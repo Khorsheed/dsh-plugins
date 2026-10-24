@@ -65,4 +65,4 @@ Status: implemented
 - Remote 签名变了：T97 前后两侧的客户端和宿主端混用时线协议不兼容。两半由同一个包发布，正常安装不会混用。两个包的 `dsh.compat.notes` 和 README 的兼容性一节都写明了这点。
 - 在面板里打的标记记为 `panel:lab`，记录里仍能看出是面板写的，但看不出是哪个标签页。
 - 在面板里批准会新建一个会话，用户不会被带过去。会话标题是「运行 <实验>」，在会话列表里能找到。
-- 仓里只有 `profiles/web-eval` 一个 profile 装了这两个包（经由 `@khorsheed/dsh-bundle-eval`），所以入口只在那里出现。
+- 仓里只有 `profiles/web-eval` 一个 profile 装了这两个包（经由 `@khorsheed/dsh-eval-suite`），所以入口只在那里出现。

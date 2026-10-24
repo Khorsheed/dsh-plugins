@@ -10,7 +10,7 @@
 # The model-facing video_* TOOLS are not part of this row: they ship as the
 # package's `./tool` composition entry (row id `video-studio-tool`, module
 # `@khorsheed/dsh-video-studio/tool`), granted per session by the dsh-video
-# preset (剪辑模式) in @khorsheed/dsh-presets — never mounted at the profile
+# preset (剪辑模式) in @khorsheed/dsh-video-suite — never mounted at the profile
 # root (the worktrees `./tool` pattern).
 - insert:
     - id: video-studio

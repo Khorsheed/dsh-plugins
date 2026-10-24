@@ -33,7 +33,7 @@ Interesting papers and articles pile up as browser tabs, and feeding one to the 
 dsh plugin --profile web add @khorsheed/dsh-reader
 ```
 
-Restart the web instance to activate (installed alone, the tools and the tab reach every session). Usually there is no need to install it alone: the reader ships with the learning mode (`@khorsheed/dsh-learning`) and the writing mode (`@khorsheed/dsh-writing`), and its tools and tab appear only in those modes' sessions. Uninstall:
+Restart the web instance to activate (installed alone, the tools and the tab reach every session). Usually there is no need to install it alone: the reader ships with the learning mode (`@khorsheed/dsh-learning-suite`) and the writing mode (`@khorsheed/dsh-writing-suite`), and its tools and tab appear only in those modes' sessions. Uninstall:
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-reader

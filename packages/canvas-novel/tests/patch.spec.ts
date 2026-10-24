@@ -37,7 +37,7 @@ describe('the shipped cordis.patch.yml (globally-enabled agent surface)', () => 
 
   it('documents the scoped shadowing (no double registration) and the mode-pack grant path', () => {
     const comments = patch.split('\n').filter((line) => line.trimStart().startsWith('#')).join('\n')
-    expect(comments).toContain('@khorsheed/dsh-writing')
+    expect(comments).toContain('@khorsheed/dsh-writing-suite')
     expect(comments).toContain('@khorsheed/dsh-canvas-novel/agent')
     expect(comments).toContain('shadows')
   })

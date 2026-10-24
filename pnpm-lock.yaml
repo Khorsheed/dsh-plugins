@@ -170,9 +170,6 @@ importers:
 
   packages/basic:
     dependencies:
-      '@khorsheed/dsh-ankh-guard':
-        specifier: workspace:*
-        version: link:../ankh-guard
       '@khorsheed/dsh-capability-catalog':
         specifier: workspace:*
         version: link:../capability-catalog
@@ -185,9 +182,6 @@ importers:
       '@khorsheed/dsh-context-guard':
         specifier: workspace:*
         version: link:../context-guard
-      '@khorsheed/dsh-context-lens':
-        specifier: workspace:*
-        version: link:../context-lens
       '@khorsheed/dsh-file-preview':
         specifier: workspace:*
         version: link:../file-preview
@@ -212,43 +206,6 @@ importers:
       '@khorsheed/dsh-whalesong':
         specifier: workspace:*
         version: link:../whalesong
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: 4.0.4
-        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.5)
-      tsdown:
-        specifier: ^0.22.2
-        version: 0.22.14(tsx@4.23.15)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.9.0
-        version: 5.9.3
-      vitest:
-        specifier: ^3.0.0
-        version: 3.2.7(@types/node@26.6.3)(jsdom@29.1.1)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1)
-
-  packages/bundle-conversation-toolbox:
-    dependencies:
-      '@khorsheed/dsh-client-message-tools':
-        specifier: workspace:*
-        version: link:../message-tools
-      '@khorsheed/dsh-client-session-title-edit':
-        specifier: workspace:*
-        version: link:../session-title-edit
-      '@khorsheed/dsh-context-guard':
-        specifier: workspace:*
-        version: link:../context-guard
-      '@khorsheed/dsh-inline-html-render':
-        specifier: workspace:*
-        version: link:../inline-html-render
-      '@khorsheed/dsh-message-timeline':
-        specifier: workspace:*
-        version: link:../message-timeline
-      '@khorsheed/dsh-quote':
-        specifier: workspace:*
-        version: link:../quote
-      '@khorsheed/dsh-taskpilot':
-        specifier: workspace:*
-        version: link:../taskpilot
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -874,6 +831,12 @@ importers:
 
   packages/dev:
     dependencies:
+      '@khorsheed/dsh-ankh-guard':
+        specifier: workspace:*
+        version: link:../ankh-guard
+      '@khorsheed/dsh-context-lens':
+        specifier: workspace:*
+        version: link:../context-lens
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*
         version: link:../local-agent
@@ -1293,6 +1256,27 @@ importers:
       '@khorsheed/dsh-game':
         specifier: workspace:*
         version: link:../game
+      '@khorsheed/dsh-local-agent':
+        specifier: workspace:*
+        version: link:../local-agent
+      '@khorsheed/dsh-local-agent-claude-code':
+        specifier: workspace:*
+        version: link:../local-agent-claude-code
+      '@khorsheed/dsh-local-agent-codex':
+        specifier: workspace:*
+        version: link:../local-agent-codex
+      '@khorsheed/dsh-local-agent-dsh':
+        specifier: workspace:*
+        version: link:../local-agent-dsh
+      '@khorsheed/dsh-local-agent-dsh-headless':
+        specifier: workspace:*
+        version: link:../local-agent-dsh-headless
+      '@khorsheed/dsh-local-agent-kimi':
+        specifier: workspace:*
+        version: link:../local-agent-kimi
+      '@khorsheed/dsh-room':
+        specifier: workspace:*
+        version: link:../room
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -2304,25 +2288,6 @@ importers:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
 
-  packages/presets:
-    dependencies:
-      '@deepseek-ai/dsh-agent-preset':
-        specifier: ^0.1.7-rc.1 || ^0.2.0-rc.1 || ^0.2.1-rc.1
-        version: 0.2.0-rc.2(@deepseek-ai/cordis-plugin-loader@1.0.5)(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-agent-preset-registry@0.2.1-rc.1(f634e48299eaa3e43c580bdbeabef67a))
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: 4.0.4
-        version: 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.5)
-      tsdown:
-        specifier: ^0.22.2
-        version: 0.22.14(tsx@4.23.15)(typescript@5.9.3)
-      typescript:
-        specifier: ^5.9.0
-        version: 5.9.3
-      vitest:
-        specifier: ^3.0.0
-        version: 3.2.7(@types/node@26.6.3)(jsdom@29.1.1)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1)
-
   packages/quote:
     dependencies:
       zod:
@@ -2832,6 +2797,27 @@ importers:
 
   packages/video:
     dependencies:
+      '@khorsheed/dsh-local-agent':
+        specifier: workspace:*
+        version: link:../local-agent
+      '@khorsheed/dsh-local-agent-claude-code':
+        specifier: workspace:*
+        version: link:../local-agent-claude-code
+      '@khorsheed/dsh-local-agent-codex':
+        specifier: workspace:*
+        version: link:../local-agent-codex
+      '@khorsheed/dsh-local-agent-dsh':
+        specifier: workspace:*
+        version: link:../local-agent-dsh
+      '@khorsheed/dsh-local-agent-dsh-headless':
+        specifier: workspace:*
+        version: link:../local-agent-dsh-headless
+      '@khorsheed/dsh-local-agent-kimi':
+        specifier: workspace:*
+        version: link:../local-agent-kimi
+      '@khorsheed/dsh-room':
+        specifier: workspace:*
+        version: link:../room
       '@khorsheed/dsh-transcribe':
         specifier: workspace:*
         version: link:../transcribe
@@ -3252,13 +3238,6 @@ packages:
       '@deepseek-ai/dsh-system-prompt': 0.2.1-rc.1
       '@deepseek-ai/dsh-tools': 0.2.1-rc.1
       '@deepseek-ai/dsh-typert-protocol': 0.2.1-rc.1
-
-  '@deepseek-ai/dsh-agent-preset@0.2.0-rc.2':
-    resolution: {integrity: sha512-hrRWLO0ow0lVWqDL0nWPPZqsjUR+J05JgDoTuz1qJrpvGbXMykayOx+ZkKWy64ErkqW2pMIgT4JGYeOPoH7kmA==}
-    peerDependencies:
-      '@deepseek-ai/cordis': 4.0.4
-      '@deepseek-ai/cordis-plugin-loader': 1.0.5
-      '@deepseek-ai/dsh-agent-preset-registry': 0.2.1-rc.1
 
   '@deepseek-ai/dsh-agent-presets@0.1.0-rc.8':
     resolution: {integrity: sha512-7h+kE0KDrJCk2Y8GAqF4fu4YqZmFi5U8/AarFkGUqRI3HDugD6oYf05c7ZWNF7lQXh1OmwmrSbuPhT/YXJapOg==}
@@ -6680,13 +6659,6 @@ snapshots:
       - '@deepseek-ai/cordis-plugin-group'
       - '@deepseek-ai/dsh-home-paths'
       - '@deepseek-ai/dsh-launch-environment'
-
-  '@deepseek-ai/dsh-agent-preset@0.2.0-rc.2(@deepseek-ai/cordis-plugin-loader@1.0.5)(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-agent-preset-registry@0.2.1-rc.1(f634e48299eaa3e43c580bdbeabef67a))':
-    dependencies:
-      '@deepseek-ai/cordis': 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.10)(@deepseek-ai/cordis-plugin-loader@1.0.5)
-      '@deepseek-ai/cordis-plugin-loader': 1.0.5(@deepseek-ai/cordis@4.0.4)(node-addon-require-builtin@0.1.9)
-      '@deepseek-ai/dsh-agent-preset-registry': 0.2.1-rc.1(f634e48299eaa3e43c580bdbeabef67a)
-      '@deepseek-ai/schemastery': 3.18.5
 
   '@deepseek-ai/dsh-agent-presets@0.1.0-rc.8(5ec64cffa5f953ad3dc94fb22635e905)':
     dependencies:

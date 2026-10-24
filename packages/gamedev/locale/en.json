@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Game Dev Suite",
-    "description": "The dsh-gamedev agent mode plus the game workbench: build and play a small 2D web game with the agent — one install."
+    "description": "The dsh-gamedev agent mode plus the game workbench: build and play a small 2D web game with the agent, with local-agent delegation and rooms — one install."
   }
 }

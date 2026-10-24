@@ -43,7 +43,7 @@ apply(isolatedCtx, {
 dsh plugin --profile <name> add @khorsheed/dsh-library
 ```
 
-只装本包：图书馆 tab 与数据面可用；模型工具不存在（它们由 `@khorsheed/dsh-presets` 声明的 `preset-learning` 按会话授予）。卸载即全部消失。
+只装本包：图书馆 tab 与数据面可用；模型工具不存在（它们由 `@khorsheed/dsh-learning-suite` 声明的 `preset-dsh-learning` 按会话授予）。卸载即全部消失。
 
 ## Compatibility
 

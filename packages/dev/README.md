@@ -1,8 +1,8 @@
-# @khorsheed/dsh-dev
+# @khorsheed/dsh-dev-suite
 
 [English](README.en.md) | 中文
 
-开发模式一个包装齐:`dsh-dev` agent preset 连同它授予工具的整个开发家族——local-agent 核与 Kimi / Codex / Claude Code / dsh 四个委派 provider、工作树、多Agent协同、快速决策。清单里只多一张「开发模式」卡片;切到开发模式的会话自动拿到该模式的工具组合。
+开发模式一个包装齐:`dsh-dev` agent preset 连同它授予工具的整个开发家族——local-agent 核与 Kimi / Codex / Claude Code / dsh 四个委派 provider、工作树、多Agent协同、快速决策,以及开发者用的重启守卫与上下文透镜。清单里只多一张「开发模式」卡片;切到开发模式的会话自动拿到该模式的工具组合。
 
 ## 这是什么模式
 
@@ -20,21 +20,31 @@
 | `@khorsheed/dsh-worktrees` | `worktrees` | 实况展示会话工作树的分支、待提交改动与提交记录 |
 | `@khorsheed/dsh-room` | `room` | 把会话升级为有协调者和成员的共享协作空间 |
 | `@khorsheed/dsh-typesafe` | `typesafe` | 类型化模型判断原语,供其它插件在代码中调用 |
+| `@khorsheed/dsh-ankh-guard` | `ankh-guard` | 先证明构建与测试通过,才放行自我修改的重启 |
+| `@khorsheed/dsh-context-lens` | `context-lens` | 按 turn 查看每次模型请求的完整组成:system 分段归因、工具定义、token 与耗时分布 |
 
 无卡库(deps-only,进 `dependencies` 不进 patch 行):`@khorsheed/dsh-local-agent-dsh-headless`(子 dsh 被 provision 面)——与 @khorsheed/dsh-bundle-local-agent 同一处理,清单页不出现,随家族存亡。
 
 ## 安装
 
-在宿主界面「添加插件」对话框里粘贴包名 `@khorsheed/dsh-dev`(或从市场索引里选它),确认后重启实例——装这一个,成员随依赖一起到达,模式 preset 与家族行由本包的 patch 统一挂载。随后在会话的模式选择器里切到「开发模式」。
+在宿主界面「添加插件」对话框里粘贴包名 `@khorsheed/dsh-dev-suite`(或从市场索引里选它),确认后重启实例——装这一个,成员随依赖一起到达,模式 preset 与家族行由本包的 patch 统一挂载。随后在会话的模式选择器里切到「开发模式」。
 
 命令行等价:
 
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-dev
+dsh plugin --profile web add @khorsheed/dsh-dev-suite
 ```
 
+<!-- collection:start -->
+推荐连同基础体验一起装(「开发」集合,一条命令):
+
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-dev
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite
+```
+<!-- collection:end -->
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-dev-suite
 ```
 
 卸载即整族移除(含模式 preset);想保留家族、只关某一行,用 bundle 详情页的行级开关。
@@ -50,14 +60,14 @@ dsh plugin --profile web remove @khorsheed/dsh-dev
 
 - **只装 dsh 侧集成**——各家 CLI 本体(`kimi` / `codex` / `claude`)需在 `PATH` 上自行安装,登录各走各的 `/<harness> login`;本包不代装、不代登录。
 - **卸载是整族的**——remove 本包会把全部成员一起移除,没有「从 bundle 里退掉单个成员」的操作;单行停用请用 bundle 详情页的行级开关。
-- **preset 行镜像自 @khorsheed/dsh-presets**——两处内容逐字一致,由仓级 parity spec 钉住;presets 包退役后此处为正本。
+- **preset 行的正本就在本包**——它曾镜像自 @khorsheed/dsh-presets,该包已于 2026-10-24 退役。
 
 ## 实现原理
 
 <details>
 <summary>内部结构(点击展开)</summary>
 
-**模式包 = 家族整合包 + 一行模式 preset。** `cordis.patch.yml` 的成员行(含两条停用官方同名工具行的 bare override)逐字来自对应成员包自己的 `cordis.patch.yml`;末尾一行 `preset-dsh-dev`(`@deepseek-ai/dsh-agent-preset` 声明)逐字镜像自 `@khorsheed/dsh-presets`,由 `scripts/preset-mode-parity.spec.ts` 钉住两边 plugins 组合与展示字段不漂移。仓级 check:plugins 的 `dsh.bundle.kind: 'mode'` sanction 机械钉死整个形状:行只允许落在「成员规范行全集 + 恰好一行 preset-<mode>」内,成员必须是真实自挂载包,每个成员至少贡献一行,mode 值全树唯一。
+**模式包 = 家族整合包 + 一行模式 preset。** `cordis.patch.yml` 的成员行(含两条停用官方同名工具行的 bare override)逐字来自对应成员包自己的 `cordis.patch.yml`;末尾一行 `preset-dsh-dev`(`@deepseek-ai/dsh-agent-preset` 声明)是本包自有的正本(曾镜像自已退役的 `@khorsheed/dsh-presets`)。仓级 check:plugins 的 `dsh.bundle.kind: 'mode'` sanction 机械钉死整个形状:行只允许落在「成员规范行全集 + 恰好一行 preset-<mode>」内,成员必须是真实自挂载包,每个成员至少贡献一行,mode 值全树唯一。
 
 **装我 = 装一族 + 一个模式,不双挂。** 成员全部列进 `dependencies`(安装即带齐),同时登记进 `dsh.references`(家族名册供 pack 期与目录层读取)。`dsh plugin add` 只把 profile 的**直接依赖**收编进 bundles 层(`reconcilePlugins`)——装本 bundle 只应用**本** patch,成员自己的 patch 不被应用,任何一行都不会挂两次。成员单独安装仍自挂载;重叠由 bundle 详情页的行级开关解决。
 

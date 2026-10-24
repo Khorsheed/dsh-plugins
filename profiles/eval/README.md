@@ -127,13 +127,13 @@ plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha
 
 ## 依赖插件
 
-21 个成员（18 个直接依赖：评测机制四个成员经整合包 `@khorsheed/dsh-bundle-eval` 一起装），三组：
+21 个成员（18 个直接依赖：评测机制四个成员经整合包 `@khorsheed/dsh-eval-suite` 一起装），三组：
 
 | 组 | 成员 | 状态 | 为本 profile 需要的改动 |
 |---|---|---|---|
 | 基础体验 | 与 dev 相同的 11 个（`ankh-guard` 在其中） | ✅ / 🔶 | 无；评测实例用自己的 `$DSH_HOME`，切换与看护归 `ankh-guard` |
 | 本地 Agent 家族 | 5 个：`local-agent` + kimi / codex / claude-code / dsh 四个 provider（第六个共享工具包 `tool-subagent` 已随 2026-09-30 家族折叠退役，委派工具收进各 provider 的 `./tool` 入口） | 🔶 | I1：评测 pin 配置（全 exec、codex 容器内 full-access、claude 与 kimi 的推理强度显式）与 effectiveSettings 快照（含已配置模型）。I2：模型回读，记录实际使用的模型。I3：容器内 exec 包装已落地（T17：`exec: {container, workdir, env}`，值不上 argv）；「CLI 驱动抽成独立包」推迟到出现第二个消费者；`cliVersion` 与 `credentialState` 填实（T25）。I4：每条件的模型参数（首轮指定、成员内固定、resume 不换）与 scoped home 覆盖，provider 设置卡加「默认模型」 |
-| 评测机制 | 4 个：`datasets` / `mission` / `lab` / `eval`，经家族整合包 `@khorsheed/dsh-bundle-eval` 一起装（T88；模型工具行是 datasets / mission / eval 各自的 `./tool` 入口，归预设——M4'③ 拆出的三个伴生包随 T88 折回核心包并退役） | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针。`eval`：run 循环的判官（T9）、报告（T10）、只读工具（T14）与完整就绪检查 |
+| 评测机制 | 4 个：`datasets` / `mission` / `lab` / `eval`，经家族整合包 `@khorsheed/dsh-eval-suite` 一起装（T88；模型工具行是 datasets / mission / eval 各自的 `./tool` 入口，归预设——M4'③ 拆出的三个伴生包随 T88 折回核心包并退役） | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针。`eval`：run 循环的判官（T9）、报告（T10）、只读工具（T14）与完整就绪检查 |
 
 评测机制里的 **`@khorsheed/dsh-eval`** 是编排器（I2·T8 入列）。已落地：三份契约 schema、`validatePlan` / `hashCondition` / `hashHome`、`generateTemplate`（manifest → run 模板，逐项等价于 I1 手写的 bench-v1）、run 循环 v0（阶段一二、宿主目录、逐格物化、逐字节委派、submit/transition、归档闸、bundle 导出）、`/eval run` slash 与 `dsh-eval` CLI（validate / run --dry-run / template / conditions hash）。判官委派（T9）、`dsh-eval report`（T10）、模型工具（T14；I5·T46 起四个读工具 `eval_conditions` / `eval_plan_validate` / `eval_run_status` / `eval_cells`，I5·T34 再加起草工具 `eval_plan_draft`）均已落地。
 
@@ -151,7 +151,7 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 | eval | 四读 `eval_conditions` `eval_plan_validate` `eval_run_status` `eval_cells` + 两写 `eval_plan_draft`（部署内实验目录）`eval_analysis_write`（只写 `analysis/`）；不开 run | 内核 | 批准、run、report |
 | 委派工具（`subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh`） | 不开——家族折叠后工具是各 provider 的 `./tool` 组合入口，按预设点名授予，eval 预设不点名即缺席；第四家 `subagent_dsh` 由控制器在开关 ON 时动态挂载，默认 OFF | 经 local-agent 门面委派选手 | `/codex login`、`/kimi status` 等 provider 动词 |
 
-**M4'③ 起这三个机制插件把核心行与工具行分开**：profile 根只挂核心行（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归工具行（T88 起是各核心包的 `./tool` 组合入口，此前是三个独立伴生包），所以上表的按域 tier 由 pack 的 `eval` 预设的工具行授予——`datasets-tool: organize`（T102 前是 `authoring`）、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这两套工具一个都拿不到，服务 / CLI / slash 仍全局，数据集标签页另按同一组合判据自隐（判据读不到时 fail-open；任务 tab 曾同规则自隐，现已随其 Remote 数据面整体退役，mission 不再携带浏览器半边）。**`mission-tool` 曾是第三行（`tools: read`），I5·T46 摘掉**：界面规格的 R6 定了「评测模式下 mission 这个词不出现」，逐格细节改由 `eval_cells` 从 eval 自己的投影读（数据仍经结构面算 mission 的账本，但算在服务端）。包照装，谁要在自己的覆盖层预设里加回这一行（`name: '@khorsheed/dsh-mission/tool'`）都还在。工具行随核心包安装，核心包随整合包 `@khorsheed/dsh-bundle-eval` 安装：`package.json` 只依赖整合包，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建四个成员与整合包并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
+**M4'③ 起这三个机制插件把核心行与工具行分开**：profile 根只挂核心行（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归工具行（T88 起是各核心包的 `./tool` 组合入口，此前是三个独立伴生包），所以上表的按域 tier 由 pack 的 `eval` 预设的工具行授予——`datasets-tool: organize`（T102 前是 `authoring`）、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这两套工具一个都拿不到，服务 / CLI / slash 仍全局，数据集标签页另按同一组合判据自隐（判据读不到时 fail-open；任务 tab 曾同规则自隐，现已随其 Remote 数据面整体退役，mission 不再携带浏览器半边）。**`mission-tool` 曾是第三行（`tools: read`），I5·T46 摘掉**：界面规格的 R6 定了「评测模式下 mission 这个词不出现」，逐格细节改由 `eval_cells` 从 eval 自己的投影读（数据仍经结构面算 mission 的账本，但算在服务端）。包照装，谁要在自己的覆盖层预设里加回这一行（`name: '@khorsheed/dsh-mission/tool'`）都还在。工具行随核心包安装，核心包随整合包 `@khorsheed/dsh-eval-suite` 安装：`package.json` 只依赖整合包，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建四个成员与整合包并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
 
 能力全貌、自然语言到实现的逐步轨迹与生成文件清单见 [docs/architecture.md](docs/architecture.md)。
 
@@ -170,7 +170,7 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 委派给**跑在同一个预设上**的 agent：进程内子 agent 继承父 agent 的预设（宿主的 `subagent-in-process-driver/tests/preset-inheritance.spec.ts` 就是这条的证明），所以子 agent 拿到的正好是这个预设的工具，shell 也在内。
 
-**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）。本 profile 只跑宿主 0.2.0 及以后（T82），0.2.0 的预设是 `@deepseek-ai/dsh-agent-preset` 的声明式行，不再扫预设目录：pack 自带一个声明式 bundle（`presets/`，包名 `@khorsheed/dsh-web-eval-preset`，`dsh.bundle.kind: 'preset-declarations'`，profile 以 `file:presets` 依赖它），`cordis.patch.yml` 把 `agent-preset-registry` 的 `default` 钉成 `eval`。T82 迁移时组成表与 0.1.5 时代的目录版 `presets/eval/agent.cordis.yml` 逐字节相同（按 sha256 核过）；T102 有意改了组成。`scripts/eval-preset-bundle.spec.ts` 钉住这一块的摘要——改组成就是换装置，要有意改摘要并开新 run。3080 跑的 dsh-presets 包里的 `preset-dsh-eval` 是它的镜像，`scripts/eval-preset-parity.spec.ts` 钉住两份一致。个人偏好另起一个预设 id，别改这个。
+**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）。本 profile 只跑宿主 0.2.0 及以后（T82），0.2.0 的预设是 `@deepseek-ai/dsh-agent-preset` 的声明式行，不再扫预设目录：pack 自带一个声明式 bundle（`presets/`，包名 `@khorsheed/dsh-web-eval-preset`，`dsh.bundle.kind: 'preset-declarations'`，profile 以 `file:presets` 依赖它），`cordis.patch.yml` 把 `agent-preset-registry` 的 `default` 钉成 `eval`。T82 迁移时组成表与 0.1.5 时代的目录版 `presets/eval/agent.cordis.yml` 逐字节相同（按 sha256 核过）；T102 有意改了组成。`scripts/eval-preset-bundle.spec.ts` 钉住这一块的摘要——改组成就是换装置，要有意改摘要并开新 run。3080 跑的评测模式包（`@khorsheed/dsh-eval-suite`）里的 `preset-dsh-eval` 是它的镜像，`scripts/eval-preset-parity.spec.ts` 钉住两份一致。个人偏好另起一个预设 id，别改这个。
 
 「添加题集 › 让 Agent 整理」开的就是评测会话：没配 `authoringPreset` 时，datasets 按「授予了 datasets 工具行的 `organize` 档」挑预设（本 profile 上是 `eval`，3080 上是 `dsh-eval`），配置里写了 id 就用写的。
 

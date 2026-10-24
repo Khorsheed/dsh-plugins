@@ -80,6 +80,9 @@ with Compatibility, `dsh.compat`/`dsh.references`/`files`/`exports`):
 - `packages/bundle-conversation-toolbox`「会话工具箱」— members: message-tools,
   message-timeline, session-title-edit, quote, inline-html-render,
   context-guard, taskpilot (one canonical row each).
+  Retired 2026-10-24: every member is also a member of `@khorsheed/dsh-basic`,
+  so the toolbox was a strict subset of basic with no install story of its
+  own; the package is deleted and the name is in `scripts/retired-packages.ts`.
 
 Each carries a spec pinning patch ↔ `FAMILY_MEMBERS` constant ↔ manifest
 (membership, verbatim-row reuse, quoting, dependency and reference

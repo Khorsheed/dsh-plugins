@@ -1,5 +1,5 @@
 /**
- * @khorsheed/dsh-dev — the 开发模式 (dsh-dev) mode bundle: the dev family
+ * @khorsheed/dsh-dev-suite — the 开发模式 (dsh-dev) mode bundle: the dev family
  * (local-agent core + the kimi / codex / claude-code / dsh delegation
  * providers, worktrees, room, typesafe) plus the mode's own preset row, as one
  * thin meta package. The bundle is composition data: cordis.patch.yml re-mounts
@@ -22,6 +22,8 @@ export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-worktrees',
   '@khorsheed/dsh-room',
   '@khorsheed/dsh-typesafe',
+  '@khorsheed/dsh-ankh-guard',
+  '@khorsheed/dsh-context-lens',
 ] as const
 
 /**

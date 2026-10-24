@@ -25,7 +25,7 @@ There is exactly one call surface: `POST {baseUrl}/v1/systemone`, `Authorization
 dsh plugin --profile web add @khorsheed/dsh-typesafe
 ```
 
-The package declares `dsh.bundle`, so add merges its `cordis.patch.yml` row (loader row id `typesafe`) into the profile's bundles layer — no hand-editing of cordis.yml. Restart the web instance to activate. To let the model ask for judgements too, an agent preset names this package's `./tool` row (`- id: typesafe-tool / name: '@khorsheed/dsh-typesafe/tool'`; the dev preset of `@khorsheed/dsh-presets` already carries it); in sessions whose preset does not name the row the service works and the model simply sees no tool.
+The package declares `dsh.bundle`, so add merges its `cordis.patch.yml` row (loader row id `typesafe`) into the profile's bundles layer — no hand-editing of cordis.yml. Restart the web instance to activate. To let the model ask for judgements too, an agent preset names this package's `./tool` row (`- id: typesafe-tool / name: '@khorsheed/dsh-typesafe/tool'`; the dev preset of `@khorsheed/dsh-dev-suite` already carries it); in sessions whose preset does not name the row the service works and the model simply sees no tool.
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-typesafe

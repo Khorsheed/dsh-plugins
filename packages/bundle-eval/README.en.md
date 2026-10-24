@@ -1,4 +1,4 @@
-# @khorsheed/dsh-bundle-eval
+# @khorsheed/dsh-eval-suite
 
 English | [中文](README.md)
 
@@ -34,7 +34,7 @@ Evaluation sessions are NOT granted the local-agent family's `subagent_*` delega
 ## Install
 
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-bundle-eval
+dsh plugin --profile web add @khorsheed/dsh-eval-suite
 ```
 
 Takes effect after the web instance restarts. Once mounted, the evaluation family's four rows, the delegation family's five rows and the evaluation-mode preset are all in place; switch a session to 「评测模式」 in the mode selector to get the domain-trimmed evaluation tools. To give the model the evaluation tools in a different preset, name the matching `./tool` row in that agent preset, for example:
@@ -44,8 +44,16 @@ Takes effect after the web instance restarts. Once mounted, the evaluation famil
   name: '@khorsheed/dsh-eval/tool'
 ```
 
+<!-- collection:start -->
+Recommended: install it together with the basic suite (the Eval collection, one command):
+
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-bundle-eval
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite
+```
+<!-- collection:end -->
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-eval-suite
 ```
 
 Uninstalling removes the whole family; to keep the family but turn one row off, use the row-level switches on the bundle detail page.
@@ -68,7 +76,7 @@ Uninstalling removes the whole family; to keep the family but turn one row off, 
 <details>
 <summary>Internals (click to expand)</summary>
 
-**A pure composition meta package (a mode bundle).** The member rows in `cordis.patch.yml` come from the matching member package's own `cordis.patch.yml`, id and name verbatim; the closing `preset-dsh-eval` row (an `@deepseek-ai/dsh-agent-preset` declaration) is mirrored verbatim from `@khorsheed/dsh-presets`, with `scripts/preset-mode-parity.spec.ts` pinning the two copies against drift (this file becomes the canonical copy once the presets package retires). The repo-level check:plugins `dsh.bundle.kind: 'mode'` sanction pins this mechanically: rows may only fall inside the allowlist of "the union of the members' canonical rows minus the companion composition rows (the `./tool` subpath entries), plus exactly one preset-<mode> row", every subtracted companion row must be granted by this bundle's preset composition, members must be real self-mounting packages, every member must contribute at least one row, the mode value is unique across the tree, and a row id shared by several bundle patches (the local-agent rows this bundle shares with dsh-dev and bundle-local-agent) must carry identical content.
+**A pure composition meta package (a mode bundle).** The member rows in `cordis.patch.yml` come from the matching member package's own `cordis.patch.yml`, id and name verbatim; the closing `preset-dsh-eval` row (an `@deepseek-ai/dsh-agent-preset` declaration) is this package's own canonical copy (it once mirrored the retired `@khorsheed/dsh-presets`). The repo-level check:plugins `dsh.bundle.kind: 'mode'` sanction pins this mechanically: rows may only fall inside the allowlist of "the union of the members' canonical rows minus the companion composition rows (the `./tool` subpath entries), plus exactly one preset-<mode> row", every subtracted companion row must be granted by this bundle's preset composition, members must be real self-mounting packages, every member must contribute at least one row, the mode value is unique across the tree, and a row id shared by several bundle patches (the local-agent rows this bundle shares with dsh-dev and bundle-local-agent) must carry identical content.
 
 **Install me = install the family, no double mount.** Every member is listed in `dependencies` (installing brings them all) and registered in `dsh.references` (the family roster that pack-time and catalog checks read). The mechanism: `dsh plugin add` reconciles only the profile's **direct** dependencies into the bundles layer (`reconcilePlugins`) — installing this bundle applies **this** patch only; the members arrive as transitive dependencies and their own patches are not applied, so no row mounts twice. A member added on its own with `dsh plugin add` still self-mounts (the repo rule holds); when both are installed, the overlapping rows are resolved by the official bundle detail page's row-level switches.
 

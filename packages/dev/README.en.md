@@ -1,8 +1,8 @@
-# @khorsheed/dsh-dev
+# @khorsheed/dsh-dev-suite
 
 English | [中文](README.md)
 
-The dev mode in one install: the `dsh-dev` agent preset plus the whole family it grants tools from — the local-agent core, the Kimi / Codex / Claude Code / dsh delegation providers, worktrees, room and typesafe. One 「开发模式」 card in the inventory; a session switched to dev mode gets the mode's tool set automatically.
+The dev mode in one install: the `dsh-dev` agent preset plus the whole family it grants tools from — the local-agent core, the Kimi / Codex / Claude Code / dsh delegation providers, worktrees, room and typesafe, plus the developer-facing ankh-guard and context-lens. One 「开发模式」 card in the inventory; a session switched to dev mode gets the mode's tool set automatically.
 
 ## What the mode is
 
@@ -20,21 +20,31 @@ Dev mode is the official standard mode's full capability set, plus community too
 | `@khorsheed/dsh-worktrees` | `worktrees` | the session worktree's branch, pending changes and commit history |
 | `@khorsheed/dsh-room` | `room` | turn a session into a shared conversation with coordinators and members |
 | `@khorsheed/dsh-typesafe` | `typesafe` | typed model judgement primitives other plugins call in code |
+| `@khorsheed/dsh-ankh-guard` | `ankh-guard` | gate self-modification restarts on a green build and test credential |
+| `@khorsheed/dsh-context-lens` | `context-lens` | per-turn structured breakdown of every model request: sections, tools, tokens, timing |
 
 Card-less library (deps-only: in `dependencies`, no patch rows of its own): `@khorsheed/dsh-local-agent-dsh-headless` (the provisioned sub-dsh face) — the same treatment as @khorsheed/dsh-bundle-local-agent; it never appears on the inventory page and lives or dies with the family.
 
 ## Install
 
-Paste the package name `@khorsheed/dsh-dev` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings every member along as dependencies, and the bundle's own patch mounts both the mode preset and the family rows. Then switch a session to 「开发模式」 in the mode selector.
+Paste the package name `@khorsheed/dsh-dev-suite` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings every member along as dependencies, and the bundle's own patch mounts both the mode preset and the family rows. Then switch a session to 「开发模式」 in the mode selector.
 
 The CLI equivalent:
 
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-dev
+dsh plugin --profile web add @khorsheed/dsh-dev-suite
 ```
 
+<!-- collection:start -->
+Recommended: install it together with the basic suite (the Dev collection, one command):
+
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-dev
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite
+```
+<!-- collection:end -->
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-dev-suite
 ```
 
 Removing the bundle removes the whole family including the mode preset; to keep the family and disable a single row, use the row-level switches on the bundle detail page.
@@ -50,14 +60,14 @@ Removing the bundle removes the whole family including the mode preset; to keep 
 
 - **dsh-side integration only** — each provider's CLI (`kimi` / `codex` / `claude`) must be installed on `PATH` separately, and login goes through each `/<harness> login`; the bundle neither installs the CLIs nor logs you in.
 - **Removal is all-or-nothing** — removing this package removes every member along with it; there is no "drop one member from the bundle" — disable single rows via the row-level switches on the bundle detail page.
-- **The preset row mirrors @khorsheed/dsh-presets** — the two copies are byte-identical in composition, pinned by the repo's parity spec; once the presets package retires, this file is the canonical copy.
+- **This package holds the canonical preset row** — it once mirrored @khorsheed/dsh-presets, which retired on 2026-10-24.
 
 ## How it works
 
 <details>
 <summary>Internals (click to expand)</summary>
 
-**A mode bundle = a family bundle plus one mode preset row.** The member rows in `cordis.patch.yml` (including the two bare overrides disabling the official same-named tool rows) come verbatim from the corresponding member's own `cordis.patch.yml`; the closing `preset-dsh-dev` row (an `@deepseek-ai/dsh-agent-preset` declaration) is mirrored verbatim from `@khorsheed/dsh-presets`, with `scripts/preset-mode-parity.spec.ts` pinning the two copies' plugin composition and display fields against drift. The repo-wide check:plugins `dsh.bundle.kind: 'mode'` sanction pins the whole shape mechanically: rows may only come from the allowlist union of member canonical rows plus exactly one `preset-<mode>` row, members must be real self-mounting packages each contributing at least one row, and the mode value is unique across the tree.
+**A mode bundle = a family bundle plus one mode preset row.** The member rows in `cordis.patch.yml` (including the two bare overrides disabling the official same-named tool rows) come verbatim from the corresponding member's own `cordis.patch.yml`; the closing `preset-dsh-dev` row (an `@deepseek-ai/dsh-agent-preset` declaration) is this package's own canonical copy (it once mirrored the retired `@khorsheed/dsh-presets`). The repo-wide check:plugins `dsh.bundle.kind: 'mode'` sanction pins the whole shape mechanically: rows may only come from the allowlist union of member canonical rows plus exactly one `preset-<mode>` row, members must be real self-mounting packages each contributing at least one row, and the mode value is unique across the tree.
 
 **Installing me installs the family and the mode — without double-mounting.** All members are listed in `dependencies` (installation brings them along) and registered in `dsh.references` (the family roster, read by pack-time and catalog checks). `dsh plugin add` reconciles only the profile's *direct* dependencies into the bundles layer (`reconcilePlugins`) — installing this bundle applies THIS patch only; the members' own patches stay inert, so no row ever mounts twice. A member installed directly still self-mounts; any overlap is resolved by the row-level switches on the bundle detail page.
 

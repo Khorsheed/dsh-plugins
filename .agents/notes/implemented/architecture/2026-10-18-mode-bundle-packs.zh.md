@@ -10,14 +10,14 @@ Status: implemented
 
 `dsh.bundle.kind: 'mode'`(checker 机制同日落地,提交 `99b7183b`)迎来它的舰队:六个模式包,每个都是 patch 末尾恰好带一条 `@deepseek-ai/dsh-agent-preset` 行(id `preset-<mode>`、`dsh.bundle.mode` 声明 `<mode>`、全树唯一)的家族包:
 
-- `packages/dev`(`@khorsheed/dsh-dev`):local-agent 核 + kimi/codex/claude-code/dsh 四个委派 provider、worktrees、room、typesafe;`local-agent-dsh-headless` 以 deps-only 随行(与 bundle-local-agent 同一处理,在 `ALLOWED_EDGES` 登记)。
-- `packages/writing`(`@khorsheed/dsh-writing`):canvas + canvas-novel。
-- `packages/learning`(`@khorsheed/dsh-learning`):library。
-- `packages/video`(`@khorsheed/dsh-video`):video-studio。
-- `packages/gamedev`(`@khorsheed/dsh-gamedev`):game。
-- `packages/bundle-eval`(`@khorsheed/dsh-bundle-eval`):family 升级为 mode `dsh-eval`;成员与「评测套件」卡面不变,版本线不动(仍未发布的 0.1.0)。
+- `packages/dev`(`@khorsheed/dsh-dev-suite`):local-agent 核 + kimi/codex/claude-code/dsh 四个委派 provider、worktrees、room、typesafe;`local-agent-dsh-headless` 以 deps-only 随行(与 bundle-local-agent 同一处理,在 `ALLOWED_EDGES` 登记)。
+- `packages/writing`(`@khorsheed/dsh-writing-suite`):canvas + canvas-novel。
+- `packages/learning`(`@khorsheed/dsh-learning-suite`):library。
+- `packages/video`(`@khorsheed/dsh-video-suite`):video-studio。
+- `packages/gamedev`(`@khorsheed/dsh-gamedev-suite`):game。
+- `packages/bundle-eval`(`@khorsheed/dsh-eval-suite`):family 升级为 mode `dsh-eval`;成员与「评测套件」卡面不变,版本线不动(仍未发布的 0.1.0)。
 
-`packages/basic`(`@khorsheed/dsh-basic`)保持 `kind: 'family'`:十八个成员,无 preset 行——没有「基础模式」。
+`packages/basic`(`@khorsheed/dsh-basic`)保持 `kind: 'family'`,无 preset 行——没有「基础模式」。起步时十八个成员;灵感空间与渲染抓取移到学习/写作模式包、侧边对话移出、快捷键退役(2026-10-19 至 10-22),2026-10-24 重启守卫与上下文透镜移到开发模式包,剩十二个。最后这次移动的规则:basic 只放普通用户每个会话都想要的东西;ankh-guard 只对受看门狗守护、会改自己的实例有意义,context-lens 是看模型请求组成的调试工具,两者都属于开发者工具。capability-catalog 作为日常的「这个实例能做什么」视图留在 basic。
 
 preset 行逐字镜像自 `@khorsheed/dsh-presets` 的同名行,接在同一个 `- insert:` 列表的成员行之后。漂移即红测:`scripts/preset-mode-parity.spec.ts` 把每个模式包的行与 presets 副本比对(解析后的 `plugins:` 组合 + `name`/`description`/`order`——与 web-eval parity 不同,`order` 也必须一致,两个副本跑的是同一个部署的 chip 列表),`scripts/eval-preset-parity.spec.ts` 升级为三方比对(web-eval 正本 ↔ presets ↔ bundle-eval)。两个 spec 共享 `scripts/preset-row-blocks.ts`(`rowLines`/`unquote`/`composition`/`field`)。presets 包退役(计划下一发布波)后,模式包的 patch 升为正本——每个 patch 头注释已写明——parity spec 届时删除。
 
@@ -26,6 +26,10 @@ preset 行逐字镜像自 `@khorsheed/dsh-presets` 的同名行,接在同一个 
 每个包用 `tests/bundle.spec.ts` 钉住组合(行 = 成员规范行经 `parseTopLevelPatchRows` 逐字比对 + 恰好一条 preset 行 + 每成员至少贡献一行),并带齐常规范式:locale 卡面元数据、双语 README、CHANGELOG、只导常量的 `src/index.ts`(`MODE` / `FAMILY_MEMBERS`,有 deps-only 或 override 名册的也一并导出)。
 
 `dsh.compat.minHost` 取「成员最高地板」与「preset 行机制地板」的较高者:`@deepseek-ai/dsh-agent-preset` 声明行只在宿主 0.1.7-rc.1 起存在。这一刀落在 dev(成员地板 0.1.5-rc.1 → 包地板 0.1.7-rc.1)与 video(同理)上;learning(library 0.1.7-rc.1)、gamedev(0.2.0-rc.1)、writing(canvas-novel 0.2.0-rc.2)、bundle-eval(0.2.0-rc.2)本就在其上。
+
+**包名带 `-suite`(2026-10-24,首发前)。** 六个模式包以 `@khorsheed/dsh-<mode>-suite` 发布(`dsh-dev-suite`、`dsh-writing-suite`、`dsh-learning-suite`、`dsh-video-suite`、`dsh-gamedev-suite`、`dsh-eval-suite`)。起因是评测包:`@khorsheed/dsh-eval` 是评测核心包,评测模式包用不了 `dsh-<mode>` 这个形态。其余几个跟着改,是为了一条规则:包名与卡名(「…套件」)对应,并与同名的镜像仓、集合分开(`Khorsheed/dsh-dev` 是开发集合的门面,`@khorsheed/dsh-dev-suite` 是它要装的 bundle)。目录、preset id(`dsh-dev` 等)与行 id 不变,会话与设置无感。旧名从未发布,不需要 deprecate。
+
+**gamedev 与 video 带上多 agent 家族(2026-10-24)。** 两个包加入 local-agent 核、四个委派 provider 与 room 作为成员(行逐字取自成员,与 bundle-local-agent、dev 挂的同一份;local-agent-dsh-headless 以 deps-only 随行),preset 授予三个本地委派工具、`room-tool`,以及官方 `tool-subagent-control` / `list-agents`,让 agent 能等待、读取、停止自己派出的任务。官方 spawn/fork 子代理工具不授予:这两个模式委派给本地 agent,而不是进程内的 dsh 子代理。为什么放进模式包而不是让用户另装:包本身不授予工具(工具跟着 preset 走),「模式旁边再装 bundle-local-agent」会让该模式的会话拿不到工具;而且模式包本来就该是普通用户的一次完整安装。接受的代价:没装 codex / claude CLI 的用户会看到处于等待状态的 provider 卡。剪辑模式需注意:它的 preset 刻意不给 shell(shell 会绕过提议流程),但被委派的 codex / claude-code 自带 shell——委派是用户有意选择的放宽。
 
 ## 备选
 
@@ -39,6 +43,7 @@ preset 行逐字镜像自 `@khorsheed/dsh-presets` 的同名行,接在同一个 
 
 - `scripts/check-profile-bundles.ts` 学会为 `kind: 'mode'` 也读 `dsh.bundle.members`(此前只认 `'family'`——mode kind 的提交改了 check:plugins 与 deploy:3080,漏了它;bundle-eval 一翻 kind,web-eval profile 立刻红)。现在它从 check-plugin-independence import `FAMILY_LIKE_KINDS`,两处不再可能漂移。
 - 模式包与 presets 包并存期间按设计重叠(两个 family-like patch 里同一个 `preset-<mode>` 行 id——豁免 row-id 台账;同装时塌缩为同一条声明)。presets 包的退役即清理点。
+  **2026-10-24 已退役**:`packages/presets` 删除,`@khorsheed/dsh-presets` 列入 `scripts/retired-packages.ts`;各模式包 patch 成为其 preset 行的唯一副本,`scripts/preset-mode-parity.spec.ts` 删除,`scripts/eval-preset-parity.spec.ts` 回到两方比对(web-eval pack ↔ 评测模式包)。
 - `docs/packages.md` 重生成(48 包、45 自挂载);七个新增/变更的 i18n sidecar 已记录。
 - npm:六条新 0.1.0 线(`@khorsheed/dsh-basic`、`-dev`、`-writing`、`-learning`、`-video`、`-gamedev`)待下一发布波;bundle-eval 的模式升级随其首次发布出门。
 

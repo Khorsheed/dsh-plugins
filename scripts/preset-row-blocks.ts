@@ -1,9 +1,9 @@
 /**
- * Preset-row block helpers shared by the two parity specs
- * (scripts/eval-preset-parity.spec.ts and scripts/preset-mode-parity.spec.ts).
+ * Preset-row block helpers for the eval parity spec
+ * (scripts/eval-preset-parity.spec.ts).
  *
  * A preset row is compared as COMPOSITION, not bytes: copies of the same row
- * live in profiles/eval/presets, packages/presets and the per-mode bundles,
+ * live in profiles/eval/presets and the eval mode pack (packages/bundle-eval),
  * and they differ on purpose in comments (where the provenance notes sit) and
  * in quoting (some files quote every `name:` value, `'cordis:group'` included,
  * which YAML reads as the same string). Line- and indent-based, like

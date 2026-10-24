@@ -10,17 +10,36 @@
 
 | 套件 | 包名 | 包含什么 | 门面仓 |
 | --- | --- | --- | --- |
-| **基础体验** | `@khorsheed/dsh-basic` | 14 个日常体验成员:消息编辑/撤回、历史时间轴、标题编辑、引用、产物预览、本地文件、任务胶囊、压缩提醒、内联卡片、能力目录、提示音、移动端、上下文透镜、运维守护 | [Khorsheed/dsh-basic](https://github.com/Khorsheed/dsh-basic) |
-| **开发套件** | `@khorsheed/dsh-dev` | 本地编码 agent 委派(Kimi / Codex / Claude Code / DSH)、worktree 改动实况、room 多 agent 协作、typesafe 快速决策,自带「开发模式」preset | [Khorsheed/dsh-dev](https://github.com/Khorsheed/dsh-dev) |
-| **写作套件** | `@khorsheed/dsh-writing` | 灵感画布、长篇小说体裁、灵感空间(RSS/链接阅读)、本机转写、渲染抓取,自带「写作模式」preset | [Khorsheed/dsh-writing](https://github.com/Khorsheed/dsh-writing) |
-| **学习套件** | `@khorsheed/dsh-learning` | 图书馆:按项目组织的精读学习(书籍摄入、路线图、讲义、测验判题),含画布/灵感空间/转写/渲染抓取,自带「学习模式」preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
-| **剪辑套件** | `@khorsheed/dsh-video` | 剪辑台:混录自动分人、声纹认人、删字即删音频,导出音频/视频/字幕/shownotes;含本机转写,自带「剪辑模式」preset | [Khorsheed/dsh-video](https://github.com/Khorsheed/dsh-video) |
-| **游戏开发套件** | `@khorsheed/dsh-gamedev` | 和 agent 一起做小游戏:试玩调参、外观编辑、分章节策划、版本与回滚,每轮结束自动检查,自带「游戏开发模式」preset | [Khorsheed/dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) |
-| **评测套件** | `@khorsheed/dsh-bundle-eval` | 本机 harness 对照评测:题集、任务规划、实验单元、执行与判分,含 local-agent 委派家族,自带「评测模式」preset | [Khorsheed/dsh-eval](https://github.com/Khorsheed/dsh-eval) |
+| **基础体验** | `@khorsheed/dsh-basic` | 12 个日常体验成员:消息编辑/撤回、历史时间轴、标题编辑、引用、产物预览、本地文件、任务胶囊、压缩提醒、内联卡片、能力目录、提示音、移动端 | [Khorsheed/dsh-basic](https://github.com/Khorsheed/dsh-basic) |
+| **开发套件** | `@khorsheed/dsh-dev-suite` | 本地编码 agent 委派(Kimi / Codex / Claude Code / DSH)、worktree 改动实况、room 多 agent 协作、typesafe 快速决策、上下文透镜、运维守护,自带「开发模式」preset | [Khorsheed/dsh-dev](https://github.com/Khorsheed/dsh-dev) |
+| **写作套件** | `@khorsheed/dsh-writing-suite` | 灵感画布、长篇小说体裁、灵感空间(RSS/链接阅读)、本机转写、渲染抓取,自带「写作模式」preset | [Khorsheed/dsh-writing](https://github.com/Khorsheed/dsh-writing) |
+| **学习套件** | `@khorsheed/dsh-learning-suite` | 图书馆:按项目组织的精读学习(书籍摄入、路线图、讲义、测验判题),含画布/灵感空间/转写/渲染抓取,自带「学习模式」preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
+| **剪辑套件** | `@khorsheed/dsh-video-suite` | 剪辑台:混录自动分人、声纹认人、删字即删音频,导出音频/视频/字幕/shownotes;含本机转写与多 agent 协作(本地 agent 委派、协作间),自带「剪辑模式」preset | [Khorsheed/dsh-video](https://github.com/Khorsheed/dsh-video) |
+| **游戏开发套件** | `@khorsheed/dsh-gamedev-suite` | 和 agent 一起做小游戏:试玩调参、外观编辑、分章节策划、版本与回滚,每轮结束自动检查,含多 agent 协作(本地 agent 委派、协作间),自带「游戏开发模式」preset | [Khorsheed/dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) |
+| **评测套件** | `@khorsheed/dsh-eval-suite` | 本机 harness 对照评测:题集、任务规划、实验单元、执行与判分,含 local-agent 委派家族,自带「评测模式」preset | [Khorsheed/dsh-eval](https://github.com/Khorsheed/dsh-eval) |
 
 ![dsh-basic 基础体验:消息编辑与撤回、引用动作、会话产物、文件列表、灵感空间一屏装齐](docs/screenshots/basic-mode.png)
 
 ![dsh-dev 开发套件:room 多 agent 邀请、worktree 实况徽标、子 agent 任务胶囊](docs/screenshots/dev-mode.png)
+
+## 一键安装:集合
+
+普通用户装一个**集合**就够了:基础体验加一个模式套件。集合只是一份清单(`collections.json`),不是 npm 包——`dsh plugin add` 后面可以跟多个包名,一条命令装齐。想自己挑的,任何单包、任何套件都能单独装,和集合并存也不会重复挂载。
+
+<!-- collections:start -->
+<!-- 由 pnpm map:collections 依 collections.json 生成，勿手改 -->
+
+| 集合 | 一条命令装齐 |
+| --- | --- |
+| 基础 | `dsh plugin --profile web add @khorsheed/dsh-basic` |
+| 开发 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite` |
+| 写作 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-writing-suite` |
+| 学习 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-learning-suite` |
+| 剪辑 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-video-suite` |
+| 游戏开发 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-gamedev-suite` |
+| 评测 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite` |
+| 全部 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite @khorsheed/dsh-writing-suite @khorsheed/dsh-learning-suite @khorsheed/dsh-video-suite @khorsheed/dsh-gamedev-suite @khorsheed/dsh-eval-suite` |
+<!-- collections:end -->
 
 ## 能力地图
 
@@ -55,7 +74,7 @@
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
 | [`inline-html-render`](packages/inline-html-render) | 把 agent 写的 ```` ```dsh-card ```` HTML 渲染成会话内**沙箱交互卡片** | `@khorsheed/dsh-inline-html-render` | ≥ 0.1.2-rc.1 | basic |
-| [`context-lens`](packages/context-lens) | **上下文透镜**:按 turn 查看每次模型请求的完整组成——system 分段归因、工具定义、历史与新增上下文、token 与耗时 | `@khorsheed/dsh-context-lens` | ≥ 0.1.5-rc.1 | basic |
+| [`context-lens`](packages/context-lens) | **上下文透镜**:按 turn 查看每次模型请求的完整组成——system 分段归因、工具定义、历史与新增上下文、token 与耗时 | `@khorsheed/dsh-context-lens` | ≥ 0.1.5-rc.1 | dev |
 | [`mobile`](packages/mobile) | **移动端呈现**与 iOS 桥 | `@khorsheed/dsh-mobile` | ≥ 0.1.5-rc.1 | basic |
 
 ### 写作与灵感
@@ -90,7 +109,7 @@
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
 | [`worktrees`](packages/worktrees) | 会话头部 **repo/worktree 徽标** + 改动抽屉:待提交/已提交文件树、diff、提交记录;模型工具经包内 `./tool` 组合入口由 preset 按会话授予 | `@khorsheed/dsh-worktrees` | ≥ 0.1.5-rc.1 | dev |
-| [`room`](packages/room) | **room 会话**:邀请多个 agent 进同一条会话——成员名册、@ 派发、任务板、通知闸门;模型工具经包内 `./tool` 组合入口由 preset 按会话授予 | `@khorsheed/dsh-room` | ≥ 0.1.5-rc.1 | dev |
+| [`room`](packages/room) | **room 会话**:邀请多个 agent 进同一条会话——成员名册、@ 派发、任务板、通知闸门;模型工具经包内 `./tool` 组合入口由 preset 按会话授予 | `@khorsheed/dsh-room` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
 
 ### 本地多 Agent
 
@@ -100,11 +119,11 @@
 
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
-| [`local-agent`](packages/local-agent) | 家族**核心**:harness 注册表、作用域目录供给、`/<harness> login|sessions|status|logout` 命令族 | `@khorsheed/dsh-local-agent` | ≥ 0.1.5-rc.1 | dev / eval |
-| [`local-agent-kimi`](packages/local-agent-kimi) | **Kimi Code** harness:`kimi -p` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-kimi` | ≥ 0.1.5-rc.1 | dev / eval |
-| [`local-agent-codex`](packages/local-agent-codex) | **Codex** harness:`codex exec` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-codex` | ≥ 0.1.5-rc.1 | dev / eval |
-| [`local-agent-claude-code`](packages/local-agent-claude-code) | **Claude Code** harness:`claude -p` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-claude-code` | ≥ 0.1.5-rc.1 | dev / eval |
-| [`local-agent-dsh`](packages/local-agent-dsh) | **dsh 自委派** harness:把 dsh 自己当本地 CLI 用 | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev / eval |
+| [`local-agent`](packages/local-agent) | 家族**核心**:harness 注册表、作用域目录供给、`/<harness> login|sessions|status|logout` 命令族 | `@khorsheed/dsh-local-agent` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
+| [`local-agent-kimi`](packages/local-agent-kimi) | **Kimi Code** harness:`kimi -p` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-kimi` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
+| [`local-agent-codex`](packages/local-agent-codex) | **Codex** harness:`codex exec` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-codex` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
+| [`local-agent-claude-code`](packages/local-agent-claude-code) | **Claude Code** harness:`claude -p` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-claude-code` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
+| [`local-agent-dsh`](packages/local-agent-dsh) | **dsh 自委派** harness:把 dsh 自己当本地 CLI 用 | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
 | [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (组合组件)dsh 委派的 **headless 子 profile** patch | `@khorsheed/dsh-local-agent-dsh-headless` | ≥ 0.1.5-rc.1 | 随 provider |
 
 > 家族随开发套件与评测套件同装;单装是高级路径——核心与 provider 要显式一起装(核心缺席时 provider 行 pending,不崩)。各 provider 的委派工具(`subagent_kimi` 等)是包内 `./tool` 组合入口,由 preset 按会话授予。
@@ -130,7 +149,7 @@
 
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
-| [`ankh-guard`](packages/ankh-guard) | 自修改重启的**安全门禁**:绿色凭证(绑定 git HEAD)+ 组合 preflight + watchdog 回滚——让 AI 自己改代码、自己重启,还不把服务搞挂 | `@khorsheed/dsh-ankh-guard` | ≥ 0.1.5-rc.1 | basic |
+| [`ankh-guard`](packages/ankh-guard) | 自修改重启的**安全门禁**:绿色凭证(绑定 git HEAD)+ 组合 preflight + watchdog 回滚——让 AI 自己改代码、自己重启,还不把服务搞挂 | `@khorsheed/dsh-ankh-guard` | ≥ 0.1.5-rc.1 | dev |
 
 ## Agent preset 设计
 

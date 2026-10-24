@@ -107,7 +107,8 @@ export const COMPOSITION_COMPONENTS: ReadonlyArray<string> = [
  *                        twice). The bundle registers nothing itself: no own
  *                        runtime row, no client half, no service/tool/slot
  *                        registrations in src. Added 2026-09-24 with
- *                        `bundle-local-agent` / `bundle-conversation-toolbox`.
+ *                        `bundle-local-agent` / `bundle-conversation-toolbox`
+ *                        (the latter retired 2026-10-24, folded into basic).
  *   mode                 a family bundle that additionally carries exactly ONE
  *                        `@deepseek-ai/dsh-agent-preset` row — the mode the
  *                        bundle installs (id `preset-<mode>`,
@@ -219,6 +220,10 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // for eval's service-level delegation (the run / provision verbs go through
   // the localAgent facade) — the same deps-only library rides with it.
   'bundle-eval': ['@khorsheed/dsh-local-agent-dsh-headless'],
+  // gamedev / video (mode bundles) carry the local-agent family and the room
+  // since 2026-10-24 — the same deps-only library rides with them.
+  'gamedev': ['@khorsheed/dsh-local-agent-dsh-headless'],
+  'video': ['@khorsheed/dsh-local-agent-dsh-headless'],
   // The worktrees and room tool rows folded back into their core packages
   // (worktrees 0.3.0, room 0.2.0) as the `./tool` composition entry (the
   // canvas ./agent pattern) — no cross-package edge remains. Each core used
@@ -1227,13 +1232,13 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
 
   // Cross-bundle row parity: a row id shared by several bundle patches must
   // carry the same YAML item content in every one (dev / bundle-eval /
-  // bundle-local-agent all re-mount the local-agent family rows; basic and
-  // bundle-conversation-toolbox share the toolbox rows). Compared as YAML
+  // bundle-local-agent all re-mount the local-agent family rows; dev and
+  // bundle-local-agent share the room row). Compared as YAML
   // content — comment and blank lines dropped, scalar quoting normalized (the
   // parity specs' convention) — everything else must match byte for byte.
   // Preset rows are exempt: their cross-copy parity is composition-level and
-  // owned by scripts/preset-mode-parity.spec.ts and
-  // scripts/eval-preset-parity.spec.ts.
+  // owned by scripts/eval-preset-parity.spec.ts (each mode pack's preset row
+  // is otherwise the only copy).
   {
     const rowCopies = new Map<string, Array<{ readonly owner: string; readonly block: string }>>()
     for (const pkg of pkgs) {

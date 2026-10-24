@@ -336,6 +336,7 @@ export function main(): void {
     { name: 'profile composition', run: () => sh('pnpm check:profiles') },
     { name: 'release groups', run: () => sh('pnpm check:release-groups') },
     { name: 'package map', run: () => sh('pnpm check:packages') },
+    { name: 'install collections', run: () => sh('pnpm check:collections') },
     { name: 'doc gates', run: () => {
       sh('pnpm run verify-agent-note-format')
       sh('pnpm run verify-agent-note-classification')

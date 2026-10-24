@@ -1,4 +1,4 @@
-# Agent Note: 评测家族把工具包折进核心包，并以 `@khorsheed/dsh-bundle-eval` 一次装齐
+# Agent Note: 评测家族把工具包折进核心包，并以 `@khorsheed/dsh-eval-suite` 一次装齐
 
 Status: implemented
 
@@ -25,7 +25,7 @@ T88 只做形态整理，分六步，不在包之间挪任何能力。
 3. **三个伴生包退役。**
    - 删除目录，名字写进 `scripts/retired-packages.ts`。
    - check-plugin-independence 从边与注入方名册里删掉它们，check-release-groups 从家族名册里删掉它们。两者 spec 的夹具都改到折叠后的形态。
-4. **新包 `@khorsheed/dsh-bundle-eval` 0.1.0。**
+4. **新包 `@khorsheed/dsh-eval-suite` 0.1.0。**
    - 声明 `dsh.bundle.kind: 'family'`，成员是 datasets、mission、lab、eval，都是硬依赖。
    - `cordis.patch.yml` 是成员自身行的逐字并集。
    - locale 里卡片标题是「评测」；双语 README 把 lab 需要 Docker 写在已知限制里。
@@ -58,7 +58,7 @@ T88 只做形态整理，分六步，不在包之间挪任何能力。
 
 ## Consequences
 
-- 一条 `dsh plugin add @khorsheed/dsh-bundle-eval` 把四个核心行各挂一次。每个核心包仍能单独安装、单独运行，它的 `./tool` 行随包一起装上。
+- 一条 `dsh plugin add @khorsheed/dsh-eval-suite` 把四个核心行各挂一次。每个核心包仍能单独安装、单独运行，它的 `./tool` 行随包一起装上。
 - web-eval 的依赖闭包少了三个包：临时实例 dump 实测 24 个 `@khorsheed` 名字、205 行 patch，每个顶层行 id 恰好出现一次。
 - capability-catalog 把评测会话里的 `datasets_*` 工具归到 `@khorsheed/dsh-datasets`、`eval_*` 工具归到 `@khorsheed/dsh-eval`，也就是用户实际管理的那张卡。
 - 仓外点名退役模块的组合必须改用 `/tool` 子路径。仓内由 check-profile-bundles 拦住任何点名退役包的组合。

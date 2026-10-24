@@ -2,11 +2,11 @@
 
 English | [中文](README.md)
 
-The everyday dsh experience in one install: message tools, session artifacts, local files, context guards, mobile — a single 「基础体验」 card in the inventory instead of fourteen packages to pick one by one.
+The everyday dsh experience in one install: message tools, session artifacts, local files, context guards, mobile — a single 「基础体验」 card in the inventory instead of twelve packages to pick one by one.
 
 ## Features
 
-- **The whole family in one install** — message tools, message timeline, title edit, quote, inline cards, context guard, background tasks, session artifacts, local files, capability catalog, mobile, whalesong, ankh-guard and context-lens, all from a single install. The reader (`@khorsheed/dsh-reader`) ships with the learning and writing modes since 2026-10-19, not in this bundle; so does its rendered fetch (`@khorsheed/dsh-capture`) since 2026-10-20. Sidechat (`@khorsheed/dsh-sidechat`) left the same day (never published with the bundle); ui-shortcuts (`@khorsheed/dsh-ui-shortcuts`) is retired — the host ships built-in shortcut settings since 0.1.7-rc.2.
+- **The whole family in one install** — message tools, message timeline, title edit, quote, inline cards, context guard, background tasks, session artifacts, local files, capability catalog, mobile and whalesong, all from a single install. ankh-guard (`@khorsheed/dsh-ankh-guard`) and context-lens (`@khorsheed/dsh-context-lens`) moved to the dev suite on 2026-10-24: the former only matters on a watchdog-guarded, self-modifying instance, the latter is a debugging view of model requests. The reader (`@khorsheed/dsh-reader`) ships with the learning and writing modes since 2026-10-19, not in this bundle; so does its rendered fetch (`@khorsheed/dsh-capture`) since 2026-10-20. Sidechat (`@khorsheed/dsh-sidechat`) left the same day (never published with the bundle); ui-shortcuts (`@khorsheed/dsh-ui-shortcuts`) is retired — the host ships built-in shortcut settings since 0.1.7-rc.2.
 - **One card in the inventory** — locale card metadata folds the family into a single 「基础体验」 card; the detail page still lists every member row with its own enable switch.
 - **Pure composition, zero runtime** — the package registers no service, tool, slot, or command of its own; the patch reuses the members' canonical rows verbatim and never double-mounts (mechanism in How it works below).
 
@@ -26,8 +26,6 @@ The everyday dsh experience in one install: message tools, session artifacts, lo
 | `@khorsheed/dsh-capability-catalog` | `capability-catalog` | enumerate every skill and tool with its registration channel |
 | `@khorsheed/dsh-mobile` | `mobile` | mobile layout, conversation library and the iOS bridge |
 | `@khorsheed/dsh-whalesong` | `whalesong` | whale spout animation with completion and blocked chimes |
-| `@khorsheed/dsh-ankh-guard` | `ankh-guard` | gate self-modification restarts on a green build and test credential |
-| `@khorsheed/dsh-context-lens` | `context-lens` | per-turn structured breakdown of every model request: sections, tools, tokens, timing |
 
 ## Install
 

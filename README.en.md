@@ -10,17 +10,36 @@ The recommended install unit is a **suite** (one npm package), not a single plug
 
 | Suite | Package | What you get | Front-door repo |
 | --- | --- | --- | --- |
-| **基础体验 (Essentials)** | `@khorsheed/dsh-basic` | 14 everyday members: message edit/withdraw, the history timeline, title editing, quote actions, artifact preview, local files, task capsules, the compaction reminder, inline cards, the capability catalog, the completion chime, mobile, the context lens, and the ops guard | [Khorsheed/dsh-basic](https://github.com/Khorsheed/dsh-basic) |
-| **开发套件 (Dev)** | `@khorsheed/dsh-dev` | Local coding-agent delegation (Kimi / Codex / Claude Code / DSH), live worktree state, room multi-agent collaboration, typesafe quick judgement — with the 开发模式 preset | [Khorsheed/dsh-dev](https://github.com/Khorsheed/dsh-dev) |
-| **写作套件 (Writing)** | `@khorsheed/dsh-writing` | The idea canvas, the novel genre, the reading space (RSS/link reader), local transcription, render capture — with the 写作模式 preset | [Khorsheed/dsh-writing](https://github.com/Khorsheed/dsh-writing) |
-| **学习套件 (Learning)** | `@khorsheed/dsh-learning` | The library: project-organized close reading (book ingestion, roadmaps, lecture notes, quizzes) with canvas/reader/transcribe/capture included — with the 学习模式 preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
-| **剪辑套件 (Video)** | `@khorsheed/dsh-video` | The cutting room: multi-speaker mixdowns, voiceprint recognition, delete-the-word-deletes-the-audio, audio/video/subtitle/shownotes export; local transcription included — with the 剪辑模式 preset | [Khorsheed/dsh-video](https://github.com/Khorsheed/dsh-video) |
-| **游戏开发套件 (Gamedev)** | `@khorsheed/dsh-gamedev` | Build small games with the agent: playtest tuning, appearance editing, chaptered design docs, versions and rollback, end-of-turn checks — with the 游戏开发模式 preset | [Khorsheed/dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) |
-| **评测套件 (Eval)** | `@khorsheed/dsh-bundle-eval` | On-machine harness comparison: datasets, mission planning, lab units, execution and judging, plus the local-agent delegation family — with the 评测模式 preset | [Khorsheed/dsh-eval](https://github.com/Khorsheed/dsh-eval) |
+| **基础体验 (Essentials)** | `@khorsheed/dsh-basic` | 12 everyday members: message edit/withdraw, the history timeline, title editing, quote actions, artifact preview, local files, task capsules, the compaction reminder, inline cards, the capability catalog, the completion chime, and mobile | [Khorsheed/dsh-basic](https://github.com/Khorsheed/dsh-basic) |
+| **开发套件 (Dev)** | `@khorsheed/dsh-dev-suite` | Local coding-agent delegation (Kimi / Codex / Claude Code / DSH), live worktree state, room multi-agent collaboration, typesafe quick judgement, the context lens and the ops guard — with the 开发模式 preset | [Khorsheed/dsh-dev](https://github.com/Khorsheed/dsh-dev) |
+| **写作套件 (Writing)** | `@khorsheed/dsh-writing-suite` | The idea canvas, the novel genre, the reading space (RSS/link reader), local transcription, render capture — with the 写作模式 preset | [Khorsheed/dsh-writing](https://github.com/Khorsheed/dsh-writing) |
+| **学习套件 (Learning)** | `@khorsheed/dsh-learning-suite` | The library: project-organized close reading (book ingestion, roadmaps, lecture notes, quizzes) with canvas/reader/transcribe/capture included — with the 学习模式 preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
+| **剪辑套件 (Video)** | `@khorsheed/dsh-video-suite` | The cutting room: multi-speaker mixdowns, voiceprint recognition, delete-the-word-deletes-the-audio, audio/video/subtitle/shownotes export; local transcription and multi-agent work (local-agent delegation, rooms) included — with the 剪辑模式 preset | [Khorsheed/dsh-video](https://github.com/Khorsheed/dsh-video) |
+| **游戏开发套件 (Gamedev)** | `@khorsheed/dsh-gamedev-suite` | Build small games with the agent: playtest tuning, appearance editing, chaptered design docs, versions and rollback, end-of-turn checks, multi-agent work (local-agent delegation, rooms) — with the 游戏开发模式 preset | [Khorsheed/dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) |
+| **评测套件 (Eval)** | `@khorsheed/dsh-eval-suite` | On-machine harness comparison: datasets, mission planning, lab units, execution and judging, plus the local-agent delegation family — with the 评测模式 preset | [Khorsheed/dsh-eval](https://github.com/Khorsheed/dsh-eval) |
 
 ![dsh-basic essentials: message edit and withdraw, quote actions, session artifacts, the file list and the ideas space in one screen](docs/screenshots/basic-mode.png)
 
 ![dsh-dev dev suite: room multi-agent invites, the worktree badge, and sub-agent task capsules](docs/screenshots/dev-mode.png)
+
+## One-command install: collections
+
+An ordinary user needs one **collection**: the basic suite plus one mode suite. A collection is just a list (`collections.json`), not an npm package — `dsh plugin add` takes several package names, so one command installs it. If you would rather pick, any single package or suite installs on its own and coexists with a collection without mounting anything twice.
+
+<!-- collections:start -->
+<!-- generated by pnpm map:collections from collections.json; do not edit by hand -->
+
+| Collection | One command |
+| --- | --- |
+| Basic | `dsh plugin --profile web add @khorsheed/dsh-basic` |
+| Dev | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite` |
+| Writing | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-writing-suite` |
+| Learning | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-learning-suite` |
+| Video | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-video-suite` |
+| Gamedev | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-gamedev-suite` |
+| Eval | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite` |
+| Everything | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite @khorsheed/dsh-writing-suite @khorsheed/dsh-learning-suite @khorsheed/dsh-video-suite @khorsheed/dsh-gamedev-suite @khorsheed/dsh-eval-suite` |
+<!-- collections:end -->
 
 ## Capability map
 
@@ -55,7 +74,7 @@ Each package's details, configuration and screenshots live in its own directory 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
 | [`inline-html-render`](packages/inline-html-render) | Renders ```` ```dsh-card ```` HTML blocks the agent writes into **sandboxed interactive cards** in the conversation | `@khorsheed/dsh-inline-html-render` | ≥ 0.1.2-rc.1 | basic |
-| [`context-lens`](packages/context-lens) | **Context lens**: per-turn inspection of each model request — system-section attribution, tool definitions, history vs. new context, tokens and latency | `@khorsheed/dsh-context-lens` | ≥ 0.1.5-rc.1 | basic |
+| [`context-lens`](packages/context-lens) | **Context lens**: per-turn inspection of each model request — system-section attribution, tool definitions, history vs. new context, tokens and latency | `@khorsheed/dsh-context-lens` | ≥ 0.1.5-rc.1 | dev |
 | [`mobile`](packages/mobile) | **Mobile presentation** and the iOS bridge | `@khorsheed/dsh-mobile` | ≥ 0.1.5-rc.1 | basic |
 
 ### Writing and ideas
@@ -90,7 +109,7 @@ Each package's details, configuration and screenshots live in its own directory 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
 | [`worktrees`](packages/worktrees) | A **repo/worktree badge** in the session header + a change drawer: pending/committed file trees, diffs, commit log; the model tool is granted per session through the package's `./tool` composition entry | `@khorsheed/dsh-worktrees` | ≥ 0.1.5-rc.1 | dev |
-| [`room`](packages/room) | **Room sessions**: invite several agents into one conversation — the member roster, @-dispatch, the task board, the notification gate; model tools granted per session through the package's `./tool` composition entry | `@khorsheed/dsh-room` | ≥ 0.1.5-rc.1 | dev |
+| [`room`](packages/room) | **Room sessions**: invite several agents into one conversation — the member roster, @-dispatch, the task board, the notification gate; model tools granted per session through the package's `./tool` composition entry | `@khorsheed/dsh-room` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
 
 ### Local multi-agent
 
@@ -100,11 +119,11 @@ Versus the official offering: you can have the lead agent invite any harness you
 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
-| [`local-agent`](packages/local-agent) | The family **core**: the harness registry, scoped-home provisioning, the `/<harness> login|sessions|status|logout` command family | `@khorsheed/dsh-local-agent` | ≥ 0.1.5-rc.1 | dev / eval |
-| [`local-agent-kimi`](packages/local-agent-kimi) | The **Kimi Code** harness: `kimi -p` delegation, resume, accounting | `@khorsheed/dsh-local-agent-kimi` | ≥ 0.1.5-rc.1 | dev / eval |
-| [`local-agent-codex`](packages/local-agent-codex) | The **Codex** harness: `codex exec` delegation, resume, accounting | `@khorsheed/dsh-local-agent-codex` | ≥ 0.1.5-rc.1 | dev / eval |
-| [`local-agent-claude-code`](packages/local-agent-claude-code) | The **Claude Code** harness: `claude -p` delegation, resume, accounting | `@khorsheed/dsh-local-agent-claude-code` | ≥ 0.1.5-rc.1 | dev / eval |
-| [`local-agent-dsh`](packages/local-agent-dsh) | The **dsh self-delegation** harness: use dsh itself as a local CLI | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev / eval |
+| [`local-agent`](packages/local-agent) | The family **core**: the harness registry, scoped-home provisioning, the `/<harness> login|sessions|status|logout` command family | `@khorsheed/dsh-local-agent` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
+| [`local-agent-kimi`](packages/local-agent-kimi) | The **Kimi Code** harness: `kimi -p` delegation, resume, accounting | `@khorsheed/dsh-local-agent-kimi` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
+| [`local-agent-codex`](packages/local-agent-codex) | The **Codex** harness: `codex exec` delegation, resume, accounting | `@khorsheed/dsh-local-agent-codex` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
+| [`local-agent-claude-code`](packages/local-agent-claude-code) | The **Claude Code** harness: `claude -p` delegation, resume, accounting | `@khorsheed/dsh-local-agent-claude-code` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
+| [`local-agent-dsh`](packages/local-agent-dsh) | The **dsh self-delegation** harness: use dsh itself as a local CLI | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
 | [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (composition component) the **headless sub-profile** patch for dsh delegation | `@khorsheed/dsh-local-agent-dsh-headless` | ≥ 0.1.5-rc.1 | with the provider |
 
 > The family ships with both the dev and the eval suite; installing it piecemeal is the advanced path — the core and a provider must both be installed explicitly (without the core, a provider row stays pending and never crashes). Each provider's delegation tool (`subagent_kimi` etc.) is the package's `./tool` composition entry, granted per session by the preset.
@@ -130,7 +149,7 @@ Versus the official offering: you can have the lead agent invite any harness you
 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
-| [`ankh-guard`](packages/ankh-guard) | The **safety gate for self-modifying restarts**: green credentials (bound to the git HEAD) + composition preflight + watchdog rollback — let the AI change code and restart itself without taking the service down | `@khorsheed/dsh-ankh-guard` | ≥ 0.1.5-rc.1 | basic |
+| [`ankh-guard`](packages/ankh-guard) | The **safety gate for self-modifying restarts**: green credentials (bound to the git HEAD) + composition preflight + watchdog rollback — let the AI change code and restart itself without taking the service down | `@khorsheed/dsh-ankh-guard` | ≥ 0.1.5-rc.1 | dev |
 
 ## Agent preset design
 

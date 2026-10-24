@@ -1443,8 +1443,7 @@ describe('patch row ownership', () => {
 describe('cross-bundle row parity', () => {
   // A row id shared by several bundle patches must carry the same YAML item
   // content in every one (dev / bundle-eval / bundle-local-agent re-mounting
-  // the local-agent rows; basic / bundle-conversation-toolbox sharing the
-  // toolbox rows). Compared as YAML content: comments, blank lines and scalar
+  // the local-agent rows; dev / bundle-local-agent sharing the room row). Compared as YAML content: comments, blank lines and scalar
   // quoting are normalized; anything else must match.
   function packagesRoot(specs: Array<{ dir: string; json: Record<string, unknown>; files: Record<string, string> }>) {
     const root = mkdtempSync(join(tmpdir(), 'dsh-independence-parity-'))

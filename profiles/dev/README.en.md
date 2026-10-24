@@ -10,7 +10,7 @@ Every member is an independent plugin — copy its package name into the host's 
 
 ## The dsh-dev pack — plugin list
 
-This pack contains the 8 plugins specific to dev mode (see the table below). Beyond that, we also recommend installing the everyday-experience plugins from [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, local file browsing, task pills, compaction reminder, inline cards, capability catalog, ambience, mobile) — copy the package names one by one, or install the common conversation pieces in one shot with the `@khorsheed/dsh-bundle-conversation-toolbox` meta package; per-plugin intros and screenshots live in dsh-basic.
+This pack contains the 8 plugins specific to dev mode (see the table below). Beyond that, we also recommend installing the everyday-experience plugins from [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, local file browsing, task pills, compaction reminder, inline cards, capability catalog, ambience, mobile) — copy the package names one by one, or install them in one shot with the `@khorsheed/dsh-basic` meta package; per-plugin intros and screenshots live in dsh-basic.
 
 | Plugin | Package name (copy to install) | What you get |
 |---|---|---|
@@ -99,7 +99,7 @@ The composition re-bases verbatim on the official "Standard mode" and only appen
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.7-rc.2` (recommended) | `@khorsheed/dsh-presets@^0.3.0` |
+| ≥ `0.1.7-rc.2` (recommended) | `@khorsheed/dsh-dev-suite` |
 | `0.1.5-rc.1` ~ `0.1.7-rc.1` | Installed directory-style by the pack scripts (see the guide at the end) |
 
 Since 0.1.7-rc.2 the official host supports preset-as-a-bundle — a preset ships as an ordinary package and installs by copying its name, no manual directory placement; upgrading is recommended for the smoother path. Once installed, dev mode's UI and tools take effect only in dev-mode sessions and never disturb the other modes.

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-10-20-eval-pack-repo-rename.md
-.agents/notes/implemented/process/2026-10-20-eval-pack-repo-rename.md: f4ce5a1cb7607227efd26db509968059e4bcfd6c
-.agents/notes/implemented/process/2026-10-20-eval-pack-repo-rename.zh.md: ab7110f7de09cb42f15aaf66aaf245584022a5af
+.agents/notes/implemented/process/2026-10-20-eval-pack-repo-rename.md: 396a2ea1297ed3b4dc500a4e06d8727288272c64
+.agents/notes/implemented/process/2026-10-20-eval-pack-repo-rename.zh.md: 24b8ef9a4d877c22bacfc6c19cfede7933565b74

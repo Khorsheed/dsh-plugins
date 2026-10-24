@@ -1,5 +1,5 @@
 {
-  "name": "@khorsheed/dsh-writing",
+  "name": "@khorsheed/dsh-writing-suite",
   "description": "Mode bundle 写作模式: the dsh-writing agent preset plus the writing family it grants — the inspiration canvas and its full-length-novel genre — in one install. Thin meta package: a patch carrying the members' canonical rows and the mode's preset row, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
   "version": "0.1.0",
   "publishConfig": {

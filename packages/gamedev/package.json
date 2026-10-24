@@ -1,6 +1,6 @@
 {
-  "name": "@khorsheed/dsh-gamedev",
-  "description": "Mode bundle 游戏开发模式: the dsh-gamedev agent preset plus the game workbench it grants — build and play a small 2D web game with the agent — in one install. Thin meta package: a patch carrying the member's canonical rows and the mode's preset row, an npm dependency on the member, locale card metadata — no runtime code, no client half.",
+  "name": "@khorsheed/dsh-gamedev-suite",
+  "description": "Mode bundle 游戏开发模式: the dsh-gamedev agent preset plus the game workbench it grants — build and play a small 2D web game with the agent — plus the multi-agent family (the local-agent core, the four delegation providers and the room), in one install. Thin meta package: a patch carrying the members' canonical rows and the mode's preset row, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
   "version": "0.1.0",
   "publishConfig": {
     "access": "public"
@@ -35,7 +35,14 @@
     "bundle"
   ],
   "dependencies": {
-    "@khorsheed/dsh-game": "workspace:*"
+    "@khorsheed/dsh-game": "workspace:*",
+    "@khorsheed/dsh-local-agent": "workspace:*",
+    "@khorsheed/dsh-local-agent-claude-code": "workspace:*",
+    "@khorsheed/dsh-local-agent-codex": "workspace:*",
+    "@khorsheed/dsh-local-agent-dsh": "workspace:*",
+    "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
+    "@khorsheed/dsh-local-agent-kimi": "workspace:*",
+    "@khorsheed/dsh-room": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
@@ -57,16 +64,28 @@
       "kind": "mode",
       "mode": "dsh-gamedev",
       "members": [
-        "@khorsheed/dsh-game"
+        "@khorsheed/dsh-game",
+        "@khorsheed/dsh-local-agent",
+        "@khorsheed/dsh-local-agent-kimi",
+        "@khorsheed/dsh-local-agent-codex",
+        "@khorsheed/dsh-local-agent-claude-code",
+        "@khorsheed/dsh-local-agent-dsh",
+        "@khorsheed/dsh-room"
       ]
     },
     "references": [
-      "@khorsheed/dsh-game"
+      "@khorsheed/dsh-game",
+      "@khorsheed/dsh-local-agent",
+      "@khorsheed/dsh-local-agent-kimi",
+      "@khorsheed/dsh-local-agent-codex",
+      "@khorsheed/dsh-local-agent-claude-code",
+      "@khorsheed/dsh-local-agent-dsh",
+      "@khorsheed/dsh-room"
     ],
     "compat": {
       "minHost": "0.2.0-rc.1",
       "verifiedHost": "0.2.1-rc.1",
-      "notes": "Pure composition: the bundle mounts the member's canonical rows plus the dsh-gamedev preset row and registers nothing of its own, so the floor is the member's own (0.2.0-rc.1 — game). Member behavior details live in the member's own dsh.compat."
+      "notes": "Pure composition: the bundle mounts the members' canonical rows plus the dsh-gamedev preset row and registers nothing of its own, so the floor is the members' highest (0.2.0-rc.1 — game; the local-agent family and room floor at 0.1.5-rc.1). Member behavior details live in each member's own dsh.compat."
     }
   }
 }

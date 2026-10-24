@@ -1,4 +1,4 @@
-# Agent Note: the evaluation family folds its tool packages into the cores and ships as `@khorsheed/dsh-bundle-eval`
+# Agent Note: the evaluation family folds its tool packages into the cores and ships as `@khorsheed/dsh-eval-suite`
 
 Status: implemented
 
@@ -25,7 +25,7 @@ T88 does a shape-only reorganization in six moves. No capability changes package
 3. **The three companions are retired.**
    - Their directories are deleted, and the names join `scripts/retired-packages.ts`.
    - check-plugin-independence drops them from its edge and injector rosters, and check-release-groups drops them from its roster. Both specs' fixtures move to the post-fold shape.
-4. **New package `@khorsheed/dsh-bundle-eval` 0.1.0.**
+4. **New package `@khorsheed/dsh-eval-suite` 0.1.0.**
    - It declares `dsh.bundle.kind: 'family'` with members datasets, mission, lab and eval, all hard dependencies.
    - Its `cordis.patch.yml` is the verbatim union of the members' own rows.
    - Its locale card title is 「评测」, and the bilingual README lists lab's Docker requirement under known limitations.
@@ -60,7 +60,7 @@ In short: mission stays and joins the bundle; the three tool packages fold into 
 
 ## Consequences
 
-- One `dsh plugin add @khorsheed/dsh-bundle-eval` mounts the four core rows once each. Each core still installs and runs alone, and its `./tool` row comes with it.
+- One `dsh plugin add @khorsheed/dsh-eval-suite` mounts the four core rows once each. Each core still installs and runs alone, and its `./tool` row comes with it.
 - web-eval's dependency closure shrinks by three packages: 24 `@khorsheed` names and 205 patch rows in the measured temporary-instance dump, with every top-level row id appearing exactly once.
 - Capability-catalog attributes the eval session's `datasets_*` tools to `@khorsheed/dsh-datasets` and the `eval_*` tools to `@khorsheed/dsh-eval`, the cards the user actually manages.
 - Out-of-repo compositions that name the retired modules must move to the `/tool` subpaths. In-repo, check-profile-bundles now fails any composition that names a retired package.

@@ -39,11 +39,11 @@
 
 3080 只收 tarball 的理由:profile 是共享状态,`link:` 会让任何开发者构建进 `lib/` 的在制品随下一次重启悄悄上线(真实事故)。"大致稳定"是进 3080 的门槛,"跑得顺"是上 npm 的门槛。
 
-### 3080 的 preset 名册：正本是 packages/presets 的声明式 bundle 行
+### 3080 的 preset 名册：正本是各模式包的 preset 行
 
-0.1.7-rc.1 起宿主不再读取 `$DSH_HOME/.agent-presets/` 目录式 preset——preset 是声明式 `@deepseek-ai/dsh-agent-preset` 行（loader id `preset-<id>`)。六个 preset（dsh-dev / dsh-eval / dsh-writing / dsh-gamedev / dsh-learning / dsh-video，2026-10-18 起统一带 `dsh-` 前缀）的唯一事实源是 `packages/presets/cordis.patch.yml`；改它 = 正常 PR 评审 + `pnpm deploy:3080 --package packages/presets` 部署（重启生效；存量会话的 preset 记在其事件日志与投影缓存里，改名需同步迁移——`scripts/migrate-preset-selections.ts` 即 2026-10-18 前缀统一时的迁移器）。
+0.1.7-rc.1 起宿主不再读取 `$DSH_HOME/.agent-presets/` 目录式 preset——preset 是声明式 `@deepseek-ai/dsh-agent-preset` 行（loader id `preset-<id>`)。六个 preset（dsh-dev / dsh-eval / dsh-writing / dsh-gamedev / dsh-learning / dsh-video，2026-10-18 起统一带 `dsh-` 前缀）各自的唯一事实源是对应模式包的 `cordis.patch.yml`（`packages/dev` / `bundle-eval` / `writing` / `gamedev` / `learning` / `video`，包名 `@khorsheed/dsh-<mode>-suite`）；改它 = 正常 PR 评审 + `pnpm deploy:3080 --package packages/<模式包目录>` 部署（重启生效；存量会话的 preset 记在其事件日志与投影缓存里，改名需同步迁移——`scripts/migrate-preset-selections.ts` 即 2026-10-18 前缀统一时的迁移器）。评测模式另有 web-eval 正本（`profiles/eval/presets`），两份由 `scripts/eval-preset-parity.spec.ts` 钉住。
 
-**2026-10-18 晚起 3080 的组合单元切换为七个模式包**(`dsh-basic` / `dsh-dev` / `dsh-writing` / `dsh-learning` / `dsh-video` / `dsh-gamedev` / `dsh-bundle-eval`,`dsh.bundle.kind: 'mode'` 或 basic 的 `'family'`):preset 行由六个模式包逐字镜像携带（parity 由 `scripts/preset-mode-parity.spec.ts` 与三方化的 `eval-preset-parity.spec.ts` 钉住）,`dsh-presets`、`dsh-bundle-local-agent`、`dsh-bundle-conversation-toolbox` 随之退出 profile(--replace),成员全部退场为传递依赖。过渡期正本仍是 packages/presets——**改 preset 组合要六处镜像同步改**(parity spec 漏一处即红);模式包在 npm 上架后 presets 包退役、模式包升为正本。成员包更新照旧 `--package packages/<member>`,deploy 的成员退场认 mode kind。
+3080 的组合单元是 `dsh-basic` 加六个模式包（`dsh.bundle.kind: 'mode'` 或 basic 的 `'family'`），成员全部是传递依赖；成员包更新照旧 `--package packages/<member>`，deploy 的成员退场认 mode kind。`@khorsheed/dsh-presets`（2026-10-18 至 2026-10-24 与模式包并存、逐字镜像）已退役，列入 `scripts/retired-packages.ts`；profile 里若还留着它，deploy 会告警。
 
 历史：目录正本 + `sync-presets.sh` 的同步制已于 2026-09-24 迁移进 bundle(见 note `2026-09-24-community-presets-declarative-bundle`),`profiles/web/` 目录已于 2026-09-30 删除。
 
@@ -65,7 +65,7 @@ pnpm deploy:3080 --package packages/<包目录> [--package packages/<第二个�
 
 **首次安装与更新统一走 `deploy:3080`。** 对明确用 `--package` 指定、声明了 `dsh.bundle.patch` 的插件，脚本检查 dependency 与 `dsh.profile.bundles`：任一缺失，就调用当前 `DSH_HARNESS` 的已构建官方 CLI 执行 `plugin --profile web add <tarball>`，由宿主登记 bundle；已完整登记的插件直接更新。安装后验证实际包名、版本、bundle 登记和 patch 文件，再进入凭证/守护预检。首次安装需要宿主 `apps/cli/lib/bin.js` 已构建；无 bundle 的新内部 companion 不会被自动挂载，应通过其所属插件安装。
 
-**家族 bundle 部署与成员退场**：部署声明 `dsh.bundle.kind: 'family'` 或 `'mode'` 的元包（`bundle-local-agent`、`bundle-conversation-toolbox`，以及各模式包）时，脚本在刷新清单后自动**成员退场**——把每个 member 移出 profile 的 `dependencies` 与 `dsh.profile.bundles`（已不在则记日志跳过，幂等）；成员的自挂载 patch 随之不再收编（reconcilePlugins 只认直接依赖），bundle patch 接管同名规范行，无双挂，清单页也不再给成员出顶层卡。`pnpm-workspace.yaml` overrides 里成员的 `file:` 钉**保留**——bundle 里重写后的 `^版本` 边靠它传递解析；钉缺失时从本次同部署成员的新 tarball 或 tarballs 目录最新匹配补齐，两者都没有则拒绝部署并提示把成员一起点名。**成员更新随 bundle 一起点名即可**（`--package packages/bundle-x --package packages/<member>`，顺序无关：成员先 pack 刷新，bundle 后注册退场）；bundle 自身的首装仍走官方 `plugin add`。安装后校验同步扩为：bundle 在 dependencies、成员不在 bundles 名册、成员包从 bundle 安装目录出发仍可 `require.resolve`。
+**家族 bundle 部署与成员退场**：部署声明 `dsh.bundle.kind: 'family'` 或 `'mode'` 的元包（`bundle-local-agent`、`basic`，以及各模式包）时，脚本在刷新清单后自动**成员退场**——把每个 member 移出 profile 的 `dependencies` 与 `dsh.profile.bundles`（已不在则记日志跳过，幂等）；成员的自挂载 patch 随之不再收编（reconcilePlugins 只认直接依赖），bundle patch 接管同名规范行，无双挂，清单页也不再给成员出顶层卡。`pnpm-workspace.yaml` overrides 里成员的 `file:` 钉**保留**——bundle 里重写后的 `^版本` 边靠它传递解析；钉缺失时从本次同部署成员的新 tarball 或 tarballs 目录最新匹配补齐，两者都没有则拒绝部署并提示把成员一起点名。**成员更新随 bundle 一起点名即可**（`--package packages/bundle-x --package packages/<member>`，顺序无关：成员先 pack 刷新，bundle 后注册退场）；bundle 自身的首装仍走官方 `plugin add`。安装后校验同步扩为：bundle 在 dependencies、成员不在 bundles 名册、成员包从 bundle 安装目录出发仍可 `require.resolve`。
 
 **部署依赖诊断**：脚本在构建/部署写入前，以及安装后录制凭证前，各检查一次失效链接。也可以单独运行只读诊断：
 
@@ -107,7 +107,7 @@ pnpm deploy:check-links
 
 - **独立线,不齐步走。** 每个插件按自己的成熟度验收、发布(semver 独立);四段式(`0.1.0-rc.8.x`)是线内补丁的既有记法。唯一硬约束:新版本必须超过 npm 已发布版本。
 - **家族同发,按依赖序。** local-agent 家族(core → tool-subagent → 各 provider)作为一批发布,版本线先对齐;pack-dist 会把 `workspace:*` 改写成 **`^<目标包自己的版本>`**(`--family name=version`,不是被打包者的版本——否则 `0.1.0` 的伴生包会声明出 `^0.1.0`,而 core 是 `0.1.0-rc.1`,干净机器直接解析失败),顺序错了干净机器装不上。
-- **整合包**：家族整合包今天就可用——`@khorsheed/dsh-bundle-local-agent`（本地 agent 家族）与 `@khorsheed/dsh-bundle-eval`（评测家族：datasets / mission / lab / eval）。形态是 `dsh.bundle.kind: 'family'`：成员是整合包的硬依赖（随它一起装进 node_modules），整合包自己的 `cordis.patch.yml` 逐字携带成员的规范行（`check:plugins` 钉住逐字一致），所以 profile 只需直接依赖整合包、**不再**把成员列为直接依赖（否则同一行挂两次；`check:profiles` 规则 4/5 认得家族整合包）。整合包版本只在成员增删或跨大版本线时 bump（caret 范围下子包 patch 发布不需要动整合包）。
+- **整合包**：家族整合包今天就可用——`@khorsheed/dsh-bundle-local-agent`（本地 agent 家族）与 `@khorsheed/dsh-eval-suite`（评测家族：datasets / mission / lab / eval）。形态是 `dsh.bundle.kind: 'family'`：成员是整合包的硬依赖（随它一起装进 node_modules），整合包自己的 `cordis.patch.yml` 逐字携带成员的规范行（`check:plugins` 钉住逐字一致），所以 profile 只需直接依赖整合包、**不再**把成员列为直接依赖（否则同一行挂两次；`check:profiles` 规则 4/5 认得家族整合包）。整合包版本只在成员增删或跨大版本线时 bump（caret 范围下子包 patch 发布不需要动整合包）。
   - 历史：此前的设想是 npm「薄元包」——子插件是传递依赖、当前 `reconcilePlugins` 只调和 profile 直接依赖、不会挂载，所以需要上游 seam（提案 `proposals/active/2026-08-21-package-management.md` 的形态 C 与 upstream-meta-pack-reconcile），过渡期交付形态 A（add 清单）与形态 B（profile 目录模板）。家族整合包把成员行收进自己的 patch，绕开了这条 seam 依赖；薄元包接口保留为历史记录。
 - **首发包没有顺序问题**(除家族外),npm 上都不存在,无 403/409 风险。
 

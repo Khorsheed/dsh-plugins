@@ -1,0 +1,53 @@
+{
+  "$comment": "Install collections: what an ordinary user installs in one command — basic plus one mode suite. A collection is a list, not a package; `pnpm map:collections` writes the install commands into README.md / README.en.md and each mode suite's README, `pnpm check:collections` keeps them current. See scripts/check-collections.ts.",
+  "collections": [
+    {
+      "id": "basic",
+      "title": { "zh": "基础", "en": "Basic" },
+      "bundles": ["@khorsheed/dsh-basic"]
+    },
+    {
+      "id": "dev",
+      "title": { "zh": "开发", "en": "Dev" },
+      "bundles": ["@khorsheed/dsh-basic", "@khorsheed/dsh-dev-suite"]
+    },
+    {
+      "id": "writing",
+      "title": { "zh": "写作", "en": "Writing" },
+      "bundles": ["@khorsheed/dsh-basic", "@khorsheed/dsh-writing-suite"]
+    },
+    {
+      "id": "learning",
+      "title": { "zh": "学习", "en": "Learning" },
+      "bundles": ["@khorsheed/dsh-basic", "@khorsheed/dsh-learning-suite"]
+    },
+    {
+      "id": "video",
+      "title": { "zh": "剪辑", "en": "Video" },
+      "bundles": ["@khorsheed/dsh-basic", "@khorsheed/dsh-video-suite"]
+    },
+    {
+      "id": "gamedev",
+      "title": { "zh": "游戏开发", "en": "Gamedev" },
+      "bundles": ["@khorsheed/dsh-basic", "@khorsheed/dsh-gamedev-suite"]
+    },
+    {
+      "id": "eval",
+      "title": { "zh": "评测", "en": "Eval" },
+      "bundles": ["@khorsheed/dsh-basic", "@khorsheed/dsh-eval-suite"]
+    },
+    {
+      "id": "full",
+      "title": { "zh": "全部", "en": "Everything" },
+      "bundles": [
+        "@khorsheed/dsh-basic",
+        "@khorsheed/dsh-dev-suite",
+        "@khorsheed/dsh-writing-suite",
+        "@khorsheed/dsh-learning-suite",
+        "@khorsheed/dsh-video-suite",
+        "@khorsheed/dsh-gamedev-suite",
+        "@khorsheed/dsh-eval-suite"
+      ]
+    }
+  ]
+}

@@ -58,7 +58,7 @@
 # 执行期没有 agent，写类动词归编排器服务面与人的 CLI。
 #
 # M4'③ 起这三个机制包拆成 core + 工具行：profile 根只挂 core（服务 / CLI /
-# slash / 标签页；T88 起由家族 bundle @khorsheed/dsh-bundle-eval 一次挂齐），
+# slash / 标签页；T88 起由家族 bundle @khorsheed/dsh-eval-suite 一次挂齐），
 # 模型工具行与工具提示词段落归各 core 包自己的 `./tool` 组合入口（T88 前是
 # 独立的 -tool 伴生包），授予点是 eval 预设（presets/cordis.patch.yml 里
 # preset-eval 的 datasets-tool / eval-tool 两行，tools tier 原样跟随）。

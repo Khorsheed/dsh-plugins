@@ -18,13 +18,12 @@ A group sitting around one recorder makes one mixed recording. After import the 
 - **Automatic video alignment**: phone footage is aligned to the recording by its sound; no clap needed.
 - **Show → project**: a show stores intro/outro music, loudness targets, subtitle style, editing habits and voiceprints. Each new episode copies them. The Settings tab shows every value's source across the project / show / global layers and can save a change as the show default or reset it.
 - **Export**: MP3 (two-pass loudnorm, −16 LUFS by default), 1080p MP4 (burned or switchable subtitles, −14 LUFS), SRT and TXT, as background jobs with progress in the panel and the conversation.
-- **Editing mode**: the `dsh-video` preset in `@khorsheed/dsh-presets` grants the `video_*` tools and the `video-studio` skill.
+- **Editing mode**: the `dsh-video` preset in `@khorsheed/dsh-video-suite` grants the `video_*` tools and the `video-studio` skill.
 
 ## Install
 
 ```bash
-dsh plugin --profile web add @khorsheed/dsh-video-studio
-dsh plugin --profile web add @khorsheed/dsh-presets   # editing mode (dsh-video)
+dsh plugin --profile web add @khorsheed/dsh-video-suite   # the video suite: this package + editing mode (dsh-video)
 ```
 
 Needs `ffmpeg` / `ffprobe` on the host (on PATH, or set in the panel under Settings → Global). Speaker separation and transcription run on the Local Transcription plugin ([`@khorsheed/dsh-transcribe`](../transcribe/)), installed alongside; without it the panel says so and editing and export still work. Its speech models (about 360 MB: Paraformer Chinese ASR, CT-Transformer punctuation, pyannote segmentation, CAM++ voiceprints) download automatically on the first transcription into `$DSH_HOME/state/transcribe/models/` (models an earlier video-studio downloaded are moved there), or by hand from Settings. The download source is selectable under Settings → Global (auto / Hugging Face / HF-Mirror China mirror; auto probes for the fastest reachable source). Downloads resume from the bytes already on disk (a restart or network drop never re-downloads them) and are verified against pinned byte sizes and sha256 hashes on completion.

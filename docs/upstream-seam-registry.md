@@ -163,8 +163,8 @@
 - **现状**：guide 文案硬编码在 `packages/client/ui-agent-preset/src/client/PresetGuideDialog.tsx:19-34` 的 `guides` Map（键为 standard/ptc/minimal/cordis 四个内置 id），`presetGuide(id, trust)` 仅在 `trust === 'system'` 时返回；`PresetDefinition`（`packages/preset/agent-preset-registry/src/definition.ts:5-11`）没有任何文档字段，声明式 preset 行无处携带。
 - **现状绕行**：无——信息只能塞进 `description` 卡片短文或包 README，设置页看不到。
 - **建议的官方改动**：`PresetDefinition` 增加可选 `guide` 字段，`presetGuide` 先读 declaration 再回落硬编码表。详见 `docs/upstream-proposals/2026-09-30-preset-guide-declaration.md`。
-- **退役条件**：官方落地后，presets 包在三个声明上补 `guide` 字段。
-- **状态**：提案待上游评审（@khorsheed/dsh-presets）。
+- **退役条件**：官方落地后，各模式包（`@khorsheed/dsh-<mode>-suite`）在自己的 preset 声明上补 `guide` 字段。
+- **状态**：提案待上游评审（原载体 @khorsheed/dsh-presets 已于 2026-10-24 退役，preset 行现归各模式包）。
 
 ### S20. 会话视图无公开滚动 API（插件无法把对话滚动到指定 turn）
 
