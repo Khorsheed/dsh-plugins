@@ -25,7 +25,7 @@ import type {} from './locales.ts'
 import type {
   BadgeConfig, ChangesResult, CommitFilesResult, CommitInfo, FileDiffRequest, FileDiffResult,
   LocalImageResult, ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult, ReadRepoImageRequest,
-  PluginInventorySnapshot, SessionSummary, WorktreeInfo,
+  PluginInventorySnapshot, SessionSummary, WorktreeInfo, WriteFileRequest, WriteFileResult,
 } from '../types.ts'
 import type { createWorktreesStore, DrawerMode } from './store.ts'
 
@@ -89,6 +89,8 @@ export interface WorktreesTabInjected {
   fetchFileDiff: (sessionId: SessionId, request: FileDiffRequest) => Promise<RemoteResult<FileDiffResult>>
   fetchReadFile: (sessionId: SessionId, request: ReadFileRequest) => Promise<RemoteResult<ReadFileResult>>
   fetchReadFileAtCommit: (sessionId: SessionId, request: ReadFileAtCommitRequest) => Promise<RemoteResult<ReadFileResult>>
+  /** Write one edited working-tree file back (the content pane's save). */
+  writeFile: (sessionId: SessionId, request: WriteFileRequest) => Promise<RemoteResult<WriteFileResult>>
   /** Read a repo-relative file as an inline image (the repo browser's image data plane). */
   fetchReadRepoImage: (sessionId: SessionId, request: ReadRepoImageRequest) => Promise<RemoteResult<LocalImageResult>>
   hooks: {

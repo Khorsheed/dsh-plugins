@@ -178,6 +178,18 @@ describe('WorktreesService', () => {
     await expect(service.readFile(cwd, '../outside.txt')).rejects.toThrow()
   })
 
+  it('writes an edited working-tree file, refusing a stale base, images, and traversal', async () => {
+    const service = new WorktreesService('main')
+    expect(await service.writeFile(cwd, 'a.txt', 'edited\n', 'stale\n')).toEqual({ ok: false, reason: 'conflict' })
+    expect(await service.writeFile(cwd, 'a.txt', 'edited\n', 'one\n')).toEqual({ ok: true })
+    expect((await service.readFile(cwd, 'a.txt')).content).toBe('edited\n')
+    expect((await service.changes(cwd)).uncommitted.map(file => file.path)).toContain('a.txt')
+    writeFileSync(join(repo, 'pic.png'), 'not really')
+    expect(await service.writeFile(cwd, 'pic.png', 'x', null)).toEqual({ ok: false, reason: 'unsupported' })
+    expect(await service.writeFile(cwd, 'gone.txt', 'x', null)).toEqual({ ok: false, reason: 'missing' })
+    await expect(service.writeFile(cwd, '../escape.txt', 'x', null)).rejects.toThrow()
+  })
+
   it('reads a repo-relative image as a base64 data URL', async () => {
     const service = new WorktreesService('main')
     writeFileSync(join(repo, 'logo.png'), Buffer.from([

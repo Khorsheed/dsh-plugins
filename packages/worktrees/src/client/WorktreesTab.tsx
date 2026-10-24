@@ -26,8 +26,9 @@ import type { WorktreesTabProps } from './contract.ts'
 import type { WorktreesTabParams } from './definition.tsx'
 import {
   ContentPane, dirnameOf, pickFileManager, pickIde,
+  type SaveOutcome, type SaveRequest,
 } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
-import { AdaptiveSplit, PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { AdaptiveSplit, PanelRoot, browserOnHost } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { PreviewChrome } from '@khorsheed/dsh-client-ui-content-preview/src/client/index.ts'
 import { CommitDetails } from './CommitDetails.tsx'
 import { CommitList } from './CommitList.tsx'
@@ -49,7 +50,7 @@ export function WorktreesTab({
   sessionId, useTabInfo, useStore, actions, t,
   fetchSummary, fetchChanges, fetchRepoFiles, fetchCommitLog, fetchCommitFiles,
   fetchWorktrees, switchWorktree, directAgent, bumpVersion,
-  fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, fetchReadRepoImage, useOpenInApp, openExternal,
+  fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, writeFile, fetchReadRepoImage, useOpenInApp, openExternal,
   copyBranch, copyText,
 }: WorktreesTabProps): ReactNode {
   const { tab } = useTabInfo()
@@ -261,6 +262,22 @@ export function WorktreesTab({
       else actions.setError(result.error.message)
     })
   }
+
+  // The content pane's save, for working-tree reads only (a commit's content
+  // is history). On success the detail re-reads before the pane leaves edit
+  // mode, and the refresh tick re-lists the changes the edit just made.
+  const saveDetail = (request: SaveRequest): Promise<SaveOutcome> => {
+    const path = selectedPath
+    if (path === null) return Promise.resolve({ ok: false, reason: 'missing' })
+    return writeFile(sessionId, { path, content: request.content, base: request.base }).then(result => {
+      if (!result.ok) return { ok: false, reason: 'error', message: result.error.message }
+      if (!result.value.ok) return result.value
+      return fetchDetail(() => false).then(() => { actions.refresh(); return { ok: true } })
+    })
+  }
+  // Editing is a host-machine gesture for now: a phone through the tunnel
+  // reads only (decided 2026-10-24).
+  const canEdit = browserOnHost() && selectedSegment !== 'commit'
 
   // Selected file detail (diff / content).
   useEffect(() => {
@@ -574,6 +591,7 @@ export function WorktreesTab({
               displayPath={absolutePath(worktreePath, selectedPath)}
               onCopyPath={() => copyText(absolutePath(worktreePath, selectedPath))}
               onReload={() => fetchDetail(() => false)}
+              {...(canEdit ? { onSave: saveDetail } : {})}
               chrome={paneChrome(selectedPath)}
               labels={structuredLabels(t)}
               t={previewTranslator(t)}

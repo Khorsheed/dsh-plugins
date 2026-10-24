@@ -32,7 +32,7 @@ import {
   type FileDiffResult, type ListLocalDirectoryRequest, type ListLocalDirectoryResult, type LocalImageResult,
   type ReadFileAtCommitRequest, type ReadFileRequest, type ReadFileResult,
   type ReadLocalFileRequest, type ReadLocalFileResult, type ReadLocalImageRequest, type ReadRepoImageRequest,
-  type SessionSummary, type WorktreeInfo, type WorktreesService,
+  type SessionSummary, type WorktreeInfo, type WorktreesService, type WriteFileRequest, type WriteFileResult,
 } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -205,6 +205,14 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
   @Remote('readFile')
   async readFile(sessionId: SessionId, request: ReadFileRequest): Promise<ReadFileResult> {
     return this.worktrees.readFile(await this.cwd(sessionId), request.path)
+  }
+
+  /** Write one edited working-tree file back (the content pane's save);
+   * refuses on a changed file unless `base` is null. The browser offers the
+   * gesture on the host machine only. */
+  @Remote('writeFile')
+  async writeFile(sessionId: SessionId, request: WriteFileRequest): Promise<WriteFileResult> {
+    return this.worktrees.writeFile(await this.cwd(sessionId), request.path, request.content, request.base)
   }
 
   /** One file's content at one commit (the commits mode's content view). */
