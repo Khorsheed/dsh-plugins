@@ -4,7 +4,7 @@ import { ComposerActions } from '../src/client/composerActions.ts'
 let controller: ComposerActions | undefined
 afterEach(() => { controller?.dispose(); document.body.innerHTML = '' })
 function fixture() {
-  document.body.innerHTML = `<div data-composer-card><div contenteditable>Unsent draft</div><div><div><button aria-haspopup="listbox" aria-label="Commands"></button><button aria-label="Attachment"></button><input type="file" hidden><div><span><button aria-label="Access"><span aria-hidden><svg/></span><span>Workspace write</span><span aria-hidden><svg/></span></button><div role="menu">Official permission menu</div></span><div data-slot="conversation.input.plan"><button>Plugin control</button></div></div><span data-seat></span></div><div><button>Send</button></div></div></div>`
+  document.body.innerHTML = `<div data-composer-card><div contenteditable="true">Unsent draft</div><div><div><button aria-haspopup="listbox" aria-label="Commands"></button><input type="file" hidden><div><span><button aria-label="Access"><span aria-hidden><svg/></span><span>Workspace write</span><span aria-hidden><svg/></span></button><div role="menu">Official permission menu</div></span><div data-slot="conversation.input.plan"><button>Plugin control</button></div></div><span data-seat></span></div><div><button>Send</button></div></div></div>`
   controller = new ComposerActions(document.querySelector('[data-seat]')!)
   return controller
 }
@@ -16,7 +16,7 @@ it('uses original callbacks, keeps permission owners mounted and preserves draft
   expect(targets.permissions!.button.parentElement).toBe(owner)
   expect(document.querySelector('[role=menu]')?.hasAttribute('data-mobile-folded-action')).toBe(false)
   expect(document.querySelector('[data-slot] button')?.hasAttribute('data-mobile-folded-action')).toBe(false)
-  expect(document.querySelectorAll('[data-mobile-folded-action]')).toHaveLength(3)
+  expect(document.querySelectorAll('[data-mobile-folded-action]')).toHaveLength(2)
   actions.dispose(); expect(document.querySelector('[data-mobile-folded-action]')).toBeNull()
   expect(document.querySelector('[contenteditable]')!.textContent).toBe('Unsent draft')
 })
@@ -44,11 +44,7 @@ it('focuses the existing editor only for an explicit command choice, keeping its
   actions.invoke('commands'); expect(focus).toHaveBeenCalledWith({ preventScroll: true })
 })
 it('adapts the unified add button and keeps attachment admission aligned with the editable owner', async () => {
-  fixture(); controller!.dispose()
-  document.querySelector('[aria-label=Attachment]')!.remove()
-  const editor = document.querySelector('[contenteditable]')!
-  editor.setAttribute('contenteditable', 'true')
-  const actions = controller = new ComposerActions(document.querySelector('[data-seat]')!)
+  const actions = fixture(), editor = document.querySelector('[contenteditable]')!
   const file = document.querySelector<HTMLInputElement>('input[type=file]')!, pick = vi.fn()
   file.addEventListener('click', pick)
   expect(actions.getSnapshot().attachments!.button).toBe(file)

@@ -4,19 +4,14 @@ import { createPortal } from 'react-dom'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { IConversation } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { queuedRows } from './queue.ts'
-import type { LegacyQueuedMessage, MobileInboxState } from './queue.ts'
+import type { MobileInboxState } from './queue.ts'
 
 export interface MobileQueueInjected { updateQueue?: IConversation['updateQueue'] }
 /** Room's takeover hides the official QueueDock. Restore its mutation verbs
  * through the same scoped Conversation API, without touching the Room composer. */
 export function MobileQueue({ useSession, useProjection, updateQueue, t }: PropsRuntime<'conversation.session.header.actions'> & PropsLocale<'mobile'> & MobileQueueInjected) {
-  // alpha.2 serves the queue as the `inbox` projection (its declared value is
-  // wire JSON; the official QueueDock narrows it the same way); the 0.1.5
-  // standard kit has no projection hook and its host serves no `inbox` key —
-  // both absence paths fall back to the legacy snapshot queue inside queuedRows.
-  const legacyQueue = useSession(s => (s as { queue?: readonly LegacyQueuedMessage[] }).queue)
-  const inbox = (useProjection === undefined ? undefined : useProjection('inbox')) as unknown as MobileInboxState | undefined
-  const rows = queuedRows(legacyQueue, inbox)
+  // The projection's declared value is wire JSON; the official QueueDock narrows it the same way.
+  const rows = queuedRows(useProjection('inbox') as unknown as MobileInboxState | undefined)
   const running = useSession(s => s.running)
   const pending = useSession(s => s.pendingSubmissions)
   const mutable = useSession(s => s.subagent === null || s.subagent.address.mode === 'continuable')
