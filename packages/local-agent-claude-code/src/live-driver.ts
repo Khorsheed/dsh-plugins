@@ -847,6 +847,9 @@ export class ClaudeLiveDriver {
         return
       }
       const usage = parser.usage
+      // Per-call folds carry the accounting; the round total only ever
+      // back-fills a stream that named none (a sum would double count).
+      const totalFallback = withUsage && !usageCarried && usage !== undefined && !parser.lines.some(line => line.usage !== undefined)
       childSession.append('assistant/message', {
         turn,
         step: stream.durable!,
@@ -856,10 +859,10 @@ export class ClaudeLiveDriver {
             : { type: 'text' as const, text: stream.text },
         ]),
         stream: [],
-        ...withUsage && !usageCarried && usage !== undefined ? { usage } : {},
+        ...totalFallback ? { usage } : {},
         ...interrupted ? { interrupted: true } : {},
       }, { surfaceOp: 'append' })
-      if (withUsage && !usageCarried && usage !== undefined) usageCarried = true
+      if (totalFallback) usageCarried = true
       stream.lastSnapshotAt = now
       stream.lastSnapshotLen = stream.text.length
       persist()

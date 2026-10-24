@@ -418,9 +418,6 @@ export async function mirrorKimiSessionDelta(
     for (const reserved of options?.streams?.reservedSteps(turn) ?? []) taken.add(reserved)
     let step = 1
     while (taken.has(step)) step += 1
-    const written = takenSteps.get(turn) ?? new Set<number>()
-    written.add(step)
-    takenSteps.set(turn, written)
     return step
   }
   /** Record a fold's coordinate chosen by a stream pairing. */
@@ -491,11 +488,20 @@ export async function mirrorKimiSessionDelta(
     // A tool reservation only pins chronological order — the fold's step
     // carries the whole lifecycle, so the reserved coordinate frees.
     for (const line of toolLines) options?.streams?.releaseTool?.(line)
-    const step = pairing?.step ?? nextFoldStep(turn)
-    markTaken(turn, step)
+    let step = pairing?.step ?? nextFoldStep(turn)
     // Close every stream reservation below the fold step first: stored steps
     // must land dense and strictly sequential.
     options?.streams?.finalizeBefore?.(turn, step)
+    // Finalization may have WRITTEN a reservation below the provisional
+    // coordinate — or RELEASED an empty one without a write. Either way the
+    // fold must take the smallest step still free afterwards: writing above
+    // a released-but-never-written reservation strands a permanent gap the
+    // released-log reader rejects as corruption.
+    let sequential = nextKimiSessionStep(childSession, turn)
+    const reservedAfter = options?.streams?.reservedSteps(turn) ?? []
+    while (reservedAfter.includes(sequential)) sequential += 1
+    step = Math.min(step, sequential)
+    markTaken(turn, step)
     // The wire's own request config rides a request/header ahead of the fold
     // (the host session's own shape) — Context Lens reads the child log's
     // config from it instead of showing 未记录. Only a change is logged.

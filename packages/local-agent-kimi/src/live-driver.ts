@@ -1131,7 +1131,26 @@ export class KimiAcpLiveDriver {
       const blocks: ContentBlock[] = []
       if (reasoning.trim() !== '') blocks.push({ type: 'reasoning', text: reasoning })
       if (text.trim() !== '') blocks.push({ type: 'text', text })
-      if (blocks.length === 0) return
+      if (blocks.length === 0) {
+        // Nothing durable to write: release the coordinate instead of pinning
+        // it forever — a later fold landing above would otherwise strand a
+        // permanent step gap the released-log reader rejects as corruption.
+        streamPublisher?.finish(step)
+        const keys = new Set(entries.map(([key]) => key))
+        const held = new Set([...streams.entries()]
+          .filter(([key, stream]) => !keys.has(key) && stream.sealed !== true)
+          .map(([, stream]) => stream.step))
+        if (!held.has(step)) {
+          const index = reservedSteps.indexOf(step)
+          if (index >= 0) reservedSteps.splice(index, 1)
+        }
+        for (const [key, stream] of entries) {
+          stream.sealed = true
+          generationSteps.delete(stream.generation)
+          if (activeStream === key) activeStream = undefined
+        }
+        return
+      }
       childSession.append('step/start', { turn, step })
       childSession.append('assistant/message', {
         turn,

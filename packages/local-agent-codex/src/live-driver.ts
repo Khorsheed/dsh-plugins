@@ -947,7 +947,16 @@ export class CodexLiveDriver {
     const lines: CodexTranscriptLine[] = []
     let mirrored = 0
     let usage: TokenUsage | undefined
-    /** Whether a folded line already carries the round's usage (no backfill event exists). */
+    /** The cumulative turn total the wire's `tokenUsage.total` names, for the settled report. */
+    let totalUsage: TokenUsage | undefined
+    /**
+     * Per-call usage by transcript line: each `thread/tokenUsage/updated`
+     * notification closes one API call (its items have all completed), and
+     * the call's LAST line carries its `tokenUsage.last`. The map is
+     * authoritative per line, independent of the flush's withUsage flag.
+     */
+    const usageByLine = new Map<number, TokenUsage>()
+    /** Whether a folded line already carries usage (per-call, or the round's fallback — no backfill event exists). */
     let usageCarried = false
     /**
      * The streaming items seen this round by item id: deltas accumulate into
@@ -1078,7 +1087,9 @@ export class CodexLiveDriver {
         stream.lastSnapshotLen = stream.text.length
         return
       }
-      const attachUsage = withUsage && !usageCarried && usage !== undefined
+      // Per-call folds carry the accounting; a final snapshot only falls back
+      // to the last-call read when the wire named no per-call usage at all.
+      const attachUsage = withUsage && !usageCarried && usageByLine.size === 0 && usage !== undefined
       childSession.append('assistant/message', {
         turn,
         step: stream.durable!,
@@ -1088,7 +1099,7 @@ export class CodexLiveDriver {
             : { type: 'text' as const, text: stream.text },
         ]),
         stream: [],
-        ...withUsage && !usageCarried && usage !== undefined ? { usage } : {},
+        ...withUsage && !usageCarried && usageByLine.size === 0 && usage !== undefined ? { usage } : {},
         ...interrupted ? { interrupted: true } : {},
       }, { surfaceOp: 'append' })
       if (attachUsage) usageCarried = true
@@ -1171,17 +1182,22 @@ export class CodexLiveDriver {
      * or — while it is still streaming — the mirror stops until it lands.
      */
     const mirrorUpTo = (upto: number, withUsage: boolean): void => {
-      // The usage rides the last NON-tool line (tool events carry no usage
-      // slot, and a kill mid-command ends the transcript with a tool line).
-      // A carrier mirrored in an earlier flush (before the usage was knowable)
-      // loses the accounting — host 0.1.5 has no usage-backfill event.
+      // Per-call usage rides the line its notification stamped, whenever that
+      // line folds. The fallback (a wire that never named per-call usage)
+      // rides the last NON-tool line once — tool/call and tool/result events
+      // carry no usage slot, and a kill mid-command ends the transcript with
+      // a tool line. A carrier mirrored in an earlier flush (before the usage
+      // was knowable) loses the accounting — host 0.1.5 has no usage-backfill
+      // event.
       let usageIndex = -1
-      if (withUsage) {
+      if (withUsage && usageByLine.size === 0) {
         for (let index = 0; index < lines.length; index += 1) {
           if (lines[index]?.kind !== 'tool') usageIndex = index
         }
       }
       const usageFor = (index: number): TokenUsage | undefined => {
+        const own = usageByLine.get(index)
+        if (own !== undefined) { usageCarried = true; return own }
         const lineUsage = withUsage && index === usageIndex ? usage : undefined
         if (lineUsage !== undefined) usageCarried = true
         return lineUsage
@@ -1247,8 +1263,9 @@ export class CodexLiveDriver {
         }
         if (line === undefined) return
         lines.push(line)
-        // Hold back the volatile last line until turn/completed (it is the
-        // round's usage carrier) — the exec live mirror's exact rule.
+        // Hold back the volatile last line (a tool result may still merge
+        // into it) — per-call usage arrives on thread/tokenUsage/updated and
+        // folds with the line whenever it lands.
         mirrorUpTo(lines.length - 1, false)
         return
       }
@@ -1275,7 +1292,24 @@ export class CodexLiveDriver {
       if (method === 'thread/tokenUsage/updated') {
         const tokenUsage = params['tokenUsage'] as JsonObject | undefined
         const last = tokenUsage?.['last'] as JsonObject | undefined
-        if (last !== undefined) usage = usageFromAppServer(last)
+        const total = tokenUsage?.['total'] as JsonObject | undefined
+        // A total with no numbers is "not reported" (never override the
+        // per-call read with an empty object).
+        if (total !== undefined && (Number.isFinite(Number(total['inputTokens'])) || Number.isFinite(Number(total['outputTokens'])))) {
+          totalUsage = usageFromAppServer(total)
+        }
+        if (last !== undefined) {
+          usage = usageFromAppServer(last)
+          // One notification closes one API call (the rollout's token_count
+          // position: right after the call's last item). Stamp the call's own
+          // usage on its last line and flush the completed prefix with it;
+          // the volatile last line keeps its hold (a tool result may still
+          // merge into it) and folds with its mapped usage whenever it lands.
+          if (lines.length > 0) {
+            usageByLine.set(lines.length - 1, usage)
+            mirrorUpTo(lines.length - 1, true)
+          }
+        }
         return
       }
       if (method === 'turn/completed') {
@@ -1483,7 +1517,11 @@ export class CodexLiveDriver {
             windowStart: startedAtMs,
             cwd: spec.cwd,
           })
-          const settledUsage = usage ?? facts.usage
+          // The settled report wants the round TOTAL: prefer the wire's
+          // cumulative tokenUsage.total (the per-call `last` under-reports a
+          // multi-call round); the rollout read is the non-completed turn's
+          // fallback, as before.
+          const settledUsage = totalUsage ?? usage ?? facts.usage
           const round = {
             ...facts.model === undefined ? {} : { observedModel: facts.model },
             ...facts.cliVersion === undefined ? {} : { cliVersion: facts.cliVersion },
