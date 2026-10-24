@@ -104,6 +104,15 @@ it('shows recovery status and disables the public entry', async () => {
   expect(tunnel.mock.calls[1]?.[1]).toMatchObject({ method: 'POST', body: JSON.stringify({ action: 'disable' }) })
   await screen.findByRole('button', { name: en.tunnelEnable })
 })
+it('shows the failing stage under the auto-retrying error and keeps disable available', async () => {
+  const connect = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'unreachable', origin: 'https://live-one-two-three.trycloudflare.com' }) })
+  const tunnel = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'error', origin: 'https://live-one-two-three.trycloudflare.com', reason: 'start-failed', detail: 'bind: Error: Configuration entry is no longer available' }) })
+  vi.stubGlobal('fetch', vi.fn((url: unknown, options?: unknown) => String(url).includes(TUNNEL_PATH) ? tunnel(url, options) : connect(url, options)))
+  render(<ConnectPhone t={t}/>)
+  await screen.findByText('bind: Error: Configuration entry is no longer available')
+  expect(screen.getByText(en.tunnelError)).toBeTruthy()
+  expect(screen.getByRole('button', { name: en.tunnelDisable })).toBeTruthy()
+})
 it('explains a missing cloudflared when the one-click entry is unsupported', async () => {
   const connect = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'not-configured', origin: null }) })
   const tunnel = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'unsupported', origin: null, reason: 'no-cloudflared' }) })

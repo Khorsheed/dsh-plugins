@@ -35,6 +35,6 @@ export interface MobileTunnelStatus {
   state: MobileTunnelState
   origin: string | null
   reason?: MobileTunnelReason
-  /** Coded failure cause for ops (e.g. 'edge-timeout'); never a provider message. */
+  /** Failing stage and cause for ops (e.g. 'edge: edge-timeout'); URL- and token-shaped text redacted. */
   detail?: string
 }

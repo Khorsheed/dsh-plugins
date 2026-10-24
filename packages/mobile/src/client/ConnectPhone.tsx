@@ -111,7 +111,7 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
       </>}
       {tunnel.state === 'starting' && <p role="status">{t('tunnelStarting')}</p>}
       {tunnel.state === 'recovering' && <p role="status">{t('tunnelRecovering')}</p>}
-      {tunnel.state === 'error' && <p role="status">{t('tunnelError')}</p>}
+      {tunnel.state === 'error' && <p role="status">{t('tunnelError')}{tunnel.detail && <small data-connect-detail>{tunnel.detail}</small>}</p>}
       {tunnel.state === 'unsupported' && <p>{t(tunnel.reason === 'no-cloudflared' ? 'tunnelNoCloudflared' : 'tunnelUnsupportedHost')}</p>}
       {managed && <button type="button" disabled={busy} onClick={() => { void act('disable') }}>{t('tunnelDisable')}</button>}
     </div>}
@@ -138,4 +138,5 @@ const styles = `
 [data-connect-tunnel] p{margin:0;flex:1 1 320px}
 [data-mobile-connect] ol{padding-left:24px;margin:24px 0}[data-mobile-connect] li{padding:5px 0}
 [data-connect-note]{font-size:13px;color:var(--dsw-alias-label-secondary)}
+[data-connect-detail]{display:block;font-size:12px;color:var(--dsw-alias-label-secondary);word-break:break-word}
 `
