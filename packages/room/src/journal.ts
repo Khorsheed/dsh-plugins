@@ -120,8 +120,13 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   let goal: string | undefined
   let settings = DEFAULT_ROOM_SETTINGS
   let coordinator: RoomState['coordinator']
+  let latestReplySeq: number | undefined
   for (const event of events) {
     switch (event.type) {
+      case 'room/speech':
+        // A reply to the room (not a report to another member).
+        if (event.data.reportedTo === undefined) latestReplySeq = event.seq
+        break
       case 'room/coordinator': {
         if (event.data.revision > (coordinator?.revision ?? 0)) coordinator = event.data
         break
@@ -354,7 +359,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const plan = planEvent?.type === 'room/plan-state' ? (({ requests: _requests, ...view }) => view)(planEvent.data) : undefined
   const deliveries = replayDeliveries(events)
   const jobs = deliveries.length === 0 ? [] : replayJobs(events, deliveries)
-  return { members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, settings, ...jobs.length === 0 ? {} : { jobs } }
+  return { members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
 }
 
 /**

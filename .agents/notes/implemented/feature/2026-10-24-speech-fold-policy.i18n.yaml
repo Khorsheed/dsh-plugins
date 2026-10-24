@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-24-speech-fold-policy.md
+.agents/notes/implemented/feature/2026-10-24-speech-fold-policy.md: f5bcaebf06900dc6349a2bd52a55fc7e9ad590c8
+.agents/notes/implemented/feature/2026-10-24-speech-fold-policy.zh.md: 30e20f939e24bac6ce9b0caa3edf36337222ba87

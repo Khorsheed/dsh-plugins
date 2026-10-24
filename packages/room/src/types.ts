@@ -610,6 +610,8 @@ export interface RoomState {
   readonly runs: readonly RoomMemberRun[]
   /** The current goal text (the latest `room/goal` event), undefined when unset. */
   readonly goal?: string
+  /** Seq of the newest member speech addressed to the room (no `reportedTo`): the reply the human is reading, shown unfolded. */
+  readonly latestReplySeq?: number
   /** Collaboration settings (defaults when never set). */
   readonly settings?: RoomSettings
   /** Tasks, newest first (absent in rooms that never dispatched work). */

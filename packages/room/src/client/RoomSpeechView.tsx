@@ -5,8 +5,12 @@
  * block): a header (name, public role, provider, time), the markdown body —
  * the official MarkdownText, typographically identical to main-agent speech —
  * and a quiet footer row. A
- * body past {@link COLLAPSE_CHARS} starts clamped to ~10 lines under a
- * bg-base fade with an expand/collapse toggle. The action row replicates the
+ * body past {@link COLLAPSE_CHARS} may fold to ~10 lines under a bg-base fade
+ * with an expand/collapse toggle (the fade expands too). The newest reply to
+ * the room starts unfolded — it is what the human is reading — and folds once
+ * a newer reply lands; reports to another member and older replies start
+ * folded. The human's own expand/collapse wins and is remembered per speech
+ * (see {@link foldChoices}). The action row replicates the
  * official MessageIconActions chrome: copy, child-session jump (when the
  * speech carries its handle), honest duration, and a hover-revealed clock.
  * Deliberately absent: branch (forking the room session has undefined
@@ -28,6 +32,33 @@ import css from './RoomSpeechView.module.css'
  */
 const COLLAPSE_CHARS = 600
 
+/** Browser storage key of one room's remembered expand/collapse choices. */
+const FOLD_KEY_PREFIX = 'dsh-room:speech-fold:'
+/** Choices kept per room (newest speeches win): bounds the stored map. */
+const FOLD_KEEP = 200
+
+/**
+ * The human's expand/collapse choices for one room's speeches, by speech seq.
+ * A per-viewer convenience in browser storage: unreadable storage (private
+ * window, blocked site data) only means the default folding applies.
+ */
+export const foldChoices = {
+  read(sessionId: string): Record<string, boolean> {
+    try {
+      const raw = globalThis.localStorage?.getItem(FOLD_KEY_PREFIX + sessionId)
+      const parsed: unknown = raw == null ? undefined : JSON.parse(raw)
+      return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, boolean> : {}
+    } catch { return {} }
+  },
+  write(sessionId: string, seq: number, expanded: boolean): void {
+    try {
+      const choices = { ...foldChoices.read(sessionId), [String(seq)]: expanded }
+      const kept = Object.keys(choices).map(Number).sort((a, b) => b - a).slice(0, FOLD_KEEP)
+      globalThis.localStorage?.setItem(FOLD_KEY_PREFIX + sessionId, JSON.stringify(Object.fromEntries(kept.map(key => [key, choices[key]]))))
+    } catch { /* a convenience: never fail the view */ }
+  },
+}
+
 /** Localized Markdown chrome (code-fence copy buttons, footnotes) over the room namespace. */
 function markdownLabels(t: RoomSpeechViewProps['t']): MarkdownLabels {
   return {
@@ -40,7 +71,8 @@ function markdownLabels(t: RoomSpeechViewProps['t']): MarkdownLabels {
 export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: RoomSpeechViewProps): ReactNode {
   const data = node.data
   const [copied, setCopied] = useState(false)
-  const [expanded, setExpanded] = useState(false)
+  // The human's own choice for this speech (remembered), else the default.
+  const [chosen, setChosen] = useState<boolean | undefined>(() => foldChoices.read(sessionId)[String(node.data.seq)])
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => {
     if (copyTimer.current !== null) clearTimeout(copyTimer.current)
@@ -52,7 +84,15 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
     : member.kind === 'main-agent' ? t('member.kind.main') : member.provider
   const child = data.childSessionId
   const collapsible = data.text.length > COLLAPSE_CHARS
+  // The newest reply to the room reads unfolded. A reply newer than the
+  // cached state's (the refresh is debounced) is the newest already.
+  const newestReply = data.reportedTo === undefined && data.seq >= (state?.latestReplySeq ?? data.seq)
+  const expanded = chosen ?? newestReply
   const clamped = collapsible && !expanded
+  const toggle = (next: boolean): void => {
+    setChosen(next)
+    foldChoices.write(sessionId, data.seq, next)
+  }
   const labels = useMemo(() => markdownLabels(t), [t])
 
   const copy = (): void => {
@@ -77,13 +117,13 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
       </div>
       <div className={clamped ? `${css.body} ${css.clamped}` : css.body}>
         <MarkdownText text={data.text} labels={labels} />
-        {clamped && <div className={css.fade} aria-hidden />}
+        {clamped && <div className={css.fade} aria-hidden onClick={() => { toggle(true) }} />}
       </div>
       {collapsible && (
         <button
           type="button"
           className={css.expandToggle}
-          onClick={() => { setExpanded(value => !value) }}
+          onClick={() => { toggle(!expanded) }}
         >
           {expanded ? t('speech.collapse') : t('speech.expand')}
         </button>
