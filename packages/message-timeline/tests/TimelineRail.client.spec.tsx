@@ -640,6 +640,17 @@ describe('width policy', () => {
     expect(el.style.getPropertyValue('--panel-wide')).not.toBe('')
   })
 
+  it('fits the box to its rows, centered on the rail midline and capped at the rail height', () => {
+    // RAIL top 20, height 300: the midline sits at 170. No fixed height, so
+    // the narrow-mode hover background wraps the rows, not the whole column.
+    renderWith({ flowLeft: 153 })
+    const el = panel()
+    expect(el.style.top).toBe('170px')
+    expect(el.style.maxHeight).toBe('300px')
+    expect(el.style.height).toBe('')
+    expect(el.style.transform).toBe('translateY(-50%)')
+  })
+
   it('degrades to a scrollport fraction while the flow probe is unanswered', () => {
     // 40% of a 1200px scrollport (480) exceeds the configured 320px.
     renderWith({ flowLeft: null, scrollportWidth: 1200 })

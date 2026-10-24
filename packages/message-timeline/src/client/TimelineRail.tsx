@@ -362,9 +362,14 @@ export function TimelineRail({
       tabIndex={0}
       data-timeline-panel=""
       style={{
+        // The box fits its rows (up to the rail height) and centers on the
+        // rail's midline, so the narrow-mode hover background wraps the list
+        // instead of painting the whole column; a longer list fills the rail
+        // and scrolls.
         left: rail.left,
-        top: rail.top,
-        height: rail.height,
+        top: rail.top + rail.height / 2,
+        maxHeight: rail.height,
+        transform: 'translateY(-50%)',
         width,
         ...(narrow ? { '--panel-wide': `${wideWidth}px` } : {}),
       } as CSSProperties}
