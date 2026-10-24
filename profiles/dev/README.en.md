@@ -1,154 +1,191 @@
 # dsh-dev
 
-[中文](README.md) | English
+English | [中文](README.md)
 
-**Direct a team of agents to write code, and see exactly what they changed.** Delegate tasks to the coding agents installed on your machine — Kimi Code, Codex, Claude Code, or dsh itself — each with its own context and accounting; which branch a change landed on, which files moved, what each commit did, all visible inside the session; and several agents can collaborate in one conversation.
+**Everything for writing code in DSH: direct a team of agents, and see exactly what they changed.** Hand work to the Kimi, Codex or Claude Code on your own machine, or to another DSH, in one sentence — watch it live, stop it midway, keep the conversation going; invite several agents into one session to split a job, @ whoever should take it, and acceptance stays your call; the session header shows the current branch and how many lines changed, one click away from pending changes and commit history; yes/no and pick-one calls come back as answers with a confidence attached; when the agent wants to restart after changing code, the build and tests have to pass first, and a version that won't boot is rolled back automatically; open any turn to see what the model actually received and where the tokens and time went…… The layer you want most when writing code, with "开发模式" (dev mode) built in, installed in one go.
 
-Every member is an independent plugin — copy its package name into the host's "Add plugin" dialog (0.1.7-rc.2+: Settings → Plugins) and install freely. If the official host later opens up custom-profile installation, this repo will support one-command install. The local-agent family also comes as a meta package — `@khorsheed/dsh-bundle-local-agent` installs it all at once (see the end of [Features](#features)).
+<img src="docs/screenshots/dev-mode.png" width="1000" alt="Dev mode at a glance: a room inviting members, the branch badge and changes drawer in the session header, sub-agent task capsules above the input box">
 
-<img src="docs/screenshots/dev-mode.png" width="1000" alt="dsh-dev dev mode at a glance: the room invite dialog, the worktree badge and change drawer, and sub-agent task pills">
+## Install
 
-## The dsh-dev pack — plugin list
+In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 
-This pack contains the 8 plugins specific to dev mode (see the table below). Beyond that, we also recommend installing the everyday-experience plugins from [dsh-basic](https://github.com/Khorsheed/dsh-basic) (message edit/withdraw, timeline, title editing, quote, artifact preview, local file browsing, task pills, compaction reminder, inline cards, capability catalog, ambience, mobile) — copy the package names one by one, or install them in one shot with the `@khorsheed/dsh-basic` meta package; per-plugin intros and screenshots live in dsh-basic.
+```
+@khorsheed/dsh-dev-suite
+```
+
+That installs all 10 members below; restart DSH and they're ready. It's best installed together with `@khorsheed/dsh-basic` (Basic Essentials), which carries everyday things like editing messages and previewing files.
+
+Then start a new session, pick "开发模式" (dev mode), and tell the agent what you want to build. All of this only shows up in dev-mode sessions, so not seeing it in other modes is expected; everything from the standard mode — planning, compaction, sub-agents, web search — is still there.
+
+Before you start: Kimi, Codex and Claude Code have to be installed by you; this suite doesn't do it. TypeSafe needs a TypeSafe key. Ankh Guard only works on an instance supervised by a watchdog.
+
+## Things you can say to the agent
+
+- "Hand this parser bug to Codex, and tell me which files it changed."
+- "Make a new worktree for the login page refactor and work there; leave main alone."
+- "Bring in Claude Code and Kimi: Claude Code writes it, Kimi adds tests, you coordinate, and show me the evidence."
+- "Which worktrees does this repo have, and which ones have uncommitted changes?"
+- "Restart the service when you're done — run the build and tests first."
+- "Why was that turn so slow? Check with the context lens where the time went."
+
+## Plugin list
 
 | Plugin | Package name (copy to install) | What you get |
 |---|---|---|
-| local-agent | `@khorsheed/dsh-local-agent` | The local coding-agent family core: scoped homes, login/session command family, delegation registry |
-| local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Kimi Code delegation (`kimi -p`), resume, accounting; the `subagent_kimi` delegation tool rides the package's `./tool` subpath row, granted per session by the dev-mode preset |
-| local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Codex delegation (`codex exec`), resume, accounting; the `subagent_codex` delegation tool rides the package's `./tool` subpath row, granted per session by the dev-mode preset |
-| local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Claude Code delegation (`claude -p`), resume, accounting; the `subagent_claude_code` delegation tool rides the package's `./tool` subpath row, granted per session by the dev-mode preset |
-| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | dsh self-delegation: use dsh itself as a local CLI |
-| worktrees | `@khorsheed/dsh-worktrees` | A per-session repo/worktree badge plus a change drawer (read-only git facts); the model tool ships as the package's `@khorsheed/dsh-worktrees/tool` subpath row, granted per session by the dev-mode preset |
-| room | `@khorsheed/dsh-room` | Multi-agent collaboration in one session: member roster, @ dispatch, tasks; the model tools `room_invite / room_message / room_read / room_plan` ride the package's `./tool` subpath row, granted per session by the dev-mode preset |
+| local-agent | `@khorsheed/dsh-local-agent` | The base for local-agent delegation: a "Local Agent Delegation" card in settings for each tool's sign-in, model and always-on switch; the four below need it |
+| local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Hand work to Kimi Code on your machine, watch it live, keep the conversation going |
+| local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Hand work to Codex on your machine, watch it live, keep the conversation going |
+| local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Hand work to Claude Code on your machine, watch it live, keep the conversation going |
+| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Hand a subtask to a separate DSH running on its own; off by default, turn it on in settings |
+| worktrees | `@khorsheed/dsh-worktrees` | The branch and changed lines in the session header; open it for pending changes, commit history and repo files |
+| room | `@khorsheed/dsh-room` | Invite several agents into one session, @ whoever takes the work, acceptance is yours |
+| typesafe | `@khorsheed/dsh-typesafe` | Yes/no and pick-one calls come back as answers with a confidence attached |
+| ankh-guard | `@khorsheed/dsh-ankh-guard` | Before the agent restarts the service, build and tests must pass; a version that won't boot is rolled back |
+| context-lens | `@khorsheed/dsh-context-lens` | Click any turn to see what the model received and where the tokens and time went |
 
-### Version compatibility
+## Feature tour
 
-Host ≥ `0.1.5-rc.1`.
+### Local agent delegation: Kimi, Codex, Claude Code and DSH
 
-**Host `0.2.0-rc.*`**: copy the specs with an `@^version` floor from the tables below. On release day do not paste a bare package name — pnpm 11 hides versions younger than 24 hours by default (`minimumReleaseAge`, a supply-chain guard), so a bare name resolves to the old 0.1.x-only line and the host compatibility check then rejects it; a floored spec auto-exempts the gate and installs the compatible new version.
+Getting your local Codex or Claude Code to help used to mean opening a terminal, copy-pasting, and carrying the result back. Now you say "give this to Codex" and it runs on your machine: its thinking, tool calls and the files it touches stream into a sub-session, you can stop it midway, or open the sub-session and keep talking to it; the result comes back to your main session with real usage and timing. Each tool runs in its own separate directory, so your existing setup and sign-ins on this machine are never touched. The "Local Agent Delegation" card in settings shows at a glance whether each one is signed in, and it's where you switch the default model and always-on mode. "Local DSH Delegation" is off by default; turn it on when you want to hand subtasks to another DSH.
 
-## Features
+<details open>
+<summary>Screenshots (5)</summary>
 
-### Local agent family (6 packages): delegate to other coding agents
+<img src="docs/screenshots/08-local-agent.png" width="840" alt="The Local Agent Delegation card in settings: one row per tool, with a status dot showing whether it is signed in">
 
-| How | Install spec (copy into the dialog) |
-|---|---|
-| Core + Kimi | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-kimi@^0.2.0-rc.1` |
-| Core + Codex | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-codex@^0.2.0-rc.1` |
-| Core + Claude Code | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-claude-code@^0.2.0-rc.1` |
-| Core + dsh | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-dsh@^0.2.0-rc.1` |
+<img src="docs/screenshots/local-agent-kimi-settings.png" width="840" alt="The Kimi section: sign-in status, default model and the always-on switch">
 
-Delegate subtasks to the coding agent CLIs on your machine — Kimi Code, Codex, Claude Code, and dsh itself. Each harness runs under its own scoped home (`$DSH_HOME/local-agent/<name>`, mode 0700), and **never touches the private configuration and credentials in your user directory**.
+<img src="docs/screenshots/local-agent-codex-card.png" width="840" alt="The Codex section: sign-in status, default model and the always-on switch">
 
-- **Separate context and accounting**: a child session's tokens and KV cache never enter the parent; every delegation is accounted from real usage.
-- **Resume across turns**: pass the child session id back to continue inside the same CLI session.
-- **Live mode**: output streams into the member session, cancelling does not kill the process, and a crash resumes the session.
-- **Two-way member channel**: open a member's sub-session to continue it directly; members can also notify each other.
+<img src="docs/screenshots/local-agent-claude-code-card.png" width="840" alt="The Claude Code section: sign-in, default model picker and the always-on switch">
 
-<img src="docs/screenshots/local-agent-delegation.png" width="840" alt="The local-agent family: provider cards in settings, auth status at a glance">
-
-<img src="docs/screenshots/local-agent-kimi-settings.png" width="840" alt="Provider detail card (Kimi): logged in, default model switchable, live-mode toggle">
-
-<img src="docs/screenshots/local-agent-codex-card.png" width="840" alt="Provider detail card (Codex): logged in, default model switchable">
-
-<img src="docs/screenshots/local-agent-claude-code-card.png" width="840" alt="Provider detail card (Claude Code): logged-out state with one-click web login">
-
-<img src="docs/screenshots/local-agent-member.png" width="840" alt="The two-way member channel: open a member's sub-session and continue it directly">
-
-### worktrees (1 package): live git state
-
-| Host version | Install spec (copy into the dialog) |
-|---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-worktrees@^0.3.1` (the model tool row is the package's `./tool` subpath entry, activated by the dev-mode preset — no separate install needed) |
-
-A repo/worktree badge sits at the top right of every session, showing the current repository, branch, and combined diff size (green = clean, yellow = dirty). Opening it reveals the change drawer: uncommitted and committed file trees with diffs, an IDE-style commit log, and full repository file browsing. It displays git facts read-only and never writes to the repository.
-
-<img src="docs/screenshots/worktrees-drawer.png" width="840" alt="worktrees: the session-header badge and the change drawer">
-
-### room (1 package): several agents inside one session
-
-| Host version | Install spec (copy into the dialog) |
-|---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-room@^0.2.1` (the model tool row is the package's `./tool` subpath entry, activated by the dev-mode preset — no separate install needed) |
-
-Invite an agent into any session and that session becomes a room: member tab, @-dispatch, multi-member capsules, a task board, and a notification gate. Members can summon each other, and progress stays visible on one conversation thread.
-
-<img src="docs/screenshots/room-members.png" width="840" alt="room: the member roster tab with coordinator and member cards">
-
-### Bundle install: bundle-local-agent (the local multi-agent family in one shot)
-
-| Host version | Install spec (copy into the dialog) |
-|---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent@^0.4.0` |
-
-One meta package installs the local-agent core plus all four providers (kimi / codex / claude-code / dsh): members arrive as npm dependencies and the bundle's patch re-mounts each member's canonical rows verbatim; afterwards every component stays individually disable-able under Settings → Plugins — the bundle packages the install, not your choices.
-
-<details>
-<summary>View the screenshots (1)</summary>
-
-<img src="docs/screenshots/bundle-local-agent.png" width="840" alt="bundle-local-agent: the detail page listing the core and four delegation providers, each individually switchable">
+<img src="docs/screenshots/local-agent-member.png" width="840" alt="Opening a delegated sub-session and continuing the conversation right there">
 
 </details>
 
-## Bundled agent preset: the dev mode (dev)
+### room: a room for several agents
 
-The pack ships a **dev mode** preset (`presets/dev`). It exists so that dev mode's tools and UI never leak into other modes: the model tool rows live in this preset's composition only, never at the profile root, and session-bound UI (the worktree badge, the room roster, …) shows or hides with the preset grant — a session gets the tools and the entry points exactly when it runs on this preset. So one instance can move back and forth between modes: pick dev mode for coding sessions, stay on Standard for everyday ones, and neither pollutes the other.
+Getting several agents onto one job used to mean copy-pasting between windows. Now press "＋ Invite agent" in a session and it becomes a small team: DSH coordinates, and you bring in Kimi, Codex, Claude Code, or a DSH set up with another mode. @ a name at the start to hand that member the work, @ several to run them in parallel; the coordinator splits tasks and members hand in evidence — finishing isn't passing, and acceptance is up to you. A capsule above the input box tells you how many tasks are running and how many need you; open it to see who handed what to whom and how long each took, and the "Team" button on the members page draws how you, the coordinator and the members connect. Every member keeps its own session across turns and restarts.
 
-The composition re-bases verbatim on the official "Standard mode" and only appends community tool rows at the end: the three local-agent delegation tools (`subagent_kimi` / `subagent_codex` / `subagent_claude_code`), the worktrees model tool, and the room tools (`room_invite` / `room_message` / `room_read` / `room_plan`), all **granted per session**; with a companion's core absent the row stays pending and never crashes the host.
+<details open>
+<summary>Screenshots (3)</summary>
 
-| Host version | Install spec (copy into the dialog) |
-|---|---|
-| ≥ `0.1.7-rc.2` (recommended) | `@khorsheed/dsh-dev-suite` |
-| `0.1.5-rc.1` ~ `0.1.7-rc.1` | Installed directory-style by the pack scripts (see the guide at the end) |
+<img src="docs/screenshots/room-1.png" width="840" alt="A room in progress: member receipts and run rows in the chat, and the @ member menu open above the input box">
 
-Since 0.1.7-rc.2 the official host supports preset-as-a-bundle — a preset ships as an ordinary package and installs by copying its name, no manual directory placement; upgrading is recommended for the smoother path. Once installed, dev mode's UI and tools take effect only in dev-mode sessions and never disturb the other modes.
+<img src="docs/screenshots/room-invite.png" width="840" alt="The members page's empty state, turning the session into a multi-agent room, and the Invite agent entry in the session header">
 
-## Other packs
+<img src="docs/screenshots/room-2.png" width="840" alt="The members page: each member's name, source, role and model, with "Set as coordinator"">
 
-| Pack | What it is |
-|---|---|
-| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | Everyday mode: the baseline experience only, without the development capabilities |
-| [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | The plugin monorepo: the capability map of every package, the preset designs, and the development docs |
+</details>
+
+### worktrees: branch and changes at a glance
+
+With a few worktrees open, you used to run git just to know which branch this session was on and how much was uncommitted. Now a branch badge sits in the session header with the branch name and changed lines, switching to a warning color when there are changes. Click it for the worktrees page in the right sidebar: pending changes with colored diffs, an IDE-style commit history you can expand one commit at a time, and the repo's files to browse, images previewed inline. All of this only looks — it never touches your repo. The agent can also create, switch and remove worktrees; removal always asks you first, and one with uncommitted changes is never removed.
+
+<details open>
+<summary>Screenshots (2)</summary>
+
+<img src="docs/screenshots/pilot-badge-standard.png" width="840" alt="The branch badge in the top right of the session header: branch name plus changed lines +175 −34, next to the repo name">
+
+<img src="docs/screenshots/worktrees-tab.png" width="840" alt="Pending changes on the worktrees page: a file tree with A/M/D marks and line counts on the left, the selected file's colored diff on the right">
+
+</details>
+
+### typesafe: TypeSafe quick judgements
+
+"Should the model handle this message?" "Which team does this ticket belong to?" — if the agent answers that kind of question with a paragraph, you end up reading it again. With TypeSafe, yes/no, pick-one and rate-it questions come back as answers with a confidence attached, so the agent can act on them directly; the room also uses it to decide when a member's report is best handed to the coordinator. Enter your TypeSafe key under "Tools & Skills" first; without one it simply reports that it can't answer, nothing breaks.
+
+### ankh-guard: Ankh Guard
+
+Letting the agent change DSH's own code is handy; the trouble is the restart. Break something and the service goes down along with the conversation you're in, leaving you to clean up. With Ankh Guard, the agent has to show the build and tests pass before it may restart; before the real stop, the new version is started once in the background, and if it won't come up the old one is left alone; if the new version keeps failing to boot, it rolls back to the last version that started cleanly, and if a newly installed plugin caused it, that plugin is removed and you're told which. After the restart, the session that asked for it gets the result, interrupted sessions carry on, and open pages refresh themselves back to where you were.
+
+<details open>
+<summary>Screenshots (1)</summary>
+
+<img src="docs/screenshots/ankh-guard.JPG" width="840" alt="A guarded restart: the checks announced before the restart, and the session resuming on its own afterwards to keep verifying">
+
+</details>
+
+### context-lens: Context Lens
+
+When you're tuning prompts or writing plugins, what you most want to know is: what was actually in this request? Why didn't the cache hit? Why was this turn so slow? Now every answer has a small icon under it; click it and the right sidebar lays out every model request in that turn: where each part of the system prompt came from, how many tools were attached, what is history and what's new this time; the real cache hits, with the differences from the previous request marked down to the character; "Duplicates only" picks out content stuffed in more than once; the "Timing" view shows whether the time went to the model, the tools or the gaps between. Delegated sub-agents are listed separately, and conversations from before you installed it can be inspected too. It only looks, never changes anything, and doesn't write what it sees into the session.
+
+<details open>
+<summary>Screenshots (2)</summary>
+
+<img src="docs/screenshots/context-lens-request.png" width="840" alt="The context lens request page in the right sidebar: turn switcher on top, then cache hits, prefix differences, and the breakdown into system prompt, tools, history and new content">
+
+<img src="docs/screenshots/context-lens-timing.png" width="840" alt="The timing page: total, model, tool execution and gaps, then a lane per agent and a tool table sorted by execution time">
+
+</details>
+
+## Make it yours
+
+- **Remove a member**: disable/uninstall in Settings → Plugins, or `dsh plugin --profile <your profile> remove <package name>` — the rest keep working. Don't use one of the local agents? Turn off just that one; `local-agent` is the base all four share, so turning it off stops them all. The suite is a starting point, not a lock-in.
+- **Add more**: any `@khorsheed/dsh-*` plugin installs the same way — copy the package name.
+- **Update**: from Settings → Plugins, or `dsh plugin --profile <your profile> update` to pull the newest versions in range.
+
+## Other suites
+
+The essentials are the layer everyone wants; add a suite for the scene you work in.
+
+| Suite | Package | What it is |
+|---|---|---|
+| [Basic Essentials](https://github.com/Khorsheed/dsh-basic) | `@khorsheed/dsh-basic` | Edit and withdraw messages, the timeline, title editing, quoting, artifact preview, local files, task capsules, compaction reminders, inline cards, the capability catalog, completion chimes, mobile |
+| [Writing Suite](https://github.com/Khorsheed/dsh-writing) | `@khorsheed/dsh-writing-suite` | The idea canvas, the novel genre, the reading space and local transcription — with "写作模式" (writing mode) |
+| [Learning Suite](https://github.com/Khorsheed/dsh-learning) | `@khorsheed/dsh-learning-suite` | Library-style close reading, the idea canvas and the reading space — with "学习模式" (learning mode) |
+| [Video Suite](https://github.com/Khorsheed/dsh-video) | `@khorsheed/dsh-video-suite` | A cutting room with speaker splitting and delete-the-word-deletes-the-audio, plus local-agent delegation — with "剪辑模式" (editing mode) |
+| [Gamedev Suite](https://github.com/Khorsheed/dsh-gamedev) | `@khorsheed/dsh-gamedev-suite` | Build small games with the agent, plus local-agent delegation — with "游戏开发模式" (game dev mode) |
+| [Eval Suite](https://github.com/Khorsheed/dsh-eval) | `@khorsheed/dsh-eval-suite` | Compare agents on this machine: question sets, experiments, judging and reports — with "评测模式" (eval mode) |
+| [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | — | The plugin monorepo: the capability map of every package and the development docs |
+
+## Compatibility
+
+Needs DSH 0.1.7 or later; verified on 0.2.1.
 
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
 
+## Developing
+
+Plugins live in [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins) (single source of truth); each member's details are in its own README under [packages/](https://github.com/Khorsheed/dsh-plugins/tree/main/packages). This repo carries only the profile template, install scripts and docs, no plugin code; the suite itself is published as `@khorsheed/dsh-dev-suite`. Issues welcome.
+
 ## Install guide for agents
 
 <details>
-<summary><strong>Expand: whole-pack install + single-package CLI install</strong> (follow this when the user says "install this for me")</summary>
+<summary><strong>Expand: whole-suite install + single-package CLI install</strong> (follow this when the user says "install this for me")</summary>
 
-### 1. Installing the whole pack
+### 1. Installing the whole suite (recommended)
 
-A whole-pack install requires host ≥ `0.1.5-rc.1`.
+Recommended: install it together with the basic suite (the Dev collection, one command):
 
-**1. Install and self-check offline (leaves the running instance alone)**
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite
+```
+
+Or Settings → Plugins → Add plugin, enter `@khorsheed/dsh-dev-suite`. Restart the web instance, then ask the user to **hard-refresh** (Cmd/Ctrl+Shift+R) — new interface code only loads on a hard refresh; a plain reload may keep serving the cached page. Then present the feature list (the plugin table above) and remind the user to start a new session in "开发模式" (dev mode).
+
+Uninstalling the suite (`dsh plugin --profile web remove @khorsheed/dsh-dev-suite`) removes its members too; to turn off just one, switch it off on the suite's detail page.
+
+### 2. Installing a single plugin
+
+- **Dialog**: Settings → Plugins → Add plugin, enter the package name (e.g. `@khorsheed/dsh-worktrees`), enable as prompted.
+- **CLI**: `dsh plugin --profile <profile> add <package name>`; `remove` to uninstall, `update` to upgrade.
+- When installing a single local agent (e.g. `@khorsheed/dsh-local-agent-codex`), install `@khorsheed/dsh-local-agent` alongside it.
+
+### 3. Hosts older than 0.1.7: directory install with this repo's scripts
+
+Hosts before 0.1.7 can't install a mode suite by package name yet; use this repo's scripts instead (needs host ≥ `0.1.5-rc.1`; this installs an earlier set of members, without TypeSafe and Context Lens):
 
 ```sh
 git clone https://github.com/Khorsheed/dsh-dev.git /tmp/dsh-dev
 sh /tmp/dsh-dev/scripts/install.sh
-```
-
-`install.sh` prints the composed row count at the end — cross-check against the script's own output (the member list is in the plugin list above). When `dsh` is not on PATH, use its full path (readable from the running instance's launch command via `ps`).
-
-**2. Same-port handover (the critical step)**
-
-```sh
 sh /tmp/dsh-dev/scripts/restart-into-dev.sh [port, default 3080]
 ```
 
-The script goes through the ankh-guard path: environment probe → credential record → preflight → watchdog stop-and-start with canary verification. **You will disconnect along with the host instance — this is expected.** The watchdog brings dev up on the original port. The script deliberately omits `--initiator`: the guard reads `$DSH_SESSION_ID` from your environment so the restart report can address your session, and you receive the "restart complete" followup when the user reopens it.
-
-**3. Tell the user to hard-refresh**
-
-The client bundles changed, so the browser needs Cmd/Ctrl+Shift+R.
-
-### 2. Installing a single plugin
-
-- **Dialog (0.1.7-rc.2+, recommended)**: Settings → Plugins → Add plugin, enter the package name, enable as prompted.
-- **CLI**: `dsh plugin --profile <profile> add <package name>`; `remove` to uninstall, `update` to upgrade.
-- **Bundle install**: the local-agent family installs in one shot via the meta package — `dsh plugin --profile <profile> add @khorsheed/dsh-bundle-local-agent`; member rows stay individually disable-able under Settings → Plugins.
+`install.sh` only places the profile template and never touches the running instance; the row count it prints at the end lets you double-check. If `dsh` isn't on PATH, use its full path (read it off the running instance's launch command with `ps`). `restart-into-dev.sh` stops the old instance and starts the new one on the same port through Ankh Guard's channel: **you'll be disconnected together with the host instance, and that's expected** — when the user reopens this session, you get a "restart complete" follow-up and carry on. Finally, ask the user to hard-refresh as well.
 
 </details>
