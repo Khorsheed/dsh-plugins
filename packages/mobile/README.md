@@ -4,7 +4,7 @@
 
 把 dsh 会话装进口袋——会话、模型、skill、工具仍由 Mac 跑，手机只拿走一个真正为它做的界面。
 
-官方 Web 客户端是桌面形态：侧栏吃掉半个屏幕、输入区密密麻麻、触控目标按鼠标设计。这个插件把同一套客户端重新呈现给窄屏触控设备——带分组和搜索的会话首页、可换行且够得着的输入工具栏、在手机上选电脑目录的面板——再配上一个可选的 [iOS 薄壳](../../apps/ios/README.zh.md)：嵌入同一套官方 Web 客户端，扫码登录即用。一切都可以干净移除：卸载即精确还原官方桌面界面，绝不写入宿主或兄弟插件的状态。
+官方 Web 客户端是桌面形态：侧栏吃掉半个屏幕、输入区密密麻麻、触控目标按鼠标设计。这个插件把同一套客户端重新呈现给窄屏触控设备——带分组和搜索的会话首页、可换行且够得着的输入工具栏、在手机上选电脑目录的面板。手机相机扫码、在浏览器里打开即可使用，还能「添加到主屏幕」；另有一个可选的 [iOS 薄壳](../../apps/ios/README.zh.md)（需自行用 Xcode 编译安装）。一切都可以干净移除：卸载即精确还原官方桌面界面，绝不写入宿主或兄弟插件的状态。
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-library.png" width="640" alt="移动端会话首页:时间与工作区分组、底部搜索框与扫码入口">
 
@@ -15,8 +15,8 @@
 - **会话首页**——时间/工作区分组、可折叠的工作区分节和底部搜索。分组偏好只存在当前浏览器（`dsh.mobile.grouping`）；导航覆盖期间官方聊天与草稿保持挂载。
 - **真正的移动布局，仅作用于当前客户端**——全宽右栏详情、移动设置、可换行且触控区域更大的输入工具栏（正文最低 17px，主要控件 16–17px）。官方正文渲染、输入框、模型/权限选择、附件与流式传输原样保留。
 - **在手机上选电脑目录**——已有工作区、逐级浏览、返回上级、显示隐藏目录、校验完整路径。工作区接入和 Room 成员目录选择共用此面板；桌面客户端保留原生选择器。
-- **扫码连接手机**——已认证的 Web 设置分区为部署的 HTTPS origin 现场生成官方登录链接，并在浏览器本地编码成二维码；iOS 壳扫码、确认主机即连上。
-- **一键公网入口（可选自愈）**——未配置静态地址时，设置页可一键启用 Cloudflare Quick Tunnel：插件自持 cloudflared 进程、经官方 configEditor 运行时热绑信任域名，隧道断线自动换新域名重绑，宿主不重启；手机浏览器扫码即用，可添加到主屏幕。
+- **扫码连接手机**——已认证的 Web 设置分区为部署的 HTTPS origin 现场生成官方登录链接，并在浏览器本地编码成二维码；手机相机扫码、在浏览器打开即登录。
+- **一键公网入口（无需账号和域名）**——未配置静态地址时，设置页可一键启用 Cloudflare Quick Tunnel。隧道由一个独立的小守护进程持有，**宿主重启和 deploy 都不换域名**，已登录的手机不用重扫；电脑睡眠、重启或隧道掉线时自动换新域名重绑，宿主不重启。
 - **带版本的原生桥接**——受认证的 `GET /api/mobile/handshake` 加 bridge version 1 消息通道，提供展示状态与可选原生设置/扫码入口。回前台经官方连接服务恢复，绝不重放发送命令；短暂切换且连接正常、初次正在连接时不重复重连，后台停留至少 5 秒仍刷新流式连接代际。
 - **与生态共处，但不强依赖**——没有任何社区插件是启动依赖。消息动作栏保留 message-tools 原有的复制/编辑/撤回，触屏长按用于系统文字选择；加号面板打开 Room 原有邀请表单；TaskPilot 与 Local Agent 界面各归其主。
 
@@ -44,52 +44,41 @@ dsh plugin --profile web remove @khorsheed/dsh-mobile
 
 ### 一键公网入口（Quick Tunnel，推荐无域名场景）
 
-未配置静态地址时，「连接手机」提供**启用公网入口（临时域名）**：插件自持一个 cloudflared 子进程（Quick Tunnel，无需账号和域名），把分配到的域名经宿主官方 `configEditor` **运行时热绑**进信任列表——不重启宿主、不放通配信任、探测不携带凭据。启用后页面直接出示二维码；手机浏览器（Safari/Chrome 均可）扫码即用，iOS 壳为可选增强。
+未配置静态地址时，「连接手机」提供**启用公网入口（临时域名）**。无需 Cloudflare 账号和域名，只要本机装了 cloudflared（`brew install cloudflared` 或官方发行包；未安装时设置页给出指引）。分配到的域名经宿主官方 `configEditor` **运行时热绑**进信任列表——不重启宿主、不放通配信任、探测不携带凭据。启用后页面直接出示二维码，手机浏览器（Safari/Chrome 均可）扫码即用。
 
-- 需要本机已安装 cloudflared（`brew install cloudflared` 或官方发行包）；未安装时设置页给出指引，插件保持静态模式。
-- 隧道断线或进程退出会自动换新域名重绑（恢复冷却 ≥10 分钟）；每次换域名手机需**重新扫码**，旧二维码与旧域名的 Cookie 随之失效。换绑瞬间浏览器 WebSocket 会瞬断并自动重连，无需重新登录。
-- 启用状态持久化在 `$DSH_HOME/state/mobile-quick-tunnel.json`；宿主重启后自动恢复入口，无需人工干预。停用即杀掉隧道进程并从信任列表剔除该域名。
-- 需要宿主 ≥ 0.1.7（提供官方 `configEditor` 服务）；更低版本、TLS 监听等不满足条件的部署自动显示静态配置指引。
+- **宿主重启不换域名。** cloudflared 由插件拉起的独立守护进程持有，不随宿主进程退出。宿主重启后插件接管仍在运行的隧道，域名不变，已登录手机的 Cookie 继续有效。
+- **何时换域名、需要重扫：** 电脑睡眠或重启、隧道掉线（Cloudflare 不承诺 Quick Tunnel 的在线时长）。插件自动换新域名并热绑，宿主不重启，唤醒后约一分钟内出新二维码。连续恢复受 10 分钟冷却节流，唤醒后的首次恢复不受限。
+- **失败会一直自动重试**（退避至最长 1 小时），设置页显示失败的环节和原因，便于排查。
+- **停用**会结束守护进程和隧道，并从信任列表剔除该域名。宿主停止或插件卸载后，守护进程在 10 分钟内自行退出。
+- 状态文件在 `$DSH_HOME/state/`：`mobile-quick-tunnel.json`（启用状态与当前域名）和 `mobile-quick-tunnel.sidecar.json`（守护进程心跳）。
 
-管理激活时，托管地址优先于 `publicOrigin`/`DSH_MOBILE_PUBLIC_ORIGIN`；停用后回落静态配置。生产部署仍推荐自有域名 + 命名隧道（地址固定，永不重扫）。
+管理激活时，托管地址优先于 `publicOrigin`/`DSH_MOBILE_PUBLIC_ORIGIN`；停用后回落静态配置。想彻底免重扫，用自有域名 + 命名隧道（见下）。
 
 ### 静态配置（自有域名/命名隧道）
 
-将手机可达的**无凭据 HTTPS origin** 配置为插件的 `publicOrigin` 选项，或在 **Host 进程**上设置 `DSH_MOBILE_PUBLIC_ORIGIN`（插件选项优先）。同一域名需加入 Host 的 `--trusted-host`，ingress 的 `PUBLIC_ORIGIN` 也必须一致。这些属于部署设置，不是手机偏好。
+将手机可达的**无凭据 HTTPS origin** 配置为插件的 `publicOrigin` 选项，或在 **Host 进程**上设置 `DSH_MOBILE_PUBLIC_ORIGIN`（插件选项优先）。同一域名需加入 Host 的 `--trusted-host`。HTTPS 入口（命名隧道、反向代理或私网）直接转发到 loopback 上的 Host 端口即可。这些属于部署设置，不是手机偏好。
 
 ```sh
-DSH_MOBILE_PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com
+DSH_MOBILE_PUBLIC_ORIGIN=https://dsh.example.com dsh web --no-open --port 3181 --trusted-host dsh.example.com
 ```
 
 1. 打开 Web「设置 → 连接手机」，核对展示的主机。
 2. 点击**显示登录二维码**。
-3. 在 iOS App 进入**连接设置 → 扫码连接电脑**，扫描后确认主机。
+3. 用手机相机扫码，核对主机地址后在浏览器中打开；装了 iOS App 的话也可以在 App 里扫码。
 
 `GET /api/mobile/connect` 仅返回配置状态。已认证、同源的 JSON `POST` 为部署者配置的 origin 调用官方 `connection.authenticatedUrl()` 取登录链接——浏览器输入不能覆盖目标地址。两个接口都经官方 Connection 注册，保留 Cookie 与 Host/Origin 校验，响应均为 `no-store`。二维码在浏览器本地编码：不调用第三方二维码服务、不记录凭据日志、不写浏览器存储。离开设置分区、页面隐藏或展示两分钟后会隐藏二维码并取消未完成的请求。地址缺失或无效、宿主能力不支持、目标域名未受信任时，只显示配置引导，不生成登录链接。
 
-**隐藏不等于凭据过期。** 二维码携带的是宿主进程的官方登录 token，在该进程重启前有效——不是短时或一次性配对码。隐藏或重新生成二维码不会撤销已复制的链接，也不会登出手机；已有 Cookie 的有效期仍由宿主控制。
+**隐藏不等于凭据过期。** 二维码携带的是宿主进程的官方登录 token，在该进程重启前有效——不是短时或一次性配对码。隐藏或重新生成二维码不会撤销已复制的链接，也不会登出手机。扫码登录后手机拿到的是宿主签发的 Cookie，绑定当前域名、有效期由宿主控制；域名不变时，它在宿主重启后依然有效。
 
-跨物理网络需要独立配置的 HTTPS/WSS 入口转发到 loopback Host 端口、有效官方认证、保持唤醒联网的 Mac 和网络可达的手机——仅启动 Host 不等于远程可用，App 也不会替你配置网络或凭据。Debug 模拟器构建仅允许 loopback HTTP，Release 要求 HTTPS。
+跨物理网络需要 HTTPS/WSS 入口转发到 loopback Host 端口、有效官方认证、保持唤醒联网的电脑和网络可达的手机——仅启动 Host 不等于远程可用。
 
 
 ### 公网入口检查与重新扫码
 
 连接手机页面在提供或生成二维码前，会匿名检查已配置的公网入口。不可达时返回明确状态，不签发登录链接。正在展示的二维码每 15 秒复查一次，入口失效或变化时收起。这是电脑侧连通性检查，不能保证手机所处网络同样可达。
 
-- **托管模式（一键入口）**：隧道失效由插件自动换新域名重绑，宿主不重启；页面状态实时可见，恢复后手机重新扫码。
+- **托管模式（一键入口）**：隧道失效由插件自动换新域名重绑，宿主不重启；页面状态实时可见，恢复后手机重新扫码。宿主重启不算失效，域名保持不变。
 - **静态模式**：检查只报告连接状态，不重建隧道、不部署插件、不重启宿主。公网入口失效时，由部署者手动恢复入口；需要变更宿主地址或信任域名的操作应先明确安排重启。电脑端地址可用后，重新打开「连接手机」，手机扫描新二维码即可。不会自动更新手机地址。
-
-## 可选：Quick Tunnel 预览
-
-网络接入属于部署配置，不是插件依赖——自建 HTTPS 反向隧道/服务器或私网连接均可；插件不嵌入任何域名、服务器或 Cloudflare 账号。无域名场景可直接用「连接手机」里的一键入口（见上），无需手工起隧道和 ingress；本节为手工/自定义部署保留。临时预览可用 [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)：无需账号或自有域名即可生成临时 HTTPS 地址，但不保证在线时间、限 200 并发、不支持 SSE（实测会话传输走 WebSocket）。
-
-```sh
-cloudflared tunnel --url http://127.0.0.1:3182 --protocol quic --no-autoupdate
-PUBLIC_ORIGIN=https://YOUR-HOST.trycloudflare.com HOST_PORT=3181 INGRESS_PORT=3182 node packages/mobile/examples/https-ingress.mjs
-dsh web --no-open --port 3181 --trusted-host YOUR-HOST.trycloudflare.com   # 独立 DSH_HOME、工作区、模型
-```
-
-随包分发的 `examples/https-ingress.mjs` 只绑定 loopback，保留公网 Host/Origin 交给官方认证，要求转发协议为 HTTPS，为上游 Cookie 补充 `Secure`，并透传 HTTP 流与 WebSocket 升级。它不读取 Host 私钥，也不增加配对或逐设备撤销系统——仅在 HTTPS 隧道之后运行，授权始终由 Host 负责。手机登录时，仅将 Host 启动链接的 origin 替换为隧道 origin，保留 `?token=...`；带凭据链接请私下保存。新建隧道会分配新域名：同步更新 ingress origin、Host trusted-host 和 mobile 公网 origin 后重新登录——旧 Cookie 绑定旧 authority。停止隧道进程即关闭这条公网路径；仅卸载插件不会。参见 [Quick Tunnel 验收记录](../../docs/acceptance/mobile-quick-tunnel-2026-09-11.md)。
 
 ## 可选协作界面
 
@@ -97,15 +86,14 @@ message-tools、TaskPilot、Room 与 Local Agent 家族独立安装；移动端�
 
 ## Compatibility
 
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：⚠️ 可用，带已声明的降级——`dsh.compat.minHost` 为 `0.1.5-rc.1`。本地浏览器/Host 验证与 iOS 模拟器构建在 `0.1.5-rc.1`（`183f08e9c6`）上通过，但移动布局与 iOS 壳仍在验收中；**Safari 在 0.1.5-rc.1 上恢复进行中回复需要选择启用的随包 ingress 适配层**（`MOBILE_SAFARI_COMPAT=1`，见「实现原理」）；**不提供设备配对与推送**。更旧的宿主：低于 `minHost` 自行承担风险——均不受支持。
-- 一键公网入口（Quick Tunnel 自愈）：需要宿主 ≥ 0.1.7（官方 `configEditor` 服务）与本机 cloudflared；缺任一能力时「连接手机」回退静态配置指引，不影响其余功能。托管隧道直连宿主端口、不经随包 ingress——Safari 恢复进行中回复的限制在托管路径上同样适用（见「实现原理」）。iOS/Android 浏览器扫码后可「添加到主屏幕」：移动布局激活时注入免凭据 manifest 与 Apple meta（无 service worker，不声明离线）。
-- 源码线（deepseek-harness master）：host-021 波对 0.2.1-rc.1 树全量构建+测试通过，但按 `dsh.compat` 的声明，真机/网络验收矩阵完成前不声明 `verifiedHost`——在其他宿主上采用前请先审计。
+- 宿主 0.2.x（`@deepseek-ai/dsh@0.2.0-rc.2` 起）：⚠️ 可用，带已声明的降级——`dsh.compat.minHost` 为 `0.2.0-rc.2`，**不再支持 0.1.x 宿主**（0.1.x 请停留在本插件 0.1.4）。对 0.2.1-rc.1 树全量构建+测试通过，但真机/网络验收矩阵完成前不声明 `verifiedHost`；移动布局与 iOS 壳仍在验收中；**不提供设备配对与推送**。
+- 一键公网入口：需要本机 cloudflared；缺少时「连接手机」回退静态配置指引，不影响其余功能。iOS/Android 浏览器扫码后可「添加到主屏幕」：移动布局激活时注入免凭据 manifest 与 Apple meta（无 service worker，不声明离线）。
 
 会话首页使用可选的官方 sessions/workspaces/uiWorkspace 服务，过滤已归档会话和子代理行、保留普通分叉会话；缺少服务时回退基础官方侧栏。启用布局前检查公开 frame/slot DOM 锚点；未知结构保留官方页面——结构变化可能降低移动可用性，但不改变 Host 执行。原生桥接版本变化需要判断 App 兼容性；兼容的 Web 更新不自动要求重发 IPA。参见[导航/扫码验收](../../docs/acceptance/mobile-navigation-2026-09-11.md)、[rc1 验收证据](../../docs/acceptance/mobile-rc1-2026-09-11.md)与[提案](../../proposals/active/2026-08-19-mobile-access.md)。无需修改官方或兄弟插件源码。
 
 ## 已知限制
 
-- **Quick Tunnel 无在线承诺**——托管入口断线会自动恢复，但每次换新域名手机必须重新扫码；需要永久地址请用自有域名 + 命名隧道。
+- **Quick Tunnel 无在线承诺**——宿主重启不换域名，但电脑睡眠/重启或隧道掉线后会换新域名，手机必须重新扫码；需要永久地址请用自有域名 + 命名隧道。
 - **开发基线**——相机/文件选择、分享/下载、后台恢复和社区插件组合尚未完成验收。iOS 扫码接收已有官方 HTTPS 登录链接并要求确认主机；相机实测验收仍待完成。
 - **没有逐设备凭据**——一次性设备配对、逐设备撤销、Keychain 配对和 APNs 推送均未实现；隐藏二维码不撤销任何东西（见上）。
 - **热卸载未通过验收**——依赖变化需要受控重启 Host 并刷新客户端。
@@ -116,19 +104,17 @@ message-tools、TaskPilot、Room 与 Local Agent 家族独立安装；移动端�
 ## 实现原理
 
 <details>
-<summary>架构、安全边界与 Safari 适配层（点击展开）</summary>
+<summary>架构与安全边界（点击展开）</summary>
 
 **Host 面。** 三条路由挂在官方受认证的 Connection 注册表上，且仅在组合中存在 `connection` 时才挂载（`ctx.inject(['connection'])`）：`GET/POST /api/mobile/connect`（扫码登录签发——POST 额外要求同源 JSON 动作与 `ready` 状态的目标地址，导航或表单永远无法引出登录链接，provider 错误绝不回显）、`GET /api/mobile/directories`（只读目录名/路径，不超出操作者现有文件系统权限——不读文件内容、不创建目录；上限 1,000 行目录 / 10,000 个扫描条目并带截断标记）、`GET /api/mobile/handshake`（只读能力发现：桥接版本、能力清单、`devicePairing: false`、`pushNotifications: false`）。所有响应均为 `no-store`。
 
-**Quick Tunnel supervisor（可选）。** 第四条路由 `GET/POST /api/mobile/tunnel` 与 connect 同级挂在官方认证注册表后：GET 只读状态；POST 为同源 JSON 的显式启停动作。启用时插件自持 cloudflared 子进程（生命周期绑定插件，dispose 即杀），从进程输出解析分配到的域名，边缘匿名探测（接受 401/403/2xx——域名刚分配给本进程，403 同样证明边缘转发）通过后，经官方 `configEditor.edit` 把 connection 行 `trustedHosts` 替换为「启动值与操作者条目 + 当前域名」——只剔除 supervisor 自己管理的旧域名，启动参数里的静态回落域名在轮换和停用后始终保留；`!!js` 启动表达式经 `webStartup` 求值，未触碰的 key 保留原表达式；绑后严格探测（401/2xx）验证信任落地才出示地址。每次启动周期的失败以编码化的 detail（如 `edge-timeout`）写入状态文件并 `console.error` 到宿主日志，绝不记录可能含凭据的 provider 消息。supervisor 本体活在 apply 根级而非 `ctx.inject(['connection'])` 内，否则会被自己触发的重绑销毁。健康循环每 45s 匿名严格探测，连续 3 次失败或进程退出即换新域名重绑，恢复冷却 ≥10 分钟；连续 3 次启动失败进入 `error` 等人工处理。启停状态持久化于 `$DSH_HOME/state/mobile-quick-tunnel.json`，宿主重启后自动恢复。supervisor 不新增 peer 依赖：对 configEditor/webServer/profileContext/webStartup 仅做结构化探测且惰性复评（组合启动期严格 `ctx.get` 对未 ACTIVE 的 fiber 返回 undefined，一次性探测会把"不支持"烤死），缺失即 `unsupported`，绝不因能力缺失导致启动失败。
+**Quick Tunnel supervisor（可选）。** 第四条路由 `GET/POST /api/mobile/tunnel` 与 connect 同级挂在官方认证注册表后：GET 只读状态；POST 为同源 JSON 的显式启停动作。启用时插件以 detached 方式拉起随包的零依赖守护进程 `lib/tunnel-sidecar.js`，由它持有 cloudflared、解析分配到的域名，并每 10 秒写心跳状态文件。宿主重启后 supervisor 读心跳文件，同端口且进程存活就直接接管，不开新隧道；域名已在信任列表里时也不再写 profile。守护进程在三种情况下连同 cloudflared 一起退出：收到 SIGTERM（停用）、cloudflared 退出、supervisor 续租的 lease 文件 10 分钟未更新（宿主停止或插件卸载）。新域名经边缘匿名探测（接受 401/403/2xx——域名刚分配给本进程，403 同样证明边缘转发）通过后，经官方 `configEditor.edit` 把 connection 行 `trustedHosts` 替换为「启动值与操作者条目 + 当前域名」——只剔除 supervisor 自己管理的旧域名，启动参数里的静态回落域名在轮换和停用后始终保留；`!!js` 启动表达式经 `webStartup` 求值，未触碰的 key 保留原表达式；绑后严格探测（401/2xx）验证信任落地才出示地址。健康循环每 20 秒检查守护进程存活并匿名探测，连续 3 次失败或进程消失即换新域名，恢复冷却 10 分钟；两次检查间隔异常大视为刚从睡眠唤醒，一次失败即立即恢复。启动失败一直重试，3 次后退避至最长 1 小时；写信任列表失败时保留隧道，下次重试直接接管。失败详情记录为「环节: 错误」（URL 与 token 形状的内容一律脱敏），写入状态文件并 `console.error` 到宿主日志。supervisor 本体活在 apply 根级而非 `ctx.inject(['connection'])` 内，否则会被自己触发的重绑销毁。supervisor 不新增 peer 依赖：对 configEditor/webServer/profileContext/webStartup 仅做结构化探测且惰性复评（组合启动期严格 `ctx.get` 对未 ACTIVE 的 fiber 返回 undefined，一次性探测会把"不支持"烤死），持久化的启用状态也等 profile 目录可解析后再读取；缺失即 `unsupported`，绝不因能力缺失导致启动失败。
 
 **Client 面。** 一个浏览器持有的 `MobilePresentation` 切换文档元素上的 `data-dsh-mobile`，持有样式表、observer 与监听器，且仅在官方 frame 锚点（`[data-slot="root"]` 且含 main/sidebar）符合预期结构时启用——否则保留官方页面。槽位贡献全部经 `slots.inject`（绝不裸 register）：`settings.section`/`mobile-connect`、`shell.overlay`/`mobile-directory` 与 `/mobile-navigation`、`conversation.input.dock` + `conversation.session.header.actions`/`mobile-send-focus`（本机消息确认提交后收起同一个空白编辑器；提交失败和后续草稿保留焦点）、`conversation.session.header.actions`/`mobile-room-queue`、`conversation.hero.brand.mark` 的欢迎内容、`conversation.input.left`/`mobile-input-tools`（加号菜单归并官方附件/指令/权限入口），以及移动模式激活期间对两个公开 `directoryFlow` 槽位的 priority −100 遮蔽。Room 输入框选举刷新使用一个始终让出的 `conversation.composer` 条目，绝不替换胜者。词典随包提供 `en`/`zh`。移动布局激活期间注入免凭据的 data-URI manifest（Chrome/Android）与 Apple meta（iOS）支持「添加到主屏幕」——start_url 仅含 origin + pathname，无 service worker，桌面不注入，卸载即移除。
 
 **原生桥接（version 1）。** 壳声明 `window.__DSH_MOBILE_SHELL__`；客户端上报 `ready`/`unloaded` 及布局与锚点诊断，仅接受同 origin 主框架的 `chrome`、`settings`、`scan` 消息。新增原生动作需壳声明能力，旧壳保留回退控件。桥接不授予文件或命令权限。
 
-**Safari 流式同步兼容层。** 宿主 `0.1.5-rc.1` 的 JSON 校验会在 Safari 还原进行中回复时误拒绝普通对象。随包 ingress 接受 `MOBILE_SAFARI_COMPAT=1`，作为选择启用的交付层适配——不修改宿主源码：只检查 WebKit 对 `/plugins/` JavaScript 的 GET 请求，由完整已知校验函数的 SHA-256 指纹决定是否替换，未知代码和已修复代码原样透传。认证、RPC 请求体、WebSocket 帧和宿主执行保持不变；直连局域网或其他 ingress 不会获得此适配。有界 JavaScript 向支持 gzip 的客户端压缩输出（超过 16 MiB、非 JS、认证失败、identity 编码不匹配的响应原样透传）；适配后的资源带校正后的字节长度、无旧 ETag/digest，保持 `private/no-store`。升级宿主时检查 `x-dsh-mobile-compat` 响应头与 ingress 不含请求内容的兼容日志，不自动扩大指纹范围；上游修复通过真实 WebKit 前后台/重连验收后移除该开关。正式部署从已安装 tarball 的 `examples/` 启动 ingress，不用开发检出。
-
-**卸载。** dispose 只移除自有资源——样式、`data-dsh-mobile` 布局标记、observer、监听、路由和槽位贡献——并恢复被适配的 `pickDirectory` 方法。会话、宿主任务、共享连接、官方 Cookie 和 App/VPN 全部原样保留。
+**卸载。** dispose 只移除自有资源——样式、`data-dsh-mobile` 布局标记、observer、监听、路由和槽位贡献——并恢复被适配的 `pickDirectory` 方法。会话、宿主任务、共享连接、官方 Cookie 和 App/VPN 全部原样保留。一键入口的守护进程不随 dispose 结束（否则宿主重启就会换域名），而是在 lease 停止续租 10 分钟后自行退出；要立即关闭公网入口，请在卸载前先点「停用公网入口」。
 
 </details>
 

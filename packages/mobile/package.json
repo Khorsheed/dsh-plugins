@@ -5,7 +5,7 @@
   "type": "module",
   "license": "MIT",
   "engines": {
-    "dsh": ">=0.1.5-rc.1 <0.3.0-0"
+    "dsh": ">=0.2.0-rc.2 <0.3.0-0"
   },
   "keywords": [
     "dsh-plugin",
@@ -38,7 +38,6 @@
     "lib",
     "cordis.patch.yml",
     "locale/*.json",
-    "examples/*.mjs",
     "README.md",
     "README.en.md",
     "LICENSE"
@@ -61,22 +60,22 @@
       ]
     },
     "compat": {
-      "minHost": "0.1.5-rc.1",
-      "notes": "Mobile layout and iOS shell under validation; Safari live-reply resume on Host 0.1.5-rc.1 requires the opt-in bundled ingress adapter. Device pairing and push are not provided. The one-click Quick Tunnel entry (self-healing public access) requires host >=0.1.7 (configEditor) and a local cloudflared binary; older hosts fall back to static-origin configuration."
+      "minHost": "0.2.0-rc.2",
+      "notes": "Mobile layout and iOS shell under validation; device pairing and push are not provided. The one-click Quick Tunnel entry needs a local cloudflared binary; without it the connect section falls back to static-origin configuration."
     }
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-connection": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-layout": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/dsh-client-connection": "^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-conversation": "^0.2.0-rc.1 || ^0.2.1-rc.1",
     "react": "^18.2.0",
-    "@deepseek-ai/dsh-client-ui-workspace": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-api-session-controller": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
-    "@deepseek-ai/dsh-api-workspace-controller": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1"
+    "@deepseek-ai/dsh-client-ui-workspace": "^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/dsh-api-workspace-controller": "^0.2.0-rc.1 || ^0.2.1-rc.1"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-client-connection": {

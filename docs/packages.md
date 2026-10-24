@@ -31,7 +31,7 @@
 | `@khorsheed/dsh-dev-suite` | `packages/dev` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
-| `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.2 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
+| `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.3 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
 | `@khorsheed/dsh-game` | `packages/game` | 0.1.0 | bundle | — | web | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-gamedev-suite` | `packages/gamedev` | 0.1.0 | bundle | — | — | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.16 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
@@ -47,7 +47,7 @@
 | `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
 | `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
 | `@khorsheed/dsh-client-message-tools` | `packages/message-tools` | 0.3.4 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
-| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.4 | bundle | — | web | 0.1.5-rc.1 | basic |
+| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.1.4 | bundle | — | web | 0.2.0-rc.2 | basic |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.4 | bundle | — | web | 0.1.5-rc.1 | basic |
 | `@khorsheed/dsh-room` | `packages/room` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | dev |
 | `@khorsheed/dsh-client-session-title-edit` | `packages/session-title-edit` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
@@ -60,7 +60,7 @@
 | `@khorsheed/dsh-video-suite` | `packages/video` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-video-studio` | `packages/video-studio` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.5 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
-| `@khorsheed/dsh-worktrees` | `packages/worktrees` | 0.3.2 | bundle | — | web | 0.1.5-rc.1 | dev |
+| `@khorsheed/dsh-worktrees` | `packages/worktrees` | 0.3.3 | bundle | — | web | 0.1.5-rc.1 | dev |
 | `@khorsheed/dsh-writing-suite` | `packages/writing` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | — |
 
 ## 整合 profile

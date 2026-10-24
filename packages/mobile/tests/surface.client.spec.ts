@@ -5,8 +5,8 @@ const instances: MobileSurface[] = []
 afterEach(() => { instances.splice(0).forEach(x => x.dispose()); document.body.innerHTML = '' })
 function fixture() {
   document.body.innerHTML = `<div data-mobile-frame><div data-slot="main.conversation"><div data-phase="active">
-  <div data-slot="conversation.session.header"><header><div data-test-row><div><nav><span><button disabled>Title</button><div data-slot="conversation.session.header.lineage"></div></span></nav><div data-slot="conversation.session.header.actions"><span title="Preset description"><svg><mask id="mask0_agent_preset_16"></mask></svg>Standard</span></div></div><div data-slot="conversation.session.header.utilities"><span><div><button><img src="/open-in-app/icon/finder"/></button><button>Apps</button></div></span><span><button aria-label="More actions" aria-haspopup="menu" aria-busy="false">More</button></span></div><div data-conversation-header-corner><button data-sidebar-right-expand>Panel</button></div></div><div role="tablist"><button role="tab" aria-selected="true">对话</button><button role="tab" aria-selected="false">轨迹</button></div></header></div>
-  <div data-conversation-scroll><div data-composer-seat><div data-composer-card><textarea>Unsent draft</textarea></div><div data-composer-stats>51 tokens</div></div></div>
+  <div data-slot="conversation.session.header"><header><div data-test-row><div><nav><span><button disabled>Title</button><div data-slot="conversation.session.header.lineage"></div></span></nav><div data-slot="conversation.session.header.actions"><span title="Preset description"><svg><mask id="mask0_agent_preset_16"></mask></svg>Standard</span></div></div><div data-slot="conversation.session.header.utilities"><span><div data-open-target="directory"><button aria-label="Finder"><img src="data:image/png;base64,x"></button><button aria-haspopup="menu">Apps</button></div></span><span><button aria-label="More actions" aria-haspopup="menu" aria-busy="false">More</button></span></div><div data-conversation-header-corner><button data-sidebar-right-expand>Panel</button></div></div><div role="tablist"><button role="tab" aria-selected="true">对话</button><button role="tab" aria-selected="false">轨迹</button></div></header></div>
+  <div data-conversation-scroll><div data-composer-seat><div data-composer-card><textarea>Unsent draft</textarea></div><div>51 tokens</div></div></div>
   </div></div></div>`
   document.body.insertAdjacentHTML('beforeend', '<button data-mobile-panel-entry>Panels</button>')
   const frame = document.querySelector<HTMLElement>('[data-mobile-frame]')!
@@ -105,7 +105,7 @@ it('leaves unknown lineage shapes and interactive subagent switchers unchanged',
   expect(document.querySelector('[data-mobile-lineage-count]')).toBeNull()
 })
 
-it('compacts the 0.1.7 text crumb without relying on Agent Team being present', () => {
+it('compacts the text crumb without relying on Agent Team being present', () => {
   const { frame, surface } = fixture()
   const title = document.querySelector('nav button:disabled')!
   const plain = document.createElement('span'); plain.textContent = title.textContent

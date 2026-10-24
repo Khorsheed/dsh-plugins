@@ -73,10 +73,6 @@ describe('mobile session navigation', () => {
     expect(recentSessions(state, ['archived'], '').map(r => r.id)).toEqual(['fork', 'current', 'new', 'old'])
     expect(state.ids).toEqual(original)
   })
-  it('keeps the selected blank visible through the 0.1.5 list `current` read as well', () => {
-    const state = { ...list([row('current', { blank: true, updatedAt: 2 }), row('new', { updatedAt: 1 })]), current: 'current' } as SessionListState
-    expect(recentSessions(state, [], '').map(r => r.id)).toEqual(['current', 'new'])
-  })
   it('filters metadata and delegates selection to the official navigation owner exactly once', () => {
     const f = fixture()
     render(<MobileLibrary {...f} t={t} />)

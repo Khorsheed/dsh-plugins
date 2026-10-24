@@ -1,32 +1,34 @@
-import { EventEmitter } from 'node:events'
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createTunnelSupervisor, findCloudflared, rotateTrustedHosts, tunnelResponse, type TunnelDeps, type TunnelLocate, type TunnelSupervisor } from '../src/tunnel.ts'
+import { createTunnelSupervisor, failureDetail, findCloudflared, nodeSidecar, rotateTrustedHosts, tunnelResponse, type SidecarControl, type TunnelDeps, type TunnelLocate, type TunnelSupervisor } from '../src/tunnel.ts'
+import type { SidecarConfig } from '../src/tunnel-sidecar.ts'
 
-class FakeChild extends EventEmitter {
-  stdout = new EventEmitter()
-  stderr = new EventEmitter()
-  exitCode: number | null = null
-  killed = false
-  kill() {
-    if (this.killed) return
-    this.killed = true
-    this.exitCode = 0
-    queueMicrotask(() => this.emit('exit', 0))
+/** Fake detached sidecars: real state files, fake processes. */
+class FakeSidecars implements SidecarControl {
+  launched: (SidecarConfig & { pid: number })[] = []
+  dead = new Set<number>()
+  stopped = new Set<number>()
+  private nextPid = 1000
+  constructor(private readonly domains: string[], private readonly clock: () => number = Date.now) {}
+  launch(config: SidecarConfig) {
+    const pid = this.nextPid++
+    this.launched.push({ ...config, pid })
+    const host = this.domains.shift() ?? `rotated-${this.launched.length}-two-three.trycloudflare.com`
+    mkdirSync(join(config.stateFile, '..'), { recursive: true })
+    writeFileSync(config.stateFile, JSON.stringify({ pid, port: config.port, host, startedAt: this.clock(), heartbeatAt: this.clock() }))
   }
-  crash() {
-    this.exitCode = 1
-    this.emit('exit', 1)
-  }
-  announce(domain: string) {
-    queueMicrotask(() => this.stderr.emit('data', Buffer.from(`+---+\n|  Your quick Tunnel: https://${domain}  |\n`)))
-  }
+  /** A live sidecar keeps heartbeating, on the supervisor's clock. */
+  read(file: string) { const state = nodeSidecar.read(file); return state && this.alive(state.pid) ? { ...state, heartbeatAt: this.clock() } : state }
+  alive(pid: number) { return !this.dead.has(pid) && !this.stopped.has(pid) }
+  stop(pid: number) { this.stopped.add(pid) }
+  crash(index = this.launched.length - 1) { this.dead.add(this.launched[index]!.pid) }
 }
 
 function fakeEditor(stored: Record<string, unknown> = { trustedHosts: { __jsExpr: 'ctx.webStartup.trustedHosts' } }) {
-  const entry = { options: { id: 'connection', name: '@deepseek-ai/dsh-client-connection' } }
+  // The loader entry's options.config is the live config the host applied.
+  const entry = { options: { id: 'connection', name: '@deepseek-ai/dsh-client-connection', config: stored } }
   return {
     entry,
     stored,
@@ -37,12 +39,15 @@ function fakeEditor(stored: Record<string, unknown> = { trustedHosts: { __jsExpr
   }
 }
 
-function makeDeps(overrides: Partial<TunnelDeps> & { domains?: string[]; locate?: Partial<TunnelLocate> } = {}) {
-  const { domains = ['alpha-beta-gamma-delta.trycloudflare.com'], locate: locateOverrides, ...rest } = overrides
-  const queue = [...domains]
-  const dir = mkdtempSync(join(tmpdir(), 'dsh-mobile-tunnel-'))
+const dirs: string[] = []
+afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }) })
+
+function makeDeps(overrides: Partial<TunnelDeps> & { domains?: string[]; locate?: Partial<TunnelLocate>; dir?: string; sidecars?: FakeSidecars } = {}) {
+  const { domains = ['alpha-beta-gamma-delta.trycloudflare.com'], locate: locateOverrides, dir: givenDir, sidecars: givenSidecars, ...rest } = overrides
+  const dir = givenDir ?? mkdtempSync(join(tmpdir(), 'dsh-mobile-tunnel-'))
+  dirs.push(dir)
   const editor = fakeEditor()
-  const children: FakeChild[] = []
+  const sidecars = givenSidecars ?? new FakeSidecars([...domains], rest.now)
   const deps: TunnelDeps = {
     locate: {
       configEditor: () => editor,
@@ -52,27 +57,23 @@ function makeDeps(overrides: Partial<TunnelDeps> & { domains?: string[]; locate?
       ...locateOverrides,
     },
     findBinary: () => '/fake/cloudflared',
-    spawnProcess: ((..._args: unknown[]) => {
-      const child = new FakeChild()
-      children.push(child)
-      const domain = queue.shift() ?? `rotated-${children.length}-two-three.trycloudflare.com`
-      child.announce(domain)
-      return child
-    }) as unknown as typeof spawn,
+    sidecar: sidecars,
     probe: vi.fn(async () => true),
     edgeProbe: vi.fn(async () => true),
     // Yield to a macrotask so real timers (vi.waitFor, cooldowns) can fire
     // between supervisor polling iterations.
     sleep: () => new Promise<void>(resolve => setTimeout(resolve, 0)),
-    healthIntervalMs: 60_000,
+    healthIntervalMs: 5,
+    wakeGapMs: 60_000,
     recoveryCooldownMs: 60_000,
+    bootProbeMs: 1,
     ...rest,
   }
-  return { deps, editor, children, dir }
+  return { deps, editor, sidecars, dir }
 }
 
-const dirs: string[] = []
-afterEach(() => { while (dirs.length) rmSync(dirs.pop()!, { recursive: true, force: true }) })
+const ready = (tunnel: TunnelSupervisor) => vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
+const stateOf = (dir: string) => JSON.parse(readFileSync(join(dir, 'state', 'mobile-quick-tunnel.json'), 'utf8'))
 
 describe('rotateTrustedHosts', () => {
   it('prunes only the managed host, keeps launch and operator authorities — even stale quick-tunnel ones — and appends the live one', () => {
@@ -138,6 +139,15 @@ describe('tunnelResponse', () => {
   })
 })
 
+describe('failureDetail', () => {
+  it('names the stage, keeps host error text and redacts URL- and token-shaped content', () => {
+    expect(failureDetail('tunnel', new Error('start-timeout'))).toBe('tunnel: start-timeout')
+    expect(failureDetail('bind', new Error('Configuration entry is no longer available'))).toBe('bind: Error: Configuration entry is no longer available')
+    expect(failureDetail('bind', new TypeError('fetch https://h.example/?token=abc failed token=xyz'))).toBe('bind: TypeError: fetch <url> failed token=<redacted>')
+    expect(failureDetail('edge', 'weird')).toBe('edge: unknown')
+  })
+})
+
 describe('quick tunnel supervisor', () => {
   it('reports unsupported with a reason when a capability is missing', () => {
     expect(createTunnelSupervisor(makeDeps({ locate: { profileHome: () => undefined } }).deps).status()).toMatchObject({ state: 'unsupported', reason: 'no-profile' })
@@ -147,169 +157,198 @@ describe('quick tunnel supervisor', () => {
     expect(createTunnelSupervisor(makeDeps({ findBinary: () => undefined }).deps).status()).toMatchObject({ state: 'unsupported', reason: 'no-cloudflared' })
   })
 
-  it('starts through the boot window once late services activate instead of baking unsupported', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'dsh-mobile-tunnel-'))
-    dirs.push(dir)
-    mkdirSync(join(dir, 'state'), { recursive: true })
-    writeFileSync(join(dir, 'state', 'mobile-quick-tunnel.json'), JSON.stringify({ enabled: true, origin: null, updatedAt: '' }))
-    const built = makeDeps({ bootProbeMs: 1, bootAttempts: 10_000 })
-    dirs.push(built.dir)
-    let available = false
-    built.deps.locate = { ...built.deps.locate, profileHome: () => dir, configEditor: () => (available ? built.editor : undefined) }
+  it('reads the persisted enablement once the profile home resolves and starts through the boot window', async () => {
+    const built = makeDeps({ bootAttempts: 10_000 })
+    mkdirSync(join(built.dir, 'state'), { recursive: true })
+    writeFileSync(join(built.dir, 'state', 'mobile-quick-tunnel.json'), JSON.stringify({ enabled: true, origin: null, updatedAt: '' }))
+    let home: string | undefined
+    let editor = false
+    built.deps.locate = { ...built.deps.locate, profileHome: () => home, configEditor: () => (editor ? built.editor : undefined) }
     const tunnel = createTunnelSupervisor(built.deps)
-    expect(tunnel.status()).toMatchObject({ state: 'unsupported', reason: 'no-config-editor' })
-    setTimeout(() => { available = true }, 50)
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 3000, interval: 5 })
-    expect(built.children).toHaveLength(1)
+    expect(tunnel.status()).toMatchObject({ state: 'unsupported', reason: 'no-profile' })
+    setTimeout(() => { home = built.dir }, 20)
+    setTimeout(() => { editor = true }, 50)
+    await ready(tunnel)
+    expect(built.sidecars.launched).toHaveLength(1)
     tunnel.dispose()
   })
 
   it('starts disabled and idle when nothing was persisted', () => {
-    const { deps, children } = makeDeps()
+    const { deps, sidecars } = makeDeps()
     const tunnel = createTunnelSupervisor(deps)
     expect(tunnel.status()).toEqual({ state: 'off', origin: null })
     expect(tunnel.managedOrigin()).toBeUndefined()
-    expect(children).toHaveLength(0)
+    expect(sidecars.launched).toHaveLength(0)
+    tunnel.dispose()
   })
 
-  it('enables: spawns the tunnel, hot-binds the live authority and persists', async () => {
-    const { deps, editor, children, dir } = makeDeps()
-    dirs.push(dir)
+  it('enables: launches the sidecar, hot-binds the live authority, persists and renews the lease', async () => {
+    const { deps, editor, sidecars, dir } = makeDeps()
     const tunnel = createTunnelSupervisor(deps)
     await tunnel.enable()
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
-    expect(children).toHaveLength(1)
-    expect(tunnel.status().origin).toBe('https://alpha-beta-gamma-delta.trycloudflare.com')
+    await ready(tunnel)
+    expect(sidecars.launched).toEqual([expect.objectContaining({ binary: '/fake/cloudflared', port: 3080, stateFile: join(dir, 'state', 'mobile-quick-tunnel.sidecar.json') })])
     expect(tunnel.managedOrigin()).toBe('https://alpha-beta-gamma-delta.trycloudflare.com')
     expect(editor.stored.trustedHosts).toEqual(['launch.internal', 'alpha-beta-gamma-delta.trycloudflare.com'])
-    expect(JSON.parse(readFileSync(join(dir, 'state', 'mobile-quick-tunnel.json'), 'utf8'))).toMatchObject({ enabled: true, origin: 'https://alpha-beta-gamma-delta.trycloudflare.com' })
+    expect(stateOf(dir)).toMatchObject({ enabled: true, origin: 'https://alpha-beta-gamma-delta.trycloudflare.com' })
+    expect(existsSync(join(dir, 'state', 'mobile-quick-tunnel.sidecar.json.lease'))).toBe(true)
     tunnel.dispose()
+  })
+
+  it('adopts the running tunnel after a host restart: same domain, no relaunch, no profile write', async () => {
+    const first = makeDeps()
+    const tunnel = createTunnelSupervisor(first.deps)
+    await tunnel.enable()
+    await ready(tunnel)
+    tunnel.dispose()
+    expect(first.sidecars.stopped.size).toBe(0)
+    const editsBefore = first.editor.edit.mock.calls.length
+    const again = createTunnelSupervisor({ ...first.deps })
+    await ready(again)
+    expect(again.managedOrigin()).toBe('https://alpha-beta-gamma-delta.trycloudflare.com')
+    expect(first.sidecars.launched).toHaveLength(1)
+    expect(first.editor.edit.mock.calls.length).toBe(editsBefore)
+    again.dispose()
+  })
+
+  it('awaits a live sidecar that has not announced its domain yet instead of replacing it', async () => {
+    const built = makeDeps()
+    const file = join(built.dir, 'state', 'mobile-quick-tunnel.sidecar.json')
+    mkdirSync(join(built.dir, 'state'), { recursive: true })
+    writeFileSync(join(built.dir, 'state', 'mobile-quick-tunnel.json'), JSON.stringify({ enabled: true, origin: null, updatedAt: '' }))
+    writeFileSync(file, JSON.stringify({ pid: 4242, port: 3080, host: null, startedAt: Date.now(), heartbeatAt: Date.now() }))
+    const tunnel = createTunnelSupervisor(built.deps)
+    setTimeout(() => writeFileSync(file, JSON.stringify({ pid: 4242, port: 3080, host: 'late-one-two-three.trycloudflare.com', startedAt: Date.now(), heartbeatAt: Date.now() })), 30)
+    await ready(tunnel)
+    expect(tunnel.managedOrigin()).toBe('https://late-one-two-three.trycloudflare.com')
+    expect(built.sidecars.launched).toHaveLength(0)
+    expect(built.sidecars.stopped.size).toBe(0)
+    tunnel.dispose()
+  })
+
+  it('relaunches when the host comes back on a different port', async () => {
+    const first = makeDeps()
+    const tunnel = createTunnelSupervisor(first.deps)
+    await tunnel.enable()
+    await ready(tunnel)
+    tunnel.dispose()
+    const again = createTunnelSupervisor({ ...first.deps, locate: { ...first.deps.locate, webServer: () => ({ port: 3181, protocol: 'http:' }) } })
+    await vi.waitFor(() => expect(again.managedOrigin()).toBe('https://rotated-2-two-three.trycloudflare.com'), { timeout: 2000, interval: 5 })
+    expect(first.sidecars.stopped.has(first.sidecars.launched[0]!.pid)).toBe(true)
+    expect(first.editor.stored.trustedHosts).toEqual(['launch.internal', 'rotated-2-two-three.trycloudflare.com'])
+    again.dispose()
   })
 
   it('recovers a dead tunnel with a fresh domain and prunes the stale grant', async () => {
-    const { deps, editor, children, dir } = makeDeps({ healthIntervalMs: 5, probe: vi.fn(async () => true) })
-    dirs.push(dir)
+    const { deps, editor, sidecars } = makeDeps()
     const tunnel = createTunnelSupervisor(deps)
     await tunnel.enable()
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
+    await ready(tunnel)
     ;(deps.probe as ReturnType<typeof vi.fn>).mockResolvedValue(false)
-    await vi.waitFor(() => expect(children).toHaveLength(2), { timeout: 2000, interval: 5 })
+    await vi.waitFor(() => expect(sidecars.launched).toHaveLength(2), { timeout: 2000, interval: 5 })
     ;(deps.probe as ReturnType<typeof vi.fn>).mockResolvedValue(true)
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
+    await ready(tunnel)
     expect(tunnel.status().origin).toBe('https://rotated-2-two-three.trycloudflare.com')
     expect(editor.stored.trustedHosts).toEqual(['launch.internal', 'rotated-2-two-three.trycloudflare.com'])
-    expect(children[0].killed).toBe(true)
+    expect(sidecars.stopped.has(sidecars.launched[0]!.pid)).toBe(true)
     tunnel.dispose()
   })
 
-  it('recovers when the child process exits unexpectedly', async () => {
-    const { deps, children, dir } = makeDeps()
-    dirs.push(dir)
+  it('recovers when the sidecar dies, then throttles further churn inside the cooldown', async () => {
+    const { deps, sidecars } = makeDeps()
     const tunnel = createTunnelSupervisor(deps)
     await tunnel.enable()
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
-    children[0].crash()
-    await vi.waitFor(() => expect(children).toHaveLength(2), { timeout: 2000, interval: 5 })
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
-    expect(tunnel.managedOrigin()).toBe('https://rotated-2-two-three.trycloudflare.com')
-    tunnel.dispose()
-  })
-
-  it('throttles recovery churn inside the cooldown window', async () => {
-    const { deps, children, dir } = makeDeps()
-    dirs.push(dir)
-    const tunnel = createTunnelSupervisor(deps)
-    await tunnel.enable()
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
-    children[0].crash()
-    await vi.waitFor(() => expect(children).toHaveLength(2), { timeout: 2000, interval: 5 })
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
-    children[1].crash()
+    await ready(tunnel)
+    sidecars.crash()
+    await vi.waitFor(() => expect(sidecars.launched).toHaveLength(2), { timeout: 2000, interval: 5 })
+    await ready(tunnel)
+    sidecars.crash()
     await new Promise(resolve => setTimeout(resolve, 100))
-    expect(children).toHaveLength(2)
+    expect(sidecars.launched).toHaveLength(2)
     expect(tunnel.status().state).toBe('recovering')
     tunnel.dispose()
   })
 
-  it('enters error after three consecutive failed starts', async () => {
-    const editor = fakeEditor()
-    editor.edit.mockRejectedValue(new Error('edit-refused'))
-    const { deps, dir } = makeDeps({ locate: { configEditor: () => editor }, recoveryCooldownMs: 0 })
-    dirs.push(dir)
+  it('skips the cooldown after waking from sleep', async () => {
+    let offset = 0
+    const { deps, sidecars } = makeDeps({ now: () => Date.now() + offset, wakeGapMs: 1000 })
     const tunnel = createTunnelSupervisor(deps)
     await tunnel.enable()
-    await vi.waitFor(() => expect(tunnel.status()).toMatchObject({ state: 'error', reason: 'start-failed', detail: 'edit-refused' }), { timeout: 2000, interval: 5 })
-    expect(JSON.parse(readFileSync(join(dir, 'state', 'mobile-quick-tunnel.json'), 'utf8'))).toMatchObject({ enabled: true, lastError: 'edit-refused' })
+    await ready(tunnel)
+    sidecars.crash()
+    await vi.waitFor(() => expect(sidecars.launched).toHaveLength(2), { timeout: 2000, interval: 5 })
+    await ready(tunnel)
+    // Inside the 60s cooldown, but the clock jumped: the machine slept and
+    // the edge dropped the tunnel. One failed probe is enough to rotate.
+    ;(deps.probe as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false)
+    offset += 60 * 60 * 1000
+    await vi.waitFor(() => expect(sidecars.launched).toHaveLength(3), { timeout: 2000, interval: 5 })
+    await ready(tunnel)
+    tunnel.dispose()
+  })
+
+  it('keeps retrying past three failures, keeps the tunnel through trust-write failures, and heals', async () => {
+    const editor = fakeEditor()
+    editor.edit.mockRejectedValue(new Error('Configuration entry is no longer available'))
+    const { deps, sidecars, dir } = makeDeps({ locate: { configEditor: () => editor }, recoveryCooldownMs: 0 })
+    const tunnel = createTunnelSupervisor(deps)
+    await tunnel.enable()
+    await vi.waitFor(() => expect(tunnel.status()).toMatchObject({ state: 'error', reason: 'start-failed', detail: 'bind: Error: Configuration entry is no longer available' }), { timeout: 2000, interval: 5 })
+    expect(stateOf(dir)).toMatchObject({ enabled: true, lastError: 'bind: Error: Configuration entry is no longer available' })
+    editor.edit.mockImplementation(async (_entry, change) => { Object.assign(editor.stored, change(structuredClone(editor.stored), {})) })
+    await ready(tunnel)
+    expect(sidecars.launched).toHaveLength(1)
+    expect(tunnel.managedOrigin()).toBe('https://alpha-beta-gamma-delta.trycloudflare.com')
+    tunnel.dispose()
+  })
+
+  it('drops a tunnel whose edge never comes up', async () => {
+    const { deps, sidecars } = makeDeps({ edgeProbe: vi.fn(async () => false), now: (() => { let t = 0; return () => (t += 10_000) })() })
+    // Each clock read advances 10s, so the 90s edge deadline passes within a few polls.
+    const tunnel = createTunnelSupervisor(deps)
+    await tunnel.enable()
+    await vi.waitFor(() => expect(tunnel.status().state).toBe('recovering'), { timeout: 2000, interval: 5 })
+    expect(sidecars.stopped.has(sidecars.launched[0]!.pid)).toBe(true)
     tunnel.dispose()
   })
 
   it('keeps a launch-flag static quick-tunnel domain across rotation and disable', async () => {
-    const { deps, editor, dir } = makeDeps({ locate: { webStartup: () => ({ trustedHosts: ['dead-launch-one-two.trycloudflare.com'] }) } })
-    dirs.push(dir)
+    const { deps, editor } = makeDeps({ locate: { webStartup: () => ({ trustedHosts: ['dead-launch-one-two.trycloudflare.com'] }) } })
     const tunnel = createTunnelSupervisor(deps)
     await tunnel.enable()
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
+    await ready(tunnel)
     expect(editor.stored.trustedHosts).toEqual(['dead-launch-one-two.trycloudflare.com', 'alpha-beta-gamma-delta.trycloudflare.com'])
     await tunnel.disable()
     expect(editor.stored.trustedHosts).toEqual(['dead-launch-one-two.trycloudflare.com'])
     tunnel.dispose()
   })
 
-  it('disables: kills the child, prunes the grant and persists off', async () => {
-    const { deps, editor, children, dir } = makeDeps()
-    dirs.push(dir)
+  it('disables: stops the sidecar, prunes the grant and persists off', async () => {
+    const { deps, editor, sidecars, dir } = makeDeps()
     const tunnel = createTunnelSupervisor(deps)
     await tunnel.enable()
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
+    await ready(tunnel)
     await tunnel.disable()
     expect(tunnel.status()).toEqual({ state: 'off', origin: null })
     expect(tunnel.managedOrigin()).toBeUndefined()
-    expect(children[0].killed).toBe(true)
+    expect(sidecars.stopped.has(sidecars.launched[0]!.pid)).toBe(true)
+    expect(existsSync(join(dir, 'state', 'mobile-quick-tunnel.sidecar.json'))).toBe(false)
     expect(editor.stored.trustedHosts).toEqual(['launch.internal'])
-    expect(JSON.parse(readFileSync(join(dir, 'state', 'mobile-quick-tunnel.json'), 'utf8'))).toMatchObject({ enabled: false, origin: null })
+    expect(stateOf(dir)).toMatchObject({ enabled: false, origin: null })
     tunnel.dispose()
-  })
-
-  it('auto-starts on construction when a previous run persisted enabled', async () => {
-    const first = makeDeps()
-    dirs.push(first.dir)
-    const tunnel = createTunnelSupervisor(first.deps)
-    await tunnel.enable()
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
-    tunnel.dispose()
-    const second = makeDeps({ locate: { profileHome: () => first.dir }, domains: ['second-live-domain-one.trycloudflare.com'] })
-    dirs.push(second.dir)
-    const again = createTunnelSupervisor(second.deps)
-    await vi.waitFor(() => expect(again.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
-    expect(second.children).toHaveLength(1)
-    expect(again.managedOrigin()).toBe('https://second-live-domain-one.trycloudflare.com')
-    again.dispose()
   })
 
   it('refuses to start while unsupported even when persisted enabled', async () => {
-    const { deps, children, dir } = makeDeps()
-    dirs.push(dir)
+    const { deps, sidecars } = makeDeps()
     const tunnel = createTunnelSupervisor(deps)
     await tunnel.enable()
+    await ready(tunnel)
     tunnel.dispose()
+    sidecars.crash()
     const degraded = createTunnelSupervisor({ ...deps, locate: { ...deps.locate, configEditor: () => undefined } })
+    await new Promise(resolve => setTimeout(resolve, 50))
     expect(degraded.status()).toMatchObject({ state: 'unsupported', reason: 'no-config-editor' })
-    expect(children).toHaveLength(1)
+    expect(sidecars.launched).toHaveLength(1)
     degraded.dispose()
-  })
-
-  it('keeps literal stored grants and evaluates the launch expression through webStartup', async () => {
-    const { deps, editor, children, dir } = makeDeps()
-    dirs.push(dir)
-    const tunnel = createTunnelSupervisor(deps)
-    await tunnel.enable()
-    await vi.waitFor(() => expect(tunnel.status().state).toBe('ready'), { timeout: 2000, interval: 5 })
-    // The bundle row's !!js expression was evaluated via webStartup.trustedHosts.
-    expect(editor.stored.trustedHosts).toEqual(['launch.internal', 'alpha-beta-gamma-delta.trycloudflare.com'])
-    // The next rotation starts from the literal list the first one persisted.
-    children[0].crash()
-    await vi.waitFor(() => expect(tunnel.status().origin).toBe('https://rotated-2-two-three.trycloudflare.com'), { timeout: 2000, interval: 5 })
-    expect(editor.stored.trustedHosts).toEqual(['launch.internal', 'rotated-2-two-three.trycloudflare.com'])
-    tunnel.dispose()
   })
 })

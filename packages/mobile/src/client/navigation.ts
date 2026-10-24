@@ -4,15 +4,10 @@ import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 
 type SessionId = SessionSummary['id']
 
-/**
- * The session the main view shows, read off both host lines: alpha.2 deleted
- * the list's `current` for the per-row `retainedBy.mainView` reference count;
- * 0.1.5 carries only `current`.
- */
+/** The session the main view shows: the row the main view retains. */
 export function mainSessionId(list: SessionListState): SessionId | undefined {
   return Object.values(list.byId).find(summary =>
     ((summary.retainedBy as { mainView?: number } | undefined)?.mainView ?? 0) > 0)?.id
-    ?? (list as { current?: SessionId }).current
 }
 
 export interface NavigationCapabilities {

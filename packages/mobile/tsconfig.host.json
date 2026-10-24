@@ -26,6 +26,7 @@
   },
   "include": [
     "src/index.ts",
-    "src/protocol.ts"
+    "src/protocol.ts",
+    "src/tunnel-sidecar.ts"
   ]
 }

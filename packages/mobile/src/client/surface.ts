@@ -38,12 +38,7 @@ export class MobileSurface {
       }
       const label = row.querySelector<HTMLElement>('[data-slot="conversation.session.header.actions"] > span[title]:has(svg :is(mask[id^="mask0_agent_preset"],path[d^="M6.51867 12.3282"]))')
       if (label) { preset = label.textContent?.trim() ?? ''; this.mark(label, 'data-mobile-header-hidden') }
-      // 0.1.7 publishes an explicit target; icons may now be data/blob URLs.
       for (const target of row.querySelectorAll<HTMLElement>('[data-slot="conversation.session.header.utilities"] [data-open-target="directory"]')) this.mark(target, 'data-mobile-header-hidden')
-      for (const img of row.querySelectorAll<HTMLImageElement>('img[src^="/open-in-app/icon/"]')) {
-        const split = img.closest('button')?.parentElement
-        if (split && split.querySelectorAll('button').length === 2) this.mark(split, 'data-mobile-header-hidden')
-      }
       for (const button of row.querySelectorAll<HTMLElement>('[data-sidebar-right-expand], [data-slot="conversation.session.header.utilities"] > span > button[aria-haspopup="menu"][aria-busy]')) {
         if (button.hasAttribute('data-sidebar-right-expand')
           ? this.doc.querySelector('[data-mobile-panel-entry]') !== null

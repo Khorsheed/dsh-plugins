@@ -41,8 +41,7 @@ export function MobileRoomNavigation({ rooms, navigation, prepareNavigation, t }
     const ok = await openRoomMemberSettings(document, name, () => epoch.current === generation)
     if (!ok && epoch.current === generation) { setError(true); setOpen(true) }
   }
-  // The official workspace service is the only navigation writer on both host
-  // lines (alpha.2 deleted sessions.open); it throws synchronously on failure.
+  // The official workspace service is the only navigation writer; it throws synchronously on failure.
   const openChat = (childSessionId: string) => {
     prepareNavigation()
     try { navigation.workspace.openSession(childSessionId as Parameters<NavigationCapabilities['workspace']['openSession']>[0]); close() }

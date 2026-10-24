@@ -1,4 +1,4 @@
-/** Checked legacy and 0.1.7 composer bridge. The official editor, chooser, permission menu and
+/** Checked composer bridge. The official editor, chooser, permission menu and
  * confirmation remain mounted and retain their callbacks. Unknown markup falls back. */
 export type ComposerAction = 'commands' | 'attachments' | 'permissions'
 export interface ActionTarget { button: HTMLButtonElement | HTMLInputElement; label: string; disabled: boolean }
@@ -19,18 +19,15 @@ export class ComposerActions {
   private sync() {
     const card = this.seat.closest('[data-composer-card]')
     const file = card?.querySelector<HTMLInputElement>(':scope > div:last-child > div:first-child > input[type=file][hidden]')
-    const previous = file?.previousElementSibling
-    const unified = previous instanceof HTMLButtonElement && previous.getAttribute('aria-haspopup') === 'listbox'
-    const attachments = unified ? file : previous
-    const commands = unified ? previous : previous?.previousElementSibling
+    const commands = file?.previousElementSibling
     const next: ComposerActionsSnapshot = {}
-    if (commands instanceof HTMLButtonElement && commands.getAttribute('aria-haspopup') === 'listbox' && (attachments instanceof HTMLButtonElement || attachments instanceof HTMLInputElement)) {
+    if (file && commands instanceof HTMLButtonElement && commands.getAttribute('aria-haspopup') === 'listbox') {
       next.commands = this.target(commands)
-      next.attachments = this.target(attachments)
-      // The new host retains its file input and onChange validation, but folds
+      next.attachments = this.target(file)
+      // The host retains its file input and onChange validation, but folds
       // its button into commands. Match the owner picker admission: editable
       // composer (live, unlocked, not committing) and input enabled (not child).
-      if (unified) next.attachments.disabled ||= commands.disabled || !card?.querySelector('[contenteditable="true"]')
+      next.attachments.disabled ||= commands.disabled || !card?.querySelector('[contenteditable="true"]')
       const modes = file?.nextElementSibling
       const permission = modes?.querySelector<HTMLButtonElement>('[data-slot="conversation.input.permission"] button[aria-label], :scope > span > button[aria-label]')
       // PermissionSelect has a text label between optional glyph and chevron spans.
@@ -49,8 +46,8 @@ export class ComposerActions {
     this.sync()
     const target = this.snapshot[action]
     if (!target || target.disabled || !target.button.isConnected) return false
-    // Open the public source without focusing Lexical. Older hosts retain
-    // their original button behavior when the optional service is absent.
+    // Open the public source without focusing Lexical; the original button
+    // behavior remains when the optional service is absent.
     if (action === 'commands' && openCommands?.()) return true
     if (action === 'commands') this.seat.closest('[data-composer-card]')?.querySelector<HTMLElement>('[contenteditable="true"]')?.focus({ preventScroll: true })
     // Synchronous with the user's click, including the native file-picker gesture.
