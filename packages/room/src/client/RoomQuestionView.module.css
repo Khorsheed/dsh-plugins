@@ -1,0 +1,177 @@
+/* A member's question card: the speech card's surface (l1 fill, thin border,
+   r12) with the member-color avatar, one fieldset per question, options as
+   pickable rows (label + one-line description), an 其他 line, and the
+   business-blue submit. Text follows the content font-size preference. */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 4px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(22px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+.card[data-state="cancelled"] {
+  opacity: 0.6;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--member-color, var(--dsw-alias-label-tertiary, #7f8287)) 85%, black);
+  color: #fff; /* panel-check: allow-color */
+  font-size: 11px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.status {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, rgba(31, 35, 41, 0.5));
+}
+
+.question {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0;
+  margin-bottom: 2px;
+  font-weight: 500;
+}
+
+.chip {
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.05));
+  color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.7));
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary, rgba(31, 35, 41, 0.5));
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 100ms ease, border-color 100ms ease;
+}
+
+.option:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+}
+
+.option[data-picked="true"] {
+  border-color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, rgb(65, 118, 230)) 8%, transparent);
+}
+
+.option input {
+  flex: none;
+  margin: 4px 0 0;
+  accent-color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+}
+
+.optionText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.optionLabel {
+  font-weight: 500;
+}
+
+.optionDescription {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.7));
+}
+
+.other {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 10px;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.other:focus {
+  border-color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+}
+
+.answer {
+  color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.7));
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.error {
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary, #d9363e);
+}
+
+.submit {
+  height: 32px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--dsw-alias-button-info-fill, rgb(65, 118, 230));
+  color: #fff; /* panel-check: allow-color */
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.submit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

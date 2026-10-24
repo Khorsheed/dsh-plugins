@@ -394,6 +394,68 @@ export type RoomAnswerApprovalResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: RoomFailure }
 
+/** One option of a member's question to the human. */
+export interface RoomQuestionOption {
+  readonly label: string
+  readonly description?: string
+}
+
+/** One question a member asks the human (the host's ask_user_question shape). */
+export interface RoomQuestionItem {
+  readonly id: string
+  readonly question: string
+  readonly header?: string
+  readonly options?: readonly RoomQuestionOption[]
+  readonly multiSelect?: boolean
+}
+
+/** The human's answer to one question: the picked option labels and/or free text. */
+export interface RoomQuestionAnswer {
+  readonly id: string
+  readonly selected: readonly string[]
+  readonly custom?: string
+}
+
+/**
+ * A member asks the human questions through its bridge (`ask_user_question`)
+ * instead of writing them into its reply: the room shows them as a card the
+ * human answers by picking, and the member's call waits for the answer.
+ */
+export interface RoomQuestionEvent {
+  readonly id: string
+  readonly member: string
+  readonly memberId: string
+  readonly questions: readonly RoomQuestionItem[]
+}
+
+/** How a member's questions ended. */
+export interface RoomQuestionResolvedEvent {
+  readonly id: string
+  /** `cancelled`: the call ended, timed out, or the host restarted before an answer. */
+  readonly outcome: 'answered' | 'cancelled'
+  readonly answers?: readonly RoomQuestionAnswer[]
+}
+
+/** A member's questions still waiting for the human. */
+export interface RoomQuestion {
+  readonly id: string
+  readonly member: string
+  readonly questions: readonly RoomQuestionItem[]
+  readonly time: number
+}
+
+/** answerQuestion request: the human's answers to a pending question card. */
+export interface RoomAnswerQuestionRequest {
+  readonly sessionId: SessionId
+  readonly id: string
+  readonly answers: readonly RoomQuestionAnswer[]
+}
+
+/** answerQuestion outcome. */
+export type RoomAnswerQuestionResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: RoomFailure }
+
 /** A relay left the pending state (confirmed, dismissed, or delivered). */
 export interface RoomRelayResolvedEvent {
   readonly id: string
@@ -497,6 +559,10 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/approval': RoomApprovalEvent
     /** That approval was answered, or expired with its call. */
     'room/approval-resolved': RoomApprovalResolvedEvent
+    /** A CLI member asks the human questions (a pick-to-answer card). */
+    'room/question': RoomQuestionEvent
+    /** Those questions were answered, or expired with the call. */
+    'room/question-resolved': RoomQuestionResolvedEvent
     /** Task board: a task was added. */
     'room/task-added': RoomTaskAddedEvent
     /** Task board: a task changed status. */
@@ -606,6 +672,8 @@ export interface RoomState {
   readonly relays: readonly RoomRelay[]
   /** Members' tool approvals still waiting for the human. */
   readonly approvals?: readonly RoomApproval[]
+  /** Members' questions still waiting for the human. */
+  readonly questions?: readonly RoomQuestion[]
   readonly tasks: readonly RoomTask[]
   readonly runs: readonly RoomMemberRun[]
   /** The current goal text (the latest `room/goal` event), undefined when unset. */
@@ -673,6 +741,7 @@ export type RoomFailure =
   /** The relay exists but already left the pending state. */
   | { readonly code: 'relay-not-pending' }
   | { readonly code: 'approval-not-pending' }
+  | { readonly code: 'question-not-pending' }
   /** The main agent is the room itself: it cannot be renamed. */
   | { readonly code: 'main-member' }
   | { readonly code: 'task-not-found' }

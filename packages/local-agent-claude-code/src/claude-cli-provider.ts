@@ -88,6 +88,12 @@ export const DEFAULT_DISPOSE_GRACE_MS = 3_000
 export const CLAUDE_AUTH_FAILURE = /failed to authenticate|authentication_failed|oauth access token|invalid (x-api-key|api key|authentication token)|api error: 40[13]/i
 
 /**
+ * The MCP tool-call bound for a member's claude process (`MCP_TOOL_TIMEOUT`,
+ * ms): a bridge call may wait up to 30 minutes for the human's answer.
+ */
+export const MEMBER_TOOL_TIMEOUT_MS = String(30 * 60_000)
+
+/**
  * Member channel registration for one claude process lifetime: mint the
  * per-run token and build the bridge MCP declaration for the spawn argv
  * (`--mcp-config <json>` — verified end-to-end against the real CLI).
@@ -430,6 +436,8 @@ export class ClaudeCliProvider implements SubagentProvider {
         cwd,
         env: delegationEnv({
           CLAUDE_CONFIG_DIR: homeDir,
+          // A bridge call may wait for the human (see MEMBER_TOOL_TIMEOUT_MS).
+          ...member === undefined ? {} : { MCP_TOOL_TIMEOUT: MEMBER_TOOL_TIMEOUT_MS },
           ...endpointAuthEnv(endpoint),
         }),
         ...exec === undefined ? {} : { exec },
@@ -554,6 +562,7 @@ export class ClaudeCliProvider implements SubagentProvider {
           cwd,
           env: delegationEnv({
             CLAUDE_CONFIG_DIR: homeDir,
+            ...member === undefined ? {} : { MCP_TOOL_TIMEOUT: MEMBER_TOOL_TIMEOUT_MS },
             ...endpointAuthEnv(endpoint),
           }),
           ...exec === undefined ? {} : { exec },

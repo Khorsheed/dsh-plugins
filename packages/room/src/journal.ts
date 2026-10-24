@@ -14,7 +14,7 @@ import { replayDeliveries } from './deliveries.ts'
 import { replayJobs } from './jobs.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  RoomApproval, RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
+  RoomApproval, RoomQuestion, RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
 } from './types.ts'
 
 /**
@@ -55,6 +55,8 @@ export const ROOM_EVENT_TYPES = [
   'room/relay-resolved',
   'room/approval',
   'room/approval-resolved',
+  'room/question',
+  'room/question-resolved',
   'room/task-added',
   'room/task-updated',
   'room/task-edited',
@@ -112,6 +114,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const byName = new Map<string, RoomMember>()
   const relays: RoomRelay[] = []
   const approvals = new Map<string, RoomApproval>()
+  const questions = new Map<string, RoomQuestion>()
   const relayById = new Map<string, RoomRelay>()
   const tasks: RoomTask[] = []
   const taskById = new Map<string, RoomTask>()
@@ -252,6 +255,12 @@ export function replay(events: readonly SessionEvent[]): RoomState {
       case 'room/approval':
         approvals.set(event.data.id, { id: event.data.id, member: event.data.member, tool: event.data.tool, ...event.data.reason === undefined ? {} : { reason: event.data.reason }, time: event.time })
         break
+      case 'room/question':
+        questions.set(event.data.id, { id: event.data.id, member: event.data.member, questions: event.data.questions, time: event.time })
+        break
+      case 'room/question-resolved':
+        questions.delete(event.data.id)
+        break
       case 'room/approval-resolved':
         approvals.delete(event.data.id)
         break
@@ -359,7 +368,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const plan = planEvent?.type === 'room/plan-state' ? (({ requests: _requests, ...view }) => view)(planEvent.data) : undefined
   const deliveries = replayDeliveries(events)
   const jobs = deliveries.length === 0 ? [] : replayJobs(events, deliveries)
-  return { members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
+  return { members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, ...questions.size === 0 ? {} : { questions: [...questions.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
 }
 
 /**

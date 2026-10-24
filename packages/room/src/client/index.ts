@@ -44,15 +44,16 @@ import { ROOM_TEAM_KIND, ROOM_TEAM_TAB_ID, RoomTeamTab, type RoomTeamInjected } 
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomApprovalDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
+import { roomApprovalDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { mainSessionId, RoomStore } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomInboxView } from './RoomInboxView.tsx'
 import { RoomApprovalView } from './RoomApprovalView.tsx'
+import { RoomQuestionView } from './RoomQuestionView.tsx'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
-  RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected,
+  RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
 
@@ -382,6 +383,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     lctx.uiConversation.events.register(roomRelayDefinition)
     lctx.uiConversation.events.register(roomInboxDefinition)
     lctx.uiConversation.events.register(roomApprovalDefinition)
+    lctx.uiConversation.events.register(roomQuestionDefinition)
   })
 
   // The slots are declared by ui-conversation, whose apply order
@@ -604,6 +606,23 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }),
     },
     RoomApprovalView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-question',
+      locale: NS,
+      inject: (sessionId: SessionId): RoomQuestionInjected => ({
+        answerQuestion: async (questionId, answers) => {
+          if (remote === undefined) return t('composer.error.generic')
+          const carried = await remote.answerQuestion({ sessionId, id: questionId, answers })
+          void roomStore.refresh(sessionId)
+          if (!carried.ok) return t('composer.error.generic')
+          return carried.value.ok ? undefined : t('question.expired')
+        },
+      }),
+    },
+    RoomQuestionView,
   ))
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()

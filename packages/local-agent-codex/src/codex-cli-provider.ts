@@ -134,7 +134,10 @@ export function registerCodexMemberRun(
     + `command=${tomlString(bridge.command)},`
     + `args=[${bridge.args.map(tomlString).join(',')}],`
     + `env={${MEMBER_BRIDGE_SOCKET_ENV}=${tomlString(registry.memberBridgeSocketPath())},${MEMBER_BRIDGE_TOKEN_ENV}=${tomlString(token)}},`
-    + `default_tools_approval_mode=${tomlString('approve')}`
+    + `default_tools_approval_mode=${tomlString('approve')},`
+    // A bridge call may wait for the human (ask_user_question, a mode tool's
+    // approval): Codex's 60s MCP default would fail it first.
+    + `tool_timeout_sec=1800`
     + `}`
   let released = false
   return {

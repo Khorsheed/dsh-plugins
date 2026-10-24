@@ -11,6 +11,7 @@
  * RoomService.postMessage) and renders through the official user node.
  * @module @khorsheed/dsh-room/client/nodes
  */
+import type { RoomQuestionAnswer, RoomQuestionItem } from '../types.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
@@ -77,6 +78,17 @@ export interface RoomApprovalData {
   readonly state: 'pending' | 'allowed-once' | 'rejected' | 'cancelled'
 }
 
+/** Chat node data of a member's question card (pick-to-answer). */
+export interface RoomQuestionData {
+  readonly seq: number
+  readonly time: number
+  readonly questionId: string
+  readonly member: string
+  readonly questions: readonly RoomQuestionItem[]
+  readonly state: 'pending' | 'answered' | 'cancelled'
+  readonly answers?: readonly RoomQuestionAnswer[]
+}
+
 export interface RoomRelayData {
   /** Seq of the relay's latest journal event. */
   readonly seq: number
@@ -116,6 +128,8 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
     'room-relay': RoomRelayData
     /** room: a member's mode tool waiting for the human's approval. */
     'room-approval': RoomApprovalData
+    /** room: a member's questions for the human (pick-to-answer card). */
+    'room-question': RoomQuestionData
     /** room: reports the gate holds in a member's inbox. */
     'room-inbox': RoomInboxData
   }
@@ -288,6 +302,36 @@ export const roomApprovalDefinition: ConversationNodeDefinition<RoomApprovalData
     return { ...context.state, state: event.data.outcome }
   },
   buildViewNode: context => viewNode(context, 'room-approval'),
+}
+
+/**
+ * A member's question card: one Context per card, started by `room/question`
+ * and settled in place (with the answers) by `room/question-resolved`.
+ */
+export const roomQuestionDefinition: ConversationNodeDefinition<RoomQuestionData> = {
+  kind: 'room-question',
+  target: 'chat',
+  match: (event) => {
+    switch (event.type) {
+      case 'room/question':
+        return { id: event.data.id, role: 'start' as const }
+      case 'room/question-resolved':
+        return { id: event.data.id, role: 'update' as const }
+      default:
+        return null
+    }
+  },
+  start: (_context, match) => {
+    const event = match.event
+    if (event.type !== 'room/question') throw new Error('room-question start requires a room/question event')
+    return { seq: event.seq, time: event.time, questionId: event.data.id, member: event.data.member, questions: event.data.questions, state: 'pending' }
+  },
+  update: (context, match) => {
+    const event = match.event
+    if (event.type !== 'room/question-resolved') return context.state
+    return { ...context.state, state: event.data.outcome, ...event.data.answers === undefined ? {} : { answers: event.data.answers } }
+  },
+  buildViewNode: context => viewNode(context, 'room-question'),
 }
 
 /**

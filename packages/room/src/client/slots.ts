@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
-import type { RoomProviderList, RoomRemoval, RoomSettings } from '../types.ts'
+import type { RoomProviderList, RoomQuestionAnswer, RoomRemoval, RoomSettings } from '../types.ts'
 import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import type { RoomChromeVisibility } from './preset-visibility.ts'
 import type { RoomStore } from './room-store.ts'
@@ -371,6 +371,18 @@ export interface RoomApprovalInjected {
   /** Answer the approval (allow once / reject); resolves with an error message when it already ended. */
   readonly answerApproval: (approvalId: string, outcome: 'allowed-once' | 'rejected') => Promise<string | undefined>
 }
+
+/** Injected face of a member's question card. */
+export interface RoomQuestionInjected {
+  /** Submit the answers; resolves with an error message when the card already ended. */
+  readonly answerQuestion: (questionId: string, answers: readonly RoomQuestionAnswer[]) => Promise<string | undefined>
+}
+
+/** Full props of the 'room-question' chat-node renderer. */
+export type RoomQuestionViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-question'>
+  & InjectFace<RoomQuestionInjected>
+  & PropsLocale<'room'>
 
 /** Full props of the 'room-approval' chat-node renderer. */
 export type RoomApprovalViewProps =

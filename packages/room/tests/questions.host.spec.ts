@@ -1,0 +1,77 @@
+/**
+ * Members' questions: a CLI member's ask_user_question becomes a pick-to-answer
+ * card in the room; the human's answers (or the card expiring) resolve the
+ * member's waiting call.
+ */
+import { describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import RoomService, { parseQuestions } from '../src/index.ts'
+import { createRoom } from './promote.ts'
+
+async function boot() {
+  const ctx = new Context()
+  const agent = { followup: vi.fn(), send: vi.fn(), whenIdle: vi.fn(async () => {}), cancel: vi.fn() }
+  ctx.provide('agents', {
+    get: () => agent,
+    create: vi.fn(async (request: { sessionId: SessionId; meta?: Record<string, unknown> }) => {
+      const session = ctx.sessions.create(request.sessionId, { meta: request.meta ?? {} })
+      return { agent: { id: session.id, session }, dispose: async () => {} }
+    }),
+  } as never)
+  ctx.provide('localAgent', { start: vi.fn(), resume: vi.fn(), cancel: vi.fn() } as never)
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(RoomService)
+  const service = ctx.get('room') as RoomService
+  const sessionId = await createRoom(ctx, service)
+  await service.invite({ sessionId, provider: 'claude-local', name: 'gm' })
+  ctx.sessions.get(sessionId)!.append('room/member-updated', { name: 'gm', childSessionId: SessionId('child-gm') })
+  const run = { childSessionId: 'child-gm', parentSessionId: String(sessionId), provider: 'claude-local' }
+  const state = async () => {
+    const result = await service.getState({ sessionId })
+    if (!result.ok) throw new Error('room unavailable')
+    return result.value
+  }
+  return { ctx, service, sessionId, run, state }
+}
+
+const QUESTIONS = [
+  { id: 'fun', question: '核心乐趣是哪一种？', header: '核心乐趣', options: [{ label: '读懂习性', description: '解谜感' }, { label: '潜行张力' }] },
+  { id: 'len', question: '一局多长？', options: ['3-5 分钟', '15-20 分钟'] },
+]
+
+describe('member questions', () => {
+  it('shows a card, and hands the human\'s answers back to the asking member', async () => {
+    const bench = await boot()
+    const asked = bench.service.receiveMemberCommand(bench.run, { name: 'ask_user_question', arguments: { questions: QUESTIONS } })
+    await vi.waitFor(async () => expect((await bench.state()).questions).toHaveLength(1))
+    const [card] = (await bench.state()).questions!
+    expect(card).toMatchObject({ member: 'gm', questions: [{ id: 'fun', header: '核心乐趣', options: [{ label: '读懂习性', description: '解谜感' }, { label: '潜行张力' }] }, { id: 'len', options: [{ label: '3-5 分钟' }, { label: '15-20 分钟' }] }] })
+    expect(await bench.service.answerQuestion({ sessionId: bench.sessionId, id: card!.id, answers: [
+      { id: 'fun', selected: ['读懂习性'] }, { id: 'len', selected: [], custom: ' 10 分钟左右 ' }, { id: 'stray', selected: ['x'] },
+    ] })).toEqual({ ok: true })
+    const outcome = await asked
+    expect(outcome.ok).toBe(true)
+    expect(JSON.parse((outcome as { receipt: string }).receipt)).toEqual({ answers: [
+      { id: 'fun', selected: ['读懂习性'] }, { id: 'len', selected: [], custom: '10 分钟左右' },
+    ] })
+    expect((await bench.state()).questions).toBeUndefined()
+    expect(await bench.service.answerQuestion({ sessionId: bench.sessionId, id: card!.id, answers: [] }))
+      .toEqual({ ok: false, error: { code: 'question-not-pending' } })
+  })
+
+  it('a card no waiting call stands behind (a restart) expires on the next access', async () => {
+    const bench = await boot()
+    bench.ctx.sessions.get(bench.sessionId)!.append('room/question', { id: 'orphan', member: 'gm', memberId: 'm', questions: [{ id: 'q1', question: '?' }] })
+    await bench.service.setGoal({ sessionId: bench.sessionId, text: '做一只兽的样板' })
+    expect((await bench.state()).questions).toBeUndefined()
+  })
+
+  it('validates questions, accepting their JSON text too', () => {
+    expect(parseQuestions(JSON.stringify([{ question: '要不要轻失败？', multi_select: true, options: ['要', '不要'] }])))
+      .toEqual([{ id: 'q1', question: '要不要轻失败？', multiSelect: true, options: [{ label: '要' }, { label: '不要' }] }])
+    expect(parseQuestions([])).toBe('questions must be a non-empty array')
+    expect(parseQuestions([{ id: 'a', question: 'x' }, { id: 'a', question: 'y' }])).toBe('Question ids must be unique')
+    expect(parseQuestions([{ options: ['x'] }])).toBe('questions[0].question is required')
+  })
+})

@@ -19,6 +19,7 @@
     "src/client/RoomSettingsView.tsx",
     "src/client/RoomInboxView.tsx",
     "src/client/RoomApprovalView.tsx",
+    "src/client/RoomQuestionView.tsx",
     "src/client/team.ts",
     "src/client/TeamView.tsx",
     "src/client/TeamTab.tsx",
