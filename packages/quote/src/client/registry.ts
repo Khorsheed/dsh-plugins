@@ -37,10 +37,13 @@ export interface QuoteActionTarget {
   /** The selected plain text — the opaque quoted chunk. */
   readonly text: string
   /**
-   * Best-effort source label (the current session's display title, else the
-   * localized generic fallback) — same value the built-in routes annotate.
+   * Best-effort source label: the content's own declared source (a file
+   * name, an article title), else the current session's display title, else
+   * a short excerpt of the quote itself.
    */
   readonly label: string
+  /** Where the content lives (absolute path, URL), when its surface declared one. */
+  readonly ref?: string
   /** The current session's id, or undefined when no session is selected. */
   readonly sessionId: SessionId | undefined
 }

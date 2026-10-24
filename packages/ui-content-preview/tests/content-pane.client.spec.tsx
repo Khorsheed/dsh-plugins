@@ -130,6 +130,13 @@ describe('ContentPane preview controls (the union of both surfaces)', () => {
     expect(screen.getByRole('heading', { name: 'Title' })).toBeTruthy()
   })
 
+  it('declares the quote source (file name) and locator (absolute path) on its root', () => {
+    mount({ kind: 'text', path: 'docs/README.md', content: MARKDOWN }, { displayPath: '/work/docs/README.md' })
+    const root = screen.getByRole('heading', { name: 'Title' }).closest('[data-quote-source]')
+    expect(root?.getAttribute('data-quote-source')).toBe('README.md')
+    expect(root?.getAttribute('data-quote-ref')).toBe('/work/docs/README.md')
+  })
+
   it('offers no preview toggle for a plain code file', () => {
     mount({ kind: 'text', path: '/work/main.ts', content: 'const x = 1\n' })
     expect(screen.queryByRole('tab', { name: 'detail.preview' })).toBeNull()

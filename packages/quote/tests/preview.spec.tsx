@@ -35,6 +35,15 @@ describe('QuotePreview', () => {
     expect(dialog.textContent).toContain('第一行\n第二行\n\n第三段')
   })
 
+  it('closes a located quote with its locator row, and shows none without one', () => {
+    const preview = bench()
+    act(() => preview.show({ title: '引用「README.md」', body: '正文', location: '/home/user/r/README.md' }))
+    expect(screen.getByText(zh['preview.location'])).toBeTruthy()
+    expect(screen.getByText('/home/user/r/README.md')).toBeTruthy()
+    act(() => preview.show({ title: 'T', body: 'B' }))
+    expect(screen.queryByText(zh['preview.location'])).toBeNull()
+  })
+
   it('falls back to the menu title when the payload carries no label', () => {
     const preview = bench()
     act(() => preview.show({ body: '旧引用' }))

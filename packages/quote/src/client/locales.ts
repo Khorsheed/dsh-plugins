@@ -8,10 +8,13 @@ export const zh = {
   'menu.copy': '复制',
 
   'quote.attribution': '—— 引用自「{label}」',
+  'quote.attributionAt': '—— 引用自「{label}」（{ref}）',
+  'quote.attributionBare': '—— 引用',
+  'quote.location': '位置：{ref}',
   'chip.label': '引用「{label}」',
   'card.source': '引用自「{label}」',
   'preview.close': '关闭',
-  'source.fallback': '选区',
+  'preview.location': '位置',
 }
 
 /** English dictionary (same key set). */
@@ -22,10 +25,13 @@ export const en: Record<keyof typeof zh, string> = {
   'menu.copy': 'Copy',
 
   'quote.attribution': '— quoted from “{label}”',
+  'quote.attributionAt': '— quoted from “{label}” ({ref})',
+  'quote.attributionBare': '— quoted',
+  'quote.location': 'Location: {ref}',
   'chip.label': 'Quote “{label}”',
   'card.source': 'Quoted from “{label}”',
   'preview.close': 'Close',
-  'source.fallback': 'Selection',
+  'preview.location': 'Location',
 }
 
 /** The dictionary namespace this view binds. */

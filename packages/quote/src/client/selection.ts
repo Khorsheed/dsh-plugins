@@ -34,6 +34,12 @@ export interface SelectionSnapshot {
    * not the session it happens to be docked beside). Absent elsewhere.
    */
   readonly source?: string
+  /**
+   * Where the model can find the content again (an absolute file path, a
+   * URL), from `data-quote-ref` on the SAME element that declared the
+   * source. Absent when that element carries none.
+   */
+  readonly ref?: string
 }
 
 /**
@@ -44,12 +50,18 @@ export interface SelectionSnapshot {
  */
 export const QUOTE_SOURCE_ATTR = 'data-quote-source'
 
-/** The nearest declared source label around a range, if any. */
-function sourceOf(range: Range): string | undefined {
+/** The opt-in locator attribute, read only beside a declared source. */
+export const QUOTE_REF_ATTR = 'data-quote-ref'
+
+/** The nearest declared source around a range (label, plus its locator when set). */
+function sourceOf(range: Range): { readonly source?: string; readonly ref?: string } {
   const container = range.commonAncestorContainer
   const element = container instanceof Element ? container : container.parentElement
-  const label = element?.closest(`[${QUOTE_SOURCE_ATTR}]`)?.getAttribute(QUOTE_SOURCE_ATTR)?.trim()
-  return label === undefined || label === '' ? undefined : label
+  const owner = element?.closest(`[${QUOTE_SOURCE_ATTR}]`)
+  const label = owner?.getAttribute(QUOTE_SOURCE_ATTR)?.trim()
+  if (owner == null || label === undefined || label === '') return {}
+  const ref = owner.getAttribute(QUOTE_REF_ATTR)?.trim()
+  return ref === undefined || ref === '' ? { source: label } : { source: label, ref }
 }
 
 /** Sink for selection updates; `null` hides the menu. */
@@ -90,11 +102,10 @@ export function classifySelection(
   if (focus !== null && (own(focus) || isInteractive(focus))) return null
   const range = selection.getRangeAt(0)
   const rect = range.getBoundingClientRect()
-  const source = sourceOf(range)
   return {
     text,
     rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-    ...(source === undefined ? {} : { source }),
+    ...sourceOf(range),
   }
 }
 

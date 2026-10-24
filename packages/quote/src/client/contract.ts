@@ -21,6 +21,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: pulls the ui-layout frame's SlotMap merge ('shell.overlay').
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from './locales.ts'
+import type { QuoteRef } from '../types.ts'
 import type { QuoteActionFeed } from './registry.ts'
 import type { SelectionSource } from './selection.ts'
 
@@ -44,9 +45,10 @@ export interface QuoteMenuInjected {
   insertQuote: (sessionId: SessionId, block: string, chipLabel: string) => void
   /**
    * Queue one opaque ref on the side-chat context bound to one session.
+   * `contextLabel` names the context on a first quote (the session's title).
    * @returns whether the host accepted the ref (a refusal no-ops silently).
    */
-  addSideChatRef: (sessionId: SessionId, label: string, text: string) => Promise<boolean>
+  addSideChatRef: (sessionId: SessionId, ref: QuoteRef, contextLabel?: string) => Promise<boolean>
   /** Surface the side-chat tab focused on one context (probed; no-op without the seat). */
   openSideChat: (contextKey: string) => void
   /** Copy text to the host clipboard (the official writeClipboard helper). */

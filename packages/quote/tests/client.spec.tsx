@@ -126,7 +126,7 @@ describe('SelectionQuoteMenu visibility (the degrade matrix)', () => {
     const { emit, mocks } = menuBench({ current: 's-1', mainView: true, title: '主会话' })
     emit(SNAPSHOT)
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
-    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「主会话」', '引用「主会话」')
+    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用', '引用「两行 文本」')
   })
 
   it('hides again when the selection collapses', () => {
@@ -138,11 +138,11 @@ describe('SelectionQuoteMenu visibility (the degrade matrix)', () => {
 })
 
 describe('SelectionQuoteMenu routes', () => {
-  it('引用到当前会话 inserts the formatted block (quote lines + attribution) and closes', () => {
+  it('引用到当前会话 inserts a sourceless selection as a bare quote under an excerpt chip, and closes', () => {
     const { emit, mocks } = menuBench({ current: 's-1', title: '主会话' })
     emit(SNAPSHOT)
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
-    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「主会话」', '引用「主会话」')
+    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用', '引用「两行 文本」')
     expect(screen.queryByRole('toolbar')).toBeNull()
   })
 
@@ -153,12 +153,30 @@ describe('SelectionQuoteMenu routes', () => {
     expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「沙箱基础设施」', '引用「沙箱基础设施」')
   })
 
+  it('a declared locator rides the attribution (and the side-chat text); the chip keeps the short name', async () => {
+    const { emit, mocks } = menuBench({ current: 's-1', title: '主会话', sideChat: true })
+    const located = { ...SNAPSHOT, source: 'README.md', ref: '/home/user/repo/README.md' }
+    emit(located)
+    fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
+    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「README.md」（/home/user/repo/README.md）', '引用「README.md」')
+    emit({ ...located, rect: { ...located.rect, top: 200 } })
+    fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToSideChat'] }))
+    expect(mocks.addSideChatRef).toHaveBeenCalledWith('s-1', { label: 'README.md', text: '两行\n文本\n\n位置：/home/user/repo/README.md' }, '主会话')
+  })
+
+  it('cuts a long sourceless chip excerpt to one short line', () => {
+    const { emit, mocks } = menuBench({ current: 's-1' })
+    emit({ ...SNAPSHOT, text: 'ined bundle. The base experience and the local-agent family are included.' })
+    fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
+    expect(mocks.insertQuote.mock.calls[0]?.[2]).toBe('引用「ined bundle. The…」')
+  })
+
   it('引用到侧边对话 queues the ref on the session context, surfaces the tab, and closes', async () => {
     const { emit, mocks } = menuBench({ current: 's-1', title: '主会话', sideChat: true })
     emit(SNAPSHOT)
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToSideChat'] }))
     expect(screen.queryByRole('toolbar')).toBeNull()
-    expect(mocks.addSideChatRef).toHaveBeenCalledWith('s-1', '主会话', '两行\n文本')
+    expect(mocks.addSideChatRef).toHaveBeenCalledWith('s-1', { label: '两行 文本', text: '两行\n文本' }, '主会话')
     await waitFor(() => expect(mocks.openSideChat).toHaveBeenCalledWith('s-1'))
   })
 
@@ -180,11 +198,11 @@ describe('SelectionQuoteMenu routes', () => {
     expect(screen.queryByRole('toolbar')).toBeNull()
   })
 
-  it('falls back to the generic source label when the session has no display title', () => {
+  it('a sourceless quote never names the session, titled or not', () => {
     const { emit, mocks } = menuBench({ current: 's-1', noTitle: true })
     emit(SNAPSHOT)
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
-    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', `> 两行\n> 文本\n> —— 引用自「${zh['source.fallback']}」`, `引用「${zh['source.fallback']}」`)
+    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用', '引用「两行 文本」')
   })
 })
 
