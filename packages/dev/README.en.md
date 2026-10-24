@@ -35,6 +35,14 @@ The CLI equivalent:
 dsh plugin --profile web add @khorsheed/dsh-dev-suite
 ```
 
+<!-- collection:start -->
+Recommended: install it together with the basic suite (the Dev collection, one command):
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite
+```
+<!-- collection:end -->
+
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-dev-suite
 ```

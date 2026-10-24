@@ -30,6 +30,14 @@ The CLI equivalent:
 dsh plugin --profile web add @khorsheed/dsh-writing-suite
 ```
 
+<!-- collection:start -->
+Recommended: install it together with the basic suite (the Writing collection, one command):
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-writing-suite
+```
+<!-- collection:end -->
+
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-writing-suite
 ```

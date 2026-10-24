@@ -33,6 +33,14 @@ The CLI equivalent:
 dsh plugin --profile web add @khorsheed/dsh-video-suite
 ```
 
+<!-- collection:start -->
+Recommended: install it together with the basic suite (the Video collection, one command):
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-video-suite
+```
+<!-- collection:end -->
+
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-video-suite
 ```

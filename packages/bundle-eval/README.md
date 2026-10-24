@@ -44,6 +44,14 @@ dsh plugin --profile web add @khorsheed/dsh-eval-suite
   name: '@khorsheed/dsh-eval/tool'
 ```
 
+<!-- collection:start -->
+推荐连同基础体验一起装(「评测」集合,一条命令):
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite
+```
+<!-- collection:end -->
+
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-eval-suite
 ```

@@ -32,6 +32,14 @@ The CLI equivalent:
 dsh plugin --profile web add @khorsheed/dsh-gamedev-suite
 ```
 
+<!-- collection:start -->
+Recommended: install it together with the basic suite (the Gamedev collection, one command):
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-gamedev-suite
+```
+<!-- collection:end -->
+
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-gamedev-suite
 ```

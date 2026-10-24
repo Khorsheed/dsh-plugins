@@ -35,6 +35,14 @@
 dsh plugin --profile web add @khorsheed/dsh-dev-suite
 ```
 
+<!-- collection:start -->
+推荐连同基础体验一起装(「开发」集合,一条命令):
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite
+```
+<!-- collection:end -->
+
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-dev-suite
 ```

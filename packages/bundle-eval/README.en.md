@@ -44,6 +44,14 @@ Takes effect after the web instance restarts. Once mounted, the evaluation famil
   name: '@khorsheed/dsh-eval/tool'
 ```
 
+<!-- collection:start -->
+Recommended: install it together with the basic suite (the Eval collection, one command):
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite
+```
+<!-- collection:end -->
+
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-eval-suite
 ```

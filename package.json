@@ -23,6 +23,8 @@
     "check:release-groups": "tsx scripts/check-release-groups.ts",
     "map:packages": "tsx scripts/generate-package-map.ts",
     "check:packages": "tsx scripts/generate-package-map.ts --check",
+    "map:collections": "tsx scripts/check-collections.ts --write",
+    "check:collections": "tsx scripts/check-collections.ts",
     "check:workflows": "tsx scripts/check-workflow-refs.ts",
     "check:builds": "tsx scripts/check-build-scripts-declared.ts",
     "gate": "tsx scripts/gate.mts",

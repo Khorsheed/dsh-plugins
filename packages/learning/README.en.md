@@ -30,6 +30,14 @@ The CLI equivalent:
 dsh plugin --profile web add @khorsheed/dsh-learning-suite
 ```
 
+<!-- collection:start -->
+Recommended: install it together with the basic suite (the Learning collection, one command):
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-learning-suite
+```
+<!-- collection:end -->
+
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-learning-suite
 ```

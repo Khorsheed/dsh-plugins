@@ -22,6 +22,25 @@
 
 ![dsh-dev 开发套件:room 多 agent 邀请、worktree 实况徽标、子 agent 任务胶囊](docs/screenshots/dev-mode.png)
 
+## 一键安装:集合
+
+普通用户装一个**集合**就够了:基础体验加一个模式套件。集合只是一份清单(`collections.json`),不是 npm 包——`dsh plugin add` 后面可以跟多个包名,一条命令装齐。想自己挑的,任何单包、任何套件都能单独装,和集合并存也不会重复挂载。
+
+<!-- collections:start -->
+<!-- 由 pnpm map:collections 依 collections.json 生成，勿手改 -->
+
+| 集合 | 一条命令装齐 |
+| --- | --- |
+| 基础 | `dsh plugin --profile web add @khorsheed/dsh-basic` |
+| 开发 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite` |
+| 写作 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-writing-suite` |
+| 学习 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-learning-suite` |
+| 剪辑 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-video-suite` |
+| 游戏开发 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-gamedev-suite` |
+| 评测 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite` |
+| 全部 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite @khorsheed/dsh-writing-suite @khorsheed/dsh-learning-suite @khorsheed/dsh-video-suite @khorsheed/dsh-gamedev-suite @khorsheed/dsh-eval-suite` |
+<!-- collections:end -->
+
 ## 能力地图
 
 每个包的功能详情、配置与截图见各自目录的 README(点目录进包即达)。「安装包名」列复制即可装;「随套件」一列表示它随哪个套件装好(成员可在套件间重叠);标「单包」的不随任何套件,用「添加插件」对话框或 `dsh plugin add` 单独安装。
