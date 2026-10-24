@@ -69,6 +69,14 @@ with Compatibility, `dsh.compat`/`dsh.references`/`files`/`exports`):
   `local-agent-dsh-headless` are card-less deps-only libraries: they enter
   `dependencies` (and `ALLOWED_EDGES`) but no patch rows beyond what the
   members' canonical rows already name.
+  2026-10-24: `@khorsheed/dsh-room` joins as the sixth member and the card
+  becomes「多Agent协作」(Multi-Agent Collaboration). A room's members ARE
+  these local agents (room probes `localAgent` and is reduced to native dsh
+  sub-members without it), so a "multi-agent" install that brings delegation
+  but not rooms covered only half of the capability. The room row is mounted
+  verbatim from room's own patch; room floors at 0.1.5-rc.1 like the rest, so
+  minHost is unchanged. dev keeps room as its own member (the overlap
+  collapses to one row).
 - `packages/bundle-conversation-toolbox`「会话工具箱」— members: message-tools,
   message-timeline, session-title-edit, quote, inline-html-render,
   context-guard, taskpilot (one canonical row each).

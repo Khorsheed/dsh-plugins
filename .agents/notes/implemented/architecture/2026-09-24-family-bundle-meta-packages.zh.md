@@ -27,6 +27,7 @@ Status: implemented
 **两个样例 bundle**(`@khorsheed/dsh-bundle-<name>`,均 0.1.0,照 dsh-presets 薄元包形态:`src/index.ts` 常量桩保证可构建 `lib/`,tsc+tsdown,`locale/en.json`+`zh.json` 卡面元数据,双语 README 含 Compatibility,`dsh.compat`/`dsh.references`/`files`/`exports`):
 
 - `packages/bundle-local-agent`「本地多Agent」——成员:local-agent 核 + kimi / codex / claude-code / dsh 四个 provider(停用官方同名工具行的两条 override 逐字取自 codex / claude-code 的 patch)。`local-agent-tool-subagent` 与 `local-agent-dsh-headless` 是无卡 deps-only 库:进 `dependencies`(与 `ALLOWED_EDGES`)但不在 patch 行里出现(超出成员规范行已点名者)。
+  2026-10-24:`@khorsheed/dsh-room` 作为第六个成员并入,卡名改为「多Agent协作」(Multi-Agent Collaboration)。协作间的成员就是这些本地 agent(room 探测 `localAgent`,没有它只剩 dsh 原生子成员),只带委派不带协作间的「多 agent」安装只覆盖了这项能力的一半。room 行逐字取自 room 自己的 patch;room 的地板同为 0.1.5-rc.1,minHost 不变。dev 仍把 room 列为自己的成员(重叠塌缩为同一行)。
 - `packages/bundle-conversation-toolbox`「会话工具箱」——成员:message-tools、message-timeline、session-title-edit、quote、inline-html-render、context-guard、taskpilot(各一条规范行)。
 
 两包各带 spec 钉死 patch ↔ `FAMILY_MEMBERS` 常量 ↔ 清单(成员清单、规范行逐字复用、引用加引号、依赖与名册登记),以成员自己的 patch 为事实源。`dsh.compat.minHost` 取各家族成员最高地板(两者均 `0.1.5-rc.1`)。

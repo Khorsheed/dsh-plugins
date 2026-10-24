@@ -2,18 +2,18 @@
 
 English | [中文](README.md)
 
-Let dsh hand work to the other CLI agents on this machine — Kimi, Codex, Claude Code, dsh itself — with the whole local-agent family in one install.
+Let dsh hand work to the other CLI agents on this machine — Kimi, Codex, Claude Code, dsh itself — or bring them into one room to work together; the whole local-agent family and the room in one install.
 
-One conversation, many agents: the mainline agent judges which task fits which harness, a delegation tool passes the task over with its requirements, and the finished CLI run brings the result back into the current dialogue (the run is visible in the 子代理 surface). This family bundle installs the local-agent core plus all four delegation providers at once, adding a single 「本地多Agent」 card to the inventory instead of making you pick packages one by one.
+One conversation, many agents: the mainline agent judges which task fits which harness, a delegation tool passes the task over with its requirements, and the finished CLI run brings the result back into the current dialogue (the run is visible in the 子代理 surface). When several members need to talk it through, open a room: its members are these local agents plus native dsh sub-members. This family bundle installs the local-agent core, all four delegation providers and the room at once, adding a single 「多Agent协作」 card to the inventory instead of making you pick packages one by one.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="The four Local Agent cards under Settings: Kimi, Codex, dsh, Claude Code — header dots showing each provider's auth state">
 
 ## Features
 
-- **The whole family in one install** — the local-agent core (shared scoped-homes root, `/<harness> login|sessions` command family, delegation facade and Remote) plus the four delegation providers (kimi / codex / claude-code / dsh), with the family tool library, all from a single `dsh plugin add`.
+- **The whole family in one install** — the local-agent core (shared scoped-homes root, `/<harness> login|sessions` command family, delegation facade and Remote) plus the four delegation providers (kimi / codex / claude-code / dsh) and the room, with the family tool library, all from a single `dsh plugin add`.
 - **In-place delegation tools** — `subagent_kimi` / `subagent_codex` / `subagent_claude_code` keep the official subagent tool names (toolName unchanged, so presets and prompts carry over), adding an optional `resume` parameter: continue the same CLI conversation in a later round instead of cold-starting every time.
 - **No resident processes** — delegation defaults to one-shot processes; with no delegation or login activity, no extra provider process runs on the machine.
-- **One card in the inventory** — locale card metadata folds the family into a single 「本地多Agent」 card; the card-less library lives and dies with the family and never appears on its own.
+- **One card in the inventory** — locale card metadata folds the family into a single 「多Agent协作」 card; the card-less library lives and dies with the family and never appears on its own.
 - **Pure composition, zero runtime** — the package registers no service, tool, slot, or command of its own; the patch reuses the members' canonical rows verbatim and never double-mounts (mechanism in How it works below).
 
 ## Members
@@ -25,10 +25,11 @@ One conversation, many agents: the mainline agent judges which task fits which h
 | `@khorsheed/dsh-local-agent-codex` | `local-agent-codex` (+ override `tool-subagent-codex`) | Codex CLI harness; the `subagent_codex` delegation tool is the package's `./tool` composition entry, granted by a preset that names it |
 | `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code` (+ override `tool-subagent-claude-code`) | Claude Code harness; the `subagent_claude_code` delegation tool is the package's `./tool` composition entry, granted by a preset that names it |
 | `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | the dsh harness controller (Settings → 本地 Agent switch, off by default; mounts `subagent_dsh` dynamically while ON) |
+| `@khorsheed/dsh-room` | `room` | the room (协作间): multi-member rooms whose members come from the local agents above and native dsh sub-members; its model-facing tools are the package's `./tool` composition entry, granted by a preset that names it |
 
 Card-less library (deps-only: in `dependencies`, no patch rows of its own): `@khorsheed/dsh-local-agent-dsh-headless` (the provisioned sub-dsh face). It never appears on the inventory page and lives or dies with the family. (Before the family fold there was also the shared tool package `@khorsheed/dsh-local-agent-tool-subagent`; it is retired — the delegation tool implementation moved into the family core's `./tool-factory` export and each provider mounts its own `./tool` composition entry.)
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent.png" width="640" alt="The 「本地多Agent」 family card's detail page in the plugin inventory: every member row listed with its own enable switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent.png" width="640" alt="The 「本地多Agent」 family card (now 「多Agent协作」) detail page in the plugin inventory: every member row listed with its own enable switch">
 
 ## Install
 
@@ -46,7 +47,7 @@ Removing the bundle removes the whole family; to keep the family and disable a s
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — pure composition; the floor is the members' highest (minHost `0.1.5-rc.1`, the floor of the core and the four providers; the deps-only library local-agent-dsh-headless floors lower). Per-member behavior differences above that floor (e.g. token-granularity live mirroring on 0.1.5) are documented in each member's own Compatibility section.
+- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — pure composition; the floor is the members' highest (minHost `0.1.5-rc.1`, the floor of the core, the four providers and room; the deps-only library local-agent-dsh-headless floors lower). Per-member behavior differences above that floor (e.g. token-granularity live mirroring on 0.1.5) are documented in each member's own Compatibility section.
 - source line (deepseek-harness master): ✅ full (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; delegation moved to `ctx.subagents.startActivation` (managed activations), and run.id is now unique per execution.
 
 **Version-line map**: `0.1.0` and later require host `0.1.5-rc.1` and up.
