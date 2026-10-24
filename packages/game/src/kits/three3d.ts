@@ -22,6 +22,9 @@ import { BLANK_PROBE } from './canvas2d.ts'
 import { KIT_IMPORTS_FILE, KIT_RUNTIME_FILE, type RuntimeKit } from './types.ts'
 
 const THREE_FILE = '_dsh/three.module.js'
+
+/** The 2D probe after one render: under the checks dsh3d's \`step\` advances logic only, so the canvas is drawn on demand here. */
+const BLANK_PROBE_3D = `(window.dsh3dWorld && window.dsh3dWorld.render(), ${BLANK_PROBE})`
 const DSH3D_FILE = '_dsh/dsh3d.js'
 
 /** `runtime/dsh3d.js` beside the package root: one level up from `lib/`, two from `src/kits/`. */
@@ -70,7 +73,7 @@ export const THREE_3D: RuntimeKit = {
   normalizeLook: normalizeLook3d,
   lookHint: LOOK3D_HINT,
   // dsh3d's renderer keeps its drawing buffer, so the 2D read-back works on the WebGL canvas too.
-  blankProbe: BLANK_PROBE,
+  blankProbe: BLANK_PROBE_3D,
   styles: ART_STYLES_3D,
   skillSection: `## 运行环境 · 3D 套件（game.json 的 runtime.kit 是 3d-three）
 - three.js 0.170 已内置，再加插件的薄运行时 dsh3d。代码里直接写 \`import * as THREE from 'three'\` 和 \`import { createWorld, build, defineBase, definePart, ink, toon, flat } from 'dsh3d'\`（不要写路径、不要引 CDN）。
@@ -83,6 +86,8 @@ ${STYLE_LINES}
 - 世界：\`const world = createWorld({ region: (x, z) => '区域名' })\`，然后
   - \`world.terrain({ size, height: (x, z) => 高度 })\` 地形；\`world.place(obj, x, z)\` 放到地面上
   - \`world.add(obj, { id: 元素id, inst: 实例id, name, state: () => '当前在干什么' })\` 登记实体（右栏「指一下」靠它认出东西）
+  - \`world.scatter(元素id, 数量或位置列表, { seed, spread, center, scale: [0.85, 1.15] })\` 把一种元素批量撒在地面上：外观只生成一次、批量绘制，每棵按地形高度落地、随机朝向和大小（同一个 seed 每次摆得一样）；点到任意一棵，「指一下」认出是哪个元素、第几棵。树林、石滩、草地都用它，别自己循环 clone。撒出来的是静物，没有逐棵动效。
+  - **多个场景**（地图上的几座山、室内外）：\`world.enterScene('场景名', w => { w.terrain(…); w.scatter(…); w.add(…); w.onUpdate(…) })\`。切到下一个场景时，上一个场景里登记的地形、实体、批量物件、onUpdate 全部移除并释放；在任何场景之外登记的（玩家、镜头跟随）保留。各场景的底色、地面颜色、水色、雾、光照写在 game.json 的 \`style3d.scenes\`：\`{ "北坡": { "bg": "#cfd6dc", "ground": "#d8dcd6", "fog": [12, 40], "light": 0.8 } }\`（名字由游戏自己定；明暗层数和描边全局共用，不能按场景换）。别在同一个场景里堆所有区域，也别手动去删 scene 里的东西。
   - \`world.follow(玩家)\` 镜头跟随（俯视斜 45° 正交镜头）；\`world.onUpdate((dt, t) => {...})\` 写游戏逻辑
   - \`world.step(dt)\` 推进一帧（dshGame.step 就调它），\`world.start()\` 开始实时播放
   - \`world.pick(x, y)\`、\`world.pause(on)\`、\`world.highlight(list)\` 是给面板用的，dshGame 里转发即可
@@ -95,8 +100,10 @@ ${STYLE_LINES}
     \`defineBase('robot', (look, kit) => { const g = new kit.THREE.Group(), body = new kit.THREE.Group(); g.add(body); body.add(kit.ink(new kit.THREE.BoxGeometry(0.8, 0.6, 0.5), kit.toon(kit.color('body', '#888888')))); return { g, body } })\`
     \`definePart('antenna', ({ spec, anchors, kit }) => { const a = kit.ink(new kit.THREE.CylinderGeometry(0.02, 0.02, spec.length ?? 0.4), kit.toon(kit.color(spec.color ?? 'accent', '#ff0000'))); a.position.y = 0.5; anchors.body.add(a); return { update: t => { a.rotation.z = 0.2 * Math.sin(t * 3) } } })\`
     之后配方里就能写 \`"base": "robot"\`、\`{ "type": "antenna", "length": 0.5 }\`（自定义部件的其他参数在 spec.extra 里）。注册过的名字用户在面板里同样能调。
-  - **场景物件也走配方**：树、石头、草丛、远山、建筑这类有形状的元素，同样在 \`src/looks.js\` 里 defineBase 注册造型（用 \`kit.flat(kit.color('body', '#…'))\`，尺寸读 \`look.proportions\`），元素文件写 \`look\`，代码里 \`build(元素id)\` 一次、再 \`clone()\` 撒到各处（数量、分布范围这类仍是元素字段）。别在 main.js 里直接手写几何体——那样右栏看不到它的样子，用户也没法调。只有地面高度场（world.terrain）和水面这种铺满整个场景的不算元素。
-  - 面数预算：单个元素 1 万三角面以内，整个场景 15 万以内（\`world.stats()\` 可查）。
+  - **场景物件也走配方**：树、石头、草丛、远山、建筑这类有形状的元素，同样在 \`src/looks.js\` 里 defineBase 注册造型（用 \`kit.flat(kit.color('body', '#…'))\`，尺寸读 \`look.proportions\`），元素文件写 \`look\`，成片的用 \`world.scatter(元素id, …)\` 撒开、单个的 \`build(元素id)\`（数量、分布范围这类仍是元素字段）。别在 main.js 里直接手写几何体——那样右栏看不到它的样子，用户也没法调。只有地面高度场（world.terrain）和水面这种铺满整个场景的不算元素。
+  - 面数预算：单个元素 1 万三角面以内，同屏一个场景 15 万以内（\`world.stats()\` 可查，批量物件按份数算）。这是建议不是硬限制，超了先看帧率。
+- 贴图与素材：图片放 \`assets/\`，\`new THREE.TextureLoader().load('assets/xx.png')\` 就能用（贴到 toon/flat 材质的 map 上）；纸纹、墨晕这类也可以用 canvas 现画，再 \`new THREE.CanvasTexture(canvas)\`，不用另存文件。glTF 外观（\`{ kind: "gltf", src }\`）目前只显示占位方块，加载器还没做，模型请用部件配方或自己注册的造型。
+- 检查里（\`window.__GAMEDEV_TEST__\`）\`step\` 推进逻辑和镜头但不画画面，测试可以放心多跑帧；要读像素时先 \`world.render()\`。
 - dshGame 约定照旧，3D 推荐这样接：
 \`\`\`js
 window.dshGame = {

@@ -2,7 +2,11 @@
 
 ## 0.1.0（2026-10-24）
 
-- Every visible element carries a look, scenery included: the skill asks for a look on everything visible, and in 3D scenery shapes are registered with `defineBase` in `src/looks.js`, built once and cloned across the scene, so the element grid can render and tune them.
+- 3D scenes: `world.enterScene(name, setup)` swaps terrain, the scene's own style overrides (`game.json` `style3d.scenes`, kept through panel rewrites) and everything registered inside, freeing the last scene. A new `terrain()` replaces the old ground.
+- `world.scatter(element, countOrPoints, { seed, … })`: one look instanced over the ground, each copy on the terrain with a seeded facing and size, outlined, and pickable as `id#n`.
+- Inside the checks `step` advances logic without rendering; the 3D blank probe renders once.
+- Skill: `assets/` (formats, limits, textures, canvas textures), scenes, scatter; glTF looks are stated as stand-ins for now.
+- Every visible element carries a look, scenery included: the skill asks for a look on everything visible, and in 3D scenery shapes are registered with `defineBase` in `src/looks.js`, scattered with `world.scatter` (or built one by one), so the element grid can render and tune them.
 - Panel edits (looks, fields, lore, picked variants, finalized params) change the working files; a bar commits them as a new version through the checks. The composer dock, the post-change nudge and its switch are gone; `game_read` shows the agent what changed once.
 - Element lore (`lore`): a 设定 card on the element page and a generated 元素设定 chapter. The element page puts "ask the agent for a new look" under the preview and folds the 3D recipe.
 - Element cards show a 3D element's model as a still (two render at a time; the color swatch stands in meanwhile). The open element's title row is the panel kit's header — a real back button, pinned while the detail scrolls.

@@ -33,7 +33,7 @@ export const GAMEDEV_SKILL: GameSkill = {
 - 用 game_open 建项目（过轻量门：title、pitch、elementTypes、artStyle 都得是用户认可的）。项目是会话工作区里的一个文件夹，game_open 会告诉你路径；之后用普通的文件工具读写其中的文件。
 - 目录：
   - \`game.json\` 清单（插件写的；改 pitch/支柱/元素类型可以直接编辑，保持合法 JSON）
-  - \`index.html\` 入口，\`src/\` 代码（ES module，相对路径 import），\`assets/\` 图片音频
+  - \`index.html\` 入口，\`src/\` 代码（ES module，相对路径 import），\`assets/\` 图片音频（png/jpg/webp、mp3/wav/ogg 都行，用相对路径 \`assets/xx.png\` 引用；游戏里不能联网，所有素材都放项目里。单个文件 8MB 以内、全部 48MB 以内，图片建议 1024 像素以内）
   - \`elements/*.json\` 元素：每个文件一个对象或对象数组，必须有 \`id\`、\`name\`、\`type\`（type 取 game.json 的 elementTypes 之一）。数值放顶层字段（hp、speed、cost……），面板会自动汇成「元素与数值」表；外观放 \`look\`（见下）；设定放 \`lore\`（见下）。
   - \`design/*.md\` 策划文档（见 game-design 技能）
   - \`tests/*.test.js\` 测试脚本

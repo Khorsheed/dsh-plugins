@@ -13,10 +13,17 @@
  * - Open vocabulary: `defineBase(name, fn)` / `definePart(type, fn)` let a
  *   project add bodies and parts the built-ins do not cover.
  * - `createWorld()`: the 45° orthographic camera, the loop (`step(dt)` for
- *   tests, `start()` for play), terrain, entity registry.
+ *   tests, `start()` for play), terrain, entity registry, scenes
+ *   (`enterScene`: terrain, the scene's own style overrides and everything
+ *   registered inside, released together on the next switch) and `scatter`
+ *   (one element instanced across the ground, still pickable).
  * - The workbench hooks: `pick(x, y)` returns a structured reference for the
  *   panel's 「指一下」, `pause(on)` freezes time, `highlight(list)` rings the
  *   entities a candidate version changed.
+ *
+ * Inside the workbench's checks (`window.__GAMEDEV_TEST__`) `step` advances
+ * logic and the camera but never draws; `render()` draws on demand (the smoke probe
+ * calls it), so a long test stays cheap.
  *
  * Plain ES module, no build step: what is here is what runs. Never spell an
  * import statement in a comment here: the sandbox loader rewrites import
@@ -109,7 +116,8 @@ export function flat(color, extra) {
 function outline() {
   outlineMaterial ??= new THREE.ShaderMaterial({
     uniforms: { c: { value: new THREE.Color(style.outline) }, w: { value: style.outlineWidth } },
-    vertexShader: 'uniform float w; void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vec3 n = normalize(normalMatrix * normal); mv.xyz += n * w; gl_Position = projectionMatrix * mv; }',
+    // USE_INSTANCING: the same hull serves `scatter`'s instanced copies.
+    vertexShader: 'uniform float w; void main(){ vec4 p = vec4(position,1.0); vec3 nn = normal;\n#ifdef USE_INSTANCING\np = instanceMatrix * p; nn = mat3(instanceMatrix) * nn;\n#endif\nvec4 mv = modelViewMatrix * p; vec3 n = normalize(normalMatrix * nn); mv.xyz += n * w; gl_Position = projectionMatrix * mv; }',
     fragmentShader: 'uniform vec3 c; void main(){ gl_FragColor = vec4(c,1.0); }',
     side: THREE.BackSide,
   })
@@ -537,12 +545,41 @@ function buildLook(look, lookOrId) {
 export function triangles(object) {
   let n = 0
   object.traverse(o => {
-    if (o.isMesh && !o.userData.outline) n += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3
+    if (o.isMesh && !o.userData.outline) n += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3 * (o.isInstancedMesh ? o.count : 1)
   })
   return Math.round(n)
 }
 
 /* ------------------------------------------------------------------- world */
+
+/** The style keys a scene may override (shading bands and the ink outline stay global: every material shares them). */
+const SCENE_STYLE_KEYS = ['bg', 'ground', 'ground2', 'water', 'fog', 'light']
+
+/** Free an object tree's GPU resources, sparing the shared cached materials. */
+function release(object) {
+  const shared = new Set(materials.values())
+  if (outlineMaterial) shared.add(outlineMaterial)
+  object.traverse(o => {
+    o.geometry?.dispose()
+    for (const m of [o.material].flat()) {
+      if (!m || shared.has(m)) continue
+      for (const v of Object.values(m)) if (v?.isTexture) v.dispose()
+      m.dispose()
+    }
+    if (o.isInstancedMesh) o.dispose()
+  })
+}
+
+/** A small seeded random source (mulberry32), so a scatter lands the same way every load. */
+function seeded(seed) {
+  let a = (Math.floor(seed) >>> 0) || 1
+  return () => {
+    a = (a + 0x6D2B79F5) >>> 0
+    let t = Math.imul(a ^ (a >>> 15), a | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
 
 const CAMERA_OFFSET = new THREE.Vector3(12, 13.5, 12)
 
@@ -553,7 +590,9 @@ const CAMERA_OFFSET = new THREE.Vector3(12, 13.5, 12)
  *   `style` defaults to game.json's `style3d` (or the preset its `artStyle` names).
  */
 export function createWorld(options = {}) {
-  const s = useStyle(options.style ?? manifestStyle())
+  const baseSpec = options.style ?? manifestStyle()
+  const baseObj = typeof baseSpec === 'string' ? { preset: baseSpec } : { ...baseSpec }
+  let s = useStyle(baseSpec)
   const canvas = options.canvas ?? document.querySelector('canvas') ?? document.body.appendChild(document.createElement('canvas'))
   // preserveDrawingBuffer: the workbench's blank-screen probe and screenshots read the canvas.
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true })
@@ -573,6 +612,48 @@ export function createWorld(options = {}) {
   const rings = new THREE.Group()
   scene.add(rings)
   let heightFn = () => 0, ground = null, time = 0, paused = false, running = false, last = 0
+  /** The scene entered last: `{ name, group, entities, updates, ground }`, or null before any. */
+  let current = null
+  const testing = () => window.__GAMEDEV_TEST__ === true
+
+  /** Background, fog and light from a resolved style (terrain colors are read when terrain is built). */
+  function applyLook(st) {
+    scene.background.set(st.bg)
+    scene.fog.color.set(st.bg)
+    scene.fog.near = st.fog[0]
+    scene.fog.far = st.fog[1]
+    hemi.color.set(st.hemi[0]); hemi.groundColor.set(st.hemi[1]); hemi.intensity = st.hemi[2]
+    sun.intensity = st.sun
+  }
+
+  /** Camera pose and world matrices, as a render would leave them (pick needs them without a render). */
+  function sync() {
+    camera.position.copy(target).add(CAMERA_OFFSET)
+    camera.lookAt(target)
+    scene.updateMatrixWorld()
+  }
+
+  /** Leave the current scene: everything it registered goes, and its GPU resources with it. */
+  function leaveScene() {
+    if (current === null) return
+    const gone = new Set(current.entities)
+    for (let i = entities.length - 1; i >= 0; i--) if (gone.has(entities[i])) entities.splice(i, 1)
+    for (const fn of current.updates) { const i = updates.indexOf(fn); if (i >= 0) updates.splice(i, 1) }
+    if (followed && gone.has(followed)) followed = null
+    for (const r of [...rings.children]) if (gone.has(r.userData.follow)) rings.remove(r)
+    scene.remove(current.group)
+    release(current.group)
+    if (current.ground !== null && ground === current.ground) dropGround()
+    current = null
+  }
+
+  function dropGround() {
+    if (ground === null) return
+    scene.remove(ground)
+    release(ground)
+    ground = null
+    heightFn = () => 0
+  }
 
   function resize() {
     const w = canvas.clientWidth || canvas.width || 640, h = canvas.clientHeight || canvas.height || 400
@@ -585,7 +666,11 @@ export function createWorld(options = {}) {
   addEventListener('resize', resize)
 
   const world = {
-    THREE, scene, camera, renderer, canvas, style: s,
+    THREE, scene, camera, renderer, canvas,
+    /** The active style: the game's, with the current scene's overrides. */
+    get style() { return s },
+    /** The current scene's name, or null. */
+    get sceneName() { return current?.name ?? null },
     /** Ground height at (x, z) — what `terrain` was given. */
     heightAt: (x, z) => heightFn(x, z),
     /**
@@ -593,6 +678,8 @@ export function createWorld(options = {}) {
      * Clicking it in 「指一下」 gives a ground reference.
      */
     terrain({ size = 70, segments = 70, height } = {}) {
+      // One ground at a time: a new terrain replaces (and frees) the old one.
+      dropGround()
       if (height) heightFn = height
       const geo = new THREE.PlaneGeometry(size, size, segments, segments)
       geo.rotateX(-Math.PI / 2)
@@ -608,6 +695,7 @@ export function createWorld(options = {}) {
       ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }))
       ground.userData.ground = true
       scene.add(ground)
+      if (current !== null) current.ground = ground
       return ground
     },
     /**
@@ -617,8 +705,10 @@ export function createWorld(options = {}) {
      */
     add(object, { id, inst, name, state } = {}) {
       object.userData.entity = { id, inst, name, state }
-      scene.add(object)
+      // Inside a scene, an entity belongs to it and leaves with it.
+      ;(current?.group ?? scene).add(object)
       entities.push(object)
+      current?.entities.push(object)
       return object
     },
     /** Put an object on the ground at (x, z). */
@@ -627,12 +717,82 @@ export function createWorld(options = {}) {
       return object
     },
     remove(object) {
-      scene.remove(object)
+      object.parent?.remove(object)
       const i = entities.indexOf(object)
       if (i >= 0) entities.splice(i, 1)
     },
-    /** Run `fn(dt, t)` every step (game logic). */
-    onUpdate(fn) { updates.push(fn) },
+    /** Run `fn(dt, t)` every step (game logic). Inside a scene it stops when the scene is left. Returns a function that stops it. */
+    onUpdate(fn) {
+      updates.push(fn)
+      current?.updates.push(fn)
+      return () => { const i = updates.indexOf(fn); if (i >= 0) updates.splice(i, 1) }
+    },
+    /**
+     * Switch scenes: free everything the previous scene registered (its
+     * entities, scatters, onUpdate callbacks and terrain), apply this scene's
+     * style overrides — game.json `style3d.scenes[name]`, then `opts.style` —
+     * and run `setup(world)`; whatever it adds, scatters, terrains or
+     * registers belongs to this scene. Things registered outside any scene
+     * (the player, say) stay. Returns setup's result (await it when setup is async).
+     */
+    enterScene(name, setup, opts = {}) {
+      leaveScene()
+      const fromData = (window.dshManifest?.style3d?.scenes ?? {})[name] ?? {}
+      const overrides = {}
+      for (const key of SCENE_STYLE_KEYS) {
+        const v = opts.style?.[key] ?? fromData[key]
+        if (v !== undefined) overrides[key] = v
+      }
+      s = resolveStyle({ ...baseObj, ...overrides })
+      applyLook(s)
+      const group = new THREE.Group()
+      group.name = `scene:${name}`
+      scene.add(group)
+      current = { name, group, entities: [], updates: [], ground: null }
+      const result = setup?.(world)
+      if (!testing()) world.render()
+      return result
+    },
+    /**
+     * One element (or look) built once and instanced over the ground: each
+     * copy lands on the terrain with a random facing and size. `points` is a
+     * list of `[x, z]` / `{ x, z }`, or a count spread over `spread` (a
+     * square side, centered on `center`). Picking a copy answers the element
+     * with `inst: 'id#n'`. Static: no per-copy motion.
+     */
+    scatter(idOrLook, points, { seed = 1, spread = 40, center = [0, 0], rotate = true, scale = [0.85, 1.15], name, inst } = {}) {
+      const rnd = seeded(seed)
+      const spots = typeof points === 'number'
+        ? Array.from({ length: Math.max(0, Math.floor(points)) }, () => [center[0] + (rnd() - 0.5) * spread, center[1] + (rnd() - 0.5) * spread])
+        : (points ?? []).map(p => (Array.isArray(p) ? p : [p.x, p.z]))
+      const id = typeof idOrLook === 'string' ? idOrLook : null
+      // Placed once: a rebuild (an edited look) keeps every copy where it was.
+      const matrices = spots.map(([x, z]) => {
+        const k = scale[0] + rnd() * (scale[1] - scale[0])
+        const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotate ? rnd() * Math.PI * 2 : 0)
+        return new THREE.Matrix4().compose(new THREE.Vector3(x, heightFn(x, z), z), q, new THREE.Vector3(k, k, k))
+      })
+      const make = () => {
+        const model = build(idOrLook)
+        model.updateMatrixWorld(true)
+        const group = new THREE.Group()
+        model.traverse(o => {
+          if (!o.isMesh) return
+          const copies = new THREE.InstancedMesh(o.geometry, o.material, matrices.length)
+          matrices.forEach((m, i) => { copies.setMatrixAt(i, m.clone().multiply(o.matrixWorld)) })
+          copies.instanceMatrix.needsUpdate = true
+          copies.computeBoundingSphere()
+          if (o.userData.outline) { copies.userData.outline = true; copies.raycast = () => {} }
+          group.add(copies)
+        })
+        group.userData.scatter = { count: spots.length }
+        if (id !== null) group.userData.builtFrom = id
+        group.userData.rescatter = make
+        return group
+      }
+      const elementName = id !== null ? window.dshElements?.[id]?.name : undefined
+      return world.add(make(), { id: id ?? undefined, inst, name: name ?? elementName })
+    },
     /** Keep the camera on an object. */
     follow(object) { followed = object },
     /** Swing the camera to an object for a few seconds. */
@@ -651,11 +811,13 @@ export function createWorld(options = {}) {
         r.position.set(o.position.x, heightFn(o.position.x, o.position.z) + 0.05, o.position.z)
         r.scale.setScalar(1 + 0.06 * Math.sin(time * 4))
       }
-      world.render()
+      // Checks drive hundreds of steps: logic and the camera pose there (tests project
+      // screen points with it), no drawing; the probe renders once.
+      if (testing()) sync()
+      else world.render()
     },
     render() {
-      camera.position.copy(target).add(CAMERA_OFFSET)
-      camera.lookAt(target)
+      sync()
       renderer.render(scene, camera)
     },
     /** Play: step on every animation frame while not paused. */
@@ -680,6 +842,7 @@ export function createWorld(options = {}) {
      * or null.
      */
     pick(x, y) {
+      sync()
       const ray = new THREE.Raycaster()
       ray.setFromCamera(new THREE.Vector2(x / canvas.width * 2 - 1, -(y / canvas.height) * 2 + 1), camera)
       const hits = ray.intersectObjects(ground ? [...entities, ground] : entities, true)
@@ -688,10 +851,13 @@ export function createWorld(options = {}) {
         while (o && !o.userData.entity && !o.userData.ground) o = o.parent
         if (!o) continue
         const point = { x: +hit.point.x.toFixed(2), y: +hit.point.y.toFixed(2), z: +hit.point.z.toFixed(2) }
-        if (o.userData.ground) return { id: null, ground: true, point, region: options.region?.(point.x, point.z) ?? null }
+        if (o.userData.ground) return { id: null, ground: true, point, region: options.region?.(point.x, point.z) ?? null, scene: current?.name ?? null }
         const e = o.userData.entity
         const state = typeof e.state === 'function' ? e.state() : e.state
-        return { id: e.id ?? null, inst: e.inst ?? null, name: e.name ?? null, state: state ?? null, point, region: options.region?.(point.x, point.z) ?? null }
+        // A scattered copy answers its element plus which copy (1-based).
+        const copy = o.userData.scatter && hit.instanceId !== undefined ? hit.instanceId + 1 : null
+        const inst = e.inst ?? (copy !== null && e.id ? `${e.id}#${copy}` : null)
+        return { id: e.id ?? null, inst: inst ?? null, name: e.name ?? null, state: state ?? null, point, region: options.region?.(point.x, point.z) ?? null, scene: current?.name ?? null }
       }
       return null
     },
@@ -702,6 +868,8 @@ export function createWorld(options = {}) {
         for (const o of entities) {
           const e = o.userData.entity
           if (e.id !== id && e.inst !== id) continue
+          // A ring around a whole forest says nothing; scattered copies are not ringed.
+          if (o.userData.scatter) continue
           const box = new THREE.Box3().setFromObject(o), r = Math.max(0.5, box.getSize(new THREE.Vector3()).x * 0.6)
           const ring = new THREE.Mesh(new THREE.RingGeometry(r, r + 0.14, 48),
             new THREE.MeshBasicMaterial({ color: tone === 'added' ? '#1f9a55' : '#2f6fe0', transparent: true, opacity: 0.85, depthWrite: false, depthTest: false, side: THREE.DoubleSide }))
@@ -727,12 +895,15 @@ export function createWorld(options = {}) {
     for (const old of [...entities]) {
       if (old.userData.builtFrom !== id) continue
       let fresh
-      try { fresh = build(id) } catch (error) { console.error(error); continue }
+      try { fresh = old.userData.rescatter ? old.userData.rescatter() : build(id) } catch (error) { console.error(error); continue }
       fresh.position.copy(old.position)
       fresh.rotation.copy(old.rotation)
       fresh.userData.entity = old.userData.entity
-      scene.remove(old)
-      scene.add(fresh)
+      const parent = old.parent ?? scene
+      parent.remove(old)
+      if (old.userData.scatter) release(old)
+      parent.add(fresh)
+      if (current?.entities.includes(old)) current.entities[current.entities.indexOf(old)] = fresh
       entities[entities.indexOf(old)] = fresh
       if (followed === old) followed = fresh
       for (const r of rings.children) if (r.userData.follow === old) r.userData.follow = fresh

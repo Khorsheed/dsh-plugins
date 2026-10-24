@@ -114,6 +114,81 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
     expect(result.passed).toBe(1)
   }, 90_000)
 
+  it('switches scenes cleanly, scatters pickable copies on the ground, and never renders inside the checks', async () => {
+    const PINE = { kind: 'parts3d', base: 'pine', proportions: { height: 1.6 }, parts: [], palette: { body: '#3f5a45' }, motion: {} }
+    const result = await checker.run(withKitRuntime({
+      ...files,
+      'game.json': text(JSON.stringify({ id: 'g', runtime: { kit: '3d-three', version: 1 }, style3d: { preset: 'ink', scenes: { 北山: { bg: '#cfd6dc', fog: [10, 30] }, 南山: { bg: '#e8efd8' } } } }), 'application/json'),
+      'elements/pine.json': text(JSON.stringify({ id: 'songlin', name: '墨松', type: '山水', look: PINE }), 'application/json'),
+      'src/main.js': text(`import { createWorld, build, defineBase } from 'dsh3d'
+        defineBase('pine', (look, kit) => { const g = new kit.THREE.Group(), body = new kit.THREE.Group(); g.add(body)
+          const h = look.proportions?.height ?? 1.5
+          const cone = kit.ink(new kit.THREE.ConeGeometry(0.5, h, 7), kit.flat(kit.color('body', '#335533'))); cone.position.y = h / 2; body.add(cone); return { g, body } })
+        const world = createWorld()
+        let renders = 0
+        const draw = world.renderer.render.bind(world.renderer)
+        world.renderer.render = (a, b) => { renders++; draw(a, b) }
+        const player = world.add(world.place(build('jiuweihu'), 0, 0), { id: 'jiuweihu', inst: 'player' })
+        let northTicks = 0
+        world.enterScene('北山', w => {
+          w.terrain({ size: 30, segments: 30, height: (x, z) => 0.3 * Math.sin(x * 0.5) })
+          w.scatter('songlin', 12, { seed: 7, spread: 20 })
+          w.onUpdate(() => { northTicks++ })
+          w.add(w.place(build('jiuweihu'), 4, 4), { id: 'jiuweihu', inst: 'north-fox' })
+        })
+        window.__north = { bg: '#' + world.scene.background.getHexString(), fog: world.scene.fog.far, entities: world.stats().entities }
+        const pines = world.scene.getObjectByName('scene:北山').children.find(o => o.userData.scatter)
+        window.__pines = pines
+        window.dshGame = {
+          ready: true, step: dt => world.step(dt), input() {},
+          pick: (x, y) => world.pick(x, y),
+          state: () => ({ renders, northTicks, scene: world.sceneName, bg: '#' + world.scene.background.getHexString(),
+            entities: world.stats().entities, grounds: world.scene.children.filter(o => o.userData.ground).length,
+            sceneGroups: world.scene.children.filter(o => o.name.startsWith('scene:')).length, playerKept: world.scene.children.includes(player) }),
+          south: () => world.enterScene('南山', w => { w.terrain({ size: 20, height: () => 0 }) }),
+        }`),
+    }, THREE_3D), {
+      'tests/scenes.test.js': `
+        test('inside the checks step advances logic without rendering', () => {
+          const before = game.state().renders
+          step(30)
+          assert.equal(game.state().renders, before, '检查里 step 不应渲染')
+          assert(game.state().northTicks >= 30, '北山的 onUpdate 应在跑')
+        })
+        test('scattered copies sit on the terrain and pick back as the element', () => {
+          const world = window.dsh3dWorld, c = world.canvas, pines = window.__pines.children[0]
+          const m = new world.THREE.Matrix4(), p = new world.THREE.Vector3()
+          pines.getMatrixAt(3, m); p.setFromMatrixPosition(m)
+          // The copy's matrix carries the cone's own lift (0.8 × its random size 0.85–1.15) above the ground.
+          const lift = p.y - world.heightAt(p.x, p.z)
+          assert(lift > 0.8 * 0.85 - 1e-4 && lift < 0.8 * 1.15 + 1e-4, '第 4 棵应落在地面上，离地 ' + lift)
+          world.follow(null); world.camera.zoom = 1
+          const v = p.clone(); v.y += 0.8; world.render(); v.project(world.camera)
+          const ref = game.pick((v.x + 1) / 2 * c.width, (1 - v.y) / 2 * c.height)
+          assert(ref && ref.id === 'songlin', '应认出墨松：' + JSON.stringify(ref))
+          assert(/^songlin#\\d+$/.test(ref.inst), '应带实例编号：' + ref.inst)
+          assert.equal(ref.name, '墨松'); assert.equal(ref.scene, '北山')
+        })
+        test('a scene takes its style from style3d.scenes', () => {
+          assert.equal(window.__north.bg, '#cfd6dc'); assert.equal(window.__north.fog, 30)
+        })
+        test('entering the next scene frees the last one and keeps what lives outside scenes', () => {
+          const ticks = game.state().northTicks
+          game.south()
+          step(10)
+          const s = game.state()
+          assert.equal(s.scene, '南山'); assert.equal(s.bg, '#e8efd8')
+          assert.equal(s.northTicks, ticks, '北山的 onUpdate 应停掉')
+          assert.equal(s.entities, 1, '只剩玩家：' + s.entities)
+          assert.equal(s.grounds, 1, '地面只有一块'); assert.equal(s.sceneGroups, 1)
+          assert(s.playerKept, '场景外的玩家应保留')
+        })`,
+    }, { blankProbe: THREE_3D.blankProbe })
+    expect(result.failures).toEqual([])
+    expect(result.passed).toBe(4)
+    expect(result.screenshot?.length).toBeGreaterThan(100)
+  }, 90_000)
+
   it('flags a 3D game that never draws', async () => {
     const result = await checker.run(withKitRuntime({
       ...files,
