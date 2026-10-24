@@ -168,6 +168,23 @@ describe('claude stream fold content completeness', () => {
     })
   })
 
+  it('a ToolSearch result folds its tool_reference blocks as the found tool names', () => {
+    const parsed = parseClaudeStreamJson([
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'ts1', name: 'ToolSearch', input: { query: 'dsh-member video', max_results: 20 } }] } }),
+      JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'ts1', content: [
+        { type: 'tool_reference', tool_name: 'mcp__dsh-member-deca9204__member_message' },
+        { type: 'tool_reference', tool_name: 'mcp__dsh-member-deca9204__room_read' },
+      ] }] } }),
+    ].join('\n'))
+    // The references ARE the result: dropping them stranded the call, and the
+    // settle closed the step with a phantom interrupted placeholder.
+    expect(parsed.lines).toEqual([
+      { kind: 'tool', id: 'ts1', name: 'ToolSearch', args: 'dsh-member video',
+        result: 'mcp__dsh-member-deca9204__member_message\nmcp__dsh-member-deca9204__room_read' },
+    ])
+    expect(parsed.toolCalls).toEqual({ count: 1, byName: { ToolSearch: 1 } })
+  })
+
   it('folds Write, MultiEdit, and NotebookEdit with their whole bodies', () => {
     const parsed = parseClaudeStreamJson([
       JSON.stringify({ type: 'assistant', message: { content: [

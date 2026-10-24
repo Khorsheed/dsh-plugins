@@ -234,16 +234,27 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
       }
     }
     case 'dynamicToolCall': {
-      // Non-shell tools (e.g. the multi-agent `wait`): {id, tool, arguments, status}.
+      // Non-shell tools (e.g. the multi-agent `wait`, the deferred `exec`
+      // discovery tool): {id, tool, arguments, status, contentItems, success}
+      // — the app-server carries the result INLINE on the completed item.
       const tool = typeof item['tool'] === 'string' ? item.tool : 'dynamic'
       const args = item['arguments'] === undefined || item['arguments'] === null
         ? undefined
         : typeof item['arguments'] === 'string' ? item['arguments'] : JSON.stringify(item['arguments'])
+      const content = item['contentItems']
+      const result = Array.isArray(content)
+        ? content
+            .filter((block): block is JsonObject => typeof block === 'object' && block !== null)
+            .map(block => typeof block['text'] === 'string' ? block['text'] : undefined)
+            .filter((text): text is string => text !== undefined && text !== '')
+            .join('\n')
+        : undefined
       return {
         kind: 'tool',
         id: itemId ?? `codex-live-${randomUUID()}`,
         name: tool,
         ...args === undefined || args === '' ? {} : { args },
+        ...result === undefined || result === '' ? {} : { result },
       }
     }
     case 'collabAgentToolCall': {

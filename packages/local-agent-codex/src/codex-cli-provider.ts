@@ -798,7 +798,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
   let event: {
     type?: string
     model?: unknown
-    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: string; name?: string; id?: string; changes?: { kind?: string; path?: string; diff?: string }[]; arguments?: string }
+    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: unknown; name?: string; id?: string; changes?: { kind?: string; path?: string; diff?: string }[]; arguments?: string; input?: string }
     usage?: unknown
     thread_id?: unknown
   }
@@ -887,6 +887,38 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
         }
       }
     }
+  } else if (item.type === 'custom_tool_call') {
+    // Custom tools (the deferred `exec` discovery tool, dynamic tools): the
+    // call rides `input`, its result the paired custom_tool_call_output.
+    // Without this branch a tool-loop round mirrored as two bare adjacent
+    // replies with the call between them invisible.
+    countToolCall(state, 'custom_tool_call')
+    state.lines.push({
+      kind: 'tool',
+      id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
+      name: item.name ?? 'custom',
+      ...typeof item.input === 'string' && item.input !== '' ? { args: item.input } : {},
+    })
+  } else if (item.type === 'custom_tool_call_output') {
+    // {call_id, output: string | content blocks} — pair by recency, the same
+    // idiom function_call_output uses (the stream orders a result right
+    // behind its call).
+    const output = typeof item.output === 'string' ? item.output
+      : Array.isArray(item.output)
+        ? item.output
+            .filter((block): block is { text: string } => typeof block === 'object' && block !== null && typeof (block as { text?: unknown }).text === 'string')
+            .map(block => block.text)
+            .join('\n')
+        : undefined
+    if (output !== undefined && output.trim() !== '') {
+      const last = state.lines[state.lines.length - 1]
+      if (last !== undefined && last.kind === 'tool') {
+        state.lines[state.lines.length - 1] = {
+          ...last,
+          result: last.result === undefined ? output : `${last.result}\n${output}`,
+        }
+      }
+    }
   }
 }
 
@@ -924,7 +956,8 @@ export class CodexStreamParser implements CodexStreamFoldState {
  * not put one on the wire; the settle path then reads the rollout's
  * turn_context). Item types covered: `reasoning` (thinking), `agent_message`
  * (reply text), `command_execution` (shell command with aggregated output),
- * `web_search_call`, and `function_call_output`. The last `agent_message`
+ * `web_search_call`, `custom_tool_call`/`custom_tool_call_output` (deferred
+ * and dynamic tools), and `function_call_output`. The last `agent_message`
  * wins as the run output (the final answer), and `turn.completed` carries the
  * turn's usage. Malformed lines are skipped.
  * @param stream - the collected stdout NDJSON text.
