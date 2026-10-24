@@ -1,16 +1,16 @@
 /**
- * The canvas Remote service: the wire's calling-agent convention on the three
- * mutating methods. A pad write is fenced by the CALLER's file policy and
- * workspace, which only the calling session knows, so every mutating method
- * must forward `agent.session` into the service core — a method that dropped it
+ * The canvas Remote service: the calling-session convention on the mutating
+ * methods. A pad write is fenced by the CALLER's file policy and workspace,
+ * which only the calling session knows, so every mutating method must resolve
+ * the session it is named by and forward it into the service core — a method that dropped it
  * would write at the deployment's own root (denied, or worse: somewhere else),
  * which is exactly the bug this convention fixes.
  *
- * The reads take no agent: a fence is a write fence, so a pad stays browsable
+ * The reads take no session: a fence is a write fence, so a pad stays browsable
  * for a session that is only being read.
  */
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { CanvasRemoteService } from '../src/remote.ts'
@@ -30,7 +30,7 @@ const CREATE: CanvasCreateRequest = { dir: WS, kind: 'article', title: '第一�
 const WRITE: CanvasWriteRequest = { dir: WS, name: NAME, content: 'a', version: '1' }
 const ARCHIVE: CanvasArchiveRequest = { dir: WS, name: NAME, archived: true }
 
-/** The session that owns the gesture, reachable only through the agent. */
+/** The session that owns the gesture, named by its id. */
 const SESSION = { id: 's1', header: { cwd: WS } } as unknown as Session
 
 /** One store call the fake saw, with whatever session it was handed. */
@@ -92,6 +92,8 @@ async function bench(): Promise<{ seen: Seen[]; remote: CanvasRemoteService; dis
   const ctx = new Context()
   ctx.provide('canvasStore', store as unknown as CanvasService)
   ctx.provide('canvasBoard', board as unknown as CanvasBoardService)
+  // The panel names its session by id; the attached store resolves it.
+  ctx.provide('sessions' as never, { get: (id: string) => id === 's1' ? SESSION : undefined } as never)
   const fiber = ctx.plugin(CanvasRemoteService, {})
   await fiber.await()
   return {
@@ -102,12 +104,12 @@ async function bench(): Promise<{ seen: Seen[]; remote: CanvasRemoteService; dis
 }
 
 describe('CanvasRemoteService', () => {
-  it('forwards the calling agent\'s session on every mutating method', async () => {
+  it('forwards the calling session on every mutating method', async () => {
     const { remote, seen, dispose } = await bench()
-    const agent = { session: SESSION } as unknown as Agent
-    expect(await remote.create(agent, CREATE)).toMatchObject({ ok: true, operation: 'create' })
-    expect(await remote.write(agent, WRITE)).toMatchObject({ ok: true, operation: 'update' })
-    expect(await remote.setArchived(agent, ARCHIVE)).toEqual({ ok: true })
+    const sessionId = SessionId('s1')
+    expect(await remote.create(sessionId, CREATE)).toMatchObject({ ok: true, operation: 'create' })
+    expect(await remote.write(sessionId, WRITE)).toMatchObject({ ok: true, operation: 'update' })
+    expect(await remote.setArchived(sessionId, ARCHIVE)).toEqual({ ok: true })
     expect(seen).toEqual([
       { method: 'create', session: SESSION },
       { method: 'write', session: SESSION },
@@ -116,7 +118,7 @@ describe('CanvasRemoteService', () => {
     await dispose()
   })
 
-  it('serves the reads without an agent', async () => {
+  it('serves the reads without a session', async () => {
     const { remote, dispose } = await bench()
     expect(await remote.list({ dir: WS })).toEqual({ items: [], archived: [] })
     expect(await remote.read({ dir: WS, name: NAME })).toEqual({ ok: false, error: 'missing' })
@@ -125,17 +127,17 @@ describe('CanvasRemoteService', () => {
 })
 
 describe('CanvasRemoteService — the canvas space verbs', () => {
-  it('forwards the calling agent\'s session on every mutating board verb', async () => {
+  it('forwards the calling session on every mutating board verb', async () => {
     const { remote, seen, dispose } = await bench()
-    const agent = { session: SESSION } as unknown as Agent
-    expect(await remote.createCanvas(agent, { title: '主题' })).toMatchObject({ ok: true })
-    expect(await remote.putCard(agent, { canvasId: CANVAS_ID, kind: 'fragment', text: 'x' })).toMatchObject({ ok: true })
-    expect(await remote.patchCard(agent, { canvasId: CANVAS_ID, cardId: 'c_1', status: 'archived' })).toMatchObject({ ok: true })
-    expect(await remote.addComment(agent, { canvasId: CANVAS_ID, cardId: 'c_1', text: 'x' })).toMatchObject({ ok: true })
-    expect(await remote.archiveCanvas(agent, { canvasId: CANVAS_ID, archived: true })).toMatchObject({ ok: true })
-    expect(await remote.deleteCard(agent, { canvasId: CANVAS_ID, cardId: 'c_1' })).toMatchObject({ ok: true })
-    expect(await remote.deleteCanvas(agent, { canvasId: CANVAS_ID })).toEqual({ ok: true })
-    expect(await remote.focusCanvas(agent, { canvasId: CANVAS_ID })).toEqual({ ok: true })
+    const sessionId = SessionId('s1')
+    expect(await remote.createCanvas(sessionId, { title: '主题' })).toMatchObject({ ok: true })
+    expect(await remote.putCard(sessionId, { canvasId: CANVAS_ID, kind: 'fragment', text: 'x' })).toMatchObject({ ok: true })
+    expect(await remote.patchCard(sessionId, { canvasId: CANVAS_ID, cardId: 'c_1', status: 'archived' })).toMatchObject({ ok: true })
+    expect(await remote.addComment(sessionId, { canvasId: CANVAS_ID, cardId: 'c_1', text: 'x' })).toMatchObject({ ok: true })
+    expect(await remote.archiveCanvas(sessionId, { canvasId: CANVAS_ID, archived: true })).toMatchObject({ ok: true })
+    expect(await remote.deleteCard(sessionId, { canvasId: CANVAS_ID, cardId: 'c_1' })).toMatchObject({ ok: true })
+    expect(await remote.deleteCanvas(sessionId, { canvasId: CANVAS_ID })).toEqual({ ok: true })
+    expect(await remote.focusCanvas(sessionId, { canvasId: CANVAS_ID })).toEqual({ ok: true })
     expect(seen).toEqual([
       { method: 'createCanvas', session: SESSION },
       { method: 'putCard', session: SESSION },
@@ -149,7 +151,7 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
     await dispose()
   })
 
-  it('serves the board reads without an agent', async () => {
+  it('serves the board reads without a session', async () => {
     const { remote, dispose } = await bench()
     expect(await remote.listCanvases()).toEqual({ items: [] })
     expect(await remote.readBoard({ canvasId: CANVAS_ID })).toEqual({ ok: false, error: 'missing' })
@@ -160,12 +162,12 @@ describe('CanvasRemoteService — the canvas space verbs', () => {
 describe('CanvasRemoteService — the manuscript verbs', () => {
   it('forwards the session, and writes from the browser as the user', async () => {
     const { remote, seen, dispose } = await bench()
-    const agent = { session: SESSION } as unknown as Agent
+    const sessionId = SessionId('s1')
     const ids = { canvasId: CANVAS_ID, manuscriptId: 'ms_abcdefgh' }
-    expect(await remote.writeManuscript(agent, { ...ids, body: 'x', baseVersion: 1 })).toEqual({ ok: false, error: 'stale', currentVersion: 2 })
-    expect(await remote.patchManuscript(agent, { ...ids, status: 'final' })).toMatchObject({ ok: true })
-    expect(await remote.exportManuscript(agent, { ...ids, workspace: WS })).toEqual({ ok: false, error: 'changed', path: `${WS}/x.md` })
-    expect(await remote.deleteManuscript(agent, ids)).toMatchObject({ ok: true })
+    expect(await remote.writeManuscript(sessionId, { ...ids, body: 'x', baseVersion: 1 })).toEqual({ ok: false, error: 'stale', currentVersion: 2 })
+    expect(await remote.patchManuscript(sessionId, { ...ids, status: 'final' })).toMatchObject({ ok: true })
+    expect(await remote.exportManuscript(sessionId, { ...ids, workspace: WS })).toEqual({ ok: false, error: 'changed', path: `${WS}/x.md` })
+    expect(await remote.deleteManuscript(sessionId, ids)).toMatchObject({ ok: true })
     expect(seen).toEqual([
       { method: 'writeManuscript:user', session: SESSION },
       { method: 'patchManuscript', session: SESSION },

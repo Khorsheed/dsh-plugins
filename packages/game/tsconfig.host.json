@@ -12,6 +12,7 @@
     "src/index.ts",
     "src/project.ts",
     "src/remote.ts",
+    "src/panel-session.ts",
     "src/skills.ts",
     "src/store.ts",
     "src/tools.ts",

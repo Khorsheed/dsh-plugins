@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { attach, provideAttachedSessions } from './attached-sessions.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { BashWriteCollector } from '../src/bash-writes.ts'
@@ -46,6 +47,7 @@ const flush = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0)
 describe('BashWriteCollector', () => {
   it('captures a bash-written file once its result settles', async () => {
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     const collector = new BashWriteCollector({ fs: makeFs(['/tmp/x.html']), env: {}, home: '/h' })
     collector.attach(ctx)
     const session = fakeSession('s1', '/work')
@@ -58,6 +60,7 @@ describe('BashWriteCollector', () => {
 
   it('drops candidates that do not exist (prefer a miss over a false positive)', async () => {
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     const collector = new BashWriteCollector({ fs: makeFs([]), env: {}, home: '/h' })
     collector.attach(ctx)
     const session = fakeSession('s1', '/work')
@@ -69,6 +72,7 @@ describe('BashWriteCollector', () => {
 
   it('ignores non-bash calls', async () => {
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     const collector = new BashWriteCollector({ fs: makeFs(['/work/a.md']), env: {}, home: '/h' })
     collector.attach(ctx)
     const session = fakeSession('s1', '/work')
@@ -84,6 +88,7 @@ describe('BashWriteCollector', () => {
 
   it('replays the session history on session/created (host restart recovery)', async () => {
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     const collector = new BashWriteCollector({ fs: makeFs(['/tmp/x.html']), env: {}, home: '/h' })
     collector.attach(ctx)
     const session = fakeSession('s1', '/work', [
@@ -97,6 +102,7 @@ describe('BashWriteCollector', () => {
 
   it('disposes its listeners', async () => {
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     const collector = new BashWriteCollector({ fs: makeFs(['/tmp/x.html']), env: {}, home: '/h' })
     const dispose = collector.attach(ctx)
     const session = fakeSession('s1', '/work')
@@ -111,13 +117,14 @@ describe('BashWriteCollector', () => {
 describe('FilePreviewService.list with the collector', () => {
   it('merges verified bash writes into the fold entries', async () => {
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     Object.assign(ctx, { fs: makeFs(['/tmp/whale.html']) })
     const service = new FilePreviewService(ctx)
     const session = fakeSession('s1', '/work')
     ctx.emit('session/event', session, toolCall('c1', 'cat > /tmp/whale.html', 1))
     ctx.emit('session/event', session, toolResult('c1', 2))
     await flush()
-    const list = await service.list({ session } as unknown as Agent)
+    const list = await service.list(attach(session))
     expect(list.entries.map(entry => entry.path)).toContain('/tmp/whale.html')
     const entry = list.entries.find(e => e.path === '/tmp/whale.html')
     expect(entry).toMatchObject({ op: 'write', turn: 1, step: 1, diffs: [] })
@@ -125,18 +132,20 @@ describe('FilePreviewService.list with the collector', () => {
 
   it('does not collect when captureBashWrites is disabled', async () => {
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     Object.assign(ctx, { fs: makeFs(['/tmp/whale.html']) })
     const service = new FilePreviewService(ctx, { captureBashWrites: false })
     const session = fakeSession('s1', '/work')
     ctx.emit('session/event', session, toolCall('c1', 'cat > /tmp/whale.html', 1))
     ctx.emit('session/event', session, toolResult('c1', 2))
     await flush()
-    const list = await service.list({ session } as unknown as Agent)
+    const list = await service.list(attach(session))
     expect(list.entries).toEqual([])
   })
 
   it('drops logged files that no longer exist on disk', async () => {
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     // /work/written.md is a logged write; only /work/survivor.md exists.
     Object.assign(ctx, { fs: makeFs(['/work/survivor.md']) })
     const service = new FilePreviewService(ctx)
@@ -145,12 +154,13 @@ describe('FilePreviewService.list with the collector', () => {
       data: { turn: 1, step: 1, callId: 'w1', name: 'write', arguments: JSON.stringify({ file_path: '/work/written.md', content: 'x' }) },
     } as unknown as SessionEvent
     const session = fakeSession('s1', '/work', [written])
-    const list = await service.list({ session } as unknown as Agent)
+    const list = await service.list(attach(session))
     expect(list.entries.map(entry => entry.path)).toEqual([])
   })
 
   it('turnFiles drops a turn file that was cleaned up after the fold', async () => {
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     // /work/gone.md no longer exists; /work/kept.md does.
     Object.assign(ctx, { fs: makeFs(['/work/kept.md']) })
     const service = new FilePreviewService(ctx)
@@ -163,7 +173,7 @@ describe('FilePreviewService.list with the collector', () => {
       data: { turn: 3, step: 2, callId: 'k1', name: 'write', arguments: JSON.stringify({ file_path: '/work/kept.md', content: 'y' }) },
     } as unknown as SessionEvent
     const session = fakeSession('s1', '/work', [gone, kept])
-    const map = await service.turnFiles({ session } as unknown as Agent)
+    const map = await service.turnFiles(attach(session))
     expect(map.turns).toHaveLength(1)
     expect(map.turns[0]!.files.map(file => file.path)).toEqual(['/work/kept.md'])
   })
@@ -172,6 +182,7 @@ describe('FilePreviewService.list with the collector', () => {
 describe('FilePreviewService.turnFiles', () => {
   it('returns per-turn groups with exact turn attribution and captured merge', async () => {
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     Object.assign(ctx, { fs: makeFs(['/tmp/bash.html', '/work/a.md']) })
     const service = new FilePreviewService(ctx)
     const write2 = {
@@ -188,7 +199,7 @@ describe('FilePreviewService.turnFiles', () => {
     ctx.emit('session/event', session, toolCall('b1', 'cat > /tmp/bash.html', 3, 5))
     ctx.emit('session/event', session, toolResult('b1', 4))
     await flush()
-    const map = await service.turnFiles({ session } as unknown as Agent)
+    const map = await service.turnFiles(attach(session))
     const turn2 = map.turns.find(group => group.turn === 2)
     const turn5 = map.turns.find(group => group.turn === 5)
     // Exact attribution: turn 2 has the write, turn 5 has the edit AND the bash capture.

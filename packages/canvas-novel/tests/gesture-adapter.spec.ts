@@ -7,7 +7,7 @@
  * path, and the disposed core's coded refusal on BOTH faces.
  */
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
 import { createNovelGestureAdapter, type NovelGestureAdapter } from '../src/gestures.ts'
@@ -35,13 +35,13 @@ interface Bench {
   store: NovelService
   fs: FakeFs
   remote: NovelRemoteService
-  agent: Agent
+  sessionId: SessionId
   adapter: NovelGestureAdapter
 }
 
 /**
  * One seeded《梦境监护者》world with BOTH faces mounted: the native Remote
- * (called with a stub agent, as the wire would) and the adapter (closed over
+ * (called with the session id, as the wire would) and the adapter (closed over
  * the same session). `poisonAgents` mounts an `agents` face whose every
  * property get throws — the tripwire proving the path never touches it.
  */
@@ -62,15 +62,17 @@ function bench(opts: { mode?: 'workspace-write' | 'read-only'; poisonAgents?: bo
   } as never)
   const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
   ctx.provide('canvasNovel', store as never)
+  // The panel names its session by id; the attached store resolves it.
+  ctx.provide('sessions' as never, { get: (id: string) => id === SESSION.id ? SESSION : undefined } as never)
   const remote = new NovelRemoteService(ctx)
-  const agent = { session: SESSION } as unknown as Agent
-  return { store, fs, remote, agent, adapter: createNovelGestureAdapter(store, SESSION) }
+  const sessionId = SESSION.id
+  return { store, fs, remote, sessionId, adapter: createNovelGestureAdapter(store, SESSION) }
 }
 
 /** One gesture case run through both faces. */
 interface ParityCase {
   readonly name: string
-  readonly remote: (face: NovelRemoteService, agent: Agent) => Promise<unknown>
+  readonly remote: (face: NovelRemoteService, sessionId: SessionId) => Promise<unknown>
   readonly adapter: (face: NovelGestureAdapter) => Promise<unknown>
 }
 
@@ -83,68 +85,68 @@ describe('the gesture adapter — parity with the native Remote', () => {
       // The happy path: a full text-form plan edit (the parse runs in the shared core).
       {
         name: 'editPlan lands',
-        remote: (face, agent) => face.editPlan(agent, { canvasId: work, n: 6, text: PLAN_TEXT }),
+        remote: (face, sessionId) => face.editPlan(sessionId, { canvasId: work, n: 6, text: PLAN_TEXT }),
         adapter: face => face.editPlan({ canvasId: work, n: 6, text: PLAN_TEXT }),
       },
       // An unknown handle: the error receipt names it, identically on both faces.
       {
         name: 'editPlan names unknown refs',
-        remote: (face, agent) => face.editPlan(agent, { canvasId: work, n: 6, text: '梗概：x\n伏笔：\n- 推进 #99：不存在的伏笔' }),
+        remote: (face, sessionId) => face.editPlan(sessionId, { canvasId: work, n: 6, text: '梗概：x\n伏笔：\n- 推进 #99：不存在的伏笔' }),
         adapter: face => face.editPlan({ canvasId: work, n: 6, text: '梗概：x\n伏笔：\n- 推进 #99：不存在的伏笔' }),
       },
       {
         name: 'confirmPlan on the edited chapter',
-        remote: (face, agent) => face.confirmPlan(agent, { canvasId: work, n: 6 }),
+        remote: (face, sessionId) => face.confirmPlan(sessionId, { canvasId: work, n: 6 }),
         adapter: face => face.confirmPlan({ canvasId: work, n: 6 }),
       },
       {
         name: 'confirmPlan on a planless chapter',
-        remote: (face, agent) => face.confirmPlan(agent, { canvasId: work, n: 1 }),
+        remote: (face, sessionId) => face.confirmPlan(sessionId, { canvasId: work, n: 1 }),
         adapter: face => face.confirmPlan({ canvasId: work, n: 1 }),
       },
       {
         name: 'reviewChapter too early',
-        remote: (face, agent) => face.reviewChapter(agent, { canvasId: work, n: 6 }),
+        remote: (face, sessionId) => face.reviewChapter(sessionId, { canvasId: work, n: 6 }),
         adapter: face => face.reviewChapter({ canvasId: work, n: 6 }),
       },
       {
         name: 'reviewChapter closes an extracted chapter',
-        remote: (face, agent) => face.reviewChapter(agent, { canvasId: work, n: 5 }),
+        remote: (face, sessionId) => face.reviewChapter(sessionId, { canvasId: work, n: 5 }),
         adapter: face => face.reviewChapter({ canvasId: work, n: 5 }),
       },
       {
         name: 'starForeshadow',
-        remote: (face, agent) => face.starForeshadow(agent, { canvasId: work, cardId: CARD.doorGap, starred: true }),
+        remote: (face, sessionId) => face.starForeshadow(sessionId, { canvasId: work, cardId: CARD.doorGap, starred: true }),
         adapter: face => face.starForeshadow({ canvasId: work, cardId: CARD.doorGap, starred: true }),
       },
       {
         name: 'starForeshadow on a character card refuses',
-        remote: (face, agent) => face.starForeshadow(agent, { canvasId: work, cardId: CARD.zhao, starred: true }),
+        remote: (face, sessionId) => face.starForeshadow(sessionId, { canvasId: work, cardId: CARD.zhao, starred: true }),
         adapter: face => face.starForeshadow({ canvasId: work, cardId: CARD.zhao, starred: true }),
       },
       {
         name: 'setCurrentState',
-        remote: (face, agent) => face.setCurrentState(agent, { canvasId: work, cardId: CARD.zhao, state: { where: '门后', state: '推门而入' } }),
+        remote: (face, sessionId) => face.setCurrentState(sessionId, { canvasId: work, cardId: CARD.zhao, state: { where: '门后', state: '推门而入' } }),
         adapter: face => face.setCurrentState({ canvasId: work, cardId: CARD.zhao, state: { where: '门后', state: '推门而入' } }),
       },
       {
         name: 'setCurrentState on a foreshadow refuses',
-        remote: (face, agent) => face.setCurrentState(agent, { canvasId: work, cardId: CARD.doorGap, state: {} }),
+        remote: (face, sessionId) => face.setCurrentState(sessionId, { canvasId: work, cardId: CARD.doorGap, state: {} }),
         adapter: face => face.setCurrentState({ canvasId: work, cardId: CARD.doorGap, state: {} }),
       },
       {
         name: 'decidePending on an empty queue',
-        remote: (face, agent) => face.decidePending(agent, { canvasId: work, id: 'p1', action: 'accept' }),
+        remote: (face, sessionId) => face.decidePending(sessionId, { canvasId: work, id: 'p1', action: 'accept' }),
         adapter: face => face.decidePending({ canvasId: work, id: 'p1', action: 'accept' }),
       },
       {
         name: 'decideOutline without a proposal',
-        remote: (face, agent) => face.decideOutline(agent, { canvasId: work, action: 'accept' }),
+        remote: (face, sessionId) => face.decideOutline(sessionId, { canvasId: work, action: 'accept' }),
         adapter: face => face.decideOutline({ canvasId: work, action: 'accept' }),
       },
     ]
     for (const entry of cases) {
-      const native = await entry.remote(a.remote, a.agent)
+      const native = await entry.remote(a.remote, a.sessionId)
       const adapted = await entry.adapter(b.adapter)
       expect(adapted, entry.name).toEqual(native)
     }
@@ -158,7 +160,7 @@ describe('the gesture adapter — parity with the native Remote', () => {
     expect((await b.store.readEntries(work))?.foreshadows.find(view => view.cardId === CARD.doorGap)?.starred).toBe(true)
 
     // And a further edit keeps parity — the parse's changed list included.
-    const edited = await a.remote.editPlan(a.agent, { canvasId: work, n: 6, text: '梗概：穿过后回头，门已经不在了。' })
+    const edited = await a.remote.editPlan(a.sessionId, { canvasId: work, n: 6, text: '梗概：穿过后回头，门已经不在了。' })
     const editedB = await b.adapter.editPlan({ canvasId: work, n: 6, text: '梗概：穿过后回头，门已经不在了。' })
     expect(editedB).toEqual(edited)
     expect(edited.ok).toBe(true)
@@ -167,7 +169,7 @@ describe('the gesture adapter — parity with the native Remote', () => {
     // decideOutline's happy path: identical proposals on both cores, then the decision.
     expect((await a.store.proposeOutline({ workId: work, sheet: { logline: '一个人守着别人的梦' } }, SESSION)).ok).toBe(true)
     expect((await b.store.proposeOutline({ workId: work, sheet: { logline: '一个人守着别人的梦' } }, SESSION)).ok).toBe(true)
-    const decidedNative = await a.remote.decideOutline(a.agent, { canvasId: work, action: 'accept' })
+    const decidedNative = await a.remote.decideOutline(a.sessionId, { canvasId: work, action: 'accept' })
     const decidedAdapted = await b.adapter.decideOutline({ canvasId: work, action: 'accept' })
     expect(decidedAdapted).toEqual(decidedNative)
     expect(decidedNative).toEqual({ ok: true })
@@ -209,11 +211,11 @@ describe('the gesture adapter — the fence underneath', () => {
   })
 
   it('a disposed core refuses coded through BOTH faces', async () => {
-    const { store, remote, agent, adapter } = bench()
+    const { store, remote, sessionId, adapter } = bench()
     store.dispose()
     const request = { canvasId: DREAM.workId, cardId: CARD.doorGap, starred: true }
     await expect(adapter.starForeshadow(request)).rejects.toBeInstanceOf(NovelDisposedError)
-    await expect(remote.starForeshadow(agent, request)).rejects.toBeInstanceOf(NovelDisposedError)
+    await expect(remote.starForeshadow(sessionId, request)).rejects.toBeInstanceOf(NovelDisposedError)
     await expect(adapter.editPlan({ canvasId: DREAM.workId, n: 6, text: PLAN_TEXT })).rejects.toBeInstanceOf(NovelDisposedError)
   })
 })

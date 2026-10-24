@@ -14,7 +14,8 @@
  * @module @khorsheed/dsh-canvas-novel/remote
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { panelSession } from './panel-session.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
   confirmPlanGesture, decideOutlineGesture, decidePendingGesture, editPlanGesture,
@@ -80,8 +81,8 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
 
   /** Accept or discard one pending item. */
   @Remote('decidePending')
-  decidePending(agent: Agent, request: NovelDecideRequest): Promise<NovelGestureResult> {
-    return decidePendingGesture(this.core, agent.session, request)
+  async decidePending(sessionId: SessionId, request: NovelDecideRequest): Promise<NovelGestureResult> {
+    return decidePendingGesture(this.core, await panelSession(this.ctx, sessionId), request)
   }
 
   /** The foreshadow ledger's counts and rows (the board strip reads its health). */
@@ -145,8 +146,8 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
 
   /** The person's ✓ 审过: closes an extracted chapter. */
   @Remote('reviewChapter')
-  reviewChapter(agent: Agent, request: NovelChapterRequest): Promise<NovelGestureResult> {
-    return reviewChapterGesture(this.core, agent.session, request)
+  async reviewChapter(sessionId: SessionId, request: NovelChapterRequest): Promise<NovelGestureResult> {
+    return reviewChapterGesture(this.core, await panelSession(this.ctx, sessionId), request)
   }
 
   /**
@@ -203,14 +204,14 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
 
   /** The person's 采用 / 不采用 on the outline proposal. */
   @Remote('decideOutline')
-  decideOutline(agent: Agent, request: NovelOutlineDecideRequest): Promise<NovelGestureResult> {
-    return decideOutlineGesture(this.core, agent.session, request)
+  async decideOutline(sessionId: SessionId, request: NovelOutlineDecideRequest): Promise<NovelGestureResult> {
+    return decideOutlineGesture(this.core, await panelSession(this.ctx, sessionId), request)
   }
 
   /** The person's ✓ 确认计划 on a planned chapter. */
   @Remote('confirmPlan')
-  confirmPlan(agent: Agent, request: NovelChapterRequest): Promise<NovelGestureResult> {
-    return confirmPlanGesture(this.core, agent.session, request)
+  async confirmPlan(sessionId: SessionId, request: NovelChapterRequest): Promise<NovelGestureResult> {
+    return confirmPlanGesture(this.core, await panelSession(this.ctx, sessionId), request)
   }
 
   /** What the newest 对账 did, card by card (the 设定 face's 最近更新). */
@@ -221,8 +222,8 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
 
   /** The person's own edit of a plan (the page's edit box), saved and confirmed at once. */
   @Remote('editPlan')
-  editPlan(agent: Agent, request: NovelPlanEditRequest): Promise<NovelPlanEditResult> {
-    return editPlanGesture(this.core, agent.session, request)
+  async editPlan(sessionId: SessionId, request: NovelPlanEditRequest): Promise<NovelPlanEditResult> {
+    return editPlanGesture(this.core, await panelSession(this.ctx, sessionId), request)
   }
 
   /** One card's engine side: its role, the star (foreshadows), 此刻, 出场 and 关系 (characters), the bar (relations). */
@@ -254,14 +255,14 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
 
   /** The person's ★ on a foreshadow. */
   @Remote('starForeshadow')
-  starForeshadow(agent: Agent, request: NovelStarRequest): Promise<NovelGestureResult> {
-    return starForeshadowGesture(this.core, agent.session, request)
+  async starForeshadow(sessionId: SessionId, request: NovelStarRequest): Promise<NovelGestureResult> {
+    return starForeshadowGesture(this.core, await panelSession(this.ctx, sessionId), request)
   }
 
   /** The person's edit of a character's 此刻. */
   @Remote('setCurrentState')
-  setCurrentState(agent: Agent, request: NovelStateRequest): Promise<NovelGestureResult> {
-    return setCurrentStateGesture(this.core, agent.session, request)
+  async setCurrentState(sessionId: SessionId, request: NovelStateRequest): Promise<NovelGestureResult> {
+    return setCurrentStateGesture(this.core, await panelSession(this.ctx, sessionId), request)
   }
 }
 

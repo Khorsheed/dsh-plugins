@@ -1,10 +1,13 @@
 /**
  * The worktrees Remote service: the badge and changes drawer's data face. A
  * thin adapter over the same `ctx.worktreesCore` service core — no logic is
- * copied here. The AGENT-BOUND half takes the calling `agent` as its first
- * parameter, resolves the session workspace (`header.cwd`, or the session's
- * active-worktree override) from it, and delegates to the service core, so
- * the Remote path is exactly as strong as the tool path. The AGENT-FREE half
+ * copied here. The SESSION-BOUND reads take the calling session's id first
+ * (resolved with {@link panelSession}, so a subagent's session — a room CLI
+ * member's — reads too), resolve the session workspace (`header.cwd`, or the
+ * session's active-worktree override) from it, and delegate to the service
+ * core, so the Remote path is exactly as strong as the tool path. The two
+ * gestures that act on the agent (`switchWorktree`, `directAgent`) keep the
+ * `agent` lookup: a subagent session has no agent of its own to redirect. The AGENT-FREE half
  * (the `*At` query verbs, `worktreeBinding`, `switchWorktreeControlled`)
  * takes explicit plain-JSON arguments — an absolute repository anchor, a
  * plain-string session id — so a trusted server-side caller can query and
@@ -19,8 +22,10 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { boundContextSummary, createUserMessage, type ContextFormed } from '@deepseek-ai/dsh-llm'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { panelSession } from './panel-session.ts'
 import type { ControlledSwitchReceipt, ControlledSwitchRequest, WorktreeBinding } from './bindings.ts'
 import {
   assertSafeLocalPath, type BadgeConfig, type ChangesResult, type CommitFilesResult, type FileDiffRequest,
@@ -105,9 +110,9 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
    * the session's active-worktree override (set by the model-facing tool) and
    * falls back to the session's static `header.cwd`. Awaits the bindings load
    * first, so a persisted override survives a host restart for this path too. */
-  private async cwd(agent: Agent): Promise<string> {
+  private async cwd(sessionId: SessionId): Promise<string> {
     await this.worktrees.bindingsReady()
-    return this.worktrees.activeWorktreeOf(agent.id) ?? (agent.session.header.cwd ?? '')
+    return this.worktrees.activeWorktreeOf(sessionId) ?? ((await panelSession(this.ctx, sessionId)).header.cwd ?? '')
   }
 
   /**
@@ -123,32 +128,32 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
 
   /** The badge + drawer summary for the calling session's worktree. */
   @Remote('summary')
-  async summary(agent: Agent): Promise<SessionSummary> {
-    return this.worktrees.summary(await this.cwd(agent))
+  async summary(sessionId: SessionId): Promise<SessionSummary> {
+    return this.worktrees.summary(await this.cwd(sessionId))
   }
 
   /** Both change segments for the drawer's file tree. */
   @Remote('changes')
-  async changes(agent: Agent): Promise<ChangesResult> {
-    return this.worktrees.changes(await this.cwd(agent))
+  async changes(sessionId: SessionId): Promise<ChangesResult> {
+    return this.worktrees.changes(await this.cwd(sessionId))
   }
 
   /** The repository's committed (tracked) file list. */
   @Remote('repoFiles')
-  async repoFiles(agent: Agent): Promise<string[]> {
-    return this.worktrees.repoFiles(await this.cwd(agent))
+  async repoFiles(sessionId: SessionId): Promise<string[]> {
+    return this.worktrees.repoFiles(await this.cwd(sessionId))
   }
 
   /** All worktrees of the session's repository (the switcher dropdown). */
   @Remote('listWorktrees')
-  async listWorktrees(agent: Agent): Promise<WorktreeInfo[]> {
-    return this.worktrees.listWorktrees(await this.cwd(agent))
+  async listWorktrees(sessionId: SessionId): Promise<WorktreeInfo[]> {
+    return this.worktrees.listWorktrees(await this.cwd(sessionId))
   }
 
   /** Point the session's active worktree at another worktree. */
   @Remote('switchWorktree')
   async switchWorktree(agent: Agent, request: { path: string }): Promise<WorktreeInfo> {
-    return this.worktrees.switchWorktree(agent.id, await this.cwd(agent), request.path)
+    return this.worktrees.switchWorktree(agent.id, await this.cwd(agent.session.id), request.path)
   }
 
   /**
@@ -180,32 +185,32 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
 
   /** The branch's own commit log (`base..HEAD`). */
   @Remote('commitLog')
-  async commitLog(agent: Agent): Promise<import('./service.ts').CommitInfo[]> {
-    return this.worktrees.commitLog(await this.cwd(agent))
+  async commitLog(sessionId: SessionId): Promise<import('./service.ts').CommitInfo[]> {
+    return this.worktrees.commitLog(await this.cwd(sessionId))
   }
 
   /** One commit's changed files. */
   @Remote('commitFiles')
-  async commitFiles(agent: Agent, request: { sha: string }): Promise<CommitFilesResult> {
-    return this.worktrees.commitFiles(await this.cwd(agent), request.sha)
+  async commitFiles(sessionId: SessionId, request: { sha: string }): Promise<CommitFilesResult> {
+    return this.worktrees.commitFiles(await this.cwd(sessionId), request.sha)
   }
 
   /** One file's unified diff in one segment (commit segment carries the sha). */
   @Remote('fileDiff')
-  async fileDiff(agent: Agent, request: FileDiffRequest): Promise<FileDiffResult> {
-    return this.worktrees.fileDiff(await this.cwd(agent), request.path, request.segment, request.commit)
+  async fileDiff(sessionId: SessionId, request: FileDiffRequest): Promise<FileDiffResult> {
+    return this.worktrees.fileDiff(await this.cwd(sessionId), request.path, request.segment, request.commit)
   }
 
   /** One file's current content. */
   @Remote('readFile')
-  async readFile(agent: Agent, request: ReadFileRequest): Promise<ReadFileResult> {
-    return this.worktrees.readFile(await this.cwd(agent), request.path)
+  async readFile(sessionId: SessionId, request: ReadFileRequest): Promise<ReadFileResult> {
+    return this.worktrees.readFile(await this.cwd(sessionId), request.path)
   }
 
   /** One file's content at one commit (the commits mode's content view). */
   @Remote('readFileAtCommit')
-  async readFileAtCommit(agent: Agent, request: ReadFileAtCommitRequest): Promise<ReadFileResult> {
-    return this.worktrees.readFileAtCommit(await this.cwd(agent), request.path, request.commit)
+  async readFileAtCommit(sessionId: SessionId, request: ReadFileAtCommitRequest): Promise<ReadFileResult> {
+    return this.worktrees.readFileAtCommit(await this.cwd(sessionId), request.path, request.commit)
   }
 
   /** List one local directory — the git-agnostic browser's directory plane.
@@ -228,8 +233,8 @@ export class WorktreesRemoteService extends TypertRemoteService<WorktreesRemoteC
   /** Read a repo-relative file as an inline image (the repo browser's data
    * plane; resolves the session's repository, like the other git data face). */
   @Remote('readRepoImage')
-  async readRepoImage(agent: Agent, request: ReadRepoImageRequest): Promise<LocalImageResult> {
-    return this.worktrees.readRepoImage(await this.cwd(agent), request.path)
+  async readRepoImage(sessionId: SessionId, request: ReadRepoImageRequest): Promise<LocalImageResult> {
+    return this.worktrees.readRepoImage(await this.cwd(sessionId), request.path)
   }
 
   /** Read one local file as an inline image — the git-agnostic browser's image

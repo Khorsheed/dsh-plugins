@@ -4,12 +4,13 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, AgentRegistry } from '@deepseek-ai/dsh-agent'
+import type { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import z from '@deepseek-ai/schemastery'
 import { BashWriteCollector } from './bash-writes.ts'
+import { panelSession } from './panel-session.ts'
 import { foldFilePreviewByTurn, type TurnFilesByTurn } from './fold.ts'
 import { openExternalNative, macAppName } from './open-external.ts'
 import {
@@ -165,8 +166,10 @@ export class FilePreviewService extends TypertRemoteService {
       res.writeHead(400).end('file preview: malformed path')
       return
     }
-    const agent = this.agents?.get(sessionId)
-    if (agent === undefined) {
+    // An attached session answers too: a subagent's (a room CLI member's)
+    // session has no Agent of its own in the registry.
+    const session = this.ctx.get('sessions')?.get(sessionId) ?? this.agents?.get(sessionId)?.session
+    if (session === undefined) {
       res.writeHead(404).end('file preview: session not found')
       return
     }
@@ -174,7 +177,7 @@ export class FilePreviewService extends TypertRemoteService {
       res.writeHead(400).end('file preview: not an image path')
       return
     }
-    const cwd = agent.session.header.cwd
+    const cwd = session.header.cwd
     let target
     try {
       target = await this.fs.resolve(display, cwd === undefined ? {} : { cwd })
@@ -220,17 +223,18 @@ export class FilePreviewService extends TypertRemoteService {
    * captured path the fold already knows keeps its log-derived entry. Only
    * paths that currently exist on disk are returned — a file the session
    * wrote and later deleted is history, not a product.
-   * @param agent - owning live agent; its session log is the data source.
+   * @param sessionId - the owning session (see panel-session.ts); its log is the data source.
    * @returns existing first-seen files capped by `maxFiles`, with the log watermark.
    */
   @Remote('list')
-  async list(agent: Agent): Promise<FilePreviewList> {
+  async list(sessionId: SessionId): Promise<FilePreviewList> {
+    const session = await panelSession(this.ctx, sessionId)
     return listFilePreview(
       // The header read stays lazy-tolerant: the pre-core code only touched
       // the cwd inside the existence probe, which an empty fold never reached.
-      { fs: this.fs, cwd: agent.session.header?.cwd, maxFiles: this.resolved.maxFiles },
-      agent.session.snapshotEvents(),
-      this.collector?.captured(agent.session.id),
+      { fs: this.fs, cwd: session.header?.cwd, maxFiles: this.resolved.maxFiles },
+      session.snapshotEvents(),
+      this.collector?.captured(sessionId),
     )
   }
 
@@ -246,12 +250,12 @@ export class FilePreviewService extends TypertRemoteService {
    * paths that currently exist on disk are returned (a deleted temp script is
    * history, not a product); existence is probed fresh on every call, so the
    * cached fold is filtered per request rather than cached.
-   * @param agent - owning live agent; its session log is the data source.
+   * @param sessionId - the owning session (see panel-session.ts); its log is the data source.
    * @returns existing per-turn file groups plus the scanned watermark.
    */
   @Remote('turnFiles')
-  async turnFiles(agent: Agent): Promise<FilePreviewTurnMap> {
-    const session = agent.session
+  async turnFiles(sessionId: SessionId): Promise<FilePreviewTurnMap> {
+    const session = await panelSession(this.ctx, sessionId)
     const events = session.snapshotEvents()
     const asOfSeq = eventsWatermark(events)
     const cached = this.turnCache.get(session.id)
@@ -276,15 +280,15 @@ export class FilePreviewService extends TypertRemoteService {
    * window (`readByteRange` of cap + 1 bytes), so an oversized file costs the
    * cap, never its full size; a known oversized stat still short-circuits to
    * `too-large` before any bytes move.
-   * @param agent - owning live agent; its session cwd anchors relative paths.
+   * @param sessionId - the owning session (see panel-session.ts); its cwd anchors relative paths.
    * @param path - the display path recorded by the write/edit tool call.
    * @param signal - cooperative cancellation from the calling UI request.
    * @returns the classified read; `text` carries content, `image` carries a
    *   browser URL, other kinds carry the size or a human-readable reason.
    */
   @Remote('read')
-  async read(agent: Agent, path: string, signal: AbortSignal): Promise<FilePreviewRead> {
-    const session = agent.session
+  async read(sessionId: SessionId, path: string, signal: AbortSignal): Promise<FilePreviewRead> {
+    const session = await panelSession(this.ctx, sessionId)
     return readFilePreview(
       {
         fs: this.fs,
@@ -310,17 +314,17 @@ export class FilePreviewService extends TypertRemoteService {
    * existing target, or a platform that cannot select, answers `revealed:
    * false` and the caller opens the parent folder instead (the pre-reveal
    * "show in folder" behavior), so the gesture always lands somewhere visible.
-   * @param agent - owning live agent; its session cwd anchors relative paths.
+   * @param sessionId - the owning session (see panel-session.ts); its cwd anchors relative paths.
    * @param path - the display path recorded by the read/write/edit tool call.
    * @param signal - cooperative cancellation from the calling UI request.
    * @returns whether the file manager selected the file, or why not.
    */
   @Remote('reveal')
-  async reveal(agent: Agent, path: string, signal: AbortSignal): Promise<FilePreviewReveal> {
+  async reveal(sessionId: SessionId, path: string, signal: AbortSignal): Promise<FilePreviewReveal> {
     if (typeof path !== 'string' || path.length === 0) {
       return { revealed: false, reason: 'missing' }
     }
-    const cwd = agent.session.header.cwd
+    const cwd = (await panelSession(this.ctx, sessionId)).header.cwd
     let target
     try {
       target = await this.fs.resolve(path, cwd === undefined ? { signal } : { cwd, signal })
@@ -359,19 +363,19 @@ export class FilePreviewService extends TypertRemoteService {
    * (probed from `/open-in-app/apps`); the id → app-name map lives in
    * open-external.ts. Non-macOS hosts and unknown ids answer without
    * launching, and the client hides the gesture.
-   * @param agent - owning live agent; its session cwd anchors relative paths.
+   * @param sessionId - the owning session (see panel-session.ts); its cwd anchors relative paths.
    * @param path - the display path recorded by the read/write/edit tool call.
    * @param app - official open-in-app catalog id (e.g. `cursor`).
    * @param signal - cooperative cancellation from the calling UI request.
    * @returns whether the application launched, or why not.
    */
   @Remote('openExternal')
-  async openExternal(agent: Agent, path: string, app: string, signal: AbortSignal): Promise<FilePreviewOpenExternal> {
+  async openExternal(sessionId: SessionId, path: string, app: string, signal: AbortSignal): Promise<FilePreviewOpenExternal> {
     if (typeof path !== 'string' || path.length === 0 || typeof app !== 'string' || app.length === 0) {
       return { opened: false, reason: 'missing' }
     }
     if (macAppName(app) === undefined) return { opened: false, reason: 'unknown-app' }
-    const cwd = agent.session.header.cwd
+    const cwd = (await panelSession(this.ctx, sessionId)).header.cwd
     let target
     try {
       target = await this.fs.resolve(path, cwd === undefined ? { signal } : { cwd, signal })

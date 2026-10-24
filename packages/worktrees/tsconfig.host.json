@@ -10,6 +10,7 @@
     "src/git.ts",
     "src/index.ts",
     "src/remote.ts",
+    "src/panel-session.ts",
     "src/service.ts",
     "src/tool.ts",
     "src/tool-definition.ts",

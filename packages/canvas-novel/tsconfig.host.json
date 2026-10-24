@@ -13,6 +13,7 @@
     "src/gestures.ts",
     "src/index.ts",
     "src/remote.ts",
+    "src/panel-session.ts",
     "src/skill.ts",
     "src/store.ts",
     "src/tools.ts",
