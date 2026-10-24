@@ -146,6 +146,13 @@ describe('SelectionQuoteMenu routes', () => {
     expect(screen.queryByRole('toolbar')).toBeNull()
   })
 
+  it('a selection inside a declared source names that source, not the session', () => {
+    const { emit, mocks } = menuBench({ current: 's-1', title: '主会话', sideChat: true })
+    emit({ ...SNAPSHOT, source: '沙箱基础设施' })
+    fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
+    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「沙箱基础设施」', '引用「沙箱基础设施」')
+  })
+
   it('引用到侧边对话 queues the ref on the session context, surfaces the tab, and closes', async () => {
     const { emit, mocks } = menuBench({ current: 's-1', title: '主会话', sideChat: true })
     emit(SNAPSHOT)

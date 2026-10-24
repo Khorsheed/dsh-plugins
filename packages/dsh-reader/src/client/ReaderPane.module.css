@@ -662,6 +662,17 @@
   letter-spacing: -0.005em;
 }
 
+/* 对照: the original title under its translation, in the body's 对照 voice —
+   quieter and smaller, still selectable. */
+.detailTitleOrig {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--dsh-panel-text-body, 13px);
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .tagRow {
   display: flex;
   flex-wrap: wrap;

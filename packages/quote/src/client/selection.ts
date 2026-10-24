@@ -28,6 +28,28 @@ export interface SelectionRect {
 export interface SelectionSnapshot {
   readonly text: string
   readonly rect: SelectionRect
+  /**
+   * The content's own source label, when the selection sits inside an
+   * element carrying `data-quote-source` (an article pane names its article,
+   * not the session it happens to be docked beside). Absent elsewhere.
+   */
+  readonly source?: string
+}
+
+/**
+ * The opt-in source attribute: any surface showing quotable content of its
+ * own (a reader article, a document preview) sets it on the content's root.
+ * Plain DOM data, no package edge — a surface that never sets it, or a quote
+ * plugin that never reads it, both degrade to the session title.
+ */
+export const QUOTE_SOURCE_ATTR = 'data-quote-source'
+
+/** The nearest declared source label around a range, if any. */
+function sourceOf(range: Range): string | undefined {
+  const container = range.commonAncestorContainer
+  const element = container instanceof Element ? container : container.parentElement
+  const label = element?.closest(`[${QUOTE_SOURCE_ATTR}]`)?.getAttribute(QUOTE_SOURCE_ATTR)?.trim()
+  return label === undefined || label === '' ? undefined : label
 }
 
 /** Sink for selection updates; `null` hides the menu. */
@@ -66,8 +88,14 @@ export function classifySelection(
   if (anchor !== null && (own(anchor) || isInteractive(anchor))) return null
   const focus = selection.focusNode
   if (focus !== null && (own(focus) || isInteractive(focus))) return null
-  const rect = selection.getRangeAt(0).getBoundingClientRect()
-  return { text, rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } }
+  const range = selection.getRangeAt(0)
+  const rect = range.getBoundingClientRect()
+  const source = sourceOf(range)
+  return {
+    text,
+    rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+    ...(source === undefined ? {} : { source }),
+  }
 }
 
 /** A selection source that also accepts the menu root (the real implementation). */

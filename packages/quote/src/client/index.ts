@@ -77,7 +77,7 @@ export { QuoteActionRegistryRuntime } from './registry.ts'
 export type {
   QuoteActionContribution, QuoteActionFeed, QuoteActionRegistry, QuoteActionTarget, ResolvedQuoteAction,
 } from './registry.ts'
-export { classifySelection, createSelectionSource } from './selection.ts'
+export { classifySelection, createSelectionSource, QUOTE_SOURCE_ATTR } from './selection.ts'
 export type { RootedSelectionSource, SelectionRect, SelectionSnapshot, SelectionSource } from './selection.ts'
 export type { QuoteMenuInjected, QuoteMenuProps } from './contract.ts'
 
