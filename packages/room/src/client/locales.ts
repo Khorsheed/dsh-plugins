@@ -89,7 +89,7 @@ export const zh = {
   'action.inviteAgent': '＋ 邀请 agent',
   'view.members': '成员',
   'members.empty': '暂无成员',
-  'composer.placeholder': '跟 {name} 对话；@ 指定其他成员',
+  'composer.placeholder': '跟{name}对话；@ 指定其他成员',
   'composer.send': '发送',
   'composer.stop': '停止生成',
   'composer.error.unknownTargets': '未知成员：{names}',
