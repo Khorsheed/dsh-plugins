@@ -30,7 +30,7 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-gamedev-suite
 ```
 
-The game comes with the Game Dev Suite. Then start a new session, pick "Game dev mode", and tell the agent what kind of game you'd like to make.
+The game comes with the Game Dev Suite. Then start a new session, pick "游戏开发模式" (game dev mode), and tell the agent what kind of game you'd like to make.
 
 The Game panel only appears in Game-dev-mode sessions; not seeing it in other modes is expected.
 

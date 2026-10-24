@@ -31,7 +31,7 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-writing-suite
 ```
 
-The canvas comes with the Writing Suite; if you'd rather use it for study notes, the Learning Suite (`@khorsheed/dsh-learning-suite`) includes it as well. Then start a new session, pick "Writing mode" (or "Learning mode"), and tell the agent "start a new canvas about …".
+The canvas comes with the Writing Suite; if you'd rather use it for study notes, the Learning Suite (`@khorsheed/dsh-learning-suite`) includes it as well. Then start a new session, pick "写作模式" (writing mode) or "学习模式" (learning mode), and tell the agent "start a new canvas about …".
 
 The canvas only appears in sessions in those two modes; not seeing it elsewhere is expected.
 

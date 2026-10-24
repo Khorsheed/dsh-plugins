@@ -31,9 +31,9 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-writing-suite
 ```
 
-The novel genre comes with the Writing Suite, along with the idea canvas. Then start a new session, pick "Writing mode", and tell the agent "I want to write a novel; start a novel canvas".
+The novel genre comes with the Writing Suite, along with the idea canvas. Then start a new session, pick "写作模式" (writing mode), and tell the agent "I want to write a novel; start a novel canvas".
 
-It only appears in Writing-mode sessions; not seeing it in other modes is expected.
+It only appears in "写作模式" (writing mode) sessions; not seeing it in other modes is expected.
 
 ## Known limitations
 

@@ -32,7 +32,7 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-video-suite
 ```
 
-It's best to also install `@khorsheed/dsh-basic` (Basic Essentials), which carries everyday things like editing messages and previewing files. Then start a new session, pick "剪辑模式" (video mode), and tell the agent where the recording is.
+It's best to also install `@khorsheed/dsh-basic` (Basic Essentials), which carries everyday things like editing messages and previewing files. Then start a new session, pick "剪辑模式" (editing mode), and tell the agent where the recording is.
 
 All of this only shows up in video-mode sessions; not seeing it in other modes is expected.
 

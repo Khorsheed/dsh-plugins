@@ -27,9 +27,9 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-learning-suite
 ```
 
-The library comes with the Learning Suite. Then start a new session, pick "Learning mode", and tell the coach what you want to read.
+The library comes with the Learning Suite. Then start a new session, pick "学习模式" (learning mode), and tell the coach what you want to read.
 
-The library only appears in Learning-mode sessions; not seeing it in other modes is expected.
+The library only appears in "学习模式" (learning mode) sessions; not seeing it in other modes is expected.
 
 ## Known limitations
 

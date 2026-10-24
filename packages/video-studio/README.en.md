@@ -30,9 +30,9 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-video-suite
 ```
 
-The studio comes with the Video Editing Suite. Then start a new session, pick "Editing mode", and tell the agent where your recording is.
+The studio comes with the Video Editing Suite. Then start a new session, pick "剪辑模式" (editing mode), and tell the agent where your recording is.
 
-The Studio panel only appears in Editing-mode sessions; not seeing it in other modes is expected.
+The Studio panel only appears in "剪辑模式" (editing mode) sessions; not seeing it in other modes is expected.
 
 ## Known limitations
 
