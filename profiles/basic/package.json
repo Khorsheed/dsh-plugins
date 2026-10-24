@@ -11,7 +11,7 @@
     "@khorsheed/dsh-inline-html-render": "^0.1.14",
     "@khorsheed/dsh-local-files": "^0.1.1",
     "@khorsheed/dsh-message-timeline": "^0.2.3",
-    "@khorsheed/dsh-mobile": "^0.1.1",
+    "@khorsheed/dsh-mobile": "^0.2.0",
     "@khorsheed/dsh-quote": "^0.1.1",
     "@khorsheed/dsh-taskpilot": "^0.3.2",
     "@khorsheed/dsh-whalesong": "^0.2.3"
