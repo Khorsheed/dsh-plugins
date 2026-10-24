@@ -108,6 +108,7 @@ async function bench(options: {
   setMemberModel?: (child: string, model?: string) => Promise<{ ok: true } | { ok: false; error: string }>
   modelDirectory?: RoomModelDirectory
   renderMemberConfiguration?: RoomMembersInjected['renderMemberConfiguration']
+  renderHarnessModelPicker?: RoomMembersInjected['renderHarnessModelPicker']
 } = {}): Promise<Bench> {
   const isRoom = options.room !== false
   const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
@@ -134,6 +135,7 @@ async function bench(options: {
     setMemberModel: vi.fn(options.setMemberModel ?? (async () => ({ ok: true as const }))),
     modelDirectory: options.modelDirectory,
     renderMemberConfiguration: options.renderMemberConfiguration,
+    renderHarnessModelPicker: options.renderHarnessModelPicker,
   }
   const props = { sessionId: SESSION, ...face, t } as unknown as MembersViewProps
   render(<MembersView {...props} />)
@@ -361,6 +363,29 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
       expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy', model: 'kimi-k2' })
+    })
+  })
+
+  it('the shared picker carries the effort choice into the invite', async () => {
+    const { face } = await bench({
+      modelSurface: modelInfo(),
+      renderHarnessModelPicker: (_harness, props) => (
+        <button
+          type="button"
+          aria-label="stub-picker"
+          onClick={() => { props.onChange('kimi-k2'); props.effort?.onChange('high') }}
+        />
+      ),
+    })
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    await screen.findByRole('dialog')
+    await screen.findByText('Kimi Code', { selector: 'option' })
+    await waitFor(() => { expect(face.modelSurface).toHaveBeenCalledWith('kimi') })
+    fireEvent.click(screen.getByRole('button', { name: 'stub-picker' }))
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
+    await waitFor(() => {
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy', model: 'kimi-k2', effort: 'high' })
     })
   })
 

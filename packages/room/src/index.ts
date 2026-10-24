@@ -742,6 +742,9 @@ export class RoomService extends TypertRemoteService {
     if (request.model !== undefined && request.model.trim() === '') {
       return { ok: false, error: { code: 'empty-text' } }
     }
+    if (request.effort !== undefined && request.effort.trim() === '') {
+      return { ok: false, error: { code: 'empty-text' } }
+    }
     const native = request.kind === 'native'
     if (request.preset !== undefined) {
       // A native member composes a host preset; a CLI member reaches that
@@ -786,6 +789,7 @@ export class RoomService extends TypertRemoteService {
       ...request.role === undefined || request.role.trim() === '' ? {} : { role: request.role.trim() },
       ...request.cwd === undefined || request.cwd.trim() === '' ? {} : { cwd: request.cwd.trim() },
       ...request.model === undefined || request.model.trim() === '' ? {} : { model: request.model.trim() },
+      ...request.effort === undefined || request.effort.trim() === '' ? {} : { effort: request.effort.trim() },
     })
     let firstTaskSeq: number | undefined
     if (request.firstTask !== undefined) {
@@ -852,8 +856,9 @@ export class RoomService extends TypertRemoteService {
     }
     if (request.cwd !== undefined && (member.childSessionId !== undefined || this.engine.hasPending(loaded.session, member.name))) return { ok: false, error: { code: 'member-cwd-bound' } }
     if (request.model !== undefined && member.childSessionId !== undefined) return { ok: false, error: { code: 'configuration-owned-by-core' } }
+    if (request.effort !== undefined && member.childSessionId !== undefined) return { ok: false, error: { code: 'configuration-owned-by-core' } }
     if (request.rename === undefined && request.instructions === undefined && request.role === undefined
-      && request.cwd === undefined && request.model === undefined) {
+      && request.cwd === undefined && request.model === undefined && request.effort === undefined) {
       return { ok: false, error: { code: 'nothing-to-update' } }
     }
     if (request.rename !== undefined && request.rename !== request.name) {
@@ -878,6 +883,9 @@ export class RoomService extends TypertRemoteService {
     const model = typeof request.model === 'string'
       ? (request.model.trim() === '' ? null : request.model.trim())
       : request.model
+    const effort = typeof request.effort === 'string'
+      ? (request.effort.trim() === '' ? null : request.effort.trim())
+      : request.effort
     loaded.session.append('room/member-updated', {
       name: request.name,
       ...request.rename === undefined ? {} : { rename: request.rename },
@@ -885,6 +893,7 @@ export class RoomService extends TypertRemoteService {
       ...role === undefined ? {} : { role },
       ...cwd === undefined ? {} : { cwd },
       ...model === undefined ? {} : { model },
+      ...effort === undefined ? {} : { effort },
     })
     await this.ctx.sessions.flush(loaded.session)
     return { ok: true, value: { name: request.name } }
@@ -908,7 +917,7 @@ export class RoomService extends TypertRemoteService {
     if (family?.prepareMember === undefined) return { ok: false, error: { code: 'coordinator-not-ready', message: 'Native preparation is unavailable in this family core' } }
     try {
       const childSessionId = await family.prepareMember(request.sessionId, member.provider, member.childSessionId ?? memberId(loaded.session.snapshotEvents(), member), {
-        ...member.cwd === undefined ? {} : { cwd: member.cwd }, ...member.model === undefined ? {} : { model: member.model },
+        ...member.cwd === undefined ? {} : { cwd: member.cwd }, ...member.model === undefined ? {} : { model: member.model }, ...member.effort === undefined ? {} : { effort: member.effort },
       })
       loaded.session.append('room/member-updated', { name: member.name, childSessionId: SessionId(childSessionId) })
       await this.ctx.sessions.flush(loaded.session)
@@ -1062,6 +1071,7 @@ export class RoomService extends TypertRemoteService {
       ...member.preset === undefined ? {} : { preset: member.preset },
       ...member.cwd === undefined ? {} : { cwd: member.cwd },
       ...member.model === undefined ? {} : { model: member.model },
+      ...member.effort === undefined ? {} : { effort: member.effort },
       ...member.childSessionId === undefined ? {} : { childSessionId: member.childSessionId },
     })
     await this.ctx.sessions.flush(loaded.session)
@@ -1380,6 +1390,7 @@ export class RoomService extends TypertRemoteService {
           ...optional('instructions') === undefined ? {} : { instructions: optional('instructions')! },
           ...optional('cwd') === undefined ? {} : { cwd: optional('cwd')! },
           ...optional('model') === undefined ? {} : { model: optional('model')! },
+          ...optional('effort') === undefined ? {} : { effort: optional('effort')! },
           ...optional('firstTask') === undefined ? {} : { firstTask: optional('firstTask')! },
           ...optional('note') === undefined ? {} : { note: optional('note')! },
         }, 'agent', actor.childSessionId)

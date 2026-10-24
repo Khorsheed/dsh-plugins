@@ -362,6 +362,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         ...patch.role === undefined ? {} : { role: patch.role },
         ...patch.cwd === undefined ? {} : { cwd: patch.cwd },
         ...patch.model === undefined ? {} : { model: patch.model },
+        ...patch.effort === undefined ? {} : { effort: patch.effort },
       })
       if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
       if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }

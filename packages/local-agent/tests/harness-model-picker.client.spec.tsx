@@ -82,4 +82,27 @@ describe('harness model picker', () => {
     expect(screen.queryByRole('option', { name: /Full Native Label/ })).toBeNull()
     await waitFor(() => expect(screen.getByText(zh.loading)).toBeTruthy())
   })
+
+  it('with the effort prop the menu offers the effort row and reports both halves without closing', async () => {
+    const withEffort: LocalAgentModelDirectory = {
+      ...ready,
+      entries: [{ value: 'alias', label: 'Full Native Label', resolvedModel: 'resolved-model-id', source: 'native',
+        reasoning: { default: 'low', options: [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }] } }],
+    }
+    const face: ModelDirectoryFace = { read: async () => withEffort, follow: async function* (signal) { yield withEffort; await untilAbort(signal) } }
+    const change = vi.fn()
+    const effortChange = vi.fn()
+    const view = render(<HarnessModelPicker face={face} value="alias" onChange={change} effort={{ value: '', onChange: effortChange }} t={t} />)
+    open(view.container)
+    // The root pane renders before the directory lands; wait for it (the
+    // model row shows the entry label) before reading the effort row.
+    await screen.findAllByText(/Full Native Label/)
+    const effortRow = await screen.findByRole('button', { name: new RegExp(zh['configuration.effort']) })
+    expect(effortRow.textContent).toContain('Low')
+    fireEvent.click(effortRow)
+    fireEvent.click(await screen.findByRole('option', { name: /High/ }))
+    expect(effortChange).toHaveBeenCalledWith('high')
+    // The menu stays open (pane navigation, like the member configuration card).
+    expect(view.container.querySelector('details')!.open).toBe(true)
+  })
 })

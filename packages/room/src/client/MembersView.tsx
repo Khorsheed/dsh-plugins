@@ -120,7 +120,10 @@ export function MembersView({
       const instructions = values.instructions.trim()
       const role = values.role.trim()
       const model = values.model.trim()
-      const modelChanged = model !== values.modelBaseline.trim() && !(member.childSessionId !== undefined && renderMemberConfiguration !== undefined)
+      const effort = values.effort.trim()
+      const configurationOwned = member.childSessionId !== undefined && renderMemberConfiguration !== undefined
+      const modelChanged = model !== values.modelBaseline.trim() && !configurationOwned
+      const effortChanged = effort !== values.effortBaseline.trim() && !configurationOwned
       if (modelChanged && member.childSessionId !== undefined) {
         if (setMemberModel === undefined) return { ok: false as const, message: t('invite.error.generic') }
         // Compatibility entry also uses the core queue. No journaled model
@@ -138,8 +141,11 @@ export function MembersView({
         ...role !== (member.role ?? '') ? { role: role === '' ? null : role } : {},
         // The journaled intent: the first dispatch binds it for a never-
         // started member (the broker call above is a no-op there — no
-        // delegation record — so this value alone carries the edit).
+        // delegation record — so this value alone carries the edit). Effort
+        // rides the same rule; a started member's effort belongs to the
+        // member-configuration card that replaces these fields outright.
         ...modelChanged && member.childSessionId === undefined ? { model: model === '' ? null : model } : {},
+        ...effortChanged && member.childSessionId === undefined ? { effort: effort === '' ? null : effort } : {},
       }
       return Object.keys(patch).length === 0 ? { ok: true as const } : updateMember(member.name, patch)
     }

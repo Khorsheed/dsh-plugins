@@ -146,16 +146,17 @@ describe('DispatchEngine (real composition)', () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async () => settledRun('child-1', 'done'))
     await bench.service.invite({
-      sessionId: bench.sessionId, provider: 'kimi', name: 'ada', model: 'kimi-k2', firstTask: '搭骨架',
+      sessionId: bench.sessionId, provider: 'kimi', name: 'ada', model: 'kimi-k2', effort: 'high', firstTask: '搭骨架',
     })
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', firstTask: '搭页面' })
     await bench.service.engine.idle()
 
     expect(bench.facade.start).toHaveBeenCalledTimes(2)
-    // ada invited with a model: the facade start's `model` call option.
-    expect(bench.facade.start.mock.calls[0]![3]).toMatchObject({ model: 'kimi-k2', onProgress: expect.any(Function) })
+    // ada invited with a model and an effort: the facade start's call options.
+    expect(bench.facade.start.mock.calls[0]![3]).toMatchObject({ model: 'kimi-k2', effort: 'high', onProgress: expect.any(Function) })
     // Usage observation does not select a model on behalf of the user.
     expect(bench.facade.start.mock.calls[1]![3].model).toBeUndefined()
+    expect(bench.facade.start.mock.calls[1]![3].effort).toBeUndefined()
   })
 
   it('records late observed usage on its own completed execution', async () => {
