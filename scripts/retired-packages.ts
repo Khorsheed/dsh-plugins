@@ -71,12 +71,12 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
   },
   {
     name: '@khorsheed/dsh-bundle-writing',
-    replacement: "@khorsheed/dsh-presets' 写作模式 (`preset-dsh-writing`), which now mounts `@khorsheed/dsh-canvas-novel/agent`",
+    replacement: "@khorsheed/dsh-writing-suite's 写作模式 (`preset-dsh-writing`), which now mounts `@khorsheed/dsh-canvas-novel/agent`",
     note: 'its 写作 preset folded into 写作模式 (2026-10-06): one writing preset, the novel tools gated by the session binding; never published to npm',
   },
   {
     name: '@khorsheed/dsh-bundle-learning',
-    replacement: "@khorsheed/dsh-presets' 学习模式 (`preset-learning` — row id and preset id unchanged)",
+    replacement: "@khorsheed/dsh-learning-suite's 学习模式 (`preset-dsh-learning`; it lived in @khorsheed/dsh-presets from 2026-10-12 until that package retired)",
     note: 'the single-row preset-declarations bundle folded into the presets package (2026-10-12) so every scene mode ships from one bundle; published as 0.1.0 — npm deprecation rides the next publish wave',
   },
   {
@@ -88,5 +88,10 @@ export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
     name: '@khorsheed/dsh-ui-shortcuts',
     replacement: "the host's built-in rebindable shortcut settings (>= 0.1.7-rc.1 line; no package replacement)",
     note: 'superseded by the built-in shortcut settings the host ships since 0.1.7-rc.2 (retired 2026-10-22); the npm name is deprecated at 0.2.4',
+  },
+  {
+    name: '@khorsheed/dsh-presets',
+    replacement: 'the six mode packs (@khorsheed/dsh-dev-suite, -writing-suite, -learning-suite, -video-suite, -gamedev-suite, -eval-suite), each carrying its own preset row — row ids and preset ids unchanged',
+    note: 'the preset rows moved into the mode packs (2026-10-18) and were mirrored until the presets package retired (2026-10-24); published to 0.3.0 — npm deprecation rides the next publish wave',
   },
 ]

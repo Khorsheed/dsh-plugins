@@ -46,14 +46,14 @@ Removing the bundle removes the whole family including the mode preset; to keep 
 ## Known Limitations
 
 - **Removal is all-or-nothing** — removing this package removes every member along with it; there is no "drop one member from the bundle" — disable single rows via the row-level switches on the bundle detail page.
-- **The preset row mirrors @khorsheed/dsh-presets** — the two copies are byte-identical in composition, pinned by the repo's parity spec; once the presets package retires, this file is the canonical copy.
+- **This package holds the canonical preset row** — it once mirrored @khorsheed/dsh-presets, which retired on 2026-10-24.
 
 ## How it works
 
 <details>
 <summary>Internals (click to expand)</summary>
 
-**A mode bundle = a family bundle plus one mode preset row.** The member rows in `cordis.patch.yml` come verbatim from the corresponding member's own `cordis.patch.yml` (the two members' `./agent` companion composition rows stay out of the patch — they live only in the preset composition below); the closing `preset-dsh-writing` row (an `@deepseek-ai/dsh-agent-preset` declaration) is mirrored verbatim from `@khorsheed/dsh-presets`, with `scripts/preset-mode-parity.spec.ts` pinning the two copies' plugin composition and display fields against drift. The repo-wide check:plugins `dsh.bundle.kind: 'mode'` sanction pins the whole shape mechanically: rows may only come from the allowlist union of member canonical rows minus the companion composition rows plus exactly one `preset-<mode>` row, every subtracted companion row must be granted by this bundle's preset composition, members must be real self-mounting packages each contributing at least one row, and the mode value is unique across the tree.
+**A mode bundle = a family bundle plus one mode preset row.** The member rows in `cordis.patch.yml` come verbatim from the corresponding member's own `cordis.patch.yml` (the two members' `./agent` companion composition rows stay out of the patch — they live only in the preset composition below); the closing `preset-dsh-writing` row (an `@deepseek-ai/dsh-agent-preset` declaration) is this package's own canonical copy (it once mirrored the retired `@khorsheed/dsh-presets`). The repo-wide check:plugins `dsh.bundle.kind: 'mode'` sanction pins the whole shape mechanically: rows may only come from the allowlist union of member canonical rows minus the companion composition rows plus exactly one `preset-<mode>` row, every subtracted companion row must be granted by this bundle's preset composition, members must be real self-mounting packages each contributing at least one row, and the mode value is unique across the tree.
 
 **Installing me installs the family and the mode — without double-mounting.** All members are listed in `dependencies` (installation brings them along) and registered in `dsh.references` (the family roster, read by pack-time and catalog checks). `dsh plugin add` reconciles only the profile's *direct* dependencies into the bundles layer (`reconcilePlugins`) — installing this bundle applies THIS patch only; the members' own patches stay inert, so no row ever mounts twice. A member installed directly still self-mounts; any overlap is resolved by the row-level switches on the bundle detail page.
 

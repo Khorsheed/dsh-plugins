@@ -18,13 +18,12 @@
 - **画面自动对齐**——手机拍的画面按声音波形和录音对齐，不需要拍手。
 - **节目 → 工程**——节目存片头片尾、响度目标、字幕样式、剪辑习惯和声纹；新一期复制一份，「设置」tab 按「这期 / 节目 / 全局」三层显示每项来源，可存为节目默认或恢复。
 - **导出**——MP3（两遍 loudnorm，默认 −16 LUFS）、1080p MP4（字幕烧录或可开关字幕轨，−14 LUFS）、SRT、TXT，后台任务，进度在面板和会话里都看得到。
-- **剪辑模式**——`@khorsheed/dsh-presets` 的 `dsh-video` preset 授予 `video_*` 工具与 `video-studio` 技能。
+- **剪辑模式**——`@khorsheed/dsh-video-suite` 的 `dsh-video` preset 授予 `video_*` 工具与 `video-studio` 技能。
 
 ## 安装
 
 ```bash
-dsh plugin --profile web add @khorsheed/dsh-video-studio
-dsh plugin --profile web add @khorsheed/dsh-presets   # 剪辑模式（dsh-video）
+dsh plugin --profile web add @khorsheed/dsh-video-suite   # 剪辑套件：本包 + 剪辑模式（dsh-video）
 ```
 
 需要本机有 `ffmpeg` / `ffprobe`（在 PATH 上，或在面板「设置 → 全局」里填路径）。分人与转写由「本机转写」插件（[`@khorsheed/dsh-transcribe`](../transcribe/)）完成，需要一起安装；没装时面板会提示，剪辑与导出照常可用。语音模型（约 360 MB：Paraformer 中文转写、CT-Transformer 标点、pyannote 分段、CAM++ 声纹）由它在第一次转写时自动下载到 `$DSH_HOME/state/transcribe/models/`（以前剪辑插件下载过的模型会自动挪过去），也可以在设置里手动下载。下载源可在「设置 → 全局」选择（自动选择 / Hugging Face / HF-Mirror 国内镜像，默认自动探测最快可达源），支持断点续传：进程重启或网络中断不丢已下载的字节，完成后按钉死的字节数与 sha256 校验。

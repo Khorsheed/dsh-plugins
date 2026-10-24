@@ -4,8 +4,8 @@
  * it grants, never by its id.
  *
  * Organizing folded into the evaluation mode, and that mode has a different
- * id per deployment (`eval` in the web-eval pack, `dsh-eval` in the published
- * dsh-presets bundle 3080 runs). A hardcoded default would be wrong on one of
+ * id per deployment (`eval` in the web-eval pack, `dsh-eval` in the eval mode
+ * pack 3080 runs). A hardcoded default would be wrong on one of
  * them, so the door asks the host's preset registry instead, with the same
  * rule the eval panel's session door uses for the eval row (T97): keep the
  * deployment default when it grants, else the first listed, unbroken preset

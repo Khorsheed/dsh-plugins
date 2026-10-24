@@ -46,14 +46,14 @@ dsh plugin --profile web remove @khorsheed/dsh-writing-suite
 ## 已知限制
 
 - **卸载是整族的**——remove 本包会把全部成员一起移除,没有「从 bundle 里退掉单个成员」的操作;单行停用请用 bundle 详情页的行级开关。
-- **preset 行镜像自 @khorsheed/dsh-presets**——两处内容逐字一致,由仓级 parity spec 钉住;presets 包退役后此处为正本。
+- **preset 行的正本就在本包**——它曾镜像自 @khorsheed/dsh-presets,该包已于 2026-10-24 退役。
 
 ## 实现原理
 
 <details>
 <summary>内部结构(点击展开)</summary>
 
-**模式包 = 家族整合包 + 一行模式 preset。** `cordis.patch.yml` 的成员行逐字来自对应成员包自己的 `cordis.patch.yml`(两成员的 `./agent` 伴生组合行不进 patch,只活在下方 preset 组合里);末尾一行 `preset-dsh-writing`(`@deepseek-ai/dsh-agent-preset` 声明)逐字镜像自 `@khorsheed/dsh-presets`,由 `scripts/preset-mode-parity.spec.ts` 钉住两边 plugins 组合与展示字段不漂移。仓级 check:plugins 的 `dsh.bundle.kind: 'mode'` sanction 机械钉死整个形状:行只允许落在「成员规范行全集 − 伴生组合行 + 恰好一行 preset-<mode>」内,被减去的伴生行必须由本包 preset 组合点名授予,成员必须是真实自挂载包,每个成员至少贡献一行,mode 值全树唯一。
+**模式包 = 家族整合包 + 一行模式 preset。** `cordis.patch.yml` 的成员行逐字来自对应成员包自己的 `cordis.patch.yml`(两成员的 `./agent` 伴生组合行不进 patch,只活在下方 preset 组合里);末尾一行 `preset-dsh-writing`(`@deepseek-ai/dsh-agent-preset` 声明)是本包自有的正本(曾镜像自已退役的 `@khorsheed/dsh-presets`)。仓级 check:plugins 的 `dsh.bundle.kind: 'mode'` sanction 机械钉死整个形状:行只允许落在「成员规范行全集 − 伴生组合行 + 恰好一行 preset-<mode>」内,被减去的伴生行必须由本包 preset 组合点名授予,成员必须是真实自挂载包,每个成员至少贡献一行,mode 值全树唯一。
 
 **装我 = 装一族 + 一个模式,不双挂。** 成员全部列进 `dependencies`(安装即带齐),同时登记进 `dsh.references`(家族名册供 pack 期与目录层读取)。`dsh plugin add` 只把 profile 的**直接依赖**收编进 bundles 层(`reconcilePlugins`)——装本 bundle 只应用**本** patch,成员自己的 patch 不被应用,任何一行都不会挂两次。成员单独安装仍自挂载;重叠由 bundle 详情页的行级开关解决。
 

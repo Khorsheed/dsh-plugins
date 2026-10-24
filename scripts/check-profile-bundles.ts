@@ -430,8 +430,8 @@ export function scanProfiles(repoRoot: string): Finding[] {
 
 /**
  * Walk every workspace package's own bundle patch. A patch's rows — including
- * the preset compositions nested in a declarative preset bundle
- * (`@khorsheed/dsh-presets`, where the incident's row lived) — resolve from
+ * the preset compositions nested in a mode pack's preset row (the retired
+ * `@khorsheed/dsh-presets` is where the incident's row lived) — resolve from
  * the INSTALLING profile, so membership (rule 5) does not apply here; the
  * row-health rules (5b subpath exports, 6 retired names) do.
  */

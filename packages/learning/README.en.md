@@ -46,14 +46,14 @@ Removing the bundle removes the member along with the mode preset; to keep the m
 ## Known Limitations
 
 - **Removal is all-or-nothing** — removing this package removes the member along with it; to disable a single row, use the row-level switches on the bundle detail page.
-- **The preset row mirrors @khorsheed/dsh-presets** — the two copies are byte-identical in composition, pinned by the repo's parity spec; once the presets package retires, this file is the canonical copy.
+- **This package holds the canonical preset row** — it once mirrored @khorsheed/dsh-presets, which retired on 2026-10-24.
 
 ## How it works
 
 <details>
 <summary>Internals (click to expand)</summary>
 
-**A mode bundle = a family bundle plus one mode preset row.** The member row in `cordis.patch.yml` comes verbatim from the member's own `cordis.patch.yml`; the closing `preset-dsh-learning` row (an `@deepseek-ai/dsh-agent-preset` declaration) is mirrored verbatim from `@khorsheed/dsh-presets`, with `scripts/preset-mode-parity.spec.ts` pinning the two copies' plugin composition and display fields against drift. The repo-wide check:plugins `dsh.bundle.kind: 'mode'` sanction pins the whole shape mechanically: rows may only come from the allowlist union of member canonical rows plus exactly one `preset-<mode>` row, members must be real self-mounting packages each contributing at least one row, and the mode value is unique across the tree.
+**A mode bundle = a family bundle plus one mode preset row.** The member row in `cordis.patch.yml` comes verbatim from the member's own `cordis.patch.yml`; the closing `preset-dsh-learning` row (an `@deepseek-ai/dsh-agent-preset` declaration) is this package's own canonical copy (it once mirrored the retired `@khorsheed/dsh-presets`). The repo-wide check:plugins `dsh.bundle.kind: 'mode'` sanction pins the whole shape mechanically: rows may only come from the allowlist union of member canonical rows plus exactly one `preset-<mode>` row, members must be real self-mounting packages each contributing at least one row, and the mode value is unique across the tree.
 
 **Installing me installs the member and the mode — without double-mounting.** The member is listed in `dependencies` (installation brings it along) and registered in `dsh.references` (the roster, read by pack-time and catalog checks). `dsh plugin add` reconciles only the profile's *direct* dependencies into the bundles layer (`reconcilePlugins`) — installing this bundle applies THIS patch only; the member's own patch stays inert, so no row ever mounts twice. A member installed directly still self-mounts; any overlap is resolved by the row-level switches on the bundle detail page.
 

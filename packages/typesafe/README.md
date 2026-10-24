@@ -25,7 +25,7 @@
 dsh plugin --profile web add @khorsheed/dsh-typesafe
 ```
 
-包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（loader 行 id `typesafe`）自动并入 profile 的 bundles 层——不用手改 cordis.yml。重启 web 实例后生效。要让模型也能发起判断，由 agent preset 组合点名本包的 `./tool` 行（`- id: typesafe-tool / name: '@khorsheed/dsh-typesafe/tool'`，`@khorsheed/dsh-presets` 的 dev preset 已带这一行）；不带该行的会话里服务可用、模型看不到工具。
+包声明了 `dsh.bundle`，add 会把它的 `cordis.patch.yml` 行（loader 行 id `typesafe`）自动并入 profile 的 bundles 层——不用手改 cordis.yml。重启 web 实例后生效。要让模型也能发起判断，由 agent preset 组合点名本包的 `./tool` 行（`- id: typesafe-tool / name: '@khorsheed/dsh-typesafe/tool'`，`@khorsheed/dsh-dev-suite` 的 dev preset 已带这一行）；不带该行的会话里服务可用、模型看不到工具。
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-typesafe

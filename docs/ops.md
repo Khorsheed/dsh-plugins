@@ -39,11 +39,11 @@
 
 3080 只收 tarball 的理由:profile 是共享状态,`link:` 会让任何开发者构建进 `lib/` 的在制品随下一次重启悄悄上线(真实事故)。"大致稳定"是进 3080 的门槛,"跑得顺"是上 npm 的门槛。
 
-### 3080 的 preset 名册：正本是 packages/presets 的声明式 bundle 行
+### 3080 的 preset 名册：正本是各模式包的 preset 行
 
-0.1.7-rc.1 起宿主不再读取 `$DSH_HOME/.agent-presets/` 目录式 preset——preset 是声明式 `@deepseek-ai/dsh-agent-preset` 行（loader id `preset-<id>`)。六个 preset（dsh-dev / dsh-eval / dsh-writing / dsh-gamedev / dsh-learning / dsh-video，2026-10-18 起统一带 `dsh-` 前缀）的唯一事实源是 `packages/presets/cordis.patch.yml`；改它 = 正常 PR 评审 + `pnpm deploy:3080 --package packages/presets` 部署（重启生效；存量会话的 preset 记在其事件日志与投影缓存里，改名需同步迁移——`scripts/migrate-preset-selections.ts` 即 2026-10-18 前缀统一时的迁移器）。
+0.1.7-rc.1 起宿主不再读取 `$DSH_HOME/.agent-presets/` 目录式 preset——preset 是声明式 `@deepseek-ai/dsh-agent-preset` 行（loader id `preset-<id>`)。六个 preset（dsh-dev / dsh-eval / dsh-writing / dsh-gamedev / dsh-learning / dsh-video，2026-10-18 起统一带 `dsh-` 前缀）各自的唯一事实源是对应模式包的 `cordis.patch.yml`（`packages/dev` / `bundle-eval` / `writing` / `gamedev` / `learning` / `video`，包名 `@khorsheed/dsh-<mode>-suite`）；改它 = 正常 PR 评审 + `pnpm deploy:3080 --package packages/<模式包目录>` 部署（重启生效；存量会话的 preset 记在其事件日志与投影缓存里，改名需同步迁移——`scripts/migrate-preset-selections.ts` 即 2026-10-18 前缀统一时的迁移器）。评测模式另有 web-eval 正本（`profiles/eval/presets`），两份由 `scripts/eval-preset-parity.spec.ts` 钉住。
 
-**2026-10-18 晚起 3080 的组合单元切换为七个模式包**(`dsh-basic` / `dsh-dev` / `dsh-writing` / `dsh-learning` / `dsh-video` / `dsh-gamedev` / `dsh-bundle-eval`,`dsh.bundle.kind: 'mode'` 或 basic 的 `'family'`):preset 行由六个模式包逐字镜像携带（parity 由 `scripts/preset-mode-parity.spec.ts` 与三方化的 `eval-preset-parity.spec.ts` 钉住）,`dsh-presets`、`dsh-bundle-local-agent`、`dsh-bundle-conversation-toolbox` 随之退出 profile(--replace),成员全部退场为传递依赖。过渡期正本仍是 packages/presets——**改 preset 组合要六处镜像同步改**(parity spec 漏一处即红);模式包在 npm 上架后 presets 包退役、模式包升为正本。成员包更新照旧 `--package packages/<member>`,deploy 的成员退场认 mode kind。
+3080 的组合单元是 `dsh-basic` 加六个模式包（`dsh.bundle.kind: 'mode'` 或 basic 的 `'family'`），成员全部是传递依赖；成员包更新照旧 `--package packages/<member>`，deploy 的成员退场认 mode kind。`@khorsheed/dsh-presets`（2026-10-18 至 2026-10-24 与模式包并存、逐字镜像）已退役，列入 `scripts/retired-packages.ts`；profile 里若还留着它，deploy 会告警。
 
 历史：目录正本 + `sync-presets.sh` 的同步制已于 2026-09-24 迁移进 bundle(见 note `2026-09-24-community-presets-declarative-bundle`),`profiles/web/` 目录已于 2026-09-30 删除。
 

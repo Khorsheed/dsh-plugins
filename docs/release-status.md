@@ -37,7 +37,6 @@
 | `@khorsheed/dsh-client-message-tools` | 0.3.4 | 0.3.4 | 0.1.5-rc.1 | 0.2.1-rc.1 | ✓ |
 | `@khorsheed/dsh-mission` | 未发布 | 0.3.0-rc.1 | 0.2.0-rc.2 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-mobile` | 0.1.4 | 0.1.4 | 0.1.5-rc.1 | — | ✓ |
-| `@khorsheed/dsh-presets` | 0.3.0 | 0.3.2 | 0.1.7-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-quote` | 0.1.3 | 0.1.3 | 0.1.5-rc.1 | 0.2.1-rc.1 | ✓ |
 | `@khorsheed/dsh-room` | 0.2.2 | 0.2.2 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-client-session-title-edit` | 0.2.6 | 0.2.6 | 0.1.2-rc.1 | 0.2.1-rc.1 | ✓ |

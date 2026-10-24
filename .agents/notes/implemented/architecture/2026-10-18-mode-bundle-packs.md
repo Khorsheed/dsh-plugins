@@ -41,6 +41,7 @@ Each bundle pins its composition in `tests/bundle.spec.ts` (rows = members' cano
 
 - `scripts/check-profile-bundles.ts` learned to read `dsh.bundle.members` for `kind: 'mode'` too (it keyed on `'family'` only; the mode-kind commit updated check:plugins and deploy:3080 but missed this one — bundle-eval's web-eval profile turned red the moment the kind flipped). It now imports `FAMILY_LIKE_KINDS` from check-plugin-independence so the two cannot drift again.
 - The mode bundles and the presets bundle overlap by design while both exist (same `preset-<mode>` row id in two family-like patches — exempt from the row-id ledger; installing both collapses to the same declaration). The presets package's retirement is the cleanup point.
+  **Retired 2026-10-24**: `packages/presets` is deleted and `@khorsheed/dsh-presets` is listed in `scripts/retired-packages.ts`; each mode pack's patch is now the only copy of its preset row, `scripts/preset-mode-parity.spec.ts` is deleted, and `scripts/eval-preset-parity.spec.ts` is two-way again (web-eval pack ↔ eval mode pack).
 - `docs/packages.md` regenerated (48 packages, 45 self-mounting); seven new/changed i18n sidecars recorded.
 - npm: six new 0.1.0 lines (`@khorsheed/dsh-basic`, `-dev`, `-writing`, `-learning`, `-video`, `-gamedev`) await the next release wave; bundle-eval ships its mode upgrade at its first publish.
 

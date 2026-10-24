@@ -8,7 +8,7 @@ You do not need game-design experience — the agent writes the code and acts as
 
 ## Features
 
-- **Game-development mode**: the `dsh-gamedev` (游戏开发模式) preset in `@khorsheed/dsh-presets` — a developer + design-mentor persona, its tools (`game_open`, `game_read`, `game_propose`, `game_publish`) and two skills (`gamedev` for the mechanics, `game-design` for mentoring).
+- **Game-development mode**: the `dsh-gamedev` (游戏开发模式) preset in `@khorsheed/dsh-gamedev-suite` — a developer + design-mentor persona, its tools (`game_open`, `game_read`, `game_propose`, `game_publish`) and two skills (`gamedev` for the mechanics, `game-design` for mentoring).
 - **Projects live in the workspace**: a project is one folder in the session's workspace (`game.json`, `index.html`, `src/`, `assets/`, `elements/`, `design/`, `tests/`); the plugin's version snapshots, check results and playtest log sit in the project's own `.game/`, so the folder moves as one. `$DSH_HOME/state/game/` holds only the project registry and session bindings.
 - **A light gate**: a project needs a title, a one-sentence pitch, element types and the art style the user chose; the tool answers with whatever is missing so the agent asks instead of inventing it.
 - **The Game tab, a game-design workbench**:
@@ -26,8 +26,7 @@ You do not need game-design experience — the agent writes the code and acts as
 ## Install
 
 ```sh
-dsh plugin --profile <name> add @khorsheed/dsh-game
-dsh plugin --profile <name> add @khorsheed/dsh-presets   # the game-development preset
+dsh plugin --profile <name> add @khorsheed/dsh-gamedev-suite   # the gamedev suite: this package + the game-development preset
 ```
 
 The package's `cordis.patch.yml` inserts two rows: `game` (service core, Remote, the per-turn checks) and `game-agent` (the `./agent` entry: tools, prompt section, skills), both **enabled by default** — installing alone gives every session the tools (aligned with canvas). The `dsh-gamedev` mode pack does not re-mount the root row; it grants the same entry inside its own preset composition, and under host 0.2.x that mode's sessions see the scoped copy shadow the global row — no double registration, no boot failure (pinned by the host's scoped.spec.ts). To keep the game tools exclusive to game-dev mode, disable the `game-agent` row in the profile and use the mode pack instead.

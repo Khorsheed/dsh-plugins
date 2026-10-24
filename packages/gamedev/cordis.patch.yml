@@ -1,10 +1,8 @@
 # @khorsheed/dsh-gamedev-suite bundle patch: the 游戏开发模式 (dsh-gamedev) mode pack
 # — the game member row plus the mode's own preset row. The member row is
 # re-mounted VERBATIM from the member package's own cordis.patch.yml (the
-# canonical row); the preset row is mirrored VERBATIM from
-# @khorsheed/dsh-presets — parity is pinned by
-# scripts/preset-mode-parity.spec.ts, and once that package retires this file
-# becomes the canonical copy. check-plugin-independence's `mode` sanction pins
+# canonical row); the preset row is canonical here (the @khorsheed/dsh-presets copy it once
+# mirrored retired 2026-10-24). check-plugin-independence's `mode` sanction pins
 # this file to exactly the member's rows minus its companion composition rows,
 # plus the one preset row.
 #

@@ -41,6 +41,7 @@ preset 行逐字镜像自 `@khorsheed/dsh-presets` 的同名行,接在同一个 
 
 - `scripts/check-profile-bundles.ts` 学会为 `kind: 'mode'` 也读 `dsh.bundle.members`(此前只认 `'family'`——mode kind 的提交改了 check:plugins 与 deploy:3080,漏了它;bundle-eval 一翻 kind,web-eval profile 立刻红)。现在它从 check-plugin-independence import `FAMILY_LIKE_KINDS`,两处不再可能漂移。
 - 模式包与 presets 包并存期间按设计重叠(两个 family-like patch 里同一个 `preset-<mode>` 行 id——豁免 row-id 台账;同装时塌缩为同一条声明)。presets 包的退役即清理点。
+  **2026-10-24 已退役**:`packages/presets` 删除,`@khorsheed/dsh-presets` 列入 `scripts/retired-packages.ts`;各模式包 patch 成为其 preset 行的唯一副本,`scripts/preset-mode-parity.spec.ts` 删除,`scripts/eval-preset-parity.spec.ts` 回到两方比对(web-eval pack ↔ 评测模式包)。
 - `docs/packages.md` 重生成(48 包、45 自挂载);七个新增/变更的 i18n sidecar 已记录。
 - npm:六条新 0.1.0 线(`@khorsheed/dsh-basic`、`-dev`、`-writing`、`-learning`、`-video`、`-gamedev`)待下一发布波;bundle-eval 的模式升级随其首次发布出门。
 

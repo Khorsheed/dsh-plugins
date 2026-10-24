@@ -99,7 +99,7 @@ The composition re-bases verbatim on the official "Standard mode" and only appen
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.7-rc.2` (recommended) | `@khorsheed/dsh-presets@^0.3.0` |
+| ≥ `0.1.7-rc.2` (recommended) | `@khorsheed/dsh-dev-suite` |
 | `0.1.5-rc.1` ~ `0.1.7-rc.1` | Installed directory-style by the pack scripts (see the guide at the end) |
 
 Since 0.1.7-rc.2 the official host supports preset-as-a-bundle — a preset ships as an ordinary package and installs by copying its name, no manual directory placement; upgrading is recommended for the smoother path. Once installed, dev mode's UI and tools take effect only in dev-mode sessions and never disturb the other modes.

@@ -68,7 +68,7 @@ dsh plugin --profile web remove @khorsheed/dsh-eval-suite
 <details>
 <summary>内部结构（点击展开）</summary>
 
-**纯组合元包（模式包）。** `cordis.patch.yml` 的成员行都来自对应成员包自己的 `cordis.patch.yml`，id 与 name 原样；末尾另有一行 `preset-dsh-eval`（`@deepseek-ai/dsh-agent-preset` 声明）逐字镜像自 `@khorsheed/dsh-presets`，由 `scripts/preset-mode-parity.spec.ts` 钉住两边不漂移（presets 包退役后此处为正本）。仓级 check:plugins 的 `dsh.bundle.kind: 'mode'` sanction 机械钉死这一点：行只允许落在「成员规范行全集 − 伴生组合行（`./tool` 等子路径入口行）＋ 恰好一行 preset-<mode>」白名单内，被减去的伴生行必须由本包 preset 组合点名授予（授予语义不丢），成员必须是真实自挂载包，每个成员必须至少贡献一行，mode 值全树唯一；同一行 id 出现在多个 bundle patch 里时（本包与 dsh-dev / bundle-local-agent 共享的 local-agent 行）内容必须一致。
+**纯组合元包（模式包）。** `cordis.patch.yml` 的成员行都来自对应成员包自己的 `cordis.patch.yml`，id 与 name 原样；末尾另有一行 `preset-dsh-eval`（`@deepseek-ai/dsh-agent-preset` 声明）是本包自有的正本(曾镜像自已退役的 `@khorsheed/dsh-presets`)。仓级 check:plugins 的 `dsh.bundle.kind: 'mode'` sanction 机械钉死这一点：行只允许落在「成员规范行全集 − 伴生组合行（`./tool` 等子路径入口行）＋ 恰好一行 preset-<mode>」白名单内，被减去的伴生行必须由本包 preset 组合点名授予（授予语义不丢），成员必须是真实自挂载包，每个成员必须至少贡献一行，mode 值全树唯一；同一行 id 出现在多个 bundle patch 里时（本包与 dsh-dev / bundle-local-agent 共享的 local-agent 行）内容必须一致。
 
 **装我 = 装一族，不双挂。** 成员全部列进 `dependencies`（安装即带齐），同时登记进 `dsh.references`（家族名册供 pack 期与目录层读取）。机制依据：`dsh plugin add` 只把 profile 的**直接依赖**收编进 bundles 层（`reconcilePlugins`）——装本 bundle 只应用**本** patch，成员作为传递依赖到达，它们自己的 patch 不被应用，任何一行都不会挂两次。成员单独 `dsh plugin add` 仍自挂载（仓规不破）；两者同装时的行重叠由官方 bundle 详情页的行级开关解决。
 

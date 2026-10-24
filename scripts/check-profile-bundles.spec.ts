@@ -270,7 +270,7 @@ describe('the real tree', () => {
   })
 
   it('every package bundle patch names healthy rows', () => {
-    // The declarative preset bundle's rows (@khorsheed/dsh-presets) resolve
+    // Preset rows nested in a bundle patch (the mode packs' preset rows) resolve
     // from the installing profile, so membership is not judged here — the
     // subpath-export and retired-name rules are.
     expect(scanPackagePatches(repoRoot)).toEqual([])

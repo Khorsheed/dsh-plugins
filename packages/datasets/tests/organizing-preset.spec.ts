@@ -3,8 +3,8 @@
  * its composition grants (the datasets-tool `organize` tier), never by id.
  *
  * The two deployment shapes are tested against their REAL preset bundles: the
- * web-eval pack (`eval`, the pinned default) and the published dsh-presets
- * bundle 3080 runs (`dsh-eval`, beside 开发模式 / 写作模式, default 开发模式). The
+ * web-eval pack (`eval`, the pinned default) and the mode packs 3080 runs
+ * (`dsh-eval`, beside 开发模式 / 写作模式, default 开发模式). The
  * fake registry answers `list` / `readDocument` the way the host's
  * agent-preset-registry does: rows sorted by `order`, and each document the
  * `plugins:` list dumped in the Loader's YAML dialect (`!!js` included).
@@ -19,6 +19,9 @@ import {
 import { DatasetsRemoteService } from '../src/remote.ts'
 
 const REPO = join(import.meta.dirname, '..', '..', '..')
+
+/** The mode packs 3080 installs beside the eval pack: 开发模式, 写作模式, 评测模式. */
+const MODE_PACKS = ['packages/dev/cordis.patch.yml', 'packages/writing/cordis.patch.yml', 'packages/bundle-eval/cordis.patch.yml']
 
 /** The Loader's `!!js` tag, round-tripped as an opaque marker (what the host dumps back). */
 class JsExpr {
@@ -39,10 +42,10 @@ interface PresetRow {
   config: { id: string; order?: number; plugins: unknown[] }
 }
 
-/** A registry double over one bundle patch file. */
-function registryOf(patchFile: string, defaultId: string, broken: string[] = []): PresetRegistrySlice {
-  const doc = yaml.load(readFileSync(join(REPO, patchFile), 'utf8'), { schema: SCHEMA }) as Array<{ insert: PresetRow[] }>
-  const presets = doc.flatMap(op => op.insert).filter(row => row.name === '@deepseek-ai/dsh-agent-preset').map(row => row.config)
+/** A registry double over one or more bundle patch files (a deployment's installed bundles). */
+function registryOf(patchFiles: string | string[], defaultId: string, broken: string[] = []): PresetRegistrySlice {
+  const doc = [patchFiles].flat().flatMap(file => yaml.load(readFileSync(join(REPO, file), 'utf8'), { schema: SCHEMA }) as Array<{ insert?: PresetRow[] }>)
+  const presets = doc.flatMap(op => op.insert ?? []).filter(row => row.name === '@deepseek-ai/dsh-agent-preset').map(row => row.config)
   const sorted = [...presets].sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || a.id.localeCompare(b.id))
   return {
     defaultId,
@@ -60,8 +63,8 @@ describe('the organizing preset is picked by grant (T102)', () => {
     expect(await resolveOrganizingPreset(registryOf('profiles/eval/presets/cordis.patch.yml', 'eval'))).toBe('eval')
   })
 
-  it('dsh-presets (3080): `dsh-eval`, although the default is 开发模式', async () => {
-    const registry = registryOf('packages/presets/cordis.patch.yml', 'dsh-dev')
+  it('the mode packs (3080): `dsh-eval`, although the default is 开发模式', async () => {
+    const registry = registryOf(MODE_PACKS, 'dsh-dev')
     expect(await resolveOrganizingPreset(registry)).toBe('dsh-eval')
     // Neither 开发模式 nor 写作模式 grants it; no 题集整理 preset is left to pick.
     expect(compositionGrantsOrganize((await registry.readDocument!('dsh-dev')).content)).toBe(false)
@@ -87,13 +90,13 @@ describe('the organizing preset is picked by grant (T102)', () => {
   })
 
   it('skips a broken preset and degrades to "" without a registry', async () => {
-    expect(await resolveOrganizingPreset(registryOf('packages/presets/cordis.patch.yml', 'dsh-dev', ['dsh-eval']))).toBe('')
+    expect(await resolveOrganizingPreset(registryOf(MODE_PACKS, 'dsh-dev', ['dsh-eval']))).toBe('')
     expect(await resolveOrganizingPreset(undefined)).toBe('')
     expect(await resolveOrganizingPreset({ list: async () => { throw new Error('down') }, readDocument: async () => ({ content: '' }) })).toBe('')
   })
 
   it('the Remote answers a configured id as is, else the pick', async () => {
-    const registry = registryOf('packages/presets/cordis.patch.yml', 'dsh-dev')
+    const registry = registryOf(MODE_PACKS, 'dsh-dev')
     const answer = async (preset: string): Promise<unknown> => {
       const ctx = {
         datasets: { organizing: { preset, datasetsHome: '/home/user/.dsh/datasets' } },

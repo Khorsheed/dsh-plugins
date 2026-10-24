@@ -170,7 +170,7 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 
 委派给**跑在同一个预设上**的 agent：进程内子 agent 继承父 agent 的预设（宿主的 `subagent-in-process-driver/tests/preset-inheritance.spec.ts` 就是这条的证明），所以子 agent 拿到的正好是这个预设的工具，shell 也在内。
 
-**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）。本 profile 只跑宿主 0.2.0 及以后（T82），0.2.0 的预设是 `@deepseek-ai/dsh-agent-preset` 的声明式行，不再扫预设目录：pack 自带一个声明式 bundle（`presets/`，包名 `@khorsheed/dsh-web-eval-preset`，`dsh.bundle.kind: 'preset-declarations'`，profile 以 `file:presets` 依赖它），`cordis.patch.yml` 把 `agent-preset-registry` 的 `default` 钉成 `eval`。T82 迁移时组成表与 0.1.5 时代的目录版 `presets/eval/agent.cordis.yml` 逐字节相同（按 sha256 核过）；T102 有意改了组成。`scripts/eval-preset-bundle.spec.ts` 钉住这一块的摘要——改组成就是换装置，要有意改摘要并开新 run。3080 跑的 dsh-presets 包里的 `preset-dsh-eval` 是它的镜像，`scripts/eval-preset-parity.spec.ts` 钉住两份一致。个人偏好另起一个预设 id，别改这个。
+**预设归 pack**，理由与 `cordis.patch.yml` 同（见[安装](#安装)）。本 profile 只跑宿主 0.2.0 及以后（T82），0.2.0 的预设是 `@deepseek-ai/dsh-agent-preset` 的声明式行，不再扫预设目录：pack 自带一个声明式 bundle（`presets/`，包名 `@khorsheed/dsh-web-eval-preset`，`dsh.bundle.kind: 'preset-declarations'`，profile 以 `file:presets` 依赖它），`cordis.patch.yml` 把 `agent-preset-registry` 的 `default` 钉成 `eval`。T82 迁移时组成表与 0.1.5 时代的目录版 `presets/eval/agent.cordis.yml` 逐字节相同（按 sha256 核过）；T102 有意改了组成。`scripts/eval-preset-bundle.spec.ts` 钉住这一块的摘要——改组成就是换装置，要有意改摘要并开新 run。3080 跑的评测模式包（`@khorsheed/dsh-eval-suite`）里的 `preset-dsh-eval` 是它的镜像，`scripts/eval-preset-parity.spec.ts` 钉住两份一致。个人偏好另起一个预设 id，别改这个。
 
 「添加题集 › 让 Agent 整理」开的就是评测会话：没配 `authoringPreset` 时，datasets 按「授予了 datasets 工具行的 `organize` 档」挑预设（本 profile 上是 `eval`，3080 上是 `dsh-eval`），配置里写了 id 就用写的。
 

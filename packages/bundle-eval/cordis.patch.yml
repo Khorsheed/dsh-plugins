@@ -4,9 +4,8 @@
 # claude-code / dsh providers, with the two bare overrides), and the mode's own
 # preset row. Member rows (and the bare overrides) are re-mounted VERBATIM from
 # each member package's own cordis.patch.yml (the canonical rows); the preset
-# row is mirrored VERBATIM from @khorsheed/dsh-presets — parity is pinned by
-# scripts/preset-mode-parity.spec.ts, and once that package retires this file
-# becomes the canonical copy. check-plugin-independence's `mode` sanction pins
+# row is canonical here (the @khorsheed/dsh-presets copy it once mirrored
+# retired 2026-10-24). check-plugin-independence's `mode` sanction pins
 # this file to exactly that union minus the members' companion composition rows
 # (the ./tool entries a preset grants), plus the one preset row.
 #
@@ -90,8 +89,8 @@
     - id: local-agent-dsh
       name: '@khorsheed/dsh-local-agent-dsh'
 
-    # ── the mode row: preset-dsh-eval (评测模式) — mirrored verbatim from
-    # @khorsheed/dsh-presets; grants datasets-tool / eval-tool per session.
+    # ── the mode row: preset-dsh-eval (评测模式) — canonical here (the
+    # retired @khorsheed/dsh-presets copy is gone); grants datasets-tool / eval-tool per session.
     - id: preset-dsh-eval
       name: '@deepseek-ai/dsh-agent-preset'
       config:

@@ -1232,8 +1232,8 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
   // content — comment and blank lines dropped, scalar quoting normalized (the
   // parity specs' convention) — everything else must match byte for byte.
   // Preset rows are exempt: their cross-copy parity is composition-level and
-  // owned by scripts/preset-mode-parity.spec.ts and
-  // scripts/eval-preset-parity.spec.ts.
+  // owned by scripts/eval-preset-parity.spec.ts (each mode pack's preset row
+  // is otherwise the only copy).
   {
     const rowCopies = new Map<string, Array<{ readonly owner: string; readonly block: string }>>()
     for (const pkg of pkgs) {

@@ -8,7 +8,7 @@
 
 ## 特性
 
-- **游戏开发模式**：`@khorsheed/dsh-presets` 里的 `dsh-gamedev`（游戏开发模式）preset——开发者兼策划导师的 persona，`game_open` / `game_read` / `game_propose` / `game_publish` 四个工具，`gamedev`（做法）与 `game-design`（带你做策划）两个技能。
+- **游戏开发模式**：`@khorsheed/dsh-gamedev-suite` 里的 `dsh-gamedev`（游戏开发模式）preset——开发者兼策划导师的 persona，`game_open` / `game_read` / `game_propose` / `game_publish` 四个工具，`gamedev`（做法）与 `game-design`（带你做策划）两个技能。
 - **项目在工作区里**：一个项目就是会话工作区里的一个文件夹（`game.json`、`index.html`、`src/`、`assets/`、`elements/`、`design/`、`tests/`），插件自己的版本快照、检查结果、试玩记录都在项目里的 `.game/`，整个文件夹拷走就带走。`$DSH_HOME/state/game/` 只放项目登记和会话绑定。
 - **轻量门**：建项目前必须有游戏名、一句话玩法、元素类型、用户选定的美术风格；缺什么工具就回什么，agent 去问你，不替你编。
 - **右栏「游戏」策划操作台**：
@@ -26,8 +26,7 @@
 ## 安装
 
 ```sh
-dsh plugin --profile <name> add @khorsheed/dsh-game
-dsh plugin --profile <name> add @khorsheed/dsh-presets   # 游戏开发模式 preset
+dsh plugin --profile <name> add @khorsheed/dsh-gamedev-suite   # 游戏开发套件:本包 + 游戏开发模式 preset
 ```
 
 本包的 `cordis.patch.yml` 插入两行：`game`（服务核心、Remote、每轮检查）与 `game-agent`（`./agent` 入口：工具、提示段、技能），两行都**默认使能**——单装即所有会话可用（与 canvas 对齐）。`dsh-gamedev` 模式包不重复挂载根行，只在自己的 preset 组合里授予同一入口：宿主 0.2.x 下该模式的会话看到 scoped 副本遮蔽全局行，不再双注册崩 boot（宿主 scoped.spec.ts 钉死）。想让游戏工具只出现在游戏开发模式，就在 profile 里把 `game-agent` 行停用并改用该模式包。
