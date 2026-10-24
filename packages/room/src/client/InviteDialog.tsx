@@ -14,8 +14,10 @@ import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
  * ▸ 高级设置 (role instructions + the member-level cwd, collapsed on invite —
  * editing opens it, since editing IS changing those). The model field sits in
  * the main form (promoted out of the drawer): the same control the provider
- * settings cards use. Invites retain a saved provider choice, otherwise the
- * shared picker chooses the first candidate. Edits retain member configuration.
+ * settings cards use, widened with the model's reasoning-effort row (a
+ * brokerless composition keeps the control model-only). Invites retain a
+ * saved provider choice, otherwise the shared picker chooses the first
+ * candidate. Edits retain member configuration.
  * Older cores without the shared picker keep the legacy default/input fallback.
  * The rest of the original
  * contract is unchanged: logged-out providers grey with login guidance (an
@@ -42,7 +44,7 @@ import { rollName } from './name-pool.ts'
 import { ROOM_ROLE_MAX } from '../journal.ts'
 import css from './InviteDialog.module.css'
 
-/** The dialog's submit values (edit mode carries name/cwd/instructions/model). */
+/** The dialog's submit values (edit mode carries name/cwd/instructions/model/effort). */
 export interface InviteDialogSubmit {
   readonly provider: string
   readonly name: string
@@ -57,12 +59,16 @@ export interface InviteDialogSubmit {
   readonly firstTask: string
   /** The delegation's invite-time model ('' = follow the harness default). */
   readonly model: string
+  /** The delegation's invite-time reasoning effort ('' = follow the harness default). */
+  readonly effort: string
   /**
    * The model value the edit field opened with (the member's effective model
    * when the broker answered, else the journaled intent): the edit-mode diff
    * baseline — a save only touches the broker/journal when the value moved.
    */
   readonly modelBaseline: string
+  /** The effort value the edit field opened with (the journaled intent), the edit-mode diff baseline. */
+  readonly effortBaseline: string
 }
 
 /**
@@ -81,6 +87,7 @@ export function inviteRequest(values: InviteDialogSubmit): RoomInviteValues {
     ...values.cwd === '' ? {} : { cwd: values.cwd },
     ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
     ...values.model === '' ? {} : { model: values.model },
+    ...values.effort === '' ? {} : { effort: values.effort },
   }
 }
 
@@ -145,6 +152,13 @@ export function InviteDialog({
   // replaces it when the memberModel read below answers.
   const [model, setModel] = useState(mode === 'edit' ? member?.model ?? '' : '')
   const [modelBaseline, setModelBaseline] = useState(mode === 'edit' ? member?.model ?? '' : '')
+  // The effort companion of the model field: '' = follow the harness default.
+  // Edit mode opens on the journaled intent (a live member's effective effort
+  // is the member-configuration card's business — it replaces this field).
+  const [effort, setEffort] = useState(mode === 'edit' ? member?.effort ?? '' : '')
+  // Read-only baseline: no broker read rewrites it (a live member's effort
+  // belongs to the member-configuration card that replaces this field).
+  const [effortBaseline] = useState(mode === 'edit' ? member?.effort ?? '' : '')
   /** The model row's surface: menu vocabulary + the default an unset field displays. */
   const [surface, setSurface] = useState<LocalAgentModelInfo | undefined>(undefined)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
@@ -369,7 +383,7 @@ export function InviteDialog({
     try {
       const outcome = await onSubmit({
         provider: native ? 'dsh' : chosen, kind: native ? 'native' : 'cli', preset: native ? chosenPreset : cliPreset, name, role: role.trim(), instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
-        model: model.trim(), modelBaseline,
+        model: model.trim(), modelBaseline, effort: effort.trim(), effortBaseline,
       })
       if (!outcome.ok) {
         setError(outcome.message)
@@ -408,7 +422,7 @@ export function InviteDialog({
                   <select
                     className={css.select}
                     value={chosen}
-                    onChange={event => { setProvider(event.target.value); setModel('') }}
+                    onChange={event => { setProvider(event.target.value); setModel(''); setEffort('') }}
                   >
                     {nativeAvailable && <option value={NATIVE}>{t('invite.native')}</option>}
                     {localAgentAvailable && (providers ?? []).map(entry => (
@@ -469,7 +483,7 @@ export function InviteDialog({
             </div>}
             {native ? null : mode === 'edit' && memberConfiguration !== undefined
               ? <div className={css.field}><span className={css.label}>{t('invite.modelLabel')}</span>{memberConfiguration}</div>
-              : memberConfiguration ?? (mode === 'invite' && chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, disabled: busy }) : undefined) ?? modelField}
+              : memberConfiguration ?? (mode === 'invite' && chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, effort: { value: effort, onChange: setEffort }, disabled: busy }) : undefined) ?? modelField}
             <label className={css.field}>
               <span className={css.label}>{t('invite.name')}</span>
               <span className={css.nameRow}>

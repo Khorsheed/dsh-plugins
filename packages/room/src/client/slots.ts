@@ -244,6 +244,8 @@ export interface RoomInviteValues {
   readonly firstTask?: string
   /** The delegation's invite-time model (omitted = follow the harness default). */
   readonly model?: string
+  /** The delegation's invite-time reasoning effort (omitted = follow the harness default). */
+  readonly effort?: string
 }
 
 /** The invite outcome: the receipt's pendingFirstTask picks the success copy. */
@@ -308,6 +310,8 @@ export interface RoomMemberPatch {
   readonly cwd?: string | null
   /** New intended model; null clears back to the harness default. */
   readonly model?: string | null
+  /** New intended reasoning effort; null clears back to the harness default. */
+  readonly effort?: string | null
 }
 
 /** Injected face of the member-speech chat node. */

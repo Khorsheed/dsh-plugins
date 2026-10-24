@@ -751,10 +751,11 @@ export class DispatchEngine {
       : member.childSessionId === undefined
       // The invite-time model lands as the delegation's own model: the facade
       // records it with the first start and every later resume re-requests it
-      // (providers bind it at spawn for exec and live alike).
+      // (providers bind it at spawn for exec and live alike). The invite-time
+      // effort rides the same channel.
       ? facade.start(room.id, provider, [{ type: 'text' as const, text: prompt }],
           // The member's name labels its child session in the host's subagent list.
-          { ...admission, label: member.name, ...member.model === undefined ? {} : { model: member.model }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
+          { ...admission, label: member.name, ...member.model === undefined ? {} : { model: member.model }, ...member.effort === undefined ? {} : { effort: member.effort }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
       : facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: prompt }], { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
     // Existing members can enter core's queue immediately. A fresh/prepared
     // identity must publish its first handle before the next submission resumes it.

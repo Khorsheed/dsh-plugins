@@ -68,6 +68,13 @@ export interface RoomMemberAddedEvent {
    * default.
    */
   readonly model?: string
+  /**
+   * The delegation's reasoning effort (invite-time only, local-agent harness
+   * providers): recorded and consumed exactly like {@link RoomMemberAddedEvent.model}
+   * — the facade `start` call's `effort` option on the first dispatch, bound
+   * at spawn. Blank/omitted = follow the harness default.
+   */
+  readonly effort?: string
   /** The CLI member's dsh child session, once delegation has started. */
   readonly childSessionId?: SessionId
 }
@@ -100,6 +107,13 @@ export interface RoomMemberUpdatedEvent {
    * both). null CLEARS it — the member follows the harness default again.
    */
   readonly model?: string | null
+  /**
+   * The member's intended reasoning effort, edited through the members tab's
+   * edit dialog. Roster-recorded intent consumed like the model above (a
+   * never-dispatched member's first facade `start`; a live member's switch
+   * rides the member-configuration channel). null CLEARS it.
+   */
+  readonly effort?: string | null
   /**
    * The CLI member's delegation handle, journaled when the member's first
    * run starts (invite predates the handle; the dispatch engine appends this
@@ -518,6 +532,8 @@ export interface RoomMember {
   readonly cwd?: string
   /** The member's intended model (roster record; the facade start's `model` option on the first dispatch). */
   readonly model?: string
+  /** The member's intended reasoning effort (roster record; the facade start's `effort` option on the first dispatch). */
+  readonly effort?: string
   readonly childSessionId?: SessionId
 }
 
@@ -745,6 +761,12 @@ export interface RoomInviteRequest {
    * `start` call's `model` option, bound at spawn for exec and live alike.
    */
   readonly model?: string
+  /**
+   * The delegation's reasoning effort (blank/omitted = follow the harness
+   * default): the facade `start` call's `effort` option, bound at spawn
+   * alongside the model.
+   */
+  readonly effort?: string
 }
 
 /** invite receipt. */
@@ -780,6 +802,12 @@ export interface RoomUpdateMemberRequest {
    * to following the harness default.
    */
   readonly model?: string | null
+  /**
+   * New intended reasoning effort (roster-recorded, bound like the model on
+   * the first dispatch); null (or a blank string) CLEARS it back to following
+   * the harness default.
+   */
+  readonly effort?: string | null
 }
 
 /** updateMember outcome. */

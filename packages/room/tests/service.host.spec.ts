@@ -142,7 +142,7 @@ describe('RoomService Remote surface (real composition)', () => {
 
   it('invite records the optional model on the roster (trimmed; absent when omitted)', async () => {
     const { service, sessionId } = await bootRoom()
-    await service.invite({ sessionId, provider: 'kimi', name: 'ada', model: ' kimi-k2 ' })
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada', model: ' kimi-k2 ', effort: ' high ' })
     await service.invite({ sessionId, provider: 'codex', name: 'bill' })
     const state = await service.getState({ sessionId })
     expect(state).toMatchObject({
@@ -150,7 +150,7 @@ describe('RoomService Remote surface (real composition)', () => {
       value: {
         members: [
           MAIN_MEMBER,
-          { name: 'ada', kind: 'cli', provider: 'kimi', model: 'kimi-k2' },
+          { name: 'ada', kind: 'cli', provider: 'kimi', model: 'kimi-k2', effort: 'high' },
           { name: 'bill', kind: 'cli', provider: 'codex' },
         ],
       },
@@ -160,6 +160,7 @@ describe('RoomService Remote surface (real composition)', () => {
       ? state.value.members.find(member => member.name === 'bill')
       : undefined
     expect(bill !== undefined && 'model' in bill).toBe(false)
+    expect(bill !== undefined && 'effort' in bill).toBe(false)
   })
 
   it('invite rejects bad names, duplicates, blank providers, and blank texts', async () => {
@@ -177,6 +178,8 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.invite({ sessionId, provider: 'kimi', name: 'ada', firstTask: '' }))
       .toEqual({ ok: false, error: { code: 'empty-text' } })
     expect(await service.invite({ sessionId, provider: 'kimi', name: 'ada', model: '  ' }))
+      .toEqual({ ok: false, error: { code: 'empty-text' } })
+    expect(await service.invite({ sessionId, provider: 'kimi', name: 'ada', effort: '  ' }))
       .toEqual({ ok: false, error: { code: 'empty-text' } })
 
     await service.invite({ sessionId, provider: 'kimi', name: 'ada' })
@@ -330,6 +333,23 @@ describe('RoomService Remote surface (real composition)', () => {
     const cleared = await service.getState({ sessionId })
     if (cleared.ok) expect(cleared.value.members[1]).not.toHaveProperty('model')
     expect(await service.updateMember({ sessionId, name: 'ada', model: null }))
+      .toEqual({ ok: true, value: { name: 'ada' } })
+  })
+
+  it('updateMember journals the intended effort — set, trim, and null/blank clears', async () => {
+    const { service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'ada', effort: 'low' })
+    // An effort-only edit is a legal update (not nothing-to-update).
+    expect(await service.updateMember({ sessionId, name: 'ada', effort: ' high ' }))
+      .toEqual({ ok: true, value: { name: 'ada' } })
+    const updated = await service.getState({ sessionId })
+    expect(updated).toMatchObject({ ok: true, value: { members: [MAIN_MEMBER, { name: 'ada', effort: 'high' }] } })
+
+    expect(await service.updateMember({ sessionId, name: 'ada', effort: ' ' }))
+      .toEqual({ ok: true, value: { name: 'ada' } })
+    const cleared = await service.getState({ sessionId })
+    if (cleared.ok) expect(cleared.value.members[1]).not.toHaveProperty('effort')
+    expect(await service.updateMember({ sessionId, name: 'ada', effort: null }))
       .toEqual({ ok: true, value: { name: 'ada' } })
   })
 

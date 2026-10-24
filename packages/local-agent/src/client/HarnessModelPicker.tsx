@@ -12,13 +12,19 @@ export interface HarnessModelPickerProps {
   face: ModelDirectoryFace
   value: string
   onChange(value: string): void
+  /**
+   * Present = the menu also offers the model's reasoning-effort row
+   * ('' = follow the harness default). Absent = the picker stays model-only
+   * (settings cards' behavior).
+   */
+  effort?: { value: string; onChange(value: string): void } | undefined
   disabled?: boolean | undefined
   defaultLabel?: string | undefined
   t: ConfigurationTranslate
 }
 
 /** Discover while expanded or resolving an empty choice; settings remain caller-owned drafts. */
-export function HarnessModelPicker({ face, value, onChange, disabled, t }: HarnessModelPickerProps) {
+export function HarnessModelPicker({ face, value, onChange, effort, disabled, t }: HarnessModelPickerProps) {
   const menu = useConfigurationMenu('below')
   const { open, setOpen } = menu
   const [surface, setSurface] = useState<{ face: ModelDirectoryFace; directory: LocalAgentModelDirectory }>()
@@ -53,9 +59,15 @@ export function HarnessModelPicker({ face, value, onChange, disabled, t }: Harne
     {open && <div ref={menu.panel} className={css.panel} style={menu.style}>
       {error && <div role="alert">{error}</div>}
       {!directory && <span role="status">{t('loading')}</span>}
-      <ModelConfigurationFields directory={directory} value={{ model: value ? { mode: 'value', value } : { mode: 'default' }, effort: { mode: 'default' } }}
-        onChange={selection => { onChange(selection.model.mode === 'value' ? selection.model.value : ''); setOpen(false) }}
-        showEffort={false} disabled={disabled} t={t} />
+      <ModelConfigurationFields directory={directory} value={{ model: value ? { mode: 'value', value } : { mode: 'default' }, effort: effort !== undefined && effort.value !== '' ? { mode: 'value', value: effort.value } : { mode: 'default' } }}
+        onChange={selection => {
+          onChange(selection.model.mode === 'value' ? selection.model.value : '')
+          effort?.onChange(selection.effort.mode === 'value' ? selection.effort.value : '')
+          // The effort-capable menu navigates between panes instead of
+          // closing on a pick (the MemberConfiguration card's behavior).
+          if (effort === undefined) setOpen(false)
+        }}
+        showEffort={effort !== undefined} disabled={disabled} t={t} />
     </div>}
   </details>
 }

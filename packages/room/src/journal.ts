@@ -139,6 +139,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           ...event.data.preset === undefined ? {} : { preset: event.data.preset },
           ...event.data.cwd === undefined ? {} : { cwd: event.data.cwd },
           ...event.data.model === undefined ? {} : { model: event.data.model },
+          ...event.data.effort === undefined ? {} : { effort: event.data.effort },
           ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
         }
         byName.set(added.name, added)
@@ -162,8 +163,11 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         const withoutModel: RoomMember = event.data.model === null
           ? (({ model: _cleared, ...rest }: RoomMember): RoomMember => rest)(withoutCwd)
           : { ...withoutCwd, ...event.data.model === undefined ? {} : { model: event.data.model } }
+        const withoutEffort: RoomMember = event.data.effort === null
+          ? (({ effort: _cleared, ...rest }: RoomMember): RoomMember => rest)(withoutModel)
+          : { ...withoutModel, ...event.data.effort === undefined ? {} : { effort: event.data.effort } }
         const patched: RoomMember = {
-          ...withoutModel,
+          ...withoutEffort,
           ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
         }
         // First admission can precede publication of the native child handle.
