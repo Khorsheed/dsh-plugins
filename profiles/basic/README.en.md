@@ -266,7 +266,7 @@ While any session runs, the sidebar whale spouts and the tab icon moves; when a 
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-mobile@^0.1.3` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-mobile@^0.2.0` |
 | earlier | no release available |
 
 A mobile presentation of the web UI for phone browsers, plus the iOS bridge — check in on sessions, hand out tasks, and handle approvals away from your desk.
