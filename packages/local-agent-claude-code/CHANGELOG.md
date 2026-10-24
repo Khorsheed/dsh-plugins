@@ -1,5 +1,5 @@
 # 变更记录
-## 未发布
+## 0.2.0-rc.4（2026-10-24）
 
 - **缓存命中 0 与未上报可区分**：用量带任一缓存字段时 `cacheReadTokens` 恒写（读到 0 就写 0)——读日志的一方（Context Lens）不再分不清「命中 0」与「没上报」。
 - **子会话日志写入 `request/header`**：子会话的配置事实（模型 + 推理强度）原来无处记录，Context Lens 整卡「未记录」。现在每轮写入宿主原生 `request/header`（只在变化时记录）——exec 路用 init 事件的观测 model（回退到启动参数）,live 路用会话配置；claude 的 wire 从不携带 effort,provider 自己设置的 env 参数即权威来源。

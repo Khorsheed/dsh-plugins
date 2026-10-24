@@ -1,6 +1,6 @@
 # 变更记录
 
-## 未发布
+## 0.2.3（2026-10-24）
 
 - **run-state 边携带子会话关联**:`room/run-state` 在身份存在后的所有边恒带 `childSessionId`（成员首跑的 running 边早于句柄产生，终态边与后续轮次都有）；终态边（done/cancelled/failed）新增 `childTurn`（该运行写入子会话的轮次号，只读在内存的存活会话）。`room/dispatch`、`room/run-state`、`room/coordinator`、`room/member-added` 是 Context Lens 的外部读取接口（类型注释已标注）。
 

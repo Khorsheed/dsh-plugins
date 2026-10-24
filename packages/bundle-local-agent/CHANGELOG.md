@@ -1,6 +1,6 @@
 # 变更记录
 
-## 未发布
+## 0.4.0（2026-10-24）
 
 - **协作间并入**:`@khorsheed/dsh-room` 成为第六个成员(规范行 `room` 原样挂载)。协作间的成员本来就是这些本地 agent,只装家族不装 room 时多 agent 只剩委派一种用法。卡名随之从「本地多Agent」改为「多Agent协作」(英文 Multi-Agent Collaboration)。room 的地板同为 0.1.5-rc.1,minHost 不动。
 

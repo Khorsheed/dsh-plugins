@@ -2,7 +2,15 @@
 
 monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGELOG.md`。
 
-## Unreleased —— 2026-10-22 发布波：dsh-basic / dsh-dev 首发 + 24 包版本前移
+## Unreleased —— 2026-10-24 发布波：七个套件首发 + 套件成员首发 + 家族版本前移
+
+- **套件首发(七个)**:`dsh-basic` 0.1.0(基础体验,12 成员)、`dsh-dev-suite` / `dsh-writing-suite` / `dsh-learning-suite` / `dsh-video-suite` / `dsh-gamedev-suite` 0.1.0、`dsh-eval-suite` 0.1.0——模式包首发前改名为 `-suite`;gamedev / video 带上 local-agent 家族与协作间;ankh-guard、context-lens 从 basic 移到 dev
+- **成员首发**:canvas 0.6.0、canvas-novel 0.1.0、context-lens 0.1.0、transcribe 0.1.0、library 0.1.0、video-studio 0.1.0、game 0.1.0、datasets / eval / lab 0.2.0-rc.1、mission 0.3.0-rc.1
+- **家族与成员前移**:local-agent 家族七包同版 0.2.0-rc.4;bundle-local-agent 0.4.0(并入协作间,卡名「多Agent协作」);room 0.2.3、context-guard 0.2.6、message-timeline 0.2.6、quote 0.1.4、typesafe 0.1.4、capture 0.1.3、reader 0.3.1
+- **退役**:`@khorsheed/dsh-presets`(preset 行归各模式套件)、`@khorsheed/dsh-bundle-conversation-toolbox`(成员全在 basic 里),npm 上 deprecate
+- 本波全部包:`dsh-basic` 0.1.0, `dsh-eval-suite` 0.1.0, `dsh-bundle-local-agent` 0.4.0, `dsh-canvas` 0.6.0, `dsh-canvas-novel` 0.1.0, `dsh-capture` 0.1.3, `dsh-context-guard` 0.2.6, `dsh-context-lens` 0.1.0, `dsh-datasets` 0.2.0-rc.1, `dsh-dev-suite` 0.1.0, `dsh-reader` 0.3.1, `dsh-eval` 0.2.0-rc.1, `dsh-game` 0.1.0, `dsh-gamedev-suite` 0.1.0, `dsh-lab` 0.2.0-rc.1, `dsh-learning-suite` 0.1.0, `dsh-library` 0.1.0, `dsh-local-agent` 0.2.0-rc.4, `dsh-local-agent-claude-code` 0.2.0-rc.4, `dsh-local-agent-codex` 0.2.0-rc.4, `dsh-local-agent-dsh-headless` 0.2.0-rc.4, `dsh-local-agent-dsh` 0.2.0-rc.4, `dsh-local-agent-kimi` 0.2.0-rc.4, `dsh-message-timeline` 0.2.6, `dsh-mission` 0.3.0-rc.1, `dsh-quote` 0.1.4, `dsh-room` 0.2.3, `dsh-transcribe` 0.1.0, `dsh-typesafe` 0.1.4, `dsh-video-suite` 0.1.0, `dsh-video-studio` 0.1.0, `dsh-writing-suite` 0.1.0
+
+## 2026-10-22 发布波：24 包版本前移(dsh-basic / dsh-dev / context-lens 当时未能首发,转入 2026-10-24 波)
 
 - **首发三包**：`@khorsheed/dsh-basic` 0.1.0（基础体验整合包，14 成员）、`@khorsheed/dsh-dev` 0.1.0（开发模式包）、`@khorsheed/dsh-context-lens` 0.1.0（上下文透镜：请求/耗时双视角，自 request-inspector 更名）
 - **local-agent 家族七包**：core / dsh-headless / claude-code / codex / kimi / dsh 同版 0.2.0-rc.3（dsh-headless 的 rc.2 版本号被 npm 发布流水线占用、409 拒绝复用，家族同版线整体上移 rc.3），bundle-local-agent 0.3.0（成员侧认证破坏性变更，按 0.x 语义 minor 进位）——认证统一为端点凭据（OAuth/网页登录全删）、可用模型名单统一且目录改端点取词、设置面整合为「本机 Agent 委派」家族卡、宿主 0.2.1 的 startActivation 迁移

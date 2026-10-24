@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.2.0-rc.4（2026-10-24）
+
+- 文档:preset 包形态的示例改为各模式包(`@khorsheed/dsh-dev-suite` 等),`@khorsheed/dsh-presets` 已退役。无代码变更。
+
 ## 0.2.0-rc.3（2026-10-22）
 
 （版本号说明：家族的 dsh-headless 包 0.2.0-rc.2 版本号已被 npm 发布流水线占用（重复利用被 409 拒绝：「Cannot stage previously published version」——曾发布后被撤回或曾被暂存，外部无法区分，结果相同：该号不可复用）；为守住家族「同一版本线」纪律（check:release-groups），本波家族整体上移 rc.3，内容即 rc.2 计划稿。）

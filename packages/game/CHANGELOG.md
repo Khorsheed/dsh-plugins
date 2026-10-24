@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0（2026-10-24）
 
 - Panel edits (looks, fields, lore, picked variants, finalized params) change the working files; a bar commits them as a new version through the checks. The composer dock, the post-change nudge and its switch are gone; `game_read` shows the agent what changed once.
 - Element lore (`lore`): a 设定 card on the element page and a generated 元素设定 chapter. The element page puts "ask the agent for a new look" under the preview and folds the 3D recipe.

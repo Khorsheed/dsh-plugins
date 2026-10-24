@@ -80,7 +80,7 @@ Invite an agent into any session and that session becomes a room: member tab, @-
 
 | Host version | Install spec (copy into the dialog) |
 |---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent@^0.3.0` |
+| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent@^0.4.0` |
 
 One meta package installs the local-agent core plus all four providers (kimi / codex / claude-code / dsh): members arrive as npm dependencies and the bundle's patch re-mounts each member's canonical rows verbatim; afterwards every component stays individually disable-able under Settings → Plugins — the bundle packages the install, not your choices.
 

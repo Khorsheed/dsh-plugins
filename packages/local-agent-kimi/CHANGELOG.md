@@ -1,5 +1,5 @@
 # 变更记录
-## 未发布
+## 0.2.0-rc.4（2026-10-24）
 
 - **cacheReadTokens 恒写**:wire 上报缓存读字段时，命中为 0 也写 0——与家族其他成员同口径（「命中 0」与「未上报」可区分）。
 - **request/header 的 model 统一为别名拼写**:wire 里 `llm.request` 带裸 id(`k3-256k`),`usage.record` 带别名（`kimi-code/k3-256k`)；原来 header 用裸 id、消息 source 用别名，新旧日志（有/无 header）对同一模型显示两个名字。现在 header 跟随 `usage.record` 的别名拼写，与 source 同名。

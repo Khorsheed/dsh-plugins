@@ -1,5 +1,5 @@
 # 变更记录
-## 未发布
+## 0.2.0-rc.4（2026-10-24）
 
 - **缓存账目补全与硬化**:`cacheReadTokens` 在上游上报该字段时恒写（0 命中也写 0，与「未上报」可区分）；补上此前丢弃的 `cacheWriteTokens`(exec 的 `cache_write_input_tokens` / app-server 的 `cacheWriteInputTokens`);`turn/completed` 的镜像失败不再吞掉收尾（轮不再因折叠异常挂起）。
 - **子会话日志写入 `request/header`**:codex 的流从不携带 model/effort，子会话配置事实原来无处记录。现在每轮以 provider 启动参数为权威来源写入宿主原生 `request/header`(exec 路的 spawn argv、live 路的 `turn/start` 请求参数；只在变化时记录）——Context Lens 的配置卡片由此读出真实值。

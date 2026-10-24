@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.1.4（2026-10-24）
+
+- 文档:安装说明里的 dev preset 出处改为 `@khorsheed/dsh-dev-suite`(`@khorsheed/dsh-presets` 已退役)。无代码变更。
+
 ## 0.1.3（2026-10-22）
 
 - **BREAKING（包结构）**：伴生包 `@khorsheed/dsh-typesafe-tool` 回并进本包——模型工具行改由本包的 `./tool` 子路径导出承载（preset 引 `name: '@khorsheed/dsh-typesafe/tool'`，行 id 仍为 `typesafe-tool`，preset 组合状态不受影响；T88 评测家族折叠、room 0.2.0 / worktrees 0.3.0 同款回并，canvas `./agent` 先例）。迁移：preset 的 `agent.cordis.yml` 里把 `name: '@khorsheed/dsh-typesafe-tool'` 改为 `name: '@khorsheed/dsh-typesafe/tool'`，并卸载旧伴生包（已发布的 0.1.2 npm 名随同一发布波 deprecate）。

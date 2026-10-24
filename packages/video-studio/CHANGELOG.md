@@ -1,6 +1,6 @@
 # 变更记录
 
-## 0.1.0（未发布）
+## 0.1.0（2026-10-24）
 
 语音管线搬进公共插件「本机转写」（`@khorsheed/dsh-transcribe`，见 `2026-10-20-transcribe-engine`）：分人与转写改为调用它的 `transcribe` 服务（每次转写时探测，没装时面板提示），模型目录随之移到 `$DSH_HOME/state/transcribe/models/`（已下载的自动挪过去）；本插件不再依赖 `sherpa-onnx-node`。英文单词在转写稿里恢复空格。
 

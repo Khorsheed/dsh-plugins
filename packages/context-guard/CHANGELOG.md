@@ -1,6 +1,6 @@
 # 变更记录
 
-## 未发布
+## 0.2.6（2026-10-24）
 
 - `dsh.references` 去掉已退役的 `@khorsheed/dsh-bundle-conversation-toolbox`(其成员全部并入 basic)。
 
