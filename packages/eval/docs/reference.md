@@ -1,0 +1,453 @@
+# @khorsheed/dsh-eval 参考：编排器、运行与判定
+
+[English](reference.en.md) | 中文
+
+本页是从 [README](../README.md) 移出的深度参考：契约、run 循环、容器路径、就绪检查、provision、判定、实验对象、服务面、报告、模型工具与 CLI。界面部分见 [ui.md](ui.md)。
+
+## 概述
+
+**web-eval 编排器：dataseek 契约 schema、plan/condition 校验、条件与 scoped home 哈希、由题集 manifest 生成 run 模板、阶段一二的 run 循环（逐格物化、逐字节委派、提交推进、归档闸、bundle 导出）。** run 的发起是人的动作（`/eval run`，发起会话即所有委派的父会话）；判定的两条机器通路（探针写 `script`、判官盲评写 `llm-draft`）随 T9 落地，`human-final` 仍归人。不依赖任何兄弟插件——四个上游服务（`datasets` / `mission` / `localAgent` / `lab`）在 run 时经 `ctx.get` 探测，缺哪个就拒绝并列出哪个，绝不炸启动；前三个每次 run 都要，`lab` 只在 plan 带 `unit` 段（容器路径）时才要——没有 unit 段就在宿主目录里跑，拒绝文案会说「挂上 dsh-lab 插件，或去掉 unit 段」。
+
+给 agent 的模型工具是五个读工具、一个起草工具与一扇分析的门（见「模型工具」一节）；run、finalize 与注解都不给模型。
+
+`report` 把 mission export 的 bundle 变成 results.jsonl 与 summary.md（见「报告」一节），只读 bundle、不依赖宿主。
+
+## 它管什么
+
+三份契约 schema 与一条 lock 记录（全文见 [dataset-authoring-protocol §6](../../../docs/dataset-authoring-protocol.md)，代码里集中在 `src/schema.ts` 一个模块，测试钉住文档与代码不漂移）：
+
+| schema | 是什么 |
+|---|---|
+| `dataseek.condition/1` | 受试对象：harness、模型声明、permissions（按 harness 词表）、scoped home 哈希、env 键名 |
+| `dataseek.plan/1` | 一次 run 的全部输入：题 × 条件 × rep × 阶段 × 顺序 × 预算 × 判官 × 期望判定源 |
+| `dataseek.verdict/1` | 判定输出：探针与判官共同遵守的格式 |
+| `dataseek.condition-lock/1` | 条件哈希与 scoped home 的实物记录；plan 的 sha 从这里解析 |
+
+校验器遵循 I1 定下的字段决定：condition 的可空字段（`harness.version`、`model.declared`、`model.endpoint`、`home.sha`）的 null 是「未解析」，validate 列为 warning；`plan.conditions` 写条件 id，sha 从 `conditions/<id>.lock.json` 解析，缺 lock 即「未就绪」（同样是 warning——拦截归 run 前的就绪检查）；`judge` 可缺省，缺省时 `expectedNs` 不得含 `llm-draft`；plan 不含 template 字段。
+
+## 模板生成：manifest → run 模板
+
+run 模板不由人或 agent 手写：它是题集 `manifest.yml` 的确定性函数（`generateTemplate`），测试逐项钉住与 I1 手写的 `templates/bench-v1.json` 等价：
+
+```text
+pending → ws-ready → stage-1 → … → judged → archived → releasable → released
+                          └→ halted（halt_on 命中）→ archived
+```
+
+- 最早转移带 run-meta schema-check（`schemas/run-meta.json`：`datasetId` + `commit`），把快照钉进状态机；
+- 每个阶段的**出边**带该阶段 structured schema 的 schema-check（manifest `output_schema.<stage>.structured` 指向的 `schemas/<stage>.json`；内联草记记法已废弃，遇到即拒绝）；
+- 声明了 `halt_on` 的阶段生成 `→ halted` 边，guard 指向约定文件 `schemas/<stageId>-halted.json`（const 校验在 schema 文件里）；
+- 进入 `releasable` 带 file-check（`archive/workspace/`、`archive/verdicts/`，目录须非空）。
+
+阶段状态按 manifest 中的位次命名（`stage1` → `stage-1`）；格产出文件是 `<stageId>.json` / `<stageId>.md`（提示词里写明）。schemaPath 相对模板自身位置生成——编排器把模板写在 plan 旁（`plans/<plan>.template.json`），与手写模板的 `../schemas/…` 同一解析方式。
+
+## run 循环 v0（阶段一二；宿主目录或容器单元）
+
+`ctx.eval.run(planPath, options)` 是本体；`/eval run` 是人的发起动作。流程：
+
+1. **校验先行**：plan 有 error 即拒绝，什么都不执行；条件 lock 与现算哈希不符即拒绝（缺 lock 记 warning，用现算哈希——完整就绪检查归 I4 provision）。
+2. **就绪检查（T23）**：建 run 之前，对 plan 里每个条件跑一次最小委派——同一门面、同一 provider、同一条 cwd 规则，见[「就绪检查」](#就绪检查每个条件一次真委派)。任一条件失败即整 run 不启动；`--ignore-readiness` 才允许带着失败条件开跑，此时该条件的格子一律记 `cell-skipped` 并给出理由。
+3. **子集（T23）**：`--only <missionId,…>` 与 `--max-cells N` 在随机顺序上取一部分。选择落进 `run.meta.subset`（`{only, maxCells, totalCells, selectedCells}`），生成的模板只带被选中的 mission——ledger 里不会留下 run 永远不会驱动的格子。plan 契约不加字段：子集属于**一次执行**，不属于被审阅的那套程序。
+4. **快照**：`datasets.snapshot` 钉 commit，进 run.meta。
+5. **模板 + 矩阵**：生成模板写到 plan 旁；`expandMatrix` 展开（题 × 条件 × rep），`orderCells` 按 `plan.order.seed` 洗牌、interleave 时优先同条件不连续；顺序与并发数写进 run.meta。
+6. **逐格**（并发缺省 1）：格子独立目录 `$DSH_HOME/state/eval/cells/<runId>/<missionId>/attempt-<N>/`，物化该题 visible 层内容并写 `materialization.json`（排序逐文件 sha256 + 整体 sha，addArtifact kind `materialization`）；每阶段一条 prompt = 题集 visible 层 `prompts/<stage>.md` 字节 + 一个换行 + 该题 `task.md` 字节，sha256 记入 orchestrator ns；编排器直接调 `ctx.localAgent.start`（首轮）/ `resume`（续轮），格子目录经委派 `cwd` 选项传给子代理（local-agent 家族的 cwd 支持，T11）。
+7. **推进**：委派返回后从格子目录收 `<stageId>.json` / `<stageId>.md`，`submit({to, json, files})`（意向边预校验），`transition(to)`；`halt_on` 命中走 `halted`。schema 违规不重试：记 `{kind: 'submission-rejected', violations}`，格子停在当前态。
+8. **失败策略**：委派启动失败、门面报错、超时取消 → `retry(reason, 'infrastructure')` 重做该格，预算缺省 1 次（`--retries` 可调）；超限记 `{kind: 'cell-skipped'}` 并跳过。超时 = `plan.budget.activeMinutes` 的每格累计委派时长，到点 `cancel(childSessionId)`。
+9. **判定、归档、过闸**：格子停在终态后先判（见下节），判定落 `archive/verdicts/`，再把格子目录拷到 `archive/workspace/`，`transition(archived)`，然后推 `releasable → released`——**T57 起这是缺省，逐格进行**；file-check 要求 verdicts/ 非空：两条源里任一有产出即可过闸，两条都没有就如实记 `finalize-refused` 并停在 archived。`--keep-units` 是调试用的退出口：开了之后每格停在 archived、容器留着。
+10. **导出**：结束时 export bundle 到所属实验的 `exports/`（旧 plan 路径起的 run 仍是 `<题库仓库>/exports/`；`--out` 可改），只收 visible 层（modelFacing:true，无需泄题闸确认）。
+
+run 开始时先为每格写一条锚点 `{kind: 'cell', task, condition, conditionSha, rep}`——在任何工作之前，所以连被跳过的格子也可归属；报告只认这条锚点定格子身份（bundle 里没有 labels，mission id 是有损的）。
+
+每次委派在 orchestrator ns 记 `{kind: 'delegation', stage, round, childSessionId, promptSha, startedAt, durationMs, usage, toolCalls?, cliVersion?, model: {declared, observed}}`（`toolCalls` 与 `cliVersion` 只在本轮 settled 事件带了才写，缺位就是「这一轮没人报过」）；`observed` 取自 T11 的回读——本轮 settled 事件优先，其次 `delegationOf(childSessionId)` 的记录。读记录要**等**：provider 在 settle 后的收尾遍里才并入观测，而门面在 result 落定的同一刻就清掉了带着 `onProgress` 的在跑记录，所以真实门面上 settled 事件根本到不了编排器、记录也要晚一拍才有值——run 结束即读会读空（第一次两格真跑的现场）。编排器因此在 settle 后有界地轮询记录（缺省 10s，`readbackWaitMs` 可调），等到与本轮开始前不同的观测即采用；等超时仍返回记录当前值（续轮跑的是同一模型时两者本就无从区分，记录本身的语义就是「该委派最近一次观测」），两处都没有才记 null。`usage` 只走 settled 事件：门面先清在跑记录的情况下这里拿不到，记 null 是诚实答案。回读到的模型与条件 `model.declared` 不符即当场失败（冻结决策 5：这次 run 归属错了），不按基础设施失败重试。
+
+**声明的模型现在是「先请求，再核对」（T30b）。**从前 `model.declared` 只用来与回读比对，实际跑哪个模型全看 harness 自己的配置——判官条件声明 dsh v4-pro、实跑宿主默认 v4-flash，就绪检查因此拒（T22 第 5 步）。现在选手轮、判官委派、就绪探测三处都把非 null 的 `model.declared` 作为委派级 `model` 传给 local-agent，由它落成各家 CLI 的模型参数；声明为 null 就照旧不传。委派注解与 `run.meta.readiness` 各多一个 `requestedModel`，记的是「这一轮向 harness 要了什么」，与「读回来什么」并列。比对本身不变：请求了还回读到别的，仍是 MisattributedRun。resume 轮不带 model——local-agent 把首轮的请求记在委派记录里，之后每轮照它重发。
+
+## 容器路径
+
+plan 里有 `unit` 段就走容器路径，没有就走宿主路径——后者与本节出现之前**逐字节相同**（pilot A 的 bundle 用本分支的 report 复算，`results.jsonl` 逐字节一致）。容器路径要 `ctx.lab` 在场；凭证不用另给——挂的是这台实例自己的作用域目录（见下）。
+
+**一格一单元，顺序固定**（架构轨迹表第 11–17 步）：
+
+1. **`acquire`**：镜像、网络、`user`、资源上限来自 plan 的 `unit` 段；**挂载只有一条**——该条件的凭证目录，`bind` 且可写（凭证续期要写回宿主，T17 的决定）；**env 只有**该条件 `unit.scopedHome.var` = 容器内路径，dsh 再加 `NODE_OPTIONS=--use-env-proxy`；`missionId` 与 `runId` 都带上。`workdir` 是 `/workspace`，并要求 lab 把它交给单元自己的用户（`ownWorkdir`）——docker 建出来的 workdir 归 root，非 root 单元写不进去。
+2. **出网自检（T29d，plan 声明了 `unit.egressCheck` 才有）**：`acquire` 之后、`populate` 之前，经 `lab.verify` 在单元里跑一次 plan 声明的那条命令，退出码 0 才继续。**先问再用**的理由是实测出来的：`eval-net` 是 `--internal` 网络，出网全靠边车代理；边车停掉时 codex 在单元里正常起来、读到自己的模型与沙箱档位、跑满 230 秒，然后 `task_complete` 的 `last_agent_message` 是 **null**——一个空回答，没有一句网络错误。上面每一层只能读成「探针失败」，而同样的四分钟会在每一格重演。就绪探针的单元同样先问、且在**委派之前**问，所以出网断了是一次 `EGRESS_UNAVAILABLE` 拒绝，**一次委派都不花**。命令与目标写在 plan 里（与网络放在一起），编排器自己不持有任何地址；声明为空或含空词，run 以 `EGRESS_CHECK_MALFORMED` 拒绝。plan 有 `network` 却没声明自检时，run 在日志里说一次——能跑，但这一轮分不清「网络不通」与「模型没话说」。
+3. **`setRefs({resource, fingerprint})`**：编排器自己写，acquire 之后立刻。lab 也写，但那是 warn-and-skip 的尽力而为，而「环境一致」这条不变量不能建在允许跳过的写上——pilot A 的指纹列整轮是空的，报告整轮 `unverifiable`。
+4. **`populate`**：宿主物化目录 → `/workspace`，`manifestPath` 指向该 attempt 的 `materialization.json`，由 lab 算哈希、写文件、登记 artifact。编排器不再另算一份：两个同名 `materialization.json` 带两个不同哈希，比任一个单独存在都糟。工作区里因此**只有题面字节**——没有清单，也就没有宿主路径进单元。
+5. **每阶段一轮委派**：`exec = {container, workdir: '/workspace', env: {<VAR>: <容器内路径>}}`，**不传 `cwd`**（单元里宿主 cwd 没有意义；作用域目录变量不点名的话 T17 会当场拒绝这一轮）。
+6. **每阶段结束 `checkpoint({name: <阶段 id>})`**（ref 经 lab 进 mission），再 `collect('/workspace' → 格子目录)`。格子目录在容器路径上是**工作区的宿主镜像**：收产出、结构校验、`submit`、判官取材都在它上面，因此第 7、9 两步的代码两条路径共用。
+7. **判定在单元内**：探针经 `lab.verify` 跑，判定材料走 verify 自己的 scratch（`/run/dsh-lab/verify`，跑完即删）；`--out` 写到 `/run/dsh-lab/verdicts/<探针>/`，**不在 `/workspace`**——归档是选手的产物，不该带判定输出。全部跑完一次 `collect` 把整棵 verdict 树收回该 attempt 的 `probe-verdicts/`，在宿主上解析、判定，再删掉单元内那个目录。退出码三态、`task` / `by` 先回填后校验的顺序，与宿主路径逐字相同。
+8. **`archive`**：lab 导出 `workspace/` 与 `manifest.json` 到该 attempt 的 `archive/`；`verdicts/` 早已在旁边（判在归档之前，闸要求它非空）。
+
+### 「环境一致」比的是环境类
+
+`refs.fingerprint` 记的不是单元的完整指纹，而是**环境类**：单元的复合指纹分量减去**该条件自有的那几项**——它自己的作用域目录挂载 target、指向它的变量名、该 harness 的额外变量（dsh 的 `NODE_OPTIONS`）、以及条件 `env.keys` 里声明的键。剩下的是计划声明的那部分：image、资源上限、network、user、计划级挂载与 env 键。
+
+不这么做的话这条不变量对本 profile 存在的理由恰好不成立：四家各挂自己的凭证目录、各设自己的变量（`CODEX_HOME` / `CLAUDE_CONFIG_DIR` / `KIMI_CODE_HOME` / `DSH_HOME`），同一个 run 必然四个指纹，报告按既有规则记 `violated` 并拒绝比较——而那四个环境在比较关心的每一个意义上都是同一个。
+
+减法是**照着造 spec 的那段代码反着读**出来的，不是从分量里猜的：`acquireSpecFor` 放进去哪几项，`conditionOwnedComponents` 就取回哪几项。哈希规则不复刻——环境类经 `lab.fingerprintOf(components)` 算，与 `acquire` 用的是同一个函数，因此派生出来的类与单元自己的指纹天然可比。标签仍是 `lab-env:<sha256>`，分量 `version` 不变：它只是同一套算法作用在少了几项的分量上。
+
+单元自己的完整指纹并没有丢：它记在该格 orchestrator ns 的 `unit` 注解里（连同被排除的项），也在 lab 写的 archive `manifest.json` 里。它**不进 refs**——mission 的 refs 只有 `resource` / `fingerprint` / `sessions` 三个键，加第四个是 mission 的改动，不属于本包。报告在不变量那一行下面把每格的单元指纹与排除项逐格列出，读者能看见差在哪儿，而不用信。
+
+### 判定目录按题库的真实相对路径物化
+
+题集级 verify 层是真目录（`datasets/<id>/verify/`），因此落在 `<判定目录>/verify/…`。**item 的层**是两种布局分岔的地方，错一层的代价正好是一个目录：
+
+- 约定式：文件在 `items/<id>/verify/`，display 路径相对它（`probes/x.mjs`）；
+- register：descriptor 把 item 目录里的自由文件归位到层角色，display 路径是 **item 相对**的（`checks/probes/x.mjs`），文件真的在 `items/<id>/checks/probes/x.mjs`。
+
+两种都按 `items/<id>/verify/<display>` 物化，register 的题就深了一层，`../../../../verify/helpers/lib` 落到判定根之外——题内探针只能自带一份题集级 lib 的副本。现在每个文件落在它在题库里的真实相对目录：哪些 display 是被 register 归位过的，从 `datasets.show` 顺带返回的 descriptor 里读 `register` 判断（面上是可选字段，不报的门面退回约定式，与从前相同）。探针的 `by` 仍是 display 路径——那是判定的出处，不是磁盘上的位置。
+
+探针的 cwd 是**该题 checklist 所在的目录**：约定式是 `items/<id>/verify`，register 归位后是 `items/<id>/checks`，两种布局下共享探针读到的都是这道题自己的 `./checklist.yml`。没有 checklist 的题回退到约定根。
+
+### 一份物化哈希，两条路径
+
+`materialization.json` 两条路径都由编排器按同一套算法算（排序后逐文件 sha256 再整体 sha256），因此同题同 commit 在宿主与容器里得到**同一个数**。此前容器路径记的是 lab populate 的 manifest 哈希，「题面一致」这条不变量只能在一条路径内部回答。lab 自己那份哈希没有丢，它换了个名字单独存在该 attempt 的 `populate-manifest.json` 里——那是另一个主张（「拷进单元的是这份」），不是同一个数的第二种写法。
+
+### 目录与凭证约定
+
+- 容器路径挂的是**评测实例自己的作用域目录**：`local-agent` 为该 harness 建的 `<homesRoot>/<家名>`，`bind` 到该条件 `unit.scopedHome.container` 声明的容器内路径，可写。凭证由这台实例上的端点凭据写进去（`endpoint-auth.json`，设置卡或 `conditions provision`），**不 stage 副本**；凭据失效就重存 key。
+- 必须是同一个目录，不能是副本：容器轮的 CLI 把 rollout / session 写进被挂进去的那个目录，而委派回读按 `homeDir(家名)` 去找。指到两处不报错——回读永远为空，`model.observed` 每轮都是 null，就绪检查报 `ready, model —`，报告的「受试对象一致」停在 ⚠️。这正是 T20 用独立凭证树时的行为，pilot B 付过一次账。
+- **每条件一份作用域目录**：条件可选的顶层字段 `scope`（只允许 `[a-z0-9-]`，是名字不是路径）把该条件的挂载源与委派换成 `<homesRoot>/<家名>@<scope>`——与缺省目录同级、各自一份凭据的另一份。缺省即不写，行为与本字段出现之前逐字节相同。`scope` 进条件哈希：两条只差 scope 的条件是两个受试对象（登录的是两个账号），所以同一家在一次 run 里可以比两个账号。就绪检查按各自的 scope 探各自的目录，容器格挂各自的目录，`run.meta.unit.scopedHomes` 每条记下它的 `scope`（宿主路径照旧不进 bundle——那是运维事实）。
+- 编排器只检查这个目录**存在、非空、属主**，绝不读内容。空目录的意思就是「这台实例上还没人登录过这一家」——开跑前拒绝，比二十四格各自 401 便宜。
+- attempt 的运行数据目录多两样：`materialization.json`（编排器算的物化清单）与 `probe-verdicts/`（探针在单元内产出的原始判定）。工作区的宿主镜像不进 attempt 目录，位置记在 `workspace-mirror.json` 里。
+
+### 销毁路径唯一
+
+`run.ts` 里只有一个 `destroyUnit`，`lab.release` 只在它里面出现：
+
+- **过闸即销毁**：`archived → releasable` 一过就销毁，然后才 `→ released`。位置是刻意的：`isReleasable` 读的是**当前**状态，而模板的 releasableStates 只有 `releasable`——先走到 `released` 再销毁，闸会答否，于是每个容器都活着。`finalize` 走的是同样三步、同样顺序，事后回收容器才成为可能。
+- **过闸是缺省（T57）**：它曾经要显式开，因为 v0 没有判官、填不满闸要的 `verdicts/`。自从每格归档前都先判，旧缺省在实践中只意味着一件事：每个容器都活过它那一格，计划的第 4 格撞上 lab 的 `maxConcurrentUnits` 起不来——于是**跑循环的缺省悄悄决定了矩阵能有多大**。想要旧行为（留个容器进去看）就用 `--keep-units`（CLI 旗标，以及批准对话框的「保留单元」）。
+- **闸拒绝即留下**：开了 `--keep-units`、或 verdicts 为空导致 `releasable` 过不去，销毁照样问一次、照样被拒，**容器留着**并在格子上记一条 `{kind: 'unit-retained', reason}`。没人看过的格子，现场比容器数值钱。
+- **异常路径先归档再释放**：格子抛错（基础设施失败、schema 拒绝、归属错误）时先 `collect` 再 `archive` 再走同一条闸——不归档就 release 等于毁证据（lab 参考文档的[「失败恢复循环」](../../lab/docs/reference.md#失败恢复循环)）。同样不带 force，所以失败的格子会留着它的容器。
+- **`force` 在本文件里只有一处**：就绪检查的探活单元。它不绑 mission，因而没有闸；lab 要求这种销毁必须显式 `force`，正是为了让「无闸销毁」是一句判决而不是一个默认。
+
+### 已知取舍
+
+- **串行**。容器路径固定 `concurrency: 1`（显式给 >1 会被拒），并发单元归 I4。`acquire` 撞上 `maxConcurrentUnits` 当缺陷报出来，不排队——而且拒绝原文**点名占着名额的是谁**：lab 只说「先释放一个」，不说是哪个，于是编排器补上每个占着名额的单元的 run id、单元 id、容器名与格子，外加能结束它们的两条命令。这份名单加在这边而不是 lab 里，因为 lab 不知道什么叫一次 run。
+- **多家横比的指纹问题已由环境类解决**（见上）：`refs.fingerprint` 记环境类，单元自己的指纹记在 `unit` 注解与归档 manifest 里。
+- **物化哈希两条路径统一**（见上）：`materialization.json` 由编排器按同一算法算，lab 的那份另存 `populate-manifest.json`。报告仍兼容旧 bundle 的 `sha` 字段。
+
+## 就绪检查：每个条件一次真委派
+
+`/<harness> status` 回答的是**形状**问题——scoped home 里有没有一份形状对的凭据记录。一份过期且刷不动的记录，读起来和一份能用的一模一样。pilot A 就照单全收了这个答案：`claude-code status` 报 `authenticated: yes`，而同一时刻每一次委派都 401，24 格里 6 格在开跑前就注定全废，而第一份证据要到第一次委派才出现。
+
+判官条件同样在内。判官也是一次会失败的真委派，而失败的代价更大：一个选手条件挂了只损失它自己的格子，判官挂了损失的是整轮的 llm-draft 判定——pilot B 的两个判官样本全掉，run 却一路走到 `released`，llm-draft 命名空间是空的。所以判官按同一条规则探、同一条规则拒，结果以 `role: 'judge'` 记进 `run.meta.readiness`。判官在宿主上委派（判定是编排器发起的，不是格子发起的），因此容器路径下它也在宿主上探——探一个它根本不会遇到的环境毫无意义。
+
+所以开跑前的检查不问，只花一次委派。`runCreate` 之前，对 plan 里每个条件用逐字节确定的一句话提示词 `READINESS_PROMPT`（回一个 `READY`，不用工具、不写文件）跑一次委派——**与正式格子同一门面、同一 provider、同一条按目录给 cwd 的规则**，不另开后门，所以探针证明的就是格子将要遇到的。条件只有在委派**既起得来又返回 `stopReason: 'completed'`** 时才算就绪；探针**请求**条件声明的那个模型（与格子将要请求的同一个），并回读实际模型，与 `model.declared` 不符即当场判该条件不就绪（冻结决策 5，在开跑前拦下，而不是等到第一个阶段轮次）。
+
+每条判定是一条 `{kind: 'readiness', condition, harness, provider, ok, startedAt, durationMs, childSessionId, declaredModel, requestedModel, observedModel, reason?}` 记录，既进 `run.meta.readiness`，也作为 orchestrator ns 注解写到该条件的每一格上——问「这格为什么没产出」的人，在格子上就能看到答案。任一条件失败即整 run 不启动并打印原因（打印的是那句 401，而不是「有个条件失败了」）；`--ignore-readiness` 才允许开跑，此时该条件的格子一律记 `cell-skipped` 并给出理由，一次委派都不发。
+
+## 能力面：`preset` 从声明变成事实
+
+条件文档里的 `preset` 一直是一句**没有对应物**的话。它进条件哈希，所以两条只差 preset 的条件在账面上是两个受试对象；但从来没有任何东西把 preset 写到哪里去过，也就没有任何东西能与它不符。T32 给了它对应物：
+
+- **谁可以声明。** 只有 `dsh`。它的作用域目录里那份子 profile 是评测实例自己写的，preset 是那份 patch 的一层（宿主 0.2.0：一条 `@deepseek-ai/dsh-agent-preset-registry` 行，`default` 写 preset id）。三家外部 CLI 跑厂商自己的编排，本家族组不了——给它们写 preset 由 validate 报 error（`PRESET_NOT_FOR_HARNESS`），只能写 `null`。它们那侧的等价物是 `skills.pack`，同样尚未落地（I6）。
+- **provision 先把 preset 组进 scope。** 条件声明了 preset 时，`conditions provision` 在哈希作用域目录**之前**调 `localAgent.provisionScope(harness, scope, { preset })`：preset 是**受试对象**的属性，做主的该是条件文档，而不是一个实例只有一份的插件设置（pilot D 之前只能手工把 preset 层追进每个 scope 的 patch，而那一层会被下一次重启静默抹掉）。顺序不是随意的——scope 自带的那份 preset 副本就在作用域目录里面，先哈希再组进去会锁下一个描述不存在目录的 `home.sha`。门面没有这个动词就退回从前：有什么读什么。
+- **provision 写下实物。** `conditions provision`（T31）在 `provisioned` 里多记两项：`preset` 从写出去的子 profile 回读，`capabilities.sha` 是 capability-catalog 对那份已配好的环境算出的**能力哈希**（规范形取技能的 name/source/正文 sha 与工具的 name/channel/parameters——描述措辞不进，改一次文案不该换一个受试对象）。测量由**实例内的探针**做（T32b，见下）；没有 catalog 的组合里探针不在，条件照样落 lock 但不带能力记录，并按名报 `CAPABILITIES_UNMEASURED`——之后就绪检查再拒一次。
+- **就绪检查还比新鲜度。** lock 记的是 provision 当时的哈希；run 起来时就绪检查**再量一次**，两者不等即判该条件不就绪、点名「preset 在 provision 之后变了」。少了这一步，lock 会永远读作「已核对」而它量的那个 preset 在底下被改——而改技能**正文**不会动任何别的已记哈希（`home.sha` 只哈希配置类文件，不含 SKILL.md），只有这一步看得见。量不出来（catalog 不在、preset 挂不起来）时，原记录照旧算数：测不到是关于 catalog 的证据，不是关于受试对象的。改的若是 scope 自带那份副本，还有第二道、且不需要 catalog 的检查：重算 `capabilities.snapshot.sha`，不等即拒。**`validate` 与 `conditions list` 也核这一条**（在实例里跑、拿得到作用域目录解析器时）——T32b 记下的「离线读到 ready、run 起来才被拒」就此对上；能力面本身仍然要活的 catalog 才量得到，纯 CLI 的 validate 因此仍看不见它。
+- **就绪检查核对。** 声明了 preset 而 lock 里没有能力记录，或记录取自另一个 preset——在花掉任何一次委派**之前**就判该条件不就绪。preset 进哈希却没人量过，等于两个纸面上的受试对象、事实上的一个。
+
+编排实例自己的能力哈希另算一回事：它记在 `run.meta.orchestrator.capabilities` 里，是**取证**。报告的「程序一致」把它列出来，不做任何比较——编排器不回答题库的任何一道题，把它做成通过/不通过的输入，等于「我们升级了规划 agent」就判一条不变量违反。组合里没挂 capability-catalog 就不记这一行。
+
+## `finalize`：跑完之后的再入口
+
+run 自己那次过闸发生在每格跑完的当下，而「判官与终评」是归档**之后**的工作。pilot A 因此人手把十二格逐个 `dsh-mission transition` 推过去。`/eval finalize <runId>` 就是这条路，机械化：对 run 内每个 `archived` 的格子走同一条闸（`archived → releasable → released`，含归档闸对 `verdicts/` 非空的 file-check），非 `archived` 的格子逐格列出状态并跳过。它是 `--keep-units` 之后、取消之后、以及闸拒了而后来有人修好之后的再入口。
+
+它不 force。闸拒绝按格记 `{kind: 'finalize-refused', from, error}` 到 orchestrator ns，格子停在闸拦下它的地方——闸正是「归档」这两个字有意义的原因。它也不碰没走到 `archived` 的格子：pending 或半途的格子是**没做完的工作**，不是**没释放的工作**。跳过按 `already-released` / `interrupted` / `not-started` 归类，一整个 run 一行就能说清。
+
+**它也回收容器（T57）**。每个过闸的格子，单元在两次 transition 之间销毁——同一个位置、同一个顺序、同样不 force，与跑循环一致。在此之前这条路只动账本：一次容器 run 事后 finalize，会走到 `released` 而每个容器还 Up 着，且再没有任何一道闸能放行它们（T39 · G18）。报告写清销毁了哪些、还剩哪些，逐条给原因：闸拒了它的格子；格子已经过闸，只剩 `dsh-lab release <unit> --force`，那是人的决定；或者格子根本没跑完。单元面是**可选**的——组合里没有 lab 就把名单报成**未知**，绝不报 `0`。
+
+进程外没有 mission 服务，所以 `dsh-eval finalize` 以子进程调用 `dsh-mission` 的 CLI（`--data-dir`、`--mission-cli`、`$DSH_MISSION_CLI`）——正是人手工用的那条缝。eval 仍然不 import mission 包的任何东西。自 T89 起它读 `dsh-mission list --json`（schema `dsh-mission.list/1`），不再按列宽解析表格；碰上不认 `--json` 的旧版 mission CLI，会明说「升级 dsh-mission」而不是读出一张空表。那个子进程是账本不是 lab，所以 CLI 这一面不释放任何容器，并且每次都说出来。
+
+## 条件 provision：声明 → 实物 → lock
+
+condition 是**声明**；`conditions/<id>.lock.json` 是「这份声明对过一次实物」的锚点。T8b 立了锚点与它的两个读者——validate 报 `LOCK_STALE` / `HOME_NOT_PROVISIONED` / `HOME_MISMATCH`，run 遇过期 lock 直接拒——但在 T31 之前**没有任何东西写它**。`dsh-eval conditions provision` 是那个写入者，而且刻意是唯一的：手写一份 lock 等于声称作用域目录核对过，而其实没有。
+
+五步，每步都能停：
+
+1. **取作用域目录** —— 按条件的 `(harness, scope)` 问 local-agent 要 `homeDir`；读即物化。
+2. **核凭证** —— `credentialState` 不是 present（`present-unverified` / `verified`）就停下，并打印该跑的登录命令 `/<家> login [--scope <名>]`。**provision 从不代登录，也从不从别的 scope 复制凭证**——登录是人的事。
+3. **逐项核声明** —— 读该作用域的 effectiveSettings，与条件逐字段比：
+
+   | 条件字段 | 对什么 | 不一致 |
+   |---|---|---|
+   | `harness.version` | CLI 自报版本 | warning（声明为 null 时把实测值**回填进 lock**，不改条件文档） |
+   | `model.declared` | harness 缺省模型 | warning——T30b 之后声明是**按次请求**的值，与缺省不同是常态；跑错仍由回读拒 |
+   | `reasoning.effort` | `reasoningEffort` | warning（harness 没这旋钮就是诚实的「没有」） |
+   | `permissions` | codex `sandbox` / claude-code `permissionMode` / kimi `autoApprove`（dsh 无旋钮） | **error，拒写 lock** |
+   | `model.endpoint` | 无 base URL 即 `"default"`，否则端点主机名（声明写整个 URL 会先取 host 再比） | **error，拒写 lock** |
+
+   两条 error 不是随手挑的：`permissions` 是审批边界（冻结决策 3）、`model.endpoint` 是上游路由（冻结决策 5），这两项**就是**受试对象，对不上说明这份条件描述的实验没人跑过。
+4. **算 `home.sha` 并写回声明** —— 作用域目录的配置内容哈希（见[哈希规则](#哈希规则)，凭证形状的文件按名与按目录整棵排除）。声明里的 `home.sha` 是 null 或与实测不符时，**provision 就地把实测值写进条件文档并重算条件哈希**，第 5 步的 lock 因此锚的是改完之后的那份文档——所以「条件变 ready」是一次动作。`--no-write-back` 恢复旧行为：只报 warning、文档一字不动，人抄一次哈希再 provision 一次（T58 之前只有这一条路，走查里第 4 步的四次多余人工有一半出在这儿）。写回只碰 `home.sha`、只在不一致时发生、只写部署的条件库（T73 之前写的是 `--repo` 指的题库工作副本）。
+5. **写 lock** —— `{schema, condition, sha, home:{sha}, provisioned:{at, cliVersion, effective:{model, reasoningEffort, permissions, endpoint}}}`。`provisioned` 是 `dataseek.condition-lock/1` 的**增补字段**，没有它的 lock 是 provision 之前写的，validate 读作「没人核对过」而不是违约。
+
+validate 用**同一个函数**复核 lock 里的 `provisioned.effective`：两条 error 级字段对不上即「未就绪」并点名字段。sha 还匹配却对不上，只可能是这份 lock 不是 provision 写的——这正是要看见的那种伪造。
+
+### 能力探针
+
+第 5 步之前还有一步，只对 `preset` 非 null 的条件跑：
+
+1. **回读 preset 层** —— 扫作用域目录下每个 `profiles/*/cordis.patch.yml`，找挂 `@deepseek-ai/dsh-agent-preset-registry` 的 insert 行，取它的 `default`（T91 起；0.1.5 的 `@deepseek-ai/dsh-agent-presets` roster 不再认）。认的是**包名**，不是生成的注释横幅、也不是 profile 目录名——子 profile 名字可配，改了名照样读得到。读不到就不测量：把声明抄进 `provisioned.preset` 正是唯一会让这个字段失去意义的做法。
+2. **确认两边读的是同一份 preset** —— catalog 按**评测实例自己**的 registry 解析 preset id（实例 profile 里装的 preset 包），子 dsh 按作用域目录里的副本解析。两种形态：
+   - 作用域目录**不自带** preset（`source: "instance-root"`）：两边读的就是实例里装的那个 preset 包，照测。但单元 bind 挂进去的只有作用域目录，所以这种条件**只在宿主轮解析得到 preset**，探针会把这句话记进日志。
+   - 作用域目录**自带**一份 preset 包副本 `<scope>/preset-packages/<id>`（`source: "scope-snapshot"`，容器轮唯一可行的形态；它得是一个声明了 `dsh.bundle.patch`、patch 里有 `@deepseek-ai/dsh-agent-preset` 行的包）：只有当**做出这份副本的 provisioning**（`localAgent.provisionScope`）报告它与部署那份**逐字节相同**时才测。凭什么转移得过去：规范化的能力面里**没有任何文件系统路径**（技能只进 name/source/正文 sha，工具只进 name/channel/parameters），所以两份逐字节相同的目录哈希必然相同——T32 的真机轮从另一头测到过这件事（同样内容换个 preset id，哈希一字不差）。没人担保、或副本的组合里有**绝对路径**、或它不是一棵纯文件树（有软链，过不了 bind mount），一律拒测并说出是哪一条。
+3. **量** —— `ctx.capabilityCatalog.snapshotFor(<回读到的 id>)`，取快照自带的 `sha`。preset 挂不起来时 catalog 是**抛错**而不是退回全局层（T32 的决定），那句拒绝就是这里的答案。
+
+探针还顺手把那份副本**整棵哈希**（每个文件都算，`SKILL.md` 也算）记进 `capabilities.snapshot.sha`。这不是对能力面的第二种说法，而是**离线**判断「受试对象还是被量过的那一个」的唯一凭据：`home.sha` 按设计只哈希配置后缀的文件，改技能正文它不动；能力面要有活的 catalog 才量得到。就绪检查与 `validate` 都核它——**T32b 记下的那个缺口（「validate 把过期的 lock 报成 ready」）就此关上**，至少对改正文这一类；validate 拿到作用域目录解析器（实例里跑时有，纯 CLI 里没有）才做这件事，拿不到就与从前逐字节一样。
+
+**它量的是什么**：该 preset 的能力面**在评测实例这份 composition 里**的样子，不是子 dsh 自己那份（dsh-base + headless patch + preset 层）。作为因子它是真的——两个 preset 两个哈希，改技能正文哈希就变——但它不是子 dsh 的整张面。要量后者得把子 profile 启起来、问挂在里面的 catalog，那条启动路留给后续；到那天为止写下的 lock 会在新的量法下读作过期，而这正是上面那条新鲜度比对会说的话（「去重新 provision」），不是一次无声的错比。
+
+provision 需要 local-agent 服务（作用域目录、凭证等级、effectiveSettings 都在那儿）与——为了探针——capability-catalog 服务，所以它和 `/eval run` 一样从活会话起：`/eval conditions provision <条件 id> [--no-write-back]`。CLI 进程外没有服务面，照旧拒绝。部署的条件库（`$DSH_HOME/state/eval/conditions`）是它唯一能写的地方；题库仓库从不被写。
+
+界面上同一件事是**实验室 › 实验设计页对比组表每行的「准备环境」按钮**（T58；T67 起条件页并进实验设计）：它走同一个服务动词，写进部署的条件库，回执是同一张 `ok / warn / error` 清单（与实验设计页的校验清单同一个组件）。这张表还能改**一个**已有声明的字段——`model.endpoint`，就绪闸必看而此前没有任何入口的那个。改它是改因子：条件重算哈希、旁边的 lock 随即过期，页面直说这件事并把「再 provision 一次」留给人点，而不是替人重锚一个受试对象。两个动作都没有模型工具孪生（R1）。
+
+## 判定：探针（script）与判官盲评（llm-draft）
+
+格子跑完阶段、停在终态后，编排器在归档前跑两条机器通路。完整契约见 [协议 §6.7 / §6.8](../../../docs/dataset-authoring-protocol.md)；这里是实现侧的读法。
+
+**探针（`script`）** —— 任意 `probes/` 段里的 `.mjs` / `.sh`，来源有两处：**题内**（该题 verify 层，只判这道题）与**题集级共享**（题集级 verify 层，对每道题各跑一次；`shared/no-patch.sh` 这类「所有题共用同一把尺子」的判据归这里）。调用约定 `<probe> --cell <格子目录> --rubric <rubric 路径> --out <verdicts.json>`。
+
+**退出码三态**：`0` = 已判定（含 `pass: false`），记 `judged`；`3` = **本轮不适用**（探针没坏、判据也没不成立，只是输入不在位——阶段三没跑、harness 工作树不在格子里），记 `probe-skipped` 并附 stderr 首行，**不算失败**；其余非 `0` = 探针失败，记 `probe-failed`。退出 `0` 却写不出可读的 `--out`，按失败记。用 `3` 不用 `2`：`2` 是 getopt 传统的「用法错误」码，读成「判不了」会咽下每一次误调用。
+
+**执行环境**：**两个 verify 层都整层物化**进宿主临时目录，相对布局与题库一致（`<tmp>/verify/…` 与 `<tmp>/items/<题 id>/verify/…`），题内探针因此能用在题库里同样成立的相对路径 import 题集级共享库（`../../../../verify/helpers/lib/x.mjs`）。cwd 一律是该题 verify 层的根，共享探针也一样。跑完整个目录删除（I3 起交 `lab.verify` 进容器，契约不变）。
+
+**`task` / `by` 先回填、后校验**——两项都是 `required` 且 schema `additionalProperties: false`，反过来会把探针没写这两项的完整判定判成废品。`by`：题内探针 = 它在该题 verify 层的 display 路径；共享探针 = `shared/` + 它在题集级 verify 层的 display 路径。探针写了但与编排器不一致的，以编排器为准并把 `overwritten` 记进 orchestrator ns。带 `ratio` 的判定在源头核两条数值约束（`total > 0` 且 `0 ≤ passed ≤ total`、`pass === (passed === total)`），不符按产物不合契约记——报告侧的退回布尔是兜底，不是唯一的闸。
+
+产出写 `script` ns 与 `archive/verdicts/script.json`；两个层都没有探针就什么都不写。每次探针运行的记录（`{probe, origin, exitCode, outcome, ok, verdicts, durationMs, error?, reason?, overwritten?, dropped?}`）进 orchestrator ns 的 `kind: 'probes'`。
+
+**判官盲评（`llm-draft`）** —— 判官本身是一份 condition，由 `plan.judge.conditions` 指定（可以列**多个**，即一个判官面板），`plan.judge.samples`（缺省 2）是每个判官条件的采样数。约束由编排器强制（决策 9，2026-09-10 放宽）：
+
+- **判官显式 pin 模型**：`model.declared` 为 null 的判官条件被 validate 判为 error、被 run 拒绝——判官跑什么由它家 harness 的缺省决定时，「这格是不是自评」无从判定，报告只会安静地错。
+- **判官可以与选手同模型，但每格由谁判要进报告**：不同 id、同 `(harness, model)` 不再拒绝。每条 `llm-draft` 判定带 `judge`（判官条件 id、模型、`selfJudged`、样本号），summary.md 逐格列出这一格由谁判，判官模型等于该格选手模型的格标「**自评**」。仍然拒绝的只有两件事：同一个 id 同时出现在 `conditions` 与 `judge.conditions`（那不是面板，是记账错误），以及同一个判官 id 列两次。
+  - 为什么不做全局排除：要评的就是全部模型时，评委必然与某个选手重合。公开榜单（MT-Bench、AlpacaEval、Arena-Hard）都让选手模型当评委并如实记录自评偏好，补救是**多评委面板 + 标出「谁判了谁」**；根本不想要模型评委的（SWE-bench 一类）用确定性打分器。旧规则的代价是实测过的：T22 第 5 步里判官声明一个模型、实际跑另一个，改声明就与选手撞车，两种声明都跑不了。
+- **判前去指纹**：`stage1.json` / `stage1.md` / `stage2.json` / `stage2.md` 里的 harness 名、CLI 名、成员自报名字换 `<harness>`，plan 各条件的模型标识换 `<model>`；替换表与次数记 `{kind: 'deidentify', files, table, total}`，**原件不动**，判官只看副本。
+- **双采样**：每个样本是**全新委派**（续聊会让判官看见自己上一次的答案），独立 cwd = 判官材料目录。
+
+judge prompt = 该题 grading 层 rubric 里 `kind: llm-draft` 的判据（`objective` 归探针、`human` 归判官台，都不给判官看）+ 去指纹材料 + 输出要求。判官把 `dataseek.verdict/1` 数组写进自己 cwd 的 `verdicts.json`；读不出来记 `{kind: 'judge-parse-failed'}` 并**重试一次**，再失败该样本如实丢弃。每个样本一条 `llm-draft` 注解 `{sample, judgeCondition, judgeSha, judgeModel, selfJudged, promptSha, verdicts}`，并落 `archive/verdicts/llm-draft-<判官条件>-<样本号>.json`；`task` 与 `by` 由编排器回填（判定方只是回声，写错会污染报告的每一次 join）。
+
+判官的用量与耗时记 `{kind: 'judge', judgeCondition, judgeSha, judgeModel, selfJudged, sample, attempt, childSessionId, promptSha, startedAt, durationMs, usage, model}`——`kind` 不是 `delegation`，所以**不进报告的选手效率表**。判官材料目录（`$DSH_HOME/state/eval/judge/<runId>/…`：prompt + 去指纹材料 + 判官的回答）在 run 结束后保留，供复核；探针目录跑完即删。
+
+grading 与 verify 层只经 datasets 服务面以显式单层 scope（`layers: ['grading']` / `['verify']`）读取，物化进宿主侧目录，**绝不进选手格子**。
+
+## 实验：部署级对象
+
+T73 之前，一份实验就是题库仓库里的 `datasets/<题集>/plans/<名称>.json`，条件住在它旁边，而评测读哪个仓库由**会话绑定**决定。那样一来，评测自己的记录（计划、条件、lock、分析初稿、导出）全都写进一个多 agent 共用的检出。T73 把两者分开：**题库仓库是只读输入，钉在一个 commit 上；实验是部署自己的对象**。
+
+```
+$DSH_HOME/state/eval/
+├── experiments/<experimentId>/
+│   ├── plan.json        # 计划，逐字节（起草时序列化，导入时原样）
+│   ├── meta.json        # name、originSession、createdAt、dataset {registry, set, commit}、experimentId
+│   ├── analysis/        # 分析初稿（eval_analysis_write 的唯一写入区）
+│   └── exports/         # 缺省导出目录；plan.exports 与 --out / exportsDir 仍优先
+└── conditions/<id>.json + <id>.lock.json   # 条件库，所有实验共用；哈希与 lock 语义不变
+```
+
+- **id 规则**：`<slug>-<yyyymmdd>-<4hex>`。slug 取名称的 `[a-z0-9-]`，至多 40 字符；日期取 UTC（同一时刻在哪台机器上都是同一天）；尾巴随机，撞了就重铸。目录先写进一个隐藏临时目录、一次 rename 就位，再把 `plan.json` 读回来比对字节——列表永远看不到写了一半的实验，崩溃只留下一个列表会跳过的点目录。
+- **版本钉**：`eval_plan_draft` / 新建实验表单收 `dataset: "<登记 id>/<题集>"` 与可选的 `commit`。候选 = 登记跟踪分支的最新 commit，加上**同题集、共用条件**的已有实验钉住的 commit。候选的 `items/` 与 `schemas/` 树哈希全部相同就不算歧义，静默钉最新；否则拒绝，回答里列出候选，并要 agent 用 `ask_user_question` 问人、人跳过就停。给了不在候选里的 commit 同样拒绝并列出候选。原文：
+
+```
+version is ambiguous for <登记 id>/<题集>: these commits hold different items/ or schemas/, and results pinned to different ones do not compare:
+  …候选清单（一行一个 commit 与来由）…
+Ask the person which version this experiment should pin with ask_user_question, then draft again with that `commit`. If they skip the question, stop — do not pick one yourself.
+```
+
+- **validate 读物化目录**：实验按 `meta.dataset` 从 datasets 登记把整个题集在那个 commit 物化成只读视图，契约文件（阶段 schema、题目、探针）从那里读，条件从条件库读。plan 自己的 `dataset` 段不再用来定位任何东西。「plan 同级的 `plans/` 往上找」这条回退只留给**旧路径**（没导入过的旧 plan 文件）。
+- **配对**：新 run 的 `run.meta` 带 `experimentId`，列表按它把 run 归到实验。旧 run 没有这个字段，依次按 planSha（导入逐字节保留计划正是为此）、再按 planPath（对导入实验的来源路径）配对；谁也认不领的 run 照样列出，标「旧运行（未关联实验）」。
+- **导入**：`dsh-eval import --from <登记 id>@<ref> [--plan 名称] --instance URL`（Remote `importExperiments`）。只用 `git show` 读 `datasets/<题集>/plans/*.json`，计划字节原样；实验钉 plan 自己的 `dataset.commit`，没有就钉 ref 解析到的 commit。计划点名的条件进条件库：哈希相同就是同一条件、原地不动；**同 id 不同内容整个导入拒绝**，逐字段列出差异，一个字节都不写。同一份计划在同一 commit 再导一次是空操作，回执会说。
+- **起跑**：`/eval run <experimentId>`、`dsh-eval run --experiment <id> --instance URL`、实验设计页的「批准并启动」。旧的 plan 路径入口仍在，只为没导入过的旧计划；那样跑出来的结果不属于任何实验。
+- **绑定的尾巴已删**：eval 这边不再读任何绑定（`DatasetsBindingFace`、`resolveRepoScope` 的绑定分支、repo 配置兜底都删了），界面上不再有「未绑定」。旧绑定文件**不自动删除**，位置见 datasets 参考文档的[「旧会话绑定」](../../datasets/docs/reference.md#旧会话绑定)（`$DSH_HOME/state/datasets/bindings/<session>.json`）；确认迁移无误后可以手动删掉。
+- 没设 `DSH_HOME` 的实例没有状态根：实验与条件库相关的动词拒绝，错误页显示「这台实例没有评测状态目录」；列表退化成只列 run（全是旧运行）并附一句说明。
+
+## 服务面 `ctx.dshEval`
+
+服务的 cordis 名是 `dshEval`，**刻意不叫 `eval`**：loader 用 `with (ctx) { return eval(expr) }` 求值配置里的 `!!js` 表达式，ctx 上的 `eval` 属性会遮蔽全局 `eval`，凡挂载本包的组合一遇 `!!js` 即炸（真实 3171 实例踩出）。包名、入口 id（`eval`）与 `/eval` slash 名不受影响。
+
+| 方法 | 作用 |
+|---|---|
+| `validatePlan(planPath, {roots?})` | 校验 plan schema 与语义（判官≠选手、judge/expectedNs 交叉检查、预算下限），解析条件声明与 lock，lint 阶段 schema，并交叉核 `expectedNs` 与每道题**实际能产出什么**——声明 `script` 但 `verify/probes/` 无可执行探针、声明 `llm-draft` 但没有 rubric 或 rubric 无 `kind: llm-draft` 叶子，两者都按 warning 报出（T23；题库侧的检查归 T26）。`roots` 给了就只从它读（实验的物化视图与条件库）；不给则走旧路径解析。数据问题以 diagnostics 返回（`errors` / `warnings` 各带稳定 code），从不 throw |
+| `validateExperiment(experimentId)` | 实验的 validate：按 `meta.dataset` 物化题集视图，以它和条件库为 `roots` 调同一个 `validatePlan`（T73） |
+| `hashCondition(condition)` | 条件哈希 = 规范化 JSON（键排序、无空白）的 sha256，`notes` 不参与（改注释不是换条件）。非法文档抛 `EvalContractError` |
+| `hashHome(homeDir)` | scoped home 内容哈希：只取配置类文件，按拒绝清单跳过凭证形状的路径；内容只进摘要，绝不返回或打印 |
+| `generateTemplate(manifestPath, opts?)` | 由题集 manifest 生成 run 模板（可选项：`stages` 子集、`missions` 格批次、`name`、schemaPath 前缀）。纯函数：不探测 schema 文件，探测归 mission 的 runCreate lint |
+| `run(planPath, options?)` | run 循环本体（见上节）。缺 datasets / mission / localAgent 任一即拒绝并列出哪个；`dryRun` 选项只做校验 + 模板 + 矩阵 + 顺序，不需要任何上游 |
+| `conditions()` | 列出条件库里的条件：harness、声明模型与 endpoint、条件哈希、就绪（lock 在不在、还对不对、home 是否核过）、lock 里的 `provisioned` 快照、未解析字段。条件库是部署的（`$DSH_HOME/state/eval/conditions`），与会话无关 |
+| `conditionDiff({a, b})` | 两份条件声明的逐字段差异（规范化深比较；`notes` 进差异清单但不影响 `identical`）。两侧各可以是条件 id 或路径。**只展示，不推荐**：哪些字段不同、各自取值，就这些——这对条件值不值得跑，取决于文件里没有的东西 |
+| `provision(conditionPath, {repo, writeBack?})` | 把声明变成实物并写 `<id>.lock.json`，见下节。**lock 的唯一写入者**；`repo` 是它能写的那个目录（T73 起调用方只传部署的条件库），声明不在它里面就拒绝。缺省把实测 `home.sha` 写回声明再锚 lock，`writeBack: false` 恢复旧的两步形状 |
+| `provisionLibraryCondition(id, {writeBack?})` | 按 id provision 条件库里的一条，slash 与实验设计页的「准备环境」都走它 |
+| `provisionCondition({condition, keepDeclaration?})` | 实验设计页的「准备环境」：同一个动词，写进部署的条件库；回执是 `ok / warn / error` 清单加改完之后的那一行 |
+| `setConditionEndpoint({condition, endpoint})` | 改一条已有声明的 `model.endpoint`——任何面能改的既有声明字段只有这一个。改的是因子，所以回执点名旁边的 lock 已过期 |
+| `experiments({session?})` | 实验室列表的投影：一行一个实验，**草稿与 run 同列**。实验取状态根下的 `experiments/`；run 取账本里 `run.meta.evalVersion` 有值的那些，按 experimentId → planSha → planPath 配到实验，配不上的标 `legacy`（旧运行）。每行带题库钉（`<登记>/<题集> @ 短哈希`）、条件与判官 id、题数、rep、因子（条件两两 diff 推出）、状态、进度、开始时间。降级不拒绝：没挂 mission 只列实验、没有状态根只列 run，缺哪块就在 `notes` 里写一句 |
+| `experiment(runId)` | 一次已启动实验的概览：上面那一行，加只有 run 才有的部分——run.meta 摘要、就绪检查记录**原文**、桶与阶段两张直方图、未释放清单、本实例还留着的 job。草稿没有 run，它的概览就是列表那一行；草稿自己的那一页是 `planReview` |
+| `planReview({experimentId} \| {planPath})` | 实验设计页的计划载荷（实验按 id，带上 meta 的版本钉；旧 plan 按路径）：plan 自己的字段（快照、题目、条件、判官与采样、rep、阶段、顺序种子、预算、期望 ns、重试、导出目录、环境、作者备注）+ `validatePlan` 的结论摊平成 `ok / warn / error` 逐条。**同一个函数**——页面和 `dsh-eval validate` 不可能对「这份计划能不能批」给出两种答案。`ok` 那几条是已解析的条件：只报问题的页面，会把一份干净的计划渲染成空白 |
+| `conditionsPage()` | 实验设计页对比组表的数据：`conditions` 的投影，一行一条——harness 与 drive、声明模型、scope、preset、lock（在不在、还对不对、home 有没有哈希、provision 记了什么）、就绪词 |
+| `conditionDiffPage({a, b})` | 实验设计页对比组表的 diff：`conditionDiff` 的投影，**只带不同的字段**，每侧的值是规范化 JSON 文本（`null` = 这一侧没有这个字段，本身就是一种不同）|
+| `approve(experimentId, {parentSessionId, cwd?, keepUnits?})` | **人的动作**（界面规格 R1、第 5 步）：先按实验 validate，有 error 就拒绝、`runStart` 一次都不碰——条件都解析不出来的计划一旦起跑，就要用真委派去发现一个离线检查早就知道的事实。warning 不拦。通过则以批准的这个会话为父会话、它的工作区为 cwd 起 run，run 带上 experimentId。**拒绝是返回值不是异常**：页面两种情况渲染同一张 check 列表，理由就该贴在解释它的那张表旁边；接线失败（没有 job 注册表、没有活着的父 agent）同理原样进 `refusal` |
+| `matrix(runId, {column?, groupBy?, filter?, stuckMs?})` | 矩阵页的排布（I5·T35b）：**行永远是题**，列是调用方选的那一个因子，其余因子分组或钉死。因子集合就是 run.meta 里各条件文档两两 diff 的键并集；格内四样——rep 圆点（实心 ≥ judged / 半心进行中 / 空心未起）、阶段（各 rep 一致就是那个态，否则 `mixed`）、卡格（在态时长超阈值，缺省 30 分钟，已判的格不算卡）、题面哈希是否与同题其余格一致。物化哈希从 run 循环自己写的 `materialization.json` 读；mission 面报不出 `dataDir` 就记「无法核验」，绝不猜 |
+| `cell(runId, missionId)` | 一格的全部（格子详情抽屉）：各次 attempt（含重跑原因与类别）、检查点、产物、refs、各注解命名空间的条数与最近一条摘要、**verify 原样输出全文**、**选手**委派的子会话 id、**判官各轮的子会话**、以及这一格此刻可不可释放 |
+| `cellArtifact(runId, missionId, attempt, path)` | **一件产物本身**（I5·T69）。路径对着那次 attempt 的运行数据目录解，先按字面判越界、再对两侧 `realpath` 判一次——前者不看磁盘，所以 `../` 不论目标在不在都按越界拒（拒绝语句的差别不能被用来探测文件存在）；后者抓的是归档里指向外面的软链，字面判看不出来。只认文本扩展名（md / json / txt / yml / yaml / log / jsonl），超 256 KB 返回开头并说明截断，目录返回条目，其余按**名字**拒并说明。**不去指纹**：这一页的页眉本来就写着对比组，去指纹只会挡住排查的人而保护不了任何人——盲的那份是判官台的 |
+| `cellAnswers({runId, task})` | **一道题的全部作答**（I5·T75，作答视图的具名面）：这道题在 run 里的每个「组 × 次」一条——判过的阶段文件（`JUDGE_MATERIAL_FILES`，先读 attempt 归档里的 `workspace`、缺了再读 attempt 目录）、当前 attempt 三层判定（script / llm-draft / human-final，判官按判官台的「判官 A / B」标、不给判官条件 id）、脚本原样输出、选手子会话与父会话 id，外加 rubric 里 `kind: human` 的判据。只给文件名不给路径，只内联文本，每个文件超 256 KB 截断并说明。**不盲**：和它打开的记录详情一样具名；盲的那份仍是 `judgeQueue`。这道题一格都没有就拒绝 |
+| `cellRows(runId, query)` | 格子页表格要的那几列，由同一个 `cells` 投影收窄而来——模型读整份，tab 读这份，一份实现 |
+| `retryCell(runId, missionId, {reason, category, by?})` | 带原因重跑，原样转发给 mission。**原因是必填**：空原因在这里就被拒，不劳 mission 再拒一次——没人说得清来由的 attempt 比没有更糟 |
+| `releaseCheck(runId, missionId)` | 释放检查：这一格的资源现在能不能销毁。答案是状态机自己的 `releasableStates`，eval 不加意见 |
+| `exportPlan(agent, request)` / `exportRun(agent, request)` | 导出 bundle 的两步，转发给 **mission 自己的 Remote**。guarded 层怎么算（经 datasets 探测）与 fail-closed 的闸都在 mission 那边，eval 只转发调用方的确认，既不能放宽也不能收窄——泄题闸有第二份实现，就有第二个地方会错。组合里没有 mission 的 Remote 就整个拒绝导出，而不是在这边把闸再写一遍 |
+| `itemRuns(datasetId, itemId)` | 一道题的「作答记录」：哪些评测 run 跑过它、各格在哪个态、各 ns 各有几条判定。按 `task` label 与 `meta.datasetId` 认题，与矩阵同源；给题集 tab（T47）用，没挂 mission 就空列表加一句话 |
+| `runStatus(runId)` | 投影一次 run：run.meta 摘要（planSha、快照 commit、条件、随机顺序与种子、启动时间）+ 逐格一行（题、条件、rep、attempt、状态、桶、编排器最近一条注解、submission-rejected 次数）。缺 mission 服务即拒绝并说明原因 |
+| `finalize(runId, options?)` | 把 run 内每个 `archived` 的格子走一遍 `archived → releasable → released`（与跑循环逐格走的是同一条闸），并**在两次 transition 之间销毁过闸格子的单元**；非 archived 的格子逐格列出状态，仍在的容器逐条给原因。闸拒绝按格记录，不 force。lab 是探测来的、不是必需的：没有就把单元名单报成未知。组合里没有 mission 服务即拒绝并说明原因 |
+| `runUnits(runId)` | 此刻 **lab** 为这次 run 持有的容器，与每格在账本里的状态 join 起来。刻意不用 mission 的 `unreleased`——那是账本按格子 refs 推出的**判断**；值得看的恰恰是两者不一致的那种：账本已经 released、容器却还 Up 着。组合里没有 lab 就答 `available: false`（未知），而不是空名单 |
+| `report(bundleDir, {out?})` | 把 mission export 的自包含 bundle 变成 `results.jsonl` + `summary.md`（见下节）。只读 bundle，写入缺省 `<bundleDir>/report/`，重复运行覆盖（报告是派生态，bundle 本身只增不改） |
+| `runReport(runId, {outDir?})` | 报告页的载荷（I5·T38）：先**找**这个 run 导出的 bundle——调用方刚导的目录 → plan 自己的 `exports` → 所属实验的 `exports/`（T73；旧运行仍试 `<题库仓库>/exports`），逐个试 `<runId>-bundle`——再交给同一个 `analyzeBundle` 分析，把五条有效性校验、配对差值、效率表与判官数字投影出来。**一个字节都不写**：落盘仍是 `dsh-eval report --out`，报告去哪儿是人的决定。还没导出的 run 返回 `bundleDir: null` 加找过的目录清单——「还没导出」和「没有报告」是两件事，只有前者有按钮 |
+| `finalizeView(runId, by?)` | 报告页那颗 finalize 按钮背后的 `finalize`：同一条闸、同一次走，把逐行进度**原文**一起收下来，页面因此能按格显示闸说了什么，而不是只有一个成功数 |
+| `judgeQueue(runId)` | 判官台的**盲**队列（I5·T37）：每格一条——序号 + 不透明 ticket、去指纹产物原文（复用 run 循环那个 `deidentify`，规则由 `run.meta.conditions` 重建）、rubric 里 `kind: human` 的判据、各判官各样本的 llm-draft、已有的 human-final，外加按**活账本**实时算出的一致性。载荷里没有条件 id、harness、模型，也没有 missionId——盲是载荷的属性，页面漏不出它没收到的东西 |
+| `draftExperiment(request, {session?})` | 起草一个实验：定版本钉、铸新条件进条件库、建实验目录并读回、再 validate（见上节与 `eval_plan_draft`）。从不起跑 |
+| `setPlanNumbers({experimentId, reps?, activeMinutes?, turns?, judgeSamples?})` | 就地改一个**还没启动**的实验 plan 里的四个数字（T74），其余字节一个不动，写完读回；已启动（账本里有它的 run，或有正在起的 job）一律拒绝 |
+| `importExperiments({from, plan?})` | 从登记仓库导入旧计划为实验（见上节）；拒绝时什么都不写 |
+| `writeAnalysis({experimentId, path, content, overwrite?})` | 往一个实验的 `analysis/` 写一个文本文件；回执带「在结果对比页可看」 |
+| `experimentArtifact({experimentId, path})` | 读一个实验目录里的一个文件：只在这个实验目录里（字面判越界 + realpath 再判），只内联文本，超 256 KB 截断并说明 |
+| `humanFinal(runId, ticket, verdicts, sessionId)` | 把一格的终评记进 `human-final` ns——**这个 ns 在整个家族里唯一的写入口**。ticket 在服务端反解回格子；转发 mission 的 `annotate`，只追加不改写；注解的 `by` 记 `tab:<sessionId>`（不是 `tool:` 前缀），verdict 文档的 `by` 记 `judge-bench`。每条判定必须带证据，空的拒绝。**没有对应的模型工具，将来也不会有**（界面规格 R1） |
+
+## 工作区接入接缝（按实例挂载）
+
+把本包挂到**隔离 Context + 独立 stateRoot** 上是受支持的消费方式：挂载方在自己的 Context 上以本包的 `apply` + `config.stateRoot` 起一份独立实例，或直接 `new EvalService(hosts, { stateRoot })`——eval 自己的状态树全部按实例绑定：实验目录、条件库、每次 run 的格子目录（`<stateRoot>/experiments/`、`conditions/`、`cells|readiness|judge|probes/<runId>/`），不再从 `$DSH_HOME/state/eval` 派生。两个实例配两个根，看到的就是两份互不相交的实验、条件与格子；不引入任何全局可变状态。
+
+```ts
+import { apply } from '@khorsheed/dsh-eval'
+
+apply(isolatedCtx, {
+  stateRoot: '/path/to/instance-state/eval',
+  // 可选：执行目标供给的 scoped-home 证据（见下）。不配则一切本地读取照旧。
+  evidence: targetEvidence,
+})
+```
+
+挂载侧的义务与语义：
+
+- **配置只此一项，缺省逐字节不变**：不配 `stateRoot` 的实例与之前逐字节一致——一切照旧从 DSH_HOME 派生，DSH_HOME 未设照旧抛「set DSH_HOME」。构造时根被规范化（绝对化、`~` 展开、沿已存在的目录树 realpath），所以边界比较比的是真实位置而不是路径字符串。
+- **runStart 的 stateRoot 收边界约束**：配了实例根之后，run 的格子根缺省就是实例根本身；`runStart` 与 `runExperimentStart`（以及 `run` / `runExperiment` 和 Remote `runStart` 新增的 `stateRoot` 选项）显式给出的路径必须解析在实例根**之内**——`..` 段越界与根内指向外面的软链都以带码拒绝 `STATEROOT_OUTSIDE_INSTANCE`（`EvalRunRefused`）挡下，且拒绝发生在任何注册之前。没配实例根时该选项照旧原样透传，不加任何检查。
+- **公平性证据可由执行目标供给（可选 `config.evidence`，`ScopedHomeEvidenceFace`）**：provision 与就绪闸钉住的证据——scoped home 内容指纹（`home.sha`）、凭证档位、有效配置逐项核对、（条件声明 preset 时的）roster 回读与 scope 自存 preset 副本的摘要——今天读的是本机目录；配上 face 之后改由**执行目标**以纯数据回答（生产侧在目标上跑同一套哈希函数与拒绝清单，经 JSON 边界送过来），本侧绝不解析或打开同名本机目录——在那种拓扑上同名目录是另一个环境。带面时该 face 是其 scope 的**整个**证据源：某动词缺席、答不出、或答非所形，落点与本地对应失败逐点相同——缺指纹 = 本地读不到目录的拒绝；凭证未分级 = 拒绝写 lock；有效配置缺席 = 「不可比」记录而非捏造一致；副本摘要缺席 = 锁定记录原样成立、绝不猜一份。对等性是契约：钉住的 fixture 上，face 路径与本地路径写出的 lock 逐字节一致。不配时一切本地行为不变。生产侧不抄实现：包根导出 `produceScopedHomeEvidence(homeDir, { preset? })`——输入是调用方已鉴权的绝对路径（相对路径拒绝），输出就是 face 三个文件系动词的答案（指纹、roster 回读、副本摘要），由本包自己的 `hashHome`/`readScopePreset`/preset 三件套算出；它没有任何缺省 home 可读（没有、也不推导），fail-closed 与本地读取逐点相同（目录不在 = `hashHome` 原样的抛错；无 roster = undefined；无副本 = `{ keepsCopy: false }`；不能当受试的副本 = 带 `problem` 原文、不给摘要）。凭证档位与有效配置不在这家工厂里——那是调用方自己的鉴权实现。
+- **单元路径的 scoped home 三决策可由执行目标接管（可选 `config.executionHome`，`ExecutionHomePort`）**：带 unit 段的 run 今天在本进程里做三件事——经 `localAgent.homeDir` 解析 home、用 `checkCredentialsDir` 验可用、acquire spec 里写死 `type: 'bind'`。配上 port 之后这三件全部归 `planScopedHomeMount`：port 收到的是**登记过的身份**（条件 id、harness、scope，加条件审过的容器内挂载点与变量名——绝不收调用方给的卷名或本机目录），回答的是目标侧的核验结果加一份挂载计划（`mount.source` 是不透明引用——卷名或目标侧路径——原样交给 lab，本进程绝不解析、绝不 stat；`type` 可为 `bind` 或 `volume`）。fail-closed 矩阵：port 没这个动词或核验抛错 = `EXECUTION_HOME_UNAVAILABLE`；不认识该身份 = `EXECUTION_HOME_UNKNOWN`；答非所形 = `EXECUTION_HOME_INVALID`——全部在任何单元 acquire 之前带码拒绝。与证据 face 的身份钉：两者同挂时，face 的 `homeIdentity` 与 port 的 `homeIdentity` 必须都在且相等——缺或不等即 `EXECUTION_HOME_IDENTITY_MISMATCH`，证据来自目标 X 绝不配目标 Y 的挂载。凭证边界不变：跨到委派/worker 侧的永远只有容器内路径与变量名，home 引用只走控制器 → lab 的 acquire spec。不配时一切本地行为逐字节不变（homeDir + 本机核对 + bind）。
+- **已绑定成员的能力组合证据（face 的可选动词 `capabilityComposition`）**：条件声明 preset 时，能力面在三个消费点被量——provision 的准入、validate/列表的 lock 记录、就绪闸的新鲜度。face 带这个动词时，这些 scope 的测量改由**已绑定成员**自己的证据（`measurement`（kind `preset-composition` + 可选 presetId/workdir/revision）、`sha`（生产者对快照的摘要——消费方只比对，绝不从行重算）、四节 `completeness`、`providerFormat`（如 `capability-catalog/evidence@1`，别的格式名即无效证据）、身份对 `homeIdentity` + `binding`），管理实例的 catalog 与 home 的 roster 回读**绝不**被问津（run.meta 里编排器自己的 provenance 读取是另一回事，那是本实例自己的能力面，不是条件的测量）。**完备态语义**：四节全 `complete` 才算数——`complete` 含「量过且为零」（与读失败可区分），`partial`/`unavailable` 一律是「未验证」：provision 即 `CAPABILITY_COMPOSITION_INCOMPLETE` 拒写 lock，新鲜度同码拒。**记录**：lock 的 `provisioned.capabilityComposition` 以它自己的 kind 记（绝不并进 `capabilities`、不冒充 `scope-snapshot`/`instance-root`），三处消费同一个 measurement 对象。**新鲜度带码词汇**：`CAPABILITY_COMPOSITION_STALE`（摘要变了）/ `MEASUREMENT_MISMATCH`（描述变了）/ `HOME_MISMATCH` / `BINDING_MISMATCH`（身份对变了）/ `INCOMPLETE`（现在量不全了）/ `INVALID`（答不出或答非所形——**无**本地回落）。与 E3 的身份钉贯通：home 指纹、组合证据、挂载计划是同一个 home 的三份回答，必须钉同一个 `homeIdentity`。动词缺席时一切本地路径逐字节不变（roster 回读 + 管理 catalog）。
+- **dispose 只动自己的 run**：`dispose()` 幂等且终态，并随借入 Context 的销毁自动触发（`apply` 里的 `ctx.effect` 接线）。它取消的是**本实例起过的、还没 settle 的** run job——走的就是 `job_kill` 那一条：job 的 cancel 钩子 → run 的 AbortSignal → 停开新格、被抓住的格按 `interrupted` 走完正常收尾落盘，绝不是 kill -9；run 自己开的父会话仍在 settle 路径里归还。**不覆盖**别的实例起过的 job——unowned-by-design 的注册语义不变，dispose 不扩大成注册表清扫；已 settle 的 job 无需处理。**永远没有 resume**：停掉的 run 只能重跑，这是既有设计，不随本接缝改变；盘上的中断格保持 `interrupted`。dispose 之后每个公开动词（含读取）以带码的包名错误 `EvalDisposedError`（`code: 'disposed'`）拒绝；与 dispose 竞态的 start 拒绝同一个码、什么都不注册（竞态中已开的父会话照常归还）。同根重建合法：同一 stateRoot 上新建服务实例照常工作，旧实例写入的数据都在。
+- **部署级的东西仍是部署级**：localAgent 门面仍是委派与 scope 组合（`provisionScope` 的写）的入口；mission 账本与题集登记仓库同理不向实例根绑定——实例根绑定的只是 eval 自己的状态树，证据 face 替换的只是公平性证据的**读取**，凭证本身哪里都不复制。
+
+## 报告（report）
+
+输入是 mission export 的 bundle（manifest.json、run.json、missions/<id>/attempt-N/{meta,annotations,artifacts}、dataset/<layer>/），输出三份文件：
+
+- **results.jsonl** — 一行一个判定：`{task, condition, conditionSha, rep, attempt, stage, ns, criterion, pass, ratio?, weight?, negative?, toolCalls?, evidence, by}`（`toolCalls` 是该**格**各轮工具调用之和，本格没有任何一轮报过就整个键缺位——因此在旧 bundle 上复算出的 results.jsonl 逐字节不变）。ratio 只在判定声明了可用的 `{passed, total}` 时出现；weight / negative 只在该判据的极性可知时出现（见下）；stage 取自注解记录的 stage 字段（判定契约本身不含 stage，未记录即 null）。
+- **summary.md** — 开头先核五条有效性校验：前四条是不变量（题面一致 / 环境一致 / 受试对象一致 / 程序一致），**任一项不成立或无法核验，只输出事实表，不输出比较**；第五条「判定覆盖一致」逐对核，不过只把那一对降为描述（见下文 T71）。比较启用时：因子由 run.meta.conditions 的条件文档两两 diff 推出（只差一项即因子名，差多项标「多因子」只做描述统计）；配对以题为区组、rep 为重采样单元，输出逐题差值（得分判据数与加权分）、n、自助法 95% 置信区间（seed 确定性，统计手写无依赖；有差值的题少于 3 道时不给区间）；判定覆盖不一致、n < 3、因子未知/多因子或没有区间时打印「不可排名」并拒绝名次。判官一致性按 criterion 算**同一判官**双采样的一致率与 Cohen κ（面板里每位判官各算各的，不把两位判官的分歧算成某一位的噪声），列了多个判官时另加一行跨判官一致性（每位先按自身多数定调，再比判官之间）；human-final 在场时算 llm-draft 对终评的一致率；自评判据单列一行提醒单独读。「每格由谁判」一表在比较启用时进比较节，否则进判官一致性节——谁判的是事实，不因不变量拦下比较而消失。效率并列不合成，且每一项**只统计已完成的格子**（`judged` / `archived` / `releasable` / `released`）：活跃时长（委派 durationMs 之和）、工具调用（各轮 `toolCalls.count` 之和；没有任何一轮报过计数就打「—」而不是 0——「没人报过」不是「一次没用」）、标价成本（run.meta.pricing 给了才有）、委派轮次（只在双方都完成的题上比）、token 只在同模型内比。未完成格子的委派时长买到的工作量未知，混进来得到的数没有意义——pilot A 两家活跃时长同为 21.0 min，那个巧合就是一格只跑了阶段一的 dsh 格子撑出来的。被排除的格子按条件与状态在表下单列一行；`results.jsonl` 不受影响。「程序一致」一节在 run 记了 `run.meta.subset` 时把它打印出来，只覆盖了一部分 plan 的 run 因此不会被读成完整的。expectedNs 里某 ns 的判定全由 `tool:` 写入时 summary 顶部红字标出。
+
+- **usage.jsonl** — **一轮委派一行**的花销台账：`{run, cell, attempt, condition, task, stage, round, counted, observedModel?, cliVersion?, durationMs?, usage?, toolCalls?}`。这里不聚合、不计价——效率表由它汇总，外部计价也只读它。`counted` 说明这一轮是否在效率表口径内（当前 attempt 且已完成，T23 规则）：把某条件 `counted: true` 的行加起来，就逐项等于它在效率表里的那一行；`counted: false` 的行是表**有意排除**的花销，留在这里而不是丢掉，好让外部按自己的口径取用。取不到的字段一律缺位，绝不补零——「没人报过」和「花了 0」是两件事。
+
+判定源**逐条判据**按权威排序取（human-final > llm-draft > script，同判据多样本按多数计），所以一格的得分可以来自多层，报告把这个混合标出来；rep 是独立样本，attempt 只算基础设施重试——所有 attempt 的判定都进 results.jsonl，聚合只用各格最新 attempt。
+
+### 判据极性与权重表（协议 §6.5）
+
+`pass` 恒为「判据成立」。负分判据的 criterion 写的是缺陷，成立即缺陷存在——所以报告的主轴是**得分判据数**：正向判据成立计 1，负向判据成立计 0、不成立计 1；加权分 = Σ weight × 该判据得到的比例，负 weight 自然扣分。摘要另出一张「负向判据命中」表（哪格、哪条、比例、证据），那是缺陷清单。
+
+「按比例给分」的判据（F2 / F3 的 C1、C2）在判定里带可选的 `ratio: {passed, total}`（协议 §6.5）：报告按 `passed / total` 计分而不是布尔（负向判据计其余量 `1 − passed/total`），同判据多样本取所给比例的均值。`pass` 仍是那个布尔事实（判据**完整**成立），`ratio` 只是细化它——读不懂 ratio 的消费者退回严格布尔，只会低估。比例只走字段：报告**从不**去解析 `evidence` 里的「通过 6/9」之类前缀；`total ≤ 0` 或 `passed` 越界的比例按缺失处理并在附注里点名。
+
+极性来自 rubric，不来自 verdict。rubric 住在 grading 层、不进 bundle，所以 run 在导出后从 grading 层**派生**一份权重表写进 `<bundle>/report/rubric-weights.json`（`dataseek.rubric-weights/1`：`{task, id, weight, negative, kind, axis}`，只有编号与数字，**不含 criterion 文字与 evidence**，因而不经泄题闸）。报告优先读它，其次读 bundle dataset 层里的 rubric（有意开闸导出时）。两者都没有时，报告只出计数，并明确打印「极性未知，计数按正向处理」、把负向判据数记为 unknown——不把「无从判断」显示成「没有缺陷」。`report` 只读这个文件，从不改写它。
+
+## 模型工具（五读、一草、一份分析，七个）
+
+**核心行不注册任何模型工具**：下面这七个工具、`tool:eval` 提示词段与 `eval-planning` 技能（`skills/eval-planning/SKILL.md`，随包分发，T100 前由 web-eval pack 拷进 `$DSH_HOME/skills`、因而漏进同一 home 的所有会话）归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-eval/tool`），由 agent preset 按会话授予。授予方式：在目标 preset 的 `agent.cordis.yml` 里加两行——`- id: eval-tool` 与 `  name: '@khorsheed/dsh-eval/tool'`（该行可带 `config: { tools: none }`）。下面的清单、配置与行为描述自此描述的是**工具行**的工具面；服务面与 CLI 仍归本包，而 `/eval` slash 的**注册**自 preset 可见性收口（A3）起也归工具行——落进 preset 的 scope 层，只有授予会话的补全列表可见（官方 `/goal` `/plan` 同款机制）；handler 与定义仍在本包 `src/slash.ts`，由工具行带它的 scoped ctx 调 `registerEvalSlash` 接入，handler 内另有 roster 兜底守卫（读不到一律放行）。
+
+agent 在一次实验里只出现两次：规划期起草、分析期读结论。规划期要写的是一个实验（plan 与它引用的新条件）；分析期要写的只有一份初稿，落在那个实验的 `analysis/`。所以模型工具是**五个读、一个起草、一扇分析的门**，并且刻意没有起跑的那一个：能起 run 的 agent 就能起一次人没批准的 run，而起草与写初稿都起不动任何东西。
+
+第四个 `eval_cells` 是 I5·T46 加的：评测预设自那以后不再挂 mission 的工具行（界面规格 R6「评测模式下 mission 这个词不出现」），原先用 `mission_list` / `mission_get` 读逐格细节的路没了，这个工具用 eval 自己的投影答同一个问题——数据仍经 `ctx.mission` 的结构面算，但算在服务端，模型侧与前端都不碰 mission。
+
+| 工具 | 答什么 |
+|---|---|
+| `eval_conditions` | 部署条件库里有哪些条件、各自的哈希与就绪状态、lock 里的 provisioned 快照、哪些字段还是 null；`diff`（恰好两条条件）改为逐字段比较两份声明——只展示差异，不推荐哪条值得跑。T73 起没有 `repo` / `dataset` 参数：条件库是部署的，不跟会话走 |
+| `eval_plan_validate` | 一个实验（`experiment`: id）的校验结果：`ok` / `errors`（不能跑）/ `warnings`（还没解析）与解析出的条件 sha，读的是实验钉住的题集视图与条件库。`plan`（路径）只留给没导入过的旧计划。校验从不启动任何东西；`eval_plan_draft` 建完自己已经验过一遍 |
+| `eval_plan_draft` | **这一行的第一个写**（I5·T34）：建一个实验（T73）：`dataset` 写 `"<登记 id>/<题集>"`，`commit` 可选——不给就按[版本钉](#实验部署级对象)的规则定，歧义时拒绝并要 agent 问人。新条件写进部署的条件库，plan 写进新实验目录，随即 validate，返回 experimentId 与结果；题库仓库一个字节都不写。与界面「新建实验」表单同一个服务面动词（`draftExperiment`），所以人建与 agent 建的是同一种对象、同一个列表。新条件一律从现有条件**复制**再改点名字段（harness / 模型 / **endpoint** / scope / preset / 权限 / 推理强度，T58 起七个），不从零造；改了零个字段会被拒（那是同一个被试换了个名字）。`model.endpoint` 是七个里最晚进来的一个，理由是它是就绪闸必看的字段却谁都改不了，于是每份起草出来的 plan 都得先拿编辑器改两份 JSON 才跑得起来，而两份还必须填同一个值，否则凭空多一个因子。计划声明了 `unit_image` 而源条件没有 `unit` 段时，复制件的 `unit.scopedHome` 与对应的 `env.keys` 一项按**该家的默认凭证挂载点**补齐（四家各一行，表在 `unit.ts`），并写进 notes；表里没有的 harness 一个字都不补，validate 照旧按名报 `UNIT_SCOPED_HOME_MISSING`——猜一个挂载点比报错更糟。validate 不过的实验**照样建出来**——它就是一份「草稿」，报错原文交给人，比什么都不留下有用。从不覆盖已有条件 |
+| `eval_analysis_write` | **这一行的第二个写**（I5·T60 · G16；T73 由 `eval_repo_write` 改名收窄）：往一个实验（`experiment`: id）的 `analysis/<path>` 写一个文本文件，任意深度；实验目录里别的路径（plan、meta、exports/）一律拒绝，并把白名单原样回给调用方。缺省不覆盖（要改传 `overwrite`），空内容拒绝。回执说「在结果对比页可看」——分析初稿在报告页第 ⑤ 块「分析初稿」列出（缺省折叠、最新一份展开，只列文件名，没有就不出现）。存在的理由是授予的尺寸要配得上动作的尺寸：为一份 markdown 放开整台机器（`danger-full-access`）不划算 |
+| `eval_run_status` | 一次 run 的 run.meta 摘要与逐格状态；数据源是 `mission.runStatus` 与 orchestrator ns |
+| `eval_cells` | 给了 `run_id` 就答一次 run 的**逐格**细节：题 / 条件 / rep 与其余 labels、桶、当前阶段与已停留时长、attempt、该次 attempt 持有的单元（`resource` 与环境指纹）、检查点名、各注解命名空间的条数、委派的子会话 id；`bucket` / `task` / `condition` 三个精确过滤。**不给 `run_id` 就改答「有哪些实验」**（I5·T35a）：每个实验与每个 run 各一行（配不上实验的 run 标「旧运行」），列与实验室 tab 同源（同一个 `experiments` 投影，两个面不可能各说各话）——这是 T46 摘掉 `mission_run_list` 之后留下的缺口，先这么问拿到 run id，再带着它问一次 |
+| `eval_experiment_get` | **一个实验，按实验室那一页的读法，一次答完**（I5·T76 · D3）：`experiment` 收 experimentId、列表行 id 或 run id。答的是列表那一行（去掉 plan 路径）、这个实验的全部 run id（新的在前）、最新一次 run 的摘要（与 `eval_run_status` 同源，去路径）、各桶格数，外加一份**作答索引**——每个 题 × 组 × 次 一条，带阶段、桶、检查点、注解条数、选手子会话，以及那次 attempt 登记的**文件名**（相对 attempt 目录的名字，绝不是路径：分析要引用的是能在别的机器上找回的名字），最后是 `analysis/` 里已有的分析初稿名。只读，别的什么都不带：不起跑、不 finalize、不 provision，也没有通往人工评估出口的门（界面规格 R1）。以前 agent 要拼三次读才得到同一个答案，引用作答时还得问人要路径 |
+
+除这两个写之外的写类动词一个都不开：run 由人在会话里用 `/eval run`（或在实验设计页按「批准并启动」）发起，materialize / submit / transition / annotate / archive / export / finalize 归编排器服务面与人的 CLI（profile 的[「工具按域开放」](../../../profiles/eval/README.md#工具按域开放)）。`eval_plan_draft` 能给模型，靠的正是这条线的另一面：草稿是文件不是动作，批准、登录、provision、终评一个都没挪位。
+
+### 没有 `repo` 参数
+
+T58 把工具的 `repo` 参数收窄成「只能复述本会话的 datasets 绑定」，起因是 agent 被告知没有绑定之后用 glob 搜磁盘、在一个多 agent 共用的检出里改了别人正在跑的 pilot 计划（走查缺口 G1）。T73 把这条路整个拆了：工具不再有 `repo` 参数，评测也不再读任何绑定——题库只以 `<登记 id>/<题集> @ commit` 的形式被读（`git show` / 物化视图），评测自己的东西写进部署的状态目录。agent 没有「指一个路径」的余地，也就没有绕行道。
+
+配置项 `tools: 'all' | 'none'`（缺省 `all`）随之搬到**工具行**，本行不再有这个键。没有更细的分组，因为没有可分的：模型工具面一个写工具都不注册。`none`（或没有引用这一行）时模型看不到这七个工具；本包的服务面与 CLI 照常，`/eval` slash 随工具行的 preset 授予显隐（`tools: none` 只关模型面，人类面不分层——行在 preset 里，命令就在）。
+
+工具注册走**延迟注入**（`ctx.inject(['tools'], …)`）而不是 apply 期的 `ctx.get('tools')` 探测：探测会和工具注册表自己的挂载顺序赛跑并且输，工具静默地一个都注册不上，还没有任何东西会说（room 与 worktrees 都踩过并修过同一处）。延迟注入在注册表出现时才触发，在没有注册表的组合里永不触发——那样的组合保留 slash、CLI 与服务面，绝不炸启动。`tool:eval` 提示词段同理走 `systemPrompt` 的延迟注入。
+
+## 发起一次 run：三个入口，一条取消路径
+
+run 是**后台 job**，不是一句回复。`/eval run` 把它注册成一个 `eval-run` job 后**立即返回** job id 与 run id：轮次结束、会话关掉、浏览器标签页关掉，run 照跑——它此前活在发起那一轮里，发起端一断整个 run 就没了（I3·T22 第 5 步）。
+
+| 入口 | 用在哪 | 形态 |
+|---|---|---|
+| `/eval run <experimentId>` | 人在实例里发起（缺省） | 起 job，立刻回 `job <id> · run <id>`；日志用 `job_output` 读 |
+| `/eval run <experimentId> --wait` | 交互式的短跑（`--dry-run`、一格的 plan） | 老形态：轮次内等到跑完再回复，逐字节与本改动之前相同 |
+| `dsh-eval run --experiment <id> --instance <url>` | CI（没有浏览器） | 经实例的 Remote 面起同一个 job，跟着日志跑到结束，退出码即 job 结局 |
+
+- **取消只有一条路**：`job_kill <jobId>`。它触发 job 的 cancel → run 的 `AbortSignal` → 与每格预算计时器同一条杠杆（对每个在跑的委派 `localAgent.cancel`）。被取消时正在跑的格子**不重试、不强推状态**，停在当时那一步——`finalize` 因此把它归入 `interrupted`（T23 的分类）；一格都还没开的格子留在 `pending`，那是 `not-started`，两件不同的事。run 自己在 `run.meta.cancelled` 记一笔，bundle 照常导出（被取消的格子也是证据）。
+- **父会话**：委派要的是**活的 agent**，不只是一条会话记录（家族门面 `requireLiveParent` 的要求）。`/eval run` 起的 job 用发起会话作父（它的 agent 活过标签页），发起会话没有活 agent 时（Remote/CI 就没有）job 自己开一条会话作父，run 结束时关掉。回复里会说明用的是哪一种。**自己开的那条会话带工作目录**（T29d）：run 自己的格子根 `<stateRoot>/cells/<runId>`，开之前先建出来。容器轮**不传每轮 cwd**（单元里宿主路径没有意义），provider 于是回落到父会话的 cwd——没有 cwd 的父会话让每个容器条件都以「the parent session has no working directory to run the CLI in」被拒，一句在讲编排器自己的管道、却像是 harness 的错的话（I4·T29c 记的）。两条起法的就绪原文因此逐字相同，测试钉住了这一点。
+- **没挂 jobs 服务的组合**：不拒绝，退回同步等待，并在回复**首行**写明这一轮的等待意味着什么。
+
+```sh
+/eval run <experimentId> [--wait] [--concurrency N] [--dry-run] [--keep-units] [--out DIR] [--retries N]
+                         [--only id,id] [--max-cells N] [--ignore-readiness]
+/eval finalize <runId>
+```
+
+run 的发起仍是人的动作，不注册任何 run 类模型工具——写类动词归编排器服务面与人。模型面能看到的是 job：`job_list` / `job_output` / `job_kill`（评测预设里已经有这三个）。
+
+## slash 与 CLI
+
+从 PATH 或 pnpm 的 `.bin` 软链调用与直连 `lib/cli.js` 等价：入口守卫先把 `argv[1]` 解析成真实路径再比对，软链路径不会让它静默空跑。
+
+```sh
+dsh-eval validate <plan.json>             # 校验 plan；报告 JSON 走 stdout
+dsh-eval run <plan.json> --dry-run        # 离线彩排：校验 + 模板 + 矩阵 + 顺序
+                                          #   [--only id,id] [--max-cells N] 彩排一个子集
+dsh-eval run --experiment <id> --instance URL  # 在一台**在跑的实例**上起一个实验的 run 并跟日志到结束（CI 入口）
+                                          #   [--token T]（或 $DSH_TOKEN）带实例的启动 token
+                                          #   [--no-follow] 只打印 job/run id 就返回
+                                          #   [--keep-units] 每格停在 archived、容器留着；停它用实例上的 job_kill
+                                          #   旧计划没导入过：run <plan.json> --instance URL（路径按实例上的解析），结果不属于任何实验
+dsh-eval import --from <id>@<ref> --instance URL [--plan NAME]
+                                          # 把登记仓库里的旧计划导成实验（git show、逐字节、条件进条件库；冲突整体拒绝）
+dsh-eval finalize <runId>                 # 把 archived 的格子走一遍释放闸
+                                          #   [--data-dir DIR] [--mission-cli PATH]；以子进程调 dsh-mission CLI
+                                          #   是账本不是 lab：这一面不释放任何容器
+dsh-eval template <manifest.yml> [--stages a,b]  # 打印生成的 run 模板
+dsh-eval conditions hash <condition.json> # 打印 { id, sha, warnings }
+dsh-eval conditions list                  # 条件库逐条件：哈希、lock 状态、home 是否核过、provisioned 快照
+dsh-eval conditions diff <a> <b>          # 两份声明的逐字段差异（各侧是条件库里的 id 或路径）
+dsh-eval conditions provision <id>        # 需要 local-agent 服务，进程外没有——CLI 如实拒绝
+                                          #   并指向 /eval conditions provision
+dsh-eval report <bundleDir> [--out DIR]   # 出 results.jsonl + summary.md；摘要 JSON 走 stdout
+```
+
+plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统一展开 `~`：slash 参数没经过 shell，CLI 参数为了活过 shell 常被引号裹住，两边都到不了 `$HOME` 展开——所以展开放在三个入口共用的那一层，而不是各记各的。
+
+数据走 stdout JSON，诊断走 stderr；退出码 0 ok / 1 失败 / 2 用法错误（与 `dsh-lab` 一致）。CLI 直连内核，不需要宿主在跑——脚本场景与已挂载插件行为完全一致。进程外没有活的父 Agent、也没有 datasets/mission/localAgent 三个服务，所以**不带 `--instance` 的 `run` 只做 `--dry-run`**；`--instance` 时 CLI 不再假装自己是编排器，而是做 CI 真正需要的那件事：当调用方。它走的是实例普通的 Remote RPC（`POST <base>/api/dshEval/<method>`，`{args:{…}}` 进、`{ok,value}` 出，token 走 `?token=`），四个动词与 slash 用的是同一套 job 层。`finalize` 不需要父 Agent、只需要 ledger，所以它在进程外以子进程调 `dsh-mission` CLI 照常工作；任一格闸拒绝即退出码 1。
+
+## 哈希规则
+
+- **条件哈希**：规范化 JSON（键全排序、无空白）的 sha256 小写十六进制；`notes` 除外。
+- **planSha**：plan 全文档规范化 JSON 的 sha256（含 notes——审阅时改注释也会换 plan，这正是「同 plan 即同一套程序」的口径）。
+- **home.sha**：只哈希配置类文件（`.json .jsonc .yml .yaml .toml .ini .cfg .conf .xml .properties`），按相对路径排序后对 `<relPath>\0<content>\0` 逐文件喂 sha256。拒绝清单：`auth.json`、`.env*`；文件名含 `token` / `key` / `credential` / `secret` / `password` / `auth`（不分大小写）；`credentials/`、`oauth/`、`sessions/`、`keys/`、`secrets/` 目录整棵跳过；符号链接与超大文件（>1 MiB）跳过。文件内容绝不读入日志、绝不打印。
+- **materialization.json**：该题 visible 层文件按路径排序后逐文件 sha256，整体 sha 按排序 `<path>\0<fileSha>\0` 折进 sha256——同题各格可被证明题面一致。
+- **能力哈希**（`provisioned.capabilities.sha`、`run.meta.orchestrator.capabilities.sha`）：由 capability-catalog 算，本包只记不算——规范形是它的契约，而 eval 不依赖任何兄弟包。两边各有一份逐字节相同的 `canonicalJson`，由各自的测试钉住。
+
+## 兼容性：降级与缺席项
+降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：
+
+- 七个工具（T73 起 `eval_repo_write` 改名 `eval_analysis_write`）与 `tool:eval` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-eval/tool`），走延迟注入：组合里没有工具注册表 / systemPrompt 时它们不注册，CLI 与服务面照常，不炸启动；`tools: 'none'`（或没有引用这一行）只是让模型看不到这七个工具。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-eval-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。浏览器半边（I5·T35a）的实验室 tab 按同一行自隐，判据读不到时失败开放；没有 `conversation.view` slot 的组合（TUI、headless）不注册它，服务面与 CLI 照常。矩阵的物化哈希要 mission 面报得出 `dataDir`，报不出就记「无法核验」；导出的两步要 mission 的 Remote 在场（没有 Typert 网关的组合就没有），不在场即整体拒绝——泄题闸绝不在 eval 这边重写一遍。
+- 面向早于 T11 的 local-agent：委派 `cwd` 被忽略、子代理继承父会话 cwd，格子因收不到产出文件而如实拒绝（submission-rejected），不会错记；`delegationOf` 与 settled 回读均缺席时 `usage` 与 `model.observed` 记 null，「受试对象一致」在报告里降为不可核验，而不是假定成立。判官同样靠 `cwd` 收 `verdicts.json`，没有 cwd 时该样本按解析失败记，不会误判。
+- `human-final` 不由本包写：它只从判官台或 `dsh-mission annotate --ns human-final` 进来（I5）。
+- 对 T89 之前的 dsh-mission：`run` 需要 mission 的 `attemptDataDir` 动词（运行数据目录的布局只由 mission 决定），缺它就拒绝开跑并点名升级——不会自己再拼一遍路径；读侧（作答、格子详情、判官台）照常，只是答卷哈希记为未知、取单格产物会拒绝。导出需要 `exportPlanGated` / `exportRunGated`，缺则拒绝并指向 dsh-mission CLI。收口、归档与导出记录在缺 `annotateRun` 时退回写第一格，与 T89 之前完全一样。`dsh-eval finalize` 碰上不认 `list --json` 的旧 CLI 会给出升级提示。
+- 没有 `ctx.lab` 的组合照常跑宿主路径；只有带 `unit` 段的 plan 会因为缺 lab 而被拒绝，并在拒绝语里点名。
+- 全局「实验室」面板（T97）用宿主 0.2.0 的 `main` 与 `sidebar.panellist` 两个槽，经 `slots.inject` 注册，不按 preset 自隐；宿主没有这两个槽时不出现，不报错。新开会话用到的宿主门都在调用时探测：`sessions.create`、`sessions.using` 改名、`remote.agentPresets`、`workspaces` 列表、`uiWorkspace.openSession`、输入框的 `setDraft`。缺 `create` 时不开会话，前两个动作退到剪贴板，批准报一句「没能新开会话」。其余门缺了就用宿主默认值：默认 preset、不改名的会话、宿主自己选的工作区。T97 起 Remote 的方法除 `approve` 外都不带会话参数，所以新旧两半不能混用。两半来自同一个包，正常安装不会出现这种情况。
+- 实验与条件库（T73）住在 `$DSH_HOME/state/eval/`：没设 `DSH_HOME` 的实例没有状态根，实验相关的动词拒绝并点名，列表退化成只列 run（全标旧运行），不炸启动。起草与 validate 要 datasets 的登记面（`registration` / `registryShowFile` / 物化视图）；没挂 datasets 时它们拒绝并点名，旧 plan 路径的 validate 与 CLI dry-run 照常。eval 不再读 datasets 绑定，旧绑定文件（`$DSH_HOME/state/datasets/bindings/<session>.json`）不自动删除。
+
+## 状态
+
+I2：T2 离线动词、T8/T8b 编排器 v0（模板生成、矩阵展开、run 循环阶段一二、格子锚点、T11 回读回填、slash、CLI dry-run）、T10 `report`（results.jsonl / summary.md / 四条不变量 / 配对差值与置信区间 / 判官一致性 / 效率并列）、T9 判官（探针契约、去指纹、双采样盲评、`--finalize` 过闸）、T14 三个只读模型工具已落地。I3：T23 补上 pilot A 暴露的四条编排器缺口——开跑前就绪检查（G4）、`finalize` 再入口（G13）、效率表只计完成格（G15）、`--only` / `--max-cells` 记进 `run.meta.subset`；T28 补上 T19 探针自测暴露的三条——题集级 verify 层物化与共享探针执行、退出码三态、`task` / `by` 先回填后校验。T20 落地容器路径：plan 的 `unit` 段一格一单元（acquire → populate → 逐阶段委派与 checkpoint → 探针经 `lab.verify` 在单元内 → archive → 过闸 release），`refs.fingerprint` 由编排器写入，四条不变量之二从此可核验。provision（I4）、并发单元（I4）、界面（I5）按 web-eval 迭代计划推进。I5：T46 加第四个只读工具 `eval_cells` 与它背后的服务面 `cells(runId)`，评测预设同时摘掉 mission 的工具行；T35a 从零搭起 client 半边——实验室 tab 的列表与详情壳（只填概览页）、服务面 `experiments` / `experiment` 与它们的 Remote 读动词 `runs` / `run`、七态状态推导，`eval_cells` 同时补上「不给 run_id 就列实验」的模式；T36 填上计划审阅页与条件页，并加上人的那一个写动词 `approve`——validate 过闸、以批准会话为父，背后不配任何模型工具；T35b 填上矩阵页与格子页：`matrix` / `cells` / `cell` 三个读面、`retry` / `releaseCheck` 两个动作转发、`exportPlan` / `exportRun` 转发 mission 的导出闸（闸仍在 mission 侧），外加给题集 tab 用的 `runsForItem`。T38 填上报告页：`report` / `finalize` 两个 Remote 动词与服务面的 `runReport` / `finalizeView`——四条不变量、配对差值、效率表、判官一致性都由同一个 `analyzeBundle` 算出后投影，比较闸在服务端合上；T37 填上判官台，七个子页至此填满：`judgeQueue` 出盲队列（序号 + ticket、去指纹产物、`kind: human` 判据、各判官各样本的 llm-draft、已有 human-final），`humanFinal` 是 `human-final` 这个 ns 的唯一写入口（转发 mission 的 annotate，只追加，`by` 记会话），rubric 解析与判官一致性各自收归一份实现。T34 补上第 2 步「一句话起草」：服务面 `draftExperiment` 一次写下 plan 与它引用的新条件（新条件一律从现有条件复制再改点名字段）并 validate，Remote 的 `newExperiment` / `draftOptions` 给「新建实验」表单用，`eval_plan_draft` 给 agent 用，两个面同一个动词；随 pack 装的 `eval-planning` 技能教 agent 走这条路，并点名批准、登录、provision、终评都不是它的。T57 把释放闸从一个旗标变成 run 的缺省，并把容器交给这条路：每格跑完当场过闸、单元在那里销毁（`--keep-units` 与批准对话框的「保留单元」可退出），`finalize` 也会销毁过闸格子的单元——事后回收的 run 这才真的被回收；`acquire` 撞上 `maxConcurrentUnits` 时点名占着名额的 run 与单元；报告页数出 lab 还持有多少，并给一个走同一条闸的「回收」。
