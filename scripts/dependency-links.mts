@@ -4,14 +4,33 @@ import { join, resolve, sep } from 'node:path'
 export interface LinkScanRoot { path: string; exclude?: string[] }
 export interface LinkFinding { path: string; target?: string; code: string }
 
-/** Read-only physical-tree scan. Validate link targets without recursively walking aliases. */
-export function scanDependencyLinks(roots: LinkScanRoot[]): LinkFinding[] {
+/** Directory listing, injectable so a spec can list an entry that is gone by the time it is read. */
+export interface LinkScanIo { readdir: (path: string) => string[] }
+
+/**
+ * Read-only physical-tree scan. Validate link targets without recursively walking aliases.
+ *
+ * An entry that vanishes between its directory listing and its lstat is skipped, not
+ * reported: a live instance keeps re-creating runtime files under the home it serves
+ * (the member bridge unlinks and re-binds `local-agent/member-bridge.sock`; the member
+ * inbox / control stores write a temp file and rename it), and losing that race is not a
+ * dangling link — the deploy used to abort on it (2026-10-24). A symlink whose TARGET is
+ * missing is still a finding, and so is a missing scan root.
+ */
+export function scanDependencyLinks(roots: LinkScanRoot[], io: LinkScanIo = { readdir: path => readdirSync(path) }): LinkFinding[] {
   const findings: LinkFinding[] = []
   const visited = new Set<string>()
-  function visit(path: string, excluded: string[] = []) {
+  function visit(path: string, excluded: string[] = [], listed = false) {
     let target: string | undefined
+    let info: ReturnType<typeof lstatSync>
     try {
-      const info = lstatSync(path)
+      info = lstatSync(path)
+    } catch (error) {
+      if (listed && (error as NodeJS.ErrnoException).code === 'ENOENT') return // vanished since its listing
+      findings.push({ path, code: (error as NodeJS.ErrnoException).code ?? 'UNKNOWN' })
+      return
+    }
+    try {
       if (info.isSymbolicLink()) {
         target = readlinkSync(path)
         statSync(path)
@@ -21,8 +40,8 @@ export function scanDependencyLinks(roots: LinkScanRoot[]): LinkFinding[] {
       const canonical = realpathSync(path)
       if (visited.has(canonical)) return
       visited.add(canonical)
-      for (const name of readdirSync(path).sort()) {
-        if (name !== '.git' && !excluded.includes(name)) visit(join(path, name))
+      for (const name of io.readdir(path).sort()) {
+        if (name !== '.git' && !excluded.includes(name)) visit(join(path, name), [], true)
       }
     } catch (error) {
       findings.push({ path, ...(target === undefined ? {} : { target }), code: (error as NodeJS.ErrnoException).code ?? 'UNKNOWN' })
