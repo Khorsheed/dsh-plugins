@@ -2,107 +2,55 @@
 
 English | [中文](README.md)
 
-One install brings the twelve plugins that make everyday dsh comfortable.
+One install brings the small things that make DSH pleasant every day: messages you can edit and withdraw, a clear view of what the agent changed, and what's running in the background.
 
-Making dsh comfortable used to mean picking through a dozen-plus community plugins and installing them one by one: sent messages could not be edited or withdrawn, you had to go hunting for the files the agent wrote, and nothing warned you when the context was about to fill up. With Basic Essentials installed, sent messages can be edited and withdrawn, a timeline on the left of the conversation jumps back to any message, the files the agent changed can be stepped through change by change in the sidebar, background jobs show above the composer where you can stop them, and it all works on a phone; the plugin inventory gains just one 「基础体验」 (Basic Essentials) card.
+Without it, a message sent by mistake stays as it is, you dig around to find which files the agent wrote, you can't tell whether a background task finished, and nobody warns you when the context is nearly full. With Basic Essentials, that's taken care of: you chat as usual, and it lays out the changes, tasks and progress beside you. No picking features one by one, and your plugin list gains just one "Basic Essentials" card.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/basic-mode.png" width="640" alt="Basic Essentials at a glance: message edit and withdraw, quote actions, session artifacts and the file list in one screen">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/basic-mode.png" width="640" alt="A session with Basic Essentials: edit and withdraw on a message, the quote menu on selected text, session artifacts and the file list in the sidebar">
 
-## Features
+## What you can do right away
 
-- **Conversations you can fix** — sent messages can be edited and withdrawn (withdrawn content truly leaves the model context), a timeline along the left edge jumps back to any message you sent, and the title renames in place.
-- **Select to quote** — select text in the conversation and the menu that pops up quotes it into the composer or copies it.
-- **See what the agent touched** — files the agent wrote or edited preview in the sidebar, stepping through every change; any local directory can be browsed too, with HTML, Markdown, JSON, CSV and images previewed directly.
-- **Background work stays visible** — background jobs and subagents show as pills above the composer and can be stopped at any time; a whale spouts while a task runs, and a chime plays when it finishes or gets blocked.
-- **A reminder before the context fills up** — once occupancy crosses the ratio you set, a one-click compact reminder appears next to the composer.
-- **Interactive cards in the conversation** — HTML the agent outputs renders inline in the conversation body as a sandboxed card.
-- **Know what the instance has** — the capability catalog lists every skill and tool in the instance with where each was registered from.
-- **Works on a phone** — mobile layout, a conversation home page and the iOS client bridge.
-- **One card in the inventory** — the whole family folds into a single 「基础体验」 card; the detail page still lists every member, each with its own enable switch.
+- Sent something wrong? Press "Withdraw" and the text goes back to the input box, and the model no longer sees it or anything after it. Or edit it and press "Save and resend".
+- Want to look back? Click the timeline on the left of the chat to jump to anything you said.
+- Want to see what the agent changed? Open a file it wrote in the sidebar and step back through each change.
+- Ask the agent to "make a little clickable card": the HTML it writes shows up in the chat as a card you can use.
 
-## Members
+## What's inside
 
-| Member | What it does |
-| --- | --- |
-| Message tools (`@khorsheed/dsh-client-message-tools`) | edit or withdraw sent messages; withdrawn content truly leaves the model context |
-| Message timeline (`@khorsheed/dsh-message-timeline`) | a timeline along the conversation's left edge — jump back to any message you sent |
-| Title edit (`@khorsheed/dsh-client-session-title-edit`) | rename the current session inline next to the chat title |
-| Quote (`@khorsheed/dsh-quote`) | selected-text action menu: quote into the session or side chat, copy |
-| Inline cards (`@khorsheed/dsh-inline-html-render`) | sandboxed interactive HTML cards inline in the conversation body |
-| Context guard (`@khorsheed/dsh-context-guard`) | a one-click compact reminder in the composer once context occupancy crosses the set ratio |
-| Background tasks (`@khorsheed/dsh-taskpilot`) | watch background jobs and subagents above the chat box, stop them any time |
-| Session artifacts (`@khorsheed/dsh-file-preview`) | preview files the agent wrote or edited and step through every change |
-| Local files (`@khorsheed/dsh-local-files`) | browse any local directory, previewing HTML, Markdown, JSON, CSV and images |
-| Capability catalog (`@khorsheed/dsh-capability-catalog`) | list every skill and tool in the instance with its registration channel |
-| Mobile (`@khorsheed/dsh-mobile`) | mobile layout, conversation home page and the iOS client bridge |
-| Whalesong (`@khorsheed/dsh-whalesong`) | a whale spout animation while tasks run, chimes on completion or when blocked |
-
-Not in this bundle: ankh-guard (`@khorsheed/dsh-ankh-guard`) and context-lens (`@khorsheed/dsh-context-lens`) moved to the dev suite on 2026-10-24 — the former only matters on a watchdog-guarded, self-modifying instance, the latter is a debugging view of how model requests are composed. The reader (`@khorsheed/dsh-reader`) ships with the learning and writing suites since 2026-10-19, and its rendered fetch (`@khorsheed/dsh-capture`) moved along with it on 2026-10-20. Sidechat (`@khorsheed/dsh-sidechat`) left the same day (never published with the bundle); ui-shortcuts (`@khorsheed/dsh-ui-shortcuts`) is retired — the host ships built-in shortcut settings since 0.1.7-rc.2.
+- **Message Tools**: edit or withdraw a sent message; withdrawn text leaves the model's context.
+- **Message Timeline**: a timeline on the left of the chat; click to jump back to what you said.
+- **Title Edit**: rename the session right next to its title.
+- **Quote**: select some text, then "Quote to current chat" or "Copy".
+- **Inline Cards**: HTML the agent writes appears in the chat as a card you can interact with.
+- **Context Guard**: once the context reaches the share you set, a "compact" button appears by the input box.
+- **Background Tasks**: background tasks and sub-agents sit above the input box, and you can stop them any time.
+- **Session Artifacts**: preview the files the agent wrote or changed, change by change.
+- **Local Files**: browse any folder on your computer and preview web pages, Markdown, spreadsheets and images.
+- **Capability Catalog**: lists every skill and tool in this DSH and where each one came from.
+- **Mobile**: works well on a phone, and connects to the iOS client.
+- **Whalesong**: a whale spouts while a task runs, and a sound plays when it finishes or gets stuck.
 
 ## Install
 
-Paste the package name `@khorsheed/dsh-basic` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings all twelve members along as dependencies, and this package mounts them.
+In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 
-The CLI equivalent:
-
-```sh
-dsh plugin --profile web add @khorsheed/dsh-basic
+```
+@khorsheed/dsh-basic
 ```
 
-```sh
-dsh plugin --profile web remove @khorsheed/dsh-basic
-```
+No mode to pick; it works in every session. For a dedicated mode (coding, writing, learning and so on), install that suite as well, for example `@khorsheed/dsh-dev-suite`.
 
-Removing the bundle removes the whole family; to keep the family and turn off a single member, use the row-level switches on the bundle detail page.
+## Known limitations
 
-For a scenario's capabilities (dev, writing, learning, video editing, game development, evaluation), install the matching suite on top of this package; each suite README's install section has a one-line command that installs it together with this one.
+- Uninstalling removes all twelve together; to turn off just one, switch it off on the Basic Essentials detail page.
+- It brings no mode of its own; dev, writing, learning, video, game dev and eval modes come with their own suites.
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — pure composition; the floor is the members' highest (minHost `0.1.5-rc.1`; some members floor lower). Individual member behavior differences above that floor are documented in each member's own Compatibility section.
-- source line (deepseek-harness master): ✅ full (verifiedHost: 0.2.1-rc.1).
+Needs DSH 0.1.5 or later; verified on 0.2.1.
 
-**Version-line map**: `0.1.0` and later require host `0.1.5-rc.1` and up.
+## For developers
 
-## Known Limitations
-
-- **Uninstall is family-wide** — removing this package removes every member together; there is no "drop one member from the bundle" operation. To disable a single member, use the row-level switches on the bundle detail page.
-- **No mode** — this package is the everyday-experience collection and carries no agent preset; the modes (dev / writing / learning / video / gamedev / eval) come from the matching suites.
-
-## How it works
-
-<details>
-<summary>Internals (click to expand)</summary>
-
-**A pure-composition meta-package.** The package registers no service, tool, slot, or command. Every row in `cordis.patch.yml` comes from the matching member package's own `cordis.patch.yml`, id and name verbatim:
-
-| Member package | Row id |
-| --- | --- |
-| `@khorsheed/dsh-client-message-tools` | `message-tools` |
-| `@khorsheed/dsh-message-timeline` | `message-timeline` |
-| `@khorsheed/dsh-client-session-title-edit` | `session-title-edit` |
-| `@khorsheed/dsh-quote` | `quote` |
-| `@khorsheed/dsh-inline-html-render` | `inline-html-render` |
-| `@khorsheed/dsh-context-guard` | `context-guard` |
-| `@khorsheed/dsh-taskpilot` | `taskpilot` |
-| `@khorsheed/dsh-file-preview` | `file-preview` |
-| `@khorsheed/dsh-local-files` | `local-files` |
-| `@khorsheed/dsh-capability-catalog` | `capability-catalog` |
-| `@khorsheed/dsh-mobile` | `mobile` |
-| `@khorsheed/dsh-whalesong` | `whalesong` |
-
-The repo-level check:plugins `dsh.bundle.kind: 'family'` sanction pins this mechanically: rows may only come from the allowlist of the members' canonical rows, every member must be a real self-mounting package, and every member must contribute at least one row. The single 「基础体验」 card in the inventory comes from this package's locale card metadata.
-
-**Installing me = installing the family, never a double mount.** Every member is listed in `dependencies` (installing brings them all) and registered in `dsh.references` (the family roster read at pack time and by the catalog layer). Mechanism: `dsh plugin add` reconciles only the profile's **direct** dependencies into the bundles layer (`reconcilePlugins`) — installing this bundle applies **this** patch only; the members arrive as transitive dependencies and their own patches are not applied, so no row is ever mounted twice. A member installed on its own with `dsh plugin add` still self-mounts (the repo rule holds); when both are installed, the official bundle detail page's row-level switches resolve the overlap.
-
-**`src/index.ts` exports constants only** (`FAMILY_MEMBERS`), so the package has a buildable `lib/` (a hard requirement of pack-dist).
-
-</details>
-
-## Development
-
-Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/basic`). Issues and contributions go there.
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md).
+- Command-line install: `dsh plugin --profile web add @khorsheed/dsh-basic`; swap `add` for `remove` to uninstall.
+- This package has no features of its own; it installs the twelve members above together. Each member's details are in its own README: [packages/](https://github.com/Khorsheed/dsh-plugins/tree/main/packages).
+- Part of [dsh-plugins](https://github.com/Khorsheed/dsh-plugins); open issues and contributions there. Changes: [CHANGELOG.md](CHANGELOG.md).
