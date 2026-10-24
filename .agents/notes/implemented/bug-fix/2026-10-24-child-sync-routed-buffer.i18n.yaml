@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-24-child-sync-routed-buffer.md
+.agents/notes/implemented/bug-fix/2026-10-24-child-sync-routed-buffer.md: f81b692ddd12aa75775ea6ef69e279b8a99e217b
+.agents/notes/implemented/bug-fix/2026-10-24-child-sync-routed-buffer.zh.md: 5c5b7351299cf9c8d7d4a1e9a0bbb76b4850025c
