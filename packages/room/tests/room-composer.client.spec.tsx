@@ -327,13 +327,12 @@ describe('RoomComposer', () => {
     expect(openTasks).toHaveBeenLastCalledWith('msg-2')
   })
 
-  it('names the coordinator a bare message goes to, without the provider id', async () => {
+  it('names the coordinator a bare message goes to, with its provider', async () => {
     await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'] })
     // STATE has no coordinator record: the room's own agent (main) coordinates.
     expect(screen.getByText('main')).toBeDefined()
-    expect(screen.getByText('· 协调者')).toBeDefined()
-    expect(screen.queryByText(/DSH$/)).toBeNull()
-    expect((screen.getByRole('textbox') as HTMLTextAreaElement).placeholder).toBe('跟 main 对话；@ 指定其他成员')
+    expect(screen.getByText('· 协调者 · DSH')).toBeDefined()
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).placeholder).toBe('跟main对话；@ 指定其他成员')
   })
 
   it('a fresh room shows only the invite capsule', async () => {

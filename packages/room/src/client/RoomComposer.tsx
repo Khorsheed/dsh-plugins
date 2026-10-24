@@ -325,7 +325,7 @@ export function RoomComposer({
         <div className={css.coordinator} style={{ '--member-color': memberColor(coordinator?.name ?? 'dsh') } as CSSProperties}>
           <span className={css.coordinatorDot} aria-hidden />
           <span className={css.coordinatorName}>{coordinator?.name ?? 'dsh'}</span>
-          <span>· {t('coordinator.label')}</span>
+          <span>· {t('coordinator.label')} · {external ? coordinator.provider : 'DSH'}</span>
         </div>
         {mention !== null && candidates.length > 0 && (
           <ul className={css.menu} role="listbox" aria-label="members">
