@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-01-eval-family-tool-fold-and-bundle.md
-.agents/notes/implemented/architecture/2026-10-01-eval-family-tool-fold-and-bundle.md: 0f6aab0bd174761c1d0367fb617a03a460b3d012
-.agents/notes/implemented/architecture/2026-10-01-eval-family-tool-fold-and-bundle.zh.md: 361f0cfc1044082cde3515633b10a955e3d756a0
+.agents/notes/implemented/architecture/2026-10-01-eval-family-tool-fold-and-bundle.md: d665b1c419c51dcff364e0975ae277d1c9c655f1
+.agents/notes/implemented/architecture/2026-10-01-eval-family-tool-fold-and-bundle.zh.md: 19ed6d61bd53b508aba81c3c2e211b9c5229e2e1

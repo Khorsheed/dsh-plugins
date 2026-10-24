@@ -65,4 +65,4 @@ The card's open action stores the review request under the panel key `''` and ca
 - The Remote signature change is a wire break between halves from different sides of T97. One package ships both halves, so a normal install never mixes them. Both packages' `dsh.compat.notes` and README Compatibility sections say so.
 - Marks written from the panel are tagged `panel:lab`, so the record still says the panel wrote them, but not which tab.
 - An approval from the panel creates a session the person did not navigate to. It is titled 「运行 <experiment>」 so it can be found in the session list.
-- Only one in-repo profile lists these packages: `profiles/web-eval`, through `@khorsheed/dsh-bundle-eval`. So the entries appear there and nowhere else in this repo.
+- Only one in-repo profile lists these packages: `profiles/web-eval`, through `@khorsheed/dsh-eval-suite`. So the entries appear there and nowhere else in this repo.

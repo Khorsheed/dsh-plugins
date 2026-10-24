@@ -1,5 +1,5 @@
 {
-  "name": "@khorsheed/dsh-video",
+  "name": "@khorsheed/dsh-video-suite",
   "description": "Mode bundle 剪辑模式: the dsh-video agent preset plus the video studio it grants — podcast and conversation editing, speakers found in one mixed recording, cut by deleting words — in one install. Thin meta package: a patch carrying the member's canonical row and the mode's preset row, an npm dependency on the member, locale card metadata — no runtime code, no client half.",
   "version": "0.1.0",
   "publishConfig": {

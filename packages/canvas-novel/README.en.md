@@ -108,7 +108,7 @@ The patch mounts two rows:
 Installing alone gives every session the agent surface: `novel_bind`, the pointer and the `novel` skill are open to all sessions, while `novel_read` / `novel_write` / `novel_extract` still appear only for a session bound to a 长篇小说 canvas. To scope the surface to the writing scene instead, install the writing mode pack:
 
 ```sh
-dsh plugin add @khorsheed/dsh-writing
+dsh plugin add @khorsheed/dsh-writing-suite
 ```
 
 Its 写作模式 (`preset-dsh-writing`) grants the same entry (`@khorsheed/dsh-canvas-novel/agent`) in its own scope, next to the canvas tools (`@khorsheed/dsh-canvas/agent`); the mode pack's patch does not mount the same-named root row, and under host 0.2.x that mode's sessions see the scoped copy shadow the global row (pinned by the host's scoped.spec.ts) — both live at once no longer fails the boot. A preset of your own works the same way: add a line `name: "@khorsheed/dsh-canvas-novel/agent"` to that preset's `agent.cordis.yml`. To keep the novel tools exclusive to writing mode, disable the `canvas-novel-agent` root row in the profile as well — a scoping choice, not a crash-avoidance requirement.

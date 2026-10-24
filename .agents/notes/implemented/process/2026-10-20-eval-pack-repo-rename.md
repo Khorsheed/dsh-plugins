@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-The evaluation pack's mirror repo was `Khorsheed/dsh-web-eval`, while the user decided the public name shortens to `Khorsheed/dsh-eval` (the GitHub-side rename is the user's; the old URL redirects). `scripts/sync-mirror.mts` derives the mirror repo name from the monorepo directory, so the rename had a repo-internal half: `profiles/web-eval` → `profiles/eval`, plus every living reference. The hazard was over-renaming: the pack's RUNTIME identity — the installed profile at `$DSH_HOME/profiles/web-eval`, `dsh --profile web-eval`, the profile manifest's `name`, and the npm packages (`@khorsheed/dsh-bundle-eval`, `@khorsheed/dsh-web-eval-preset`) — is load-bearing for every installed instance and was explicitly out of scope.
+The evaluation pack's mirror repo was `Khorsheed/dsh-web-eval`, while the user decided the public name shortens to `Khorsheed/dsh-eval` (the GitHub-side rename is the user's; the old URL redirects). `scripts/sync-mirror.mts` derives the mirror repo name from the monorepo directory, so the rename had a repo-internal half: `profiles/web-eval` → `profiles/eval`, plus every living reference. The hazard was over-renaming: the pack's RUNTIME identity — the installed profile at `$DSH_HOME/profiles/web-eval`, `dsh --profile web-eval`, the profile manifest's `name`, and the npm packages (`@khorsheed/dsh-eval-suite`, `@khorsheed/dsh-web-eval-preset`) — is load-bearing for every installed instance and was explicitly out of scope.
 
 ## Decision
 

@@ -33,7 +33,7 @@ RSS 订阅和随手粘来的文章链接收在同一面墙上——点开就在 
 dsh plugin --profile web add @khorsheed/dsh-reader
 ```
 
-装完重启 web 实例后生效（单装时工具与页签在所有会话可见）。一般不必单装：灵感空间随学习模式（`@khorsheed/dsh-learning`）与写作模式（`@khorsheed/dsh-writing`）安装，工具与页签只在这两个模式的会话里出现。卸载：
+装完重启 web 实例后生效（单装时工具与页签在所有会话可见）。一般不必单装：灵感空间随学习模式（`@khorsheed/dsh-learning-suite`）与写作模式（`@khorsheed/dsh-writing-suite`）安装，工具与页签只在这两个模式的会话里出现。卸载：
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-reader

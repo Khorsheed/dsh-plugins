@@ -1,5 +1,5 @@
 /**
- * @khorsheed/dsh-gamedev — the 游戏开发模式 (dsh-gamedev) mode bundle: the game
+ * @khorsheed/dsh-gamedev-suite — the 游戏开发模式 (dsh-gamedev) mode bundle: the game
  * workbench (build and play a small 2D web game with the agent) plus the
  * mode's own preset row, as one thin meta package. The bundle is composition
  * data: cordis.patch.yml re-mounts the member's canonical rows (minus the

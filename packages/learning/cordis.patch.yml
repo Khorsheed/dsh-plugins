@@ -1,4 +1,4 @@
-# @khorsheed/dsh-learning bundle patch: the 学习模式 (dsh-learning) mode pack —
+# @khorsheed/dsh-learning-suite bundle patch: the 学习模式 (dsh-learning) mode pack —
 # the member rows (library, and since 2026-10-19 the canvas and the reader)
 # plus the mode's own preset row. The member row is
 # re-mounted VERBATIM from the member package's own cordis.patch.yml (the

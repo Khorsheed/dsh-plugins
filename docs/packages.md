@@ -20,7 +20,7 @@
 | `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.4.3 | bundle | — | web | 0.1.5-rc.1 | basic, dev, eval |
 | `@khorsheed/dsh-basic` | `packages/basic` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-bundle-conversation-toolbox` | `packages/bundle-conversation-toolbox` | 0.1.3 | bundle | — | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-bundle-eval` | `packages/bundle-eval` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | eval |
+| `@khorsheed/dsh-eval-suite` | `packages/bundle-eval` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | eval |
 | `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.3.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas` | `packages/canvas` | 0.6.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas-novel` | `packages/canvas-novel` | 0.1.0 | bundle | — | web | 0.2.0-rc.2 | — |
@@ -29,15 +29,15 @@
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.5 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
 | `@khorsheed/dsh-context-lens` | `packages/context-lens` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
-| `@khorsheed/dsh-dev` | `packages/dev` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
+| `@khorsheed/dsh-dev-suite` | `packages/dev` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-reader` | `packages/dsh-reader` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0-rc.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.2 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
 | `@khorsheed/dsh-game` | `packages/game` | 0.1.0 | bundle | — | web | 0.2.0-rc.1 | — |
-| `@khorsheed/dsh-gamedev` | `packages/gamedev` | 0.1.0 | bundle | — | — | 0.2.0-rc.1 | — |
+| `@khorsheed/dsh-gamedev-suite` | `packages/gamedev` | 0.1.0 | bundle | — | — | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.16 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.2.0-rc.1 | bundle | — | — | 0.2.0-rc.2 | — |
-| `@khorsheed/dsh-learning` | `packages/learning` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
+| `@khorsheed/dsh-learning-suite` | `packages/learning` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-library` | `packages/library` | 0.1.0 | bundle | — | web | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.2.0-rc.3 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
 | `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.2.0-rc.3 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
@@ -60,11 +60,11 @@
 | `@khorsheed/dsh-typesafe` | `packages/typesafe` | 0.1.3 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/ui-content-preview` | 0.1.1 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-panel-kit` | `packages/ui-panel-kit` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-video` | `packages/video` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
+| `@khorsheed/dsh-video-suite` | `packages/video` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-video-studio` | `packages/video-studio` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.5 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
 | `@khorsheed/dsh-worktrees` | `packages/worktrees` | 0.3.2 | bundle | — | web | 0.1.5-rc.1 | dev |
-| `@khorsheed/dsh-writing` | `packages/writing` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | — |
+| `@khorsheed/dsh-writing-suite` | `packages/writing` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | — |
 
 ## 整合 profile
 

@@ -1,4 +1,4 @@
-# @khorsheed/dsh-bundle-eval bundle patch: the 评测模式 (dsh-eval) mode pack —
+# @khorsheed/dsh-eval-suite bundle patch: the 评测模式 (dsh-eval) mode pack —
 # the evaluation family's rows (datasets / mission / lab / eval), the
 # local-agent delegation family's rows (the core plus the kimi / codex /
 # claude-code / dsh providers, with the two bare overrides), and the mode's own
@@ -40,7 +40,7 @@
 # The deps-only family library (@khorsheed/dsh-local-agent-dsh-headless) is an
 # npm dependency of this bundle but contributes NO row here — card-less by
 # design (the same treatment as in @khorsheed/dsh-bundle-local-agent and
-# @khorsheed/dsh-dev).
+# @khorsheed/dsh-dev-suite).
 
 - id: tool-subagent-codex
   disabled: true

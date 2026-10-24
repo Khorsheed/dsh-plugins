@@ -3,7 +3,7 @@
   "private": true,
   "dependencies": {
     "@khorsheed/dsh-ankh-guard": "^0.1.1",
-    "@khorsheed/dsh-bundle-eval": "^0.1.0",
+    "@khorsheed/dsh-eval-suite": "^0.1.0",
     "@khorsheed/dsh-capability-catalog": "^0.1.52",
     "@khorsheed/dsh-client-message-tools": "^0.1.0",
     "@khorsheed/dsh-client-session-title-edit": "^0.1.0",
@@ -41,7 +41,7 @@
         "@khorsheed/dsh-local-agent-codex",
         "@khorsheed/dsh-local-agent-claude-code",
         "@khorsheed/dsh-local-agent-dsh",
-        "@khorsheed/dsh-bundle-eval",
+        "@khorsheed/dsh-eval-suite",
         "@khorsheed/dsh-ankh-guard",
         "@khorsheed/dsh-web-eval-preset"
       ]

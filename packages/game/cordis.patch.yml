@@ -11,7 +11,7 @@
 # The second row is the `./agent` composition entry (game_open / game_read,
 # the mode's guidance section, the gamedev and game-design skills), live for
 # EVERY session — the community default (the canvas `./agent` pattern). The
-# game-development mode pack (@khorsheed/dsh-gamedev) does NOT re-mount this
+# game-development mode pack (@khorsheed/dsh-gamedev-suite) does NOT re-mount this
 # row: it grants the same entry inside its preset composition, and under host
 # 0.2.x a preset session's scoped copy shadows this global row
 # (packages/core/tools/tests/scoped.spec.ts), so the two coexist — no

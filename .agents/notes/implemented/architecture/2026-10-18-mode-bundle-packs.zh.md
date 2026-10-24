@@ -10,12 +10,12 @@ Status: implemented
 
 `dsh.bundle.kind: 'mode'`(checker 机制同日落地,提交 `99b7183b`)迎来它的舰队:六个模式包,每个都是 patch 末尾恰好带一条 `@deepseek-ai/dsh-agent-preset` 行(id `preset-<mode>`、`dsh.bundle.mode` 声明 `<mode>`、全树唯一)的家族包:
 
-- `packages/dev`(`@khorsheed/dsh-dev`):local-agent 核 + kimi/codex/claude-code/dsh 四个委派 provider、worktrees、room、typesafe;`local-agent-dsh-headless` 以 deps-only 随行(与 bundle-local-agent 同一处理,在 `ALLOWED_EDGES` 登记)。
-- `packages/writing`(`@khorsheed/dsh-writing`):canvas + canvas-novel。
-- `packages/learning`(`@khorsheed/dsh-learning`):library。
-- `packages/video`(`@khorsheed/dsh-video`):video-studio。
-- `packages/gamedev`(`@khorsheed/dsh-gamedev`):game。
-- `packages/bundle-eval`(`@khorsheed/dsh-bundle-eval`):family 升级为 mode `dsh-eval`;成员与「评测套件」卡面不变,版本线不动(仍未发布的 0.1.0)。
+- `packages/dev`(`@khorsheed/dsh-dev-suite`):local-agent 核 + kimi/codex/claude-code/dsh 四个委派 provider、worktrees、room、typesafe;`local-agent-dsh-headless` 以 deps-only 随行(与 bundle-local-agent 同一处理,在 `ALLOWED_EDGES` 登记)。
+- `packages/writing`(`@khorsheed/dsh-writing-suite`):canvas + canvas-novel。
+- `packages/learning`(`@khorsheed/dsh-learning-suite`):library。
+- `packages/video`(`@khorsheed/dsh-video-suite`):video-studio。
+- `packages/gamedev`(`@khorsheed/dsh-gamedev-suite`):game。
+- `packages/bundle-eval`(`@khorsheed/dsh-eval-suite`):family 升级为 mode `dsh-eval`;成员与「评测套件」卡面不变,版本线不动(仍未发布的 0.1.0)。
 
 `packages/basic`(`@khorsheed/dsh-basic`)保持 `kind: 'family'`:十八个成员,无 preset 行——没有「基础模式」。
 
@@ -26,6 +26,8 @@ preset 行逐字镜像自 `@khorsheed/dsh-presets` 的同名行,接在同一个 
 每个包用 `tests/bundle.spec.ts` 钉住组合(行 = 成员规范行经 `parseTopLevelPatchRows` 逐字比对 + 恰好一条 preset 行 + 每成员至少贡献一行),并带齐常规范式:locale 卡面元数据、双语 README、CHANGELOG、只导常量的 `src/index.ts`(`MODE` / `FAMILY_MEMBERS`,有 deps-only 或 override 名册的也一并导出)。
 
 `dsh.compat.minHost` 取「成员最高地板」与「preset 行机制地板」的较高者:`@deepseek-ai/dsh-agent-preset` 声明行只在宿主 0.1.7-rc.1 起存在。这一刀落在 dev(成员地板 0.1.5-rc.1 → 包地板 0.1.7-rc.1)与 video(同理)上;learning(library 0.1.7-rc.1)、gamedev(0.2.0-rc.1)、writing(canvas-novel 0.2.0-rc.2)、bundle-eval(0.2.0-rc.2)本就在其上。
+
+**包名带 `-suite`(2026-10-24,首发前)。** 六个模式包以 `@khorsheed/dsh-<mode>-suite` 发布(`dsh-dev-suite`、`dsh-writing-suite`、`dsh-learning-suite`、`dsh-video-suite`、`dsh-gamedev-suite`、`dsh-eval-suite`)。起因是评测包:`@khorsheed/dsh-eval` 是评测核心包,评测模式包用不了 `dsh-<mode>` 这个形态。其余几个跟着改,是为了一条规则:包名与卡名(「…套件」)对应,并与同名的镜像仓、集合分开(`Khorsheed/dsh-dev` 是开发集合的门面,`@khorsheed/dsh-dev-suite` 是它要装的 bundle)。目录、preset id(`dsh-dev` 等)与行 id 不变,会话与设置无感。旧名从未发布,不需要 deprecate。
 
 ## 备选
 

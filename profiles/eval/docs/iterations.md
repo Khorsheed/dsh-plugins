@@ -411,7 +411,7 @@ T30c（2026-09-09 加）：效率表今天只有 token 与时长，工具调用�
 | T80 | ✅ 四条已合（2026-09-26：T80a `0f59af27`；T80b `b028f906`；T80d `23cd336a`；T80c `edb7e313`） | 收口补充一轮：按 T79 清单改，P0 + 全部 P1 + 协调者提升的 12 条 P2。文案见 §三「T80」 | T79 | 交互稿 v5 各场景同等层次；之后 3171 重装（含 T73 试点）→ 用户走查 |
 | T81 | ✅ 收口（2026-09-26）：阶段一 main 在 0.1.5-rc.1 上 a–e 全过；阶段二被 main 的 `d49f29af` 取代，不合 | 评测线在 0.1.5 上恢复。typert 双形态 codec（`00cfa1d6`）、preset 双名探测（`380a469c`）、图标自带（`d49f29af`：`scripts/sync-icon-artwork.mts` 给每个包生成 `src/client/icons.tsx`，0.1.5 与 0.1.7 都不再按名字取宿主图标）都由各包负责人在 main 上做了。文案见 §三「T81」 | T78 | 0.1.5 临时实例上 a–e 全过；datasets 图标面由 T76 补拍一并看 |
 | T82 | ✅ 代码（2026-10-01 改向，同日合入 `0b61ca67`，题库 `cc45dc5`） | **web-eval 只支持宿主 0.2.0 及以后**（用户 10-01 定，取代原「0.1.7 + 0.1.5 双宿主」）：preset 只走 bundle、install.sh 只认 ≥ 0.2.0、0.2.0 工具链、临时实例冒烟、受试 dsh 版本是否跟实例走、3171 数据试迁、compat 提到 0.2.0。文案见 §三「T82（改）」 | T87 | 0.2.0 临时实例 a–e 与 T86/T87 欠账全过；3171 副本迁过去核对一致 |
-| T88 | ✅ 代码（2026-10-01 定，同日合入 `a242b711`） | 评测家族照 local-agent 形态整理：三个 *-tool 折进核心包的 `./tool` 入口并退役旧包；datasets / mission / lab / eval 保持独立包；新增 family bundle `@khorsheed/dsh-bundle-eval`，web-eval 改依赖它。mission 不退役。文案见 §三「T88」 | T82 | |
+| T88 | ✅ 代码（2026-10-01 定，同日合入 `a242b711`） | 评测家族照 local-agent 形态整理：三个 *-tool 折进核心包的 `./tool` 入口并退役旧包；datasets / mission / lab / eval 保持独立包；新增 family bundle `@khorsheed/dsh-eval-suite`，web-eval 改依赖它。mission 不退役。文案见 §三「T88」 | T82 | |
 | T89 | 代码（2026-10-01 定，排在 T88 合入之后派发） | 评测家族衔接收紧：mission 提供单元格数据目录动词、list/get 出 JSON、两份判分规则加跨包契约测试、eval 包内目录化并拆 run.ts；协调者评估后一并做 run 级 annotation 与 export 走服务面，./report 入口暂缓。文案见 §三「T89」 | T88 | ✅ 合入 `898f701f`——|
 | T90 | 代码（2026-10-01 定；第一段即派，第二段排在 T89 合入后） | **数据集接入只走一条路：交给 Agent 整理，人确认登记**。datasets 带 skill；「添加题集」弹窗只填数据在哪 / 名称 / 想测什么；Agent 看数据、对齐方案、改造提交校验后提交登记申请；人在「原目录 → 题集」对照视图里核对并确认。抽题移到 eval 新建实验（第二段）。交互参照 `docs/t90-dataset-journey.html`，视觉沿用宿主。文案见 §三「T90」 | T88 | 第一段 ✅ 合入 `8d9c7e12`；第二段 ✅ 合入 `c2698b1c`（建实验时选题：全部 / 随机 N 固定种子 / 手选）；真机走查待 3185 重装——本地目录、公开数据集、已是协议仓库三种来源各走通一次；对照视图截图过协调者与用户 |
 | T91 | 代码（2026-10-01 定，与 T88 并行） | **dsh 条件在 0.2.0 上跑起来**：宿主轮 headless 改用实例自带的 0.2.0 版（共享 `/opt` 软链不动）；local-agent-dsh 往受试环境塞预设改走 0.2.0 机制；题库 eval-lean / eval-full 改声明式。local-agent 家族已同意由评测线改。文案见 §三「T91」 | T82 | ✅ 合入 `230dc5b7`（题库 i1-walk `dc6a6db`）——3185 上一条带预设的 0.2.0 dsh 条件 provision 带能力指纹、就绪过、跑完 1 格 |
@@ -4386,7 +4386,7 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0；跨宿主版本先删 tsbuildinfo。
    - check-plugin-independence 的白名单、allowed edges、community-service injectors 删退役名、加新入口。
    - check-release-groups 的家族名册同步。
    - 各 spec 夹具改到折叠后的形态。
-4. family bundle：新增 packages/bundle-eval（@khorsheed/dsh-bundle-eval，kind: family）。
+4. family bundle：新增 packages/bundle-eval（@khorsheed/dsh-eval-suite，kind: family）。
    - 成员：datasets、mission、lab、eval。patch 逐字复用四个成员的规范行，不发明行 id。
    - locale 卡面元数据把整族归成一张卡「评测」。
    - README 双语照 bundle-local-agent 的结构写，lab 需要 Docker 这一点写进已知限制。
@@ -4417,7 +4417,7 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0；跨宿主版本先删 tsbuildinfo。
 
 #### T88 合入（2026-10-01）
 
-- `a242b711`（e65a0328 三个 *-tool 折进核心包 `./tool`、退役进 retired-packages、预设 name 改指；73ebefe7 新建 `@khorsheed/dsh-bundle-eval` 0.1.0（kind family，四行与成员逐字相同），check-profile-bundles 认 family，web-eval 改依赖 bundle；1b17408c ops「整合包」改写、README/CHANGELOG、Agent Note `architecture/2026-10-01-eval-family-tool-fold-and-bundle`）。
+- `a242b711`（e65a0328 三个 *-tool 折进核心包 `./tool`、退役进 retired-packages、预设 name 改指；73ebefe7 新建 `@khorsheed/dsh-eval-suite` 0.1.0（kind family，四行与成员逐字相同），check-profile-bundles 认 family，web-eval 改依赖 bundle；1b17408c ops「整合包」改写、README/CHANGELOG、Agent Note `architecture/2026-10-01-eval-family-tool-fold-and-bundle`）。
 - 四个家族包 0.2.0-rc.1、presets 0.3.0；退役名的 npm 弃用标记留给发布波。
 - 临时实例（0.2.0-rc.2）：24 个 @khorsheed 成员、205 行，顶层行 id 205 个全不重；插件页一张「评测」卡；评测会话 tab 为对话 / 轨迹 / 题集 / 实验室，无任务 tab；工具目录里 datasets / eval 工具的 owner 已是核心包名，没有 mission 工具。
 - 门禁：check:plugins 37 包 0 条、profile-bundles、hygiene、release-groups、test:scripts 277，各包 test 全过。
@@ -4941,7 +4941,7 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0。
 - 去掉会话依赖：datasets Remote 全部不再要 agent 参数；eval Remote 除 `approve` 外同样去掉（批准仍要会话，因为运行的父会话和 cwd 取自它）。写标记带可选 `session`，无会话时记 `panel:lab`。`judge-bench` 的人工终判同步改，`sessionId` 可为 null。面板里的实验列表固定显示全部。
 - 需要会话的动作开新会话：「添加题集」开「题集整理」会话；「新建实验」、交给 agent 的几处入口开评测模式会话，请求填进输入框不发送，开不了时退回剪贴板。面板里「批准并开始」会在后台新建一个会话，在那里批准，不跳转。
 - T96 卡片改用 `ctx.layout.selectPanel('datasets')` 打开全局题集面板直达评审，T96 记账的 DOM 锚点（`switchToTab`）已删除；没有 layout 服务时回到会话页签并给一行提示。
-- 可见性：只有 `profiles/web-eval` 经 `@khorsheed/dsh-bundle-eval` 装了这两个包，basic、dev 都没装，所以入口只在评测 profile 出现。
+- 可见性：只有 `profiles/web-eval` 经 `@khorsheed/dsh-eval-suite` 装了这两个包，basic、dev 都没装，所以入口只在评测 profile 出现。
 - 协调者门禁：干净构建；datasets 347、eval 1274、bundle-eval 7 全过；check:plugins / hygiene --all 0 finding。test:scripts 只挂 `generate-package-map.spec`，docs/packages.md 与重新生成的结果只差 canvas-novel 一行，是 main 上原有的红，归 canvas-novel 线补跑 `pnpm map:packages`。截图（首页入口、两个面板 1440 / 390 明暗、两个新会话）看过；都是空态，有数据时的样子在 3185 走查时看。
 - 过程记录：实施方把截图写到了 `~/.dsh/scratch`，越过不碰 `~/.dsh` 的红线，协调者已挪到 tmp。实施中途被 429 限流打断，续跑后完成。
 - 记账不阻塞：面板里「批准并开始」新建的后台会话在侧栏可见，用户可能看不懂这个会话从哪来，走查时留意。

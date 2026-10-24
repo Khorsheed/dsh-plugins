@@ -1,4 +1,4 @@
-# @khorsheed/dsh-gamedev
+# @khorsheed/dsh-gamedev-suite
 
 English | [中文](README.md)
 
@@ -18,16 +18,16 @@ The game tools and skills (the game's `./agent` entry) are not mounted at the pr
 
 ## Install
 
-Paste the package name `@khorsheed/dsh-gamedev` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings the member along as a dependency, and the bundle's own patch mounts both the mode preset and the member rows. Then switch a session to 「游戏开发模式」 in the mode selector.
+Paste the package name `@khorsheed/dsh-gamedev-suite` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings the member along as a dependency, and the bundle's own patch mounts both the mode preset and the member rows. Then switch a session to 「游戏开发模式」 in the mode selector.
 
 The CLI equivalent:
 
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-gamedev
+dsh plugin --profile web add @khorsheed/dsh-gamedev-suite
 ```
 
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-gamedev
+dsh plugin --profile web remove @khorsheed/dsh-gamedev-suite
 ```
 
 Removing the bundle removes the member along with the mode preset; to keep the member and disable a single row, use the row-level switches on the bundle detail page.

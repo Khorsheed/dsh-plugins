@@ -1,4 +1,4 @@
-# @khorsheed/dsh-writing bundle patch: the 写作模式 (dsh-writing) mode pack —
+# @khorsheed/dsh-writing-suite bundle patch: the 写作模式 (dsh-writing) mode pack —
 # the writing family's member rows plus the mode's own preset row. Member rows
 # are re-mounted VERBATIM from each member package's own cordis.patch.yml (the
 # canonical rows); the preset row is mirrored VERBATIM from

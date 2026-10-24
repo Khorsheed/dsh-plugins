@@ -1,5 +1,5 @@
 /**
- * @khorsheed/dsh-video — the 剪辑模式 (dsh-video) mode bundle: the video
+ * @khorsheed/dsh-video-suite — the 剪辑模式 (dsh-video) mode bundle: the video
  * studio (podcast and conversation editing) plus the mode's own preset row, as
  * one thin meta package. The bundle is composition data: cordis.patch.yml
  * re-mounts the member's canonical row and the preset row, and package.json

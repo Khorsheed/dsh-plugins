@@ -127,13 +127,13 @@ plan 的 `conditions` 与 `judge.conditions` 写**条件 id**（不写 sha；sha
 
 ## 依赖插件
 
-21 个成员（18 个直接依赖：评测机制四个成员经整合包 `@khorsheed/dsh-bundle-eval` 一起装），三组：
+21 个成员（18 个直接依赖：评测机制四个成员经整合包 `@khorsheed/dsh-eval-suite` 一起装），三组：
 
 | 组 | 成员 | 状态 | 为本 profile 需要的改动 |
 |---|---|---|---|
 | 基础体验 | 与 dev 相同的 11 个（`ankh-guard` 在其中） | ✅ / 🔶 | 无；评测实例用自己的 `$DSH_HOME`，切换与看护归 `ankh-guard` |
 | 本地 Agent 家族 | 5 个：`local-agent` + kimi / codex / claude-code / dsh 四个 provider（第六个共享工具包 `tool-subagent` 已随 2026-09-30 家族折叠退役，委派工具收进各 provider 的 `./tool` 入口） | 🔶 | I1：评测 pin 配置（全 exec、codex 容器内 full-access、claude 与 kimi 的推理强度显式）与 effectiveSettings 快照（含已配置模型）。I2：模型回读，记录实际使用的模型。I3：容器内 exec 包装已落地（T17：`exec: {container, workdir, env}`，值不上 argv）；「CLI 驱动抽成独立包」推迟到出现第二个消费者；`cliVersion` 与 `credentialState` 填实（T25）。I4：每条件的模型参数（首轮指定、成员内固定、resume 不换）与 scoped home 覆盖，provider 设置卡加「默认模型」 |
-| 评测机制 | 4 个：`datasets` / `mission` / `lab` / `eval`，经家族整合包 `@khorsheed/dsh-bundle-eval` 一起装（T88；模型工具行是 datasets / mission / eval 各自的 `./tool` 入口，归预设——M4'③ 拆出的三个伴生包随 T88 折回核心包并退役） | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针。`eval`：run 循环的判官（T9）、报告（T10）、只读工具（T14）与完整就绪检查 |
+| 评测机制 | 4 个：`datasets` / `mission` / `lab` / `eval`，经家族整合包 `@khorsheed/dsh-eval-suite` 一起装（T88；模型工具行是 datasets / mission / eval 各自的 `./tool` 入口，归预设——M4'③ 拆出的三个伴生包随 T88 折回核心包并退役） | 🔶 rc | `mission`：retry 带 reason；ns 报告带 writtenBy。`lab`：复合指纹（镜像 + 资源限制 + 挂载布局 + env 键）。`datasets`：金丝雀字段；item 级外部源指针。`eval`：run 循环的判官（T9）、报告（T10）、只读工具（T14）与完整就绪检查 |
 
 评测机制里的 **`@khorsheed/dsh-eval`** 是编排器（I2·T8 入列）。已落地：三份契约 schema、`validatePlan` / `hashCondition` / `hashHome`、`generateTemplate`（manifest → run 模板，逐项等价于 I1 手写的 bench-v1）、run 循环 v0（阶段一二、宿主目录、逐格物化、逐字节委派、submit/transition、归档闸、bundle 导出）、`/eval run` slash 与 `dsh-eval` CLI（validate / run --dry-run / template / conditions hash）。判官委派（T9）、`dsh-eval report`（T10）、模型工具（T14；I5·T46 起四个读工具 `eval_conditions` / `eval_plan_validate` / `eval_run_status` / `eval_cells`，I5·T34 再加起草工具 `eval_plan_draft`）均已落地。
 
@@ -151,7 +151,7 @@ agent 只在规划期与分析期出现，需要的是读与起草；执行期�
 | eval | 四读 `eval_conditions` `eval_plan_validate` `eval_run_status` `eval_cells` + 两写 `eval_plan_draft`（部署内实验目录）`eval_analysis_write`（只写 `analysis/`）；不开 run | 内核 | 批准、run、report |
 | 委派工具（`subagent_codex` / `subagent_claude_code` / `subagent_kimi` / `subagent_dsh`） | 不开——家族折叠后工具是各 provider 的 `./tool` 组合入口，按预设点名授予，eval 预设不点名即缺席；第四家 `subagent_dsh` 由控制器在开关 ON 时动态挂载，默认 OFF | 经 local-agent 门面委派选手 | `/codex login`、`/kimi status` 等 provider 动词 |
 
-**M4'③ 起这三个机制插件把核心行与工具行分开**：profile 根只挂核心行（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归工具行（T88 起是各核心包的 `./tool` 组合入口，此前是三个独立伴生包），所以上表的按域 tier 由 pack 的 `eval` 预设的工具行授予——`datasets-tool: organize`（T102 前是 `authoring`）、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这两套工具一个都拿不到，服务 / CLI / slash 仍全局，数据集标签页另按同一组合判据自隐（判据读不到时 fail-open；任务 tab 曾同规则自隐，现已随其 Remote 数据面整体退役，mission 不再携带浏览器半边）。**`mission-tool` 曾是第三行（`tools: read`），I5·T46 摘掉**：界面规格的 R6 定了「评测模式下 mission 这个词不出现」，逐格细节改由 `eval_cells` 从 eval 自己的投影读（数据仍经结构面算 mission 的账本，但算在服务端）。包照装，谁要在自己的覆盖层预设里加回这一行（`name: '@khorsheed/dsh-mission/tool'`）都还在。工具行随核心包安装，核心包随整合包 `@khorsheed/dsh-bundle-eval` 安装：`package.json` 只依赖整合包，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建四个成员与整合包并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
+**M4'③ 起这三个机制插件把核心行与工具行分开**：profile 根只挂核心行（服务 / CLI / slash / 标签页），模型工具行与工具提示词段落归工具行（T88 起是各核心包的 `./tool` 组合入口，此前是三个独立伴生包），所以上表的按域 tier 由 pack 的 `eval` 预设的工具行授予——`datasets-tool: organize`（T102 前是 `authoring`）、`eval-tool: all`（见[冻结决策 12 的执行点](#冻结决策-12-的执行点eval-预设)）——不再是 profile 根的 `tools` 配置；同 profile 里走别的预设的会话这两套工具一个都拿不到，服务 / CLI / slash 仍全局，数据集标签页另按同一组合判据自隐（判据读不到时 fail-open；任务 tab 曾同规则自隐，现已随其 Remote 数据面整体退役，mission 不再携带浏览器半边）。**`mission-tool` 曾是第三行（`tools: read`），I5·T46 摘掉**：界面规格的 R6 定了「评测模式下 mission 这个词不出现」，逐格细节改由 `eval_cells` 从 eval 自己的投影读（数据仍经结构面算 mission 的账本，但算在服务端）。包照装，谁要在自己的覆盖层预设里加回这一行（`name: '@khorsheed/dsh-mission/tool'`）都还在。工具行随核心包安装，核心包随整合包 `@khorsheed/dsh-eval-suite` 安装：`package.json` 只依赖整合包，源码模式的 `UNPUBLISHED_DIRS` 负责从检出构建四个成员与整合包并打成 tarball（`autoInstallPeers: false`，peer 不会被自动装上）。
 
 能力全貌、自然语言到实现的逐步轨迹与生成文件清单见 [docs/architecture.md](docs/architecture.md)。
 

@@ -15,7 +15,7 @@
 # novel_extract for sessions bound to a 长篇小说 canvas, plus novel_bind, the
 # novel:pointer prompt section and the `novel` skill for the mounting scope),
 # live for EVERY session — the community default, aligned with the canvas
-# `./agent` row. The writing mode pack (@khorsheed/dsh-writing) does NOT
+# `./agent` row. The writing mode pack (@khorsheed/dsh-writing-suite) does NOT
 # re-mount this row: it grants the same entry
 # (`@khorsheed/dsh-canvas-novel/agent`) inside its `preset-dsh-writing`
 # composition, and under host 0.2.x a preset session's scoped copy shadows

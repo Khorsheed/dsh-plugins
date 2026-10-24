@@ -108,7 +108,7 @@ patch 挂两行：
 单装即所有会话可用：`novel_bind`、轻指引与 `novel` 技能对每个会话开放，`novel_read` / `novel_write` / `novel_extract` 仍会按会话绑定出现——绑定长篇小说画布的会话才有。写作场景想收窄成按模式授予，装写作模式包即可：
 
 ```sh
-dsh plugin add @khorsheed/dsh-writing
+dsh plugin add @khorsheed/dsh-writing-suite
 ```
 
 它的「写作模式」（`preset-dsh-writing`）在自己的作用域内授予同一个入口 `@khorsheed/dsh-canvas-novel/agent`，和画布工具 `@khorsheed/dsh-canvas/agent` 并列；模式包的 patch 不再挂 profile 根的同名行，宿主 0.2.x 下该模式的会话看到 scoped 副本遮蔽全局行（宿主 scoped.spec.ts 钉死），同活不再崩 boot。自建 preset 也一样：在该 preset 的 `agent.cordis.yml` 里加一行 `name: "@khorsheed/dsh-canvas-novel/agent"`。想让小说工具**只**出现在写作模式，再在 profile 里把 `canvas-novel-agent` 根行停用即可——那是收窄语义的选择，不是避免崩溃的必须。

@@ -1,4 +1,4 @@
-# @khorsheed/dsh-learning
+# @khorsheed/dsh-learning-suite
 
 English | [中文](README.md)
 
@@ -22,16 +22,16 @@ The library's model face (the tools, the coach guidance section, the library ski
 
 ## Install
 
-Paste the package name `@khorsheed/dsh-learning` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings the member along as a dependency, and the bundle's own patch mounts both the mode preset and the member row. Then switch a session to 「学习模式」 in the mode selector.
+Paste the package name `@khorsheed/dsh-learning-suite` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings the member along as a dependency, and the bundle's own patch mounts both the mode preset and the member row. Then switch a session to 「学习模式」 in the mode selector.
 
 The CLI equivalent:
 
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-learning
+dsh plugin --profile web add @khorsheed/dsh-learning-suite
 ```
 
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-learning
+dsh plugin --profile web remove @khorsheed/dsh-learning-suite
 ```
 
 Removing the bundle removes the member along with the mode preset; to keep the member and disable a single row, use the row-level switches on the bundle detail page.

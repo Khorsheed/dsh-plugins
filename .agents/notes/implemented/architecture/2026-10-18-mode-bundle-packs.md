@@ -10,12 +10,12 @@ The community modes (开发 / 写作 / 学习 / 剪辑 / 游戏开发 / 评测) 
 
 `dsh.bundle.kind: 'mode'` (checker mechanics landed the same day, commit `99b7183b`) gets its fleet: six mode bundles, each a family bundle whose patch closes with exactly one `@deepseek-ai/dsh-agent-preset` row (id `preset-<mode>`, `dsh.bundle.mode` declaring `<mode>`, unique across the tree):
 
-- `packages/dev` (`@khorsheed/dsh-dev`): local-agent core + the kimi/codex/claude-code/dsh providers, worktrees, room, typesafe; `local-agent-dsh-headless` rides along deps-only (same treatment as bundle-local-agent, sanctioned in `ALLOWED_EDGES`).
-- `packages/writing` (`@khorsheed/dsh-writing`): canvas + canvas-novel.
-- `packages/learning` (`@khorsheed/dsh-learning`): library.
-- `packages/video` (`@khorsheed/dsh-video`): video-studio.
-- `packages/gamedev` (`@khorsheed/dsh-gamedev`): game.
-- `packages/bundle-eval` (`@khorsheed/dsh-bundle-eval`): upgraded family → mode `dsh-eval`; members and the 评测套件 card unchanged, version line untouched (still unpublished 0.1.0).
+- `packages/dev` (`@khorsheed/dsh-dev-suite`): local-agent core + the kimi/codex/claude-code/dsh providers, worktrees, room, typesafe; `local-agent-dsh-headless` rides along deps-only (same treatment as bundle-local-agent, sanctioned in `ALLOWED_EDGES`).
+- `packages/writing` (`@khorsheed/dsh-writing-suite`): canvas + canvas-novel.
+- `packages/learning` (`@khorsheed/dsh-learning-suite`): library.
+- `packages/video` (`@khorsheed/dsh-video-suite`): video-studio.
+- `packages/gamedev` (`@khorsheed/dsh-gamedev-suite`): game.
+- `packages/bundle-eval` (`@khorsheed/dsh-eval-suite`): upgraded family → mode `dsh-eval`; members and the 评测套件 card unchanged, version line untouched (still unpublished 0.1.0).
 
 `packages/basic` (`@khorsheed/dsh-basic`) stays `kind: 'family'`: eighteen members, no preset row — there is no "basic mode".
 
@@ -26,6 +26,8 @@ Companion rows have since gone composition-only — see [2026-10-19-composition-
 Each bundle pins its composition in `tests/bundle.spec.ts` (rows = members' canonical rows via `parseTopLevelPatchRows` + exactly one preset row + per-member contribution), and carries the usual surface: locale card metadata, bilingual README, CHANGELOG, the constants-only `src/index.ts` (`MODE` / `FAMILY_MEMBERS` / deps-only or override rosters where they exist).
 
 `dsh.compat.minHost` is the HIGHER of the members' highest floor and the preset-row mechanism floor: an `@deepseek-ai/dsh-agent-preset` declaration row exists only on host 0.1.7-rc.1+. This bites dev (members floor 0.1.5-rc.1 → bundle floors 0.1.7-rc.1) and video (same); learning (library 0.1.7-rc.1), gamedev (0.2.0-rc.1), writing (canvas-novel 0.2.0-rc.2) and bundle-eval (0.2.0-rc.2) are at or above it already.
+
+**Package names carry `-suite` (2026-10-24, before first publish).** The six mode packs publish as `@khorsheed/dsh-<mode>-suite` (`dsh-dev-suite`, `dsh-writing-suite`, `dsh-learning-suite`, `dsh-video-suite`, `dsh-gamedev-suite`, `dsh-eval-suite`). The trigger was the eval pack: `@khorsheed/dsh-eval` is the evaluation core, so the pack could not take the plain `dsh-<mode>` form. The rest followed for one rule: the package name matches the card title (「…套件」), and stays distinct from the same-named mirror repos and collections (`Khorsheed/dsh-dev` is the dev collection's front door, `@khorsheed/dsh-dev-suite` is the bundle it installs). Directories, preset ids (`dsh-dev`, …) and row ids are unchanged, so sessions and settings are unaffected. None of the old names was ever published, so nothing needs deprecating.
 
 ## Alternatives considered
 

@@ -1,4 +1,4 @@
-# @khorsheed/dsh-dev
+# @khorsheed/dsh-dev-suite
 
 English | [中文](README.md)
 
@@ -25,16 +25,16 @@ Card-less library (deps-only: in `dependencies`, no patch rows of its own): `@kh
 
 ## Install
 
-Paste the package name `@khorsheed/dsh-dev` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings every member along as dependencies, and the bundle's own patch mounts both the mode preset and the family rows. Then switch a session to 「开发模式」 in the mode selector.
+Paste the package name `@khorsheed/dsh-dev-suite` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings every member along as dependencies, and the bundle's own patch mounts both the mode preset and the family rows. Then switch a session to 「开发模式」 in the mode selector.
 
 The CLI equivalent:
 
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-dev
+dsh plugin --profile web add @khorsheed/dsh-dev-suite
 ```
 
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-dev
+dsh plugin --profile web remove @khorsheed/dsh-dev-suite
 ```
 
 Removing the bundle removes the whole family including the mode preset; to keep the family and disable a single row, use the row-level switches on the bundle detail page.

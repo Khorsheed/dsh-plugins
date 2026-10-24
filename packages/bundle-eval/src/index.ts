@@ -1,5 +1,5 @@
 /**
- * @khorsheed/dsh-bundle-eval — the evaluation family (datasets / mission /
+ * @khorsheed/dsh-eval-suite — the evaluation family (datasets / mission /
  * lab / eval) plus the local-agent delegation family (the core and the kimi /
  * codex / claude-code / dsh harness providers the run verb delegates through)
  * plus the dsh-eval mode preset, as one thin meta package. The bundle is
@@ -29,7 +29,7 @@ export const FAMILY_MEMBERS = [
 /**
  * Card-less family library installed alongside (an npm dependency, no patch
  * rows of its own) — the provisioned sub-dsh face local-agent-dsh resolves.
- * Same deps-only treatment as @khorsheed/dsh-dev and
+ * Same deps-only treatment as @khorsheed/dsh-dev-suite and
  * @khorsheed/dsh-bundle-local-agent.
  */
 export const FAMILY_DEPS_ONLY = [

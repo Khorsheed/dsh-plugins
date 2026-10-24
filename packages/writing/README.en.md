@@ -1,4 +1,4 @@
-# @khorsheed/dsh-writing
+# @khorsheed/dsh-writing-suite
 
 English | [中文](README.md)
 
@@ -22,16 +22,16 @@ The canvas tool row (canvas `./agent`) is live for EVERY session in the member's
 
 ## Install
 
-Paste the package name `@khorsheed/dsh-writing` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings every member along as dependencies, and the bundle's own patch mounts both the mode preset and the family rows. Then switch a session to 「写作模式」 in the mode selector.
+Paste the package name `@khorsheed/dsh-writing-suite` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings every member along as dependencies, and the bundle's own patch mounts both the mode preset and the family rows. Then switch a session to 「写作模式」 in the mode selector.
 
 The CLI equivalent:
 
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-writing
+dsh plugin --profile web add @khorsheed/dsh-writing-suite
 ```
 
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-writing
+dsh plugin --profile web remove @khorsheed/dsh-writing-suite
 ```
 
 Removing the bundle removes the whole family including the mode preset; to keep the family and disable a single row, use the row-level switches on the bundle detail page.

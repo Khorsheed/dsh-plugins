@@ -1,5 +1,5 @@
 {
-  "name": "@khorsheed/dsh-gamedev",
+  "name": "@khorsheed/dsh-gamedev-suite",
   "description": "Mode bundle 游戏开发模式: the dsh-gamedev agent preset plus the game workbench it grants — build and play a small 2D web game with the agent — in one install. Thin meta package: a patch carrying the member's canonical rows and the mode's preset row, an npm dependency on the member, locale card metadata — no runtime code, no client half.",
   "version": "0.1.0",
   "publishConfig": {

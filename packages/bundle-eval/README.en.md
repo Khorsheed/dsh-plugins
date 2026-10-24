@@ -1,4 +1,4 @@
-# @khorsheed/dsh-bundle-eval
+# @khorsheed/dsh-eval-suite
 
 English | [中文](README.md)
 
@@ -34,7 +34,7 @@ Evaluation sessions are NOT granted the local-agent family's `subagent_*` delega
 ## Install
 
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-bundle-eval
+dsh plugin --profile web add @khorsheed/dsh-eval-suite
 ```
 
 Takes effect after the web instance restarts. Once mounted, the evaluation family's four rows, the delegation family's five rows and the evaluation-mode preset are all in place; switch a session to 「评测模式」 in the mode selector to get the domain-trimmed evaluation tools. To give the model the evaluation tools in a different preset, name the matching `./tool` row in that agent preset, for example:
@@ -45,7 +45,7 @@ Takes effect after the web instance restarts. Once mounted, the evaluation famil
 ```
 
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-bundle-eval
+dsh plugin --profile web remove @khorsheed/dsh-eval-suite
 ```
 
 Uninstalling removes the whole family; to keep the family but turn one row off, use the row-level switches on the bundle detail page.

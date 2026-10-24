@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-评测 pack 的镜像仓原是 `Khorsheed/dsh-web-eval`，用户拍板公开名收短为 `Khorsheed/dsh-eval`（GitHub 侧改名由用户操作，旧 URL 带跳转）。`scripts/sync-mirror.mts` 由 monorepo 目录名推导镜像仓名，所以这次改名有仓内一半：`profiles/web-eval` → `profiles/eval`，外加全部活引用。风险在于改过头：pack 的**运行时**身份——已装实例的 `$DSH_HOME/profiles/web-eval`、`dsh --profile web-eval`、profile 清单的 `name`、npm 包名（`@khorsheed/dsh-bundle-eval`、`@khorsheed/dsh-web-eval-preset`）——对每个已装实例都是承重的，明确不在范围内。
+评测 pack 的镜像仓原是 `Khorsheed/dsh-web-eval`，用户拍板公开名收短为 `Khorsheed/dsh-eval`（GitHub 侧改名由用户操作，旧 URL 带跳转）。`scripts/sync-mirror.mts` 由 monorepo 目录名推导镜像仓名，所以这次改名有仓内一半：`profiles/web-eval` → `profiles/eval`，外加全部活引用。风险在于改过头：pack 的**运行时**身份——已装实例的 `$DSH_HOME/profiles/web-eval`、`dsh --profile web-eval`、profile 清单的 `name`、npm 包名（`@khorsheed/dsh-eval-suite`、`@khorsheed/dsh-web-eval-preset`）——对每个已装实例都是承重的，明确不在范围内。
 
 ## Decision
 

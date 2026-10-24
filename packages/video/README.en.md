@@ -1,4 +1,4 @@
-# @khorsheed/dsh-video
+# @khorsheed/dsh-video-suite
 
 English | [中文](README.md)
 
@@ -19,16 +19,16 @@ The `video_*` tools and the `video-studio` skill are not a profile-root row: the
 
 ## Install
 
-Paste the package name `@khorsheed/dsh-video` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings the member along as a dependency, and the bundle's own patch mounts both the mode preset and the member row. Then switch a session to 「剪辑模式」 in the mode selector.
+Paste the package name `@khorsheed/dsh-video-suite` into the host's add-plugin dialog (or pick it from the marketplace index), confirm, and restart the instance — this one install brings the member along as a dependency, and the bundle's own patch mounts both the mode preset and the member row. Then switch a session to 「剪辑模式」 in the mode selector.
 
 The CLI equivalent:
 
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-video
+dsh plugin --profile web add @khorsheed/dsh-video-suite
 ```
 
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-video
+dsh plugin --profile web remove @khorsheed/dsh-video-suite
 ```
 
 Removing the bundle removes the member along with the mode preset; to keep the member and disable a single row, use the row-level switches on the bundle detail page.

@@ -1,4 +1,4 @@
-# @khorsheed/dsh-bundle-eval
+# @khorsheed/dsh-eval-suite
 
 [English](README.en.md) | 中文
 
@@ -34,7 +34,7 @@
 ## 安装
 
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-bundle-eval
+dsh plugin --profile web add @khorsheed/dsh-eval-suite
 ```
 
 重启 web 实例后生效。挂载后评测家族四行、委派家族五行与评测模式 preset 一并就位；在会话的模式选择器里切到「评测模式」即获得按域裁剪的评测工具。要在其它预设里给模型评测工具，在那个 agent 预设里点名对应的 `./tool` 行，例如：
@@ -45,7 +45,7 @@ dsh plugin --profile web add @khorsheed/dsh-bundle-eval
 ```
 
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-bundle-eval
+dsh plugin --profile web remove @khorsheed/dsh-eval-suite
 ```
 
 卸载即整族移除；想保留家族、只关某一行，用 bundle 详情页的行级开关。

@@ -7,7 +7,7 @@
  * to 3080 meant the published @khorsheed/dsh-presets bundle 3080 runs must
  * carry the same agent: `dsh-eval` there is the same composition under the id
  * 3080's sessions already use. Since 2026-10-18 the row has a third home:
- * @khorsheed/dsh-bundle-eval, upgraded to a mode bundle, carries the same
+ * @khorsheed/dsh-eval-suite, upgraded to a mode bundle, carries the same
  * `preset-dsh-eval` row (mirrored from dsh-presets, which this spec also
  * pins). T100 also mirrored `dataset-authoring` (题集整理); T102 folded
  * organizing into the evaluation mode and removed that row on all sides, so

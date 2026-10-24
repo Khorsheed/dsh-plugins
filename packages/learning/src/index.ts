@@ -1,5 +1,5 @@
 /**
- * @khorsheed/dsh-learning — the 学习模式 (dsh-learning) mode bundle: the
+ * @khorsheed/dsh-learning-suite — the 学习模式 (dsh-learning) mode bundle: the
  * library (project-organized deep reading) plus the mode's own preset row, as
  * one thin meta package. The bundle is composition data: cordis.patch.yml
  * re-mounts the member's canonical row and the preset row, and package.json

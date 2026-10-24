@@ -1,5 +1,5 @@
 /**
- * @khorsheed/dsh-writing — the 写作模式 (dsh-writing) mode bundle: the writing
+ * @khorsheed/dsh-writing-suite — the 写作模式 (dsh-writing) mode bundle: the writing
  * family (the inspiration canvas and its full-length-novel genre) plus the
  * mode's own preset row, as one thin meta package. The bundle is composition
  * data: cordis.patch.yml re-mounts the members' canonical rows (minus the

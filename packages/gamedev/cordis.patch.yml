@@ -1,4 +1,4 @@
-# @khorsheed/dsh-gamedev bundle patch: the 游戏开发模式 (dsh-gamedev) mode pack
+# @khorsheed/dsh-gamedev-suite bundle patch: the 游戏开发模式 (dsh-gamedev) mode pack
 # — the game member row plus the mode's own preset row. The member row is
 # re-mounted VERBATIM from the member package's own cordis.patch.yml (the
 # canonical row); the preset row is mirrored VERBATIM from

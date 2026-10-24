@@ -1,4 +1,4 @@
-# @khorsheed/dsh-video
+# @khorsheed/dsh-video-suite
 
 [English](README.en.md) | 中文
 
@@ -19,16 +19,16 @@
 
 ## 安装
 
-在宿主界面「添加插件」对话框里粘贴包名 `@khorsheed/dsh-video`(或从市场索引里选它),确认后重启实例——装这一个,成员随依赖一起到达,模式 preset 与成员行由本包的 patch 统一挂载。随后在会话的模式选择器里切到「剪辑模式」。
+在宿主界面「添加插件」对话框里粘贴包名 `@khorsheed/dsh-video-suite`(或从市场索引里选它),确认后重启实例——装这一个,成员随依赖一起到达,模式 preset 与成员行由本包的 patch 统一挂载。随后在会话的模式选择器里切到「剪辑模式」。
 
 命令行等价:
 
 ```sh
-dsh plugin --profile web add @khorsheed/dsh-video
+dsh plugin --profile web add @khorsheed/dsh-video-suite
 ```
 
 ```sh
-dsh plugin --profile web remove @khorsheed/dsh-video
+dsh plugin --profile web remove @khorsheed/dsh-video-suite
 ```
 
 卸载即整族移除(含模式 preset);想保留成员、只关某一行,用 bundle 详情页的行级开关。

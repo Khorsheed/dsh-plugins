@@ -1,4 +1,4 @@
-# @khorsheed/dsh-dev bundle patch: the 开发模式 (dsh-dev) mode pack — the dev
+# @khorsheed/dsh-dev-suite bundle patch: the 开发模式 (dsh-dev) mode pack — the dev
 # family's member rows plus the mode's own preset row. Member rows (and the two
 # bare overrides) are re-mounted VERBATIM from each member package's own
 # cordis.patch.yml (the canonical rows); the preset row is mirrored VERBATIM
