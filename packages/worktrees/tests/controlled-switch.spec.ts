@@ -70,12 +70,19 @@ afterEach(async () => {
 function makeRemote(service: WorktreesService): WorktreesRemoteService {
   const ctx = new Context()
   Object.assign(ctx, { worktreesCore: service })
+  // The session-bound reads name their session by id (src/panel-session.ts).
+  ctx.provide('sessions' as never, { get: (id: string) => attached.get(id) } as never)
   return new WorktreesRemoteService(ctx, {})
 }
 
-/** The minimal Agent slice the agent-bound verbs read (`id` + `session.header.cwd`). */
+/** Sessions the Remote's session-bound reads resolve by id. */
+const attached = new Map<string, unknown>()
+
+/** The minimal Agent slice the agent-bound verbs read (`id` + `session.header.cwd`); its session is attached for the reads. */
 function agentAt(cwd: string, id = sessionId): Agent {
-  return { id, session: { header: { cwd } } } as unknown as Agent
+  const session = { id, header: { cwd } }
+  attached.set(id, session)
+  return { id, session } as unknown as Agent
 }
 
 describe('agent-free query verbs', () => {
@@ -85,23 +92,23 @@ describe('agent-free query verbs', () => {
     const remote = makeRemote(service)
     const agent = agentAt(repo)
 
-    expect(await remote.summaryAt({ at: repo })).toEqual(await remote.summary(agent))
-    expect(await remote.changesAt({ at: repo })).toEqual(await remote.changes(agent))
-    expect(await remote.repoFilesAt({ at: repo })).toEqual(await remote.repoFiles(agent))
-    expect(await remote.listWorktreesAt({ at: repo })).toEqual(await remote.listWorktrees(agent))
-    expect(await remote.commitLogAt({ at: repo })).toEqual(await remote.commitLog(agent))
+    expect(await remote.summaryAt({ at: repo })).toEqual(await remote.summary(agent.session.id))
+    expect(await remote.changesAt({ at: repo })).toEqual(await remote.changes(agent.session.id))
+    expect(await remote.repoFilesAt({ at: repo })).toEqual(await remote.repoFiles(agent.session.id))
+    expect(await remote.listWorktreesAt({ at: repo })).toEqual(await remote.listWorktrees(agent.session.id))
+    expect(await remote.commitLogAt({ at: repo })).toEqual(await remote.commitLog(agent.session.id))
 
     const sha = (await git(repo, ['rev-parse', 'HEAD'])).trim()
-    expect(await remote.commitFilesAt({ at: repo, sha })).toEqual(await remote.commitFiles(agent, { sha }))
+    expect(await remote.commitFilesAt({ at: repo, sha })).toEqual(await remote.commitFiles(agent.session.id, { sha }))
     const diffRequest = { path: 'a.txt', segment: 'uncommitted' as const }
-    expect(await remote.fileDiffAt({ at: repo, ...diffRequest })).toEqual(await remote.fileDiff(agent, diffRequest))
-    expect(await remote.readFileAt({ at: repo, path: 'a.txt' })).toEqual(await remote.readFile(agent, { path: 'a.txt' }))
+    expect(await remote.fileDiffAt({ at: repo, ...diffRequest })).toEqual(await remote.fileDiff(agent.session.id, diffRequest))
+    expect(await remote.readFileAt({ at: repo, path: 'a.txt' })).toEqual(await remote.readFile(agent.session.id, { path: 'a.txt' }))
     expect(await remote.readFileAt({ at: repo, path: 'a.txt', commit: 'HEAD' }))
-      .toEqual(await remote.readFileAtCommit(agent, { path: 'a.txt', commit: 'HEAD' }))
+      .toEqual(await remote.readFileAtCommit(agent.session.id, { path: 'a.txt', commit: 'HEAD' }))
 
     writeFileSync(join(repo, 'pic.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]))
     expect(await remote.readRepoImageAt({ at: repo, path: 'pic.png' }))
-      .toEqual(await remote.readRepoImage(agent, { path: 'pic.png' }))
+      .toEqual(await remote.readRepoImage(agent.session.id, { path: 'pic.png' }))
   })
 
   it('sees the same repository from a linked-worktree anchor, and rejects non-absolute anchors', async () => {
@@ -111,7 +118,7 @@ describe('agent-free query verbs', () => {
     expect(fromLinked.isRepo).toBe(true)
     expect(fromLinked.branch).toBe('main')
     // The agent-bound twin over a session rooted at the linked worktree agrees.
-    expect(await remote.summary(agentAt(linked, 'other-session'))).toEqual(fromLinked)
+    expect(await remote.summary(agentAt(linked, 'other-session').session.id)).toEqual(fromLinked)
     await expect(remote.summaryAt({ at: 'relative/path' })).rejects.toThrow(/invalid local path/)
     await expect(remote.summaryAt({ at: '/up/../escape' })).rejects.toThrow(/invalid local path/)
   })

@@ -10,6 +10,7 @@
     "src/fold.ts",
     "src/index.ts",
     "src/open-external.ts",
+    "src/panel-session.ts",
     "src/read-surface.ts",
     "src/reveal.ts",
     "src/types.ts"

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { attach, provideAttachedSessions } from './attached-sessions.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { FsVersion, type FsInfo, type FsTarget, type FileSystem } from '@deepseek-ai/dsh-fs'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { FilePreviewService } from '@khorsheed/dsh-file-preview'
@@ -26,14 +27,15 @@ function rangeOf(text: string): ReturnType<typeof vi.fn> {
 
 function makeService(fs: Partial<FileSystem>, config = {}): FilePreviewService {
   const ctx = new Context()
+  provideAttachedSessions(ctx)
   Object.assign(ctx, { fs })
   return new FilePreviewService(ctx, config)
 }
 
 /** A loose session double carrying only the fields the service reads. */
-function makeAgent(session: { events: readonly SessionEvent[]; header: { cwd?: string | undefined } }): Agent {
+function makeAgent(session: { events: readonly SessionEvent[]; header: { cwd?: string | undefined } }): SessionId {
   const { events, ...rest } = session
-  return { session: { ...rest, snapshotEvents: () => events } as unknown as Session } as unknown as Agent
+  return attach({ ...rest, snapshotEvents: () => events })
 }
 
 /** Let cordis apply sub-fibers (the image route's `ctx.inject` loads async). */
@@ -142,6 +144,7 @@ describe('FilePreviewService.read', () => {
       readByteRange: vi.fn(),
     }
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     Object.assign(ctx, { fs })
     ctx.provide('agents', { get: (sessionId: string) => (sessionId === 'session-1' ? makeAgent({ events: [], header: { cwd: '/tmp' } }) : undefined) } as never)
     const webServer = { register: vi.fn() }
@@ -149,7 +152,7 @@ describe('FilePreviewService.read', () => {
     const service = new FilePreviewService(ctx)
     await tick()
     const session = { id: 'session-1', header: { cwd: '/tmp' } } as unknown as Session
-    const result = await service.read({ session } as unknown as Agent, 'image.PNG', new AbortController().signal)
+    const result = await service.read(attach(session), 'image.PNG', new AbortController().signal)
     expect(result).toEqual({
       path: 'image.PNG',
       kind: 'image',
@@ -167,13 +170,14 @@ describe('FilePreviewService.read', () => {
       readByteRange: vi.fn(),
     }
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     Object.assign(ctx, { fs })
     ctx.provide('agents', { get: () => makeAgent({ events: [], header: { cwd: '/tmp' } }) } as never)
     ctx.provide('webServer', { register: vi.fn() } as never)
     const service = new FilePreviewService(ctx)
     await tick()
     const session = { id: 'session-2', header: { cwd: '/tmp' } } as unknown as Session
-    const result = await service.read({ session } as unknown as Agent, 'pic.svg', new AbortController().signal)
+    const result = await service.read(attach(session), 'pic.svg', new AbortController().signal)
     expect(result).toEqual({ path: 'pic.svg', kind: 'image', url: '/file-preview-image/session-2/pic.svg' })
   })
 
@@ -184,11 +188,12 @@ describe('FilePreviewService.read', () => {
       readByteRange: vi.fn(),
     }
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     Object.assign(ctx, { fs })
     const service = new FilePreviewService(ctx)
     await tick()
     const session = { id: 'session-3', header: { cwd: '/tmp' } } as unknown as Session
-    const agent = { session } as unknown as Agent
+    const agent = attach(session)
     expect(await service.read(agent, 'late.svg', new AbortController().signal)).toEqual({ path: 'late.svg', kind: 'binary', size: 42 })
 
     const unregister = vi.fn()

@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs'
+import { attach, provideAttachedSessions } from './attached-sessions.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { normalize } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { createToolResultMessage, type ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
@@ -116,12 +117,13 @@ const flush = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0)
  * collector replays the log on session/created exactly as on a host restart. */
 async function makeServiceSide(fs: FileSystem, events: readonly SessionEvent[]) {
   const ctx = new Context()
+  provideAttachedSessions(ctx)
   Object.assign(ctx, { fs })
   const service = new FilePreviewService(ctx, { maxReadBytes: 64 })
   const session = fakeSession('s1', '/work', events)
   ctx.emit('session/created', session)
   await flush()
-  const agent = { session } as unknown as Agent
+  const agent = attach(session)
   return { service, agent }
 }
 
@@ -194,6 +196,7 @@ describe('createFilePreviewReadSurface — parity with the live path', () => {
       toolResult(14, 13, { diffs: [] }, 4, 2),
     ]
     const ctx = new Context()
+    provideAttachedSessions(ctx)
     Object.assign(ctx, { fs })
     const service2 = new FilePreviewService(ctx, { maxReadBytes: 64 })
     const session2 = fakeSession('s2', '/work', escapeEvents)
@@ -201,7 +204,7 @@ describe('createFilePreviewReadSurface — parity with the live path', () => {
     await flush()
     const surface2 = createFilePreviewReadSurface({ events: () => escapeEvents, cwd: '/work', fs, maxReadBytes: 64 })
     const surfaceList = await surface2.list()
-    expect(surfaceList).toEqual(await service2.list({ session: session2 } as unknown as Agent))
+    expect(surfaceList).toEqual(await service2.list(attach(session2)))
     expect(surfaceList.entries.some(entry => entry.path === '../escape.txt')).toBe(false)
     expect((await surface2.turnFiles()).turns.some(group => group.files.some(file => file.path === '../escape.txt'))).toBe(false)
   })

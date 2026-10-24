@@ -6,14 +6,16 @@
  * every receipt carries the resolved absolute and workspace-relative
  * spellings back).
  *
- * The MUTATING methods take the calling `agent` first (the wire's lookup
- * convention): the pad writes are fenced by the caller's own file policy and
- * workspace, which only the session knows. Reads take no agent — a fence is a
+ * The MUTATING methods take the calling session's id first, resolved with
+ * {@link panelSession} (subagent sessions included): the pad writes are fenced
+ * by the caller's own file policy and workspace, which only the session
+ * knows. Reads take no session — a fence is a
  * write fence, so a pad stays browsable for a session that is only being read.
  *
  * @module @khorsheed/dsh-canvas
  */
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { panelSession } from './panel-session.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { CanvasService } from './service.ts'
@@ -82,35 +84,35 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
 
   /**
    * Create one item; an existing title is refused rather than overwritten.
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - workspace root, kind, title, and initial body.
    * @returns the new item's receipt, or the failure code.
    */
   @Remote('create')
-  create(agent: Agent, request: CanvasCreateRequest): Promise<CanvasWriteResult> {
-    return this.store.create(request, agent.session)
+  async create(sessionId: SessionId, request: CanvasCreateRequest): Promise<CanvasWriteResult> {
+    return this.store.create(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Overwrite one item under the version guard from the last read.
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - workspace root, name, body, and the version last read.
    * @returns the write receipt, or the failure code.
    */
   @Remote('write')
-  write(agent: Agent, request: CanvasWriteRequest): Promise<CanvasWriteResult> {
-    return this.store.write(request, agent.session)
+  async write(sessionId: SessionId, request: CanvasWriteRequest): Promise<CanvasWriteResult> {
+    return this.store.write(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Hide one item from the list, or restore it — the file is never touched.
-   * @param agent - the calling session's agent; its session fences the index write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the index write.
    * @param request - workspace root, name, and the target archived state.
    * @returns the receipt, or the failure code.
    */
   @Remote('setArchived')
-  setArchived(agent: Agent, request: CanvasArchiveRequest): Promise<CanvasArchiveResult> {
-    return this.store.setArchived(request, agent.session)
+  async setArchived(sessionId: SessionId, request: CanvasArchiveRequest): Promise<CanvasArchiveResult> {
+    return this.store.setArchived(request, await panelSession(this.ctx, sessionId))
   }
 
   /* ------------------------------------------------------ the canvas space (v2, M1) */
@@ -123,13 +125,13 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
 
   /**
    * Create one canvas (a topic, optionally with workspaces attached).
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - topic title and optional attached workspace paths.
    * @returns the new board and its first freshness token, or the failure code.
    */
   @Remote('createCanvas')
-  createCanvas(agent: Agent, request: BoardCreateRequest): Promise<BoardMutationResult> {
-    return this.board.createCanvas(request, agent.session)
+  async createCanvas(sessionId: SessionId, request: BoardCreateRequest): Promise<BoardMutationResult> {
+    return this.board.createCanvas(request, await panelSession(this.ctx, sessionId))
   }
 
   /** Read one board with the freshness token a later mutation must present. */
@@ -140,142 +142,142 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
 
   /**
    * Add one user card (createdBy user, straight to kept).
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id, kind, text, and optional source.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('putCard')
-  putCard(agent: Agent, request: BoardPutCardRequest): Promise<BoardMutationResult> {
-    return this.board.putCard(request, agent.session)
+  async putCard(sessionId: SessionId, request: BoardPutCardRequest): Promise<BoardMutationResult> {
+    return this.board.putCard(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Edit one card: text, a status transition, or a question-state transition.
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id, card id, and the fields to change.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('patchCard')
-  patchCard(agent: Agent, request: BoardPatchCardRequest): Promise<BoardMutationResult> {
-    return this.board.patchCard(request, agent.session)
+  async patchCard(sessionId: SessionId, request: BoardPatchCardRequest): Promise<BoardMutationResult> {
+    return this.board.patchCard(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Clear the 「新」 mark: the given cards, or every unseen card.
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id and, optionally, the card ids.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('markSeen')
-  markSeen(agent: Agent, request: BoardMarkSeenRequest): Promise<BoardMutationResult> {
-    return this.board.markSeen(request, agent.session)
+  async markSeen(sessionId: SessionId, request: BoardMarkSeenRequest): Promise<BoardMutationResult> {
+    return this.board.markSeen(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Comment on one card.
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id, card id, text, and the author (default user).
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('addComment')
-  addComment(agent: Agent, request: BoardAddCommentRequest): Promise<BoardMutationResult> {
-    return this.board.addComment(request, agent.session)
+  async addComment(sessionId: SessionId, request: BoardAddCommentRequest): Promise<BoardMutationResult> {
+    return this.board.addComment(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Archive a canvas from the space list, or restore it (the reversible half).
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id and the target archived state.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('setWorkspace')
-  setWorkspace(agent: Agent, request: BoardWorkspaceRequest): Promise<BoardMutationResult> {
-    return this.board.setWorkspace(request, agent.session)
+  async setWorkspace(sessionId: SessionId, request: BoardWorkspaceRequest): Promise<BoardMutationResult> {
+    return this.board.setWorkspace(request, await panelSession(this.ctx, sessionId))
   }
 
   @Remote('archiveCanvas')
-  archiveCanvas(agent: Agent, request: BoardArchiveRequest): Promise<BoardMutationResult> {
-    return this.board.archiveCanvas(request, agent.session)
+  async archiveCanvas(sessionId: SessionId, request: BoardArchiveRequest): Promise<BoardMutationResult> {
+    return this.board.archiveCanvas(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Delete one canvas for good (the operator's confirmed gesture; no agent
    * tool is built over this verb).
-   * @param agent - the calling session's agent; its session supplies the mode.
+   * @param sessionId - the calling session (see panel-session.ts); it supplies the mode.
    * @param request - the canvas id.
    * @returns the receipt, or the failure code.
    */
   @Remote('deleteCanvas')
-  deleteCanvas(agent: Agent, request: BoardDeleteCanvasRequest): Promise<BoardDeleteCanvasResult> {
-    return this.board.deleteCanvas(request, agent.session)
+  async deleteCanvas(sessionId: SessionId, request: BoardDeleteCanvasRequest): Promise<BoardDeleteCanvasResult> {
+    return this.board.deleteCanvas(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Delete one card for good, with every line touching it (operator-only).
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id and card id.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('deleteCard')
-  deleteCard(agent: Agent, request: BoardDeleteCardRequest): Promise<BoardMutationResult> {
-    return this.board.deleteCard(request, agent.session)
+  async deleteCard(sessionId: SessionId, request: BoardDeleteCardRequest): Promise<BoardMutationResult> {
+    return this.board.deleteCard(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Write one canvas's category catalog (rename / add / retire), archiving the
    * cards the caller filed away in the same rewrite.
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id, the desired catalog, the cards to archive.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('setCategories')
-  setCategories(agent: Agent, request: BoardSetCategoriesRequest): Promise<BoardMutationResult> {
-    return this.board.setCategories(request, agent.session)
+  async setCategories(sessionId: SessionId, request: BoardSetCategoriesRequest): Promise<BoardMutationResult> {
+    return this.board.setCategories(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Write one type's brief — the type page's reference draft, text and drawings.
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id, category id, the brief and its drawings.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('setTypeBrief')
-  setTypeBrief(agent: Agent, request: BoardSetTypeBriefRequest): Promise<BoardMutationResult> {
-    return this.board.setTypeBrief(request, agent.session)
+  async setTypeBrief(sessionId: SessionId, request: BoardSetTypeBriefRequest): Promise<BoardMutationResult> {
+    return this.board.setTypeBrief(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Adopt or reject the agent's pending type proposal.
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id, category id, the decision.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('decideType')
-  decideType(agent: Agent, request: BoardDecideTypeRequest): Promise<BoardMutationResult> {
-    return this.board.decideType(request, agent.session)
+  async decideType(sessionId: SessionId, request: BoardDecideTypeRequest): Promise<BoardMutationResult> {
+    return this.board.decideType(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Write one canvas's layout — the places, the lanes and the lines, each part
    * optional (`[]` clears, absent leaves alone).
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id and the layout parts that changed.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('setLayout')
-  setLayout(agent: Agent, request: BoardSetLayoutRequest): Promise<BoardMutationResult> {
-    return this.board.setLayout(request, agent.session)
+  async setLayout(sessionId: SessionId, request: BoardSetLayoutRequest): Promise<BoardMutationResult> {
+    return this.board.setLayout(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Mark the canvas this session's tab has open (the main-session tools' target).
-   * @param agent - the calling session's agent; its session records the focus.
+   * @param sessionId - the calling session (see panel-session.ts); it records the focus.
    * @param request - the canvas id.
    * @returns the receipt, or the failure code.
    */
   @Remote('focusCanvas')
-  focusCanvas(agent: Agent, request: BoardFocusRequest): Promise<BoardFocusResult> {
-    return this.board.focusCanvas(request, agent.session)
+  async focusCanvas(sessionId: SessionId, request: BoardFocusRequest): Promise<BoardFocusResult> {
+    return this.board.focusCanvas(request, await panelSession(this.ctx, sessionId))
   }
 
   /* ---------------------------------------------------------------- genres (创作体裁) */
@@ -288,34 +290,34 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
 
   /**
    * Select a genre for one canvas, or clear it with `null`.
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id and genre id.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('selectGenre')
-  selectGenre(agent: Agent, request: BoardSelectGenreRequest): Promise<BoardMutationResult> {
-    return this.board.selectGenre(request, agent.session)
+  async selectGenre(sessionId: SessionId, request: BoardSelectGenreRequest): Promise<BoardMutationResult> {
+    return this.board.selectGenre(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * The canvas the calling session is bound to, or null.
-   * @param agent - the calling session's agent.
+   * @param sessionId - the calling session (see panel-session.ts).
    * @returns the canvas id, or null.
    */
   @Remote('boundCanvas')
-  async boundCanvas(agent: Agent): Promise<string | null> {
-    return (await this.board.boundCanvasId(String(agent.session.id))) ?? null
+  async boundCanvas(sessionId: SessionId): Promise<string | null> {
+    return (await this.board.boundCanvasId(String(sessionId))) ?? null
   }
 
   /**
    * Bind the calling session to a canvas with a genre (`null` unbinds).
-   * @param agent - the calling session's agent; its session is the one bound.
+   * @param sessionId - the calling session (see panel-session.ts); it is the one bound.
    * @param request - the canvas id, or null.
    * @returns the canvas now bound, or the failure code.
    */
   @Remote('bindCanvas')
-  bindCanvas(agent: Agent, request: BoardBindRequest): Promise<BoardBindResult> {
-    return this.board.bindSession(request, agent.session)
+  async bindCanvas(sessionId: SessionId, request: BoardBindRequest): Promise<BoardBindResult> {
+    return this.board.bindSession(request, await panelSession(this.ctx, sessionId))
   }
 
   /* ---------------------------------------------------------------- manuscripts */
@@ -329,48 +331,48 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   /**
    * Create a manuscript, or rewrite one at the version the editor loaded
    * (`stale` with the current version when someone wrote in between).
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - the body, and for a rewrite the id and base version.
    * @returns the manuscript, the fresh board and token, or the failure code.
    */
   @Remote('writeManuscript')
-  writeManuscript(agent: Agent, request: ManuscriptWriteRequest): Promise<ManuscriptWriteResult> {
-    return this.board.writeManuscript(request, agent.session, 'user')
+  async writeManuscript(sessionId: SessionId, request: ManuscriptWriteRequest): Promise<ManuscriptWriteResult> {
+    return this.board.writeManuscript(request, await panelSession(this.ctx, sessionId), 'user')
   }
 
   /**
    * Rename a manuscript or move it between 「写作中」 and 「定稿」.
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id, manuscript id, the fields that changed.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('patchManuscript')
-  patchManuscript(agent: Agent, request: ManuscriptPatchRequest): Promise<BoardMutationResult> {
-    return this.board.patchManuscript(request, agent.session)
+  async patchManuscript(sessionId: SessionId, request: ManuscriptPatchRequest): Promise<BoardMutationResult> {
+    return this.board.patchManuscript(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Delete a manuscript and its body files for good.
-   * @param agent - the calling session's agent; its session fences the write.
+   * @param sessionId - the calling session (see panel-session.ts); it fences the write.
    * @param request - canvas id and manuscript id.
    * @returns the fresh board and token, or the failure code.
    */
   @Remote('deleteManuscript')
-  deleteManuscript(agent: Agent, request: ManuscriptDeleteRequest): Promise<BoardMutationResult> {
-    return this.board.deleteManuscript(request, agent.session)
+  async deleteManuscript(sessionId: SessionId, request: ManuscriptDeleteRequest): Promise<BoardMutationResult> {
+    return this.board.deleteManuscript(request, await panelSession(this.ctx, sessionId))
   }
 
   /**
    * Save a manuscript into an attached workspace as `<title>.md` plus
    * `<title>.assets/`; `exists` / `changed` ask the caller to confirm with
    * `overwrite`.
-   * @param agent - the calling session's agent; its session names the attached workspaces.
+   * @param sessionId - the calling session (see panel-session.ts); it names the attached workspaces.
    * @param request - canvas id, manuscript id, the workspace, the overwrite flag.
    * @returns the saved path and image counts, or the failure code.
    */
   @Remote('exportManuscript')
-  exportManuscript(agent: Agent, request: ManuscriptExportRequest): Promise<ManuscriptExportResult> {
-    return this.board.exportManuscript(request, agent.session)
+  async exportManuscript(sessionId: SessionId, request: ManuscriptExportRequest): Promise<ManuscriptExportResult> {
+    return this.board.exportManuscript(request, await panelSession(this.ctx, sessionId))
   }
 
   /* ---------------------------------------------------------------- images (§10.3) */

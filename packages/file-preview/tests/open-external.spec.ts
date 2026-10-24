@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { attach, provideAttachedSessions } from './attached-sessions.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { FsVersion, type FsInfo, type FsTarget, type FileSystem } from '@deepseek-ai/dsh-fs'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { FilePreviewService } from '@khorsheed/dsh-file-preview'
@@ -18,13 +19,14 @@ function makeService(
   deps: { openExternalNative?: (path: string, app: string, signal: AbortSignal) => Promise<void> } = {},
 ): FilePreviewService {
   const ctx = new Context()
+  provideAttachedSessions(ctx)
   Object.assign(ctx, { fs })
   return new FilePreviewService(ctx, {}, deps)
 }
 
 /** A loose session double carrying only the fields the service reads. */
-function makeAgent(session: { header: { cwd?: string | undefined } }): Agent {
-  return { session: session as unknown as Session } as unknown as Agent
+function makeAgent(session: { header: { cwd?: string | undefined } }): SessionId {
+  return attach(session)
 }
 
 const target = { displayPath: 'notes.md' } as unknown as FsTarget

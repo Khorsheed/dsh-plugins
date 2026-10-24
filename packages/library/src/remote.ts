@@ -4,8 +4,8 @@
  * Every method is a one-line delegation to {@link LibraryService}; the value it
  * returns is the BARE domain value (a refusal is a value inside the protocol's
  * own result envelope, never a second `{ ok }` object nested inside the first).
- * Session-bound methods take the calling `agent` first (the canvas precedent):
- * its session is the one bound.
+ * Session-bound methods take the calling session's id first (the canvas
+ * precedent): that session is the one bound.
  *
  * v5: the shelf unified — books are resources (`getResource` / `putResource` /
  * `removeResource`), quizzes are assessments (`listAssessments` /
@@ -14,7 +14,7 @@
  * @module @khorsheed/dsh-library/remote
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { LibraryService } from './service.ts'
 import type {
@@ -299,14 +299,14 @@ export class LibraryRemoteService extends TypertRemoteService<LibraryRemoteConfi
 
   /** The calling session's binding, or null. */
   @Remote('boundTarget')
-  async boundTarget(agent: Agent): Promise<LibraryBinding | null> {
-    return this.core.getBinding(String(agent.session.id)) ?? null
+  async boundTarget(sessionId: SessionId): Promise<LibraryBinding | null> {
+    return this.core.getBinding(String(sessionId)) ?? null
   }
 
   /** Bind the calling session to a project / resource (null unbinds). */
   @Remote('bindTarget')
-  bindTarget(agent: Agent, request: { binding: LibraryBinding | null }): Promise<LibraryOutcome<{ binding: LibraryBinding | null }>> {
-    return this.core.setBinding(String(agent.session.id), request.binding)
+  bindTarget(sessionId: SessionId, request: { binding: LibraryBinding | null }): Promise<LibraryOutcome<{ binding: LibraryBinding | null }>> {
+    return this.core.setBinding(String(sessionId), request.binding)
   }
 
   /* --------------------------------------------------------------- events */
