@@ -1333,15 +1333,15 @@ export function appendCodexTranscriptLine(
 ): boolean {
   childSession.append('step/start', { turn, step })
   if (line.kind === 'tool') {
-    // Tool lines never carry the round's usage — the callers attach usage to
-    // the round's final line, which is an agent message on every well-formed
-    // stream.
+    // A tool-only call's usage rides the advertising assistant/message (the
+    // tool/call and tool/result events themselves have no usage slot).
     const args = line.args ?? ''
     childSession.append('assistant/message', {
       turn,
       step,
       message: codexAssistantEvent([{ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: args }]),
       stream: [],
+      ...usage === undefined ? {} : { usage },
     }, { surfaceOp: 'append' })
     const call = childSession.append('tool/call', {
       turn,

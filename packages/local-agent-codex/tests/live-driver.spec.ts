@@ -430,6 +430,47 @@ describe('codex live driver rounds', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
+  it('stamps each API call\'s own usage on its last line, and the cumulative total on the settled report', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-percall'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // Call 1: an intermediate message plus a tool call, closed by its usage.
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'm1', type: 'agentMessage', text: '先看工具' } })
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't1', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a', status: 'completed' } })
+    fake.notify('thread/tokenUsage/updated', {
+      threadId: 'thread-1', turnId: 'turn-1',
+      tokenUsage: {
+        last: { inputTokens: 10, cachedInputTokens: 6, outputTokens: 3, reasoningOutputTokens: 0, totalTokens: 19 },
+        total: { inputTokens: 10, cachedInputTokens: 6, outputTokens: 3, reasoningOutputTokens: 0, totalTokens: 19 },
+      },
+    })
+    // Call 2: the final answer and its own usage; the cumulative total grows.
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'm2', type: 'agentMessage', text: '结论', phase: 'final_answer' } })
+    fake.notify('thread/tokenUsage/updated', {
+      threadId: 'thread-1', turnId: 'turn-1',
+      tokenUsage: {
+        last: { inputTokens: 20, cachedInputTokens: 10, outputTokens: 4, reasoningOutputTokens: 0, totalTokens: 34 },
+        total: { inputTokens: 30, cachedInputTokens: 16, outputTokens: 7, reasoningOutputTokens: 0, totalTokens: 53 },
+      },
+    })
+    fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(3) }, { timeout: 5_000 })
+    const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+    // The intermediate text carries nothing (its call's usage rides the call's
+    // LAST line — the tool line's advertising message); no double counting.
+    expect((assistant[0]!.data as { usage?: unknown }).usage).toBeUndefined()
+    expect(assistant[1]!.data).toMatchObject({ usage: { inputTokens: 4, outputTokens: 3, cacheReadTokens: 6 } })
+    expect(assistant[2]!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 10 } })
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    // The settled report carries the round total (30 - 16 uncached input).
+    expect(m.settles[0]?.round).toMatchObject({ usage: { inputTokens: 14, outputTokens: 7, cacheReadTokens: 16 } })
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
   it('reports the settled round’s observation read back from its rollout file', async () => {
     // The live drive's half of the exec path's onRoundSettled: the app-server
     // wire names no model, so the settle reads the round's own rollout file —
