@@ -25,3 +25,22 @@ export function rotateMobileProbe(probe: string, command: string, next: string):
   if (!previous) throw new Error('Mobile origin binding missing')
   return probe.replaceAll(quickTunnelOrigin(previous), quickTunnelOrigin(next))
 }
+
+/** Retire a static Quick Tunnel binding (the mobile plugin now manages its own
+ * tunnel): drop exactly the bound origin variable and its one trust flag. */
+export function clearMobileCommand(command: string): string {
+  const env = /(?:^|\s)DSH_MOBILE_PUBLIC_ORIGIN=(['"]?)(https:\/\/[a-z0-9.-]+)\1(?=\s|$)/g
+  const matches = [...command.matchAll(env)]
+  if (matches.length !== 1) throw new Error('Launch command must bind exactly one mobile public origin')
+  const host = new URL(quickTunnelOrigin(matches[0][2])).host.replaceAll('.', '\\.')
+  const trusted = new RegExp(`\\s+--trusted-host(?:=|\\s+)(['"]?)${host}\\1(?=\\s|$)`, 'g')
+  if ([...command.matchAll(trusted)].length !== 1) throw new Error('Launch command must trust exactly the current mobile domain')
+  return command.replace(env, '').replace(trusted, '').replace(/^\s+/, '')
+}
+
+/** Candidate probes carry the origin variable but may lack the trust flag. */
+export function clearMobileProbe(probe: string): string {
+  return probe.replace(/(^|\s)DSH_MOBILE_PUBLIC_ORIGIN=(['"]?)https:\/\/[a-z0-9.-]+\2(?=\s|$)/g, (_match, lead) => lead)
+    .replace(/\s+--trusted-host(?:=|\s+)(['"]?)[a-z0-9-]+(?:-[a-z0-9]+)*\.trycloudflare\.com\1(?=\s|$)/g, '')
+    .replace(/^\s+/, '').replace(/ {2,}/g, ' ')
+}

@@ -47,6 +47,8 @@
  *      the next restart overwrites it (silently lost).
  *   --no-restart    install/refresh + diagnostic preflight; do not restart
  *   --mobile-origin HTTPS  rotate an existing Quick Tunnel binding through reconfigure
+ *   --clear-mobile-origin  retire the static Quick Tunnel binding (DSH_MOBILE_PUBLIC_ORIGIN
+ *      and its --trusted-host) through reconfigure; the mobile plugin manages its own tunnel
  * @module scripts/deploy-3080
  */
 
@@ -56,7 +58,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpat
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { quickTunnelOrigin, rotateMobileCommand, rotateMobileProbe } from './mobile-tunnel-config.mts'
+import { clearMobileCommand, clearMobileProbe, quickTunnelOrigin, rotateMobileCommand, rotateMobileProbe } from './mobile-tunnel-config.mts'
 import { checkDeploymentLinks } from './dependency-links.mts'
 import { familySpecsFor, formatFamilySpecs, loadWorkspaceVersions } from './pack-dist.ts'
 import { RETIRED_PACKAGES } from './retired-packages.ts'
@@ -90,6 +92,7 @@ let versionOverride
 let initiator
 let noRestart = false
 let mobileOrigin
+let clearMobile = false
 for (let i = 0; i < args.length; i++) {
   const a = args[i]
   if (a === '--package') packages.push(args[++i])
@@ -103,9 +106,11 @@ for (let i = 0; i < args.length; i++) {
   else if (a === '--initiator') initiator = args[++i]
   else if (a === '--no-restart') noRestart = true
   else if (a === '--mobile-origin') mobileOrigin = quickTunnelOrigin(args[++i])
+  else if (a === '--clear-mobile-origin') clearMobile = true
   else usage(`unknown argument ${a}`)
 }
-if (mobileOrigin && (noRestart || !packages.includes('packages/mobile'))) usage('--mobile-origin requires packages/mobile and a guarded restart')
+if (mobileOrigin && clearMobile) usage('--mobile-origin and --clear-mobile-origin are mutually exclusive')
+if ((mobileOrigin || clearMobile) && (noRestart || !packages.includes('packages/mobile'))) usage('--mobile-origin / --clear-mobile-origin require packages/mobile and a guarded restart')
 if (packages.length === 0) usage('--package <dir> is required (repeatable)')
 if (versionOverride !== undefined && packages.length > 1) usage('--version only makes sense with a single package')
 
@@ -137,15 +142,15 @@ function sha256(path) {
 function restartVerb() {
   const scheduleExit = ['schedule-exit', '--port', PORT, '--delay-ms', '5000', '--profile', 'web', '--repo', HARNESS, '--preflight-timeout-ms', '300000', ...(initiator === undefined ? [] : ['--initiator', initiator])]
   const specPath = join(DSH_HOME, 'state', 'launch-spec.json')
-  if (!existsSync(specPath)) { if (mobileOrigin) throw new Error('Mobile rotation requires a supervised launch spec'); return scheduleExit }
+  if (!existsSync(specPath)) { if (mobileOrigin || clearMobile) throw new Error('Mobile rotation requires a supervised launch spec'); return scheduleExit }
   let active
-  try { active = JSON.parse(readFileSync(specPath, 'utf8')).active } catch { if (mobileOrigin) throw new Error('Cannot read mobile launch spec'); return scheduleExit }
+  try { active = JSON.parse(readFileSync(specPath, 'utf8')).active } catch { if (mobileOrigin || clearMobile) throw new Error('Cannot read mobile launch spec'); return scheduleExit }
   const pf = active?.preflight
-  if (typeof pf?.runnerPath !== 'string' || typeof pf?.runnerSha256 !== 'string' || !existsSync(pf.runnerPath)) { if (mobileOrigin) throw new Error('Mobile rotation requires a bound preflight runner'); return scheduleExit }
+  if (typeof pf?.runnerPath !== 'string' || typeof pf?.runnerSha256 !== 'string' || !existsSync(pf.runnerPath)) { if (mobileOrigin || clearMobile) throw new Error('Mobile rotation requires a bound preflight runner'); return scheduleExit }
   const runnerDrift = sha256(pf.runnerPath) !== pf.runnerSha256
   const anchorDrift = typeof pf.installAnchor === 'string' && typeof pf.installAnchorSha256 === 'string'
     && existsSync(pf.installAnchor) && sha256(pf.installAnchor) !== pf.installAnchorSha256
-  const nextCommand = mobileOrigin ? rotateMobileCommand(active.command, mobileOrigin) : active.command
+  const nextCommand = mobileOrigin ? rotateMobileCommand(active.command, mobileOrigin) : clearMobile ? clearMobileCommand(active.command) : active.command
   const originDrift = nextCommand !== active.command
   if (!runnerDrift && !anchorDrift && !originDrift) return scheduleExit
   if (typeof active?.command !== 'string' || typeof pf.installAnchor !== 'string' || typeof pf.candidateProbeCommand !== 'string') {
@@ -170,7 +175,7 @@ function restartVerb() {
     '--preflight-surface', pf.surface ?? 'built',
     '--preflight-runner', pf.runnerPath,
     '--preflight-install-anchor', pf.installAnchor,
-    '--candidate-probe-command', mobileOrigin ? rotateMobileProbe(pf.candidateProbeCommand, active.command, mobileOrigin) : pf.candidateProbeCommand,
+    '--candidate-probe-command', mobileOrigin ? rotateMobileProbe(pf.candidateProbeCommand, active.command, mobileOrigin) : clearMobile ? clearMobileProbe(pf.candidateProbeCommand) : pf.candidateProbeCommand,
     '--preflight-timeout-ms', '300000',
   ]
 }
@@ -228,9 +233,10 @@ function verifyRetreatedMember(installed, ownerName, member, expectedVersion) {
 // Diagnose existing damage before build work or any deployment writes.
 checkDeploymentLinks(DSH_HOME, HARNESS)
 
-if (mobileOrigin) {
+if (mobileOrigin || clearMobile) {
   const active = JSON.parse(readFileSync(join(DSH_HOME, 'state', 'launch-spec.json'), 'utf8')).active
-  rotateMobileCommand(active.command, mobileOrigin)
+  if (mobileOrigin) rotateMobileCommand(active.command, mobileOrigin)
+  else clearMobileCommand(active.command)
 }
 
 // Multi-agent deploy lock: two concurrent deploys would race the profile and
