@@ -18,6 +18,7 @@
     "src/withdraw.ts",
     "src/client/index.ts",
     "src/client/chat-hook.ts",
+    "src/client/fold.ts",
     "src/client/backfill.ts",
     "src/client/dom-hider.ts",
     "src/client/edit-in-place.ts",

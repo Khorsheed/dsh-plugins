@@ -218,6 +218,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         withdraw: () => withdraw(targetSeq),
       }, ctx.sessions.binding(sessionId)?.session.getSnapshot().running === true),
       backfillDraft: (text) => { backfill(sessionId, text) },
+      foldScope: sessionId,
       modelsAvailable: directory !== undefined,
       loadModels: () => {
         // Load failures surface on the directory store itself.

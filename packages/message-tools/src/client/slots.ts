@@ -54,6 +54,8 @@ export interface MessageToolsInjected {
    * the same path.
    */
   backfillDraft: (text: string) => void
+  /** The session id the fold choices are remembered under. */
+  foldScope: string
 }
 
 /** Full props of the shadowed 'user'/'steering'/'message-tools-edited'/'message-tools-restored' renderer (all keys share it). */

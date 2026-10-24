@@ -8,7 +8,8 @@
  * gallery surface (see message-images.ts): the pre-0.2.1 `renderMessageImages`
  * owner prop when the host still passes it, otherwise the root-scoped
  * `conversation.images.content` factory. User messages inside a withdrawn
- * span render nothing; the withdrawal divider marks the spot.
+ * span render nothing; the withdrawal divider marks the spot. A long message
+ * folds behind a fade with 展开全部 / 收起 (see fold.ts).
  */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
@@ -20,6 +21,7 @@ import { foldHiddenRanges, isSeqHidden } from './withdrawn-node.ts'
 import { chatHookOf, type ChatSlice } from './chat-hook.ts'
 import { renderImageGallery } from './message-images.ts'
 import { withdrawAndBackfill } from './withdraw-backfill.ts'
+import { foldable, foldChoices, selectNewestUserSeq } from './fold.ts'
 import { ModelChip, type ModelChipProps } from './ModelChip.tsx'
 import type { UserMessageViewProps } from './slots.ts'
 import css from './UserMessageView.module.css'
@@ -178,13 +180,17 @@ function InlineEditor({ initial, busy, t, onSave, onCancel, models }: {
 
 /** The shadowed user-message view: bubble plus copy/edit/withdraw actions. */
 export const UserMessageView = memo(function UserMessageView({
-  node, renderMessageImages, loadImage, renderFactorySlot, t, editMessage, withdrawMessage, backfillDraft,
+  node, renderMessageImages, loadImage, renderFactorySlot, t, editMessage, withdrawMessage, backfillDraft, foldScope,
   useModelDirectory, modelsAvailable, loadModels, selectModel,
   ...standard
 }: UserMessageViewProps): ReactNode {
   // Chat data lives in the `useChat` session standard prop on host 0.1.2
   // (the helper degrades to the frozen empty snapshot without it).
-  const ranges = chatHookOf(standard as Pick<UserMessageViewProps, 'useChat'>)(selectHiddenRanges, shallowEqual)
+  const useChat = chatHookOf(standard as Pick<UserMessageViewProps, 'useChat'>)
+  const ranges = useChat(selectHiddenRanges, shallowEqual)
+  const newestUserSeq = useChat(selectNewestUserSeq)
+  // The human's own choice for this message (remembered), else the default.
+  const [chosen, setChosen] = useState<boolean | undefined>(() => foldChoices.read(foldScope)[String(node.data.seq)])
   const [editing, setEditing] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [acknowledged, setAcknowledged] = useState(false)
@@ -196,6 +202,14 @@ export const UserMessageView = memo(function UserMessageView({
   const { text, images, rest } = contentParts(data.content)
   const truncated = (total: number): string => t('json.truncated', { total })
   const showBubble = text !== '' || rest.length > 0
+  const collapsible = foldable(text)
+  // The newest user message reads unfolded until the next one arrives.
+  const expanded = chosen ?? data.seq >= newestUserSeq
+  const clamped = collapsible && !expanded
+  const toggle = (next: boolean): void => {
+    setChosen(next)
+    foldChoices.write(foldScope, data.seq, next)
+  }
 
   const saveEdit = (newText: string): void => {
     setBusy(true)
@@ -250,12 +264,18 @@ export const UserMessageView = memo(function UserMessageView({
         )}
         {images.length > 0 ? renderImageGallery(renderMessageImages, renderFactorySlot, loadImage, { images, align: 'end' }) : null}
         {showBubble && (
-          <div className={css.bubble}>
+          <div className={clamped ? `${css.bubble} ${css.clamped}` : css.bubble}>
             {projectUserText(text)}
             {rest.map((block, index) => (
               <JsonBlock key={index} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />
             ))}
+            {clamped && <div className={css.fade} aria-hidden onClick={() => { toggle(true) }} />}
           </div>
+        )}
+        {showBubble && collapsible && (
+          <button type="button" className={css.foldToggle} onClick={() => { toggle(!expanded) }}>
+            {expanded ? t('fold.collapse') : t('fold.expand')}
+          </button>
         )}
       </div>
       <div className={css.actions}>
