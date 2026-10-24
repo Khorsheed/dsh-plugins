@@ -12,7 +12,7 @@ Status: implemented
 - **一轮只装它发起的运行。** 运行来自 `room/run-state`（`runId` 为 `<dispatchSeq>:<memberId>`）。每个运行的视图是它子会话的 scope，沿用子会话自己的 scope id，只装这一次运行的请求：优先按运行记录的子会话 turn（`childTurn`），否则取运行时间段内（±2 秒）开始的请求。子会话按 `childSessionId` 找，否则取登记时间离运行开始最近的子 agent（10 秒内）。还没有子会话的运行显示为空视图。
 - **保留 turn 之外的子会话。** `reconstructSession` 把放不进任何 turn 的委派收进一个隐藏容器（`purpose: 'room-members'`）；store 把它们的 scope 放进一个从不列出的隐藏 turn，子会话请求照常落进来，轮次再从中切分。实时通道里 turn 之外的 catalog 事件进同一个容器。
 - **整个会话一套编号。** 主会话 turn（无论是否载入，按日志区间）与房间轮次按时间统一编号（`TurnListItem.ordinal`、`ListTurnsResult.total`）。未载入的区段由 store 按这套编号给出（`ListTurnsResult.unloaded`，两端附带宿主 turn 号供窗口移动使用）。会话地图、query 行、轮次菜单、`N / 总数` 切换器和 ‹ / › 步进都用这套编号；载入窗口仍按宿主 turn 寻址。
-- **会话地图。** 一轮里成员的请求放在主会话 turn 原本的位置。协调者交接（`room/coordinator`）在其后第一个 turn 之前画一条虚线，标注「<名字> 接手」。
+- **会话地图。** 一轮里成员的请求放在主会话 turn 原本的位置。协调者交接（`room/coordinator`）在其后第一个 turn 之前画一条虚线，标注「<名字> 接手」。同一个间隙里有多次交接时只画一条线，标注到那一轮为止实际接手的成员，加上之前几次的计数（「剪刀手五号 接手 +1」）；悬停提示列出完整的交接链。原来每次交接各画一条、相隔 10px，标注会叠在一起看不清。
 - **缓存命中未知。** usage 里没有 `cacheReadTokens` 的请求，命中率显示「—」、地图柱子显示灰色，而不是红色的 0%。部分来源（codex、claude-code）暂未上报缓存读取。
 
 ## Alternatives considered

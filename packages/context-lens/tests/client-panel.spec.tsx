@@ -173,12 +173,14 @@ interface BenchOptions {
   readonly range?: { first: number; last: number } | undefined
   /** Runs when the panel asks the session to page history back. */
   readonly onLoadThrough?: (() => void) | undefined
+  /** Coordinator handoffs on the session trend. */
+  readonly handoffs?: readonly { at: number; name: string }[] | undefined
 }
 
 function bench(opts: BenchOptions = {}) {
   let listAttempts = 0
   const mocks = {
-    getSessionTrend: vi.fn(async () => ({ ok: true, value: { turns: opts.turns ?? TURNS, backfill: { state: 'complete' }, requests: [...OVERVIEW1.scopes.flatMap(scope => scope.requests.map(request => ({ ...request, turnSeq: 1 }))), ...OVERVIEW2.scopes.flatMap(scope => scope.requests.map(request => ({ ...request, turnSeq: 2 })))] } })),
+    getSessionTrend: vi.fn(async () => ({ ok: true, value: { turns: opts.turns ?? TURNS, backfill: { state: 'complete' }, ...opts.handoffs === undefined ? {} : { handoffs: opts.handoffs }, requests: [...OVERVIEW1.scopes.flatMap(scope => scope.requests.map(request => ({ ...request, turnSeq: 1 }))), ...OVERVIEW2.scopes.flatMap(scope => scope.requests.map(request => ({ ...request, turnSeq: 2 })))] } })),
     listTurns: vi.fn(async (): Promise<Result<ListTurnsResult>> => {
       const attempt = listAttempts
       listAttempts += 1
@@ -690,6 +692,15 @@ describe('Context Lens session trend', () => {
     // The map does not switch to the participant; the tabs below do.
     expect(mainBars()).toEqual(before)
     expect(screen.queryByRole('button', { name: 'turn 2 #201 · 0%' })).toBeNull()
+  })
+
+  it('handoffs in one gap share one marker naming who holds the room; the tooltip keeps the chain', async () => {
+    bench({ handoffs: [{ at: 500, name: 'kimi' }, { at: 2_500, name: '剪刀手' }, { at: 2_600, name: '剪刀手五号' }] })
+    await screen.findByText('#101 · read:a.ts')
+    expect(screen.getByText('kimi 接手')).toBeTruthy()
+    const merged = screen.getByText('剪刀手五号 接手 +1').parentElement!
+    expect(merged.getAttribute('title')).toBe('剪刀手 接手 → 剪刀手五号 接手')
+    expect(screen.queryByText('剪刀手 接手')).toBeNull()
   })
 })
 
