@@ -594,7 +594,10 @@ function cmdStage(): void {
     }
     const tgz = join(root, 'dist-publish', tarballName(entry.name, entry.target))
     if (!existsSync(tgz)) fail(`missing ${tgz}`, '先跑 `pnpm release:wave pack`')
-    const run = spawnSync('npx', ['npm@12', 'stage', 'publish', tgz], { cwd: root, encoding: 'utf8' })
+    // npm 12 refuses a prerelease without an explicit dist-tag; our rc lines
+    // (the local-agent family, the eval family) ship as `latest`, as before.
+    const tag = entry.target.includes('-') ? ['--tag', 'latest'] : []
+    const run = spawnSync('npx', ['npm@12', 'stage', 'publish', tgz, ...tag], { cwd: root, encoding: 'utf8' })
     process.stdout.write(run.stdout ?? '')
     process.stderr.write(run.stderr ?? '')
     if (run.status !== 0) {
