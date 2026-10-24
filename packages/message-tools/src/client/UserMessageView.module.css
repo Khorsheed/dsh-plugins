@@ -144,3 +144,44 @@
   line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
   color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-primary-dimmed));
 }
+
+/* A long message folds to ~10 lines (the bubble's own line height, so the
+   font-size preference moves it too); the tail dissolves into the bubble fill
+   under a fade that also expands on click. */
+.clamped {
+  position: relative;
+  max-height: calc(10 * (22px + var(--dsh-content-font-delta, 0px)) + 20px);
+  overflow: hidden;
+}
+
+.fade {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 48px;
+  cursor: pointer;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--dsw-specific-bubble, var(--dsw-alias-bg-layer-1, #f3f4f6)) 0%, transparent),
+    var(--dsw-specific-bubble, var(--dsw-alias-bg-layer-1, #f3f4f6))
+  );
+}
+
+/* 展开全部 / 收起: a quiet business-blue text button under the bubble. */
+.foldToggle {
+  align-self: flex-end;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
+  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  cursor: pointer;
+}
+
+.foldToggle:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  outline-offset: 2px;
+  border-radius: 4px;
+}

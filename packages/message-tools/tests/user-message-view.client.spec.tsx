@@ -103,6 +103,7 @@ function props(over: {
     editMessage: over.editMessage ?? vi.fn(async () => {}),
     withdrawMessage: over.withdrawMessage ?? vi.fn(async () => {}),
     backfillDraft: over.backfillDraft ?? vi.fn(),
+    foldScope: 'session-1',
     useModelDirectory: (select: (snapshot: ModelDirectoryState) => unknown) => select(directory),
     modelsAvailable: over.modelsAvailable ?? false,
     loadModels: over.loadModels ?? vi.fn(),
@@ -114,6 +115,36 @@ function props(over: {
 function stubClipboard(writeText: () => Promise<void>): void {
   vi.stubGlobal('navigator', { clipboard: { writeText } })
 }
+
+describe('UserMessageView folding', () => {
+  const long = `${'很长的一段需求。'.repeat(90)}\n\n末尾标记`
+
+  it('the newest user message reads unfolded; an older long one folds with 展开全部', () => {
+    const older = userNode([{ type: 'text', text: long }], { seq: 3 })
+    const newer = userNode([{ type: 'text', text: '好的' }], { seq: 9 })
+    render(<UserMessageView {...props({ node: older, snapshotNodes: [older, newer] })} />)
+    expect(screen.getByRole('button', { name: zh['fold.expand'] })).toBeTruthy()
+    cleanup()
+    render(<UserMessageView {...props({ node: older, snapshotNodes: [older] })} />)
+    expect(screen.getByRole('button', { name: zh['fold.collapse'] })).toBeTruthy()
+    cleanup()
+    // Short messages never fold.
+    render(<UserMessageView {...props({ node: newer, snapshotNodes: [older, newer] })} />)
+    expect(screen.queryByRole('button', { name: zh['fold.expand'] })).toBeNull()
+  })
+
+  it('remembers the human\'s choice per message; the fade expands too', () => {
+    const older = userNode([{ type: 'text', text: long }], { seq: 4 })
+    const newer = userNode([{ type: 'text', text: '好的' }], { seq: 9 })
+    const { container } = render(<UserMessageView {...props({ node: older, snapshotNodes: [older, newer] })} />)
+    fireEvent.click(container.querySelector('[aria-hidden][class*="fade"]')!)
+    expect(screen.getByRole('button', { name: zh['fold.collapse'] })).toBeTruthy()
+    cleanup()
+    render(<UserMessageView {...props({ node: older, snapshotNodes: [older, newer] })} />)
+    expect(screen.getByRole('button', { name: zh['fold.collapse'] })).toBeTruthy()
+    globalThis.localStorage?.clear()
+  })
+})
 
 describe('UserMessageView hidden spans', () => {
   it('renders nothing for a message inside a withdrawn span', () => {

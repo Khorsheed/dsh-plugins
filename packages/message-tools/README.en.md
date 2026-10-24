@@ -14,6 +14,7 @@ Said something too fast, or the conversation went off the rails? Until now all y
 - **Edit in place** — inline editor with a working model chip; saving regenerates the turn from that point, and edited bubbles edit again.
 - **Real withdrawal, not a marker** — the message and the whole tail after it leave the model context, collapsing into an expandable 「已撤回 N 条消息」 divider; expanding it replays the withdrawn user text, the images sent with those messages, and the assistant text (image-only messages count toward N).
 - **Draft backfill** — a landed withdrawal puts the original text back into the composer draft, never auto-sent.
+- **Long messages fold** — a message past about 600 characters or 12 lines folds to about ten lines under a fade; 「Show all」 or the fade expands it. The newest message stays open until the next one is sent, and your expand/collapse is remembered per message.
 - **Restore to tail** — 「恢复到对话末尾」 replays user messages verbatim and assistant text as a 「已恢复」 group; tool calls never replay.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions2.png" width="640" alt="in-place editing: the message becomes an input with a model picker; saving re-sends it as a new message, and the edited original leaves the model context">
