@@ -1,20 +1,50 @@
 # @khorsheed/dsh-library
 
-The library and learning engine: project-organized close reading. Books are registered, never uploaded (the coach verifies the edition and its contents on the web); each book gets a roadmap the coach drafts and the learner adopts. Photographed underlines and margin notes become the learner's own knowledge cards (知识卡片); a subject project's mastery unit is each station's knowledge points — the coach's notes land on a point, missed questions wait in 待订正 to be retaken in the sidebar (never counted toward passing), and answered right again, a point turns from weak to mastered; chapter quizzes are composed on two axes (what they target × what they rest on), and graded verdicts move the roadmap forward.
+English | [中文](README.md)
+
+Study the books and courses at hand with a coach: books are registered, never uploaded; the coach drafts the path; photographed underlines become your own knowledge cards; missed questions are retaken until you get them.
+
+Teaching yourself from a textbook used to mean planning your own pace, copying your own notes, writing your own questions — and nobody remembered to ask again what you got wrong. The library organizes learning by project ("Math", "Embodied AI"): you register the books you have, or let the coach pick an existing textbook; the coach drafts a study path that takes effect only when you press Adopt; while reading, a photo of a page turns its underlines and margin notes into knowledge cards; each station ends with a chapter quiz, missed questions wait in 待订正 (to retake), and once you retake them right, that knowledge point turns from weak to mastered.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-today.png" width="640" alt="The right sidebar's Library, Today page: continue, review today (retakes and due cards), the project list, recent changes">
 
 ## Features
 
-- **The library sidebar** (a page-type right-Sidebar tab, kind `library`; one layout that adapts to its width, full screen on a phone): today (continue, reviews due, projects, recently noted) → project (continue, drafts waiting, textbooks numbered in study order with their progress, links; deleting a project or a textbook asks through a dialog that spells out what goes) → textbook (a roadmap draft to adopt as this textbook's path or discard, or the S-shaped path, plus the chapters the path skips) → node (guide / my notes / chapter quiz) → knowledge cards (filtered by source, searchable, mastered / delete) → chapter quiz (choice and fill judged on the spot, open answers handed to the coach) → result → review flashcards. What needs the model (adding a book, planning, composing a quiz, judging open answers) is drafted into the conversation input after the sidebar binds the session.
-- **Registered books**: title, edition, ISBN, kind (knowledge / material) and the contents with its source url. No file is ever parsed.
-- **Textbooks in study order**: anything with a contents is a textbook — the learner's own book, an existing book or digital course the coach picks, or an outline the coach writes itself — numbered in study order (`seq`) and reorderable. The project carries no path; every path belongs to a textbook.
-- **Draft → adopt roadmaps**: the coach writes a textbook's draft (a new one replaces the old), the learner's 采用 in the sidebar makes it the path; adoption keeps the progress of nodes whose ids survive. Nodes are quiz (a chapter quiz completes them), acceptance (judged line by line) or read (「读完」 does); a station points at its textbook's chapters, and a side link or coached teaching never moves the path.
-- **Photo pages**: one page photo records its printed text and every mark at once; certain marks become cards in one go, uncertain ones are listed apart. Photos are kept by attachment reference; reading one back is whitelisted to pages the project recorded.
-- **Knowledge cards** dedupe on the write path: an exact normalized key (case, width, punctuation, English plurals) merges; a near-duplicate is held back with candidates for the coach to `mergeInto` / `asNew`. Weakness (0–3) is kept apart from the review schedule (Leitner); a card hangs on a book or on the project; a recording can be undone.
-- **Two-axis quizzes**: target (marked / asked / missed / the chapter's topic) × evidence (a photo quote / a web quote with its url / domain knowledge). A material book takes no content question from memory.
-- **The assess cascade**: void questions count for nothing; a passed card climbs a box and eases its weakness, a missed one comes back tomorrow and grows weaker; a card-less miss no longer becomes a card (only a word or concept the coach names does) — it waits in the station's 待订正; point state changes are ledgered and feed 今日's 「最近的变化」; a node at its pass ratio completes and unlocks what follows, and a retake never moves it.
-- **Session binding**: a session binds to a project or one of its books, and the tools' project / book default to it; every turn carries one bound-context line (book, node, weakest cards).
-- **The model face** (the `./tool` composition entry, granted per session by presets): `library_read`, one `library_<noun>` tool per write (`library_project` / `library_resource` / `library_roadmap` / `library_notes` / `library_page` / `library_cards` / `library_quiz` / `library_binding`), `library_assess`, documented in their own descriptions; every refusal teaches the correct call. A book IS a resource (`library_resource` with kind "book" and a contents). Optional `hideSections` / `denyTools` quiet unrelated root prompt sections and tools in that scope.
-- **Self-hiding**: the tab type registers on the canvas double-check criterion, fail-open on every unreadable path.
+- **Register books and textbooks**: a book is registered by title, edition, ISBN and contents; the coach verifies the edition and its contents on the web (with source links) — nothing is uploaded, no file is parsed. Anything with a contents is a textbook: your own book, an existing book or digital course the coach picks, or an outline the coach writes; a project can hold several, numbered in study order and reorderable.
+- **Adopt a study path**: each textbook has one path, drafted by the coach; in the sidebar you adopt it as this book's path or discard it; a new draft replaces the old one, and re-adopting keeps the progress already made. The path holds only levels, with overview chapters as optional side stops, and the chapters this path skips are listed apart.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-roadmap.png" width="640" alt="A textbook's page: the S-shaped study path with each station's progress, the chapters this path skips below">
+
+- **Photograph underlines and margin notes**: take a photo of a page from the sidebar and the coach reads its printed text and every underline and note at once: certain marks become cards in one go, uncertain ones are listed apart. Knowledge cards can be filtered by source, searched, marked mastered or deleted; the same word or concept merges instead of making a second card. When the coach notes a weak point, the sidebar toasts it with an undo.
+- **Chapter quizzes**: each station ends with a quiz. Questions are chosen on two axes: what they target (what I marked / what I asked / what I missed / the chapter's topic) × what they rest on (a quote from the photo / a web quote with its link / domain knowledge). Choice and fill-in are judged on the spot, open answers go to the coach; a question you flag as faulty is voided and never counts.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-quiz.png" width="640" alt="A station's chapter quiz: choice and fill-in judged on the spot, an open question marked as handed to the coach">
+
+- **Retakes and point mastery**: each station lists its knowledge points. A missed question waits in that station's 待订正; retakes never count toward passing; a question answered right leaves the list, and its point moves accordingly: weak (open misses, or not yet answered right since the coach's note) → practicing → mastered (no open misses, at least 3 different questions right across 2 attempts), with the evidence one click away. A station at its pass mark unlocks the next.
+- **Review today**: the Today page gathers every station's misses into one retake paper, plus the cards due. Review means answering: fill the sentence, pick the meaning here, spell, explain a concept; a round ends with a summary and a "practice the missed" round, and the flashcard mode stays. Recent changes lists which points just turned weak or mastered.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-points.png" width="640" alt="A station's knowledge points in weak, practicing and mastered states, with the to-retake entry above">
+
+- **The session follows the book**: a session binds to a project or one of its books, and a chip in the session header shows and switches the binding; what needs the model (adding a book, planning, composing a quiz, judging open answers) is drafted into the composer by the sidebar for you to send.
+- **Works on a phone**: one layout that adapts to its width, full screen on a phone. Projects have a color and an icon, books a generated cover.
+
+## Install
+
+Recommended: the learning suite, together with the basic experience:
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-learning-suite
+```
+
+Restart the instance, then pick 学习模式 (learning mode) in the session's mode picker: the coach persona plus the library's model tools.
+
+Advanced: this package alone.
+
+```sh
+dsh plugin --profile web add @khorsheed/dsh-library
+```
+
+Installed alone, only the host service and the data face are there and **there are no model tools** (they are granted per session by the `preset-dsh-learning` row declared in `@khorsheed/dsh-learning-suite`); the Library sidebar self-hides per session and appears only where the library tools are reachable (hidden in standard mode). So a standalone install needs a mode that grants `@khorsheed/dsh-library/tool`. Uninstalling removes every surface.
 
 ## The workspace integration seam (server-side consumption)
 
@@ -37,14 +67,6 @@ The mounting side's obligations and the semantics:
 - **Terminal dispose + same-root rebuild**: `dispose()` is idempotent and terminal, and fires automatically when the borrowed Context is torn down (wired through `ctx.effect` at construction) — afterwards every public verb, reads included, refuses with the coded package-named `LibraryDisposedError` (`code: 'disposed'`). A write racing disposal refuses coded before the lock is ever taken (the disk side was already safe: lock / temp write / atomic rename). Rebuilding over the same state root is legal: a new service instance on it works as usual, and everything the old instance wrote is there.
 - **Local behavior unchanged**: apart from these additive surfaces, every semantic is byte-identical to before.
 
-## Install
-
-```sh
-dsh plugin --profile <name> add @khorsheed/dsh-library
-```
-
-This package alone: the Library tab and the data face work; the model tools do not exist (they are granted per session by the `preset-dsh-learning` row declared in `@khorsheed/dsh-learning-suite`). Uninstalling removes every surface.
-
 ## Compatibility
 
 | Host line | Verdict |
@@ -56,12 +78,32 @@ Details live in the package.json `dsh.compat.notes`: state is plain `node:fs` un
 
 ## Known limits
 
-- Out of scope: book file upload and parsing (EPUB / PDF), an in-conversation 「精读」tab, XP and streaks, project-level exams and cross-book linking.
-- The sidebar's photo button sends the photo as your message in the conversation, where the coach reads it.
-- The session-header chip shows and switches the project or book this session is bound to; when the coach notes a weak point the sidebar toasts it with an undo.
-- Projects have a color and an icon, books a generated cover; the path holds only levels, with overview chapters as optional side stops and how-to-use pages, answer keys and appendices in the book's before-you-start / appendix strip.
-- Review is answering: fill the sentence, pick the meaning here, spell, explain a concept; a round ends with a summary and a practice round for the missed; the flashcard mode stays.
-- A photo page needs the full attachment reference (attachmentId + mediaType + bytes + width + height — copied verbatim off the message's image block), else `ref-incomplete`.
+- **No book uploads**: book files are not uploaded or parsed (EPUB / PDF).
+- **Photos go through the conversation**: the sidebar's photo button sends the photo as your message in the conversation, where the coach reads it.
+- **Not yet**: an in-conversation 「精读」 tab, XP and streaks, project-level exams and cross-book linking.
+
+## How it works
+
+<details>
+<summary>Internals (click to expand)</summary>
+
+**The sidebar.** Navigation of the page-type right-Sidebar tab (kind `library`): today → project (continue, drafts waiting, textbooks numbered in study order with their progress, links; deleting a project or a textbook asks through a dialog that spells out what goes) → textbook (a roadmap draft or the S-shaped path, plus the chapters the path skips; how-to-use pages, answer keys and appendices in the book's before-you-start / appendix strip) → node (guide / my notes / chapter quiz) → knowledge cards → chapter quiz → result → review. The tab type self-hides on the canvas double-check criterion (root rows ∪ the current session's preset rows naming `@khorsheed/dsh-library/tool`), fail-open on every unreadable path.
+
+**Books and textbooks.** A book IS a resource (`library_resource` with `kind: "book"` and a contents); a book is a knowledge or a material book, and a material book takes no content question from memory. Textbooks are numbered in study order (`seq`). The project carries no path; every path belongs to a textbook.
+
+**Roadmaps.** Adoption keeps the progress of nodes whose ids survive. Nodes are quiz (a chapter quiz completes them), acceptance (judged line by line) or read (「读完」 does); a station points at its textbook's chapters, and a side link or coached teaching never moves the path.
+
+**Photo pages.** One page photo records its printed text and every mark at once; photos are kept by attachment reference, and reading one back is whitelisted to pages the project recorded. A photo page needs the full attachment reference (attachmentId + mediaType + bytes + width + height — copied verbatim off the message's image block), else `ref-incomplete`.
+
+**Knowledge cards** dedupe on the write path: an exact normalized key (case, width, punctuation, English plurals) merges; a near-duplicate is held back with candidates for the coach to `mergeInto` / `asNew`. Weakness (0–3) is kept apart from the review schedule (Leitner); a card hangs on a book or on the project; a recording can be undone.
+
+**The assess cascade** (`library_assess`). Void questions count for nothing; a passed card climbs a box and eases its weakness, a missed one comes back tomorrow and grows weaker; a card-less miss does not become a card (only a word or concept the coach names does) — it waits in the station's 待订正; point state changes are ledgered and feed Today's recent changes; a node at its pass ratio completes and unlocks what follows, and a retake never moves it.
+
+**Session binding.** A session binds to a project or one of its books, and the tools' project / book default to it; every turn carries one bound-context line through `systemPrompt.context` (book, node, weakest cards).
+
+**The model face** (the `./tool` composition entry, granted per session by presets): `library_read`, one `library_<noun>` tool per write (`library_project` / `library_resource` / `library_roadmap` / `library_notes` / `library_page` / `library_cards` / `library_quiz` / `library_binding`), `library_assess`, documented in their own descriptions; every refusal teaches the correct call. Optional `hideSections` / `denyTools` quiet unrelated root prompt sections and tools in that scope.
+
+</details>
 
 ## Development
 
@@ -69,3 +111,9 @@ Details live in the package.json `dsh.compat.notes`: state is plain `node:fs` un
 pnpm run build   # gen-typert → tsc → tsdown
 pnpm run test    # vitest
 ```
+
+Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/library`). Issues and contributions go there.
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
