@@ -263,7 +263,7 @@ describe('RoomSpeechView', () => {
     seq: 7, time: 1007, member: 'ada', text: '方案 A 如下', childSessionId: 'child-1' as SessionId, durationMs: 1200,
   }
 
-  async function bench(data: RoomSpeechData = speech, state: RoomState = STATE, openDetail?: (sessionId: SessionId, messageId: string, label: string) => void) {
+  async function bench(data: RoomSpeechData = speech, state: RoomState = STATE, openDetail?: (sessionId: SessionId, messageId: string) => void) {
     const roomStore = await primedStore(state)
     const openSession = vi.fn()
     const props = {
@@ -286,7 +286,7 @@ describe('RoomSpeechView', () => {
     const openDetail = vi.fn()
     await bench({ ...speech, messageId: 'msg-9' }, STATE, openDetail)
     fireEvent.click(screen.getByRole('button', { name: '这一轮的请求明细' }))
-    expect(openDetail).toHaveBeenCalledWith('child-1', 'msg-9', 'ada')
+    expect(openDetail).toHaveBeenCalledWith('child-1', 'msg-9')
     cleanup()
     await bench(speech, STATE, openDetail)
     expect(screen.queryByRole('button', { name: '这一轮的请求明细' })).toBeNull()
