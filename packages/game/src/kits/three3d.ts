@@ -10,11 +10,16 @@
  * once, on first use: three.js from the pinned `three` dependency, dsh3d from
  * this package's `runtime/` folder. A missing file degrades to a runtime that
  * reports why, so the smoke check names the problem instead of crashing.
+ *
+ * three's own add-ons (`three/addons/…`: GLTFLoader, EffectComposer, …) map
+ * to `_dsh/addons/` too, but only the ones a project's code imports ride its
+ * bundle, with whatever they import in turn: the whole add-on tree is far too
+ * big to carry on every load.
  * @module @khorsheed/dsh-game
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, normalize, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { LOOK3D_HINT, normalizeLook3d } from '../look3d.ts'
 import { ART_STYLES_3D, BODY_BASES, type BundleFile } from '../types.ts'
@@ -57,9 +62,59 @@ function load(): Record<string, BundleFile> {
   cached = {
     [THREE_FILE]: { type: 'text/javascript', text: readFileSync(three, 'utf8') },
     [DSH3D_FILE]: { type: 'text/javascript', text: readFileSync(dsh3d, 'utf8') },
-    [KIT_IMPORTS_FILE]: { type: 'application/json', text: JSON.stringify({ three: THREE_FILE, dsh3d: DSH3D_FILE }) },
+    // A key ending in '/' maps a prefix (import-map style).
+    [KIT_IMPORTS_FILE]: { type: 'application/json', text: JSON.stringify({ three: THREE_FILE, dsh3d: DSH3D_FILE, 'three/addons/': ADDONS_DIR }) },
   }
   return cached
+}
+
+const ADDONS_DIR = '_dsh/addons/'
+/** An add-on set larger than this is cut off (the loader then reports the missing module). */
+const ADDONS_MAX_BYTES = 6 * 1024 * 1024
+
+/** three's `examples/jsm` folder (what `three/addons/` names). */
+function addonsRoot(): string | undefined {
+  try {
+    const dir = join(dirname(createRequire(import.meta.url).resolve('three')), '..', 'examples', 'jsm')
+    return existsSync(dir) ? dir : undefined
+  } catch {
+    return undefined
+  }
+}
+
+const SPECIFIER = /(?:\bimport\s*\(\s*|\bfrom\s*|\bimport\s+)(['"])([^'"]+)\1/g
+
+/**
+ * The add-on files a project's scripts import (`three/addons/x`), plus the
+ * add-on files those import relatively, as bundle entries under `_dsh/addons/`.
+ * @param project - the project's bundle files.
+ * @returns the entries to add to the bundle.
+ */
+export function addonFiles(project: Readonly<Record<string, BundleFile>>): Record<string, BundleFile> {
+  const root = addonsRoot()
+  if (root === undefined) return {}
+  const queue: string[] = []
+  for (const [path, file] of Object.entries(project)) {
+    if (!/\.m?js$/.test(path) || !('text' in file)) continue
+    for (const m of file.text.matchAll(SPECIFIER)) if (m[2]!.startsWith('three/addons/')) queue.push(m[2]!.slice('three/addons/'.length))
+  }
+  const out: Record<string, BundleFile> = {}
+  let total = 0
+  while (queue.length > 0) {
+    const rel = posix.normalize(queue.shift()!)
+    if (rel.startsWith('..') || rel.startsWith('/') || out[ADDONS_DIR + rel] !== undefined) continue
+    const full = normalize(join(root, rel))
+    if (!full.startsWith(root) || !existsSync(full)) continue
+    const text = readFileSync(full, 'utf8')
+    if (total + text.length > ADDONS_MAX_BYTES) break
+    total += text.length
+    out[ADDONS_DIR + rel] = { type: 'text/javascript', text }
+    for (const m of text.matchAll(SPECIFIER)) {
+      const spec = m[2]!
+      if (spec.startsWith('./') || spec.startsWith('../')) queue.push(posix.join(posix.dirname(rel), spec))
+    }
+  }
+  return out
 }
 
 const STYLE_LINES = ART_STYLES_3D.map(s => `- \`${s.id}\` ${s.label}：${s.look}`).join('\n')
@@ -69,7 +124,7 @@ export const THREE_3D: RuntimeKit = {
   id: '3d-three',
   version: 1,
   label: '3D（three.js）',
-  runtimeFiles: load,
+  runtimeFiles: project => (project === undefined ? load() : { ...load(), ...addonFiles(project) }),
   normalizeLook: normalizeLook3d,
   lookHint: LOOK3D_HINT,
   // dsh3d's renderer keeps its drawing buffer, so the 2D read-back works on the WebGL canvas too.
@@ -102,7 +157,13 @@ ${STYLE_LINES}
     之后配方里就能写 \`"base": "robot"\`、\`{ "type": "antenna", "length": 0.5 }\`（自定义部件的其他参数在 spec.extra 里）。注册过的名字用户在面板里同样能调。
   - **场景物件也走配方**：树、石头、草丛、远山、建筑这类有形状的元素，同样在 \`src/looks.js\` 里 defineBase 注册造型（用 \`kit.flat(kit.color('body', '#…'))\`，尺寸读 \`look.proportions\`），元素文件写 \`look\`，成片的用 \`world.scatter(元素id, …)\` 撒开、单个的 \`build(元素id)\`（数量、分布范围这类仍是元素字段）。别在 main.js 里直接手写几何体——那样右栏看不到它的样子，用户也没法调。只有地面高度场（world.terrain）和水面这种铺满整个场景的不算元素。
   - 面数预算：单个元素 1 万三角面以内，同屏一个场景 15 万以内（\`world.stats()\` 可查，批量物件按份数算）。这是建议不是硬限制，超了先看帧率。
-- 贴图与素材：图片放 \`assets/\`，\`new THREE.TextureLoader().load('assets/xx.png')\` 就能用（贴到 toon/flat 材质的 map 上）；纸纹、墨晕这类也可以用 canvas 现画，再 \`new THREE.CanvasTexture(canvas)\`，不用另存文件。glTF 外观（\`{ kind: "gltf", src }\`）目前只显示占位方块，加载器还没做，模型请用部件配方或自己注册的造型。
+- 贴图与素材：图片放 \`assets/\`，\`new THREE.TextureLoader().load('assets/xx.png')\` 就能用（贴到 toon/flat 材质的 map 上）；纸纹、墨晕这类也可以用 canvas 现画，再 \`new THREE.CanvasTexture(canvas)\`，不用另存文件。glTF 作为元素外观（\`{ kind: "gltf", src }\`）目前只显示占位方块；要先用 Blender 做的模型，可以在代码里用 GLTFLoader 直接加载 \`assets/\` 里的 .glb 放进场景（只是右栏还不能预览、调整它）。
+- three 自带的扩展直接引：\`import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'\`，后期处理 \`three/addons/postprocessing/EffectComposer.js\` 等都行（只打包你引用到的文件）。
+- 镜头：默认是 45° 俯视的正交镜头。要跟随、第三人称：自己建 \`new THREE.PerspectiveCamera(…)\`，\`world.setCamera(cam)\`，然后每帧（onUpdate 里）自己摆位置、朝向；「指一下」、高亮圈都跟着这台镜头走，\`world.setCamera(null)\` 换回默认。鼠标转视角可以在点击里 \`canvas.requestPointerLock()\`（Esc 退出），并在 dshGame 上提供 \`look(dx, dy)\`，测试里用 \`drag(dx, dy)\` 模拟拖动。
+- 光与投影：\`world.lights.hemi\`（天光）、\`world.lights.sun\`（太阳）可以直接调；style3d 里写 \`"shadows": true\` 开太阳投影（之后 world.add / scatter 进来的东西都投影、受影）。
+- 后期处理（泛光、调色）：\`world.onRender(({ renderer, scene, camera }) => composer.render())\` 接管绘制，返回的函数交还。
+- 材质：toon / flat 按颜色共用一份。要让某一个东西单独发光、变色、淡出：\`toon('#ff8a3d', { own: true, emissive: '#ff8a3d' })\` 拿一份自己的。
+- 加载资源时（glb、大贴图）先挂 \`window.dshGame = { ready: false, loading: true, … }\`，加载完再设 \`ready = true\`：检查会等最多 20 秒（不写 loading 只等 4 秒）。
 - 检查里（\`window.__GAMEDEV_TEST__\`）\`step\` 推进逻辑和镜头但不画画面，测试可以放心多跑帧；要读像素时先 \`world.render()\`。
 - dshGame 约定照旧，3D 推荐这样接：
 \`\`\`js

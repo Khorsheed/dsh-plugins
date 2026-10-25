@@ -37,5 +37,5 @@ export function kitOf(ref: KitRef | undefined): RuntimeKit {
  * does, its file is what it meant to ship).
  */
 export function withKitRuntime(files: Readonly<Record<string, BundleFile>>, kit: RuntimeKit): Record<string, BundleFile> {
-  return { ...kit.runtimeFiles(), ...files }
+  return { ...kit.runtimeFiles(files), ...files }
 }

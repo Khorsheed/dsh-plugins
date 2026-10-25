@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { kitOf } from '../src/kits/index.ts'
+import { addonFiles } from '../src/kits/three3d.ts'
 import {
   pillarNotes,
   chapterStatus, elementsChapter, gate, isBuildFile, listOf, parseManifest, resolveArtStyle, slugOf, validateElements,
@@ -26,6 +27,16 @@ describe('the light gate', () => {
   })
 })
 
+describe('three add-ons', () => {
+  it('bundles only the add-ons a project imports, with what they import in turn', () => {
+    const files = addonFiles({
+      'src/main.js': { type: 'text/javascript', text: "import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'\nimport x from 'three/addons/../../package.json'" },
+      'notes.md': { type: 'text/markdown', text: "from 'three/addons/controls/OrbitControls.js'" },
+    })
+    expect(Object.keys(files).sort()).toEqual(['_dsh/addons/loaders/GLTFLoader.js', '_dsh/addons/utils/BufferGeometryUtils.js'])
+  })
+})
+
 describe('manifest and chapters', () => {
   it('parses a hand-edited manifest with defaults', () => {
     const parsed = parseManifest('{"id":"g_1","title":"T","elementTypes":["角色"]}')
@@ -36,13 +47,13 @@ describe('manifest and chapters', () => {
 
   it('keeps the game’s own per-scene styles through a parse (a panel rewrite must not drop them)', () => {
     const parsed = parseManifest(JSON.stringify({
-      id: 'g', style3d: { preset: 'ink', shades: 3, scenes: {
+      id: 'g', style3d: { preset: 'ink', shades: 3, shadows: true, scenes: {
         北山: { bg: '#CFD6DC', fog: [10, 30], light: 9, outline: '#000000', shades: 5 },
         '': { bg: '#ffffff' }, 坏: 'x', 雾: { fog: [30, 10] },
       } },
     }))
     expect(parsed.ok && parsed.manifest.style3d).toEqual({
-      preset: 'ink', shades: 3,
+      preset: 'ink', shades: 3, shadows: true,
       // Colors, fog and light only (outline and shading stay game-wide); a bad fog drops just the fog.
       scenes: { 北山: { bg: '#cfd6dc', fog: [10, 30], light: 4 }, 雾: {} },
     })

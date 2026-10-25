@@ -189,6 +189,58 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
     expect(result.screenshot?.length).toBeGreaterThan(100)
   }, 90_000)
 
+  it('opens the doors: three add-ons, its own camera, lights and shadows, a render hook, own materials, loading and drag', async () => {
+    const result = await checker.run(withKitRuntime({
+      ...files,
+      'game.json': text(JSON.stringify({ id: 'g', runtime: { kit: '3d-three', version: 1 }, style3d: { preset: 'ink', shadows: true } }), 'application/json'),
+      'src/main.js': text(`import * as THREE from 'three'
+        import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+        import { createWorld, build, toon } from 'dsh3d'
+        window.dshGame = { ready: false, loading: true }
+        const world = createWorld()
+        world.terrain({ size: 30, height: () => 0 })
+        const merged = mergeGeometries([new THREE.BoxGeometry(1, 1, 1), new THREE.BoxGeometry(1, 1, 1).translate(0, 1, 0)])
+        const tower = world.add(world.place(new THREE.Mesh(merged, toon('#8a5a3c')), 3, 0), { id: 'tower', name: '塔' })
+        const fox = world.add(world.place(build('jiuweihu'), 0, 0), { id: 'jiuweihu', inst: 'fox-1' })
+        const cam = new THREE.PerspectiveCamera(50, 1.6, 0.1, 200)
+        let yaw = 0, hooked = 0
+        world.setCamera(cam)
+        world.onUpdate(() => { cam.position.set(Math.sin(yaw) * 9, 6, Math.cos(yaw) * 9); cam.lookAt(1.5, 0.5, 0) })
+        world.onRender(({ renderer, scene, camera }) => { hooked++; renderer.render(scene, camera) })
+        const shared = toon('#ff0000'), own = toon('#ff0000', { own: true, emissive: '#ff0000' })
+        setTimeout(() => {
+          Object.assign(window.dshGame, {
+            ready: true, loading: false, step: dt => world.step(dt), input() {},
+            look: (dx) => { yaw += dx * 0.01 },
+            pick: (x, y) => world.pick(x, y),
+            state: () => ({ hooked, yaw, perspective: world.camera.isPerspectiveCamera, ownApart: own !== shared && own !== toon('#ff0000'),
+              shadowMap: world.renderer.shadowMap.enabled, sunCasts: world.lights.sun.castShadow,
+              towerCasts: tower.castShadow, foxCasts: (() => { let c = false; fox.traverse(o => { if (o.isMesh && !o.userData.outline) c = c || o.castShadow }); return c })() }),
+          })
+        }, 5000)`),
+    }, THREE_3D), {
+      'tests/doors.test.js': `
+        test('drag turns the game camera; pick follows it', () => {
+          drag(40, 0, 2)
+          assert(game.state().yaw > 0.3, '拖动应转动镜头')
+          const world = window.dsh3dWorld, c = world.canvas
+          world.render()
+          const v = new world.THREE.Vector3(3, 0.6, 0).project(world.camera)
+          const ref = game.pick((v.x + 1) / 2 * c.width, (1 - v.y) / 2 * c.height)
+          assert(ref && ref.id === 'tower', '透视镜头下应点中塔：' + JSON.stringify(ref))
+        })
+        test('lights, shadows, the render hook and own materials', () => {
+          const s = game.state()
+          assert(s.perspective, '应在用游戏自己的透视镜头')
+          assert(s.shadowMap && s.sunCasts && s.towerCasts && s.foxCasts, '投影应打开：' + JSON.stringify(s))
+          assert(s.hooked > 0, 'onRender 应接管绘制')
+          assert(s.ownApart, 'own 材质应是独立的一份')
+        })`,
+    }, { blankProbe: THREE_3D.blankProbe })
+    expect(result.failures).toEqual([])
+    expect(result.passed).toBe(2)
+  }, 90_000)
+
   it('flags a 3D game that never draws', async () => {
     const result = await checker.run(withKitRuntime({
       ...files,

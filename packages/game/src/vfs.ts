@@ -120,12 +120,19 @@ const LOADER = `window.__boot = function (files) {
     return css.replace(/url\\(\\s*(['"]?)([^'")]+)\\1\\s*\\)/g, function (m, q, u) { var r = norm(base, u); return r && files[r] ? 'url("' + urlFor(r) + '")' : m });
   }
   var busy = {};
+  // An exact bare name, else the longest prefix key ending in '/' (import-map style).
+  function bareOf(spec) {
+    if (bare[spec]) return bare[spec];
+    var best = '';
+    for (var k in bare) if (k.charAt(k.length - 1) === '/' && spec.indexOf(k) === 0 && k.length > best.length) best = k;
+    return best ? bare[best] + spec.slice(best.length) : undefined;
+  }
   function modUrl(p) {
     if (urls[p]) return urls[p];
     if (busy[p]) throw new Error('module cycle at ' + p);
     busy[p] = 1;
     var src = text(p).replace(/(\\bimport\\s*\\(\\s*|\\bfrom\\s*|\\bimport\\s+)(['"])([^'"]+)\\2/g, function (m, pre, q, spec) {
-      var r = /^\\.{0,2}\\//.test(spec) ? norm(dir(p), spec) : bare[spec];
+      var r = /^\\.{0,2}\\//.test(spec) ? norm(dir(p), spec) : bareOf(spec);
       return r && files[r] ? pre + q + modUrl(r) + q : m;
     });
     delete busy[p];
