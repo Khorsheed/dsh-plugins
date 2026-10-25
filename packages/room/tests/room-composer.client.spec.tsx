@@ -10,6 +10,7 @@ import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { RoomComposer, selectRoomComposer } from '../src/client/RoomComposer.tsx'
+import type { DraftChip } from '../src/client/draft-chips.ts'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { RoomTaskTags } from '../src/client/task-tag.ts'
 import { zh } from '../src/client/locales.ts'
@@ -66,6 +67,8 @@ const IDLE: SessionSlice = { running: false, queue: [] }
 /** The input-machine slice the composer reads and writes (the draft only). */
 interface InputSlice {
   readonly draft: string
+  /** The machine's reference chips (newer hosts); absent = the plain path. */
+  readonly occurrences?: readonly DraftChip[]
 }
 
 type InputStore = ReturnType<typeof createSnapshotStore<InputSlice>>
@@ -101,6 +104,9 @@ async function bench(
     modelDirectory?: RoomModelDirectory
     openTasks?: (task?: string) => void
     taskTags?: RoomTaskTags
+    /** Extra input actions (the chip-mode span edit). */
+    extraInputActions?: Record<string, unknown>
+    openReference?: (source: string, ref: string) => boolean
   } = {},
 ): Promise<Bench> {
   const roomStore = await primedStore(options.state)
@@ -109,6 +115,7 @@ async function bench(
     setDraft: vi.fn((text: string) => { inputStore.set({ draft: text }) }),
     submit: vi.fn(),
     persistDraft: vi.fn(),
+    ...options.extraInputActions,
   }
   // The session standard kit's useInput: a reactive selector over the fake machine.
   const useInput = (<T,>(selector: (snapshot: InputSlice) => T): T =>
@@ -136,6 +143,7 @@ async function bench(
     renderMemberInbox: options.renderMemberInbox,
     stopMember: options.stopMember,
     modelDirectory: options.modelDirectory,
+    openReference: options.openReference,
     useSession,
     // Default: a projection seat that serves nothing (no stats row, no todo strip).
     useProjection: options.useProjection === undefined
@@ -711,5 +719,88 @@ describe('external coordinator composer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'composer.send' }))
     await waitFor(() => expect(submit).toHaveBeenCalledWith(SESSION, 'next coordinator input'))
     expect(inputActions.submit).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A fake chip-aware machine: the draft is the clipboard projection, chips
+ * fold to one character in detect coordinates, and `insertText` replaces a
+ * detect span (deleting any chip inside it) under the revision CAS — the
+ * host editor's contract, reduced to strings.
+ */
+function chipMachine(draft: string, chips: readonly DraftChip[]) {
+  const inputStore = createSnapshotStore<InputSlice>({ draft, occurrences: chips })
+  let rev = 0
+  /** Detect index → clipboard index (a span edge never sits inside a chip). */
+  const toClipboard = (detect: number, list: readonly DraftChip[]): number => {
+    let shift = 0
+    for (const item of list) {
+      const at = item.offset - shift
+      if (detect <= at) break
+      shift += item.length - 1
+    }
+    return detect + shift
+  }
+  const insertText = vi.fn((text: string, span: { start: number; end: number; draftRev: number }) => {
+    if (span.draftRev !== rev) return false
+    const current = inputStore.getSnapshot()
+    const list = current.occurrences ?? []
+    const start = toClipboard(span.start, list)
+    const end = toClipboard(span.end, list)
+    const delta = text.length - (end - start)
+    const next = list
+      .filter(item => item.offset + item.length <= start || item.offset >= end)
+      .map(item => item.offset >= end ? { ...item, offset: item.offset + delta } : item)
+    rev += 1
+    inputStore.set({ draft: current.draft.slice(0, start) + text + current.draft.slice(end), occurrences: next })
+    return true
+  })
+  const captureInsertion = () => ({ start: 0, end: 0, draftRev: rev })
+  return { inputStore, extraInputActions: { insertText, captureInsertion }, insertText }
+}
+
+describe('RoomComposer reference chips (chip-aware hosts)', () => {
+  const QUOTE = '> 滚轮拉远拉近。\n> —— 引用\n'
+  const quoteChip: DraftChip = { occurrenceId: 1, source: 'quote', ref: '{"v":1}', offset: 0, length: QUOTE.length, label: '引用「滚轮拉远拉近。」' }
+
+  it('shows a chip row and only the typed text; typing after it keeps the chip', async () => {
+    const machine = chipMachine(`${QUOTE} `, [quoteChip])
+    const { area } = await bench(vi.fn(), { inputStore: machine.inputStore, extraInputActions: machine.extraInputActions })
+    expect(screen.getByRole('button', { name: /引用「滚轮拉远拉近。」/ })).toBeTruthy()
+    // The raw quote block never shows in the textarea — only the chip's trailing space.
+    expect(area.value).toBe(' ')
+    type(area, ' 镜头太晃')
+    expect(machine.inputStore.getSnapshot()).toEqual({
+      draft: `${QUOTE} 镜头太晃`,
+      occurrences: [quoteChip],
+    })
+    expect(area.value).toBe(' 镜头太晃')
+  })
+
+  it('sends the full projection (the quote text included) through room dispatch', async () => {
+    const submit = vi.fn(async () => ({ ok: true as const }))
+    const machine = chipMachine(`${QUOTE} 镜头太晃`, [quoteChip])
+    const { area } = await bench(submit, { inputStore: machine.inputStore, extraInputActions: machine.extraInputActions })
+    fireEvent.keyDown(area, { key: 'Enter' })
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(SESSION, `${QUOTE} 镜头太晃`.trim()))
+  })
+
+  it('✕ removes the chip and keeps the typed text; a click previews through its source', async () => {
+    const openReference = vi.fn(() => true)
+    const machine = chipMachine(`${QUOTE} 镜头太晃`, [quoteChip])
+    const { area } = await bench(vi.fn(), { inputStore: machine.inputStore, extraInputActions: machine.extraInputActions, openReference })
+    fireEvent.click(screen.getByRole('button', { name: /引用「滚轮拉远拉近。」/ }))
+    expect(openReference).toHaveBeenCalledWith('quote', '{"v":1}')
+    fireEvent.click(screen.getByRole('button', { name: 'composer.chipRemove' }))
+    expect(machine.inputStore.getSnapshot()).toEqual({ draft: ' 镜头太晃', occurrences: [] })
+    expect(screen.queryByRole('button', { name: /引用「/ })).toBeNull()
+    expect(area.value).toBe(' 镜头太晃')
+  })
+
+  it('falls back to the plain projection on a face without insertText', async () => {
+    const inputStore = createSnapshotStore<InputSlice>({ draft: QUOTE, occurrences: [quoteChip] })
+    const { area } = await bench(vi.fn(), { inputStore })
+    expect(area.value).toBe(QUOTE)
+    expect(screen.queryByRole('button', { name: /引用「/ })).toBeNull()
   })
 })

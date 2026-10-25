@@ -266,3 +266,58 @@
 .tagRemove:hover {
   background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
 }
+
+/* Draft reference chips (a quote, any trigger source's pick): one row above
+ * the textarea, the official composer's chip look — business-primary text on
+ * its tint, the label clipped to one line; click previews, ✕ removes. */
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 12px 0 16px;
+  margin-bottom: -8px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 4px 0 2px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, rgb(65, 118, 230)) 12%, transparent);
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.chipLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chipLabel:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.chipAt {
+  flex: none;
+  opacity: 0.8;
+}
+
+.chipText {
+  min-width: 0;
+  max-width: min(280px, 60vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

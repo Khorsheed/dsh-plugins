@@ -62,6 +62,11 @@ export type RoomRemote = TypertRemoteNamespaceMap['room']
 /** Dictionary namespace owned by this plugin. */
 const NS = 'room'
 
+/** The input-trigger service's chip-preview route, mirrored (probed, never imported). */
+interface InputTriggersMirror {
+  sessionOf(scope: unknown): { openReference(source: string | undefined, reference: { readonly ref: string }): boolean }
+}
+
 /**
  * Required services: slots, sessions, the remote channel, and the locale
  * service. `remote.room` is deliberately NOT an inject: this plugin both
@@ -463,6 +468,20 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
       stopMember: (name, expectedRunId) => { void remote?.cancel({ sessionId, name, ...expectedRunId === undefined ? {} : { expectedRunId } }).then(() => roomStore.refresh(sessionId)) },
       modelDirectory: modelDirectoryFor(sessionId),
+      // A draft chip's preview: the official editor's chip click routes
+      // through the session's input-trigger controller to the chip's owning
+      // source — probed at click time, so a composition without the service
+      // (or a torn-down scope) just declines.
+      openReference: (source, ref) => {
+        try {
+          const scope = ctx.sessions.scope(sessionId)
+          const triggers = ctx.get('inputTriggers') as InputTriggersMirror | undefined
+          if (scope === undefined || triggers === undefined) return false
+          return triggers.sessionOf(scope).openReference(source, { ref })
+        } catch {
+          return false
+        }
+      },
       // The hidden official bar's Stop: the runtime session face's cancel
       // (the same verb ui-conversation's own Stop injects). A torn-down
       // binding degrades to a no-op.

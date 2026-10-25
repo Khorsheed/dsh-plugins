@@ -23,9 +23,13 @@
  * share one draft — text typed during the first-pull election window
  * carries over, drafts persist across navigation, and external draft
  * writers (quote-anything's 引用到当前会话) land here with zero
- * room-specific code. A reference chip in the machine projects to its
- * clipboard text in this plain textarea, and editing flattens chips back
- * to text (`setDraft` semantics).
+ * room-specific code. Reference chips in the machine (a quote, any trigger
+ * source's pick) render as their own row above the textarea — label, click
+ * to preview through the chip's source, × to remove — and the textarea holds
+ * only the typed text around them; edits map back as detect-span
+ * replacements, so typing never flattens a chip (draft-chips.ts). A host
+ * without the machine's chip view or `insertText` keeps the old plain form:
+ * chips project to their clipboard text and editing flattens them.
  *
  * Taking over the chain inherits the official bar's environment duties (the
  * member-channel rule, local-agent 84a2ed0): a pending interaction yields (the
@@ -56,6 +60,7 @@ import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation
 // Type-only: InboxState plus the `inbox` key merge into SessionProjectionMap.
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { RoomComposerMatch, RoomComposerProps } from './slots.ts'
+import { chipDetectIndex, freeText, planFreeEdit, type DraftChip } from './draft-chips.ts'
 import { memberColor } from './member-color.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
 import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
@@ -128,11 +133,19 @@ export function selectRoomComposer(
   return sessionId !== undefined && isRoomCached(sessionId) ? { room: true } : null
 }
 
+/** The chip-mode slice of the input action face (newer hosts), mirrored. */
+interface ChipEditActions {
+  captureInsertion(): { readonly start: number; readonly end: number; readonly draftRev: number }
+  insertText(text: string, span: { readonly start: number; readonly end: number; readonly draftRev: number }): boolean
+}
+
+const NO_CHIPS: readonly DraftChip[] = []
+
 /** The room composer takeover component. */
 export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
-  modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, useSession, useProjection, useInput, inputActions, t,
+  modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, openReference, useSession, useProjection, useInput, inputActions, t,
 }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const tag = useSyncExternalStore(taskTags?.subscribe ?? NO_TAGS, () => taskTags?.get(sessionId))
@@ -140,6 +153,15 @@ export function RoomComposer({
   // shared with the hidden fallback bar, persistent across navigation, and
   // writable by external drafters (quote) with zero room-specific code.
   const draft = useInput(input => input.draft)
+  // The machine's chips (absent before the occurrence view shipped) and the
+  // span-guarded text edit (absent on older faces): both present = chip mode.
+  const occurrences = useInput(input => (input as { occurrences?: readonly DraftChip[] }).occurrences)
+  const chipEdit = inputActions as Partial<ChipEditActions>
+  const chipMode = occurrences !== undefined && occurrences.length > 0
+    && chipEdit.insertText !== undefined && chipEdit.captureInsertion !== undefined
+  const chips = chipMode ? occurrences : NO_CHIPS
+  // What the textarea shows: the typed text around the chips.
+  const value = chipMode ? freeText(draft, chips) : draft
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mention, setMention] = useState<(ActiveMention & { index: number }) | null>(null)
@@ -203,19 +225,40 @@ export function RoomComposer({
     if (areaRef.current !== null) resize(areaRef.current)
   }, [draft])
 
+  // Write the textarea's text back: chip mode maps the change onto the
+  // machine as span edits (each against the then-current revision, last
+  // first), so the chips survive; otherwise the whole draft is replaced.
+  const writeText = (next: string): void => {
+    if (!chipMode) {
+      inputActions.setDraft(next)
+      return
+    }
+    for (const edit of planFreeEdit(draft, chips, next)) {
+      const draftRev = chipEdit.captureInsertion!().draftRev
+      if (!chipEdit.insertText!(edit.text, { start: edit.start, end: edit.end, draftRev })) return
+    }
+  }
+
+  // Remove one chip: delete its single detect placeholder.
+  const removeChip = (k: number): void => {
+    const start = chipDetectIndex(draft, chips, k)
+    chipEdit.insertText?.('', { start, end: start + 1, draftRev: chipEdit.captureInsertion!().draftRev })
+    areaRef.current?.focus()
+  }
+
   const onChange = (event: ChangeEvent<HTMLTextAreaElement>): void => {
-    const value = event.target.value
-    inputActions.setDraft(value)
+    const next = event.target.value
+    writeText(next)
     resize(event.target)
-    const active = detectMention(value, event.target.selectionStart ?? value.length)
+    const active = detectMention(next, event.target.selectionStart ?? next.length)
     setMention(active === null ? null : { ...active, index: 0 })
   }
 
   const applyMention = (name: string): void => {
     if (mention === null) return
-    const caret = areaRef.current?.selectionStart ?? draft.length
-    const next = `${draft.slice(0, mention.start)}@${name} ${draft.slice(caret)}`
-    inputActions.setDraft(next)
+    const caret = areaRef.current?.selectionStart ?? value.length
+    const next = `${value.slice(0, mention.start)}@${name} ${value.slice(caret)}`
+    writeText(next)
     setMention(null)
     setPicked(picked.includes(name) ? picked : [...picked, name])
     // The machine tracks no caret: restore it behind the spliced pick once
@@ -365,11 +408,36 @@ export function RoomComposer({
             </span>
           </div>
         )}
+        {chips.length > 0 && (
+          <div className={css.chipRow}>
+            {chips.map((chip, k) => (
+              <span key={chip.occurrenceId} className={css.chip}>
+                <button
+                  type="button"
+                  className={css.chipLabel}
+                  title={chip.label}
+                  onClick={() => { openReference?.(chip.source, chip.ref) }}
+                >
+                  <span aria-hidden className={css.chipAt}>@</span>
+                  <span className={css.chipText}>{chip.label}</span>
+                </button>
+                <button
+                  type="button"
+                  className={css.tagRemove}
+                  aria-label={t('composer.chipRemove', { label: chip.label })}
+                  title={t('composer.chipRemove', { label: chip.label })}
+                  onMouseDown={(event) => { event.preventDefault() }}
+                  onClick={() => { removeChip(k) }}
+                >✕</button>
+              </span>
+            ))}
+          </div>
+        )}
         <textarea
           ref={areaRef}
           className={css.input}
           rows={2}
-          value={draft}
+          value={value}
           placeholder={tag === undefined ? t('composer.placeholder', { name: coordinator?.name ?? 'dsh' }) : tag.task === 'new' ? t('job.tagPlaceholderNew') : t('job.tagPlaceholder', { label: tag.label })}
           onChange={onChange}
           onKeyDown={onKeyDown}
