@@ -307,13 +307,24 @@ div.need p {
 
 .back {
   align-self: flex-start;
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  margin-left: -6px;
+  padding: 0 8px 0 4px;
   border: 0;
+  border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
   font: inherit;
-  font-size: var(--dsh-panel-font-caption, 12px);
+  font-size: var(--dsh-panel-text-body, 13px);
   cursor: pointer;
+}
+
+.back:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12));
+  color: var(--dsw-alias-label-primary, #1f2329);
 }
 
 .card {
