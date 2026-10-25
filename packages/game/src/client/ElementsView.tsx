@@ -122,6 +122,8 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
   const [look3d, setLook3d] = useState<Look3D | null>(element.look3d)
   const [clips, setClips] = useState<readonly string[]>([])
   const [clip, setClip] = useState<{ name: string; n: number } | null>(null)
+  const [view, setView] = useState<{ yaw: number; n: number } | null>(null)
+  const turnTo = (yaw: number): void => { setView(v => ({ yaw, n: (v?.n ?? 0) + 1 })) }
   useEffect(() => { setClips([]); setClip(null) }, [element.id])
   useEffect(() => { setLook3d(element.look3d) }, [element.id, element.look3d])
 
@@ -165,12 +167,17 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
 
     {look3d !== null ? <section className={css.lookPanel}>
       <Preview3D api={api} projectId={project.id} version={project.current?.version} look={look3d} mode="spin"
-        className={css.turntable} emptyLabel={t('look.preview3dEmpty')} onClips={setClips} clip={clip} />
+        className={css.turntable} emptyLabel={t('look.preview3dEmpty')} onClips={setClips} clip={clip} view={view} />
       {clips.length > 0 && <ChipRow label={t('gltf.clips')} value={clip?.name ?? ''} onSelect={name => { setClip(c => ({ name, n: (c?.n ?? 0) + 1 })) }}
         chips={clips.map(name => ({ id: name, label: name }))} />}
       <div className={css.toolRow}>
         <span className={css.metaLine}>{t('look.drag3d')}</span>
         <span className={css.spacer} />
+        <span role="group" aria-label={t('look.views')} className={css.toolRow}>
+          <button type="button" className={css.seg} onClick={() => { turnTo(0) }}>{t('look.front')}</button>
+          <button type="button" className={css.seg} onClick={() => { turnTo(90) }}>{t('look.side')}</button>
+          <button type="button" className={css.seg} onClick={() => { turnTo(180) }}>{t('look.back')}</button>
+        </span>
         <span className={css.saveState} data-state={saving}>{saving === 'idle' ? '' : t(`look.${saving}`)}</span>
       </div>
       {look3d.kind === 'gltf' && <GltfControls t={t} look={look3d} onChange={save} />}

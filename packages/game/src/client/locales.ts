@@ -255,7 +255,7 @@ export const zh = {
   'recipe.palette': '配色',
   'recipe.motion': '动效',
   'look.preview3dEmpty': '还没有能运行的版本，预览要等第一版通过检查',
-  'look.drag3d': '拖动可转动查看；改动提交成新版本后进游戏',
+  'look.drag3d': '左右拖转动、上下拖调俯仰；改动提交成新版本后进游戏',
   'play.inserted': '已插入对话框：{label}',
   'play.pickHover': '{label}',
   'play.diff': '差异高亮',
@@ -359,6 +359,10 @@ export const zh = {
   'gltf.original': '原材质',
   'gltf.scale': '大小',
   'gltf.clips': '动画',
+  'look.views': '视角',
+  'look.front': '正面',
+  'look.side': '侧面',
+  'look.back': '背面',
 }
 
 /** English dictionary. */
@@ -605,7 +609,7 @@ export const en: Record<keyof typeof zh, string> = {
   'recipe.palette': 'Colors',
   'recipe.motion': 'Motion',
   'look.preview3dEmpty': 'No runnable version yet — the preview waits for the first passing version',
-  'look.drag3d': 'Drag to turn it; edits reach the game once you commit them',
+  'look.drag3d': 'Drag sideways to turn, up and down to tilt; edits reach the game once you commit them',
   'play.inserted': 'Added to the composer: {label}',
   'play.pickHover': '{label}',
   'play.diff': 'Show changes',
@@ -709,6 +713,10 @@ export const en: Record<keyof typeof zh, string> = {
   'gltf.original': 'Its own materials',
   'gltf.scale': 'Size',
   'gltf.clips': 'Animations',
+  'look.views': 'View',
+  'look.front': 'Front',
+  'look.side': 'Side',
+  'look.back': 'Back',
 }
 
 /** The dictionary namespace this view binds. */

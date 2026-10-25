@@ -2,6 +2,7 @@
 
 ## 0.1.0（2026-10-24）
 
+- 3D previews face the model: a perspective orbit (models face +x), stills from the front three-quarter, `look.preview: { yaw, pitch }`, a turntable that tilts when dragged up and down, and 正面 / 侧面 / 背面 buttons.
 - 3D conveniences: `world.followCamera({ target, mouse: true })` (third person, pointer-lock turning), `style3d.rim` / `rimColor`, `scatter(…, { sway })` for grass and trees in the wind; the skill gives a tested bloom recipe through `three/addons`.
 - glTF skeletal animation: an idle clip plays on its own, `model.userData.play('walk')` cross-fades, the outline follows the bones, pick finds a posed character, and the element page lists clips to play in the turntable.
 - Walkable models: `world.add(obj, { walkable: true })` / `world.walkable(obj)` and `world.groundAt(x, z, fromY)` — climb stairs onto a platform without being pulled onto the roof above.

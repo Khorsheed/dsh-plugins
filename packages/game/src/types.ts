@@ -211,6 +211,8 @@ export interface Parts3DLook {
   readonly motion: Readonly<Record<string, MotionSpec>>
   /** Overall size in world units (default 1). */
   readonly scale?: number
+  /** The panel's default view of it. */
+  readonly preview?: PreviewAngle
   /** Refine-path (Blender) knobs; ignored by the live builder. */
   readonly refine?: Readonly<Record<string, number>>
 }
@@ -227,7 +229,15 @@ export interface GltfLook {
   readonly outline?: boolean
   /** The clip that plays on its own (default: one named idle / 待机 / stand, else the first). */
   readonly animation?: string
+  /** The panel's default view of it. */
+  readonly preview?: PreviewAngle
   readonly recipe?: Parts3DLook
+}
+
+/** A preview angle in degrees: yaw 0 looks at the face (models face +x), 90 from the side, 180 from behind; pitch looks down. */
+export interface PreviewAngle {
+  readonly yaw?: number
+  readonly pitch?: number
 }
 
 /** Any 3D look. */

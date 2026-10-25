@@ -11,7 +11,7 @@
  */
 import {
   BODY_BASES, PART_TYPES,
-  type BodyBase, type GltfLook, type Look3D, type MotionSpec, type PartSpec, type PartType, type Parts3DLook,
+  type BodyBase, type GltfLook, type Look3D, type MotionSpec, type PartSpec, type PartType, type Parts3DLook, type PreviewAngle,
 } from './types.ts'
 
 const HEX = /^#[0-9a-f]{6}$/i
@@ -96,8 +96,18 @@ function parts3d(r: Record<string, unknown>): Parts3DLook | null {
     palette,
     motion,
     ...(scale === undefined ? {} : { scale }),
+    ...previewOf(r),
     ...(Object.keys(refine).length === 0 ? {} : { refine }),
   }
+}
+
+/** A look's `preview` angle (degrees), when it has a usable one. */
+function previewOf(r: Record<string, unknown>): { preview?: PreviewAngle } {
+  const p = record(r.preview)
+  if (p === undefined) return {}
+  const yaw = clamp(p.yaw, -360, 360), pitch = clamp(p.pitch, -10, 80)
+  const out = { ...(yaw === undefined ? {} : { yaw }), ...(pitch === undefined ? {} : { pitch }) }
+  return Object.keys(out).length === 0 ? {} : { preview: out }
 }
 
 function gltf(r: Record<string, unknown>): GltfLook | null {
@@ -111,6 +121,7 @@ function gltf(r: Record<string, unknown>): GltfLook | null {
     kind: 'gltf', src, ...(scale === undefined ? {} : { scale }),
     ...(material === undefined ? {} : { material }), ...(typeof r.outline === 'boolean' ? { outline: r.outline } : {}),
     ...(typeof r.animation === 'string' && r.animation.trim() !== '' ? { animation: r.animation.trim().slice(0, 80) } : {}),
+    ...previewOf(r),
     ...(baked === null ? {} : { recipe: baked }),
   }
 }

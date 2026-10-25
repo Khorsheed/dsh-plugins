@@ -38,6 +38,7 @@
     "src/kits/types.ts",
     "src/look3d.ts",
     "src/client/Preview3D.tsx",
+    "src/client/preview-entry.ts",
     "src/client/Recipe3DEditor.tsx",
     "src/client/refs.ts"
   ]

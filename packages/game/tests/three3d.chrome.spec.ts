@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { ChromeChecker, findChrome } from '../src/checks.ts'
 import { withKitRuntime } from '../src/kits/index.ts'
 import { THREE_3D } from '../src/kits/three3d.ts'
+import { PREVIEW_HTML, PREVIEW_ID, PREVIEW_MAIN, PREVIEW_PITCH, PREVIEW_YAW } from '../src/client/preview-entry.ts'
 import type { BundleFile } from '../src/types.ts'
 
 /** A real 3D game through the real check pipeline: skipped on a machine without Chrome. */
@@ -508,6 +509,36 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
     }, { blankProbe: THREE_3D.blankProbe })
     expect(result.failures).toEqual([])
     expect(result.passed).toBe(3)
+  }, 90_000)
+
+  it('previews a look from the front three-quarter in perspective, honors its own angle, and turns to a side on request', async () => {
+    const page = (look: unknown, mode: string): Record<string, BundleFile> => withKitRuntime({
+      ...files,
+      'index.html': text(PREVIEW_HTML, 'text/html'),
+      '_preview/main.js': text(PREVIEW_MAIN),
+      '_preview/mode.json': text(JSON.stringify({ mode }), 'application/json'),
+      [`elements/${PREVIEW_ID}.json`]: text(JSON.stringify({ id: PREVIEW_ID, name: PREVIEW_ID, type: 'preview', look }), 'application/json'),
+    }, THREE_3D)
+    const still = await checker.run(page(FOX, 'still'), {
+      'tests/view.test.js': `test('default view', () => {
+        const s = game.state()
+        assert.equal(s.yaw, ${PREVIEW_YAW}); assert.equal(s.pitch, ${PREVIEW_PITCH})
+        assert(s.perspective, '应是透视镜头'); assert(s.radius > 0.5 && s.focusY > 0.1, JSON.stringify(s))
+        const cam = window.dsh3dWorld.camera.position
+        assert(cam.x > 0 && cam.y > s.focusY, '应从正面偏上方看：' + JSON.stringify(cam))
+      })`,
+    }, { blankProbe: THREE_3D.blankProbe })
+    expect(still.failures).toEqual([])
+    const own = await checker.run(page({ ...FOX, preview: { yaw: 0, pitch: 5 } }, 'spin'), {
+      'tests/own.test.js': `test('own angle, then a side', async () => {
+        assert.near(game.state().yaw, 0, 5, '转盘从自己的角度开始慢慢转'); assert.equal(game.state().pitch, 5)
+        window.postMessage({ gamedev: 'preview-view', yaw: 180 }, '*')
+        await new Promise(r => setTimeout(r, 50))
+        assert.equal(game.state().yaw, 180); assert.equal(game.state().spinning, false)
+      })`,
+    }, { blankProbe: THREE_3D.blankProbe })
+    expect(own.failures).toEqual([])
+    expect(own.passed).toBe(1)
   }, 90_000)
 
   it('flags a 3D game that never draws', async () => {
