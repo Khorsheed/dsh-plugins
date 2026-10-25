@@ -106,7 +106,12 @@ function gltf(r: Record<string, unknown>): GltfLook | null {
   const scale = clamp(r.scale, 0.05, 50)
   const recipe = record(r.recipe)
   const baked = recipe === undefined ? null : parts3d(recipe)
-  return { kind: 'gltf', src, ...(scale === undefined ? {} : { scale }), ...(baked === null ? {} : { recipe: baked }) }
+  const material = r.material === 'original' || r.material === 'toon' ? r.material : undefined
+  return {
+    kind: 'gltf', src, ...(scale === undefined ? {} : { scale }),
+    ...(material === undefined ? {} : { material }), ...(typeof r.outline === 'boolean' ? { outline: r.outline } : {}),
+    ...(baked === null ? {} : { recipe: baked }),
+  }
 }
 
 /**

@@ -447,6 +447,9 @@ button.strip { cursor: pointer; }
 .preview3dNote { padding: 12px; text-align: center; color: var(--g-screen-dim); font-size: var(--dsh-panel-text-meta, 12px); }
 .turntable { width: 100%; aspect-ratio: 16 / 10; max-height: 300px; }
 .proposal3d { width: 120px; height: 96px; }
+.gltfRow { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.gltfScale { display: inline-flex; align-items: center; gap: 6px; }
+.gltfScale input { width: 64px; }
 .elArt3d { width: 100%; height: 100%; border-radius: 8px; background: transparent; }
 /* The recipe editor: groups of sliders and color wells generated from the recipe. */
 .recipe { display: flex; flex-direction: column; gap: 4px; }

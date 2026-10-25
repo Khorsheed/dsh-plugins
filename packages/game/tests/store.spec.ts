@@ -291,3 +291,21 @@ describe('working changes and who published', () => {
     expect(await store.changes(project.id)).toMatchObject({ ok: true, busy: 'recent' })
   })
 })
+
+describe('model looks', () => {
+  it('fails the check when a glTF look points at a file the project does not have', async () => {
+    const result = await store.create({ title: 'Models', pitch: 'p', elementTypes: '角色', artStyle: 'ink', runtime: '3d' }, session())
+    if (!result.ok) throw new Error(JSON.stringify(result))
+    const root = result.project.root
+    await put(join(root, 'index.html'), '<p>3d</p>')
+    await put(join(root, 'elements/yumin.json'), JSON.stringify({ id: 'yumin', name: '羽民', type: '角色', look: { kind: 'gltf', src: 'assets/yumin.glb' } }))
+    const failed = await store.checkTurn(session(), 0, 2)
+    expect(failed.kind === 'fail' && failed.record.failures.map(f => f.message)).toEqual([expect.stringContaining('assets/yumin.glb，项目里没有这个文件')])
+    await put(join(root, 'assets/yumin.glb'), 'glb')
+    expect((await store.checkTurn(session(), 0, 2)).kind).toBe('pass')
+    const file = await store.workingFile(result.project.id, 'assets/yumin.glb')
+    expect(file).toEqual({ ok: true, file: { type: 'model/gltf-binary', b64: Buffer.from('glb').toString('base64') } })
+    expect(await store.workingFile(result.project.id, '../outside.glb')).toMatchObject({ ok: false })
+    expect(await store.workingFile(result.project.id, '.game/checks.json')).toMatchObject({ ok: false })
+  })
+})

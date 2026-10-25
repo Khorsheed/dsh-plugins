@@ -46,7 +46,7 @@ Status: implemented
 
 ## Consequences
 
-- 游戏现在可以引入 GLTFLoader 直接摆放 `.glb` 模型。在 glTF 外观做好之前，面板还不能把它们当作元素预览和调整。
+- 游戏现在可以引入 GLTFLoader 直接摆放 `.glb` 模型。作为元素外观时，面板也能预览和调整它们，见 [glTF 外观](../feature/2026-10-25-game-gltf-looks.zh.md)。
 - 游戏接管镜头或绘制后，那部分就归游戏自己管。工作台仍然通过当前的镜头来点选和画高亮圈。
 - 投影范围固定为目标周围 48 个世界单位。需要更大范围的游戏，自己调 `world.lights.sun.shadow.camera`。
 - 加载器对任何套件的模块对照表都支持前缀键。

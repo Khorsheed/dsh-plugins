@@ -145,6 +145,9 @@ const LOADER = `window.__boot = function (files) {
     return (urls[p] = mint(bytes(p), files[p].type));
   }
   function rel(v) { var r = typeof v === 'string' && norm('', v); return r && files[r] ? urlFor(r) : null }
+  // A project path's blob URL (null when the project has no such file): three's loading
+  // manager maps model and texture paths through it, since a relative Request has no usable base here.
+  window.__dshFileUrl = rel;
   var nativeFetch = window.fetch.bind(window);
   window.fetch = function (input, init) {
     var u = typeof input === 'string' ? input : input && input.url;

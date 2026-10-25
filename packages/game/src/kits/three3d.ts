@@ -62,6 +62,9 @@ function load(): Record<string, BundleFile> {
   cached = {
     [THREE_FILE]: { type: 'text/javascript', text: readFileSync(three, 'utf8') },
     [DSH3D_FILE]: { type: 'text/javascript', text: readFileSync(dsh3d, 'utf8') },
+    // dsh3d loads glTF looks with three's GLTFLoader: always aboard, since a panel preview may
+    // load a model the live version does not carry yet.
+    ...addonFiles({ 'dsh3d.js': { type: 'text/javascript', text: "import 'three/addons/loaders/GLTFLoader.js'" } }),
     // A key ending in '/' maps a prefix (import-map style).
     [KIT_IMPORTS_FILE]: { type: 'application/json', text: JSON.stringify({ three: THREE_FILE, dsh3d: DSH3D_FILE, 'three/addons/': ADDONS_DIR }) },
   }
@@ -157,7 +160,8 @@ ${STYLE_LINES}
     之后配方里就能写 \`"base": "robot"\`、\`{ "type": "antenna", "length": 0.5 }\`（自定义部件的其他参数在 spec.extra 里）。注册过的名字用户在面板里同样能调。
   - **场景物件也走配方**：树、石头、草丛、远山、建筑这类有形状的元素，同样在 \`src/looks.js\` 里 defineBase 注册造型（用 \`kit.flat(kit.color('body', '#…'))\`，尺寸读 \`look.proportions\`），元素文件写 \`look\`，成片的用 \`world.scatter(元素id, …)\` 撒开、单个的 \`build(元素id)\`（数量、分布范围这类仍是元素字段）。别在 main.js 里直接手写几何体——那样右栏看不到它的样子，用户也没法调。只有地面高度场（world.terrain）和水面这种铺满整个场景的不算元素。
   - 面数预算：单个元素 1 万三角面以内，同屏一个场景 15 万以内（\`world.stats()\` 可查，批量物件按份数算）。这是建议不是硬限制，超了先看帧率。
-- 贴图与素材：图片放 \`assets/\`，\`new THREE.TextureLoader().load('assets/xx.png')\` 就能用（贴到 toon/flat 材质的 map 上）；纸纹、墨晕这类也可以用 canvas 现画，再 \`new THREE.CanvasTexture(canvas)\`，不用另存文件。glTF 作为元素外观（\`{ kind: "gltf", src }\`）目前只显示占位方块；要先用 Blender 做的模型，可以在代码里用 GLTFLoader 直接加载 \`assets/\` 里的 .glb 放进场景（只是右栏还不能预览、调整它）。
+- 贴图与素材：图片放 \`assets/\`，\`new THREE.TextureLoader().load('assets/xx.png')\` 就能用（贴到 toon/flat 材质的 map 上）；纸纹、墨晕这类也可以用 canvas 现画，再 \`new THREE.CanvasTexture(canvas)\`，不用另存文件。
+- **模型文件做外观（glTF）**：Blender 做的角色、建筑导出成 .glb 放进 \`assets/\`，元素文件写 \`"look": { "kind": "gltf", "src": "assets/yumin.glb", "scale": 1, "material": "toon" }\`。代码里照样 \`build('yumin')\`：它立刻返回，模型加载完自己出现（要等就 \`await model.userData.loaded\` 或 \`await loaded()\`）。\`material\` 取 \`toon\`（默认：套当前风格的卡通明暗和描边，保留模型的颜色、顶点色和贴图）或 \`original\`（模型自己的材质，默认不描边）；\`outline: true/false\` 单独开关描边。右栏能预览、切换材质、调大小。导出建议：Y 轴朝上、单位米、原点在脚底、贴图打包进 .glb、单个模型 1 万面以内。检查会等模型加载完再截图、跑测试；外观引用的文件不在项目里，检查会拦下。用现成的 CC0 素材时，在 \`assets/LICENSES.md\` 记下来源和授权。骨骼动画还没接上（下一步），现在模型以静止姿态出现。
 - three 自带的扩展直接引：\`import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'\`，后期处理 \`three/addons/postprocessing/EffectComposer.js\` 等都行（只打包你引用到的文件）。
 - 镜头：默认是 45° 俯视的正交镜头。要跟随、第三人称：自己建 \`new THREE.PerspectiveCamera(…)\`，\`world.setCamera(cam)\`，然后每帧（onUpdate 里）自己摆位置、朝向；「指一下」、高亮圈都跟着这台镜头走，\`world.setCamera(null)\` 换回默认。鼠标转视角可以在点击里 \`canvas.requestPointerLock()\`（Esc 退出），并在 dshGame 上提供 \`look(dx, dy)\`，测试里用 \`drag(dx, dy)\` 模拟拖动。
 - 光与投影：\`world.lights.hemi\`（天光）、\`world.lights.sun\`（太阳）可以直接调；style3d 里写 \`"shadows": true\` 开太阳投影（之后 world.add / scatter 进来的东西都投影、受影）。

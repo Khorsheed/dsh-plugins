@@ -45,6 +45,34 @@ const files: Record<string, BundleFile> = {
   'elements/fox.json': text(JSON.stringify({ id: 'jiuweihu', name: '九尾狐', type: '异兽', look: FOX }), 'application/json'),
 }
 
+
+/** A tiny binary glTF: a tetrahedron with red vertex colors (12 vertices, no indices), sitting on y = 0. */
+function tetraGlb(): string {
+  const v = [[0, 1.2, 0], [-0.6, 0, -0.4], [0.6, 0, -0.4], [0, 0, 0.7]]
+  const faces = [[0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 3, 2]]
+  const pos = new Float32Array(faces.flatMap(f => f.flatMap(i => v[i]!)))
+  const col = new Float32Array(pos.length).map((_, i) => (i % 3 === 0 ? 0.9 : 0.15))
+  const bin = Buffer.concat([Buffer.from(pos.buffer), Buffer.from(col.buffer)])
+  const json = JSON.stringify({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0, COLOR_0: 1 }, material: 0 }] }],
+    materials: [{ pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0 } }],
+    buffers: [{ byteLength: bin.length }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: pos.byteLength }, { buffer: 0, byteOffset: pos.byteLength, byteLength: col.byteLength }],
+    accessors: [
+      { bufferView: 0, componentType: 5126, count: 12, type: 'VEC3', min: [-0.6, 0, -0.4], max: [0.6, 1.2, 0.7] },
+      { bufferView: 1, componentType: 5126, count: 12, type: 'VEC3' },
+    ],
+  })
+  const pad = (b: Buffer, fill: number): Buffer => Buffer.concat([b, Buffer.alloc((4 - (b.length % 4)) % 4, fill)])
+  const j = pad(Buffer.from(json), 0x20), b = pad(bin, 0)
+  const head = Buffer.alloc(12), jh = Buffer.alloc(8), bh = Buffer.alloc(8)
+  head.writeUInt32LE(0x46546c67, 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + 8 + j.length + 8 + b.length, 8)
+  jh.writeUInt32LE(j.length, 0); jh.writeUInt32LE(0x4e4f534a, 4)
+  bh.writeUInt32LE(b.length, 0); bh.writeUInt32LE(0x004e4942, 4)
+  return Buffer.concat([head, jh, j, bh, b]).toString('base64')
+}
+
 describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
   it('renders a parts-recipe creature, picks it with a structured reference, and pauses', async () => {
     const result = await checker.run(withKitRuntime(files, THREE_3D), {
@@ -239,6 +267,62 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
     }, { blankProbe: THREE_3D.blankProbe })
     expect(result.failures).toEqual([])
     expect(result.passed).toBe(2)
+  }, 90_000)
+
+  it('loads a glTF look: toon over vertex colors with an outline, or its own materials; checks wait for it; pick finds it', async () => {
+    const result = await checker.run(withKitRuntime({
+      ...files,
+      'assets/tetra.glb': { type: 'model/gltf-binary', b64: tetraGlb() },
+      'elements/models.json': text(JSON.stringify([
+        { id: 'tetra', name: '四面体', type: '道具', look: { kind: 'gltf', src: 'assets/tetra.glb', scale: 1.5 } },
+        { id: 'plain', name: '原样', type: '道具', look: { kind: 'gltf', src: 'assets/tetra.glb', material: 'original' } },
+      ]), 'application/json'),
+      'src/main.js': text(`import { createWorld, build } from 'dsh3d'
+        const world = createWorld()
+        world.terrain({ size: 30, height: () => 0 })
+        const tetra = world.add(world.place(build('tetra'), 0, 0), { id: 'tetra', name: '四面体' })
+        const plain = world.add(world.place(build('plain'), 3, 0), { id: 'plain' })
+        world.follow(tetra)
+        const meshes = o => { const out = []; o.traverse(m => { if (m.isMesh) out.push(m) }); return out }
+        // Ready at once: the checks themselves must wait for the models.
+        window.dshGame = { ready: true, step: dt => world.step(dt), input() {}, pick: (x, y) => world.pick(x, y),
+          state: () => {
+            const t = meshes(tetra), p = meshes(plain)
+            const body = t.find(m => !m.userData.outline)
+            return { tMeshes: t.length, toon: body?.material?.isMeshToonMaterial === true, vertexColors: body?.material?.vertexColors === true,
+              outlined: t.some(m => m.userData.outline), plainStd: p[0]?.material?.isMeshStandardMaterial === true, plainOutlined: p.some(m => m.userData.outline) }
+          } }`),
+    }, THREE_3D), {
+      'tests/model.test.js': `
+        test('the model is loaded before the test runs, toon-shaded over its vertex colors, with an outline', () => {
+          const s = game.state()
+          assert(s.tMeshes >= 2, '模型应已加载：' + JSON.stringify(s))
+          assert(s.toon && s.vertexColors, '应是保留顶点色的卡通材质：' + JSON.stringify(s))
+          assert(s.outlined, '卡通着色应带描边')
+          assert(s.plainStd && !s.plainOutlined, 'original 应保留原材质、不描边：' + JSON.stringify(s))
+        })
+        test('pick finds the loaded model', () => {
+          const world = window.dsh3dWorld, c = world.canvas
+          world.render()
+          const v = new world.THREE.Vector3(0, 0.5, 0).project(world.camera)
+          const ref = game.pick((v.x + 1) / 2 * c.width, (1 - v.y) / 2 * c.height)
+          assert(ref && ref.id === 'tetra', '应点中四面体：' + JSON.stringify(ref))
+        })`,
+    }, { blankProbe: THREE_3D.blankProbe })
+    expect(result.failures).toEqual([])
+    expect(result.passed).toBe(2)
+  }, 90_000)
+
+  it('reports a model that fails to load, and falls back instead of crashing', async () => {
+    const result = await checker.run(withKitRuntime({
+      ...files,
+      'src/main.js': text(`import { createWorld, build } from 'dsh3d'
+        const world = createWorld()
+        world.terrain({ size: 30, height: () => 0 })
+        world.follow(world.add(build({ kind: 'gltf', src: 'assets/missing.glb' }), { id: 'ghost' }))
+        window.dshGame = { ready: true, step: dt => world.step(dt), input() {}, state: () => ({}) }`),
+    }, THREE_3D), {}, { blankProbe: THREE_3D.blankProbe })
+    expect(result.failures.some(f => f.message.includes('assets/missing.glb'))).toBe(true)
   }, 90_000)
 
   it('flags a 3D game that never draws', async () => {

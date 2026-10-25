@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-25-game-plugin-boundary.md
-.agents/notes/implemented/architecture/2026-10-25-game-plugin-boundary.md: 206ad5d535878b30d1686372d63c33d52732b182
-.agents/notes/implemented/architecture/2026-10-25-game-plugin-boundary.zh.md: 3d294cbf532a2250208221d27171bef9f7044f99
+.agents/notes/implemented/architecture/2026-10-25-game-plugin-boundary.md: f1701c4ad8d67345b6f9275fcbb8058bd89b14c9
+.agents/notes/implemented/architecture/2026-10-25-game-plugin-boundary.zh.md: 6bb901615e2a6003fb0c8215620a778374a19821

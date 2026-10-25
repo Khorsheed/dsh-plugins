@@ -423,6 +423,7 @@ const TYPES: Readonly<Record<string, string>> = {
   txt: 'text/plain', md: 'text/markdown', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
   gif: 'image/gif', webp: 'image/webp', wav: 'audio/wav', ogg: 'audio/ogg', mp3: 'audio/mpeg', m4a: 'audio/mp4',
   woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
+  glb: 'model/gltf-binary', gltf: 'model/gltf+json',
 }
 
 /** Extensions shipped as text (everything else is base64). */

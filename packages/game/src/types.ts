@@ -218,6 +218,10 @@ export interface GltfLook {
   /** Project-relative path to a `.glb` / `.gltf`. */
   readonly src: string
   readonly scale?: number
+  /** `toon` (default): the style's toon shading over the model's colors, vertex colors and textures; `original`: its own materials. */
+  readonly material?: 'toon' | 'original'
+  /** Ink outline around the model (default: on with toon, off with original). */
+  readonly outline?: boolean
   readonly recipe?: Parts3DLook
 }
 
