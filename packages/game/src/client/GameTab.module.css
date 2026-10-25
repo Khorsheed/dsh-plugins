@@ -210,7 +210,8 @@ button.strip { cursor: pointer; }
 .stripMeta { color: var(--dsw-alias-label-tertiary); font-size: var(--dsh-panel-text-meta, 12px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stripGo { margin-left: auto; color: var(--s); white-space: nowrap; font-size: var(--dsh-panel-text-meta, 12px); }
 
-.stage { display: flex; flex-direction: column; border-radius: 12px; overflow: hidden; border: 1px solid var(--dsw-alias-border-l2); background: var(--g-screen); }
+/* flex: none: in the scrolling column an overflow-hidden box may otherwise shrink below its 16:10 screen, cropping the game's bottom (and centering the poster's button in the cropped-away part). */
+.stage { flex: none; display: flex; flex-direction: column; border-radius: 12px; overflow: hidden; border: 1px solid var(--dsw-alias-border-l2); background: var(--g-screen); }
 .stageBar {
   display: flex; align-items: center; gap: 8px; padding: 6px 8px; flex-wrap: wrap;
   background: var(--g-screen-bar); border-bottom: 1px solid var(--g-screen-line);
