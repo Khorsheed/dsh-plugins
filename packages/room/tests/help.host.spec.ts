@@ -166,3 +166,71 @@ describe('help helpers', () => {
     expect(turnAnswer(events, 'missing')).toBe('')
   })
 })
+
+describe('asking another room', () => {
+  const finish = (text: string) => ({ output: [{ type: 'text', text }], stopReason: 'completed' })
+
+  async function rooms() {
+    const ctx = new Context()
+    const roomAgent = { followup: vi.fn(), send: vi.fn(), whenIdle: vi.fn(async () => {}), cancel: vi.fn() }
+    ctx.provide('agents', {
+      get: () => roomAgent,
+      create: vi.fn(async (request: { sessionId: SessionId; meta?: Record<string, unknown> }) => {
+        const session = ctx.sessions.create(request.sessionId, { meta: request.meta ?? {} })
+        return { agent: { id: session.id, session }, dispose: async () => {} }
+      }),
+    } as never)
+    // CLI members answer through the local-agent facade: each run waits on its flight.
+    const flights: { provider: string; resolve: (value: unknown) => void }[] = []
+    const run = async (_parent: string, provider: string) => {
+      let resolve!: (value: unknown) => void
+      const result = new Promise((res) => { resolve = res })
+      flights.push({ provider, resolve })
+      return { id: SessionId(`child-${provider}`), localAgent: undefined, result, dispose: async () => {} }
+    }
+    ctx.provide('localAgent', { start: vi.fn(run), resume: vi.fn(run), cancel: vi.fn(() => true) } as never)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(RoomService)
+    const service = ctx.get('room') as RoomService
+    const asking = await createRoom(ctx, service)
+    const asked = await createRoom(ctx, service)
+    await service.invite({ sessionId: asked, provider: 'claude-local', name: '游戏大师' })
+    ctx.provide('sessionReferenceResolver', {
+      listCandidates: vi.fn(async (_agent: unknown, query: string) => [{ sessionId: asked, label: '游戏开发' }]
+        .filter(entry => query === '' || entry.sessionId.includes(query) || entry.label.includes(query))),
+    } as never)
+    const room = ctx.sessions.get(asking)!
+    room.append('user/message', { id: 'h1', content: [{ type: 'text', text: mention('游戏开发', asked) }], source: { kind: 'user' } }, { surfaceOp: 'append' })
+    const thread = () => room.snapshotEvents().filter(event => event.type.startsWith('room/help'))
+    const inbound = () => ctx.sessions.get(asked)!.snapshotEvents().filter(event => event.type === 'room/help-in').map(event => event.data)
+    return { ctx, service, asking, asked, room, caller: { id: asking, session: room }, flights, thread, inbound, roomAgent }
+  }
+
+  it('hands a request for a named member to that member and brings its final reply back', async () => {
+    const bench = await rooms()
+    const sent = await bench.service.askHelp({ sessionId: bench.asking, session: `@[游戏大师（游戏开发）](dsh-session:${Buffer.from(JSON.stringify(bench.asked)).toString('base64url')})`, text: '头一直转圈' }, bench.caller as never)
+    expect(sent).toMatch(/Sent to 游戏大师 in the room "游戏开发"/)
+    expect(bench.thread()[0]!.data).toMatchObject({ target: { sessionId: bench.asked, room: true, member: '游戏大师' } })
+    expect(bench.inbound()).toMatchObject([{ member: '游戏大师', from: 'dsh', text: '头一直转圈', op: 'request' }])
+    await vi.waitFor(() => expect(bench.flights).toHaveLength(1))
+    bench.flights[0]!.resolve(finish('修好了，v10 已发布'))
+    await vi.waitFor(() => expect(bench.thread().at(-1)!.data).toMatchObject({ state: 'replied' }))
+    expect(bench.thread().filter(event => event.type === 'room/help-message').map(event => event.data)).toMatchObject([{ kind: 'reply', text: '修好了，v10 已发布' }])
+  })
+
+  it('goes to the coordinator without a named member; a paused room holds it and dismissing ends the thread', async () => {
+    const bench = await rooms()
+    expect(await bench.service.setSettings({ sessionId: bench.asked, paused: true })).toMatchObject({ ok: true })
+    expect(await bench.service.askHelp({ sessionId: bench.asking, session: '游戏开发', text: '帮忙看看' }, bench.caller as never)).toMatch(/paused/)
+    expect(bench.inbound()).toMatchObject([{ member: 'dsh', held: true }])
+    expect(bench.thread().at(-1)!.data).toMatchObject({ state: 'queued' })
+    const relay = (await bench.service.getState({ sessionId: bench.asked }) as { value: { relays: { id: string }[] } }).value.relays[0]!
+    expect(await bench.service.dismissRelay({ sessionId: bench.asked, relayId: relay.id })).toMatchObject({ ok: true })
+    expect(bench.thread().at(-1)!.data).toMatchObject({ state: 'failed', error: '对方房间没有接这条求助' })
+  })
+
+  it('refuses a member the room does not have', async () => {
+    const bench = await rooms()
+    expect(await bench.service.askHelp({ sessionId: bench.asking, session: '游戏开发', member: '不存在', text: 'x' }, bench.caller as never)).toMatch(/has no member "不存在"/)
+  })
+})

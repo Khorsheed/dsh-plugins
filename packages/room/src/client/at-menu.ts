@@ -22,7 +22,21 @@ export interface SessionCandidate {
   readonly createdAt?: number
   /** The session is a room (asking a room goes through its own roster). */
   readonly room?: boolean
+  /** A room's members (askable by name). */
+  readonly members?: readonly RoomMenuMember[]
 }
+
+/** A member of another room, as the @ menu lists it. */
+export interface RoomMenuMember {
+  readonly name: string
+  readonly kind: string
+  readonly provider?: string
+}
+
+/** One row of the other-sessions group: a session (or room), or a member of a room. */
+export type OtherRow =
+  | { readonly kind: 'session'; readonly candidate: SessionCandidate }
+  | { readonly kind: 'roomMember'; readonly candidate: SessionCandidate; readonly member: RoomMenuMember }
 
 /** How many other sessions show before anything is typed. */
 export const RECENT_SESSIONS = 5
@@ -82,14 +96,56 @@ export function sessionTitle(candidate: SessionCandidate): string {
  * @returns the group's rows.
  */
 export function sessionRows(query: string, candidates: readonly SessionCandidate[], exclude: ReadonlySet<string>): SessionCandidate[] {
+  const pool = uniqueCandidates(candidates, exclude)
+  if (query === '') return pool.slice(0, RECENT_SESSIONS)
+  return rankByMatch(query, pool, sessionTitle).slice(0, MATCHED_SESSIONS)
+}
+
+/** The candidates minus the excluded, first occurrence kept. */
+function uniqueCandidates(candidates: readonly SessionCandidate[], exclude: ReadonlySet<string>): SessionCandidate[] {
   const seen = new Set<string>()
-  const pool = candidates.filter((candidate) => {
+  return candidates.filter((candidate) => {
     if (exclude.has(candidate.sessionId) || seen.has(candidate.sessionId)) return false
     seen.add(candidate.sessionId)
     return true
   })
-  if (query === '') return pool.slice(0, RECENT_SESSIONS)
-  return rankByMatch(query, pool, sessionTitle).slice(0, MATCHED_SESSIONS)
+}
+
+/**
+ * The other-sessions group with rooms. Nothing typed: the recent five, each
+ * expanded room followed by its members. Typed: sessions and every room's
+ * members match together (a member by its own name), best first.
+ * @param query - what the human typed after `@`.
+ * @param candidates - the resolver's candidates, most relevant first.
+ * @param exclude - session ids never offered.
+ * @param expanded - the rooms whose members show.
+ * @returns the group's rows.
+ */
+export function otherRows(query: string, candidates: readonly SessionCandidate[], exclude: ReadonlySet<string>, expanded: ReadonlySet<string>): OtherRow[] {
+  if (query === '') {
+    return sessionRows('', candidates, exclude).flatMap(candidate => [
+      { kind: 'session' as const, candidate },
+      ...expanded.has(candidate.sessionId) ? (candidate.members ?? []).map(member => ({ kind: 'roomMember' as const, candidate, member })) : [],
+    ])
+  }
+  const pool: OtherRow[] = uniqueCandidates(candidates, exclude).flatMap(candidate => [
+    { kind: 'session' as const, candidate },
+    ...(candidate.members ?? []).map(member => ({ kind: 'roomMember' as const, candidate, member })),
+  ])
+  return rankByMatch(query, pool, row => row.kind === 'session' ? sessionTitle(row.candidate) : row.member.name).slice(0, MATCHED_SESSIONS)
+}
+
+/**
+ * The mention for a member of a room: the room's own `dsh-session:` URI under
+ * a 「成员（房间）」 label (the label `room_help` reads the member from).
+ * @param candidate - the room.
+ * @param member - its member.
+ * @returns the mention text and its label.
+ */
+export function memberMention(candidate: SessionCandidate, member: RoomMenuMember): { readonly mention: string; readonly label: string } {
+  const uri = /\]\((dsh-session:[^)\s]*)\)\s*$/u.exec(candidate.mention)?.[1] ?? ''
+  const label = `${member.name}（${sessionTitle(candidate)}）`
+  return { mention: `@[${label.replace(/[\\\]]/gu, '\\$&')}](${uri})`, label }
 }
 
 /**

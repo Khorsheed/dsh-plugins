@@ -63,7 +63,7 @@ import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { RoomComposerMatch, RoomComposerProps } from './slots.ts'
 import { chipDetectIndex, draftSegments, freeText, planFreeEdit, type DraftChip } from './draft-chips.ts'
-import { detectOffset, rankByMatch, sessionRows, sessionTitle, shortTime, type SessionCandidate } from './at-menu.ts'
+import { detectOffset, memberMention, otherRows, rankByMatch, sessionTitle, shortTime, type RoomMenuMember, type SessionCandidate } from './at-menu.ts'
 import { memberColor } from './member-color.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
 import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
@@ -97,6 +97,7 @@ function previewOf(content: InboxState['next-turn'][number]['content']): string 
 type AtRow =
   | { readonly kind: 'member'; readonly member: { readonly name: string; readonly kind: string; readonly provider?: string } }
   | { readonly kind: 'session'; readonly candidate: SessionCandidate }
+  | { readonly kind: 'roomMember'; readonly candidate: SessionCandidate; readonly member: RoomMenuMember }
 
 interface ActiveMention {
   /** The partial name after the trailing `@`. */
@@ -185,9 +186,18 @@ export function RoomComposer({
   const justComposed = useRef(false)
   const members = state?.members ?? []
   // The other-sessions group: the host's candidates for the open query (the
-  // recent list plus the query's own lookup, merged), rooms left out until
-  // asking a room is supported.
+  // recent list plus the query's own lookup, merged). A room starts folded;
+  // its arrow (or →) shows its members, and a typed query matches members by name.
   const [sessionPool, setSessionPool] = useState<readonly SessionCandidate[]>([])
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  const toggleRoom = (id: string, open?: boolean): void => {
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (open ?? !next.has(id)) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
   const query = mention?.query
   useEffect(() => {
     if (query === undefined || listSessions === undefined) return
@@ -199,10 +209,10 @@ export function RoomComposer({
   }, [query, listSessions])
   const excluded = new Set([sessionId as string, ...members.flatMap(member => member.childSessionId === undefined ? [] : [member.childSessionId as string])])
   const memberRows = mention === null ? [] : rankByMatch(mention.query, members, member => member.name)
-  const otherRows = mention === null ? [] : sessionRows(mention.query, sessionPool.filter(candidate => candidate.room !== true), excluded)
+  const others = mention === null ? [] : otherRows(mention.query, sessionPool, excluded, expanded)
   const candidates: readonly AtRow[] = [
     ...memberRows.map(member => ({ kind: 'member' as const, member })),
-    ...otherRows.map(candidate => ({ kind: 'session' as const, candidate })),
+    ...others,
   ]
   // The inherited environment state: the room's own main-agent turn flag
   // (drives the Send/Stop swap) and the still-queued inbox rows (the official
@@ -283,6 +293,7 @@ export function RoomComposer({
   // (detect coordinates: the chips before it each fold to one placeholder);
   // a host without the insertion seam gets the mention as text.
   const applySession = (candidate: SessionCandidate): void => {
+    setExpanded(new Set())
     if (mention === null) return
     const caret = areaRef.current?.selectionStart ?? value.length
     setMention(null)
@@ -298,7 +309,12 @@ export function RoomComposer({
   }
   const pick = (row: AtRow): void => {
     if (row.kind === 'member') applyMention(row.member.name)
-    else applySession(row.candidate)
+    else if (row.kind === 'session') applySession(row.candidate)
+    else {
+      // A room's member: the room's own chip under a 「成员（房间）」 label.
+      const named = memberMention(row.candidate, row.member)
+      applySession({ ...row.candidate, mention: named.mention, displayTitle: named.label })
+    }
   }
 
   const applyMention = (name: string): void => {
@@ -368,9 +384,18 @@ export function RoomComposer({
           setMention({ ...mention, index: (mention.index + candidates.length - 1) % candidates.length })
           return
         }
+        const active = candidates[mention.index]!
+        if ((event.key === 'ArrowRight' || event.key === 'ArrowLeft') && active.kind !== 'member' && (active.kind === 'roomMember' || active.candidate.room === true)) {
+          event.preventDefault()
+          toggleRoom(active.candidate.sessionId, event.key === 'ArrowRight')
+          if (event.key === 'ArrowLeft' && active.kind === 'roomMember') {
+            setMention({ ...mention, index: candidates.findIndex(row => row.kind === 'session' && row.candidate.sessionId === active.candidate.sessionId) })
+          }
+          return
+        }
         if (event.key === 'Enter' || event.key === 'Tab') {
           event.preventDefault()
-          pick(candidates[mention.index]!)
+          pick(active)
           return
         }
       }
@@ -420,9 +445,9 @@ export function RoomComposer({
         {mention !== null && candidates.length > 0 && (
           <ul className={css.menu} role="listbox" aria-label={t('composer.at.label')}>
             {candidates.map((row, index) => (
-              <li key={row.kind === 'member' ? `m:${row.member.name}` : `s:${row.candidate.sessionId}`}>
-                {index === 0 && row.kind === 'member' && otherRows.length > 0 && <div className={css.menuGroup}>{t('composer.at.members')}</div>}
-                {index === memberRows.length && row.kind === 'session' && (
+              <li key={row.kind === 'member' ? `m:${row.member.name}` : row.kind === 'session' ? `s:${row.candidate.sessionId}` : `r:${row.candidate.sessionId}:${row.member.name}`}>
+                {index === 0 && row.kind === 'member' && others.length > 0 && <div className={css.menuGroup}>{t('composer.at.members')}</div>}
+                {index === memberRows.length && row.kind !== 'member' && (
                   <div className={css.menuGroup}>{t(mention.query === '' ? 'composer.at.recent' : 'composer.at.sessions')}</div>
                 )}
                 <button
@@ -430,12 +455,24 @@ export function RoomComposer({
                   role="option"
                   aria-selected={index === mention.index}
                   className={index === mention.index ? css.itemActive : css.item}
+                  data-kid={row.kind === 'roomMember' && mention.query === '' ? '' : undefined}
                   onMouseDown={(event) => {
                     event.preventDefault()
                     pick(row)
                   }}
                 >
-                  {row.kind === 'member'
+                  {row.kind === 'roomMember'
+                    ? <>
+                        <span className={css.dot} style={{ background: memberColor(row.member.name) }} aria-hidden />
+                        <span className={css.itemText}>
+                          {row.member.name}
+                          {mention.query !== '' && <span className={css.itemContext}> · {sessionTitle(row.candidate)}</span>}
+                        </span>
+                        <span className={css.hint}>
+                          {row.member.kind === 'main-agent' ? t('member.kind.main') : row.member.provider ?? ''}
+                        </span>
+                      </>
+                    : row.kind === 'member'
                     ? <>
                         <span className={css.dot} style={{ background: memberColor(row.member.name) }} aria-hidden />
                         <span className={css.itemText}>{row.member.name}</span>
@@ -446,14 +483,30 @@ export function RoomComposer({
                     : <>
                         <span className={css.sessionMark} aria-hidden>@</span>
                         <span className={css.itemText}>{sessionTitle(row.candidate)}</span>
+                        {row.candidate.room === true && (row.candidate.members?.length ?? 0) > 0 && (
+                          <span
+                            role="button"
+                            tabIndex={-1}
+                            className={css.expand}
+                            data-open={expanded.has(row.candidate.sessionId) ? '' : undefined}
+                            aria-label={t(expanded.has(row.candidate.sessionId) ? 'composer.at.collapse' : 'composer.at.expand')}
+                            onMouseDown={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              toggleRoom(row.candidate.sessionId)
+                            }}
+                          >▸</span>
+                        )}
                         <span className={css.hint}>
-                          {row.candidate.createdAt === undefined ? t('composer.at.session') : t('composer.at.sessionAt', { time: shortTime(row.candidate.createdAt, Date.now()) })}
+                          {row.candidate.room === true
+                            ? t('composer.at.room')
+                            : row.candidate.createdAt === undefined ? t('composer.at.session') : t('composer.at.sessionAt', { time: shortTime(row.candidate.createdAt, Date.now()) })}
                         </span>
                       </>}
                 </button>
               </li>
             ))}
-            {mention.query === '' && otherRows.length > 0 && <li className={css.menuMore}>{t('composer.at.more')}</li>}
+            {mention.query === '' && others.length > 0 && <li className={css.menuMore}>{t('composer.at.more')}</li>}
           </ul>
         )}
         {tag !== undefined && (

@@ -43,7 +43,7 @@ import { RoomTaskTags } from './task-tag.ts'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
+import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { mainSessionId, RoomStore } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
@@ -52,7 +52,7 @@ import { RoomApprovalView } from './RoomApprovalView.tsx'
 import { RoomQuestionView } from './RoomQuestionView.tsx'
 import { RoomDecisionView } from './RoomDecisionView.tsx'
 import { RoomHelpRequestView, RoomHelpView } from './RoomHelpView.tsx'
-import { sessionTitle, type SessionCandidate } from './at-menu.ts'
+import { sessionTitle, type RoomMenuMember, type SessionCandidate } from './at-menu.ts'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
   RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
@@ -395,6 +395,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     lctx.uiConversation.events.register(roomDecisionDefinition)
     lctx.uiConversation.events.register(roomHelpDefinition)
     lctx.uiConversation.events.register(roomHelpRequestDefinition)
+    lctx.uiConversation.events.register(roomHelpInDefinition)
   })
 
   // The slots are declared by ui-conversation, whose apply order
@@ -468,6 +469,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
     return flag
   }
+  const memberLists = new Map<string, { readonly at: number; readonly members: Promise<readonly RoomMenuMember[]> }>()
+  const roomMembers = (id: string): Promise<readonly RoomMenuMember[]> => {
+    const cached = memberLists.get(id)
+    if (cached !== undefined && Date.now() - cached.at < 30_000) return cached.members
+    const members = (remote?.getState({ sessionId: id as SessionId }) ?? Promise.resolve(undefined))
+      .then(carried => carried?.ok === true && carried.value.ok
+        ? carried.value.value.members.map(member => ({ name: member.name, kind: member.kind, ...member.provider === undefined ? {} : { provider: member.provider } }))
+        : [])
+      .catch(() => [])
+    memberLists.set(id, { at: Date.now(), members })
+    return members
+  }
   const listSessionsFor = async (sessionId: SessionId, query: string, signal: AbortSignal): Promise<readonly SessionCandidate[]> => {
     const resolver = ctx.get('remote.sessionReferenceResolver') as {
       candidates?(sessionId: SessionId, query: string, signal: AbortSignal): Promise<readonly SessionCandidate[]>
@@ -479,7 +492,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ])
     const merged = [...recent, ...matched]
     const flags = await Promise.all(merged.map(candidate => roomFlag(candidate.sessionId)))
-    return merged.map((candidate, index) => ({ ...candidate, ...flags[index] === true ? { room: true } : {} }))
+    // A room carries its members (askable by name): one getState per room, kept 30s.
+    return Promise.all(merged.map(async (candidate, index) => flags[index] === true
+      ? { ...candidate, room: true, members: await roomMembers(candidate.sessionId) }
+      : candidate))
   }
   const composerEntry = {
     name: 'conversation.composer',

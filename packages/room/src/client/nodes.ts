@@ -110,6 +110,9 @@ export interface RoomHelpRequestData {
   readonly op: 'request' | 'message'
   /** The asker's own words. */
   readonly text: string
+  /** Another room asked this room: the member it went to, and whether the paused room holds it. */
+  readonly member?: string
+  readonly held?: boolean
 }
 
 /** Chat node data of a member's question card (pick-to-answer). */
@@ -529,6 +532,28 @@ export const roomHelpRequestDefinition: ConversationNodeDefinition<RoomHelpReque
     const source = event.type === 'user/message' ? helpSourceOf(event.data.source) : undefined
     if (source === undefined) throw new Error('room-help-request start requires a room-help message')
     return { seq: event.seq, time: event.time, ...source }
+  },
+  update: context => context.state,
+  buildViewNode: context => viewNode(context, 'room-help-request'),
+}
+
+/**
+ * Another room asked this room for help (`room/help-in`): the same request
+ * card, naming the member it went to (and that it waits while this room is
+ * paused), with a jump back to the asking room.
+ */
+export const roomHelpInDefinition: ConversationNodeDefinition<RoomHelpRequestData> = {
+  kind: 'room-help-in',
+  target: 'chat',
+  match: event => event.type === 'room/help-in' ? { id: String(event.seq), role: 'start' } : null,
+  start: (_context, match) => {
+    const event = match.event
+    if (event.type !== 'room/help-in') throw new Error('room-help-in start requires a room/help-in event')
+    const data = event.data
+    return {
+      seq: event.seq, time: event.time, help: data.id, room: data.room, roomTitle: data.roomTitle, from: data.from,
+      op: data.op, text: data.text, member: data.member, ...data.held === true ? { held: true } : {},
+    }
   },
   update: context => context.state,
   buildViewNode: context => viewNode(context, 'room-help-request'),

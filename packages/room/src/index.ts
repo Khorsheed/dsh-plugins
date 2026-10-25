@@ -63,7 +63,7 @@ import { resolveTaskRef } from './jobs.ts'
 import { suggestTask } from './report-gate.ts'
 import { decisionRecord } from './decisions.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { askerPrompt, claimed, helperTools, helpMessage, mentionedSessions, messagePrompt, readHelpSource, receivedHelps, referencedSessions, replayHelps, requestPrompt, turnAnswer, type HelpSource } from './help.ts'
+import { askerPrompt, claimed, helperTools, helpMessage, memberFromLabel, mentionedSessions, messagePrompt, readHelpSource, receivedHelps, referencedSessions, replayHelps, requestPrompt, turnAnswer, type HelpSource } from './help.ts'
 import type {
   RoomHelp,
   RoomCancelRequest, RoomCancelResult,
@@ -281,7 +281,10 @@ export class RoomService extends TypertRemoteService {
     this.engine = new DispatchEngine(ctx, {
       allows: (room, seq) => this.plans.allows(room, seq),
       admitted: (room, seq) => this.plans.admitted(room, seq),
-      settled: (room, seq, outcome) => this.plans.settled(room, seq, outcome),
+      settled: async (room, seq, outcome) => {
+        await this.plans.settled(room, seq, outcome)
+        void this.helpSettled(room, seq, outcome).catch((error: unknown) => { this.ctx.logger.warn(`room: help reply faulted: ${String(error)}`) })
+      },
     })
     ctx.effect(() => () => this.plans.dispose())
     // The human talking to the room's own agent directly (the official input
@@ -1366,9 +1369,13 @@ export class RoomService extends TypertRemoteService {
     if (resolver?.listCandidates === undefined) return { error: 'This host cannot look sessions up; room_help is unavailable.' }
     const mentioned = mentionedSessions(name)[0]
     const query = (mentioned ?? name.replace(/^@/u, '')).trim()
-    const candidates = await resolver.listCandidates(caller, query, 8)
+    let candidates = await resolver.listCandidates(caller, query, 8)
+    // 「成员（房间）」 typed as text: look the room up by its own title.
+    const inRoom = mentioned === undefined ? /^(.+)（(.+)）$/u.exec(query) : null
+    if (candidates.length === 0 && inRoom !== null) candidates = await resolver.listCandidates(caller, inRoom[2]!, 8)
     const titleOf = (entry: { label: string; displayTitle?: string }): string => entry.displayTitle ?? entry.label
     const exact = candidates.find(entry => entry.sessionId === query) ?? candidates.find(entry => titleOf(entry) === query)
+      ?? (inRoom === null ? undefined : candidates.find(entry => titleOf(entry) === inRoom[2]))
     const picked = exact ?? (candidates.length === 1 ? candidates[0] : undefined)
     if (picked !== undefined) return { sessionId: picked.sessionId, title: titleOf(picked) }
     if (candidates.length === 0) return { error: `No session matches "${name}". Ask the human to @ the session in the room.` }
@@ -1383,7 +1390,7 @@ export class RoomService extends TypertRemoteService {
    * @param caller - the calling agent.
    * @returns the tool's text result.
    */
-  async askHelp(request: { readonly sessionId: string; readonly session?: string; readonly help?: string; readonly text: string }, caller: Agent): Promise<string> {
+  async askHelp(request: { readonly sessionId: string; readonly session?: string; readonly member?: string; readonly help?: string; readonly text: string }, caller: Agent): Promise<string> {
     const text = request.text.trim()
     if (text === '') return 'The help text must be non-blank.'
     const routed = this.nativeRoute(request.sessionId)
@@ -1405,6 +1412,7 @@ export class RoomService extends TypertRemoteService {
       if (help === undefined) return `No help thread "${threadId}" in this room.`
       room.append('room/help-message', { help: help.id, kind: 'message', text })
       await this.ctx.sessions.flush(room)
+      if (help.target.room === true) return this.deliverToRoom(room, help, text, 'message')
       return this.deliverHelp(room, help, messagePrompt(help, roomTitle, text), 'message', text)
     }
 
@@ -1414,9 +1422,16 @@ export class RoomService extends TypertRemoteService {
     if (target.sessionId === room.id || loaded.state.members.some(member => member.childSessionId === target.sessionId)) {
       return 'That session is this room or one of its members; use room_message instead.'
     }
-    const targetSession = this.ctx.sessions.get(SessionId(target.sessionId))
-    if (targetSession !== undefined && isRoomLog(targetSession.snapshotEvents())) {
-      return `"${target.title}" is a room; asking a room for help is not supported yet. Ask a plain session.`
+    // A room target goes through that room's own roster: the named member
+    // (the argument, or the 「成员（房间）」 label the @ menu wrote), else its coordinator.
+    const targetRoom = (await this.isRoom({ sessionId: SessionId(target.sessionId) })) === true
+    const named = request.member?.trim() || (targetRoom ? memberFromLabel(request.session, target.title) : undefined)
+    if (targetRoom) {
+      const other = await this.ensureLive(SessionId(target.sessionId))
+      if (!other.ok) return `Could not open the room "${target.title}".`
+      if (named !== undefined && !other.state.members.some(member => member.name === named)) {
+        return `The room "${target.title}" has no member "${named}"; its members are ${other.state.members.map(member => member.name).join(', ')}.`
+      }
     }
     const consented = referencedSessions(events).has(target.sessionId) || helps.some(entry => entry.target.sessionId === target.sessionId)
     if (!consented) {
@@ -1427,10 +1442,72 @@ export class RoomService extends TypertRemoteService {
       }], 10 * 60_000)
       if (answers?.[0]?.selected[0] !== '允许') return `The human did not allow asking "${target.title}". Do not retry unless they @ that session in the room.`
     }
-    const help = { id: randomUUID().slice(0, 8), from: memberId(events, asker), fromName: asker.name, target, text }
+    const help = {
+      id: randomUUID().slice(0, 8), from: memberId(events, asker), fromName: asker.name,
+      target: targetRoom ? { ...target, room: true as const, ...named === undefined ? {} : { member: named } } : target, text,
+    }
     room.append('room/help', help)
     await this.ctx.sessions.flush(room)
+    if (targetRoom) return this.deliverToRoom(room, help, text, 'request')
     return this.deliverHelp(room, help, requestPrompt(help, roomTitle), 'request', text)
+  }
+
+  /**
+   * Hand a help request (or a follow-up on it) to another room: its named
+   * member, else its coordinator, as a `help`-origin dispatch — held like any
+   * agent message while that room is paused — and shown on that room's
+   * timeline. The member's final reply comes back through {@link helpSettled}.
+   */
+  private async deliverToRoom(room: Session, help: { readonly id: string; readonly fromName: string; readonly target: { readonly sessionId: string; readonly title: string; readonly member?: string } }, text: string, op: 'request' | 'message'): Promise<string> {
+    const fail = async (error: string): Promise<string> => {
+      room.append('room/help-state', { help: help.id, state: 'failed', error })
+      await this.ctx.sessions.flush(room)
+      return `Could not reach "${help.target.title}": ${error}`
+    }
+    const other = await this.ensureLive(SessionId(help.target.sessionId))
+    if (!other.ok) return fail('that room is not available')
+    const events = other.session.snapshotEvents()
+    const member = help.target.member === undefined
+      ? coordinatorMember(other.state, events)
+      : other.state.members.find(entry => entry.name === help.target.member)
+    if (member === undefined) return fail(help.target.member === undefined ? 'that room has no coordinator' : `that room has no member "${help.target.member}"`)
+    const origin = { id: help.id, room: room.id, roomTitle: this.roomTitle(room), from: help.fromName }
+    const sent = sendOrHold(other.session, {
+      to: member, text, fromName: `${help.fromName}（${origin.roomTitle}）`,
+      intent: { origin: 'help', hop: 1, kind: 'task', help: origin, ...op === 'request' ? { task: SELF_TASK } : {} },
+    })
+    other.session.append('room/help-in', { ...origin, member: member.name, text, op, ...sent.delivered ? {} : { held: true } })
+    await this.ctx.sessions.flush(other.session)
+    room.append('room/help-state', { help: help.id, state: sent.delivered ? 'running' : 'queued' })
+    await this.ctx.sessions.flush(room)
+    if (sent.delivered) this.engine.dispatch(other.session, member.name, text, { dispatchSeq: sent.seq })
+    const who = `${member.name} in the room "${help.target.title}"`
+    return `${sent.delivered ? `Sent to ${who}.` : `Sent to ${who}; that room is paused, so the request waits until it resumes.`}`
+      + ` Help id: ${help.id}. The reply reaches you on its own — end your turn now; do not poll.`
+  }
+
+  /**
+   * A help dispatch in this room settled: its final reply (or its failure)
+   * goes back to the asking room's thread.
+   * @param room - the room that was asked.
+   * @param dispatchSeq - the settled dispatch.
+   * @param outcome - the run's outcome.
+   */
+  private async helpSettled(room: Session, dispatchSeq: number | undefined, outcome: { readonly state: string; readonly text?: string; readonly error?: string }): Promise<void> {
+    const source = dispatchSeq === undefined ? undefined : room.snapshotEvents().find(event => event.seq === dispatchSeq)
+    if (source?.type !== 'room/dispatch' || source.data.help === undefined) return
+    const asked = source.data.help
+    const loaded = await this.ensureLive(SessionId(asked.room))
+    if (!loaded.ok) return
+    const thread = replayHelps(loaded.session.snapshotEvents()).find(entry => entry.id === asked.id)
+    if (thread === undefined) return
+    if (outcome.state === 'done') {
+      const text = outcome.text?.trim()
+      await this.recordHelperMessage(loaded.session, thread, { kind: 'reply', text: text === undefined || text === '' ? '（对方这一轮结束了，没有给出答复）' : text })
+      return
+    }
+    loaded.session.append('room/help-state', { help: thread.id, state: 'failed', error: outcome.error ?? `对方这一轮${outcome.state === 'cancelled' ? '被取消了' : '没有完成'}` })
+    await this.ctx.sessions.flush(loaded.session)
   }
 
   /** Queue one help message in the helper's session (waking it when cold) and watch its turn. */
@@ -1977,6 +2054,15 @@ export class RoomService extends TypertRemoteService {
     if (relay.state !== 'pending') return { ok: false, error: { code: 'relay-not-pending' } }
     loaded.session.append('room/relay-resolved', { id: relay.id, state: 'dismissed' })
     await this.ctx.sessions.flush(loaded.session)
+    // A dismissed help request from another room ends that room's thread.
+    const asked = relay.intent?.help
+    if (asked !== undefined) {
+      const asking = await this.ensureLive(SessionId(asked.room))
+      if (asking.ok && replayHelps(asking.session.snapshotEvents()).some(entry => entry.id === asked.id)) {
+        asking.session.append('room/help-state', { help: asked.id, state: 'failed', error: '对方房间没有接这条求助' })
+        await this.ctx.sessions.flush(asking.session)
+      }
+    }
     return { ok: true, value: { relayId: relay.id } }
   }
 
