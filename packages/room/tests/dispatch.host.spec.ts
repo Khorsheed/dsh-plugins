@@ -167,10 +167,12 @@ describe('DispatchEngine (real composition)', () => {
     const session = bench.ctx.sessions.get(bench.sessionId)!
     const lifecycleCount = session.snapshotEvents().filter(event => event.type === 'room/run-state').length
     const progress = bench.facade.start.mock.calls[0]![3].onProgress
-    progress({ kind: 'settled', observedModel: 'observed-model', observedEffort: 'high', usage: { inputTokens: 30, outputTokens: 12 } })
+    // Disjoint counts: the billed total includes the cached input buckets.
+    progress({ kind: 'settled', observedModel: 'observed-model', observedEffort: 'high', usage: { inputTokens: 30, outputTokens: 12, cacheReadTokens: 1_000, cacheWriteTokens: 8 } })
     expect(session.snapshotEvents().filter(event => event.type === 'room/run-state')).toHaveLength(lifecycleCount)
     const result = await bench.service.getState({ sessionId: bench.sessionId })
-    expect(result).toMatchObject({ ok: true, value: { executions: [{ state: 'done', model: 'observed-model', effort: 'high', tokens: 42, childSessionId: 'child-usage' }] } })
+    expect(result).toMatchObject({ ok: true, value: { executions: [{ state: 'done', model: 'observed-model', effort: 'high', tokens: 1_050, childSessionId: 'child-usage',
+      usage: { inputTokens: 30, outputTokens: 12, cacheReadTokens: 1_000, cacheWriteTokens: 8 } }] } })
   })
 
   it('the briefing lists the other members by public role only; later prompts carry NO running log', async () => {
