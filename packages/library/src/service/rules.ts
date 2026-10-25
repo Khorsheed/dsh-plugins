@@ -61,6 +61,10 @@ export function unlockReady(nodes: readonly RoadmapNode[]): { nodes: RoadmapNode
   return { nodes: next, unlocked }
 }
 
+/** A lesson's size in knowledge points (a quiz station's points). */
+export const STATION_MIN_POINTS = 3
+export const STATION_MAX_POINTS = 5
+
 /**
  * Structural validation of a roadmap's nodes; returns the teaching error or
  * undefined. `scope.resourceId` marks a resource-level draft: the special case
@@ -110,6 +114,13 @@ export function validateRoadmapShape(
         errors.push(`nodes[${index}] (${node.id}) acceptance line ${lineIndex + 1} refs assessment ${JSON.stringify(entry.ref)}, which does not exist — compose it first (library_quiz), then draft`)
       }
     }
+    // One station is one lesson: 3–5 knowledge points, never a chapter's whole glossary.
+    const pointCount = Array.isArray(node.points) ? node.points.length : 0
+    if (node.gate === 'quiz' && pointCount > STATION_MAX_POINTS) {
+      errors.push(`nodes[${index}] (${node.id}) has ${pointCount} points — one station is one lesson of ${STATION_MIN_POINTS}–${STATION_MAX_POINTS} points: split it into consecutive stations, simple before hard`)
+    } else if (node.gate === 'quiz' && pointCount > 0 && pointCount < STATION_MIN_POINTS) {
+      errors.push(`nodes[${index}] (${node.id}) has ${pointCount} point${pointCount === 1 ? '' : 's'} — a lesson carries ${STATION_MIN_POINTS}–${STATION_MAX_POINTS}: merge it with a neighbour or name what else it teaches`)
+    }
     if (!Array.isArray(node.covers) || node.covers.length === 0) {
       errors.push(`nodes[${index}] (${node.id}) needs at least one cover — what the station draws on: "r_…#1-5" (a shelf resource + contents rows) | "https://…" (a web text) | "topic: …" (plain coached teaching)`)
     } else {
@@ -140,6 +151,10 @@ export function validateRoadmapShape(
             if (ranges.length === 0) {
               errors.push(`nodes[${index}] (${node.id}) has an unreadable locator ${JSON.stringify(cover.locator)} — locators count contents rows, 1-based and inclusive: "1-5,7"`)
               continue
+            }
+            // An authored textbook's chapters are lessons you wrote: one station teaches one.
+            if (covered.id === scope.resourceId && covered.origin === 'authored' && ranges.reduce((rows, range) => rows + range.to - range.from + 1, 0) > 1) {
+              errors.push(`nodes[${index}] (${node.id}) spans ${cover.locator} of 《${covered.title}》, a textbook you authored — each of its chapters is one lesson and one station: one row per station (too much for one lesson → split the chapter in the contents first)`)
             }
             for (const range of ranges) {
               if (range.to > (covered.toc?.length ?? 0)) {
@@ -201,3 +216,38 @@ export function coversVerbatimBlocker(covers: readonly LibraryNodeCover[], resou
   return undefined
 }
 
+
+/** The least a point's 讲义 section says (characters, markup and blanks aside). */
+export const LESSON_SECTION_MIN = 120
+
+/**
+ * What keeps a 讲义 from reading as a lesson, or undefined: change logs and
+ * internal words never reach the learner; on a textbook you authored (the 讲义
+ * ARE its text) every knowledge point gets its own section — a heading naming
+ * the point, then enough to learn it from.
+ */
+export function lessonProblems(text: string, node: RoadmapNode, authored: boolean): string | undefined {
+  const problems: string[] = []
+  if (/第\s*\d+\s*次更新|修正说明|更新说明|\bacceptance\b/i.test(text)) {
+    problems.push('the 讲义 are for the learner — drop change logs (第 N 次更新, 修正说明; the sidebar already counts revisions) and internal words (acceptance)')
+  }
+  const points = node.points ?? []
+  if (authored && points.length > 0) {
+    const squash = (value: string): string => value.replace(/[\s*_`]/g, '').toLowerCase()
+    const headings = [...text.matchAll(/^#{1,4}\s+(.+)$/gm)].map(match => ({ title: squash(match[1] ?? ''), at: match.index ?? 0, end: (match.index ?? 0) + match[0].length }))
+    const pointHeadings = points.map(point => headings.find(heading => heading.title.includes(squash(point.title))))
+    const starts = pointHeadings.flatMap(heading => heading === undefined ? [] : [heading.at]).sort((a, b) => a - b)
+    const missing: string[] = []
+    const thin: string[] = []
+    for (const [index, point] of points.entries()) {
+      const heading = pointHeadings[index]
+      if (heading === undefined) { missing.push(point.title); continue }
+      const next = starts.find(start => start > heading.at) ?? text.length
+      const body = text.slice(heading.end, next).replace(/[\s#>*_`|-]/g, '')
+      if (body.length < LESSON_SECTION_MIN) thin.push(point.title)
+    }
+    if (missing.length > 0) problems.push(`this textbook is yours, so its 讲义 are the lesson itself: give each knowledge point its own section headed by its title (## ${points[0]!.title}) — missing: ${missing.join('、')}`)
+    if (thin.length > 0) problems.push(`too thin to learn from (each point: what it is → why it matters → an example or the steps → a common mistake → one self-check question): ${thin.join('、')}`)
+  }
+  return problems.length === 0 ? undefined : problems.join('; ')
+}

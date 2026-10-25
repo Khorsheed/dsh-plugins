@@ -21,7 +21,7 @@ import {
 } from '../types.ts'
 import { mintLibraryId } from '../store.ts'
 import { refuse } from './core.ts'
-import { titleOf, unlockReady, validateRoadmapShape } from './rules.ts'
+import { lessonProblems, titleOf, unlockReady, validateRoadmapShape } from './rules.ts'
 import { LibraryServiceCards } from './cards.ts'
 
 export class LibraryServiceRoadmap extends LibraryServiceCards {
@@ -256,6 +256,9 @@ export class LibraryServiceRoadmap extends LibraryServiceCards {
       const roadmap = this.store.readRoadmap(project.value.id, request.resourceId)
       const node = roadmap?.nodes.find(candidate => candidate.id === request.nodeId)
       if (roadmap === undefined || node === undefined) return this.notesMiss(project.value.id, request.resourceId, request.nodeId)
+      const book = roadmap.primaryResourceId === undefined ? undefined : this.store.readResource(project.value.id, roadmap.primaryResourceId)
+      const lesson = lessonProblems(text, node, book?.origin === 'authored')
+      if (lesson !== undefined) return refuse('invalid', lesson)
       const notes: LibraryNodeNotes = { text, updatedAt: new Date().toISOString(), revisions: (node.notes?.revisions ?? 0) + 1 }
       const next: LibraryRoadmap = { ...roadmap, nodes: roadmap.nodes.map(candidate => candidate.id === node.id ? { ...candidate, notes } : candidate) }
       this.store.writeRoadmap(project.value.id, next)

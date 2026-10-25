@@ -14,7 +14,10 @@ export function libraryNotesTool(kit: ToolKit): ToolDefinition {
   return defineTool({
     name: 'library_notes',
     description:
-      'Write or rewrite a station\'s 讲义 (markdown; math in $…$ / $$…$$): when a station\'s teaching settles, and whenever the learner asks to 补讲 / 沉淀讲义 — the explanation, the points THIS learner got stuck on, the pitfalls. On an authored textbook the 讲义 ARE the text; on a real book they are marginalia, never a substitute. Each rewrite bumps 第 N 次更新.',
+      'Write or rewrite a station\'s 讲义 (markdown; math in $…$ / $$…$$) — written FOR the learner, never a glossary or your own notes. '
+      + 'On a textbook you authored the 讲义 ARE the lesson, written when the station opens: one line on what this lesson teaches; then one ## section per knowledge point, headed by its title, simple → hard — what it is → why it matters → an example or the steps → a common mistake → one self-check question; end with a recap and 「觉得掌握了 → 去章节考」. '
+      + 'On a real book they are a reading guide and marginalia (which pages, what to watch for, where THIS learner got stuck), never a substitute. Rewrite whenever the learner asks to 补讲 / 沉淀讲义. '
+      + 'No change logs or internal words (第 N 次更新, 修正说明, acceptance) — the sidebar counts revisions itself.',
     parameters: {
       ...textbookParams,
       node: { type: 'string', required: true, description: 'The station id (library_read · roadmap lists them).' },
