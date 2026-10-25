@@ -379,6 +379,16 @@ describe('textbook paths', () => {
 })
 
 describe('station notes (讲义)', () => {
+  it('a misplaced 讲义 is refused with its fix: still a draft, or here are the stations', async () => {
+    const { projectId, bookId } = await seed()
+    await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }] }] })
+    const drafted = await service.putNotes({ projectId, resourceId: bookId, nodeId: 'n1', text: '讲义' })
+    expect(!drafted.ok && drafted.message).toMatch(/still a draft — the learner adopts it/)
+    await service.adoptRoadmap({ projectId, resourceId: bookId })
+    const wrong = await service.putNotes({ projectId, resourceId: bookId, nodeId: 'nope', text: '讲义' })
+    expect(!wrong.ok && wrong.message).toMatch(/its stations: n1/)
+  })
+
   it('writes and rewrites a station\'s notes on the adopted path; a re-plan keeps them', async () => {
     const { projectId, bookId } = await seed()
     await adopt(projectId, bookId)
@@ -412,11 +422,11 @@ describe('station notes (讲义)', () => {
     expect((await service.getRoadmap({ projectId, resourceId: rl })).roadmap?.nodes[1]?.notes?.text).toBe('讲授站讲义正文')
     // The bad calls teach.
     const noNode = await service.putNotes({ projectId, resourceId: rl, nodeId: 's9', text: 'x' })
-    expect(!noNode.ok && noNode.message).toMatch(/no node/)
+    expect(!noNode.ok && noNode.message).toMatch(/no station .* its stations:/)
     const empty = await service.putNotes({ projectId, resourceId: rl, nodeId: 's2', text: '   ' })
     expect(!empty.ok && empty.message).toMatch(/need text/)
     const noPath = await service.putNotes({ projectId, resourceId: bookId, nodeId: 'n1', text: 'x' })
-    expect(!noPath.ok && noPath.message).toMatch(/no node/)
+    expect(!noPath.ok && noPath.message).toMatch(/has no path yet — draft one/)
   })
 })
 

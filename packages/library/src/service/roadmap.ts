@@ -228,6 +228,24 @@ export class LibraryServiceRoadmap extends LibraryServiceCards {
    * persisted on the adopted path's node. Replanning keeps it when the
    * station's id survives; every write bumps `revisions`.
    */
+  /** Why a 讲义 has nowhere to land, naming the fix: the path is only a draft, the station sits on another textbook, or here are this path's stations. */
+  private notesMiss(projectId: string, resourceId: string | undefined, nodeId: string): LibraryOutcome<never> {
+    const book = resourceId === undefined ? undefined : this.store.readResource(projectId, resourceId)
+    const named = book === undefined ? 'this textbook' : `《${book.title}》 (${book.id})`
+    const roadmap = this.store.readRoadmap(projectId, resourceId)
+    if (roadmap === undefined) {
+      const draft = this.store.readRoadmap(projectId, resourceId, 'draft')
+      return refuse('not-found', draft === undefined
+        ? `${named} has no path yet — draft one (library_roadmap); 讲义 land on an adopted path's stations`
+        : `${named}'s path is still a draft — the learner adopts it in the sidebar (路线 → 采用) before 讲义 can land; teach in the conversation meanwhile, then write the 讲义`)
+    }
+    const elsewhere = this.store.listResources(projectId)
+      .filter(resource => resource.id !== roadmap.primaryResourceId)
+      .find(resource => this.store.readRoadmap(projectId, resource.id)?.nodes.some(candidate => candidate.id === nodeId) === true)
+    if (elsewhere !== undefined) return refuse('not-found', `station ${JSON.stringify(nodeId)} is on 《${elsewhere.title}》's path — pass resource ${elsewhere.id}`)
+    return refuse('not-found', `no station ${JSON.stringify(nodeId)} on ${named}'s path — its stations: ${roadmap.nodes.map(candidate => candidate.id).join(', ')}`)
+  }
+
   async putNotes(request: { projectId: string; resourceId?: string; nodeId: string; text: string }): Promise<LibraryOutcome<{ notes: LibraryNodeNotes }>> {
     this.assertAlive('putNotes')
     const project = this.readProjectOrRefusal(request.projectId)
@@ -237,9 +255,7 @@ export class LibraryServiceRoadmap extends LibraryServiceCards {
     return await this.mutate(project.value.id, () => {
       const roadmap = this.store.readRoadmap(project.value.id, request.resourceId)
       const node = roadmap?.nodes.find(candidate => candidate.id === request.nodeId)
-      if (roadmap === undefined || node === undefined) {
-        return refuse('not-found', `no node ${JSON.stringify(request.nodeId)} on the adopted path — read the roadmap for its stations (notes ride the adopted path; the learner adopts a draft first)`)
-      }
+      if (roadmap === undefined || node === undefined) return this.notesMiss(project.value.id, request.resourceId, request.nodeId)
       const notes: LibraryNodeNotes = { text, updatedAt: new Date().toISOString(), revisions: (node.notes?.revisions ?? 0) + 1 }
       const next: LibraryRoadmap = { ...roadmap, nodes: roadmap.nodes.map(candidate => candidate.id === node.id ? { ...candidate, notes } : candidate) }
       this.store.writeRoadmap(project.value.id, next)
