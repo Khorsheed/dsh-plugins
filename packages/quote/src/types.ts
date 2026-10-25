@@ -66,13 +66,15 @@ export function formatQuoteBlock(text: string, attribution: string): string {
  * draft is filled directly; a non-empty draft gets the block appended after
  * one blank line — the user's in-progress input is never silently
  * overwritten (the message-tools backfill precedent), and the blank line
- * keeps the blockquote detached from the typed paragraph.
+ * keeps the blockquote detached from the typed paragraph. A trailing newline
+ * closes the block, so text typed next starts a line of its own instead of
+ * extending the attribution line.
  * @param current - the current composer draft.
  * @param block - the formatted quote block.
  * @returns the next draft.
  */
 export function mergedQuoteDraft(current: string, block: string): string {
-  return current.trim() === '' ? block : `${current}\n\n${block}`
+  return current.trim() === '' ? `${block}\n` : `${current}\n\n${block}\n`
 }
 
 /* ------------------------------------------------- the reference chip wire */

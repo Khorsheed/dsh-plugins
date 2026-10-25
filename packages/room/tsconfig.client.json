@@ -34,6 +34,7 @@
     "src/client/RoomSpeechView.tsx",
     "src/client/RoomStatsLine.tsx",
     "src/client/RoomTodoStrip.tsx",
+    "src/client/draft-chips.ts",
     "src/client/format.ts",
     "src/client/index.ts",
     "src/client/locales.ts",

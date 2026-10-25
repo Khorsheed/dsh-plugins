@@ -153,7 +153,10 @@ export interface QuoteInputTriggersMirror {
  * the published `draft` is the clipboard projection (each chip spans its full
  * `length`), hence the fold in the end coordinate. The blank-line separator
  * of a non-blank draft rides INSIDE the chip's clipboard text, so deleting
- * the chip removes it too.
+ * the chip removes it too. A trailing newline rides inside as well: the
+ * editor puts the caret right after the chip, and text typed there must open
+ * a line of its own — glued onto the attribution line, it would fall into the
+ * blockquote and the sent card would no longer recognize the block.
  *
  * One retry: the span's `draftRev` CAS declines an insert that raced a
  * keystroke, and a fresh snapshot immediately re-arms it.
@@ -169,7 +172,7 @@ export function insertQuoteChip(scope: QuoteBailScope, input: QuoteChipInput, bl
     const snapshot = input.state.getSnapshot()
     const folded = (snapshot.occurrences ?? []).reduce((extra, occurrence) => extra + occurrence.length - 1, 0)
     const detectEnd = snapshot.draft.length - folded
-    const clipboardText = `${snapshot.draft.trim() === '' ? '' : '\n\n'}${block}`
+    const clipboardText = `${snapshot.draft.trim() === '' ? '' : '\n\n'}${block}\n`
     const applied = scope.bail(scope, 'slash/input-insert-reference', {
       reference: {
         source: QUOTE_REFERENCE_SOURCE,

@@ -93,12 +93,12 @@ export interface QuotePreviewData {
 
 /**
  * Fold a decoded chip payload into preview data: drop the blank-line prefix
- * (a non-blank draft's separator) and the closing attribution line (the title
+ * (a non-blank draft's separator), the closing newline, and the closing attribution line (the title
  * carries the source, the location row its locator), and strip every body
  * line's wire prefix.
  */
 export function quotePreviewFromRef(decoded: QuoteRefPayload): QuotePreviewData {
-  const lines = decoded.text.replace(/^\n+/, '').split('\n')
+  const lines = decoded.text.replace(/^\n+/, '').replace(/\n+$/, '').split('\n')
   const attribution = parseAttribution(lines[lines.length - 1] ?? '')
   return {
     ...decoded.label === undefined ? {} : { title: decoded.label },

@@ -187,6 +187,12 @@ export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInject
   readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
   readonly stopMember?: ((name: string, expectedRunId?: string) => void) | undefined
   /**
+   * Preview one draft chip through its owning trigger source (the official
+   * editor's chip-click gesture; a quote chip opens its full-text card).
+   * @returns whether a source accepted. Absent without the input-trigger service.
+   */
+  readonly openReference?: ((source: string, ref: string) => boolean) | undefined
+  /**
    * Dispatch a message into the room and refresh the store on success. EVERY
    * send routes here, bare text included (the host routes bare text to the
    * current coordinator); the composer's useInput/inputActions kit carries
