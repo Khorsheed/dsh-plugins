@@ -21,7 +21,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import { useRef, useState, type ReactNode } from 'react'
-import { IconArchiveOutlineMedium, IconCheckDoubleOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium, IconNewChatOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconArchiveOutlineMedium, IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconCloseOutlineMedium, IconCodeOutlineMedium, IconLinkOutlineMedium, IconListPenOutlineMedium, IconNewChatOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { ChipRow, type Chip } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import {
@@ -42,7 +42,7 @@ import { DrawFigure } from '../detail/DrawFigure.tsx'
 import { CardTextarea } from './CardTextarea.tsx'
 import { DraftTile, type NewCardSlot } from './DraftTile.tsx'
 import { useDismiss } from '../use-dismiss.ts'
-import { IconSlidersOutline16, IconSparkFill16 } from '../icons-local.tsx'
+import { IconCheckDoubleOutline16, IconSlidersOutline16, IconSparkFill16 } from '../icons-local.tsx'
 import { MoreMenu } from '../more-menu.tsx'
 import { cardFaceOf, useGenreSeats } from '../genre-seats.tsx'
 import type { CanvasCardNote } from '../slots.ts'
@@ -565,7 +565,7 @@ export function BoardView({
                   aria-label={t('action.markAllSeen')}
                   onClick={onMarkAllSeen}
                 >
-                  <IconCheckDoubleOutlineMedium size={16} />
+                  <IconCheckDoubleOutline16 size={16} />
                 </button>
               )}
               {!readonly && (
