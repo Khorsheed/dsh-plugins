@@ -11,7 +11,7 @@
  */
 import {
   BODY_BASES, PART_TYPES,
-  type BodyBase, type GltfLook, type Look3D, type MotionSpec, type PartSpec, type PartType, type Parts3DLook,
+  type BodyBase, type GltfLook, type Look3D, type MotionSpec, type PartSpec, type PartType, type Parts3DLook, type PreviewAngle, type BoneTweak,
 } from './types.ts'
 
 const HEX = /^#[0-9a-f]{6}$/i
@@ -96,7 +96,45 @@ function parts3d(r: Record<string, unknown>): Parts3DLook | null {
     palette,
     motion,
     ...(scale === undefined ? {} : { scale }),
+    ...previewOf(r),
     ...(Object.keys(refine).length === 0 ? {} : { refine }),
+  }
+}
+
+/** A look's `preview` angle (degrees), when it has a usable one. */
+function previewOf(r: Record<string, unknown>): { preview?: PreviewAngle } {
+  const p = record(r.preview)
+  if (p === undefined) return {}
+  const yaw = clamp(p.yaw, -360, 360), pitch = clamp(p.pitch, -10, 80)
+  const out = { ...(yaw === undefined ? {} : { yaw }), ...(pitch === undefined ? {} : { pitch }) }
+  return Object.keys(out).length === 0 ? {} : { preview: out }
+}
+
+/** Names the model chose (materials, bones, shape keys): any text, bounded. */
+const PART_NAME = /^[^\u0000-\u001f]{1,60}$/
+
+/** A glTF look's named tweaks: tint, bones, morphs (each kept only when usable, at most 64 names). */
+function tweaksOf(r: Record<string, unknown>): Pick<GltfLook, 'tint' | 'bones' | 'morphs'> {
+  const entries = (raw: unknown): [string, unknown][] => Object.entries(record(raw) ?? {}).filter(([k]) => PART_NAME.test(k)).slice(0, 64)
+  const tint = Object.fromEntries(entries(r.tint).filter(([, v]) => typeof v === 'string' && HEX.test(v)).map(([k, v]) => [k, (v as string).toLowerCase()]))
+  const morphs = Object.fromEntries(entries(r.morphs).map(([k, v]) => [k, clamp(v, -1, 2)]).filter(([, v]) => v !== undefined)) as Record<string, number>
+  const bones: Record<string, BoneTweak> = {}
+  for (const [k, v] of entries(r.bones)) {
+    const b = record(v)
+    if (b === undefined) continue
+    const triple = (raw: unknown, min: number, max: number): [number, number, number] | undefined => {
+      if (!Array.isArray(raw) || raw.length !== 3) return undefined
+      const t = raw.map(x => clamp(x, min, max))
+      return t.every(x => x !== undefined) ? t as [number, number, number] : undefined
+    }
+    const scale = typeof b.scale === 'number' ? clamp(b.scale, 0.1, 5) : triple(b.scale, 0.1, 5)
+    const rotate = triple(b.rotate, -180, 180)
+    if (scale !== undefined || rotate !== undefined) bones[k] = { ...(scale === undefined ? {} : { scale }), ...(rotate === undefined ? {} : { rotate }) }
+  }
+  return {
+    ...(Object.keys(tint).length === 0 ? {} : { tint }),
+    ...(Object.keys(bones).length === 0 ? {} : { bones }),
+    ...(Object.keys(morphs).length === 0 ? {} : { morphs }),
   }
 }
 
@@ -111,6 +149,8 @@ function gltf(r: Record<string, unknown>): GltfLook | null {
     kind: 'gltf', src, ...(scale === undefined ? {} : { scale }),
     ...(material === undefined ? {} : { material }), ...(typeof r.outline === 'boolean' ? { outline: r.outline } : {}),
     ...(typeof r.animation === 'string' && r.animation.trim() !== '' ? { animation: r.animation.trim().slice(0, 80) } : {}),
+    ...previewOf(r),
+    ...tweaksOf(r),
     ...(baked === null ? {} : { recipe: baked }),
   }
 }

@@ -141,12 +141,13 @@ export function flat(color, extra) {
 function outline() {
   outlineMaterial ??= new THREE.ShaderMaterial({
     uniforms: { c: { value: new THREE.Color(style.outline) }, w: { value: style.outlineWidth } },
-    // One hull for every case: USE_INSTANCING (scatter's copies) and USE_SKINNING (a glTF
-    // character's bones) come from three's own chunks, which compile to nothing otherwise.
+    // One hull for every case: USE_INSTANCING (scatter's copies), USE_SKINNING (a glTF
+    // character's bones) and USE_MORPHTARGETS (its shape keys) come from three's own chunks,
+    // which compile to nothing otherwise.
     vertexShader: [
-      '#include <common>', '#include <skinning_pars_vertex>', 'uniform float w;', 'void main(){',
-      '#include <beginnormal_vertex>', '#include <skinbase_vertex>', '#include <skinnormal_vertex>',
-      '#include <begin_vertex>', '#include <skinning_vertex>',
+      '#include <common>', '#include <morphtarget_pars_vertex>', '#include <skinning_pars_vertex>', 'uniform float w;', 'void main(){',
+      '#include <morphinstance_vertex>', '#include <beginnormal_vertex>', '#include <morphnormal_vertex>', '#include <skinbase_vertex>', '#include <skinnormal_vertex>',
+      '#include <begin_vertex>', '#include <morphtarget_vertex>', '#include <skinning_vertex>',
       'vec4 p = vec4(transformed, 1.0); vec3 nn = objectNormal;',
       '#ifdef USE_INSTANCING', 'p = instanceMatrix * p; nn = mat3(instanceMatrix) * nn;', '#endif',
       'vec4 mv = modelViewMatrix * p; vec3 n = normalize(normalMatrix * nn); mv.xyz += n * w; gl_Position = projectionMatrix * mv; }',
@@ -515,6 +516,13 @@ export function defineBase(name, make) { BASES[name] = make }
  */
 export function definePart(type, make) { PARTS[type] = make }
 
+/** A hull draws the same shape keys as its mesh: they share the influences. */
+function shareMorphs(mesh, hull) {
+  if (!mesh.morphTargetInfluences) return
+  hull.morphTargetInfluences = mesh.morphTargetInfluences
+  hull.morphTargetDictionary = mesh.morphTargetDictionary
+}
+
 /** What stands in for a glTF model that failed to load: a labeled block, never a crash. */
 function gltfStandIn(look) {
   const g = new THREE.Group()
@@ -558,6 +566,7 @@ function toonOver(m) {
   if (m.alphaTest) params.alphaTest = m.alphaTest
   params.side = m.side
   const toonMat = rimmed(new THREE.MeshToonMaterial(params))
+  toonMat.name = m.name
   m.dispose()
   return toonMat
 }
@@ -577,9 +586,63 @@ function gltfModel(look, lookOrId) {
   // Skeletal animation: the mixer runs on the world's clock (update(t) from step).
   let mixer = null, clips = [], current = null, wanted = null, last = null
   g.userData.animations = []
+  // Named tweaks from the look (tint by material, bones by name, shape keys by name), applied
+  // after the animation every frame so a clip never overwrites them.
+  const parts = { materials: new Map(), bones: new Map(), morphMeshes: [] }
+  let tune = { tint: {}, bones: {}, morphs: {} }
+  const tunedBones = new Set()
+  function collect(root, meshes) {
+    for (const o of meshes) {
+      for (const m of [o.material].flat()) {
+        if (!m || !m.name) continue
+        if (!parts.materials.has(m.name)) parts.materials.set(m.name, [])
+        parts.materials.get(m.name).push(m)
+        m.userData.baseColor = m.color ? m.color.clone() : null
+      }
+      if (o.morphTargetDictionary && o.morphTargetInfluences && !o.userData.outline) { o.userData.restMorphs = [...o.morphTargetInfluences]; parts.morphMeshes.push(o) }
+    }
+    root.traverse(n => { if (n.name && (n.isBone || !n.isMesh) && !parts.bones.has(n.name)) parts.bones.set(n.name, { node: n, scale: n.scale.clone(), quat: n.quaternion.clone() }) })
+  }
+  function restBones() {
+    for (const name of tunedBones) { const b = parts.bones.get(name); if (b) { b.node.scale.copy(b.scale); b.node.quaternion.copy(b.quat) } }
+  }
+  function tuneBones() {
+    for (const [name, spec] of Object.entries(tune.bones ?? {})) {
+      const b = parts.bones.get(name)
+      if (!b) continue
+      tunedBones.add(name)
+      if (typeof spec.scale === 'number') b.node.scale.multiplyScalar(spec.scale)
+      else if (Array.isArray(spec.scale)) b.node.scale.multiply(new THREE.Vector3(...spec.scale))
+      if (Array.isArray(spec.rotate)) b.node.quaternion.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(...spec.rotate.map(v => deg(v)))))
+    }
+  }
+  function tuneMorphs() {
+    const wanted = Object.entries(tune.morphs ?? {})
+    if (wanted.length === 0) return
+    for (const o of parts.morphMeshes) for (const [name, v] of wanted) { const i = o.morphTargetDictionary[name]; if (i !== undefined) o.morphTargetInfluences[i] = v }
+  }
+  /** Apply a look's tweaks again without reloading (the panel's live edits). */
+  function retune(next) {
+    tune = { tint: next.tint ?? {}, bones: next.bones ?? {}, morphs: next.morphs ?? {} }
+    for (const [name, list] of parts.materials) for (const m of list) {
+      const c = tune.tint[name]
+      if (m.userData.baseColor) m.color.copy(c ? new THREE.Color(c) : m.userData.baseColor)
+    }
+    for (const o of parts.morphMeshes) o.userData.restMorphs.forEach((v, i) => { o.morphTargetInfluences[i] = v })
+    restBones(); tuneBones(); tuneMorphs()
+  }
+  g.userData.retune = next => { if (parts.bones.size + parts.materials.size + parts.morphMeshes.length > 0) retune(next) }
+  /** What the loaded model can be tuned by: its named materials, bones and shape keys. */
+  g.userData.parts = () => ({
+    materials: [...parts.materials].map(([name, list]) => ({ name, color: '#' + (list[0].userData.baseColor ?? new THREE.Color('#ffffff')).getHexString(), vertexColors: list.some(m => m.vertexColors) })),
+    bones: [...parts.bones.values()].filter(b => b.node.isBone).map(b => b.node.name),
+    morphs: [...new Set(parts.morphMeshes.flatMap(o => Object.keys(o.morphTargetDictionary)))],
+  })
   g.userData.update = t => {
+    restBones()
     if (mixer !== null) mixer.update(last === null ? 0 : Math.max(0, t - last))
     last = t
+    tuneBones(); tuneMorphs()
   }
   /**
    * Play a clip by name, cross-fading from the one before (`{ fade: 0.2, loop: true }`).
@@ -619,14 +682,18 @@ function gltfModel(look, lookOrId) {
             o.parent.add(hull)
             hull.updateMatrixWorld(true)
             hull.bind(o.skeleton, o.bindMatrix)
+            shareMorphs(o, hull)
           } else {
             const hull = new THREE.Mesh(o.geometry, outline())
             hull.raycast = () => {}
             hull.userData.outline = true
             o.add(hull)
+            shareMorphs(o, hull)
           }
         }
       })
+      collect(gltf.scene, meshes)
+      retune(look)
       body.add(gltf.scene)
       clips = gltf.animations
       g.userData.animations = clips.map(c => c.name)

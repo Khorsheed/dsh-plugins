@@ -6,6 +6,9 @@
  * swapped in — so the panel never carries a second copy of the builder, and
  * what it shows is exactly what the game builds.
  *
+ * The camera and the in-frame entry live in `preview-entry.ts`: a
+ * perspective orbit that faces the model (yaw 0 = its +x front).
+ *
  * `spin` keeps a live, draggable turntable that follows look edits; `still`
  * renders once, posts a PNG back and is replaced by that image (cached per
  * look, so a scrolled-back card costs nothing). Stills render a couple at a
@@ -14,56 +17,11 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { BundleFile, Look3D } from '../types.ts'
-import { shellHtml, type FrameMessage } from '../vfs.ts'
+import { shellHtml, type FrameMessage, type ModelParts } from '../vfs.ts'
 import type { GameApi } from './contract.ts'
 import { failureOf } from './contract.ts'
+import { PREVIEW_HTML, PREVIEW_ID, PREVIEW_MAIN } from './preview-entry.ts'
 import css from './GameTab.module.css'
-
-/** The id the previewed look rides under in `window.dshElements`. */
-const PREVIEW_ID = '__preview'
-
-/** The preview entry: build the look, fit it, spin or snapshot. Kept as a string (it runs in the frame). */
-const PREVIEW_MAIN = `
-const { createWorld, build, THREE } = await import('dsh3d')
-try { await import('../src/looks.js') } catch (e) {}
-const mode = (await (await fetch('_preview/mode.json')).json()).mode
-const world = createWorld({ canvas: document.querySelector('canvas') })
-let model = null, angle = 0.5, drag = null
-function place() {
-  model.position.set(0, 0, 0)
-  model.updateMatrixWorld(true)
-  const box = new THREE.Box3().setFromObject(model)
-  if (box.isEmpty()) return
-  const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3())
-  model.position.set(-center.x, -box.min.y - size.y / 2, -center.z)
-  world.setZoom(6.2 / Math.max(0.6, Math.max(size.x, size.y, size.z) * 0.85))
-}
-async function fit() {
-  if (model) world.remove(model)
-  // From the look object, not the id: the world's own rebuild-by-element must not touch the preview.
-  model = build(window.dshElements['${PREVIEW_ID}'].look)
-  world.add(model, { id: '${PREVIEW_ID}' })
-  place()
-  // A glTF look fills in later: measure again once it has, and say which clips it has.
-  if (model.userData.loaded) { await model.userData.loaded; place() }
-  parent.postMessage({ gamedev: 'preview-clips', names: model.userData.animations ?? [] }, '*')
-}
-addEventListener('message', e => { if (e.data && e.data.gamedev === 'preview-play' && model) model.userData.play?.(e.data.name) })
-await fit()
-addEventListener('dshelements', () => { setTimeout(fit) })
-const canvas = world.canvas
-canvas.addEventListener('pointerdown', e => { drag = e.clientX; canvas.setPointerCapture(e.pointerId) })
-canvas.addEventListener('pointermove', e => { if (drag !== null) { angle += (e.clientX - drag) * 0.012; drag = e.clientX } })
-canvas.addEventListener('pointerup', () => { drag = null })
-world.onUpdate(dt => { if (mode === 'spin' && drag === null) angle += dt * 0.5; if (model) model.rotation.y = angle })
-if (mode === 'still') {
-  world.step(0.4)
-  parent.postMessage({ gamedev: 'preview', png: canvas.toDataURL('image/png') }, '*')
-} else world.start()
-`
-
-const PREVIEW_HTML = '<style>html,body{margin:0;height:100%;overflow:hidden}canvas{width:100%;height:100%;display:block;touch-action:none}</style>'
-  + '<canvas></canvas><script type="module" src="_preview/main.js"></script>'
 
 /** Live version bundles per project, fetched once per version (three.js rides in them). */
 const bundles = new Map<string, Promise<Readonly<Record<string, BundleFile>> | null>>()
@@ -129,14 +87,16 @@ export interface Preview3DProps {
   readonly emptyLabel: string
   /** Shown instead of `emptyLabel`, and under a still while it renders. */
   readonly placeholder?: ReactNode
-  /** A turntable reports a model's animation clips here once it has loaded. */
-  readonly onClips?: (names: readonly string[]) => void
+  /** A turntable reports a model's animation clips, and what it can be tuned by, once it has loaded. */
+  readonly onClips?: (names: readonly string[], parts: ModelParts | null) => void
   /** A turntable plays this clip (bump `n` to play the same one again). */
   readonly clip?: { readonly name: string; readonly n: number } | null
+  /** A turntable turns to this side (yaw in degrees: 0 front, 90 side, 180 back; bump `n` to repeat). */
+  readonly view?: { readonly yaw: number; readonly n: number } | null
 }
 
 /** One 3D look preview. */
-export function Preview3D({ api, projectId, version, look, mode, className, emptyLabel, placeholder, onClips, clip }: Preview3DProps): ReactNode {
+export function Preview3D({ api, projectId, version, look, mode, className, emptyLabel, placeholder, onClips, clip, view }: Preview3DProps): ReactNode {
   const lookJson = JSON.stringify(look)
   const stillKey = `${projectId}:${version}:${lookJson}`
   const [files, setFiles] = useState<Readonly<Record<string, BundleFile>> | null>(null)
@@ -193,11 +153,16 @@ export function Preview3D({ api, projectId, version, look, mode, className, empt
         stills.set(stillKey, data.png)
         setImage(data.png)
       }
-      if (data?.gamedev === 'preview-clips' && mode === 'spin') onClips?.(data.names)
+      if (data?.gamedev === 'preview-clips' && mode === 'spin') onClips?.(data.names, data.parts)
     }
     window.addEventListener('message', onMessage)
     return () => { window.removeEventListener('message', onMessage) }
   }, [mode, stillKey, onClips])
+
+  useEffect(() => {
+    if (view == null || mode !== 'spin' || !booted.current) return
+    frame.current?.contentWindow?.postMessage({ gamedev: 'preview-view', yaw: view.yaw }, '*')
+  }, [view, mode])
 
   useEffect(() => {
     if (clip == null || mode !== 'spin' || !booted.current) return
