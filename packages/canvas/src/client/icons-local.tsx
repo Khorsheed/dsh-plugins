@@ -132,3 +132,27 @@ export const IconSlidersOutline16 = ({ size = 16, className }: LocalIconProps) =
     <circle cx="6.2" cy="11.2" r="1.6" />
   </svg>
 )
+
+/**
+ * Double check: the board's 「全部标为已读」. ui-primitives dropped
+ * `IconCheckDoubleOutlineMedium` in 0.2.1-rc.1, so the glyph the board already
+ * shipped (the 0.1.7-rc.1 artwork, unchanged) lives here instead.
+ * @param props - size and className.
+ * @returns the icon element.
+ */
+export const IconCheckDoubleOutline16 = ({ size = 16, className }: LocalIconProps) => (
+  <svg
+    width={size}
+    height={size}
+    className={className}
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth={1.3}
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <path d="M1.25 8.75L4.25 11.75L10.75 4.25" />
+    <path d="M7.75 11.25L8.25 11.75L14.75 4.25" />
+  </svg>
+)
