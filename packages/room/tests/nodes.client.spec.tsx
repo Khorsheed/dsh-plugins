@@ -322,13 +322,15 @@ describe('RoomSpeechView', () => {
     expect(screen.getByText('1.2s')).toBeDefined()
   })
 
-  it('reads as a conversation entry: a member-color avatar beside one card holding header, body and actions', async () => {
+  it('reads as a conversation entry: one full-width block whose header opens with the member-color avatar', async () => {
     const { container } = await bench()
     const root = container.firstElementChild as HTMLElement
     expect(root.style.getPropertyValue('--member-color')).toBe(memberColor('ada'))
-    const [avatar, card] = [...root.children] as HTMLElement[]
-    expect(avatar!.textContent).toBe('A')
-    expect(card!.contains(screen.getByText('ada'))).toBe(true)
+    const [card] = [...root.children] as HTMLElement[]
+    expect(root.children).toHaveLength(1)
+    const name = screen.getByText('ada')
+    expect(name.previousElementSibling!.textContent).toBe('A')
+    expect(card!.contains(name)).toBe(true)
     expect(card!.contains(screen.getByText('方案 A 如下'))).toBe(true)
     expect(card!.contains(screen.getByRole('button', { name: '复制' }))).toBe(true)
   })
