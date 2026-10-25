@@ -46,7 +46,7 @@ A wall that only the plugin can open is a plugin bug and is fixed first. The gam
 
 ## Consequences
 
-- A game can now import GLTFLoader and place `.glb` models directly. The panel cannot preview or tune them as elements until the glTF look path lands.
+- A game can now import GLTFLoader and place `.glb` models directly. As element looks they are previewed and tuned in the panel since [glTF looks](../feature/2026-10-25-game-gltf-looks.md).
 - A game that takes over the camera or drawing owns that part. The workbench still picks and rings through whatever camera is current.
 - The shadow box is fixed at 48 world units around the target. A game that needs more tunes `world.lights.sun.shadow.camera`.
 - The loader accepts prefix keys for any kit's import map.

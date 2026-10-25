@@ -168,6 +168,7 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
         <span className={css.spacer} />
         <span className={css.saveState} data-state={saving}>{saving === 'idle' ? '' : t(`look.${saving}`)}</span>
       </div>
+      {look3d.kind === 'gltf' && <GltfControls t={t} look={look3d} onChange={save} />}
     </section> : <section className={css.lookPanel}>
       <div className={css.lookMain}>
         {look !== null
@@ -283,4 +284,25 @@ function LoreCard({ t, element, onSave }: { t: ElementsViewProps['t']; element: 
       onBlur={() => { if (text.trim() !== element.lore) onSave(text.trim()) }} />
     <p className={css.metaLine}>{t('lore.note')}</p>
   </section>
+}
+
+/** A model-file look: which file, toon or its own materials, and its size in the game. */
+function GltfControls({ t, look, onChange }: { t: ElementsViewProps['t']; look: Extract<Look3D, { kind: 'gltf' }>; onChange: (next: Look3D) => void }): ReactNode {
+  const material = look.material ?? 'toon'
+  const [scale, setScale] = useState(String(look.scale ?? 1))
+  useEffect(() => { setScale(String(look.scale ?? 1)) }, [look.scale])
+  return <div className={css.gltfRow}>
+    <span className={css.metaLine}>{t('gltf.file', { src: look.src })}</span>
+    <span className={css.spacer} />
+    <span role="group" aria-label={t('gltf.material')} className={css.toolRow}>
+      <button type="button" className={css.seg} aria-pressed={material === 'toon'} onClick={() => { onChange({ ...look, material: 'toon' }) }}>{t('gltf.toon')}</button>
+      <button type="button" className={css.seg} aria-pressed={material === 'original'} onClick={() => { onChange({ ...look, material: 'original' }) }}>{t('gltf.original')}</button>
+    </span>
+    <label className={css.gltfScale}>
+      <span className={css.metaLine}>{t('gltf.scale')}</span>
+      <input className={css.input} inputMode="decimal" value={scale} onChange={e => { setScale(e.target.value) }}
+        onBlur={() => { const v = Number(scale); if (Number.isFinite(v) && v > 0 && v !== (look.scale ?? 1)) onChange({ ...look, scale: v }) }}
+        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
+    </label>
+  </div>
 }

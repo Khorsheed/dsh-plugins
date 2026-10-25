@@ -96,6 +96,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     deleteProject: (sid, projectId, mode) => remote.deleteProject(sid, { projectId, mode }),
     bundle: (projectId, which) => remote.bundle({ projectId, which }),
     versionBundle: (projectId, version) => remote.versionBundle({ projectId, version }),
+    workingFile: (projectId, path) => remote.workingFile({ projectId, path }),
     confirm: (sid, projectId) => remote.confirm(sid, { projectId }),
     commit: (sid, projectId) => remote.commit(sid, { projectId }),
     changes: projectId => remote.changes({ projectId }),

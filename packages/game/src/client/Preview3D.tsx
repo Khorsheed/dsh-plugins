@@ -29,16 +29,25 @@ try { await import('../src/looks.js') } catch (e) {}
 const mode = (await (await fetch('_preview/mode.json')).json()).mode
 const world = createWorld({ canvas: document.querySelector('canvas') })
 let model = null, angle = 0.5, drag = null
-function fit() {
+function place() {
+  model.position.set(0, 0, 0)
+  model.updateMatrixWorld(true)
+  const box = new THREE.Box3().setFromObject(model)
+  if (box.isEmpty()) return
+  const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3())
+  model.position.set(-center.x, -box.min.y - size.y / 2, -center.z)
+  world.setZoom(6.2 / Math.max(0.6, Math.max(size.x, size.y, size.z) * 0.85))
+}
+async function fit() {
   if (model) world.remove(model)
   // From the look object, not the id: the world's own rebuild-by-element must not touch the preview.
   model = build(window.dshElements['${PREVIEW_ID}'].look)
   world.add(model, { id: '${PREVIEW_ID}' })
-  const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3())
-  model.position.set(-center.x, -box.min.y - size.y / 2, -center.z)
-  world.setZoom(6.2 / Math.max(0.6, Math.max(size.x, size.y, size.z) * 0.85))
+  place()
+  // A glTF look fills in later: measure again once it has.
+  if (model.userData.loaded) { await model.userData.loaded; place() }
 }
-fit()
+await fit()
 addEventListener('dshelements', () => { setTimeout(fit) })
 const canvas = world.canvas
 canvas.addEventListener('pointerdown', e => { drag = e.clientX; canvas.setPointerCapture(e.pointerId) })
@@ -64,6 +73,13 @@ function liveBundle(api: GameApi, projectId: string, version: number): Promise<R
     bundles.set(key, pending)
   }
   return pending
+}
+
+/** The working copy of a glTF look's file (a model exported moments ago may not be in any version yet). */
+async function withModel(api: GameApi, projectId: string, look: Look3D, files: Readonly<Record<string, BundleFile>> | null): Promise<Readonly<Record<string, BundleFile>> | null> {
+  if (files === null || look.kind !== 'gltf') return files
+  const r = await api.workingFile(projectId, look.src)
+  return failureOf(r) === undefined && r.ok && r.value.ok ? { ...files, [look.src]: r.value.file } : files
 }
 
 /** Still images per look (and project version, whose style and registrations shape it). */
@@ -124,6 +140,9 @@ export function Preview3D({ api, projectId, version, look, mode, className, empt
   const frame = useRef<HTMLIFrameElement>(null)
   const booted = useRef(false)
   const shell = useMemo(() => shellHtml(), [])
+  // A glTF look's file: switching it reloads the frame (other look edits stream in live).
+  const modelSrc = look.kind === 'gltf' ? look.src : ''
+  useEffect(() => { booted.current = false }, [modelSrc])
 
   // A still follows its key (a new live version or an edited look): start over from the cache or a fresh render.
   useEffect(() => {
@@ -145,20 +164,20 @@ export function Preview3D({ api, projectId, version, look, mode, className, empt
     if (version === undefined || !visible || image !== null) return
     let live = true
     if (mode === 'spin') {
-      void liveBundle(api, projectId, version).then(f => { if (live) setFiles(f) })
+      void liveBundle(api, projectId, version).then(f => withModel(api, projectId, look, f)).then(f => { if (live) setFiles(f) })
       return () => { live = false }
     }
     // A still holds a render slot from loading until its image lands (or it times out).
     const slot = stillSlot()
     let timer: ReturnType<typeof setTimeout> | undefined
-    void slot.ready.then(() => liveBundle(api, projectId, version)).then(f => {
+    void slot.ready.then(() => liveBundle(api, projectId, version)).then(f => withModel(api, projectId, look, f)).then(f => {
       if (!live) return
       if (f === null) { slot.release(); return }
       timer = setTimeout(slot.release, STILL_TIMEOUT_MS)
       setFiles(f)
     })
     return () => { live = false; clearTimeout(timer); slot.release() }
-  }, [api, projectId, version, visible, image, mode])
+  }, [api, projectId, version, visible, image, mode, modelSrc]) // eslint-disable-line react-hooks/exhaustive-deps -- look is read for its model file only (modelSrc)
 
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
@@ -196,7 +215,7 @@ export function Preview3D({ api, projectId, version, look, mode, className, empt
   return <div ref={box} className={[css.preview3d, className].filter(Boolean).join(' ')}>
     {image !== null ? <img src={image} alt="" /> : <>
       {(mode === 'still' || version === undefined) && waiting}
-      {version !== undefined && files !== null && <iframe ref={frame} className={css.preview3dFrame} data-mode={mode} title="preview" sandbox="allow-scripts" srcDoc={shell} onLoad={boot} />}
+      {version !== undefined && files !== null && <iframe key={modelSrc} ref={frame} className={css.preview3dFrame} data-mode={mode} title="preview" sandbox="allow-scripts" srcDoc={shell} onLoad={boot} />}
     </>}
   </div>
 }

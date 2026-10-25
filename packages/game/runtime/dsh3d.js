@@ -488,7 +488,7 @@ export function defineBase(name, make) { BASES[name] = make }
  */
 export function definePart(type, make) { PARTS[type] = make }
 
-/** A gltf look until the loader lands (the refine milestone): a labeled stand-in, never a crash. */
+/** What stands in for a glTF model that failed to load: a labeled block, never a crash. */
 function gltfStandIn(look) {
   const g = new THREE.Group()
   const box = ink(new THREE.BoxGeometry(0.6, 0.6, 0.6), toon('#c9bda4'))
@@ -496,6 +496,85 @@ function gltfStandIn(look) {
   g.add(box)
   g.userData.update = () => {}
   g.userData.standIn = look.src
+  return g
+}
+
+/* ------------------------------------------------------------------- glTF */
+
+/** Model loads in flight; `loaded()` and the workbench's checks wait on them. */
+const pending = new Set()
+
+/** Resolves once every model `build` has started so far has loaded (or failed). */
+export function loaded() { return Promise.all([...pending]).then(() => undefined) }
+window.__dshPending = loaded
+
+let gltfLoader = null
+async function loaderFor() {
+  if (gltfLoader === null) {
+    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js')
+    const manager = new THREE.LoadingManager()
+    // Project paths (the model, a .gltf's .bin and textures) become the sandbox's own blob URLs.
+    manager.setURLModifier(url => window.__dshFileUrl?.(url) ?? url)
+    gltfLoader = new GLTFLoader(manager)
+  }
+  return gltfLoader
+}
+
+/** The style's toon material over a loaded material's colors, vertex colors, textures and glow. */
+function toonOver(m) {
+  const params = { gradientMap: gradientFor(style.shades), color: m.color ? m.color.clone() : new THREE.Color('#ffffff') }
+  if (m.map) params.map = m.map
+  if (m.vertexColors) params.vertexColors = true
+  if (m.emissive) params.emissive = m.emissive.clone()
+  if (m.emissiveMap) params.emissiveMap = m.emissiveMap
+  if (m.transparent) { params.transparent = true; params.opacity = m.opacity }
+  if (m.alphaTest) params.alphaTest = m.alphaTest
+  params.side = m.side
+  const toonMat = new THREE.MeshToonMaterial(params)
+  m.dispose()
+  return toonMat
+}
+
+/**
+ * A glTF look: the model frame comes back at once and the .glb fills it when
+ * loaded (`model.userData.loaded` resolves then). Toon by default; the
+ * outline hull is skipped on skinned meshes (it would not follow the bones).
+ * A failed load reports itself and falls back to the look's recipe, else a block.
+ */
+function gltfModel(look, lookOrId) {
+  const g = new THREE.Group()
+  const body = new THREE.Group()
+  g.add(body)
+  g.scale.setScalar(num(look.scale, 1))
+  g.userData.update = () => {}
+  g.userData.src = look.src
+  const toonMode = look.material !== 'original'
+  const withOutline = look.outline ?? toonMode
+  const job = loaderFor()
+    .then(loader => loader.loadAsync(look.src))
+    .then(gltf => {
+      // Collected first: the hulls added below are meshes too, and must not be visited.
+      const meshes = []
+      gltf.scene.traverse(o => { if (o.isMesh) meshes.push(o) })
+      meshes.forEach(o => {
+        if (toonMode) o.material = Array.isArray(o.material) ? o.material.map(toonOver) : toonOver(o.material)
+        if (withOutline && !o.isSkinnedMesh && style.outlineWidth > 0) {
+          const hull = new THREE.Mesh(o.geometry, outline())
+          hull.raycast = () => {}
+          hull.userData.outline = true
+          o.add(hull)
+        }
+      })
+      body.add(gltf.scene)
+      g.userData.animations = gltf.animations
+    })
+    .catch(error => {
+      console.error(`dsh3d：模型 ${look.src} 加载失败：${error?.message ?? error}`)
+      body.add(look.recipe ? buildLook(look.recipe, lookOrId) : gltfStandIn(look))
+    })
+    .finally(() => { pending.delete(job) })
+  pending.add(job)
+  g.userData.loaded = job
   return g
 }
 
@@ -511,7 +590,7 @@ export function build(lookOrId) {
 
 function buildLook(look, lookOrId) {
   if (!look || typeof look !== 'object') throw new Error(`dsh3d.build：没有可用的 look（${String(lookOrId)}）`)
-  if (look.kind === 'gltf') return look.recipe ? buildLook(look.recipe, lookOrId) : gltfStandIn(look)
+  if (look.kind === 'gltf') return gltfModel(look, lookOrId)
   const make = BASES[look.base]
   if (!make) throw new Error(`dsh3d.build：base「${look.base}」没有注册（内置 ${Object.keys(BASES).join('、')}；自己的身体用 defineBase 注册）`)
   const kit = kitFor(look)
@@ -764,6 +843,7 @@ export function createWorld(options = {}) {
       // Inside a scene, an entity belongs to it and leaves with it.
       ;(current?.group ?? scene).add(object)
       shade(object)
+      object.userData.loaded?.then(() => { shade(object) })
       entities.push(object)
       current?.entities.push(object)
       return object
@@ -831,8 +911,17 @@ export function createWorld(options = {}) {
       })
       const make = () => {
         const model = build(idOrLook)
-        model.updateMatrixWorld(true)
         const group = new THREE.Group()
+        // A glTF look fills in later: the copies are made once it has.
+        const fill = () => { model.updateMatrixWorld(true); instance(model, group); shade(group) }
+        if (model.userData.loaded) model.userData.loaded.then(fill)
+        else fill()
+        group.userData.scatter = { count: spots.length }
+        if (id !== null) group.userData.builtFrom = id
+        group.userData.rescatter = make
+        return group
+      }
+      const instance = (model, group) => {
         model.traverse(o => {
           if (!o.isMesh) return
           const copies = new THREE.InstancedMesh(o.geometry, o.material, matrices.length)
@@ -842,10 +931,6 @@ export function createWorld(options = {}) {
           if (o.userData.outline) { copies.userData.outline = true; copies.raycast = () => {} }
           group.add(copies)
         })
-        group.userData.scatter = { count: spots.length }
-        if (id !== null) group.userData.builtFrom = id
-        group.userData.rescatter = make
-        return group
       }
       const elementName = id !== null ? window.dshElements?.[id]?.name : undefined
       return world.add(make(), { id: id ?? undefined, inst, name: name ?? elementName })

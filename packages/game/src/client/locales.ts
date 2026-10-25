@@ -353,6 +353,11 @@ export const zh = {
   'versions.by.user': '你发布',
   'versions.by.agent': 'agent 发布',
   'versions.by.turn': '回合结束自动',
+  'gltf.file': '模型文件：{src}',
+  'gltf.material': '材质',
+  'gltf.toon': '卡通着色',
+  'gltf.original': '原材质',
+  'gltf.scale': '大小',
 }
 
 /** English dictionary. */
@@ -697,6 +702,11 @@ export const en: Record<keyof typeof zh, string> = {
   'versions.by.user': 'Published by you',
   'versions.by.agent': 'Published by the agent',
   'versions.by.turn': 'Auto at turn end',
+  'gltf.file': 'Model file: {src}',
+  'gltf.material': 'Material',
+  'gltf.toon': 'Toon shading',
+  'gltf.original': 'Its own materials',
+  'gltf.scale': 'Size',
 }
 
 /** The dictionary namespace this view binds. */

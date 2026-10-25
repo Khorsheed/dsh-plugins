@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-25-game-gltf-looks.md
+.agents/notes/implemented/feature/2026-10-25-game-gltf-looks.md: 54c0989800b2a26eaca7deea18e06241b6bb3e2e
+.agents/notes/implemented/feature/2026-10-25-game-gltf-looks.zh.md: d94cdc943d6aaa78cfcf2794d484fb6840792797

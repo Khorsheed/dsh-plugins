@@ -10,7 +10,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { panelSession } from './panel-session.ts'
 import type { GameService } from './store.ts'
-import type { CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
+import type { BundleFile, CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -66,6 +66,12 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
   @Remote('bind')
   bind(sessionId: SessionId, request: { projectId: string | null }): Promise<GameResult> {
     return this.store.bind(sessionId, request.projectId)
+  }
+
+  /** One working build file, for a panel preview ahead of any version. */
+  @Remote('workingFile')
+  workingFile(request: { projectId: string; path: string }): Promise<GameResult<{ readonly ok: true; readonly file: BundleFile }>> {
+    return this.store.workingFile(request.projectId, request.path)
   }
 
   /** A version's files for the play area. */

@@ -101,7 +101,11 @@ const WAIT_READY = `(async () => {
   const start = Date.now();
   for (;;) {
     const g = window.dshGame;
-    if (g && g.ready) return true;
+    if (g && g.ready) {
+      // Models still loading (dsh3d's glTF looks): smoke, tests and the screenshot wait for them.
+      if (window.__dshPending) await Promise.race([window.__dshPending(), new Promise(r => setTimeout(r, ${LOADING_TIMEOUT_MS}))]);
+      return true;
+    }
     const limit = g && g.loading ? ${LOADING_TIMEOUT_MS} : ${READY_TIMEOUT_MS};
     if (Date.now() - start >= limit) return false;
     await new Promise(r => setTimeout(r, 40));

@@ -37,7 +37,7 @@ import {
 } from './project.ts'
 import {
   CHAPTERS, LORE_MAX, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
-  type AnyLook, type ChapterView, type CommitResult, type VersionSource, type WorkingChanges, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
+  type AnyLook, type BundleFile, type ChapterView, type CommitResult, type VersionSource, type WorkingChanges, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
   type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView, type TurnReport,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
@@ -559,6 +559,23 @@ export class GameService {
     }
   }
 
+  /**
+   * One build file as it is in the working folder now (a model the user just
+   * exported, say), for a panel preview ahead of any version. Build files only,
+   * inside the project, 8 MB at most.
+   */
+  async workingFile(projectId: string, path: string): Promise<GameResult<{ readonly ok: true; readonly file: BundleFile }>> {
+    const row = await this.row(projectId)
+    if (row === undefined) return { ok: false, error: 'not-found' }
+    const rel = path.replace(/^\.\//, '')
+    const full = resolve(row.root, rel)
+    if (!isBuildFile(rel) || !inside(row.root, full)) return { ok: false, error: 'invalid' }
+    const info = await stat(full).catch(() => undefined)
+    if (info === undefined || !info.isFile() || info.size > 8 * 1024 * 1024) return { ok: false, error: 'not-found' }
+    const data = await readFile(full)
+    return { ok: true, file: bundleOf([{ path: rel, data }])[rel]! }
+  }
+
   /** The files of a deployed (or candidate) version, for the play area. */
   async bundle(projectId: string, which: 'current' | 'candidate' = 'current'): Promise<GameResult<{ readonly ok: true; readonly bundle: PlayBundle }>> {
     const row = await this.row(projectId)
@@ -656,11 +673,19 @@ export class GameService {
     else if (!parsed.ok) failures.push({ where: 'data', message: parsed.error })
     const kit = kitOf(parsed?.ok === true ? parsed.manifest.runtime : undefined)
     const elementFiles = build.filter(f => f.path.startsWith('elements/') && f.path.endsWith('.json'))
-    failures.push(...validateElements(
+    const validated = validateElements(
       Object.fromEntries(elementFiles.map(f => [f.path, f.data.toString('utf8')])),
       parsed?.ok === true ? parsed.manifest.elementTypes : [],
       kit,
-    ).failures)
+    )
+    failures.push(...validated.failures)
+    // A model look must point at a file the build carries.
+    const shipped = new Set(build.map(f => f.path))
+    for (const e of validated.elements) {
+      if (e.look3d?.kind === 'gltf' && !shipped.has(e.look3d.src)) {
+        failures.push({ where: e.file, message: `「${e.name}」的外观引用了 ${e.look3d.src}，项目里没有这个文件（放进 assets/ 再引用）` })
+      }
+    }
     const browser = await this.checker.run(
       withKitRuntime(bundleOf(build), kit),
       Object.fromEntries(tests.map(t => [`tests/${t.path}`, t.data.toString('utf8')])),
