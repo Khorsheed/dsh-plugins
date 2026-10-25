@@ -199,14 +199,21 @@ export function RoomComposer({
     })
   }
   const query = mention?.query
+  // The injected face is rebuilt on every render (and the room re-renders
+  // every second while anything runs): read it through a ref so only a new
+  // query cancels the lookup — keyed on the function, no lookup ever finished.
+  const listRef = useRef(listSessions)
+  listRef.current = listSessions
+  const canList = listSessions !== undefined
   useEffect(() => {
-    if (query === undefined || listSessions === undefined) return
+    const list = listRef.current
+    if (query === undefined || list === undefined) return
     const abort = new AbortController()
     const timer = setTimeout(() => {
-      listSessions(query, abort.signal).then((found) => { if (!abort.signal.aborted) setSessionPool(found) }).catch(() => {})
+      list(query, abort.signal).then((found) => { if (!abort.signal.aborted) setSessionPool(found) }).catch(() => {})
     }, query === '' ? 0 : 120)
     return () => { clearTimeout(timer); abort.abort() }
-  }, [query, listSessions])
+  }, [query, canList])
   // Outside sessions kept on the member list sit in the members group.
   const linked = state?.linked ?? []
   const excluded = new Set([
