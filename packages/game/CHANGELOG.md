@@ -2,6 +2,7 @@
 
 ## 0.1.0（2026-10-24）
 
+- glTF skeletal animation: an idle clip plays on its own, `model.userData.play('walk')` cross-fades, the outline follows the bones, pick finds a posed character, and the element page lists clips to play in the turntable.
 - Walkable models: `world.add(obj, { walkable: true })` / `world.walkable(obj)` and `world.groundAt(x, z, fromY)` — climb stairs onto a platform without being pulled onto the roof above.
 - glTF looks: `{ kind: 'gltf', src }` loads the glb (toon over its colors, vertex colors and textures, with an outline; or `material: 'original'`), checks wait for models and fail a look whose file is missing, and the panel previews the working copy of a just-exported model with a toon/original switch and size.
 - 3D kit doors (additive): `three/addons/…` imports (only what a project uses rides its bundle), `world.setCamera` for the game's own camera (pick and rings follow it), `world.lights` and `style3d.shadows`, `world.onRender` for post-processing, `toon/flat(…, { own: true })`, `dshGame.loading` (checks wait up to 20 s), pointer lock in the play frame and `dshGame.look` with a `drag` test helper. The skill says to log plugin walls in `design/plugin-requests.md`.

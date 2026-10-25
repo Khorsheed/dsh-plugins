@@ -222,6 +222,8 @@ export interface GltfLook {
   readonly material?: 'toon' | 'original'
   /** Ink outline around the model (default: on with toon, off with original). */
   readonly outline?: boolean
+  /** The clip that plays on its own (default: one named idle / 待机 / stand, else the first). */
+  readonly animation?: string
   readonly recipe?: Parts3DLook
 }
 

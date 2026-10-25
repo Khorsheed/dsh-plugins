@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-25-game-gltf-looks.md
-.agents/notes/implemented/feature/2026-10-25-game-gltf-looks.md: 54c0989800b2a26eaca7deea18e06241b6bb3e2e
-.agents/notes/implemented/feature/2026-10-25-game-gltf-looks.zh.md: d94cdc943d6aaa78cfcf2794d484fb6840792797
+.agents/notes/implemented/feature/2026-10-25-game-gltf-looks.md: 9caa2d2b90452395bcaeccf6d6a2aee8183c3f6c
+.agents/notes/implemented/feature/2026-10-25-game-gltf-looks.zh.md: 77ea9ae09519962023c22892ffaeb508b93c336b
