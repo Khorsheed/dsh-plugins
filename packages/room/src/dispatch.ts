@@ -755,6 +755,12 @@ export class DispatchEngine {
           ...event.observedModel === undefined ? {} : { model: event.observedModel },
           ...event.observedEffort === undefined ? {} : { effort: event.observedEffort },
           ...total === undefined || !Number.isFinite(total) || total < 0 ? {} : { tokens: total },
+          ...event.usage === undefined ? {} : { usage: {
+            inputTokens: event.usage.inputTokens, outputTokens: event.usage.outputTokens,
+            ...event.usage.cacheReadTokens === undefined ? {} : { cacheReadTokens: event.usage.cacheReadTokens },
+            ...event.usage.cacheWriteTokens === undefined ? {} : { cacheWriteTokens: event.usage.cacheWriteTokens },
+            ...event.usage.reasoningTokens === undefined ? {} : { reasoningTokens: event.usage.reasoningTokens },
+          } },
         })
         void this.ctx.sessions.flush(room).catch(error => this.ctx.logger.warn(`room: execution metadata flush failed: ${String(error)}`))
       },

@@ -223,6 +223,17 @@ export interface RoomExecutionMetadataEvent {
   readonly model?: string
   readonly effort?: string
   readonly tokens?: number
+  /** The round's billing breakdown as the harness reported it (disjoint counts, the host's TokenUsage). */
+  readonly usage?: RoomRunUsage
+}
+
+/** One round's billing breakdown: uncached input, cache read/write and output are disjoint. */
+export interface RoomRunUsage {
+  readonly inputTokens: number
+  readonly outputTokens: number
+  readonly cacheReadTokens?: number
+  readonly cacheWriteTokens?: number
+  readonly reasoningTokens?: number
 }
 
 /** A member run's lifecycle edge. */
@@ -659,6 +670,7 @@ export interface RoomExecution extends RoomMemberRun {
   readonly model?: string
   readonly effort?: string
   readonly tokens?: number
+  readonly usage?: RoomRunUsage
 }
 
 /**
@@ -684,6 +696,8 @@ export interface RoomState {
   readonly goal?: string
   /** Seq of the newest member speech addressed to the room (no `reportedTo`): the reply the human is reading, shown unfolded. */
   readonly latestReplySeq?: number
+  /** Seq of the newest member speech of any kind: its action row stays shown, older rows reveal on hover. */
+  readonly latestSpeechSeq?: number
   /** Collaboration settings (defaults when never set). */
   readonly settings?: RoomSettings
   /** Tasks, newest first (absent in rooms that never dispatched work). */

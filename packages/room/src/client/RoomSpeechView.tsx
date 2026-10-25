@@ -24,6 +24,7 @@ import { memberColor } from './member-color.ts'
 import { formatClock, formatDurationMs } from './format.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
 import type { RoomSpeechViewProps } from './slots.ts'
+import type { RoomExecution } from '../types.ts'
 import css from './RoomSpeechView.module.css'
 
 /**
@@ -86,7 +87,11 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
   const child = data.childSessionId
   // The run's billed tokens, as the host's 用量 chip shows them (recorded
   // when the run settles; absent for runs the producer reported none for).
-  const tokens = data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === data.runId)?.tokens
+  const execution = data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === data.runId)
+  const tokens = execution?.tokens
+  // The newest speech keeps its action row shown; older rows reveal on hover
+  // (the host's turn-tail rule). A speech newer than the cached state's is the newest.
+  const newestSpeech = data.seq >= (state?.latestSpeechSeq ?? data.seq)
   const collapsible = data.text.length > COLLAPSE_CHARS
   // The newest reply to the room reads unfolded. A reply newer than the
   // cached state's (the refresh is debounced) is the newest already.
@@ -109,15 +114,15 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
 
   const color = memberColor(data.member)
   return (
-    <div className={css.speech} data-time-hover-root="" style={{ '--member-color': color } as CSSProperties}>
+    <div className={css.speech} data-time-hover-root="" data-actions-reveal={newestSpeech ? 'always' : 'hover'} style={{ '--member-color': color } as CSSProperties}>
       <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
+      <div className={css.stack}>
       <div className={css.card}>
       <div className={css.identity}>
         <span className={css.name}>{data.member}</span>
         {member?.role !== undefined && <span className={css.role}>{member.role}</span>}
         {provider !== undefined && provider !== '' && <span className={css.provider}>{provider}</span>}
         {data.interrupted !== undefined && <span className={css.interrupted}>{t(data.interrupted === 'cancelled' ? 'speech.stopped' : 'speech.failed')}</span>}
-        <span className={css.clock}>{formatClock(data.time)}</span>
       </div>
       <div className={clamped ? `${css.body} ${css.clamped}` : css.body}>
         <MarkdownText text={data.text} labels={labels} />
@@ -132,6 +137,12 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
           {expanded ? t('speech.collapse') : t('speech.expand')}
         </button>
       )}
+      {data.reportedTo !== undefined && (
+        <span className={css.reported}>{t('speech.reportedTo', { member: data.reportedTo })}</span>
+      )}
+      </div>
+      {/* The host's message action row, outside the card: copy, the member's
+          session, its request details, usage (hover for the breakdown), time. */}
       <div className={css.actions}>
         <Tooltip label={copied ? t('action.copied') : t('action.copy')} side="bottom">
           <button
@@ -167,17 +178,55 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
             </button>
           </Tooltip>
         )}
-        {data.durationMs !== undefined && (
-          <span className={css.meta}>{formatDurationMs(data.durationMs)}</span>
-        )}
-        {tokens !== undefined && tokens > 0 && (
-          <span className={css.meta}>{t('speech.usage', { tokens: formatTokens(tokens) })}</span>
-        )}
-        {data.reportedTo !== undefined && (
-          <span className={css.reported}>{t('speech.reportedTo', { member: data.reportedTo })}</span>
-        )}
+        {tokens !== undefined && tokens > 0
+          ? <UsageChip tokens={tokens} execution={execution} provider={member?.kind === 'cli' ? member.provider : undefined} durationMs={data.durationMs} t={t} />
+          : data.durationMs !== undefined && <span className={css.meta}>{formatDurationMs(data.durationMs)}</span>}
+        <span className={css.meta}>{formatClock(data.time)}</span>
       </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * 用量 with its breakdown on hover or focus — the host's turn usage panel:
+ * total, provider / model, cache hit, the disjoint input buckets, output, and
+ * this round's run time. Rows the harness did not report are left out.
+ */
+function UsageChip({ tokens, execution, provider, durationMs, t }: {
+  readonly tokens: number
+  readonly execution: RoomExecution | undefined
+  readonly provider: string | undefined
+  readonly durationMs: number | undefined
+  readonly t: RoomSpeechViewProps['t']
+}): ReactNode {
+  const [open, setOpen] = useState(false)
+  const usage = execution?.usage
+  const billed = usage === undefined ? 0 : usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
+  const exact = (n: number): string => n.toLocaleString('en-US')
+  const route = [provider, execution?.model].filter(Boolean).join('/')
+  const rows: [string, string][] = [
+    ...route === '' ? [] : [[t('usage.route'), route] as [string, string]],
+    ...usage !== undefined && billed > 0 ? [[t('usage.cacheHit'), `${Math.round((usage.cacheReadTokens ?? 0) / billed * 1000) / 10}%`] as [string, string]] : [],
+    ...usage === undefined ? [] : [
+      [t('usage.uncached'), `${exact(usage.inputTokens)} tok`],
+      ...usage.cacheReadTokens === undefined ? [] : [[t('usage.cacheRead'), `${exact(usage.cacheReadTokens)} tok`]],
+      ...usage.cacheWriteTokens === undefined ? [] : [[t('usage.cacheWrite'), `${exact(usage.cacheWriteTokens)} tok`]],
+      [t('usage.output'), `${exact(usage.outputTokens)} tok`],
+    ] as [string, string][],
+    ...durationMs === undefined ? [] : [[t('usage.duration'), formatDurationMs(durationMs)] as [string, string]],
+  ]
+  return (
+    <span className={css.usage} onMouseEnter={() => { setOpen(true) }} onMouseLeave={() => { setOpen(false) }}>
+      <button type="button" className={css.usageChip} aria-expanded={open} onFocus={() => { setOpen(true) }} onBlur={() => { setOpen(false) }}>
+        {t('speech.usage', { tokens: formatTokens(tokens) })}
+      </button>
+      {open && (
+        <span className={css.usagePanel} role="tooltip">
+          <span className={css.usageHead}><span>{t('usage.title')}</span><span>{exact(tokens)} tok</span></span>
+          {rows.map(([label, value]) => <span key={label} className={css.usageRow}><span>{label}</span><span>{value}</span></span>)}
+        </span>
+      )}
+    </span>
   )
 }
