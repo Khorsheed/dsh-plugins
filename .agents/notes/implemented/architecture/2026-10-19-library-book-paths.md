@@ -66,3 +66,10 @@ Sidebar: 章节考's 范围 defaults to 都考; the settings and the pending ask
 - 3080: the model created 「神经科学」 but the open sidebar kept showing only 数学. Creating a project logs no event, and the pane's poll watched only events. Now every service write stamps `latestActivity` too.
 - The user asked for the sidebar to open on its own. `kit.autoBind` (it runs after every successful project / textbook / path / quiz write) records the newest session-made write. The client polls it, and when the write came from the on-screen session it calls `sidebarRight.openTab('library')`. This happens once per session per page load, so closing the tab sticks. A write from before the page loaded never opens anything. Without the sidebar surface or the host half, nothing happens.
 - The same run died on "DeepSeek Messages stream: tool input is invalid JSON": the 7 KB `library_roadmap` payload held `"心—脑"` with bare ASCII quotes inside a string. The host parses tool input strictly and does not retry, so the plugin can only prevent it. The prompt now tells the coach to quote with 「」 inside any text.
+
+## Follow-up (2026-10-25): three refusals that left the coach guessing
+
+The 「添加Blender 3D游戏制作项目」 run (model inkling) failed 6 of 19 library calls:
+- **讲义 on a draft path, or on another textbook's station.** The refusal said only "no node on the adopted path". It now names the fix: still a draft (the learner adopts it in the sidebar first; teach in the conversation meanwhile), no path yet, the station is on 《another book》 (pass that resource), or this path's station ids.
+- **Correcting a textbook's note.** `library_resource` with a resourceId and only `note` fell into the link branch ("a link takes title, url"), and with `kind: "book"` it demanded the whole contents again. The model concluded the card could not be edited. A shelved textbook now keeps its title, contents and their source; a correction sends only what changes.
+- `library_read` without `what` already self-corrected on the next call, so it is left as is.

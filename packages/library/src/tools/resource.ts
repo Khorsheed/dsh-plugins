@@ -6,7 +6,7 @@
  */
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import { LIBRARY_RESOURCE_KINDS, type LibraryResourceKind } from '../types.ts'
+import { isThickResource, LIBRARY_RESOURCE_KINDS, type LibraryResourceKind } from '../types.ts'
 import {
   arrival,
   jsonOutput,
@@ -29,7 +29,7 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
     parameters: {
       ...scopeParams,
       op: { type: 'string', required: true, enum: ['create', 'move', 'remove'], description: 'create: shelve (or correct one, with resourceId); move: put a textbook at seq; remove: take one off (its path and pages go too).' },
-      resourceId: { type: 'string', description: 'The entry to correct / move / remove.' },
+      resourceId: { type: 'string', description: 'The entry to correct (send only the fields that change — a shelved textbook keeps its title and contents) / move / remove.' },
       kind: { type: 'string', enum: [...LIBRARY_RESOURCE_KINDS], description: 'book | course: a textbook (toc required); article | video | repo | tool | hardware: a link (url required).' },
       origin: { type: 'string', enum: ['learner', 'picked', 'authored'], description: 'Whose it is (default picked).' },
       seq: { type: 'integer', description: 'A textbook\'s place in the study order, from 1 (the rest shift).' },
@@ -120,9 +120,23 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
       // A whole contents may arrive as one newline-joined string — the
       // biggest single payload, and the one models mangle most as JSON.
       const tocList = payloadList(args.toc)
-      const tocRows = typeof args.toc === 'string' && tocList === undefined
+      const sentRows = typeof args.toc === 'string' && tocList === undefined
         ? splitTocText(args.toc)
         : (tocList ?? [])
+      // Correcting a shelved textbook (its note, kind, edition…) sends only
+      // what changes: the title and the contents come from the shelf.
+      const shelved = namedId !== undefined && sentRows.length === 0 && pickString(args.url) === undefined
+        ? await service.getResource({ projectId, resourceId: namedId })
+        : undefined
+      const kept = shelved?.ok === true && isThickResource(shelved.resource) ? shelved.resource : undefined
+      const tocRows = sentRows.length > 0 ? sentRows : (kept?.toc ?? []).map(entry => ({ ...entry }))
+      if (kept !== undefined) {
+        args = {
+          ...args,
+          ...(typeof args.title !== 'string' || args.title.trim() === '' ? { title: kept.title } : {}),
+          ...(args.kind === undefined ? { kind: kept.kind } : {}),
+        }
+      }
       const thick = tocRows.length > 0 || args.kind === 'book' || args.kind === 'course'
       if (thick) {
         if (typeof args.title !== 'string' || args.title.trim() === '' || tocRows.length === 0) {
@@ -139,7 +153,7 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
           ...origin,
           ...(typeof args.seq === 'number' ? { seq: args.seq } : {}),
           toc,
-          tocSource: (payload(args.tocSource) ?? { by: 'model' }) as { by: 'web' | 'model' | 'photo'; url?: string },
+          tocSource: (payload(args.tocSource) ?? kept?.tocSource ?? { by: 'model' }) as { by: 'web' | 'model' | 'photo'; url?: string },
           ...(args.bookKind === 'knowledge' || args.bookKind === 'material' ? { bookKind: args.bookKind } : {}),
           ...(typeof args.short === 'string' ? { short: args.short } : {}),
           ...(typeof args.author === 'string' ? { author: args.author } : {}),

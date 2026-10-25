@@ -149,6 +149,9 @@ describe('the v4 spellings still parse (aliases)', () => {
     expect(service.getBinding('s_learn')).toEqual({ projectId: project, resourceId: book })
     const listed = (await call('library_read', { what: 'books' })) as { resources: { title: string }[] }
     expect(listed.resources.map(resource => resource.title)).toContain('Principles of Neural Science')
+    // Correcting a shelved textbook needs only the changed field: title and contents stay.
+    const noted = (await call('library_resource', { op: 'create', resourceId: book, note: '按 three.js 方向修正' })) as { resource: { title: string; note: string; toc: unknown[] } }
+    expect([noted.resource.title, noted.resource.note, noted.resource.toc.length]).toEqual(['Principles of Neural Science', '按 three.js 方向修正', 2])
     const removed = (await call('library_resource', { op: 'remove', bookId: book })) as { id: string }
     expect(removed.id).toBe(book)
   })
@@ -496,7 +499,7 @@ describe('station notes through the tools', () => {
     expect((await service.getRoadmap({ projectId: project, resourceId: book })).roadmap?.nodes[0]?.notes?.text).toContain('要点')
     // The bad calls teach.
     await expect(call('library_notes', { text: 'x' })).rejects.toThrow(/missing required property/)
-    await expect(call('library_notes', { node: 'n9', text: 'x' })).rejects.toThrow(/no node/)
+    await expect(call('library_notes', { node: 'n9', text: 'x' })).rejects.toThrow(/no station .* its stations:/)
     // An authored textbook's station: its 讲义 are the text.
     const rl = (await call('library_resource', { op: 'create', kind: 'book', title: '强化学习入门', origin: 'authored', toc: '奖励\n策略梯度', tocSource: { by: 'model' } })) as { resource: { id: string } }
     await call('library_roadmap', { resource: rl.resource.id, nodes: [{ id: 's1', title: '奖励', gate: 'quiz', chapters: '1' }] })
