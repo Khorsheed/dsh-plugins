@@ -28,6 +28,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
+import * as sessionModule from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // The durable reader validates plugin vocabulary before replay. Register in
 // both resolution planes: source-based host toolchains and installed bundles
@@ -43,7 +44,7 @@ for (const catalog of streamCatalogs) {
   (catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
 }
 
-import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
 import type { SubagentActivation, SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
@@ -2235,8 +2236,12 @@ export class LocalAgentRegistry {
    * const handle = await ctx.sessionPersistence.open(SessionId(childSessionId), 'write')
    * try {
    *   const cold = await handle.read(0)
+   *   // Close a turn a restart interrupted, or the next round's turn/start
+   *   // makes the stored log unreadable.
+   *   const closers = interruptedTurnClosers(cold.events)
+   *   if (closers.length > 0) await handle.append(closers)
    *   const session = ctx.sessions.prepare(SessionId(childSessionId), {
-   *     seed: [...cold.events],
+   *     seed: [...cold.events, ...closers],
    *     meta: structuredClone(handle.header),
    *     inheritedEventCount: handle.inheritedEventCount,
    *     eventState: cold.eventState,
@@ -2244,7 +2249,7 @@ export class LocalAgentRegistry {
    *   // The seeded constructor's session/end-seed marker lands before enter()
    *   // installs publication hooks — push the unstored suffix through the
    *   // handle directly, or the writer's contiguous cursor diverges.
-   *   const unstored = session.snapshotEvents().slice(cold.events.length)
+   *   const unstored = session.snapshotEvents().slice(cold.events.length + closers.length)
    *   if (unstored.length > 0) await handle.append(unstored)
    *   const detach = ctx.sessions.enter(session)
    *   try { ctx.sessions.announce(session) }
@@ -2545,8 +2550,17 @@ export class LocalAgentRegistry {
     const handle = await this.acquireChildWriteHandle(childSessionId)
     try {
       const cold = await handle.read(0)
+      // A host restart mid-round leaves the child's last turn open on disk;
+      // the next round's turn/start would then follow an unclosed turn and
+      // the strict reader rejects the whole log. Close it the way the agent
+      // loop's own resume does: synthetic closers (missing tool errors,
+      // step/end, an `interrupted` turn/end) appended through the handle.
+      // Older hosts without the helper keep the previous behavior.
+      const closeOpenTurn = (sessionModule as { interruptedTurnClosers?: (events: readonly SessionEvent[]) => SessionEvent[] }).interruptedTurnClosers
+      const closers = closeOpenTurn === undefined ? [] : closeOpenTurn(cold.events)
+      if (closers.length > 0) await handle.append(closers)
       const session = sessions.prepare(SessionId(childSessionId), {
-        seed: [...cold.events],
+        seed: [...cold.events, ...closers],
         meta: structuredClone(handle.header),
         inheritedEventCount: handle.inheritedEventCount,
         eventState: cold.eventState,
@@ -2556,7 +2570,7 @@ export class LocalAgentRegistry {
       // — push the unstored suffix through the handle directly (the agent
       // loop's resume does the same via appendUnstoredSuffix), or the writer's
       // contiguous cursor and the session log diverge.
-      const unstored = session.snapshotEvents().slice(cold.events.length)
+      const unstored = session.snapshotEvents().slice(cold.events.length + closers.length)
       if (unstored.length > 0) await handle.append(unstored)
       const detach = sessions.enter(session)
       try {

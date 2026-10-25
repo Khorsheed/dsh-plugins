@@ -1045,6 +1045,13 @@ export class ClaudeLiveDriver {
     /** The round's event sink (installed on the runtime while it runs). */
     const onEvent = (event: JsonObject): void => {
       const type = event['type']
+      // Once settled, the turn/end is written: the sink stays only so a late
+      // result converges the chain. Anything else (the CLI's interrupt notice
+      // after a cancel) would land after the turn closed and corrupt the log.
+      if (roundSettled) {
+        if (type === 'result') { awaitingResult = false; resolveResult(event) }
+        return
+      }
       if (type === 'system' && typeof event['session_id'] === 'string') {
         // EVERY turn emits an init; the first one mints the delegation id.
         // Its model/build fields are this round's settled observation (the
