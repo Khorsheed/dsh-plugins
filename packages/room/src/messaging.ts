@@ -115,6 +115,7 @@ export function sendOrHold(session: Session, message: OutgoingMessage, skipHold 
     ...intent.replyTo === undefined ? {} : { replyTo: intent.replyTo },
     ...intent.reportFor === undefined ? {} : { reportFor: intent.reportFor },
     ...intent.plan === undefined ? {} : { plan: intent.plan },
+    ...intent.help === undefined ? {} : { help: intent.help },
   })
   return { delivered: true, seq: dispatch.seq }
 }
@@ -164,6 +165,8 @@ export function envelopeLine(events: readonly SessionEvent[], seq: number): stri
     }
     case 'relay':
       return undefined
+    case 'help':
+      return `【来自协作间「${dispatch.help?.roomTitle ?? ''}」· ${dispatch.help?.from ?? ''} 的求助 · #${messageId(seq)}】（对方在另一个会话里，看不到这个房间；你这一轮的最终回复会自动送回对方，写成给对方看的答复，不用另外回复）`
     default: {
       const sender = nameOf(dispatch.from)
         ?? (dispatch.origin === 'coordinator' ? coordinatorMember(state, events)?.name : undefined) ?? '成员'

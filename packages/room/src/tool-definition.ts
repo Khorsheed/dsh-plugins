@@ -317,7 +317,7 @@ export function roomPlanTool(backend: { commandPlan(sessionId: string, command: 
 /** The slice of RoomService the help tool drives. */
 export interface RoomHelpToolBackend {
   /** Ask another session for help, or write again on a thread (see RoomService.askHelp). */
-  askHelp(request: { readonly sessionId: string; readonly session?: string; readonly help?: string; readonly text: string }, caller: Agent): Promise<string>
+  askHelp(request: { readonly sessionId: string; readonly session?: string; readonly member?: string; readonly help?: string; readonly text: string }, caller: Agent): Promise<string>
 }
 
 /**
@@ -332,13 +332,19 @@ export function roomHelpTool(backend: RoomHelpToolBackend) {
       'Ask another session — outside this room — for help: typically the session that built the thing you are stuck on, '
       + 'which still has the whole context. The helper keeps working in its own session (if it is busy, your request waits '
       + 'in its queue) and its final answer plus a short handoff comes back to you on its own, so end your turn after asking; '
-      + 'never poll. Name the session by its title, its id, or the @ mention the human wrote. The first ask of a session the '
+      + 'never poll. Name the session by its title, its id, or the @ mention the human wrote. A session that is another room '
+      + 'hands the request to its coordinator, or to the member you name (a mention labelled 「成员（房间）」 names one). '
+      + 'The first ask of a session the '
       + 'human did not @ in this room waits for the human\'s approval. To answer the helper\'s question or ask it more, call '
       + 'again with the help id and no session.',
     parameters: {
       session: {
         type: 'string',
         description: 'The session to ask (title, id, or @ mention). Omit when continuing a thread with help.',
+      },
+      member: {
+        type: 'string',
+        description: 'When the session is another room: the member of that room to ask. Omit to let its coordinator decide.',
       },
       help: {
         type: 'string',
@@ -360,6 +366,7 @@ export function roomHelpTool(backend: RoomHelpToolBackend) {
       if (agent === undefined) return { text: 'room_help requires a calling agent (exec.agent was undefined).' }
       return { text: await backend.askHelp({ sessionId: agent.session.id, text: args.text,
         ...args.session === undefined ? {} : { session: args.session },
+        ...args.member === undefined ? {} : { member: args.member },
         ...args.help === undefined ? {} : { help: args.help } }, agent) }
     },
   })

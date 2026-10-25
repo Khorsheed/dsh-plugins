@@ -131,6 +131,21 @@ export function mentionedSessions(text: string): string[] {
   })
 }
 
+/**
+ * The member a 「成员（房间）」 label names (the label the @ menu writes for a
+ * room member, inside an `@[…](dsh-session:…)` mention or typed as text).
+ * @param name - the session argument as given.
+ * @param roomTitle - the room's resolved title.
+ * @returns the member name, or undefined when the label names the room itself.
+ */
+export function memberFromLabel(name: string | undefined, roomTitle: string): string | undefined {
+  if (name === undefined) return undefined
+  const label = /@\[((?:\\.|[^\\\]])*)\]\(dsh-session:/u.exec(name)?.[1]?.replace(/\\(.)/gu, '$1') ?? name.trim()
+  const suffix = `（${roomTitle}）`
+  if (!label.endsWith(suffix) || label === suffix) return undefined
+  return label.slice(0, -suffix.length).replace(/^@/u, '').trim() || undefined
+}
+
 /** The session id inside a `dsh-session:` payload (base64url JSON string), if well-formed. */
 function decodeSessionUri(payload: string): string | undefined {
   try {

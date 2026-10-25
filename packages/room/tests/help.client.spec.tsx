@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { roomHelpDefinition, roomHelpRequestDefinition, type RoomHelpData, type RoomHelpRequestData } from '../src/client/nodes.ts'
+import { roomHelpDefinition, roomHelpInDefinition, roomHelpRequestDefinition, type RoomHelpData, type RoomHelpRequestData } from '../src/client/nodes.ts'
 import { RoomHelpRequestView, RoomHelpView } from '../src/client/RoomHelpView.tsx'
 import { zh } from '../src/client/locales.ts'
 import type { RoomHelpRequestViewProps, RoomHelpViewProps } from '../src/client/slots.ts'
@@ -37,6 +37,17 @@ describe('room-help', () => {
     expect(screen.getByText('分支 fix/x')).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: '打开对方会话 →' }))
     expect(openSession).toHaveBeenCalledWith('s-a')
+  })
+})
+
+describe('room-help-in', () => {
+  it('shows another room\'s request with the member it went to and a held tag', () => {
+    const event = ev(4, 'room/help-in', { id: 'h1', room: 'room-y', roomTitle: '剪辑第 3 期', from: 'dsh', member: '游戏大师', text: '帮忙', op: 'request', held: true })
+    expect(roomHelpInDefinition.match(event)).toEqual({ id: '4', role: 'start' })
+    const data = roomHelpInDefinition.start({} as never, { event, role: 'start' } as never, undefined as never) as RoomHelpRequestData
+    render(<RoomHelpRequestView {...{ node: { data }, openSession: vi.fn(), t } as unknown as RoomHelpRequestViewProps} />)
+    expect(screen.getByText(/来自协作间「剪辑第 3 期」· dsh 的求助/).textContent).toContain('→ 交给 游戏大师')
+    expect(screen.getByText('房间暂停中，恢复后处理')).toBeDefined()
   })
 })
 

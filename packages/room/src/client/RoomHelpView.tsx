@@ -65,7 +65,11 @@ export function RoomHelpRequestView({ node, openSession, t }: RoomHelpRequestVie
     <div className={css.card}>
       <div className={css.cardHead}>
         <span aria-hidden className={css.icon}>↘</span>
-        <span className={css.cardTitle}>{t(data.op === 'message' ? 'help.card.message' : 'help.card.request', { room: data.roomTitle, from: data.from })}</span>
+        <span className={css.cardTitle}>
+          {t(data.op === 'message' ? 'help.card.message' : 'help.card.request', { room: data.roomTitle, from: data.from })}
+          {data.member !== undefined && t('help.card.to', { member: data.member })}
+        </span>
+        {data.held === true && <span className={css.tag}>{t('help.card.held')}</span>}
         <button type="button" className={css.action} onClick={() => { openSession(data.room as SessionId) }}>{t('help.card.back')}</button>
       </div>
       <p className={css.cardBody} data-folded={long && !open ? 'true' : undefined}>{data.text}</p>

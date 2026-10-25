@@ -149,7 +149,9 @@ export interface RoomDispatchEvent {
    * free member-to-member messaging), a delivery's report, or a legacy
    * confirmed relay.
    */
-  readonly origin?: 'human' | 'coordinator' | 'member' | 'report' | 'relay'
+  readonly origin?: 'human' | 'coordinator' | 'member' | 'report' | 'relay' | 'help'
+  /** A help request from another room (origin `help`): its final reply goes back there. */
+  readonly help?: RoomHelpOrigin
   /** The sending member's id (coordinator/member origins). */
   readonly from?: string
   /**
@@ -290,7 +292,9 @@ export type RoomHoldReason = 'confirm' | 'hop-limit' | 'paused'
 
 /** A held message's would-be dispatch. */
 export interface RoomHeldDispatch {
-  readonly origin: 'coordinator' | 'member' | 'report'
+  readonly origin: 'coordinator' | 'member' | 'report' | 'help'
+  /** A help request from another room (origin `help`): its final reply goes back there. */
+  readonly help?: RoomHelpOrigin
   readonly from?: string
   readonly kind?: 'task' | 'notify'
   readonly hop: number
@@ -602,10 +606,34 @@ export interface RoomHelpEvent {
   /** The asking member's id and name. */
   readonly from: string
   readonly fromName: string
-  /** The helper's session. */
-  readonly target: { readonly sessionId: string; readonly title: string }
+  /**
+   * The helper's session. A room target (`room`) routes through that room:
+   * to the named `member`, else to its coordinator.
+   */
+  readonly target: { readonly sessionId: string; readonly title: string; readonly room?: true; readonly member?: string }
   /** The request as the helper reads it. */
   readonly text: string
+}
+
+/** Where a help request in this room came from (the asking room's thread). */
+export interface RoomHelpOrigin {
+  /** The thread id in the asking room. */
+  readonly id: string
+  readonly room: string
+  readonly roomTitle: string
+  /** The asking member's name. */
+  readonly from: string
+}
+
+/** Another room asked this room for help (shown on this room's timeline). */
+export interface RoomHelpInEvent extends RoomHelpOrigin {
+  /** The member it was handed to (the named one, else the coordinator). */
+  readonly member: string
+  readonly text: string
+  /** `message`: the asker writing again on the thread. */
+  readonly op: 'request' | 'message'
+  /** Held at the gate (this room is paused) instead of delivered. */
+  readonly held?: true
 }
 
 /** One message on a help thread after the request. */
@@ -704,6 +732,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/help-message': RoomHelpMessageEvent
     /** A help thread changed state. */
     'room/help-state': RoomHelpStateEvent
+    /** Another room asked this room for help. */
+    'room/help-in': RoomHelpInEvent
   }
 }
 

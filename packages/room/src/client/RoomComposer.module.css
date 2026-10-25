@@ -205,6 +205,39 @@
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
 
+/* A room's member under its expanded room, indented past the room's mark. */
+.item[data-kid],
+.itemActive[data-kid] {
+  padding-left: 28px;
+}
+
+/* Where a matched room member sits: its room's title, dim. */
+.itemContext {
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  font-size: 12px;
+}
+
+/* A room's expand arrow: turns down while its members show. */
+.expand {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  transition: transform 120ms ease;
+}
+
+.expand:hover {
+  background: var(--dsw-alias-fill-secondary, rgba(127, 127, 127, 0.12));
+}
+
+.expand[data-open] {
+  transform: rotate(90deg);
+}
+
 /* Group titles (本房间成员 / 最近的会话) and the search hint. */
 .menuGroup {
   padding: 6px 10px 2px;

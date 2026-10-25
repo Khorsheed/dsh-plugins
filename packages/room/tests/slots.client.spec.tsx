@@ -102,12 +102,12 @@ describe('room client apply', () => {
     expect(inject).toEqual(['slots', 'sessions', 'remote', 'locale'])
   })
 
-  it('mounts the Remote, registers the ten Definitions and the slot entries with the right shapes', async () => {
+  it('mounts the Remote, registers the eleven Definitions and the slot entries with the right shapes', async () => {
     const { ctx, slots, remoteService, conversationEvents } = await bench()
     await ctx.plugin({ inject: [...inject], apply }).await()
     await settled()
     expect(remoteService.$mount).toHaveBeenCalledTimes(1)
-    expect(conversationEvents.register).toHaveBeenCalledTimes(10)
+    expect(conversationEvents.register).toHaveBeenCalledTimes(11)
 
     const header = slots.entries('conversation.session.header.actions')
     expect(header).toHaveLength(1)

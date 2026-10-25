@@ -200,7 +200,7 @@ describe('RoomComposer', () => {
     expect(screen.getAllByRole('option')).toHaveLength(3)
   })
 
-  it('lists other sessions under the members — recent five, rooms and members\' own sessions left out — and inserts a picked one as the host\'s chip', async () => {
+  it('lists other sessions under the members — recent five (rooms marked) — and inserts a picked one as the host\'s chip', async () => {
     const sessions = [
       { sessionId: 's1', label: '开发剪辑插件', mention: '@[开发剪辑插件](dsh-session:czE)', createdAt: Date.now() },
       { sessionId: 'room-2', label: '读书会', mention: '@[读书会](dsh-session:x)', room: true },
@@ -215,7 +215,7 @@ describe('RoomComposer', () => {
     expect(screen.getByText('composer.at.members')).toBeDefined()
     expect(screen.getByText('composer.at.recent')).toBeDefined()
     expect(screen.getByText('composer.at.more')).toBeDefined()
-    expect(screen.queryByText('读书会')).toBeNull()
+    expect(screen.getByText('读书会').parentElement!.textContent).toContain('composer.at.room')
 
     // Fuzzy: the characters in order find the title.
     type(area, '去问问 @剪插')
@@ -223,6 +223,21 @@ describe('RoomComposer', () => {
     fireEvent.keyDown(area, { key: 'Enter' })
     expect(insertSessionReference).toHaveBeenCalledWith(sessions[0], { start: 4, end: 7, draftRev: 7 })
     expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('lists a room folded; → shows its members and picking one inserts the room under a 「成员（房间）」 label', async () => {
+    const room = { sessionId: 'z', label: '游戏开发', mention: '@[游戏开发](dsh-session:eg)', room: true, members: [{ name: '游戏大师', kind: 'cli', provider: 'claude-local' }] }
+    const insertSessionReference = vi.fn(() => true)
+    const { area } = await bench(vi.fn(), { listSessions: vi.fn(async () => [room]), insertSessionReference, extraInputActions: { captureInsertion: () => ({ start: 0, end: 0, draftRev: 1 }), insertText: vi.fn() } })
+    type(area, '@')
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(4))
+    expect(screen.getAllByRole('option')[3]!.textContent).toContain('composer.at.room')
+    for (let step = 0; step < 3; step += 1) fireEvent.keyDown(area, { key: 'ArrowDown' })
+    fireEvent.keyDown(area, { key: 'ArrowRight' })
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(5))
+    fireEvent.keyDown(area, { key: 'ArrowDown' })
+    fireEvent.keyDown(area, { key: 'Enter' })
+    expect(insertSessionReference).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'z', mention: '@[游戏大师（游戏开发）](dsh-session:eg)', displayTitle: '游戏大师（游戏开发）' }), { start: 0, end: 1, draftRev: 1 })
   })
 
   it('falls back to the mention text when the host takes no chip', async () => {
