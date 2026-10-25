@@ -15,9 +15,12 @@
  * artwork is instead flattened from the harness checkout (DSH_HARNESS) into a
  * committed per-package module — never hand-edit those files.
  *
- * Usage: tsx scripts/sync-icon-artwork.mts [--check]
+ * Usage: tsx scripts/sync-icon-artwork.mts [--check] [--package <dir>]
  *   (no flag)  rewrite every packages/<pkg>/src/client/icons.tsx in place
  *   --check    verify all generated modules are current; exit 1 on drift
+ *   --package  only this package directory (e.g. local-agent): when the
+ *              harness moved on and another package's icons no longer
+ *              exist upstream, one package can still be regenerated
  *
  * DSH_HARNESS (default ~/code/deepseek-harness) locates the upstream source:
  * packages/client/ui-primitives/src/icons/{index.tsx,shared-artwork.tsx}.
@@ -53,11 +56,19 @@ export interface UpstreamIcons {
   readonly pathConsts: ReadonlyMap<string, string>
   /** Upstream provenance for generated headers (package version + HEAD). */
   readonly origin: string
+  /**
+   * Wrappers whose artwork has a shape this script cannot flatten (e.g. a
+   * hook-using component), icon → artwork. Harmless until a package uses
+   * one; rendering it fails loud then.
+   */
+  readonly unflattenable?: ReadonlyMap<string, string>
 }
 
 const WRAPPER_RE = /export const (Icon\w+) = \(props: IconProps\) => \(\s*\n\s*<(\w+Artwork) \{\.\.\.props\} strokeWidth=\{(ICON_\w+_STROKE)\} \/>\s*\n\)/g
 const ARTWORK_RE = /const (\w+Artwork) = \(\{ size = (\d+), className(?:, strokeWidth)? \}: \w+\) => \(\s*\n([\s\S]*?)\n\)\n/g
 const COMPOSITE_RE = /const (\w+Artwork) = \(props: \w+\) => \(\s*\n\s*<(\w+Artwork) \{\.\.\.props\} size=\{props\.size \?\? (\d+)\} \/>\s*\n\)/g
+/** The rc.3 composite shape: `({ size = N, ...rest }) => (<Inner size={size} {...rest} />)`. */
+const COMPOSITE_REST_RE = /const (\w+Artwork) = \(\{ size = (\d+), \.\.\.rest \}: \w+\) => \(\s*\n\s*<(\w+Artwork) size=\{size\} \{\.\.\.rest\} \/>\s*\n\)/g
 const STROKE_CONST_RE = /export const (ICON_\w+_STROKE) = ([\d.]+)/g
 const PATH_CONST_RE = /export const ([A-Z][A-Z0-9_]+_PATH) = ('[^']*')/g
 
@@ -92,6 +103,11 @@ export function parseUpstreamIcons(indexSource: string, sharedSource: string, or
       if (inner === undefined) throw new Error(`sync-icon-artwork: composite artwork ${m[1]} references unknown ${m[2]}`)
       artworks.set(m[1]!, { sizeDefault: Number(m[3]), svg: inner.svg })
     }
+    for (const m of source.matchAll(COMPOSITE_REST_RE)) {
+      const inner = artworks.get(m[3]!)
+      if (inner === undefined) throw new Error(`sync-icon-artwork: composite artwork ${m[1]} references unknown ${m[3]}`)
+      artworks.set(m[1]!, { sizeDefault: Number(m[2]), svg: inner.svg })
+    }
   }
 
   const wrappers = new Map<string, WrapperSource>()
@@ -101,10 +117,18 @@ export function parseUpstreamIcons(indexSource: string, sharedSource: string, or
     expectedArtworks.add(m[2]!)
   }
   if (wrappers.size === 0) throw new Error('sync-icon-artwork: no Icon* wrappers found upstream — the module shape changed')
-  for (const name of expectedArtworks) {
-    if (!artworks.has(name)) throw new Error(`sync-icon-artwork: wrapper references artwork ${name}, found in neither icons module`)
+  // An artwork shape the parser cannot flatten only matters to a package that
+  // uses its icon: set the wrapper aside, and fail loud when one is rendered.
+  const unflattenable = new Map<string, string>()
+  for (const [icon, wrapper] of wrappers) {
+    if (artworks.has(wrapper.artwork)) continue
+    if (!new RegExp(`const ${wrapper.artwork} = `).test(indexSource + sharedSource)) {
+      throw new Error(`sync-icon-artwork: wrapper references artwork ${wrapper.artwork}, found in neither icons module`)
+    }
+    unflattenable.set(icon, wrapper.artwork)
+    wrappers.delete(icon)
   }
-  return { artworks, wrappers, strokeValues, pathConsts, origin }
+  return { artworks, wrappers, strokeValues, pathConsts, origin, ...unflattenable.size === 0 ? {} : { unflattenable } }
 }
 
 /* ---------------- rendering ---------------- */
@@ -129,6 +153,10 @@ export interface IconProps {
  */
 export function renderIconComponent(upstream: UpstreamIcons, name: string, usedConsts: Set<string>): string {
   const wrapper = upstream.wrappers.get(name)
+  const shape = upstream.unflattenable?.get(name)
+  if (shape !== undefined) {
+    throw new Error(`sync-icon-artwork: ${name}'s artwork ${shape} has a shape this script cannot flatten — extend parseUpstreamIcons`)
+  }
   if (wrapper === undefined) {
     throw new Error(`sync-icon-artwork: no upstream icon named ${name} — the harness checkout's ui-primitives does not export it`)
   }
@@ -239,6 +267,7 @@ function harnessOrigin(harness: string): string {
 
 async function main(): Promise<void> {
   const check = process.argv.includes('--check')
+  const only = process.argv.includes('--package') ? process.argv[process.argv.indexOf('--package') + 1]?.replace(/^packages\//u, '').replace(/\/$/u, '') : undefined
   const repoRoot = new URL('..', import.meta.url).pathname
   const harness = process.env['DSH_HARNESS'] ?? join(homedir(), 'code/deepseek-harness')
   const iconsDir = join(harness, 'packages/client/ui-primitives/src/icons')
@@ -255,6 +284,7 @@ async function main(): Promise<void> {
   const stale: string[] = []
   for (const dir of readdirSync(packagesRoot, { withFileTypes: true })) {
     if (!dir.isDirectory() || !existsSync(join(packagesRoot, dir.name, 'package.json'))) continue
+    if (only !== undefined && dir.name !== only) continue
     const packageDir = join(packagesRoot, dir.name)
     const packageName = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')).name as string
     const icons = collectIconUsage(packageDir)

@@ -55,7 +55,6 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
       onClick={jump}
       onKeyDown={onKeyDown}
     >
-      {!failed && <span className={speech.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>}
       <StateDot state={failed ? 'error' : 'ongoing'} />
       <span className={css.title}>
         {failed ? t('run.failed', { member: data.member }) : t('run.working', { member: data.member })}
@@ -84,6 +83,7 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
   if (failed) return <div>{row}</div>
   return (
     <div className={speech.speech} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
+      <span className={speech.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
       <div className={`${speech.card} ${css.liveCard}`}>
         {row}
         {childSessionId !== undefined && renderMemberOutput?.(childSessionId, data.startedAt)}

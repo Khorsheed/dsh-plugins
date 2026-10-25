@@ -1,6 +1,7 @@
 /** Generation-time text rendered through the public Markdown component. */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { DisclosureRow, IconThinkOutlineRegular, MarkdownText, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, MarkdownText, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconThinkOutlineRegular } from './icons.tsx'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from './live-node.ts'
 import type { MemberLiveOutputs } from './live-output.ts'

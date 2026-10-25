@@ -130,6 +130,16 @@ describe('parseUpstreamIcons', () => {
     expect(parsed.artworks.get('IconPlanOutlineArtwork')?.sizeDefault).toBe(14)
   })
 
+  it('sets aside a wrapper whose artwork it cannot flatten, and fails loud only when that icon is rendered', () => {
+    const upstream = parseUpstreamIcons(
+      FIXTURE_INDEX + `\nconst HookArtwork = ({ size = 16, className, strokeWidth }: WeightedIconProps) => {\n  const id = useId()\n  return <svg />\n}\n\nexport const IconHookMedium = (props: IconProps) => (\n  <HookArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />\n)\n`,
+      FIXTURE_SHARED,
+      'test',
+    )
+    expect(upstream.unflattenable?.get('IconHookMedium')).toBe('HookArtwork')
+    expect(() => renderIconModule(upstream, '@khorsheed/dsh-x', ['IconHookMedium'])).toThrow(/cannot flatten/)
+  })
+
   it('throws when a wrapper references an artwork neither module carries', () => {
     expect(() => parseUpstreamIcons(
       FIXTURE_INDEX + `\nexport const IconGhostMedium = (props: IconProps) => (\n  <MissingArtwork {...props} strokeWidth={ICON_MEDIUM_STROKE} />\n)\n`,

@@ -1,24 +1,24 @@
-/* Member speech: a conversation entry — a light card (one member's turn as
-   one block) whose header opens with the member-color avatar inline before
-   the name, markdown body, quiet footer. No avatar column: the card spans the
-   full width, lined up with the room agent's own replies. Alias tokens with
-   fallback chains. */
+/* Member speech: a conversation entry — a member-color avatar beside a light
+   card (one member's turn as one block), header, markdown body, quiet
+   footer. Alias tokens with fallback chains. */
 
 .speech {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
   margin: 8px 0 16px;
 }
 
 .avatar {
-  display: inline-grid;
+  display: grid;
   place-items: center;
-  flex: none;
-  align-self: center;
-  width: 20px;
-  height: 20px;
+  width: 28px;
+  height: 28px;
+  margin-top: 2px;
   border-radius: 50%;
   background: color-mix(in srgb, var(--member-color, var(--dsw-alias-label-tertiary, #7f8287)) 85%, black);
   color: #fff; /* panel-check: allow-color */
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   user-select: none;
 }
@@ -37,7 +37,7 @@
 .identity {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: baseline;
   gap: 2px 8px;
 }
 
@@ -161,7 +161,7 @@
   transition: opacity 120ms ease;
 }
 
-/* The card and its action row, stacked. */
+/* The card and its action row, stacked beside the avatar. */
 .stack {
   display: flex;
   flex-direction: column;
