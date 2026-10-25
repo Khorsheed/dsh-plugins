@@ -11,7 +11,7 @@
  * RoomService.postMessage) and renders through the official user node.
  * @module @khorsheed/dsh-room/client/nodes
  */
-import type { RoomQuestionAnswer, RoomQuestionItem } from '../types.ts'
+import type { RoomDecisionEvent, RoomQuestionAnswer, RoomQuestionItem } from '../types.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
@@ -82,6 +82,13 @@ export interface RoomApprovalData {
   readonly state: 'pending' | 'allowed-once' | 'rejected' | 'cancelled'
 }
 
+/** Chat node data of one decision the room made on its own (a timeline row). */
+export interface RoomDecisionData {
+  readonly seq: number
+  readonly time: number
+  readonly decision: RoomDecisionEvent
+}
+
 /** Chat node data of a member's question card (pick-to-answer). */
 export interface RoomQuestionData {
   readonly seq: number
@@ -132,6 +139,8 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
     'room-relay': RoomRelayData
     /** room: a member's mode tool waiting for the human's approval. */
     'room-approval': RoomApprovalData
+    /** room: a decision the room made on its own (rule or decision model). */
+    'room-decision': RoomDecisionData
     /** room: a member's questions for the human (pick-to-answer card). */
     'room-question': RoomQuestionData
     /** room: reports the gate holds in a member's inbox. */
@@ -274,6 +283,20 @@ export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
   },
   update: context => context.state,
   buildViewNode: context => viewNode(context, 'room-event'),
+}
+
+/** A room decision: one single-event Context per `room/decision`. */
+export const roomDecisionDefinition: ConversationNodeDefinition<RoomDecisionData> = {
+  kind: 'room-decision',
+  target: 'chat',
+  match: event => event.type === 'room/decision' ? { id: event.data.id, role: 'start' } : null,
+  start: (_context, match) => {
+    const event = match.event
+    if (event.type !== 'room/decision') throw new Error('room-decision start requires a room/decision event')
+    return { seq: event.seq, time: event.time, decision: event.data }
+  },
+  update: context => context.state,
+  buildViewNode: context => viewNode(context, 'room-decision'),
 }
 
 /**

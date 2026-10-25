@@ -61,6 +61,7 @@ import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, worki
 import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
 import { resolveTaskRef } from './jobs.ts'
 import { suggestTask } from './report-gate.ts'
+import { decisionRecord } from './decisions.ts'
 import type {
   RoomCancelRequest, RoomCancelResult,
   RoomPrepareMemberRequest, RoomPrepareMemberResult,
@@ -558,16 +559,26 @@ export class RoomService extends TypertRemoteService {
     const open = jobs.filter(job => job.status === 'running' || job.status === 'attention')
     const events = session.snapshotEvents()
     const state = replay(events)
+    // Nothing to file into, or automatic filing switched off: a task of its own.
+    if (open.length === 0 || state.settings?.autoTaskFiling === false) return { task: messageId }
     const suggestion = await suggestTask(this.ctx, text, open.map(job => ({
       number: job.number, title: job.title,
       running: (state.deliveries ?? []).filter(row => job.deliveries.includes(row.id) && (row.status === 'running' || row.status === 'queued'))
         .map(row => state.members.find(member => memberId(events, member) === row.memberId)?.name ?? row.memberId),
     })))
-    if (suggestion === undefined) return { task: messageId }
     const target = suggestion.task === 'new' ? undefined : jobs.find(job => job.number === suggestion.task)
+    // Every filing that weighed the open tasks is recorded (the timeline row, Context Lens).
+    session.append('room/decision', decisionRecord('task-filing', {
+      outcome: target === undefined ? 'new' : String(target.number),
+      ...suggestion.rule === undefined ? {} : { rule: suggestion.rule },
+      ...suggestion.probability === undefined ? {} : { probability: suggestion.probability },
+      ...suggestion.call === undefined ? {} : { call: suggestion.call },
+      about: { message: messageId, ...target === undefined ? {} : { task: { number: target.number, title: target.title.slice(0, 200) } } },
+    }))
     if (target === undefined) return { task: messageId }
-    session.append('room/task-link', { message: messageId, task: target.id, by: 'model', probability: suggestion.probability })
-    return { task: target.id, note: `【任务归属】这条消息看起来是在接着做「任务 ${target.number}：${target.title}」（判断置信 ${suggestion.probability.toFixed(2)}）。如果不对，派活时用 task: "new" 或别的任务编号指明，房间会改过来。` }
+    const probability = suggestion.probability ?? 0
+    session.append('room/task-link', { message: messageId, task: target.id, by: 'model', probability })
+    return { task: target.id, note: `【任务归属】这条消息看起来是在接着做「任务 ${target.number}：${target.title}」（判断置信 ${probability.toFixed(2)}）。如果不对，派活时用 task: "new" 或别的任务编号指明，房间会改过来。` }
   }
 
   /**
@@ -1681,11 +1692,21 @@ export class RoomService extends TypertRemoteService {
     if (request.reportTiming !== undefined && request.reportTiming !== 'judge' && request.reportTiming !== 'each') {
       return { ok: false, error: { code: 'invalid-settings' } }
     }
+    if (request.autoTaskFiling !== undefined && typeof request.autoTaskFiling !== 'boolean') return { ok: false, error: { code: 'invalid-settings' } }
+    if (request.reportThreshold !== undefined && (typeof request.reportThreshold !== 'number' || !(request.reportThreshold >= 0.1 && request.reportThreshold <= 0.9))) {
+      return { ok: false, error: { code: 'invalid-settings' } }
+    }
+    if (request.reportWaitMinutes !== undefined && (!Number.isInteger(request.reportWaitMinutes) || request.reportWaitMinutes < 1 || request.reportWaitMinutes > 30)) {
+      return { ok: false, error: { code: 'invalid-settings' } }
+    }
     const change = {
       ...request.memberMessages === undefined ? {} : { memberMessages: request.memberMessages },
       ...request.hopLimit === undefined ? {} : { hopLimit: request.hopLimit },
       ...request.paused === undefined ? {} : { paused: request.paused },
       ...request.reportTiming === undefined ? {} : { reportTiming: request.reportTiming },
+      ...request.autoTaskFiling === undefined ? {} : { autoTaskFiling: request.autoTaskFiling },
+      ...request.reportThreshold === undefined ? {} : { reportThreshold: Math.round(request.reportThreshold * 100) / 100 },
+      ...request.reportWaitMinutes === undefined ? {} : { reportWaitMinutes: request.reportWaitMinutes },
     }
     if (Object.keys(change).length === 0) return { ok: false, error: { code: 'nothing-to-update' } }
     const wasPaused = loaded.state.settings?.paused === true

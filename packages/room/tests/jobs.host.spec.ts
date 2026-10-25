@@ -90,6 +90,9 @@ describe('tasks', () => {
     let state = await bench.state()
     expect(state.jobs).toHaveLength(1)
     expect(state.jobs![0]!.messages).toMatchObject([{ text: '@kimi 实现登录接口' }, { text: '@bill 顺便把注册也测一下', by: 'model', probability: 0.88 }])
+    // The filing is recorded with its model call.
+    const decisions = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().flatMap(event => event.type === 'room/decision' ? [event.data] : [])
+    expect(decisions).toMatchObject([{ scenario: 'task-filing', outcome: '1', probability: 0.88, about: { task: { number: 1 } }, call: { request: { questions: [{ id: 'task', type: 'choice' }] } } }])
 
     // The room's agent answering that follow-up decides it is new work after all.
     const sent = await bench.service.messageMember({ sessionId: bench.sessionId, member: 'kimi', text: '另起：写部署脚本', task: 'new' })
@@ -100,6 +103,16 @@ describe('tasks', () => {
     expect(state.jobs![0]!.messages[0]!.by).toBeUndefined()
     expect(await bench.service.messageMember({ sessionId: bench.sessionId, member: 'kimi', text: 'x', task: '9' }))
       .toEqual({ ok: false, error: { code: 'unknown-task' } })
+  })
+
+  it('with automatic filing off an untagged follow-up is a new task, unasked and unrecorded', async () => {
+    const bench = await boot({ answer: '1', probability: 0.88 })
+    expect(await bench.service.setSettings({ sessionId: bench.sessionId, autoTaskFiling: false })).toMatchObject({ ok: true, value: { autoTaskFiling: false } })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@kimi 实现登录接口' })
+    await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledOnce())
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@bill 顺便把注册也测一下' })
+    expect((await bench.state()).jobs).toHaveLength(2)
+    expect(bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().some(event => event.type === 'room/decision')).toBe(false)
   })
 
   it('the composer\'s tag files the next message under that task without asking the model', async () => {

@@ -43,16 +43,17 @@ import { RoomTaskTags } from './task-tag.ts'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomApprovalDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
+import { roomApprovalDefinition, roomDecisionDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { mainSessionId, RoomStore } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomInboxView } from './RoomInboxView.tsx'
 import { RoomApprovalView } from './RoomApprovalView.tsx'
 import { RoomQuestionView } from './RoomQuestionView.tsx'
+import { RoomDecisionView } from './RoomDecisionView.tsx'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
-  RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected,
+  RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected,
 } from './slots.ts'
 import type { RoomFailure } from '../types.ts'
 
@@ -389,6 +390,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     lctx.uiConversation.events.register(roomInboxDefinition)
     lctx.uiConversation.events.register(roomApprovalDefinition)
     lctx.uiConversation.events.register(roomQuestionDefinition)
+    lctx.uiConversation.events.register(roomDecisionDefinition)
   })
 
   // The slots are declared by ui-conversation, whose apply order
@@ -643,6 +645,24 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }),
     },
     RoomQuestionView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-decision',
+      locale: NS,
+      inject: (sessionId: SessionId): RoomDecisionInjected => ({
+        // Context Lens is another plugin: opened by its tab kind, only when mounted.
+        ...ctx.get('remote.requestInspector') === undefined || ctx.get('sidebarRight') === undefined ? {} : {
+          openDecision: (decisionId: string) => {
+            try {
+              (ctx.get('sidebarRight') as { openTab(kind: string, options?: { params?: object }): void }).openTab('context-lens', { params: { sessionId, roomDecision: decisionId } })
+            } catch { /* the tab kind is hidden or absent */ }
+          },
+        },
+      }),
+    },
+    RoomDecisionView,
   ))
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()

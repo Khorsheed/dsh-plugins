@@ -320,6 +320,12 @@ export interface RoomSettingsEvent {
    * recipient's inbox; `each` hands every report over at once.
    */
   readonly reportTiming?: 'judge' | 'each'
+  /** Automatic task filing: false = an untagged human message always starts a new task. */
+  readonly autoTaskFiling?: boolean
+  /** Report timing: the "hand it over now" probability that delivers at once (0.1–0.9). */
+  readonly reportThreshold?: number
+  /** Report timing: the longest a held report waits before it is handed over anyway, in minutes (1–30). */
+  readonly reportWaitMinutes?: number
 }
 
 /** The folded settings with defaults applied. */
@@ -328,6 +334,52 @@ export interface RoomSettings {
   readonly hopLimit: number
   readonly paused: boolean
   readonly reportTiming: 'judge' | 'each'
+  readonly autoTaskFiling: boolean
+  readonly reportThreshold: number
+  readonly reportWaitMinutes: number
+}
+
+/** The room's own decision scenarios (the decision-model table, see decisions.ts). */
+export type RoomDecisionScenario = 'task-filing' | 'report-timing'
+
+/** One call to the decision model (typesafe), recorded as it went out and came back. */
+export interface RoomDecisionCall {
+  /** The model the service answered with (or was asked, on a failure). */
+  readonly model: string
+  readonly latencyMs?: number
+  readonly cached?: boolean
+  readonly inputTokens?: number
+  readonly outputTokens?: number
+  /** The request body's judged parts: the state and the questions, as sent. */
+  readonly request: { readonly state: RoomJsonValue; readonly questions: RoomJsonValue }
+  /** The answers as they came back. */
+  readonly response?: RoomJsonValue
+  /** Why the call produced no usable answer (timeout, circuit-open, http …). */
+  readonly failure?: { readonly reason: string; readonly detail?: string }
+}
+
+/**
+ * One decision the room made on its own — by a rule, or by asking the
+ * decision model — with what it was about. The timeline shows the outcome;
+ * Context Lens lists the ones with a model call as requests.
+ */
+export interface RoomDecisionEvent {
+  readonly id: string
+  readonly scenario: RoomDecisionScenario
+  /** task-filing: `new` or the task number; report-timing: `now` or `later`. */
+  readonly outcome: string
+  /** The rule that decided (a fallback after a failed call included); absent = the model decided. */
+  readonly rule?: string
+  /** The probability the outcome was taken with, when the model decided. */
+  readonly probability?: number
+  readonly call?: RoomDecisionCall
+  /** What it was about: the human message (task-filing) or the report's sender and recipient (report-timing). */
+  readonly about: {
+    readonly message?: string
+    readonly task?: { readonly number: number; readonly title: string }
+    readonly from?: string
+    readonly to?: string
+  }
 }
 
 /**
@@ -590,6 +642,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/settings': RoomSettingsEvent
     /** The report gate decided on an arrived report. */
     'room/report-gate': RoomReportGateEvent
+    /** The room decided something on its own (a rule, or the decision model). */
+    'room/decision': RoomDecisionEvent
     /** A human message was attributed to a task. */
     'room/task-link': RoomTaskLinkEvent
     /** A human stopped a task. */
@@ -1054,6 +1108,9 @@ export type RoomReleaseReportsResult =
 export interface RoomSetSettingsRequest {
   readonly sessionId: SessionId
   readonly reportTiming?: 'judge' | 'each'
+  readonly autoTaskFiling?: boolean
+  readonly reportThreshold?: number
+  readonly reportWaitMinutes?: number
   readonly memberMessages?: 'free' | 'confirm'
   /** 2–50. */
   readonly hopLimit?: number

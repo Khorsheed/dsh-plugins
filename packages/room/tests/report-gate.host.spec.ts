@@ -38,15 +38,19 @@ describe('judgeReport (rules)', () => {
     expect(await judgeReport(ctx, base)).toEqual({ hold: false, reason: 'unavailable' })
   })
 
-  it('asks the model otherwise; a failed call hands over', async () => {
+  it('asks the model otherwise, recording the call; a failed call hands over and keeps its failure', async () => {
     const model = new Context()
-    const judge = vi.fn(async () => ({ ok: true, judgement: { decisions: [{ id: 'deliver_now', answer: 0.2 }] } }))
+    const judge = vi.fn(async () => ({ ok: true, judgement: { model: 'jev-latest', decisions: [{ id: 'deliver_now', answer: 0.2 }], usage: { inputTokens: 538, outputTokens: 6 }, latencyMs: 900, cached: false } }))
     model.provide('typesafe', { judge } as never)
-    expect(await judgeReport(model, base)).toEqual({ hold: true, reason: 'model', probability: 0.2 })
-    judge.mockResolvedValueOnce({ ok: true, judgement: { decisions: [{ id: 'deliver_now', answer: 0.8 }] } })
-    expect(await judgeReport(model, base)).toEqual({ hold: false, reason: 'model', probability: 0.8 })
-    judge.mockResolvedValueOnce({ ok: false, reason: 'timeout' } as never)
-    expect(await judgeReport(model, base)).toEqual({ hold: false, reason: 'unavailable' })
+    expect(await judgeReport(model, base)).toMatchObject({ hold: true, reason: 'model', probability: 0.2,
+      call: { model: 'jev-latest', inputTokens: 538, outputTokens: 6, latencyMs: 900, cached: false, request: { state: {}, questions: [{ id: 'deliver_now', type: 'noul' }] } } })
+    judge.mockResolvedValueOnce({ ok: true, judgement: { model: 'jev-latest', decisions: [{ id: 'deliver_now', answer: 0.8 }], latencyMs: 1, cached: false } })
+    expect(await judgeReport(model, base)).toMatchObject({ hold: false, reason: 'model', probability: 0.8 })
+    // The room's threshold decides: 0.8 is still held below a 0.9 threshold.
+    judge.mockResolvedValueOnce({ ok: true, judgement: { model: 'jev-latest', decisions: [{ id: 'deliver_now', answer: 0.8 }], latencyMs: 1, cached: false } })
+    expect(await judgeReport(model, { ...base, threshold: 0.9 })).toMatchObject({ hold: true })
+    judge.mockResolvedValueOnce({ ok: false, reason: 'timeout', detail: 'no answer within 8000ms' } as never)
+    expect(await judgeReport(model, base)).toMatchObject({ hold: false, reason: 'unavailable', call: { failure: { reason: 'timeout', detail: 'no answer within 8000ms' } } })
   })
 })
 
@@ -117,6 +121,13 @@ describe('report gate in the room', () => {
     const state = await bench.service.getState({ sessionId: bench.sessionId })
     if (!state.ok) throw new Error('room unavailable')
     expect(pendingHolds(session.snapshotEvents(), state.value.members.find(member => member.name === 'dsh')!.id!)).toEqual([])
+    // Both timing decisions are recorded: the model's hold (with its call), then the last-result rule.
+    const decisions = session.snapshotEvents().flatMap(event => event.type === 'room/decision' ? [event.data] : [])
+    expect(decisions).toMatchObject([
+      { scenario: 'report-timing', outcome: 'later', probability: 0.1, about: { from: 'ada', to: 'dsh' }, call: { request: { questions: [{ id: 'deliver_now' }] } } },
+      { scenario: 'report-timing', outcome: 'now', rule: 'last', about: { from: 'bill', to: 'dsh' } },
+    ])
+    expect(decisions[1]).not.toHaveProperty('call')
   })
 
   it('a human can hand held reports over at once', async () => {
