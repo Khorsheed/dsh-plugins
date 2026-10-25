@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InspectorActionProps } from './contract.ts'
-import { IconRequestInspectorOutlineMedium } from './icons.tsx'
+import { IconRequestInspectorOutlineMedium } from './icons-local.tsx'
 import css from './EntryIcon.module.css'
 
 /** One message's context-lens control. */

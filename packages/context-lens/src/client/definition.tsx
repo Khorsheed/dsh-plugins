@@ -13,7 +13,7 @@
  */
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { IconRequestInspectorOutlineMedium } from './icons.tsx'
+import { IconRequestInspectorOutlineMedium } from './icons-local.tsx'
 import type {} from './locales.ts'
 
 /** The tab kind this package owns. */

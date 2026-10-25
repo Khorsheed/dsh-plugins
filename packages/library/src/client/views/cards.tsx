@@ -10,7 +10,7 @@ import { useState, type ReactNode } from 'react'
 import { ChipRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { LibraryCard, LibraryCardSourceType } from '../../types.ts'
 import type { LibraryCardFilter } from '../store.ts'
-import { IconSearchOutlineMedium, IconSparkleOutlineMedium } from '../icons.tsx'
+import { IconSearchOutlineMedium, IconSparkleMedium } from '../icons.tsx'
 import { BoxDots, daysUntil, Highlight, outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, type ViewProps } from '../ui.tsx'
 import { MathText } from '../math.tsx'
 import css from '../LibraryPane.module.css'
@@ -43,7 +43,7 @@ export function CardsView({ p, projectId, filter }: ViewProps & { projectId: str
         backLabel={t('action.back')}
         actions={[
           { id: 'search', label: t('cards.search'), icon: <IconSearchOutlineMedium />, pressed: searching, onSelect: () => { setSearching(!searching); setQuery('') } },
-          { id: 'review', label: t('review.start'), icon: <IconSparkleOutlineMedium />, onSelect: () => { actions.push({ view: 'review', projectId }) } },
+          { id: 'review', label: t('review.start'), icon: <IconSparkleMedium />, onSelect: () => { actions.push({ view: 'review', projectId }) } },
         ]}
         moreLabel={t('action.more')}
       />

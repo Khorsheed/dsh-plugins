@@ -20,7 +20,8 @@ import { profileOf, type LibraryProfile } from '../../profiles.ts'
 import { clearQuizDraft, loadQuizDraft, saveQuizDraft } from '../quiz-drafts.ts'
 import { MathText, Tex } from '../math.tsx'
 import { Highlight, outcome, shortGloss, StateLine, useLoad, value, type ViewProps } from '../ui.tsx'
-import { IconChatOutlineMedium, IconCheckOutlineMedium, IconFlagOutlineMedium } from '../icons.tsx'
+import { IconCheckOutlineMedium } from '../icons.tsx'
+import { IconChatOutlineMedium, IconFlagOutlineMedium } from '../icons-local.tsx'
 import css from '../LibraryPane.module.css'
 
 /** One question's state in the sitting. */

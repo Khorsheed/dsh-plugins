@@ -30,8 +30,9 @@
 
 import { useEffect, useId, useState } from 'react'
 import {
-  Button, Checkbox, IconRefreshOutlineRegular, IconSearchOutlineRegular, Input, Modal, SegmentedControl, Tag,
+  Button, Checkbox, Input, Modal, SegmentedControl, Tag,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconRefreshOutlineRegular, IconSearchOutlineRegular } from './icons.tsx'
 import type { EvalDraftItemOption, EvalDraftOptionsView } from '../types.ts'
 import { mintSeed, resolveSelection, selectionPool } from '../contract/item-selection.ts'
 import type { LabViewProps } from './contract.ts'

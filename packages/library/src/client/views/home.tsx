@@ -13,7 +13,8 @@ import { ChipRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/cli
 import { isThickResource, LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryResourceKind, type LibraryResourceProgress, type LibraryTemplate } from '../../types.ts'
 import { colorOf, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
 import { QuizRows } from './book.tsx'
-import { IconArticleOutlineMedium, IconCardsOutlineMedium, IconCourseOutlineMedium, IconHardwareOutlineMedium, IconLinkOutlineMedium, IconPenOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconRepoOutlineMedium, IconSparkleOutlineMedium, IconToolOutlineMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconLinkOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconArticleOutlineMedium, IconCardsOutlineMedium, IconCourseOutlineMedium, IconHardwareOutlineMedium, IconPenOutlineMedium, IconRepoOutlineMedium, IconToolOutlineMedium } from '../icons-local.tsx'
 import { ConfirmDialog, OriginTag, outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
 import { MathText } from '../math.tsx'
 import css from '../LibraryPane.module.css'
@@ -171,7 +172,7 @@ export function TodayView({ p }: ViewProps): ReactNode {
                   className={css.record}
                   onClick={() => { actions.push({ view: 'cards', projectId: entry.record.projectId, filter: 'chat' }) }}
                 >
-                  <span className={css.recordIcon} aria-hidden="true"><IconSparkleOutlineMedium size={14} /></span>
+                  <span className={css.recordIcon} aria-hidden="true"><IconSparkleMedium size={14} /></span>
                   <span className={css.recordText}>
                     <span className={css.recordTitle}><MathText text={entry.record.title ?? ''} /></span>
                     <span className={css.muted}>{entry.record.projectName} · {t('source.chat')} · {when(entry.record.at, t)}</span>
@@ -436,7 +437,7 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
           { id: 'cards', label: t('cards.title'), icon: <IconCardsOutlineMedium />, onSelect: () => { actions.push({ view: 'cards', projectId, filter: 'all' }) } },
           { id: 'edit', label: t('project.edit'), icon: <IconPenOutlineMedium />, menuOnly: true, onSelect: () => { setEditing(true) } },
           ...(thick.length > 1 ? [{ id: 'order', label: t('project.reorder'), icon: <span aria-hidden="true">⇅</span>, menuOnly: true, onSelect: () => { setOrdering(true) } }] : []),
-          { id: 'bind', label: t('action.bindProject'), icon: <IconSparkleOutlineMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId }).then(() => { setNotice(t('notice.bound')) }) } },
+          { id: 'bind', label: t('action.bindProject'), icon: <IconSparkleMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId }).then(() => { setNotice(t('notice.bound')) }) } },
           { id: 'delete', label: t('project.delete'), icon: <IconTrashOutlineMedium />, menuOnly: true, onSelect: () => { setError(undefined); setDeleting(true) } },
         ]}
         moreLabel={t('action.more')}
