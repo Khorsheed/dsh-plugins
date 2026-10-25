@@ -56,7 +56,11 @@
   line-height: 18px;
 }
 
-.provider,
+.provider {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
 
 .interrupted {
   font-size: 12px;
