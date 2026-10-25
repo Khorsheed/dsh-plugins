@@ -143,6 +143,7 @@ ${STYLE_LINES}
   自己加的物体用 \`ink(geometry, toon('#颜色'))\`（卡通材质 + 描边），地面起伏、石头、树这类场景用 \`flat('#颜色')\`，这样换 style3d 时全场跟着变。别用写实贴图和 PBR 材质。
 - 世界：\`const world = createWorld({ region: (x, z) => '区域名' })\`，然后
   - \`world.terrain({ size, height: (x, z) => 高度 })\` 地形；\`world.place(obj, x, z)\` 放到地面上
+  - **能站上去的模型**（楼梯、平台、桥、屋顶）：\`world.add(obj, { walkable: true })\` 或 \`world.walkable(obj)\`。角色移动时用 \`world.groundAt(x, z, 脚底高度 + 台阶高)\` 取落脚高度：只认这个高度以下最高的面，所以能一级级爬楼梯，不会被吸到头顶的屋顶上。要挡墙就再问一次不设上限的 \`groundAt(x, z)\`，比脚底高出一个台阶以上就别走过去。它只管「站在哪」，不管撞墙、滑坡。
   - \`world.add(obj, { id: 元素id, inst: 实例id, name, state: () => '当前在干什么' })\` 登记实体（右栏「指一下」靠它认出东西）
   - \`world.scatter(元素id, 数量或位置列表, { seed, spread, center, scale: [0.85, 1.15] })\` 把一种元素批量撒在地面上：外观只生成一次、批量绘制，每棵按地形高度落地、随机朝向和大小（同一个 seed 每次摆得一样）；点到任意一棵，「指一下」认出是哪个元素、第几棵。树林、石滩、草地都用它，别自己循环 clone。撒出来的是静物，没有逐棵动效。
   - **多个场景**（地图上的几座山、室内外）：\`world.enterScene('场景名', w => { w.terrain(…); w.scatter(…); w.add(…); w.onUpdate(…) })\`。切到下一个场景时，上一个场景里登记的地形、实体、批量物件、onUpdate 全部移除并释放；在任何场景之外登记的（玩家、镜头跟随）保留。各场景的底色、地面颜色、水色、雾、光照写在 game.json 的 \`style3d.scenes\`：\`{ "北坡": { "bg": "#cfd6dc", "ground": "#d8dcd6", "fog": [12, 40], "light": 0.8 } }\`（名字由游戏自己定；明暗层数和描边全局共用，不能按场景换）。别在同一个场景里堆所有区域，也别手动去删 scene 里的东西。

@@ -720,6 +720,9 @@ export function createWorld(options = {}) {
   let heightFn = () => 0, ground = null, time = 0, paused = false, running = false, last = 0
   /** The scene entered last: `{ name, group, entities, updates, ground }`, or null before any. */
   let current = null
+  /** Objects that count as ground for `groundAt`. */
+  const walkables = []
+  const groundRay = new THREE.Raycaster(), down = new THREE.Vector3(), DOWN = new THREE.Vector3(0, -1, 0)
   const testing = () => window.__GAMEDEV_TEST__ === true
 
   /** Background, fog and light from a resolved style (terrain colors are read when terrain is built). */
@@ -750,6 +753,7 @@ export function createWorld(options = {}) {
     const gone = new Set(current.entities)
     for (let i = entities.length - 1; i >= 0; i--) if (gone.has(entities[i])) entities.splice(i, 1)
     for (const fn of current.updates) { const i = updates.indexOf(fn); if (i >= 0) updates.splice(i, 1) }
+    for (const w of current.walkables) { const i = walkables.indexOf(w); if (i >= 0) walkables.splice(i, 1) }
     if (followed && gone.has(followed)) followed = null
     for (const r of [...rings.children]) if (gone.has(r.userData.follow)) rings.remove(r)
     scene.remove(current.group)
@@ -838,8 +842,9 @@ export function createWorld(options = {}) {
      * panel and the model talk about), `inst` this instance, `state` a string
      * or a function returning one (shown in the reference: 「摆尾中」).
      */
-    add(object, { id, inst, name, state } = {}) {
+    add(object, { id, inst, name, state, walkable } = {}) {
       object.userData.entity = { id, inst, name, state }
+      if (walkable) world.walkable(object)
       // Inside a scene, an entity belongs to it and leaves with it.
       ;(current?.group ?? scene).add(object)
       shade(object)
@@ -847,6 +852,32 @@ export function createWorld(options = {}) {
       entities.push(object)
       current?.entities.push(object)
       return object
+    },
+    /**
+     * Count an object (stairs, a platform, a bridge, a roof) as ground:
+     * `groundAt` lands on it. Inside a scene it leaves with the scene.
+     * `walkable(object, false)` takes it back.
+     */
+    walkable(object, on = true) {
+      const i = walkables.indexOf(object)
+      if (on && i < 0) { walkables.push(object); current?.walkables.push(object); object.updateMatrixWorld(true) }
+      if (!on && i >= 0) walkables.splice(i, 1)
+      return object
+    },
+    /**
+     * The height to stand at (x, z): the highest walkable surface (or the
+     * terrain) at or below `fromY`. A character passes its feet plus a step
+     * height, so it climbs a stair but not onto a roof above it; with no
+     * `fromY` the topmost surface counts.
+     */
+    groundAt(x, z, fromY = Infinity) {
+      const top = Number.isFinite(fromY) ? fromY + 0.001 : 1e4
+      down.set(x, top, z)
+      groundRay.set(down, DOWN)
+      groundRay.far = top + 1e4
+      const hits = groundRay.intersectObjects(ground ? [...walkables, ground] : walkables, true)
+      for (const hit of hits) if (hit.point.y <= top) return hit.point.y
+      return heightFn(x, z)
     },
     /** Put an object on the ground at (x, z). */
     place(object, x, z) {
@@ -885,7 +916,7 @@ export function createWorld(options = {}) {
       const group = new THREE.Group()
       group.name = `scene:${name}`
       scene.add(group)
-      current = { name, group, entities: [], updates: [], ground: null }
+      current = { name, group, entities: [], updates: [], walkables: [], ground: null }
       const result = setup?.(world)
       if (!testing()) world.render()
       return result
