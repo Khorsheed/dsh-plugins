@@ -23,12 +23,12 @@ describe('formatQuoteBlock', () => {
 
 describe('mergedQuoteDraft', () => {
   it('fills a blank draft directly', () => {
-    expect(mergedQuoteDraft('', '> 引用')).toBe('> 引用')
-    expect(mergedQuoteDraft('  \n ', '> 引用')).toBe('> 引用')
+    expect(mergedQuoteDraft('', '> 引用')).toBe('> 引用\n')
+    expect(mergedQuoteDraft('  \n ', '> 引用')).toBe('> 引用\n')
   })
 
   it('appends after one blank line when a draft exists, never overwriting it', () => {
-    expect(mergedQuoteDraft('已经打的字', '> 引用')).toBe('已经打的字\n\n> 引用')
+    expect(mergedQuoteDraft('已经打的字', '> 引用')).toBe('已经打的字\n\n> 引用\n')
   })
 })
 

@@ -41,7 +41,8 @@ describe('insertQuoteChip', () => {
     const { reference, span } = scope.calls[0]!
     expect(reference.source).toBe(QUOTE_REFERENCE_SOURCE)
     expect(reference.label).toBe('引用「A」')
-    expect(reference.clipboardText).toBe('> 引用\n> —— 引用自「A」')
+    // The closing newline: text typed after the chip opens a line of its own.
+    expect(reference.clipboardText).toBe('> 引用\n> —— 引用自「A」\n')
     expect(decodeQuoteRef(reference.ref)).toEqual({ text: reference.clipboardText, label: '引用「A」' })
     expect(span).toEqual({ start: 0, end: 0, draftRev: 3 })
   })
@@ -49,7 +50,7 @@ describe('insertQuoteChip', () => {
   it('appends to a non-blank draft with the blank-line prefix inside the chip', () => {
     const scope = scopeWith([true])
     insertQuoteChip(scope, inputWith({ draft: '已经打的字', draftRev: 7, occurrences: [] }), '> 引用', '引用「A」')
-    expect(scope.calls[0]!.reference.clipboardText).toBe('\n\n> 引用')
+    expect(scope.calls[0]!.reference.clipboardText).toBe('\n\n> 引用\n')
     expect(scope.calls[0]!.span).toEqual({ start: 5, end: 5, draftRev: 7 })
   })
 
@@ -83,8 +84,8 @@ describe('quoteReferenceCodec', () => {
     const scope = scopeWith([true])
     insertQuoteChip(scope, inputWith({ draft: '已有', draftRev: 0, occurrences: [] }), '> 引用块', 'L')
     const ref = scope.calls[0]!.reference.ref
-    expect(quoteReferenceCodec.clipboardText(ref)).toBe('\n\n> 引用块')
-    await expect(quoteReferenceCodec.serialize(ref, new AbortController().signal)).resolves.toBe('\n\n> 引用块')
+    expect(quoteReferenceCodec.clipboardText(ref)).toBe('\n\n> 引用块\n')
+    await expect(quoteReferenceCodec.serialize(ref, new AbortController().signal)).resolves.toBe('\n\n> 引用块\n')
   })
 
   it('refuses a corrupt ref at serialize (the send blocks, never downgrades)', async () => {
