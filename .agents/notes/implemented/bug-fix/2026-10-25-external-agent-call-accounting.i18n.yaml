@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-25-external-agent-call-accounting.md
+.agents/notes/implemented/bug-fix/2026-10-25-external-agent-call-accounting.md: 0b64b88921a5f318693760f001303763d29a947a
+.agents/notes/implemented/bug-fix/2026-10-25-external-agent-call-accounting.zh.md: 3b43882d187dc4e90519513bdd88c31783b31d34

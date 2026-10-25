@@ -544,6 +544,49 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('accounts one API call once, with its final usage, and never mirrors CLI-injected user text as an answer', async () => {
+    // The in-the-wild shape (a Skill round): call A emits Skill, Claude Code
+    // runs it early (its result and the skill body arrive mid-message), then
+    // A's ToolSearch block; every block repeats A's message_start usage
+    // (output 6), and only A's message_delta carries the final count (242).
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-call-usage'))
+    const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const partial = (event: Record<string, unknown>) => fake.emit({ type: 'stream_event', event })
+    const startUsage = { input_tokens: 2, output_tokens: 6, cache_read_input_tokens: 0, cache_creation_input_tokens: 22711 }
+    partial({ type: 'message_start', message: { id: 'msg-a', usage: startUsage } })
+    fake.emit({ type: 'assistant', message: { id: 'msg-a', role: 'assistant', usage: startUsage, content: [{ type: 'tool_use', id: 'tu-skill', name: 'Skill', input: { skill: 'game-design' } }] } })
+    fake.emit({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu-skill', content: 'Launching skill' }] } })
+    fake.emit({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: 'Base directory for this skill: …' }] } })
+    fake.emit({ type: 'assistant', message: { id: 'msg-a', role: 'assistant', usage: startUsage, content: [{ type: 'tool_use', id: 'tu-search', name: 'ToolSearch', input: { query: 'select:x' } }] } })
+    fake.emit({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu-search', content: 'x' }] } })
+    // Nothing of A reaches the log while A is still generating.
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(0)
+    partial({ type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 242 } })
+    partial({ type: 'message_stop' })
+    const bUsage = { input_tokens: 4, output_tokens: 1, cache_read_input_tokens: 22711, cache_creation_input_tokens: 2013 }
+    partial({ type: 'message_start', message: { id: 'msg-b', usage: bUsage } })
+    fake.emit({ type: 'assistant', message: { id: 'msg-b', role: 'assistant', usage: bUsage, content: [{ type: 'text', text: '看完了' }] } })
+    partial({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 109 } })
+    partial({ type: 'message_stop' })
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 6, output_tokens: 351 } })
+    expect((await run.result).stopReason).toBe('completed')
+    const messages = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+      .map(e => e.data as { message: { content: { type: string; name?: string; text?: string }[] }; usage?: Record<string, number> })
+    expect(messages.map(m => m.message.content.map(block => block.name ?? block.text))).toEqual([['Skill'], ['ToolSearch'], ['看完了']])
+    expect(messages.map(m => m.usage)).toEqual([
+      undefined,
+      { inputTokens: 2, outputTokens: 242, cacheReadTokens: 0, cacheWriteTokens: 22711 },
+      { inputTokens: 4, outputTokens: 109, cacheReadTokens: 22711, cacheWriteTokens: 2013 },
+    ])
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
   it('a cancelled round folds an unresulted tool call with the interrupted placeholder', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-tool-abort'))

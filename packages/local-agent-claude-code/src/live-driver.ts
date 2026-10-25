@@ -92,6 +92,7 @@ import {
   MEMBER_TOOL_TIMEOUT_MS,
   textTask,
   toolCallsOf,
+  usageFromClaude,
 } from './claude-cli-provider.ts'
 import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
 import { endpointAuthEnv } from './endpoint-auth.ts'
@@ -769,6 +770,39 @@ export class ClaudeLiveDriver {
     // key, paired with their completion in arrival order.
     let messageKey: string | undefined
     let legacyMessage = 0
+
+    // One API call per native message id. Claude emits an `assistant` event
+    // per content block, each repeating the usage snapshot taken at
+    // message_start (output counted only that far); the call's final count
+    // arrives in its message_delta. A call's lines therefore fold only once
+    // the call ended (or the round settles), and its usage — the start
+    // snapshot completed by the delta — rides its last line alone.
+    const callUsage = new Map<string, Record<string, unknown>>()
+    const openCalls = new Set<string>()
+    let currentCall: string | undefined
+    const endCall = (usage: unknown): void => {
+      if (currentCall === undefined) return
+      if (typeof usage === 'object' && usage !== null) {
+        const merged = { ...callUsage.get(currentCall) }
+        for (const [key, value] of Object.entries(usage)) if (value !== null && value !== undefined) merged[key] = value
+        callUsage.set(currentCall, merged)
+      }
+      openCalls.delete(currentCall)
+    }
+    /**
+     * A line's usage when its call is known: `skip` on every line but the
+     * call's last, the call's final usage (or, without stream events, the
+     * line's own report) on the last; `null` for an id-less line.
+     */
+    const callLineUsage = (index: number): { skip: true } | { usage: ReturnType<typeof usageFromClaude> | undefined } | null => {
+      const id = parser.lines[index]?.messageId
+      if (id === undefined) return null
+      let last = -1
+      parser.lines.forEach((line, position) => { if (line.messageId === id) last = position })
+      if (index !== last) return { skip: true }
+      const raw = callUsage.get(id)
+      return { usage: raw !== undefined ? usageFromClaude(raw) : parser.lines[index]!.usage }
+    }
     const streamKey = (kind: 'think' | 'text', index: unknown): string =>
       `${messageKey ?? `legacy-${turn}-${legacyMessage}`}:${typeof index === 'number' ? index : kind}`
 
@@ -913,8 +947,10 @@ export class ClaudeLiveDriver {
       // The fold's per-call usage (the assistant event's inline report) wins
       // over the round-total fallback; once any line carries its own, the
       // round total never joins the log (a sum would double count).
-      const effectiveUsage = line.usage ?? lineUsage
-      if (line.usage !== undefined) usageCarried = true
+      const perCall = callLineUsage(index)
+      const effectiveUsage = perCall === null ? line.usage ?? lineUsage
+        : 'skip' in perCall ? undefined : perCall.usage ?? lineUsage
+      if (effectiveUsage !== undefined) usageCarried = true
       const stream = streamOfLine(line)
       if (stream !== undefined) {
         // A streamed line finalizes its own step (opening it now if no
@@ -935,7 +971,9 @@ export class ClaudeLiveDriver {
       } else {
         closeOpenStep()
         lastStep += 1
-        appendClaudeTranscriptLine(childSession, turn, lastStep, line, effectiveUsage)
+        // The fold decided the usage; the line's own (per-block snapshot) must not override it.
+        const { usage: _snapshot, ...bare } = line
+        appendClaudeTranscriptLine(childSession, turn, lastStep, bare as typeof line, effectiveUsage)
       }
       folded.add(index)
       localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
@@ -978,6 +1016,8 @@ export class ClaudeLiveDriver {
         const line = parser.lines[index]
         if (line === undefined) continue
         if (!settle && line.kind === 'tool' && line.result === undefined) break
+        // A call still streaming more blocks folds once it ends (its usage is final then).
+        if (!settle && line.messageId !== undefined && openCalls.has(line.messageId)) break
         const own = streamOfLine(line)
         // Streams order among themselves by start; a plain line follows every
         // stream that began before it completed.
@@ -986,6 +1026,8 @@ export class ClaudeLiveDriver {
         for (const earlier of before) {
           const at = parser.lines.findIndex((candidate, position) => position > index && position < upto && !folded.has(position) && streamOfLine(candidate) === earlier)
           if (at < 0) break outer
+          const atCall = parser.lines[at]?.messageId
+          if (!settle && atCall !== undefined && openCalls.has(atCall)) break outer
           foldLine(at, usageFor(at))
         }
         foldLine(index, usageFor(index))
@@ -1032,6 +1074,17 @@ export class ClaudeLiveDriver {
         if (inner?.['type'] === 'message_start') {
           const message = inner['message'] as JsonObject | undefined
           messageKey = typeof message?.['id'] === 'string' ? message['id'] : `legacy-${turn}-${++legacyMessage}`
+          currentCall = typeof message?.['id'] === 'string' ? message['id'] : undefined
+          if (currentCall !== undefined) {
+            openCalls.add(currentCall)
+            const usage = message?.['usage']
+            if (typeof usage === 'object' && usage !== null) callUsage.set(currentCall, { ...usage as Record<string, unknown> })
+          }
+          return
+        }
+        if (inner?.['type'] === 'message_delta' || inner?.['type'] === 'message_stop') {
+          endCall(inner['usage'])
+          mirrorUpTo(parser.lines.length - 1, false)
           return
         }
         const delta = inner?.['delta'] as JsonObject | undefined
