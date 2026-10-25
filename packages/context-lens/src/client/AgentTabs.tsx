@@ -25,6 +25,8 @@ export interface AgentTabsProps {
   readonly onSelect: (scopeId: string) => void
   readonly onOpenRequest: (link: RequestLink) => void
   readonly t: T
+  /** The room's decision-model calls this turn: a 房间 tab after the agents when positive. */
+  readonly roomCount?: number | undefined
 }
 
 function labelOf(scope: AgentScopeOverview, t: T): string {
@@ -90,7 +92,10 @@ function Relation({ scope, onOpenRequest, t }: { readonly scope: AgentScopeOverv
   return parts.length === 0 ? null : <div className={css.relation}>{parts}</div>
 }
 
-export function AgentTabs({ scopes, value, onSelect, onOpenRequest, t }: AgentTabsProps): ReactNode {
+/** The 房间 tab's value (no agent scope carries it). */
+export const ROOM_TAB = 'room:decisions'
+
+export function AgentTabs({ scopes, value, onSelect, onOpenRequest, roomCount, t }: AgentTabsProps): ReactNode {
   const selected = scopes.find(scope => scope.scopeId === value) ?? scopes[0]
   const main = scopes.filter(scope => scope.kind === 'main')
   const others = [
@@ -107,7 +112,14 @@ export function AgentTabs({ scopes, value, onSelect, onOpenRequest, t }: AgentTa
     <div className={css.row} role="tablist" aria-label={t('tab.title')}>
       {[...main, ...shown].map(scope => <Tab key={scope.scopeId} scope={scope} selected={scope.scopeId === selected?.scopeId} onSelect={onSelect} t={t} />)}
       {shown.length < others.length && <Overflow hidden={others.length - shown.length} items={others} value={value} onSelect={onSelect} t={t} />}
-      {selected && <Relation scope={selected} onOpenRequest={onOpenRequest} t={t} />}
+      {/* The room's own decision-model calls this turn, after every agent. */}
+      {roomCount !== undefined && roomCount > 0 && (
+        <button type="button" role="tab" aria-selected={value === ROOM_TAB} className={css.tab} onClick={() => onSelect(ROOM_TAB)}>
+          <span className={css.label}>{t('room.tab')}</span>
+          <span className={css.count}>{roomCount}</span>
+        </button>
+      )}
+      {selected && value !== ROOM_TAB && <Relation scope={selected} onOpenRequest={onOpenRequest} t={t} />}
     </div>
   </div>
 }

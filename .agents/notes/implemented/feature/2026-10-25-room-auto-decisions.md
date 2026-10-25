@@ -37,5 +37,5 @@ Several rules also decided before the model was asked, and nothing named them.
 
 ## Consequences
 
-- Context Lens needs a matching 房间 tab that lists the recorded model calls as requests (a follow-up change).
+- Context Lens lists the recorded model calls as requests on a 房间 tab (see [2026-10-24-context-lens-room-rounds](2026-10-24-context-lens-room-rounds.md)); rule decisions stay on the timeline only.
 - Tests cover the recorded filing and timing decisions with and without a call, filing switched off, the settings ranges, the decision line, and persistence of the new event.

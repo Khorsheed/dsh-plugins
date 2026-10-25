@@ -37,5 +37,5 @@ Status: implemented
 
 ## Consequences
 
-- Context Lens 需要配套一个「房间」页签，把记录下的模型调用当作请求列出来（后续改动）。
+- Context Lens 在「房间」页签里把记录下的模型调用当作请求列出（见 [2026-10-24-context-lens-room-rounds](2026-10-24-context-lens-room-rounds.zh.md)）；规则做出的判断只显示在时间轴上。
 - 测试覆盖了：有调用和无调用两种情况下记录的归类和时机判断、关闭自动分类、设置的取值范围、判断那一行的文案，以及新事件的持久化。

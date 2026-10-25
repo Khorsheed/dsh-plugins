@@ -355,6 +355,8 @@ export type CaptureOrigin =
 /** `listTurns` row — deliberately light (no segments, no request payloads). */
 export interface TurnListItem {
   sessionId: string
+  /** Ids of the room decisions this turn holds (a 查看判断 jump resolves its turn by them). */
+  roomDecisionIds?: string[]
   /**
    * The panel-facing address. Real turns key on the host's own turn number
    * (stable across live capture and log backfill, and durable across process
@@ -487,9 +489,39 @@ export interface ListTurnsResult {
 }
 
 /** `getTurn` payload: scopes with request headers but without segments. */
+/** A JSON value as recorded in a session log (the room's decision calls). */
+export type LensJsonValue = null | boolean | number | string | LensJsonValue[] | { [key: string]: LensJsonValue }
+
+/**
+ * One decision-model call the room made on its own (a `room/decision` event
+ * carrying a call), shown as a request in the turn's 房间 tab. Read
+ * structurally from the room plugin's log; absent without the room plugin.
+ */
+export interface RoomDecisionRow {
+  id: string
+  seq: number
+  at: number
+  /** `task-filing` / `report-timing` (the room's scenario table). */
+  scenario: string
+  outcome: string
+  rule?: string
+  probability?: number
+  model: string
+  latencyMs?: number
+  cached?: boolean
+  inputTokens?: number
+  outputTokens?: number
+  request: { state: LensJsonValue; questions: LensJsonValue }
+  response?: LensJsonValue
+  failure?: { reason: string; detail?: string }
+  about: { message?: string; task?: { number: number; title: string }; from?: string; to?: string }
+}
+
 export interface TurnOverview {
   turn: TurnListItem
   scopes: AgentScopeOverview[]
+  /** The room's decision-model calls made during this turn (the 房间 tab); absent when none. */
+  roomDecisions?: RoomDecisionRow[]
   /** The answering instance's epoch — see {@link ListTurnsResult.generation}. */
   generation?: string
   /**

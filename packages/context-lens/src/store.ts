@@ -26,6 +26,7 @@
 import { countToolCalls } from './tool-summary.ts'
 import type {
   AgentScopeOverview,
+  RoomDecisionRow,
   BackfillInfo,
   CaptureOrigin,
   CapturedRequest,
@@ -1297,9 +1298,11 @@ export class InspectorStore {
       .filter(turn => turn.purpose !== 'room-members' && this.attachedTurn(session, turn) === undefined)
       .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
     const handoffs = (session.room?.handoffs ?? []).map(h => ({ at: h.at, name: session.room!.members.get(h.memberId) ?? h.memberId }))
+    const decisions = scopeAuthorized('main', filter) ? this.decisionsByTurn(session, filter) : new Map<number, RoomDecisionRow[]>()
     return {
       turns: listed.map(turn => {
-        const item = this.turnItem(sessionId, turn, filter)
+        const held = decisions.get(turn.turnSeq)
+        const item = { ...this.turnItem(sessionId, turn, filter), ...held === undefined ? {} : { roomDecisionIds: held.map(row => row.id) } }
         const ordinal = ordinals.get(turn.hostTurn !== undefined ? `h${turn.hostTurn}` : `t${turn.turnSeq}`)
         return ordinal === undefined ? item : { ...item, ordinal }
       }),
@@ -1383,12 +1386,36 @@ export class InspectorStore {
         for (const scope of pseudo.scopes.values()) scopes.push(this.scopeOverview(session, pseudo, scope))
       }
     }
+    const roomDecisions = scopeAuthorized('main', filter) ? this.decisionsByTurn(session, filter).get(turn.turnSeq) : undefined
     return {
       turn: item,
       scopes,
+      ...roomDecisions === undefined ? {} : { roomDecisions },
       generation: this.generation,
       ...filter?.scopes === undefined ? {} : { authorizedScopes: scopes.map(scope => scope.scopeId) },
     }
+  }
+
+  /**
+   * The room's decision-model calls by the turn they happened in: each goes to
+   * the latest listed turn (main turn or room round) that started at or
+   * before it.
+   */
+  private decisionsByTurn(session: SessionRecord, filter?: ScopeFilter): Map<number, RoomDecisionRow[]> {
+    const byTurn = new Map<number, RoomDecisionRow[]>()
+    const decisions = session.room?.decisions ?? []
+    if (decisions.length === 0) return byTurn
+    const listed = [...session.turns, ...this.roomTurns(session, filter)]
+      .filter(turn => turn.purpose !== 'room-members' && this.attachedTurn(session, turn) === undefined)
+      .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
+    for (const decision of decisions) {
+      const owner = listed.findLast(turn => turn.startedAt <= decision.at)
+      if (owner === undefined) continue
+      const rows = byTurn.get(owner.turnSeq) ?? []
+      rows.push(decision)
+      byTurn.set(owner.turnSeq, rows)
+    }
+    return byTurn
   }
 
   /** Record one `room/*` event of a main session (log backfill or live). */

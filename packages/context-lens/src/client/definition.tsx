@@ -33,6 +33,8 @@ export interface RequestInspectorTabParams {
    */
   readonly sessionId?: string
   readonly messageId?: string
+  /** A room decision (`room/decision` id): opens the turn holding it on the 房间 tab, that call selected. */
+  readonly roomDecision?: string
 }
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
