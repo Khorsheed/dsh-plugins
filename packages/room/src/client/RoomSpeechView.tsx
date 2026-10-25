@@ -1,10 +1,8 @@
 /**
  * Member speech node ('room-speech' keyed renderer): a conversation entry —
- * a light card that blocks off one member's turn (several agents take turns
- * in a room, so each turn reads as its own block): a header (the member's
- * color avatar inline before the name — no avatar column, so the card lines
- * up with the room agent's own replies and keeps the full width on a phone —
- * public role, provider), the markdown body —
+ * the member's color avatar beside a light card that blocks off one member's
+ * turn (several agents take turns in a room, so each turn reads as its own
+ * block): a header (name, public role, provider, time), the markdown body —
  * the official MarkdownText, typographically identical to main-agent speech —
  * and a quiet footer row. A
  * body past {@link COLLAPSE_CHARS} may fold to ~10 lines under a bg-base fade
@@ -121,10 +119,10 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
   const color = memberColor(data.member)
   return (
     <div className={css.speech} data-time-hover-root="" data-actions-reveal={newestSpeech ? 'always' : 'hover'} style={{ '--member-color': color } as CSSProperties}>
+      <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
       <div className={css.stack}>
       <div className={css.card}>
       <div className={css.identity}>
-        <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
         <span className={css.name}>{data.member}</span>
         {member?.role !== undefined && <span className={css.role}>{member.role}</span>}
         {provider !== undefined && provider !== '' && <span className={css.provider}>{provider}</span>}
