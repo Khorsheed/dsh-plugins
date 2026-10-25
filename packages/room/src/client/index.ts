@@ -729,7 +729,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // Cross-session help: the thread row in the asking room, the request card
   // in the helper's session (any session — the card is how it gets there).
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    { name: 'conversation.chat.node', key: 'room-help', locale: NS, inject: (): RoomHelpInjected => ({ openSession }) },
+    { name: 'conversation.chat.node', key: 'room-help', locale: NS, inject: (): RoomHelpInjected => ({ openSession, roomStore }) },
     RoomHelpView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(

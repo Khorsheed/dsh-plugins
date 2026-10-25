@@ -148,6 +148,15 @@ describe('cross-session help', () => {
   })
 })
 
+describe('help reminder setting', () => {
+  it('takes 10–120 minutes', async () => {
+    const bench = await boot()
+    expect(await bench.service.setSettings({ sessionId: bench.sessionId, helpReminderMinutes: 60 })).toMatchObject({ ok: true, value: { helpReminderMinutes: 60 } })
+    expect(await bench.service.setSettings({ sessionId: bench.sessionId, helpReminderMinutes: 5 })).toEqual({ ok: false, error: { code: 'invalid-settings' } })
+    expect(await bench.service.setSettings({ sessionId: bench.sessionId, helpReminderMinutes: 121 })).toEqual({ ok: false, error: { code: 'invalid-settings' } })
+  })
+})
+
 describe('help helpers', () => {
   it('reads dsh-session mentions', () => {
     expect(mentionedSessions(`看 ${mention('A', 'abc')} 和 ${mention('B', 'x-y')}`)).toEqual(['abc', 'x-y'])

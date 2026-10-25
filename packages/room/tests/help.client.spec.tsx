@@ -40,6 +40,18 @@ describe('room-help', () => {
   })
 })
 
+describe('room-help reminder', () => {
+  it('turns amber with the minutes waited once an unanswered request passes the room\'s reminder', () => {
+    const help = { id: 'h1', from: 'm', fromName: 'dsh', target: { sessionId: 's-a', title: 'A' }, text: 'x', state: 'queued', since: Date.now() - 41 * 60_000, messages: [], time: 0 }
+    const roomStore = { subscribe: () => () => {}, getCached: () => ({ settings: { helpReminderMinutes: 40 } }) }
+    const { container, rerender } = render(<RoomHelpView {...{ node: { data: { seq: 1, time: 0, help } }, sessionId: 'room', roomStore, openSession: vi.fn(), t } as unknown as RoomHelpViewProps} />)
+    expect(container.querySelector('[data-overdue]')).not.toBeNull()
+    expect(screen.getByText(/已等 41 分钟/)).toBeDefined()
+    rerender(<RoomHelpView {...{ node: { data: { seq: 1, time: 0, help: { ...help, state: 'replied' } } }, sessionId: 'room', roomStore, openSession: vi.fn(), t } as unknown as RoomHelpViewProps} />)
+    expect(container.querySelector('[data-overdue]')).toBeNull()
+  })
+})
+
 describe('room-help-in', () => {
   it('shows another room\'s request with the member it went to and a held tag', () => {
     const event = ev(4, 'room/help-in', { id: 'h1', room: 'room-y', roomTitle: '剪辑第 3 期', from: 'dsh', member: '游戏大师', text: '帮忙', op: 'request', held: true })

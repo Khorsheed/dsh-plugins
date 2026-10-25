@@ -51,6 +51,11 @@
   color: var(--dsw-alias-state-error, #c2453d);
 }
 
+.tag[data-state="overdue"] {
+  background: var(--dsw-alias-state-warning-bg, rgba(178, 106, 0, 0.12));
+  color: var(--dsw-alias-state-warning, #b26a00);
+}
+
 .tag[data-state="asking"] {
   color: var(--dsw-alias-state-warning, #b26a00);
 }

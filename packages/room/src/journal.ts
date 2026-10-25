@@ -73,7 +73,7 @@ export const ROOM_EVENT_TYPES = [
 ] as const
 
 /** Collaboration settings of a room that never changed them. */
-export const DEFAULT_ROOM_SETTINGS: RoomSettings = { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge', autoTaskFiling: true, reportThreshold: 0.5, reportWaitMinutes: 3 }
+export const DEFAULT_ROOM_SETTINGS: RoomSettings = { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge', autoTaskFiling: true, reportThreshold: 0.5, reportWaitMinutes: 3, helpReminderMinutes: 30 }
 
 /** Whether an event log carries the room identity marker. */
 export function isRoomLog(events: readonly SessionEvent[]): boolean {
@@ -329,6 +329,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           autoTaskFiling: event.data.autoTaskFiling ?? settings.autoTaskFiling,
           reportThreshold: event.data.reportThreshold ?? settings.reportThreshold,
           reportWaitMinutes: event.data.reportWaitMinutes ?? settings.reportWaitMinutes,
+          helpReminderMinutes: event.data.helpReminderMinutes ?? settings.helpReminderMinutes,
         }
         break
       }

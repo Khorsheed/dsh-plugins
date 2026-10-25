@@ -71,7 +71,7 @@ describe('RoomService Remote surface (real composition)', () => {
   it('getState replays a fresh room (main agent seated), and rejects plain/unknown sessions', async () => {
     const { ctx, service, sessionId } = await bootRoom()
     const state = await service.getState({ sessionId })
-    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [], settings: { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge', autoTaskFiling: true, reportThreshold: 0.5, reportWaitMinutes: 3 } } })
+    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [], settings: { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge', autoTaskFiling: true, reportThreshold: 0.5, reportWaitMinutes: 3, helpReminderMinutes: 30 } } })
 
     const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
     expect(await service.getState({ sessionId: plain.id }))
@@ -94,7 +94,7 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(session.snapshotEvents().filter(event => event.type.startsWith('room/')).map(event => event.type))
       .toEqual(['room/created', 'room/member-added'])
     const state = await service.getState({ sessionId })
-    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [], settings: { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge', autoTaskFiling: true, reportThreshold: 0.5, reportWaitMinutes: 3 } } })
+    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [], settings: { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge', autoTaskFiling: true, reportThreshold: 0.5, reportWaitMinutes: 3, helpReminderMinutes: 30 } } })
 
     // Idempotent: a second promotion journals nothing more.
     const again = await service.ensureRoom(sessionId)

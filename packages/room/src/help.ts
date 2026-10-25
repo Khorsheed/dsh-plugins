@@ -87,7 +87,7 @@ export function replayHelps(events: readonly SessionEvent[]): RoomHelp[] {
   const helps = new Map<string, RoomHelp>()
   for (const event of events) {
     if (event.type === 'room/help') {
-      helps.set(event.data.id, { ...event.data, state: 'queued', messages: [], time: event.time })
+      helps.set(event.data.id, { ...event.data, state: 'queued', since: event.time, messages: [], time: event.time })
     } else if (event.type === 'room/help-message') {
       const help = helps.get(event.data.help)
       if (help !== undefined) helps.set(help.id, { ...help, messages: [...help.messages, { ...event.data, time: event.time }] })
@@ -95,7 +95,7 @@ export function replayHelps(events: readonly SessionEvent[]): RoomHelp[] {
       const help = helps.get(event.data.help)
       if (help === undefined) continue
       const { error: _old, ...rest } = help
-      helps.set(help.id, { ...rest, state: event.data.state, ...event.data.error === undefined ? {} : { error: event.data.error } })
+      helps.set(help.id, { ...rest, state: event.data.state, since: help.state === event.data.state ? help.since : event.time, ...event.data.error === undefined ? {} : { error: event.data.error } })
     }
   }
   return [...helps.values()]

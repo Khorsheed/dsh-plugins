@@ -490,7 +490,7 @@ export const roomHelpDefinition: ConversationNodeDefinition<RoomHelpData> = {
   start: (_context, match) => {
     const event = match.event
     if (event.type !== 'room/help') throw new Error('room-help start requires a room/help event')
-    return { seq: event.seq, time: event.time, help: { ...event.data, state: 'queued', messages: [], time: event.time } }
+    return { seq: event.seq, time: event.time, help: { ...event.data, state: 'queued', since: event.time, messages: [], time: event.time } }
   },
   update: (context, match) => {
     const event = match.event
@@ -500,7 +500,7 @@ export const roomHelpDefinition: ConversationNodeDefinition<RoomHelpData> = {
     }
     if (event.type === 'room/help-state') {
       const { error: _previous, ...rest } = help
-      return { ...context.state, help: { ...rest, state: event.data.state, ...event.data.error === undefined ? {} : { error: event.data.error } } }
+      return { ...context.state, help: { ...rest, state: event.data.state, since: help.state === event.data.state ? help.since : event.time, ...event.data.error === undefined ? {} : { error: event.data.error } } }
     }
     return context.state
   },

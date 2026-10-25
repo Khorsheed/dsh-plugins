@@ -8,22 +8,40 @@
  * - `room-help-request` (the helper's session): the request the room queued
  *   there, as a card naming the asking room and member, with a jump back.
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { RoomHelpRequestViewProps, RoomHelpViewProps } from './slots.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import css from './RoomHelpView.module.css'
 
+const NO_STORE = (): (() => void) => () => {}
+
+/** Default minutes before an unanswered request turns amber (the room setting's default). */
+const REMINDER_MINUTES = 30
+
 /** The thread row in the asking room. */
-export function RoomHelpView({ node, openSession, t }: RoomHelpViewProps): ReactNode {
+export function RoomHelpView({ node, sessionId, roomStore, openSession, t }: RoomHelpViewProps): ReactNode {
   const help = node.data.help
   const [open, setOpen] = useState(false)
+  // An unanswered request (queued, or the helper still on it) past the room's
+  // reminder turns amber with how long it has waited; nothing is cancelled.
+  const minutes = useSyncExternalStore(roomStore?.subscribe ?? NO_STORE, () => roomStore?.getCached(sessionId)?.settings?.helpReminderMinutes) ?? REMINDER_MINUTES
+  const waiting = help.state === 'queued' || help.state === 'running'
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!waiting) return
+    const timer = setInterval(() => { setNow(Date.now()) }, 30_000)
+    return () => { clearInterval(timer) }
+  }, [waiting])
+  const waited = Math.floor((now - help.since) / 60_000)
+  const overdue = waiting && waited >= minutes
   return (
-    <div className={css.thread} data-state={help.state}>
+    <div className={css.thread} data-state={help.state} data-overdue={overdue ? '' : undefined}>
       <div className={css.line}>
         <span aria-hidden className={css.icon}>{help.state === 'replied' ? '✓' : help.state === 'failed' ? '!' : '↗'}</span>
         <span className={css.text}>{t('help.title', { from: help.fromName, target: help.target.title })}</span>
-        <span className={css.tag} data-state={help.state}>
+        <span className={css.tag} data-state={overdue ? 'overdue' : help.state}>
           {t(`help.state.${help.state}` as never)}{help.state === 'failed' && help.error !== undefined ? `：${help.error}` : ''}
+          {overdue && t('help.waited', { minutes: waited })}
         </span>
         <button type="button" className={css.action} aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
           {t(open ? 'help.collapse' : 'help.expand')}

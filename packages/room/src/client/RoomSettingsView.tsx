@@ -79,6 +79,19 @@ export function RoomSettingsView({ settings, onChange, t }: {
             </span>
             <Switch checked={settings.paused} label={t('settings.pause')} onChange={(paused) => { change({ paused }) }} />
           </div>
+          <div className={css.row}>
+            <span className={css.label}>
+              <b>{t('settings.helpReminder')}</b>
+              <span>{t('settings.helpReminderHint')}</span>
+            </span>
+            <span className={css.stepper}>
+              <button type="button" aria-label={t('settings.less')} disabled={settings.helpReminderMinutes <= 10}
+                onClick={() => { change({ helpReminderMinutes: settings.helpReminderMinutes - 10 }) }}>−</button>
+              <b aria-live="polite">{t('settings.minutes', { count: settings.helpReminderMinutes })}</b>
+              <button type="button" aria-label={t('settings.more')} disabled={settings.helpReminderMinutes >= 120}
+                onClick={() => { change({ helpReminderMinutes: settings.helpReminderMinutes + 10 }) }}>＋</button>
+            </span>
+          </div>
           <div className={css.group}>{t('settings.groupAuto')}</div>
           <div className={css.row}>
             <span className={css.label}>
