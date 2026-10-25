@@ -750,7 +750,10 @@ export class DispatchEngine {
         if (event.kind !== 'settled') return
         const previous = room.snapshotEvents().filter(row => row.type === 'room/run-state' && row.data.runId === runId).at(-1)
         if (previous?.type !== 'room/run-state') return
-        const total = event.usage?.totalTokens ?? (event.usage === undefined ? undefined : event.usage.inputTokens + event.usage.outputTokens)
+        // TokenUsage counts are disjoint: the billed total includes the cached
+        // input buckets (a cache-heavy CLI round is mostly cache reads).
+        const total = event.usage?.totalTokens ?? (event.usage === undefined ? undefined
+          : event.usage.inputTokens + (event.usage.cacheReadTokens ?? 0) + (event.usage.cacheWriteTokens ?? 0) + event.usage.outputTokens)
         room.append('room/execution-metadata', { runId,
           ...event.observedModel === undefined ? {} : { model: event.observedModel },
           ...event.observedEffort === undefined ? {} : { effort: event.observedEffort },
