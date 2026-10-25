@@ -18,6 +18,7 @@
     "src/plan-service.ts",
     "src/deliveries.ts",
     "src/jobs.ts",
+    "src/helps.ts",
     "src/messaging.ts",
     "src/report-gate.ts",
     "src/decisions.ts",

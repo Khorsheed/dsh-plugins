@@ -240,6 +240,17 @@ describe('RoomComposer', () => {
     expect(insertSessionReference).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'z', mention: '@[游戏大师（游戏开发）](dsh-session:eg)', displayTitle: '游戏大师（游戏开发）' }), { start: 0, end: 1, draftRev: 1 })
   })
 
+  it('puts sessions kept on the member list in the members group, as the host\'s session mention', async () => {
+    const insertSessionReference = vi.fn(() => true)
+    const state = { members: [{ id: 'm-main', name: 'main', kind: 'main-agent', invitedBy: 'human' }], relays: [], tasks: [], runs: [], linked: [{ sessionId: 's1', title: '开发剪辑插件', time: 0 }] } as unknown as RoomState
+    const { area } = await bench(vi.fn(), { state, listSessions: vi.fn(async () => [{ sessionId: 's1', label: '开发剪辑插件', mention: 'x' }]), insertSessionReference, extraInputActions: { captureInsertion: () => ({ start: 0, end: 0, draftRev: 1 }), insertText: vi.fn() } })
+    type(area, '@开')
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1))
+    expect(screen.getByRole('option').textContent).toContain('team.external.linked')
+    fireEvent.keyDown(area, { key: 'Enter' })
+    expect(insertSessionReference).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', mention: `@[开发剪辑插件](dsh-session:${Buffer.from(JSON.stringify('s1')).toString('base64url')})` }), expect.anything())
+  })
+
   it('falls back to the mention text when the host takes no chip', async () => {
     const listSessions = vi.fn(async () => [{ sessionId: 's1', label: '开发剪辑插件', mention: '@[开发剪辑插件](dsh-session:czE)' }])
     const { area } = await bench(vi.fn(), { listSessions })

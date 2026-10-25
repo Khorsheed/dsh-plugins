@@ -284,6 +284,8 @@ export interface RoomMembersInjected extends RoomInviteInjected {
   readonly restoreMember: (member: string) => Promise<RoomMutationOutcome>
   /** Open the team page in the right sidebar, optionally revealing one member. Absent without a sidebar. */
   readonly openTeam?: ((member?: string) => void) | undefined
+  /** Take an outside session off the member list (its own session is untouched). */
+  readonly unlinkSession?: ((target: string) => void) | undefined
   /** Change the room's collaboration settings. */
   readonly setSettings: (patch: Partial<RoomSettings>) => Promise<RoomMutationOutcome>
   /**
@@ -422,6 +424,10 @@ export type RoomQuestionViewProps =
 export interface RoomHelpInjected {
   /** Open another session (the helper's, or the asking room). */
   readonly openSession: (sessionId: SessionId) => void
+  /** Keep an outside session on the member list (the third ask's hint). */
+  readonly linkSession?: ((target: string, title: string) => void) | undefined
+  /** Dismiss that hint for good. */
+  readonly dismissNudge?: ((target: string) => void) | undefined
   /** The client-side room state store (the reminder setting). */
   readonly roomStore?: RoomStore | undefined
 }

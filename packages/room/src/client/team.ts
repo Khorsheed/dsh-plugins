@@ -9,10 +9,15 @@
  * human included), walking out from the human so the result is always a
  * tree; a member nobody has tasked yet sits under the coordinator. Edges the
  * tree does not draw stay available as cross links.
+ *
+ * Outside sessions the room asked for help hang under whoever asked them
+ * (dashed 外援 nodes, grey once every ask has ended); one kept on the member
+ * list (「加入房间成员」) is a solid node still marked 外部会话. Neither counts
+ * in the room's totals: its work and usage belong to its own session.
  * @module @khorsheed/dsh-room/client/team
  */
 import { coordinatorMember } from '../journal.ts'
-import type { RoomDelivery, RoomMember, RoomState } from '../types.ts'
+import type { RoomDelivery, RoomHelp, RoomMember, RoomState } from '../types.ts'
 
 /** The human, as a tree root. */
 export const TEAM_ROOT = 'you'
@@ -45,6 +50,17 @@ export interface TeamNode {
   readonly rounds: number
   /** Newest first. */
   readonly deliveries: readonly TeamDelivery[]
+  /** An outside session: asked for help (and/or kept on the member list). */
+  readonly external?: {
+    readonly sessionId: string
+    /** On the member list (「加入房间成员」). */
+    readonly linked: boolean
+    /** A room target (asked through that room's roster): never linkable. */
+    readonly room: boolean
+    /** Every ask has ended (replied or failed). */
+    readonly done: boolean
+    readonly helps: readonly RoomHelp[]
+  }
 }
 
 /** What flowed from one node to another. */
@@ -133,7 +149,7 @@ export function teamOf(state: RoomState): Team {
     order.push(id)
   }
 
-  const nodes = order.map((id): TeamNode => {
+  const memberNodes = order.map((id): TeamNode => {
     const member = byId.get(id)!
     const run = state.runs.find(entry => entry.member === member.name)
     const executions = (state.executions ?? []).filter(row => row.memberId === id)
@@ -153,17 +169,68 @@ export function teamOf(state: RoomState): Team {
       deliveries: (received.get(id) ?? []).slice().reverse(),
     }
   })
+  const nodes = [...memberNodes, ...externalNodes(state, memberNodes)]
+  const own = nodes.filter(node => node.external === undefined)
   return {
     nodes,
     edges: [...edges.values()],
     totals: {
-      members: nodes.length,
-      running: nodes.filter(node => node.status === 'running').length,
+      members: own.length,
+      running: own.filter(node => node.status === 'running').length,
       deliveries: (state.deliveries ?? []).filter(row => row.origin !== 'report' && row.origin !== 'relay').length,
-      tokens: nodes.reduce((sum, node) => sum + node.tokens, 0),
-      elapsedMs: nodes.reduce((sum, node) => sum + node.elapsedMs, 0),
+      tokens: own.reduce((sum, node) => sum + node.tokens, 0),
+      elapsedMs: own.reduce((sum, node) => sum + node.elapsedMs, 0),
     },
   }
+}
+
+/** The id of an outside session's node. */
+export const externalId = (sessionId: string, member?: string): string => `ext:${sessionId}${member === undefined ? '' : `:${member}`}`
+
+/** A help thread's status as a delivery outcome. */
+function helpStatus(help: RoomHelp): RoomDelivery['status'] {
+  return help.state === 'replied' ? 'done' : help.state === 'failed' ? 'failed' : help.state === 'queued' ? 'queued' : 'running'
+}
+
+/**
+ * The outside sessions' nodes: one per asked target (a room's member counts
+ * as its own target), under whoever asked it last, plus every linked session
+ * nobody has asked yet, under the coordinator.
+ */
+function externalNodes(state: RoomState, members: readonly TeamNode[]): TeamNode[] {
+  const coordinator = members.find(node => node.coordinator)
+  const linked = new Map((state.linked ?? []).map(entry => [entry.sessionId, entry]))
+  const groups = new Map<string, RoomHelp[]>()
+  for (const help of state.helps ?? []) {
+    const key = externalId(help.target.sessionId, help.target.member)
+    groups.set(key, [...groups.get(key) ?? [], help])
+  }
+  const nodes: TeamNode[] = []
+  for (const [id, helps] of groups) {
+    const last = helps.at(-1)!
+    const target = last.target
+    const asker = members.find(node => node.id === last.from)
+    const title = target.member === undefined ? target.title : `${target.member}（${target.title}）`
+    const done = helps.every(help => help.state === 'replied' || help.state === 'failed')
+    nodes.push({
+      id, parent: asker?.id ?? coordinator?.id ?? TEAM_ROOT, coordinator: false,
+      member: { name: title, kind: 'cli', invitedBy: 'agent', childSessionId: target.sessionId as NonNullable<RoomMember['childSessionId']> },
+      status: done ? 'idle' : helps.some(help => help.state === 'running' || help.state === 'asking') ? 'running' : 'idle',
+      tokens: 0, elapsedMs: 0, rounds: helps.length,
+      deliveries: helps.slice().reverse().map(help => ({ id: help.id, seq: 0, from: help.fromName, text: help.text, status: helpStatus(help), kind: 'task' as const })),
+      external: { sessionId: target.sessionId, linked: target.member === undefined && linked.has(target.sessionId), room: target.room === true, done, helps },
+    })
+  }
+  for (const entry of linked.values()) {
+    if (groups.has(externalId(entry.sessionId))) continue
+    nodes.push({
+      id: externalId(entry.sessionId), parent: coordinator?.id ?? TEAM_ROOT, coordinator: false,
+      member: { name: entry.title, kind: 'cli', invitedBy: 'human', childSessionId: entry.sessionId as NonNullable<RoomMember['childSessionId']> },
+      status: 'idle', tokens: 0, elapsedMs: 0, rounds: 0, deliveries: [],
+      external: { sessionId: entry.sessionId, linked: true, room: false, done: false, helps: [] },
+    })
+  }
+  return nodes
 }
 
 /** Compact token count: 1.2M / 288k / 512. */

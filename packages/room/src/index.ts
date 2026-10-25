@@ -65,7 +65,7 @@ import { decisionRecord } from './decisions.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { askerPrompt, claimed, helperTools, helpMessage, memberFromLabel, mentionedSessions, messagePrompt, readHelpSource, receivedHelps, referencedSessions, replayHelps, requestPrompt, turnAnswer, type HelpSource } from './help.ts'
 import type {
-  RoomHelp,
+  RoomHelp, RoomHelpLinkRequest, RoomHelpLinkResult,
   RoomCancelRequest, RoomCancelResult,
   RoomPrepareMemberRequest, RoomPrepareMemberResult,
   RoomFailure, RoomSetCoordinatorRequest, RoomSetCoordinatorResult, RoomReconcileDeliveryRequest, RoomReconcileDeliveryResult,
@@ -2042,6 +2042,57 @@ export class RoomService extends TypertRemoteService {
     }
     await this.ctx.sessions.flush(loaded.session)
     return { ok: true, value: replay(loaded.session.snapshotEvents()).settings ?? DEFAULT_ROOM_SETTINGS }
+  }
+
+  /**
+   * Keep an outside session on the member list (「加入房间成员」): only a
+   * shortcut for asking it — it stays in its own session, asks still go
+   * through room_help, and its usage stays its own.
+   * @param request - room session, the outside session and its title.
+   * @returns ok, or a rejection.
+   */
+  @Remote('linkSession')
+  async linkSession(request: RoomHelpLinkRequest): Promise<RoomHelpLinkResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const title = request.title?.trim()
+    if (request.target === request.sessionId || title === undefined || title === '' || loaded.state.members.some(member => member.childSessionId === request.target)) {
+      return { ok: false, error: { code: 'invalid-settings' } }
+    }
+    if (loaded.state.linked?.some(entry => entry.sessionId === request.target) === true) return { ok: true }
+    loaded.session.append('room/help-link', { sessionId: request.target, title })
+    await this.ctx.sessions.flush(loaded.session)
+    return { ok: true }
+  }
+
+  /**
+   * Take an outside session off the member list (its own session is untouched).
+   * @param request - room session, the outside session.
+   * @returns ok, or `member-not-found` when it was not on the list.
+   */
+  @Remote('unlinkSession')
+  async unlinkSession(request: RoomHelpLinkRequest): Promise<RoomHelpLinkResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (loaded.state.linked?.some(entry => entry.sessionId === request.target) !== true) return { ok: false, error: { code: 'member-not-found' } }
+    loaded.session.append('room/help-unlink', { sessionId: request.target })
+    await this.ctx.sessions.flush(loaded.session)
+    return { ok: true }
+  }
+
+  /**
+   * Dismiss the 加入房间成员 hint for one outside session (it never shows again).
+   * @param request - room session, the outside session.
+   * @returns ok.
+   */
+  @Remote('dismissHelpNudge')
+  async dismissHelpNudge(request: RoomHelpLinkRequest): Promise<RoomHelpLinkResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    if (loaded.state.helpNudgesDismissed?.includes(request.target) === true) return { ok: true }
+    loaded.session.append('room/help-nudge-dismissed', { sessionId: request.target })
+    await this.ctx.sessions.flush(loaded.session)
+    return { ok: true }
   }
 
   /**

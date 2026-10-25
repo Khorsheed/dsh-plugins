@@ -54,6 +54,7 @@
     "src/plan.ts",
     "src/deliveries.ts",
     "src/jobs.ts",
+    "src/helps.ts",
     "src/client/icons.tsx",
     "src/client/executions.ts",
     "src/client/tasks.ts",

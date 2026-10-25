@@ -43,12 +43,33 @@ describe('room-help', () => {
 describe('room-help reminder', () => {
   it('turns amber with the minutes waited once an unanswered request passes the room\'s reminder', () => {
     const help = { id: 'h1', from: 'm', fromName: 'dsh', target: { sessionId: 's-a', title: 'A' }, text: 'x', state: 'queued', since: Date.now() - 41 * 60_000, messages: [], time: 0 }
-    const roomStore = { subscribe: () => () => {}, getCached: () => ({ settings: { helpReminderMinutes: 40 } }) }
+    const cached = { settings: { helpReminderMinutes: 40 } }
+    const roomStore = { subscribe: () => () => {}, getCached: () => cached }
     const { container, rerender } = render(<RoomHelpView {...{ node: { data: { seq: 1, time: 0, help } }, sessionId: 'room', roomStore, openSession: vi.fn(), t } as unknown as RoomHelpViewProps} />)
     expect(container.querySelector('[data-overdue]')).not.toBeNull()
     expect(screen.getByText(/已等 41 分钟/)).toBeDefined()
     rerender(<RoomHelpView {...{ node: { data: { seq: 1, time: 0, help: { ...help, state: 'replied' } } }, sessionId: 'room', roomStore, openSession: vi.fn(), t } as unknown as RoomHelpViewProps} />)
     expect(container.querySelector('[data-overdue]')).toBeNull()
+  })
+})
+
+describe('room-help third-ask hint', () => {
+  it('suggests keeping a plain session on the member list once, under its third answered ask', () => {
+    const ask = (id: string) => ({ id, from: 'm', fromName: 'dsh', target: { sessionId: 's-a', title: 'A' }, text: id, state: 'replied', since: 0, messages: [], time: 0 })
+    const helps = [ask('h1'), ask('h2'), ask('h3')]
+    const cached = { helps }
+    const roomStore = { subscribe: () => () => {}, getCached: () => cached }
+    const linkSession = vi.fn()
+    const dismissNudge = vi.fn()
+    const view = (help: (typeof helps)[number]) => <RoomHelpView {...{ node: { data: { seq: 1, time: 0, help } }, sessionId: 'room', roomStore, openSession: vi.fn(), linkSession, dismissNudge, t } as unknown as RoomHelpViewProps} />
+    const { rerender } = render(view(helps[1]!))
+    expect(screen.queryByText(/要不要加入房间成员/)).toBeNull()
+    rerender(view(helps[2]!))
+    expect(screen.getByText('已经向它求助 3 次了，要不要加入房间成员？')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '加入房间成员' }))
+    expect(linkSession).toHaveBeenCalledWith('s-a', 'A')
+    fireEvent.click(screen.getByRole('button', { name: '不用了' }))
+    expect(dismissNudge).toHaveBeenCalledWith('s-a')
   })
 })
 

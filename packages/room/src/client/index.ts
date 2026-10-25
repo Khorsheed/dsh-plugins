@@ -295,8 +295,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // The team page lives in the right sidebar; without it the members tab
   // simply shows no 团队 entry.
   const teamSidebar = ctx.get('sidebarRightTabs') === undefined ? undefined : ctx.get('sidebarRight')
+  // Outside sessions on the member list (「加入房间成员」) and the third ask's hint.
+  const linkFace = (sessionId: SessionId) => ({
+    linkSession: (target: string, title: string) => { void remote?.linkSession({ sessionId, target, title }).then(() => roomStore.refresh(sessionId)) },
+    unlinkSession: (target: string) => { void remote?.unlinkSession({ sessionId, target }).then(() => roomStore.refresh(sessionId)) },
+    dismissNudge: (target: string) => { void remote?.dismissHelpNudge({ sessionId, target }).then(() => roomStore.refresh(sessionId)) },
+  })
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
+    unlinkSession: linkFace(sessionId).unlinkSession,
     // 团队 is the collaboration page's second view (one sidebar page, two switches).
     ...teamSidebar === undefined ? {} : { openTeam: (member?: string) => { teamSidebar.openTab(ROOM_TASKS_KIND, { params: { view: 'team', ...member === undefined ? {} : { member } } }) } },
     setCoordinator: async (memberId, expectedRevision) => {
@@ -434,6 +441,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   /** The task page's actions (sessionId binds per entry inject). */
   const tasksFace = (sessionId: SessionId): RoomTasksInjected => ({
     ...goalFace(sessionId),
+    linkSession: linkFace(sessionId).linkSession,
+    unlinkSession: linkFace(sessionId).unlinkSession,
     taskTags,
     stopJob: async (task) => {
       const carried = await remote?.stopJob({ sessionId, task })
@@ -729,7 +738,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // Cross-session help: the thread row in the asking room, the request card
   // in the helper's session (any session — the card is how it gets there).
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    { name: 'conversation.chat.node', key: 'room-help', locale: NS, inject: (): RoomHelpInjected => ({ openSession, roomStore }) },
+    { name: 'conversation.chat.node', key: 'room-help', locale: NS, inject: (sessionId: SessionId): RoomHelpInjected => ({ openSession, roomStore, linkSession: linkFace(sessionId).linkSession, dismissNudge: linkFace(sessionId).dismissNudge }) },
     RoomHelpView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(

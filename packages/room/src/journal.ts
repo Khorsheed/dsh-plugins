@@ -12,6 +12,7 @@
  */
 import { replayDeliveries } from './deliveries.ts'
 import { replayJobs } from './jobs.ts'
+import { replayHelps, replayLinks } from './helps.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
   RoomApproval, RoomQuestion, RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
@@ -70,6 +71,9 @@ export const ROOM_EVENT_TYPES = [
   'room/help-message',
   'room/help-state',
   'room/help-in',
+  'room/help-link',
+  'room/help-unlink',
+  'room/help-nudge-dismissed',
 ] as const
 
 /** Collaboration settings of a room that never changed them. */
@@ -379,7 +383,12 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const plan = planEvent?.type === 'room/plan-state' ? (({ requests: _requests, ...view }) => view)(planEvent.data) : undefined
   const deliveries = replayDeliveries(events)
   const jobs = deliveries.length === 0 ? [] : replayJobs(events, deliveries)
-  return { members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, ...questions.size === 0 ? {} : { questions: [...questions.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, ...latestSpeechSeq === undefined ? {} : { latestSpeechSeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
+  const helps = replayHelps(events)
+  const links = replayLinks(events)
+  return {
+    ...helps.length === 0 ? {} : { helps },
+    ...links.linked.length === 0 ? {} : { linked: links.linked },
+    ...links.nudgesDismissed.length === 0 ? {} : { helpNudgesDismissed: links.nudgesDismissed }, members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, ...questions.size === 0 ? {} : { questions: [...questions.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, ...latestSpeechSeq === undefined ? {} : { latestSpeechSeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
 }
 
 /**
