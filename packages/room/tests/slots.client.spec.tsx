@@ -171,6 +171,26 @@ describe('room client apply', () => {
     expect(select({ pendingInteraction: undefined, sessionId: 'room-1' })).toEqual({ room: true })
   })
 
+  it('the @ menu reads the host\'s session candidates through their RemoteResult, rooms flagged with members', async () => {
+    const { ctx, slots, remote } = await bench()
+    const candidates = vi.fn(async (_sessionId: string, query: string) => ({ ok: true as const, value: [
+      { sessionId: 'plain-1', label: '开发剪辑插件', mention: '@[开发剪辑插件](dsh-session:a)' },
+      { sessionId: 'room-1', label: '游戏开发', mention: '@[游戏开发](dsh-session:b)' },
+    ].filter(row => query === '' || row.label.includes(query)) }))
+    ctx.provide('remote.sessionReferenceResolver', { candidates } as never)
+    remote.getState.mockResolvedValue({ ok: true as const, value: { ok: true as const, value: { ...EMPTY_ROOM, members: [{ name: '游戏大师', kind: 'cli', provider: 'claude-local', invitedBy: 'agent' }] } } } as never)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.composer')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => RoomComposerInjected)('room-x')
+    const rows = await face.listSessions!('', new AbortController().signal)
+    expect(rows).toMatchObject([
+      { sessionId: 'plain-1', label: '开发剪辑插件' },
+      { sessionId: 'room-1', room: true, members: [{ name: '游戏大师', provider: 'claude-local' }] },
+    ])
+    candidates.mockResolvedValueOnce({ ok: false } as never)
+    expect(await face.listSessions!('', new AbortController().signal)).toHaveLength(0)
+  })
+
   it('openSession routes through uiWorkspace and swallows its synchronous refusal (alpha.2)', async () => {
     const { ctx, slots, uiWorkspace } = await bench({ uiWorkspace: true })
     await ctx.plugin({ inject: [...inject], apply }).await()
