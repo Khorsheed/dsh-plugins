@@ -86,6 +86,8 @@ interface Bench {
   inputStore: InputStore
   /** The injected main-agent turn Stop (stubbed). */
   stop: ReturnType<typeof vi.fn>
+  /** Re-render with some props replaced. */
+  rerenderWith: (patch: Partial<RoomComposerProps>) => void
 }
 
 /** Render the composer with the framework shares stubbed (a stateful fake input machine backs the draft; stop is a spy). */
@@ -155,9 +157,11 @@ async function bench(
       : options.useProjection,
     t: options.t ?? ((key: string) => key),
   } as unknown as RoomComposerProps
-  render(<RoomComposer {...props} />)
+  const rendered = render(<RoomComposer {...props} />)
   const area = screen.getByRole('textbox') as HTMLTextAreaElement
-  return { roomStore, area, inputActions, inputStore, stop }
+  /** Re-render with some props replaced (a fresh injected face). */
+  const rerenderWith = (patch: Partial<RoomComposerProps>): void => { rendered.rerender(<RoomComposer {...props} {...patch} />) }
+  return { roomStore, area, inputActions, inputStore, stop, rerenderWith }
 }
 
 /** Change the draft with the caret at the end (a real typing position). */
@@ -249,6 +253,20 @@ describe('RoomComposer', () => {
     expect(screen.getByRole('option').textContent).toContain('team.external.linked')
     fireEvent.keyDown(area, { key: 'Enter' })
     expect(insertSessionReference).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's1', mention: `@[开发剪辑插件](dsh-session:${Buffer.from(JSON.stringify('s1')).toString('base64url')})` }), expect.anything())
+  })
+
+  it('a re-render with a fresh face (the room ticks every second) does not cancel the session lookup', async () => {
+    let resolve!: (rows: unknown[]) => void
+    const listSessions = vi.fn(() => new Promise<never>((res) => { resolve = res as never }))
+    const { area, rerenderWith } = await bench(vi.fn(), { listSessions })
+    type(area, '@')
+    await waitFor(() => expect(listSessions).toHaveBeenCalledTimes(1))
+    const signal = (listSessions.mock.calls[0] as unknown as [string, AbortSignal])[1]
+    // The room's per-second tick re-renders with a freshly built face.
+    rerenderWith({ listSessions: vi.fn(async () => []) })
+    expect(signal.aborted).toBe(false)
+    resolve([{ sessionId: 's1', label: '开发剪辑插件', mention: 'x' }])
+    await waitFor(() => expect(screen.getByText('开发剪辑插件')).toBeDefined())
   })
 
   it('falls back to the mention text when the host takes no chip', async () => {
