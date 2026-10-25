@@ -491,14 +491,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return members
   }
   const listSessionsFor = async (sessionId: SessionId, query: string, signal: AbortSignal): Promise<readonly SessionCandidate[]> => {
+    // A Remote call resolves to a RemoteResult ({ ok, value }), never the bare list.
     const resolver = ctx.get('remote.sessionReferenceResolver') as {
-      candidates?(sessionId: SessionId, query: string, signal: AbortSignal): Promise<readonly SessionCandidate[]>
+      candidates?(sessionId: SessionId, query: string, signal: AbortSignal): Promise<{ readonly ok: boolean; readonly value?: readonly SessionCandidate[] }>
     } | undefined
     if (resolver?.candidates === undefined) return []
-    const [recent, matched] = await Promise.all([
-      resolver.candidates(sessionId, '', signal),
-      query === '' ? Promise.resolve([]) : resolver.candidates(sessionId, query, signal),
-    ])
+    const lookup = (text: string): Promise<readonly SessionCandidate[]> => resolver.candidates!(sessionId, text, signal)
+      .then(result => result.ok && Array.isArray(result.value) ? result.value : [])
+    const [recent, matched] = await Promise.all([lookup(''), query === '' ? Promise.resolve([]) : lookup(query)])
     const merged = [...recent, ...matched]
     const flags = await Promise.all(merged.map(candidate => roomFlag(candidate.sessionId)))
     // A room carries its members (askable by name): one getState per room, kept 30s.
