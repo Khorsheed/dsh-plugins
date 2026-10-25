@@ -93,6 +93,24 @@ export interface SessionLogCursor {
   compactions: Map<string, { startedAt: number; hostTurn?: number; request?: BuiltLogRequest }>
   /** The latest step/start time — the next request's dispatch proxy. */
   stepStartAt: number | undefined
+  /**
+   * The log mirrors an external agent (its descriptor names a provider that
+   * runs in its own process). A mirror that writes a step only once its call
+   * is over writes step/start and the answer together; such a request
+   * starts when the log's previous event happened (`stepPrevAt`).
+   */
+  external?: boolean
+  /** The latest event time that marks progress (not a live-stream checkpoint). */
+  lastEventAt?: number
+  /** The progress event before the latest step/start. */
+  stepPrevAt?: number
+  /**
+   * An external agent's step that reported no usage: a mirror writes one
+   * model call as several steps (one per item or content block) with the
+   * call's usage on its last, so the step waits to join the steps after it
+   * as one request. Its blocks accumulate in `deferredBlocks`.
+   */
+  deferred?: { request: BuiltLogRequest; hostTurn: number | undefined; blocks: CapturedMessage['content'] }
   /** The latest request/header config, when the log carries any. */
   config: RequestConfig | undefined
   /** The latest request/header tool list, when the log carries any. */
@@ -150,6 +168,17 @@ export interface FoldSink {
   delegation?(delegation: LogDelegation): void
 }
 
+/**
+ * Subagent providers that run inside this host, so their requests pass
+ * through the live capture. Every other provider (claude-local, codex-local,
+ * kimi-cli, dsh-cli, …) is its own process, mirrored into its log after the
+ * fact.
+ */
+export const IN_PROCESS_PROVIDERS: ReadonlySet<string> = new Set(['spawn', 'fork'])
+
+/** A step/start this close to its answer was written after the call, not when it began. */
+const MIRROR_LAG_MS = 50
+
 /** A fresh cursor for one log. */
 export function openCursor(): SessionLogCursor {
   return {
@@ -201,6 +230,7 @@ export function foldLogRows(
         break
       }
       case 'turn/end': {
+        flushDeferred(cursor, built, sink)
         const hostTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
         const reason = typeof data['reason'] === 'object' && data['reason'] !== null
           ? data['reason'] as { kind: string; error?: { message?: string } }
@@ -211,7 +241,14 @@ export function foldLogRows(
       }
       case 'step/start':
         cursor.stepStartAt = row.time
+        if (cursor.lastEventAt === undefined) delete cursor.stepPrevAt
+        else cursor.stepPrevAt = cursor.lastEventAt
         break
+      case 'subagent/descriptor': {
+        const provider = data['provider']
+        if (typeof provider === 'string' && !IN_PROCESS_PROVIDERS.has(provider)) cursor.external = true
+        break
+      }
       case 'request/header': {
         const header = data['header'] as { config?: Record<string, unknown>; tools?: unknown } | undefined
         const config = header?.config
@@ -258,12 +295,26 @@ export function foldLogRows(
         break
       }
       case 'assistant/message': {
-        const request = buildRequest(cursor, row, data, false)
-        built.push(request)
-        cursor.requests.push(request)
         const hostTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
-        sink.request?.(hostTurn, request)
+        if (cursor.deferred !== undefined && cursor.deferred.hostTurn !== hostTurn) flushDeferred(cursor, built, sink)
+        const own = buildRequest(cursor, row, data, false)
         const message = fromLogMessage(data['message'])
+        let request = own
+        if (cursor.deferred !== undefined) {
+          // The rest of the deferred call: it joins the request the call began.
+          request = cursor.deferred.request
+          const blocks = [...cursor.deferred.blocks, ...message?.content ?? []]
+          cursor.deferred.blocks = blocks
+          joinCall(request, own, blocks)
+        }
+        if (cursor.external === true && own.usage === undefined && own.status !== 'failed') {
+          cursor.deferred ??= { request, hostTurn, blocks: [...message?.content ?? []] }
+        } else {
+          delete cursor.deferred
+          built.push(request)
+          cursor.requests.push(request)
+          sink.request?.(hostTurn, request)
+        }
         if (message !== undefined) message.sourceTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
         if (message !== undefined) {
           placeMessage(cursor, row, message)
@@ -389,6 +440,7 @@ export function foldLogRows(
         // plugin rows (e.g. local-agent/stream) land here by design.
         break
     }
+    if (row.time !== undefined && row.type !== 'local-agent/stream') cursor.lastEventAt = row.time
   }
   return built
 }
@@ -483,7 +535,7 @@ export function reconstructSession(rows: readonly SessionLogRow[], materialize?:
     }
     return turn
   }
-  foldLogRows(cursor, rows, {
+  const sink: FoldSink = {
     turnStart: (hostTurn, at, seq) => {
       const turn = turnFor(hostTurn, at)
       if (turn !== undefined && seq !== undefined && turn.startSeq === undefined) turn.startSeq = seq
@@ -515,7 +567,10 @@ export function reconstructSession(rows: readonly SessionLogRow[], materialize?:
     delegation: (delegation) => {
       place(delegation)
     },
-  })
+  }
+  foldLogRows(cursor, rows, sink)
+  // An external call still in progress shows the steps it wrote so far.
+  flushDeferred(cursor, [], sink)
   // A delegation whose result never landed (a crashed turn) still surfaces.
   for (const pending of cursor.pendingDelegations.values()) place(pending)
   if (orphans.length > 0) {
@@ -587,7 +642,10 @@ function buildRequest(
   data: Record<string, unknown>,
   failed: boolean,
 ): BuiltLogRequest {
-  const startedAt = cursor.stepStartAt ?? row.time ?? 0
+  const written = cursor.stepStartAt ?? row.time ?? 0
+  // Written with its answer: the step opened after the call was over.
+  const late = cursor.external === true && row.time !== undefined && row.time - written < MIRROR_LAG_MS && cursor.stepPrevAt !== undefined
+  const startedAt = late ? cursor.stepPrevAt! : written
   const settledAt = row.time ?? startedAt
   const stream = Array.isArray(data['stream']) ? data['stream'] : []
   const streamFacts = readStream(stream)
@@ -688,6 +746,31 @@ function spansFromMessage(
     return [{ kind: 'text', index: 0, start: facts.firstChunkAt ?? fallbackStart }]
   }
   return spans
+}
+
+/** A deferred call's step that never got its usage step still counts as a request. */
+function flushDeferred(cursor: SessionLogCursor, built: BuiltLogRequest[], sink: FoldSink): void {
+  const deferred = cursor.deferred
+  if (deferred === undefined) return
+  delete cursor.deferred
+  built.push(deferred.request)
+  cursor.requests.push(deferred.request)
+  sink.request?.(deferred.hostTurn, deferred.request)
+}
+
+/** Fold one more step of a call into the request the call began (its input stays the first step's). */
+function joinCall(request: BuiltLogRequest, step: BuiltLogRequest, blocks: CapturedMessage['content']): void {
+  const message = { role: 'assistant', content: blocks } as CapturedMessage
+  const response = responseFromMessage(message)
+  if (response !== undefined) request.response = response
+  request.responseSummary = summarizeMessage(message)
+  request.status = step.status
+  if (step.error !== undefined) request.error = step.error
+  if (step.usage !== undefined) request.usage = step.usage
+  if (step.settledAt !== undefined) request.settledAt = step.settledAt
+  if (step.finishKind !== undefined) request.finishKind = step.finishKind
+  request.blocks.push(...step.blocks)
+  request.execs.push(...step.execs)
 }
 
 /** The response's own content from a committed assistant message (authoritative). */

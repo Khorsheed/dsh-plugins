@@ -36,6 +36,7 @@ import { fromRequestMessage, serializeMessage } from './messages.ts'
 import { messageOfRow, meterOf, replacementFact, replacementFactsOf, type PendingMeter, type ReplacementRow } from './changes.ts'
 import {
   foldLogRows,
+  IN_PROCESS_PROVIDERS,
   isSessionLogReader,
   openCursor,
   reconstructSession,
@@ -51,13 +52,6 @@ declare module '@deepseek-ai/cordis' {
     requestInspector: InspectorService
   }
 }
-
-/**
- * Subagent providers that run inside this host, so their requests pass
- * through the capture. Every other provider (claude-local, codex-local,
- * kimi-cli, dsh-cli, …) is its own process: its session is log-driven.
- */
-const IN_PROCESS_PROVIDERS = new Set(['spawn', 'fork'])
 
 /** Plugin config: capture retention knobs. */
 export interface InspectorConfig {

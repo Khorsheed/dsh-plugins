@@ -90,7 +90,13 @@ describe('codex usage caliber (shared with turn.completed)', () => {
     // A reader must tell "no hits" from "not reported": the field rides every
     // payload, so zero hits still write the bucket; cache creation maps too.
     expect(usageFromCodex({ input_tokens: 10, cached_input_tokens: 0, cache_write_input_tokens: 7, output_tokens: 4 }))
-      .toEqual({ inputTokens: 10, outputTokens: 4, cacheReadTokens: 0, cacheWriteTokens: 7 })
+      .toEqual({ inputTokens: 3, outputTokens: 4, cacheReadTokens: 0, cacheWriteTokens: 7 })
+  })
+
+  it('keeps the three input buckets disjoint: codex input already contains cache reads and writes', () => {
+    // A real rollout token_count (total_tokens = input + output = 14565).
+    expect(usageFromCodex({ input_tokens: 14353, cached_input_tokens: 11404, cache_write_input_tokens: 2946, output_tokens: 212, total_tokens: 14565 }))
+      .toEqual({ inputTokens: 3, outputTokens: 212, cacheReadTokens: 11404, cacheWriteTokens: 2946 })
   })
 
   it('omits the cache bucket when codex reports no cached input', () => {

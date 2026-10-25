@@ -939,6 +939,10 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
     const identity = messageId !== undefined
       ? { streamId: `${messageId}:${blockIndex}`, messageId } : {}
     const kind = record['type']
+    // A user event's text is the CLI's own injection (a Skill's body, a slash
+    // command's output, an interrupt notice) — never the model's answer; the
+    // round's prompt is mirrored separately as the user message.
+    if (kind === 'text' && event.type === 'user') continue
     if (kind === 'text' && typeof record['text'] === 'string' && (record['text'] as string).trim() !== '') {
       state.lines.push({ kind: 'text', text: record['text'] as string, ...identity })
       // The final assistant text block is the run output.
@@ -1316,7 +1320,7 @@ function toolResultText(content: unknown): string | undefined {
  * @param usage - the raw claude usage object.
  * @returns the shared usage record.
  */
-function usageFromClaude(usage: unknown): TokenUsage {
+export function usageFromClaude(usage: unknown): TokenUsage {
   const raw = usage as {
     input_tokens?: unknown
     output_tokens?: unknown

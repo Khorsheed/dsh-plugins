@@ -172,8 +172,10 @@ export function usageFromCodex(usage: unknown): TokenUsage {
   const cached = Number(raw.cached_input_tokens)
   const cacheWrite = Number(raw.cache_write_input_tokens)
   const output = Number(raw.output_tokens)
+  // `input_tokens` already contains both cache buckets (total = input +
+  // output); the shared contract keeps the three input buckets disjoint.
   const uncached = Number.isFinite(input) && Number.isFinite(cached)
-    ? Math.max(0, input - cached)
+    ? Math.max(0, input - cached - (Number.isFinite(cacheWrite) ? cacheWrite : 0))
     : Number.isFinite(input)
       ? input
       : 0
