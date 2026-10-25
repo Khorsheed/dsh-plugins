@@ -539,9 +539,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         // Context Lens is another plugin: reach it through the sidebar by its
         // tab kind, only when its namespace is mounted; a refused open is a no-op.
         ...ctx.get('remote.requestInspector') === undefined || ctx.get('sidebarRight') === undefined ? {} : {
-          openDetail: (sessionId: SessionId, messageId: string, label: string) => {
+          openDetail: (sessionId: SessionId, messageId: string) => {
             try {
-              (ctx.get('sidebarRight') as { openTab(kind: string, options?: { params?: object }): void }).openTab('context-lens', { params: { sessionId, messageId, label } })
+              (ctx.get('sidebarRight') as { openTab(kind: string, options?: { params?: object }): void }).openTab('context-lens', { params: { sessionId, messageId } })
             } catch { /* the tab kind is hidden or absent */ }
           },
         },

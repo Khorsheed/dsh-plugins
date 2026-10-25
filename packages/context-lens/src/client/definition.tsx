@@ -28,13 +28,11 @@ export interface RequestInspectorTabParams {
   readonly turnSeq?: number
   /**
    * Inspect ANOTHER session than the one the sidebar belongs to (a room
-   * member's child session): the panel reads that session and offers a way
-   * back. `messageId` picks the turn that message closed; `label` names the
-   * session in the strip (e.g. the member's name).
+   * member's child session); `messageId` picks the turn that message closed.
+   * The next navigation without a session returns to the sidebar's own.
    */
   readonly sessionId?: string
   readonly messageId?: string
-  readonly label?: string
 }
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {

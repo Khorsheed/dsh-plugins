@@ -88,7 +88,11 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
   // The run's billed tokens, as the host's 用量 chip shows them (recorded
   // when the run settles; absent for runs the producer reported none for).
   const execution = data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === data.runId)
-  const tokens = execution?.tokens
+  // The billed total is the sum of the disjoint buckets when they were
+  // recorded (an older record's total may leave the cache out).
+  const usage = execution?.usage
+  const tokens = usage === undefined ? execution?.tokens
+    : usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0) + usage.outputTokens
   // The newest speech keeps its action row shown; older rows reveal on hover
   // (the host's turn-tail rule). A speech newer than the cached state's is the newest.
   const newestSpeech = data.seq >= (state?.latestSpeechSeq ?? data.seq)
@@ -180,7 +184,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
               type="button"
               className={css.action}
               aria-label={t('speech.detail')}
-              onClick={() => { openDetail(child, data.messageId!, data.member) }}
+              onClick={() => { openDetail(child, data.messageId!) }}
             >
               <IconRequestDetailOutlineMedium />
             </button>

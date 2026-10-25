@@ -52,9 +52,9 @@ export function InspectorPanel({
 }: InspectorTabProps): ReactNode {
   const { tab } = useTabInfo()
   // A navigation may point the panel at another session (a room member's
-  // child session); the human returns with the strip's button.
-  const [viewed, setViewed] = useState<{ readonly sessionId: string; readonly label?: string } | null>(null)
-  const sessionId = (viewed?.sessionId ?? ownSessionId) as typeof ownSessionId
+  // child session); the next navigation without one returns to the own session.
+  const [viewed, setViewed] = useState<string | null>(null)
+  const sessionId = (viewed ?? ownSessionId) as typeof ownSessionId
   /** The message whose turn the next turn list should select (from a navigation). */
   const pendingMessage = useRef<string | undefined>(undefined)
   const [trend, setTrend] = useState<SessionTrend | null>(null)
@@ -109,7 +109,7 @@ export function InspectorPanel({
     if (revision === 0 || revision === lastNavRevision.current) return
     lastNavRevision.current = revision
     const target = navParams?.sessionId
-    setViewed(target === undefined || target === ownSessionId ? null : { sessionId: target, ...navParams?.label === undefined ? {} : { label: navParams.label } })
+    setViewed(target === undefined || target === ownSessionId ? null : target)
     pendingMessage.current = navParams?.messageId
     if (navParams?.messageId !== undefined) {
       setTurnSeq(null)
@@ -508,12 +508,6 @@ export function InspectorPanel({
             />
           </div>
         </div>
-        {viewed !== null && (
-          <div className={css.viewing} role="status">
-            <span>{t('lens.viewing', { label: viewed.label ?? viewed.sessionId })}</span>
-            <button type="button" className={css.viewingBack} onClick={() => { setViewed(null); setTurnSeq(null) }}>{t('lens.viewingBack')}</button>
-          </div>
-        )}
         {parent && <ParentLine parent={parent} t={t} />}
         {/* The trend is the session map: always the main conversation, it picks the turn. */}
         {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={effectiveScope?.kind === 'main' ? selectedRequestSeq : null} scopeId="main" scopeLabel={t('scope.mainName')} gaps={loadTurns ? gaps : []} onLoadGap={onLoadGap} t={t} onSelect={(next, seq, targetScope) => {
