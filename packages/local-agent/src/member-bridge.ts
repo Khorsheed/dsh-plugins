@@ -77,6 +77,16 @@ const ROOM_TOOLS = [
     }, required: ['questions'], additionalProperties: false } },
   { name: 'room_message', description: 'Send a room member a message by name (same as member_message). kind "task" (default): its reply comes back to you as a report citing the message id; kind "notify": FYI only. Do not poll.',
     inputSchema: { type: 'object', properties: { member: { type: 'string' }, text: { type: 'string' }, kind: { type: 'string', enum: ['task', 'notify'] }, inReplyTo: { type: 'string' }, note: { type: 'string', description: 'What you will wait for before acting on the result.' }, task: { type: 'string', description: '"new" or a task number; omit to stay in your current task.' } }, required: ['member', 'text'], additionalProperties: false } },
+  { name: 'room_help', description: 'Ask another session outside this room for help — typically the one that built what you are stuck on. It works in its own session (a busy one queues you); '
+      + 'its final answer plus a short handoff comes back to you on its own, so end your turn after asking and do not poll. Name the session by title, id or the @ mention the human wrote; '
+      + 'a session that is another room goes to its coordinator, or to the member you name. The first ask of a session the human did not @ in the room waits for their approval. '
+      + 'To answer its question or ask more, call again with the help id and no session.',
+    inputSchema: { type: 'object', properties: {
+      session: { type: 'string', description: 'The session to ask (title, id, or @ mention). Omit when continuing a thread.' },
+      member: { type: 'string', description: 'When the session is another room: the member to ask. Omit to let its coordinator decide.' },
+      help: { type: 'string', description: 'The help id of an existing thread.' },
+      text: { type: 'string', description: 'What you need, self-contained: the helper does not see this room.' },
+    }, required: ['text'], additionalProperties: false } },
 ] as const
 
 export async function callRoomCommand(env: MemberBridgeEnv, name: MemberRoomCommandName, args: unknown): Promise<Record<string, unknown>> {

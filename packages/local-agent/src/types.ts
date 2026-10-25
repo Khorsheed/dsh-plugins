@@ -688,7 +688,7 @@ export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy' | `se
  * independence-checker sanction: room absent or declining is invisible to the
  * family path. Room implements this shape to own the dispatch gate.
  */
-export type MemberRoomCommandName = 'room_plan' | 'room_read' | 'room_invite' | 'room_message' | 'ask_user_question'
+export type MemberRoomCommandName = 'room_plan' | 'room_read' | 'room_invite' | 'room_message' | 'ask_user_question' | 'room_help'
 
 export interface MemberRoomCommand {
   name: MemberRoomCommandName
