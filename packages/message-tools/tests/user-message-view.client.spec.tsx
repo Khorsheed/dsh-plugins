@@ -123,7 +123,7 @@ describe('UserMessageView folding', () => {
     const older = userNode([{ type: 'text', text: long }], { seq: 3 })
     const newer = userNode([{ type: 'text', text: '好的' }], { seq: 9 })
     render(<UserMessageView {...props({ node: older, snapshotNodes: [older, newer] })} />)
-    expect(screen.getByRole('button', { name: zh['fold.expand'] })).toBeTruthy()
+    expect(screen.getByRole('button', { name: zh['fold.expand'] }).getAttribute('aria-expanded')).toBe('false')
     cleanup()
     render(<UserMessageView {...props({ node: older, snapshotNodes: [older] })} />)
     expect(screen.getByRole('button', { name: zh['fold.collapse'] })).toBeTruthy()
