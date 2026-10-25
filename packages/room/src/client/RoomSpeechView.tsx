@@ -18,7 +18,8 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { MarkdownText, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconCopyOutlineMedium, IconLinkOutlineMedium, IconRequestDetailOutlineMedium } from './icons.tsx'
+import { IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconCopyOutlineMedium, IconLinkOutlineMedium } from './icons.tsx'
+import { IconRequestDetailOutline16 } from './icons-local.tsx'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { memberColor } from './member-color.ts'
 import { formatClock, formatDurationMs } from './format.ts'
@@ -186,7 +187,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
               aria-label={t('speech.detail')}
               onClick={() => { openDetail(child, data.messageId!) }}
             >
-              <IconRequestDetailOutlineMedium />
+              <IconRequestDetailOutline16 />
             </button>
           </Tooltip>
         )}
