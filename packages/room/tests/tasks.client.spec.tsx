@@ -76,7 +76,7 @@ describe('TasksView', () => {
     expect(screen.getByText('决策模型归入 · 0.86')).toBeDefined()
     expect(screen.getByText('子任务')).toBeDefined()
     expect(screen.getByText('时间线')).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: '‹ 全部任务' }))
+    fireEvent.click(screen.getByRole('button', { name: '全部任务' }))
     expect(screen.getByRole('group', { name: '任务' })).toBeDefined()
   })
 

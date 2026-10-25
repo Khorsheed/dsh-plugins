@@ -20,6 +20,7 @@ import {
   TASK_FILTERS, filterJobs, isOpenDelivery, jobDeliveries, jobElapsed, needsAttention, pendingRelays, runningMembers, segmentsOf, subtaskTree,
   type SubtaskNode, type TaskFilter,
 } from './tasks.ts'
+import { IconChevronLeftOutlineMedium } from './icons.tsx'
 import css from './TasksView.module.css'
 
 type T = RoomComposerProps['t']
@@ -202,7 +203,7 @@ function JobDetail({ state, job, now, actions, back, t }: { readonly state: Room
   }
   const stopping = [...new Set(open.map(row => memberOf(state, row.memberId)?.name ?? row.memberId))]
   return <div className={css.detail} data-task={job.id}>
-    <button type="button" className={css.back} onClick={back}>{t('job.back')}</button>
+    <button type="button" className={css.back} onClick={back}><IconChevronLeftOutlineMedium size={18} />{t('job.back')}</button>
     <div className={css.card}>
       <strong className={css.cardTitle}>{label} · {job.title}</strong>
       <div className={css.rowMeta}>
