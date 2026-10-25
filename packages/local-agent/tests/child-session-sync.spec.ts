@@ -175,6 +175,25 @@ describe('LocalAgentRegistry.syncChildSession', () => {
     expect(persistence.stored.get('child-1')).toHaveLength(live!.snapshotEvents().length)
   })
 
+  it('closes a turn a restart interrupted before the member runs again', async () => {
+    // The in-the-wild shape: the host restarted mid-round, so the stored log
+    // ends inside turn 1; the next round's turn/start must not follow it.
+    const persistence = fakePersistence()
+    const cold = Session.create(SessionId('child-1'))
+    cold.append('turn/start', { turn: 1 })
+    cold.append('step/start', { turn: 1, step: 1 })
+    persistence.stored.set('child-1', [...cold.snapshotEvents()])
+    const { ctx, registry } = await mount(persistence)
+    await registry.ensureChildLive('child-1')
+    const live = ctx.sessions.get(SessionId('child-1'))!
+    const tail = live.snapshotEvents().map(event => event.type)
+    expect(tail.slice(0, 4)).toEqual(['turn/start', 'step/start', 'step/end', 'turn/end'])
+    expect(live.snapshotEvents()[3]!.data).toMatchObject({ turn: 1, reason: { kind: 'interrupted' } })
+    // The closers are durable: the stored log is balanced before the next round.
+    expect(persistence.stored.get('child-1')!.map(event => event.type).slice(0, 4)).toEqual(['turn/start', 'step/start', 'step/end', 'turn/end'])
+    expect(persistence.stored.get('child-1')).toHaveLength(live.snapshotEvents().length)
+  })
+
   it('keeps an already-open official history follower contiguous across cold member restoration', async () => {
     const persistence = fakePersistence()
     const cold = Session.create(SessionId('child-1'))
