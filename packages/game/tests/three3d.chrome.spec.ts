@@ -325,6 +325,48 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
     expect(result.failures.some(f => f.message.includes('assets/missing.glb'))).toBe(true)
   }, 90_000)
 
+  it('walks up a staircase onto a platform, never onto the roof above, and forgets walkables with their scene', async () => {
+    const result = await checker.run(withKitRuntime({
+      ...files,
+      'src/main.js': text(`import * as THREE from 'three'
+        import { createWorld, flat } from 'dsh3d'
+        const world = createWorld()
+        world.terrain({ size: 40, height: () => 0 })
+        const box = (w, h, d, x, y, z, opts) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), flat('#8a7a66')); m.position.set(x, y, z); return world.add(m, opts) }
+        world.enterScene('village', w => {
+          // Three steps of 0.3 up to a 1.2 m platform; a roof floats 3 m up over the platform.
+          for (let i = 0; i < 3; i++) box(1, 0.3 * (i + 1), 2, 1 + i, 0.15 * (i + 1), 0, { id: 'stair', walkable: true })
+          box(4, 1.2, 4, 5.5, 0.6, 0, { id: 'platform', walkable: true })
+          box(4, 0.2, 4, 6, 4.2, 0, { id: 'roof', walkable: true })
+          box(1, 2, 1, -3, 1, 0, { id: 'crate' })
+        })
+        const player = { x: 0, y: 0 }
+        window.dshGame = { ready: true, input() {}, step: dt => world.step(dt), state: () => ({ ...player }),
+          walk: (dx, n) => { for (let i = 0; i < n; i++) { const nx = player.x + dx; const y = world.groundAt(nx, 0, player.y + 0.4); player.x = nx; player.y = y } },
+          groundAt: (x, z, from) => world.groundAt(x, z, from),
+          leave: () => world.enterScene('field', w => { w.terrain({ size: 20, height: () => 0 }) }) }`),
+    }, THREE_3D), {
+      'tests/walk.test.js': `
+        test('climbs the stairs onto the platform', () => {
+          game.walk(0.1, 70)
+          assert.near(game.state().y, 1.2, 1e-3, '应站在 1.2 米的平台上，实际 ' + game.state().y)
+        })
+        test('the roof above does not pull the walker up; asking without a ceiling finds it', () => {
+          assert.near(game.groundAt(6, 0, 1.6), 1.2, 1e-3)
+          assert.near(game.groundAt(6, 0), 4.3, 1e-3)
+        })
+        test('an object not marked walkable is not ground', () => {
+          assert.near(game.groundAt(-3, 0, 5), 0, 1e-3)
+        })
+        test('leaving the scene forgets its walkables', () => {
+          game.leave()
+          assert.near(game.groundAt(6, 0), 0, 1e-3)
+        })`,
+    }, { blankProbe: THREE_3D.blankProbe })
+    expect(result.failures).toEqual([])
+    expect(result.passed).toBe(4)
+  }, 90_000)
+
   it('flags a 3D game that never draws', async () => {
     const result = await checker.run(withKitRuntime({
       ...files,
