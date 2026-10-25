@@ -148,6 +148,20 @@ describe('cross-session help', () => {
   })
 })
 
+describe('a CLI member asking', () => {
+  it('asks through the bridge command; the reply reaches that member', async () => {
+    const bench = await boot()
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'claude-local', name: 'gm' })
+    bench.room.append('room/member-updated', { name: 'gm', childSessionId: SessionId('child-gm') })
+    bench.room.append('user/message', { id: 'h1', content: [{ type: 'text', text: mention('开发剪辑插件', HELPER) }], source: { kind: 'user' } }, { surfaceOp: 'append' })
+    const actor = { childSessionId: 'child-gm', parentSessionId: String(bench.sessionId), provider: 'claude-local' }
+    const outcome = await bench.service.receiveMemberCommand(actor as never, { name: 'room_help', arguments: { session: '开发剪辑插件', text: '导出报错' } } as never)
+    expect(outcome).toMatchObject({ ok: true, receipt: expect.stringMatching(/Sent to "开发剪辑插件"/) })
+    expect(bench.thread()[0]!.data).toMatchObject({ fromName: 'gm' })
+    expect(await bench.service.receiveMemberCommand(actor as never, { name: 'room_help', arguments: { text: 'x', bogus: 1 } } as never)).toMatchObject({ ok: false })
+  })
+})
+
 describe('outside sessions on the member list', () => {
   it('links, refuses a member\'s own session, unlinks, and remembers a dismissed hint', async () => {
     const bench = await boot()

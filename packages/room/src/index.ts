@@ -1390,10 +1390,12 @@ export class RoomService extends TypertRemoteService {
    * @param caller - the calling agent.
    * @returns the tool's text result.
    */
-  async askHelp(request: { readonly sessionId: string; readonly session?: string; readonly member?: string; readonly help?: string; readonly text: string }, caller: Agent): Promise<string> {
+  async askHelp(request: { readonly sessionId: string; readonly session?: string; readonly member?: string; readonly help?: string; readonly text: string }, caller: Agent | undefined, actorChildSessionId?: string): Promise<string> {
     const text = request.text.trim()
     if (text === '') return 'The help text must be non-blank.'
-    const routed = this.nativeRoute(request.sessionId)
+    // The asker: a CLI member (authenticated by the bridge), a native member
+    // (its own session routes to the room), else the room's own agent.
+    const routed = actorChildSessionId === undefined ? this.nativeRoute(request.sessionId) : { roomId: SessionId(request.sessionId), actor: actorChildSessionId }
     const roomId = routed?.roomId ?? SessionId(request.sessionId)
     const loaded = this.ctx.sessions.get(roomId) !== undefined && isRoomLog(this.ctx.sessions.get(roomId)!.snapshotEvents())
       ? await this.ensureLive(roomId)
@@ -1417,7 +1419,11 @@ export class RoomService extends TypertRemoteService {
     }
 
     if (request.session === undefined || request.session.trim() === '') return 'Name the session to ask: its title, its id, or the @ mention the human wrote.'
-    const target = await this.resolveHelpTarget(caller, request.session.trim())
+    // Discovery ranks by the asking agent's workspace; a CLI member has no
+    // agent here, so the room's own stands in.
+    const finder = caller ?? this.ctx.agents.get(room.id)
+    if (finder === undefined) return 'This room has no live agent to look sessions up with; try again in a moment.'
+    const target = await this.resolveHelpTarget(finder, request.session.trim())
     if ('error' in target) return target.error
     if (target.sessionId === room.id || loaded.state.members.some(member => member.childSessionId === target.sessionId)) {
       return 'That session is this room or one of its members; use room_message instead.'
@@ -1837,7 +1843,7 @@ export class RoomService extends TypertRemoteService {
       if (sender === undefined) return { ok: false, error: 'The authenticated member is not in this room roster' }
       if (command === null || typeof command !== 'object' || command.arguments === null || typeof command.arguments !== 'object' || Array.isArray(command.arguments)) return { ok: false, error: 'Malformed room command' }
       const args = command.arguments
-      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'role', 'instructions', 'cwd', 'model', 'effort', 'mode', 'firstTask', 'note'], room_message: ['member', 'text', 'kind', 'inReplyTo', 'note', 'task'], ask_user_question: ['questions'] }
+      const allowed: Record<string, readonly string[]> = { room_plan: ['command'], room_read: [], room_invite: ['provider', 'name', 'role', 'instructions', 'cwd', 'model', 'effort', 'mode', 'firstTask', 'note'], room_message: ['member', 'text', 'kind', 'inReplyTo', 'note', 'task'], ask_user_question: ['questions'], room_help: ['session', 'member', 'help', 'text'] }
       const keys = allowed[command.name]
       if (keys === undefined || Object.keys(args).some(key => !keys.includes(key))) return { ok: false, error: 'Unknown room command or argument; room and actor identity are host-owned' }
       const required = (key: string): string => {
@@ -1853,6 +1859,13 @@ export class RoomService extends TypertRemoteService {
         return answers === undefined
           ? { ok: false, error: 'The human did not answer (the question expired or the room was stopped). Continue with your best judgement and say what you assumed.' }
           : { ok: true, receipt: JSON.stringify({ answers }) }
+      }
+      if (command.name === 'room_help') {
+        const text = await this.askHelp({ sessionId: loaded.session.id, text: required('text'),
+          ...optional('session') === undefined ? {} : { session: optional('session')! },
+          ...optional('member') === undefined ? {} : { member: optional('member')! },
+          ...optional('help') === undefined ? {} : { help: optional('help')! } }, undefined, actor.childSessionId)
+        return { ok: true, receipt: text }
       }
       if (command.name === 'room_read') {
         return { ok: true, receipt: JSON.stringify({ self: sender.name, ...JSON.parse(await this.readRoomContext(loaded.session.id)) }) }
