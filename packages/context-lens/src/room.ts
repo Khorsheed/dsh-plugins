@@ -16,6 +16,7 @@
  *
  * @module @khorsheed/dsh-context-lens/room
  */
+import type { LensJsonValue, RoomDecisionRow } from './types.ts'
 
 /** One member run of a dispatch. */
 export interface RoomRun {
@@ -45,12 +46,14 @@ export interface RoomState {
   dispatches: RoomDispatch[]
   runs: Map<string, RoomRun>
   handoffs: { seq: number; at: number; memberId: string }[]
+  /** The decision-model calls the room recorded (`room/decision` with a call). */
+  decisions: RoomDecisionRow[]
   /** Event seqs already applied (backfill and live may both deliver one). */
   seen: Set<number>
 }
 
 export function emptyRoom(): RoomState {
-  return { members: new Map(), dispatches: [], runs: new Map(), handoffs: [], seen: new Set() }
+  return { members: new Map(), dispatches: [], runs: new Map(), handoffs: [], decisions: [], seen: new Set() }
 }
 
 const str = (value: unknown): string | undefined => typeof value === 'string' && value.length > 0 ? value : undefined
@@ -97,6 +100,27 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
       if (child !== undefined) run.childSessionId = child
       if (childTurn !== undefined) run.childTurn = childTurn
       room.runs.set(runId, run)
+      return true
+    }
+    case 'room/decision': {
+      const call = (typeof d['call'] === 'object' && d['call'] !== null ? d['call'] : undefined) as Record<string, unknown> | undefined
+      const id = str(d['id']), scenario = str(d['scenario']), outcome = str(d['outcome'])
+      if (call === undefined || id === undefined || scenario === undefined || outcome === undefined || seq === undefined || at === undefined) return true
+      const request = (typeof call['request'] === 'object' && call['request'] !== null ? call['request'] : {}) as Record<string, unknown>
+      const failure = call['failure'] as { reason?: unknown; detail?: unknown } | undefined
+      const about = (typeof d['about'] === 'object' && d['about'] !== null ? d['about'] : {}) as RoomDecisionRow['about']
+      room.decisions.push({
+        id, seq, at, scenario, outcome, model: str(call['model']) ?? 'typesafe', about,
+        request: { state: (request['state'] ?? null) as LensJsonValue, questions: (request['questions'] ?? null) as LensJsonValue },
+        ...str(d['rule']) === undefined ? {} : { rule: str(d['rule'])! },
+        ...num(d['probability']) === undefined ? {} : { probability: num(d['probability'])! },
+        ...num(call['latencyMs']) === undefined ? {} : { latencyMs: num(call['latencyMs'])! },
+        ...typeof call['cached'] === 'boolean' ? { cached: call['cached'] } : {},
+        ...num(call['inputTokens']) === undefined ? {} : { inputTokens: num(call['inputTokens'])! },
+        ...num(call['outputTokens']) === undefined ? {} : { outputTokens: num(call['outputTokens'])! },
+        ...call['response'] === undefined ? {} : { response: call['response'] as LensJsonValue },
+        ...typeof failure?.reason === 'string' ? { failure: { reason: failure.reason, ...typeof failure.detail === 'string' ? { detail: failure.detail } : {} } } : {},
+      })
       return true
     }
     case 'room/coordinator': {

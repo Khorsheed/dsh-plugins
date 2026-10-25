@@ -83,3 +83,37 @@
   margin: 4px 0 0;
   color: var(--dsw-alias-text-error, #d9363e);
 }
+
+/* A group heading: 协作 / 自动判断. */
+.group {
+  padding: 10px 0 2px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.group + .row {
+  border-top: none;
+}
+
+/* Report timing's own parameters: a box that widens by its padding on both
+   sides, so its labels line up with the row titles and its steppers with the
+   row's switch. */
+.subbox {
+  margin: 0 -10px 6px;
+  padding: 0 9px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 10px;
+}
+
+.subrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 0;
+}
+
+.subrow + .subrow {
+  border-top: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.08));
+}

@@ -1,6 +1,7 @@
 import type { SessionTrend } from '../types.ts'
 import { Trend } from './Trend.tsx'
-import { AgentTabs, ParentLine } from './AgentTabs.tsx'
+import { AgentTabs, ParentLine, ROOM_TAB } from './AgentTabs.tsx'
+import { RoomDecisionsView } from './RoomDecisionsView.tsx'
 /** Session/turn/scope navigation; request detail owns its JSON toggle. */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
@@ -57,6 +58,10 @@ export function InspectorPanel({
   const sessionId = (viewed ?? ownSessionId) as typeof ownSessionId
   /** The message whose turn the next turn list should select (from a navigation). */
   const pendingMessage = useRef<string | undefined>(undefined)
+  /** The room decision whose turn the next turn list should select (from a navigation). */
+  const pendingDecision = useRef<string | undefined>(undefined)
+  /** The selected room decision on the 房间 tab. */
+  const [decisionId, setDecisionId] = useState<string | null>(null)
   const [trend, setTrend] = useState<SessionTrend | null>(null)
   /** The latest conversation jump; an older one still waiting for history gives up. */
   const jumpToken = useRef(0)
@@ -111,6 +116,12 @@ export function InspectorPanel({
     const target = navParams?.sessionId
     setViewed(target === undefined || target === ownSessionId ? null : target)
     pendingMessage.current = navParams?.messageId
+    pendingDecision.current = navParams?.roomDecision
+    if (navParams?.roomDecision !== undefined) {
+      setTurnSeq(null)
+      setScopeId(ROOM_TAB)
+      setDecisionId(navParams.roomDecision)
+    }
     if (navParams?.messageId !== undefined) {
       setTurnSeq(null)
       setScopeId('main')
@@ -144,7 +155,10 @@ export function InspectorPanel({
       setBackfill(result.value.backfill)
       setParent(result.value.parent ?? null)
       setListMeta(listMetaOf(result.value))
-      const asked = pendingMessage.current === undefined ? undefined : resolveTurnSeq(result.value.turns, pendingMessage.current)
+      const decided = pendingDecision.current === undefined ? undefined
+        : result.value.turns.find(turn => turn.roomDecisionIds?.includes(pendingDecision.current!) === true)?.turnSeq
+      pendingDecision.current = undefined
+      const asked = decided ?? (pendingMessage.current === undefined ? undefined : resolveTurnSeq(result.value.turns, pendingMessage.current))
       pendingMessage.current = undefined
       setTurnSeq(previous => asked !== undefined
         ? asked
@@ -432,6 +446,12 @@ export function InspectorPanel({
     body = <div className={css.stateNote} role="status">{t('state.turnMissing')}</div>
   } else if (overview === null) {
     body = <div className={css.stateNote} role="status">{t('state.loading')}</div>
+  } else if (scopeId === ROOM_TAB && (overview.roomDecisions?.length ?? 0) > 0) {
+    body = (
+      <div className={css.bodyFill}>
+        <RoomDecisionsView decisions={overview.roomDecisions!} selectedId={decisionId} onSelect={setDecisionId} t={t} />
+      </div>
+    )
   } else if (effectiveScope === undefined) {
     body = <div className={css.stateNote} role="status">{t('state.emptyScope')}</div>
   } else if (effectiveScope.requests.length === 0 && effectiveScope.status !== 'failed') {
@@ -522,10 +542,11 @@ export function InspectorPanel({
           <b title={turn.query !== '' ? turn.query : turn.trigger?.text}>{turn.hostTurn === undefined && turn.query === 'compaction' ? t('compaction.title') : turn.query !== '' ? turn.query : turn.trigger!.text}</b>
         </div>}
         {/* Below it, the selected turn's participants: nothing that did not take part. */}
-        {scopes.length > 0 && (
+        {(scopes.length > 0 || (overview?.roomDecisions?.length ?? 0) > 0) && (
           <AgentTabs
             scopes={scopes}
-            value={effectiveScope?.scopeId ?? 'main'}
+            roomCount={overview?.roomDecisions?.length}
+            value={scopeId === ROOM_TAB && (overview?.roomDecisions?.length ?? 0) > 0 ? ROOM_TAB : effectiveScope?.scopeId ?? 'main'}
             onSelect={onSelectScope}
             onOpenRequest={link => { setTurnSeq(link.turnSeq); onOpenRequest(link.seq, link.scopeId) }}
             t={t}

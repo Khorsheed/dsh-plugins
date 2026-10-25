@@ -8,38 +8,25 @@
  *
  * Rules answer first: failures and uncertain outcomes, the last outstanding
  * result, the `each` setting, and an unavailable decision model all hand the
- * report over now. Otherwise the decision model (the optional `typesafe`
- * service, probed — room never depends on it) answers one yes/no question
- * from what the recipient said it waits for, how long the human has been
- * waiting, and the progress of everything still out.
+ * report over now. Otherwise the decision model answers the `report-timing`
+ * scenario question (decisions.ts) from what the recipient said it waits for,
+ * how long the human has been waiting, and the progress of everything still
+ * out; the room's threshold turns its probability into now / later.
  * @module @khorsheed/dsh-room/report-gate
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { memberId, replay } from './journal.ts'
-import type { RoomDelivery, RoomMember } from './types.ts'
-
-/** How long held reports wait before the recipient is woken anyway. */
-export const REPORT_HOLD_MS = 3 * 60_000
-
-/** Above this "hand it over now" probability, the report is delivered. */
-const DELIVER_THRESHOLD = 0.5
-
-/** The bounded decision-model call. */
-const JUDGE_TIMEOUT_MS = 8000
-
-/** The slice of the typesafe service the gate calls (duck-typed probe). */
-interface DecisionService {
-  judge(input: { state: unknown; questions: readonly { id: string; type: 'noul'; instructions: string }[] }, options?: { timeoutMs?: number; fresh?: boolean }): Promise<
-    { ok: true; judgement: { decisions: readonly { id: string; answer: string | number | boolean }[] } } | { ok: false; reason: string }
-  >
-}
+import type { RoomDecisionCall, RoomDelivery, RoomMember } from './types.ts'
+import { askDecisionModel, DECISION_SCENARIOS, hasDecisionModel } from './decisions.ts'
 
 /** The gate's verdict. */
 export interface GateVerdict {
   readonly hold: boolean
   readonly reason: string
   readonly probability?: number
+  /** The decision-model call behind it, when one went out. */
+  readonly call?: RoomDecisionCall
 }
 
 /** One arrived report, as the gate sees it. */
@@ -47,17 +34,6 @@ export interface ArrivedReport {
   readonly from: string
   readonly outcome: string
   readonly text: string
-}
-
-const QUESTION = {
-  id: 'deliver_now',
-  type: 'noul' as const,
-  instructions:
-    'A coordinating agent delegated work to other agents and their results arrive one by one. The human can already '
-    + 'read every result in the room. Should the results that have arrived be handed to the coordinator now? Answer '
-    + 'yes when they let it move the work forward (start the next step, answer the human, react to a problem) or when '
-    + 'the human has been waiting long enough that an update helps. Answer no when the coordinator said it is waiting '
-    + 'for the remaining results and those are still running normally.',
 }
 
 /** Deliveries still out that report to this member (queued or running), newest first. */
@@ -113,22 +89,19 @@ export async function judgeReport(ctx: Context, input: {
   readonly timing: 'judge' | 'each'
   readonly outcome: string
   readonly outstanding: number
+  /** The "hand it over now" probability at or above which the report is delivered (default 0.5). */
+  readonly threshold?: number
   readonly state: () => unknown
 }): Promise<GateVerdict> {
   if (input.timing === 'each') return { hold: false, reason: 'setting' }
   if (input.outcome !== 'done') return { hold: false, reason: 'failure' }
   if (input.outstanding === 0) return { hold: false, reason: 'last' }
-  const service = (ctx.get as (name: string) => unknown)('typesafe') as Partial<DecisionService> | undefined
-  if (typeof service?.judge !== 'function') return { hold: false, reason: 'unavailable' }
-  try {
-    const result = await service.judge({ state: input.state(), questions: [QUESTION] }, { timeoutMs: JUDGE_TIMEOUT_MS, fresh: true })
-    if (!result.ok) return { hold: false, reason: 'unavailable' }
-    const answer = result.judgement.decisions.find(decision => decision.id === QUESTION.id)?.answer
-    if (typeof answer !== 'number') return { hold: false, reason: 'unavailable' }
-    return { hold: answer < DELIVER_THRESHOLD, reason: 'model', probability: answer }
-  } catch {
-    return { hold: false, reason: 'unavailable' }
+  if (!hasDecisionModel(ctx)) return { hold: false, reason: 'unavailable' }
+  const asked = await askDecisionModel(ctx, DECISION_SCENARIOS['report-timing'].question, input.state())
+  if (!asked.ok || typeof asked.answer !== 'number') {
+    return { hold: false, reason: 'unavailable', ...asked.call === undefined ? {} : { call: asked.call } }
   }
+  return { hold: asked.answer < (input.threshold ?? 0.5), reason: 'model', probability: asked.answer, call: asked.call }
 }
 
 /** One open task offered to the attribution question. */
@@ -145,25 +118,25 @@ export interface OpenTaskSummary {
  * @param ctx - host context (probes `typesafe`).
  * @param message - the new human message text.
  * @param open - the open tasks.
- * @returns the suggested task number (or `new`) and its probability, or undefined without a model.
+ * @returns the suggested task number (or `new`) with its probability and the call, or `new` by the `unavailable` rule.
  */
-export async function suggestTask(ctx: Context, message: string, open: readonly OpenTaskSummary[]): Promise<{ readonly task: number | 'new'; readonly probability: number } | undefined> {
-  if (open.length === 0) return undefined
-  const service = (ctx.get as (name: string) => unknown)('typesafe') as { judge?: (input: unknown, options?: unknown) => Promise<{ ok: boolean; judgement?: { decisions: readonly { id: string; answer: unknown; probabilities?: Record<string, number> }[] } }> } | undefined
-  if (typeof service?.judge !== 'function') return undefined
+export async function suggestTask(ctx: Context, message: string, open: readonly OpenTaskSummary[]): Promise<{
+  readonly task: number | 'new'
+  /** The rule that decided (`unavailable` after a failed or missing model); absent = the model decided. */
+  readonly rule?: string
+  readonly probability?: number
+  readonly call?: RoomDecisionCall
+}> {
+  if (!hasDecisionModel(ctx)) return { task: 'new', rule: 'unavailable' }
+  const scenario = DECISION_SCENARIOS['task-filing'].question
   const criteria: Record<string, string> = Object.fromEntries(open.map(job => [String(job.number),
     `Continues task ${job.number}: "${job.title.slice(0, 200)}"${job.running.length === 0 ? '' : ` (still running: ${job.running.join(', ')})`}`]))
   criteria['new'] = 'Starts a new, unrelated task'
-  try {
-    const result = await service.judge({
-      state: { message: message.slice(0, 2000), openTasks: open.map(job => ({ number: job.number, title: job.title.slice(0, 200), running: job.running })) },
-      questions: [{ id: 'task', type: 'choice', instructions: 'A human sent this message to a team of agents that is still working on the open tasks listed. Does the message add to, correct or ask about one of those tasks, or does it start a new one?', criteria }],
-    }, { timeoutMs: JUDGE_TIMEOUT_MS, fresh: true })
-    const decision = result.ok ? result.judgement?.decisions.find(entry => entry.id === 'task') : undefined
-    if (decision === undefined || typeof decision.answer !== 'string') return undefined
-    const probability = decision.probabilities?.[decision.answer] ?? 0
-    return { task: decision.answer === 'new' ? 'new' : Number(decision.answer), probability }
-  } catch {
-    return undefined
-  }
+  const asked = await askDecisionModel(ctx, { ...scenario, criteria }, {
+    message: message.slice(0, 2000),
+    openTasks: open.map(job => ({ number: job.number, title: job.title.slice(0, 200), running: job.running })),
+  })
+  if (!asked.ok || typeof asked.answer !== 'string') return { task: 'new', rule: 'unavailable', ...asked.call === undefined ? {} : { call: asked.call } }
+  const probability = asked.probabilities?.[asked.answer] ?? 0
+  return { task: asked.answer === 'new' ? 'new' : Number(asked.answer), probability, call: asked.call }
 }

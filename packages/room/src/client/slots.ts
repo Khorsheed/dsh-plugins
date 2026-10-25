@@ -383,6 +383,18 @@ export interface RoomApprovalInjected {
   readonly answerApproval: (approvalId: string, outcome: 'allowed-once' | 'rejected') => Promise<string | undefined>
 }
 
+/** Injected face of a room decision row. */
+export interface RoomDecisionInjected {
+  /** Open Context Lens at this decision's model request; absent without Context Lens. */
+  readonly openDecision?: ((decisionId: string) => void) | undefined
+}
+
+/** Full props of the 'room-decision' chat-node renderer. */
+export type RoomDecisionViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-decision'>
+  & InjectFace<RoomDecisionInjected>
+  & PropsLocale<'room'>
+
 /** Injected face of a member's question card. */
 export interface RoomQuestionInjected {
   /** Submit the answers; resolves with an error message when the card already ended. */

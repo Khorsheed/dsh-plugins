@@ -31,7 +31,8 @@ import { probeLocalAgent, runOutputText } from './adapter.ts'
 import { composeRoomAgent } from './agent-setup.ts'
 import { coordinatorMember, memberId, pendingInstructions, previousCursor, replay, roomChangesSince } from './journal.ts'
 import { envelopeLine, messageId, sendOrHold } from './messaging.ts'
-import { gateState, judgeReport, outstandingFor, REPORT_HOLD_MS, type GateVerdict } from './report-gate.ts'
+import { gateState, judgeReport, outstandingFor, type GateVerdict } from './report-gate.ts'
+import { decisionRecord } from './decisions.ts'
 import type { RoomHeldDispatch, RoomMember, RoomRelay, RoomState } from './types.ts'
 
 /**
@@ -510,6 +511,7 @@ export class DispatchEngine {
       ? { hold: false, reason: 'plan' }
       : await judgeReport(this.ctx, {
         timing: state.settings?.reportTiming ?? 'judge',
+        threshold: state.settings?.reportThreshold ?? 0.5,
         outcome,
         outstanding: outstandingFor(deliveries, recipientId, deliveryId).length,
         state: () => gateState(room.snapshotEvents(), recipient, [
@@ -520,6 +522,17 @@ export class DispatchEngine {
       })
     // The judgement awaited: a concurrent path may have reported meanwhile.
     if (room.snapshotEvents().some(event => event.type === 'room/dispatch' && event.data.reportFor === deliveryId)) return
+    // Every timing decision the room weighed is recorded (the timeline row,
+    // Context Lens); the each-setting and plan cadence decide nothing.
+    if (verdict.reason !== 'setting' && verdict.reason !== 'plan') {
+      room.append('room/decision', decisionRecord('report-timing', {
+        outcome: verdict.hold ? 'later' : 'now',
+        ...verdict.reason === 'model' ? {} : { rule: verdict.reason },
+        ...verdict.probability === undefined ? {} : { probability: verdict.probability },
+        ...verdict.call === undefined ? {} : { call: verdict.call },
+        about: { from: senderName ?? fromId, to: recipient.name },
+      }))
+    }
     if (verdict.hold) {
       await this.holdReport(room, recipient, reportText, intent, verdict)
       return
@@ -589,7 +602,7 @@ export class DispatchEngine {
       const timer = setTimeout(() => {
         this.holdTimers.delete(key)
         void this.releaseHeld(room, recipientId, 'timeout').catch(error => this.ctx.logger.warn(`room: held report release failed: ${String(error)}`))
-      }, REPORT_HOLD_MS)
+      }, (replay(events).settings?.reportWaitMinutes ?? 3) * 60_000)
       timer.unref?.()
       this.holdTimers.set(key, timer)
     }

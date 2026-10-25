@@ -71,7 +71,7 @@ describe('RoomService Remote surface (real composition)', () => {
   it('getState replays a fresh room (main agent seated), and rejects plain/unknown sessions', async () => {
     const { ctx, service, sessionId } = await bootRoom()
     const state = await service.getState({ sessionId })
-    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [], settings: { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge' } } })
+    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [], settings: { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge', autoTaskFiling: true, reportThreshold: 0.5, reportWaitMinutes: 3 } } })
 
     const plain = ctx.sessions.create(SessionId('plain'), { meta: {} })
     expect(await service.getState({ sessionId: plain.id }))
@@ -94,7 +94,7 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(session.snapshotEvents().filter(event => event.type.startsWith('room/')).map(event => event.type))
       .toEqual(['room/created', 'room/member-added'])
     const state = await service.getState({ sessionId })
-    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [], settings: { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge' } } })
+    expect(state).toEqual({ ok: true, value: { members: [MAIN_MEMBER], relays: [], tasks: [], runs: [], settings: { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge', autoTaskFiling: true, reportThreshold: 0.5, reportWaitMinutes: 3 } } })
 
     // Idempotent: a second promotion journals nothing more.
     const again = await service.ensureRoom(sessionId)
@@ -601,6 +601,15 @@ describe('RoomService Remote surface (real composition)', () => {
     // Two first starts of one provider at once: ambiguous, no mode.
     starting.mockReturnValue([cut!, cut2!])
     expect(await service.memberMode(actor)).toBeUndefined()
+  })
+
+  it('the automatic-decision settings validate their ranges and fold into the settings', async () => {
+    const { service, sessionId } = await bootRoom()
+    expect(await service.setSettings({ sessionId, reportThreshold: 0.7, reportWaitMinutes: 5, autoTaskFiling: false }))
+      .toMatchObject({ ok: true, value: { reportThreshold: 0.7, reportWaitMinutes: 5, autoTaskFiling: false } })
+    for (const bad of [{ reportThreshold: 0 }, { reportThreshold: 1 }, { reportWaitMinutes: 0 }, { reportWaitMinutes: 31 }, { reportWaitMinutes: 2.5 }]) {
+      expect(await service.setSettings({ sessionId, ...bad })).toEqual({ ok: false, error: { code: 'invalid-settings' } })
+    }
   })
 
   it('setGoal journals the goal (latest wins; blank clears) and getState carries it', async () => {

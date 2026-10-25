@@ -24,6 +24,7 @@ In a room session the main conversation stops running turns once another member 
 
 ## Consequences
 
+- 2026-10-25: a turn also carries the room's decision-model calls made during it (`room/decision` events with a call, each attached to the latest listed turn that started at or before it). They appear as a 房间 tab after the agents, listed like requests (#n · scenario, probability, input → output tokens, latency); the detail shows the model facts, the state sent, the fixed question, candidates and outcome, and `{ }` shows the request and response as JSON. Turn list items carry `roomDecisionIds`, so the `roomDecision` navigation param lands on the right turn and call. A scope filter that hides the main view hides the decisions too.
 - 2026-10-25: the tab can inspect another session. Navigation params `{ sessionId, messageId }` point the panel at that session (a room member's child session) and select the turn the message closed (`resolveTurnSeq`); the next navigation without a session returns to the sidebar's own. The conversation is not scroll-synced while another session is shown. (A 「正在看」 strip with a way back was tried and dropped: the owner saw no need for it.)
 - Turn numbers in the panel no longer equal the host's turn numbers in a room session; elsewhere they still match.
 - Without `childTurn`, two runs of one member that overlap in time share requests. The room plugin is adding `childTurn` on `done`.

@@ -680,6 +680,29 @@ describe('InspectorPanel · 新增 provenance label', () => {
   })
 })
 
+describe('Context Lens room decisions', () => {
+  const decision = {
+    id: 'd1', seq: 30, at: 2_500, scenario: 'report-timing', outcome: 'later', probability: 0.31, model: 'jev-latest', latencyMs: 900, cached: false,
+    inputTokens: 538, outputTokens: 6, about: { from: '剪刀手', to: 'dsh' },
+    request: { state: { coordinatorNotes: ['等两位都改完再看'], userWaitingSeconds: 102 }, questions: [{ id: 'deliver_now', type: 'noul', instructions: 'Should the results be handed over now?' }] },
+    response: [{ id: 'deliver_now', answer: 0.31 }],
+  }
+
+  it('a 房间 tab after the agents lists the room\'s model calls; the detail shows the state, question, candidates and toggles to JSON; a jump lands on it', async () => {
+    const turns = TURNS.map(turn => turn.turnSeq === 2 ? { ...turn, roomDecisionIds: ['d1'] } : turn)
+    bench({ turns, overview: seq => seq === 2 ? { ...OVERVIEW2, roomDecisions: [decision] } as never : seq === 1 ? OVERVIEW1 : undefined,
+      params: { roomDecision: 'd1' }, revision: 1 })
+    const tab = await screen.findByRole('tab', { name: /房间/ })
+    await waitFor(() => expect(tab.getAttribute('aria-selected')).toBe('true'))
+    expect(screen.getByRole('button', { name: /#1 · 自动判断汇报时机/ }).textContent).toContain('538 → 6')
+    expect(screen.getByText('等两位都改完再看', { exact: false })).toBeTruthy()
+    expect(screen.getByText('Should the results be handed over now?')).toBeTruthy()
+    expect(screen.getByText('剪刀手 的结果稍后统一汇报给 dsh')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['view.raw'] }))
+    expect(screen.getAllByText(/"deliver_now"/, { selector: 'pre' })).toHaveLength(2)
+  })
+})
+
 describe('Context Lens inspecting another session', () => {
   it('reads the named session and selects the turn its message closed', async () => {
     const { mocks } = bench({ params: { sessionId: 'child-gm', messageId: 'm-1' }, revision: 1 })

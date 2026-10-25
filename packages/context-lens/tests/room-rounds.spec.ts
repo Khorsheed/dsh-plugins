@@ -84,3 +84,33 @@ describe('room rounds', () => {
     expect(store.listTurns('s').turns.map(t => t.query)).toEqual(['邀请 Kimi'])
   })
 })
+
+describe('room decisions', () => {
+  const call = (latencyMs: number) => ({ model: 'jev-latest', latencyMs, cached: false, inputTokens: 412, outputTokens: 9,
+    request: { state: { message: '残片也修一下', openTasks: [{ number: 1, title: '你好' }] }, questions: [{ id: 'task', type: 'choice', instructions: 'Does the message …' }] },
+    response: [{ id: 'task', answer: '1', probabilities: { '1': 0.82, new: 0.18 } }] })
+  const decisions: SessionLogRow[] = [
+    // In the first round (after its dispatch at 5000): a filing the model decided.
+    { type: 'room/decision', seq: 24, time: 6200, data: { id: 'd1', scenario: 'task-filing', outcome: '1', probability: 0.82, call: call(1200), about: { task: { number: 1, title: '你好' } } } },
+    // A rule decision carries no call: no request to list.
+    { type: 'room/decision', seq: 25, time: 7000, data: { id: 'd2', scenario: 'report-timing', outcome: 'now', rule: 'last', about: { from: 'coco', to: 'kimi' } } },
+    // In the second round: a timing call that failed.
+    { type: 'room/decision', seq: 32, time: 52_000, data: { id: 'd3', scenario: 'report-timing', outcome: 'now', rule: 'unavailable', about: { from: 'coco', to: 'kimi' },
+      call: { model: 'jev-latest', latencyMs: 8000, request: { state: {}, questions: [] }, failure: { reason: 'timeout' } } } },
+  ]
+
+  it('attaches each decision-model call to the round it happened in; rule decisions are not requests', () => {
+    const store = loaded()
+    for (const row of decisions) store.noteRoomEvent('s', row.type, row.data, row.seq, row.time)
+    const [main, first, second] = store.listTurns('s').turns
+    expect(main!.roomDecisionIds).toBeUndefined()
+    expect(first!.roomDecisionIds).toEqual(['d1'])
+    expect(second!.roomDecisionIds).toEqual(['d3'])
+    const rows = store.getTurn('s', first!.turnSeq)!.roomDecisions!
+    expect(rows).toMatchObject([{ id: 'd1', scenario: 'task-filing', probability: 0.82, model: 'jev-latest', latencyMs: 1200, inputTokens: 412, outputTokens: 9,
+      request: { state: { message: '残片也修一下' } }, response: [{ answer: '1' }] }])
+    expect(store.getTurn('s', second!.turnSeq)!.roomDecisions).toMatchObject([{ id: 'd3', failure: { reason: 'timeout' } }])
+    // A scope filter that hides the room's own view hides its decisions too.
+    expect(store.getTurn('s', first!.turnSeq, { scopes: ['child-coco'] })!.roomDecisions).toBeUndefined()
+  })
+})
