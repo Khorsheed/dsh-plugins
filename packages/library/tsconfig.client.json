@@ -20,6 +20,7 @@
     "src/client/covers.tsx",
     "src/client/definition.tsx",
     "src/client/icons.tsx",
+    "src/client/icons-local.tsx",
     "src/client/index.ts",
     "src/client/locales.ts",
     "src/client/preset-visibility.ts",

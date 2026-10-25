@@ -10,7 +10,8 @@ import { ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-pa
 import { acceptanceLines, coverKind, isThickResource, type LibraryPage, type LibraryResource, type RoadmapNode } from '../../types.ts'
 import { CoverChips, coverLabel, type CoverContext } from '../covers.tsx'
 import type { LibraryNodeTab } from '../store.ts'
-import { IconCameraOutlineMedium, IconSparkleOutlineMedium } from '../icons.tsx'
+import { IconSparkleMedium } from '../icons.tsx'
+import { IconCameraOutlineMedium } from '../icons-local.tsx'
 import { outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
@@ -58,7 +59,7 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
         actions={node === undefined ? [] : [
-          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(t('prime.node', { book: resource?.title ?? '', node: node.title })) } },
+          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleMedium />, onSelect: () => { prime(t('prime.node', { book: resource?.title ?? '', node: node.title })) } },
         ]}
         moreLabel={t('action.more')}
       />

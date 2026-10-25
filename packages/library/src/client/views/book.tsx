@@ -18,9 +18,8 @@ import {
 } from '../../types.ts'
 import { colorOf, Cover, coverOf } from '../look.tsx'
 import { CoverChips, type CoverContext } from '../covers.tsx'
-import {
-  IconCheckOutlineMedium, IconLockOutlineMedium, IconRefreshOutlineMedium, IconSparkleOutlineMedium, IconTrashOutlineMedium,
-} from '../icons.tsx'
+import { IconCheckOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
+import { IconLockOutlineMedium } from '../icons-local.tsx'
 import { ConfirmDialog, OriginTag, outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
@@ -101,9 +100,9 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
         actions={resource === undefined ? [] : [
-          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleOutlineMedium />, onSelect: () => { prime(t('prime.readBook', { book: resource.title })) } },
+          { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleMedium />, onSelect: () => { prime(t('prime.readBook', { book: resource.title })) } },
           { id: 'replan', label: t('book.replan'), icon: <IconRefreshOutlineMedium />, onSelect: () => { prime(t('prime.replan', { book: resource.title })) } },
-          { id: 'bind', label: t('action.bindBook'), icon: <IconSparkleOutlineMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId, resourceId }).then(() => { setNotice(t('notice.bound')) }) } },
+          { id: 'bind', label: t('action.bindBook'), icon: <IconSparkleMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId, resourceId }).then(() => { setNotice(t('notice.bound')) }) } },
           { id: 'delete', label: t('book.delete'), icon: <IconTrashOutlineMedium />, menuOnly: true, onSelect: () => { setDeleteError(undefined); setConfirmingDelete(true) } },
         ]}
         moreLabel={t('action.more')}
