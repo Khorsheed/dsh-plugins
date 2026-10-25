@@ -193,6 +193,17 @@ export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInject
    */
   readonly openReference?: ((source: string, ref: string) => boolean) | undefined
   /**
+   * Other sessions for the @ menu: the host's session-reference candidates
+   * (the recent list merged with the query's own lookup), rooms flagged.
+   * Absent without the session-reference service.
+   */
+  readonly listSessions?: ((query: string, signal: AbortSignal) => Promise<readonly import('./at-menu.ts').SessionCandidate[]>) | undefined
+  /**
+   * Insert the host's session chip for a picked session over a detect-coordinate span.
+   * @returns whether the input machine took it (false: the composer falls back to text).
+   */
+  readonly insertSessionReference?: ((candidate: import('./at-menu.ts').SessionCandidate, span: { readonly start: number; readonly end: number; readonly draftRev: number }) => boolean) | undefined
+  /**
    * Dispatch a message into the room and refresh the store on success. EVERY
    * send routes here, bare text included (the host routes bare text to the
    * current coordinator); the composer's useInput/inputActions kit carries

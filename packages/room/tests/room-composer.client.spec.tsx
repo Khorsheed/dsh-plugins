@@ -107,6 +107,8 @@ async function bench(
     /** Extra input actions (the chip-mode span edit). */
     extraInputActions?: Record<string, unknown>
     openReference?: (source: string, ref: string) => boolean
+    listSessions?: RoomComposerProps['listSessions']
+    insertSessionReference?: RoomComposerProps['insertSessionReference']
   } = {},
 ): Promise<Bench> {
   const roomStore = await primedStore(options.state)
@@ -144,6 +146,8 @@ async function bench(
     stopMember: options.stopMember,
     modelDirectory: options.modelDirectory,
     openReference: options.openReference,
+    listSessions: options.listSessions,
+    insertSessionReference: options.insertSessionReference,
     useSession,
     // Default: a projection seat that serves nothing (no stats row, no todo strip).
     useProjection: options.useProjection === undefined
@@ -194,6 +198,40 @@ describe('RoomComposer', () => {
     // A later complete token re-opens completion after it.
     type(area, '@ada @')
     expect(screen.getAllByRole('option')).toHaveLength(3)
+  })
+
+  it('lists other sessions under the members — recent five, rooms and members\' own sessions left out — and inserts a picked one as the host\'s chip', async () => {
+    const sessions = [
+      { sessionId: 's1', label: '开发剪辑插件', mention: '@[开发剪辑插件](dsh-session:czE)', createdAt: Date.now() },
+      { sessionId: 'room-2', label: '读书会', mention: '@[读书会](dsh-session:x)', room: true },
+      { sessionId: 's2', label: '山海经 3D 游戏共创', mention: '@[山海经](dsh-session:y)' },
+      ...['a', 'b', 'c', 'd', 'e'].map(id => ({ sessionId: id, label: `会话 ${id}`, mention: `@[${id}](dsh-session:${id})` })),
+    ]
+    const listSessions = vi.fn(async () => sessions)
+    const insertSessionReference = vi.fn(() => true)
+    const { area } = await bench(vi.fn(), { listSessions, insertSessionReference, extraInputActions: { captureInsertion: () => ({ start: 0, end: 0, draftRev: 7 }), insertText: vi.fn() } })
+    type(area, '去问问 @')
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(3 + 5))
+    expect(screen.getByText('composer.at.members')).toBeDefined()
+    expect(screen.getByText('composer.at.recent')).toBeDefined()
+    expect(screen.getByText('composer.at.more')).toBeDefined()
+    expect(screen.queryByText('读书会')).toBeNull()
+
+    // Fuzzy: the characters in order find the title.
+    type(area, '去问问 @剪插')
+    await waitFor(() => expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual([expect.stringContaining('开发剪辑插件')]))
+    fireEvent.keyDown(area, { key: 'Enter' })
+    expect(insertSessionReference).toHaveBeenCalledWith(sessions[0], { start: 4, end: 7, draftRev: 7 })
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('falls back to the mention text when the host takes no chip', async () => {
+    const listSessions = vi.fn(async () => [{ sessionId: 's1', label: '开发剪辑插件', mention: '@[开发剪辑插件](dsh-session:czE)' }])
+    const { area } = await bench(vi.fn(), { listSessions })
+    type(area, '@开发')
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1))
+    fireEvent.keyDown(area, { key: 'Enter' })
+    expect(area.value).toBe('@[开发剪辑插件](dsh-session:czE) ')
   })
 
   it('submits an @-message as a dispatch and clears the draft', async () => {

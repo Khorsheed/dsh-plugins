@@ -52,6 +52,7 @@ import { RoomApprovalView } from './RoomApprovalView.tsx'
 import { RoomQuestionView } from './RoomQuestionView.tsx'
 import { RoomDecisionView } from './RoomDecisionView.tsx'
 import { RoomHelpRequestView, RoomHelpView } from './RoomHelpView.tsx'
+import { sessionTitle, type SessionCandidate } from './at-menu.ts'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
   RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
@@ -453,6 +454,33 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   })
   const sidebar = ctx.get('sidebarRight')
   const sidebarTabs = ctx.get('sidebarRightTabs')
+  // The @ menu's other sessions: the host's session-reference candidates
+  // (the recent list merged with the query's own lookup), each flagged when
+  // it is a room (probed once per session and remembered).
+  const roomFlags = new Map<string, Promise<boolean>>()
+  const roomFlag = (id: string): Promise<boolean> => {
+    let flag = roomFlags.get(id)
+    if (flag === undefined) {
+      flag = (remote?.isRoom({ sessionId: id as SessionId }) ?? Promise.resolve(undefined))
+        .then(carried => carried?.ok === true && carried.value === true)
+        .catch(() => false)
+      roomFlags.set(id, flag)
+    }
+    return flag
+  }
+  const listSessionsFor = async (sessionId: SessionId, query: string, signal: AbortSignal): Promise<readonly SessionCandidate[]> => {
+    const resolver = ctx.get('remote.sessionReferenceResolver') as {
+      candidates?(sessionId: SessionId, query: string, signal: AbortSignal): Promise<readonly SessionCandidate[]>
+    } | undefined
+    if (resolver?.candidates === undefined) return []
+    const [recent, matched] = await Promise.all([
+      resolver.candidates(sessionId, '', signal),
+      query === '' ? Promise.resolve([]) : resolver.candidates(sessionId, query, signal),
+    ])
+    const merged = [...recent, ...matched]
+    const flags = await Promise.all(merged.map(candidate => roomFlag(candidate.sessionId)))
+    return merged.map((candidate, index) => ({ ...candidate, ...flags[index] === true ? { room: true } : {} }))
+  }
   const composerEntry = {
     name: 'conversation.composer',
     priority: -10,
@@ -477,6 +505,21 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       // through the session's input-trigger controller to the chip's owning
       // source — probed at click time, so a composition without the service
       // (or a torn-down scope) just declines.
+      ...ctx.get('remote.sessionReferenceResolver') === undefined ? {} : {
+        listSessions: (query: string, signal: AbortSignal) => listSessionsFor(sessionId, query, signal),
+        insertSessionReference: (candidate: SessionCandidate, span: { start: number; end: number; draftRev: number }) => {
+          try {
+            const scope = ctx.sessions.scope(sessionId) as { bail?: (thisArg: unknown, name: string, request: unknown) => unknown } | undefined
+            if (scope?.bail === undefined) return false
+            return scope.bail(scope, 'slash/input-insert-reference', {
+              reference: { source: 'reference', ref: candidate.mention, label: sessionTitle(candidate), appearance: 'session', clipboardText: candidate.mention },
+              span,
+            }) === true
+          } catch {
+            return false
+          }
+        },
+      },
       openReference: (source, ref) => {
         try {
           const scope = ctx.sessions.scope(sessionId)

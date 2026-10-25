@@ -16,6 +16,7 @@ A room often hits a problem that another session already has the context for. Th
 - **Answers travel as reports.** A helper's question or reply reaches the asking member as a report-origin `room/dispatch` with `reportFor: help:<id>`, the path plan reconciliation already uses. A running asker gets it in its current turn, and an idle one is woken. This matches how the host hands a background subagent's result to its parent. The asker answers a question, or follows up, by calling `room_help` with the help id.
 - **A forgotten reply call still answers.** After the helper goes idle, a turn that claimed the request but recorded neither a reply nor a question hands over its last answer as a `fallback` reply. A request that left the queue unclaimed (the queue was cleared) fails the thread.
 - **Consent.** If the human @-mentioned the session in the room, or the room already asked it, the request goes straight out. Otherwise the first ask shows a 允许 / 不允许 card through the existing question card and waits up to 10 minutes.
+- **The @ menu.** The room composer's @ menu has two groups: this room's members, then other sessions from the host's own session-reference candidates. With nothing typed it lists the five most recent; typing matches both groups fuzzily, where the characters only have to appear in order, ranked exact > prefix > contiguous > in-order, then by recency. Rooms and the members' own sessions are left out. A picked session goes into the draft as the host's own session chip, through the scoped `slash/input-insert-reference` event; a host without that seam gets the mention as text. The sent text carries the `dsh-session:` mention, which is both the consent signal and what `room_help` resolves.
 - **Journal.** `room/help` (asker, target, text), `room/help-message` (`question` / `reply` / `message`, handoff, fallback) and `room/help-state` (`queued` / `running` / `asking` / `replied` / `failed`). The room timeline shows each thread as one `room-help` row whose state and messages update in place, with 看求助内容 and 打开对方会话.
 
 ## Alternatives considered
@@ -31,7 +32,6 @@ A room often hits a problem that another session already has the context for. Th
 - Not in this batch:
   - asking a room, or a member of another room (`room_help` refuses a room target for now);
   - CLI members asking (the member bridge has no `room_help` yet);
-  - the room composer's @ menu;
   - the 30-minute reminder and its setting;
   - the team tree's helper node, 加入房间成员, and the third-ask nudge.
 - Restart: the helper's tools are restored, but the room's watcher of the helper's turn is in-memory. A thread open across a restart gets no fallback reply; the helper can still reply with the tool.
