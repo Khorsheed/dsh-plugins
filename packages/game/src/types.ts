@@ -94,6 +94,9 @@ export interface Style3D {
   readonly light?: number
   /** The sun casts shadows (game-wide; off unless set). */
   readonly shadows?: boolean
+  /** Rim light on toon surfaces (0 = off … 2), and its color. */
+  readonly rim?: number
+  readonly rimColor?: string
   /**
    * Per-scene overrides, keyed by the game's own scene names (dsh3d
    * `enterScene(name)`): background, ground colors, water, fog and light.

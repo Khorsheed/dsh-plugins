@@ -2,6 +2,7 @@
 
 ## 0.1.0（2026-10-24）
 
+- 3D conveniences: `world.followCamera({ target, mouse: true })` (third person, pointer-lock turning), `style3d.rim` / `rimColor`, `scatter(…, { sway })` for grass and trees in the wind; the skill gives a tested bloom recipe through `three/addons`.
 - glTF skeletal animation: an idle clip plays on its own, `model.userData.play('walk')` cross-fades, the outline follows the bones, pick finds a posed character, and the element page lists clips to play in the turntable.
 - Walkable models: `world.add(obj, { walkable: true })` / `world.walkable(obj)` and `world.groundAt(x, z, fromY)` — climb stairs onto a platform without being pulled onto the roof above.
 - glTF looks: `{ kind: 'gltf', src }` loads the glb (toon over its colors, vertex colors and textures, with an outline; or `material: 'original'`), checks wait for models and fail a look whose file is missing, and the panel previews the working copy of a just-exported model with a toon/original switch and size.

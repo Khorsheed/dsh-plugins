@@ -453,6 +453,63 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
     expect(result.passed).toBe(2)
   }, 90_000)
 
+  it('ready-made follow camera, rim light, swaying scatter, and the bloom recipe through three/addons', async () => {
+    const result = await checker.run(withKitRuntime({
+      ...files,
+      'game.json': text(JSON.stringify({ id: 'g', runtime: { kit: '3d-three', version: 1 }, style3d: { preset: 'ink', rim: 0.8, rimColor: '#ffeecc' } }), 'application/json'),
+      'elements/grass.json': text(JSON.stringify({ id: 'grass', name: '草', type: '山水', look: { kind: 'parts3d', base: 'blade', parts: [], palette: { body: '#5a7a4a' }, motion: {} } }), 'application/json'),
+      'src/main.js': text(`import * as THREE from 'three'
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+        import { createWorld, build, defineBase, toon } from 'dsh3d'
+        defineBase('blade', (look, kit) => { const g = new kit.THREE.Group(), body = new kit.THREE.Group(); g.add(body)
+          const c = kit.ink(new kit.THREE.ConeGeometry(0.08, 0.6, 4), kit.toon(kit.color('body', '#557744'))); c.position.y = 0.3; body.add(c); return { g, body } })
+        const world = createWorld()
+        world.terrain({ size: 30, height: () => 0 })
+        const fox = world.add(world.place(build('jiuweihu'), 0, 0), { id: 'jiuweihu', inst: 'fox-1' })
+        world.scatter('grass', 40, { seed: 3, spread: 10, sway: { amplitude: 0.1, period: 2 } })
+        const lantern = world.add(world.place(new THREE.Mesh(new THREE.SphereGeometry(0.3), toon('#ffaa44', { own: true, emissive: '#ffaa44' })), 2, 0), { id: 'lantern' })
+        const rig = world.followCamera({ target: fox, distance: 6 })
+        const composer = new EffectComposer(world.renderer)
+        composer.addPass(new RenderPass(world.scene, world.camera))
+        composer.addPass(new UnrealBloomPass(new THREE.Vector2(640, 400), 0.6, 0.4, 0.85))
+        composer.addPass(new OutputPass())
+        let bloomed = 0
+        world.onRender(() => { bloomed++; composer.render() })
+        const grass = world.scene.children.find(o => o.userData.scatter)
+        window.dshGame = { ready: true, input() {}, step: dt => world.step(dt), pick: (x, y) => world.pick(x, y), look: (dx, dy) => rig.look(dx, dy),
+          state: () => ({ yaw: rig.yaw, camZ: world.camera.position.z, perspective: world.camera === rig.camera, bloomed,
+            rim: fox.children.length > 0 && (() => { let r = false; fox.traverse(o => { if (o.material?.customProgramCacheKey?.() === 'dsh3d-rim') r = true }); return r })(),
+            sway: grass.children.some(o => o.material?.userData?.sway?.amplitude === 0.1) }) }`),
+    }, THREE_3D), {
+      'tests/conv.test.js': `
+        test('the follow camera sits behind the target and turns with a drag', () => {
+          step(2)
+          const s0 = game.state()
+          assert(s0.perspective, '应在用跟随镜头')
+          assert(s0.camZ > 3, '默认应在目标后方（z 为正）：' + s0.camZ)
+          drag(200, 0, 2)
+          assert(game.state().yaw < -0.5, '拖动应转动跟随镜头：' + game.state().yaw)
+        })
+        test('pick follows the follow camera', () => {
+          const world = window.dsh3dWorld, c = world.canvas
+          world.render()
+          const v = new world.THREE.Vector3(0, 0.4, 0).project(world.camera)
+          const ref = game.pick((v.x + 1) / 2 * c.width, (1 - v.y) / 2 * c.height)
+          assert(ref && ref.id === 'jiuweihu', '应点中九尾狐：' + JSON.stringify(ref))
+        })
+        test('rim light, swaying grass and the bloom pass are in place', () => {
+          window.dsh3dWorld.render()
+          const s = game.state()
+          assert(s.rim, '卡通材质应带轮廓光'); assert(s.sway, '草应带随风摆'); assert(s.bloomed > 0, '泛光应接管绘制')
+        })`,
+    }, { blankProbe: THREE_3D.blankProbe })
+    expect(result.failures).toEqual([])
+    expect(result.passed).toBe(3)
+  }, 90_000)
+
   it('flags a 3D game that never draws', async () => {
     const result = await checker.run(withKitRuntime({
       ...files,

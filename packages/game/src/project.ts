@@ -221,6 +221,9 @@ function style3dOf(raw: unknown): { style3d: Style3D } | undefined {
   if (width !== undefined) out.outlineWidth = width
   if (shades !== undefined) out.shades = Math.round(shades)
   if (typeof r.shadows === 'boolean') out.shadows = r.shadows
+  const rim = clampNum(r.rim, 0, 2)
+  if (rim !== undefined) out.rim = rim
+  if (typeof r.rimColor === 'string' && HEX.test(r.rimColor)) out.rimColor = r.rimColor.toLowerCase()
   // The game's own scenes (any names, a bounded number): each keeps only what a scene may override.
   if (r.scenes !== null && typeof r.scenes === 'object' && !Array.isArray(r.scenes)) {
     const scenes: Record<string, SceneStyle3D> = {}

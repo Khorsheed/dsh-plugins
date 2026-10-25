@@ -47,13 +47,13 @@ describe('manifest and chapters', () => {
 
   it('keeps the game’s own per-scene styles through a parse (a panel rewrite must not drop them)', () => {
     const parsed = parseManifest(JSON.stringify({
-      id: 'g', style3d: { preset: 'ink', shades: 3, shadows: true, scenes: {
+      id: 'g', style3d: { preset: 'ink', shades: 3, shadows: true, rim: 5, rimColor: '#FFEEDD', scenes: {
         北山: { bg: '#CFD6DC', fog: [10, 30], light: 9, outline: '#000000', shades: 5 },
         '': { bg: '#ffffff' }, 坏: 'x', 雾: { fog: [30, 10] },
       } },
     }))
     expect(parsed.ok && parsed.manifest.style3d).toEqual({
-      preset: 'ink', shades: 3, shadows: true,
+      preset: 'ink', shades: 3, shadows: true, rim: 2, rimColor: '#ffeedd',
       // Colors, fog and light only (outline and shading stay game-wide); a bad fog drops just the fog.
       scenes: { 北山: { bg: '#cfd6dc', fog: [10, 30], light: 4 }, 雾: {} },
     })
