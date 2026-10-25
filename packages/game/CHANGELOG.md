@@ -2,6 +2,7 @@
 
 ## 0.1.0（2026-10-24）
 
+- The play stage no longer shrinks in the scrolling play view: it used to crop the bottom of the game (and push the poster's Play button below the visible middle).
 - The panel bar covers every working change — panel edits, the agent's, a CLI member's, the user's editor — with 检查并发版 (disabled while a turn runs or a file changed in the last 20 s); it polls while visible. Versions record who published (you / the agent / turn end). The skill, guidance and personas: publish before reporting or asking, and publish for CLI members.
 - 3D scenes: `world.enterScene(name, setup)` swaps terrain, the scene's own style overrides (`game.json` `style3d.scenes`, kept through panel rewrites) and everything registered inside, freeing the last scene. A new `terrain()` replaces the old ground.
 - `world.scatter(element, countOrPoints, { seed, … })`: one look instanced over the ground, each copy on the terrain with a seeded facing and size, outlined, and pickable as `id#n`.
