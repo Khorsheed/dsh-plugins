@@ -627,6 +627,29 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('writes nothing after a cancelled turn closed — late CLI events only converge the chain', async () => {
+    // In the wild: the parent cancelled, turn/end landed, then the CLI's
+    // interrupt notice and a late assistant line arrived and were mirrored
+    // after the turn's end — the stored log became unreadable.
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-late-after-cancel'))
+    const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const controller = new AbortController()
+    const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+    controller.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    const closed = child.snapshotEvents().length
+    fake.emit({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: '[Request interrupted by user]' }] } })
+    fake.emit({ type: 'assistant', message: { id: 'late', role: 'assistant', content: [{ type: 'text', text: 'late words' }] } })
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1' })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(child.snapshotEvents()).toHaveLength(closed)
+    expect(child.snapshotEvents().at(-1)?.type).toBe('turn/end')
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
   it('stop-then-rephrase: the next message goes out only after the cancelled turn’s result lands', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-5'))
