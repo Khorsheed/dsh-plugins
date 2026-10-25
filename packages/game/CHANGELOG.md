@@ -2,6 +2,7 @@
 
 ## 0.1.0（2026-10-24）
 
+- 3D kit doors (additive): `three/addons/…` imports (only what a project uses rides its bundle), `world.setCamera` for the game's own camera (pick and rings follow it), `world.lights` and `style3d.shadows`, `world.onRender` for post-processing, `toon/flat(…, { own: true })`, `dshGame.loading` (checks wait up to 20 s), pointer lock in the play frame and `dshGame.look` with a `drag` test helper. The skill says to log plugin walls in `design/plugin-requests.md`.
 - The play stage no longer shrinks in the scrolling play view: it used to crop the bottom of the game (and push the poster's Play button below the visible middle).
 - The panel bar covers every working change — panel edits, the agent's, a CLI member's, the user's editor — with 检查并发版 (disabled while a turn runs or a file changed in the last 20 s); it polls while visible. Versions record who published (you / the agent / turn end). The skill, guidance and personas: publish before reporting or asking, and publish for CLI members.
 - 3D scenes: `world.enterScene(name, setup)` swaps terrain, the scene's own style overrides (`game.json` `style3d.scenes`, kept through panel rewrites) and everything registered inside, freeing the last scene. A new `terrain()` replaces the old ground.

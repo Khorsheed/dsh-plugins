@@ -11,8 +11,9 @@
  *
  * Test scripts are `tests/*.test.js` the agent writes beside the code. Each
  * file runs on a fresh load of the build, as the body of an async function
- * receiving `test`, `assert`, `game` (= `window.dshGame`), `step` and
- * `press`; `test(name, fn)` registers a case and every case runs in order.
+ * receiving `test`, `assert`, `game` (= `window.dshGame`), `step`, `press`
+ * and `drag` (calls the game's optional `look(dx, dy)`); `test(name, fn)`
+ * registers a case and every case runs in order.
  * @module @khorsheed/dsh-game
  */
 import { existsSync } from 'node:fs'
@@ -88,6 +89,8 @@ export function findChrome(configured?: string): string | undefined {
 
 /** How long the game gets to set `dshGame.ready`. */
 const READY_TIMEOUT_MS = 4000
+/** …and how long while it says it is still loading assets (`dshGame.loading`). */
+const LOADING_TIMEOUT_MS = 20_000
 /** How long one test file may run. */
 const TEST_TIMEOUT_MS = 8000
 /** The viewport checks render at. */
@@ -95,9 +98,14 @@ const VIEWPORT = { width: 640, height: 400 }
 
 /** The in-page wait for `window.dshGame.ready`; resolves true/false. */
 const WAIT_READY = `(async () => {
-  const until = Date.now() + ${READY_TIMEOUT_MS};
-  while (Date.now() < until) { const g = window.dshGame; if (g && g.ready) return true; await new Promise(r => setTimeout(r, 40)); }
-  return false;
+  const start = Date.now();
+  for (;;) {
+    const g = window.dshGame;
+    if (g && g.ready) return true;
+    const limit = g && g.loading ? ${LOADING_TIMEOUT_MS} : ${READY_TIMEOUT_MS};
+    if (Date.now() - start >= limit) return false;
+    await new Promise(r => setTimeout(r, 40));
+  }
 })()`
 
 /**
@@ -132,8 +140,9 @@ function testExpression(body: string): string {
   const game = window.dshGame;
   const step = (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) game.step(dt); };
   const press = (key, frames = 1) => { game.input(key, true); step(frames); game.input(key, false); };
+  const drag = (dx, dy, frames = 1) => { if (typeof game.look !== 'function') fail('window.dshGame.look 不是函数，没法模拟鼠标拖动'); game.look(dx, dy); step(frames); };
   try {
-    await (async (test, assert, game, step, press) => {\n${body}\n})(test, assert, game, step, press);
+    await (async (test, assert, game, step, press, drag) => {\n${body}\n})(test, assert, game, step, press, drag);
   } catch (e) { return { load: String(e && e.message || e), results: [] }; }
   const results = [];
   for (const c of cases) {
@@ -224,7 +233,7 @@ export class ChromeChecker implements BrowserChecker {
       const { page, ready } = await this.load(executablePath, files)
       try {
         if (!ready) {
-          failures.push({ where: 'smoke', message: `游戏没在 ${READY_TIMEOUT_MS / 1000} 秒内就绪：window.dshGame.ready 一直不是 true` })
+          failures.push({ where: 'smoke', message: `游戏没在 ${READY_TIMEOUT_MS / 1000} 秒内就绪（加载资源时设 dshGame.loading = true 可放宽到 ${LOADING_TIMEOUT_MS / 1000} 秒）：window.dshGame.ready 一直不是 true` })
         } else {
           const smoke = await within(5000, page.evaluate(smokeExpression(options.blankProbe)) as Promise<{ stepped: boolean; blank: boolean | null }>, '冒烟运行')
           if (!smoke.stepped) failures.push({ where: 'smoke', message: 'window.dshGame.step 不是函数，测试没法推进游戏时间' })

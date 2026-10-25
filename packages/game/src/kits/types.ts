@@ -37,8 +37,10 @@ export interface RuntimeKit {
    * Files added to every bundle of a project on this kit: the runtime
    * script ({@link KIT_RUNTIME_FILE}), vendored libraries, and the bare
    * import map ({@link KIT_IMPORTS_FILE}). Kept out of version snapshots.
+   * Given the project's own files, a kit may add what they import from it
+   * (the 3D kit's `three/addons/…`).
    */
-  runtimeFiles(): Readonly<Record<string, BundleFile>>
+  runtimeFiles(project?: Readonly<Record<string, BundleFile>>): Readonly<Record<string, BundleFile>>
   /** Normalize an element's `look`; null when unusable. */
   normalizeLook(raw: unknown): AnyLook | null
   /** What a usable look needs, worded for the model when one fails. */

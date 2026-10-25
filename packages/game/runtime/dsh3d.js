@@ -74,7 +74,7 @@ export function resolveStyle(input) {
   const spec = typeof input === 'string' ? { preset: input } : (input ?? {})
   const base = STYLES[spec.preset] ?? STYLES.ink
   const out = { ...base }
-  for (const key of ['bg', 'ground', 'ground2', 'water', 'outline', 'outlineWidth', 'shades']) if (spec[key] !== undefined) out[key] = spec[key]
+  for (const key of ['bg', 'ground', 'ground2', 'water', 'outline', 'outlineWidth', 'shades', 'shadows']) if (spec[key] !== undefined) out[key] = spec[key]
   if (Array.isArray(spec.fog) && spec.fog.length === 2) out.fog = spec.fog
   if (typeof spec.light === 'number') out.sun = spec.light
   return out
@@ -99,15 +99,21 @@ function manifestStyle() {
 /** The active style. */
 export function currentStyle() { return style }
 
-/** Toon-shaded material for a color (cached). */
+/**
+ * Toon-shaded material for a color (cached: every caller with the same color
+ * and extras shares one). `{ own: true }` gives a private copy instead — for
+ * one object to glow, flash or fade without touching the rest.
+ */
 export function toon(color, extra) {
+  if (extra?.own) { const { own, ...rest } = extra; return new THREE.MeshToonMaterial({ color, gradientMap: gradientFor(style.shades), ...rest }) }
   const key = `t${color}${extra ? JSON.stringify(extra) : ''}`
   if (!materials.has(key)) materials.set(key, new THREE.MeshToonMaterial({ color, gradientMap: gradientFor(style.shades), ...extra }))
   return materials.get(key)
 }
 
-/** Flat-shaded material for terrain, rocks and trees (cached). */
+/** Flat-shaded material for terrain, rocks and trees (cached; `{ own: true }` gives a private copy). */
 export function flat(color, extra) {
+  if (extra?.own) { const { own, ...rest } = extra; return new THREE.MeshLambertMaterial({ color, flatShading: true, ...rest }) }
   const key = `f${color}${extra ? JSON.stringify(extra) : ''}`
   if (!materials.has(key)) materials.set(key, new THREE.MeshLambertMaterial({ color, flatShading: true, ...extra }))
   return materials.get(key)
@@ -602,9 +608,30 @@ export function createWorld(options = {}) {
   scene.fog = new THREE.Fog(s.bg, s.fog[0], s.fog[1])
   const hemi = new THREE.HemisphereLight(s.hemi[0], s.hemi[1], s.hemi[2])
   const sun = new THREE.DirectionalLight(0xffffff, s.sun)
-  sun.position.set(-6, 14, 8)
+  const SUN_OFFSET = new THREE.Vector3(-6, 14, 8)
+  sun.position.copy(SUN_OFFSET)
   scene.add(hemi, sun)
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 300)
+  // Shadows are opt-in (style3d.shadows): the sun casts, and its shadow box follows the camera's target.
+  const shadows = s.shadows === true
+  if (shadows) {
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    sun.castShadow = true
+    sun.shadow.mapSize.set(2048, 2048)
+    const box = sun.shadow.camera
+    box.left = -24; box.right = 24; box.top = 24; box.bottom = -24; box.near = 0.5; box.far = 80
+    sun.shadow.bias = -0.0005
+    scene.add(sun.target)
+  }
+  /** Marks a newly added object's meshes to cast and receive shadows (outline hulls stay out). */
+  function shade(object) {
+    if (!shadows) return
+    object.traverse(o => { if (o.isMesh && !o.userData.outline) { o.castShadow = true; o.receiveShadow = true } })
+  }
+  const iso = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 300)
+  /** The camera in use: the built-in 45° one, or the game's own (`setCamera`). */
+  let camera = iso
+  let renderHook = null
   const target = new THREE.Vector3()
   let zoom = 1, view = num(options.view, 6.2), followed = null, focusUntil = 0
   const entities = []
@@ -628,9 +655,14 @@ export function createWorld(options = {}) {
 
   /** Camera pose and world matrices, as a render would leave them (pick needs them without a render). */
   function sync() {
-    camera.position.copy(target).add(CAMERA_OFFSET)
-    camera.lookAt(target)
+    // The built-in camera tracks the target; a game's own camera is the game's to place.
+    if (camera === iso) {
+      iso.position.copy(target).add(CAMERA_OFFSET)
+      iso.lookAt(target)
+    }
+    if (shadows) { sun.position.copy(target).add(SUN_OFFSET); sun.target.position.copy(target) }
     scene.updateMatrixWorld()
+    camera.updateMatrixWorld()
   }
 
   /** Leave the current scene: everything it registered goes, and its GPU resources with it. */
@@ -659,14 +691,37 @@ export function createWorld(options = {}) {
     const w = canvas.clientWidth || canvas.width || 640, h = canvas.clientHeight || canvas.height || 400
     renderer.setSize(w, h, false)
     const aspect = w / h, half = Math.max(view, view * 0.84 / aspect) / zoom
-    camera.left = -half * aspect; camera.right = half * aspect; camera.top = half; camera.bottom = -half
-    camera.updateProjectionMatrix()
+    iso.left = -half * aspect; iso.right = half * aspect; iso.top = half; iso.bottom = -half
+    iso.updateProjectionMatrix()
+    if (camera.isPerspectiveCamera) { camera.aspect = aspect; camera.updateProjectionMatrix() }
   }
   resize()
   addEventListener('resize', resize)
 
   const world = {
-    THREE, scene, camera, renderer, canvas,
+    THREE, scene, renderer, canvas,
+    /** The camera in use (the built-in 45° orthographic one until `setCamera`). */
+    get camera() { return camera },
+    /** The two lights, for a game to tune: `hemi` (sky/ground fill) and `sun` (directional; casts when style3d.shadows). */
+    lights: { hemi, sun },
+    /**
+     * Use the game's own camera (a perspective follow camera, say) for
+     * rendering and for the workbench's pick, highlight and focus; the game
+     * places it every frame. `setCamera(null)` goes back to the built-in one.
+     */
+    setCamera(next) {
+      camera = next ?? iso
+      resize()
+      return camera
+    },
+    /**
+     * Take over drawing (post-processing, a second pass): `fn({ renderer, scene, camera })`
+     * runs instead of the plain render. Returns a function that hands it back.
+     */
+    onRender(fn) {
+      renderHook = fn
+      return () => { if (renderHook === fn) renderHook = null }
+    },
     /** The active style: the game's, with the current scene's overrides. */
     get style() { return s },
     /** The current scene's name, or null. */
@@ -694,6 +749,7 @@ export function createWorld(options = {}) {
       geo.computeVertexNormals()
       ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }))
       ground.userData.ground = true
+      ground.receiveShadow = shadows
       scene.add(ground)
       if (current !== null) current.ground = ground
       return ground
@@ -707,6 +763,7 @@ export function createWorld(options = {}) {
       object.userData.entity = { id, inst, name, state }
       // Inside a scene, an entity belongs to it and leaves with it.
       ;(current?.group ?? scene).add(object)
+      shade(object)
       entities.push(object)
       current?.entities.push(object)
       return object
@@ -818,7 +875,8 @@ export function createWorld(options = {}) {
     },
     render() {
       sync()
-      renderer.render(scene, camera)
+      if (renderHook !== null) renderHook({ renderer, scene, camera })
+      else renderer.render(scene, camera)
     },
     /** Play: step on every animation frame while not paused. */
     start() {
@@ -903,6 +961,7 @@ export function createWorld(options = {}) {
       parent.remove(old)
       if (old.userData.scatter) release(old)
       parent.add(fresh)
+      shade(fresh)
       if (current?.entities.includes(old)) current.entities[current.entities.indexOf(old)] = fresh
       entities[entities.indexOf(old)] = fresh
       if (followed === old) followed = fresh

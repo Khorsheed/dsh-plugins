@@ -92,6 +92,8 @@ export interface Style3D {
   readonly fog?: readonly [number, number]
   /** Sun intensity. */
   readonly light?: number
+  /** The sun casts shadows (game-wide; off unless set). */
+  readonly shadows?: boolean
   /**
    * Per-scene overrides, keyed by the game's own scene names (dsh3d
    * `enterScene(name)`): background, ground colors, water, fog and light.

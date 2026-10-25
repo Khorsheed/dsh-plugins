@@ -162,7 +162,8 @@ export function PlayFrame({ projectId, version, files, run, params, picking, onP
       ref={frame}
       className={css.frame}
       title={label}
-      sandbox="allow-scripts"
+      // Pointer lock: a game may grab the mouse for camera turns (a click asks, Esc releases).
+      sandbox="allow-scripts allow-pointer-lock"
       srcDoc={shell}
       onLoad={boot}
     />
