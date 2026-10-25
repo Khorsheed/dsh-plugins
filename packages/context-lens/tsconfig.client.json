@@ -19,6 +19,7 @@
     "src/client/definition.tsx",
     "src/client/HeaderUtility.tsx",
     "src/client/icons.tsx",
+    "src/client/icons-local.tsx",
     "src/client/index.ts",
     "src/client/InspectorPanel.tsx",
     "src/client/locales.ts",

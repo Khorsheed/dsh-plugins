@@ -8,7 +8,7 @@
 import type { ReactNode } from 'react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InspectorUtilityProps } from './contract.ts'
-import { IconRequestInspectorOutlineMedium } from './icons.tsx'
+import { IconRequestInspectorOutlineMedium } from './icons-local.tsx'
 import css from './EntryIcon.module.css'
 
 /** The session-header utility icon. */
