@@ -195,7 +195,7 @@ export const NODES_SCHEMA = {
       also: { oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }], description: 'Side references: "https://…" (a web text, a video), "r_…#2" (another shelf entry), "topic: …" (your own teaching beyond the book).' },
       goals: { oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }], description: 'What the learner can do after it (never acceptance lines).' },
       dependsOn: { type: 'array', items: { type: 'string' }, description: 'Earlier station ids this one waits for.' },
-      points: { type: 'array', description: 'gate=quiz only: its 3-6 knowledge points { id, title } — every question names one; ids are stable slugs, never reworded.', items: { type: 'object', additionalProperties: true, properties: {
+      points: { type: 'array', description: 'gate=quiz only: its 3-5 knowledge points { id, title } (one station is one lesson — more than 5 means split it) — every question names one; ids are stable slugs, never reworded.', items: { type: 'object', additionalProperties: true, properties: {
         id: { type: 'string' },
         title: { type: 'string', description: 'As the learner reads it (「极限的定义」).' },
       } } },

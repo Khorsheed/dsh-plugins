@@ -408,6 +408,36 @@ describe('station notes (讲义)', () => {
     expect(replanned.roadmap?.nodes[0]?.notes?.revisions).toBe(2)
   })
 
+  it('one station is one lesson: 3–5 points, one chapter of an authored textbook', async () => {
+    const { projectId } = await seed()
+    const rl = await authored(projectId)
+    const points = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `p${i}`, title: `考点${i}` }))
+    const big = await service.draftRoadmap({ projectId, resourceId: rl, nodes: [{ id: 's1', title: '全部', gate: 'quiz', covers: [{ ref: rl, locator: '1' }], points: points(6) }] })
+    expect(!big.ok && big.message).toMatch(/has 6 points — one station is one lesson/)
+    const small = await service.draftRoadmap({ projectId, resourceId: rl, nodes: [{ id: 's1', title: '一点', gate: 'quiz', covers: [{ ref: rl, locator: '1' }], points: points(1) }] })
+    expect(!small.ok && small.message).toMatch(/has 1 point — a lesson carries 3–5/)
+    const spans = await service.draftRoadmap({ projectId, resourceId: rl, nodes: [{ id: 's1', title: '两章', gate: 'quiz', covers: [{ ref: rl, locator: '1-2' }], points: points(4) }] })
+    expect(!spans.ok && spans.message).toMatch(/a textbook you authored — each of its chapters is one lesson/)
+  })
+
+  it('an authored textbook\'s 讲义 give every point its own section; no change logs anywhere', async () => {
+    const { projectId } = await seed()
+    const rl = await authored(projectId)
+    const pts = [{ id: 'r', title: '奖励信号' }, { id: 'v', title: '价值函数' }, { id: 'q', title: '策略' }]
+    const drafted = await service.draftRoadmap({ projectId, resourceId: rl, nodes: [{ id: 's1', title: '奖励', gate: 'quiz', covers: [{ ref: rl, locator: '1' }], points: pts }] })
+    if (!drafted.ok) throw new Error(drafted.message)
+    await service.adoptRoadmap({ projectId, resourceId: rl })
+    const body = '这里把它讲清楚：是什么、为什么重要、一个具体例子、常见误区，以及一道自测题。'.repeat(4)
+    const glossary = await service.putNotes({ projectId, resourceId: rl, nodeId: 's1', text: `## 奖励信号\n${body}\n\n- 价值函数：一句话\n- 策略：一句话` })
+    expect(!glossary.ok && glossary.message).toMatch(/missing: 价值函数、策略/)
+    const thin = await service.putNotes({ projectId, resourceId: rl, nodeId: 's1', text: `## 奖励信号\n${body}\n## 价值函数\n一句话。\n## 策略\n${body}` })
+    expect(!thin.ok && thin.message).toMatch(/too thin to learn from .*: 价值函数/)
+    const logged = await service.putNotes({ projectId, resourceId: rl, nodeId: 's1', text: `【第 1 次更新】\n## 奖励信号\n${body}\n## 价值函数\n${body}\n## 策略\n${body}` })
+    expect(!logged.ok && logged.message).toMatch(/drop change logs/)
+    const lesson = await service.putNotes({ projectId, resourceId: rl, nodeId: 's1', text: `这一课学奖励、价值和策略。\n## 1. 奖励信号\n${body}\n### 常见误区\n别把奖励当目标。\n## 2. 价值函数\n${body}\n## 3. 策略\n${body}` })
+    expect(lesson.ok).toBe(true)
+  })
+
   it('writes notes on an authored textbook\'s station (they are its text), and teaches the bad calls', async () => {
     const { projectId, bookId } = await seed()
     const rl = await authored(projectId)
@@ -790,6 +820,7 @@ describe('quiz points (考点)', () => {
       nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }], points: [
         { id: 'gating', title: '门控机制' },
         { id: 'selectivity', title: '选择性通透' },
+        { id: 'structure', title: '通道结构' },
       ] }],
     })
     if (!draft.ok) throw new Error(draft.message)
@@ -801,7 +832,7 @@ describe('quiz points (考点)', () => {
     const { projectId, bookId } = await seed()
     await adoptPointed(projectId, bookId)
     const { roadmap } = await service.getRoadmap({ projectId, resourceId: bookId })
-    expect(roadmap?.nodes[0]?.points?.map(point => point.id)).toEqual(['gating', 'selectivity'])
+    expect(roadmap?.nodes[0]?.points?.map(point => point.id)).toEqual(['gating', 'selectivity', 'structure'])
   })
 
   it('refuses points on a read node, and duplicate or unsafe ids', async () => {
@@ -832,7 +863,7 @@ describe('quiz points (考点)', () => {
     const stored = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [question({ point: 'gating' }), question({ id: 'q2', point: 'pharmacology' })], addPoints: [{ id: 'pharmacology', title: '药理学' }] } })
     expect(stored.ok).toBe(true)
     const { roadmap } = await service.getRoadmap({ projectId, resourceId: bookId })
-    expect(roadmap?.nodes[0]?.points?.map(point => point.id)).toEqual(['gating', 'selectivity', 'pharmacology'])
+    expect(roadmap?.nodes[0]?.points?.map(point => point.id)).toEqual(['gating', 'selectivity', 'structure', 'pharmacology'])
     const full = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [question({ point: 'gating' }), question({ id: 'q2', point: 'selectivity' }), question({ id: 'q3', point: 'pharmacology' })] } })
     expect(full.ok && full.warnings.every(warning => !warning.includes('药理学'))).toBe(true)
     const readd = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [question({ point: 'gating' })], addPoints: [{ id: 'gating', title: '重复' }] } })
@@ -952,7 +983,7 @@ describe('knowledge-point mastery (proposal 2026-10-19-library-point-mastery)', 
   /** A knowledge-book station with two points, adopted, and a paper on it. */
   async function station(): Promise<{ projectId: string; bookId: string; quizId: string }> {
     const { projectId, bookId } = await seed()
-    await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }], points: [{ id: 'gate', title: '门控' }, { id: 'sel', title: '选择性' }] }] })
+    await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }], points: [{ id: 'gate', title: '门控' }, { id: 'sel', title: '选择性' }, { id: 'pad1', title: '补充一' }, { id: 'pad2', title: '补充二' }] }] })
     await service.adoptRoadmap({ projectId, resourceId: bookId })
     const quiz = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [
       question({ id: 'q1', kind: 'fill', answer: '失活', point: 'gate' }),
@@ -1012,8 +1043,8 @@ describe('today: retakes across a project, feeds without stale rows', () => {
   async function twoStations(): Promise<{ projectId: string; bookId: string; q1: string; q2: string }> {
     const { projectId, bookId } = await seed()
     await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [
-      { id: 'n1', title: '离子通道', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }], points: [{ id: 'gate', title: '门控' }] },
-      { id: 'n2', title: '动作电位', gate: 'quiz', covers: [{ ref: bookId, locator: '2' }], points: [{ id: 'phase', title: '时相' }] },
+      { id: 'n1', title: '离子通道', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }], points: [{ id: 'gate', title: '门控' }, { id: 'pad1', title: '补充一' }, { id: 'pad2', title: '补充二' }] },
+      { id: 'n2', title: '动作电位', gate: 'quiz', covers: [{ ref: bookId, locator: '2' }], points: [{ id: 'phase', title: '时相' }, { id: 'pad1', title: '补充一' }, { id: 'pad2', title: '补充二' }] },
     ] })
     await service.adoptRoadmap({ projectId, resourceId: bookId })
     const ids: string[] = []

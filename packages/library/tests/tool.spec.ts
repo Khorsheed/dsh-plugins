@@ -549,12 +549,12 @@ describe('live-run failure modes (3080, 2026-10-19)', () => {
     expect(chaptersLocator('27-30 + 附录A')).toEqual({ locator: '27-30', rest: '附录A' })
     const { project, book } = await seed()
     const drafted = (await call('library_roadmap', { resource: book, nodes: [
-      { id: 'n1', title: '离子通道', gate: 'quiz', chapters: '第1章', points: [{ id: 'p1', title: '门控' }] },
+      { id: 'n1', title: '离子通道', gate: 'quiz', chapters: '第1章', points: [{ id: 'p1', title: '门控' }, { id: 'pad1', title: '补充一' }, { id: 'pad2', title: '补充二' }] },
       { id: 'n2', title: '动手', gate: 'acceptance', chapters: '2 + 附录A', acceptance: ['做完实验'], points: [{ id: 'p2', title: 'x' }] },
     ] })) as { adjusted?: string[] }
     expect(drafted.adjusted?.join('\n')).toMatch(/points dropped on 动手[\s\S]*附录A/)
     const draft = (await service.getRoadmap({ projectId: project, resourceId: book })).draft
-    expect(draft?.nodes[0]?.points).toEqual([{ id: 'p1', title: '门控' }])
+    expect(draft?.nodes[0]?.points).toEqual([{ id: 'p1', title: '门控' }, { id: 'pad1', title: '补充一' }, { id: 'pad2', title: '补充二' }])
     expect(draft?.nodes[1]?.points).toBeUndefined()
     expect(draft?.nodes[1]?.covers).toEqual([{ ref: book, locator: '2' }, { ref: 'topic: 附录A' }])
   })
@@ -584,7 +584,7 @@ describe('live-run failure modes (3080, 2026-10-19)', () => {
 describe('knowledge points through the tools', () => {
   it('library_cards with a point lands as a point note in a subject project; the context lists the station\'s points', async () => {
     const { project, book } = await seed()
-    await call('library_roadmap', { resource: book, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', chapters: '1', points: [{ id: 'gate', title: '门控' }] }] })
+    await call('library_roadmap', { resource: book, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', chapters: '1', points: [{ id: 'gate', title: '门控' }, { id: 'pad1', title: '补充一' }, { id: 'pad2', title: '补充二' }] }] })
     await service.adoptRoadmap({ projectId: project, resourceId: book })
     const noted = (await call('library_cards', { cards: [{ point: 'gate', term: '失活 vs 关闭', gloss: '把两态混了' }] })) as { pointNotes: { point: string; state: string }[] }
     expect(noted.pointNotes).toEqual([{ point: '门控', state: 'weak', changed: ['门控: untested → weak'] }])
@@ -598,7 +598,7 @@ describe('knowledge points through the tools', () => {
 describe('the learner\'s record stays the learner\'s (3080, 2026-10-20)', () => {
   it('a subject project refuses a free-floating chat card and teaches the station\'s points and the coach\'s own slips', async () => {
     const { project, book } = await seed()
-    await call('library_roadmap', { resource: book, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', chapters: '1', points: [{ id: 'gate', title: '门控' }] }] })
+    await call('library_roadmap', { resource: book, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', chapters: '1', points: [{ id: 'gate', title: '门控' }, { id: 'pad1', title: '补充一' }, { id: 'pad2', title: '补充二' }] }] })
     await service.adoptRoadmap({ projectId: project, resourceId: book })
     await expect(call('library_cards', { cards: [{ kind: 'concept', term: '单位圆 tan θ（避免答案/解析不一致）', gloss: '出题时答案字段写错', source: { type: 'chat' } }] }))
       .rejects.toThrow(/lands on the station's knowledge point[\s\S]*gate \(门控\)[\s\S]*never your own slip/)

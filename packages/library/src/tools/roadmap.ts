@@ -29,6 +29,7 @@ export function libraryRoadmapTool(kit: ToolKit): ToolDefinition {
     description:
       'Write one textbook\'s DRAFT path; it replaces that textbook\'s previous draft. The learner adopts it on the textbook\'s page (采用) — you only write drafts, and never ask before writing one. '
       + 'A station covers the textbook\'s rows (chapters: "3-4"); also adds side references (a link, another entry\'s rows, topic: your own teaching) without moving the path anywhere. '
+      + 'One station is one lesson the learner finishes in one sitting: 3–5 knowledge points, ordered simple → hard across the path. A real book\'s long chapter splits into several stations on the same rows; a textbook you authored teaches one chapter per station (its chapters ARE lessons). '
       + 'A path covers what the goal needs — skipping chapters is fine. Returns where it landed and which textbooks still wait for adoption.',
     parameters: {
       resource: { type: 'string', required: true, description: 'The textbook this path belongs to (library_read · resources lists them).' },
