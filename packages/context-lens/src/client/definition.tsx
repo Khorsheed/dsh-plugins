@@ -26,6 +26,15 @@ export const REQUEST_INSPECTOR_TAB_ID = '@khorsheed/dsh-context-lens'
 export interface RequestInspectorTabParams {
   /** 1-based per-session turn number; absent = the latest turn. */
   readonly turnSeq?: number
+  /**
+   * Inspect ANOTHER session than the one the sidebar belongs to (a room
+   * member's child session): the panel reads that session and offers a way
+   * back. `messageId` picks the turn that message closed; `label` names the
+   * session in the strip (e.g. the member's name).
+   */
+  readonly sessionId?: string
+  readonly messageId?: string
+  readonly label?: string
 }
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {

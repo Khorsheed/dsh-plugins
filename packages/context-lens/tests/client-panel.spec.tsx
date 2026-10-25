@@ -680,6 +680,18 @@ describe('InspectorPanel · 新增 provenance label', () => {
   })
 })
 
+describe('Context Lens inspecting another session', () => {
+  it('reads the named session, selects the turn its message closed, and offers the way back', async () => {
+    const { mocks } = bench({ params: { sessionId: 'child-gm', messageId: 'm-1', label: '游戏大师' }, revision: 1 })
+    await waitFor(() => expect(mocks.listTurns).toHaveBeenCalledWith('child-gm'))
+    expect(screen.getByRole('status').textContent).toContain('正在看：游戏大师 的会话')
+    await waitFor(() => expect(mocks.getTurn).toHaveBeenCalledWith('child-gm', 1))
+    fireEvent.click(screen.getByRole('button', { name: '回到本会话' }))
+    await waitFor(() => expect(mocks.listTurns).toHaveBeenCalledWith('s1'))
+    expect(screen.queryByText(/正在看：/)).toBeNull()
+  })
+})
+
 describe('Context Lens session trend', () => {
   it('keeps the session map on the main conversation while a participant is selected', async () => {
     bench()

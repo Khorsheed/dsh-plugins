@@ -320,6 +320,11 @@ export interface RoomSpeechInjected {
   readonly roomStore: RoomStore
   /** Open a session (the speech's child-session jump). */
   readonly openSession: (sessionId: SessionId) => void
+  /**
+   * Open Context Lens at the member's round (its session + closing message);
+   * absent when the composition has no Context Lens.
+   */
+  readonly openDetail?: ((sessionId: SessionId, messageId: string, label: string) => void) | undefined
 }
 
 /** Full props of the 'room-speech' chat-node renderer. */

@@ -72,6 +72,17 @@ export const IconLinkOutlineMedium = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** The request-detail glyph Context Lens puts in the host's message action row. */
+export const IconRequestDetailOutlineMedium = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.2}>
+    <rect x="2.5" y="1.5" width="11" height="13" rx="2" stroke="currentColor" />
+    <path d="M5 5.2H11" stroke="currentColor" />
+    <path d="M5 8H11" stroke="currentColor" />
+    <path d="M5 10.8H8.6" stroke="currentColor" />
+    <circle cx="11.2" cy="11.2" r="1.7" fill="currentColor" stroke="none" />
+  </svg>
+)
+
 export const IconQueueOutlineMedium = ({ size = 14, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" strokeWidth={1.3}>
     <path d="M5 6.75H11" stroke="currentColor" />

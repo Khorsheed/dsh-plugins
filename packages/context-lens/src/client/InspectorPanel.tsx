@@ -7,7 +7,7 @@ import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.t
 import type {
   AgentScopeOverview, BackfillInfo, CapturedRequest, ListTurnsResult, TurnListItem, TurnOverview, TurnTiming,
 } from '../types.ts'
-import { WINDOW_TURNS, fmtSpan, gapShown, latestTurnSeq, turnGaps, turnNumber, type CompositionFilter, type TurnGap } from './aggregate.ts'
+import { WINDOW_TURNS, fmtSpan, gapShown, latestTurnSeq, resolveTurnSeq, turnGaps, turnNumber, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
 import { hasTurnAnchor, scrollConversationToBottom, scrollConversationToTurn } from './scroll-sync.ts'
@@ -47,10 +47,16 @@ const listMetaOf = ({ range, unloaded, total }: ListTurnsResult): Pick<ListTurns
   ({ ...range === undefined ? {} : { range }, ...unloaded === undefined ? {} : { unloaded }, ...total === undefined ? {} : { total } })
 
 export function InspectorPanel({
-  sessionId, useTabInfo, t,
+  sessionId: ownSessionId, useTabInfo, t,
   listTurns, loadTurns, loadThrough, getTurn, getRequest, getTurnTiming, getSessionTrend,
 }: InspectorTabProps): ReactNode {
   const { tab } = useTabInfo()
+  // A navigation may point the panel at another session (a room member's
+  // child session); the human returns with the strip's button.
+  const [viewed, setViewed] = useState<{ readonly sessionId: string; readonly label?: string } | null>(null)
+  const sessionId = (viewed?.sessionId ?? ownSessionId) as typeof ownSessionId
+  /** The message whose turn the next turn list should select (from a navigation). */
+  const pendingMessage = useRef<string | undefined>(undefined)
   const [trend, setTrend] = useState<SessionTrend | null>(null)
   /** The latest conversation jump; an older one still waiting for history gives up. */
   const jumpToken = useRef(0)
@@ -96,11 +102,22 @@ export function InspectorPanel({
   // one tab): the turn action's { turnSeq } selects that turn and scroll-syncs
   // the conversation to it.
   const revision = tab.navigation.revision
-  const navTurnSeq = (tab.navigation.params as RequestInspectorTabParams | undefined)?.turnSeq
+  const navParams = tab.navigation.params as RequestInspectorTabParams | undefined
+  const navTurnSeq = navParams?.turnSeq
   const lastNavRevision = useRef(0)
   useEffect(() => {
     if (revision === 0 || revision === lastNavRevision.current) return
     lastNavRevision.current = revision
+    const target = navParams?.sessionId
+    setViewed(target === undefined || target === ownSessionId ? null : { sessionId: target, ...navParams?.label === undefined ? {} : { label: navParams.label } })
+    pendingMessage.current = navParams?.messageId
+    if (navParams?.messageId !== undefined) {
+      setTurnSeq(null)
+      setScopeId('main')
+      setSelectedSeq(null)
+      setFilterCat(null)
+      setMainTab('token')
+    }
     if (navTurnSeq === undefined) return
     setTurnSeq(navTurnSeq)
     setScopeId('main')
@@ -109,8 +126,8 @@ export function InspectorPanel({
     setMainTab('token')
     // Real turns key on the host's turn number, so a positive seq scrolls even
     // before the turn list resolves; pseudo-turns (negative) never scroll.
-    if (navTurnSeq > 0) scrollConversationToTurn(navTurnSeq)
-  }, [revision, navTurnSeq])
+    if (navTurnSeq > 0 && navParams?.sessionId === undefined) scrollConversationToTurn(navTurnSeq)
+  }, [revision, navTurnSeq, navParams, ownSessionId])
 
   // The session's turn list, on mount (pull-based: refetch = reopen or retry).
   useEffect(() => {
@@ -127,9 +144,13 @@ export function InspectorPanel({
       setBackfill(result.value.backfill)
       setParent(result.value.parent ?? null)
       setListMeta(listMetaOf(result.value))
-      setTurnSeq(previous => previous !== null && result.value.turns.some(turn => turn.turnSeq === previous)
-        ? previous
-        : latestTurnSeq(result.value.turns) ?? null)
+      const asked = pendingMessage.current === undefined ? undefined : resolveTurnSeq(result.value.turns, pendingMessage.current)
+      pendingMessage.current = undefined
+      setTurnSeq(previous => asked !== undefined
+        ? asked
+        : previous !== null && result.value.turns.some(turn => turn.turnSeq === previous)
+          ? previous
+          : latestTurnSeq(result.value.turns) ?? null)
     }).catch((cause: unknown) => {
       // A call that rejects (e.g. the gateway's arity gate, a disconnected
       // carrier) is the same load failure as a refusal: the error state, not
@@ -137,7 +158,7 @@ export function InspectorPanel({
       if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
     })
     return () => { cancelled = true }
-  }, [sessionId, listTurns, tab.signal, reloadKey])
+  }, [sessionId, listTurns, tab.signal, reloadKey, revision])
 
   // The selected turn's scope/request overview.
   useEffect(() => {
@@ -487,6 +508,12 @@ export function InspectorPanel({
             />
           </div>
         </div>
+        {viewed !== null && (
+          <div className={css.viewing} role="status">
+            <span>{t('lens.viewing', { label: viewed.label ?? viewed.sessionId })}</span>
+            <button type="button" className={css.viewingBack} onClick={() => { setViewed(null); setTurnSeq(null) }}>{t('lens.viewingBack')}</button>
+          </div>
+        )}
         {parent && <ParentLine parent={parent} t={t} />}
         {/* The trend is the session map: always the main conversation, it picks the turn. */}
         {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={effectiveScope?.kind === 'main' ? selectedRequestSeq : null} scopeId="main" scopeLabel={t('scope.mainName')} gaps={loadTurns ? gaps : []} onLoadGap={onLoadGap} t={t} onSelect={(next, seq, targetScope) => {

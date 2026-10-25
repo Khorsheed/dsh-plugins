@@ -213,6 +213,8 @@ export interface RoomSpeechEvent {
   readonly durationMs?: number
   /** The run this speech closed (its execution metadata — tokens, model — is keyed by it). */
   readonly runId?: string
+  /** The member's closing assistant message in its own session (`childSessionId`): what per-message tools address. */
+  readonly messageId?: string
 }
 
 /** Observed execution metadata; separate from lifecycle edges to avoid restarting chat nodes. */

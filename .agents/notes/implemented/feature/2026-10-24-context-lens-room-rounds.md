@@ -24,6 +24,7 @@ In a room session the main conversation stops running turns once another member 
 
 ## Consequences
 
+- 2026-10-25: the tab can inspect another session. Navigation params `{ sessionId, messageId, label }` point the panel at that session (a room member's child session), select the turn the message closed (`resolveTurnSeq`), and show a 「正在看：… 的会话」 strip with 回到本会话; the conversation is not scroll-synced while another session is shown.
 - Turn numbers in the panel no longer equal the host's turn numbers in a room session; elsewhere they still match.
 - Without `childTurn`, two runs of one member that overlap in time share requests. The room plugin is adding `childTurn` on `done`.
 - Rounds are not windowed; a room with hundreds of dispatches lists them all.

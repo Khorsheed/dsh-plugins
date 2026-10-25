@@ -18,7 +18,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { MarkdownText, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconCheckOutlineMedium, IconCopyOutlineMedium, IconLinkOutlineMedium } from './icons.tsx'
+import { IconCheckOutlineMedium, IconCopyOutlineMedium, IconLinkOutlineMedium, IconRequestDetailOutlineMedium } from './icons.tsx'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { memberColor } from './member-color.ts'
 import { formatClock, formatDurationMs } from './format.ts'
@@ -69,7 +69,7 @@ function markdownLabels(t: RoomSpeechViewProps['t']): MarkdownLabels {
 }
 
 /** The member speech row. */
-export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: RoomSpeechViewProps): ReactNode {
+export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDetail, t }: RoomSpeechViewProps): ReactNode {
   const data = node.data
   const [copied, setCopied] = useState(false)
   // The human's own choice for this speech (remembered), else the default.
@@ -152,6 +152,18 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
               onClick={() => { openSession(child) }}
             >
               <IconLinkOutlineMedium />
+            </button>
+          </Tooltip>
+        )}
+        {child !== undefined && data.messageId !== undefined && openDetail !== undefined && (
+          <Tooltip label={t('speech.detail')} side="bottom">
+            <button
+              type="button"
+              className={css.action}
+              aria-label={t('speech.detail')}
+              onClick={() => { openDetail(child, data.messageId!, data.member) }}
+            >
+              <IconRequestDetailOutlineMedium />
             </button>
           </Tooltip>
         )}

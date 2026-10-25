@@ -73,6 +73,20 @@ export function runChildSessionId(roomId: SessionId, member: RoomMember | undefi
  * The child session round a run reached: the last turn/start the child wrote.
  * Live sessions only — a reconcile path whose child is not in memory omits it.
  */
+/**
+ * The id of the last assistant message a session's log holds after `afterSeq`:
+ * the message a member's round closed with, which per-message tools (Context
+ * Lens) address in the member's own session.
+ * @param session - the member's session.
+ * @param afterSeq - only messages after this seq count.
+ * @returns the message id, or undefined when the round produced none.
+ */
+export function lastAssistantMessageId(session: Session | undefined, afterSeq = -1): string | undefined {
+  const event = session?.snapshotEvents().findLast(entry => entry.type === 'assistant/message' && entry.seq > afterSeq)
+  const id = (event?.data as { message?: { id?: unknown } } | undefined)?.message?.id
+  return typeof id === 'string' ? id : undefined
+}
+
 export function runChildTurn(session: Session | undefined): number | undefined {
   const last = session?.snapshotEvents().filter(event => event.type === 'turn/start').at(-1)
   return (last?.data as { turn?: number } | undefined)?.turn
@@ -707,6 +721,7 @@ export class DispatchEngine {
       member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
       text: output, childSessionId: agent.session.id, durationMs: Date.now() - startedAt,
       ...runId === undefined ? {} : { runId },
+      ...lastAssistantMessageId(agent.session, before) === undefined ? {} : { messageId: lastAssistantMessageId(agent.session, before)! },
       ...reportedTo === undefined ? {} : { reportedTo },
     })
     await this.ctx.sessions.flush(room)
@@ -800,11 +815,14 @@ export class DispatchEngine {
     const interrupted = result.stopReason === 'completed' ? undefined
       : result.stopReason === 'aborted' ? 'cancelled' as const : 'failed' as const
     const reportedTo = dispatchSeq === undefined ? undefined : reportRecipient(room.snapshotEvents(), dispatchSeq)?.name
+    // The member's own closing message: per-message tools address it in its session.
+    const closingMessageId = lastAssistantMessageId(this.ctx.sessions.get(run.id))
     const speech = output !== '' || interrupted === undefined ? room.append('room/speech', {
       member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
       text: output,
       childSessionId: run.id,
       runId,
+      ...closingMessageId === undefined ? {} : { messageId: closingMessageId },
       durationMs: Date.now() - startedAt,
       ...interrupted === undefined ? {} : { interrupted },
       ...reportedTo === undefined ? {} : { reportedTo },
