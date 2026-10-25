@@ -24,6 +24,8 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { RoomHelp, RoomHelpMessageEvent } from './types.ts'
 
+export { replayHelps } from './helps.ts'
+
 /** The producer-owned source kind of a help message in the helper's session. */
 export const HELP_KIND = 'room-help'
 
@@ -76,29 +78,6 @@ export function readHelpSource(source: unknown): HelpSource | undefined {
     op: value.op === 'message' ? 'message' : 'request',
     text: typeof value.text === 'string' ? value.text : '',
   }
-}
-
-/**
- * Fold a room's help threads from its log.
- * @param events - the room's events.
- * @returns the threads, oldest first.
- */
-export function replayHelps(events: readonly SessionEvent[]): RoomHelp[] {
-  const helps = new Map<string, RoomHelp>()
-  for (const event of events) {
-    if (event.type === 'room/help') {
-      helps.set(event.data.id, { ...event.data, state: 'queued', since: event.time, messages: [], time: event.time })
-    } else if (event.type === 'room/help-message') {
-      const help = helps.get(event.data.help)
-      if (help !== undefined) helps.set(help.id, { ...help, messages: [...help.messages, { ...event.data, time: event.time }] })
-    } else if (event.type === 'room/help-state') {
-      const help = helps.get(event.data.help)
-      if (help === undefined) continue
-      const { error: _old, ...rest } = help
-      helps.set(help.id, { ...rest, state: event.data.state, since: help.state === event.data.state ? help.since : event.time, ...event.data.error === undefined ? {} : { error: event.data.error } })
-    }
-  }
-  return [...helps.values()]
 }
 
 /**

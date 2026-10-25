@@ -618,6 +618,27 @@ export interface RoomHelpEvent {
   readonly text: string
 }
 
+/** An outside session kept on this room's member list (「加入房间成员」): a shortcut for asking it. */
+export interface RoomLinkedSession {
+  readonly sessionId: string
+  readonly title: string
+  readonly time: number
+}
+
+/** link / unlink / dismiss-hint requests: the room and the outside session. */
+export interface RoomHelpLinkRequest {
+  readonly sessionId: SessionId
+  /** The outside session. */
+  readonly target: string
+  /** Its title (link only). */
+  readonly title?: string
+}
+
+/** link / unlink / dismiss-hint outcome. */
+export type RoomHelpLinkResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly error: RoomFailure }
+
 /** Where a help request in this room came from (the asking room's thread). */
 export interface RoomHelpOrigin {
   /** The thread id in the asking room. */
@@ -739,6 +760,12 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/help-state': RoomHelpStateEvent
     /** Another room asked this room for help. */
     'room/help-in': RoomHelpInEvent
+    /** An outside session joined this room's member list (a shortcut for asking it). */
+    'room/help-link': { readonly sessionId: string; readonly title: string }
+    /** It left the list (its own session is untouched). */
+    'room/help-unlink': { readonly sessionId: string }
+    /** The human dismissed the 加入房间成员 hint for a session. */
+    'room/help-nudge-dismissed': { readonly sessionId: string }
   }
 }
 
@@ -847,6 +874,12 @@ export interface RoomState {
   readonly settings?: RoomSettings
   /** Tasks, newest first (absent in rooms that never dispatched work). */
   readonly jobs?: readonly RoomJob[]
+  /** Cross-session help threads this room opened (absent when none). */
+  readonly helps?: readonly RoomHelp[]
+  /** Outside sessions kept on the member list (absent when none). */
+  readonly linked?: readonly RoomLinkedSession[]
+  /** Sessions whose 加入房间成员 hint was dismissed (absent when none). */
+  readonly helpNudgesDismissed?: readonly string[]
 }
 
 /**

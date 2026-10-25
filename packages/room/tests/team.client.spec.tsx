@@ -127,3 +127,31 @@ describe('the collaboration page', () => {
   })
 })
 
+
+describe('outside sessions on the team', () => {
+  const help = (id: string, state: string, extra: object = {}) => ({ id, from: 'm-claude', fromName: 'claude', target: { sessionId: 's-a', title: '开发剪辑插件' }, text: `求助 ${id}`, state, since: 0, messages: [], time: 0, ...extra })
+
+  it('hangs a helper under whoever asked it, dashed and out of the totals; a linked one stays solid', () => {
+    const state = { ...STATE, helps: [help('h1', 'replied'), help('h2', 'running')], linked: [{ sessionId: 's-b', title: '读书会', time: 0 }] } as unknown as RoomState
+    const team = teamOf(state)
+    const helper = team.nodes.find(node => node.id === 'ext:s-a')!
+    expect(helper).toMatchObject({ parent: 'm-claude', status: 'running', external: { linked: false, done: false } })
+    expect(helper.deliveries.map(row => [row.text, row.status])).toEqual([['求助 h2', 'running'], ['求助 h1', 'done']])
+    expect(team.nodes.find(node => node.id === 'ext:s-b')).toMatchObject({ parent: 'm-dsh', external: { linked: true } })
+    expect(team.totals.members).toBe(4)
+
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+    const linkSession = vi.fn()
+    const { container } = render(<TeamView state={state} openSession={vi.fn()} linkSession={linkSession} t={t} />)
+    expect(container.querySelector('[data-team-node="ext:s-a"]')!.getAttribute('data-external')).toBe('helper')
+    expect(container.querySelector('[data-team-node="ext:s-b"]')!.getAttribute('data-external')).toBe('linked')
+    fireEvent.click(container.querySelector('[data-team-node="ext:s-a"]')!)
+    fireEvent.click(screen.getByRole('button', { name: '加入房间成员' }))
+    expect(linkSession).toHaveBeenCalledWith('s-a', '开发剪辑插件')
+  })
+
+  it('greys a helper out once every ask ended', () => {
+    const team = teamOf({ ...STATE, helps: [help('h1', 'replied'), help('h2', 'failed')] } as unknown as RoomState)
+    expect(team.nodes.find(node => node.id === 'ext:s-a')!.external).toMatchObject({ done: true })
+  })
+})

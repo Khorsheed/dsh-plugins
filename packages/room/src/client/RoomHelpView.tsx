@@ -11,6 +11,7 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { RoomHelpRequestViewProps, RoomHelpViewProps } from './slots.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { NUDGE_AFTER } from '../helps.ts'
 import css from './RoomHelpView.module.css'
 
 const NO_STORE = (): (() => void) => () => {}
@@ -19,12 +20,21 @@ const NO_STORE = (): (() => void) => () => {}
 const REMINDER_MINUTES = 30
 
 /** The thread row in the asking room. */
-export function RoomHelpView({ node, sessionId, roomStore, openSession, t }: RoomHelpViewProps): ReactNode {
+export function RoomHelpView({ node, sessionId, roomStore, openSession, linkSession, dismissNudge, t }: RoomHelpViewProps): ReactNode {
   const help = node.data.help
   const [open, setOpen] = useState(false)
   // An unanswered request (queued, or the helper still on it) past the room's
   // reminder turns amber with how long it has waited; nothing is cancelled.
-  const minutes = useSyncExternalStore(roomStore?.subscribe ?? NO_STORE, () => roomStore?.getCached(sessionId)?.settings?.helpReminderMinutes) ?? REMINDER_MINUTES
+  const state = useSyncExternalStore(roomStore?.subscribe ?? NO_STORE, () => roomStore?.getCached(sessionId))
+  const minutes = state?.settings?.helpReminderMinutes ?? REMINDER_MINUTES
+  // The third ask of one plain session, once answered: a one-time hint to keep
+  // it on the member list (unless it is already there, or the hint was dismissed).
+  const target = help.target.sessionId
+  const asks = (state?.helps ?? []).filter(entry => entry.target.sessionId === target && entry.target.room !== true)
+  const nudge = help.state === 'replied' && help.target.room !== true && linkSession !== undefined
+    && asks.length >= NUDGE_AFTER && asks[NUDGE_AFTER - 1]?.id === help.id
+    && state?.linked?.some(entry => entry.sessionId === target) !== true
+    && state?.helpNudgesDismissed?.includes(target) !== true
   const waiting = help.state === 'queued' || help.state === 'running'
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -48,6 +58,13 @@ export function RoomHelpView({ node, sessionId, roomStore, openSession, t }: Roo
         </button>
         <button type="button" className={css.action} onClick={() => { openSession(help.target.sessionId as SessionId) }}>{t('help.open')}</button>
       </div>
+      {nudge && (
+        <div className={css.nudge}>
+          <span>{t('help.nudge', { count: asks.length })}</span>
+          <button type="button" className={css.action} onClick={() => { linkSession(target, help.target.title) }}>{t('help.nudgeLink')}</button>
+          {dismissNudge !== undefined && <button type="button" className={css.action} onClick={() => { dismissNudge(target) }}>{t('help.nudgeDismiss')}</button>}
+        </div>
+      )}
       {open && (
         <div className={css.body}>
           <div className={css.entry}>

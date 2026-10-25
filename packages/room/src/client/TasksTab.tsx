@@ -32,12 +32,16 @@ const NARROW = '(max-width: 720px)'
 export interface RoomTasksInjected extends Omit<TasksViewActions, 'compose'> {
   readonly roomStore: RoomStore
   readonly taskTags: RoomTaskTags
+  /** Keep an outside session on the member list (the team view's 加入房间成员). */
+  readonly linkSession?: ((target: string, title: string) => void) | undefined
+  /** Take it off the list. */
+  readonly unlinkSession?: ((target: string) => void) | undefined
 }
 
 type Props = PropsRuntime<'sidebar.right.pane.tab'> & InjectFace<RoomTasksInjected> & PropsLocale<'room'>
 
 /** The sidebar page body. */
-export function RoomTasksTab({ sessionId, roomStore, taskTags, useTabInfo, t, ...actions }: Props): ReactNode {
+export function RoomTasksTab({ sessionId, roomStore, taskTags, useTabInfo, linkSession, unlinkSession, t, ...actions }: Props): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
   const { tab } = useTabInfo()
@@ -65,7 +69,7 @@ export function RoomTasksTab({ sessionId, roomStore, taskTags, useTabInfo, t, ..
       <div className={css.body} role="tabpanel">
         {view === 'tasks'
           ? <TasksView state={state} focus={task === undefined ? undefined : { task, revision: tab.navigation.revision }} compose={compose} {...actions} t={t as never} />
-          : <TeamView state={state} focus={member === undefined ? undefined : { member, revision: tab.navigation.revision }} openSession={(id: SessionId) => { actions.openSession?.(id) }} t={t as never} />}
+          : <TeamView state={state} focus={member === undefined ? undefined : { member, revision: tab.navigation.revision }} openSession={(id: SessionId) => { actions.openSession?.(id) }} linkSession={linkSession} unlinkSession={unlinkSession} t={t as never} />}
       </div>
     </div>
   )

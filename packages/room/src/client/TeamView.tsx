@@ -36,8 +36,11 @@ function Avatar({ node }: { readonly node: TeamNode }): ReactNode {
   return <span className={css.avatar} style={{ '--member-color': memberColor(node.member.name) } as CSSProperties} aria-hidden>{node.member.name.slice(0, 1).toUpperCase()}</span>
 }
 
-/** Provider · model line. */
+/** Provider · model line (an outside session: what it is and how often it was asked). */
 function configLine(node: TeamNode, t: T): string {
+  if (node.external !== undefined) {
+    return [t(node.external.room ? 'team.external.room' : 'team.external.session'), ...node.external.helps.length === 0 ? [] : [t('team.external.asks', { count: node.external.helps.length })]].join(' · ')
+  }
   const provider = node.member.kind === 'main-agent' ? t('member.kind.main')
     : node.member.kind === 'native' ? t('member.kind.native', { preset: node.member.preset ?? t('member.kind.defaultPreset') })
       : node.member.provider ?? ''
@@ -101,26 +104,54 @@ function NodeCard({ team, node, selected, onSelect, t, compact }: {
   readonly onSelect: () => void; readonly t: T; readonly compact: boolean
 }): ReactNode {
   return (
-    <button type="button" className={css.node} data-selected={selected} data-team-node={node.id} onClick={onSelect} aria-expanded={compact ? selected : undefined}>
-      {!compact && <FlowPill team={team} node={node} t={t} floating />}
+    <button
+      type="button"
+      className={css.node}
+      data-selected={selected}
+      data-team-node={node.id}
+      data-external={node.external === undefined ? undefined : node.external.linked ? 'linked' : 'helper'}
+      data-done={node.external?.done === true && !node.external.linked ? '' : undefined}
+      onClick={onSelect}
+      aria-expanded={compact ? selected : undefined}
+    >
+      {!compact && node.external === undefined && <FlowPill team={team} node={node} t={t} floating />}
       <span className={css.nodeHead}>
         <Avatar node={node} />
         <span className={css.nodeName}>{node.member.name}</span>
         {node.coordinator && <span className={css.chip}>{t('coordinator.label')}</span>}
+        {node.external !== undefined && <span className={css.chip} data-external="">{t(node.external.linked ? 'team.external.linked' : 'team.external.helper')}</span>}
         {node.member.role !== undefined && <span className={css.role}>{node.member.role}</span>}
         <StatusDot node={node} t={t} />
       </span>
       <span className={css.line}>{configLine(node, t)}</span>
-      <span className={css.line}>
-        {compact && <FlowPill team={team} node={node} t={t} floating={false} />}
-        <span>{statsLine(node, t)}</span>
-      </span>
+      {node.external === undefined && (
+        <span className={css.line}>
+          {compact && <FlowPill team={team} node={node} t={t} floating={false} />}
+          <span>{statsLine(node, t)}</span>
+        </span>
+      )}
       {node.current !== undefined && <span className={css.current}>▶ {node.current}</span>}
     </button>
   )
 }
 
-function Tree({ team, at, selected, onSelect, openSession, t }: {
+/** What a link control needs. */
+interface LinkActions {
+  readonly linkSession?: ((target: string, title: string) => void) | undefined
+  readonly unlinkSession?: ((target: string) => void) | undefined
+}
+
+/** An outside session's list control: 加入房间成员 (a plain session asked before) or 移出成员列表. */
+function LinkControl({ node, linkSession, unlinkSession, t }: LinkActions & { readonly node: TeamNode; readonly t: T }): ReactNode {
+  const external = node.external
+  if (external === undefined || external.room) return null
+  if (external.linked) {
+    return unlinkSession === undefined ? null : <button type="button" className={css.open} onClick={() => { unlinkSession(external.sessionId) }}>{t('team.external.unlink')}</button>
+  }
+  return linkSession === undefined ? null : <button type="button" className={css.open} onClick={() => { linkSession(external.sessionId, node.member.name) }}>{t('team.external.link')}</button>
+}
+
+function Tree({ team, at, selected, onSelect, openSession, linkSession, unlinkSession, t }: LinkActions & {
   readonly team: Team; readonly at: string; readonly selected: string | undefined
   readonly onSelect: (id: string) => void; readonly openSession: (sessionId: SessionId) => void; readonly t: T
 }): ReactNode {
@@ -137,9 +168,10 @@ function Tree({ team, at, selected, onSelect, openSession, t }: {
               {node.member.childSessionId !== undefined && (
                 <button type="button" className={css.open} onClick={() => { openSession(node.member.childSessionId!) }}>{t('team.openSession')}</button>
               )}
+              <LinkControl node={node} linkSession={linkSession} unlinkSession={unlinkSession} t={t} />
             </div>
           )}
-          <Tree team={team} at={node.id} selected={selected} onSelect={onSelect} openSession={openSession} t={t} />
+          <Tree team={team} at={node.id} selected={selected} onSelect={onSelect} openSession={openSession} linkSession={linkSession} unlinkSession={unlinkSession} t={t} />
         </li>
       ))}
     </ul>
@@ -249,7 +281,7 @@ function Graph({ team, selected, onSelect, t }: {
 }
 
 /** The team view body. */
-export function TeamView({ state, focus, openSession, t }: {
+export function TeamView({ state, focus, openSession, linkSession, unlinkSession, t }: LinkActions & {
   readonly state: RoomState
   /** A member name to select and reveal (the navigation param). */
   readonly focus?: { readonly member: string; readonly revision: number } | undefined
@@ -305,8 +337,10 @@ export function TeamView({ state, focus, openSession, t }: {
                 {chosen.member.childSessionId !== undefined && (
                   <button type="button" className={css.open} onClick={() => { openSession(chosen.member.childSessionId!) }}>{t('team.openSession')}</button>
                 )}
+                <LinkControl node={chosen} linkSession={linkSession} unlinkSession={unlinkSession} t={t} />
               </div>
-              <p className={css.line}>{configLine(chosen, t)} · {statsLine(chosen, t)}</p>
+              <p className={css.line}>{configLine(chosen, t)}{chosen.external === undefined ? ` · ${statsLine(chosen, t)}` : ''}</p>
+              {chosen.external !== undefined && <p className={css.line}>{t('team.external.note')}</p>}
               <Deliveries node={chosen} t={t} />
             </section>
           )}
@@ -314,7 +348,7 @@ export function TeamView({ state, focus, openSession, t }: {
       ) : (
         <>
           <span className={css.root}>{t('team.you')}</span>
-          <Tree team={team} at={TEAM_ROOT} selected={selected} onSelect={select} openSession={openSession} t={t} />
+          <Tree team={team} at={TEAM_ROOT} selected={selected} onSelect={select} openSession={openSession} linkSession={linkSession} unlinkSession={unlinkSession} t={t} />
         </>
       )}
     </div>

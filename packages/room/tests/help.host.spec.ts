@@ -148,6 +148,22 @@ describe('cross-session help', () => {
   })
 })
 
+describe('outside sessions on the member list', () => {
+  it('links, refuses a member\'s own session, unlinks, and remembers a dismissed hint', async () => {
+    const bench = await boot()
+    expect(await bench.service.linkSession({ sessionId: bench.sessionId, target: HELPER, title: '开发剪辑插件' })).toEqual({ ok: true })
+    expect(await bench.service.linkSession({ sessionId: bench.sessionId, target: bench.sessionId, title: 'self' })).toEqual({ ok: false, error: { code: 'invalid-settings' } })
+    expect(await bench.service.dismissHelpNudge({ sessionId: bench.sessionId, target: HELPER })).toEqual({ ok: true })
+    let state = (await bench.service.getState({ sessionId: bench.sessionId }) as { value: { linked?: unknown; helpNudgesDismissed?: unknown } }).value
+    expect(state.linked).toMatchObject([{ sessionId: HELPER, title: '开发剪辑插件' }])
+    expect(state.helpNudgesDismissed).toEqual([HELPER])
+    expect(await bench.service.unlinkSession({ sessionId: bench.sessionId, target: HELPER })).toEqual({ ok: true })
+    expect(await bench.service.unlinkSession({ sessionId: bench.sessionId, target: HELPER })).toEqual({ ok: false, error: { code: 'member-not-found' } })
+    state = (await bench.service.getState({ sessionId: bench.sessionId }) as { value: { linked?: unknown } }).value
+    expect(state.linked).toBeUndefined()
+  })
+})
+
 describe('help reminder setting', () => {
   it('takes 10–120 minutes', async () => {
     const bench = await boot()

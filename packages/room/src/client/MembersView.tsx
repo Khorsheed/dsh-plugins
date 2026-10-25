@@ -13,7 +13,9 @@
  */
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS } from '../journal.ts'
 import { RoomSettingsView } from './RoomSettingsView.tsx'
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { memberColor } from './member-color.ts'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconAgentPresetOutlineMedium } from './icons.tsx'
 import type { RoomMember, RoomRemoval } from '../types.ts'
@@ -45,7 +47,7 @@ function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirect
 
 /** The members tab. */
 export function MembersView({
-  sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, updateMember, invite, listProviders, browseDirectory,
+  sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, unlinkSession, updateMember, invite, listProviders, browseDirectory,
   modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
@@ -282,6 +284,24 @@ export function MembersView({
           {t('members.invite')}
         </button>
       </div>
+      {/* Outside sessions on the member list: a shortcut for asking them —
+          each keeps working in its own session, its usage stays there. */}
+      {(state.linked?.length ?? 0) > 0 && (
+        <section className={css.linked} aria-label={t('members.linked')}>
+          <span className={css.count}>{t('members.linked')}</span>
+          {state.linked!.map(entry => (
+            <div key={entry.sessionId} className={css.linkedRow}>
+              <span className={css.linkedAvatar} style={{ '--member-color': memberColor(entry.title) } as CSSProperties} aria-hidden>{entry.title.slice(0, 1)}</span>
+              <span className={css.linkedName}>{entry.title}</span>
+              <span className={css.linkedTag}>{t('team.external.linked')}</span>
+              <button type="button" className={css.linkedAction} onClick={() => { openSession(entry.sessionId as SessionId) }}>{t('members.linkedOpen')}</button>
+              {unlinkSession !== undefined && (
+                <button type="button" className={css.linkedAction} onClick={() => { unlinkSession(entry.sessionId) }}>{t('team.external.unlink')}</button>
+              )}
+            </div>
+          ))}
+        </section>
+      )}
       {removed !== null && (
         <div className={css.undo} role="status">
           <span>{removedSummary(removed)}</span>

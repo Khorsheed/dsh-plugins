@@ -63,7 +63,7 @@ import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { RoomComposerMatch, RoomComposerProps } from './slots.ts'
 import { chipDetectIndex, draftSegments, freeText, planFreeEdit, type DraftChip } from './draft-chips.ts'
-import { detectOffset, memberMention, otherRows, rankByMatch, sessionTitle, shortTime, type RoomMenuMember, type SessionCandidate } from './at-menu.ts'
+import { detectOffset, memberMention, otherRows, rankByMatch, sessionMention, sessionTitle, shortTime, type RoomMenuMember, type SessionCandidate } from './at-menu.ts'
 import { memberColor } from './member-color.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
 import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
@@ -207,13 +207,19 @@ export function RoomComposer({
     }, query === '' ? 0 : 120)
     return () => { clearTimeout(timer); abort.abort() }
   }, [query, listSessions])
-  const excluded = new Set([sessionId as string, ...members.flatMap(member => member.childSessionId === undefined ? [] : [member.childSessionId as string])])
-  const memberRows = mention === null ? [] : rankByMatch(mention.query, members, member => member.name)
-  const others = mention === null ? [] : otherRows(mention.query, sessionPool, excluded, expanded)
-  const candidates: readonly AtRow[] = [
-    ...memberRows.map(member => ({ kind: 'member' as const, member })),
-    ...others,
+  // Outside sessions kept on the member list sit in the members group.
+  const linked = state?.linked ?? []
+  const excluded = new Set([
+    sessionId as string, ...linked.map(entry => entry.sessionId),
+    ...members.flatMap(member => member.childSessionId === undefined ? [] : [member.childSessionId as string]),
+  ])
+  const memberRows: readonly AtRow[] = mention === null ? [] : [
+    ...rankByMatch(mention.query, members, member => member.name).map(member => ({ kind: 'member' as const, member })),
+    ...rankByMatch(mention.query, linked, entry => entry.title)
+      .map(entry => ({ kind: 'session' as const, candidate: { sessionId: entry.sessionId, label: entry.title, mention: sessionMention(entry.sessionId, entry.title), linked: true } })),
   ]
+  const others = mention === null ? [] : otherRows(mention.query, sessionPool, excluded, expanded)
+  const candidates: readonly AtRow[] = [...memberRows, ...others]
   // The inherited environment state: the room's own main-agent turn flag
   // (drives the Send/Stop swap) and the still-queued inbox rows (the official
   // queue dock's data, re-homed as a read-only strip). alpha.2 moved the
@@ -446,8 +452,8 @@ export function RoomComposer({
           <ul className={css.menu} role="listbox" aria-label={t('composer.at.label')}>
             {candidates.map((row, index) => (
               <li key={row.kind === 'member' ? `m:${row.member.name}` : row.kind === 'session' ? `s:${row.candidate.sessionId}` : `r:${row.candidate.sessionId}:${row.member.name}`}>
-                {index === 0 && row.kind === 'member' && others.length > 0 && <div className={css.menuGroup}>{t('composer.at.members')}</div>}
-                {index === memberRows.length && row.kind !== 'member' && (
+                {index === 0 && memberRows.length > 0 && others.length > 0 && <div className={css.menuGroup}>{t('composer.at.members')}</div>}
+                {index === memberRows.length && (
                   <div className={css.menuGroup}>{t(mention.query === '' ? 'composer.at.recent' : 'composer.at.sessions')}</div>
                 )}
                 <button
@@ -498,7 +504,9 @@ export function RoomComposer({
                           >▸</span>
                         )}
                         <span className={css.hint}>
-                          {row.candidate.room === true
+                          {row.candidate.linked === true
+                            ? t('team.external.linked')
+                            : row.candidate.room === true
                             ? t('composer.at.room')
                             : row.candidate.createdAt === undefined ? t('composer.at.session') : t('composer.at.sessionAt', { time: shortTime(row.candidate.createdAt, Date.now()) })}
                         </span>

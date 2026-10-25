@@ -24,6 +24,8 @@ export interface SessionCandidate {
   readonly room?: boolean
   /** A room's members (askable by name). */
   readonly members?: readonly RoomMenuMember[]
+  /** On this room's member list (「加入房间成员」). */
+  readonly linked?: boolean
 }
 
 /** A member of another room, as the @ menu lists it. */
@@ -146,6 +148,21 @@ export function memberMention(candidate: SessionCandidate, member: RoomMenuMembe
   const uri = /\]\((dsh-session:[^)\s]*)\)\s*$/u.exec(candidate.mention)?.[1] ?? ''
   const label = `${member.name}（${sessionTitle(candidate)}）`
   return { mention: `@[${label.replace(/[\\\]]/gu, '\\$&')}](${uri})`, label }
+}
+
+/**
+ * The host's canonical mention of a session: `@[label](dsh-session:…)`, the
+ * URI being base64url of the JSON-encoded id (what the host's own @ menu
+ * writes; built here for the room's linked sessions, which the resolver's
+ * recent list may not carry).
+ * @param sessionId - the session.
+ * @param label - its shown title.
+ * @returns the mention text.
+ */
+export function sessionMention(sessionId: string, label: string): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(sessionId))
+  const payload = btoa(String.fromCharCode(...bytes)).replace(/\+/gu, '-').replace(/\//gu, '_').replace(/=+$/u, '')
+  return `@[${label.replace(/[\\\]]/gu, '\\$&')}](dsh-session:${payload})`
 }
 
 /**
