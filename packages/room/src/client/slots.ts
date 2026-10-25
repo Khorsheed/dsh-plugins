@@ -422,6 +422,8 @@ export type RoomQuestionViewProps =
 export interface RoomHelpInjected {
   /** Open another session (the helper's, or the asking room). */
   readonly openSession: (sessionId: SessionId) => void
+  /** The client-side room state store (the reminder setting). */
+  readonly roomStore?: RoomStore | undefined
 }
 
 /** Full props of the 'room-help' chat-node renderer. */

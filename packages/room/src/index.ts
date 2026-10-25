@@ -2019,7 +2019,11 @@ export class RoomService extends TypertRemoteService {
     if (request.reportWaitMinutes !== undefined && (!Number.isInteger(request.reportWaitMinutes) || request.reportWaitMinutes < 1 || request.reportWaitMinutes > 30)) {
       return { ok: false, error: { code: 'invalid-settings' } }
     }
+    if (request.helpReminderMinutes !== undefined && (!Number.isInteger(request.helpReminderMinutes) || request.helpReminderMinutes < 10 || request.helpReminderMinutes > 120)) {
+      return { ok: false, error: { code: 'invalid-settings' } }
+    }
     const change = {
+      ...request.helpReminderMinutes === undefined ? {} : { helpReminderMinutes: request.helpReminderMinutes },
       ...request.memberMessages === undefined ? {} : { memberMessages: request.memberMessages },
       ...request.hopLimit === undefined ? {} : { hopLimit: request.hopLimit },
       ...request.paused === undefined ? {} : { paused: request.paused },

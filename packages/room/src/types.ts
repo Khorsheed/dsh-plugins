@@ -330,6 +330,8 @@ export interface RoomSettingsEvent {
   readonly reportThreshold?: number
   /** Report timing: the longest a held report waits before it is handed over anyway, in minutes (1–30). */
   readonly reportWaitMinutes?: number
+  /** Cross-session help: minutes an unanswered request waits before its row turns amber (10–120). */
+  readonly helpReminderMinutes?: number
 }
 
 /** The folded settings with defaults applied. */
@@ -341,6 +343,7 @@ export interface RoomSettings {
   readonly autoTaskFiling: boolean
   readonly reportThreshold: number
   readonly reportWaitMinutes: number
+  readonly helpReminderMinutes: number
 }
 
 /** The room's own decision scenarios (the decision-model table, see decisions.ts). */
@@ -665,6 +668,8 @@ export interface RoomHelpStateEvent {
 /** A help thread, folded from its events. */
 export interface RoomHelp extends RoomHelpEvent {
   readonly state: RoomHelpStatus
+  /** When the thread entered its current state (epoch ms). */
+  readonly since: number
   readonly error?: string
   readonly messages: readonly (RoomHelpMessageEvent & { readonly time: number })[]
   readonly time: number
@@ -1197,6 +1202,8 @@ export interface RoomSetSettingsRequest {
   readonly autoTaskFiling?: boolean
   readonly reportThreshold?: number
   readonly reportWaitMinutes?: number
+  /** 10–120, in steps of 10. */
+  readonly helpReminderMinutes?: number
   readonly memberMessages?: 'free' | 'confirm'
   /** 2–50. */
   readonly hopLimit?: number
