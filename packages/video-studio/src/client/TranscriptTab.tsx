@@ -11,7 +11,8 @@ import { displayTokens, findOccurrences } from '../core/text.ts'
 import { formatClock, isRemoved, keptRanges, removedRanges, toOutputTime, toReferenceTime, type Range } from '../core/timeline.ts'
 import type { Edit, Project, ProjectView, Segment, Speaker, Token } from '../types.ts'
 import type { RemoteResult, VideoPaneProps } from './contract.ts'
-import { IconCut, IconPen, IconPlay, IconRestore } from './icons.tsx'
+import { IconListPenOutlineMedium, IconPlayOutlineMedium } from './icons.tsx'
+import { IconCut, IconRestore } from './icons-local.tsx'
 import type { VideoStudioKey } from './locales.ts'
 import { TranscriptPlayer } from './player.ts'
 import css from './VideoPane.module.css'
@@ -387,12 +388,12 @@ export function TranscriptTab({ p, v, act, report }: { p: VideoPaneProps; v: Pro
         {sel && selPos && (
           <div ref={bubbleRef} className={css.bubble} role="menu" style={{ left: selPos.x, top: selPos.y }} data-below={selPos.below || undefined}
             onMouseDown={(e) => e.preventDefault()}>
-            <button type="button" className={css.bubbleItem} onClick={() => { playFrom(sel.start); clearSel() }}><IconPlay size={14} />{t('player.fromHere')}</button>
+            <button type="button" className={css.bubbleItem} onClick={() => { playFrom(sel.start); clearSel() }}><IconPlayOutlineMedium size={14} />{t('player.fromHere')}</button>
             <button type="button" className={css.bubbleItem} onClick={() => { if (view === 'final') cutWithUndo(sel.start, sel.end, sel.text); else void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: true })); clearSel() }}><IconCut size={14} />{t('select.cut')}</button>
             {removed.some((r) => r.start < sel.end && r.end > sel.start) && (
               <button type="button" className={css.bubbleItem} onClick={() => { void act(() => p.setCut({ projectId: project.id, start: sel.start, end: sel.end, cut: false })); clearSel() }}><IconRestore size={14} />{t('select.restore')}</button>
             )}
-            <button type="button" className={css.bubbleItem} title={t('select.fixHint')} onClick={startFix}><IconPen size={14} />{t('select.fix')}</button>
+            <button type="button" className={css.bubbleItem} title={t('select.fixHint')} onClick={startFix}><IconListPenOutlineMedium size={14} />{t('select.fix')}</button>
           </div>
         )}
       </div>
