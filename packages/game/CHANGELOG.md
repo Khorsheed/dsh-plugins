@@ -2,6 +2,7 @@
 
 ## 0.1.0（2026-10-24）
 
+- Nothing in a scrolling panel column shrinks any more: with many elements the filter chips were squashed out of sight (the same cause as the cropped play stage).
 - glTF looks tune by name inside `build()`: `tint` (material colors), `bones` (size and rotation over the animation), `morphs` (shape keys, outline included); the element page lists the model's materials, bones and shape keys as color wells and sliders, retuned live without reloading.
 - 3D previews face the model: a perspective orbit (models face +x), stills from the front three-quarter, `look.preview: { yaw, pitch }`, a turntable that tilts when dragged up and down, and 正面 / 侧面 / 背面 buttons.
 - 3D conveniences: `world.followCamera({ target, mouse: true })` (third person, pointer-lock turning), `style3d.rim` / `rimColor`, `scatter(…, { sway })` for grass and trees in the wind; the skill gives a tested bloom recipe through `three/addons`.
