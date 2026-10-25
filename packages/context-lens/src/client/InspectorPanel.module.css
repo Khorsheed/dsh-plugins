@@ -279,3 +279,9 @@
   .failRow { flex-wrap: wrap; }
   .failMeta { flex-basis: 100%; margin-left: 16px; }
 }
+
+/* Inspecting another session (a room member's): one quiet strip naming it,
+   with the way back to the session the sidebar belongs to. */
+.viewing { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: var(--ri-fill-1, var(--dsw-alias-bg-layer-2)); font-size: var(--dsh-panel-text-meta, 12px); color: var(--dsw-alias-label-secondary); }
+.viewingBack { margin-left: auto; border: 0; padding: 0; background: transparent; font: inherit; color: var(--dsw-alias-state-business-primary); cursor: pointer; white-space: nowrap; }
+.viewingBack:hover { text-decoration: underline; }

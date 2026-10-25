@@ -263,12 +263,12 @@ describe('RoomSpeechView', () => {
     seq: 7, time: 1007, member: 'ada', text: '方案 A 如下', childSessionId: 'child-1' as SessionId, durationMs: 1200,
   }
 
-  async function bench(data: RoomSpeechData = speech, state: RoomState = STATE) {
+  async function bench(data: RoomSpeechData = speech, state: RoomState = STATE, openDetail?: (sessionId: SessionId, messageId: string, label: string) => void) {
     const roomStore = await primedStore(state)
     const openSession = vi.fn()
     const props = {
       node: nodeOf('room-speech', data), sessionId: 'room-1' as SessionId,
-      roomStore, openSession, t,
+      roomStore, openSession, ...openDetail === undefined ? {} : { openDetail }, t,
     } as unknown as RoomSpeechViewProps
     const { container } = render(<RoomSpeechView {...props} />)
     return { openSession, container }
@@ -280,6 +280,19 @@ describe('RoomSpeechView', () => {
     cleanup()
     await bench({ ...speech, runId: '7:m-ada' })
     expect(screen.queryByText(/用量/)).toBeNull()
+  })
+
+  it('opens Context Lens at the member\'s closing message; without one (or without the lens) there is no detail button', async () => {
+    const openDetail = vi.fn()
+    await bench({ ...speech, messageId: 'msg-9' }, STATE, openDetail)
+    fireEvent.click(screen.getByRole('button', { name: '这一轮的请求明细' }))
+    expect(openDetail).toHaveBeenCalledWith('child-1', 'msg-9', 'ada')
+    cleanup()
+    await bench(speech, STATE, openDetail)
+    expect(screen.queryByRole('button', { name: '这一轮的请求明细' })).toBeNull()
+    cleanup()
+    await bench({ ...speech, messageId: 'msg-9' })
+    expect(screen.queryByRole('button', { name: '这一轮的请求明细' })).toBeNull()
   })
 
   it('renders the identity row, the unframed body, and the action row', async () => {
