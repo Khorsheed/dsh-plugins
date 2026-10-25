@@ -74,7 +74,7 @@ export function resolveStyle(input) {
   const spec = typeof input === 'string' ? { preset: input } : (input ?? {})
   const base = STYLES[spec.preset] ?? STYLES.ink
   const out = { ...base }
-  for (const key of ['bg', 'ground', 'ground2', 'water', 'outline', 'outlineWidth', 'shades', 'shadows']) if (spec[key] !== undefined) out[key] = spec[key]
+  for (const key of ['bg', 'ground', 'ground2', 'water', 'outline', 'outlineWidth', 'shades', 'shadows', 'rim', 'rimColor']) if (spec[key] !== undefined) out[key] = spec[key]
   if (Array.isArray(spec.fog) && spec.fog.length === 2) out.fog = spec.fog
   if (typeof spec.light === 'number') out.sun = spec.light
   return out
@@ -100,14 +100,33 @@ function manifestStyle() {
 export function currentStyle() { return style }
 
 /**
+ * The style's rim light (style3d `rim`, `rimColor`) on a toon material: a
+ * bright edge where the surface turns away from the camera, which lifts a
+ * character off the ground. No rim in the style leaves the material as it is.
+ */
+function rimmed(material) {
+  const strength = num(style.rim, 0)
+  if (strength <= 0) return material
+  const color = new THREE.Color(style.rimColor ?? '#ffffff')
+  material.onBeforeCompile = shader => {
+    shader.uniforms.rimStrength = { value: strength }
+    shader.uniforms.rimColor = { value: color }
+    shader.fragmentShader = 'uniform float rimStrength; uniform vec3 rimColor;\n' + shader.fragmentShader.replace('#include <dithering_fragment>',
+      'float rimF = 1.0 - max(dot(normalize(normal), normalize(vViewPosition)), 0.0);\ngl_FragColor.rgb += rimColor * rimStrength * pow(rimF, 3.0);\n#include <dithering_fragment>')
+  }
+  material.customProgramCacheKey = () => 'dsh3d-rim'
+  return material
+}
+
+/**
  * Toon-shaded material for a color (cached: every caller with the same color
  * and extras shares one). `{ own: true }` gives a private copy instead — for
  * one object to glow, flash or fade without touching the rest.
  */
 export function toon(color, extra) {
-  if (extra?.own) { const { own, ...rest } = extra; return new THREE.MeshToonMaterial({ color, gradientMap: gradientFor(style.shades), ...rest }) }
+  if (extra?.own) { const { own, ...rest } = extra; return rimmed(new THREE.MeshToonMaterial({ color, gradientMap: gradientFor(style.shades), ...rest })) }
   const key = `t${color}${extra ? JSON.stringify(extra) : ''}`
-  if (!materials.has(key)) materials.set(key, new THREE.MeshToonMaterial({ color, gradientMap: gradientFor(style.shades), ...extra }))
+  if (!materials.has(key)) materials.set(key, rimmed(new THREE.MeshToonMaterial({ color, gradientMap: gradientFor(style.shades), ...extra })))
   return materials.get(key)
 }
 
@@ -538,7 +557,7 @@ function toonOver(m) {
   if (m.transparent) { params.transparent = true; params.opacity = m.opacity }
   if (m.alphaTest) params.alphaTest = m.alphaTest
   params.side = m.side
-  const toonMat = new THREE.MeshToonMaterial(params)
+  const toonMat = rimmed(new THREE.MeshToonMaterial(params))
   m.dispose()
   return toonMat
 }
@@ -759,6 +778,9 @@ export function createWorld(options = {}) {
   const iso = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 300)
   /** The camera in use: the built-in 45° one, or the game's own (`setCamera`). */
   let camera = iso
+  /** The follow rig `followCamera` set up, while its camera is the one in use. */
+  let followRig = null
+  const swayTime = { value: 0 }
   let renderHook = null
   const target = new THREE.Vector3()
   let zoom = 1, view = num(options.view, 6.2), followed = null, focusUntil = 0
@@ -786,6 +808,12 @@ export function createWorld(options = {}) {
 
   /** Camera pose and world matrices, as a render would leave them (pick needs them without a render). */
   function sync() {
+    if (followRig !== null && camera === followRig.camera) {
+      const r = followRig, t = r.target.position
+      const pitch = Math.min(1.35, Math.max(-0.35, r.pitch))
+      camera.position.set(t.x + Math.sin(r.yaw) * Math.cos(pitch) * r.distance, t.y + r.height + Math.sin(pitch) * r.distance, t.z + Math.cos(r.yaw) * Math.cos(pitch) * r.distance)
+      camera.lookAt(t.x, t.y + r.height, t.z)
+    }
     // The built-in camera tracks the target; a game's own camera is the game's to place.
     if (camera === iso) {
       iso.position.copy(target).add(CAMERA_OFFSET)
@@ -794,6 +822,27 @@ export function createWorld(options = {}) {
     if (shadows) { sun.position.copy(target).add(SUN_OFFSET); sun.target.position.copy(target) }
     scene.updateMatrixWorld()
     camera.updateMatrixWorld()
+  }
+
+  /**
+   * A private copy of a material whose vertices bend with the wind: higher
+   * vertices swing more (the base stays put), each copy out of step with the
+   * next. `{ amplitude: 0.06, period: 2.4 }` per metre of height. Shadows stay still.
+   */
+  function swaying(material, sway) {
+    const amp = num(sway.amplitude, 0.06), period = Math.max(0.2, num(sway.period, 2.4))
+    const m = material.clone()
+    m.onBeforeCompile = shader => {
+      shader.uniforms.swayT = swayTime
+      shader.uniforms.swayAmp = { value: amp }
+      shader.uniforms.swayPeriod = { value: period }
+      shader.vertexShader = 'uniform float swayT; uniform float swayAmp; uniform float swayPeriod;\n' + shader.vertexShader.replace('#include <begin_vertex>',
+        '#include <begin_vertex>\nfloat swayPh = 0.0;\n#ifdef USE_INSTANCING\nswayPh = instanceMatrix[3].x * 0.37 + instanceMatrix[3].z * 0.61;\n#endif\n'
+        + 'float swayH = max(transformed.y, 0.0);\ntransformed.x += sin(swayT * 6.2832 / swayPeriod + swayPh) * swayAmp * swayH;\ntransformed.z += cos(swayT * 5.0265 / swayPeriod + swayPh) * swayAmp * 0.5 * swayH;')
+    }
+    m.customProgramCacheKey = () => 'dsh3d-sway'
+    m.userData.sway = { amplitude: amp, period }
+    return m
   }
 
   /** Leave the current scene: everything it registered goes, and its GPU resources with it. */
@@ -842,9 +891,30 @@ export function createWorld(options = {}) {
      * places it every frame. `setCamera(null)` goes back to the built-in one.
      */
     setCamera(next) {
+      if (followRig !== null && next !== followRig.camera) followRig = null
       camera = next ?? iso
       resize()
       return camera
+    },
+    /**
+     * A third-person camera behind `target`: perspective, `distance` back and
+     * `height` up, turned by `yaw` / `pitch` (radians; change them on the
+     * returned rig, or call `rig.look(dx, dy)` with mouse deltas). `mouse: true`
+     * grabs the pointer on a click (Esc lets go) and turns with the mouse.
+     * Pick and rings follow it; `setCamera(null)` returns to the 45° view.
+     */
+    followCamera({ target, distance = 7, height = 1.4, yaw = 0, pitch = 0.35, fov = 50, mouse = false, sensitivity = 0.004 } = {}) {
+      const rig = {
+        target, distance, height, yaw, pitch, camera: new THREE.PerspectiveCamera(fov, 1, 0.1, 500),
+        look(dx, dy) { rig.yaw -= dx * sensitivity; rig.pitch = Math.min(1.35, Math.max(-0.35, rig.pitch + dy * sensitivity)) },
+      }
+      world.setCamera(rig.camera)
+      followRig = rig
+      if (mouse) {
+        canvas.addEventListener('click', () => { if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.() })
+        addEventListener('mousemove', e => { if (followRig === rig && document.pointerLockElement === canvas) rig.look(e.movementX, e.movementY) })
+      }
+      return rig
     },
     /**
      * Take over drawing (post-processing, a second pass): `fn({ renderer, scene, camera })`
@@ -977,7 +1047,7 @@ export function createWorld(options = {}) {
      * square side, centered on `center`). Picking a copy answers the element
      * with `inst: 'id#n'`. Static: no per-copy motion.
      */
-    scatter(idOrLook, points, { seed = 1, spread = 40, center = [0, 0], rotate = true, scale = [0.85, 1.15], name, inst } = {}) {
+    scatter(idOrLook, points, { seed = 1, spread = 40, center = [0, 0], rotate = true, scale = [0.85, 1.15], name, inst, sway } = {}) {
       const rnd = seeded(seed)
       const spots = typeof points === 'number'
         ? Array.from({ length: Math.max(0, Math.floor(points)) }, () => [center[0] + (rnd() - 0.5) * spread, center[1] + (rnd() - 0.5) * spread])
@@ -1004,7 +1074,7 @@ export function createWorld(options = {}) {
       const instance = (model, group) => {
         model.traverse(o => {
           if (!o.isMesh) return
-          const copies = new THREE.InstancedMesh(o.geometry, o.material, matrices.length)
+          const copies = new THREE.InstancedMesh(o.geometry, sway ? swaying(o.material, sway) : o.material, matrices.length)
           matrices.forEach((m, i) => { copies.setMatrixAt(i, m.clone().multiply(o.matrixWorld)) })
           copies.instanceMatrix.needsUpdate = true
           copies.computeBoundingSphere()
@@ -1025,6 +1095,7 @@ export function createWorld(options = {}) {
     /** Advance `dt` seconds: game logic, motion, camera, render. Tests drive this. */
     step(dt) {
       time += dt
+      swayTime.value = time
       for (const fn of updates) fn(dt, time)
       for (const e of entities) e.userData.update?.(time)
       if (followed && time > focusUntil) target.lerp(followed.position, Math.min(1, dt * 5))
