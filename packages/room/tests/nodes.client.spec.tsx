@@ -295,6 +295,23 @@ describe('RoomSpeechView', () => {
     expect(screen.queryByRole('button', { name: '这一轮的请求明细' })).toBeNull()
   })
 
+  it('the usage chip opens the round\'s breakdown; only the newest speech keeps its action row shown', async () => {
+    const executions = [{ id: '7:m-ada', memberId: 'm-ada', member: 'ada', state: 'done' as const, startedAt: 1, tokens: 29_234, model: 'k3',
+      usage: { inputTokens: 9_110, outputTokens: 1_180, cacheReadTokens: 18_944, cacheWriteTokens: 0 } }]
+    const { container } = await bench({ ...speech, runId: '7:m-ada' }, { ...STATE, executions, latestSpeechSeq: 7 })
+    fireEvent.mouseEnter(screen.getByText('用量 29.2K tok').parentElement!)
+    const panel = screen.getByRole('tooltip')
+    expect(panel.textContent).toContain('本轮用量29,234 tok')
+    expect(panel.textContent).toContain('提供方 / 模型kimi/k3')
+    expect(panel.textContent).toContain('缓存命中67.5%')
+    expect(panel.textContent).toContain('缓存读取18,944 tok')
+    expect(panel.textContent).toContain('耗时1.2s')
+    expect((container.firstElementChild as HTMLElement).dataset.actionsReveal).toBe('always')
+    cleanup()
+    const older = await bench({ ...speech, runId: '7:m-ada' }, { ...STATE, executions, latestSpeechSeq: 12 })
+    expect((older.container.firstElementChild as HTMLElement).dataset.actionsReveal).toBe('hover')
+  })
+
   it('renders the identity row, the unframed body, and the action row', async () => {
     await bench()
     expect(screen.getByText('ada')).toBeDefined()

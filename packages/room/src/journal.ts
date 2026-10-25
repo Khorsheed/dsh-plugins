@@ -124,9 +124,11 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   let settings = DEFAULT_ROOM_SETTINGS
   let coordinator: RoomState['coordinator']
   let latestReplySeq: number | undefined
+  let latestSpeechSeq: number | undefined
   for (const event of events) {
     switch (event.type) {
       case 'room/speech':
+        latestSpeechSeq = event.seq
         // A reply to the room (not a report to another member).
         if (event.data.reportedTo === undefined) latestReplySeq = event.seq
         break
@@ -368,7 +370,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const plan = planEvent?.type === 'room/plan-state' ? (({ requests: _requests, ...view }) => view)(planEvent.data) : undefined
   const deliveries = replayDeliveries(events)
   const jobs = deliveries.length === 0 ? [] : replayJobs(events, deliveries)
-  return { members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, ...questions.size === 0 ? {} : { questions: [...questions.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
+  return { members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, ...questions.size === 0 ? {} : { questions: [...questions.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, ...latestSpeechSeq === undefined ? {} : { latestSpeechSeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
 }
 
 /**
