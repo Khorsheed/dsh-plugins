@@ -60,6 +60,18 @@ describe('quoteTextRule', () => {
     expect(node?.data.label).toBe('B')
   })
 
+  it('parses a located attribution into label + locator (both locales)', () => {
+    const zhBlock = '> 正文\n> —— 引用自「README.md」（/home/user/repo/README.md）'
+    expect(match(zhBlock)?.data).toEqual({ label: 'README.md', ref: '/home/user/repo/README.md', text: zhBlock })
+    const enBlock = '> body\n> — quoted from “README.md” (/home/user/repo/README.md)'
+    expect(match(enBlock)?.data).toEqual({ label: 'README.md', ref: '/home/user/repo/README.md', text: enBlock })
+  })
+
+  it('matches a bare (sourceless) quote with no label', () => {
+    const text = '> 对话里的一句\n> —— 引用'
+    expect(match(text)).toEqual({ id: 'quote-block', start: 0, end: text.length, data: { text } })
+  })
+
   it('leaves a blockquote without the attribution line, and a mid-line >, alone', () => {
     expect(match('> 只是 markdown 引用\n> 没有署名')).toBeUndefined()
     expect(match('他说 > —— 引用自「A」 不算')).toBeUndefined()
@@ -74,9 +86,9 @@ describe('quoteTextRule', () => {
 })
 
 describe('QuoteTextNode (the transcript card)', () => {
-  function card(block: string, label = '主会话') {
+  function card(block: string, label: string | null = '主会话', ref?: string) {
     const props = {
-      node: { id: 'quote-block', start: 0, end: block.length, data: { label, text: block } },
+      node: { id: 'quote-block', start: 0, end: block.length, data: { ...label === null ? {} : { label }, ...ref === undefined ? {} : { ref }, text: block } },
       raw: block,
       interactive: false,
       t,
@@ -89,6 +101,15 @@ describe('QuoteTextNode (the transcript card)', () => {
     const body = document.querySelector('span[class*="body"]')
     expect(body?.textContent).toBe('第一行\n第二行')
     expect(screen.getByText(zh['card.source'].replace('{label}', '主会话'))).toBeTruthy()
+  })
+
+  it('a bare quote renders the body alone; a located one keeps its locator on hover', () => {
+    card('> 对话里的一句\n> —— 引用', null)
+    expect(document.querySelector('span[class*="body"]')?.textContent).toBe('对话里的一句')
+    expect(document.querySelector('span[class*="source"]')).toBeNull()
+    cleanup()
+    card('> 正文\n> —— 引用自「README.md」（/home/user/r/README.md）', 'README.md', '/home/user/r/README.md')
+    expect(screen.getByText(zh['card.source'].replace('{label}', 'README.md')).getAttribute('title')).toBe('/home/user/r/README.md')
   })
 
   it('keeps an interior quoted blank line as an empty line', () => {

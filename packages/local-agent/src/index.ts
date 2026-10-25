@@ -2589,16 +2589,43 @@ export class LocalAgentRegistry {
    * @param session - the live child session to sync.
    */
   async syncChildSession(session: Session, strict: boolean = false): Promise<void> {
+    const id = String(session.id)
     try {
-      const handle = await this.acquireChildWriteHandle(String(session.id), session.header)
-      const stored = await handle.read(0)
-      const suffix = session.snapshotEvents().slice(stored.events.length)
-      if (suffix.length > 0) await handle.append(suffix)
-      await handle.flush()
+      try {
+        await this.syncChildSessionOnce(session)
+      } catch (error: unknown) {
+        if (!/append seq mismatch/.test(error instanceof Error ? error.message : String(error))) throw error
+        // A routed live buffer the explicit suffix raced (see
+        // syncChildSessionOnce) stays poisoned for the handle's lifetime:
+        // drop the handle with it and catch up from disk on a fresh one.
+        await this.releaseChildWriteHandle(id)
+        await this.syncChildSessionOnce(session)
+      }
     } catch (error: unknown) {
       if (strict) throw error
-      this.ctx.logger.warn(`localAgent: syncing child session ${String(session.id)} to persistence failed: ${error instanceof Error ? error.message : String(error)}`)
+      this.ctx.logger.warn(`localAgent: syncing child session ${id} to persistence failed: ${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+
+  /**
+   * One sync pass. While the write handle is open the host routes every live
+   * append into the writer's buffer, so the routed events are drained first
+   * (`sessions.flush`: drain + flush) and only what is STILL missing — events
+   * from before the handle opened, or a host that routes nothing — goes in
+   * explicitly, bounded to the events that existed before the drain. Appending
+   * routed-but-undrained events explicitly as well would land them twice: the
+   * explicit write wins, the buffered copy then fails contiguity forever, and
+   * every later flush — the host's tool-execution checkpoint included —
+   * throws "append seq mismatch".
+   */
+  private async syncChildSessionOnce(session: Session): Promise<void> {
+    const handle = await this.acquireChildWriteHandle(String(session.id), session.header)
+    const known = session.snapshotEvents().length
+    await this.ctx.get('sessions')?.flush(session)
+    const stored = await handle.read(0)
+    const missing = session.snapshotEvents().slice(stored.events.length, known)
+    if (missing.length > 0) await handle.append(missing)
+    await handle.flush()
   }
 
   /**

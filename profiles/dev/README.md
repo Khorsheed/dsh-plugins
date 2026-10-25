@@ -1,154 +1,191 @@
 # dsh-dev
 
-中文 | [English](README.en.md)
+[English](README.en.md) | 中文
 
-**调度一组 agent 写代码，并看清他们改了什么。** 把任务派给你本机装的 Kimi Code、Codex、Claude Code 或 dsh 自己，各自独立上下文与记账；改动落在哪个分支、动了哪些文件、每次提交做了什么，都在会话里一眼可见；多个 agent 可以在同一个会话里协作。
+**在 DSH 里写代码的一整套工具：调度一组 agent 干活，并看清他们改了什么。** 一句话把活交给你电脑上的 Kimi、Codex、Claude Code，或者另一个 DSH，过程实时可见、可以中途停、可以接着聊；邀请几个 agent 进同一个会话分工，@ 谁就派给谁，验收还是你说了算；会话顶上直接显示当前分支和改了多少行，点开就是待提交的改动和提交记录；「是不是」「选哪个」这类判断拿回带把握程度的答案；agent 改完代码要重启，先过构建和测试才放行，起不来自动退回；随时点开任意一轮，看模型到底收到了什么、token 和时间花在哪……——写代码时最想要的那层能力，自带「开发模式」，一次装齐。
 
-每个成员都是独立插件，复制包名到宿主的「添加插件」对话框（0.1.7-rc.2 起：设置 → 插件）即可自由安装；后续如果官方开放自定义 profile 安装，本仓库会支持一行命令直接安装。本地 Agent 家族也可以装元包 `@khorsheed/dsh-bundle-local-agent` 一次装齐（见[功能展示](#功能展示)末尾）。
+<img src="docs/screenshots/dev-mode.png" width="1000" alt="开发模式全景：协作间正在邀请成员，会话顶上是分支徽标和改动抽屉，输入框上方是子 agent 的任务胶囊">
 
-<img src="docs/screenshots/dev-mode.png" width="1000" alt="dsh-dev 开发模式全景:room 邀请成员、worktree 徽标与改动抽屉、子 agent 任务胶囊">
+## 安装
 
-## dev 整合包 - 插件列表
+在 DSH 的「插件 → 添加插件」里输入下面的包名，点安装：
 
-本整合包包含开发模式单独的 8 个插件（见下表）。除此之外，也推荐安装 [dsh-basic](https://github.com/Khorsheed/dsh-basic) 的基础体验优化插件（消息编辑/撤回、时间轴、标题编辑、引用、产物预览、本地文件浏览、任务胶囊、压缩提醒、内联卡片、能力目录、提示音、移动端）——复制包名逐个装，或用元包 `@khorsheed/dsh-basic` 一次装齐；逐插件介绍与截图见 dsh-basic。
+```
+@khorsheed/dsh-dev-suite
+```
 
-| 插件 | 包名（复制即可安装） | 你得到 |
+一次装齐下面 10 个成员，装完重启 DSH 就能用。最好连同 `@khorsheed/dsh-basic`（基础体验）一起装，改消息、看文件这些日常功能在那里。
+
+装完开一个新会话，选「开发模式」，告诉 agent 你要做什么。这些功能只在开发模式的会话里出现，在其它模式里看不到是正常的；计划、压缩、子 agent、网页检索这些标准模式里的能力都还在。
+
+用之前要准备的：Kimi、Codex、Claude Code 要你自己先装好，本套件不代装；快速决策要先配 TypeSafe 的 key；重启守卫只在有看门狗守护的实例上起作用。
+
+## 可以这样跟 agent 说
+
+- 「把 parser 里这个 bug 交给 Codex 修，修完告诉我改了哪些文件。」
+- 「新建一个 worktree 做登录页重构，在那边干活，别动 main。」
+- 「邀请 Claude Code 和 Kimi 进来：Claude Code 写实现，Kimi 补测试，你来协调，最后给我看证据。」
+- 「这个仓库有哪些 worktree？哪些还有没提交的改动？」
+- 「改完重启一下服务，重启前先把构建和测试跑过。」
+- 「这一轮怎么这么慢？用上下文透镜看看时间花在哪了。」
+
+## 成员插件列表
+
+| 插件 | 包名（复制即可安装） | 能力说明 |
 |---|---|---|
-| local-agent | `@khorsheed/dsh-local-agent` | 本地编码 agent 家族核心：作用域 home、登录/会话命令族、委派 registry |
-| local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Kimi Code 委派（`kimi -p`）、续聊、记账；委派工具 `subagent_kimi` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
-| local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Codex 委派（`codex exec`）、续聊、记账；委派工具 `subagent_codex` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
-| local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Claude Code 委派（`claude -p`）、续聊、记账；委派工具 `subagent_claude_code` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
-| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | dsh 自委派：把 dsh 自己当本地 CLI 用 |
-| worktrees | `@khorsheed/dsh-worktrees` | 会话头部 repo/worktree 徽标 + 改动抽屉（只读 git 事实）；模型工具随 `@khorsheed/dsh-worktrees/tool` 子路径行由开发模式 preset 按会话授予 |
-| room | `@khorsheed/dsh-room` | 多 agent 同会话协作：成员名册、@ 派发、任务；模型工具 `room_invite / room_message / room_read / room_plan` 随包内 `./tool` 子路径行由开发模式 preset 按会话授予 |
-
-### 版本兼容
-
-宿主 ≥ `0.1.5-rc.1`。
-
-**宿主 `0.2.0-rc.*`**：复制下表中带 `@^版本` 下限的规格。发版当天不要裸填包名——pnpm 11 默认启用 24 小时新版保护（`minimumReleaseAge`，供应链安全），裸名会把当天发布的新版藏起来、装到只支持 0.1.x 的旧线，再被宿主的兼容性检查拦下；带下限的规格会自动豁免保护期，装到兼容的新版。
+| local-agent | `@khorsheed/dsh-local-agent` | 本机 agent 委派的底座：设置里一张「本机 Agent 委派」卡片，管各家的登录、模型和常驻开关；下面四家都要它在 |
+| local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | 把活交给本机的 Kimi Code，过程实时可见、可以续聊 |
+| local-agent-codex | `@khorsheed/dsh-local-agent-codex` | 把活交给本机的 Codex，过程实时可见、可以续聊 |
+| local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | 把活交给本机的 Claude Code，过程实时可见、可以续聊 |
+| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | 把子任务交给另一个单独运行的 DSH；默认关着，在设置里打开 |
+| worktrees | `@khorsheed/dsh-worktrees` | 会话顶上显示分支和改动行数，点开看待提交改动、提交记录和仓库文件 |
+| room | `@khorsheed/dsh-room` | 邀请几个 agent 进同一个会话分工，@ 谁派给谁，验收你说了算 |
+| typesafe | `@khorsheed/dsh-typesafe` | 「是不是」「选哪个」这类判断，拿回带把握程度的答案 |
+| ankh-guard | `@khorsheed/dsh-ankh-guard` | agent 要重启服务，先过构建和测试才放行；起不来自动退回 |
+| context-lens | `@khorsheed/dsh-context-lens` | 点一下任意一轮，看模型收到了什么、token 和时间花在哪 |
 
 ## 功能展示
 
-### 本地 Agent 家族（6 个包）：把任务派给别的编码 agent
+### 本地 agent 委派：Kimi、Codex、Claude Code 和 DSH
 
-| 装法 | 安装规格（复制到对话框） |
-|---|---|
-| 核心 + Kimi | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-kimi@^0.2.0-rc.1` |
-| 核心 + Codex | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-codex@^0.2.0-rc.1` |
-| 核心 + Claude Code | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-claude-code@^0.2.0-rc.1` |
-| 核心 + dsh | `@khorsheed/dsh-local-agent@^0.2.0-rc.1` + `@khorsheed/dsh-local-agent-dsh@^0.2.0-rc.1` |
+以前想让本机的 Codex 或 Claude Code 帮一把，得自己开终端、复制粘贴、再把结果搬回来。现在你说一句「交给 Codex」，它就在你电脑上跑起来：思考、工具调用和改了哪些文件实时出现在子会话里，可以中途停下，也可以打开子会话接着跟它聊；结果带着真实用量和耗时回到主会话。每家都在自己单独的目录里运行，你电脑上原来的配置和登录一点不碰。设置里的「本机 Agent 委派」卡片一眼看清每家有没有登录好，默认模型和常驻模式都在这里切；「本机 DSH 委派」默认关着，想把子任务交给另一个 DSH 时再打开。
 
-把子任务委派给你本机装的编码 Agent CLI——Kimi Code、Codex、Claude Code、以及 dsh 自己。每个 harness 在自己独立的作用域目录下运行（`$DSH_HOME/local-agent/<name>`，0700 权限），**绝不触碰你用户目录里的私人配置与凭据**。
+<details open>
+<summary>功能示意（5 张）</summary>
 
-- **独立上下文与记账**：子会话独立 token、独立 KV 缓存，永不进父级；每次委派按真实用量分桶记账。
-- **跨轮续聊**：把子会话 id 传回即可在同一个 CLI 会话里继续。
-- **常驻模式**：输出实时流入成员会话、取消不杀进程、崩溃自动续会话。
-- **成员双向通道**：打开成员子会话即可直接对它续一轮；成员之间也能互相通知。
+<img src="docs/screenshots/08-local-agent.png" width="840" alt="设置里的「本机 Agent 委派」卡片：每家一行，状态点显示有没有登录好">
 
-<img src="docs/screenshots/local-agent-delegation.png" width="840" alt="本地 Agent 家族:设置页的 provider 卡片,认证状态一眼可见">
+<img src="docs/screenshots/local-agent-kimi-settings.png" width="840" alt="Kimi 一节：认证状态、默认模型和常驻模式开关">
 
-<img src="docs/screenshots/local-agent-kimi-settings.png" width="840" alt="provider 详情卡(Kimi):已登录态,默认模型可切换,常驻模式开关">
+<img src="docs/screenshots/local-agent-codex-card.png" width="840" alt="Codex 一节：认证状态、默认模型和常驻模式开关">
 
-<img src="docs/screenshots/local-agent-codex-card.png" width="840" alt="provider 详情卡(Codex):已登录态,默认可换 GPT-5.6-Sol">
+<img src="docs/screenshots/local-agent-claude-code-card.png" width="840" alt="Claude Code 一节：认证、默认模型选择和常驻模式开关">
 
-<img src="docs/screenshots/local-agent-claude-code-card.png" width="840" alt="provider 详情卡(Claude Code):未登录态,一键网页登录">
-
-<img src="docs/screenshots/local-agent-member.png" width="840" alt="成员双向通道:打开成员子会话直接续聊">
-
-### worktrees（1 个包）：git 状态实况
-
-| 宿主版本 | 安装规格（复制到对话框） |
-|---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-worktrees@^0.3.1`（模型工具行是包内 `./tool` 子路径入口，随开发模式 preset 生效，无需单装） |
-
-每个会话右上角一个 repo/worktree 徽标，显示当前仓库、分支与合并 diff 行数（绿 = 无改动，黄 = 有改动）。点开是改动抽屉：未提交/已提交文件树 + diff、IDE 风格提交记录、仓库全量文件浏览。只读展示 git 事实，不写仓库。
-
-<img src="docs/screenshots/worktrees-drawer.png" width="840" alt="worktrees:会话头部徽标与改动抽屉">
-
-### room（1 个包）：多 agent 在同一个会话里协作
-
-| 宿主版本 | 安装规格（复制到对话框） |
-|---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-room@^0.2.1`（模型工具行是包内 `./tool` 子路径入口，随开发模式 preset 生效，无需单装） |
-
-在任意会话里邀请一个 agent，这个会话就成为 room：成员 tab、@ 分发、多成员胶囊、任务板、通知闸门。成员之间可以互相召唤，进度在同一条会话线上可见。
-
-<img src="docs/screenshots/room-members.png" width="840" alt="room:成员名册 tab,协调者与成员卡片">
-
-### 打包装：bundle-local-agent（本地多 Agent 一次装齐）
-
-| 宿主版本 | 安装规格（复制到对话框） |
-|---|---|
-| ≥ `0.1.5-rc.1` | `@khorsheed/dsh-bundle-local-agent@^0.4.0` |
-
-一个元包装齐 local-agent 核心 + kimi / codex / claude-code / dsh 四个 provider：成员作为 npm 依赖自动带入，元包的 patch 逐字重挂各成员的规范行；装完后每个组件在 设置 → 插件 里仍可单独禁用——打包的是安装，不是绑定。
-
-<details>
-<summary>展开查看功能示意（1 张）</summary>
-
-<img src="docs/screenshots/bundle-local-agent.png" width="840" alt="bundle-local-agent:详情页逐行列出核心与四家委派,各自可独立开关">
+<img src="docs/screenshots/local-agent-member.png" width="840" alt="打开委派出去的子会话，直接在里面接着聊">
 
 </details>
 
-## 自带 Agent 预设：开发模式（dev）
+### room：多 agent 协作间
 
-pack 自带一个**开发模式** preset（`presets/dev`）。它存在的意义是让开发模式的工具与 UI 不污染其它模式：模型工具行只挂在本 preset 的组合里、不进 profile 根；会话绑定的 UI（worktree 徽标、room 成员名册等）跟随 preset 授予显隐——选了这个 preset 的会话才拿得到工具、才看得见入口。于是同一个实例可以在多个模式之间来回切换：写代码的会话选「开发模式」，日常会话留在「标准模式」，互不干扰。
+让几个 agent 干同一件事，以前只能在几个窗口之间复制粘贴。现在在会话里点「＋ 邀请 agent」，这个会话就变成一个小团队：DSH 当协调者，你再请 Kimi、Codex、Claude Code 或者带着别的模式的 DSH 进来。开头 @ 谁就派给谁，几个名字一起 @ 就并行开工；协调者拆任务、成员交证据，生成完不等于通过，验收是你的事。输入框上方一个胶囊告诉你几个任务在进行、几件要你处理，点开能看到谁派给谁、各自花了多久；成员页的「团队」按钮画出你、协调者和成员之间的关系。每个成员跨轮次、跨重启都保留自己的会话。
 
-组合以官方「标准模式」逐字重基，只在末尾追加社区工具行：三家 local-agent 委派工具（`subagent_kimi` / `subagent_codex` / `subagent_claude_code`）、worktrees 模型工具与 room 工具（`room_invite` / `room_message` / `room_read` / `room_plan`），全部**按会话授予**；伴生 core 缺席时该行 pending，不炸宿主。
+<details open>
+<summary>功能示意（3 张）</summary>
 
-| 宿主版本 | 安装规格（复制到对话框） |
-|---|---|
-| ≥ `0.1.7-rc.2`（推荐） | `@khorsheed/dsh-dev-suite` |
-| `0.1.5-rc.1` ~ `0.1.7-rc.1` | 随整合包脚本以目录式安装（见文末指南） |
+<img src="docs/screenshots/room-1.png" width="840" alt="进行中的协作间：聊天里的成员回执和运行行，输入框上方展开的 @ 成员菜单">
 
-0.1.7-rc.2 起官方支持 preset as a bundle——preset 像普通插件一样打包成包，复制包名即可安装，不再需要手动放置目录；建议升级到该版本，装起来更丝滑。安装后开发模式的 UI 与工具仅在开发模式会话生效，不干扰其它模式。
+<img src="docs/screenshots/room-invite.png" width="840" alt="成员页的空态「把会话变成多 agent 协作间」和会话头部的「邀请 agent」入口">
 
-## 其他整合包
+<img src="docs/screenshots/room-2.png" width="840" alt="成员页：每个成员的名称、来源、角色和模型，以及「设为协调者」">
 
-| 整合包 | 定位 |
-|---|---|
-| [dsh-basic](https://github.com/Khorsheed/dsh-basic) | 日常模式：只含基础体验，不带开发能力 |
-| [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | 插件 monorepo 主仓：全部插件的能力地图、preset 设计与开发文档 |
+</details>
+
+### worktrees：分支与改动一眼可见
+
+同时开着几个 worktree，以前要敲 git 才知道这个会话对着哪个分支、还有多少没提交。现在会话顶上一个分支徽标，写着分支名和改动行数，有改动时变成警告色。点开是右栏的工作树页：待提交的改动带彩色 diff，提交记录像 IDE 一样能逐条展开，仓库里的文件也能直接翻、图片直接预览。这些都只是看，不会动你的仓库；让 agent 新建、切换、删除 worktree 也行，删除前一定先问你，有没提交改动的不会被删。
+
+<details open>
+<summary>功能示意（2 张）</summary>
+
+<img src="docs/screenshots/pilot-badge-standard.png" width="840" alt="会话头部右上角的分支徽标：分支名加改动行数 +175 −34，旁边是仓库名">
+
+<img src="docs/screenshots/worktrees-tab.png" width="840" alt="右栏工作树页的待提交改动：左边文件树带 A/M/D 标记和行数，右边是选中文件的彩色 diff">
+
+</details>
+
+### typesafe：快速决策
+
+「这条消息要不要模型参与」「这个工单归哪个团队」——这类判断如果让 agent 写一段话回答，你还得再读一遍。装上快速决策，agent 遇到「是不是」「选哪个」「打几分」这类问题，拿回的是带把握程度的答案，可以直接据此往下走；协作间也用它来判断成员的回报什么时候交给协调者最合适。先在「工具与技能」里填好 TypeSafe 的 key；没配时它只会说做不了，不会出错。
+
+### ankh-guard：重启守卫
+
+让 agent 改 DSH 自己的代码很方便，麻烦在重启那一下：改坏了，服务连同正在聊的会话一起挂掉，只能你去收拾。装上重启守卫，agent 想重启得先证明构建和测试都过了；真正停机前先在后台把新版本完整启动一遍，起不来就不碰旧的；新版本连续起不来，自动退回最后一次正常的版本，如果是新装的插件惹的祸，就把它卸掉并告诉你。重启完，发起重启的会话会收到结果，被打断的会话接着聊，开着的网页自己刷新回原来的位置。
+
+<details open>
+<summary>功能示意（1 张）</summary>
+
+<img src="docs/screenshots/ankh-guard.JPG" width="840" alt="一次受守护的重启：重启前告知验证项，重启后会话自动恢复并继续验证">
+
+</details>
+
+### context-lens：上下文透镜
+
+调提示词、写插件时最想知道的往往是：这次请求里到底塞了什么？缓存为什么没命中？这一轮怎么这么慢？现在每一轮回答下面多一个图标，点一下右栏就把这一轮的每次模型请求摊开：系统提示每一段从哪来、带了多少工具、哪些是历史、哪些是这次新加的；真实的缓存命中多少，和上一次请求不一样的地方精确到字标出来；点「只看重复」挑出重复塞进去的内容；切到「耗时分布」看时间花在模型、工具还是中间的空档。委派出去的子 agent 单独列出，装之前的对话也能看。它只看不改，看到的数据不写进会话。
+
+<details open>
+<summary>功能示意（2 张）</summary>
+
+<img src="docs/screenshots/context-lens-request.png" width="840" alt="右栏的上下文透镜请求页：顶部切换轮次，下面是缓存命中、前缀差异，以及系统提示、工具、历史、新增几块的构成">
+
+<img src="docs/screenshots/context-lens-timing.png" width="840" alt="耗时页：总耗时、模型、工具执行、间隙四格，下面是各个 agent 的泳道和按执行时间排序的工具表">
+
+</details>
+
+## 按你的方式调整
+
+- **去掉某个成员**：在 设置 → 插件 里禁用/卸载，或 `dsh plugin --profile <你的 profile> remove <包名>`——其余照常工作。用不上哪家本机 agent，就只关那一家；`local-agent` 是四家共用的底座，关掉它四家都停。套件是起点，不是绑定
+- **加装**：任何 `@khorsheed/dsh-*` 插件同样复制包名安装
+- **更新**：设置 → 插件 里操作，或 `dsh plugin --profile <你的 profile> update` 拉取范围内最新版本
+
+## 其他套件
+
+基础体验是每个人都适合装的一层；想要某个场景，再装对应的套件。
+
+| 套件 | 包名 | 定位 |
+|---|---|---|
+| [基础体验](https://github.com/Khorsheed/dsh-basic) | `@khorsheed/dsh-basic` | 消息编辑撤回、时间轴、标题编辑、引用、产物预览、本地文件、任务胶囊、压缩提醒、内联卡片、能力目录、提示音、移动端 |
+| [写作套件](https://github.com/Khorsheed/dsh-writing) | `@khorsheed/dsh-writing-suite` | 灵感画布、长篇小说、灵感空间、本机转写，自带「写作模式」 |
+| [学习套件](https://github.com/Khorsheed/dsh-learning) | `@khorsheed/dsh-learning-suite` | 图书馆式精读、灵感画布、灵感空间，自带「学习模式」 |
+| [剪辑套件](https://github.com/Khorsheed/dsh-video) | `@khorsheed/dsh-video-suite` | 混录分人、删字即删音频的剪辑台，可委派本地 agent，自带「剪辑模式」 |
+| [游戏开发套件](https://github.com/Khorsheed/dsh-gamedev) | `@khorsheed/dsh-gamedev-suite` | 和 agent 一起做小游戏，可委派本地 agent，自带「游戏开发模式」 |
+| [评测套件](https://github.com/Khorsheed/dsh-eval) | `@khorsheed/dsh-eval-suite` | 本机多个 agent 对照评测：题集、实验、判分与报告，自带「评测模式」 |
+| [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | — | 插件主仓：全部插件的能力地图与开发文档 |
+
+## Compatibility
+
+需要 DSH 0.1.7 或更新版本，已在 0.2.1 上验证。
 
 ## 变更记录
 
 见 [CHANGELOG.md](CHANGELOG.md)。
 
+## 开发
+
+插件源码在 [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins)（唯一事实源），每个成员的详细说明在它自己的 README 里：[packages/](https://github.com/Khorsheed/dsh-plugins/tree/main/packages)。本仓只有 profile 模板、安装脚本与文档，不含插件代码；套件本身发布为 `@khorsheed/dsh-dev-suite`。欢迎 issue。
+
 ## 给 Agent 的安装指南
 
 <details>
-<summary><strong>展开：整合包整体安装 + 单包命令行安装</strong>（用户说"帮我装一下"时照此执行）</summary>
+<summary><strong>展开：套件整体安装 + 单包命令行安装</strong>（用户说"帮我装一下"时照此执行）</summary>
 
-### 一、整体安装整合包
+### 一、安装套件（推荐）
 
-整合包整体安装要求宿主 ≥ `0.1.5-rc.1`。
+推荐连同基础体验一起装(「开发」集合,一条命令):
 
-**一、安装与离线自检（不碰运行中的实例）**
+```sh
+dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite
+```
+
+或者在 设置 → 插件 → 添加插件 里填 `@khorsheed/dsh-dev-suite`。装完重启对应 web 实例，然后让用户**硬刷**页面（Cmd/Ctrl+Shift+R）——新的界面代码要强刷才会加载，普通刷新可能继续跑缓存的旧页面。最后呈上功能清单（即上文「成员插件列表」一表），并提醒用户开新会话选「开发模式」。
+
+卸载套件（`dsh plugin --profile web remove @khorsheed/dsh-dev-suite`）会把成员一起移除；只想关一个，就在套件详情页里单独关。
+
+### 二、安装单个插件
+
+- **对话框**：设置 → 插件 → 添加插件，填包名（如 `@khorsheed/dsh-worktrees`），按提示启用。
+- **命令行**：`dsh plugin --profile <profile> add <包名>`；卸载 `remove`，更新 `update`。
+- 单装某一家本机 agent（如 `@khorsheed/dsh-local-agent-codex`）时，要连同 `@khorsheed/dsh-local-agent` 一起装。
+
+### 三、宿主早于 0.1.7：用本仓脚本以目录式安装
+
+0.1.7 之前的宿主还不能按包名装模式套件，改用本仓的脚本（要求宿主 ≥ `0.1.5-rc.1`；装上的是较早的一组成员，不含快速决策和上下文透镜）：
 
 ```sh
 git clone https://github.com/Khorsheed/dsh-dev.git /tmp/dsh-dev
 sh /tmp/dsh-dev/scripts/install.sh
-```
-
-`install.sh` 末尾会打印组合的行数，可与脚本输出对照复核（成员清单见上方「插件列表」）。`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。
-
-**二、同端口交接（关键一步）**
-
-```sh
 sh /tmp/dsh-dev/scripts/restart-into-dev.sh [端口，默认 3080]
 ```
 
-脚本走 ankh-guard 守卫通道：环境探针 → 记录凭证 → preflight → watchdog 停旧启新 + canary 验证。**你会随宿主实例一起断开，这是预期**——watchdog 会在原端口拉起 dev；脚本刻意不传 `--initiator`，守卫会从你的环境读取 `$DSH_SESSION_ID`，重启报告才能寻址到你的会话：用户重新打开这个会话时，你会收到「重启完成」的 followup 并继续。
-
-**三、告诉用户硬刷页面**
-
-客户端 bundle 变了，浏览器需要 Cmd/Ctrl+Shift+R 强制刷新。
-
-### 二、安装单个插件
-
-- **对话框（0.1.7-rc.2 起，推荐）**：设置 → 插件 → 添加插件，填包名，按提示启用。
-- **命令行**：`dsh plugin --profile <profile> add <包名>`；卸载 `remove`，更新 `update`。
-- **打包装**：本地 Agent 家族用元包 `dsh plugin --profile <profile> add @khorsheed/dsh-bundle-local-agent` 一次装齐，成员行仍可在 设置 → 插件 里单独禁用。
+`install.sh` 只放置 profile 模板、不碰运行中的实例，末尾打印组合的行数可供复核；`dsh` 不在 PATH 时用它的完整路径（可用 `ps` 查当前实例的启动命令获得）。`restart-into-dev.sh` 走重启守卫的通道在原端口停旧启新：**你会随宿主实例一起断开，这是预期**——用户重新打开这个会话时，你会收到「重启完成」的通知并继续。最后同样让用户硬刷页面。
 
 </details>

@@ -63,8 +63,19 @@ describe('classifySelection', () => {
     document.body.innerHTML = '<article data-quote-source="  沙箱基础设施  "><div><p id="a">选我</p></div></article>'
     const snapshot = classifySelection(selectAllOf(document.querySelector('#a')!), () => false)
     expect(snapshot?.source).toBe('沙箱基础设施')
+    expect(snapshot?.ref).toBeUndefined()
     document.body.innerHTML = '<article data-quote-source=" "><p id="b">选我</p></article>'
     expect(classifySelection(selectAllOf(document.querySelector('#b')!), () => false)?.source).toBeUndefined()
+  })
+
+  it('reads data-quote-ref only off the element that declared the source', () => {
+    document.body.innerHTML = '<div data-quote-source="README.md" data-quote-ref=" /home/user/repo/README.md "><p id="a">选我</p></div>'
+    expect(classifySelection(selectAllOf(document.querySelector('#a')!), () => false))
+      .toMatchObject({ source: 'README.md', ref: '/home/user/repo/README.md' })
+    document.body.innerHTML = '<div data-quote-ref="/home/user/x"><div data-quote-source="内层"><p id="b">选我</p></div></div>'
+    const inner = classifySelection(selectAllOf(document.querySelector('#b')!), () => false)
+    expect(inner?.source).toBe('内层')
+    expect(inner?.ref).toBeUndefined()
   })
 
   it('answers null inside a textarea (the editing exclusion)', () => {

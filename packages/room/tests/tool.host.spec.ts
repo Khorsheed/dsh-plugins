@@ -101,14 +101,13 @@ describe('room_invite tool (real composition)', () => {
     })
   })
 
-  it('returns a self-correcting error text on an unknown provider (the harness-name slip)', async () => {
+  it('returns a self-correcting error text on an unknown provider; the harness name itself resolves', async () => {
     const { ctx, service, tool } = await boot()
     const sessionId = await createRoom(ctx, service)
     const room = ctx.sessions.get(sessionId)!
-    // The real-machine bug: the model passed the harness name "kimi".
-    const text = await call(tool, { provider: 'kimi', name: 'ada', instructions: '后端' }, execFor(room))
+    const text = await call(tool, { provider: 'gemini', name: 'ada', instructions: '后端' }, execFor(room))
     expect(text).toContain('unknown-provider')
-    expect(text).toContain('"kimi"')
+    expect(text).toContain('"gemini"')
     // The legal set is in the text, so the model can rename and retry.
     expect(text).toContain('kimi-cli')
     expect(text).toContain('codex-cli')
@@ -119,6 +118,16 @@ describe('room_invite tool (real composition)', () => {
     // The self-correction the text enables: rename and retry succeeds.
     const retried = await call(tool, { provider: 'kimi-cli', name: 'ada', instructions: '后端' }, execFor(room))
     expect(retried).toContain('joined')
+    // The real-machine slip: the harness name "kimi" now resolves to kimi-cli.
+    expect(await call(tool, { provider: 'kimi', name: 'bob', instructions: '后端' }, execFor(room))).toContain('joined')
+  })
+
+  it('room_read in a plain session lists what an invite needs instead of failing', async () => {
+    const { ctx, service } = await boot()
+    const plain = ctx.sessions.create(SessionId('plain-read'), { meta: {} })
+    const read = JSON.parse(await service.readRoomContext(plain.id)) as { room: boolean; providers: { provider: string }[] }
+    expect(read.room).toBe(false)
+    expect(read.providers.map(entry => entry.provider)).toEqual(expect.arrayContaining(['kimi-cli', 'codex-cli']))
   })
 
   it('returns a retryable error text on a name collision and an invalid name', async () => {

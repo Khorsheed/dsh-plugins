@@ -83,6 +83,34 @@ describe('session-mirror', () => {
     expect(latest.model).toBeUndefined()
   })
 
+  it('an empty stream reservation never strands a step gap (dense, strictly sequential log)', async () => {
+    const { home } = wireHome('empty-reservation', fullWire)
+    const child = Session.create(SessionId('empty-reservation'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+    // A stream reserved step 2 with NO content (a wire step that carried only
+    // reasoning + a tool call): the driver's finalizeBefore releases it
+    // without writing. The fold must then take the freed coordinate — writing
+    // above it would strand a permanent gap (the prod lens corruption).
+    const reserved: number[] = [2]
+    await mirrorKimiSessionDelta(ctx, child, home, 'empty-reservation', 0, {
+      streams: {
+        reservedSteps: () => reserved,
+        completeStreams: () => undefined,
+        finalizeBefore: (_turn, step) => {
+          // The driver's below-the-fold-step filter, with the empty release.
+          if (step > 2) reserved.length = 0
+        },
+      },
+    })
+    const steps = child.snapshotEvents().filter(event => event.type === 'step/start')
+      .map(event => (event.data as { step: number }).step)
+    expect(steps.length).toBeGreaterThan(1)
+    expect(steps).toEqual(Array.from({ length: steps.length }, (_, index) => index + 1))
+    expectValidReleasedLog(child)
+  })
+
   it('mirrors user prompts and folds assistant activity into messages', async () => {
     const { home } = wireHome('s1', fullWire)
     const child = Session.create(SessionId('child-1'))

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-24-kimi-empty-stream-step-gap.md
+.agents/notes/implemented/bug-fix/2026-10-24-kimi-empty-stream-step-gap.md: f48b939d96ed568609aa2822487fb9153e330185
+.agents/notes/implemented/bug-fix/2026-10-24-kimi-empty-stream-step-gap.zh.md: 15e0c834d89545ba43eaf4075b5a4b66d0d1326b

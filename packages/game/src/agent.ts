@@ -30,8 +30,9 @@ interface SkillRegistrySlice {
 const GUIDANCE = 'This session is the game-development mode. The user designs and plays a small web game (2D or 3D) with you: '
   + 'the conversation decides what the game is, the right-sidebar game tab shows the design doc and plays the latest '
   + 'version that passed the checks. Use game_open / game_read for the project; write its files with the '
-  + 'ordinary file tools. Before asking the user to play anything, call game_publish and make sure it passed — a question '
-  + 'does not end the turn, so the play area would still show the old version. Load the game-design skill when shaping the game with the user, and the gamedev skill before '
+  + 'ordinary file tools. Whenever you changed something playable, call game_publish before you report or ask anything, '
+  + 'without waiting to be asked — a question does not end the turn, so the play area would still show the old version. '
+  + 'When a CLI member reports its changes, publish them for it (members have no publish tool). Load the game-design skill when shaping the game with the user, and the gamedev skill before '
   + 'writing game code. Answer in the user\'s language.'
 
 /**

@@ -52,6 +52,13 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/**
+ * Subagent providers that run inside this host, so their requests pass
+ * through the capture. Every other provider (claude-local, codex-local,
+ * kimi-cli, dsh-cli, …) is its own process: its session is log-driven.
+ */
+const IN_PROCESS_PROVIDERS = new Set(['spawn', 'fork'])
+
 /** Plugin config: capture retention knobs. */
 export interface InspectorConfig {
   /** Turns retained per session (oldest evicted first, backfilled before live). Default 30. */
@@ -194,6 +201,7 @@ export class InspectorService {
     const at = event.time
     const eventType: string = event.type
     this.noteReplacement(session, event as unknown as ReplacementRow)
+    this.store.noteLogActivity(sessionId)
     if (eventType.startsWith('compaction/')) this.store.noteCompaction(sessionId, eventType, event.data as unknown as Record<string, unknown>)
     if (eventType.startsWith('room/')) {
       this.store.noteRoomEvent(sessionId, eventType, event.data, event.seq, at)
@@ -252,7 +260,10 @@ export class InspectorService {
     const type: string = event.type
     if (type === 'subagent/descriptor') {
       const provider = (event.data as Record<string, unknown>)['provider']
-      if (typeof provider === 'string') this.store.noteChildProvider(sessionId, provider)
+      if (typeof provider === 'string') {
+        this.store.noteChildProvider(sessionId, provider)
+        if (!IN_PROCESS_PROVIDERS.has(provider)) this.store.markLogDriven(sessionId)
+      }
       return
     }
     if (type === 'subagent/catalog') {
@@ -391,7 +402,7 @@ export class InspectorService {
     // Retryable until complete: a partial fill re-reads on later queries
     // (eviction may have freed room); the read is one zstd decode.
     const state = this.store.backfillState(sessionId)
-    if (state === 'broken' || (state === 'complete' && !this.store.needsRequestNumbers(sessionId))) return
+    if (state === 'broken' || (state === 'complete' && !this.store.needsRequestNumbers(sessionId) && !this.store.needsLogRead(sessionId))) return
     const jobKey = `main:${sessionId}`
     const pending = this.refreshing.get(jobKey)
     if (pending !== undefined) return pending
@@ -412,6 +423,9 @@ export class InspectorService {
         // whole context, so a long log rebuilt at once grows quadratically.
         const hosts = events.filter(row => row.type === 'turn/start')
           .map(row => (row.data as { turn?: unknown } | undefined)?.turn).filter((turn): turn is number => typeof turn === 'number')
+        // An external agent's own session: its requests reach only this log.
+        const provider = (events.find(row => row.type === 'subagent/descriptor')?.data as Record<string, unknown> | undefined)?.['provider']
+        if (typeof provider === 'string' && !IN_PROCESS_PROVIDERS.has(provider)) this.store.markLogDriven(sessionId)
         const keep = this.store.windowHosts(sessionId, hosts)
         this.store.insertLogTurns(sessionId, reconstructSession(events, host => host === undefined || keep.has(host)))
         for (const fact of replacementFactsOf(events)) this.store.noteReplacement(sessionId, fact)

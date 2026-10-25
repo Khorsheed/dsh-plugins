@@ -662,7 +662,10 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
     : null
 
   return (
-    <div ref={rootRef} className={css.root} data-compact={compact ? 'true' : 'false'}>
+    // data-quote-source / data-quote-ref: a passage quoted from here names the
+    // file and hands the model its absolute path (plain DOM data — read by the
+    // quote plugin when installed, inert otherwise).
+    <div ref={rootRef} className={css.root} data-compact={compact ? 'true' : 'false'} data-quote-source={basename} data-quote-ref={location}>
       <div className={`${css.titleBar} ${embedded ? css.headerEmbedded : ''}`}>
         <PanelHeader
           className={css.paneHeader}

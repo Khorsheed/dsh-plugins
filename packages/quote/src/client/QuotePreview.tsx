@@ -5,7 +5,9 @@
  * the chip label alone never tells you what you quoted. The card floats
  * beside the click (the recorded pointerdown position rides the store's
  * show), falling back to centered-over-composer without one. Dismisses on
- * the close button, Escape, or a click anywhere outside the card.
+ * the close button, Escape, or a click anywhere outside the card. A located
+ * quote closes with its locator row — the absolute path the model receives
+ * alongside the text, so what you see is what is sent.
  *
  * @module @khorsheed/dsh-quote/client
  */
@@ -106,6 +108,12 @@ export function QuotePreview({ preview, t }: QuotePreviewProps): ReactNode {
         </button>
       </div>
       <div className={css.body}>{state.body}</div>
+      {state.location !== undefined && (
+        <div className={css.location}>
+          <span className={css.locationLabel}>{t('preview.location')}</span>
+          <span className={css.locationValue}>{state.location}</span>
+        </div>
+      )}
     </div>
   )
 }

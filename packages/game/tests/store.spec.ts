@@ -229,7 +229,7 @@ describe('game_publish', () => {
 
     await put(join(project.root, 'index.html'), '<p>hi</p>')
     expect(await publish()).toContain('v1 通过检查（1 个用例），已进试玩区')
-    expect((await store.view(project.id))?.current?.version).toBe(1)
+    expect((await store.view(project.id))?.current).toMatchObject({ version: 1, by: 'agent' })
     expect(await publish()).toContain('没有新改动：这一版已经检查过，试玩区是 v1')
     expect(checker.runs).toHaveLength(1)
 
@@ -247,5 +247,47 @@ describe('game_publish', () => {
     await store.setAutoConfirm(project.id, false, session())
     await put(join(project.root, 'index.html'), '<p>hi</p>')
     expect(await publish()).toContain('v1 通过检查，作为候选等用户在右栏确认')
+  })
+})
+
+describe('working changes and who published', () => {
+  it('finds files anyone changed against the live version, and tags each version with its publisher', async () => {
+    const project = await created()
+    await put(join(project.root, 'index.html'), '<p>v1</p>')
+    await put(join(project.root, 'src/main.js'), 'window.dshGame = { ready: true }')
+    let changes = await store.changes(project.id)
+    expect(changes).toMatchObject({ ok: true, against: null, hasEntry: true, busy: 'recent' })
+    expect(changes.ok && changes.files.map(f => f.path).sort()).toEqual(['game.json', 'index.html', 'src/main.js'])
+
+    expect((await store.checkTurn(session(), 0, 2)).kind).toBe('pass')
+    expect((await store.view(project.id))?.current?.by).toBe('turn')
+    changes = await store.changes(project.id)
+    expect(changes).toMatchObject({ ok: true, against: 1, count: 0, failed: null })
+
+    // A CLI member writes a file and adds another, outside any turn; a design note is not a build change.
+    await put(join(project.root, 'src/main.js'), 'window.dshGame = { ready: true, step() {} }')
+    await put(join(project.root, 'src/scenes.js'), 'export {}')
+    await put(join(project.root, 'design/core-loop.md'), '# loop')
+    changes = await store.changes(project.id)
+    expect(changes.ok && changes.files).toEqual([{ path: 'src/main.js', kind: 'changed' }, { path: 'src/scenes.js', kind: 'added' }])
+
+    // A failing check after the newest change is reported on the bar; the user's next pass is tagged as theirs.
+    checker.next = { failures: [{ where: 'smoke', message: '运行报错' }], passed: 0 }
+    expect(await store.commit(project.id, session())).toMatchObject({ ok: true, kind: 'failed' })
+    expect((await store.changes(project.id))).toMatchObject({ ok: true, failed: [{ where: 'smoke', message: '运行报错' }] })
+    checker.next = { failures: [], passed: 1 }
+    expect(await store.commit(project.id, session())).toEqual({ ok: true, kind: 'deployed', version: 2 })
+    const view = await store.view(project.id)
+    expect(view?.versions.map(v => [v.version, v.by])).toEqual([[2, 'user'], [1, 'turn']])
+    expect(await store.changes(project.id)).toMatchObject({ ok: true, against: 2, count: 0 })
+  })
+
+  it('reports a running turn on a bound session as busy', async () => {
+    const project = await created()
+    await put(join(project.root, 'index.html'), '<p>v1</p>')
+    store.setTurnActive('s1', true)
+    expect(await store.changes(project.id)).toMatchObject({ ok: true, busy: 'turn' })
+    store.setTurnActive('s1', false)
+    expect(await store.changes(project.id)).toMatchObject({ ok: true, busy: 'recent' })
   })
 })

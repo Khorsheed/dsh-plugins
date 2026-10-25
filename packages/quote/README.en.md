@@ -38,7 +38,7 @@ To follow up on a passage from an assistant reply or a file preview, you used to
 
 Why not side-chat's own Remote: the M2 probe found no client-reachable "queue one pending ref" verb among its wire verbs (`send` starts a whole turn; `quoteMessage` addresses an assistant message by id), so this plugin ships a thin Remote adapting exactly that call.
 
-**Source label**: the current session's display title (best-effort plain text; a generic "Selection" fallback when none). Quotes never link back to the origin position — the annotation stops at "which chat" granularity.
+**Source label**: the content's own declared source — when an element around the selection carries `data-quote-source` (a file preview sets the file name, the 灵感空间 reader the article title), that names the quote; when the same element also carries `data-quote-ref` (an absolute path, a URL), the model-facing attribution adds that location (`— quoted from “README.md” (/abs/path/README.md)`) while the chip keeps the short name, and the chip-click preview lists the location at its foot. A selection with no declared source (the conversation itself) names nothing: the chip shows an excerpt of the quote, the model gets a bare quote (`— quoted`), and the sent card shows the body alone.
 
 **Degrade matrix**: no current session → both quote items hide (copy stays); `remote.sidechat` or `remote.quote` absent → Quote to side chat hides; a click that still races a missing side-chat service gets the verb's `unavailable` refusal and no-ops silently.
 
@@ -63,7 +63,7 @@ if (registry !== undefined) {
 }
 ```
 
-- **The target is an opaque payload**: `{ text, label, sessionId }` — the selected plain text, the best-effort source label (the current session's display title, else "Selection"), and the current session id (`undefined` when none; gate the row yourself via `available`). The registry never learns where an action delivers to, just as this plugin never learns a quote source's types.
+- **The target is an opaque payload**: `{ text, label, sessionId, ref? }` — the selected plain text, the best-effort source label (the content's declared source, else the current session's display title, else a quote excerpt), the location (only when the content declared `data-quote-ref`), and the current session id (`undefined` when none; gate the row yourself via `available`). The registry never learns where an action delivers to, just as this plugin never learns a quote source's types.
 - **Order**: the three built-in rows (current chat / side chat / copy) always lead; contributed rows follow in registration order.
 - **Degrade**: quote absent → the probe misses and the action never appears (silent — never `inject` this service); your plugin absent → its rows are absent. Neither side breaks.
 - **Timing**: registration is boot-time; a probe that misses at apply means quote is not installed or loaded after your plugin — treat it as the degrade.

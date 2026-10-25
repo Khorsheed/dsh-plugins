@@ -57,17 +57,15 @@ export function roomInviteTool(backend: RoomInviteToolBackend) {
       + 'to have the member join idle. A member keeps its own CLI session and accumulates context '
       + 'across rounds, so prefer inviting over a one-shot subagent_* delegation whenever the work '
       + 'expects follow-ups with the same agent — reserve one-shot delegations for self-contained '
-      + 'tasks with no continuation. The provider must be a registered delegation provider id — '
-      + 'an unknown one is rejected with the list of available ids, so retry with one of those.',
+      + 'tasks with no continuation. room_read lists the invitable providers and modes (it works before '
+      + 'the session is a room too); the provider may be its id or the harness name (e.g. claude-code).',
     parameters: {
       provider: {
         type: 'string',
         required: true,
         description:
-          'The local-agent delegation provider id (e.g. kimi-cli / codex-cli / claude-code) — the '
-          + 'delegation id the family registered, which may differ from the harness\'s display '
-          + 'name. When unsure, call without firstTask first: an unknown id is rejected with the '
-          + 'list of available providers to retry with.',
+          'The CLI to invite: a provider id from room_read, or the harness name / display name '
+          + '(claude-code, Claude Code, codex, kimi). An unknown one is rejected with the available ids.',
       },
       name: {
         type: 'string',
@@ -285,7 +283,7 @@ export function roomMessageTool(backend: RoomMessageToolBackend) {
 export function roomReadTool(backend: { readRoomContext(sessionId: string): Promise<string> }) {
   return defineTool({
     name: 'room_read',
-    description: 'Read the current room: roster with each member\'s role, the coordinator, the tasks with their numbers (for the task parameter), deliveries, recent outcomes and available harness providers. Reading does not wake any member. Use it to look around, not to wait for a result — reports arrive on their own.',
+    description: 'Read the current room: roster with each member\'s role, the coordinator, the tasks with their numbers (for the task parameter), deliveries, recent outcomes and available harness providers. In a session that is not a room yet it returns the invitable providers and modes instead. Reading does not wake any member. Use it to look around, not to wait for a result — reports arrive on their own.',
     parameters: {},
     output: { schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string', required: true } } },
       render: (_args, value) => [{ type: 'text', text: value.text }] },

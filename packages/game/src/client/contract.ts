@@ -10,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: pulls the right-Sidebar SlotMap seats ('sidebar.right.pane.tab').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from './locales.ts'
-import type { CommitResult, DeleteProjectResult, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from '../types.ts'
+import type { CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from '../types.ts'
 
 type R<T> = Promise<RemoteResult<T>>
 type Ok<T extends object = object> = GameResult<{ readonly ok: true } & T>
@@ -26,6 +26,7 @@ export interface GameApi {
   versionBundle: (projectId: string, version: number) => R<Ok<{ readonly bundle: PlayBundle }>>
   confirm: (sid: SessionId, projectId: string) => R<Ok<{ readonly version: number }>>
   commit: (sid: SessionId, projectId: string) => R<GameResult<CommitResult>>
+  changes: (projectId: string) => R<GameResult<WorkingChanges & { readonly ok: true }>>
   reject: (sid: SessionId, projectId: string, reason: string) => R<Ok>
   rollback: (sid: SessionId, projectId: string, version: number) => R<Ok>
   diff: (projectId: string, from: number, to: number) => R<Ok<{ readonly diff: VersionDiff }>>

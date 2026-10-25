@@ -77,7 +77,7 @@ export { QuoteActionRegistryRuntime } from './registry.ts'
 export type {
   QuoteActionContribution, QuoteActionFeed, QuoteActionRegistry, QuoteActionTarget, ResolvedQuoteAction,
 } from './registry.ts'
-export { classifySelection, createSelectionSource, QUOTE_SOURCE_ATTR } from './selection.ts'
+export { classifySelection, createSelectionSource, QUOTE_REF_ATTR, QUOTE_SOURCE_ATTR } from './selection.ts'
 export type { RootedSelectionSource, SelectionRect, SelectionSnapshot, SelectionSource } from './selection.ts'
 export type { QuoteMenuInjected, QuoteMenuProps } from './contract.ts'
 
@@ -224,8 +224,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     selection: createSelectionSource(window),
     sideChatAvailable,
     insertQuote,
-    addSideChatRef: async (sessionId, label, text) => {
-      const result = await addRef({ contextKey: sessionId, label, ref: { label, text } })
+    addSideChatRef: async (sessionId, ref, contextLabel) => {
+      const result = await addRef({ contextKey: sessionId, ...contextLabel === undefined ? {} : { label: contextLabel }, ref })
       return result?.ok === true && result.value.ok
     },
     openSideChat: (contextKey) => {

@@ -1,5 +1,9 @@
 # 变更记录
 
+## 未发布
+
+- 文档:README 改为面向用户的简介(做什么、怎么装、用之前要准备什么);原来的完整说明(重启协议、命令行、watchdog 与部署形态、启动配置切换、配置项)原样移到 `docs/reference.md`。
+
 ## 0.4.3（2026-10-22）
 
 - **启动环境 scrub 扩展到 NODE_PATH / NODE_OPTIONS**：看门狗 `launch_instance`、CLI 的 bare-restart spawn 与 supervisor spawn 三处在清 `WD_*` 之外同步清 `NODE_PATH` / `NODE_OPTIONS`。从 tsx 等工具包裹的 shell 拉起看门狗时，tsx 会把 `NODE_PATH` 钉到自己的 pnpm 仓；不清掉的话它遗传给每一代实例，bundle 解析被劫持到那个检出的 workspace——组合默默地服务那个检出的内容而不是 profile 里装的版本（3080，2026-10-12：presets 被解析到主检出的 workspace 副本，新部署的 preset 行整天不可见，逐字节排查复现 9 vs 10 才定位）

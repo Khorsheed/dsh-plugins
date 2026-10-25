@@ -127,6 +127,10 @@
   background: color-mix(in srgb, var(--g-accent) 8%, var(--dsw-alias-bg-layer-1)); border: 0.5px solid color-mix(in srgb, var(--g-accent) 40%, var(--dsw-alias-border-l2));
   font-size: var(--dsh-panel-text-body, 13px);
 }
+.commitBar[data-state='busy'] { background: color-mix(in srgb, var(--g-warn) 9%, var(--dsw-alias-bg-layer-1)); border-color: color-mix(in srgb, var(--g-warn) 45%, var(--dsw-alias-border-l2)); }
+.commitFiles { margin: 6px 14px 0; padding: 6px 12px; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); font: 12px/1.7 ui-monospace, monospace; color: var(--dsw-alias-label-secondary); overflow-x: auto; }
+.commitFiles div { white-space: nowrap; }
+.commitKind { display: inline-block; width: 1.5em; color: var(--g-warn); }
 .commitBar[data-state='failed'] { background: color-mix(in srgb, var(--g-err) 8%, var(--dsw-alias-bg-layer-1)); border-color: color-mix(in srgb, var(--g-err) 40%, var(--dsw-alias-border-l2)); }
 .commitText { display: flex; align-items: baseline; gap: 8px; flex: 1 1 220px; min-width: 0; }
 .commitText strong { flex: none; color: var(--dsw-alias-label-primary); font-weight: 600; }
@@ -401,6 +405,9 @@ button.strip { cursor: pointer; }
 .tlDot { width: 14px; height: 14px; border-radius: 50%; background: var(--dsw-alias-bg-base); border: 3px solid var(--c); box-sizing: border-box; margin-top: 2px; z-index: 1; }
 .tlBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: var(--dsh-panel-text-body, 13px); }
 .tlHead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tlBy { font-size: var(--dsh-panel-text-meta, 12px); padding: 0 7px; border-radius: 6px; border: 1px solid var(--g-line); color: var(--dsw-alias-label-secondary); white-space: nowrap; }
+.tlBy[data-by='user'] { color: var(--g-accent); border-color: color-mix(in srgb, var(--g-accent) 45%, var(--g-line)); background: color-mix(in srgb, var(--g-accent) 10%, transparent); }
+.tlBy[data-by='turn'] { color: var(--dsw-alias-label-tertiary); border-style: dashed; }
 .tlTag { font-size: var(--dsh-panel-text-meta, 12px); padding: 0 8px; border-radius: 10px; color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); }
 .tlItem[data-status='past'] .tlTag { color: var(--dsw-alias-label-tertiary); }
 .tlActions { display: flex; gap: 12px; flex-wrap: wrap; }

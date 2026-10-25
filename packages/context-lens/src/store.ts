@@ -245,6 +245,10 @@ interface SessionRecord {
   lastAccess: number
   /** The backfill window's newest host turn; absent means the latest turns. */
   windowEnd?: number
+  /** An external agent's session opened on its own: turns come from its log only (see markLogDriven). */
+  logDriven?: boolean
+  /** A log-driven session had live events since its log was last read. */
+  logDirty?: boolean
   /** First and last host turn the session's log holds (known after a backfill). */
   logRange?: { first: number; last: number }
   /** Every main turn's span, loaded or not (log + live): orders rounds and finds the time outside turns. */
@@ -711,6 +715,7 @@ export class InspectorStore {
     if (hostTurn === 1 && !session.nextRequestNumbers.has(scopeId)) session.nextRequestNumbers.set(scopeId, 1)
     if (this.isChild(sessionId)) return
     if (!session.turnSpans.has(hostTurn)) session.turnSpans.set(hostTurn, { start: at })
+    if (session.logDriven) { session.logDirty = true; return }
     if (session.openTurn !== undefined) return
     // The host turn number is the canonical address: a turn the log lane
     // already reconstructed reopens here rather than duplicating (defensive —
@@ -732,6 +737,7 @@ export class InspectorStore {
     if (span !== undefined) span.end = at
     const session = this.sessions.get(sessionId)
     if (session === undefined) return
+    if (session.logDriven) { session.logDirty = true; return }
     let turn = session.openTurn
     if (turn === undefined) {
       // The plugin mounted mid-turn: the open bracket predates the capture, so
@@ -966,7 +972,25 @@ export class InspectorStore {
         if (delegation.childId === undefined || this.findScope(session, delegation.childId) === undefined) this.addDelegationScope(session, target, delegation)
       }
     }
-    if (session.backfillState === 'complete' || session.backfillState === 'broken') return 0
+    // A log-driven session re-reads what changed since the last read: a loaded
+    // turn the log has grown or closed since is rebuilt from the log.
+    let refreshed = 0
+    if (session.logDriven && session.backfillState !== 'broken') {
+      const materialized = this.windowOf(session, hosts)
+      for (const loaded of session.turns.filter(turn => turn.purpose === undefined && turn.hostTurn !== undefined)) {
+        const logged = logTurns.find(turn => turn.purpose === undefined && turn.hostTurn === loaded.hostTurn)
+        if (logged === undefined || !materialized.has(logged.hostTurn)) continue
+        const held = loaded.scopes.get('main')?.requests.length ?? 0
+        if (held === logged.requests.length && loaded.endedAt === this.logTurnEnd(session, logged, logTurns)) continue
+        this.evictTurn(session, loaded, false)
+        this.insertLogTurn(session, logged, logTurns)
+        refreshed += 1
+      }
+      if (refreshed > 0) this.renumberScopes(session)
+    }
+    const dirty = session.logDirty === true
+    session.logDirty = false
+    if (session.backfillState === 'broken' || (session.backfillState === 'complete' && !dirty)) return refreshed
     const keep = this.windowOf(session, hosts)
     const window = logTurns.filter(turn => turn.purpose === undefined && keep.has(turn.hostTurn))
     if (window.length === 0) {
@@ -1013,7 +1037,7 @@ export class InspectorStore {
         if (stop(i)) break
         continue
       }
-      this.insertLogTurn(session, candidate)
+      this.insertLogTurn(session, candidate, logTurns)
       inserted += 1
     }
     session.backfillState = dropped > 0 ? 'partial' : 'complete'
@@ -1096,12 +1120,60 @@ export class InspectorStore {
   }
 
   /** Retry numbering after a streaming turn’s first durable response becomes available. */
+  /**
+   * Make a session log-driven: an external agent's session opened on its own
+   * (a CLI in its own process, so no request passes through this host). Its
+   * turns come from its log only; the live turns opened so far held nothing
+   * and give way to the log's.
+   */
+  markLogDriven(sessionId: string): void {
+    // Also a known child: opened on its own, its own record is what the panel reads.
+    const session = this.session(sessionId)
+    if (session.logDriven) return
+    session.logDriven = true
+    session.logDirty = true
+    for (const turn of [...session.turns]) {
+      if (turn.purpose !== undefined || !turn.liveContent) continue
+      if ([...turn.scopes.values()].some(scope => scope.requests.length > 0)) continue
+      if (session.openTurn === turn) session.openTurn = undefined
+      this.evictTurn(session, turn, false)
+    }
+  }
+
+  /** Any live event of a log-driven session: the next read re-reads its log. */
+  noteLogActivity(sessionId: string): void {
+    const session = this.sessions.get(sessionId)
+    if (session?.logDriven) session.logDirty = true
+  }
+
+  /** Whether a read should re-read a log-driven session's log. */
+  needsLogRead(sessionId: string): boolean {
+    return this.sessions.get(sessionId)?.logDirty === true
+  }
+
+  /** A log turn's end as the store records it: still open when it is a log-driven session's last turn. */
+  private logTurnEnd(session: SessionRecord, logTurn: LogTurn, logTurns: readonly LogTurn[]): number | undefined {
+    if (this.logTurnOpen(session, logTurn, logTurns)) return undefined
+    const lastSettled = logTurn.requests.reduce<number | undefined>(
+      (latest, request) => request.settledAt !== undefined && (latest === undefined || request.settledAt > latest)
+        ? request.settledAt
+        : latest,
+      undefined,
+    )
+    return logTurn.endedAt ?? lastSettled ?? logTurn.startedAt
+  }
+
+  private logTurnOpen(session: SessionRecord, logTurn: LogTurn, logTurns: readonly LogTurn[]): boolean {
+    if (!session.logDriven || logTurn.endReasonKind !== undefined || logTurn.purpose !== undefined) return false
+    return !logTurns.some(turn => turn.purpose === undefined && turn.hostTurn > logTurn.hostTurn)
+  }
+
   needsRequestNumbers(sessionId: string): boolean {
     return this.sessions.get(sessionId)?.turns.some(t => t.liveStartObserved && (t.scopes.get('main')?.requests.some(r => r.purpose === undefined && r.requestNumber === undefined) ?? false)) ?? false
   }
 
   /** One reconstructed turn → one TurnRecord (main scope + delegation stubs). */
-  private insertLogTurn(session: SessionRecord, logTurn: LogTurn): void {
+  private insertLogTurn(session: SessionRecord, logTurn: LogTurn, logTurns: readonly LogTurn[] = []): void {
     const turn = this.mintTurn(session, logTurn.startedAt, {
       ...logTurn.purpose === undefined ? { hostTurn: logTurn.hostTurn } : { purpose: logTurn.purpose },
       turnSeq: logTurn.purpose === undefined ? logTurn.hostTurn : session.nextBucketSeq--,
@@ -1110,17 +1182,14 @@ export class InspectorStore {
     if (logTurn.trigger !== undefined) turn.trigger = logTurn.trigger
     if (logTurn.startSeq !== undefined) turn.startSeq = logTurn.startSeq
     if (logTurn.closingMessageId !== undefined) turn.closingMessageId = logTurn.closingMessageId
-    const lastSettled = logTurn.requests.reduce<number | undefined>(
-      (latest, request) => request.settledAt !== undefined && (latest === undefined || request.settledAt > latest)
-        ? request.settledAt
-        : latest,
-      undefined,
-    )
     // A turn the log never closed (a crash) reads as failed/interrupted, and
-    // still gets an end time so eviction treats it as closed.
-    turn.endedAt = logTurn.endedAt ?? lastSettled ?? logTurn.startedAt
-    const mainStatus: ScopeRecord['status'] =
-      logTurn.endReasonKind === 'completed' || logTurn.endReasonKind === 'max-tokens' ? 'ok' : 'failed'
+    // still gets an end time so eviction treats it as closed — except a
+    // log-driven session's last turn, which is still running.
+    const open = this.logTurnOpen(session, logTurn, logTurns)
+    const end = this.logTurnEnd(session, logTurn, logTurns)
+    if (end !== undefined) turn.endedAt = end
+    const mainStatus: ScopeRecord['status'] = open ? 'running'
+      : logTurn.endReasonKind === 'completed' || logTurn.endReasonKind === 'max-tokens' ? 'ok' : 'failed'
     const main: ScopeRecord = {
       scopeId: 'main',
       scopeSeq: 0, // renumbered after the insert
@@ -1130,7 +1199,7 @@ export class InspectorStore {
       config: logTurn.requests[0]?.config ?? {},
       requests: [],
       startedAt: logTurn.startedAt,
-      endedAt: turn.endedAt,
+      ...turn.endedAt === undefined ? {} : { endedAt: turn.endedAt },
       live: false,
       logFilled: true,
     }

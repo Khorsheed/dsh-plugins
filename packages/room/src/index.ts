@@ -823,10 +823,18 @@ export class RoomService extends TypertRemoteService {
       // exactly what dispatch can resolve, and the rejection carries the
       // legal set so a model caller can self-correct (rename and retry).
       const available: string[] = []
+      // The names a model reaches for first — the harness name (claude-code)
+      // and its display name (Claude Code) — resolve to the provider id.
+      const aliases = new Map<string, string>()
+      const key = (name: string): string => name.toLowerCase().replace(/[\s_-]+/g, '')
       for (const row of roster.roster()) {
         const status = await roster.statusOf(row.name)
-        if (status.delegationProvider !== undefined) available.push(status.delegationProvider)
+        if (status.delegationProvider === undefined) continue
+        available.push(status.delegationProvider)
+        for (const alias of [row.name, row.displayName, status.delegationProvider]) aliases.set(key(alias), status.delegationProvider)
       }
+      const aliased = aliases.get(key(request.provider))
+      if (!available.includes(request.provider) && aliased !== undefined) request = { ...request, provider: aliased }
       if (!available.includes(request.provider)) {
         return { ok: false, error: { code: 'unknown-provider', provider: request.provider, available } }
       }
@@ -1295,6 +1303,18 @@ export class RoomService extends TypertRemoteService {
       return JSON.stringify({ self, ...JSON.parse(await this.readRoomContext(routed.roomId)) })
     }
     const state = await this.getState({ sessionId: SessionId(sessionId) })
+    if (!state.ok && state.error.code === 'not-a-room') {
+      // A plain session: everything an invite needs, instead of an error that
+      // sends the model guessing provider ids.
+      const offered = await this.listProviders({ sessionId: SessionId(sessionId) })
+      return JSON.stringify({
+        room: false,
+        note: 'This session is not a room yet. room_invite promotes it into one: no other setup is needed.',
+        providers: offered.providers.map(entry => ({ provider: entry.provider, name: entry.displayName, ...entry.authenticated ? {} : { loggedOut: true } })),
+        ...offered.presets === undefined ? {} : { modes: offered.presets.map(entry => ({ id: entry.id, ...entry.name === undefined ? {} : { name: entry.name } })) },
+        ...offered.sessionPreset === undefined ? {} : { sessionMode: offered.sessionPreset },
+      })
+    }
     if (!state.ok) throw new Error(`Room unavailable: ${state.error.code}`)
     const events = this.ctx.sessions.get(SessionId(sessionId))?.snapshotEvents() ?? []
     const recent = events.filter(event => event.type === 'room/speech').slice(-12).map(event => event.type === 'room/speech' ? { member: event.data.member, text: event.data.text.slice(0, 2000) } : null)
