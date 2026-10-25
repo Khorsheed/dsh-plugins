@@ -211,6 +211,8 @@ export interface RoomSpeechEvent {
   readonly childSessionId?: SessionId
   /** Native admission→settle milliseconds, excluding queue time. */
   readonly durationMs?: number
+  /** The run this speech closed (its execution metadata — tokens, model — is keyed by it). */
+  readonly runId?: string
 }
 
 /** Observed execution metadata; separate from lifecycle edges to avoid restarting chat nodes. */

@@ -274,6 +274,14 @@ describe('RoomSpeechView', () => {
     return { openSession, container }
   }
 
+  it('shows the run\'s billed tokens once its execution record carries them', async () => {
+    await bench({ ...speech, runId: '7:m-ada' }, { ...STATE, executions: [{ id: '7:m-ada', memberId: 'm-ada', member: 'ada', state: 'done', startedAt: 1, tokens: 4_200 }] })
+    expect(screen.getByText('用量 4.2K tok')).toBeDefined()
+    cleanup()
+    await bench({ ...speech, runId: '7:m-ada' })
+    expect(screen.queryByText(/用量/)).toBeNull()
+  })
+
   it('renders the identity row, the unframed body, and the action row', async () => {
     await bench()
     expect(screen.getByText('ada')).toBeDefined()

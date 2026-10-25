@@ -448,7 +448,7 @@ export class DispatchEngine {
       outcome = member.kind === 'main-agent'
         ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [], options.dispatchSeq)
         : member.kind === 'native'
-          ? await this.runNativeMember(room, member, cursor, text, admitted, options.relayIds ?? [], options.dispatchSeq)
+          ? await this.runNativeMember(room, member, cursor, text, admitted, options.relayIds ?? [], options.dispatchSeq, runId)
           : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId, options.dispatchSeq)
     } catch (error: unknown) {
       this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
@@ -688,7 +688,7 @@ export class DispatchEngine {
    */
   private async runNativeMember(
     room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, admitted: () => Promise<number>, relayIds: readonly string[], dispatchSeq: number | undefined,
+    text: string, admitted: () => Promise<number>, relayIds: readonly string[], dispatchSeq: number | undefined, runId?: string,
   ): Promise<RunOutcome> {
     const agent = await this.nativeAgent(room, member)
     const startedAt = await admitted()
@@ -706,6 +706,7 @@ export class DispatchEngine {
     room.append('room/speech', {
       member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
       text: output, childSessionId: agent.session.id, durationMs: Date.now() - startedAt,
+      ...runId === undefined ? {} : { runId },
       ...reportedTo === undefined ? {} : { reportedTo },
     })
     await this.ctx.sessions.flush(room)
@@ -803,6 +804,7 @@ export class DispatchEngine {
       member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
       text: output,
       childSessionId: run.id,
+      runId,
       durationMs: Date.now() - startedAt,
       ...interrupted === undefined ? {} : { interrupted },
       ...reportedTo === undefined ? {} : { reportedTo },

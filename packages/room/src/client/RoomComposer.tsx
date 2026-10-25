@@ -421,7 +421,7 @@ export function RoomComposer({
           fallback; re-rendered here from the same projections. The framework
           omits the seat entirely on a host without the projection subsystem —
           degrade to no row. */}
-      {!external && useProjection !== undefined && <RoomStatsLine useProjection={useProjection} t={t} />}
+      {!external && useProjection !== undefined && <RoomStatsLine useProjection={useProjection} state={state} t={t} />}
     </div>
   )
 }

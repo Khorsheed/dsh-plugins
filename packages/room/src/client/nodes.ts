@@ -34,6 +34,8 @@ export interface RoomSpeechData {
   readonly childSessionId?: SessionId
   /** Dispatch→settle milliseconds, when measured. */
   readonly durationMs?: number
+  /** The run this speech closed: its execution metadata (tokens) is keyed by it. */
+  readonly runId?: string
 }
 
 /** Chat node data of one member run row. */
@@ -176,6 +178,7 @@ export const roomSpeechDefinition: ConversationNodeDefinition<RoomSpeechData> = 
       ...event.data.reportedTo === undefined ? {} : { reportedTo: event.data.reportedTo },
       ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
       ...event.data.durationMs === undefined ? {} : { durationMs: event.data.durationMs },
+      ...event.data.runId === undefined ? {} : { runId: event.data.runId },
     }
   },
   update: context => context.state,

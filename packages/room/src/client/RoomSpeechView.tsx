@@ -22,6 +22,7 @@ import { IconCheckOutlineMedium, IconCopyOutlineMedium, IconLinkOutlineMedium } 
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { memberColor } from './member-color.ts'
 import { formatClock, formatDurationMs } from './format.ts'
+import { formatTokens } from './RoomStatsLine.tsx'
 import type { RoomSpeechViewProps } from './slots.ts'
 import css from './RoomSpeechView.module.css'
 
@@ -83,6 +84,9 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
     ? undefined
     : member.kind === 'main-agent' ? t('member.kind.main') : member.provider
   const child = data.childSessionId
+  // The run's billed tokens, as the host's 用量 chip shows them (recorded
+  // when the run settles; absent for runs the producer reported none for).
+  const tokens = data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === data.runId)?.tokens
   const collapsible = data.text.length > COLLAPSE_CHARS
   // The newest reply to the room reads unfolded. A reply newer than the
   // cached state's (the refresh is debounced) is the newest already.
@@ -153,6 +157,9 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, t }: R
         )}
         {data.durationMs !== undefined && (
           <span className={css.meta}>{formatDurationMs(data.durationMs)}</span>
+        )}
+        {tokens !== undefined && tokens > 0 && (
+          <span className={css.meta}>{t('speech.usage', { tokens: formatTokens(tokens) })}</span>
         )}
         {data.reportedTo !== undefined && (
           <span className={css.reported}>{t('speech.reportedTo', { member: data.reportedTo })}</span>

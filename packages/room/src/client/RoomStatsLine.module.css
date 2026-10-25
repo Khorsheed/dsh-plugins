@@ -26,3 +26,92 @@
   color: var(--dsw-alias-separator-primary, rgba(127, 127, 127, 0.4));
   margin: 0 10px; /* carries the former flex gap */
 }
+
+/* With members: the coordinator's line elides on its own, the members chip
+   stays whole at its end, and its breakdown opens above the row. */
+.withMembers {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  max-width: var(--dsh-chat-content-width, 780px);
+  width: 100%;
+  margin: 0 auto;
+  padding: 4px 16px 0;
+  box-sizing: border-box;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.withMembers .root {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.membersChip {
+  flex: none;
+  padding: 0 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.membersChip:hover,
+.membersChip[aria-expanded="true"] {
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+}
+
+.breakdown {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  min-width: min(420px, calc(100vw - 32px));
+  padding: 6px 0;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1)));
+  border-radius: 12px;
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1, #ffffff)));
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
+  box-shadow: var(--dsw-elevation-prominent, 0 12px 32px rgba(0, 0, 0, 0.12));
+  text-align: left;
+}
+
+.breakdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.breakdown th,
+.breakdown td {
+  padding: 3px 12px;
+  white-space: nowrap;
+  font-weight: 400;
+}
+
+.breakdown th {
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  text-align: left;
+}
+
+.breakdown td {
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+}
+
+.breakdown td.name {
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+.breakdown .num {
+  text-align: right;
+}
