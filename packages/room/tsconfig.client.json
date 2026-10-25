@@ -22,6 +22,7 @@
     "src/client/RoomQuestionView.tsx",
     "src/client/RoomDecisionView.tsx",
     "src/client/RoomHelpView.tsx",
+    "src/client/at-menu.ts",
     "src/client/team.ts",
     "src/client/TeamView.tsx",
     "src/client/MembersView.tsx",

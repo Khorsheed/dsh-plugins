@@ -3,8 +3,10 @@
  * sessions. Replaces the official input bar while the selector holds (the
  * official bar is display:none underneath), so it owns the whole interaction:
  * a textarea (Enter sends, Shift+Enter newlines), a send button, and the
- * @-completion menu listing ONLY existing roster members (pure addressing —
- * invitation lives in the members tab). Addressing is the union of two
+ * @ menu in two groups: this room's members (pure addressing — invitation
+ * lives in the members tab) and other sessions (the host's session-reference
+ * candidates; a pick inserts the host's own session chip, the mention the
+ * room's agent asks for help through — see at-menu.ts). Addressing is the union of two
  * channels: leading `@name` tokens (the host's parseMentions grammar,
  * stripped from the dispatched text) and the mention menu's picks (a pick
  * records explicit addressing wherever the `@name` sits in the sentence —
@@ -60,7 +62,8 @@ import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation
 // Type-only: InboxState plus the `inbox` key merge into SessionProjectionMap.
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { RoomComposerMatch, RoomComposerProps } from './slots.ts'
-import { chipDetectIndex, freeText, planFreeEdit, type DraftChip } from './draft-chips.ts'
+import { chipDetectIndex, draftSegments, freeText, planFreeEdit, type DraftChip } from './draft-chips.ts'
+import { detectOffset, rankByMatch, sessionRows, sessionTitle, shortTime, type SessionCandidate } from './at-menu.ts'
 import { memberColor } from './member-color.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
 import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
@@ -89,6 +92,11 @@ function previewOf(content: InboxState['next-turn'][number]['content']): string 
   const chars = Array.from(flat)
   return chars.length > QUEUE_PREVIEW_CHARS ? `${chars.slice(0, QUEUE_PREVIEW_CHARS).join('')}…` : flat
 }
+
+/** One @ menu row: a member of this room, or another session. */
+type AtRow =
+  | { readonly kind: 'member'; readonly member: { readonly name: string; readonly kind: string; readonly provider?: string } }
+  | { readonly kind: 'session'; readonly candidate: SessionCandidate }
 
 interface ActiveMention {
   /** The partial name after the trailing `@`. */
@@ -145,7 +153,7 @@ const NO_CHIPS: readonly DraftChip[] = []
 export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
-  modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, openReference, useSession, useProjection, useInput, inputActions, t,
+  modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
 }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const tag = useSyncExternalStore(taskTags?.subscribe ?? NO_TAGS, () => taskTags?.get(sessionId))
@@ -176,9 +184,26 @@ export function RoomComposer({
   const composing = useRef(false)
   const justComposed = useRef(false)
   const members = state?.members ?? []
-  const candidates = mention === null
-    ? []
-    : members.filter(member => member.name.startsWith(mention.query))
+  // The other-sessions group: the host's candidates for the open query (the
+  // recent list plus the query's own lookup, merged), rooms left out until
+  // asking a room is supported.
+  const [sessionPool, setSessionPool] = useState<readonly SessionCandidate[]>([])
+  const query = mention?.query
+  useEffect(() => {
+    if (query === undefined || listSessions === undefined) return
+    const abort = new AbortController()
+    const timer = setTimeout(() => {
+      listSessions(query, abort.signal).then((found) => { if (!abort.signal.aborted) setSessionPool(found) }).catch(() => {})
+    }, query === '' ? 0 : 120)
+    return () => { clearTimeout(timer); abort.abort() }
+  }, [query, listSessions])
+  const excluded = new Set([sessionId as string, ...members.flatMap(member => member.childSessionId === undefined ? [] : [member.childSessionId as string])])
+  const memberRows = mention === null ? [] : rankByMatch(mention.query, members, member => member.name)
+  const otherRows = mention === null ? [] : sessionRows(mention.query, sessionPool.filter(candidate => candidate.room !== true), excluded)
+  const candidates: readonly AtRow[] = [
+    ...memberRows.map(member => ({ kind: 'member' as const, member })),
+    ...otherRows.map(candidate => ({ kind: 'session' as const, candidate })),
+  ]
   // The inherited environment state: the room's own main-agent turn flag
   // (drives the Send/Stop swap) and the still-queued inbox rows (the official
   // queue dock's data, re-homed as a read-only strip). alpha.2 moved the
@@ -254,6 +279,28 @@ export function RoomComposer({
     setMention(active === null ? null : { ...active, index: 0 })
   }
 
+  // A session pick: the host's own session chip replaces the typed `@query`
+  // (detect coordinates: the chips before it each fold to one placeholder);
+  // a host without the insertion seam gets the mention as text.
+  const applySession = (candidate: SessionCandidate): void => {
+    if (mention === null) return
+    const caret = areaRef.current?.selectionStart ?? value.length
+    setMention(null)
+    if (insertSessionReference !== undefined && chipEdit.captureInsertion !== undefined) {
+      const segments = chipMode ? draftSegments(draft, chips) : [value]
+      const span = { start: detectOffset(segments, mention.start), end: detectOffset(segments, caret), draftRev: chipEdit.captureInsertion().draftRev }
+      if (insertSessionReference(candidate, span)) {
+        requestAnimationFrame(() => areaRef.current?.focus())
+        return
+      }
+    }
+    writeText(`${value.slice(0, mention.start)}${candidate.mention} ${value.slice(caret)}`)
+  }
+  const pick = (row: AtRow): void => {
+    if (row.kind === 'member') applyMention(row.member.name)
+    else applySession(row.candidate)
+  }
+
   const applyMention = (name: string): void => {
     if (mention === null) return
     const caret = areaRef.current?.selectionStart ?? value.length
@@ -323,7 +370,7 @@ export function RoomComposer({
         }
         if (event.key === 'Enter' || event.key === 'Tab') {
           event.preventDefault()
-          applyMention(candidates[mention.index]!.name)
+          pick(candidates[mention.index]!)
           return
         }
       }
@@ -371,9 +418,13 @@ export function RoomComposer({
           <span>· {t('coordinator.label')} · {external ? coordinator.provider : 'DSH'}</span>
         </div>
         {mention !== null && candidates.length > 0 && (
-          <ul className={css.menu} role="listbox" aria-label="members">
-            {candidates.map((member, index) => (
-              <li key={member.name}>
+          <ul className={css.menu} role="listbox" aria-label={t('composer.at.label')}>
+            {candidates.map((row, index) => (
+              <li key={row.kind === 'member' ? `m:${row.member.name}` : `s:${row.candidate.sessionId}`}>
+                {index === 0 && row.kind === 'member' && otherRows.length > 0 && <div className={css.menuGroup}>{t('composer.at.members')}</div>}
+                {index === memberRows.length && row.kind === 'session' && (
+                  <div className={css.menuGroup}>{t(mention.query === '' ? 'composer.at.recent' : 'composer.at.sessions')}</div>
+                )}
                 <button
                   type="button"
                   role="option"
@@ -381,17 +432,28 @@ export function RoomComposer({
                   className={index === mention.index ? css.itemActive : css.item}
                   onMouseDown={(event) => {
                     event.preventDefault()
-                    applyMention(member.name)
+                    pick(row)
                   }}
                 >
-                  <span className={css.dot} style={{ background: memberColor(member.name) }} aria-hidden />
-                  <span>{member.name}</span>
-                  <span className={css.hint}>
-                    {member.kind === 'main-agent' ? t('member.kind.main') : member.provider ?? ''}
-                  </span>
+                  {row.kind === 'member'
+                    ? <>
+                        <span className={css.dot} style={{ background: memberColor(row.member.name) }} aria-hidden />
+                        <span className={css.itemText}>{row.member.name}</span>
+                        <span className={css.hint}>
+                          {row.member.kind === 'main-agent' ? t('member.kind.main') : row.member.provider ?? ''}
+                        </span>
+                      </>
+                    : <>
+                        <span className={css.sessionMark} aria-hidden>@</span>
+                        <span className={css.itemText}>{sessionTitle(row.candidate)}</span>
+                        <span className={css.hint}>
+                          {row.candidate.createdAt === undefined ? t('composer.at.session') : t('composer.at.sessionAt', { time: shortTime(row.candidate.createdAt, Date.now()) })}
+                        </span>
+                      </>}
                 </button>
               </li>
             ))}
+            {mention.query === '' && otherRows.length > 0 && <li className={css.menuMore}>{t('composer.at.more')}</li>}
           </ul>
         )}
         {tag !== undefined && (

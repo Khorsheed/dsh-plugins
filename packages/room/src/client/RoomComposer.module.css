@@ -141,7 +141,7 @@
   list-style: none;
   min-width: 218px;
   max-width: 360px;
-  max-height: 220px;
+  max-height: 340px;
   overflow-y: auto;
   border: 1px solid var(--dsw-alias-border-inverted, rgba(0, 0, 0, 0));
   border-radius: 12px;
@@ -188,7 +188,43 @@
   flex: none;
 }
 
+.itemText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A session row's mark, in the dot's seat: the host's session-chip @. */
+.sessionMark {
+  flex: none;
+  width: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+/* Group titles (本房间成员 / 最近的会话) and the search hint. */
+.menuGroup {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.menuMore {
+  margin-top: 2px;
+  padding: 6px 10px 4px;
+  border-top: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.06));
+  font-size: 11.5px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
 .hint {
+  flex: none;
+  white-space: nowrap;
   margin-left: auto;
   font-size: 12px;
   line-height: 18px;
