@@ -168,20 +168,55 @@
   );
 }
 
-/* 展开全部 / 收起: a quiet business-blue text button under the bubble. */
+/* Expand / collapse: a small round chevron seated in the bubble's own
+   bottom-right corner (no separate row under the bubble). Its fill is the
+   page base, so it reads as a soft chip on the bubble tint in light and dark
+   themes alike; the chevron flips when the message is open. Clamped, it
+   floats over the fade; open, it takes a short trailing row inside the
+   bubble, tucked into the bottom padding. */
+.foldBar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 2px -8px -4px 0;
+}
+
+.clamped .foldBar {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  margin: 0;
+}
+
 .foldToggle {
-  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 20px;
   padding: 0;
   border: none;
-  background: transparent;
-  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
-  font-size: calc(var(--dsh-content-font-size-secondary, 13px) - 1px);
-  line-height: calc(18px + var(--dsh-content-font-delta-secondary, 0px));
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base, #fff);
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--dsw-alias-label-primary, #000) 8%, transparent);
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.foldToggle svg {
+  transition: transform 160ms ease;
+}
+
+.foldToggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.foldToggle:hover {
+  background: color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 82%, var(--dsw-alias-label-primary, #000));
+  color: var(--dsw-alias-label-primary, var(--dsw-alias-label-secondary));
 }
 
 .foldToggle:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
   outline-offset: 2px;
-  border-radius: 4px;
 }

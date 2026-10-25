@@ -9,13 +9,14 @@
  * owner prop when the host still passes it, otherwise the root-scoped
  * `conversation.images.content` factory. User messages inside a withdrawn
  * span render nothing; the withdrawal divider marks the spot. A long message
- * folds behind a fade with 展开全部 / 收起 (see fold.ts).
+ * folds behind a fade; a small chevron seated in the bubble's bottom-right
+ * corner expands / collapses it (see fold.ts).
  */
 import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
 import type { UserMessageNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { Button, JsonBlock, RiskConfirmation, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconCheckOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium } from './icons.tsx'
+import { IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium } from './icons.tsx'
 import { IconUndoOutlineMedium } from './icons-local.tsx'
 import { foldHiddenRanges, isSeqHidden } from './withdrawn-node.ts'
 import { chatHookOf, type ChatSlice } from './chat-hook.ts'
@@ -270,12 +271,22 @@ export const UserMessageView = memo(function UserMessageView({
               <JsonBlock key={index} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />
             ))}
             {clamped && <div className={css.fade} aria-hidden onClick={() => { toggle(true) }} />}
+            {collapsible && (
+              <div className={css.foldBar}>
+                <Tooltip label={expanded ? t('fold.collapse') : t('fold.expand')} side="bottom">
+                  <button
+                    type="button"
+                    className={css.foldToggle}
+                    aria-label={expanded ? t('fold.collapse') : t('fold.expand')}
+                    aria-expanded={expanded}
+                    onClick={() => { toggle(!expanded) }}
+                  >
+                    <IconChevronDownOutlineMedium />
+                  </button>
+                </Tooltip>
+              </div>
+            )}
           </div>
-        )}
-        {showBubble && collapsible && (
-          <button type="button" className={css.foldToggle} onClick={() => { toggle(!expanded) }}>
-            {expanded ? t('fold.collapse') : t('fold.expand')}
-          </button>
         )}
       </div>
       <div className={css.actions}>
