@@ -363,6 +363,15 @@ export const zh = {
   'look.front': '正面',
   'look.side': '侧面',
   'look.back': '背面',
+  'gltf.colors': '颜色（按材质）',
+  'gltf.vertexColors': '顶点色',
+  'gltf.vertexColorsHint': '这个材质用了顶点色：新颜色会和顶点色相乘，可能偏暗',
+  'gltf.reset': '还原',
+  'gltf.morphs': '形态键',
+  'gltf.bones': '骨骼比例',
+  'gltf.boneSearch': '找骨头…',
+  'gltf.rotate': '旋转',
+  'gltf.moreBones': '另有 {count} 根，搜索名字找',
 }
 
 /** English dictionary. */
@@ -717,6 +726,15 @@ export const en: Record<keyof typeof zh, string> = {
   'look.front': 'Front',
   'look.side': 'Side',
   'look.back': 'Back',
+  'gltf.colors': 'Colors (by material)',
+  'gltf.vertexColors': 'vertex colors',
+  'gltf.vertexColorsHint': 'This material uses vertex colors: the new color multiplies them and may look darker',
+  'gltf.reset': 'Reset',
+  'gltf.morphs': 'Shape keys',
+  'gltf.bones': 'Bone sizes',
+  'gltf.boneSearch': 'Find a bone…',
+  'gltf.rotate': 'Rotation',
+  'gltf.moreBones': '{count} more; search by name',
 }
 
 /** The dictionary namespace this view binds. */

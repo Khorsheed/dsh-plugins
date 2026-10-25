@@ -231,7 +231,19 @@ export interface GltfLook {
   readonly animation?: string
   /** The panel's default view of it. */
   readonly preview?: PreviewAngle
+  /** Base color by the model's material name (`{ "冠": "#c9a23a" }`). */
+  readonly tint?: Readonly<Record<string, string>>
+  /** Per bone (by name): a scale (one number or x/y/z) and a rotation offset in degrees, on top of any animation. */
+  readonly bones?: Readonly<Record<string, BoneTweak>>
+  /** Shape-key weights by name (`{ "smile": 0.6 }`). */
+  readonly morphs?: Readonly<Record<string, number>>
   readonly recipe?: Parts3DLook
+}
+
+/** One bone's tweak in a glTF look. */
+export interface BoneTweak {
+  readonly scale?: number | readonly [number, number, number]
+  readonly rotate?: readonly [number, number, number]
 }
 
 /** A preview angle in degrees: yaw 0 looks at the face (models face +x), 90 from the side, 180 from behind; pitch looks down. */

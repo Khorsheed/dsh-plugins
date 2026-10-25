@@ -14,6 +14,7 @@ import { failureOf, type ViewProps } from './contract.ts'
 import { blankLook, ensureColor, LookCanvas, recolor, setCell } from './looks.tsx'
 import { Preview3D } from './Preview3D.tsx'
 import { Recipe3DEditor } from './Recipe3DEditor.tsx'
+import type { ModelParts } from '../vfs.ts'
 import css from './GameTab.module.css'
 
 /** Props of the elements view. */
@@ -121,10 +122,11 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
   useEffect(() => { setLook(element.look) }, [element.id, element.look])
   const [look3d, setLook3d] = useState<Look3D | null>(element.look3d)
   const [clips, setClips] = useState<readonly string[]>([])
+  const [parts, setParts] = useState<ModelParts | null>(null)
   const [clip, setClip] = useState<{ name: string; n: number } | null>(null)
   const [view, setView] = useState<{ yaw: number; n: number } | null>(null)
   const turnTo = (yaw: number): void => { setView(v => ({ yaw, n: (v?.n ?? 0) + 1 })) }
-  useEffect(() => { setClips([]); setClip(null) }, [element.id])
+  useEffect(() => { setClips([]); setClip(null); setParts(null) }, [element.id])
   useEffect(() => { setLook3d(element.look3d) }, [element.id, element.look3d])
 
   const save = (next: AnyLook): void => {
@@ -167,7 +169,7 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
 
     {look3d !== null ? <section className={css.lookPanel}>
       <Preview3D api={api} projectId={project.id} version={project.current?.version} look={look3d} mode="spin"
-        className={css.turntable} emptyLabel={t('look.preview3dEmpty')} onClips={setClips} clip={clip} view={view} />
+        className={css.turntable} emptyLabel={t('look.preview3dEmpty')} onClips={(names, found) => { setClips(names); setParts(found) }} clip={clip} view={view} />
       {clips.length > 0 && <ChipRow label={t('gltf.clips')} value={clip?.name ?? ''} onSelect={name => { setClip(c => ({ name, n: (c?.n ?? 0) + 1 })) }}
         chips={clips.map(name => ({ id: name, label: name }))} />}
       <div className={css.toolRow}>
@@ -265,6 +267,10 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
       <summary>{t('look.fineTune')}</summary>
       <Recipe3DEditor t={t} look={look3d} onChange={save} />
     </details>}
+    {look3d?.kind === 'gltf' && parts !== null && (parts.materials.length + parts.bones.length + parts.morphs.length) > 0 && <details className={css.fold}>
+      <summary>{t('look.fineTune')}</summary>
+      <GltfTweaks t={t} look={look3d} parts={parts} onChange={save} />
+    </details>}
 
     <section className={css.block}>
       <h4 className={css.blockTitle}>{t('fields.title')}</h4>
@@ -316,5 +322,75 @@ function GltfControls({ t, look, onChange }: { t: ElementsViewProps['t']; look: 
         onBlur={() => { const v = Number(scale); if (Number.isFinite(v) && v > 0 && v !== (look.scale ?? 1)) onChange({ ...look, scale: v }) }}
         onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }} />
     </label>
+  </div>
+}
+
+/** Rig helpers a user never tunes (Rigify and friends): hidden from the bone list unless already tweaked. */
+const RIG_HELPER = /^(DEF|MCH|ORG|CTRL|WGT|IK|FK|VIS|MSTR)[-_.]/i
+
+type GltfLookOf = Extract<Look3D, { kind: 'gltf' }>
+
+/**
+ * A model look tuned by the names inside it: base color per material, a size
+ * (and, folded, a rotation) per bone, a weight per shape key. Every change is
+ * a look edit (live in the turntable, saved like any other).
+ */
+function GltfTweaks({ t, look, parts, onChange }: { t: ElementsViewProps['t']; look: GltfLookOf; parts: ModelParts; onChange: (next: Look3D) => void }): ReactNode {
+  const [query, setQuery] = useState('')
+  const tint = look.tint ?? {}, bones = look.bones ?? {}, morphs = look.morphs ?? {}
+  const set = <K extends 'tint' | 'bones' | 'morphs'>(key: K, value: GltfLookOf[K]): void => { onChange({ ...look, [key]: value }) }
+  const without = <V,>(map: Readonly<Record<string, V>>, name: string): Record<string, V> => { const next = { ...map }; delete next[name]; return next }
+  const shown = parts.bones.filter(b => bones[b] !== undefined || (!RIG_HELPER.test(b) && (query === '' || b.toLowerCase().includes(query.toLowerCase()))))
+  const boneScale = (name: string): number => { const s = bones[name]?.scale; return typeof s === 'number' ? s : 1 }
+  const rot = (name: string): readonly [number, number, number] => bones[name]?.rotate ?? [0, 0, 0]
+  const setBone = (name: string, patch: { scale?: number; rotate?: [number, number, number] }): void => {
+    const next = { ...bones[name], ...patch }
+    const plain = (next.scale === undefined || next.scale === 1) && (next.rotate === undefined || next.rotate.every(v => v === 0))
+    set('bones', plain ? without(bones, name) : { ...bones, [name]: next })
+  }
+  return <div className={css.recipe}>
+    {parts.materials.length > 0 && <div className={css.recipeGroup}>
+      <span className={css.recipePartName}>{t('gltf.colors')}</span>
+      <div className={css.recipeColors}>
+        {parts.materials.map(m => <label key={m.name} className={css.recipeColor} title={m.vertexColors ? t('gltf.vertexColorsHint') : undefined}>
+          <input type="color" value={tint[m.name] ?? m.color} onChange={e => { set('tint', { ...tint, [m.name]: e.target.value }) }} />
+          <span>{m.name}{m.vertexColors ? ` · ${t('gltf.vertexColors')}` : ''}</span>
+          {tint[m.name] !== undefined && <button type="button" className={css.link} onClick={() => { set('tint', without(tint, m.name)) }}>{t('gltf.reset')}</button>}
+        </label>)}
+      </div>
+    </div>}
+    {parts.morphs.length > 0 && <div className={css.recipeGroup}>
+      <span className={css.recipePartName}>{t('gltf.morphs')}</span>
+      {parts.morphs.map(name => <label key={name} className={css.param}>
+        <span className={css.paramLabel}>{name}</span>
+        <input type="range" className={css.range} min={0} max={1} step={0.05} value={morphs[name] ?? 0}
+          onChange={e => { const v = Number(e.target.value); set('morphs', v === 0 ? without(morphs, name) : { ...morphs, [name]: v }) }} />
+        <span className={css.paramValue}>{(morphs[name] ?? 0).toFixed(2)}</span>
+      </label>)}
+    </div>}
+    {parts.bones.length > 0 && <div className={css.recipeGroup}>
+      <span className={css.recipePartName}>{t('gltf.bones')}</span>
+      <input className={css.input} value={query} placeholder={t('gltf.boneSearch')} aria-label={t('gltf.boneSearch')} onChange={e => { setQuery(e.target.value) }} />
+      {shown.slice(0, 40).map(name => <div key={name} className={css.recipePart}>
+        <label className={css.param}>
+          <span className={css.paramLabel}>{name}</span>
+          <input type="range" className={css.range} min={0.5} max={2} step={0.05} value={boneScale(name)} onChange={e => { setBone(name, { scale: Number(e.target.value) }) }} />
+          <span className={css.paramValue}>×{boneScale(name).toFixed(2)}</span>
+        </label>
+        <details className={css.history}>
+          <summary>{t('gltf.rotate')}</summary>
+          {(['x', 'y', 'z'] as const).map((axis, i) => <label key={axis} className={css.param}>
+            <span className={css.paramLabel}>{axis}</span>
+            <input type="range" className={css.range} min={-45} max={45} step={1} value={rot(name)[i]} onChange={e => {
+              const next = [...rot(name)] as [number, number, number]
+              next[i] = Number(e.target.value)
+              setBone(name, { rotate: next })
+            }} />
+            <span className={css.paramValue}>{rot(name)[i]}°</span>
+          </label>)}
+        </details>
+      </div>)}
+      {shown.length > 40 && <span className={css.metaLine}>{t('gltf.moreBones', { count: shown.length - 40 })}</span>}
+    </div>}
   </div>
 }

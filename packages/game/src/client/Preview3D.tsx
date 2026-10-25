@@ -17,7 +17,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { BundleFile, Look3D } from '../types.ts'
-import { shellHtml, type FrameMessage } from '../vfs.ts'
+import { shellHtml, type FrameMessage, type ModelParts } from '../vfs.ts'
 import type { GameApi } from './contract.ts'
 import { failureOf } from './contract.ts'
 import { PREVIEW_HTML, PREVIEW_ID, PREVIEW_MAIN } from './preview-entry.ts'
@@ -87,8 +87,8 @@ export interface Preview3DProps {
   readonly emptyLabel: string
   /** Shown instead of `emptyLabel`, and under a still while it renders. */
   readonly placeholder?: ReactNode
-  /** A turntable reports a model's animation clips here once it has loaded. */
-  readonly onClips?: (names: readonly string[]) => void
+  /** A turntable reports a model's animation clips, and what it can be tuned by, once it has loaded. */
+  readonly onClips?: (names: readonly string[], parts: ModelParts | null) => void
   /** A turntable plays this clip (bump `n` to play the same one again). */
   readonly clip?: { readonly name: string; readonly n: number } | null
   /** A turntable turns to this side (yaw in degrees: 0 front, 90 side, 180 back; bump `n` to repeat). */
@@ -153,7 +153,7 @@ export function Preview3D({ api, projectId, version, look, mode, className, empt
         stills.set(stillKey, data.png)
         setImage(data.png)
       }
-      if (data?.gamedev === 'preview-clips' && mode === 'spin') onClips?.(data.names)
+      if (data?.gamedev === 'preview-clips' && mode === 'spin') onClips?.(data.names, data.parts)
     }
     window.addEventListener('message', onMessage)
     return () => { window.removeEventListener('message', onMessage) }

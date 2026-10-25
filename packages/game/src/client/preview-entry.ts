@@ -66,9 +66,18 @@ async function fit() {
   model = build(look)
   world.add(model, { id: '${PREVIEW_ID}' })
   place()
-  // A glTF look fills in later: measure again once it has, and say which clips it has.
+  // A glTF look fills in later: measure again once it has, then say what it can be tuned by.
   if (model.userData.loaded) { await model.userData.loaded; place() }
-  parent.postMessage({ gamedev: 'preview-clips', names: model.userData.animations ?? [] }, '*')
+  parent.postMessage({ gamedev: 'preview-clips', names: model.userData.animations ?? [], parts: model.userData.parts?.() ?? null }, '*')
+}
+/** What a rebuild depends on; anything else (tint, bones, morphs, angle, clip) is retuned in place. */
+const rebuildKey = look => JSON.stringify(look && look.kind === 'gltf' ? [look.src, look.material, look.outline, look.scale] : look)
+let builtKey = null
+function edited() {
+  const look = lookNow(), key = rebuildKey(look)
+  if (model && key === builtKey && model.userData.retune) { model.userData.retune(look); viewFrom(look); return }
+  builtKey = key
+  fit()
 }
 addEventListener('message', e => {
   const d = e.data
@@ -76,8 +85,9 @@ addEventListener('message', e => {
   if (d.gamedev === 'preview-play') model.userData.play?.(d.name)
   if (d.gamedev === 'preview-view') { yaw = d.yaw; if (Number.isFinite(d.pitch)) pitch = d.pitch; spinning = false; aim(); world.render() }
 })
+builtKey = rebuildKey(lookNow())
 await fit()
-addEventListener('dshelements', () => { setTimeout(fit) })
+addEventListener('dshelements', () => { setTimeout(edited) })
 const canvas = world.canvas
 canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; spinning = false; canvas.setPointerCapture(e.pointerId) })
 canvas.addEventListener('pointermove', e => {

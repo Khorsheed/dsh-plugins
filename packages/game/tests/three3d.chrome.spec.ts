@@ -90,14 +90,15 @@ function skinnedGlb(): string {
   const ibm = view(f32([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]))
   const times = view(f32([0, 1]))
   const rots = view(f32([0, 0, 0, 1, 0, Math.SQRT1_2, 0, Math.SQRT1_2]))
+  const smile = view(f32(faces.flatMap(f => f.flatMap(i => (i === 0 ? [0, 0.5, 0] : [0, 0, 0])))))
   const bin = Buffer.concat(parts)
   const sampler = { input: 4, output: 5, interpolation: 'LINEAR' }
   const json = JSON.stringify({
     asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0, 1] }],
     nodes: [{ name: 'body', mesh: 0, skin: 0 }, { name: 'bone' }],
     skins: [{ joints: [1], inverseBindMatrices: 3 }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 0, JOINTS_0: 1, WEIGHTS_0: 2 }, material: 0 }] }],
-    materials: [{ pbrMetallicRoughness: { baseColorFactor: [0.8, 0.3, 0.2, 1], metallicFactor: 0 } }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0, JOINTS_0: 1, WEIGHTS_0: 2 }, targets: [{ POSITION: 6 }], material: 0 }], weights: [0], extras: { targetNames: ['smile'] } }],
+    materials: [{ name: '袍', pbrMetallicRoughness: { baseColorFactor: [0.8, 0.3, 0.2, 1], metallicFactor: 0 } }],
     animations: [
       { name: 'idle', channels: [{ sampler: 0, target: { node: 1, path: 'rotation' } }], samplers: [sampler] },
       { name: 'walk', channels: [{ sampler: 0, target: { node: 1, path: 'rotation' } }], samplers: [sampler] },
@@ -110,6 +111,7 @@ function skinnedGlb(): string {
       { bufferView: ibm, componentType: 5126, count: 1, type: 'MAT4' },
       { bufferView: times, componentType: 5126, count: 2, type: 'SCALAR', min: [0], max: [1] },
       { bufferView: rots, componentType: 5126, count: 2, type: 'VEC4' },
+      { bufferView: smile, componentType: 5126, count: 12, type: 'VEC3', min: [0, 0, 0], max: [0, 0.5, 0] },
     ],
   })
   const pad = (b: Buffer, fill: number): Buffer => Buffer.concat([b, Buffer.alloc((4 - (b.length % 4)) % 4, fill)])
@@ -539,6 +541,48 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
     }, { blankProbe: THREE_3D.blankProbe })
     expect(own.failures).toEqual([])
     expect(own.passed).toBe(1)
+  }, 90_000)
+
+  it('tunes a glTF look by name — tint, bone size and rotation over the animation, shape keys with the outline — and retunes live', async () => {
+    const result = await checker.run(withKitRuntime({
+      ...files,
+      'assets/rig.glb': { type: 'model/gltf-binary', b64: skinnedGlb() },
+      'elements/rig.json': text(JSON.stringify({ id: 'rig', name: '木偶', type: '角色', look: {
+        kind: 'gltf', src: 'assets/rig.glb', tint: { 袍: '#00ff00' }, bones: { bone: { scale: 2, rotate: [10, 0, 0] } }, morphs: { smile: 1 },
+      } }), 'application/json'),
+      'src/main.js': text(`import { createWorld, build } from 'dsh3d'
+        const world = createWorld()
+        world.terrain({ size: 30, height: () => 0 })
+        const rig = world.add(world.place(build('rig'), 0, 0), { id: 'rig' })
+        const find = test => { let r = null; rig.traverse(o => { if (!r && test(o)) r = o }); return r }
+        window.dshGame = { ready: true, input() {}, step: dt => world.step(dt),
+          retune: look => rig.userData.retune(look),
+          state: () => {
+            const body = find(o => o.isSkinnedMesh && !o.userData.outline), hull = find(o => o.isSkinnedMesh && o.userData.outline), bone = find(o => o.isBone)
+            return { color: '#' + body.material.color.getHexString(), scale: bone.scale.x, rotX: bone.rotation.x, smile: body.morphTargetInfluences[0],
+              hullShares: hull.morphTargetInfluences === body.morphTargetInfluences, parts: rig.userData.parts() }
+          } }`),
+    }, THREE_3D), {
+      'tests/tune.test.js': `
+        test('the look tunes the model, and the animation does not wash it out', () => {
+          step(45)
+          const s = game.state()
+          assert.equal(s.color, '#00ff00')
+          assert.near(s.scale, 2, 1e-6, '骨头放大应稳定在 2 倍（不随帧累加）')
+          assert.near(s.smile, 1, 1e-6); assert(s.hullShares, '描边应和模型共用形态键权重')
+          assert.equal(JSON.stringify(s.parts.materials.map(m => m.name)), JSON.stringify(['袍']))
+          assert.equal(JSON.stringify(s.parts.bones), JSON.stringify(['bone'])); assert.equal(JSON.stringify(s.parts.morphs), JSON.stringify(['smile']))
+        })
+        test('retune applies new values in place and restores what was dropped', () => {
+          game.retune({ kind: 'gltf', src: 'assets/rig.glb', morphs: { smile: 0.25 } })
+          step(2)
+          const s = game.state()
+          assert(s.color !== '#00ff00', '去掉 tint 应回到原色：' + s.color)
+          assert.near(s.scale, 1, 1e-6, '去掉骨头调整应回到原大小'); assert.near(s.smile, 0.25, 1e-6)
+        })`,
+    }, { blankProbe: THREE_3D.blankProbe })
+    expect(result.failures).toEqual([])
+    expect(result.passed).toBe(2)
   }, 90_000)
 
   it('flags a 3D game that never draws', async () => {
