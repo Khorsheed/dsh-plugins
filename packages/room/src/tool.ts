@@ -23,7 +23,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls this package's `Context.room` service augmentation.
 import type {} from './index.ts'
-import { roomInviteTool, roomMessageTool, roomReadTool, roomPlanTool } from './tool-definition.ts'
+import { roomHelpTool, roomInviteTool, roomMessageTool, roomReadTool, roomPlanTool } from './tool-definition.ts'
 
 const PACKAGE_NAME = '@khorsheed/dsh-room'
 
@@ -79,5 +79,6 @@ export function apply(ctx: Context): void {
     if (typeof service.readRoomContext === 'function') toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomReadTool(service))), 'room-tool: room_read tool')
     toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomInviteTool(service))), 'room-tool: room_invite tool')
     toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomMessageTool(service))), 'room-tool: room_message tool')
+    if (typeof service.askHelp === 'function') toolsCtx.effect(() => toolsCtx.tools.register(definePluginTool(roomHelpTool(service))), 'room-tool: room_help tool')
   })
 }

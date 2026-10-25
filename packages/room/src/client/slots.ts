@@ -407,6 +407,24 @@ export type RoomQuestionViewProps =
   & InjectFace<RoomQuestionInjected>
   & PropsLocale<'room'>
 
+/** Injected face of the help rows (the asking room's thread row, the helper's request card). */
+export interface RoomHelpInjected {
+  /** Open another session (the helper's, or the asking room). */
+  readonly openSession: (sessionId: SessionId) => void
+}
+
+/** Full props of the 'room-help' chat-node renderer. */
+export type RoomHelpViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-help'>
+  & InjectFace<RoomHelpInjected>
+  & PropsLocale<'room'>
+
+/** Full props of the 'room-help-request' chat-node renderer. */
+export type RoomHelpRequestViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-help-request'>
+  & InjectFace<RoomHelpInjected>
+  & PropsLocale<'room'>
+
 /** Full props of the 'room-approval' chat-node renderer. */
 export type RoomApprovalViewProps =
   PropsRuntime<'conversation.chat.node', 'room-approval'>
