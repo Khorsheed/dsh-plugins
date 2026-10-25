@@ -18,7 +18,7 @@
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { MarkdownText, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconCheckOutlineMedium, IconCopyOutlineMedium, IconLinkOutlineMedium, IconRequestDetailOutlineMedium } from './icons.tsx'
+import { IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconCopyOutlineMedium, IconLinkOutlineMedium, IconRequestDetailOutlineMedium } from './icons.tsx'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { memberColor } from './member-color.ts'
 import { formatClock, formatDurationMs } from './format.ts'
@@ -127,16 +127,24 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
       <div className={clamped ? `${css.body} ${css.clamped}` : css.body}>
         <MarkdownText text={data.text} labels={labels} />
         {clamped && <div className={css.fade} aria-hidden onClick={() => { toggle(true) }} />}
+        {/* message-tools' fold control, shared look: a small chevron seated in
+            the body's bottom-right corner (over the fade while folded). */}
+        {collapsible && (
+          <div className={css.foldBar}>
+            <Tooltip label={expanded ? t('speech.collapse') : t('speech.expand')} side="bottom">
+              <button
+                type="button"
+                className={css.foldToggle}
+                aria-label={expanded ? t('speech.collapse') : t('speech.expand')}
+                aria-expanded={expanded}
+                onClick={() => { toggle(!expanded) }}
+              >
+                <IconChevronDownOutlineMedium />
+              </button>
+            </Tooltip>
+          </div>
+        )}
       </div>
-      {collapsible && (
-        <button
-          type="button"
-          className={css.expandToggle}
-          onClick={() => { toggle(!expanded) }}
-        >
-          {expanded ? t('speech.collapse') : t('speech.expand')}
-        </button>
-      )}
       {data.reportedTo !== undefined && (
         <span className={css.reported}>{t('speech.reportedTo', { member: data.reportedTo })}</span>
       )}

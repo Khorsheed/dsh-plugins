@@ -94,17 +94,55 @@
   );
 }
 
-/* The expand/collapse toggle: the MembersView expandToggle chrome (business
-   primary text button), reused for the same affordance. */
-.expandToggle {
-  align-self: flex-start;
+/* Expand / collapse: message-tools' fold control (UserMessageView.module.css)
+   — a small round chevron seated in the body's bottom-right corner, over the
+   fade while folded, at the end of the body once expanded; it flips up when
+   expanded. */
+.foldBar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 2px -4px 0 0;
+}
+
+.clamped .foldBar {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  margin: 0;
+}
+
+.foldToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 20px;
   padding: 0;
   border: none;
-  background: transparent;
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base, #fff);
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-primary));
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--dsw-alias-label-primary, #000) 8%, transparent);
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.foldToggle svg {
+  transition: transform 160ms ease;
+}
+
+.foldToggle[aria-expanded='true'] svg {
+  transform: rotate(180deg);
+}
+
+.foldToggle:hover {
+  background: color-mix(in srgb, var(--dsw-alias-bg-base, #fff) 82%, var(--dsw-alias-label-primary, #000));
+  color: var(--dsw-alias-label-primary, var(--dsw-alias-label-secondary));
+}
+
+.foldToggle:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  outline-offset: 2px;
 }
 
 /* The official MessageIconActions chrome, replicated: 28px icon buttons in
@@ -246,6 +284,6 @@
 /* Mouse clicks never raise a focus ring; keyboard navigation keeps the
    visible one. */
 .action:focus:not(:focus-visible),
-.expandToggle:focus:not(:focus-visible) {
+.foldToggle:focus:not(:focus-visible) {
   outline: none;
 }
