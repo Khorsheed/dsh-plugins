@@ -15,7 +15,7 @@ import type { ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InjectFace, PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { LabViewInjected, LabViewProps } from './contract.ts'
-import { IconGaugeOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconGaugeOutlineRegular } from './icons.tsx'
 import { LabView } from './LabView.tsx'
 import type { createLabViewStore } from './store.ts'
 

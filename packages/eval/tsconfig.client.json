@@ -15,6 +15,7 @@
   },
   "files": [
     "src/client/AnswerView.tsx",
+    "src/client/icons.tsx",
     "src/client/ConditionsPage.tsx",
     "src/client/DesignPage.tsx",
     "src/client/Inspect.tsx",
