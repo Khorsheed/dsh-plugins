@@ -17,6 +17,9 @@
 }
 
 .scroll { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px 56px; display: flex; flex-direction: column; gap: 12px; }
+/* A scrolling column scrolls; its blocks never shrink. An overflow box (the chip row's sideways scroller, the stage)
+   would otherwise be squashed below its content once the column is full — the filter chips vanished at 29 elements. */
+.scroll > * { flex-shrink: 0; }
 .spacer { flex: 1; }
 .lead { margin: 0; color: var(--dsw-alias-label-secondary); font-size: var(--dsh-panel-text-body, 13px); line-height: 1.6; }
 .metaLine { color: var(--dsw-alias-label-tertiary); font-size: var(--dsh-panel-text-meta, 12px); }
