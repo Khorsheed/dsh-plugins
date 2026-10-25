@@ -62,7 +62,10 @@ import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
 import { resolveTaskRef } from './jobs.ts'
 import { suggestTask } from './report-gate.ts'
 import { decisionRecord } from './decisions.ts'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import { askerPrompt, claimed, helperTools, helpMessage, mentionedSessions, messagePrompt, readHelpSource, receivedHelps, referencedSessions, replayHelps, requestPrompt, turnAnswer, type HelpSource } from './help.ts'
 import type {
+  RoomHelp,
   RoomCancelRequest, RoomCancelResult,
   RoomPrepareMemberRequest, RoomPrepareMemberResult,
   RoomFailure, RoomSetCoordinatorRequest, RoomSetCoordinatorResult, RoomReconcileDeliveryRequest, RoomReconcileDeliveryResult,
@@ -344,6 +347,27 @@ export class RoomService extends TypertRemoteService {
         if (!result.ok) throw new Error(`Room input routing failed: ${result.error.code}`)
       }
       return { kind: 'enter', messages: [] }
+    })
+    // Cross-session help (help.ts): a help message reaching a helper's turn
+    // equips that agent with the helper tools and marks the thread running;
+    // an agent whose log already holds help requests (a restart dropped its
+    // agent-local tools) is equipped on its first step.
+    const scanned = new WeakSet<object>()
+    ctx.on('agent/pre-step', async ({ agent, step }, next) => {
+      const decision = await next()
+      if (decision.kind !== 'enter') return decision
+      const arriving = decision.messages.flatMap((message) => {
+        const source = readHelpSource(message.source)
+        return source === undefined ? [] : [source]
+      })
+      if (arriving.length > 0) {
+        this.equipHelper(agent)
+        for (const source of arriving) await this.markHelpRunning(source)
+      } else if (step === 1 && !scanned.has(agent)) {
+        scanned.add(agent)
+        if (receivedHelps(agent.session.snapshotEvents()).length > 0) this.equipHelper(agent)
+      }
+      return decision
     })
     // The model-facing room tools are deliberately NOT registered here: they
     // belong to this package's `./tool` composition entry (src/tool.ts),
@@ -1304,6 +1328,225 @@ export class RoomService extends TypertRemoteService {
     const events = session.snapshotEvents()
     const coordinator = coordinatorMember(replay(events), events)
     return actorChildSessionId === undefined ? coordinator?.kind === 'main-agent' : coordinator?.childSessionId === actorChildSessionId
+  }
+
+  // ── Cross-session help (help.ts) ──────────────────────────────────────────
+
+  private readonly equipped = new WeakSet<object>()
+
+  /** Register the helper tools on one helper agent (agent-local: they unwind with it). */
+  private equipHelper(agent: Agent): void {
+    if (this.equipped.has(agent)) return
+    const tools = (agent.ctx.get as (name: string) => unknown)('tools') as { register(def: object): () => void } | undefined
+    if (tools === undefined) return
+    this.equipped.add(agent)
+    for (const def of helperTools(this)) {
+      try {
+        tools.register(def)
+      } catch (error) {
+        this.ctx.logger.warn(`room: helper tool on "${agent.session.id}" was refused: ${String(error)}`)
+      }
+    }
+  }
+
+  /** A room's display title (its latest `session/title`), else its id. */
+  private roomTitle(session: Session): string {
+    const titled = session.snapshotEvents().findLast(event => (event.type as string) === 'session/title') as { data?: { title?: unknown } } | undefined
+    return typeof titled?.data?.title === 'string' && titled.data.title !== '' ? titled.data.title : String(session.id)
+  }
+
+  /**
+   * Resolve the session a member names: an `@[…](dsh-session:…)` mention, a
+   * session id, or a title (through the host's session-reference discovery).
+   */
+  private async resolveHelpTarget(caller: Agent, name: string): Promise<{ readonly sessionId: string; readonly title: string } | { readonly error: string }> {
+    const resolver = (this.ctx.get as (name: string) => unknown)('sessionReferenceResolver') as {
+      listCandidates?(agent: Agent, query?: string, limit?: number): Promise<readonly { sessionId: string; label: string; displayTitle?: string }[]>
+    } | undefined
+    if (resolver?.listCandidates === undefined) return { error: 'This host cannot look sessions up; room_help is unavailable.' }
+    const mentioned = mentionedSessions(name)[0]
+    const query = (mentioned ?? name.replace(/^@/u, '')).trim()
+    const candidates = await resolver.listCandidates(caller, query, 8)
+    const titleOf = (entry: { label: string; displayTitle?: string }): string => entry.displayTitle ?? entry.label
+    const exact = candidates.find(entry => entry.sessionId === query) ?? candidates.find(entry => titleOf(entry) === query)
+    const picked = exact ?? (candidates.length === 1 ? candidates[0] : undefined)
+    if (picked !== undefined) return { sessionId: picked.sessionId, title: titleOf(picked) }
+    if (candidates.length === 0) return { error: `No session matches "${name}". Ask the human to @ the session in the room.` }
+    return { error: `"${name}" matches several sessions: ${candidates.map(entry => `"${titleOf(entry)}" (${entry.sessionId})`).join(', ')}. Retry with the exact title or id.` }
+  }
+
+  /**
+   * A member asks another session for help, or writes again on a thread
+   * (the `room_help` tool). The first ask of a session the human never
+   * @-mentioned in this room waits for the human's go-ahead.
+   * @param request - the calling session, the target session (new thread) or help id (existing), the text.
+   * @param caller - the calling agent.
+   * @returns the tool's text result.
+   */
+  async askHelp(request: { readonly sessionId: string; readonly session?: string; readonly help?: string; readonly text: string }, caller: Agent): Promise<string> {
+    const text = request.text.trim()
+    if (text === '') return 'The help text must be non-blank.'
+    const routed = this.nativeRoute(request.sessionId)
+    const roomId = routed?.roomId ?? SessionId(request.sessionId)
+    const loaded = this.ctx.sessions.get(roomId) !== undefined && isRoomLog(this.ctx.sessions.get(roomId)!.snapshotEvents())
+      ? await this.ensureLive(roomId)
+      : undefined
+    if (loaded === undefined || !loaded.ok) return 'room_help works from inside a room; this session is not one.'
+    const room = loaded.session
+    const events = room.snapshotEvents()
+    const asker = loaded.state.members.find(member => routed === undefined ? member.kind === 'main-agent' : member.childSessionId === routed.actor)
+    if (asker === undefined) return 'Only a member of this room can ask for help.'
+    const roomTitle = this.roomTitle(room)
+    const helps = replayHelps(events)
+
+    const threadId = request.help?.trim()
+    if (threadId !== undefined && threadId !== '') {
+      const help = helps.find(entry => entry.id === threadId)
+      if (help === undefined) return `No help thread "${threadId}" in this room.`
+      room.append('room/help-message', { help: help.id, kind: 'message', text })
+      await this.ctx.sessions.flush(room)
+      return this.deliverHelp(room, help, messagePrompt(help, roomTitle, text), 'message', text)
+    }
+
+    if (request.session === undefined || request.session.trim() === '') return 'Name the session to ask: its title, its id, or the @ mention the human wrote.'
+    const target = await this.resolveHelpTarget(caller, request.session.trim())
+    if ('error' in target) return target.error
+    if (target.sessionId === room.id || loaded.state.members.some(member => member.childSessionId === target.sessionId)) {
+      return 'That session is this room or one of its members; use room_message instead.'
+    }
+    const targetSession = this.ctx.sessions.get(SessionId(target.sessionId))
+    if (targetSession !== undefined && isRoomLog(targetSession.snapshotEvents())) {
+      return `"${target.title}" is a room; asking a room for help is not supported yet. Ask a plain session.`
+    }
+    const consented = referencedSessions(events).has(target.sessionId) || helps.some(entry => entry.target.sessionId === target.sessionId)
+    if (!consented) {
+      const answers = await this.askQuestions(room, asker, [{
+        id: 'help', header: '求助',
+        question: `${asker.name} 想向会话「${target.title}」求助：${text.length > 80 ? `${text.slice(0, 80)}…` : text}`,
+        options: [{ label: '允许' }, { label: '不允许' }],
+      }], 10 * 60_000)
+      if (answers?.[0]?.selected[0] !== '允许') return `The human did not allow asking "${target.title}". Do not retry unless they @ that session in the room.`
+    }
+    const help = { id: randomUUID().slice(0, 8), from: memberId(events, asker), fromName: asker.name, target, text }
+    room.append('room/help', help)
+    await this.ctx.sessions.flush(room)
+    return this.deliverHelp(room, help, requestPrompt(help, roomTitle), 'request', text)
+  }
+
+  /** Queue one help message in the helper's session (waking it when cold) and watch its turn. */
+  private async deliverHelp(room: Session, help: { readonly id: string; readonly fromName: string; readonly target: { readonly sessionId: string; readonly title: string } }, prompt: string, op: 'request' | 'message', display: string): Promise<string> {
+    const fail = async (error: string): Promise<string> => {
+      room.append('room/help-state', { help: help.id, state: 'failed', error })
+      await this.ctx.sessions.flush(room)
+      return `Could not reach "${help.target.title}": ${error}`
+    }
+    const controller = (this.ctx.get as (name: string) => unknown)('sessionController') as {
+      resolveAgent?(sessionId: SessionId): Promise<{ readonly agent: Agent } | { readonly error: { readonly message: string } }>
+    } | undefined
+    if (controller?.resolveAgent === undefined) return fail('this host cannot wake other sessions')
+    let agent: Agent
+    try {
+      const resolved = await controller.resolveAgent(SessionId(help.target.sessionId))
+      if ('error' in resolved) return await fail(resolved.error.message)
+      agent = resolved.agent
+    } catch (error) {
+      return fail(String(error))
+    }
+    this.equipHelper(agent)
+    const queued = (agent as Agent & { readonly status?: string }).status === 'running'
+    const message = helpMessage(prompt, { help: help.id, room: room.id, roomTitle: this.roomTitle(room), from: help.fromName, op, text: display.slice(0, 4000) })
+    room.append('room/help-state', { help: help.id, state: queued ? 'queued' : 'running' })
+    await this.ctx.sessions.flush(room)
+    const mark = room.snapshotEvents().at(-1)?.seq ?? -1
+    agent.followup(message)
+    this.watchHelp(room.id, help.id, agent, String(message.id), mark)
+    return `${queued ? `Sent to "${help.target.title}"; it is busy, so the request waits in its queue.` : `Sent to "${help.target.title}".`}`
+      + ` Help id: ${help.id}. Its reply reaches you on its own — end your turn now; do not poll.`
+  }
+
+  /**
+   * After the helper's turn: a turn that never claimed the message failed the
+   * thread; one that ended without the reply or question tool hands over its
+   * last answer as the reply.
+   */
+  private watchHelp(roomId: SessionId, helpId: string, agent: Agent, messageId: string, mark: number): void {
+    void (async () => {
+      await agent.whenIdle()
+      const loaded = await this.ensureLive(roomId)
+      if (!loaded.ok) return
+      const room = loaded.session
+      const help = replayHelps(room.snapshotEvents()).find(entry => entry.id === helpId)
+      if (help === undefined || help.state === 'failed') return
+      const answered = room.snapshotEvents().some(event => event.seq > mark && event.type === 'room/help-message' && event.data.help === helpId && event.data.kind !== 'message')
+      if (answered) return
+      const helperEvents = agent.session.snapshotEvents()
+      if (!claimed(helperEvents, messageId)) {
+        room.append('room/help-state', { help: helpId, state: 'failed', error: 'the request left the helper\'s queue without being handled' })
+        await this.ctx.sessions.flush(room)
+        return
+      }
+      const answer = turnAnswer(helperEvents, messageId)
+      await this.recordHelperMessage(room, help, { kind: 'reply', text: answer === '' ? '（对方这一轮结束了，没有给出答复）' : answer, fallback: true })
+    })().catch((error: unknown) => { this.ctx.logger.warn(`room: help ${helpId} watch faulted: ${String(error)}`) })
+  }
+
+  /** A help request reached the helper's turn: a queued thread is running now. */
+  private async markHelpRunning(source: HelpSource): Promise<void> {
+    const room = this.ctx.sessions.get(SessionId(source.room))
+    if (room === undefined) return
+    const help = replayHelps(room.snapshotEvents()).find(entry => entry.id === source.help)
+    if (help === undefined || help.state === 'running') return
+    if (help.state !== 'queued' && !(help.state === 'asking' && source.op === 'message') && !(help.state === 'replied' && source.op === 'message')) return
+    room.append('room/help-state', { help: help.id, state: 'running' })
+    await this.ctx.sessions.flush(room)
+  }
+
+  /** Journal a helper's question or reply and hand it to the asking member. */
+  private async recordHelperMessage(room: Session, help: RoomHelp, message: { readonly kind: 'question' | 'reply'; readonly text: string; readonly handoff?: string; readonly fallback?: true }): Promise<void> {
+    room.append('room/help-message', { help: help.id, kind: message.kind, text: message.text, ...message.handoff === undefined ? {} : { handoff: message.handoff }, ...message.fallback === undefined ? {} : { fallback: true } })
+    room.append('room/help-state', { help: help.id, state: message.kind === 'reply' ? 'replied' : 'asking' })
+    const events = room.snapshotEvents()
+    const state = replay(events)
+    const asker = state.members.find(member => memberId(events, member) === help.from) ?? coordinatorMember(state, events)
+    if (asker === undefined) {
+      await this.ctx.sessions.flush(room)
+      return
+    }
+    const text = askerPrompt(help, message)
+    const dispatch = room.append('room/dispatch', {
+      id: randomUUID(), origin: 'report', reportFor: `help:${help.id}`, targets: [asker.name], targetIds: [memberId(events, asker)], text,
+    })
+    await this.ctx.sessions.flush(room)
+    this.engine.dispatch(room, asker.name, text, { dispatchSeq: dispatch.seq })
+  }
+
+  /**
+   * The helper's `room_help_reply` / `room_help_ask`: find the thread from
+   * the help requests in the helper's own log, then carry the message back.
+   * @param agent - the helper agent.
+   * @param request - thread (optional when only one), kind, text, handoff.
+   * @returns the tool's text result.
+   */
+  async helperMessage(agent: Agent, request: { help?: string; kind: 'question' | 'reply'; text: string; handoff?: string }): Promise<string> {
+    const received = receivedHelps(agent.session.snapshotEvents())
+    const wanted = request.help?.trim()
+    const source = wanted === undefined || wanted === '' ? received.at(-1) : received.find(entry => entry.help === wanted)
+    if (source === undefined) {
+      return received.length === 0
+        ? 'No help request reached this session.'
+        : `No help "${wanted}" here; the requests this session received: ${received.map(entry => `${entry.help} (from ${entry.from} in "${entry.roomTitle}")`).join(', ')}.`
+    }
+    const text = request.text.trim()
+    if (text === '') return 'The text must be non-blank.'
+    const loaded = await this.ensureLive(SessionId(source.room))
+    if (!loaded.ok) return `The room "${source.roomTitle}" that asked is no longer available.`
+    const help = replayHelps(loaded.session.snapshotEvents()).find(entry => entry.id === source.help)
+    if (help === undefined) return 'That help thread is gone.'
+    const handoff = request.handoff?.trim()
+    await this.recordHelperMessage(loaded.session, help, { kind: request.kind, text, ...handoff === undefined || handoff === '' ? {} : { handoff } })
+    return request.kind === 'reply'
+      ? `Your reply reached ${help.fromName} in "${source.roomTitle}".`
+      : `Your question went to ${help.fromName} in "${source.roomTitle}"; the answer arrives as a new message. End your turn now.`
   }
 
   /** Bounded shared room context for native and external model tools; reading never wakes an agent. */

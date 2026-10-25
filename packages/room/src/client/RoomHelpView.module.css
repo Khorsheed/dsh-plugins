@@ -1,0 +1,175 @@
+/* Cross-session help. The thread row reads like the relay / decision status
+   lines (one dim line, inline actions) and opens to a quiet box with the
+   request and the thread's messages. The request card in the helper's session
+   takes the question card's surface (l1 fill, thin border, r12). */
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.icon {
+  flex: none;
+  width: 14px;
+  text-align: center;
+}
+
+.text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 1));
+}
+
+.tag {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.05));
+  font-size: 11.5px;
+}
+
+.tag[data-state="replied"] {
+  color: var(--dsw-alias-state-success, #2f8a57);
+}
+
+.tag[data-state="failed"] {
+  color: var(--dsw-alias-state-error, #c2453d);
+}
+
+.tag[data-state="asking"] {
+  color: var(--dsw-alias-state-warning, #b26a00);
+}
+
+.action {
+  flex: none;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, rgba(127, 127, 127, 1));
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-fill-secondary, rgba(127, 127, 127, 0.12));
+  color: var(--dsw-alias-label-primary, rgba(30, 30, 30, 1));
+}
+
+.action:focus:not(:focus-visible),
+.more:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 4px 4px 24px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.04));
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.label {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.9));
+}
+
+.copy {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.handoff {
+  margin: 4px 0 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.12));
+  white-space: pre-wrap;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 1));
+}
+
+.handoff b {
+  margin-right: 6px;
+  font-weight: 600;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  font-size: var(--dsh-content-font-size, 14px);
+  line-height: calc(22px + var(--dsh-content-font-delta, 0px));
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 1));
+}
+
+.cardTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.cardBody {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cardBody[data-folded="true"] {
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.more {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, rgba(127, 127, 127, 1));
+  cursor: pointer;
+}

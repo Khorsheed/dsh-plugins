@@ -66,6 +66,9 @@ export const ROOM_EVENT_TYPES = [
   'room/decision',
   'room/task-link',
   'room/job-stopped',
+  'room/help',
+  'room/help-message',
+  'room/help-state',
 ] as const
 
 /** Collaboration settings of a room that never changed them. */

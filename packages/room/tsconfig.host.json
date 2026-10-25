@@ -20,6 +20,7 @@
     "src/jobs.ts",
     "src/messaging.ts",
     "src/report-gate.ts",
-    "src/decisions.ts"
+    "src/decisions.ts",
+    "src/help.ts"
   ]
 }

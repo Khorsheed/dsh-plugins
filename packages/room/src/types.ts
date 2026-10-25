@@ -592,6 +592,56 @@ export interface RoomTaskEditedEvent {
   readonly member?: string
 }
 
+/**
+ * Cross-session help: a member of this room asked another session for help.
+ * The helper stays in its own session (its own queue, model and context); the
+ * room journals the thread and carries messages both ways.
+ */
+export interface RoomHelpEvent {
+  readonly id: string
+  /** The asking member's id and name. */
+  readonly from: string
+  readonly fromName: string
+  /** The helper's session. */
+  readonly target: { readonly sessionId: string; readonly title: string }
+  /** The request as the helper reads it. */
+  readonly text: string
+}
+
+/** One message on a help thread after the request. */
+export interface RoomHelpMessageEvent {
+  readonly help: string
+  /**
+   * `question`: the helper asks the asker. `reply`: the helper's answer (its
+   * final reply plus a short handoff). `message`: the asker writes again
+   * (an answer to a question, or a follow-up).
+   */
+  readonly kind: 'question' | 'reply' | 'message'
+  readonly text: string
+  /** The helper's short handoff note on a reply. */
+  readonly handoff?: string
+  /** A reply taken from the helper's last answer because it never called the reply tool. */
+  readonly fallback?: true
+}
+
+/** Where a help thread stands. */
+export type RoomHelpStatus = 'queued' | 'running' | 'asking' | 'replied' | 'failed'
+
+/** A help thread changed state. */
+export interface RoomHelpStateEvent {
+  readonly help: string
+  readonly state: RoomHelpStatus
+  readonly error?: string
+}
+
+/** A help thread, folded from its events. */
+export interface RoomHelp extends RoomHelpEvent {
+  readonly state: RoomHelpStatus
+  readonly error?: string
+  readonly messages: readonly (RoomHelpMessageEvent & { readonly time: number })[]
+  readonly time: number
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   // External readers: Context Lens reads room/dispatch (origin/text/targets/
   // targetIds), room/run-state (runId/member/state/startedAt/elapsedMs/
@@ -648,6 +698,12 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/task-link': RoomTaskLinkEvent
     /** A human stopped a task. */
     'room/job-stopped': RoomJobStoppedEvent
+    /** Cross-session help: a member asked another session. */
+    'room/help': RoomHelpEvent
+    /** A message on a help thread (the helper's question or reply, the asker's follow-up). */
+    'room/help-message': RoomHelpMessageEvent
+    /** A help thread changed state. */
+    'room/help-state': RoomHelpStateEvent
   }
 }
 

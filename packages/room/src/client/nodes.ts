@@ -11,7 +11,8 @@
  * RoomService.postMessage) and renders through the official user node.
  * @module @khorsheed/dsh-room/client/nodes
  */
-import type { RoomDecisionEvent, RoomQuestionAnswer, RoomQuestionItem } from '../types.ts'
+import type { RoomDecisionEvent, RoomHelp, RoomQuestionAnswer, RoomQuestionItem } from '../types.ts'
+import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
@@ -89,6 +90,28 @@ export interface RoomDecisionData {
   readonly decision: RoomDecisionEvent
 }
 
+/** Chat node data of a cross-session help thread, in the asking room. */
+export interface RoomHelpData {
+  readonly seq: number
+  readonly time: number
+  readonly help: RoomHelp
+}
+
+/** Chat node data of a help request (or a follow-up on it), in the helper's own session. */
+export interface RoomHelpRequestData {
+  readonly seq: number
+  readonly time: number
+  readonly help: string
+  /** The asking room's session and title. */
+  readonly room: string
+  readonly roomTitle: string
+  /** The asking member. */
+  readonly from: string
+  readonly op: 'request' | 'message'
+  /** The asker's own words. */
+  readonly text: string
+}
+
 /** Chat node data of a member's question card (pick-to-answer). */
 export interface RoomQuestionData {
   readonly seq: number
@@ -143,6 +166,10 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
     'room-decision': RoomDecisionData
     /** room: a member's questions for the human (pick-to-answer card). */
     'room-question': RoomQuestionData
+    /** room: a help thread this room opened with another session. */
+    'room-help': RoomHelpData
+    /** room: a help request another session's room sent this session. */
+    'room-help-request': RoomHelpRequestData
     /** room: reports the gate holds in a member's inbox. */
     'room-inbox': RoomInboxData
   }
@@ -436,4 +463,73 @@ export const roomInboxDefinition: ConversationNodeDefinition<RoomInboxData> = {
     return { ...context.state, held: context.state.held.filter(seq => seq !== event.data.dispatchSeq) }
   },
   buildViewNode: context => viewNode(context, 'room-inbox', context.state !== undefined && context.state.held.length > 0 ? 'visible' : 'hidden'),
+}
+
+/**
+ * A help thread in the asking room: one Context per thread, started by
+ * `room/help` and folded in place by its `room/help-message` and
+ * `room/help-state` events (one row whose state and messages update).
+ */
+export const roomHelpDefinition: ConversationNodeDefinition<RoomHelpData> = {
+  kind: 'room-help',
+  target: 'chat',
+  match: (event) => {
+    switch (event.type) {
+      case 'room/help':
+        return { id: event.data.id, role: 'start' as const }
+      case 'room/help-message':
+      case 'room/help-state':
+        return { id: event.data.help, role: 'update' as const }
+      default:
+        return null
+    }
+  },
+  start: (_context, match) => {
+    const event = match.event
+    if (event.type !== 'room/help') throw new Error('room-help start requires a room/help event')
+    return { seq: event.seq, time: event.time, help: { ...event.data, state: 'queued', messages: [], time: event.time } }
+  },
+  update: (context, match) => {
+    const event = match.event
+    const help = context.state.help
+    if (event.type === 'room/help-message') {
+      return { ...context.state, help: { ...help, messages: [...help.messages, { ...event.data, time: event.time }] } }
+    }
+    if (event.type === 'room/help-state') {
+      const { error: _previous, ...rest } = help
+      return { ...context.state, help: { ...rest, state: event.data.state, ...event.data.error === undefined ? {} : { error: event.data.error } } }
+    }
+    return context.state
+  },
+  buildViewNode: context => viewNode(context, 'room-help'),
+}
+
+/** A message source's help fields, when it is a room help source. */
+function helpSourceOf(source: unknown): Omit<RoomHelpRequestData, 'seq' | 'time'> | undefined {
+  const value = source as Record<string, unknown> | null
+  if (value?.kind !== 'room-help' || typeof value.help !== 'string' || typeof value.room !== 'string') return undefined
+  const text = (key: string): string => typeof value[key] === 'string' ? value[key] : ''
+  return { help: value.help, room: value.room, roomTitle: text('roomTitle'), from: text('from'), op: value.op === 'message' ? 'message' : 'request', text: text('text') }
+}
+
+/**
+ * A help request in the helper's session: the `user/message` the room queued
+ * there (its `room-help` source) renders as a card naming the asking room
+ * instead of a plain injected-context row.
+ */
+export const roomHelpRequestDefinition: ConversationNodeDefinition<RoomHelpRequestData> = {
+  kind: 'room-help-request',
+  target: 'chat',
+  match: (event) => {
+    if (event.type !== 'user/message' || !isAppendSurfaceEvent(event) || helpSourceOf(event.data.source) === undefined) return null
+    return { id: String(event.seq), role: 'start' }
+  },
+  start: (_context, match) => {
+    const event = match.event
+    const source = event.type === 'user/message' ? helpSourceOf(event.data.source) : undefined
+    if (source === undefined) throw new Error('room-help-request start requires a room-help message')
+    return { seq: event.seq, time: event.time, ...source }
+  },
+  update: context => context.state,
+  buildViewNode: context => viewNode(context, 'room-help-request'),
 }

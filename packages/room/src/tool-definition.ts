@@ -22,6 +22,7 @@
  *
  * @module @khorsheed/dsh-room
  */
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type {
   RoomGetStateRequest, RoomGetStateResult,
@@ -309,6 +310,57 @@ export function roomPlanTool(backend: { commandPlan(sessionId: string, command: 
       if (exec.agent === undefined) return { text: 'room_plan requires a calling agent.' }
       try { return { text: await backend.commandPlan(exec.agent.session.id, args.command) } }
       catch (error) { return { text: String(error) } }
+    },
+  })
+}
+
+/** The slice of RoomService the help tool drives. */
+export interface RoomHelpToolBackend {
+  /** Ask another session for help, or write again on a thread (see RoomService.askHelp). */
+  askHelp(request: { readonly sessionId: string; readonly session?: string; readonly help?: string; readonly text: string }, caller: Agent): Promise<string>
+}
+
+/**
+ * Build the room_help tool definition bound to the room service.
+ * @param backend - the room service.
+ * @returns a registry-ready tool definition.
+ */
+export function roomHelpTool(backend: RoomHelpToolBackend) {
+  return defineTool({
+    name: 'room_help',
+    description:
+      'Ask another session — outside this room — for help: typically the session that built the thing you are stuck on, '
+      + 'which still has the whole context. The helper keeps working in its own session (if it is busy, your request waits '
+      + 'in its queue) and its final answer plus a short handoff comes back to you on its own, so end your turn after asking; '
+      + 'never poll. Name the session by its title, its id, or the @ mention the human wrote. The first ask of a session the '
+      + 'human did not @ in this room waits for the human\'s approval. To answer the helper\'s question or ask it more, call '
+      + 'again with the help id and no session.',
+    parameters: {
+      session: {
+        type: 'string',
+        description: 'The session to ask (title, id, or @ mention). Omit when continuing a thread with help.',
+      },
+      help: {
+        type: 'string',
+        description: 'The help id of an existing thread, to answer its question or follow up.',
+      },
+      text: {
+        type: 'string',
+        required: true,
+        description: 'What you need, self-contained: the helper does not see this room. Include the error, what you tried, where things are.',
+      },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { text: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+    },
+    isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      const agent = exec.agent
+      if (agent === undefined) return { text: 'room_help requires a calling agent (exec.agent was undefined).' }
+      return { text: await backend.askHelp({ sessionId: agent.session.id, text: args.text,
+        ...args.session === undefined ? {} : { session: args.session },
+        ...args.help === undefined ? {} : { help: args.help } }, agent) }
     },
   })
 }
