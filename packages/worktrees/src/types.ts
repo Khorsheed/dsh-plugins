@@ -21,7 +21,7 @@ export type {
   ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalFileEntry,
   LocalImageResult, ReadFileAtCommitRequest, ReadFileRequest, ReadFileResult,
   ReadLocalFileRequest, ReadLocalFileResult, ReadLocalImageRequest, ReadRepoImageRequest,
-  SessionSummary, WorktreeInfo, WorktreesService, WorktreesServiceOptions,
+  SessionSummary, WorktreeInfo, WorktreesService, WorktreesServiceOptions, WriteFileRequest, WriteFileResult,
 } from './service.ts'
 
 /**

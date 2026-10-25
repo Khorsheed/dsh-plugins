@@ -61,7 +61,7 @@ import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   FileDiffRequest, PluginInventorySnapshot,
   ReadFileAtCommitRequest, ReadFileRequest,
-  ReadRepoImageRequest,
+  ReadRepoImageRequest, WriteFileRequest,
 } from '../types.ts'
 import { WorktreesBadge } from './Badge.tsx'
 import { WorktreesTab } from './WorktreesTab.tsx'
@@ -225,6 +225,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       fetchFileDiff: (sid: SessionId, request: FileDiffRequest) => remote.fileDiff(sid, request),
       fetchReadFile: (sid: SessionId, request: ReadFileRequest) => remote.readFile(sid, request),
       fetchReadFileAtCommit: (sid: SessionId, request: ReadFileAtCommitRequest) => remote.readFileAtCommit(sid, request),
+      writeFile: (sid: SessionId, request: WriteFileRequest) => remote.writeFile(sid, request),
       fetchReadRepoImage: (sid: SessionId, request: ReadRepoImageRequest) => remote.readRepoImage(sid, request),
       hooks: { openInApp: openInApp.apps },
       openExternal: openOnHost,

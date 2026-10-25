@@ -22,12 +22,12 @@ import type {} from '@khorsheed/dsh-local-files/remote'
 // workspace root's reactive data source, the same read ui-sidebar-files makes).
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
-  ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalFilesRead,
-  ReadLocalFileRequest, SearchLocalDirectoryRequest, SearchLocalDirectoryResult,
+  ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalFilesRead, LocalFilesWriteResult,
+  ReadLocalFileRequest, SearchLocalDirectoryRequest, SearchLocalDirectoryResult, WriteLocalFileRequest,
 } from '../types.ts'
 import type { createLocalFilesStore } from './store-local.ts'
 
-/** The localFiles Remote namespace (list + readFile + search), as mounted by this plugin. */
+/** The localFiles Remote namespace (list + readFile + writeFile + search), as mounted by this plugin. */
 export type LocalFilesRemote = TypertRemoteNamespaceMap['localFiles']
 
 /** Business face injected into the file-browser view (either seat). */
@@ -36,6 +36,8 @@ export interface WorkspaceViewInjected {
   listDirectory: (request: ListLocalDirectoryRequest) => Promise<RemoteResult<ListLocalDirectoryResult>>
   /** Read one local file for preview (git-agnostic kind-union content plane). */
   readFile: (request: ReadLocalFileRequest) => Promise<RemoteResult<LocalFilesRead>>
+  /** Write one edited text file back (the content pane's save). */
+  writeFile: (request: WriteLocalFileRequest) => Promise<RemoteResult<LocalFilesWriteResult>>
   /** Search entry names below a root (the tree's filename search). */
   searchFiles: (request: SearchLocalDirectoryRequest) => Promise<RemoteResult<SearchLocalDirectoryResult>>
   /** Open the host's native directory picker; resolves the chosen path, or null when cancelled. */

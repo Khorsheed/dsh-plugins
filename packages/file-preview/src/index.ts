@@ -17,7 +17,8 @@ import {
   IMAGE_MIME, eventsWatermark, isImagePath, listFilePreview, readErrorMessage, readFilePreview, turnFilesFilePreview,
 } from './read-surface.ts'
 import { revealNativePath } from './reveal.ts'
-import type { FilePreviewConfig, FilePreviewList, FilePreviewOpenExternal, FilePreviewRead, FilePreviewReveal, FilePreviewTurnMap } from './types.ts'
+import type { FilePreviewConfig, FilePreviewList, FilePreviewOpenExternal, FilePreviewRead, FilePreviewReveal, FilePreviewTurnMap, FilePreviewWrite } from './types.ts'
+import { writeFilePreview } from './write.ts'
 
 export { createFilePreviewReadSurface } from './read-surface.ts'
 export type { FilePreviewImageBytes, FilePreviewReadFs, FilePreviewReadSource, FilePreviewReadSurface } from './read-surface.ts'
@@ -302,6 +303,36 @@ export class FilePreviewService extends TypertRemoteService {
           : undefined,
       },
       path,
+      signal,
+    )
+  }
+
+  /**
+   * Write an edited text file back — the content pane's save. The display
+   * path resolves against the session cwd exactly like `read`, and the write
+   * goes through the same fs face (so a sandboxing backend fences it). It
+   * refuses with `conflict` when the file no longer holds `base` (null
+   * overwrites); the browser offers the gesture on the host machine only.
+   * @param sessionId - the owning session (see panel-session.ts); its cwd anchors relative paths.
+   * @param path - the display path the read used.
+   * @param content - the full new text.
+   * @param base - the text the edit started from, or null to overwrite.
+   * @param signal - cooperative cancellation from the calling UI request.
+   * @returns whether the write landed, or why not.
+   */
+  @Remote('write')
+  async write(sessionId: SessionId, path: string, content: string, base: string | null, signal: AbortSignal): Promise<FilePreviewWrite> {
+    const session = await panelSession(this.ctx, sessionId)
+    return writeFilePreview(
+      {
+        fs: this.fs,
+        cwd: session.header.cwd,
+        maxReadBytes: this.resolved.maxReadBytes,
+        htmlMaxReadBytes: this.resolved.htmlMaxReadBytes,
+      },
+      path,
+      content,
+      base,
       signal,
     )
   }

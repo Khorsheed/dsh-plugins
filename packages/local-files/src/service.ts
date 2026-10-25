@@ -8,8 +8,9 @@
  *
  * @module @khorsheed/dsh-local-files
  */
-import { open, readdir, realpath, stat } from 'node:fs/promises'
-import { dirname, isAbsolute, join, sep } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { chmod, open, readdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { basename, dirname, isAbsolute, join, sep } from 'node:path'
 
 /** Read cap for the content view (guards rendering against monster files). */
 export const MAX_CONTENT_BYTES = 2 * 1024 * 1024
@@ -196,6 +197,23 @@ export interface ReadLocalFileRequest {
    * all-or-nothing and ignore it. */
   offset?: number
 }
+
+/** Write one edited text file back (the content pane's save). */
+export interface WriteLocalFileRequest {
+  /** Absolute local file path; the file must already exist. */
+  path: string
+  /** The full new text. */
+  content: string
+  /** The text the edit started from; the write refuses with `conflict` when
+   * the file no longer holds it. `null` overwrites unconditionally. */
+  base: string | null
+}
+
+/** One `writeFile` answer. `unsupported`: the file cannot round-trip a text
+ * edit (an image, not lossless UTF-8, or beyond the read cap). */
+export type LocalFilesWriteResult =
+  | { ok: true }
+  | { ok: false; reason: 'conflict' | 'unsupported' | 'missing' | 'error'; message?: string }
 
 /** Thrown for client-supplied local paths that fail the absolute-path rules. */
 export class UnsafeLocalPathError extends Error {
@@ -397,5 +415,46 @@ export class LocalFilesService {
       ...(truncated ? { nextOffset: offset + buffer.byteLength } : {}),
       ...(isHtmlPath(path) && isScriptedHtml(text) ? { htmlScripted: true } : {}),
     }
+  }
+
+  /**
+   * Write an edited text file back — the content pane's save. Only an
+   * existing regular file that a text edit can round-trip is written: within
+   * the read cap (a bigger file was only ever shown as a window) and lossless
+   * UTF-8 (a lossy decode would rewrite bytes the user never touched). With a
+   * `base`, the current content must still equal it, so an edit started
+   * before the model (or anything else) rewrote the file answers `conflict`
+   * instead of discarding that write. The new bytes land in a sibling temp
+   * file carrying the original mode, then rename over the target (a symlink
+   * is resolved first, so the link itself survives): a reader never sees a
+   * half-written file.
+   * @param path - absolute local file path.
+   * @param content - the full new text.
+   * @param base - the text the edit started from, or null to overwrite.
+   * @returns whether the write landed, or why not.
+   */
+  async writeFile(path: string, content: string, base: string | null): Promise<LocalFilesWriteResult> {
+    const safe = assertSafeLocalPath(path)
+    const canonical = await realpath(safe).catch(() => null)
+    const info = canonical === null ? null : await stat(canonical).catch(() => null)
+    if (canonical === null || info === null || !info.isFile()) return { ok: false, reason: 'missing' }
+    if (imageMimeOf(path) !== null || info.size > MAX_CONTENT_BYTES || Buffer.byteLength(content) > MAX_CONTENT_BYTES) {
+      return { ok: false, reason: 'unsupported' }
+    }
+    const current = await readFile(canonical).catch(() => null)
+    if (current === null) return { ok: false, reason: 'error', message: `local-files: cannot read: ${path}` }
+    const text = current.toString('utf8')
+    if (!Buffer.from(text, 'utf8').equals(current)) return { ok: false, reason: 'unsupported' }
+    if (base !== null && text !== base) return { ok: false, reason: 'conflict' }
+    const temp = join(dirname(canonical), `.${basename(canonical)}.${randomUUID().slice(0, 8)}.dsh-edit`)
+    try {
+      await writeFile(temp, content, { flag: 'wx' })
+      await chmod(temp, info.mode & 0o7777)
+      await rename(temp, canonical)
+    } catch (cause) {
+      await rm(temp, { force: true }).catch(() => undefined)
+      return { ok: false, reason: 'error', message: cause instanceof Error ? cause.message : String(cause) }
+    }
+    return { ok: true }
   }
 }

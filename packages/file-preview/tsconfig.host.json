@@ -13,6 +13,7 @@
     "src/panel-session.ts",
     "src/read-surface.ts",
     "src/reveal.ts",
-    "src/types.ts"
+    "src/types.ts",
+    "src/write.ts"
   ]
 }

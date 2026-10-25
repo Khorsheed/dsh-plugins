@@ -48,6 +48,13 @@ export interface FilePreviewList {
 /** Read outcome classification of `filePreview.read`. */
 export type FilePreviewReadKind = 'text' | 'image' | 'binary' | 'missing' | 'too-large' | 'error'
 
+/** One `filePreview.write` answer (the content pane's save). `unsupported`:
+ * the file cannot round-trip a text edit (image/binary, not lossless UTF-8, or
+ * beyond the read cap); `conflict`: it changed since the edit began. */
+export type FilePreviewWrite =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: 'conflict' | 'unsupported' | 'missing' | 'error'; readonly message?: string }
+
 /** One `filePreview.read` response; exactly one of the content arms is populated. */
 export interface FilePreviewRead {
   /** The resolved display path of the read target. */

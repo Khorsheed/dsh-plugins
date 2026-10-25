@@ -13,7 +13,8 @@
  *
  * @module @khorsheed/dsh-worktrees
  */
-import { readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { chmod, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, sep } from 'node:path'
 import {
   isWorktreeBinding, WorktreeBindingStore, type ControlledSwitchReceipt, type ControlledSwitchRequest,
@@ -154,6 +155,23 @@ export interface ReadFileResult {
    */
   htmlScripted?: boolean
 }
+
+/** Write one edited working-tree file back (the content pane's save). */
+export interface WriteFileRequest {
+  /** Repo-relative path; the file must already exist. */
+  path: string
+  /** The full new text. */
+  content: string
+  /** The text the edit started from; the write refuses with `conflict` when
+   * the file no longer holds it. `null` overwrites unconditionally. */
+  base: string | null
+}
+
+/** One `writeFile` answer. `unsupported`: the file cannot round-trip a text
+ * edit (an image, not lossless UTF-8, or beyond the read cap). */
+export type WriteFileResult =
+  | { ok: true }
+  | { ok: false; reason: 'conflict' | 'unsupported' | 'missing' | 'error'; message?: string }
 
 /** Whether a path names an HTML document (`.html`/`.htm`/`.xhtml`). */
 export function isHtmlPath(path: string): boolean {
@@ -707,6 +725,48 @@ export class WorktreesService {
       content,
       ...(isHtmlPath(path) && isScriptedHtml(content) ? { htmlScripted: true } : {}),
     }
+  }
+
+  /**
+   * Write an edited working-tree file back — the content pane's save. Only an
+   * existing regular file a text edit can round-trip is written: within the
+   * read cap and lossless UTF-8 (a lossy decode would rewrite bytes the user
+   * never touched). With a `base`, the file must still hold it, so an edit
+   * started before the agent rewrote the file answers `conflict` instead of
+   * discarding that write. The bytes land in a sibling temp file carrying the
+   * original mode, then rename over the target, so git and readers never see
+   * a half-written file.
+   * @param cwd - session working directory.
+   * @param path - repo-relative path.
+   * @param content - the full new text.
+   * @param base - the text the edit started from, or null to overwrite.
+   * @returns whether the write landed, or why not.
+   */
+  async writeFile(cwd: string, path: string, content: string, base: string | null): Promise<WriteFileResult> {
+    const repo = await this.repoOf(cwd)
+    if (repo === null) throw new Error('worktrees: not a git repository')
+    const safe = assertSafePath(path)
+    const canonical = await realpath(join(repo, ...safe.split('/'))).catch(() => null)
+    const info = canonical === null ? null : await stat(canonical).catch(() => null)
+    if (canonical === null || info === null || !info.isFile()) return { ok: false, reason: 'missing' }
+    if (imageMimeOf(path) !== null || info.size > MAX_CONTENT_BYTES || Buffer.byteLength(content) > MAX_CONTENT_BYTES) {
+      return { ok: false, reason: 'unsupported' }
+    }
+    const current = await readFile(canonical).catch(() => null)
+    if (current === null) return { ok: false, reason: 'error', message: `worktrees: cannot read: ${path}` }
+    const text = current.toString('utf8')
+    if (!Buffer.from(text, 'utf8').equals(current)) return { ok: false, reason: 'unsupported' }
+    if (base !== null && text !== base) return { ok: false, reason: 'conflict' }
+    const temp = join(dirname(canonical), `.${basename(canonical)}.${randomUUID().slice(0, 8)}.dsh-edit`)
+    try {
+      await writeFile(temp, content, { flag: 'wx' })
+      await chmod(temp, info.mode & 0o7777)
+      await rename(temp, canonical)
+    } catch (cause) {
+      await rm(temp, { force: true }).catch(() => undefined)
+      return { ok: false, reason: 'error', message: cause instanceof Error ? cause.message : String(cause) }
+    }
+    return { ok: true }
   }
 
   /**

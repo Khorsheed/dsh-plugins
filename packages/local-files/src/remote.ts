@@ -11,8 +11,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   ListLocalDirectoryRequest, ListLocalDirectoryResult, LocalFilesRead,
-  ReadLocalFileRequest, LocalFilesService,
-  SearchLocalDirectoryRequest, SearchLocalDirectoryResult,
+  ReadLocalFileRequest, LocalFilesService, LocalFilesWriteResult,
+  SearchLocalDirectoryRequest, SearchLocalDirectoryResult, WriteLocalFileRequest,
 } from './service.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -54,6 +54,16 @@ export class LocalFilesRemoteService extends TypertRemoteService<LocalFilesRemot
   @Remote('readFile')
   readFile(request: ReadLocalFileRequest): Promise<LocalFilesRead> {
     return this.localFiles.readFile(request.path, request.offset)
+  }
+
+  /** Write one edited text file back — the content pane's save. Same
+   * absolute-path, no-lookup discipline; refuses on a changed file unless
+   * `base` is null (see LocalFilesService.writeFile). The browser offers the
+   * gesture on the host machine only; the method itself, like readFile, trusts
+   * whoever can reach this instance. */
+  @Remote('writeFile')
+  writeFile(request: WriteLocalFileRequest): Promise<LocalFilesWriteResult> {
+    return this.localFiles.writeFile(request.path, request.content, request.base)
   }
 
   /** Search entry names below a root — the tree's filename search. Same

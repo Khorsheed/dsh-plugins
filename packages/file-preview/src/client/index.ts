@@ -239,6 +239,7 @@ export function installFilePreviewSurfaces(
     inject: (sessionId: SessionId): FilePreviewTabInjected => ({
       listFiles: (sid: SessionId) => remote.list(sid),
       readFile: (sid: SessionId, path: string) => remote.read(sid, path),
+      writeFile: (sid: SessionId, path: string, content: string, base: string | null) => remote.write(sid, path, content, base),
       copyPath: (path: string) => writeClipboard(resolveWorkspacePath(sessionCwd(sessionId), path)),
       revealFolder: (path: string) => { revealFolder(sessionId, path) },
       openInIde: (path: string, app?: string) => { openInIde(sessionId, path, app) },
