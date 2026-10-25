@@ -44,9 +44,11 @@ async function fit() {
   model = build(window.dshElements['${PREVIEW_ID}'].look)
   world.add(model, { id: '${PREVIEW_ID}' })
   place()
-  // A glTF look fills in later: measure again once it has.
+  // A glTF look fills in later: measure again once it has, and say which clips it has.
   if (model.userData.loaded) { await model.userData.loaded; place() }
+  parent.postMessage({ gamedev: 'preview-clips', names: model.userData.animations ?? [] }, '*')
 }
+addEventListener('message', e => { if (e.data && e.data.gamedev === 'preview-play' && model) model.userData.play?.(e.data.name) })
 await fit()
 addEventListener('dshelements', () => { setTimeout(fit) })
 const canvas = world.canvas
@@ -127,10 +129,14 @@ export interface Preview3DProps {
   readonly emptyLabel: string
   /** Shown instead of `emptyLabel`, and under a still while it renders. */
   readonly placeholder?: ReactNode
+  /** A turntable reports a model's animation clips here once it has loaded. */
+  readonly onClips?: (names: readonly string[]) => void
+  /** A turntable plays this clip (bump `n` to play the same one again). */
+  readonly clip?: { readonly name: string; readonly n: number } | null
 }
 
 /** One 3D look preview. */
-export function Preview3D({ api, projectId, version, look, mode, className, emptyLabel, placeholder }: Preview3DProps): ReactNode {
+export function Preview3D({ api, projectId, version, look, mode, className, emptyLabel, placeholder, onClips, clip }: Preview3DProps): ReactNode {
   const lookJson = JSON.stringify(look)
   const stillKey = `${projectId}:${version}:${lookJson}`
   const [files, setFiles] = useState<Readonly<Record<string, BundleFile>> | null>(null)
@@ -187,10 +193,16 @@ export function Preview3D({ api, projectId, version, look, mode, className, empt
         stills.set(stillKey, data.png)
         setImage(data.png)
       }
+      if (data?.gamedev === 'preview-clips' && mode === 'spin') onClips?.(data.names)
     }
     window.addEventListener('message', onMessage)
     return () => { window.removeEventListener('message', onMessage) }
-  }, [mode, stillKey])
+  }, [mode, stillKey, onClips])
+
+  useEffect(() => {
+    if (clip == null || mode !== 'spin' || !booted.current) return
+    frame.current?.contentWindow?.postMessage({ gamedev: 'preview-play', name: clip.name }, '*')
+  }, [clip, mode])
 
   // A spinning preview follows look edits live (the same element message the play area gets).
   useEffect(() => {

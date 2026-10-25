@@ -358,6 +358,7 @@ export const zh = {
   'gltf.toon': '卡通着色',
   'gltf.original': '原材质',
   'gltf.scale': '大小',
+  'gltf.clips': '动画',
 }
 
 /** English dictionary. */
@@ -707,6 +708,7 @@ export const en: Record<keyof typeof zh, string> = {
   'gltf.toon': 'Toon shading',
   'gltf.original': 'Its own materials',
   'gltf.scale': 'Size',
+  'gltf.clips': 'Animations',
 }
 
 /** The dictionary namespace this view binds. */

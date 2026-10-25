@@ -1,4 +1,4 @@
-# Agent Note: glTF model looks (static)
+# Agent Note: glTF model looks
 
 Status: implemented
 
@@ -12,7 +12,10 @@ Status: implemented
 - **沙箱里的加载。** three 的加载器会用相对路径创建 `Request`，而在沙箱里（`about:srcdoc`，或检查用的 `data:` 页面）这样的相对路径没有可用的基准地址。所以加载器开放了 `window.__dshFileUrl(path)`（返回项目文件的 blob 地址），dsh3d 的 GLTFLoader 通过 `LoadingManager` 的地址改写，把模型、`.bin` 和贴图的路径都映射过去。GLTFLoader（连同 BufferGeometryUtils）会进每一个 3D 版本，因为面板预览可能要加载线上版本还没有的模型。
 - **检查。** `ready` 之后，检查会先等 `window.__dshPending()`（dsh3d 正在进行的加载，最长等到 20 秒的加载上限），再跑冒烟、每个测试文件和截图。gltf 外观的 `src` 不在构建文件里时，检查失败，并写明是哪个元素、哪个文件。`glb` 和 `gltf` 有了对应的 MIME 类型。
 - **面板。** 各处预览（转盘、卡片静态图、方案静态图）通过新的 `workingFile` Remote 取外观文件的工作区版本（只限项目内的构建文件，最大 8MB），所以刚导出的模型不用等任何版本带上它，就能先显示出来。预览入口在模型加载完后重新取景，等加载完才拍静态图。换 `src` 会重新加载画面。元素页显示模型文件、卡通着色/原材质切换和大小输入框。
-- **技能文档。** 写明了外观的格式、导出建议（Y 轴朝上、单位米、原点在脚底、贴图打包进 glb、最多 1 万面）、CC0 素材的规矩（`assets/LICENSES.md`），以及动画还没接上。
+- **骨骼动画。** 带动画的模型加载后会有一个 `AnimationMixer`，跟着 world 的时钟走（`userData.update(t)` 按每步的时间差推进）。`userData.play(name, { fade, loop })` 交叉淡入淡出并返回动作；在加载完成前调用，会等模型加载后再生效。`userData.animations` 列出动画名。自动播放的是 `look.animation`，没写就找名字里带 idle / 待机 / stand 的，再没有就播第一个。
+- **描边和点选跟着骨骼。** 描边的顶点着色器改用 three 自带的代码块（`skinning_*`、`beginnormal`、`begin`）拼成，一种外壳材质同时适用于普通、批量和蒙皮网格。蒙皮网格的描边外壳是一个兄弟节点 `SkinnedMesh`，绑定在同一副骨骼上。每次点选前都会重算蒙皮网格的包围盒和包围球，因为摆出的姿势可能超出静止姿态的范围。
+- **面板里的动画。** 转盘会报告模型有哪些动画（`preview-clips`），元素页把它们列成标签，点一下就在转盘里播放（`preview-play`）。
+- **技能文档。** 写明了外观的格式、导出建议（Y 轴朝上、单位米、原点在脚底、贴图打包进 glb、最多 1 万面、每个动作做成一个 Blender Action）、CC0 素材的规矩（`assets/LICENSES.md`），以及怎么播放动画。
 
 ## Alternatives considered
 
@@ -22,7 +25,7 @@ Status: implemented
 
 **只从线上版本的打包里预览。** 那样用户必须先发版才能看到刚导出的模型，预览就失去了意义。
 
-**现在就给蒙皮网格加描边。** 描边外壳的着色器不会跟着骨骼动。这要和动画一起做（下一步），连同蒙皮网格的点选。
+**给蒙皮网格单独做一种描边材质。** 用 three 的代码块拼出外壳着色器后，一种材质就能覆盖所有情况，批量绘制那条路径也没有变。
 
 ## Consequences
 

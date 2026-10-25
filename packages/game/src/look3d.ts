@@ -110,6 +110,7 @@ function gltf(r: Record<string, unknown>): GltfLook | null {
   return {
     kind: 'gltf', src, ...(scale === undefined ? {} : { scale }),
     ...(material === undefined ? {} : { material }), ...(typeof r.outline === 'boolean' ? { outline: r.outline } : {}),
+    ...(typeof r.animation === 'string' && r.animation.trim() !== '' ? { animation: r.animation.trim().slice(0, 80) } : {}),
     ...(baked === null ? {} : { recipe: baked }),
   }
 }

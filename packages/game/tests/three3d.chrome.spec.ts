@@ -73,6 +73,53 @@ function tetraGlb(): string {
   return Buffer.concat([head, jh, j, bh, b]).toString('base64')
 }
 
+
+/** A skinned glTF: the tetrahedron bound to one bone, with clips 'idle' and 'walk' that turn the bone a quarter around y over 1 s. */
+function skinnedGlb(): string {
+  const v = [[0, 1.2, 0], [-0.6, 0, -0.4], [0.6, 0, -0.4], [0, 0, 0.7]]
+  const faces = [[0, 1, 2], [0, 2, 3], [0, 3, 1], [1, 3, 2]]
+  const parts: Buffer[] = []
+  const views: { buffer: 0; byteOffset: number; byteLength: number }[] = []
+  let offset = 0
+  const view = (b: Buffer): number => { parts.push(b); views.push({ buffer: 0, byteOffset: offset, byteLength: b.length }); offset += b.length; return views.length - 1 }
+  const f32 = (a: number[]): Buffer => Buffer.from(new Float32Array(a).buffer)
+  const pos = view(f32(faces.flatMap(f => f.flatMap(i => v[i]!))))
+  const joints = view(Buffer.from(new Uint8Array(12 * 4)))
+  const weights = view(f32(Array.from({ length: 12 }, () => [1, 0, 0, 0]).flat()))
+  const ibm = view(f32([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]))
+  const times = view(f32([0, 1]))
+  const rots = view(f32([0, 0, 0, 1, 0, Math.SQRT1_2, 0, Math.SQRT1_2]))
+  const bin = Buffer.concat(parts)
+  const sampler = { input: 4, output: 5, interpolation: 'LINEAR' }
+  const json = JSON.stringify({
+    asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: [0, 1] }],
+    nodes: [{ name: 'body', mesh: 0, skin: 0 }, { name: 'bone' }],
+    skins: [{ joints: [1], inverseBindMatrices: 3 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0, JOINTS_0: 1, WEIGHTS_0: 2 }, material: 0 }] }],
+    materials: [{ pbrMetallicRoughness: { baseColorFactor: [0.8, 0.3, 0.2, 1], metallicFactor: 0 } }],
+    animations: [
+      { name: 'idle', channels: [{ sampler: 0, target: { node: 1, path: 'rotation' } }], samplers: [sampler] },
+      { name: 'walk', channels: [{ sampler: 0, target: { node: 1, path: 'rotation' } }], samplers: [sampler] },
+    ],
+    buffers: [{ byteLength: bin.length }], bufferViews: views,
+    accessors: [
+      { bufferView: pos, componentType: 5126, count: 12, type: 'VEC3', min: [-0.6, 0, -0.4], max: [0.6, 1.2, 0.7] },
+      { bufferView: joints, componentType: 5121, count: 12, type: 'VEC4' },
+      { bufferView: weights, componentType: 5126, count: 12, type: 'VEC4' },
+      { bufferView: ibm, componentType: 5126, count: 1, type: 'MAT4' },
+      { bufferView: times, componentType: 5126, count: 2, type: 'SCALAR', min: [0], max: [1] },
+      { bufferView: rots, componentType: 5126, count: 2, type: 'VEC4' },
+    ],
+  })
+  const pad = (b: Buffer, fill: number): Buffer => Buffer.concat([b, Buffer.alloc((4 - (b.length % 4)) % 4, fill)])
+  const j = pad(Buffer.from(json), 0x20), b = pad(bin, 0)
+  const head = Buffer.alloc(12), jh = Buffer.alloc(8), bh = Buffer.alloc(8)
+  head.writeUInt32LE(0x46546c67, 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + 8 + j.length + 8 + b.length, 8)
+  jh.writeUInt32LE(j.length, 0); jh.writeUInt32LE(0x4e4f534a, 4)
+  bh.writeUInt32LE(b.length, 0); bh.writeUInt32LE(0x004e4942, 4)
+  return Buffer.concat([head, jh, j, bh, b]).toString('base64')
+}
+
 describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
   it('renders a parts-recipe creature, picks it with a structured reference, and pauses', async () => {
     const result = await checker.run(withKitRuntime(files, THREE_3D), {
@@ -365,6 +412,45 @@ describe.skipIf(chrome === undefined)('3d-three kit in headless Chrome', () => {
     }, { blankProbe: THREE_3D.blankProbe })
     expect(result.failures).toEqual([])
     expect(result.passed).toBe(4)
+  }, 90_000)
+
+  it('plays a glTF character\'s skeletal animation, outlines it with the bones, and picks it', async () => {
+    const result = await checker.run(withKitRuntime({
+      ...files,
+      'assets/rig.glb': { type: 'model/gltf-binary', b64: skinnedGlb() },
+      'elements/rig.json': text(JSON.stringify({ id: 'rig', name: '木偶', type: '角色', look: { kind: 'gltf', src: 'assets/rig.glb' } }), 'application/json'),
+      'src/main.js': text(`import { createWorld, build } from 'dsh3d'
+        const world = createWorld()
+        world.terrain({ size: 30, height: () => 0 })
+        const rig = world.add(world.place(build('rig'), 0, 0), { id: 'rig', name: '木偶' })
+        world.follow(rig)
+        const bone = () => { let b = null; rig.traverse(o => { if (o.isBone) b = o }); return b }
+        window.dshGame = { ready: true, input() {}, step: dt => world.step(dt), pick: (x, y) => world.pick(x, y),
+          play: name => rig.userData.play(name) !== null,
+          state: () => { let skinnedHull = false; rig.traverse(o => { skinnedHull = skinnedHull || (o.isSkinnedMesh && o.userData.outline === true) })
+            return { clips: rig.userData.animations, turn: bone()?.quaternion.y ?? 0, skinnedHull } } }`),
+    }, THREE_3D), {
+      'tests/anim.test.js': `
+        test('the idle clip plays on its own and the outline rides the bones', () => {
+          const before = game.state().turn
+          step(30)
+          const s = game.state()
+          assert.equal(JSON.stringify(s.clips), JSON.stringify(['idle', 'walk']))
+          assert(s.turn > before + 0.1, '骨骼应在转动：' + JSON.stringify(s))
+          assert(s.skinnedHull, '描边应是跟着骨骼的蒙皮网格')
+        })
+        test('play switches clips; pick finds the posed character', () => {
+          assert(game.play('walk'), 'play(walk) 应返回动作')
+          step(10)
+          const world = window.dsh3dWorld, c = world.canvas
+          world.render()
+          const v = new world.THREE.Vector3(0, 0.5, 0).project(world.camera)
+          const ref = game.pick((v.x + 1) / 2 * c.width, (1 - v.y) / 2 * c.height)
+          assert(ref && ref.id === 'rig', '应点中木偶：' + JSON.stringify(ref))
+        })`,
+    }, { blankProbe: THREE_3D.blankProbe })
+    expect(result.failures).toEqual([])
+    expect(result.passed).toBe(2)
   }, 90_000)
 
   it('flags a 3D game that never draws', async () => {

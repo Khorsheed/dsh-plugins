@@ -1,4 +1,4 @@
-# Agent Note: glTF model looks (static)
+# Agent Note: glTF model looks
 
 Status: implemented
 
@@ -12,7 +12,10 @@ The game agent's next slice is a character modeled in Blender (the user is learn
 - **Loading inside the sandbox.** three's loaders build `Request`s from relative URLs, and those have no usable base in the sandbox (`about:srcdoc`, or the checks' `data:` page). So the loader exposes `window.__dshFileUrl(path)` (a project file's blob URL), and dsh3d's GLTFLoader maps every model, `.bin` and texture path through a `LoadingManager` URL modifier. GLTFLoader (with BufferGeometryUtils) rides every 3D bundle, because a panel preview may load a model the live version does not carry yet.
 - **Checks.** After `ready`, the checks await `window.__dshPending()` (dsh3d's in-flight loads, up to the 20 s loading window) before the smoke run, each test file and the screenshot. A gltf look whose `src` is not among the build files fails the check, naming the element and the file. `glb` and `gltf` get MIME types.
 - **Panel.** Previews (the turntable, card stills, proposal stills) fetch the working copy of the look's file through a new `workingFile` Remote (build files inside the project, 8 MB at most), so a model exported a moment ago shows before any version carries it. The preview entry re-fits once the model loads and takes its still only after that. Switching `src` reloads the frame. The element page shows the file, a toon / own-materials switch and a size field.
-- **Skill.** It covers the look format, export advice (Y up, meters, origin at the feet, textures packed in the glb, at most 10k triangles), the CC0 rule (`assets/LICENSES.md`), and the fact that animation is not wired yet.
+- **Skeletal animation.** A loaded model with clips gets an `AnimationMixer` driven by the world clock (`userData.update(t)` advances it by the step's delta). `userData.play(name, { fade, loop })` cross-fades and returns the action; called before the load finishes, it applies once the model loads. `userData.animations` lists the clip names. The clip that plays on its own is `look.animation`, else one named idle / 待机 / stand, else the first.
+- **Outline and picking follow the bones.** The outline vertex shader is built from three's own chunks (`skinning_*`, `beginnormal`, `begin`), so one hull material serves plain, instanced and skinned meshes. A skinned mesh gets a `SkinnedMesh` hull as a sibling, bound to the same skeleton. Before each pick, the bounding box and sphere of every skinned mesh are recomputed, because a pose can leave its rest-pose bounds.
+- **Panel clips.** A turntable reports the model's clips (`preview-clips`), and the element page lists them as chips. Clicking one plays it in the turntable (`preview-play`).
+- **Skill.** It covers the look format, export advice (Y up, meters, origin at the feet, textures packed in the glb, at most 10k triangles, one Blender Action per clip), the CC0 rule (`assets/LICENSES.md`), and how to play clips.
 
 ## Alternatives considered
 
@@ -22,7 +25,7 @@ The game agent's next slice is a character modeled in Blender (the user is learn
 
 **Preview from the live version's bundle only.** The user would have to publish before seeing a freshly exported model, which defeats the point of previewing.
 
-**Outline skinned meshes now.** The hull shader does not follow bones. That comes with animation (next step), together with skinned picking.
+**A separate outline material for skinned meshes.** Building the hull shader from three's chunks makes one material serve every case, and the instanced path is unchanged.
 
 ## Consequences
 

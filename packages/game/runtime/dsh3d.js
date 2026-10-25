@@ -122,8 +122,16 @@ export function flat(color, extra) {
 function outline() {
   outlineMaterial ??= new THREE.ShaderMaterial({
     uniforms: { c: { value: new THREE.Color(style.outline) }, w: { value: style.outlineWidth } },
-    // USE_INSTANCING: the same hull serves `scatter`'s instanced copies.
-    vertexShader: 'uniform float w; void main(){ vec4 p = vec4(position,1.0); vec3 nn = normal;\n#ifdef USE_INSTANCING\np = instanceMatrix * p; nn = mat3(instanceMatrix) * nn;\n#endif\nvec4 mv = modelViewMatrix * p; vec3 n = normalize(normalMatrix * nn); mv.xyz += n * w; gl_Position = projectionMatrix * mv; }',
+    // One hull for every case: USE_INSTANCING (scatter's copies) and USE_SKINNING (a glTF
+    // character's bones) come from three's own chunks, which compile to nothing otherwise.
+    vertexShader: [
+      '#include <common>', '#include <skinning_pars_vertex>', 'uniform float w;', 'void main(){',
+      '#include <beginnormal_vertex>', '#include <skinbase_vertex>', '#include <skinnormal_vertex>',
+      '#include <begin_vertex>', '#include <skinning_vertex>',
+      'vec4 p = vec4(transformed, 1.0); vec3 nn = objectNormal;',
+      '#ifdef USE_INSTANCING', 'p = instanceMatrix * p; nn = mat3(instanceMatrix) * nn;', '#endif',
+      'vec4 mv = modelViewMatrix * p; vec3 n = normalize(normalMatrix * nn); mv.xyz += n * w; gl_Position = projectionMatrix * mv; }',
+    ].join('\n'),
     fragmentShader: 'uniform vec3 c; void main(){ gl_FragColor = vec4(c,1.0); }',
     side: THREE.BackSide,
   })
@@ -546,8 +554,31 @@ function gltfModel(look, lookOrId) {
   const body = new THREE.Group()
   g.add(body)
   g.scale.setScalar(num(look.scale, 1))
-  g.userData.update = () => {}
   g.userData.src = look.src
+  // Skeletal animation: the mixer runs on the world's clock (update(t) from step).
+  let mixer = null, clips = [], current = null, wanted = null, last = null
+  g.userData.animations = []
+  g.userData.update = t => {
+    if (mixer !== null) mixer.update(last === null ? 0 : Math.max(0, t - last))
+    last = t
+  }
+  /**
+   * Play a clip by name, cross-fading from the one before (`{ fade: 0.2, loop: true }`).
+   * Called before the model has loaded, it plays once it has. Returns the action, or null.
+   */
+  g.userData.play = (name, { fade = 0.2, loop = true } = {}) => {
+    wanted = name
+    if (mixer === null) return null
+    const clip = clips.find(c => c.name === name)
+    if (!clip) { console.error(`dsh3d：模型 ${look.src} 没有叫「${name}」的动画（有：${clips.map(c => c.name).join('、') || '无'}）`); return null }
+    const action = mixer.clipAction(clip)
+    action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity)
+    action.clampWhenFinished = !loop
+    action.reset().fadeIn(current === null ? 0 : fade).play()
+    if (current !== null && current !== action) current.fadeOut(fade)
+    current = action
+    return action
+  }
   const toonMode = look.material !== 'original'
   const withOutline = look.outline ?? toonMode
   const job = loaderFor()
@@ -558,15 +589,33 @@ function gltfModel(look, lookOrId) {
       gltf.scene.traverse(o => { if (o.isMesh) meshes.push(o) })
       meshes.forEach(o => {
         if (toonMode) o.material = Array.isArray(o.material) ? o.material.map(toonOver) : toonOver(o.material)
-        if (withOutline && !o.isSkinnedMesh && style.outlineWidth > 0) {
-          const hull = new THREE.Mesh(o.geometry, outline())
-          hull.raycast = () => {}
-          hull.userData.outline = true
-          o.add(hull)
+        if (withOutline && style.outlineWidth > 0) {
+          if (o.isSkinnedMesh) {
+            // A skinned hull rides the same skeleton, as a sibling with the mesh's own transform.
+            const hull = new THREE.SkinnedMesh(o.geometry, outline())
+            hull.raycast = () => {}
+            hull.userData.outline = true
+            hull.position.copy(o.position); hull.quaternion.copy(o.quaternion); hull.scale.copy(o.scale)
+            hull.bindMode = o.bindMode
+            o.parent.add(hull)
+            hull.updateMatrixWorld(true)
+            hull.bind(o.skeleton, o.bindMatrix)
+          } else {
+            const hull = new THREE.Mesh(o.geometry, outline())
+            hull.raycast = () => {}
+            hull.userData.outline = true
+            o.add(hull)
+          }
         }
       })
       body.add(gltf.scene)
-      g.userData.animations = gltf.animations
+      clips = gltf.animations
+      g.userData.animations = clips.map(c => c.name)
+      if (clips.length > 0) {
+        mixer = new THREE.AnimationMixer(gltf.scene)
+        const idle = look.animation ?? clips.find(c => /idle|待机|stand/i.test(c.name))?.name ?? clips[0].name
+        g.userData.play(wanted ?? idle)
+      }
     })
     .catch(error => {
       console.error(`dsh3d：模型 ${look.src} 加载失败：${error?.message ?? error}`)
@@ -1017,6 +1066,8 @@ export function createWorld(options = {}) {
      */
     pick(x, y) {
       sync()
+      // A posed skinned mesh can leave its rest-pose bounds: refresh them before the ray.
+      for (const e of entities) e.traverse(o => { if (o.isSkinnedMesh && !o.userData.outline) { o.computeBoundingBox(); o.computeBoundingSphere() } })
       const ray = new THREE.Raycaster()
       ray.setFromCamera(new THREE.Vector2(x / canvas.width * 2 - 1, -(y / canvas.height) * 2 + 1), camera)
       const hits = ray.intersectObjects(ground ? [...entities, ground] : entities, true)

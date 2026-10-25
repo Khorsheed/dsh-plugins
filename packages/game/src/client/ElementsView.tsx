@@ -120,6 +120,9 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
 
   useEffect(() => { setLook(element.look) }, [element.id, element.look])
   const [look3d, setLook3d] = useState<Look3D | null>(element.look3d)
+  const [clips, setClips] = useState<readonly string[]>([])
+  const [clip, setClip] = useState<{ name: string; n: number } | null>(null)
+  useEffect(() => { setClips([]); setClip(null) }, [element.id])
   useEffect(() => { setLook3d(element.look3d) }, [element.id, element.look3d])
 
   const save = (next: AnyLook): void => {
@@ -162,7 +165,9 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
 
     {look3d !== null ? <section className={css.lookPanel}>
       <Preview3D api={api} projectId={project.id} version={project.current?.version} look={look3d} mode="spin"
-        className={css.turntable} emptyLabel={t('look.preview3dEmpty')} />
+        className={css.turntable} emptyLabel={t('look.preview3dEmpty')} onClips={setClips} clip={clip} />
+      {clips.length > 0 && <ChipRow label={t('gltf.clips')} value={clip?.name ?? ''} onSelect={name => { setClip(c => ({ name, n: (c?.n ?? 0) + 1 })) }}
+        chips={clips.map(name => ({ id: name, label: name }))} />}
       <div className={css.toolRow}>
         <span className={css.metaLine}>{t('look.drag3d')}</span>
         <span className={css.spacer} />

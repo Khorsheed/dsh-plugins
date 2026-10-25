@@ -220,6 +220,7 @@ export type FrameMessage =
   | { readonly gamedev: 'inspect'; readonly ready: boolean; readonly state: unknown; readonly errors: readonly { kind: string; msg: string }[] }
   | { readonly gamedev: 'picked'; readonly id: string | null; readonly ref: PickRef | null; readonly hover: boolean; readonly supported: boolean; readonly x: number; readonly y: number }
   | { readonly gamedev: 'preview'; readonly png: string }
+  | { readonly gamedev: 'preview-clips'; readonly names: readonly string[] }
 
 /** What a game's `pick` may return beyond a bare id (dsh3d returns this). */
 export interface PickRef {
