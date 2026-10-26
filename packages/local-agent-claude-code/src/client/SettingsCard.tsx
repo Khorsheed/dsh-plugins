@@ -181,7 +181,8 @@ function useCardState(
   const write = (field: string, value: unknown): void => {
     setSaved(false)
     setError(false)
-    void scope.set(field, value).then(() => { setSaved(true) }, () => { setError(true) })
+    // The host answers a refused write with `false` (ConfigForm), not a rejection.
+    void scope.set(field, value).then((accepted) => { if (accepted === false) setError(true); else setSaved(true) }, () => { setError(true) })
   }
 
   // The credential save: one `configureEndpoint` call carrying only the

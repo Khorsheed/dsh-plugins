@@ -197,6 +197,17 @@ describe('DshSettingsCard', () => {
     expect(screen.queryByRole('button', { name: coreZh['settings.login'] })).toBeNull()
   })
 
+  it('a write the host refuses (ConfigForm answers false) reads as a failure, not 已保存', async () => {
+    const { scope } = renderCard({})
+    scope.set.mockImplementation(async () => false)
+    await openCard()
+    fireEvent.click(screen.getByRole('switch', { name: zh['enable.switch.aria'] }))
+    await act(async () => {})
+    expect(screen.getByText(zh['live.error'])).toBeTruthy()
+    expect(screen.queryByText(zh['live.applied'])).toBeNull()
+    expect(screen.getByRole('switch', { name: zh['enable.switch.aria'] }).getAttribute('aria-checked')).toBe('false')
+  })
+
   it('writes the delegation switch through the scope', async () => {
     const { scope } = renderCard({})
     await openCard()
