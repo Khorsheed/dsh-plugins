@@ -19,7 +19,7 @@ The reader fetched every feed and article page through `ctx.web.fetch` and relie
 ## Consequences
 
 - Feeds and articles keep working with the switch on; the reader never spends a Fetch API call.
-- Limits raised on the `web-fetch-http` row no longer reach the reader; deployments set `fetchLimits` on the reader row instead (README updated, both languages). 3080 runs the defaults, so its behavior is unchanged.
+- Limits raised on the `web-fetch-http` row no longer reach the reader; deployments set `fetchLimits` on the reader row instead (`packages/reader/docs/reference.md`, both languages). 3080 runs the defaults, so its behavior is unchanged.
 - A user who picked a different fetch provider on purpose (for example a proxying one) no longer has it applied to reader fetches.
 - Retire when the seam lets a request name its provider (S22).
 

@@ -19,7 +19,7 @@ Status: implemented
 ## Consequences
 
 - 开关开着时订阅源和文章照常工作，阅读器也不会花 Fetch API 调用费。
-- `web-fetch-http` 行上抬过的上限不再作用于阅读器，部署方改在阅读器行上配 `fetchLimits`（中英 README 已更新）。3080 用的是默认值，行为不变。
+- `web-fetch-http` 行上抬过的上限不再作用于阅读器，部署方改在阅读器行上配 `fetchLimits`（`packages/reader/docs/reference.md`，中英文都已更新）。3080 用的是默认值，行为不变。
 - 用户特意选了别的抓取提供方（比如带代理的）时，阅读器的抓取不再经过它。
 - 退役条件：抓取缝允许单次请求指定提供方（S22）。
 
