@@ -268,6 +268,18 @@ describe('asking another room', () => {
     expect(bench.thread().at(-1)!.data).toMatchObject({ state: 'failed', error: '对方房间没有接这条求助' })
   })
 
+  it('moves the asked member on from a round a restart left uncertain, instead of waiting behind it silently', async () => {
+    const bench = await rooms()
+    const other = bench.ctx.sessions.get(bench.asked)!
+    const gm = (await bench.service.getState({ sessionId: bench.asked }) as { value: { members: { name: string; id: string }[] } }).value.members.find(member => member.name === '游戏大师')!
+    const lost = other.append('room/dispatch', { id: 'lost', targets: ['游戏大师'], targetIds: [gm.id], text: '旧活', origin: 'human' })
+    other.append('room/delivery-state', { id: `${lost.seq}:${gm.id}`, dispatchSeq: lost.seq, memberId: gm.id, state: 'uncertain', error: 'restart' })
+    await bench.service.askHelp({ sessionId: bench.asking, session: '游戏开发', member: '游戏大师', text: '在做什么游戏' }, bench.caller as never)
+    await vi.waitFor(() => expect(bench.flights).toHaveLength(1))
+    const rows = (await bench.service.getState({ sessionId: bench.asked }) as { value: { deliveries: { text: string; status: string }[] } }).value.deliveries
+    expect(rows.map(row => [row.text, row.status])).toEqual([['旧活', 'cancelled'], ['在做什么游戏', 'running']])
+  })
+
   it('refuses a member the room does not have', async () => {
     const bench = await rooms()
     expect(await bench.service.askHelp({ sessionId: bench.asking, session: '游戏开发', member: '不存在', text: 'x' }, bench.caller as never)).toMatch(/has no member "不存在"/)

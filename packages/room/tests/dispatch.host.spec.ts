@@ -223,7 +223,8 @@ describe('DispatchEngine (real composition)', () => {
     // Nothing changed: no goal, no roster, no change notes.
     expect(second).not.toContain('插件 API v2')
     expect(second).not.toContain('【房间变动】')
-    expect(second.trim()).toMatch(/^【来自 你 · #m\d+】\n继续$/)
+    // The human's own words carry no envelope.
+    expect(second.trim()).toBe('继续')
 
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', role: '前端' })
     await bench.service.updateMember({ sessionId: bench.sessionId, name: 'ada', role: '后端' })

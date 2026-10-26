@@ -6,7 +6,7 @@ import type { RoomState } from '../src/types.ts'
 const ev = (seq: number, type: string, data: unknown) => ({ seq, time: seq, type, data }) as never
 
 describe('handoffText', () => {
-  it('reads the human, the room agent, members and the work handed out; drops reports', () => {
+  it('names the handover, the goal and the open tasks, and replays no conversation', () => {
     const state = {
       members: [{ id: 'm-dsh', name: 'dsh', kind: 'main-agent' }, { id: 'm-kimi', name: 'kimi', kind: 'cli' }, { id: 'm-cc', name: 'claude-code', kind: 'cli' }],
       relays: [], tasks: [], runs: [], goal: '登录上线',
@@ -25,11 +25,8 @@ describe('handoffText', () => {
     expect(text).toContain('【协调者交接】dsh 把协调者交给了你（claude-code）')
     expect(text).toContain('房间目标：登录上线')
     expect(text).toContain('进行中的任务 1（进行中）：打招呼')
-    expect(text.split('【最近的对话】\n')[1]!.split('\n')).toEqual([
-      '你（人）：让大家打招呼',
-      'dsh → kimi：打个招呼',
-      'kimi：大家好，我是 Kimi',
-      'dsh：kimi 打过招呼了',
-    ])
+    expect(text).not.toContain('让大家打招呼')
+    expect(text).not.toContain('大家好，我是 Kimi')
+    expect(text).toContain('之前的对话没有附上')
   })
 })
