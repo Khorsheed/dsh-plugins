@@ -141,6 +141,10 @@ describe('cross-session help', () => {
 
   it('refuses outside a room, unknown sessions and ambiguous names', async () => {
     const bench = await boot()
+    const registry = { archivedSessionIds: [HELPER] as string[] }
+    bench.ctx.provide('workspaceRegistry', registry as never)
+    expect(await bench.service.askHelp({ sessionId: bench.sessionId, session: HELPER, text: 'x' }, bench.caller as never)).toMatch(/is archived/)
+    registry.archivedSessionIds = []
     expect(await bench.service.askHelp({ sessionId: 'not-a-room', session: HELPER, text: 'x' }, bench.caller as never)).toMatch(/inside a room/)
     expect(await bench.service.askHelp({ sessionId: bench.sessionId, session: '没有这个', text: 'x' }, bench.caller as never)).toMatch(/No session matches/)
     expect(await bench.service.askHelp({ sessionId: bench.sessionId, session: '', text: 'x' }, bench.caller as never)).toMatch(/Name the session/)
