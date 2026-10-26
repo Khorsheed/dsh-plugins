@@ -98,7 +98,7 @@ function previewOf(content: InboxState['next-turn'][number]['content']): string 
 type AtRow =
   | { readonly kind: 'member'; readonly member: { readonly name: string; readonly kind: string; readonly provider?: string } }
   | { readonly kind: 'session'; readonly candidate: SessionCandidate }
-  | { readonly kind: 'roomMember'; readonly candidate: SessionCandidate; readonly member: RoomMenuMember }
+  | { readonly kind: 'roomMember'; readonly candidate: SessionCandidate; readonly member: RoomMenuMember; readonly nested?: true }
 
 interface ActiveMention {
   /** The partial name after the trailing `@`. */
@@ -469,7 +469,7 @@ export function RoomComposer({
                   role="option"
                   aria-selected={index === mention.index}
                   className={index === mention.index ? css.itemActive : css.item}
-                  data-kid={row.kind === 'roomMember' && mention.query === '' ? '' : undefined}
+                  data-kid={row.kind === 'roomMember' && row.nested === true ? '' : undefined}
                   onMouseDown={(event) => {
                     event.preventDefault()
                     pick(row)
@@ -480,7 +480,7 @@ export function RoomComposer({
                         <span className={css.dot} style={{ background: memberColor(row.member.name) }} aria-hidden />
                         <span className={css.itemText}>
                           {row.member.name}
-                          {mention.query !== '' && <span className={css.itemContext}> · {sessionTitle(row.candidate)}</span>}
+                          {row.nested !== true && <span className={css.itemContext}> · {sessionTitle(row.candidate)}</span>}
                         </span>
                         <span className={css.hint}>
                           {row.member.kind === 'main-agent' ? t('member.kind.main') : row.member.provider ?? ''}

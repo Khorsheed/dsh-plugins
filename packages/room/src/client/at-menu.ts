@@ -38,7 +38,7 @@ export interface RoomMenuMember {
 /** One row of the other-sessions group: a session (or room), or a member of a room. */
 export type OtherRow =
   | { readonly kind: 'session'; readonly candidate: SessionCandidate }
-  | { readonly kind: 'roomMember'; readonly candidate: SessionCandidate; readonly member: RoomMenuMember }
+  | { readonly kind: 'roomMember'; readonly candidate: SessionCandidate; readonly member: RoomMenuMember; readonly nested?: true }
 
 /** How many other sessions show before anything is typed. */
 export const RECENT_SESSIONS = 5
@@ -127,14 +127,21 @@ export function otherRows(query: string, candidates: readonly SessionCandidate[]
   if (query === '') {
     return sessionRows('', candidates, exclude).flatMap(candidate => [
       { kind: 'session' as const, candidate },
-      ...expanded.has(candidate.sessionId) ? (candidate.members ?? []).map(member => ({ kind: 'roomMember' as const, candidate, member })) : [],
+      ...expanded.has(candidate.sessionId) ? (candidate.members ?? []).map(member => ({ kind: 'roomMember' as const, candidate, member, nested: true as const })) : [],
     ])
   }
   const pool: OtherRow[] = uniqueCandidates(candidates, exclude).flatMap(candidate => [
     { kind: 'session' as const, candidate },
     ...(candidate.members ?? []).map(member => ({ kind: 'roomMember' as const, candidate, member })),
   ])
-  return rankByMatch(query, pool, row => row.kind === 'session' ? sessionTitle(row.candidate) : row.member.name).slice(0, MATCHED_SESSIONS)
+  const ranked = rankByMatch(query, pool, row => row.kind === 'session' ? sessionTitle(row.candidate) : row.member.name).slice(0, MATCHED_SESSIONS)
+  // An expanded room lists all its members under it, matched or not (a
+  // member already listed by its own match moves under its room).
+  const under = (row: OtherRow): boolean => row.kind === 'roomMember' && expanded.has(row.candidate.sessionId)
+  return ranked.filter(row => !under(row) || !ranked.some(other => other.kind === 'session' && other.candidate.sessionId === row.candidate.sessionId))
+    .flatMap(row => row.kind === 'session' && expanded.has(row.candidate.sessionId)
+      ? [row, ...(row.candidate.members ?? []).map(member => ({ kind: 'roomMember' as const, candidate: row.candidate, member, nested: true as const }))]
+      : [row])
 }
 
 /**
