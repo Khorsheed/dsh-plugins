@@ -183,9 +183,18 @@
 - **退役条件**：官方改成回走语义后，任何尾部空 step 都不再吞回复；我们的共享预约可保留（它同时是更贴宿主形态的实现）。
 - **状态**：绕行中（@khorsheed/dsh-local-agent-kimi)。
 
+### S22. `ctx.web.fetch` 无法按调用指定提供方，原始 HTML/XML 消费方被全局开关改成 Markdown
+
+- **需求**：要原始文档的消费方（灵感空间阅读器的订阅源与文章提取：按 `<?xml`/`<rss`/`<feed` 判订阅源、HTML 提取器取正文、按落地 URL 判跨站重定向）需要拿到目标站点的原始响应。0.2.1-rc.2 起官方网页搜索设置页的「启用新版 Web 搜索 API」一个开关同时改写 `web.searchProvider` 与 `web.fetchProvider`，抓取改走 `deepseek-fetch-api`：`body` 是 Markdown（`kind: 'text'`）、`statusCode` 恒 200、`url` 恒为请求地址。`WebFetchRequest` 只有 `url`，`WebRuntime` 不暴露提供方注册表，插件无法指定「这次走本地 HTTP」。
+- **现状绕行**：阅读器在官方 web 服务上用自己持有的 `HttpFetchProvider`（`@deepseek-ai/dsh-web-fetch-http`，可选 peer）抓订阅源与页面，策略与错误同默认 `http` 行；上限改由阅读器行的 `fetchLimits` 配置（Agent Note `.agents/notes/implemented/bug-fix/2026-10-24-reader-own-http-fetch-provider.md`）。
+- **建议的官方改动**：`WebFetchRequest` 加可选 `provider`（或 `accept: 'raw' | 'markdown'`），或公开按 id 取提供方的只读查询；HTTP 提供方的网络策略照旧由它自己负责。
+- **退役条件**：官方能让单次调用指定 HTTP 提供方（或声明要原始响应）后，阅读器回到 `ctx.web.fetch`，删掉 `document-fetch.ts`，`fetchLimits` 改回由 `web-fetch-http` 行配置。
+- **状态**：绕行中（@khorsheed/dsh-reader）。
+
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。
 - 每次官方升级：逐条核对"退役条件"是否已满足（S1 的核对清单可以直接抄进升级 checklist)。
 - 2026-09-15 全量核对（`0.1.5-rc.1 → 0.1.6-alpha.1`，区间约 804 commits）：S12 部分落地（`registerMessageProjection`），转待实施；S2/S3/S4/S8/S10/S11/S13/S14/S15 均未落地，绕行保留；S5 维持（npm 生成器 exports 无变化，monorepo 耦合结论不变）。适配波次见提案 `proposals/active/2026-09-15-host-016-adaptation.md`。
 - 2026-09-29 全量核对（`0.1.7-rc.2 → 0.2.0-rc.1`，区间 261 commits）：**S11 已退役**（两臂落地均早于 0.1.7-rc.2，见条目）；S5 生成器已上 npm 但仍 monorepo 耦合，不退役；S2/S3/S4/S8/S10/S12/S13/S14/S15/S17/S18 与 meta-pack reconcile、browser-auth（cookie 仍无 `Secure`、`--host 0.0.0.0` 仍拒）均未落地，绕行保留。S3/S4 注意：事件已在此之前改名 `tool/ptc-dispatch`（payload 未变）。0.2.0-rc.1 无插件面 API 删改（唯一硬 break：`runNativeCommand` 新增必填第 4 参 `window`）；新能力：`ctx.otel` 共享 OTel 服务、`Volatile<T>` 配置模式、`ISessions.fork` 的 `onCreated`、schedule 转为可选 bundle（web 默认组合不再含 `time-context`/`schedule`/`ui-schedule` 三行）。
+- 2026-10-24 全量核对（`0.2.1-rc.1 → 0.2.1-rc.3`，release 分支 15 commits）：S1–S21 均未落地，绕行保留；新登记 **S22**（全局 Search/Fetch API 开关把原始文档抓取改成 Markdown）。新能力：三处「更多」菜单与 Pin（`sidebar.panellist.actions` / `conversation.session.header.views.actions` / `sidebar.right.tab.guide.actions`）、`DraftInitializationOptions.whenDraftExists`、新会话按预设复用空白会话、DeepSeek API key 路由跟随官方 `/models`。适配波次见提案 `proposals/active/2026-10-24-host-021-rc3-adaptation.md`。

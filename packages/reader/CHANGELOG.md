@@ -1,5 +1,9 @@
 # 变更记录
 
+## 未发布
+
+- **订阅源和文章不再被新版搜索 API 开关弄坏**：宿主 0.2.1-rc.2 起，网页搜索设置页的「启用新版 Web 搜索 API」会把抓取一起切到 DeepSeek Fetch API（返回 Markdown），订阅源会被当成网页、文章抽不出正文。现在阅读器在官方 web 服务上用自己持有的官方 HTTP 抓取提供方实例抓取，拿到的始终是原始文档；没装提供方包时照旧走 `ctx.web.fetch`。新增配置 `fetchLimits`（`maxResponseBytes` / `maxBodyChars` / `timeoutMs` / `maxRedirects`），抬过 `web-fetch-http` 行上限的部署改配这里。见 Agent Note `2026-10-24-reader-own-http-fetch-provider`。
+
 ## 0.3.1（2026-10-26）
 
 - 修复：重新转写一篇之前翻译过的稿子时，转写进行中每次正文刷新都会重新铺一遍翻译（提示条反复出现）；现在转写中不恢复翻译，转完后恢复一次。

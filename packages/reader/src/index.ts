@@ -12,6 +12,7 @@
  * @module @khorsheed/dsh-reader
  */
 import type { Context } from '@deepseek-ai/cordis'
+import type { DocumentFetchLimits } from './document-fetch.ts'
 import { ReaderService } from './service.ts'
 import { ReaderNotesStore } from './notes.ts'
 import { ReaderRemoteService } from './remote.ts'
@@ -55,6 +56,13 @@ export interface ReaderConfig {
   readonly stateRoot?: string
   /** A yt-dlp binary to use instead of the reader's managed copy (video metadata and captions). */
   readonly ytdlpPath?: string
+  /**
+   * Fetch limits for feeds and pages: `maxResponseBytes` (default 5 000 000),
+   * `maxBodyChars` (100 000), `timeoutMs` (30 000), `maxRedirects` (5) — the
+   * official `http` fetch row's defaults. The reader fetches through its own
+   * instance of that provider, so limits raised on that row do not reach it; set them here.
+   */
+  readonly fetchLimits?: DocumentFetchLimits
 }
 
 /**

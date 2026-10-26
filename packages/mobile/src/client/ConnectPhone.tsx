@@ -21,7 +21,7 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
   const [info, setInfo] = useState<MobileConnectInfo>(), [login, setLogin] = useState<string>()
   const [tunnel, setTunnel] = useState<MobileTunnelStatus>()
   const [busy, setBusy] = useState(false), [failed, setFailed] = useState(false)
-  const request = useRef<AbortController>(), timer = useRef<ReturnType<typeof setTimeout>>()
+  const request = useRef<AbortController>(), timer = useRef<ReturnType<typeof setTimeout>>(), settling = useRef(false)
   const hide = () => { request.current?.abort(); clearTimeout(timer.current); setLogin(undefined); setBusy(false) }
   const loadTunnel = async (signal?: AbortSignal) => {
     try {
@@ -31,7 +31,9 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
       setTunnel(response.ok && result && TUNNEL_STATES.has(result.state) ? result : undefined)
     } catch { if (!signal?.aborted) setTunnel(undefined) }
   }
-  const load = async (generate = false) => {
+  /** `background` reads come from the start-up poll: the tunnel's trust write reloads the
+   * host connection mid-start, so one failed read there is expected and the next tick retries. */
+  const load = async (generate = false, background = false) => {
     hide(); setFailed(false); setBusy(true)
     const controller = new AbortController(); request.current = controller
     try {
@@ -49,7 +51,7 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
         if (!info?.origin || url.origin !== info.origin || url.protocol !== 'https:' || !url.searchParams.get('token')) throw new Error('invalid')
         setLogin(url.href); timer.current = setTimeout(hide, 120_000)
       } else setInfo(result)
-    } catch { if (!controller.signal.aborted) setFailed(true) }
+    } catch { if (!controller.signal.aborted && !background) setFailed(true) }
     finally { if (!controller.signal.aborted) setBusy(false) }
   }
   const act = async (action: 'enable' | 'disable') => {
@@ -70,8 +72,14 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
     return () => { request.current?.abort(); clearTimeout(timer.current); document.removeEventListener('visibilitychange', conceal); window.removeEventListener('pagehide', hide) }
   }, [])
   useEffect(() => {
-    if (tunnel?.state !== 'starting' && tunnel?.state !== 'recovering') return
-    const poll = setInterval(() => { void loadTunnel(); void load() }, 5_000)
+    if (tunnel?.state !== 'starting' && tunnel?.state !== 'recovering') {
+      // The poll stops on the tick that reads the settled state; its connect read may
+      // predate the new origin, so read once more now that the tunnel has settled.
+      if (settling.current) { settling.current = false; void load() }
+      return
+    }
+    settling.current = true
+    const poll = setInterval(() => { void loadTunnel(); void load(false, true) }, 5_000)
     return () => clearInterval(poll)
   }, [tunnel?.state])
   useEffect(() => {
@@ -99,11 +107,14 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
   // enabling managed mode is also the recovery for a dead, untrusted or
   // missing static origin. A healthy static deployment sees no new chrome.
   const offerTunnel = managed || (info !== undefined && info.state !== 'ready')
+  // The setup line is for a host with no one-click entry to point at: whenever the
+  // tunnel status is readable, its own controls (or its unsupported reason) say what to do.
+  const status = info && info.state !== 'ready' ? (info.state === 'unreachable' ? 'connectUnreachable' : info.state === 'untrusted-origin' ? 'connectUntrusted' : info.state === 'unsupported' ? 'connectUnsupported' : tunnel ? undefined : 'connectSetup') : undefined
   return <section data-mobile-connect>
     <style>{styles}</style>
     <h2>{t('connectPhone')}</h2><p>{t('connectIntro')}</p>
     {info?.origin && <div data-connect-host><span>{t('server')}</span><strong>{new URL(info.origin).host}</strong></div>}
-    {info && info.state !== 'ready' && <div role="status"><p>{t(info.state === 'unreachable' ? 'connectUnreachable' : info.state === 'untrusted-origin' ? 'connectUntrusted' : info.state === 'unsupported' ? 'connectUnsupported' : 'connectSetup')}</p></div>}
+    {status && <div role="status"><p>{t(status)}</p></div>}
     {tunnel && offerTunnel && <div data-connect-tunnel>
       {tunnel.state === 'off' && <>
         <p data-connect-note>{t('tunnelExplainer')}</p>

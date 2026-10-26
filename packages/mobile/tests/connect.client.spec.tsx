@@ -120,7 +120,7 @@ it('explains a missing cloudflared when the one-click entry is unsupported', asy
   vi.stubGlobal('fetch', fetcher)
   render(<ConnectPhone t={t}/>)
   await screen.findByText(en.tunnelNoCloudflared)
-  expect(screen.getByText(en.connectSetup)).toBeTruthy()
+  expect(screen.queryByText(en.connectSetup)).toBeNull()
   expect(screen.queryByRole('button', { name: en.tunnelEnable })).toBeNull()
 })
 it('offers the one-click entry as recovery when the configured address is unreachable', async () => {
@@ -140,4 +140,47 @@ it('offers the one-click entry as recovery when the configured address is untrus
   render(<ConnectPhone t={t}/>)
   await screen.findByText(en.connectUntrusted)
   expect(screen.getByRole('button', { name: en.tunnelEnable })).toBeTruthy()
+})
+
+it('rides out a failed read while the tunnel starts and shows the settled address once it is ready', async () => {
+  const origin = 'https://live-four-five-six.trycloudflare.com'
+  // Initial read, the read after enabling, then the poll read that lands on the host's
+  // connection reload (the trust write), then the settled read.
+  const connect = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'not-configured', origin: null }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'not-configured', origin: null }) })
+    .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    .mockResolvedValue({ ok: true, json: async () => ({ state: 'ready', origin }) })
+  const tunnel = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'off', origin: null }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ state: 'starting', origin: null }) })
+    .mockResolvedValue({ ok: true, json: async () => ({ state: 'ready', origin }) })
+  const fetcher = vi.fn((url: unknown, options?: unknown) => String(url).includes(TUNNEL_PATH) ? tunnel(url, options) : connect(url, options))
+  vi.stubGlobal('fetch', fetcher)
+  vi.useFakeTimers({ shouldAdvanceTime: true })
+  render(<ConnectPhone t={t}/>)
+  fireEvent.click(await screen.findByRole('button', { name: en.tunnelEnable }))
+  await waitFor(() => expect(connect).toHaveBeenCalledTimes(2))
+  // The poll tick: the tunnel reads ready while the connect read fails on the reload.
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+  expect(screen.queryByText(en.connectError)).toBeNull()
+  // Settled: one more connect read, and no further polling.
+  expect(connect).toHaveBeenCalledTimes(4)
+  await act(async () => { await vi.advanceTimersByTimeAsync(15_000) })
+  expect(connect).toHaveBeenCalledTimes(4)
+  expect(screen.queryByText(en.connectError)).toBeNull()
+  expect(screen.getByText('live-four-five-six.trycloudflare.com')).toBeTruthy()
+  expect(screen.getByRole('button', { name: en.connectGenerate })).toBeTruthy()
+})
+
+it('leaves the setup line to hosts without a readable one-click entry', async () => {
+  const connect = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'not-configured', origin: null }) })
+  const tunnel = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'off', origin: null }) })
+  vi.stubGlobal('fetch', vi.fn((url: unknown, options?: unknown) => String(url).includes(TUNNEL_PATH) ? tunnel(url, options) : connect(url, options)))
+  const view = render(<ConnectPhone t={t}/>)
+  await screen.findByRole('button', { name: en.tunnelEnable })
+  expect(screen.queryByText(en.connectSetup)).toBeNull()
+  view.unmount()
+  tunnel.mockResolvedValue({ ok: false, json: async () => ({ error: 'not-found' }) })
+  render(<ConnectPhone t={t}/>)
+  await screen.findByText(en.connectSetup)
+  expect(screen.queryByRole('button', { name: en.tunnelEnable })).toBeNull()
 })

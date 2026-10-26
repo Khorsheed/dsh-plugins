@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-27-mobile-connect-settles-after-tunnel-start.md
+.agents/notes/implemented/bug-fix/2026-10-27-mobile-connect-settles-after-tunnel-start.md: 5a59850553c21167699f17c248e346dac7dfa7b3
+.agents/notes/implemented/bug-fix/2026-10-27-mobile-connect-settles-after-tunnel-start.zh.md: 1d2906a332cf1dca81cf61816bc1805af7eae281
