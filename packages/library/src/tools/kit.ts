@@ -196,12 +196,11 @@ export const NODES_SCHEMA = {
       id: { type: 'string', description: 'Unique: s1, s2…' },
       title: { type: 'string' },
       chapters: { oneOf: [{ type: 'string' }, { type: 'integer' }], description: 'Contents rows it covers: "4" | "3-4".' },
-      points: { type: 'array', description: '3–5 knowledge points.', items: { type: 'object', additionalProperties: true, properties: {
+      points: { type: 'array', description: 'Required: its 3–5 knowledge points — the chapter quiz asks them.', items: { type: 'object', additionalProperties: true, properties: {
         id: { type: 'string', description: 'A stable slug.' },
         title: { type: 'string' },
       } } },
       goals: { type: 'json', description: 'What the learner can do after it: ["…"].' },
-      acceptance: { type: 'json', description: 'Only for a hands-on station judged on a deliverable instead of a quiz: the lines to check ["…"].' },
     } } },
     { type: 'string', description: 'The same list as JSON text.' },
   ],

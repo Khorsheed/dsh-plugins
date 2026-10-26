@@ -257,7 +257,8 @@ export class LibraryServiceRoadmap extends LibraryServiceCards {
       const node = roadmap?.nodes.find(candidate => candidate.id === request.nodeId)
       if (roadmap === undefined || node === undefined) return this.notesMiss(project.value.id, request.resourceId, request.nodeId)
       const book = roadmap.primaryResourceId === undefined ? undefined : this.store.readResource(project.value.id, roadmap.primaryResourceId)
-      const lesson = lessonProblems(text, node, book?.origin === 'authored')
+      // Every textbook's 讲义 are the lesson itself (10-26): the per-point check applies to all.
+      const lesson = lessonProblems(text, node, book !== undefined)
       if (lesson !== undefined) return refuse('invalid', lesson)
       // A rewrite keeps the version it replaces (notes/<resource>/<node>.<n>.md).
       if (node.notes !== undefined && node.notes.text !== '' && roadmap.primaryResourceId !== undefined) {

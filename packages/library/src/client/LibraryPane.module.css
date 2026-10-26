@@ -2787,13 +2787,21 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 .railDots { display: inline-flex; gap: 3px; }
 
 .railNext {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 6px;
-  padding: 10px 12px;
-  border: 0.5px solid var(--dsw-alias-border-l2);
-  border-radius: var(--dsw-radius-md, 12px);
-  background: var(--dsw-alias-bg-layer-1);
+}
+
+.railTitleRow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+
+.railNextTag {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--lib-accent) 14%, transparent);
+  color: var(--lib-accent);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  line-height: 18px;
 }
 
 .btnRow { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }

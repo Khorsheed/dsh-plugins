@@ -40,6 +40,36 @@ afterEach(() => {
 async function call(name: string, args: Record<string, unknown>, from: unknown = exec): Promise<unknown> {
   const tool = tools.find(candidate => candidate.name === name)
   if (tool === undefined) throw new Error(`no tool ${name}`)
+  return tool.execute(withPoints(name, args) as never, from as never)
+}
+
+/**
+ * Every quiz station needs 3–5 points (10-26); a fixture station that says
+ * nothing about points gets three placeholders, so the older tests keep
+ * testing what they test. rawCall skips this.
+ */
+function withPoints(name: string, args: Record<string, unknown>): Record<string, unknown> {
+  if (name !== 'library_roadmap') return args
+  const text = typeof args.nodes === 'string'
+  let nodes: unknown = args.nodes
+  if (text) { try { nodes = JSON.parse(args.nodes as string) } catch { return args } }
+  if (!Array.isArray(nodes)) return args
+  const filled = (nodes as Record<string, unknown>[]).map((node, index) => node.points !== undefined || (node.gate !== undefined && node.gate !== 'quiz') || node.kind !== undefined
+    ? node
+    : { ...node, points: [1, 2, 3].map(n => ({ id: `p${index}_${n}`, title: `考点${index}-${n}` })) })
+  return { ...args, nodes: text ? JSON.stringify(filled) : filled }
+}
+
+/** A 讲义 that passes the per-point check: one full section per title (the fixture points are 考点<i>-1..3). */
+function lessonFor(titles: readonly string[], extra = ''): string {
+  return titles.map(title => `## ${title}\n${'讲清楚它是什么、为什么重要、一个具体例子、常见误区，再留一道思考题。'.repeat(4)}`).join('\n') + extra
+}
+const FIXTURE_POINTS = ['考点0-1', '考点0-2', '考点0-3']
+
+/** A tool call exactly as given (no fixture points). */
+async function rawCall(name: string, args: Record<string, unknown>, from: unknown = exec): Promise<unknown> {
+  const tool = tools.find(candidate => candidate.name === name)
+  if (tool === undefined) throw new Error(`no tool ${name}`)
   return tool.execute(args as never, from as never)
 }
 
@@ -309,9 +339,16 @@ describe('the write chain strings itself', () => {
     expect(service.getBinding('s_elsewhere')).toEqual({ projectId: project, resourceId: book })
   })
 
-  it('acceptance lines on a quiz station are taught both exits', async () => {
+  it('acceptance lines on a quiz station become its goals: the chapter quiz is the check (10-26)', async () => {
+    const { project, book } = await seed()
+    await call('library_roadmap', { resource: book, nodes: [{ id: 'n1', title: '极限', gate: 'quiz', chapters: '1', acceptance: ['会求极限'] }] })
+    const draft = (await service.getRoadmap({ projectId: project, resourceId: book })).draft?.nodes[0]
+    expect([draft?.gate, draft?.goals, draft?.acceptance]).toEqual(['quiz', ['会求极限'], undefined])
+  })
+
+  it('a station without its points is refused, naming it', async () => {
     const { book } = await seed()
-    await expect(call('library_roadmap', { resource: book, nodes: [{ id: 'n1', title: '极限', gate: 'quiz', chapters: '1', acceptance: ['会求极限'] }] })).rejects.toThrow(/gate: "acceptance"[\s\S]*goals/)
+    await expect(rawCall('library_roadmap', { resource: book, nodes: [{ id: 'n1', title: '极限', chapters: '1' }] })).rejects.toThrow(/every station needs its 3–5 knowledge points[\s\S]*n1/)
   })
 
   it('a draft with several shape problems gets ONE refusal listing them all — not one round trip each', async () => {
@@ -409,7 +446,7 @@ describe('payload transport', () => {
     const written = (await call('library_quiz', {
       node: 'n1',
       questions: [{
-        id: 'q1', kind: 'choice', prompt: 'p',
+        id: 'q1', kind: 'choice', prompt: 'p', point: 'p0_1',
         options: [{ label: 'A) 甲' }, { label: 'B) 乙' }],
         answer: 'A) 甲',
         target: { kind: 'topic' },
@@ -470,7 +507,7 @@ describe('the per-noun tools take flat fields', () => {
     expect(drafted.stations).toBe(1)
     const adopted = await service.adoptRoadmap({ projectId: created.project.id, resourceId: added.resource.id })
     if (!adopted.ok) throw new Error(adopted.message)
-    const noted = (await call('library_notes', { node: 'n1', text: '## 函数讲义' })) as { notes: { revisions: number } }
+    const noted = (await call('library_notes', { node: 'n1', text: lessonFor(FIXTURE_POINTS) })) as { notes: { revisions: number } }
     expect(noted.notes.revisions).toBe(1)
     const res = (await call('library_textbook', { op: 'create', title: 'Gymnasium 文档', url: 'https://gymnasium.example', kind: 'tool' })) as { resource: { id: string } }
     expect((await call('library_textbook', { op: 'remove', resourceId: res.resource.id })) as { ok: boolean })
@@ -494,7 +531,7 @@ describe('station notes through the tools', () => {
     ] })
     const adoptedBook = await service.adoptRoadmap({ projectId: project, resourceId: book })
     if (!adoptedBook.ok) throw new Error(adoptedBook.message)
-    const written = (await call('library_notes', { node: 'n1', text: '## 讲义\n\n- 要点' })) as { notes: { revisions: number } }
+    const written = (await call('library_notes', { node: 'n1', text: lessonFor(FIXTURE_POINTS, '\n- 要点') })) as { notes: { revisions: number } }
     expect(written.notes.revisions).toBe(1)
     expect((await service.getRoadmap({ projectId: project, resourceId: book })).roadmap?.nodes[0]?.notes?.text).toContain('要点')
     // The bad calls teach.
@@ -505,7 +542,7 @@ describe('station notes through the tools', () => {
     await call('library_roadmap', { resource: rl.resource.id, nodes: [{ id: 's1', title: '奖励', gate: 'quiz', chapters: '1' }] })
     const adoptedRl = await service.adoptRoadmap({ projectId: project, resourceId: rl.resource.id })
     if (!adoptedRl.ok) throw new Error(adoptedRl.message)
-    const station = (await call('library_notes', { resource: rl.resource.id, node: 's1', text: '自编教材正文' })) as { notes: { revisions: number } }
+    const station = (await call('library_notes', { resource: rl.resource.id, node: 's1', text: lessonFor(FIXTURE_POINTS) })) as { notes: { revisions: number } }
     expect(station.notes.revisions).toBe(1)
   })
 })
@@ -627,7 +664,7 @@ describe('a reused session and the book type (3080, 2026-10-20)', () => {
 describe('the slim surface (2026-10-26)', () => {
   const pts = [{ id: 'gate', title: '门控' }, { id: 'sel', title: '选择性' }, { id: 'struct', title: '结构' }]
 
-  it('a draft tells the coach to stop until adoption; acceptance lines alone make a hands-on station', async () => {
+  it('a draft tells the coach to stop until adoption; acceptance lines without a gate become goals of a quiz station', async () => {
     const { book } = await seed()
     const drafted = (await call('library_roadmap', { resource: book, nodes: [
       { id: 's1', title: '离子通道', chapters: '1', points: pts },
@@ -636,14 +673,14 @@ describe('the slim surface (2026-10-26)', () => {
     expect(drafted.next).toMatch(/stop: before they adopt it, write no 讲义/)
     const read = (await call('library_read', { what: 'roadmap' })) as { adopted: null; draft: { stations: { id: string; gate?: string; points: string[] }[] } }
     expect(read.adopted).toBeNull()
-    expect(read.draft.stations.map(station => [station.id, station.gate ?? 'quiz', station.points.length])).toEqual([['s1', 'quiz', 3], ['s2', 'acceptance', 0]])
+    expect(read.draft.stations.map(station => [station.id, station.gate ?? 'quiz', station.points.length])).toEqual([['s1', 'quiz', 3], ['s2', 'quiz', 3]])
   })
 
   it('a read of the path never carries the 讲义 text; a forgotten what reads what the arguments point at', async () => {
     const { project, book } = await seed()
     await call('library_roadmap', { resource: book, nodes: [{ id: 's1', title: '离子通道', chapters: '1', points: pts }] })
     await service.adoptRoadmap({ projectId: project, resourceId: book })
-    const written = (await call('library_notes', { node: 's1', text: '## 门控\n讲义正文' })) as { next: string }
+    const written = (await call('library_notes', { node: 's1', text: lessonFor(['门控', '选择性', '结构'], '\n讲义正文') })) as { next: string }
     expect(written.next).toMatch(/then wait/)
     const read = (await call('library_read', { resource: book })) as { adopted: { stations: { notes?: string }[] } }
     expect(read.adopted.stations[0]?.notes).toMatch(/chars, revision 1/)
