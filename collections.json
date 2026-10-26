@@ -1,5 +1,5 @@
 {
-  "$comment": "Install collections: what an ordinary user installs in one command — basic plus one mode suite. A collection is a list, not a package; `pnpm map:collections` writes the install commands into README.md / README.en.md and each mode suite's README, `pnpm check:collections` keeps them current. See scripts/check-collections.ts.",
+  "$comment": "Install collections: what an ordinary user installs in one command — basic plus one mode suite. `\"unpublished\": true` holds a suite back from the root README and from every published collection until it ships. A collection is a list, not a package; `pnpm map:collections` writes the install commands into README.md / README.en.md and each mode suite's README, `pnpm check:collections` keeps them current. See scripts/check-collections.ts.",
   "collections": [
     {
       "id": "basic",
@@ -13,6 +13,7 @@
     },
     {
       "id": "writing",
+      "unpublished": true,
       "title": { "zh": "写作", "en": "Writing" },
       "bundles": ["@khorsheed/dsh-basic", "@khorsheed/dsh-writing-suite"]
     },
@@ -33,6 +34,7 @@
     },
     {
       "id": "eval",
+      "unpublished": true,
       "title": { "zh": "评测", "en": "Eval" },
       "bundles": ["@khorsheed/dsh-basic", "@khorsheed/dsh-eval-suite"]
     },
@@ -42,11 +44,9 @@
       "bundles": [
         "@khorsheed/dsh-basic",
         "@khorsheed/dsh-dev-suite",
-        "@khorsheed/dsh-writing-suite",
         "@khorsheed/dsh-learning-suite",
         "@khorsheed/dsh-video-suite",
-        "@khorsheed/dsh-gamedev-suite",
-        "@khorsheed/dsh-eval-suite"
+        "@khorsheed/dsh-gamedev-suite"
       ]
     }
   ]

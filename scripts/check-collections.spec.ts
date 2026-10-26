@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  checkCollections, compareVersions, installCommand, intersectRanges, loadCollections, packBlock,
+  checkCollections, compareVersions, installCommand, intersectRanges, loadCollections, packBlock, rootBlock,
 } from './check-collections.ts'
 
 const repoRoot = join(import.meta.dirname, '..')
@@ -36,6 +36,15 @@ describe('generated text', () => {
       .toBe('dsh plugin --profile web add @a/b @a/c')
   })
 
+  it('the root block skips an unpublished collection', () => {
+    const block = rootBlock([
+      { id: 'dev', title: { zh: '开发', en: 'Dev' }, bundles: ['@a/basic', '@a/d'] },
+      { id: 'writing', title: { zh: '写作', en: 'Writing' }, bundles: ['@a/basic', '@a/w'], unpublished: true },
+    ], 'zh')
+    expect(block).toContain('@a/d')
+    expect(block).not.toContain('@a/w')
+  })
+
   it('the mode suite block names its scene collection', () => {
     const block = packBlock({ id: 'writing', title: { zh: '写作', en: 'Writing' }, bundles: ['@a/basic', '@a/w'] }, 'zh')
     expect(block).toContain('「写作」集合')
@@ -48,6 +57,14 @@ describe('real tree', () => {
     for (const c of loadCollections(repoRoot).filter(c => c.id !== 'basic' && c.id !== 'full')) {
       expect(c.bundles[0], c.id).toBe('@khorsheed/dsh-basic')
       expect(c.bundles, c.id).toHaveLength(2)
+    }
+  })
+
+  it('no published collection lists a held-back suite', () => {
+    const collections = loadCollections(repoRoot)
+    const held = collections.filter(c => c.unpublished).flatMap(c => c.bundles.slice(1))
+    for (const c of collections.filter(c => !c.unpublished)) {
+      for (const name of held) expect(c.bundles).not.toContain(name)
     }
   })
 
