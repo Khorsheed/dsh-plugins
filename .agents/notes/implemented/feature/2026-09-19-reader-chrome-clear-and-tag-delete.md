@@ -43,7 +43,7 @@ Four things about the inspiration space's controls, reported together with scree
 
 ## Testing
 
-`packages/dsh-reader` runs 201 tests (3 new in `ReaderPane.client.spec.tsx`):
+`packages/reader` runs 201 tests (3 new in `ReaderPane.client.spec.tsx`):
 
 - The `×` appears only when the field has text, clears the value, and disappears again.
 - Deleting a tag from the popover calls `deleteTag` with that id and clears the active narrowing (`@tag-id`) with it.

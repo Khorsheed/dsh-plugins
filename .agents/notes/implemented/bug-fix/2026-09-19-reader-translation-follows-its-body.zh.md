@@ -34,6 +34,6 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 共 254 个测试（新增 1 个）：
+`packages/reader` 共 254 个测试（新增 1 个）：
 
 - `tests/ReaderPane.client.spec.tsx`：打开一篇文章并翻译；随后在读者毫无动作的情况下替换它的正文（用的就是重抓会走的那条 store action）；文章必须显示**翻译过的**新文字。修复前，恢复已经用掉了它唯一的一次机会（`restoredTranslationRef`）且读的是陈旧副本，所以断言拿到的是英文原文而失败。

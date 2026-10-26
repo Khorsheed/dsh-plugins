@@ -10,7 +10,7 @@ A version reached the play area only through the end-of-turn checks (`agent/turn
 
 - A fourth model tool, `game_publish`, runs the same `checkTurn` pipeline on demand: data validation → headless load and 2-second smoke run → `tests/*.test.js`. A pass cuts a version into the play area (or a candidate when auto-confirm is off or for a restyle); a failure lists the findings; an unchanged build answers from the last check without re-running it.
 - It calls `checkTurn` with no fix-round cap, so an explicit publish never marks a build "given up"; the end-of-turn loop still checks (and steers) a build that failed a publish. A build that passed a publish is skipped at turn end by the existing fingerprint check.
-- The rule lives in the prompt layers: the `gamedev` skill, the `game-agent` guidance section and both copies of the `dsh-gamedev` persona (`packages/gamedev`, `packages/presets`) require a green `game_publish` before the agent asks the user to play or try anything, and say that pure design questions need none.
+- The rule lives in the prompt layers: the `gamedev` skill, the `game-agent` guidance section and both copies of the `dsh-gamedev` persona (`packages/gamedev-suite`, `packages/presets`) require a green `game_publish` before the agent asks the user to play or try anything, and say that pure design questions need none.
 
 ## Alternatives considered
 

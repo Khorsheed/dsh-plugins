@@ -43,7 +43,7 @@ Three reports about one family of research pages (`transformer-circuits.pub`), e
 
 ## Testing
 
-`packages/dsh-reader` runs 217 tests (5 new):
+`packages/reader` runs 217 tests (5 new):
 
 - `extract-article.spec.ts`: a page with two title `<h1>`s, a masthead and leading `<br>`s extracts to a body that starts at `<h3>Authors</h3>` with no `<h1>` and no site name; a leading `<figure><img>` is kept (a picture is content).
 - `boot.spec.ts`: `storeEntryBody` above the budget returns `tooLarge: true`, hands the html back, and commits nothing (`getEntryBody` afterwards reports no cache); a body under the budget still caches and is served.

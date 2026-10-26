@@ -32,4 +32,4 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader`（+3）：`tests/extract-article.spec.ts` 驱动 `tests/fixtures/capture-svg.html`（capture 形状的 figure：渐变、裁剪路径、symbol `<use>`、tspan、内联样式）——图表带着本文档片段引用完整存活；`script`/`foreignObject`/`onload`/`animate`/外部 `use`/外部 `url()` 全部钉死为不存在（带外部样式的 rect 保住其余属性）；`scriptFigures` 只计真正空壳的那一个；feed 正文路径同子集，行内摘要丢掉图表文字。
+`packages/reader`（+3）：`tests/extract-article.spec.ts` 驱动 `tests/fixtures/capture-svg.html`（capture 形状的 figure：渐变、裁剪路径、symbol `<use>`、tspan、内联样式）——图表带着本文档片段引用完整存活；`script`/`foreignObject`/`onload`/`animate`/外部 `use`/外部 `url()` 全部钉死为不存在（带外部样式的 rect 保住其余属性）；`scriptFigures` 只计真正空壳的那一个；feed 正文路径同子集，行内摘要丢掉图表文字。

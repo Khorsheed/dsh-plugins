@@ -34,6 +34,6 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader`——新用例都先对着改动前的面板红过：
+`packages/reader`——新用例都先对着改动前的面板红过：
 
 - `tests/ReaderPane.client.spec.tsx`：脚本插图提示在缝探测在场时打开应用内浏览器 tab（文案翻成「在浏览器打开原文」，不碰 `openExternal`），应用内打开被拒时退回外部链接；失败卡片显示原因行，`unreachable` 时重试、`blocked` 时打开浏览器、`http` 时是确定的指示器（没有 role=button）；仅链接添加的判定带浏览器打开动作并用粘贴的 URL 触发；没有 capture Remote 时「渲染抓取」不存在，挂上 mock 后点击即渲染→提取→存正文。

@@ -38,7 +38,7 @@ problems the first cut accepted:
 Three moves, all rc.1-arm only; the 0.1.5 arm is untouched.
 
 **A. The shared kernel grew an explicit `headless` mode** (opt-in prop, never
-probed): `packages/ui-content-preview`'s ContentPane drops the chrome its host
+probed): `packages/client-ui-content-preview`'s ContentPane drops the chrome its host
 frame already carries — the title/path bar and the view controls — and renders
 the content area (plus the truncation notice and the slow-render hint). Two
 affordances STAY because the rc.1 official document tab has no equivalent for

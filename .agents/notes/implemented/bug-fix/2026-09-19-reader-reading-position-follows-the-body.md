@@ -33,6 +33,6 @@ Two causes, both in the position rather than in the article:
 
 ## Testing
 
-`packages/dsh-reader` runs 256 tests (2 new, and both fail on the previous commit):
+`packages/reader` runs 256 tests (2 new, and both fail on the previous commit):
 
 - `tests/ReaderPane.client.spec.tsx`: a reader scrolls into an article; its body is replaced and the scroller is clamped (as a browser would); the article must be back at the saved offset. And: a reader scrolls the wall, the pane unmounts and a new pane mounts over the same page; the wall must be back at the saved offset.

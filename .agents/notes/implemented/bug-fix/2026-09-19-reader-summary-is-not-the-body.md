@@ -50,7 +50,7 @@ Two reports about the same surface, and the first one was a real defect with a l
 
 ## Testing
 
-`packages/dsh-reader` runs 208 tests (7 new):
+`packages/reader` runs 208 tests (7 new):
 
 - `parse-rss.spec.ts`: a feed whose only text is a `<description>` is `summaryOnly`; a feed with `<content:encoded>` is not.
 - `selectors.spec.ts`: a title match ranks above a newer summary match; a `#sourceId` selector is unranked.

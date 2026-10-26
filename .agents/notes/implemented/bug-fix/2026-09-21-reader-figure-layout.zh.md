@@ -29,4 +29,4 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader`（+5，先红）：`tests/extract-article.spec.ts` 驱动 `tests/fixtures/capture-composite-figure.html`——由存下的 capture 正文重建的 Figure 2 组合体，三张卡是原文逐字文本，且该区域按 outerHTML 到达的样子序列化为**无标签间空白**（这正是让红诚实的地方：改动前的代码粘出 `stageJ-space`）。卡片保住容器与白名单样式；敌意声明（`position: fixed`、`z-index: 9999`、外部 `url()`、`behavior`）被剥而卡片的真版式留下；组合体不计脚本图、空壳照计；figure 之外解包形状不变只多边界；行内摘要同例。两处既有期望更新（边缘裁剪、行内间距）连同理由就地钉住。
+`packages/reader`（+5，先红）：`tests/extract-article.spec.ts` 驱动 `tests/fixtures/capture-composite-figure.html`——由存下的 capture 正文重建的 Figure 2 组合体，三张卡是原文逐字文本，且该区域按 outerHTML 到达的样子序列化为**无标签间空白**（这正是让红诚实的地方：改动前的代码粘出 `stageJ-space`）。卡片保住容器与白名单样式；敌意声明（`position: fixed`、`z-index: 9999`、外部 `url()`、`behavior`）被剥而卡片的真版式留下；组合体不计脚本图、空壳照计；figure 之外解包形状不变只多边界；行内摘要同例。两处既有期望更新（边缘裁剪、行内间距）连同理由就地钉住。

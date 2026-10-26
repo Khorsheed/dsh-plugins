@@ -30,4 +30,4 @@ The flush writes through the same `patchSession`, so the `sessionStorage` place 
 
 ## Testing
 
-`packages/dsh-reader` (+3): `tests/ReaderPane.client.spec.tsx` — a source-filter narrowing (`#hn`, two feeds so the rows prove it) survives a plain remount; survives the remount + add-source + dialog-close sequence; survives the mirror never having written (the unmount cleanup is the only writer); and survives together with the open detail view. The missed-mirror case was red before the fix; the sequence cases pass both ways and stay as guards.
+`packages/reader` (+3): `tests/ReaderPane.client.spec.tsx` — a source-filter narrowing (`#hn`, two feeds so the rows prove it) survives a plain remount; survives the remount + add-source + dialog-close sequence; survives the mirror never having written (the unmount cleanup is the only writer); and survives together with the open detail view. The missed-mirror case was red before the fix; the sequence cases pass both ways and stay as guards.

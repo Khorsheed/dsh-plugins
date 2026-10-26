@@ -30,4 +30,4 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader`（+3）：`tests/ReaderPane.client.spec.tsx`——来源筛选（`#hn`，两个 feed 让行数可证）扛过纯重挂载；扛过重挂载 + 新增源 + 关弹窗的完整序列；扛过镜像从未写入（卸载 cleanup 是唯一写者）；以及收窄与打开的详情页一起回来。漏镜像用例在修复前红过；序列用例两态都绿，留作守卫。
+`packages/reader`（+3）：`tests/ReaderPane.client.spec.tsx`——来源筛选（`#hn`，两个 feed 让行数可证）扛过纯重挂载；扛过重挂载 + 新增源 + 关弹窗的完整序列；扛过镜像从未写入（卸载 cleanup 是唯一写者）；以及收窄与打开的详情页一起回来。漏镜像用例在修复前红过；序列用例两态都绿，留作守卫。

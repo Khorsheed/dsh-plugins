@@ -14,7 +14,7 @@ Status: implemented
 
 ## Alternatives considered
 
-**在刷新/解析时把每份全文 payload 都落盘，不等打开。** 这是换个名字的预抓——为可能没人读的条目缓存正文，正是本包拒绝的爬虫形状（见 [README 的只订阅不抓文](../../../packages/dsh-reader/README.md)）。打开才是读者的手势；把手势已经展示出来的文字存下，才是「付一次」诚实的版本。
+**在刷新/解析时把每份全文 payload 都落盘，不等打开。** 这是换个名字的预抓——为可能没人读的条目缓存正文，正是本包拒绝的爬虫形状（见 [README 的只订阅不抓文](../../../packages/reader/README.md)）。打开才是读者的手势；把手势已经展示出来的文字存下，才是「付一次」诚实的版本。
 **交给自动补齐。** 补齐按设计跳过全文条目（调用方报告它们已有文字）；让它缓存它们等于把同一个预抓往下一层挪。
 **只修药丸（feed 有全文就显示已抓取）。** 那药丸就成了客户端算出来的状态——正是抓取状态 note 否决的东西——而且文字照样随 feed 窗口死去。存储才是修复；药丸跟着它走。
 
@@ -27,6 +27,6 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 共 327 个测试（在滚动钳制那条线之上 +3）：
+`packages/reader` 共 327 个测试（在滚动钳制那条线之上 +3）：
 
 - `tests/ReaderPane.client.spec.tsx`：一个会真正持有的 mock 宿主（`storeEntryBody` 的写入就是之后 `getEntryBody` 与 `entryFetchStates` 的回答来源）驱动三个用例——打开存下 feed 全文（带 `bodyHash`），返回后药丸翻成已抓取；再次打开读缓存，不写第二遍；summaryOnly 的打开照样付它那一次抓取，且摘要永不入库。两个存储用例对改动前的代码红；摘要用例两侧都绿，这是设计——它钉住的是改动不得越过的边界。

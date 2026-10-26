@@ -32,6 +32,6 @@ The "reader has taken over" flag (`readerScrolledRef`, the thing that ends the r
 
 ## Testing
 
-`packages/dsh-reader` runs 324 tests (+4 over the translation-persistence line):
+`packages/reader` runs 324 tests (+4 over the translation-persistence line):
 
 - `tests/ReaderPane.client.spec.tsx`: the reported flow end to end — scroll, unmount, fresh mount, the place is back (plain, and with the globe on, landing on the same translated sentence); the wall's place survives the same remount; and the two clamp cases above.

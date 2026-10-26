@@ -30,7 +30,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 共 461 个测试（新增 3 个，`tests/ReaderPane.client.spec.tsx` 的「the translation memory survives a reload」组）：
+`packages/reader` 共 461 个测试（新增 3 个，`tests/ReaderPane.client.spec.tsx` 的「the translation memory survives a reload」组）：
 
 - 无 Translator API + 存有与正文匹配的映射 → 地球出现、译文贴上，菜单显示存档抬头且没有重新翻译，「只看原文」能切回，阅读回写 0 条新句、3 条 recalled；
 - 无 Translator API + 什么都没存 → 没有地球；

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-10-24-eval-family-user-facing-readmes.md
-.agents/notes/implemented/process/2026-10-24-eval-family-user-facing-readmes.md: 67595a26cd83441b822972a588aabb300b4db089
-.agents/notes/implemented/process/2026-10-24-eval-family-user-facing-readmes.zh.md: 7813146b6b87986378ddd7e914cab2597b9479f6
+.agents/notes/implemented/process/2026-10-24-eval-family-user-facing-readmes.md: 514d171c8c4978ad712fd6f3803cc4b34d19f020
+.agents/notes/implemented/process/2026-10-24-eval-family-user-facing-readmes.zh.md: 56bea24883f82f4eb4eab2cc151ae0a3f9b39207

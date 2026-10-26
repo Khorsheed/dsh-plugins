@@ -14,7 +14,7 @@ The boundaries do not move: a cached fresh body is never re-stored (it is paid f
 
 ## Alternatives considered
 
-**Persist every fulltext payload at refresh/parse time, before any open.** That is pre-fetching by another name — caching bodies for entries nobody may read, the crawler shape the package refuses ([the subscribe-don't-crawl rule in the README](../../../packages/dsh-reader/README.md)). The open is the reader's gesture; storing what the gesture already displays is the honest version of "pay once".
+**Persist every fulltext payload at refresh/parse time, before any open.** That is pre-fetching by another name — caching bodies for entries nobody may read, the crawler shape the package refuses ([the subscribe-don't-crawl rule in the README](../../../packages/reader/README.md)). The open is the reader's gesture; storing what the gesture already displays is the honest version of "pay once".
 **Leave it to the automatic backfill.** The backfill skips fulltext entries by design (the caller reports them as having text); making it cache them is the same pre-fetch, one layer down.
 **Treat the pill as the fix (say 已抓取 whenever the feed has full text).** The pill would then be a client-computed state — exactly what the fetch-state note rejected — and the text would still die with the feed window. The store is the fix; the pill follows it.
 
@@ -27,6 +27,6 @@ The boundaries do not move: a cached fresh body is never re-stored (it is paid f
 
 ## Testing
 
-`packages/dsh-reader` runs 327 tests (+3 over the scroll-clamp line):
+`packages/reader` runs 327 tests (+3 over the scroll-clamp line):
 
 - `tests/ReaderPane.client.spec.tsx`: a holding mock host (`storeEntryBody` writes are what `getEntryBody` and `entryFetchStates` then answer) drives the three cases — open stores the feed's full text (with its `bodyHash`) and the pill flips to 已抓取 after back; a reopen reads the cache and stores nothing twice; a summary-only open still pays its one fetch and never stores the summary. The two store cases are red against the pre-change code; the summary case is green on both sides by design — it pins the boundary the change must not cross.

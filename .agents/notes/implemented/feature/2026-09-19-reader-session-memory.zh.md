@@ -39,7 +39,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 共 240 个测试（新增 18 个）：
+`packages/reader` 共 240 个测试（新增 18 个）：
 
 - `tests/session.spec.ts`（新增，12 个）：合并语义、会话之间互不串台、`undefined` 会删字段、12 个会话上限与 LRU 顺序、按条目的阅读位置、翻译记录（含"原文"会清掉记录）、按语言对索引的翻译会话缓存。
 - `tests/ReaderPane.client.spec.tsx`（75 个，+6）：已缓存正文**不**调用 `fetchEntryBody`；没抓过的条目仍然恰好抓一次；「重新抓取」从详情页再抓一次；以及三个重新挂载用例（同一个会话 id 的第二个面板恢复打开的正文与墙上的查询、**不用点击**就把地球重新点亮、重开时不再向宿主索要它已经持有的正文）。

@@ -23,6 +23,6 @@ Status: implemented
 ## 后果
 
 - 两个视图在宿主 ≥0.2.1-alpha.3 渲染官方画廊，在更早的支持范围内宿主保持 legacy 画廊；minHost(`0.1.5-rc.1`）与 engines 区间不变。
-- `RenderMessageImagesShim`/`RenderMessageImagesShimProp` 与所有 `TODO(host-021 batch-3)` 标记移除；两个客户端 spec 现覆盖工厂调用形状、legacy 优先与工厂缺席的不渲染分支。`pnpm --filter ./packages/message-tools run build && pnpm --filter ./packages/message-tools test` 全绿（229 测试）。
+- `RenderMessageImagesShim`/`RenderMessageImagesShimProp` 与所有 `TODO(host-021 batch-3)` 标记移除；两个客户端 spec 现覆盖工厂调用形状、legacy 优先与工厂缺席的不渲染分支。`pnpm --filter ./packages/client-message-tools run build && pnpm --filter ./packages/client-message-tools test` 全绿（229 测试）。
 - 无需新的上游 seam：现有工厂席位加常驻的 `loadImage` owner prop 已覆盖自定义节点渲染器的图片需求。
 - 两个 README 改述正式消费，取代批次 2 的降级描述（配对 sidecar 已重录）。

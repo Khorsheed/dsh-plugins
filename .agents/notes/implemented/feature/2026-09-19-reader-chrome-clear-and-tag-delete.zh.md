@@ -43,7 +43,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 现在跑 201 个测试（`ReaderPane.client.spec.tsx` 新增 3 个）：
+`packages/reader` 现在跑 201 个测试（`ReaderPane.client.spec.tsx` 新增 3 个）：
 
 - `×` 只在框内有文字时出现，能清空输入，随后自己消失。
 - 在弹层里删标签会以该 id 调用 `deleteTag`，并把正在生效的收窄（`@tag-id`）一并清掉。

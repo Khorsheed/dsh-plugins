@@ -34,7 +34,7 @@ Full recheck recorded in `docs/upstream-seam-registry.md` (2026-09-29 entry). Ve
 
 **Stay on the 0.1.7 line until 0.2.0 final.** Rejected: the CI forward lane already follows `dist-tags.next` (0.2.0-rc.2), so the old pin proves yesterday's world; the adaptation cost measured one parameter.
 
-**Extract a new shared renderer-kernel package.** Rejected as unnecessary: `packages/ui-content-preview` already is that kernel — consumed source-plane by file-preview, local-files, and worktrees, inlined into each `lib/client.js` at build time (`build/tsdown.client.ts` `noExternal`), never mounted, never published — so per-package uninstall is already clean. The genuine leftovers (the two `FileTree.tsx` forks, the repeated `preview.ts` adapter label bodies) fold into the existing kernel as a separate cleanup, not this wave.
+**Extract a new shared renderer-kernel package.** Rejected as unnecessary: `packages/client-ui-content-preview` already is that kernel — consumed source-plane by file-preview, local-files, and worktrees, inlined into each `lib/client.js` at build time (`build/tsdown.client.ts` `noExternal`), never mounted, never published — so per-package uninstall is already clean. The genuine leftovers (the two `FileTree.tsx` forks, the repeated `preview.ts` adapter label bodies) fold into the existing kernel as a separate cleanup, not this wave.
 
 **Pin peers exactly to 0.2.0-rc.2.** Rejected per the rc.2-era precedent: wide ranges plus workspace `overrides` pin the dev graph while keeping older hosts installable. Note the prerelease tuple rule makes `^0.1.0-rc.6` formally unsatisfied even by 0.1.7-rc.2 under strict semver — the ranges are documentary; pnpm's lenient peer resolution carries the install.
 

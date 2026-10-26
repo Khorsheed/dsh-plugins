@@ -4,13 +4,13 @@ Status: proposed
 
 ## Problem
 
-`message-tools` (packages/message-tools) is slated for community open-source
+`message-tools` (packages/client-message-tools) is slated for community open-source
 release, but its withdraw/edit/restore machinery had never had an independent
 architectural review. Before shipping we want an external assessment of
 architecture, code quality, completeness, and open-source readiness, so we can
 fix real defects before the surface is public.
 
-A codex subagent ran a read-only review of `packages/message-tools` (src,
+A codex subagent ran a read-only review of `packages/client-message-tools` (src,
 tests, package.json, cordis.patch.yml, ts configs, README/CHANGELOG). The
 review is reproduced in full in the codex output; this note records the
 findings we accept (verified against the source and tests, not just the
@@ -149,7 +149,7 @@ is only in devDependencies. Consumers need it for the host contract.
 
 ### Packaging / hygiene
 
-- Stray `packages/message-tools/khorsheed-dsh-client-message-tools-0.4.9.tgz`
+- Stray `packages/client-message-tools/khorsheed-dsh-client-message-tools-0.4.9.tgz`
   artifact — gitignored (won't ship) but obsolete (pre-0.1.0) and confusing.
 - `./types` export points at runtime `types.js` while `types.ts` is types-only.
 - `dsh.compat.minHost` (0.1.0-rc.8) vs README's rc.8/0.1.1-rc.2 — put the

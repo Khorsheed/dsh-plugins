@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-06-reader-stored-translation-without-api.md
-.agents/notes/implemented/feature/2026-10-06-reader-stored-translation-without-api.md: c0c4145498bd87c36a64791c13bbf368a9fbe061
-.agents/notes/implemented/feature/2026-10-06-reader-stored-translation-without-api.zh.md: 0ce15aaea3b148828c88d5e18bb293c80f6dc9a3
+.agents/notes/implemented/feature/2026-10-06-reader-stored-translation-without-api.md: 9d3ef7717e2f86fadc2cae86da9bc470fe17893d
+.agents/notes/implemented/feature/2026-10-06-reader-stored-translation-without-api.zh.md: 98b8f76161414b809109982d6383bfeefcd3766b

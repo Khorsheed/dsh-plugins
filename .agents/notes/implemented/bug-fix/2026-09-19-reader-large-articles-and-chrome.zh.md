@@ -43,7 +43,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 现在跑 217 个测试（新增 5 个）：
+`packages/reader` 现在跑 217 个测试（新增 5 个）：
 
 - `extract-article.spec.ts`：带两个标题 `<h1>`、一个站头与开头 `<br>` 的页面，抽出的正文从 `<h3>Authors</h3>` 开始，不含 `<h1>`、不含站名；开头的 `<figure><img>` 被保留（画面就是内容）。
 - `boot.spec.ts`：`storeEntryBody` 超过预算时返回 `tooLarge: true`、把 html 交回、什么都不提交（之后 `getEntryBody` 报告没有缓存）；预算内的正文照旧缓存并可读。

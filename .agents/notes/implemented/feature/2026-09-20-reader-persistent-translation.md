@@ -39,7 +39,7 @@ Two host-side tiers, reusing the store's existing machinery (`store.ts` sidecar 
 
 ## Testing
 
-`packages/dsh-reader` runs 320 tests (+30 over the pre-feature line; every new case red against the pre-change code — the host cases against the absent verbs, the client ones against the unwarmed pane / unkeyed memory):
+`packages/reader` runs 320 tests (+30 over the pre-feature line; every new case red against the pre-change code — the host cases against the absent verbs, the client ones against the unwarmed pane / unkeyed memory):
 
 - `tests/boot.spec.ts` (+12, real context + tmpdir): pair keying across a restart; the entry map (inline vs sidecarred, swept on eviction); cross-tier LRU eviction; stale-schema reads as a miss with no eager wipe, replaced by the next write; `recalled` bumps the use clock. The linkage rule: a budget-evicted body takes its map (memory untouched), a refetch that changes `bodyHash` drops it (a same-body re-store keeps it), an expired-but-retained body keeps it, and `removeSource` drops exactly the source's entries' maps. Plus `getStorageStats` aggregation and `clearTranslations` clearing both tiers and nothing else.
 - `tests/annotations.spec.ts` (+6, pure): the shared-budget LRU across both tiers, stale-version eviction on sight, the count cap, under-budget identity, normalizer laziness, and `boundAnnotations` dropping the translation with its body while the tags survive.

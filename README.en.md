@@ -49,9 +49,9 @@ Each package's details, configuration and screenshots live in its own directory 
 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
-| [`message-tools`](packages/message-tools) | **In-place edit / true withdraw / restore-replay** for user messages — the only plugin here that changes what the model sees, riding the same mechanism as the official compaction | `@khorsheed/dsh-client-message-tools` | ≥ 0.1.5-rc.1 | basic |
+| [`message-tools`](packages/client-message-tools) | **In-place edit / true withdraw / restore-replay** for user messages — the only plugin here that changes what the model sees, riding the same mechanism as the official compaction | `@khorsheed/dsh-client-message-tools` | ≥ 0.1.5-rc.1 | basic |
 | [`message-timeline`](packages/message-timeline) | A floating **history timeline** on the chat's left edge — click to jump to any user message | `@khorsheed/dsh-message-timeline` | ≥ 0.1.2-rc.1 | basic |
-| [`session-title-edit`](packages/session-title-edit) | **Inline session-title renaming**; a user-set title is never overwritten by auto-generation | `@khorsheed/dsh-client-session-title-edit` | ≥ 0.1.2-rc.1 | basic |
+| [`session-title-edit`](packages/client-session-title-edit) | **Inline session-title renaming**; a user-set title is never overwritten by auto-generation | `@khorsheed/dsh-client-session-title-edit` | ≥ 0.1.2-rc.1 | basic |
 | [`quote`](packages/quote) | Select any text for a floating **quote action menu** (quote into the composer / sidechat / copy); other plugins can register their own actions | `@khorsheed/dsh-quote` | ≥ 0.1.5-rc.1 | basic |
 
 ### Files and artifacts
@@ -83,7 +83,7 @@ Each package's details, configuration and screenshots live in its own directory 
 | --- | --- | --- | --- | --- |
 | [`canvas`](packages/canvas) | The **idea canvas**: accumulate cards, links and model proposals on a topical canvas | `@khorsheed/dsh-canvas` | ≥ 0.1.5-rc.1 | writing / learning |
 | [`canvas-novel`](packages/canvas-novel) | The canvas's **novel** genre: a work-memory engine for characters/foreshadowing/chapters, reconciliation gates, and the writing tools | `@khorsheed/dsh-canvas-novel` | ≥ 0.2.0-rc.2 | writing |
-| [`dsh-reader`](packages/dsh-reader) | The **ideas space**: RSS/Atom subscriptions + pasted article links, a card stream and a readable detail view | `@khorsheed/dsh-reader` | ≥ 0.1.5-rc.1 | writing / learning |
+| [`dsh-reader`](packages/reader) | The **ideas space**: RSS/Atom subscriptions + pasted article links, a card stream and a readable detail view | `@khorsheed/dsh-reader` | ≥ 0.1.5-rc.1 | writing / learning |
 
 ### Learning
 

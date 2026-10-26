@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-21-reader-unmount-narrowing-flush.md
-.agents/notes/implemented/bug-fix/2026-09-21-reader-unmount-narrowing-flush.md: bfa283058eeb070ff53c9d4df67c6ecd73af6386
-.agents/notes/implemented/bug-fix/2026-09-21-reader-unmount-narrowing-flush.zh.md: 1941d13633f491852f5058e5413a0232cfd50f75
+.agents/notes/implemented/bug-fix/2026-09-21-reader-unmount-narrowing-flush.md: 4b214902f1551e9b246eb3d46a9f92717deb3aec
+.agents/notes/implemented/bug-fix/2026-09-21-reader-unmount-narrowing-flush.zh.md: 996abc395f5a177e9078e39bee21cbe01c7c7b2e

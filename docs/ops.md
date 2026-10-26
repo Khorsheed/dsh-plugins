@@ -41,7 +41,7 @@
 
 ### 3080 的 preset 名册：正本是各模式包的 preset 行
 
-0.1.7-rc.1 起宿主不再读取 `$DSH_HOME/.agent-presets/` 目录式 preset——preset 是声明式 `@deepseek-ai/dsh-agent-preset` 行（loader id `preset-<id>`)。六个 preset（dsh-dev / dsh-eval / dsh-writing / dsh-gamedev / dsh-learning / dsh-video，2026-10-18 起统一带 `dsh-` 前缀）各自的唯一事实源是对应模式包的 `cordis.patch.yml`（`packages/dev` / `bundle-eval` / `writing` / `gamedev` / `learning` / `video`，包名 `@khorsheed/dsh-<mode>-suite`）；改它 = 正常 PR 评审 + `pnpm deploy:3080 --package packages/<模式包目录>` 部署（重启生效；存量会话的 preset 记在其事件日志与投影缓存里，改名需同步迁移——`scripts/migrate-preset-selections.ts` 即 2026-10-18 前缀统一时的迁移器）。评测模式另有 web-eval 正本（`profiles/eval/presets`），两份由 `scripts/eval-preset-parity.spec.ts` 钉住。
+0.1.7-rc.1 起宿主不再读取 `$DSH_HOME/.agent-presets/` 目录式 preset——preset 是声明式 `@deepseek-ai/dsh-agent-preset` 行（loader id `preset-<id>`)。六个 preset（dsh-dev / dsh-eval / dsh-writing / dsh-gamedev / dsh-learning / dsh-video，2026-10-18 起统一带 `dsh-` 前缀）各自的唯一事实源是对应模式包的 `cordis.patch.yml`（`packages/dev-suite` / `bundle-eval` / `writing` / `gamedev` / `learning` / `video`，包名 `@khorsheed/dsh-<mode>-suite`）；改它 = 正常 PR 评审 + `pnpm deploy:3080 --package packages/<模式包目录>` 部署（重启生效；存量会话的 preset 记在其事件日志与投影缓存里，改名需同步迁移——`scripts/migrate-preset-selections.ts` 即 2026-10-18 前缀统一时的迁移器）。评测模式另有 web-eval 正本（`profiles/eval/presets`），两份由 `scripts/eval-preset-parity.spec.ts` 钉住。
 
 3080 的组合单元是 `dsh-basic` 加六个模式包（`dsh.bundle.kind: 'mode'` 或 basic 的 `'family'`），成员全部是传递依赖；成员包更新照旧 `--package packages/<member>`，deploy 的成员退场认 mode kind。`@khorsheed/dsh-presets`（2026-10-18 至 2026-10-24 与模式包并存、逐字镜像）已退役，列入 `scripts/retired-packages.ts`；profile 里若还留着它，deploy 会告警。
 

@@ -44,7 +44,7 @@ Nothing was wrong with the fetch or the extraction: the page answers 200 with 41
 
 ## Testing
 
-`packages/dsh-reader` runs 198 tests (3 new in `ReaderPane.client.spec.tsx`):
+`packages/reader` runs 198 tests (3 new in `ReaderPane.client.spec.tsx`):
 
 - Opening a feed entry that carries a link and no description calls `fetchEntryBody` exactly once with that link and renders what comes back (the previously blank page).
 - While that request is in flight the 「正在抓取正文…」 line is on screen, and it disappears when the body arrives.

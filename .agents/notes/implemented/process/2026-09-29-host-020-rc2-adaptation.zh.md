@@ -34,7 +34,7 @@ Status: implemented
 
 **留在 0.1.7 线等 0.2.0 正式版。** 否决：CI forward lane 已跟随 `dist-tags.next`(0.2.0-rc.2)，旧钉子证明的是昨天的世界；本次适配成本实测只有一个参数。
 
-**新拆一个共享渲染内核包。** 以"无必要"否决：`packages/ui-content-preview` 已经是那个内核——file-preview、local-files、worktrees 以源码面消费它，构建时内联进各自的 `lib/client.js`(`build/tsdown.client.ts` 的 `noExternal`)，不挂载、不发布——单包卸载天然干净。真正残留的重复（两个 `FileTree.tsx` fork、三个 `preview.ts` 适配器标签体）收进现有内核即可，那是独立的清理项，不在本波。
+**新拆一个共享渲染内核包。** 以"无必要"否决：`packages/client-ui-content-preview` 已经是那个内核——file-preview、local-files、worktrees 以源码面消费它，构建时内联进各自的 `lib/client.js`(`build/tsdown.client.ts` 的 `noExternal`)，不挂载、不发布——单包卸载天然干净。真正残留的重复（两个 `FileTree.tsx` fork、三个 `preview.ts` 适配器标签体）收进现有内核即可，那是独立的清理项，不在本波。
 
 **peer 精确钉 0.2.0-rc.2。** 沿 rc.2 时代先例否决：宽 range + workspace `overrides` 已钉住 dev 图，窄化只会让旧宿主装不了。注意 prerelease tuple 规则使 `^0.1.0-rc.6` 在严格 semver 下连 0.1.7-rc.2 都不满足——range 是文档性的，安装靠 pnpm 的宽松 peer 解析。
 

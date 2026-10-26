@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-Two kinds of article failed in the reader (`packages/dsh-reader`):
+Two kinds of article failed in the reader (`packages/reader`):
 
 - **Inline SVG figures that are themed with CSS custom properties.** The figures in claude.dev blog posts (for example fig1 of *automating-eval-design-and-hillclimbing*) color their strokes, fills and text with `var(--…)`. The extractor's SVG subset kept those attribute values verbatim. The custom properties live in the source site's stylesheet, which the reader does not carry, so every `var()` resolved to nothing. The figure collapsed into its unthemed marker dots, with no lines, axes or labels. These pages also ship a desktop SVG and a narrow `mobile` duplicate side by side, and the reader rendered both. The page's own CSS normally hides one of them.
 - **WeChat articles (`mp.weixin.qq.com`).** The host's `web-fetch-http` request (fixed harness UA, so no browser fingerprint) gets back an HTTP 200 「环境异常 … 完成验证后即可继续访问」 challenge page. The visible text of that page is about 65 characters. `captcha` appears only past character 8000, outside the preview window. So `BOT_WALL_PATTERN` missed it: the add dialog said "refuses automatic fetching", while the body fetch stored the challenge page as the article. Nothing escalated to the rendered fetch, because `maybeAutoRender` fired only for script-figure shells.

@@ -8,7 +8,7 @@
 # 行形与 kind 约定跟社区 preset 行对齐（loader id `preset-<id>`、name 加引号、
 # package.json 的 dsh.bundle.kind: preset-declarations）。当初不并进已退役的
 # packages/presets：多个 preset 一包装违背「只装评测装置、整份替换」（协调者 09-25 定 A）；
-# 评测模式包（packages/bundle-eval）的 preset-dsh-eval 是本行的镜像（T100），scripts/eval-preset-parity.spec.ts 钉住两份一致。
+# 评测模式包（packages/eval-suite）的 preset-dsh-eval 是本行的镜像（T100），scripts/eval-preset-parity.spec.ts 钉住两份一致。
 #
 # T82 时 `plugins:` 整块逐字取自 8fe63e72 的目录版 presets/eval/agent.cordis.yml
 # （统一缩进 10 格）。T102（2026-10-06）把题集整理并进评测模式，改了组成：挂 shell

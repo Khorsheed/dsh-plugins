@@ -38,7 +38,7 @@ Building it exposed a second problem: the detail view resolved its entry from th
 
 ## Testing
 
-`packages/dsh-reader` runs 254 tests (14 new):
+`packages/reader` runs 254 tests (14 new):
 
 - `tests/annotations.spec.ts` (+4): records that cannot be reopened or ordered are dropped, a missing URL is legal, duplicates collapse keeping the file's order, the 100-row cap truncates from the oldest end, and the list round-trips through the disk document.
 - `tests/boot.spec.ts` (+4): newest open first, a reopen moves the entry to the top with the new title, an unopenable record is refused, the cap drops the oldest read, and the list survives a second host on the same state root while `clearRecent` is durable too.

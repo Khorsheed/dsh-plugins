@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-经宿主救助，且只在出错后（`packages/dsh-reader`)：只有已经在浏览器里加载失败的图片才走宿主重取；健康图片永远不碰代理。
+经宿主救助，且只在出错后（`packages/reader`)：只有已经在浏览器里加载失败的图片才走宿主重取；健康图片永远不碰代理。
 
 - 新增 `src/image-fetch.ts`——`fetchImageBytes(url)`：仅 http(s)、不带凭证、拒绝 localhost 名、公网地址校验并把连接**钉死**在校验过的 DNS 答案上（自定义 `lookup`，关闭 DNS 重绑定窗口），逐跳重校验重定向（最多 3 跳，中途跳私网即拒），先验 2xx + `image/*` 再读正文，8 MiB 上限，15 秒超时。另有 `ImageFetchCache`:32 MiB 字节上限的 LRU——侧栏重挂载（会让每张被阻断的图再失败一次）只读内存。
 - 在阅读器已有的带鉴权 Remote 面上新增 `@Remote('fetchImage')` 动词——刻意**不**开 `webServer` HTTP 路由，那会是一个新的无鉴权面。

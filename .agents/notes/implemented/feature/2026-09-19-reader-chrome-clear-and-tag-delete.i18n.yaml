@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-19-reader-chrome-clear-and-tag-delete.md
-.agents/notes/implemented/feature/2026-09-19-reader-chrome-clear-and-tag-delete.md: e46ec5711923fec2233b7101d13ca5d41908dc4c
-.agents/notes/implemented/feature/2026-09-19-reader-chrome-clear-and-tag-delete.zh.md: 6504eddfc7bad0e00469bf27ffa12863e16c9a81
+.agents/notes/implemented/feature/2026-09-19-reader-chrome-clear-and-tag-delete.md: d38a80927e87229d1da7cb7ae3e2e61e3ea53135
+.agents/notes/implemented/feature/2026-09-19-reader-chrome-clear-and-tag-delete.zh.md: a2de429070ac3d4c82001cd14b0ca73f1d1019d4

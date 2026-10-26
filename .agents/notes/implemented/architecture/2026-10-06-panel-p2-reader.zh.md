@@ -16,7 +16,7 @@ Status: implemented
 - **紧凑详情表头**：返回、不放标题、翻译控件（地球 + 视图下拉）经 kit 新增的 `PanelHeader.extra` 位放入，复制链接 / 在浏览器打开原文 / 删除作为「…」菜单行。`extra` 是不占图标名额的复合控件位。标题栏不放标题（协调者 10-06 评审）：文章大标题就在下面，来源和日期在其上的 kicker 里，标题栏放文章标题或来源名都会重复；宽面板标题栏保留标题——那里标题旁还有更多控件，视野里也没有紧跟的大标题。
 - **正文用主色**，各宽度都改（协调者 10-06 评审）：阅读区正文原为 `label-secondary`，改为 `label-primary`；引用块和图注保留次级色——它们是对正文的注释。已在样例上对照深浅两色。
 - **阅读字号跟随共享变量**，默认值保持阅读器自己的桌面字号：正文 `var(--dsh-panel-text-reading, 13.5px)`，h1/h2 为正文的 1.11 倍（桌面 15px、手机约 19px），h3/h4 同正文，文章标题 `max(17px, 1.3×正文)`（桌面 17px、手机 22px）。中英文各自的行高（1.78 / 1.66）保留，没有换成共享的 1.7：这是刻意的排版区分，且两者都不低于共享值的用意。
-- 新增仓库内样例（`packages/dsh-reader/examples/compact`，端口 8876；参数 `?w=`、`&theme=dark`、`&touch=1`），用内存宿主数据渲染真实面板以便截图。包的 `files` 不含 `examples/`。
+- 新增仓库内样例（`packages/reader/examples/compact`，端口 8876；参数 `?w=`、`&theme=dark`、`&touch=1`），用内存宿主数据渲染真实面板以便截图。包的 `files` 不含 `examples/`。
 
 ## Alternatives considered
 

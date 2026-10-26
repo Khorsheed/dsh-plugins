@@ -34,4 +34,4 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 共 271 个测试（+10）：`tests/extract-article.spec.ts` 里每条回收路径各一个用例（懒加载属性、`data:` 占位的穿透、srcset 的宽度与倍率两种描述符、data URI 的逗号、picture 的 source 与回退、noscript 回收、不是图的 noscript、输出标签上的 referrerpolicy），外加「脚本绘制图提示不变」的回归。两个真实页面 fixture 抽出的正文不变。
+`packages/reader` 共 271 个测试（+10）：`tests/extract-article.spec.ts` 里每条回收路径各一个用例（懒加载属性、`data:` 占位的穿透、srcset 的宽度与倍率两种描述符、data URI 的逗号、picture 的 source 与回退、noscript 回收、不是图的 noscript、输出标签上的 referrerpolicy），外加「脚本绘制图提示不变」的回归。两个真实页面 fixture 抽出的正文不变。

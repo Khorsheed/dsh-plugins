@@ -33,6 +33,6 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 共 256 个测试（新增 2 个，且在改动前的提交上两个都失败）：
+`packages/reader` 共 256 个测试（新增 2 个，且在改动前的提交上两个都失败）：
 
 - `tests/ReaderPane.client.spec.tsx`：读者滚进文章内部；正文被替换且滚动容器被钳位（浏览器会做这件事）；文章必须回到保存的偏移。以及：读者滚动墙面，面板卸载、新面板在同一页面挂载；墙必须回到保存的偏移。

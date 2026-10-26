@@ -40,7 +40,7 @@ Two reports, one of them a bug this repository introduced hours earlier.
 
 ## Testing
 
-`packages/dsh-reader` runs 212 tests (4 new):
+`packages/reader` runs 212 tests (4 new):
 
 - `extract-article.spec.ts`: a caption-only figure is dropped and counted while a figure with `<img>` survives (its relative `src` absolutized); a page whose figures all carry pictures reports no count.
 - `ReaderPane.client.spec.tsx`: opening an entry whose fetched body reports script-drawn figures shows the note with that count and the 「阅读原文」 action.

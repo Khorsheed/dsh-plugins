@@ -10,7 +10,7 @@ In the reader's article view (灵感空间), some figures render as the browser'
 
 ## Decision
 
-Rescue-on-error through the host (`packages/dsh-reader`): only images that already failed in the browser are re-fetched host-side; healthy images never touch the proxy.
+Rescue-on-error through the host (`packages/reader`): only images that already failed in the browser are re-fetched host-side; healthy images never touch the proxy.
 
 - New `src/image-fetch.ts` — `fetchImageBytes(url)`: http(s) only, no credentials, localhost-name refusal, public-address validation with the connection **pinned** to the validated DNS answers via a custom `lookup` (closes the DNS-rebinding window), per-hop redirect re-validation (max 3, mid-flight refusal of private targets), 2xx + `image/*` content-type checked before the body is read, 8 MiB cap, 15 s timeout. Plus `ImageFetchCache`, a 32 MiB byte-bounded LRU so a sidebar remount (which re-fails every blocked image) is a memory read.
 - New `@Remote('fetchImage')` verb on the reader's existing authenticated Remote face — deliberately **not** a `webServer` HTTP route, which would be a new unauthenticated surface.

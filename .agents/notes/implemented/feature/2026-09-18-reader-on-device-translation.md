@@ -44,7 +44,7 @@ A wall of English cards is where the reader scans, so the same on-device machine
 
 ## Verification
 
-`packages/dsh-reader/tests/translate.client.spec.ts` pins the module: sentence splitting (abbreviations, initials, decimals, "U.S.", CJK terminators, no terminator at all), segmentation and byte-exact restore, the bare-text body shape, idempotency, link and code survival, view switching, the click toggle, one-request batching, the sentinel-mismatch fallback (one batch then one request per unit), a failing unit being counted instead of losing the article, remembered sentences costing no request, and cancelling between batches.
+`packages/reader/tests/translate.client.spec.ts` pins the module: sentence splitting (abbreviations, initials, decimals, "U.S.", CJK terminators, no terminator at all), segmentation and byte-exact restore, the bare-text body shape, idempotency, link and code survival, view switching, the click toggle, one-request batching, the sentinel-mismatch fallback (one batch then one request per unit), a failing unit being counted instead of losing the article, remembered sentences costing no request, and cancelling between batches.
 
 `ReaderPane.client.spec.tsx` pins the flow with a scripted `globalThis.Translator`: the globe translates in place, a click reveals exactly one sentence's original and a second click hides it, the menu switches to original-only and back, the globe is absent without the API / with an unavailable pair / on a Chinese body, a failed `create()` shows the reason while the body keeps its original bytes, and a mangled separator still yields per-sentence translations.
 
