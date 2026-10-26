@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/local-agent-claude-code/docs/reference.en.md
+packages/local-agent-claude-code/docs/reference.en.md: dc6cc2675b7e7c0dc82e75291373905ea90491af
+packages/local-agent-claude-code/docs/reference.md: 7a90dd46df7997be69edf065ae11b6ff4eb19401

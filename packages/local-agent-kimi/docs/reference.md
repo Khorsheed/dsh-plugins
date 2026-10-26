@@ -1,0 +1,137 @@
+# @khorsheed/dsh-local-agent-kimi 完整参考
+
+> 面向开发者和运维的完整说明：配置项、认证与端点、内部结构。2026-10-26 前它是本包的 README；面向用户的简介见 [README](../README.md)。
+
+[English](reference.en.md) | 中文
+
+把任务从任意 dsh 会话委派给本机的 Kimi Code CLI——它跑在自己的作用域目录里，你的 `~/.kimi-code` 分文不动。
+
+想让模型把一整块活交给另一个编码 agent，以前只能自己开终端、复制粘贴、再把结果搬回来。这个插件给每个 agent preset 配上 `subagent_kimi` 委派工具和 `/kimi` 命令族：委派在会话工作区的子会话里执行，转写与进度直接出现在子代理界面，结果带着真实用量与耗时回来，还能用同一句柄续聊。
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="640" alt="Kimi 设置卡：认证状态、登录/退出、默认模型与常驻模式开关">
+
+## 特性
+
+- **按会话授予的委派**——`subagent_kimi` 工具是本包的 `./tool` 组合入口，由点名它的 agent 预设（如开发模式）授予该预设的会话；其余预设的会话看不到它。
+- **作用域目录**——config、凭据、会话全部留在 `$DSH_HOME/local-agent/kimi`，与你自己的 `~/.kimi-code` 互不干扰。
+- **端点凭据（唯一的认证方式）**——设置卡「认证」区填 `baseUrl` + `apiKey`（保存进默认 scope 的 `endpoint-auth.json`，0600，只存本机）或预配在 profile 配置行即已认证；每个命名 scope 可用自己的 `endpoint-auth.json` 按字段覆盖部署级配置。managed provider 经 `api_key_env` 从子进程环境读 key——密钥不落 `config.toml`（它要进评测条件指纹）。容器轮与宿主轮用同一套凭据，容器里不需要再授权一次。没有网页登录、没有 device-code。旁边的「验证端点并获取模型」按钮对**已保存**的端点跑一次无 token 探测（`GET <baseUrl>/v1/models`，Bearer 头），回执可达性与端点当前供应的模型列表。
+- **可续聊的委派**——把结果自述的 `resume` 句柄传回，即继续同一个 Kimi 会话，并按轮记录真实用量与耗时。
+- **会话记录与转写回放**——`/kimi sessions` 列出本 harness 的委派记录（绝不含你的私人会话）；`/kimi session <id>` 把该会话的 wire 日志渲染成可读转写——思考、工具调用与结果一目了然。
+- **设置卡片**——core 的「本机 Agent 委派」家族卡里的一节（Plugins 页；旧版 core 上回落为本包自己的 `plugins.item` 卡，宿主服务 `local-agent-kimi` 命名空间时挂载）一眼看清认证状态与作用域会话，登录/退出、可用模型（有序短名单，第一个为默认；留空 = 跟随旧链）、常驻模式开关全部热生效，无需重载。
+- **模型回读与独立工作目录**——每轮从 wire.jsonl 的 usage/request 记录回读实际模型，写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
+- **常驻驱动（可选）**——`live: true` 让每个成员常驻一个 `kimi acp` 进程，按轮 `session/prompt`，支持运行时级优雅取消；关闭或通道不可用即回一次性 `kimi -p`。
+
+## 安装
+
+需要一个可运行的 dsh profile，且 `PATH` 上有 Kimi Code CLI（`kimi`）——插件既不替你安装，也不替你准备凭据。
+
+```sh
+# 两个都得点名：`dsh plugin add` 只调和直接依赖。
+dsh plugin --profile web add @khorsheed/dsh-local-agent
+dsh plugin --profile web add @khorsheed/dsh-local-agent-kimi
+```
+
+重启 web 实例后生效，然后在「本机 Agent 委派」家族卡（Plugins 页）的 Kimi 一节「认证」区填端点与 key 即可（也可预配在 profile 的本包配置行）；都不配则状态为未认证。卸载：
+
+```sh
+dsh plugin --profile web remove @khorsheed/dsh-local-agent-kimi
+```
+
+作用域目录会被刻意保留，重装后凭据仍在——删除 `$DSH_HOME/local-agent/kimi` 即可清除全部痕迹。
+
+## 配置
+
+可选：经作用域 `config.toml`（`$DSH_HOME/local-agent/kimi/config.toml`）把 Kimi 的 LLM 请求路由到你自己的端点：
+
+```toml
+[providers."managed:kimi-code"]
+base_url = "https://your-router.example/v1"
+```
+
+**只改写这一个键**——预置逻辑从不覆盖已存在的 config，且 `[services.moonshot_*]` 的 base_url 必须保留（它们路由内置的搜索/抓取工具）。
+
+⚠️ **凭据暴露**：端点 key 会发送给处理请求的端点——`baseUrl` 只指向你控制或信任的端点。
+
+插件自身配置（可选，写在 profile patch 层）：
+
+```yaml
+- id: local-agent-kimi
+  config:
+    model: kimi-code/k3        # 可选：每轮委派以它起 CLI；不写就一个模型参数都不传（见下）
+    thinkingEffort: high       # 推理强度；写入「全新」作用域 config.toml 的 [thinking] effort 与模型 default_effort（low/high/max，默认 high）。仅预置期生效——已存在的 config 永不覆盖
+    live: false                # 常驻驱动：每成员常驻一个 kimi acp 进程，按轮发 session/prompt（runtime 级优雅取消 session/cancel、推送触发的镜像）；关闭或通道不可用即回一次性 kimi -p
+    liveIdleMs: 1800000        # 常驻 runtime 空闲回收时限（默认 30 分钟）
+```
+
+**迁移提示。** live 轮次统一消费增量输出：旧 `liveMirrorGranularity: event | token` 键继续兼容读取，但不再影响行为，也不会改变运行中的进程。评测继续保留 exec。最终内容仍以 provider 完成项为准，包括工具记录和用量。
+
+### 默认模型（`model`）
+
+⚠️ **这个键的语义变了。** 旧版里 `model` 只在**首次预置**全新作用域目录时用一次——写进 `config.toml` 的 `default_model`，已存在的 config 不动。现在它**每轮委派都生效**。首次预置的镜像行为保留：全新的、没有用户 config 可镜像的作用域目录，仍然按它写出最小 managed config。
+
+**不写 = 今天的表现。** 没有这个键时，本插件在 argv 上一个模型参数都不加，跑哪个模型由作用域 `config.toml` 的顶层 `default_model` 决定。
+
+**写了 = 每轮委派以它起 CLI。** 值必须是作用域 `config.toml` 里已定义的那个模型名（`[models."…"]` 的键）——`-m` 是按 kimi 自己的模型表解析的。
+
+| 驱动 | 传法 |
+|---|---|
+| 一次性（默认） | `kimi -m <模型> -p <任务>`；resume 轮为 `kimi -S <会话> -m <模型> -p <任务>`——`-S` 仍在最前，`-m` 紧贴 `-p`（`-p` 之后的词会被当成提示词） |
+| 常驻（`live: true`） | `kimi acp` **没有**模型旗标，所以每次起常驻进程前，把作用域 `config.toml` 的顶层 `default_model` 改写成该值。改写是就地、幂等的：只动顶层那一行，注释、模型表、provider、`[thinking]` 全部逐字节保留；没有 config 可写时不新建（预置逻辑才负责创建），该轮照跑，模型回读负责暴露不一致 |
+
+也就是说：一次性驱动不碰你的 `config.toml`，常驻驱动会改写其中的 `default_model` 一行。
+
+设置卡「可用模型」区维护一份**有序模型短名单**：点「添加模型」从端点当前供应的目录里勾选加入，列表里只会有端点真实供应的模型；拖动行调整顺序。**第一个模型就是默认模型**——每轮委派以它起 CLI（一次性 argv 旗标，常驻模式起进程前改写作用域 `default_model`），优先级只低于成员会话级覆盖与委派级指定。列表保存在作用域目录的 `models.json`（每个命名 scope 可各有一份，与端点凭据同一套文件机制），编辑即保存，下一轮委派生效。**留空 = 回退旧链**（`model` 键 → 作用域 `config.toml` 的顶层 `default_model` → CLI 内置）。kimi 的 `-m` 按作用域 config 的 `[models."…"]` 表解析（kimi-cli 2.1.1 实测：裸端点 id 没有表不能跑），所以加入一个还没有表的端点 id 时，同一次写入会按 managed 形状补上它的表（端点上报的显示名/推理档位/上下文窗口随行）。成员级模型和推理强度修改使用下文的持久控制面。成员会话里的模型/推理强度对话框与这份短名单严格一致：候选即名单（按名单顺序），名单外只保留成员当前绑定的模型以免既有绑定显示空白。
+
+目录词汇来自端点本身（`GET <baseUrl>/v1/models`），作用域 config 的模型表只做元数据补全：端点供应的 id 命中某张 managed 表的 `model` 时，候选值取**表键**（`-m` 真正可运行的名字），显示名与推理档位端点优先、表兜底。常驻成员的 ACP 原生 configOptions 仍是该成员的权威目录（保留显示名及当前模型的推理选项）。端点无凭据、拒绝凭据、不应答或答非 `/models` 形态时，目录带原因空载；传输故障保留最后一次成功快照并按缓存节奏重试。查询不创建临时 ACP 会话。目录刷新与订阅共用 core 缓存，共用模型菜单和成员 effort 控制已接入。运行中选择排到下一完整轮次（含工具续跑）；core 统一持有当前/待生效配置、撤销与重试，冻结评测成员禁止变更。
+
+**委派级的模型优先。** 编排器可以经门面 `DelegationCallOptions.model` 给**某一次委派**点名模型，它排在这个键之前（顺序见家族核心 README）。首轮请求的值记进委派记录，resume 轮照它重发——resume 不接受 model 参数。常驻模式下它成为该成员的**起始模型**：起进程前改写作用域 `default_model` 绑定；已有常驻 runtime 绑着别的模型时先退役，以新模型重起并 `session/load` 续上同一个 CLI 会话。
+
+**成员级切换（composer）。** 成员会话的 composer 可以为该成员切换模型：一个**会话级 override**，排在所有层（含委派记录）之前；只存内存，宿主重启即失效。常驻模式下，切换让绑定模型不同的常驻 runtime 退役——下一轮以新模型重起、`session/load` 续上同一个 CLI 会话，对话本身不断；一次性模式下下一轮 `-m` 直接带新值。
+
+**这不是评测的缺口。** 评测 run 的条件在建立时冻结：run 跑到一半改这个键，下一轮的模型回读会发现声明模型 ≠ 实测模型，run 直接判为 misattributed 而失败（冻结决策 5）。
+
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明一份实时读取的公平性设置快照，供评测条件哈希使用：drive（exec/live，随 live 偏好）、推理强度（读作用域 config 的 `[thinking] effort`，缺则回模型 `default_effort`）、是否自动批准（作用域 config 是否带 `Bash(*)` 放行规则）、端点是否固定（只报主机名；managed 端点不算固定）、已配置模型（先看作用域 `models.json` 的首项，没有才看插件配置的 `model` 键——它每轮覆盖；再没有才读作用域 config 的顶层 `default_model`；都没有就不给字段）、CLI 版本（`kimi --version`，按可执行文件路径+mtime 缓存；探测不到即字段缺位）。`/kimi status` 与 `LocalAgentStatus` Remote 附带同一份快照。web-eval 冻结决策 2 到 4 的显式化即由此读取。
+
+## Compatibility
+
+- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 公开 API 兼容——生成中的内容走 local-agent 瞬时 Remote 与公开 Conversation 节点；后缀检查点负责恢复，最终原生消息保留转写与用量语义。minHost 为 0.1.5-rc.1，更旧宿主请停留在旧发布线。0.1.5 退役了 per-chunk 会话事件：token 粒度的增量不再落进子会话日志——改走 run-progress 通道，轮次 settle 为一条合并的 assistant/message（最终文本一致）；晚到的 usage 若其载体消息已经镜像，则带一条 warn 丢弃（宿主没有 usage 回填事件可挂）。设置卡渲染为 core「本机 Agent 委派」家族卡的一节（Plugins 页 core 的 `plugins.item` 条目，0.1.7-alpha.1+；旧版 core 上回落为本包自己的 `plugins.item` 卡），`configForms.whileServed` 随宿主服务的 `local-agent-kimi` 命名空间挂载；0.1.5 线不再呈现卡片（宿主删除了 `settings.plugin.item` 席位），其余表面不变。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿；委派迁移到 `ctx.subagents.startActivation`（受管 activation），run.id 改为每次执行唯一。`thinkingEffort` 配置项（默认 high、仅预置期生效）与 `effectiveSettings` 评测快照均为插件级实现：只读写作用域文件，在两条宿主线上都不依赖宿主 API。
+
+## 已知限制
+
+- **没有网页登录**——认证只有端点凭据一条路（设置卡/profile 行，kimi-for-coding 平台 key 或中转 key 均可）；kimi 会员的 OAuth 路径不在本包。
+- **进程簿记会写真实 home**——无论 `KIMI_CODE_HOME` 如何，kimi 都会写入无实质内容的 `~/.kimi-code/server/instances/*.json`；config、凭据、会话仍在作用域内。
+- **`/kimi` 命令需要 Web 会话**——headless profile 仍可通过挂载工具行的组合进行委派。
+
+## 实现原理
+
+<details>
+<summary>内部结构（点击展开）</summary>
+
+**作用域目录与凭据。** 本包启动的每个 Kimi 进程都以 `KIMI_CODE_HOME=$DSH_HOME/local-agent/kimi` 运行。认证是端点凭据制：scope 的 `endpoint-auth.json`（0600）按字段覆盖 profile 配置行的 `baseUrl`/`apiKey`；managed provider（`managed:kimi-code`）在 config.toml 里声明的是 `api_key_env = "DSH_KIMI_ENDPOINT_KEY"`（kimi CLI 原生支持从指定环境变量读 key，与内联 `api_key` 互斥），key 只存在于 endpoint-auth.json 和子进程环境里，`config.toml` 永不携带秘密、可以安全进入评测条件哈希。设置卡「认证」区编辑的就是默认 scope 的 endpoint-auth.json（经家族 gateway 的 `endpointAuth`/`configureEndpoint` Remote）；保存 baseUrl 时同一次写入会把 managed provider 的 `base_url` 重指过去（清空即回落到 kimi 官方服务），每轮 spawn 前还有一次幂等校准，手改文件同样即时生效。一次性 `kimi -p`、常驻 `kimi acp`、容器轮（`containerExecSpawn` 按名字转发环境变量）三条路共用同一套注入。首次启动时作用域目录会被预置一份 `config.toml`——把用户自己的 config 中所有 `api_key` 抹空后复制并迁移到 env-key 形态，用户没有 config 时则写入最小 managed config。OAuth 时代的 `credentials/` 与 `oauth/` 目录在每次 provision 时被清扫——本包不再读取它们，留着只会让一份失效授权在状态显示未认证时仍悄悄可用。`/kimi logout` 删除 scope 的 `endpoint-auth.json`；凭据完全来自 profile 配置行时 logout 拒绝并提示去改 profile。
+
+**挂载。** bundle patch 注册 `kimi` harness（恰好一行 provider 行）；`subagent_kimi` 工具是本包的 `./tool` 组合入口（实现共享自家族核的 `./tool-factory` 导出），由点名它的 agent 预设按会话授予——dev 预设的 `tool-subagent-kimi` 行是授予点。`kimi-cli` 一次性 provider 在作用域目录下 spawn `kimi -p`。家族 core（`local-agent` 行，共享作用域目录根）随 `@khorsheed/dsh-local-agent` 自己的 patch 提供，本包把它声明为依赖。浏览器设置卡片由本包的 `./client` 半提供，复用家族 core 的共享构件（认证块、模型选择器）：渲染为 core「本机 Agent 委派」家族卡的一节，宿主服务 `local-agent-kimi` 命名空间时经 `configForms.whileServed` 挂载——独立安装、家族 bundle、模式包都是同一节（旧版 core 上回落为本包自己的 `plugins.item` 卡）。身份三角保持一致：`cordis.patch.yml` 的行 id、package.json 的 name、tsdown 的 `clientBundle('@khorsheed/dsh-local-agent-kimi')`。
+
+**会话记录与转写。** `/kimi sessions` 列出作用域目录下的 `session_index.jsonl`——本 harness 的委派，绝不是用户的私人会话。`/kimi session <id>` 读取该会话的 `wire.jsonl` 渲染成可读转写：用户提示、思考与助手回复逐行标注 wire 轮次号（1 起，与子会话 `turn/start` 编号一致），工具调用带参数渲染、结果按调用配对（文件编辑类调用渲染成 patch 形态，不认识的内容类型保留可见标记），kimi 自动权限模式的 `<system-reminder>` 消息被过滤。设置卡片呈现认证状态与收窄到当前工作区的作用域会话；登录进行中时状态会持续重新探测，直到凭据落地。
+
+**模型回读与 cwd 覆盖。** 每轮 settle 后，provider 把 wire.jsonl 里 `usage.record`（次选 `llm.request`）事件 `model` 字段的实际模型（最后一个为准——resume 会话后续轮次追加在文件尾部）随 `settled` 进度事件上报，并合并进 `delegations.jsonl` 的 `observedModel` 字段；取不到即缺位，绝不猜测。编排器还可以经门面 `DelegationCallOptions.cwd` 给本轮指定工作目录（记录进 `cwd` 字段）；resume 轮解析出的目录若与首轮记录不一致，进程启动前即 fail loud——CLI 会话延续的是首轮所在目录的上下文。
+
+**Model broker。** 本 harness 向注册表声明 `modelBroker`：设置卡读无成员的 `modelInfo`（生效层 + 候选），成员 composer 经 gateway 读写成员级 override。解析顺序固定：override → 委派记录模型 → 作用域 `models.json` 首项 → 插件 `model` 键 → 作用域 `default_model` → CLI 内置默认（不指名任何模型）。候选：作用域 `models.json` 非空时它就是**全部**词汇（端点目录外的一个也不混入）；为空时回退旧链 = 本键 + 作用域默认 + config 的 `[models."…"]` 表 + 最近存值，去重。override 与起始模型账本都在内存（重启即清）；`setMemberModel` 在成员有进行中轮次时抛错，否则在常驻 runtime 绑定模型 ≠ 新生效值时将其退役（同模型是 no-op），下一轮懒重起。
+
+**工具调用计数。** 每轮 settle 时，provider 顺带数出本轮的工具调用，随 `settled` 进度事件上报（`toolCalls: { count, byName }`）。数的是 transcript 里**本轮 turn** 的 `tool.call` 行——刻意不按镜像窗口数：常驻模式下 settle 那一遍的 delta 可能已被 live 轮询清空，而 resume 轮也不该把前几轮的调用算进来。`byName` 的键是 wire 给出的工具名，原样保留。本轮一份，绝不累计；一次都没调用就整个字段缺位（缺席 ≠ 0）。
+
+**续聊（resume）。** 首次委派的结果文本自述句柄（`追问请带 resume="<childSessionId>"`）；把它作为工具的可选 `resume` 参数传回，即在同一个 dsh 子会话里继续同一个 kimi 会话（`kimi -S session_<id> -p`）。句柄绝不进 prompt：它只经 `localAgent` 委派 registry 对记录该委派的同一 parent 会话与 provider 解析——伪造的句柄在任何 CLI 进程启动前就被拒绝。
+
+**隔离与记账。** 子会话是委派会话工作区内一个全新会话；父级只收到最终回答或精确错误——子会话的上下文、评论、工具活动与 diff 永不跨入父级会话。provider 在 spawn 时开 `turn/start`、settle 时关 `turn/end`，失败或被中止也会关（reason `error`/`aborted`），因此耗时等于真实 CLI 运行时长。每个镜像 step（assistant 消息、工具调用/结果）都是在同 (turn, step) 原子写入的 `step/start`–`step/end` 三元组——宿主会话的实时装配只在边界上登记 step，released-log 读取端在冷读时也只承认稠密顺序的 step；token 粒度的流式增量走 `local-agent/stream` 实时通道，其 durable 内容在完成 fold 或 settle 时以三元组落在 `turn/end` 之前。工具行在 wire 记录到结果后一次性 fold 完整生命周期（通告、调用、结果），轮次结束仍未记录的调用以中断占位结果收尾。折叠粒度是 wire step（一次 LLM 请求）：同一 step 的思考、回复与工具调用折成同一个 dsh step——一条 assistant 消息同时携带 reasoning/text/tool-call 块，与主会话同形，Context Lens 里一轮一次请求、逐请求真实用量；wire 未写 `step.end` 的 step 在增量镜像里整步等待、闭合后整步落盘。每条 `usage.record`（一次请求的口径、非累计）挂在自己 step 的消息上；镜像过滤 kimi 自动权限模式的 `<system-reminder>` 消息、工具调用带参数渲染、结果按调用配对，并增量推进，早期消息绝不重复。中止会让工具结果立即 settle（SIGTERM→grace→SIGKILL），并保留已镜像的部分成果。
+
+**命名 scope。** `/kimi login --scope <名>` 在 `<homesRoot>/kimi@<名>` 里另开一份 `KIMI_CODE_HOME`：目录建立时跑同一份 provision（provider/model 配置，然后是权限规则——顺序不能反，权限写入要读配置文件），之后该 scope 各自的 endpoint-auth.json、各自 wire 日志、各自转写镜像。带 scope 的委派只走 exec（常驻 `kimi acp` 按成员绑缺省目录），且**不带成员通道**：成员桥声明写在作用域目录的 `mcp.json` 里、socket 又是 homes 根级单例，与其半接上不如这一轮明确不要。
+
+**容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> kimi -p …`，其余（wire.jsonl 镜像与回读、settle、记录）逐字节不变。`env` 必须给出容器内的 `KIMI_CODE_HOME`，且它应当是宿主作用域目录的 rw bind 挂载点——转写镜像与模型回读读的是宿主那份 wire 日志。容器轮固定走 exec 一次性驱动（常驻 `kimi acp` 是宿主进程），且**不写** `mcp.json` 的成员桥条目：那条声明带着宿主 node 路径，容器里起不来，与其在共享配置文件里留一个坏 server，不如这一轮不要成员通道。
+
+**常驻驱动（`live: true`）。** 替代每轮 spawn：成员首轮委派拉起一个常驻 `kimi acp` 进程（ACP over stdio；握手要求 `loadSession` 能力，否则熔断回退），`session/new` 建会话（server 分配 id，即委派记录的 `cliSessionId`），之后每轮 = `session/prompt`；`cancel` 落地为 `session/cancel`——进程不死、会话可续。成员桥经 ACP `mcpServers` 内联声明（不写 mcp.json）。`session/request_permission` 按无人值守策略自动应答（选第一个 allow，无则 cancelled，与 `kimi -p` 的自动批准一致）。**完成项的镜像刻意仍是文件折叠**：ACP 推送的是 token 级 chunk，与 wire.jsonl 行折叠不同构，所以推送只触发节流的 `mirrorKimiDelta` 过一遍，settle 对账仍是权威——单一折叠、单一 offset，两条驱动路径不可能漂移；实时输出把完成子项 1:1 全量折叠，生成中的文本经共用瞬时通道发布，默认最多合并 50ms；增量恢复检查点独立于浏览器发布，最终原生消息在预留的 (turn, step) 替换临时展示，中止的流保留带 interrupted 的最终消息。runtime 空闲超时回收（stdin EOF → SIGTERM 阶梯），崩溃后下一轮自动重连并 `session/load` 盘上的会话。
+
+</details>
+
+## 开发
+
+隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/local-agent-kimi`）。问题与贡献请移步该仓库。
