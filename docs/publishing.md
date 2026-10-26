@@ -68,8 +68,8 @@ npx npm@12 publish /tmp/dist/<新包>.tgz --access public --otp=<token>
 2026-10-24 起,社区包统一按下面的规则定版本号;`pnpm release:wave check` 遇到 prerelease 目标版本直接报错,`plan` 会把 rc 线建议为它的正式版本(`0.2.0-rc.3` → `0.2.0`)。
 
 - **只发 `0.MINOR.PATCH`,不发 prerelease(`-rc.N` / `-alpha` 等)。** 所有包都还在 0.x,本身就表示「尚未稳定」;和宿主的兼容关系由 `engines.dsh` 与 `dsh.compat.minHost` 表达,不靠版本号后缀。prerelease 还会带来两类实际麻烦:npm 对 prerelease 的区间匹配只认同一个三元组(`^0.2.0-rc.4` 匹配不到 `0.2.1-rc.x`),以及 npm 12 要求 prerelease 显式 `--tag`。
-- **MINOR**:破坏性改动、新能力,以及套件(family / mode bundle)的成员变化或卡名变化。
-- **PATCH**:修 bug、只改文档或说明、只跟随依赖的版本前移。
+- **MINOR**:只用于破坏性改动——会让已装用户升级后用不了的变化,例如抬高宿主下限(`engines.dsh` / `minHost`)、去掉已有能力或改坏配置。
+- **PATCH**:其余一切——新能力、修 bug、只改文档或说明、跟随依赖前移,以及套件(family / mode bundle)的成员增减或卡名变化。0.x 阶段版本号保持小步走(维护者 2026-10-26 定)。
 - **家族同版**:local-agent 家族各包仍是同一条版本线(见下文「家族发布」),一起前移。
 - **新包首发**从 `0.1.0` 起;已有历史版本线的包(如 `0.2.0-rc.1` 的评测家族)首发取那条线的正式版本。
 - **不烧版本号**:已 stage 的版本若要改内容,先在网页上确认能否撤回后复用,不能复用才前移 PATCH;不要为了改内容随手拒绝再换号。
