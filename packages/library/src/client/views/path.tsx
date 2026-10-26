@@ -92,7 +92,10 @@ export function Path({ p, projectId, resource, roadmap, onOpen, onLesson, onReta
                   {status === 'done' ? <IconCheckOutlineMedium size={18} /> : side ? '·' : number}
                 </button>
                 <div className={css.railBody}>
-                  <button type="button" className={css.railTitle} onClick={() => { onOpen(node) }}>{node.title}</button>
+                  <span className={css.railTitleRow}>
+                    <button type="button" className={css.railTitle} onClick={() => { onOpen(node) }}>{node.title}</button>
+                    {isNext && <span className={css.railNextTag} title={t('path.nextHint')}>{t('path.nextTag')}</span>}
+                  </span>
                   <span className={css.railMeta}>
                     {status === 'done' && <span className={css.railState} data-status="done">{best === undefined ? t('path.done') : t('path.doneBest', { percent: String(Math.round(best * 100)) })}</span>}
                     {status === 'studying' && <span className={css.railState} data-status="studying">{open > 0 ? t('path.studyingOpen', { count: String(open) }) : t('path.studying')}</span>}
@@ -111,11 +114,8 @@ export function Path({ p, projectId, resource, roadmap, onOpen, onLesson, onReta
                   </span>
                   {isNext && (
                     <span className={css.railNext}>
-                      <span className={css.muted}>{t(node.notes === undefined ? 'path.nextStart' : 'path.nextContinue')}</span>
-                      <span className={css.btnRow}>
-                        {open > 0 && <button type="button" className={css.ghost} onClick={() => { onRetake(node) }}>{t('path.retake', { count: String(open) })}</button>}
-                        <button type="button" className={css.primary} onClick={() => { if (node.notes === undefined) onOpen(node); else onLesson(node) }}>{t(node.notes === undefined ? 'lesson.start' : 'path.continue')}</button>
-                      </span>
+                      {open > 0 && <button type="button" className={css.ghost} onClick={() => { onRetake(node) }}>{t('path.retake', { count: String(open) })}</button>}
+                      <button type="button" className={css.primary} onClick={() => { if (node.notes === undefined) onOpen(node); else onLesson(node) }}>{t(node.notes === undefined ? 'lesson.start' : 'path.continue')}</button>
                     </span>
                   )}
                 </div>

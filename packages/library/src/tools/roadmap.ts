@@ -45,12 +45,23 @@ export function libraryRoadmapTool(kit: ToolKit): ToolDefinition {
       const resourceId = pickString(args.resource, argsAny.book)
       if (resourceId === undefined) throw new Error(`a path belongs to one textbook — pass resource${textbookList(exec) || ' (shelve the textbook first with library_textbook)'}`)
       const adjusted: string[] = []
+      const missingPoints: string[] = []
       const nodes = (list as Record<string, unknown>[]).map(node => {
         const { chapters, also, chapterRanges, covers, kind, gate, points, ...rest } = node
         // gate is the v5 spelling; the old kind still parses (practice → acceptance).
-        // Unsaid, acceptance lines make a hands-on station and anything else a quiz one.
-        const gateValue = typeof gate === 'string' ? gate : kind === 'practice' ? 'acceptance' : typeof kind === 'string' ? kind
-          : Array.isArray(rest.acceptance) && rest.acceptance.length > 0 ? 'acceptance' : 'quiz'
+        // Unsaid, every station is a quiz one: its check is the chapter quiz, never a
+        // rubric the learner cannot tell how to meet (10-26) — stray acceptance
+        // lines become goals.
+        const gateValue = typeof gate === 'string' ? gate : kind === 'practice' ? 'acceptance' : typeof kind === 'string' ? kind : 'quiz'
+        if (gateValue === 'quiz' && Array.isArray(rest.acceptance) && rest.acceptance.length > 0) {
+          const lines = (rest.acceptance as unknown[]).flatMap(line => typeof line === 'string' ? [line] : typeof payload(line)?.line === 'string' ? [String(payload(line)!.line)] : [])
+          const goals = Array.isArray(rest.goals) ? rest.goals as unknown[] : typeof rest.goals === 'string' ? [rest.goals] : []
+          rest.goals = [...goals, ...lines]
+          delete rest.acceptance
+        }
+        if (gateValue === 'quiz' && (!Array.isArray(points) || points.length === 0)) {
+          missingPoints.push(String(rest.id ?? rest.title ?? '?'))
+        }
         // Points belong to quiz stations; on any other gate they are dropped, not refused.
         const keepPoints = gateValue === 'quiz' || points === undefined || (Array.isArray(points) && points.length === 0)
         if (!keepPoints) adjusted.push(`points dropped on ${String(rest.title ?? rest.id)} — a ${String(gateValue)} station has no quiz; what it checks belongs in ${gateValue === 'acceptance' ? 'acceptance lines' : 'goals'}`)
@@ -71,6 +82,10 @@ export function libraryRoadmapTool(kit: ToolKit): ToolDefinition {
         const all = main.length === 0 && side.length === 0 ? [{ ref: resourceId }] : [...main, ...side]
         return { ...rest, ...(gateValue === undefined ? {} : { gate: gateValue }), ...(keepPoints && points !== undefined ? { points } : {}), covers: all }
       })
+      // Every station is checked by its chapter quiz, and the quiz asks its points.
+      if (missingPoints.length > 0) {
+        throw new Error(`every station needs its 3–5 knowledge points (points: [{ id, title }]) — the chapter quiz asks them: ${missingPoints.join(', ')}`)
+      }
       const projectId = projectOf(argsAny.project, exec, resourceId)
       const before = unwrap(await service.getProject({ id: projectId }))
       const replaced = before.project.resources.find(row => row.id === resourceId)?.hasDraft === true

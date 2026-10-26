@@ -246,8 +246,8 @@ export function lessonProblems(text: string, node: RoadmapNode, authored: boolea
       const body = text.slice(heading.end, next).replace(/[\s#>*_`|-]/g, '')
       if (body.length < LESSON_SECTION_MIN) thin.push(point.title)
     }
-    if (missing.length > 0) problems.push(`this textbook is yours, so its 讲义 are the lesson itself: give each knowledge point its own section headed by its title (## ${points[0]!.title}) — missing: ${missing.join('、')}`)
-    if (thin.length > 0) problems.push(`too thin to learn from (each point: what it is → why it matters → an example or the steps → a common mistake → one self-check question): ${thin.join('、')}`)
+    if (missing.length > 0) problems.push(`the 讲义 are the lesson itself — the learner learns from them, not from a reading list: give each knowledge point its own section headed by its title (## ${points[0]!.title}) — missing: ${missing.join('、')}`)
+    if (thin.length > 0) problems.push(`too thin to learn from (each point: explain it plainly → an example or the steps → a common mistake → a 思考题; outside links belong in a final ## 参考): ${thin.join('、')}`)
   }
   return problems.length === 0 ? undefined : problems.join('; ')
 }

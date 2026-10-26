@@ -14,9 +14,9 @@ export function libraryNotesTool(kit: ToolKit): ToolDefinition {
   return defineTool({
     name: 'library_notes',
     description:
-      'Write or rewrite a station\'s 讲义 (markdown, math in $…$), for THIS learner — written when the learner starts the station. '
-      + 'A textbook you authored: the 讲义 are the lesson — one line on what it teaches, then one ## section per knowledge point headed by its title (what it is → why it matters → an example or the steps → a common mistake → a self-check question), then a recap. '
-      + 'A real book: a reading guide and marginalia (which pages, what to watch for, where this learner got stuck). No change logs or internal words.',
+      'Write or rewrite a station\'s 讲义 (markdown, math in $…$), for THIS learner, when they start the station. The 讲义 are the lesson itself — the learner learns from them without leaving the page, whatever the textbook: '
+      + 'open with the core question and 「你将学到」 (the points, numbered) and one or two warm-up questions; then one ## section per knowledge point, headed by its title — explain it plainly, give a concrete example or the steps to try, a common mistake, and a 思考题; '
+      + 'then 小结. Outside material (a manual page, a video, the learner\'s book pages) goes only in a final ## 参考 section, never as the lesson. No change logs or internal words.',
     parameters: {
       ...textbookParams,
       node: { type: 'string', required: true, description: 'The station id.' },

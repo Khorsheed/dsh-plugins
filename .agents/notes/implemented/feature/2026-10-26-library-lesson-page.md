@@ -30,3 +30,10 @@ Decided with the user over `proposals/prototypes/library-lesson-page.html` (opti
 ## Testing
 
 190/190 green. New service tests: 讲义 in their file, the path without the text, a rewrite archiving revision 1, textbook removal cleaning the directory; a legacy inline note reads and migrates on the next write, keeping its revision. Screens checked in the sidebar fixture (dark): the guide card with and without 讲义, and the lesson page at 420px (chip contents) and 900px (left contents).
+
+## Follow-up (2026-10-26, same day): every 讲义 is the lesson, every station is a quiz
+
+The first live run after these batches showed three problems:
+- **讲义 as a reading list.** On a picked textbook (the Blender manual) the coach wrote 「读书指引」 — read these manual pages, watch for this — and the learner had to keep switching between the sidebar and the manual. The user wants lessons like their own `lessons/` series: the core question, 「你将学到」, warm-up questions, one full section per point with an example and a 思考题, then 小结. `lessonProblems` now applies to every textbook, and outside material (manual pages, videos, the learner's own book pages) goes only in a final `## 参考`. The `library_notes` description and both 开始学这一站 drafts say so.
+- **Acceptance-only stations.** Batch 1 inferred a hands-on station from acceptance lines, so the coach's 「学完能做到」 lines turned two stations into rubric sheets with no points; the learner could not tell what to submit. Now, unless the gate is explicitly given, a station is a quiz station and its acceptance lines join its goals. `library_roadmap` refuses a quiz station without points, naming it. The service stays lenient for old data and direct calls.
+- **「推荐下一站」** sat alone in an empty box. The next station now carries a small 下一站 tag by its title (the tooltip explains it is the first station not yet passed, and any station can come first), with its buttons directly below.
