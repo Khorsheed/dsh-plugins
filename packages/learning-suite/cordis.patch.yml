@@ -1,5 +1,6 @@
 # @khorsheed/dsh-learning-suite bundle patch: the 学习模式 (dsh-learning) mode pack —
-# the member rows (library, and since 2026-10-19 the canvas and the reader)
+# the member rows (library, and since 2026-10-19 the reader; the canvas left
+# 2026-10-26 — not shipping in this release wave)
 # plus the mode's own preset row. The member row is
 # re-mounted VERBATIM from the member package's own cordis.patch.yml (the
 # canonical row); the preset row is canonical here (the @khorsheed/dsh-presets copy it once
@@ -17,17 +18,13 @@
 # The library's MODEL face (library_read / library_assess / the coach prompt
 # section / the library skill) is not a profile-root row by design: it ships as
 # the library package's `./tool` composition entry, granted per session by THIS
-# bundle's preset row (its `library-tool` row). The canvas's `./agent` and the
-# reader's `./tool` rows are granted the same way (`canvas-agent`,
-# `reader-tool`), and both right-Sidebar tabs self-hide on those rows.
+# bundle's preset row (its `library-tool` row). The reader's `./tool` row is
+# granted the same way (`reader-tool`), and its right-Sidebar tab self-hides on
+# that row.
 - insert:
     # 图书馆: the library service core and the learning sidebar.
     - id: library
       name: "@khorsheed/dsh-library"
-
-    # 灵感画布: the canvas core (canvasStore/canvasBoard).
-    - id: canvas
-      name: "@khorsheed/dsh-canvas"
 
     # 灵感空间: RSS feeds and saved article links on a card wall (row id `reader`).
     - id: reader
@@ -195,15 +192,6 @@
                 - 'ui:deliverable-file-references'
               denyTools:
                 - list_capabilities
-
-          # ── the canvas grant ────────────────────────────────────────────────────────
-
-          # 画布会话工具与 canvas 技能（2026-10-19 加入学习模式：读完用自己的话写成卡片与
-          # 成稿，以输出促吸收）只授予本 preset 的会话；画布页签按同一行双查自隐。服务核心
-          # （canvasBoard）由 profile 根的 canvas 行提供，本行沿 scope 父链解析；画布未装时
-          # 本行降级为零注册。
-          - id: canvas-agent
-            name: '@khorsheed/dsh-canvas/agent'
 
           # ── the reader grant ────────────────────────────────────────────────────────
 

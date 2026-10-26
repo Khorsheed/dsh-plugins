@@ -14,7 +14,6 @@ export const MODE = 'dsh-learning' as const
 /** Self-mounting member packages whose canonical rows the bundle patch mounts, in cordis.patch.yml row order. */
 export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-library',
-  '@khorsheed/dsh-canvas',
   '@khorsheed/dsh-reader',
   '@khorsheed/dsh-transcribe',
   '@khorsheed/dsh-capture',

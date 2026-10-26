@@ -16,7 +16,7 @@ Papers, articles and videos you come across end up scattered across browser tabs
 - **Select a line, take a note**: select a sentence and click "Take a note" to keep the original and your thought; noted lines are highlighted in the text, and a note jumps back to its spot.
 - **Discuss with your notes**: "Discuss with these notes" puts them in the composer — send it and talk it over with the agent; ask it to record the conclusion and it goes under that note.
 - **Let the agent quiz you**: after reading, "Let the agent quiz me" has it play a student who hasn't read the piece and ask you to explain it, then point out, against the original, only what you missed. No scores — click again to practice again.
-- **Quote into the chat, sync to the canvas**: select text to quote it straight into the composer; with the canvas installed, a note can "Sync to canvas" as an inspiration card.
+- **Quote into the chat**: select text to quote it straight into the composer; with the canvas installed, a note can "Sync to canvas" as an inspiration card.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="640" alt="the detail view: the article rendered as text; with the globe toggle on, sentences are translated side by side and clicking one reveals its original">
 

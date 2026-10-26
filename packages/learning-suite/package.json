@@ -35,7 +35,6 @@
     "bundle"
   ],
   "dependencies": {
-    "@khorsheed/dsh-canvas": "workspace:*",
     "@khorsheed/dsh-library": "workspace:*",
     "@khorsheed/dsh-reader": "workspace:*",
     "@khorsheed/dsh-transcribe": "workspace:*",
@@ -62,7 +61,6 @@
       "mode": "dsh-learning",
       "members": [
         "@khorsheed/dsh-library",
-        "@khorsheed/dsh-canvas",
         "@khorsheed/dsh-reader",
         "@khorsheed/dsh-transcribe",
         "@khorsheed/dsh-capture"
@@ -70,7 +68,6 @@
     },
     "references": [
       "@khorsheed/dsh-library",
-      "@khorsheed/dsh-canvas",
       "@khorsheed/dsh-reader",
       "@khorsheed/dsh-transcribe",
       "@khorsheed/dsh-capture"
