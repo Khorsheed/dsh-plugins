@@ -86,10 +86,12 @@ describe('ProviderAuthBlock', () => {
     expect(screen.queryByRole('button', { name: zh['settings.logout'] })).toBeNull()
   })
 
-  it('marks the harness unavailable when the status probe reports undefined (provider absent)', async () => {
+  it('marks the harness unavailable when the status probe reports undefined (provider absent), offering no login', async () => {
     const status = vi.fn().mockResolvedValue(undefined)
     render(<ProviderAuthBlock {...blockProps({ status })} />)
-    expect(await screen.findByText(zh['error'])).toBeTruthy()
+    expect(await screen.findByText(zh['settings.statusFailed'])).toBeTruthy()
+    // An unreadable status says nothing about a login flow (dsh has none).
+    expect(screen.queryByRole('button', { name: zh['settings.login'] })).toBeNull()
   })
 
   it('runs the login command and offers the authorization page link', async () => {
