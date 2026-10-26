@@ -768,6 +768,12 @@ export class RoomService extends TypertRemoteService {
     // Side-effect-free: a cold room answers from its durable log (see loadCold).
     const loaded = await this.loadCold(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
+    // A held report's wake timer lives in the process that held it: after a
+    // restart nothing would ever hand it over. A cold room holding one is
+    // brought live, whose recovery hands every untimed hold over.
+    if (this.ctx.sessions.get(request.sessionId) === undefined && (loaded.state.deliveries ?? []).some(row => row.status === 'held')) {
+      void this.ensureLive(request.sessionId).catch((error: unknown) => { this.ctx.logger.warn(`room: reviving held reports failed: ${String(error)}`) })
+    }
     return { ok: true, value: { ...this.engine.view(request.sessionId, loaded.state), ...loaded.state.plan === undefined ? {} : { plan: this.plans.view(request.sessionId, loaded.state.plan) } } }
   }
 

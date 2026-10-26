@@ -485,7 +485,28 @@ export class DispatchEngine {
    * coordinator for plan work, else the dispatch's `replyTo`), at most once
    * per delivery. Public so a removal can settle the waits it breaks.
    */
+  /** Report-gate decisions per recipient, one at a time (see reportOutcome). */
+  private readonly gateQueues = new Map<string, Promise<void>>()
+
+  /**
+   * Gate one arrived report for the member waiting on it. Decisions for the
+   * same recipient run one at a time: a decision-model judgement takes a
+   * second or two, and a later report deciding meanwhile (the 「最后一个结果」
+   * rule) would hand over its batch without the one still being judged —
+   * which then got held behind a round that had already answered.
+   */
   async reportOutcome(room: Session, dispatchSeq: number, deliveryId: string, fromId: string, outcome: string, text: string): Promise<void> {
+    const source = room.snapshotEvents().find(event => event.seq === dispatchSeq)
+    const key = `${room.id} ${source?.type === 'room/dispatch' ? source.data.replyTo ?? '' : ''}`
+    const next = (this.gateQueues.get(key) ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => this.gateReport(room, dispatchSeq, deliveryId, fromId, outcome, text))
+    this.gateQueues.set(key, next)
+    void next.then(() => { if (this.gateQueues.get(key) === next) this.gateQueues.delete(key) }, () => { if (this.gateQueues.get(key) === next) this.gateQueues.delete(key) })
+    return next
+  }
+
+  private async gateReport(room: Session, dispatchSeq: number, deliveryId: string, fromId: string, outcome: string, text: string): Promise<void> {
     const events = room.snapshotEvents()
     const source = events.find(event => event.seq === dispatchSeq)
     if (source?.type !== 'room/dispatch' || (source.data.origin !== 'coordinator' && source.data.origin !== 'member') || source.data.replyTo === undefined) return
