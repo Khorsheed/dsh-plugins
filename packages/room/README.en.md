@@ -37,7 +37,6 @@ It also comes with 开发套件 (the dev suite), 剪辑套件 (the video suite),
 ## Known limitations
 
 - Inviting Kimi, Codex or Claude Code also needs 多Agent协作 (`@khorsheed/dsh-bundle-local-agent`); without it you can only invite dsh's own members.
-- Codex and Claude Code members have not been fully accepted yet; dsh and Kimi members are tested end to end.
 - Archived sessions don't appear in the @ menu and can't be asked for help — unarchive one first.
 - Room sessions depend on this plugin: once it is uninstalled, earlier room sessions can't be read.
 

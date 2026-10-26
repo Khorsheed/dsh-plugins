@@ -79,14 +79,14 @@ DSH_MOBILE_PUBLIC_ORIGIN=https://dsh.example.com dsh web --no-open --port 3181 -
 
 ## 可选协作界面
 
-message-tools、TaskPilot、Room 与 Local Agent 家族独立安装；移动端读取它们的公开能力，从不把它们作为启动依赖。复制/编辑/撤回使用原有消息动作栏；触屏长按用于系统文字选择，不再弹出第二套消息菜单。加号面板打开 **Room 原有邀请表单**，仅调整为移动端底部面板样式——代理发现、认证、随机命名、首个任务派发和移除确认都由 Room 负责，不存在第二套移动邀请/编辑 API。移动端在当前浏览器内临时适配公开的 `uiWorkspace.pickDirectory` 方法，让 Room 原表单原样消费面板返回的结果，卸载时恢复。Room 与 Local Agent 保留各自输入框，因此不承诺 Room 内展示全部普通会话的 TaskPilot 胶囊。已知 Room 版本首次异步填充缓存时可能未刷新输入框选举；移动端用一个始终让出的 chain 条目刷新公开槽位选举，不替换胜者。参见[协作验收](../../../docs/acceptance/mobile-collaboration-2026-09-12.md)。
+message-tools、TaskPilot、Room 与 Local Agent 家族独立安装；移动端读取它们的公开能力，从不把它们作为启动依赖。复制/编辑/撤回使用原有消息动作栏；触屏长按用于系统文字选择，不再弹出第二套消息菜单。加号面板打开 **Room 原有邀请表单**，仅调整为移动端底部面板样式——代理发现、认证、随机命名、首个任务派发和移除确认都由 Room 负责，不存在第二套移动邀请/编辑 API。移动端在当前浏览器内临时适配公开的 `uiWorkspace.pickDirectory` 方法，让 Room 原表单原样消费面板返回的结果，卸载时恢复。Room 与 Local Agent 保留各自输入框，因此不承诺 Room 内展示全部普通会话的 TaskPilot 胶囊。已知 Room 版本首次异步填充缓存时可能未刷新输入框选举；移动端用一个始终让出的 chain 条目刷新公开槽位选举，不替换胜者。
 
 ## Compatibility
 
 - 宿主 0.2.x（`@deepseek-ai/dsh@0.2.0-rc.2` 起）：⚠️ 可用，带已声明的降级——`dsh.compat.minHost` 为 `0.2.0-rc.2`，**不再支持 0.1.x 宿主**（0.1.x 请停留在本插件 0.1.4）。对 0.2.1-rc.1 树全量构建+测试通过，但真机/网络验收矩阵完成前不声明 `verifiedHost`；移动布局与 iOS 壳仍在验收中；**不提供设备配对与推送**。
 - 一键公网入口：需要本机 cloudflared；缺少时「连接手机」回退静态配置指引，不影响其余功能。iOS/Android 浏览器扫码后可「添加到主屏幕」：移动布局激活时注入免凭据 manifest 与 Apple meta（无 service worker，不声明离线）。
 
-会话首页使用可选的官方 sessions/workspaces/uiWorkspace 服务，过滤已归档会话和子代理行、保留普通分叉会话；缺少服务时回退基础官方侧栏。启用布局前检查公开 frame/slot DOM 锚点；未知结构保留官方页面——结构变化可能降低移动可用性，但不改变 Host 执行。原生桥接版本变化需要判断 App 兼容性；兼容的 Web 更新不自动要求重发 IPA。参见[导航/扫码验收](../../../docs/acceptance/mobile-navigation-2026-09-11.md)、[rc1 验收证据](../../../docs/acceptance/mobile-rc1-2026-09-11.md)与[提案](../../../proposals/active/2026-08-19-mobile-access.md)。无需修改官方或兄弟插件源码。
+会话首页使用可选的官方 sessions/workspaces/uiWorkspace 服务，过滤已归档会话和子代理行、保留普通分叉会话；缺少服务时回退基础官方侧栏。启用布局前检查公开 frame/slot DOM 锚点；未知结构保留官方页面——结构变化可能降低移动可用性，但不改变 Host 执行。原生桥接版本变化需要判断 App 兼容性；兼容的 Web 更新不自动要求重发 IPA。无需修改官方或兄弟插件源码。
 
 ## 已知限制
 

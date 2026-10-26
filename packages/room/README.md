@@ -37,7 +37,6 @@
 ## 已知限制
 
 - 要邀请 Kimi、Codex、Claude Code，还得装「多Agent协作」（`@khorsheed/dsh-bundle-local-agent`）；没装时只能邀请 dsh 自己的成员。
-- Codex 和 Claude Code 成员还没有完整验收过，dsh 和 Kimi 成员已经实测可用。
 - 已归档的会话不会出现在 @ 菜单里，也找不了它帮忙，要先取消归档。
 - 协作间的会话离不开这个插件：卸掉之后，以前的协作间会话读不出来。
 

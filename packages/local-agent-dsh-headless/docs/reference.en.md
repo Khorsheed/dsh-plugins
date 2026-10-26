@@ -71,7 +71,7 @@ The parent `local-agent-dsh` provider supplies `--model` automatically: the harn
 - **Never add this bundle to an interactive profile's `bundles`** — its sub-profile-only patch rows (persona override, `hmr` off, `tools` mode, the `ptc-runtime` insert, the member-bridge MCP) collide with an interactive composition and leak overrides into real user sessions. The package **declares no `dsh.bundle`** (the manifest carries `dsh.composition.component: "sub-profile-patch"`), so a hand-added bundles row fails loud at boot in `loadProfile` — that is the gate.
 - **`dsh plugin add` on this package mounts nothing, and need not** — the package used to declare `dsh.bundle`, and reconcilePlugins auto-mounts every `dsh.bundle`-declaring direct dependency into the composition's layer stack: both the 2026-08-23 P0 (duplicate `code-runtime` in the prod web profile) and its 2026-09-03 G3 recurrence were exactly that mount. The declaration is gone (T6); installing the package directly now earns only a "plain dependency" warning and mounts nothing — a **transitive** install through `@khorsheed/dsh-local-agent-dsh` suffices, and the parent provider auto-provisions.
 - No other `local-agent` family bundles belong in this composition — nothing here spawns another dsh.
-- Patch edits must be boot-verified before landing (`dsh preflight` or one real sub-dsh launch): the `!!js` tag is scalar-only, and a mistagged collection fails at profile boot.
+- Patch edits must be boot-verified before landing (the ankh-guard CLI's `preflight`, or one real sub-dsh launch): the `!!js` tag is scalar-only, and a mistagged collection fails at profile boot.
 
 ## How it works
 
