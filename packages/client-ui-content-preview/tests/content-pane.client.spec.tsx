@@ -180,12 +180,15 @@ describe('ContentPane chrome and non-text reads', () => {
     expect(openFolder).toHaveBeenCalledTimes(1)
   })
 
-  it('collapses the IDE control to one button when a single IDE resolved', () => {
+  it('puts a single resolved IDE in the ⋯ menu as one row', () => {
+    const openIDE = vi.fn()
     mount({ kind: 'text', path: '/work/a.ts', content: 'x\n' }, {
-      chrome: { openIDE: () => {}, ideChoices: [{ id: 'zed', label: 'Zed' }] },
+      chrome: { openIDE, ideChoices: [{ id: 'zed', label: 'Zed' }] },
     })
-    expect(screen.getByRole('button', { name: 'action.openIDE' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'action.more' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'action.openIDE' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'action.more' }))
+    fireEvent.click(screen.getByText('action.openIDE'))
+    expect(openIDE).toHaveBeenCalled()
   })
 
   it('lists every resolved IDE in the ⋯ menu once several resolved', () => {
@@ -197,11 +200,13 @@ describe('ContentPane chrome and non-text reads', () => {
         onIdeChoice,
       },
     })
-    // The default IDE stays one click away; each resolved IDE is a menu row,
-    // and picking one routes through the caller (which owns the remembered
-    // choice and the host route).
-    expect(screen.getByRole('button', { name: 'action.openIDE' })).toBeTruthy()
+    // Each resolved IDE is a named menu row (no generic row repeating the
+    // current choice), and picking one routes through the caller (which owns
+    // the remembered choice and the host route).
+    expect(screen.queryByRole('button', { name: 'action.openIDE' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'action.more' }))
+    expect(screen.queryByText('action.openIDE')).toBeNull()
+    expect(screen.getByText('action.openIDE · Zed')).toBeTruthy()
     fireEvent.click(screen.getByText('action.openIDE · VS Code'))
     expect(onIdeChoice).toHaveBeenCalledWith('vscode')
   })
@@ -251,14 +256,15 @@ describe('ContentPane chrome and non-text reads', () => {
 describe('ContentPane reload gesture', () => {
   const read: PreviewRead = { kind: 'text', path: '/work/a.ts', content: 'x\n' }
 
-  it('renders the button ahead of copy-path, and only when onReload is supplied', () => {
+  it('renders the button after copy-path, and only when onReload is supplied', () => {
     mount(read, {
       onReload: () => Promise.resolve(),
       onCopyPath: () => Promise.resolve(true),
     })
     const reload = screen.getByRole('button', { name: 'action.reload' })
     const copy = screen.getByRole('button', { name: 'action.copyPath' })
-    expect(reload.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // Copy path is the more used gesture: it leads, right after edit.
+    expect(copy.compareDocumentPosition(reload) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     cleanup()
     mount(read, { onCopyPath: () => Promise.resolve(true) })
     expect(screen.queryByRole('button', { name: 'action.reload' })).toBeNull()
@@ -315,7 +321,7 @@ describe('ContentPane compact chrome (panel-responsive-spec P1)', () => {
     expect(screen.queryByRole('searchbox')).toBeNull()
   })
 
-  it('keeps search and reload inline and folds copy and the host gestures into the ⋯ menu, with no path row', () => {
+  it('keeps search and copy path inline and folds reload and the host gestures into the ⋯ menu, with no path row', () => {
     mount({ kind: 'text', path: '/work/a.md', content: '# A\n' }, {
       displayPath: '/work/a.md',
       onReload: () => Promise.resolve(),
@@ -323,11 +329,11 @@ describe('ContentPane compact chrome (panel-responsive-spec P1)', () => {
       chrome: { openFolder: () => {} },
     })
     expect(screen.getByRole('button', { name: 'search.placeholder' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'action.reload' })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: 'action.copyPath' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'action.copyPath' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'action.reload' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'action.more' }))
     expect(screen.queryByText('/work/a.md')).toBeNull()
-    expect(screen.getByText('action.copyPath')).toBeTruthy()
+    expect(screen.getByText('action.reload')).toBeTruthy()
     expect(screen.getByText('action.showInFolder')).toBeTruthy()
   })
 
