@@ -497,7 +497,8 @@ describe('kimi live driver rounds', () => {
     const m = mount({ config: { snapshotMinIntervalMs: 0 } })
     const liveStreams = new LocalAgentStreams()
     const published = vi.spyOn(liveStreams, 'publish')
-    Object.assign(m.ctx.localAgent, { liveStreams })
+    const settled = vi.fn()
+    Object.assign(m.ctx.localAgent, { liveStreams, recordRoundSettled: settled })
     const child = Session.create(SessionId('child-transient-kimi'))
     m.queueChild(new FakeAcpServer({ turn: () => { writeKimiWire(m.homeDir, 'acp-session-1', '建个文件', 'hello'); return { chunks: ['hello'] } } }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
@@ -511,6 +512,8 @@ describe('kimi live driver rounds', () => {
     const answers = events.filter(event => event.type === 'assistant/message' && JSON.stringify(event.data.message.content).includes('hello'))
     expect(answers).toHaveLength(1)
     expect(answers[0]!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
+    // The settled observation carries the round's usage (the room's usage chip reads it).
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledWith(String(child.id), expect.objectContaining({ usage: expect.objectContaining({ inputTokens: 10, outputTokens: 4 }) })))
     expectStepBoundaries(child)
     await m.driver.disposeAll()
     liveStreams.dispose()
@@ -584,7 +587,7 @@ describe('kimi live driver rounds', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
     await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
-    expect(m.settles[0]).toEqual({ id: 'child-kimi-obs', round: { observedModel: 'kimi-k2-thinking' } })
+    expect(m.settles[0]).toMatchObject({ id: 'child-kimi-obs', round: { observedModel: 'kimi-k2-thinking' } })
     await m.driver.disposeAll()
   })
 

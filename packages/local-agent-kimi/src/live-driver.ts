@@ -1642,8 +1642,18 @@ export class KimiAcpLiveDriver {
       // a round that never opened owns no span to observe. Degrades
       // silently on a core predating recordRoundSettled.
       if (turnOpened) {
+        // The round's spend for the room's usage chip: every folded step of
+        // this turn carries its own usage (the uncarried rest rides the last
+        // one), so the turn's sum is the round total.
+        let usage: Parameters<typeof addTokenUsage>[0]
+        for (const event of childSession.snapshotEvents()) {
+          if (event.type !== 'assistant/message') continue
+          const data = event.data as { turn?: number; usage?: Parameters<typeof addTokenUsage>[1] }
+          if (data.turn === turn && data.usage !== undefined) usage = addTokenUsage(usage, data.usage)
+        }
         const round = {
           ...roundModel === undefined ? {} : { observedModel: roundModel },
+          ...usage === undefined ? {} : { usage },
         }
         const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
         registry?.recordRoundSettled?.(childSession.id, round)
