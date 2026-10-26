@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/client-message-tools/docs/reference.en.md
+packages/client-message-tools/docs/reference.en.md: 2ccb21349b6809f8473eab1d0c49a8ce79fb94b8
+packages/client-message-tools/docs/reference.md: ec4d4bb12faa780cb95b0eb49e6ef22320569d5a
