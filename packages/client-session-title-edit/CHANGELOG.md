@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.2.7（2026-10-26）
+
+- 无功能变更：仓内目录随 npm 包名改为 `packages/client-session-title-edit`（包名不变，安装与使用无感），README 里的路径与截图尺寸随之更新。
+
 ## 0.2.6（2026-10-22）
 
 无功能变更。适配宿主 0.2.1 线：verifiedHost 前移至 0.2.1-rc.1，`@deepseek-ai/dsh-*` peer 区间加宽覆盖 0.2.1 并声明 `engines.dsh`（`>=0.1.2-rc.1 <0.3.0-0`）；退役 load 期 invariant 伴生探针（空仪式，无行为变化）。

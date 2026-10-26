@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.3.6（2026-10-26）
+
+- README 截图缩小一档。无功能变更。
+
 ## 0.3.5（2026-10-22）
 
 无功能变更。适配宿主 0.2.1 线：`@deepseek-ai/dsh-*` peer 区间追加 `^0.2.1-rc.1`（`^0.2.0-rc.1` 在 npm/pnpm 严格解析下不覆盖 0.2.1 预发布三元组）；宿主 0.2.1 移除 invariants 体系，随包 invariant 伴生退役、兼容判定改由 package.json `engines.dsh` 声明；`dsh.compat.verifiedHost` 前移至 `0.2.1-rc.1`，全量构建+测试在该树通过（jobs Context 合并的类型导入改直引 `@deepseek-ai/dsh-jobs` 包根——0.2.1 的 dsh-subagent 不再转口该 augmentation；双线安全，0.2.0 上同名存在）。

@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.2.7（2026-10-26）
+
+- **README 更新**：设置截图换成新版「插件 → 内置插件配置 → 压缩提醒时机」两张，文字改为大白话。无功能变更。
+
 ## 0.2.6（2026-10-24）
 
 - `dsh.references` 去掉已退役的 `@khorsheed/dsh-bundle-conversation-toolbox`(其成员全部并入 basic)。

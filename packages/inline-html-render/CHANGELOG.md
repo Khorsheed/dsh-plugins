@@ -1,5 +1,9 @@
 # 变更记录
 
+## 0.1.17（2026-10-26）
+
+- **README 重写**：改为面向用户的简短说明。无功能变更。
+
 ## 0.1.16（2026-10-22）
 
 - **技能卡来源归一为包全名**：随包注册的两个作者 skill（`inline-html-card`、`3d-artifact`）的 `provider` 从裸词 `inline-html-render` 改为 `@khorsheed/dsh-inline-html-render`——能力目录的技能卡与其他插件一样显示包全名；行为与 skill 内容不变

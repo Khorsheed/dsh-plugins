@@ -1,10 +1,14 @@
 # 变更记录
 
-## 0.1.0（2026-10-24）
+## 0.1.0（2026-10-26）
 
-- 文案:成员 room 的卡名随之改为「协作间」。
-- **成员加入重启守卫(`ankh-guard`)与上下文透镜(`context-lens`)**:从基础体验移来,两者都是开发者用的;规范行原样挂载,地板同为 0.1.5-rc.1,minHost 不动。
-- **preset 行正本归本包**:`@khorsheed/dsh-presets` 退役,本包 patch 里的 preset 行不再是镜像,而是唯一副本(组合内容不变)。
-- **改名**:npm 包名 `@khorsheed/dsh-dev` → `@khorsheed/dsh-dev-suite`(首发前改名,旧名从未发布)。包名与卡名「…套件」对齐,并与同名的镜像仓/集合名分开;preset id、行 id 与目录不变,会话与设置无感。
+首个公开发布：「开发套件」——开发模式（`dsh-dev` 预设）和它用到的插件，一次装好。装完开一个「开发模式」的会话就能用：
 
-首个公开发布:开发模式包——`dsh-dev` preset 行+ local-agent 家族五成员、worktrees、room、typesafe 的规范行,deps-only 库 local-agent-dsh-headless 随行。
+- **本机 agent 委派**：local-agent 核心与 Kimi / Codex / Claude Code / dsh 四个提供方（无界面的 dsh 运行库随行），让本机装好的编码 agent CLI 替你干活。
+- **协作间**：把会话升级成有协调者和成员的协作空间，成员可以是上面这些本机 agent。
+- **快速决策**：协作间的「自动判断」（新消息并不并进已有任务、成员结果何时汇报）靠它。
+- **工作树**：会话头部的分支标签与右栏工作树页，实况展示分支、待提交改动和提交记录。
+- **重启守卫**：会改自己的实例先证明构建与测试通过，才放行重启。
+- **上下文透镜**：按轮查看每次模型请求到底装了什么、token 和时间花在哪。
+
+开发模式的预设行由本包自带（原 `@khorsheed/dsh-presets` 已退役）；npm 包名为 `@khorsheed/dsh-dev-suite`（首发前由 `@khorsheed/dsh-dev` 改名，旧名从未发布），预设 id 与行 id 不受影响。README 的「其它套件」只列这一波发布的套件（写作、评测套件暂不发布；学习套件不含画布）。

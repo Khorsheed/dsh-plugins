@@ -1,38 +1,17 @@
-# Changelog
+# 变更记录
 
-## 0.1.0（2026-10-24）
+## 0.1.0（2026-10-26）
 
-- Nothing in a scrolling panel column shrinks any more: with many elements the filter chips were squashed out of sight (the same cause as the cropped play stage).
-- glTF looks tune by name inside `build()`: `tint` (material colors), `bones` (size and rotation over the animation), `morphs` (shape keys, outline included); the element page lists the model's materials, bones and shape keys as color wells and sliders, retuned live without reloading.
-- 3D previews face the model: a perspective orbit (models face +x), stills from the front three-quarter, `look.preview: { yaw, pitch }`, a turntable that tilts when dragged up and down, and 正面 / 侧面 / 背面 buttons.
-- 3D conveniences: `world.followCamera({ target, mouse: true })` (third person, pointer-lock turning), `style3d.rim` / `rimColor`, `scatter(…, { sway })` for grass and trees in the wind; the skill gives a tested bloom recipe through `three/addons`.
-- glTF skeletal animation: an idle clip plays on its own, `model.userData.play('walk')` cross-fades, the outline follows the bones, pick finds a posed character, and the element page lists clips to play in the turntable.
-- Walkable models: `world.add(obj, { walkable: true })` / `world.walkable(obj)` and `world.groundAt(x, z, fromY)` — climb stairs onto a platform without being pulled onto the roof above.
-- glTF looks: `{ kind: 'gltf', src }` loads the glb (toon over its colors, vertex colors and textures, with an outline; or `material: 'original'`), checks wait for models and fail a look whose file is missing, and the panel previews the working copy of a just-exported model with a toon/original switch and size.
-- 3D kit doors (additive): `three/addons/…` imports (only what a project uses rides its bundle), `world.setCamera` for the game's own camera (pick and rings follow it), `world.lights` and `style3d.shadows`, `world.onRender` for post-processing, `toon/flat(…, { own: true })`, `dshGame.loading` (checks wait up to 20 s), pointer lock in the play frame and `dshGame.look` with a `drag` test helper. The skill says to log plugin walls in `design/plugin-requests.md`.
-- The play stage no longer shrinks in the scrolling play view: it used to crop the bottom of the game (and push the poster's Play button below the visible middle).
-- The panel bar covers every working change — panel edits, the agent's, a CLI member's, the user's editor — with 检查并发版 (disabled while a turn runs or a file changed in the last 20 s); it polls while visible. Versions record who published (you / the agent / turn end). The skill, guidance and personas: publish before reporting or asking, and publish for CLI members.
-- 3D scenes: `world.enterScene(name, setup)` swaps terrain, the scene's own style overrides (`game.json` `style3d.scenes`, kept through panel rewrites) and everything registered inside, freeing the last scene. A new `terrain()` replaces the old ground.
-- `world.scatter(element, countOrPoints, { seed, … })`: one look instanced over the ground, each copy on the terrain with a seeded facing and size, outlined, and pickable as `id#n`.
-- Inside the checks `step` advances logic without rendering; the 3D blank probe renders once.
-- Skill: `assets/` (formats, limits, textures, canvas textures), scenes, scatter; glTF looks are stated as stand-ins for now.
-- Every visible element carries a look, scenery included: the skill asks for a look on everything visible, and in 3D scenery shapes are registered with `defineBase` in `src/looks.js`, scattered with `world.scatter` (or built one by one), so the element grid can render and tune them.
-- Panel edits (looks, fields, lore, picked variants, finalized params) change the working files; a bar commits them as a new version through the checks. The composer dock, the post-change nudge and its switch are gone; `game_read` shows the agent what changed once.
-- Element lore (`lore`): a 设定 card on the element page and a generated 元素设定 chapter. The element page puts "ask the agent for a new look" under the preview and folds the 3D recipe.
-- Element cards show a 3D element's model as a still (two render at a time; the color swatch stands in meanwhile). The open element's title row is the panel kit's header — a real back button, pinned while the detail scrolls.
-- `game_publish`: run the checks and cut a version mid-turn. A question does not end the turn, so the skill and the mode persona require a green publish before the agent asks the user to play.
+首个公开发布：游戏——和 agent 一起做小游戏，你说想玩什么，它做出来，你在右栏直接试玩。随「游戏开发套件」安装，只在游戏开发模式的会话里出现。
 
-- The one-pager has one source (`game.json`), edited on the design card; `design/pillars.md` becomes 支柱说明 (pillar notes only), lines restating the one-pager are filtered out.
+- **先聊清楚再动手**：游戏名、一句话玩法、有哪几类东西、什么美术风格，agent 一样样问你；风格从示例图里挑。一页纸策划（`game.json`）在「策划」卡片里就地编辑，章节和数值图表都在那里。
+- **坏的版本到不了你手上**：每轮结束自动检查（数据校验、无头冒烟试跑、项目自己的测试），没过就当场修（同一轮至多两次），过了才进「试玩」（想先看一眼再上线，把「自动上线」关掉）；agent 在问你之前要先发出一个通过检查的版本（`game_publish`）。
+- **边玩边调手感**：跳多高、跑多快做成滑块，拖着试，觉得对了「定稿」；「告诉 agent」把试的数值写进输入框。
+- **看得见的都能改样子**：主角、敌人、道具，连树、石头、房子都在「元素」里，可以自己画像素外观，也可以让 agent 一次给三个方案挑；每个元素有自己的「设定」卡，汇成「元素设定」一章。
+- **你、agent、成员的改动一条路进游戏**：面板里的修改、agent 和 Claude Code 这类成员改的文件、你在编辑器里改的，右栏都会提示，点「检查并发版」进游戏；每一版记着是谁发的。
+- **随时退回**：「版本」里每一版都留着，可以对比、回滚、确认或拒绝候选版本，也能导出成单个 `.html` 发给朋友。
+- **项目切换**：点标题打开项目卡片（截图、版本、风格、元素、最近改动）。
+- **3D 也能做**：场景切换与地形、批量散布（草、树随风摆）、第三人称跟随相机、可行走的模型；glTF 模型带卡通描边，可按名字调材质颜色、骨骼与形态键，骨骼动画能播放和切换；元素页用 3D 静帧与可拖动的转台预览（正面 / 侧面 / 背面）。
+- 试玩要你点播放按钮才开始；对话里每轮末尾有一张卡片列出这一轮改了什么，点了跳到对应页签。
 
-- Turn card in the conversation's turn tail (outside the fold): what the turn changed, with jumps into the tab; host-side turn baselines diffed at turn/end.
-- Sliders are trials only (no pending change); "Tell the agent" writes the trial values into the composer.
-- After a change the panel asks whether to tell the agent (write into chat / not this one / later / stop asking).
-- Play is opt-in: a poster and a Play button, Stop while running.
-- Host look: the host's Switch and Tag primitives, Button-styled actions, neutral chips.
-
-- Panel changes are no longer attached to the next send automatically: they collect in the "Panel changes" dock, "Write into chat" puts the list into the composer, and a sent message carrying it clears what it lists (`agent/pre-step` no longer touches the batch). Unsent changes show in `game_read`.
-- Project switcher: the title opens project cards (screenshot, version, style, elements, last change, pitch) led by a New project card.
-
-- The Game tab becomes a game-design workbench (M2/M3 of the proposal): parameter drawer with live sliders, finalize/reset; element card grid, pixel look editor, field editing, `game_propose` 3-variant look proposals picked in the panel; one-pager and pillars pinned in the design view with in-place chapter editing and numbers charts; versions timeline with candidate confirm/reject, rollback, diff and single-file export; art-style gallery and restyle-as-candidate; pick-in-game; panel changes auto-attached at the next send with a "will attach" dock above the composer; collapsible conversation rows for check findings and attached changes.
-
-- First version (M1 of proposal 2026-10-09-gamedev-mode): projects in the session workspace behind a light gate, `game_open` / `game_read`, the `gamedev` and `game-design` skills, the right-sidebar Game tab (play / design / elements / checks), and the end-of-turn checks (data validation, headless smoke run, the project's own test scripts) that steer failures back into the same turn at most twice and deploy passing versions.
+已知限制：画面全靠代码画（没有 AI 生图），游戏不能联网，每轮的试跑检查要用本机的 Chrome。
