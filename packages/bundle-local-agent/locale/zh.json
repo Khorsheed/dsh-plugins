@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "多Agent协作",
-    "description": "把任务委派给本机 CLI 智能体(Kimi、Codex、Claude Code、dsh),也能开多成员协作间——还能看清每个成员收到了什么、时间花在哪——local-agent 家族、协作间与上下文透镜一次装齐。"
+    "description": "把任务交给本机的 Kimi、Codex、Claude Code 或另一个 DSH，也能请几个 agent 进同一个会话协作。"
   }
 }

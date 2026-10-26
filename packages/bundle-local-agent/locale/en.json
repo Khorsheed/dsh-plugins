@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Multi-Agent Collaboration",
-    "description": "Delegate to local CLI agents (Kimi, Codex, Claude Code, dsh) and run multi-member rooms — and see what each member received and where its time went — the local-agent family, room and Context Lens in one install."
+    "description": "Hand tasks to the Kimi, Codex, Claude Code or another DSH on your machine, or bring several agents into one session to work together."
   }
 }

@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Evaluation Suite",
-    "description": "Controlled harness comparisons on this machine: datasets, experiments, runs, and judging — the evaluation family (datasets, mission, lab, eval) plus the local-agent delegation family (kimi / codex / claude-code / dsh harnesses) in one install."
+    "description": "Eval mode: let an agent set up, run and score comparison experiments on your machine — from question sets to multi-agent delegation, in one place."
   }
 }

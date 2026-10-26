@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "开发套件",
-    "description": "开发模式 preset 连同它的家族一次装齐:本地 CLI 委派(Kimi / Codex / Claude Code / dsh)、工作树、协作间、快速决策,以及重启守卫与上下文透镜。"
+    "description": "开发模式：委派本机 agent、看清工作树与上下文，找到你和 Agent 协作的最佳方式。"
   }
 }

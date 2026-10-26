@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "评测套件",
-    "description": "在本机做 harness 对照评测：题集、实验、运行与判分——评测家族（datasets、mission、lab、eval）与 local-agent 委派家族（kimi / codex / claude-code / dsh）一次装齐。"
+    "description": "评测模式：让 Agent 在本机搭建、运行并判分对照实验，从题集到多 Agent 委派一站完成。"
   }
 }
