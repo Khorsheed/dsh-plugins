@@ -187,6 +187,9 @@ describe('room client apply', () => {
       { sessionId: 'plain-1', label: '开发剪辑插件' },
       { sessionId: 'room-1', room: true, members: [{ name: '游戏大师', provider: 'claude-local' }] },
     ])
+    // An archived session is never offered.
+    ctx.provide('workspaces', { list: { getSnapshot: () => ({ archivedSessionIds: ['plain-1'] }) } } as never)
+    expect((await face.listSessions!('', new AbortController().signal)).map(row => row.sessionId)).toEqual(['room-1'])
     candidates.mockResolvedValueOnce({ ok: false } as never)
     expect(await face.listSessions!('', new AbortController().signal)).toHaveLength(0)
   })

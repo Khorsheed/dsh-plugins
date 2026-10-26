@@ -499,7 +499,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     const lookup = (text: string): Promise<readonly SessionCandidate[]> => resolver.candidates!(sessionId, text, signal)
       .then(result => result.ok && Array.isArray(result.value) ? result.value : [])
     const [recent, matched] = await Promise.all([lookup(''), query === '' ? Promise.resolve([]) : lookup(query)])
-    const merged = [...recent, ...matched]
+    // Archived sessions cannot be opened or woken: never offer one.
+    const workspaces = ctx.get('workspaces') as { list?: { getSnapshot?: () => { archivedSessionIds?: readonly string[] } } } | undefined
+    const archived = new Set(workspaces?.list?.getSnapshot?.().archivedSessionIds ?? [])
+    const merged = [...recent, ...matched].filter(candidate => !archived.has(candidate.sessionId))
     const flags = await Promise.all(merged.map(candidate => roomFlag(candidate.sessionId)))
     // A room carries its members (askable by name): one getState per room, kept 30s.
     return Promise.all(merged.map(async (candidate, index) => flags[index] === true

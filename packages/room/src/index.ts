@@ -1419,6 +1419,12 @@ export class RoomService extends TypertRemoteService {
     if (target.sessionId === room.id || loaded.state.members.some(member => member.childSessionId === target.sessionId)) {
       return 'That session is this room or one of its members; use room_message instead.'
     }
+    // The host fences archived sessions off (they are not listed, cannot be
+    // opened, and a waking delivery to their agent is refused): say so.
+    const archived = (this.ctx.get as (name: string) => unknown)('workspaceRegistry') as { archivedSessionIds?: readonly string[] } | undefined
+    if (archived?.archivedSessionIds?.includes(target.sessionId) === true) {
+      return `"${target.title}" is archived; it cannot be asked. Tell the human to unarchive it first, or pick another session.`
+    }
     // A room target goes through that room's own roster: the named member
     // (the argument, or the 「成员（房间）」 label the @ menu wrote), else its coordinator.
     const targetRoom = (await this.isRoom({ sessionId: SessionId(target.sessionId) })) === true
