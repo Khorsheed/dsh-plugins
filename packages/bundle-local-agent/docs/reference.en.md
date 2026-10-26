@@ -28,6 +28,7 @@ One conversation, many agents: the mainline agent judges which task fits which h
 | `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code` (+ override `tool-subagent-claude-code`) | Claude Code harness; the `subagent_claude_code` delegation tool is the package's `./tool` composition entry, granted by a preset that names it |
 | `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | the dsh harness controller (Settings → 本地 Agent switch, off by default; mounts `subagent_dsh` dynamically while ON) |
 | `@khorsheed/dsh-room` | `room` | the room (协作间): multi-member rooms whose members come from the local agents above and native dsh sub-members; its model-facing tools are the package's `./tool` composition entry, granted by a preset that names it |
+| `@khorsheed/dsh-context-lens` | `context-lens` | Context Lens: per-turn request breakdown and timing, sub-agents listed separately; the row is identical to the Dev Suite's |
 
 Card-less library (deps-only: in `dependencies`, no patch rows of its own): `@khorsheed/dsh-local-agent-dsh-headless` (the provisioned sub-dsh face). It never appears on the inventory page and lives or dies with the family. (Before the family fold there was also the shared tool package `@khorsheed/dsh-local-agent-tool-subagent`; it is retired — the delegation tool implementation moved into the family core's `./tool-factory` export and each provider mounts its own `./tool` composition entry.)
 

@@ -28,7 +28,7 @@ function memberRows(pkgName: string): PatchRow[] {
 const sameRow = (a: PatchRow, b: PatchRow): boolean => a.id === b.id && a.name === b.name
 
 describe('cordis.patch.yml', () => {
-  it('mounts exactly the six members’ canonical rows, verbatim', () => {
+  it('mounts exactly the members’ canonical rows, verbatim', () => {
     const rows = parseTopLevelPatchRows(patch)
     const canonical = FAMILY_MEMBERS.flatMap((member) => memberRows(member))
     expect(rows).toHaveLength(canonical.length)

@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 **Let DSH run a team of the agents on your machine.** Hand work to the local Kimi Code, Codex, Claude Code, or a second, separately running DSH in one sentence: watch it live, stop it midway, open the sub-session and keep talking, and pick up again after DSH restarts. Invite several agents into one session and split the work: @ someone to assign it, the coordinator breaks down the task, members bring evidence, and acceptance is still your call. A stuck member can even ask another session for help. Every agent's credential, models, and resident switch live on one card, and your existing CLI setup is never touched…… Everything local multi-agent work needs, installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="1000" alt="A room in progress: member receipts and run rows in the chat, with the @ member menu open above the composer">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent-hero.png" width="1000" alt="A room in game dev mode: Claude Code coordinates, and typing @ in the composer lists this room's members, recent sessions and other rooms">
 
 ## Install
 
@@ -14,9 +14,9 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-bundle-local-agent
 ```
 
-That installs the 6 members below; restart DSH and the plugin list shows just one new card, 「多Agent协作」 (multi-agent). Each member can still be switched on or off on that card's detail page.
+That installs the 7 members below; restart DSH and the plugin list shows just one new card, 「多Agent协作」 (multi-agent). Each member can still be switched on or off on that card's detail page.
 
-Before you start: install the Kimi, Codex, and Claude Code CLIs yourself; this suite doesn't install them. Then on the Plugins page open the 「本机 Agent 委派」 (Local Agent Delegation) card and enter the endpoint and key for each agent you want. 「本机 DSH 委派」 (Local DSH Delegation) is off by default; turn it on on the same card when you need it.
+Before you start: install the Kimi, Codex, and Claude Code CLIs yourself; this suite doesn't install them. Then on the Plugins page open the 「本机 Agent 委派」 (Local Agent Delegation) card and enter the endpoint and key for each agent you want to use; the plugin detects each CLI's version and whether the endpoint is reachable.
 
 Handing work off and inviting agents into a room happen in a mode that grants them, such as the Dev Suite's "开发模式" (dev mode) (the Gamedev and Video Suite modes include them too). If you mostly write code, installing the Dev Suite `@khorsheed/dsh-dev-suite` is simpler: it already includes this whole family.
 
@@ -30,6 +30,7 @@ Handing work off and inviting agents into a room happen in a mode that grants th
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Hand work to the local Claude Code; thinking and replies stream back, every call's usage recorded |
 | local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Hand subtasks to a second, separately running DSH; off by default, switch it on on the card |
 | room | `@khorsheed/dsh-room` | The room (协作间): turn a session into a small team, @ someone to assign work, you decide acceptance |
+| context-lens | `@khorsheed/dsh-context-lens` | Context Lens: click any turn to see what the model (each member included) received and where tokens and time went |
 
 It also brings `@khorsheed/dsh-local-agent-dsh-headless`, the interface-less DSH behind Local DSH Delegation, which doesn't show up in the list on its own.
 
@@ -37,37 +38,14 @@ It also brings `@khorsheed/dsh-local-agent-dsh-headless`, the interface-less DSH
 
 ### Local agent delegation: Kimi, Codex, Claude Code
 
-Getting the local Codex or Claude Code to help used to mean opening a terminal, pasting things in, and carrying the result back yourself. Now you say "give this to Codex" and it runs on your machine: thinking, tool calls, and changed files appear live in a sub-session; you can stop it midway, or open the sub-session to keep talking and switch model and reasoning effort on the fly. The result comes back to the main session with its real usage and time. Each agent runs in its own separate folder; your existing config and sign-ins are never touched.
+Getting the local Codex or Claude Code to help used to mean opening a terminal, pasting things in, and carrying the result back yourself. Now DSH runs them for you: thinking, tool calls, and changed files appear live in a sub-session; you can stop it midway, or open the sub-session to keep talking and switch model and reasoning effort on the fly. The result comes back to the main session with its real usage and time. Each agent runs in its own separate folder; your existing config and sign-ins are never touched.
 
 <details open>
-<summary>Screenshots (4)</summary>
+<summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="840" alt="A sub-session handed to a local CLI: output appearing live, with the member composer at the bottom for continuing and switching models">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="840" alt="The Kimi section: auth status, endpoint and API key, available models, resident-mode switch">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="840" alt="The Codex section: authentication, available models, and the resident-mode switch">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="840" alt="The Claude Code section: authentication, available models, and the resident-mode switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="840" alt="The Local Agent Delegation card on the Plugins page: the Kimi section with sign-in status, endpoint, API key, available models and the resident-mode switch, with Codex and Claude Code folded below">
 
 </details>
-
-### local-agent: one card for every local agent
-
-The 「本机 Agent 委派」 card on the Plugins page has one section per agent; the status dot in each header shows whether its credential is set, and an agent without its CLI is marked "CLI not detected". Expand a section to enter the endpoint and key, press "Verify endpoint & list models" to check it connects, tick and drag models under "Available models" (the top one is the default), and decide whether to turn on "Resident mode (live)". Hand-off records stay on your machine, so after DSH restarts an unfinished sub-session can still continue.
-
-<details open>
-<summary>Screenshots (2)</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="840" alt="The Local Agent Delegation card: one section per agent, a status dot showing whether its credential is set">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent.png" width="840" alt="The detail page of the 多Agent协作 card in the plugin list: every member on its own row, each with its own switch">
-
-</details>
-
-### local-agent-dsh: hand it to another DSH
-
-Some subtasks deserve a clean DSH: none of the current session's context, its own session history, and no way to disturb the instance you're using. Turn on "DeepSeek delegation" in the DSH section of the card, and the agent can hand such subtasks to a separate DSH started on your machine. It uses the model and key you already picked, with no separate sign-in; the result comes back, and you can keep working in the same sub-session afterwards.
 
 ### room: the multi-agent room
 
@@ -82,9 +60,22 @@ Getting several agents onto one job used to mean copying and pasting between win
 
 </details>
 
+### context-lens: Context Lens
+
+With several agents on one job, the hard part is seeing what each one is actually doing. Click the small icon under any turn's reply and the right sidebar opens that turn's breakdown: what the model received, how much hit the cache, where the tokens went. Switch to the time view and each agent gets its own lane, sub-agents listed separately, so you can see at a glance who is waiting and whose tools are slow.
+
+<details open>
+<summary>Screenshots (2)</summary>
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-request.png" width="840" alt="The Context Lens request page in the right sidebar: switch turns at the top, then cache hits, the prefix diff, and the system prompt, tools, history and new parts">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-timing.png" width="840" alt="The time page: total, model, tool execution and gap tiles, then a lane per agent and a tool table sorted by execution time">
+
+</details>
+
 ## Make it yours
 
-- **Switch off one agent**: turn off its row on the 多Agent协作 card's detail page and the rest keep working; `local-agent` is the core all four share, so turning it off stops all four.
+- **Use just one agent**: configure only the one you want on the 「本机 Agent 委派」 card (Codex, say), then in any session say "bring Codex in to review the code with me".
 - **Uninstall**: removing this suite removes the whole family; to keep some agents, use the detail-page switches instead.
 - **Add more**: any `@khorsheed/dsh-*` plugin installs the same way, by its package name.
 
@@ -93,7 +84,7 @@ Getting several agents onto one job used to mean copying and pasting between win
 | Suite | Package | What it's for |
 |---|---|---|
 | [Basic Essentials](https://github.com/Khorsheed/dsh-basic) | `@khorsheed/dsh-basic` | Edit and withdraw messages, browse files, background-job pills, mobile…… the layer everyone should have |
-| [Dev Suite](https://github.com/Khorsheed/dsh-dev) | `@khorsheed/dsh-dev-suite` | Everything in this suite, plus live worktrees, quick decisions, the restart guard, and Context Lens; comes with "开发模式" (dev mode) |
+| [Dev Suite](https://github.com/Khorsheed/dsh-dev) | `@khorsheed/dsh-dev-suite` | Everything in this suite, plus live worktrees, quick decisions, and the restart guard; comes with "开发模式" (dev mode) |
 | [Gamedev Suite](https://github.com/Khorsheed/dsh-gamedev) | `@khorsheed/dsh-gamedev-suite` | Make small games with the agent, local agents included; comes with "游戏开发模式" (game dev mode) |
 | [Video Suite](https://github.com/Khorsheed/dsh-video) | `@khorsheed/dsh-video-suite` | Per-speaker mixes and an editor where deleting words deletes the audio, local agents included; comes with "剪辑模式" (editing mode) |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | — | The main plugin repo: a map of every plugin and the developer docs |

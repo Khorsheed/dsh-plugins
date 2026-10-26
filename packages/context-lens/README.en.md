@@ -30,7 +30,7 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-dev-suite
 ```
 
-The context lens comes with the Dev Suite. Then open any session, have one exchange, and click the icon under that answer.
+The context lens comes with the Dev Suite, and with 「多Agent协作」 (multi-agent, `@khorsheed/dsh-bundle-local-agent`) too. Then open any session, have one exchange, and click the icon under that answer.
 
 ## Known limitations
 

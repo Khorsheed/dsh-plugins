@@ -28,6 +28,7 @@
 | `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code` (+ override `tool-subagent-claude-code`) | Claude Code harness;`subagent_claude_code` 委派工具是包内 `./tool` 组合入口,由预设点名授予 |
 | `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | dsh harness 控制器(Settings → 本地 Agent 开关,默认关;ON 时动态挂载 `subagent_dsh`) |
 | `@khorsheed/dsh-room` | `room` | 协作间:多成员房间,成员取自上面的本地 agent 与 dsh 原生子成员;模型面工具是包内 `./tool` 组合入口,由预设点名授予 |
+| `@khorsheed/dsh-context-lens` | `context-lens` | 上下文透镜:逐轮看请求构成与耗时,子 agent 单列;行与开发套件里的同一行逐字一致 |
 
 无卡库(deps-only,进 `dependencies` 不进 patch 行):`@khorsheed/dsh-local-agent-dsh-headless`(子 dsh 被 provision 面)。它在清单页不出现,随家族存亡。(家族折叠前还有一个共享工具包 `@khorsheed/dsh-local-agent-tool-subagent`;已退役——委派工具实现收进家族核的 `./tool-factory` 导出,各 provider 以自己的 `./tool` 组合入口挂载。)
 

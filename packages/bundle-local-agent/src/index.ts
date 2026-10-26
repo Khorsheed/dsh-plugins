@@ -16,6 +16,7 @@ export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-local-agent-claude-code',
   '@khorsheed/dsh-local-agent-dsh',
   '@khorsheed/dsh-room',
+  '@khorsheed/dsh-context-lens',
 ] as const
 
 /**

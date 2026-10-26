@@ -222,6 +222,9 @@ importers:
 
   packages/bundle-local-agent:
     dependencies:
+      '@khorsheed/dsh-context-lens':
+        specifier: workspace:*
+        version: link:../context-lens
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*
         version: link:../local-agent

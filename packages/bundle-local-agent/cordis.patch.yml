@@ -1,6 +1,7 @@
 # @khorsheed/dsh-bundle-local-agent bundle patch: the multi-agent family as one
 # bundle card — the local-agent core row, the four delegation provider rows and
-# the room (协作间, whose members are these local agents),
+# the room (协作间, whose members are these local agents) and Context Lens
+# (see what each member received and where its time went),
 # re-mounted VERBATIM from each member package's own cordis.patch.yml (the
 # canonical rows; check-plugin-independence's `family` sanction pins this file
 # to exactly that union — no invented ids, no foreign rows).
@@ -61,3 +62,8 @@
     # native dsh sub-members (probes localAgent, degrades without it).
     - id: room
       name: '@khorsheed/dsh-room'
+
+    # 上下文透镜: per-turn request and timing breakdown, sub-agents included —
+    # how you see what each member is actually doing.
+    - id: context-lens
+      name: '@khorsheed/dsh-context-lens'
