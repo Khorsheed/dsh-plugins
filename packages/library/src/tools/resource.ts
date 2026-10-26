@@ -25,7 +25,7 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
     name: 'library_textbook',
     description:
       'Shelve, correct, reorder or remove a textbook (anything with a contents) — in study order. origin: learner (their own) | picked (a book or course you chose; its path takes only the chapters the goal needs) | authored (you write it: one chapter per lesson, your 讲义 are its text). '
-      + 'A real book: verify the edition and contents online and cite the page (tocSource { by: "web", url }); never ask for an upload. A correction (resourceId) sends only what changes. A web page a station cites is no textbook — the path names its url.',
+      + 'A real book: verify the edition and contents online and cite the page (tocSource { by: "web", url }) — search the title with its author or ISBN, narrowed with site: to catalog or publisher pages (site:book.douban.com, site:worldcat.org, the publisher\'s domain), one query per edition to tell apart, never a " in a query; never ask for an upload. A correction (resourceId) sends only what changes. A web page a station cites is no textbook — the path names its url.',
     parameters: {
       ...scopeParams,
       op: { type: 'string', required: true, description: 'add | update | move | remove.' },
