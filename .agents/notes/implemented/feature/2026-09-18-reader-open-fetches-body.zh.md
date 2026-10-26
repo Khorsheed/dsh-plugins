@@ -44,7 +44,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 现在跑 198 个测试（`ReaderPane.client.spec.tsx` 新增 3 个）：
+`packages/reader` 现在跑 198 个测试（`ReaderPane.client.spec.tsx` 新增 3 个）：
 
 - 打开一条只有 link、没有 description 的 feed 条目时，`fetchEntryBody` 恰好被调用一次且参数就是这个 link，并把返回的内容渲染出来（原先的空白页）。
 - 请求在飞的时候，「正在抓取正文…」那一行在屏幕上；正文到达后它消失。

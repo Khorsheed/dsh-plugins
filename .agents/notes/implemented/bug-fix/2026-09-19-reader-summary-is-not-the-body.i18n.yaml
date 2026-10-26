@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-19-reader-summary-is-not-the-body.md
-.agents/notes/implemented/bug-fix/2026-09-19-reader-summary-is-not-the-body.md: bffbe8ff64ace221ed43cee0d277477723c5b268
-.agents/notes/implemented/bug-fix/2026-09-19-reader-summary-is-not-the-body.zh.md: 883226b31d19d72046fdd4f39f29b4c4b5f43355
+.agents/notes/implemented/bug-fix/2026-09-19-reader-summary-is-not-the-body.md: 3d1183d6496f877c467dd3aa79a8c4b913a1164d
+.agents/notes/implemented/bug-fix/2026-09-19-reader-summary-is-not-the-body.zh.md: dabf7d09359af2d4a6621f88d32bc08547a6ea96

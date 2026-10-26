@@ -8,7 +8,7 @@ Status: implemented
 
 ## Decision
 
-每份 README 按已发布 README 的统一写法（`packages/message-tools/README.md`）：H1 = npm 包名、语言切换行、一句话价值、一段场景（在一套题上对比本机 agent harness）、截图、特性 bullet、安装（先给 `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite`，再给单独安装）、Compatibility、已知限制、折叠的实现原理（链到深度文档）、开发页脚。每种语言约 95 行。
+每份 README 按已发布 README 的统一写法（`packages/client-message-tools/README.md`）：H1 = npm 包名、语言切换行、一句话价值、一段场景（在一套题上对比本机 agent harness）、截图、特性 bullet、安装（先给 `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite`，再给单独安装）、Compatibility、已知限制、折叠的实现原理（链到深度文档）、开发页脚。每种语言约 95 行。
 
 深度内容原样移出（只去掉标题里的任务编号、调整链接层级），放进带各自 i18n sidecar 的双语对：
 

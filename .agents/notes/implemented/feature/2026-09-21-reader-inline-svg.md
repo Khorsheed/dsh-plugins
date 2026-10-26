@@ -32,4 +32,4 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` (+3): `tests/extract-article.spec.ts` drives `tests/fixtures/capture-svg.html` (a capture-shaped figure: gradients, clip path, symbol `<use>`, tspans, inlined styles) — the chart survives with internal fragment refs intact; `script`/`foreignObject`/`onload`/`animate`/external-`use`/external-`url()` are all pinned GONE (the external-style rect keeps its other attributes); `scriptFigures` counts only the genuinely empty shell; the feed-body path applies the same subset and the inline summary drops chart text.
+`packages/reader` (+3): `tests/extract-article.spec.ts` drives `tests/fixtures/capture-svg.html` (a capture-shaped figure: gradients, clip path, symbol `<use>`, tspans, inlined styles) — the chart survives with internal fragment refs intact; `script`/`foreignObject`/`onload`/`animate`/external-`use`/external-`url()` are all pinned GONE (the external-style rect keeps its other attributes); `scriptFigures` counts only the genuinely empty shell; the feed-body path applies the same subset and the inline summary drops chart text.

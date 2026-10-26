@@ -23,6 +23,6 @@ Host 0.2.1-alpha.3 removed `renderMessageImages` from `ChatNodeOwnerProps`: the 
 ## Consequences
 
 - Both views render the official gallery on host ≥0.2.1-alpha.3 and keep the legacy gallery on earlier in-range hosts; minHost (`0.1.5-rc.1`) and the engines range are unchanged.
-- `RenderMessageImagesShim`/`RenderMessageImagesShimProp` and every `TODO(host-021 batch-3)` marker are gone; the two client specs now cover the factory call shape, legacy preference, and the absent-factory omission arm. `pnpm --filter ./packages/message-tools run build && pnpm --filter ./packages/message-tools test` is green (229 tests).
+- `RenderMessageImagesShim`/`RenderMessageImagesShimProp` and every `TODO(host-021 batch-3)` marker are gone; the two client specs now cover the factory call shape, legacy preference, and the absent-factory omission arm. `pnpm --filter ./packages/client-message-tools run build && pnpm --filter ./packages/client-message-tools test` is green (229 tests).
 - No new upstream seam was needed: the existing factory seat plus the standing `loadImage` owner prop cover a custom node renderer's image needs.
 - Both READMEs describe the formal consumption instead of the batch-2 degrade (pairing sidecar re-recorded).

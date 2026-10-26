@@ -6,7 +6,7 @@ English | [中文](2026-08-19-message-tools-withdraw-interrupted-assistant.zh.md
 
 ## Problem
 
-「测试撤回」会话以及「统计今天12点前后token用量与价格」会话暴露了 `packages/message-tools` 中的一组相关缺陷：
+「测试撤回」会话以及「统计今天12点前后token用量与价格」会话暴露了 `packages/client-message-tools` 中的一组相关缺陷：
 
 1. **撤回没有取消运行中的轮次。** 编辑路径已经会在计算 replacement 区间前取消并等待运行中轮次落定，但撤回路径没有。若用户在助手仍在流式输出时撤回，replacement 会先于剩余的 assistant/chunk 与收尾写入落盘，导致实时助手内容出现在被撤回区间之外。
 2. **恢复无法还原中断的助手内容。** 在最终完成前被中断的轮次可能永远不会产生 `assistant/message` surface 事件；其可见内容只存在于 `assistant/chunk` 行中。撤回 replacement 的 `sourceEventSeqs` 只包含被遮蔽的 *surface* 节点，因此 `planRestore` 永远看不到这些 chunk。复现结果是：撤回后部分助手行仍可见，硬刷新后临时/实时内容消失，恢复只能把用户消息带回来。

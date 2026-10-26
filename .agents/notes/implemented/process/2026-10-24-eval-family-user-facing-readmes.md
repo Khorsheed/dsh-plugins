@@ -8,7 +8,7 @@ The READMEs of `@khorsheed/dsh-eval` (≈635 lines), `@khorsheed/dsh-datasets` (
 
 ## Decision
 
-Each README follows the house style of the published READMEs (`packages/message-tools/README.md`): H1 = the npm name, a language toggle, one plain sentence of value, a scenario paragraph (comparing local agent harnesses on a question set), screenshots, 特性 / Features bullets, 安装 / Install leading with `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite` and then the standalone command, Compatibility, 已知限制 / Known limitations, a collapsed 实现原理 / How it works with links to the deep docs, and the development footer. Each lands at roughly 95 lines per language.
+Each README follows the house style of the published READMEs (`packages/client-message-tools/README.md`): H1 = the npm name, a language toggle, one plain sentence of value, a scenario paragraph (comparing local agent harnesses on a question set), screenshots, 特性 / Features bullets, 安装 / Install leading with `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite` and then the standalone command, Compatibility, 已知限制 / Known limitations, a collapsed 实现原理 / How it works with links to the deep docs, and the development footer. Each lands at roughly 95 lines per language.
 
 The deep content moved, verbatim apart from heading task codes and link depth, into bilingual pairs with their own i18n sidecars:
 

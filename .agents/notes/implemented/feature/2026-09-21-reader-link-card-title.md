@@ -31,7 +31,7 @@ The extraction now captures the article's identity, and the card prefers it — 
 
 ## Testing
 
-`packages/dsh-reader` (+13; the pane's three upgrade cases were additionally verified red by stashing the client diff — they fail without it, while the feed-guard case passes both ways by design):
+`packages/reader` (+13; the pane's three upgrade cases were additionally verified red by stashing the client diff — they fail without it, while the feed-guard case passes both ways by design):
 
 - `tests/extract-article.spec.ts` (+4): h1 beats document title, document-title fallback (read pre-strip), excerpt truncation at 280, absence reported as absent.
 - `tests/host-pure.spec.ts` (+2): the normalizer carries/caps/trims the meta and never sweeps a meta-only annotation; body-budget eviction keeps the meta.

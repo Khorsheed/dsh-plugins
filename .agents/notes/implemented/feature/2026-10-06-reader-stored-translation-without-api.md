@@ -30,7 +30,7 @@ The inspiration space translates article bodies through the browser's own Transl
 
 ## Testing
 
-`packages/dsh-reader` runs 461 tests (3 new, `tests/ReaderPane.client.spec.tsx`, "the translation memory survives a reload"):
+`packages/reader` runs 461 tests (3 new, `tests/ReaderPane.client.spec.tsx`, "the translation memory survives a reload"):
 
 - no Translator API + a stored map matching the body → the globe appears, the translation paints, the menu shows the stored label and no retranslate item, original-only switches back, and reading persists 0 learned / 3 recalled;
 - no Translator API + nothing stored → no globe;

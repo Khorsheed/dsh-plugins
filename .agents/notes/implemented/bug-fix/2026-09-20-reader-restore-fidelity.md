@@ -33,7 +33,7 @@ Three defects in the pane's restore machinery, all of the same kind: the page me
 
 ## Testing
 
-`packages/dsh-reader` runs 282 tests (+8 over the lazy-image line, all red against the pre-fix code except the backward-compatibility case, which is green on both sides by design):
+`packages/reader` runs 282 tests (+8 over the lazy-image line, all red against the pre-fix code except the backward-compatibility case, which is green on both sides by design):
 
 - `tests/ReaderPane.client.spec.tsx`: the wall's switch and card texts survive a remount with no click; two race cases (a late `getEntryBody` answer, a late owed-fetch answer) never land under the newer entry's title; the translation case uses a layout stub whose block height follows text length, so the re-anchored position after translation is the same fraction of the new text; the recording case now asserts the anchor's text fields.
 - `tests/reading-position.spec.ts` (new): the pure mapping — pixel passthrough for old anchors, exact Range resolution for unchanged text, the proportional fallback for changed text or missing layout.

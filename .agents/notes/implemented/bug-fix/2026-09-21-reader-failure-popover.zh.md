@@ -29,4 +29,4 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader`（净 +1，重写部分先红过）：`tests/ReaderPane.client.spec.tsx`——卡片上读不到原因、点一下出现；墙类浮层在浏览器打开且绝不重试；网络类浮层的「重新抓取」会重试；终局浮层只有原因没有动作；外部点击关闭。
+`packages/reader`（净 +1，重写部分先红过）：`tests/ReaderPane.client.spec.tsx`——卡片上读不到原因、点一下出现；墙类浮层在浏览器打开且绝不重试；网络类浮层的「重新抓取」会重试；终局浮层只有原因没有动作；外部点击关闭。

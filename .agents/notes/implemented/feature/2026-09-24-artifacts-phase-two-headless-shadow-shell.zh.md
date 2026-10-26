@@ -31,7 +31,7 @@ document tab 作为默认渲染器，并退役了自建 FilePreviewTab 内容页
 三招，全部只落在 rc.1 臂；0.1.5 臂不动。
 
 **A. 共享内核长出显式 `headless` 模式**（opt-in prop，永不探测）：
-`packages/ui-content-preview` 的 ContentPane 只压制宿主框架已携带的 chrome——
+`packages/client-ui-content-preview` 的 ContentPane 只压制宿主框架已携带的 chrome——
 标题/路径栏与视图切换——渲染内容区（外加截断提示与渲染超时提示）。两个手势
 **保留**，因为 rc.1 官方 document tab 对两者都没有等价物：内容搜索行（已核实：
 ui-sidebar-documentpreview 的 rc.1 源码与产物包里都没有任何搜索输入框——保留是

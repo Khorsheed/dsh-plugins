@@ -24,7 +24,7 @@
 
 ## 依赖：ui-panel-kit
 
-共享组件在 `@khorsheed/dsh-client-ui-panel-kit`（`packages/ui-panel-kit`）。它是**源码层共享库**：不是插件，不注册任何东西，构建时被内联进你自己的 `lib/client.js`，运行时插件之间没有依赖。
+共享组件在 `@khorsheed/dsh-client-ui-panel-kit`（`packages/client-ui-panel-kit`）。它是**源码层共享库**：不是插件，不注册任何东西，构建时被内联进你自己的 `lib/client.js`，运行时插件之间没有依赖。
 
 接入三步：
 
@@ -180,7 +180,7 @@ pnpm check:panels --package packages/<你的包>
 给你的面板写一个只在仓库内用的样例页（内存样例数据，不连生产实例），用 Playwright 驱动本机 Chrome 截图。现成的样例可以照抄：
 
 - `packages/mobile/examples/panels`（`pnpm exec tsx examples/panels/serve.ts`，端口 8875）：真实的面板导航、文件列表、工作树。
-- `packages/dsh-reader/examples/compact`（端口 8876）：灵感空间列表与详情，支持 `?body=<url>` 回放一份本地正文。
+- `packages/reader/examples/compact`（端口 8876）：灵感空间列表与详情，支持 `?body=<url>` 回放一份本地正文。
 
 两个要求，缺一个截出来的就不是手机上的样子：
 

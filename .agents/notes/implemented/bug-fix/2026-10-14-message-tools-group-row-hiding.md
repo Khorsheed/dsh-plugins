@@ -8,7 +8,7 @@ After editing (or withdrawing) a message on host ≥ 0.1.7-alpha.1, the pre-edit
 
 ## Decision
 
-The rule set now covers the grouped rendering's two extra row shapes (`hiddenGroupFlowKeys` in `packages/message-tools/src/client/dom-hider.ts`):
+The rule set now covers the grouped rendering's two extra row shapes (`hiddenGroupFlowKeys` in `packages/client-message-tools/src/client/dom-hider.ts`):
 
 - **A group container hides when every member's node key is hidden.** Membership is read from the typed public group contract (`uiConversation.binding(sessionId).snapshot.getSnapshot().views.grouped('chat')` — entries plus per-group sources), not from the DOM. A group straddling a span boundary keeps its header for the members that remain visible.
 - **A hidden member's composite groupPart row key (`["<nodeKey>","<part>"]`, e.g. the reasoning pane) is always added**, whether or not its group hides as a whole — ChatNodeSeat stamps part rows with that composite key, which the plain node-key rule never reaches. The `'response'` part needs no rule: it reuses the plain node key.
@@ -25,4 +25,4 @@ The grouped reader is resolved per apply pass and guarded twice — `views.group
 
 - Edit and withdraw spans hide the「已调用工具」fold headers again on host ≥ 0.1.7-alpha.1; pre-group hosts (minHost 0.1.5-rc.1) are byte-identical in behavior.
 - Partially hidden groups keep their header; the fold title's summary may still count hidden members — cosmetic, and the same trade the host's own folding makes.
-- Tests: `packages/message-tools/tests/dom-hider.client.spec.ts` covers the pure fold (full/partial/empty/missing groups, composite part keys) and the installed hider (group keys in the written rules, the pre-group degrade, a throwing snapshot read).
+- Tests: `packages/client-message-tools/tests/dom-hider.client.spec.ts` covers the pure fold (full/partial/empty/missing groups, composite part keys) and the installed hider (group keys in the written rules, the pre-group degrade, a throwing snapshot read).

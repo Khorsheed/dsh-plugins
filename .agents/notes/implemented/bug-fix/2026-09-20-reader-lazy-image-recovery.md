@@ -34,4 +34,4 @@ All in `client/extract-article.ts`:
 
 ## Testing
 
-`packages/dsh-reader` runs 271 tests (+10): each recovery path has its own case in `tests/extract-article.spec.ts` (lazy attributes, the `data:` placeholder fall-through, srcset width and density descriptors, the data-URI comma, picture source and fallback, noscript recovery, the noscript-that-is-not-an-image, referrerpolicy on the emitted tag), plus the regression that the script-drawn-figure notice is unchanged. The two real-page fixtures still extract the same bodies.
+`packages/reader` runs 271 tests (+10): each recovery path has its own case in `tests/extract-article.spec.ts` (lazy attributes, the `data:` placeholder fall-through, srcset width and density descriptors, the data-URI comma, picture source and fallback, noscript recovery, the noscript-that-is-not-an-image, referrerpolicy on the emitted tag), plus the regression that the script-drawn-figure notice is unchanged. The two real-page fixtures still extract the same bodies.

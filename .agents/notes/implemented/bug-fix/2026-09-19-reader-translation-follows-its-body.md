@@ -34,6 +34,6 @@ Both are invisible in the "switch panel and come back" case: a fresh mount reads
 
 ## Testing
 
-`packages/dsh-reader` runs 254 tests (1 new):
+`packages/reader` runs 254 tests (1 new):
 
 - `tests/ReaderPane.client.spec.tsx`: an article is opened and translated; its body is then replaced under the reader with no gesture at all (the store action a re-fetch uses); the article must show the new text TRANSLATED. Before the fix the restore had already spent its one chance (`restoredTranslationRef`) and read a stale copy, so the assertion failed with the raw English sentence.

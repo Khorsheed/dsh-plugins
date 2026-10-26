@@ -40,7 +40,7 @@ describe('scan (real tree)', () => {
 
   it('every package exporting ./remote appears', () => {
     const pkgs = new Set(scan().map((r) => r.pkg))
-    for (const expected of ['capability-catalog', 'datasets', 'file-preview', 'local-agent', 'local-files', 'message-tools', 'room', 'worktrees']) {
+    for (const expected of ['capability-catalog', 'datasets', 'file-preview', 'local-agent', 'local-files', 'client-message-tools', 'room', 'worktrees']) {
       expect(pkgs, `${expected} has a ./remote export but no extracted namespace`).toContain(expected)
     }
   })

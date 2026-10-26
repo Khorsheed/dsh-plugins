@@ -14,13 +14,13 @@ Two defects surfaced on the 3080 production instance after the message-tools mig
 
 ## Decision
 
-**The settle wait keys on the cancelled turn's teardown fully landing, not the `running` flip** (`packages/message-tools/src/client/edit-in-place.ts`):
+**The settle wait keys on the cancelled turn's teardown fully landing, not the `running` flip** (`packages/client-message-tools/src/client/edit-in-place.ts`):
 
 - `turnSettled(snapshot)` is true only when `running` is false AND `runningCalls` is empty AND the latest turn in `chat.timeline.turnOrder` has a `closed` timeline location — the `turn/end` event is written after every tool result, so a closed turn proves the whole teardown is durable. An empty turn order means the running turn's `turn/start` has not streamed in yet: not settled. Only the *latest* turn must be closed; a historically unclosed turn cannot deadlock the wait.
 - `waitForTurnSettled(read, options)` polls that predicate with a 5s bound (100ms interval, injectable clock/sleep for tests) and REJECTS on timeout. A session binding that vanished cannot prove the settle and is rejected the same way. `editInPlace` never edits after a failed or timed-out settle — the rejection surfaces as the existing「编辑失败」inline error.
 - The slot wiring (`src/client/index.ts`) now reads the predicate off the live session snapshot instead of the old `running`-only loop.
 
-**The hider probe retries within a bounded window instead of deciding on one frame** (`packages/message-tools/src/client/dom-hider.ts`):
+**The hider probe retries within a bounded window instead of deciding on one frame** (`packages/client-message-tools/src/client/dom-hider.ts`):
 
 - A missed first probe starts a retry: a `MutationObserver` on `document.body` (childList subtree plus the `data-chat-flow-key` attribute filter) waits for the first chat row, with a deadline timer (default 10s, injectable via `installDomHider(ctx, { probeRetryWindowMs })`).
 - Rows appearing inside the window pass the probe and apply the pending rules; only a window that expires with rows still absent disables the hider, with the same single `console.warn` and the same never-throw discipline. The observer OUTLIVES the disable: a row appearing later (the production repro sat on the trace tab past the 10s window, then the user switched back to the chat tab) proves the miss was mounting timing, and hiding reactivates instead of leaking the spans for the rest of the page lifetime.

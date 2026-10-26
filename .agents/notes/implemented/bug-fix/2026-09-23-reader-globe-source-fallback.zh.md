@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-详情页的翻译地球仪会在一些文章上消失——在华人团队的 arXiv 论文上稳定复现。地球的显隐门（`packages/dsh-reader/src/client/ReaderPane.tsx` 的 `translationOffered`）在两种情况下藏起控件：落定的源语言是目标语言（`zh`），或可用性探测回答 `unavailable`。而源语言此前由浏览器 LanguageDetector 对去标签正文的前 600 字符样本判定（`src/client/translate.ts` 的 `detectSourceLanguage`）。arXiv 链接会被升级为 LaTeXML 的 HTML 版（`src/arxiv.ts`），其正文开头固定是标题加完整作者块——一篇约 200 个拼音名字的论文，这 600 字符样本是拼音而非散文，探测器可能高置信地回答 `zh`（或 `vi` 等本机不支持的语言）。回答 `zh` 会直接触发门上的源语言条件；其他错误答案则拿一个本机没有的语言对去探测，落定 `unavailable`。两条路都把地球藏在一篇本来能翻的正文上。
+详情页的翻译地球仪会在一些文章上消失——在华人团队的 arXiv 论文上稳定复现。地球的显隐门（`packages/reader/src/client/ReaderPane.tsx` 的 `translationOffered`）在两种情况下藏起控件：落定的源语言是目标语言（`zh`），或可用性探测回答 `unavailable`。而源语言此前由浏览器 LanguageDetector 对去标签正文的前 600 字符样本判定（`src/client/translate.ts` 的 `detectSourceLanguage`）。arXiv 链接会被升级为 LaTeXML 的 HTML 版（`src/arxiv.ts`），其正文开头固定是标题加完整作者块——一篇约 200 个拼音名字的论文，这 600 字符样本是拼音而非散文，探测器可能高置信地回答 `zh`（或 `vi` 等本机不支持的语言）。回答 `zh` 会直接触发门上的源语言条件；其他错误答案则拿一个本机没有的语言对去探测，落定 `unavailable`。两条路都把地球藏在一篇本来能翻的正文上。
 
 有两个加重因素。探测只问单一源语言，而 `startTranslation` 建 session 时早就走 `[检测值, 'en']` 候选链——门比它把守的翻译器更严格。另外 `translationSource` 和 `translateAvailability` 跨条目存续，上一篇文章的答案会在切换瞬间短暂决定下一篇的控件。
 
@@ -32,7 +32,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 现有 424 个测试。面板规格新增了可编程的 `LanguageDetector` 全局与两个用例：对拼音作者名单高置信回答 `zh` 时地球保留、session 以 `en` 建立；检测出的源语言在本机没有语言对（`vi`）时回退到脚本猜测的语言对。两个用例在修复前的代码上均失败（通过把 `ReaderPane.tsx` 还原到 HEAD 做过变异验证）。
+`packages/reader` 现有 424 个测试。面板规格新增了可编程的 `LanguageDetector` 全局与两个用例：对拼音作者名单高置信回答 `zh` 时地球保留、session 以 `en` 建立；检测出的源语言在本机没有语言对（`vi`）时回退到脚本猜测的语言对。两个用例在修复前的代码上均失败（通过把 `ReaderPane.tsx` 还原到 HEAD 做过变异验证）。
 
 ## Related
 

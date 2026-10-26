@@ -182,11 +182,11 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
   // 'source-plane-library'. Listed here because the checker pairs the
   // manifest metadata with this historical list; there is nothing for any
   // patch to mount on its behalf.
-  'ui-content-preview',
+  'client-ui-content-preview',
   // ui-panel-kit is the same shape: the source-plane panel kit (type tokens
   // plus the shared compact controls), inlined into each consuming plugin's
   // own client bundle (proposal panel-responsive-spec, 2026-10-06).
-  'ui-panel-kit',
+  'client-ui-panel-kit',
 ]
 
 /**
@@ -213,17 +213,17 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // covers only the family's DEPS-ONLY library it also installs (card-less,
   // no patch rows of its own beyond what the members' canonical rows name).
   'bundle-local-agent': ['@khorsheed/dsh-local-agent-dsh-headless'],
-  // dev (the dsh-dev mode bundle) installs the same deps-only library for the
+  // dev-suite (the dsh-dev mode bundle) installs the same deps-only library for the
   // same reason — its local-agent-dsh member provisions the sub-dsh through it.
-  'dev': ['@khorsheed/dsh-local-agent-dsh-headless'],
-  // bundle-eval (the dsh-eval mode bundle) takes the local-agent family along
+  'dev-suite': ['@khorsheed/dsh-local-agent-dsh-headless'],
+  // eval-suite (the dsh-eval mode bundle) takes the local-agent family along
   // for eval's service-level delegation (the run / provision verbs go through
   // the localAgent facade) — the same deps-only library rides with it.
-  'bundle-eval': ['@khorsheed/dsh-local-agent-dsh-headless'],
+  'eval-suite': ['@khorsheed/dsh-local-agent-dsh-headless'],
   // gamedev / video (mode bundles) carry the local-agent family and the room
   // since 2026-10-24 — the same deps-only library rides with them.
-  'gamedev': ['@khorsheed/dsh-local-agent-dsh-headless'],
-  'video': ['@khorsheed/dsh-local-agent-dsh-headless'],
+  'gamedev-suite': ['@khorsheed/dsh-local-agent-dsh-headless'],
+  'video-suite': ['@khorsheed/dsh-local-agent-dsh-headless'],
   // The worktrees and room tool rows folded back into their core packages
   // (worktrees 0.3.0, room 0.2.0) as the `./tool` composition entry (the
   // canvas ./agent pattern) — no cross-package edge remains. Each core used
@@ -258,11 +258,11 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // ui-content-preview → ui-panel-kit: one source-plane library reading
   // another (the pane's title bar and tab row); both are inlined into each
   // consuming plugin's bundle, so nothing is installed at runtime.
-  'ui-content-preview': ['@khorsheed/dsh-client-ui-panel-kit'],
-  // dsh-reader → ui-panel-kit: the inspiration space's compact header, chip
+  'client-ui-content-preview': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // reader → client-ui-panel-kit: the inspiration space's compact header, chip
   // row and panel root (panel-responsive-spec P2) — the same inlined,
   // zero-runtime source-plane edge as the file surfaces above.
-  'dsh-reader': ['@khorsheed/dsh-client-ui-panel-kit'],
+  'reader': ['@khorsheed/dsh-client-ui-panel-kit'],
   // canvas-novel → ui-panel-kit: the chapter book's compact header and the
   // story view's tabs (panel-responsive-spec P3) — the same inlined edge.
   'canvas-novel': ['@khorsheed/dsh-client-ui-panel-kit'],
@@ -1233,7 +1233,7 @@ function scanCrossPackage(pkgs: Pkg[]): { findings: Finding[]; ledger: string[] 
   }
 
   // Cross-bundle row parity: a row id shared by several bundle patches must
-  // carry the same YAML item content in every one (dev / bundle-eval /
+  // carry the same YAML item content in every one (dev-suite / eval-suite /
   // bundle-local-agent all re-mount the local-agent family rows; dev and
   // bundle-local-agent share the room row). Compared as YAML
   // content — comment and blank lines dropped, scalar quoting normalized (the

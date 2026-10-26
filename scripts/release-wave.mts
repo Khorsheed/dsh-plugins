@@ -155,10 +155,12 @@ export function bumpVersion(version: string, kind: 'patch' | 'minor'): string {
 }
 
 /**
- * Tag for one published package: `<dir>-v<target>`. The doc rule 「包名去掉
- * @khorsheed/dsh- 前缀」 and the dir name agree everywhere except the renamed
- * client packages (message-tools, session-title-edit) and dsh-reader — and
- * every historical tag there follows the DIRECTORY name, so the dir wins.
+ * Tag for one published package: `<dir>-v<target>`. Since 2026-10-26 every
+ * directory equals the npm name without `@khorsheed/dsh-`, so dir and package
+ * agree. The three renamed packages with release history (message-tools →
+ * client-message-tools, session-title-edit → client-session-title-edit,
+ * dsh-reader → reader) had their historical tags duplicated under the new
+ * directory name, so "changes since the last tag" keeps working.
  */
 export function tagFor(dir: string, target: string): string {
   return `${dir}-v${target}`

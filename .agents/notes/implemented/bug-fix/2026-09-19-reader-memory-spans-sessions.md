@@ -33,7 +33,7 @@ Worth separating, because the report said "no content cache" too: **the article 
 
 ## Testing
 
-`packages/dsh-reader` runs 253 tests (the two per-session cases are gone; one cross-session case is new):
+`packages/reader` runs 253 tests (the two per-session cases are gone; one cross-session case is new):
 
 - `tests/ReaderPane.client.spec.tsx` (+1): a pane mounted for `session-a` opens an English article and turns the globe on; the pane unmounts and a pane for `session-b` mounts over the same page — the article is already open and the translated text is already there, with neither the card nor the globe clicked.
 - `tests/session.spec.ts`: the snapshot's merge semantics, the reading position, the translation record (including "original" forgetting it) and the pair-keyed translator cache — now with no session argument anywhere.

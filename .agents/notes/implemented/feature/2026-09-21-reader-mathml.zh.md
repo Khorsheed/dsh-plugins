@@ -34,4 +34,4 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader`（+5，每个都先对着改动前的提取器红过）：`tests/extract-article.spec.ts` 驱动一个真实形状的 arXiv fixture（`tests/fixtures/arxiv-math.html`，LaTeXML 风格）——安全子集带 `alttext`/`display` 存活；TeX `<annotation>` 剥属性后存活；带 HTML 载荷的 `annotation-xml`、直接嵌在 `<math>` 里的 script、带 `onerror` 的 img 全部钉死为**不存在**；只有公式的 figure 不触发脚本图提示；feed 正文路径（`normalizeRichText`）同样放行 math；行内摘要把它摊平成文本。
+`packages/reader`（+5，每个都先对着改动前的提取器红过）：`tests/extract-article.spec.ts` 驱动一个真实形状的 arXiv fixture（`tests/fixtures/arxiv-math.html`，LaTeXML 风格）——安全子集带 `alttext`/`display` 存活；TeX `<annotation>` 剥属性后存活；带 HTML 载荷的 `annotation-xml`、直接嵌在 `<math>` 里的 script、带 `onerror` 的 img 全部钉死为**不存在**；只有公式的 figure 不触发脚本图提示；feed 正文路径（`normalizeRichText`）同样放行 math；行内摘要把它摊平成文本。

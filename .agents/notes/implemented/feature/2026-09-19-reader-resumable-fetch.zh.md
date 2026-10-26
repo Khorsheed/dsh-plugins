@@ -37,7 +37,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 现在跑 222 个测试（新增 6 个）：
+`packages/reader` 现在跑 222 个测试（新增 6 个）：
 
 - `boot.spec.ts`：`fetchEntryBody` 作答前已把 raw 写盘（返回 `rawFile`、`bodies/` 里有一个文件）；`entryFetchStates` 报 `raw`；`getRawBody` 交回 payload 与它的 URL；`storeEntryBody` 把状态翻成 `ready` 并清掉 raw 文件；403 报 `failed` 且 code 为 `blocked`。
 - `ReaderPane.client.spec.tsx`：卡片按宿主状态显示「抓取 / 已抓取 / 抓取失败」；点灰药丸（与红药丸）会调用 `fetchEntryBody`；红药丸悬停带分类原因；`raw` 条目经 `getRawBody` → `storeEntryBody` 被抽取，全程不发网络请求。

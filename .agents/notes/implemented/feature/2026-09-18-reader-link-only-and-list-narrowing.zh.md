@@ -64,7 +64,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 现在跑 195 个测试，其中 20 个是这次新增的：
+`packages/reader` 现在跑 195 个测试，其中 20 个是这次新增的：
 
 - `host-pure.spec.ts`：`classifyFetchFailure` 覆盖每一种失败，包括那条回归——带 `WEB_REDIRECT_BLOCKED` **代码**、目标是登录主机的算 `login`，目标是普通主机的算 `redirected`；`crossOriginRetarget` 跟随同主机的 scheme 升级、拒绝换主机，并且不对「只有消息里像」的值动作；`inspectPreview` 不碰真有正文的页面，同时认得 200 的反爬页、登录中间页、极短页面和跨主机的空跳。
 - `boot.spec.ts`：OpenReview 形状的挑战页既不作为 payload 存储、也不进入补齐候选，而条目级的详情回答带着原因；一次暂时失败之后的手动刷新会清掉记录；没有 `web` 的组合仍然保住 URL 并给它分类；404 保住链接并记成 `http`；普通网页照旧带正文保存。

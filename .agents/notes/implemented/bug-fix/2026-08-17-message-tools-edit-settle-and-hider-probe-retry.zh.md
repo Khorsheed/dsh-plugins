@@ -14,13 +14,13 @@ message-tools 迁入本仓后，3080 生产实例暴露两个缺陷。
 
 ## Decision
 
-**落定等待以被取消轮次的收尾全部落盘为准，而非 `running` 翻转**(`packages/message-tools/src/client/edit-in-place.ts`):
+**落定等待以被取消轮次的收尾全部落盘为准，而非 `running` 翻转**(`packages/client-message-tools/src/client/edit-in-place.ts`):
 
 - `turnSettled(snapshot)` 仅当 `running` 为 false、且 `runningCalls` 为空、且 `chat.timeline.turnOrder` 最新轮次的时间线位置为 `closed` 时才为真——`turn/end` 在所有工具结果之后落盘，轮次关闭即证明收尾整体持久。轮次顺序为空说明运行轮次的 `turn/start` 尚未流入：未落定。只要求**最新**轮次关闭；历史遗留的未关闭轮次不会把等待拖死。
 - `waitForTurnSettled(read, options)` 以 5 秒为界轮询该谓词（间隔 100ms，测试可注入时钟/睡眠），超时**拒绝**。会话绑定消失无法证明落定，同样按超时拒绝。`editInPlace` 在落定失败或超时后绝不编辑——拒绝沿既有路径显示为「编辑失败」内联错误。
 - 槽位接线（`src/client/index.ts`）改为从实时会话快照读该谓词，取代旧的只看 `running` 的循环。
 
-**隐藏器探测改为有界窗口内重试，不再一帧定生死**(`packages/message-tools/src/client/dom-hider.ts`):
+**隐藏器探测改为有界窗口内重试，不再一帧定生死**(`packages/client-message-tools/src/client/dom-hider.ts`):
 
 - 首次探测落空即进入重试：`document.body` 上的 `MutationObserver`(childList 子树 + `data-chat-flow-key` 属性过滤）等待首条聊天行出现，另有截止定时器（默认 10s，可经 `installDomHider(ctx, { probeRetryWindowMs })` 注入）。
 - 窗口内行出现即探测通过并应用待发规则；只有窗口耗尽仍探不到行才停用隐藏器——同一条 `console.warn`、同样的绝不抛错纪律，均不变。observer 在停用后**仍然存活**：行晚到（生产复现就是页面在轨迹页签停过了 10s 窗口、用户随后切回对话页签）证明落空只是挂载时机问题，隐藏自动恢复，而不是在页面余生里泄漏区间。

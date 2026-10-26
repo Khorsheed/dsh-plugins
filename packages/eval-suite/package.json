@@ -1,0 +1,95 @@
+{
+  "name": "@khorsheed/dsh-eval-suite",
+  "description": "Mode bundle 评测模式: the evaluation family (datasets / lab / eval (with its mission ledger)) plus the local-agent delegation family (the core and the kimi / codex / claude-code / dsh harness providers the run verb delegates through) plus the dsh-eval agent preset in one install. Thin meta package: a patch carrying the members' canonical rows and the mode's preset row, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
+  "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/eval-suite"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "locale/*.json"
+  ],
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "eval",
+    "bundle"
+  ],
+  "dependencies": {
+    "@khorsheed/dsh-datasets": "workspace:*",
+    "@khorsheed/dsh-eval": "workspace:*",
+    "@khorsheed/dsh-lab": "workspace:*",
+    "@khorsheed/dsh-local-agent": "workspace:*",
+    "@khorsheed/dsh-local-agent-claude-code": "workspace:*",
+    "@khorsheed/dsh-local-agent-codex": "workspace:*",
+    "@khorsheed/dsh-local-agent-dsh": "workspace:*",
+    "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
+    "@khorsheed/dsh-local-agent-kimi": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "tsdown": "^0.22.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json && tsdown",
+    "test": "vitest run",
+    "typecheck": "tsc -b tsconfig.json --noEmit"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml",
+      "kind": "mode",
+      "mode": "dsh-eval",
+      "members": [
+        "@khorsheed/dsh-datasets",
+        "@khorsheed/dsh-lab",
+        "@khorsheed/dsh-eval",
+        "@khorsheed/dsh-local-agent",
+        "@khorsheed/dsh-local-agent-kimi",
+        "@khorsheed/dsh-local-agent-codex",
+        "@khorsheed/dsh-local-agent-claude-code",
+        "@khorsheed/dsh-local-agent-dsh"
+      ]
+    },
+    "references": [
+      "@khorsheed/dsh-datasets",
+      "@khorsheed/dsh-lab",
+      "@khorsheed/dsh-eval",
+      "@khorsheed/dsh-local-agent",
+      "@khorsheed/dsh-local-agent-kimi",
+      "@khorsheed/dsh-local-agent-codex",
+      "@khorsheed/dsh-local-agent-claude-code",
+      "@khorsheed/dsh-local-agent-dsh"
+    ],
+    "compat": {
+      "minHost": "0.2.0-rc.2",
+      "verifiedHost": "0.2.1-rc.1",
+      "notes": "Pure composition: the bundle mounts the members' canonical rows plus the dsh-eval preset row and registers nothing of its own, so the floor is the members' highest — datasets / lab / eval (the mission ledger now inside eval) floor at 0.2.0-rc.2 together (the evaluation family moves as one line since the T88 fold), the five local-agent members floor at 0.1.5-rc.1, and the preset row's 0.1.7-rc.1 mechanism floor sits below both. lab's container path needs a reachable Docker daemon; without one lab's verbs fail at call time and eval's container path refuses naming lab, while the host path, datasets, and the mission ledger are unaffected. Individual member behaviors are documented in each member's own dsh.compat."
+    }
+  }
+}

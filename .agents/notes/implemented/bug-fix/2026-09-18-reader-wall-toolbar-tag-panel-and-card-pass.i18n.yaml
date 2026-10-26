@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-18-reader-wall-toolbar-tag-panel-and-card-pass.md
-.agents/notes/implemented/bug-fix/2026-09-18-reader-wall-toolbar-tag-panel-and-card-pass.md: 139050f6628dc8a8f0b1f8af524c99eb17069dcd
-.agents/notes/implemented/bug-fix/2026-09-18-reader-wall-toolbar-tag-panel-and-card-pass.zh.md: 97a2558c1d96cafca364c2938b29def41e6816f8
+.agents/notes/implemented/bug-fix/2026-09-18-reader-wall-toolbar-tag-panel-and-card-pass.md: cf4a1365c6a6d26400eae228165ec8674c0c82c2
+.agents/notes/implemented/bug-fix/2026-09-18-reader-wall-toolbar-tag-panel-and-card-pass.zh.md: 980ae6bc2f4a306e0afade9c97e4e214c7a49b40

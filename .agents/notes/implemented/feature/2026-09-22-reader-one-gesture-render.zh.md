@@ -15,7 +15,7 @@ Status: implemented
 
 **一条规则：指向单条文章的显式用户手势跑完整个管线——先普通抓，落到脚本图壳就自动接续渲染抓取。** 手势清单：新增链接、卡片「抓取」、卡片菜单的抓取、打开条目、详情页「重新抓取」。后台路径（feed 定时刷新、回填扫描）永不升级——这正是防止阅读器变成"拖着浏览器的爬虫"的那条界。手势门的安全内容不变：渲染仍只跟随指向该条目的用户动作，站点允许记录照常累积。
 
-- **升级**在 `maybeAutoRender`（`packages/dsh-reader/src/client/ReaderPane.tsx`）：capture Remote 探测在场 + 有链接 + `scriptFigures > 0` → `captureBody`。每条目每窗格会话只自动触发一次（`autoRenderTriedRef`）；渲染失败留下提示条和手动「渲染抓取」重试，重开不会复燃。渲染在飞时提示条变为进度文案（`detail.rendering`）。
+- **升级**在 `maybeAutoRender`（`packages/reader/src/client/ReaderPane.tsx`）：capture Remote 探测在场 + 有链接 + `scriptFigures > 0` → `captureBody`。每条目每窗格会话只自动触发一次（`autoRenderTriedRef`）；渲染失败留下提示条和手动「渲染抓取」重试，重开不会复燃。渲染在飞时提示条变为进度文案（`detail.rendering`）。
 - **正文记录的 `rendered` 标记**（types/store/service/contract：随正文入库、`getEntryBody` 返回）是「重新抓取」的路由依据：渲染过的条目重新渲染。普通抓取永不置位，其正文保持普通路线。标记出现之前入库的旧正文与普通正文不可区分——它们先普通抓一次、落到壳、被自动升级愈合成带标记的渲染正文（不做迁移；管线即迁移）。
 - 重新抓取按钮也读 `captureBusy`：重渲染要数分钟，看起来死掉的按钮就是坏按钮。
 
@@ -34,4 +34,4 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader`——422 测试本地全绿：原 capture 通路客户端测试改写为自动渲染用例（打开 → 壳抓取 → 无第二次点击 captureRender 即触发；入库携带 `rendered: true` + `scriptFigures: 0`），失败用例钉住循环守卫与手动重试，路由用例钉住「重新抓取」→ 渲染（含在飞按钮态、普通抓取零调用）。boot 套件往返验证 `rendered` 标记与显式零计数。3199 端到端：从壳到 23 张快照正文只需一次点击；再次「重新抓取」走服务端渲染（站点渲染计数 7→8）且不丢弃屏上正文。
+`packages/reader`——422 测试本地全绿：原 capture 通路客户端测试改写为自动渲染用例（打开 → 壳抓取 → 无第二次点击 captureRender 即触发；入库携带 `rendered: true` + `scriptFigures: 0`），失败用例钉住循环守卫与手动重试，路由用例钉住「重新抓取」→ 渲染（含在飞按钮态、普通抓取零调用）。boot 套件往返验证 `rendered` 标记与显式零计数。3199 端到端：从壳到 23 张快照正文只需一次点击；再次「重新抓取」走服务端渲染（站点渲染计数 7→8）且不丢弃屏上正文。

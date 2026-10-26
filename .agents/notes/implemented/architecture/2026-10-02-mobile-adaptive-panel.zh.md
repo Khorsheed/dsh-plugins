@@ -24,7 +24,7 @@ mobile 在新建会话旁增加面板入口。可选的结构化 `sidebarRight` 
 
 ## Preview and acceptance boundary
 
-原共享布局样例用 `node packages/ui-panel-kit/examples/adaptive-split/serve.mjs` 启动，监听回环端口 8873。综合样例在 `packages/mobile` 下执行 `pnpm exec tsx examples/panels/serve.ts`，监听回环端口 8875。它导入真实 MobilePanelNavigation、宿主 DockLayout、AdaptiveSplit 和 LinkView，数据为内存样例。样例导入宿主真实 AppFrame 和 SidebarRight 样式，包含保留会话包装层和面板 body，默认使用已收起的零宽右列且只打开引导页；右侧栏宽度开关覆盖两种几何状态，新建会话开关覆盖入口位置；深浅色开关与完整文件操作组覆盖导航对比度和图标间距。文件浏览器和工作树使用真实插件组件与状态仓库，注入延迟返回的 Remote 样例数据；只有卡片编辑器仍为样例控件，不读取生产文件或提交。源码解析器与测试共享。mobile 包只发布原有 ingress `.mjs` 示例，仓库内预览不进入发布包。
+原共享布局样例用 `node packages/client-ui-panel-kit/examples/adaptive-split/serve.mjs` 启动，监听回环端口 8873。综合样例在 `packages/mobile` 下执行 `pnpm exec tsx examples/panels/serve.ts`，监听回环端口 8875。它导入真实 MobilePanelNavigation、宿主 DockLayout、AdaptiveSplit 和 LinkView，数据为内存样例。样例导入宿主真实 AppFrame 和 SidebarRight 样式，包含保留会话包装层和面板 body，默认使用已收起的零宽右列且只打开引导页；右侧栏宽度开关覆盖两种几何状态，新建会话开关覆盖入口位置；深浅色开关与完整文件操作组覆盖导航对比度和图标间距。文件浏览器和工作树使用真实插件组件与状态仓库，注入延迟返回的 Remote 样例数据；只有卡片编辑器仍为样例控件，不读取生产文件或提交。源码解析器与测试共享。mobile 包只发布原有 ingress `.mjs` 示例，仓库内预览不进入发布包。
 
 终端内容受益于全宽宿主容器及已有视口处理，全局侧滑排除 xterm。未添加终端快捷键栏：它需要官方输入能力，不能模拟 DOM 按键。嵌入内容保持原沙箱边界。真实 iPhone/WebView 的键盘、安全区、前后台恢复和终端验收仍待完成；组件样例不是部署实例或手机测试。
 

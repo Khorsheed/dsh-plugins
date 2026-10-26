@@ -8,7 +8,7 @@ Status: implemented
 
 ## Decision
 
-新建源码面库 `@khorsheed/dsh-client-ui-panel-kit`（`packages/ui-panel-kit`，`private`，`dsh.composition.component: source-plane-library`），形式与 `ui-content-preview` 完全相同：使用方 import `./src/client/*`，tsdown 把它内联进各插件自己的 `lib/client.js`。它不注册任何东西，没有自己的 bundle；`check-plugin-independence` 把它与 ui-content-preview 一起列入 `NO_OWN_PATCH`。
+新建源码面库 `@khorsheed/dsh-client-ui-panel-kit`（`packages/client-ui-panel-kit`，`private`，`dsh.composition.component: source-plane-library`），形式与 `ui-content-preview` 完全相同：使用方 import `./src/client/*`，tsdown 把它内联进各插件自己的 `lib/client.js`。它不注册任何东西，没有自己的 bundle；`check-plugin-independence` 把它与 ui-content-preview 一起列入 `NO_OWN_PATCH`。
 
 它包含三样东西：
 

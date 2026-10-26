@@ -50,7 +50,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 现在跑 208 个测试（新增 7 个）：
+`packages/reader` 现在跑 208 个测试（新增 7 个）：
 
 - `parse-rss.spec.ts`：唯一文本来自 `<description>` 的 feed 条目是 `summaryOnly`；带 `<content:encoded>` 的不是。
 - `selectors.spec.ts`：标题命中排在更新的摘要命中之前；`#源id` 选择器不参与排序。

@@ -34,6 +34,6 @@ One principle everywhere: **the action belongs to the cause**. The recorded `fai
 
 ## Testing
 
-`packages/dsh-reader` — new cases red-first against the pre-change pane:
+`packages/reader` — new cases red-first against the pre-change pane:
 
 - `tests/ReaderPane.client.spec.tsx`: the script-figure notice opens the in-app browser tab when the seam probes present (label flips to 「在浏览器打开原文」, `openExternal` untouched), falls back externally when the in-app open refuses; the failed card shows the reason line, retries when the code is `unreachable`, opens the browser for `blocked`, and is a dead-certain indicator (no role=button) for `http`; the verdict for a link-only add carries the open-in-browser action and fires it with the pasted URL; 渲染抓取 is absent without a capture Remote and, with a mocked one, renders→extracts→stores the body on click.

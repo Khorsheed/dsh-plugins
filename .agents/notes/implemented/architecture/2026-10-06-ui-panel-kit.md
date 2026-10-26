@@ -8,7 +8,7 @@ On a phone walkthrough (2026-10-06) the canvas, file list, file preview and insp
 
 ## Decision
 
-A new source-plane library, `@khorsheed/dsh-client-ui-panel-kit` (`packages/ui-panel-kit`, `private`, `dsh.composition.component: source-plane-library`), shaped exactly like `ui-content-preview`: consumers import `./src/client/*` and tsdown inlines it into each plugin's own `lib/client.js`. It registers nothing and has no bundle of its own; `check-plugin-independence` lists it in `NO_OWN_PATCH` beside ui-content-preview.
+A new source-plane library, `@khorsheed/dsh-client-ui-panel-kit` (`packages/client-ui-panel-kit`, `private`, `dsh.composition.component: source-plane-library`), shaped exactly like `ui-content-preview`: consumers import `./src/client/*` and tsdown inlines it into each plugin's own `lib/client.js`. It registers nothing and has no bundle of its own; `check-plugin-independence` lists it in `NO_OWN_PATCH` beside ui-content-preview.
 
 It carries three things:
 
