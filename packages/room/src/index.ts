@@ -1221,7 +1221,17 @@ export class RoomService extends TypertRemoteService {
     }
     // Leading tokens are stripped from the dispatched text; a picked mid-
     // sentence mention stays — the sentence is dispatched verbatim.
-    const text = parsed.targets.length > 0 ? parsed.text : request.text.trim()
+    const said = parsed.targets.length > 0 ? parsed.text : request.text.trim()
+    // The human pointing at a session outside the room is a help request: say
+    // so every time (a member's briefing reaches it once, on its first round).
+    const outside = [...said.matchAll(/@\[((?:\\.|[^\\\]\n])+)\]\((dsh-session:[^)\s]+)\)/gu)]
+    const text = said
+    // The hint rides the member's prompt only; the journal keeps the human's words.
+    const prompt = outside.length === 0 ? said : [
+      said,
+      '',
+      `（人点名了房间外的会话：${outside.map(match => `「${match[1]!.replace(/\\(.)/gu, '$1')}」`).join('、')}。用 room_help 去问：session 参数原样传那个 @[…](dsh-session:…) 引用；标签是「成员（房间）」时会交给那个成员。不要转给别的成员代问。）`,
+    ].join('\n')
     if (text === '') return { ok: false, error: { code: 'empty-text' } }
     const roster = new Set(loaded.state.members.map(member => member.name))
     const unknown = targets.filter(target => !roster.has(target))
@@ -1239,7 +1249,7 @@ export class RoomService extends TypertRemoteService {
     })
     await this.ctx.sessions.flush(loaded.session)
     for (const target of targets) {
-      this.engine.dispatch(loaded.session, target, text, { dispatchSeq: dispatch.seq })
+      this.engine.dispatch(loaded.session, target, prompt, { dispatchSeq: dispatch.seq })
     }
     return { ok: true, value: { parsed: { targets, text }, seq: dispatch.seq } }
   }

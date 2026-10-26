@@ -148,6 +148,19 @@ describe('cross-session help', () => {
   })
 })
 
+describe('the human pointing at a session', () => {
+  it('tells the coordinator to ask it through room_help, in the prompt only', async () => {
+    const bench = await boot()
+    const sent = await bench.service.postMessage({ sessionId: bench.sessionId, text: `${mention('游戏大师（游戏开发）', HELPER)} 问问他在做什么` })
+    expect(sent.ok).toBe(true)
+    await bench.service.engine.idle()
+    const prompt = (bench.roomAgent.followup.mock.calls.at(-1)![0] as { content: { text: string }[] }).content[0]!.text
+    expect(prompt).toMatch(/人点名了房间外的会话：「游戏大师（游戏开发）」。用 room_help 去问/)
+    const dispatch = bench.room.snapshotEvents().findLast(event => event.type === 'room/dispatch')!
+    expect((dispatch.data as { text: string }).text).not.toContain('room_help')
+  })
+})
+
 describe('a CLI member asking', () => {
   it('asks through the bridge command; the reply reaches that member', async () => {
     const bench = await boot()
