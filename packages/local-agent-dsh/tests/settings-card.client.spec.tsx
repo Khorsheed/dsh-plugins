@@ -157,20 +157,16 @@ async function openCard(): Promise<void> {
 }
 
 describe('DshSettingsCard', () => {
-  it('renders the default states: delegation off (so no status probe, no error, no dot), live off — and NO login action', async () => {
+  it('renders the default states: no 启用 switch (always on), live off — and NO login action', async () => {
     renderCard({})
     await openCard()
 
-    // Off by default the harness is not registered: the card says so instead of a failed probe.
-    expect(screen.getByText(zh['auth.disabled'])).toBeTruthy()
-    expect(screen.queryByText(coreZh['settings.statusFailed'])).toBeNull()
-    expect(document.querySelector('[data-auth-status]')).toBeNull()
+    expect(screen.getByText(coreZh['settings.notAuthenticated'])).toBeTruthy()
     // dsh authenticates through the host credentials: no login/reauthorize button.
     expect(screen.queryByRole('button', { name: coreZh['settings.login'] })).toBeNull()
     expect(screen.getByText(zh['auth.host'])).toBeTruthy()
-    const enable = screen.getByRole('switch', { name: zh['enable.switch.aria'] })
-    expect(enable.getAttribute('aria-checked')).toBe('false')
-    expect(screen.getByText(zh['enable.off'])).toBeTruthy()
+    // The delegation switch is gone: installing the plugin is the intent.
+    expect(screen.getAllByRole('switch')).toHaveLength(1)
     const live = screen.getByRole('switch', { name: zh['live.title'] })
     expect(live.getAttribute('aria-checked')).toBe('false')
   })
@@ -185,8 +181,6 @@ describe('DshSettingsCard', () => {
     expect(screen.getByText(coreZh['settings.authenticated'])).toBeTruthy()
     expect(screen.queryByRole('button', { name: coreZh['settings.logout'] })).toBeNull()
     expect(screen.queryByRole('button', { name: coreZh['settings.reauthorize'] })).toBeNull()
-    expect(screen.getByRole('switch', { name: zh['enable.switch.aria'] }).getAttribute('aria-checked')).toBe('true')
-    expect(screen.getByText(zh['enable.on'])).toBeTruthy()
     expect(screen.getByRole('switch', { name: zh['live.title'] }).getAttribute('aria-checked')).toBe('true')
   })
 
@@ -197,26 +191,15 @@ describe('DshSettingsCard', () => {
     expect(screen.queryByRole('button', { name: coreZh['settings.login'] })).toBeNull()
   })
 
-  it('a write the host refuses (ConfigForm answers false) reads as a failure, not 已保存', async () => {
+  it('a refused write (the scope answers false) reads as a failure, not 已保存', async () => {
     const { scope } = renderCard({})
     scope.set.mockImplementation(async () => false)
     await openCard()
-    fireEvent.click(screen.getByRole('switch', { name: zh['enable.switch.aria'] }))
+    fireEvent.click(screen.getByRole('switch', { name: zh['live.title'] }))
     await act(async () => {})
     expect(screen.getByText(zh['live.error'])).toBeTruthy()
     expect(screen.queryByText(zh['live.applied'])).toBeNull()
-    expect(screen.getByRole('switch', { name: zh['enable.switch.aria'] }).getAttribute('aria-checked')).toBe('false')
-  })
-
-  it('writes the delegation switch through the scope', async () => {
-    const { scope } = renderCard({})
-    await openCard()
-
-    fireEvent.click(screen.getByRole('switch', { name: zh['enable.switch.aria'] }))
-    await act(async () => {})
-    expect(scope.set).toHaveBeenCalledWith('enabled', true)
-    expect(screen.getByRole('switch', { name: zh['enable.switch.aria'] }).getAttribute('aria-checked')).toBe('true')
-    expect(screen.getByText(zh['enable.on'])).toBeTruthy()
+    expect(screen.getByRole('switch', { name: zh['live.title'] }).getAttribute('aria-checked')).toBe('false')
   })
 
   it('writes the live switch through the scope and shows the applied hint', async () => {
@@ -236,7 +219,6 @@ describe('DshSettingsCard', () => {
     })
     await openCard()
 
-    expect((screen.getByRole('switch', { name: zh['enable.switch.aria'] }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('switch', { name: zh['live.title'] }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByLabelText(zh['model.title']) as HTMLInputElement).disabled).toBe(true)
     expect(screen.getByText(zh['live.unavailable'])).toBeTruthy()

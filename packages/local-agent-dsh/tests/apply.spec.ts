@@ -105,10 +105,11 @@ describe('local-agent-dsh toggle controller', () => {
     expect(await m.registered[0]!.isAuthenticated?.('ignored-home')).toBe(true)
   })
 
-  it('registers nothing while the DeepSeek toggle is off (default)', () => {
-    const { registered, providers, mountedTools } = mount()
-    expect(registered).toHaveLength(0)
-    expect(providers).toHaveLength(0)
+  it('registers the harness and provider even when a profile still says enabled: false (the switch is gone), and mounts no root tool', () => {
+    const { registered, providers, mountedTools } = mount({ enabled: false })
+    expect(registered).toHaveLength(1)
+    expect(providers).toHaveLength(1)
+    // The delegation tool is the package's ./tool entry, granted by a preset.
     expect(mountedTools).toHaveLength(0)
   })
 
@@ -163,7 +164,7 @@ describe('local-agent-dsh toggle controller', () => {
     expect('model' in (await bareHarness.effectiveSettings!(home))).toBe(false)
   })
 
-  it('registers the harness, provider, and tool while on, and the watch toggles them live', () => {
+  it('registers the harness and provider, and ignores a leftover enabled flip', () => {
     const { registered, providers, mountedTools, settings } = mount({ enabled: true })
 
     // ON: harness + provider registered, tool mounted for dsh-cli.
@@ -175,20 +176,12 @@ describe('local-agent-dsh toggle controller', () => {
       delegationProvider: 'dsh-cli',
     })
     expect(providers).toHaveLength(1)
-    expect(mountedTools).toHaveLength(1)
-    // Since the family fold the tool mounts as an inline plugin over the core's
-    // ./tool-factory with the provider/toolName bound in code (no row config);
-    // the real registration of `subagent_dsh` on `dsh-cli` is pinned by
-    // real-composition.host.spec.ts.
-    const tool = mountedTools[0] as { plugin: { name?: string; inject?: string[] }; config: unknown }
-    expect(tool.plugin.name).toBe('local-agent-dsh-tool')
-    expect(tool.plugin.inject).toEqual(['tools', 'subagents', 'localAgent'])
-    expect(tool.config).toBeUndefined()
+    expect(mountedTools).toHaveLength(0)
 
-    // Flip OFF through the settings watch: everything model-visible disposes.
+    // A leftover enabled flip changes nothing: there is no off any more.
     settings.set({ enabled: false })
-    expect(registered).toHaveLength(0)
-    expect(providers).toHaveLength(0)
+    expect(registered).toHaveLength(1)
+    expect(providers).toHaveLength(1)
   })
 
   it('registers the settings namespace with an empty base for a bare config', () => {
@@ -210,12 +203,9 @@ describe('local-agent-dsh toggle controller', () => {
     expect(providers).toHaveLength(1)
   })
 
-  it('builds no driver while enabled is off, even with live on (the live value is inert)', () => {
-    const { providers, registered } = mount({ enabled: false, live: true })
-    // The provider never registers, so the resolver is unreachable — live
-    // applies when the toggle turns on again.
-    expect(providers).toHaveLength(0)
-    expect(registered).toHaveLength(0)
+  it('builds the live driver whatever a leftover enabled field says', () => {
+    const { resolveLive } = mount({ enabled: false, live: true })
+    expect(resolveLive('child-x')).toBeInstanceOf(DshLiveDriver)
   })
 
   it('keeps live off when the settings say off; the resolver gates to exec', () => {
@@ -228,14 +218,6 @@ describe('local-agent-dsh toggle controller', () => {
     const driver = resolveLive('child-x')
     expect(driver).toBeInstanceOf(DshLiveDriver)
     expect(driver!.liveCount).toBe(0)
-  })
-
-  it('applies a persisted live value when enabled flips on', () => {
-    const { settings, providers, resolveLive } = mount({ enabled: false, live: true })
-    expect(providers).toHaveLength(0)
-    settings.set({ enabled: true })
-    expect(providers).toHaveLength(1)
-    expect(resolveLive('child-x')).toBeInstanceOf(DshLiveDriver)
   })
 
   it('hot-switches live without re-registering the provider: on → driver; off → gate to exec + drain', async () => {
@@ -262,30 +244,4 @@ describe('local-agent-dsh toggle controller', () => {
     expect(resolveLive('child-x')).toBe(driver)
   })
 
-  it('an enabled flip off disposes the live generation; flipping back on rebuilds it', async () => {
-    const { settings, providers, resolveLive } = mount({ enabled: true, live: true })
-    const driver = resolveLive('child-x')
-    expect(driver).toBeInstanceOf(DshLiveDriver)
-    settings.set({ enabled: false })
-    expect(providers).toHaveLength(0)
-    await new Promise(resolve => setTimeout(resolve, 10))
-    expect(driver!.liveCount).toBe(0)
-    // Back on: a fresh provider generation with a fresh driver (live persisted).
-    settings.set({ enabled: true })
-    expect(providers).toHaveLength(1)
-    const rebuilt = resolveLive('child-x')
-    expect(rebuilt).toBeInstanceOf(DshLiveDriver)
-    expect(rebuilt).not.toBe(driver)
-  })
-
-  it('enabled back on with live off stays on exec (independent toggles)', () => {
-    const { settings, providers, resolveLive } = mount({ enabled: true, live: true })
-    expect(resolveLive('child-x')).toBeInstanceOf(DshLiveDriver)
-    settings.set({ live: false })
-    settings.set({ enabled: false })
-    expect(providers).toHaveLength(0)
-    settings.set({ enabled: true })
-    expect(providers).toHaveLength(1)
-    expect(resolveLive('child-x')).toBeUndefined()
-  })
 })

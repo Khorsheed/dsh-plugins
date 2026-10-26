@@ -27,6 +27,7 @@
     "src/prepared-members.ts",
     "src/member-inbox.ts",
     "src/settings-face.ts",
+    "src/card-settings.ts",
     "src/tool-factory.ts"
   ]
 }

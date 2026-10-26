@@ -257,7 +257,7 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
   readonly t: DshSettingsCardProps['t']
 }) {
   const {
-    snapshot, saved, error, ready, enabled, live, storedModel, modelValue,
+    snapshot, saved, error, ready, live, storedModel, modelValue,
     modelSaved, modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
     modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
     setModelDraft, setModelMenuOpen,
@@ -281,37 +281,14 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
     <div className={css.body}>
       <section className={css.block}>
         <h3 className={css.blockTitle}>{t('auth.title')}</h3>
-        {/* Switched off (the default), the harness is not registered at all:
-            a status probe can only fail, so say it is off instead of showing
-            an error, a red dot and a login it would refuse. */}
-        {enabled
-          ? <ProviderAuthBlock
-              harness={{ id: 'dsh', label: 'dsh' }}
-              useSessions={useSessions}
-              status={auth.status}
-              runCommand={auth.runCommand}
-              t={authT}
-            />
-          : <span className={css.hint}>{t('auth.disabled')}</span>}
+        <ProviderAuthBlock
+          harness={{ id: 'dsh', label: 'dsh' }}
+          useSessions={useSessions}
+          status={auth.status}
+          runCommand={auth.runCommand}
+          t={authT}
+        />
         <span className={css.hint}>{t('auth.host')}</span>
-      </section>
-      <section className={css.block}>
-        <h3 className={css.blockTitle}>{t('enable.title')}</h3>
-        <div className={css.row}>
-          <span className={css.rowLabel}>{t('enable.switch')}</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={enabled}
-            aria-label={t('enable.switch.aria')}
-            className={enabled ? `${css.switch} ${css.switchOn}` : css.switch}
-            disabled={!ready}
-            onClick={() => { write('enabled', !enabled) }}
-          >
-            <span className={css.knob} />
-          </button>
-        </div>
-        <span className={css.hint}>{t(enabled ? 'enable.on' : 'enable.off')}</span>
       </section>
       <section className={css.block}>
         <h3 className={css.blockTitle}>
@@ -451,7 +428,7 @@ export function DshSettingsCard(props: DshSettingsCardProps) {
         <span className={css.headText}>
           <span className={css.nameRow}>
             <span className={css.name}>{title}</span>
-            {state.enabled && <AuthStatusDot status={authStatus} label={dotLabel} />}
+            <AuthStatusDot status={authStatus} label={dotLabel} />
           </span>
           <span className={css.description}>{t('card.description')}</span>
         </span>

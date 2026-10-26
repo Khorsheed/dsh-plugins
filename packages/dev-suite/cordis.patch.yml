@@ -242,6 +242,9 @@
           - id: tool-subagent-claude-code-local
             name: '@khorsheed/dsh-local-agent-claude-code/tool'
 
+          - id: tool-subagent-dsh
+            name: '@khorsheed/dsh-local-agent-dsh/tool'
+
           # The worktrees model tool: the core stays global (badge/tab/service), the
           # tool row is session-granted here. Since worktrees 0.3.0 the row ships
           # inside the core package as the `./tool` composition entry (the standalone

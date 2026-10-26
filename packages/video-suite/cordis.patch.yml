@@ -167,6 +167,9 @@
           - id: tool-subagent-claude-code-local
             name: '@khorsheed/dsh-local-agent-claude-code/tool'
 
+          - id: tool-subagent-dsh
+            name: '@khorsheed/dsh-local-agent-dsh/tool'
+
           # room_invite / room_message / room_read / room_plan; the room service
           # and UI stay at the profile root.
           - id: room-tool

@@ -112,7 +112,7 @@ export interface Config {
  * behavior byte-identical.
  */
 const SETTINGS_FIELDS = {
-  live: z.boolean().default(false),
+  live: z.boolean().default(true),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
   model: z.string(),
   recentModels: z.array(z.string()).default([]),
@@ -186,7 +186,7 @@ export function apply(ctx: Context, config: Config): void {
       const model = vol(config.model)
       const recentModels = vol(config.recentModels)
       return {
-        live: vol(config.live) ?? false,
+        live: vol(config.live) ?? true,
         liveMirrorGranularity: vol(config.liveMirrorGranularity) ?? 'token',
         ...model === undefined ? {} : { model },
         ...recentModels === undefined ? {} : { recentModels },
@@ -199,6 +199,8 @@ export function apply(ctx: Context, config: Config): void {
     }
     const face = settingsFace<CodexLiveSettings>(ctx, {
       namespace: CODEX_SETTINGS_NAMESPACE,
+      // Card writes live in the harness's own store (card-settings.ts), never the profile patch.
+      harness: 'codex',
       legacySchema: CODEX_SETTINGS_SCHEMA,
       legacyBase,
       read: readSettings,

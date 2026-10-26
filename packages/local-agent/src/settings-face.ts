@@ -70,6 +70,49 @@ export function settingsFace<T>(ctx: Context, options: {
   legacySchema: unknown
   legacyBase: Record<string, unknown>
   read: () => T
+  /**
+   * The harness whose settings-card overrides (card-settings.json in its
+   * scoped home) layer over the row config: a field stored there wins, an
+   * absent one falls back to `read()`. Absent = row config only.
+   */
+  harness?: string
+}): SettingsFace<T> {
+  if (options.harness !== undefined) return cardSettingsFace(ctx, options.harness, rowFace(ctx, options))
+  return rowFace(ctx, options)
+}
+
+/** The family core's card-settings face, structurally probed. */
+interface CardSettingsHost {
+  cardSettings(name: string): Readonly<Record<string, unknown>>
+  onCardSettings(name: string, listener: () => void): () => void
+}
+
+/** Layer a harness's card-settings overrides over a row face. */
+function cardSettingsFace<T>(ctx: Context, harness: string, row: SettingsFace<T>): SettingsFace<T> {
+  const host = (): CardSettingsHost | undefined => {
+    const service = (ctx.get as (name: string) => unknown)('localAgent') as Partial<CardSettingsHost> | undefined
+    return typeof service?.cardSettings === 'function' && typeof service.onCardSettings === 'function' ? service as CardSettingsHost : undefined
+  }
+  const get = (): T => {
+    const stored = host()?.cardSettings(harness) ?? {}
+    return { ...row.get(), ...stored } as T
+  }
+  return {
+    get,
+    watch: (listener) => {
+      const offRow = row.watch(() => { listener(get()) })
+      const offStore = host()?.onCardSettings(harness, () => { listener(get()) }) ?? (() => {})
+      return () => { offRow(); offStore() }
+    },
+  }
+}
+
+/** The row-config face of one host line (the original settings face). */
+function rowFace<T>(ctx: Context, options: {
+  namespace: string
+  legacySchema: unknown
+  legacyBase: Record<string, unknown>
+  read: () => T
 }): SettingsFace<T> {
   const legacy = ctx.get('settings') as LegacySettingsRegistry | undefined
   if (legacy !== undefined && typeof legacy.register === 'function') {
