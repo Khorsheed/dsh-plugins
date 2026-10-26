@@ -250,6 +250,8 @@ export function WorkspaceView({
   }
 
   const current = root ?? ''
+  // The tree's expansion and scroll survive tab/page switches per (session, root).
+  const treeMemoryKey = `${currentSession}\u0000${current}`
 
   // Memoized: FileTree seeds search-mode expansion off the groups' identity,
   // so an unmemoized array literal would re-seed (clobbering the user's
@@ -362,6 +364,8 @@ export function WorkspaceView({
             <div className={css.empty}>{t('state.error', { message: error })}</div>
           ) : (
             <FileTree
+              key={treeMemoryKey}
+              memoryKey={treeMemoryKey}
               groups={groups}
               selectedPath={treeSelectedPath}
               onSelect={(path: string) => { actions.select(`${root ?? ''}/${path}`); setDetailOpen(true) }}

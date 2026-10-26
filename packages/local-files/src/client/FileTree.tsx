@@ -9,7 +9,7 @@
  * children on demand (per-level local browsing) rather than from a static
  * trie.
  */
-import { useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconFolderCloseMedium, IconFolderOpenMedium, IconPanelLeftOutlineMedium, IconSearchOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './FileTree.module.css'
@@ -145,6 +145,10 @@ export interface FileTreeProps {
   loadChildren?: (dirPath: string) => Promise<FileTreeItem[]>
   /** Prefix for resolving a directory's absolute path (local browser root). */
   rootPath?: string
+  /** Keeps this tree's expansion, loaded children and scroll offset across
+   * unmounts (a tab switch, a page switch) under this key. The parent keys
+   * the tree by it too, so a different root or session starts fresh. */
+  memoryKey?: string
   /** When given, renders a show-hidden toggle (eye) in the tree header; the
    * parent owns the visibility state and filtering. */
   showHidden?: boolean
@@ -217,6 +221,29 @@ function ExpandGlyph({ open }: { open: boolean }): ReactNode {
 }
 
 /** Relative time for a commit (compact form). */
+/**
+ * One tree's view state, kept across unmounts under its `memoryKey`: the
+ * right sidebar unmounts a tab's body whenever another tab or page takes
+ * over, and the tree's own state would go with it — every folder collapsed,
+ * the scroll back at the top. Module level, like the content pane's scroll
+ * offsets: the memory outlives the component, never the page.
+ */
+interface TreeMemory {
+  expanded: ReadonlySet<string>
+  lazy: Readonly<Record<string, readonly FileTreeItem[]>>
+  scrollTop: number
+}
+const treeMemory = new Map<string, TreeMemory>()
+
+/** The nearest ancestor that scrolls vertically (the tree scrolls inside its column, not itself). */
+function scrollParentOf(element: HTMLElement): HTMLElement | null {
+  for (let node = element.parentElement; node !== null; node = node.parentElement) {
+    const overflow = getComputedStyle(node).overflowY
+    if (overflow === 'auto' || overflow === 'scroll') return node
+  }
+  return null
+}
+
 export function relativeTime(seconds: number, now = Date.now()): string {
   if (seconds <= 0) return ''
   const delta = Math.max(0, Math.floor(now / 1000) - seconds)
@@ -228,10 +255,11 @@ export function relativeTime(seconds: number, now = Date.now()): string {
 }
 
 /** The file tree. */
-export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', showHidden = false, onToggleHidden, iconActions = false, headerless = false, searchOpen = false, onToggleSearch, searchQuery = '', onSearchQuery, searching = false, searchTruncated = false, t }: FileTreeProps): ReactNode {
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', memoryKey, showHidden = false, onToggleHidden, iconActions = false, headerless = false, searchOpen = false, onToggleSearch, searchQuery = '', onSearchQuery, searching = false, searchTruncated = false, t }: FileTreeProps): ReactNode {
+  const remembered = memoryKey === undefined ? undefined : treeMemory.get(memoryKey)
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => remembered?.expanded ?? new Set())
   // Lazy sub-directory children, keyed by the directory's resolved path.
-  const [lazy, setLazy] = useState<Record<string, readonly FileTreeItem[]>>({})
+  const [lazy, setLazy] = useState<Readonly<Record<string, readonly FileTreeItem[]>>>(() => remembered?.lazy ?? {})
   // Directories whose children were requested but are still loading.
   const [lazyLoading, setLazyLoading] = useState<ReadonlySet<string>>(() => new Set())
   // Search mode: the parent filtered the groups down to the hits. Each fresh
@@ -342,6 +370,45 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
     return out
   }
 
+  // Remember the view under the key as it changes; the scroll offset is
+  // tracked by its own listener below.
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (memoryKey === undefined) return
+    treeMemory.set(memoryKey, { expanded, lazy, scrollTop: treeMemory.get(memoryKey)?.scrollTop ?? 0 })
+  }, [memoryKey, expanded, lazy])
+  // Restore the scroll offset before paint (the remembered children are
+  // already rendered, so the height is right), then follow the user's scroll.
+  useLayoutEffect(() => {
+    if (memoryKey === undefined || rootRef.current === null) return undefined
+    const scroller = scrollParentOf(rootRef.current)
+    if (scroller === null) return undefined
+    const saved = treeMemory.get(memoryKey)?.scrollTop
+    if (saved !== undefined && saved > 0) scroller.scrollTop = saved
+    const onScroll = (): void => {
+      const entry = treeMemory.get(memoryKey)
+      if (entry !== undefined) entry.scrollTop = scroller.scrollTop
+      else treeMemory.set(memoryKey, { expanded: new Set(), lazy: {}, scrollTop: scroller.scrollTop })
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    return () => scroller.removeEventListener('scroll', onScroll)
+  }, [memoryKey])
+  // A restored tree paints from memory, then re-lists every folder it shows
+  // open, so what changed on disk while the tab was away shows up.
+  useEffect(() => {
+    if (loadChildren === undefined || remembered === undefined) return
+    for (const path of remembered.expanded) {
+      const dirPath = rootPath === '' ? path : `${rootPath}/${path}`
+      if (remembered.lazy[dirPath] === undefined) continue
+      void loadChildren(dirPath).then(
+        (items) => { setLazy(previous => ({ ...previous, [dirPath]: items })) },
+        () => undefined,
+      )
+    }
+    // Mount only: a key change remounts the tree (the parent keys it).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const toggle = (path: string): void => {
     const apply = (previous: ReadonlySet<string>): Set<string> => {
       const next = new Set(previous)
@@ -430,7 +497,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
   }
 
   return (
-    <div className={css.tree}>
+    <div ref={rootRef} className={css.tree}>
       {!headerless && <div className={css.treeHeader}>
         <span className={css.treeTitle}>{treeTitle ?? t('tree.changedFilesTitle')}</span>
         <span className={css.treeActions}>
