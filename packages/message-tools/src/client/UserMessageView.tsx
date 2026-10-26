@@ -12,7 +12,7 @@
  * folds behind a fade; a small chevron seated in the bubble's bottom-right
  * corner expands / collapses it (see fold.ts).
  */
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
 import type { UserMessageNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { Button, JsonBlock, RiskConfirmation, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -54,8 +54,29 @@ function contentParts(content: readonly unknown[]): {
   return { text: texts.join(''), images, rest }
 }
 
-/** Plaintext `/name` and `@name` word-boundary tokens decorate as chips; the logged text stays the truth. */
+/** The host's canonical session mention, `@[title](dsh-session:…)` (the @ menu's session chip, sent as text). */
+const SESSION_MENTION = /@\[((?:\\.|[^\\\]\n])+)\]\(dsh-session:[^)\s]+\)/gu
+
+/**
+ * A session mention shows as a chip with its title (the host's own user-text
+ * rule does the same); the rest of the text keeps the token projection.
+ */
 function projectUserText(text: string): ReactNode {
+  const parts: ReactNode[] = []
+  let cursor = 0
+  for (const match of text.matchAll(SESSION_MENTION)) {
+    if (match.index > cursor) parts.push(<Fragment key={`t${cursor}`}>{projectTokens(text.slice(cursor, match.index))}</Fragment>)
+    const label = match[1]!.replace(/\\(.)/gu, '$1')
+    parts.push(<span key={`s${match.index}`} className={css.refChip} data-ref-chip="session" title={label}>@{label}</span>)
+    cursor = match.index + match[0].length
+  }
+  if (parts.length === 0) return projectTokens(text)
+  if (cursor < text.length) parts.push(<Fragment key={`t${cursor}`}>{projectTokens(text.slice(cursor))}</Fragment>)
+  return <>{parts}</>
+}
+
+/** Plaintext `/name` and `@name` word-boundary tokens decorate as chips; the logged text stays the truth. */
+function projectTokens(text: string): ReactNode {
   const re = /(^|\s)([/@][\w-]+)(?=\s|$)/g
   const parts: ReactNode[] = []
   let cursor = 0

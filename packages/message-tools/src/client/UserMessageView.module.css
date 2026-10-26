@@ -36,6 +36,8 @@
 /* Plain text run inside a bubble — the retired official `MessageText`
    primitive's exact metrics (pre-wrap, break-word, inherited font metrics). */
 .textRun {
+  /* Inline, so a chip between two runs stays in the sentence. */
+  display: inline;
   white-space: pre-wrap;
   word-break: break-word;
   font-size: inherit;

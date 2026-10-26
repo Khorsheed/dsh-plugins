@@ -197,6 +197,15 @@ describe('UserMessageView bubble', () => {
     expect(container.querySelector('[data-ref-chip="subagent"]')?.textContent).toBe('@bot')
     expect(container.textContent).toContain('直接 ')
   })
+
+  it('shows a session mention (the @ menu\'s session chip, sent as text) as a chip with its title', () => {
+    const node = userNode([{ type: 'text', text: '@[游戏大师（游戏开发）](dsh-session:InNlc3Npb24i) 问问他在做什么， @reviewer 也看看' }])
+    const { container } = render(<UserMessageView {...props({ node })} />)
+    expect(container.querySelector('[data-ref-chip="session"]')?.textContent).toBe('@游戏大师（游戏开发）')
+    expect(container.querySelector('[data-ref-chip="subagent"]')?.textContent).toBe('@reviewer')
+    expect(container.textContent).not.toContain('dsh-session:')
+    expect(container.textContent).toContain('问问他在做什么')
+  })
 })
 
 describe('UserMessageView images and extra blocks', () => {
