@@ -197,8 +197,7 @@ dsh plugin --profile web remove @khorsheed/dsh-<name>
 独立 pnpm monorepo;每个包以 `@khorsheed/dsh-*` 发布。
 
 ```
-packages/   一个目录一个可发布插件或套件
-profiles/   套件门面仓的同步源(basic / dev / learning / video / gamedev)
+packages/   一个目录一个可发布插件或套件(套件目录同时是它门面仓的唯一同步源)
 build/      共享构建/测试预设(tsdown client bundle、vitest 源码面配置)
 scripts/    仓库工具(pack-dist、gen-typert、镜像同步、门禁检查器)
 ```

@@ -197,8 +197,7 @@ General rules:
 A standalone pnpm monorepo; every package publishes as `@khorsheed/dsh-*`.
 
 ```
-packages/   one directory per publishable plugin or suite
-profiles/   sync sources of the suite front-door repos (basic / dev / learning / video / gamedev)
+packages/   one directory per publishable plugin or suite (a suite's directory is also the sole sync source of its front-door repo)
 build/      shared build/test presets (tsdown client bundle, vitest source-plane config)
 scripts/    repo tooling (pack-dist, gen-typert, mirror sync, gate checkers)
 ```

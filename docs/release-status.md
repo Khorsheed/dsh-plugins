@@ -1,10 +1,10 @@
 # 发布状态
 
-> 由 `pnpm release:status` 生成(2026-10-26)，请勿手改。数据源：各包 package.json(version、dsh.compat)+ 本仓 `profiles/basic` + npm registry。
+> 由 `pnpm release:status` 生成(2026-10-26)，请勿手改。数据源：各包 package.json(version、dsh.compat)+ 基础体验套件 `packages/basic` 的成员 + npm registry。
 
 | 包 | npm 已发布 | 仓内版本 | minHost | verifiedHost | basic 成员 |
 | --- | --- | --- | --- | --- | --- |
-| `@khorsheed/dsh-ankh-guard` | 0.4.3 | 0.4.3 | 0.1.5-rc.1 | 0.2.1-rc.1 | ✓ |
+| `@khorsheed/dsh-ankh-guard` | 0.4.3 | 0.4.3 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-basic` | 未发布 | 0.1.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-bundle-local-agent` | 0.3.0 | 0.4.0 | 0.1.5-rc.1 | 0.2.1-rc.1 |  |
 | `@khorsheed/dsh-canvas` | 未发布 | 0.6.0 | 0.1.5-rc.1 | 0.1.5-rc.1 |  |

@@ -34,7 +34,7 @@ function tracked(): Set<string> {
 
 describe('mirrorFiles', () => {
   it('emits only files git tracks — no gitignored local state', () => {
-    const fixtures = [['package', 'ankh-guard'], ['profile', 'basic'], ['skill', 'self-upgrade']] as const
+    const fixtures = [['package', 'ankh-guard'], ['package', 'basic'], ['profile', 'eval'], ['skill', 'self-upgrade']] as const
     for (const [kind, name] of fixtures.filter(([, name]) => name !== 'self-upgrade' || skillFixturePresent)) {
       const untracked = mirrorFiles(kind, name).filter((f: string) => !tracked().has(`${kind}s/${name}/${f}`))
       expect(untracked, `${kind}s/${name} would ship untracked files`).toEqual([])
@@ -55,9 +55,11 @@ describe('mirrorFiles', () => {
   })
 
   it('ships nested tracked files, including force-added screenshots', () => {
-    const files = mirrorFiles('profile', 'basic')
+    // packages/basic is the dsh-basic mirror's only source and the README
+    // image host: the raw URLs every README embeds resolve to these files.
+    const files = mirrorFiles('package', 'basic')
     expect(files).toContain('package.json')
-    expect(files).toContain('scripts/install.sh')
+    expect(files).toContain('README.md')
     expect(files.some((f: string) => f.startsWith('docs/screenshots/'))).toBe(true)
   })
 })

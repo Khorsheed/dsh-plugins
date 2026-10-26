@@ -19,7 +19,8 @@
  * sees git's view — authoritative for the mirror path too.
  *
  * Usage: npx tsx scripts/sync-mirror.mts <package|profile|skill> <name> [--dry-run|--check]
- *   e.g. sync-mirror.mts skill self-upgrade
+ *   e.g. sync-mirror.mts package basic   (a suite: packages/<suite> is its mirror's only source)
+ *        sync-mirror.mts skill self-upgrade
  * Requires: push rights to Khorsheed/dsh-<name> for the push mode.
  * @module scripts/sync-mirror
  */
@@ -63,6 +64,8 @@ const KINDS = {
     skip: new Set(['node_modules', 'lib', '.DS_Store']),
     gitignore: 'node_modules/\nlib/\n*.tsbuildinfo\n.DS_Store\n',
   },
+  // Only profiles/eval remains (the held-back eval line); the suite front
+  // doors (dsh-basic, dsh-dev, …) mirror from packages/<suite> as kind package.
   profile: {
     srcDir: (name) => join(root, 'profiles', name),
     keep: new Set(['.git', '.gitignore']),
@@ -159,16 +162,16 @@ export function main(argv = process.argv.slice(2)) {
     run('git', ['add', '-A'], work)
     const diff = run('git', ['status', '--porcelain'], work)
     if (diff === '') {
-      process.stdout.write(`mirror dsh-${name} already up to date\n`)
+      process.stdout.write(`mirror dsh-${mirrorRepoName(kind, name)} already up to date\n`)
     } else if (check) {
-      process.stderr.write(`mirror dsh-${name} is behind ${kind}s/${name}:\n${diff}\n\nrun: pnpm exec tsx scripts/sync-mirror.mts ${kind} ${name}\n`)
+      process.stderr.write(`mirror dsh-${mirrorRepoName(kind, name)} is behind ${kind}s/${name}:\n${diff}\n\nrun: pnpm exec tsx scripts/sync-mirror.mts ${kind} ${name}\n`)
       process.exit(1)
     } else if (dryRun) {
       process.stdout.write(`${run('git', ['status', '--short'], work)}\n(dry run — not pushed)\n`)
     } else {
       run('git', ['commit', '-m', `sync from dsh-plugins @ ${headSha.slice(0, 7)}`], work)
       run('git', ['push', 'origin', 'HEAD'], work)
-      process.stdout.write(`mirror dsh-${name} synced @ ${headSha.slice(0, 7)}\n`)
+      process.stdout.write(`mirror dsh-${mirrorRepoName(kind, name)} synced @ ${headSha.slice(0, 7)}\n`)
     }
   } finally {
     rmSync(work, { recursive: true, force: true })
