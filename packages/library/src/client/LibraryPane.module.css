@@ -2558,3 +2558,126 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 .toolChip:focus-visible { outline: 2px solid var(--lib-accent); outline-offset: 1px; }
 .toolChip[data-done='true'] { border-color: transparent; background: var(--lib-ok-soft); color: var(--lib-ok); }
 .toolChip[data-on='true'] { border-color: transparent; background: var(--lib-bad-soft); color: var(--lib-bad); }
+
+/* 讲义页：窄屏目录是顶部一排，侧栏够宽时目录在左、正文在右 */
+.lesson {
+  display: grid;
+  gap: 14px;
+}
+
+.lessonToc {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 6px 0 8px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.lessonTocHead,
+.lessonTocActions { display: none; }
+
+.lessonTocItem {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.lessonTocItem:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
+.lessonTocItem[aria-current='true'] { border-color: var(--lib-accent); color: var(--lib-accent); }
+.lessonTocItem:focus-visible { outline: 2px solid var(--lib-accent); outline-offset: 1px; }
+
+.lessonDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 16%, transparent);
+}
+
+.lessonDot[data-state='none'] { background: transparent; border: 1px solid var(--dsw-alias-border-l3); }
+.lessonDot[data-state='weak'] { background: var(--lib-bad); }
+.lessonDot[data-state='practicing'] { background: var(--lib-accent); }
+.lessonDot[data-state='mastered'] { background: var(--lib-ok); }
+
+.lessonBody {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.lessonSection {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  scroll-margin-top: 48px;
+}
+
+.lessonHeading {
+  margin: 0;
+  font-size: var(--dsh-panel-text-title, 15px);
+  font-weight: 600;
+}
+
+.lessonPoints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.lessonPoints > span { display: inline-flex; align-items: center; gap: 5px; }
+
+@container dsh-panel (min-width: 720px) {
+  .lesson {
+    grid-template-columns: 200px minmax(0, 1fr);
+    align-items: start;
+    gap: 24px;
+  }
+
+  .lessonToc {
+    top: 8px;
+    flex-direction: column;
+    overflow: visible;
+    padding: 0;
+    background: transparent;
+  }
+
+  .lessonTocHead {
+    display: block;
+    padding: 0 8px 4px;
+    font-size: var(--dsh-panel-text-meta, 12px);
+    color: var(--dsw-alias-label-secondary);
+  }
+
+  .lessonTocItem {
+    justify-content: flex-start;
+    border: none;
+    border-radius: var(--dsw-radius-md, 10px);
+    white-space: normal;
+    text-align: left;
+    color: var(--dsw-alias-label-primary);
+  }
+
+  .lessonTocItem[aria-current='true'] { background: var(--dsw-alias-interactive-bg-hover); }
+
+  .lessonTocActions {
+    display: grid;
+    gap: 6px;
+    margin-top: 10px;
+  }
+}

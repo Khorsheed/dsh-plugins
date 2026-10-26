@@ -526,8 +526,11 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
       }),
       ...(points === undefined || points.length === 0 ? {} : { points }),
       ...(gate === 'acceptance' && Array.isArray(node.acceptance) ? { acceptance: acceptanceEntries(node.acceptance) } : {}),
-      ...(notesRec === undefined || notesText === undefined ? {} : {
-        notes: { text: notesText, updatedAt: stamp(notesRec.updatedAt), revisions: finite(notesRec.revisions) ?? 1 },
+      // 讲义 live in notes/<resource>/<node>.md; the node keeps their stamp
+      // (text '' until readRoadmap fills it). A legacy node still carries the
+      // text inline — it moves to the file on the next write.
+      ...(notesRec === undefined || (notesText === undefined && finite(notesRec.revisions) === undefined) ? {} : {
+        notes: { text: notesText ?? '', updatedAt: stamp(notesRec.updatedAt), revisions: finite(notesRec.revisions) ?? 1 },
       }),
     })
   }
@@ -947,6 +950,13 @@ export class LibraryStore {
   }
 
   /** The v5 pages ledger of one thick resource. */
+  /** notes/<resource>/<node>.md — or <node>.<n>.md, the Nth revision kept before a rewrite. */
+  private notesFile(projectId: string, resourceId: string, nodeId: string, revision?: number): string {
+    assertLibraryId(resourceId, 'resource id')
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(nodeId)) throw new LibraryStoreError(`not a station id: ${JSON.stringify(nodeId)}`, 'corrupt')
+    return join(this.projectDir(projectId), 'notes', resourceId, revision === undefined ? `${nodeId}.md` : `${nodeId}.${revision}.md`)
+  }
+
   private pagesFile(projectId: string, resourceId: string): string {
     assertLibraryId(resourceId, 'resource id')
     return join(this.projectDir(projectId), 'pages', `${resourceId}.jsonl`)
@@ -1152,9 +1162,38 @@ export class LibraryStore {
   readRoadmap(projectId: string, resourceId: string | undefined, which: 'adopted' | 'draft' = 'adopted'): LibraryRoadmap | undefined {
     if (resourceId === undefined) return undefined
     const current = this.readJsonFile(this.roadmapFile(projectId, resourceId, which), normalizeRoadmap)
-    if (current !== undefined) return { ...current, primaryResourceId: resourceId }
+    if (current !== undefined) return this.withNotes(projectId, { ...current, primaryResourceId: resourceId })
     const legacy = this.readJsonFile(this.legacyRoadmapFile(projectId, resourceId, which), normalizeRoadmap)
-    return legacy === undefined ? undefined : { ...legacy, primaryResourceId: resourceId }
+    return legacy === undefined ? undefined : this.withNotes(projectId, { ...legacy, primaryResourceId: resourceId })
+  }
+
+  /** A path with each station's 讲义 text read from its file (a node whose file is gone loses its notes). */
+  private withNotes(projectId: string, roadmap: LibraryRoadmap & { primaryResourceId: string }): LibraryRoadmap {
+    if (!roadmap.nodes.some(node => node.notes !== undefined && node.notes.text === '')) return roadmap
+    return {
+      ...roadmap,
+      nodes: roadmap.nodes.map(node => {
+        if (node.notes === undefined || node.notes.text !== '') return node
+        const text = this.readNotes(projectId, roadmap.primaryResourceId, node.id)
+        if (text !== undefined) return { ...node, notes: { ...node.notes, text } }
+        const { notes: _gone, ...rest } = node
+        return rest
+      }),
+    }
+  }
+
+  /** One station's 讲义 markdown, when written. */
+  readNotes(projectId: string, resourceId: string, nodeId: string): string | undefined {
+    try {
+      return readFileSync(this.notesFile(projectId, resourceId, nodeId), 'utf8')
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Keep the current 讲义 of a station as revision N before a rewrite (call inside `withProjectLock`). */
+  archiveNotes(projectId: string, resourceId: string, nodeId: string, revision: number, text: string): void {
+    this.writeTextFile(this.notesFile(projectId, resourceId, nodeId, revision), text)
   }
 
   /**
@@ -1239,8 +1278,17 @@ export class LibraryStore {
 
   /** Write one textbook's adopted roadmap or its draft (call inside `withProjectLock`) — the v5 layout. */
   writeRoadmap(projectId: string, roadmap: LibraryRoadmap): void {
-    if (roadmap.primaryResourceId === undefined) throw new LibraryStoreError('a roadmap is written under its textbook (primaryResourceId)', 'corrupt')
-    this.writeJsonFile(this.roadmapFile(projectId, roadmap.primaryResourceId, roadmap.status === 'adopted' ? 'adopted' : 'draft'), roadmap)
+    const resourceId = roadmap.primaryResourceId
+    if (resourceId === undefined) throw new LibraryStoreError('a roadmap is written under its textbook (primaryResourceId)', 'corrupt')
+    // 讲义 text goes to its own file; the path keeps only the stamp.
+    const nodes = roadmap.nodes.map(node => {
+      if (node.notes === undefined) return node
+      if (node.notes.text !== '' && this.readNotes(projectId, resourceId, node.id) !== node.notes.text) {
+        this.writeTextFile(this.notesFile(projectId, resourceId, node.id), node.notes.text)
+      }
+      return { ...node, notes: { updatedAt: node.notes.updatedAt, revisions: node.notes.revisions } }
+    })
+    this.writeJsonFile(this.roadmapFile(projectId, resourceId, roadmap.status === 'adopted' ? 'adopted' : 'draft'), { ...roadmap, nodes })
   }
 
   /** Drop one textbook's draft (adopted or discarded), in BOTH layouts. */
@@ -1284,6 +1332,7 @@ export class LibraryStore {
   removeResource(projectId: string, resourceId: string): void {
     rmSync(this.resourceFile(projectId, resourceId), { force: true })
     rmSync(this.pagesFile(projectId, resourceId), { force: true })
+    rmSync(join(this.projectDir(projectId), 'notes', resourceId), { recursive: true, force: true })
     rmSync(this.roadmapFile(projectId, resourceId, 'adopted'), { force: true })
     rmSync(this.roadmapFile(projectId, resourceId, 'draft'), { force: true })
     rmSync(this.legacyBookDir(projectId, resourceId), { recursive: true, force: true })
