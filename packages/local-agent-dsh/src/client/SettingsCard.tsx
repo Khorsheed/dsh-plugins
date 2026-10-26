@@ -280,13 +280,18 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
     <div className={css.body}>
       <section className={css.block}>
         <h3 className={css.blockTitle}>{t('auth.title')}</h3>
-        <ProviderAuthBlock
-          harness={{ id: 'dsh', label: 'dsh' }}
-          useSessions={useSessions}
-          status={auth.status}
-          runCommand={auth.runCommand}
-          t={authT}
-        />
+        {/* Switched off (the default), the harness is not registered at all:
+            a status probe can only fail, so say it is off instead of showing
+            an error, a red dot and a login it would refuse. */}
+        {enabled
+          ? <ProviderAuthBlock
+              harness={{ id: 'dsh', label: 'dsh' }}
+              useSessions={useSessions}
+              status={auth.status}
+              runCommand={auth.runCommand}
+              t={authT}
+            />
+          : <span className={css.hint}>{t('auth.disabled')}</span>}
         <span className={css.hint}>{t('auth.host')}</span>
       </section>
       <section className={css.block}>
@@ -445,7 +450,7 @@ export function DshSettingsCard(props: DshSettingsCardProps) {
         <span className={css.headText}>
           <span className={css.nameRow}>
             <span className={css.name}>{title}</span>
-            <AuthStatusDot status={authStatus} label={dotLabel} />
+            {state.enabled && <AuthStatusDot status={authStatus} label={dotLabel} />}
           </span>
           <span className={css.description}>{t('card.description')}</span>
         </span>

@@ -157,11 +157,14 @@ async function openCard(): Promise<void> {
 }
 
 describe('DshSettingsCard', () => {
-  it('renders the default states: unauthenticated, delegation off, live off — and NO login action', async () => {
+  it('renders the default states: delegation off (so no status probe, no error, no dot), live off — and NO login action', async () => {
     renderCard({})
     await openCard()
 
-    expect(screen.getByText(coreZh['settings.notAuthenticated'])).toBeTruthy()
+    // Off by default the harness is not registered: the card says so instead of a failed probe.
+    expect(screen.getByText(zh['auth.disabled'])).toBeTruthy()
+    expect(screen.queryByText(coreZh['settings.statusFailed'])).toBeNull()
+    expect(document.querySelector('[data-auth-status]')).toBeNull()
     // dsh authenticates through the host credentials: no login/reauthorize button.
     expect(screen.queryByRole('button', { name: coreZh['settings.login'] })).toBeNull()
     expect(screen.getByText(zh['auth.host'])).toBeTruthy()
@@ -187,10 +190,11 @@ describe('DshSettingsCard', () => {
     expect(screen.getByRole('switch', { name: zh['live.title'] }).getAttribute('aria-checked')).toBe('true')
   })
 
-  it('marks the auth block unavailable when the probe reports undefined (core absent)', async () => {
-    renderCard({ authStatus: undefined })
+  it('marks the auth block unavailable when the probe reports undefined while switched on (core absent)', async () => {
+    renderCard({ authStatus: undefined, value: { enabled: true, live: false } })
     await openCard()
-    expect(screen.getByText(coreZh['error'])).toBeTruthy()
+    expect(screen.getByText(coreZh['settings.statusFailed'])).toBeTruthy()
+    expect(screen.queryByRole('button', { name: coreZh['settings.login'] })).toBeNull()
   })
 
   it('writes the delegation switch through the scope', async () => {
