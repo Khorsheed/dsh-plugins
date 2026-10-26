@@ -55,9 +55,11 @@ function DetailView(props: {
   readonly revealFolder: FilePreviewTabInjected['revealFolder']
   readonly openInIde: FilePreviewTabInjected['openInIde']
   readonly onBack: () => void
+  /** Open another file in this tab's detail view (a markdown link). */
+  readonly onOpenFile: (path: string) => void
   readonly t: FilePreviewTabProps['t']
 }): ReactNode {
-  const { sessionId, path, entry, cwd, apps, readFile, writeFile, copyPath, revealFolder, openInIde, onBack, t } = props
+  const { sessionId, path, entry, cwd, apps, readFile, writeFile, copyPath, revealFolder, openInIde, onBack, onOpenFile, t } = props
   const [read, setRead] = useState<FilePreviewRead | null>(null)
   const [error, setError] = useState<string | null>(null)
   // The content⇄change-history view is the caller's state (the kernel only
@@ -115,6 +117,11 @@ function DetailView(props: {
       return reload().then(() => ({ ok: true }))
     })
 
+  // The markdown preview's local images: the same `read` answers an image
+  // path with its host-served image address (the pane makes it absolute).
+  const loadImage = (target: string): Promise<string | undefined> =>
+    readFile(sessionId, target).then(result => (result.ok && result.value.kind === 'image' ? result.value.url : undefined))
+
   return (
     <div className={css.detail}>
       <ContentPane
@@ -128,6 +135,8 @@ function DetailView(props: {
         onBack={onBack}
         onCopyPath={() => copyPath(path)}
         onReload={reload}
+        resolveImage={loadImage}
+        onOpenFile={(target) => { onOpenFile(target) }}
         {...(browserOnHost() ? { onSave: save } : {})}
         chrome={{
           ...(fileManager === undefined ? {} : { openFolder: () => { revealFolder(path) } }),
@@ -242,6 +251,11 @@ export function FilePreviewTab(props: FilePreviewTabProps): ReactNode {
           revealFolder={revealFolder}
           openInIde={openInIde}
           onBack={() => { actions.deselect(tab.id) }}
+          onOpenFile={(target) => {
+            // The fold's own spelling when the list knows the file, so its change history shows.
+            const known = list?.find(entry => resolveWorkspacePath(cwd, entry.path) === resolveWorkspacePath(cwd, target))
+            actions.select(tab.id, known?.path ?? target)
+          }}
           t={t}
         />
       </div>

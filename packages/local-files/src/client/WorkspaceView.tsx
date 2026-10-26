@@ -234,6 +234,16 @@ export function WorkspaceView({
     })
   }
 
+  // The markdown preview's local media: an image a document names is read
+  // through the same Remote (an image read answers a data URL), and a link to
+  // a local file selects it here, like a click in the tree.
+  const loadImage = (path: string): Promise<string | undefined> =>
+    readFile({ path }).then(result => (result.ok && result.value.kind === 'image' ? result.value.url : undefined))
+  const openLinkedFile = (path: string): void => {
+    actions.select(path)
+    setDetailOpen(true)
+  }
+
   const navigate = (path: string): void => {
     actions.setRoot(path)
     if (sessionId !== undefined) rememberLocalRoot(sessionId, path)
@@ -401,6 +411,8 @@ export function WorkspaceView({
               : {
                 onCopyPath: () => writeClipboard(selectedPath),
                 onReload: reloadPreview,
+                resolveImage: loadImage,
+                onOpenFile: openLinkedFile,
                 // Editing is a host-machine gesture for now: a phone through
                 // the tunnel reads only (decided 2026-10-24).
                 ...(onHost ? { onSave: savePreview } : {}),
