@@ -96,7 +96,9 @@ export function parseMentions(raw: string): { readonly targets: readonly string[
   let rest = raw.trim()
   for (;;) {
     const match = /^@(\S+)(?:\s+|$)/.exec(rest)
-    if (match === null) break
+    // A host reference (`@[title](dsh-session:…)`, the @ menu's session chip)
+    // names another session, never a member: it stays in the text.
+    if (match === null || match[1]!.startsWith('[')) break
     const name = match[1]!
     if (!targets.includes(name)) targets.push(name)
     rest = rest.slice(match[0].length).trim()

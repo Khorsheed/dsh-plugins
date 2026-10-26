@@ -217,16 +217,15 @@
   font-size: 12px;
 }
 
-/* A room's expand arrow: turns down while its members show. */
+/* A room's expand arrow (the host's chevron): turns down while its members show. */
 .expand {
   flex: none;
   display: inline-grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  font-size: 10px;
-  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
   transition: transform 120ms ease;
 }
 
