@@ -10,7 +10,7 @@ local-files、file-preview、worktrees 这几个文件面板都通过共享内�
 
 面板负责编辑，各面板插件负责写入。
 
-- **内核（`ui-content-preview`）**：新增可选的 `ContentPaneProps.onSave(request) => Promise<SaveOutcome>`。面板插件传了它，完整（未截断）的文本读取在标题行多一个「编辑」。进入编辑后，源码面（纯代码文件就是唯一的那一面）变成 `<textarea>`，渲染面显示草稿；编辑条显示状态，带「保存 / 放弃」，⌘S / Ctrl+S 保存。`SaveRequest` 是 `{ content, base }`：`base` 是开始编辑时的读取内容，在进入编辑时钉住（`edit.ts`），中途点重新载入也不会挪动冲突锚点。`base: null` 对应冲突条上的「仍然覆盖」。`SaveOutcome` 为 `ok`，或 `conflict | unsupported | missing | error` 之一。textarea 会把 CRLF 规范成 LF，保存时还原 CRLF。草稿像滚动位置一样按（会话，路径）存在模块级，切换文件既不丢也不串；有未保存修改时挂上 `beforeunload` 提醒。可编辑时「复制路径」改为 `menuOnly`，把标题行 4 个图标位里的一个让给「编辑」。
+- **内核（`ui-content-preview`）**：新增可选的 `ContentPaneProps.onSave(request) => Promise<SaveOutcome>`。面板插件传了它，完整（未截断）的文本读取在标题行多一个「编辑」。进入编辑后，源码面（纯代码文件就是唯一的那一面）变成 `<textarea>`，渲染面显示草稿；编辑条显示状态，带「保存 / 放弃」，⌘S / Ctrl+S 保存。`SaveRequest` 是 `{ content, base }`：`base` 是开始编辑时的读取内容，在进入编辑时钉住（`edit.ts`），中途点重新载入也不会挪动冲突锚点。`base: null` 对应冲突条上的「仍然覆盖」。`SaveOutcome` 为 `ok`，或 `conflict | unsupported | missing | error` 之一。textarea 会把 CRLF 规范成 LF，保存时还原 CRLF。草稿像滚动位置一样按（会话，路径）存在模块级，切换文件既不丢也不串；有未保存修改时挂上 `beforeunload` 提醒。标题行的图标顺序是：编辑、复制路径（最常用，紧挨着编辑）、重新加载、打开所在文件夹；「在 IDE 中打开」一律放在 ⋯ 菜单里，每个找到的 IDE 各占一行。这样不管有没有「编辑」都放得进 4 个图标位，文件变成可编辑时其他按钮不会挪位。
 - **各面板插件**：各自新增写入 Remote，并且只在 `browserOnHost()` 成立时传 `onSave`（2026-10-24 定：手机经隧道暂时只读）。
   - `localFiles/writeFile` 与 `worktrees/writeFile`（仓库相对路径，只写工作树，提交内容保持只读）和各自的读取一样直接用 `node:fs`。只写已存在的普通文件，且在读取上限内、字节能无损往返 UTF-8。先比对当前内容与 `base`，再写同目录临时文件、`chmod` 回原权限、`rename` 覆盖到 realpath 目标。
   - `filePreview/write` 和它的读取一样走 `ctx.fs`：先严格 UTF-8 无损读取、比对 `base`，再用 `stat` 拿到的版本号调 `writeText(..., { kind: 'replaceIfVersion', version })`。`FS_STALE_VERSION` 映射为 `conflict`。沙箱后端会像围栏 agent 的写入一样围栏这次写入。读取的解码器会去掉开头的 BOM，保存时补回。

@@ -193,14 +193,15 @@ describe('FilePreviewTab', () => {
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
     await act(async () => {})
-    // An editable read spends the inline slot on edit; copy path folds into ⋯.
+    // Copy path sits inline beside edit; opening in the IDE lives in ⋯.
     expect(screen.getByLabelText('action.edit')).toBeTruthy()
-    fireEvent.click(screen.getByLabelText('action.more'))
-    fireEvent.click(screen.getByText('action.copyPath'))
+    fireEvent.click(screen.getByLabelText('action.copyPath'))
     expect(copyPath).toHaveBeenCalledWith('src/agent.ts')
     fireEvent.click(screen.getByLabelText('action.showInFolder'))
     expect(revealFolder).toHaveBeenCalledWith('src/agent.ts')
-    fireEvent.click(screen.getByLabelText('action.openIDE'))
+    expect(screen.queryByLabelText('action.openIDE')).toBeNull()
+    fireEvent.click(screen.getByLabelText('action.more'))
+    fireEvent.click(screen.getByText('action.openIDE'))
     expect(openInIde).toHaveBeenCalledWith('src/agent.ts', 'cursor')
   })
 
@@ -209,24 +210,24 @@ describe('FilePreviewTab', () => {
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
     await act(async () => {})
-    fireEvent.click(screen.getByLabelText('action.more'))
-    expect(screen.getByText('action.copyPath')).toBeTruthy()
+    expect(screen.getByLabelText('action.copyPath')).toBeTruthy()
     expect(screen.queryByLabelText('action.showInFolder')).toBeNull()
-    expect(screen.queryByLabelText('action.openIDE')).toBeNull()
+    expect(screen.queryByText(/action\.openIDE/)).toBeNull()
   })
 
-  it('the ⋯ menu lists every probed IDE and re-chooses on select', async () => {
+  it('the ⋯ menu lists every probed IDE as its own row', async () => {
     const openInIde = vi.fn()
     renderTab({ openInIde, apps: ['finder', 'cursor', 'vscode'] })
     await act(async () => {})
     fireEvent.click(screen.getByText('agent.ts'))
     await act(async () => {})
     fireEvent.click(screen.getByLabelText('action.more'))
+    expect(screen.queryByText('action.openIDE')).toBeNull()
     fireEvent.click(screen.getByText('action.openIDE · Visual Studio Code'))
-    expect(openInIde).toHaveBeenCalledWith('src/agent.ts', 'vscode')
-    // The choice sticks: the main button now launches vscode.
-    fireEvent.click(screen.getByLabelText('action.openIDE'))
-    expect(openInIde).toHaveBeenCalledWith('src/agent.ts', 'vscode')
+    expect(openInIde).toHaveBeenLastCalledWith('src/agent.ts', 'vscode')
+    fireEvent.click(screen.getByLabelText('action.more'))
+    fireEvent.click(screen.getByText('action.openIDE · Cursor'))
+    expect(openInIde).toHaveBeenLastCalledWith('src/agent.ts', 'cursor')
   })
 
   it('an outside-workspace file opens the same detail view (Remote read resolves it)', async () => {

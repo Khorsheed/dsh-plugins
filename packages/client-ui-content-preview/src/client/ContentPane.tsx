@@ -516,10 +516,12 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   const location = displayPath ?? path
 
   // Header actions in priority order: the search toggle (compact only — wide
-  // panes keep the row open), edit, reload, copy path, then the host-open gestures
-  // (absent off-host: the open-in-app probe publishes no apps there). The
-  // full path is no menu row: the title names the file, the list's trail
-  // names where it is, and copy path hands over the rest.
+  // panes keep the row open), edit, copy path (the most used gesture, so it
+  // sits beside edit), reload, show in folder; opening in an IDE always lives
+  // in the ⋯ menu. Host-open gestures are absent off-host (the open-in-app
+  // probe publishes no apps there). The full path is no menu row: the title
+  // names the file, the list's trail names where it is, and copy path hands
+  // over the rest.
   const headerActions: PanelAction[] = []
   if (compact && searchable) {
     headerActions.push({
@@ -532,27 +534,24 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
   if (editable && !editing && !diffActive) {
     headerActions.push({ id: 'edit', label: t('action.edit'), icon: <IconEditOutlineMedium size={16} />, pinned: true, onSelect: startEdit })
   }
+  if (onCopyPath !== undefined) {
+    headerActions.push({
+      id: 'copy', label: copiedPath ? t('action.copied') : t('action.copyPath'), onSelect: doCopyPath,
+      icon: copiedPath ? <IconCheckOutlineMedium size={16} /> : <IconCopyOutlineMedium size={16} />,
+    })
+  }
   if (onReload !== undefined) {
     headerActions.push({
       id: 'reload', label: t('action.reload'), disabled: reloading, onSelect: doReload,
       icon: <IconRefreshOutlineMedium size={16} className={reloading ? css.actionSpinning : undefined} />,
     })
   }
-  if (onCopyPath !== undefined) {
-    headerActions.push({
-      // An editable read spends the inline slot on edit; copy path is the
-      // gesture that folds (keyed on `editable`, not `editing`, so the row
-      // does not jump when edit mode starts).
-      id: 'copy', label: copiedPath ? t('action.copied') : t('action.copyPath'), onSelect: doCopyPath, menuOnly: editable,
-      icon: copiedPath ? <IconCheckOutlineMedium size={16} /> : <IconCopyOutlineMedium size={16} />,
-    })
-  }
   if (chrome?.openFolder !== undefined) {
     headerActions.push({ id: 'folder', label: t('action.showInFolder'), icon: <IconFolderOpenOutlineMedium size={16} />, onSelect: chrome.openFolder })
   }
   if (chrome?.openIDE !== undefined) {
-    headerActions.push({ id: 'ide', label: t('action.openIDE'), icon: <IconCodeOutlineMedium size={16} />, onSelect: chrome.openIDE })
-    // Each resolved IDE is its own menu row (the wide pane's old split caret).
+    // Several resolved IDEs: one menu row each, named (a generic row beside
+    // them would only repeat the current choice). One IDE: a single row.
     if (splitIde) {
       for (const choice of ideChoices) {
         headerActions.push({
@@ -560,6 +559,8 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
           menuOnly: true, onSelect: () => { chrome.onIdeChoice?.(choice.id) },
         })
       }
+    } else {
+      headerActions.push({ id: 'ide', label: t('action.openIDE'), icon: <IconCodeOutlineMedium size={16} />, menuOnly: true, onSelect: chrome.openIDE })
     }
   }
   if (!diffActive && html && content !== null && htmlMode !== 'source') {
