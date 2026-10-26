@@ -69,7 +69,7 @@ export function shortOf(book: { readonly title: string; readonly short?: string 
 export function Cover({ book, shade = 0, size = 'shelf', kindLabel }: {
   book: { readonly title: string; readonly short?: string | undefined; readonly edition?: string | undefined }
   shade?: number
-  size?: 'shelf' | 'mini' | 'badge'
+  size?: 'shelf' | 'mini' | 'badge' | 'card' | 'hero'
   kindLabel?: string | undefined
 }): ReactNode {
   return (
@@ -95,10 +95,10 @@ export function coverOf(resource: { readonly title: string; readonly meta?: { re
 }
 
 /** A circular progress ring in the project's color. */
-export function Ring({ percent }: { percent: number }): ReactNode {
+export function Ring({ percent, label, title }: { percent: number; label?: string | undefined; title?: string | undefined }): ReactNode {
   return (
-    <span className={css.ring} style={{ ['--pct' as string]: `${Math.max(0, Math.min(100, percent))}%` }} role="img" aria-label={`${percent}%`}>
-      <span>{percent}%</span>
+    <span className={css.ring} data-labelled={label === undefined ? undefined : 'true'} style={{ ['--pct' as string]: `${Math.max(0, Math.min(100, percent))}%` }} role="img" aria-label={title ?? `${percent}%`} title={title}>
+      <span>{percent}%{label !== undefined && <small>{label}</small>}</span>
     </span>
   )
 }

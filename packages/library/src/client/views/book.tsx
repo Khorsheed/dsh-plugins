@@ -22,6 +22,7 @@ import { IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } f
 import { ConfirmDialog, OriginTag, outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 import { Path } from './path.tsx'
+import { splitTitle } from '../titles.ts'
 
 /** A node's contents rows of one thick resource, as titles. */
 export function rowsOf(node: RoadmapNode, resource: LibraryResource): string[] {
@@ -89,13 +90,15 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
   return (
     <>
       <PanelHeader
-        title={resource?.title ?? ''}
+        title={resource === undefined ? '' : splitTitle(resource.title).main}
         onBack={() => { actions.pop() }}
         backLabel={t('action.back')}
         actions={resource === undefined ? [] : [
           { id: 'ask', label: t('action.askCoach'), icon: <IconSparkleMedium />, onSelect: () => { prime(t('prime.readBook', { book: resource.title })) } },
           { id: 'replan', label: t('book.replan'), icon: <IconRefreshOutlineMedium />, onSelect: () => { prime(t('prime.replan', { book: resource.title })) } },
           { id: 'bind', label: t('action.bindBook'), icon: <IconSparkleMedium />, menuOnly: true, onSelect: () => { void p.bindTarget({ projectId, resourceId }).then(() => { setNotice(t('notice.bound')) }) } },
+          // 知识型 / 材料型 is rarely changed: it lives in the menu, not on the page.
+          ...(isThickResource(resource) ? [{ id: 'kind', label: t(resource.meta?.bookKind === 'material' ? 'book.kindToKnowledge' : 'book.kindToMaterial'), icon: <IconRefreshOutlineMedium />, menuOnly: true, onSelect: () => { void act(() => outcome(p.setBookKind(projectId, resourceId, resource.meta?.bookKind === 'material' ? 'knowledge' : 'material'))) } }] : []),
           { id: 'delete', label: t('book.delete'), icon: <IconTrashOutlineMedium />, menuOnly: true, onSelect: () => { setDeleteError(undefined); setConfirmingDelete(true) } },
         ]}
         moreLabel={t('action.more')}
@@ -104,28 +107,17 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
         <StateLine loaded={loaded} t={t} />
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
         {resource !== undefined && (
-          <section className={css.bookHead}>
-            {resource.seq !== undefined ? <span className={css.seq}>{resource.seq}</span> : <Cover book={coverOf(resource)} shade={loaded.data?.shade ?? 0} size="badge" />}
-            <span className={css.projectText}>
-              <span className={css.textbookTitle}>{resource.title}<OriginTag origin={resource.origin} digital={resource.kind === 'course'} t={t} /></span>
-              <span className={css.muted}>
-                {[resource.meta?.edition, kindLabelOf(resource, t), loaded.data?.roadmap === undefined ? undefined : t('book.shelfMeta', { done: String(loaded.data.roadmap.nodes.filter(node => node.gate === 'quiz' && node.state === 'done').length), total: String(loaded.data.roadmap.nodes.filter(node => node.gate === 'quiz').length) })].filter(Boolean).join(' · ')}
+          <section className={css.bookHero}>
+            <Cover book={coverOf(resource)} shade={loaded.data?.shade ?? 0} size="hero" />
+            <span className={css.bookHeroText}>
+              <span className={css.bookHeroTitle}>{splitTitle(resource.title).main}</span>
+              {splitTitle(resource.title).sub !== undefined && <span className={css.muted}>{splitTitle(resource.title).sub}</span>}
+              <span className={css.bookHeroMeta}>
+                <OriginTag origin={resource.origin} digital={resource.kind === 'course'} t={t} />
+                {resource.meta?.bookKind === 'material' && <span className={css.chip} data-tone="warn">{t('bookKind.material')}</span>}
+                {[resource.meta?.edition, resource.seq === undefined ? undefined : t('book.seqOf', { seq: String(resource.seq) })].filter(Boolean).map(part => <span key={part}>{part}</span>)}
               </span>
             </span>
-          </section>
-        )}
-        {resource !== undefined && isThickResource(resource) && (
-          <section className={css.kindRow}>
-            <span className={css.kindRowText}>
-              <span>{t('book.kindLine', { kind: t(`bookKind.${resource.meta?.bookKind ?? 'knowledge'}`) })}</span>
-              <span className={css.muted}>{t(`book.kindHint.${resource.meta?.bookKind ?? 'knowledge'}`)}</span>
-            </span>
-            <button
-              type="button"
-              className={css.ghost}
-              disabled={busy}
-              onClick={() => { void act(() => outcome(p.setBookKind(projectId, resourceId, resource.meta?.bookKind === 'material' ? 'knowledge' : 'material'))) }}
-            >{t(resource.meta?.bookKind === 'material' ? 'book.kindToKnowledge' : 'book.kindToMaterial')}</button>
           </section>
         )}
         {resource?.meta?.extras !== undefined && resource.meta.extras.length > 0 && <Extras p={p} resource={resource} />}
@@ -153,7 +145,7 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
               onLesson={node => { actions.push({ view: 'lesson', projectId, resourceId, nodeId: node.id }) }}
               onRetake={node => { actions.push({ view: 'node', projectId, resourceId, nodeId: node.id, tab: 'quiz' }) }}
             />
-            <SkippedRows p={p} rows={skippedRows(loaded.data.roadmap, resource)} />
+
           </>
         )}
         {resource !== undefined && loaded.data?.roadmap === undefined && loaded.data?.draft === undefined && (
@@ -169,11 +161,8 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
             <QuizRows p={p} projectId={projectId} quizzes={looseQuizzes} />
           </section>
         )}
-        {resource !== undefined && (
-          <div className={css.muted}>
-            {t('book.contentsMeta', { rows: String(resource.toc?.length ?? 0), kind: kindLabelOf(resource, t) })}
-            {resource.tocSource?.url !== undefined && <> · <a className={css.link} href={resource.tocSource.url} target="_blank" rel="noreferrer">{t('book.contentsSource')}</a></>}
-          </div>
+        {resource !== undefined && isThickResource(resource) && (
+          <Contents p={p} resource={resource} skipped={loaded.data?.roadmap === undefined ? [] : skippedRows(loaded.data.roadmap, resource)} />
         )}
       </div>
       {confirmingDelete && resource !== undefined && (
@@ -217,7 +206,7 @@ function skippedRows(roadmap: LibraryRoadmap, resource: LibraryResource): { n: n
   return (resource.toc ?? []).filter(row => !covered.has(row.n)).map(row => ({ n: row.n, title: row.title }))
 }
 
-/** 「本路线不学」: the skipped chapters, folded. */
+/** 「本路线不学」 on a draft card: the skipped chapters, folded. */
 function SkippedRows({ p, rows }: { p: ViewProps['p']; rows: readonly { n: number; title: string }[] }): ReactNode {
   const { t } = p
   if (rows.length === 0) return null
@@ -225,6 +214,25 @@ function SkippedRows({ p, rows }: { p: ViewProps['p']; rows: readonly { n: numbe
     <details className={css.skipped}>
       <summary>{t('book.skipped', { count: String(rows.length) })}</summary>
       <ul>{rows.map(row => <li key={row.n}>{row.title}</li>)}</ul>
+    </details>
+  )
+}
+
+/** The contents, folded into one line: how many chapters, how many this path skips; open for the rows (skipped ones dimmed) and where the contents came from. */
+function Contents({ p, resource, skipped }: { p: ViewProps['p']; resource: LibraryResource; skipped: readonly { n: number; title: string }[] }): ReactNode {
+  const { t } = p
+  const skippedRows = new Set(skipped.map(row => row.n))
+  const rows = resource.toc ?? []
+  return (
+    <details className={css.contentsFold}>
+      <summary>
+        <span>{t('book.contentsLine', { rows: String(rows.length) })}{skipped.length > 0 ? ` · ${t('book.skipped', { count: String(skipped.length) })}` : ''}</span>
+        <span className={css.muted}>{t('book.contentsOpen')}</span>
+      </summary>
+      <ol className={css.contentsList}>
+        {rows.map(row => <li key={row.n} data-skipped={skippedRows.has(row.n) ? 'true' : undefined}>{row.part === undefined ? row.title : `${row.part} · ${row.title}`}{skippedRows.has(row.n) ? ` · ${t('book.skippedTag')}` : ''}</li>)}
+      </ol>
+      {resource.tocSource?.url !== undefined && <a className={css.link} href={resource.tocSource.url} target="_blank" rel="noreferrer">{t('book.contentsSource')}</a>}
     </details>
   )
 }
