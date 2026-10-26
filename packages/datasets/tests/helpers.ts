@@ -69,6 +69,9 @@ export function makeFixtureRepo(): FixtureRepo {
   git(dir, ['init', '-q', '-b', 'main'])
   git(dir, ['config', 'user.email', 'fixture@example.com'])
   git(dir, ['config', 'user.name', 'fixture'])
+  // No background gc/maintenance: it rewrites .git/objects while cleanup walks it.
+  git(dir, ['config', 'gc.auto', '0'])
+  git(dir, ['config', 'maintenance.auto', 'false'])
   writeFiles(dir, {
     'datasets/alpha/dataset.json': `${JSON.stringify(ALPHA_DESCRIPTOR, null, 2)}\n`,
     'datasets/alpha/handbook.md': '# handbook passthrough\n',
@@ -139,6 +142,9 @@ export function makeJudgingRepo(): FixtureRepo {
   git(dir, ['init', '-q', '-b', 'main'])
   git(dir, ['config', 'user.email', 'fixture@example.com'])
   git(dir, ['config', 'user.name', 'fixture'])
+  // No background gc/maintenance: it rewrites .git/objects while cleanup walks it.
+  git(dir, ['config', 'gc.auto', '0'])
+  git(dir, ['config', 'maintenance.auto', 'false'])
   writeFiles(dir, {
     'datasets/bench/dataset.json': `${JSON.stringify(BENCH_DESCRIPTOR, null, 2)}\n`,
     'datasets/bench/manifest.yml': 'suite_id: bench\n',

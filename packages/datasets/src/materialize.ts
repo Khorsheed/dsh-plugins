@@ -89,11 +89,17 @@ export function layerPaths(
 /** Make a tree writable again (staging cleanup; the final tree stays read-only). */
 function makeWritable(dir: string): void {
   if (!existsSync(dir)) return
+  // An entry can vanish between readdir and lstat (a git repo in the tree
+  // packing its loose objects in the background): nothing left to unlock.
   const walk = (path: string): void => {
-    const stat = lstatSync(path)
-    if (stat.isSymbolicLink()) return
-    chmodSync(path, stat.isDirectory() ? 0o755 : 0o644)
-    if (stat.isDirectory()) for (const entry of readdirSync(path)) walk(join(path, entry))
+    try {
+      const stat = lstatSync(path)
+      if (stat.isSymbolicLink()) return
+      chmodSync(path, stat.isDirectory() ? 0o755 : 0o644)
+      if (stat.isDirectory()) for (const entry of readdirSync(path)) walk(join(path, entry))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
   }
   walk(dir)
 }
