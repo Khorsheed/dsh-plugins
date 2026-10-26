@@ -28,6 +28,7 @@ import { NodeView } from './views/station.tsx'
 import { CardsView } from './views/cards.tsx'
 import { NewProjectView, ProjectView, TodayView } from './views/home.tsx'
 import { QuizView, ResultView, ReviewView } from './views/quiz.tsx'
+import { LessonView } from './views/lesson.tsx'
 import css from './LibraryPane.module.css'
 
 /** The tab body. */
@@ -42,6 +43,7 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
           case 'project': return <ProjectView p={props} projectId={route.projectId} />
           case 'resource': return <BookView p={props} projectId={route.projectId} resourceId={route.resourceId} />
           case 'node': return <NodeView p={props} projectId={route.projectId} resourceId={route.resourceId} nodeId={route.nodeId} tab={route.tab} />
+          case 'lesson': return <LessonView p={props} projectId={route.projectId} resourceId={route.resourceId} nodeId={route.nodeId} />
           case 'cards': return <CardsView p={props} projectId={route.projectId} filter={route.filter} />
           case 'quiz': return <QuizView p={props} projectId={route.projectId} resourceId={route.resourceId} quizId={route.quizId} />
           case 'result': return <ResultView p={props} projectId={route.projectId} resourceId={route.resourceId} result={route.result} />

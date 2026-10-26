@@ -22,6 +22,7 @@ export type LibraryRoute =
   | { readonly view: 'project'; readonly projectId: string }
   | { readonly view: 'resource'; readonly projectId: string; readonly resourceId: string }
   | { readonly view: 'node'; readonly projectId: string; readonly resourceId: string; readonly nodeId: string; readonly tab: LibraryNodeTab }
+  | { readonly view: 'lesson'; readonly projectId: string; readonly resourceId: string; readonly nodeId: string }
   | { readonly view: 'cards'; readonly projectId: string; readonly filter: LibraryCardFilter }
   | { readonly view: 'quiz'; readonly projectId: string; readonly resourceId?: string; readonly quizId: string }
   | { readonly view: 'result'; readonly projectId: string; readonly resourceId?: string; readonly result: LibraryAssessResult }
@@ -57,6 +58,8 @@ export interface LibraryState {
   rev: number
   /** Per-station quiz settings and the pending ask — they outlive the tab that shows them. */
   quiz: Record<string, LibraryStationQuiz>
+  /** Stations whose 讲义 the learner asked for (开始学这一站), keyed `project:resource:node` → when. */
+  preparing: Record<string, number>
 }
 
 /** Annotation twin of the actions literal below. */
@@ -74,6 +77,8 @@ export type LibraryActions = {
   setQuizSettings: (draft: LibraryState, key: string, settings: LibraryQuizSettings) => void
   /** Start (or clear, with undefined) a station's pending ask. */
   setQuizAsk: (draft: LibraryState, key: string, ask: LibraryQuizAsk | undefined) => void
+  /** Start (or clear) waiting for a station's 讲义. */
+  setPreparing: (draft: LibraryState, key: string, since: number | undefined) => void
 }
 
 const TODAY: LibraryRoute = { view: 'today' }
@@ -84,7 +89,7 @@ const TODAY: LibraryRoute = { view: 'today' }
  */
 export function createLibraryStore(): EngineStoreHandle<LibraryState, LibraryActions> {
   return defineStore({
-    init: (): LibraryState => ({ stack: [TODAY], rev: 0, quiz: {} }),
+    init: (): LibraryState => ({ stack: [TODAY], rev: 0, quiz: {}, preparing: {} }),
     actions: {
       push: (d, route) => { d.stack.push(route) },
       replace: (d, route) => { d.stack[d.stack.length - 1] = route },
@@ -101,6 +106,10 @@ export function createLibraryStore(): EngineStoreHandle<LibraryState, LibraryAct
       setQuizAsk: (d, key, ask) => {
         const { ask: _previous, ...rest } = d.quiz[key] ?? {}
         d.quiz[key] = ask === undefined ? rest : { ...rest, ask }
+      },
+      setPreparing: (d, key, since) => {
+        if (since === undefined) delete d.preparing[key]
+        else d.preparing[key] = since
       },
     },
   })

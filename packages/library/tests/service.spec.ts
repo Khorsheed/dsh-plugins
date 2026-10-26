@@ -4,7 +4,7 @@
  * weakness and review scheduling, the two-axis quiz checks, the assess
  * cascade, bindings and undo.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -379,6 +379,34 @@ describe('textbook paths', () => {
 })
 
 describe('station notes (讲义)', () => {
+  it('讲义 live in notes/<resource>/<node>.md; the path keeps only the stamp; a rewrite keeps the old version', async () => {
+    const { projectId, bookId } = await seed()
+    await adopt(projectId, bookId)
+    const dir = join(root, 'projects', projectId)
+    await service.putNotes({ projectId, resourceId: bookId, nodeId: 'n1', text: '## 离子通道\n第一版' })
+    expect(readFileSync(join(dir, 'notes', bookId, 'n1.md'), 'utf8')).toBe('## 离子通道\n第一版')
+    expect(readFileSync(join(dir, 'roadmaps', `${bookId}.json`), 'utf8')).not.toContain('第一版')
+    expect((await service.getRoadmap({ projectId, resourceId: bookId })).roadmap?.nodes[0]?.notes?.text).toBe('## 离子通道\n第一版')
+    await service.putNotes({ projectId, resourceId: bookId, nodeId: 'n1', text: '## 离子通道\n第二版' })
+    expect(readFileSync(join(dir, 'notes', bookId, 'n1.1.md'), 'utf8')).toBe('## 离子通道\n第一版')
+    expect((await service.getRoadmap({ projectId, resourceId: bookId })).roadmap?.nodes[0]?.notes?.revisions).toBe(2)
+    await service.removeResource({ projectId, resourceId: bookId })
+    expect(existsSync(join(dir, 'notes', bookId))).toBe(false)
+  })
+
+  it('a legacy path with the 讲义 inline still reads, and moves them to the file on the next write', async () => {
+    const { projectId, bookId } = await seed()
+    await adopt(projectId, bookId)
+    const file = join(root, 'projects', projectId, 'roadmaps', `${bookId}.json`)
+    const legacy = JSON.parse(readFileSync(file, 'utf8')) as { nodes: Record<string, unknown>[] }
+    legacy.nodes[0] = { ...legacy.nodes[0], notes: { text: '旧讲义正文', updatedAt: '2026-10-01T00:00:00.000Z', revisions: 3 } }
+    writeFileSync(file, JSON.stringify(legacy))
+    expect((await service.getRoadmap({ projectId, resourceId: bookId })).roadmap?.nodes[0]?.notes?.text).toBe('旧讲义正文')
+    await service.putNotes({ projectId, resourceId: bookId, nodeId: 'n1', text: '新讲义' })
+    expect(readFileSync(join(root, 'projects', projectId, 'notes', bookId, 'n1.3.md'), 'utf8')).toBe('旧讲义正文')
+    expect(readFileSync(file, 'utf8')).not.toContain('旧讲义正文')
+  })
+
   it('a misplaced 讲义 is refused with its fix: still a draft, or here are the stations', async () => {
     const { projectId, bookId } = await seed()
     await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'n1', title: '离子通道', gate: 'quiz', covers: [{ ref: bookId, locator: '1' }] }] })

@@ -1,25 +1,26 @@
 /**
- * One station of a textbook's path: its four tabs — 导读 / 我的记录 (the
- * photographed pages) / 讲义 / 章节考 (views/station-quiz.tsx).
+ * One station of a textbook's path: 导读 (with the lesson card: 开始学这一站 /
+ * 打开讲义 — the 讲义 are their own page, views/lesson.tsx) / 我的记录 (the
+ * photographed pages) / 章节考 (views/station-quiz.tsx).
  *
  * @module @khorsheed/dsh-library/client/views/station
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ListRow, PanelHeader, UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { acceptanceLines, coverKind, isThickResource, type LibraryPage, type LibraryResource, type RoadmapNode } from '../../types.ts'
 import { CoverChips, coverLabel, type CoverContext } from '../covers.tsx'
 import type { LibraryNodeTab } from '../store.ts'
 import { IconSparkleMedium } from '../icons.tsx'
 import { IconCameraOutlineMedium } from '../icons-local.tsx'
-import { outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, when, type ViewProps } from '../ui.tsx'
+import { outcome, shortGloss, StateLine, useLoad, value, WeaknessBars, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
 /** The zigzag column (0..2) a node at `index` sits in. */
 import { AcceptanceTab, QuizTab } from './station-quiz.tsx'
 import { rowsOf } from './book.tsx'
+import { LessonCard } from './lesson.tsx'
 
-/** One node: guide, photographed pages, its 讲义, and the gate tab 章节考 — on every kind of station. */
+/** One node: guide (with the lesson card), photographed pages, and the gate tab 章节考 — on every kind of station. */
 export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & { projectId: string; resourceId: string; nodeId: string; tab: LibraryNodeTab }): ReactNode {
   const { t, actions, useStore } = p
   const rev = useStore(s => s.rev)
@@ -43,7 +44,6 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
   const tabs: { id: LibraryNodeTab; label: string }[] = [
     { id: 'guide', label: t('node.guide') },
     ...(coversOwn && resource !== undefined && isThickResource(resource) ? [{ id: 'pages' as const, label: t('node.pages') }] : []),
-    { id: 'notes', label: t('node.notes') },
     // Every station ends in 章节考: a quiz / read station's papers, an
     // acceptance station's rubric sheet.
     { id: 'quiz', label: t('node.quiz') },
@@ -78,13 +78,10 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
         <StateLine loaded={loaded} t={t} />
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
         {node !== undefined && activeTab === 'guide' && (
-          <GuideTab p={p} projectId={projectId} resourceId={resourceId} node={node} resource={resource} coverContext={coverContext} onPrime={prime} />
+          <GuideTab p={p} projectId={projectId} resourceId={resourceId} node={node} resource={resource} coverContext={coverContext} />
         )}
         {node !== undefined && activeTab === 'pages' && resource !== undefined && (
           <PagesTab p={p} projectId={projectId} resourceId={resourceId} resourceTitle={resource.title} node={node} onBind={() => { void p.bindTarget({ projectId, resourceId }) }} />
-        )}
-        {node !== undefined && activeTab === 'notes' && (
-          <NotesTab p={p} node={node} onPrime={prime} />
         )}
         {node !== undefined && activeTab === 'quiz' && node.gate === 'acceptance' && (
           <AcceptanceTab p={p} projectId={projectId} node={node} passRatio={loaded.data?.passRatio ?? 0.8} onPrime={() => { prime(t('prime.accept', { node: node.title, nodeId: node.id, criteria: acceptanceLines(node).map(line => `- ${line.id}: ${line.line}`).join('\n') })) }} />
@@ -115,8 +112,8 @@ export function NodeView({ p, projectId, resourceId, nodeId, tab }: ViewProps & 
   )
 }
 
-function GuideTab({ p, projectId, resourceId, node, resource, coverContext, onPrime }: {
-  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; resource: LibraryResource | undefined; coverContext: CoverContext; onPrime: (text: string) => void
+function GuideTab({ p, projectId, resourceId, node, resource, coverContext }: {
+  p: ViewProps['p']; projectId: string; resourceId: string | undefined; node: RoadmapNode; resource: LibraryResource | undefined; coverContext: CoverContext
 }): ReactNode {
   const { t, actions } = p
   const rows = resource === undefined ? [] : rowsOf(node, resource)
@@ -125,6 +122,7 @@ function GuideTab({ p, projectId, resourceId, node, resource, coverContext, onPr
   return (
     <>
       {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
+      {resourceId !== undefined && <LessonCard p={p} projectId={projectId} resourceId={resourceId} node={node} resource={resource} />}
       {node.goals.length > 0 && (
         <section className={css.section}>
           <h3 className={css.sectionTitle}>{t('node.goals')}</h3>
@@ -144,7 +142,6 @@ function GuideTab({ p, projectId, resourceId, node, resource, coverContext, onPr
         </section>
       )}
       <div className={css.actions}>
-        <button type="button" className={css.secondary} onClick={() => { onPrime(t('prime.node', { book: resource?.title ?? '', node: node.title })) }}>{t('action.askCoach')}</button>
         {node.gate === 'read' && node.state === 'current' && (
           <button
             type="button"
@@ -309,36 +306,3 @@ function PageThumb({ p, projectId, page }: { p: ViewProps['p']; projectId: strin
   )
 }
 
-/**
- * The station's 讲义 tab: the coach's distilled teaching on the node —
- * marginalia for a book station, the textbook itself for a 讲授 station.
- * The body renders through the host's MarkdownText (full GFM + KaTeX — the
- * same surface the conversation has).
- */
-function NotesTab({ p, node, onPrime }: { p: ViewProps['p']; node: RoadmapNode; onPrime: (text: string) => void }): ReactNode {
-  const { t } = p
-  const notes = node.notes
-  const markdownLabels = useMemo<MarkdownLabels>(() => ({
-    code: { copyLabel: t('markdown.copy'), copiedLabel: t('markdown.copied') },
-    footnotes: t('markdown.footnotes'),
-  }), [t])
-  return (
-    <>
-      {node.state === 'locked' && <div className={css.notice}>{t('node.locked')}</div>}
-      {notes === undefined ? (
-        <div className={css.empty}>
-          <div className={css.emptyTitle}>{t('node.notesEmptyTitle')}</div>
-          <div className={css.muted}>{t('node.notesEmpty')}</div>
-        </div>
-      ) : (
-        <section className={css.notesPaper}>
-          <div className={css.notesMeta}>{t('node.notesMeta', { at: when(notes.updatedAt, t), n: String(notes.revisions) })}</div>
-          <MarkdownText text={notes.text} labels={markdownLabels} />
-        </section>
-      )}
-      <div className={css.actions}>
-        <button type="button" className={css.secondary} onClick={() => { onPrime(t('prime.notes', { node: node.title, nodeId: node.id })) }}>{notes === undefined ? t('node.notesWrite') : t('node.notesAsk')}</button>
-      </div>
-    </>
-  )
-}

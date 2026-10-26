@@ -259,6 +259,10 @@ export class LibraryServiceRoadmap extends LibraryServiceCards {
       const book = roadmap.primaryResourceId === undefined ? undefined : this.store.readResource(project.value.id, roadmap.primaryResourceId)
       const lesson = lessonProblems(text, node, book?.origin === 'authored')
       if (lesson !== undefined) return refuse('invalid', lesson)
+      // A rewrite keeps the version it replaces (notes/<resource>/<node>.<n>.md).
+      if (node.notes !== undefined && node.notes.text !== '' && roadmap.primaryResourceId !== undefined) {
+        this.store.archiveNotes(project.value.id, roadmap.primaryResourceId, node.id, node.notes.revisions, node.notes.text)
+      }
       const notes: LibraryNodeNotes = { text, updatedAt: new Date().toISOString(), revisions: (node.notes?.revisions ?? 0) + 1 }
       const next: LibraryRoadmap = { ...roadmap, nodes: roadmap.nodes.map(candidate => candidate.id === node.id ? { ...candidate, notes } : candidate) }
       this.store.writeRoadmap(project.value.id, next)
