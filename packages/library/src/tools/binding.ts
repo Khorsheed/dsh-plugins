@@ -21,11 +21,11 @@ export function libraryBindingTool(kit: ToolKit): ToolDefinition {
   return defineTool({
     name: 'library_binding',
     description:
-      'Bind this session to a project (and optionally a textbook) — the header chip, and every tool\'s defaults. Writes bind an unbound session by themselves; bind by hand to switch, or unbind: true.',
+      'Bind this session to a project (and optionally a textbook) — every tool\'s default. Writes bind an unbound session by themselves; use this to switch, or unbind: true.',
     parameters: {
-      project: { type: 'string', description: 'The project id (library_read · projects lists them).' },
-      resource: { type: 'string', description: 'A textbook within it, to work inside its path.' },
-      unbind: { type: 'boolean', description: 'Unbind this session instead.' },
+      project: { type: 'string' },
+      resource: { type: 'string', description: 'A textbook in it.' },
+      unbind: { type: 'boolean' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,
@@ -46,7 +46,7 @@ export function libraryBindingTool(kit: ToolKit): ToolDefinition {
       // registered) binds the project and says so — not a failed call.
       if (resourceId !== undefined && !(await service.getResource({ projectId, resourceId })).ok) {
         const bound = unwrap(await service.setBinding(sessionId, { projectId }))
-        return { ...bound, note: `no resource ${JSON.stringify(resourceId)} in this project — bound the project only. Resource ids are minted (r_…); registering the textbook (library_resource) binds this session to it by itself${textbookList(exec)}` } as unknown as JsonValue
+        return { ...bound, note: `no resource ${JSON.stringify(resourceId)} in this project — bound the project only. Resource ids are minted (r_…); registering the textbook (library_textbook) binds this session to it by itself${textbookList(exec)}` } as unknown as JsonValue
       }
       return unwrap(await service.setBinding(sessionId, { projectId, ...(resourceId === undefined ? {} : { resourceId }) })) as unknown as JsonValue
     },

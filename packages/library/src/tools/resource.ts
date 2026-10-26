@@ -1,5 +1,5 @@
 /**
- * The `library_resource` tool (moved verbatim from tool-definition.ts; the shared
+ * The `library_textbook` tool (moved verbatim from tool-definition.ts; the shared
  * helpers and schemas are in `tools/kit.ts`).
  *
  * @module @khorsheed/dsh-library/tools/resource
@@ -15,69 +15,31 @@ import {
   pickString,
   splitTocText,
   unwrap,
-  LIST_WRAPPER_SCHEMA,
   type ToolKit,
 } from './kit.ts'
 
-/** Build the `library_resource` tool over the shared kit. */
+/** Build the `library_textbook` tool over the shared kit (the file keeps its v5 name). */
 export function libraryResourceTool(kit: ToolKit): ToolDefinition {
   const { service, projectOf, autoBind, scopeParams } = kit
   return defineTool({
-    name: 'library_resource',
+    name: 'library_textbook',
     description:
-      'Shelve, reorder or remove one entry. A TEXTBOOK is anything with a contents (kind book | course): the learner\'s own (origin learner), an existing book or digital course you pick (picked — only the chapters the goal needs end up in its path), or one you author when nothing fits (authored — your own contents; your 讲义 are its text). Shelve textbooks in study order (seq; omitted = last). Verify a real one\'s exact edition and contents on the web and cite the page (tocSource web + url); never ask for an upload. A LINK (article | video | repo | tool | hardware) is title + url + why — it never carries a path, a station cites it (also).',
+      'Shelve, correct, reorder or remove a textbook (anything with a contents) — in study order. origin: learner (their own) | picked (a book or course you chose; its path takes only the chapters the goal needs) | authored (you write it: one chapter per lesson, your 讲义 are its text). '
+      + 'A real book: verify the edition and contents online and cite the page (tocSource { by: "web", url }); never ask for an upload. A correction (resourceId) sends only what changes. A web page a station cites is no textbook — the path names its url.',
     parameters: {
       ...scopeParams,
-      op: { type: 'string', required: true, enum: ['create', 'move', 'remove'], description: 'create: shelve (or correct one, with resourceId); move: put a textbook at seq; remove: take one off (its path and pages go too).' },
-      resourceId: { type: 'string', description: 'The entry to correct (send only the fields that change — a shelved textbook keeps its title and contents) / move / remove.' },
-      kind: { type: 'string', enum: [...LIBRARY_RESOURCE_KINDS], description: 'book | course: a textbook (toc required); article | video | repo | tool | hardware: a link (url required).' },
-      origin: { type: 'string', enum: ['learner', 'picked', 'authored'], description: 'Whose it is (default picked).' },
-      seq: { type: 'integer', description: 'A textbook\'s place in the study order, from 1 (the rest shift).' },
-      title: { type: 'string', description: 'The exact edition\'s title, or what the link\'s page calls it.' },
-      url: { type: 'string', description: 'A link\'s address; a digital textbook\'s home page.' },
-      note: { type: 'string', description: 'One line on why it is here.' },
-      toc: {
-        oneOf: [
-          { type: 'string', description: 'The whole contents as ONE newline-joined string of titles (preferred).' },
-          { type: 'array', description: 'One row per chapter.', items: { oneOf: [
-            { type: 'string' },
-            { type: 'object', additionalProperties: true, properties: {
-              title: { type: 'string', required: true },
-              part: { type: 'string', description: 'The part heading it belongs to (a part is never a row).' },
-            } },
-          ] } },
-          LIST_WRAPPER_SCHEMA,
-        ],
-        description: 'A textbook\'s contents — required for one.',
-      },
-      tocSource: {
-        oneOf: [
-          { type: 'object', additionalProperties: true, properties: {
-            by: { type: 'string', required: true, enum: ['web', 'model', 'photo'], description: 'web: verified online (+ url); model: your own or from memory; photo: the learner\'s photo.' },
-            url: { type: 'string' },
-          } },
-          { type: 'string', description: 'The same object as its JSON text.' },
-        ],
-        description: 'Where the contents came from (default { by: "model" }).',
-      },
-      bookKind: { type: 'string', enum: ['knowledge', 'material'], description: 'knowledge (the default): a textbook of domain knowledge — quiz the knowledge; material: ONLY when the exact text itself is what is tested (exam papers, literature, readers) — every content question then quotes a photographed page. Whose book it is (origin learner) says nothing about this.' },
+      op: { type: 'string', required: true, description: 'add | update | move | remove.' },
+      resourceId: { type: 'string', description: 'The textbook to update / move / remove.' },
+      title: { type: 'string', description: 'The exact edition\'s title.' },
+      origin: { type: 'string', enum: ['learner', 'picked', 'authored'] },
+      toc: { type: 'json', description: 'The contents: one chapter per line in one string, or ["…", "…"].' },
+      tocSource: { type: 'json', description: '{ by: "web" | "model" | "photo", url? } — web needs the url.' },
+      seq: { type: 'integer', description: 'Its place in the study order, from 1.' },
+      bookKind: { type: 'string', enum: ['knowledge', 'material'], description: 'material only when the exact text is what is tested (exam papers, literature).' },
+      edition: { type: 'string' },
       author: { type: 'string' },
-      edition: { type: 'string', description: 'e.g. 2010 年 8 月第一版.' },
-      isbn: { type: 'string' },
-      short: { type: 'string', description: 'A 2-4 character cover abbreviation (普微 / 剑5).' },
-      extras: {
-        oneOf: [
-          { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
-            title: { type: 'string', required: true },
-            note: { type: 'string' },
-            where: { type: 'string' },
-            when: { type: 'string', required: true, enum: ['before', 'reference'] },
-          } } },
-          { type: 'string', description: 'The same array as its JSON text.' },
-          LIST_WRAPPER_SCHEMA,
-        ],
-        description: 'How-to-use pages, answer keys, appendices worth knowing about — not stations (before: read first; reference: when needed).',
-      },
+      url: { type: 'string', description: 'A digital textbook\'s home page.' },
+      note: { type: 'string', description: 'One line on why it is here.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,
@@ -85,17 +47,19 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
       // The v4 spellings ride along off the untyped surface (bookId → resourceId).
       const argsAny = args as Record<string, unknown>
       const namedId = pickString(args.resourceId, argsAny.bookId)
-      if (args.op === 'remove') {
-        if (namedId === undefined) throw new Error('library_resource · op=remove takes the resourceId field — library_read · resources lists the ids')
+      // add / update are the advertised spellings; create (either one) still parses.
+      const op = args.op === 'add' || args.op === 'update' ? 'create' : args.op as string
+      if (op === 'remove') {
+        if (namedId === undefined) throw new Error('library_textbook · op=remove takes the resourceId field — library_read · resources lists the ids')
         return unwrap(await service.removeResource({ projectId: projectOf(args.project, exec, namedId), resourceId: namedId })) as unknown as JsonValue
       }
-      if (args.op === 'move') {
-        if (namedId === undefined || typeof args.seq !== 'number') throw new Error('library_resource · op=move takes resourceId and seq (the textbook\'s new place, from 1)')
+      if (op === 'move') {
+        if (namedId === undefined || typeof args.seq !== 'number') throw new Error('library_textbook · op=move takes resourceId and seq (the textbook\'s new place, from 1)')
         const moved = unwrap(await service.moveResource({ projectId: projectOf(args.project, exec, namedId), resourceId: namedId, seq: args.seq }))
         return { order: moved.resources.filter(resource => resource.seq !== undefined).map(resource => `${resource.seq}. ${resource.id} 《${resource.title}》`) } as unknown as JsonValue
       }
-      if (args.op !== 'create') {
-        throw new Error(`library_resource needs op: create | move | remove — got ${JSON.stringify(args.op)}`)
+      if (op !== 'create') {
+        throw new Error(`library_textbook needs op: add | update | move | remove — got ${JSON.stringify(args.op)}`)
       }
       // origin is the v6 field; the older addedBy still parses (coach → picked).
       const originArg = argsAny.origin ?? (argsAny.addedBy === 'learner' ? 'learner' : argsAny.addedBy === 'coach' ? 'picked' : undefined)
@@ -131,23 +95,22 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
       const kept = shelved?.ok === true && isThickResource(shelved.resource) ? shelved.resource : undefined
       const tocRows = sentRows.length > 0 ? sentRows : (kept?.toc ?? []).map(entry => ({ ...entry }))
       if (kept !== undefined) {
-        args = {
-          ...args,
-          ...(typeof args.title !== 'string' || args.title.trim() === '' ? { title: kept.title } : {}),
-          ...(args.kind === undefined ? { kind: kept.kind } : {}),
-        }
+        if (typeof args.title !== 'string' || args.title.trim() === '') argsAny.title = kept.title
+        if (argsAny.kind === undefined) argsAny.kind = kept.kind
       }
-      const thick = tocRows.length > 0 || args.kind === 'book' || args.kind === 'course'
+      // A thin link is the hidden v5 case: only an explicit link kind (article, video…) takes that branch.
+      const linkKind = typeof argsAny.kind === 'string' && argsAny.kind !== 'book' && argsAny.kind !== 'course' && (LIBRARY_RESOURCE_KINDS as readonly string[]).includes(argsAny.kind)
+      const thick = tocRows.length > 0 || !linkKind
       if (thick) {
         if (typeof args.title !== 'string' || args.title.trim() === '' || tocRows.length === 0) {
-          throw new Error(`a textbook (kind "book" | "course") takes: title, toc (one newline-joined string of titles, or [{ title, part? }]), tocSource { by, url? }, origin, seq? (+ bookKind, edition?, author?, isbn?, url?, resourceId? to correct) — ${arrival('toc', args.toc)}`)
+          throw new Error(`a textbook takes: title, toc (one chapter per line), tocSource { by, url? }, origin (+ seq?, bookKind?, edition?, author?; resourceId to update one) — ${arrival('toc', args.toc)}`)
         }
         const toc = tocRows.map(row => typeof row === 'string' ? { title: row } : row as { title: string; part?: string })
         const written = unwrap(await service.putResource({
           projectId,
           ...(namedId === undefined ? {} : { resourceId: namedId }),
           title: args.title,
-          kind: args.kind === 'course' ? 'course' : 'book',
+          kind: argsAny.kind === 'course' ? 'course' : 'book',
           ...(typeof args.url === 'string' ? { url: args.url } : {}),
           ...(typeof args.note === 'string' ? { note: args.note } : {}),
           ...origin,
@@ -155,11 +118,11 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
           toc,
           tocSource: (payload(args.tocSource) ?? kept?.tocSource ?? { by: 'model' }) as { by: 'web' | 'model' | 'photo'; url?: string },
           ...(args.bookKind === 'knowledge' || args.bookKind === 'material' ? { bookKind: args.bookKind } : {}),
-          ...(typeof args.short === 'string' ? { short: args.short } : {}),
+          ...(typeof argsAny.short === 'string' ? { short: argsAny.short } : {}),
           ...(typeof args.author === 'string' ? { author: args.author } : {}),
           ...(typeof args.edition === 'string' ? { edition: args.edition } : {}),
-          ...(typeof args.isbn === 'string' ? { isbn: args.isbn } : {}),
-          ...(Array.isArray(payloadList(args.extras)) ? { extras: payloadList(args.extras) as { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[] } : {}),
+          ...(typeof argsAny.isbn === 'string' ? { isbn: argsAny.isbn } : {}),
+          ...(Array.isArray(payloadList(argsAny.extras)) ? { extras: payloadList(argsAny.extras) as { title: string; note?: string; where?: string; when?: 'before' | 'reference' }[] } : {}),
         }))
         await autoBind(exec, { projectId, resourceId: written.resource.id })
         // A real book with a handful of rows was almost always joined wrong — say so before a path is drafted against it.
@@ -179,7 +142,7 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
         projectId,
         ...(namedId === undefined ? {} : { resourceId: namedId }),
         title,
-        kind: (LIBRARY_RESOURCE_KINDS as readonly string[]).includes(args.kind ?? '') && args.kind !== 'book' ? args.kind as LibraryResourceKind : 'article',
+        kind: linkKind ? argsAny.kind as LibraryResourceKind : 'article',
         url,
         ...(typeof args.note === 'string' ? { note: args.note } : {}),
         ...origin,

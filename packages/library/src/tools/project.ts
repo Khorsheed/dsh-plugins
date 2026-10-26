@@ -15,14 +15,12 @@ export function libraryProjectTool(kit: ToolKit): ToolDefinition {
   return defineTool({
     name: 'library_project',
     description:
-      'Create a learning project, or edit one (projectId + the fields to change; goal "" clears). '
-      + 'template: "language" (marks are words) | "subject" (marks are concepts) | "custom". '
-      + 'Creating binds an unbound session to it. A project is a goal and carries no path: next, shelve its textbooks (library_resource), then draft each one\'s path (library_roadmap).',
+      'Create a learning project (one goal), or edit one (projectId + what changes; goal "" clears). template: subject | language (marks are words) | custom. Next: shelve its textbooks (library_textbook).',
     parameters: {
-      projectId: { type: 'string', description: 'Edit this existing project (library_read · projects lists the ids). Omit to CREATE — ids are minted (p_…), never chosen by the caller.' },
-      name: { type: 'string', description: 'The project\'s name (required when creating).' },
-      template: { type: 'string', description: '"language" | "subject" | "custom".' },
-      goal: { type: 'string', description: 'The one-line goal ("" clears).' },
+      projectId: { type: 'string', description: 'Edit this project; omit to create (ids are minted).' },
+      name: { type: 'string' },
+      template: { type: 'string', enum: ['subject', 'language', 'custom'] },
+      goal: { type: 'string', description: 'One line.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,

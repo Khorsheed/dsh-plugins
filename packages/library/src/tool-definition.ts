@@ -52,7 +52,7 @@ export { chaptersLocator, splitTocText } from './tools/kit.ts'
 export const LIBRARY_TOOL_NAMES: readonly string[] = [
   'library_read',
   'library_project',
-  'library_resource',
+  'library_textbook',
   'library_roadmap',
   'library_notes',
   'library_page',

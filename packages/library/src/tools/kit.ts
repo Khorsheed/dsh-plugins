@@ -11,11 +11,11 @@ import { formatLocator, type LibraryBinding, type LibraryOutcome } from '../type
 import type { LibraryService } from '../service.ts'
 import { ImageRefCache } from '../image-refs.ts'
 
-/** JSON pass-through output — what the render emits IS what the model reads. */
+/** JSON pass-through output — what the render emits IS what the model reads, so it goes compact (indentation doubled every result). */
 export function jsonOutput() {
   return {
     schema: { type: 'json' } as const,
-    render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
+    render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value) }],
   }
 }
 
@@ -25,7 +25,7 @@ export function unwrap<T>(outcome: LibraryOutcome<T>): T {
   throw new Error(outcome.message)
 }
 
-export const READ_WHATS = ['projects', 'resources', 'toc', 'roadmap', 'pages', 'cards', 'quiz', 'stats'] as const
+export const READ_WHATS = ['projects', 'resources', 'toc', 'roadmap', 'pages', 'cards', 'quiz'] as const
 
 export type Exec = { agent?: Agent }
 
@@ -184,77 +184,46 @@ export function normalizeQuestionAxes(question: Record<string, unknown>): Record
  */
 export const LIST_WRAPPER_SCHEMA = { type: 'object', additionalProperties: true, description: 'The same list wrapped: { items: [...] }.' } as const
 
-/** The roadmap nodes schema — shared by the parameter declaration and its description. */
+/**
+ * The roadmap nodes schema. Only the canonical shape is advertised; execute
+ * still takes the older spellings (also, dependsOn, read stations, acceptance
+ * refs, chapterRanges, covers) — the schema items allow extra keys, and the
+ * JSON-text branch lets a stringified list through to execute's parser.
+ */
 export const NODES_SCHEMA = {
   oneOf: [
-    { type: 'array', description: 'The stations, in study order.', items: { type: 'object', additionalProperties: true, properties: {
-      id: { type: 'string', description: 'Required: a unique station id (letters, digits, . _ -).' },
-      title: { type: 'string', description: 'Required: what the learner masters here.' },
-      gate: { type: 'string', enum: ['quiz', 'acceptance', 'read'], description: 'Required. quiz: a level, passed by its chapter quiz; acceptance: a hands-on station judged line by line; read: an optional side stop (读完), never a dependency.' },
-      chapters: { oneOf: [{ type: 'string' }, { type: 'integer' }], description: 'The textbook\'s contents rows this station covers — row numbers as library_read · toc numbers them, 1-based: "3-4" | "5" | "1-2,7". Omit only on a station resting on also alone.' },
-      also: { oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }], description: 'Side references: "https://…" (a web text, a video), "r_…#2" (another shelf entry), "topic: …" (your own teaching beyond the book).' },
-      goals: { oneOf: [{ type: 'array', items: { type: 'string' } }, { type: 'string' }], description: 'What the learner can do after it (never acceptance lines).' },
-      dependsOn: { type: 'array', items: { type: 'string' }, description: 'Earlier station ids this one waits for.' },
-      points: { type: 'array', description: 'gate=quiz only: its 3-5 knowledge points { id, title } (one station is one lesson — more than 5 means split it) — every question names one; ids are stable slugs, never reworded.', items: { type: 'object', additionalProperties: true, properties: {
-        id: { type: 'string' },
-        title: { type: 'string', description: 'As the learner reads it (「极限的定义」).' },
+    { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
+      id: { type: 'string', description: 'Unique: s1, s2…' },
+      title: { type: 'string' },
+      chapters: { oneOf: [{ type: 'string' }, { type: 'integer' }], description: 'Contents rows it covers: "4" | "3-4".' },
+      points: { type: 'array', description: '3–5 knowledge points.', items: { type: 'object', additionalProperties: true, properties: {
+        id: { type: 'string', description: 'A stable slug.' },
+        title: { type: 'string' },
       } } },
-      acceptance: { type: 'array', description: 'gate=acceptance: the lines judged one verdict each (ids L1, L2… by order). { line, ref: <quiz id> } passes itself when that quiz passes — compose the quiz first.', items: { oneOf: [
-        { type: 'string' },
-        { type: 'object', additionalProperties: true, properties: {
-          line: { type: 'string' },
-          ref: { type: 'string' },
-        } },
-      ] } },
+      goals: { type: 'json', description: 'What the learner can do after it: ["…"].' },
+      acceptance: { type: 'json', description: 'Only for a hands-on station judged on a deliverable instead of a quiz: the lines to check ["…"].' },
     } } },
-    { type: 'string', description: 'The same array as its JSON text.' },
-    LIST_WRAPPER_SCHEMA,
+    { type: 'string', description: 'The same list as JSON text.' },
   ],
 } as const
 
-/** The quiz questions schema — the two-axis fields are optional (defaults: topic + knowledge). */
+/**
+ * The quiz questions schema. ids are numbered when missing; target and
+ * evidence follow from cardIds / quote / pageId / url and the textbook (the
+ * full two-axis objects still parse).
+ */
 export const QUESTIONS_SCHEMA = {
   oneOf: [
     { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
-      id: { type: 'string', description: 'Required.' },
-      kind: { type: 'string', enum: ['choice', 'fill', 'free'], description: 'Required.' },
-      prompt: { type: 'string', description: 'Required.' },
-      options: { type: 'array', description: 'choice only.', items: { oneOf: [
-        { type: 'string', description: 'The option text.' },
-        { type: 'object', additionalProperties: true, properties: { label: { type: 'string' } } },
-      ] } },
-      answer: { type: 'string', description: 'Required on every question; choice: the correct option, copied verbatim.' },
-      explanation: { type: 'string', description: 'Why the answer is right.' },
-      point: { type: 'string', description: 'The station point it probes (its id).' },
-      target: {
-        oneOf: [
-          { type: 'object', additionalProperties: true, properties: {
-            kind: { type: 'string', enum: ['marked', 'asked', 'missed', 'topic'] },
-            cardIds: { type: 'array', items: { type: 'string' } },
-          } },
-          { type: 'string', enum: ['marked', 'asked', 'missed', 'topic'], description: 'Just the kind.' },
-        ],
-        description: 'Optional — omit for the station\'s topic; flat cardIds imply marked.',
-      },
-      evidence: {
-        oneOf: [
-          { type: 'object', additionalProperties: true, properties: {
-            kind: { type: 'string', enum: ['photo', 'web', 'knowledge'] },
-            pageId: { type: 'string' },
-            url: { type: 'string' },
-            quote: { type: 'string', description: 'The passage, verbatim.' },
-          } },
-          { type: 'string', enum: ['photo', 'web', 'knowledge'], description: 'Just the kind.' },
-        ],
-        description: 'Optional — omit for domain knowledge; flat pageId / url set photo / web.',
-      },
-      cardIds: { type: 'array', items: { type: 'string' }, description: 'The learner\'s cards it probes (library_read · cards).' },
-      quote: { type: 'string', description: 'The passage the answer rests on, verbatim.' },
-      url: { type: 'string', description: 'The web page quoted.' },
-      pageId: { type: 'string', description: 'The photographed page quoted (library_read · pages).' },
+      point: { type: 'string', description: 'The station point it probes.' },
+      kind: { type: 'string', enum: ['choice', 'fill', 'free'] },
+      prompt: { type: 'string' },
+      options: { type: 'json', description: 'choice only: ["…", "…"].' },
+      answer: { type: 'string', description: 'choice: the right option, verbatim.' },
+      explanation: { type: 'string' },
+      quote: { type: 'string', description: 'The page text it rests on (required for a material textbook).' },
     } } },
-    { type: 'string', description: 'The same array as its JSON text.' },
-    LIST_WRAPPER_SCHEMA,
+    { type: 'string', description: 'The same list as JSON text.' },
   ],
 } as const
 
@@ -308,11 +277,11 @@ export function createToolKit(service: LibraryService, images: ImageRefCache) {
 
   /** The shared scope parameters (write tools). */
   const scopeParams = {
-    project: { type: 'string', description: 'Project id (defaults to the binding; a resource id implies its project).' },
+    project: { type: 'string', description: 'Defaults to the binding.' },
   } as const
   const textbookParams = {
     ...scopeParams,
-    resource: { type: 'string', description: 'The textbook id (defaults to the binding\'s).' },
+    resource: { type: 'string', description: 'Defaults to the binding.' },
   } as const
 
   return { service, images, bindingOf, projectOf, autoBind, textbookList, resourceOf, scopeParams, textbookParams }

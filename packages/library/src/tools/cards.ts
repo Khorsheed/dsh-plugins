@@ -16,7 +16,6 @@ import {
   pickString,
   sessionIdOf,
   unwrap,
-  LIST_WRAPPER_SCHEMA,
   type ToolKit,
 } from './kit.ts'
 
@@ -26,40 +25,25 @@ export function libraryCardsTool(kit: ToolKit): ToolDefinition {
   return defineTool({
     name: 'library_cards',
     description:
-      'Record a weak point the moment the learner is stuck on the MATERIAL (mixes it up, asks the same point again, keeps probing one detail), then say in one short line what you noted. '
-      + 'Subject projects: name the station\'s knowledge point (node + point) — the note lands on that point and turns it weak; it is not a card. '
-      + 'Language projects, or a concept with no point: { kind: word|concept, term, gloss, context?, source: { type: "chat" }, weaken: true } becomes a card; near-duplicates come back pending — resend each with mergeInto or asNew. '
-      + 'Never a weak point: ordinary curiosity, or feedback on a question or the tools (a broken question is voided by the learner, not noted).',
+      'The learner is stuck on the material (mixes it up, asks the same thing again) → note it now, then say in one line what you noted. '
+      + 'Subject projects: { point, gloss } — the note lands on the current station\'s knowledge point. Language projects: { term, gloss, sentence? } becomes a word card; a near-duplicate comes back pending — resend it with mergeInto or asNew. '
+      + 'Not a weak point: curiosity, your own slip (fix the quiz), or feedback on a question or the tools.',
     parameters: {
       ...scopeParams,
-      resource: { type: 'string', description: 'The textbook it came up in (defaults to the binding\'s).' },
+      resource: { type: 'string', description: 'The textbook (defaults to the binding\'s).' },
       cards: {
         oneOf: [
           { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
-            point: { type: 'string', description: 'Subject projects: the station\'s knowledge point id (the per-turn context lists them) — the note lands there.' },
-            node: { type: 'string', description: 'The station id (defaults to the bound textbook\'s current station).' },
-            kind: { type: 'string', enum: ['word', 'concept'] },
-            term: { type: 'string', description: 'The short name of what they stuck on.' },
-            gloss: { type: 'string', description: 'The in-context meaning, or what they confused it with.' },
-            aliases: { type: 'array', items: { type: 'string' } },
-            userGloss: { type: 'string', description: 'The learner\'s own wording.' },
-            context: { type: 'object', additionalProperties: true, properties: {
-              sentence: { type: 'string' },
-              node: { type: 'string', description: 'The station id.' },
-            } },
-            source: { type: 'object', additionalProperties: true, properties: {
-              type: { type: 'string', required: true, enum: ['chat', 'photo', 'quiz', 'manual'] },
-              note: { type: 'string' },
-            }, description: 'When the learner is stuck: chat + weaken true.' },
-            weaken: { type: 'boolean', description: 'The learner is stuck on it.' },
-            mergeInto: { type: 'string', description: 'Resolve a pending near-duplicate: merge into this card id.' },
-            asNew: { type: 'boolean', description: 'Resolve a pending near-duplicate: keep it separate.' },
+            point: { type: 'string', description: 'Subject: the knowledge point id.' },
+            term: { type: 'string', description: 'What they stuck on, in a few words.' },
+            gloss: { type: 'string', description: 'What they got wrong, or the meaning.' },
+            sentence: { type: 'string', description: 'Language: the sentence it came from.' },
+            mergeInto: { type: 'string' },
+            asNew: { type: 'boolean' },
           } } },
-          { type: 'string', description: 'The same array as its JSON text.' },
-          LIST_WRAPPER_SCHEMA,
+          { type: 'string', description: 'The same list as JSON text.' },
         ],
         required: true,
-        description: 'The weak points to record.',
       },
     },
     output: jsonOutput(),
@@ -67,23 +51,26 @@ export function libraryCardsTool(kit: ToolKit): ToolDefinition {
     async execute(args, exec) {
       const list = payloadList(args.cards)
       if (list === undefined) {
-        throw new Error(`library_cards takes cards: [{ kind: "word"|"concept", term, gloss, context?, source: { type: "chat", note? }, weaken? }] — ${arrival('cards', args.cards)}`)
+        throw new Error(`library_cards takes cards: [{ point, gloss }] (subject) or [{ term, gloss, sentence? }] (language) — ${arrival('cards', args.cards)}`)
       }
       const sessionId = sessionIdOf(exec)
+      const resource = pickString(args.resource, (args as Record<string, unknown>).book) ?? bindingOf(exec)?.resourceId
+      const projectId = projectOf(args.project, exec, resource)
+      const project = profileOf(unwrap(await service.getProject({ id: projectId })).project.template)
       const cards = (list as Record<string, unknown>[]).map(card => {
         const source = payload(card.source) ?? { type: 'chat' }
-        const context = payload(card.context)
+        // A flat sentence is the context; a card from the chat weakens unless told otherwise.
+        const context = payload(card.context) ?? (pickString(card.sentence) === undefined ? undefined : { sentence: card.sentence })
         return {
           ...card,
+          kind: card.kind === 'word' || card.kind === 'concept' ? card.kind : project.markKind,
+          ...(card.weaken === undefined && source.type === 'chat' ? { weaken: true } : {}),
           source: { ...source, ...(source.type === 'chat' && source.ref === undefined && sessionId !== undefined ? { ref: sessionId } : {}) },
           ...(context === undefined ? {} : { context: { sentence: String(context.sentence ?? ''), ...(typeof context.node === 'string' ? { nodeId: context.node } : {}) } }),
         } as unknown as LibraryCardInput
       })
-      const resource = pickString(args.resource, (args as Record<string, unknown>).book) ?? bindingOf(exec)?.resourceId
-      const projectId = projectOf(args.project, exec, resource)
       // A subject project's weak point with a knowledge point lands on the point.
-      const project = unwrap(await service.getProject({ id: projectId })).project
-      const pointed = profileOf(project.template).pointsDriven
+      const pointed = project.pointsDriven
         ? (list as Record<string, unknown>[]).filter(card => pickString(card.point) !== undefined)
         : []
       const noted = []
@@ -107,7 +94,7 @@ export function libraryCardsTool(kit: ToolKit): ToolDefinition {
       // In a points-driven project a weak point from the conversation lands on
       // a knowledge point or nowhere: a free-floating chat card is how the
       // coach's own slips and the learner's feedback leaked in as 「弱点」.
-      if (profileOf(project.template).pointsDriven) {
+      if (project.pointsDriven) {
         const loose = rest.filter(card => (card as { source?: { type?: string } }).source?.type === 'chat')
         if (loose.length > 0) {
           const points = sessionId === undefined ? [] : (service.bindingSummary(sessionId, 0).station?.mastery.points ?? [])

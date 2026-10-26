@@ -64,7 +64,7 @@ export class LibraryServiceRoadmap extends LibraryServiceCards {
     if ('error' in project) return project
     const textbooks = this.store.listResources(project.value.id).filter(isThickResource)
     const shelf = textbooks.length === 0
-      ? 'this project has no textbook yet — register one first (library_resource with a contents: the learner\'s book, one you pick, or one you author)'
+      ? 'this project has no textbook yet — register one first (library_textbook with a contents: the learner\'s book, one you pick, or one you author)'
       : `this project's textbooks: ${textbooks.map(textbook => `${textbook.seq ?? '-'}. ${textbook.id} 《${textbook.title}》`).join('; ')}`
     if (typeof request.resourceId !== 'string' || request.resourceId.trim() === '') {
       return refuse('invalid', `a path belongs to one textbook — pass resource; ${shelf}`)

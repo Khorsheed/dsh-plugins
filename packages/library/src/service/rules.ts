@@ -139,7 +139,7 @@ export function validateRoadmapShape(
           }
           const covered = scope.resource(cover.ref)
           if (covered === undefined) {
-            errors.push(`nodes[${index}] (${node.id}) covers resource ${JSON.stringify(cover.ref)}, which is not on the project's shelf — library_read · resources lists them; register it first (library_resource)`)
+            errors.push(`nodes[${index}] (${node.id}) covers resource ${JSON.stringify(cover.ref)}, which is not on the project's shelf — library_read · resources lists them; register it first (library_textbook)`)
             continue
           }
           if (cover.locator !== undefined) {
@@ -159,7 +159,7 @@ export function validateRoadmapShape(
             for (const range of ranges) {
               if (range.to > (covered.toc?.length ?? 0)) {
                 const rows = covered.toc?.length ?? 0
-                errors.push(`nodes[${index}] (${node.id}) covers up to row ${range.to}, but 《${covered.title}》's contents has ${rows} rows — library_read · toc lists them${rows < 3 ? `; a book with ${rows} row(s) was registered with its chapters joined — fix the contents first (library_resource op create, resourceId ${covered.id}, toc one chapter per line), never drop the chapters` : ''}`)
+                errors.push(`nodes[${index}] (${node.id}) covers up to row ${range.to}, but 《${covered.title}》's contents has ${rows} rows — library_read · toc lists them${rows < 3 ? `; a book with ${rows} row(s) was registered with its chapters joined — fix the contents first (library_textbook op update, resourceId ${covered.id}, toc one chapter per line), never drop the chapters` : ''}`)
               }
             }
           }

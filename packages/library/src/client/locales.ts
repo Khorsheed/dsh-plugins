@@ -350,7 +350,7 @@ export const zh = {
   'review.youMissed': '你答错过：{note}',
 
   'prime.addBook': '我在「{project}」里有一本书：《》（版本：）。请联网核对版本和目录，按学习顺序上架（origin: learner），然后为它排一条学习路线草稿。',
-  'prime.addResource': '请把这条链接放上「{project}」的架子：（粘贴 url）。请联网打开它，补上标题、类型（article/video/repo/tool/course/hardware）和一句话 note（为什么给它），用 library_resource 落账。',
+  'prime.addResource': '请把这条链接放上「{project}」的架子：（粘贴 url）。请联网打开它，补上标题、类型（article/video/repo/tool/course/hardware）和一句话 note（为什么给它），用 library_textbook 落账（kind 填链接类型）。',
   'prime.plan': '请为《{book}》排一条学习路线草稿。',
   'prime.replan': '请重新为《{book}》排学习路线：',
   'prime.readBook': '我们来读《{book}》。',
@@ -855,7 +855,7 @@ export const en: Record<LibraryKey, string> = {
   'review.youMissed': 'You missed it: {note}',
 
   'prime.addBook': 'I have a book for “{project}”: (title, edition). Verify the edition and its contents on the web, shelve it in study order (origin: learner), then draft its path.',
-  'prime.addResource': 'Please put this link on “{project}”’s shelf: (paste the url). Open it on the web, fill in its title, its kind (article/video/repo/tool/course/hardware) and a one-line note on why it earns its place, then record it with library_resource.',
+  'prime.addResource': 'Please put this link on “{project}”’s shelf: (paste the url). Open it on the web, fill in its title, its kind (article/video/repo/tool/course/hardware) and a one-line note on why it earns its place, then record it with library_textbook (kind: the link type).',
   'prime.plan': 'Please draft a roadmap for “{book}”.',
   'prime.replan': 'Please re-plan the roadmap for “{book}”: ',
   'prime.readBook': 'Let’s read “{book}”.',
