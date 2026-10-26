@@ -72,7 +72,7 @@
 <details open>
 <summary>功能示意（1 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="640" alt="transcribe:灵感空间里一期播客的本机转写稿，左侧是时间，段落按说话人标色">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="640" alt="transcribe:灵感空间里一段 B 站视频的本机转写稿：上面是视频，下面按说话人 A、B 分段，每段前面有时间，点时间从那里播放，译文跟在原文下面">
 
 </details>
 

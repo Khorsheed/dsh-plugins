@@ -4,6 +4,8 @@
 
 灵感空间的协作插件，帮你把想看的文章拉回来，对一些布局比较复杂的网页做了单独的优化和适配。
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="560" alt="灵感空间里用渲染抓取拿到的一篇文章：中英对照的正文，文中那张要靠脚本画出来的示意图也完整带回来了">
+
 ## 能做什么
 
 - **手动再试一次**：觉得正文不全，点文章里的「渲染抓取」，让它用浏览器重新抓。

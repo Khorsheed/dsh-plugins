@@ -6,6 +6,8 @@ Turns long recordings into timed text on this computer, and can tell who is spea
 
 A two-hour podcast or a video without subtitles: getting a transcript used to mean uploading it to an online service or typing it out yourself. Local Transcription does it on your own machine, with a timestamp on every sentence, and separates the speakers in a conversation. You don't operate it directly: when Studio separates speakers and transcribes, or Reader makes a transcript for a video or podcast without subtitles, this is what runs.
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="560" alt="A Bilibili video transcribed locally in the Reader: the video on top, the transcript below split by speaker A and B, each paragraph with a timestamp that plays from there, translations under the original">
+
 ## What it does
 
 - **Long recordings become timed text**: every sentence is marked with the second it starts and ends, so checking it against the audio is easy.

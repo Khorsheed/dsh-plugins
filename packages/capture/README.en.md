@@ -4,6 +4,8 @@ English | [中文](README.md)
 
 A companion to the reader: it brings back the articles you want to read, with extra handling for pages with complex layouts.
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="560" alt="An article brought back by rendered fetch in the Reader: the bilingual text, with the script-drawn diagram in it intact">
+
 ## What it does
 
 - **Try again by hand**: if the article looks incomplete, click "Fetch rendered" in it to fetch it again through the browser.

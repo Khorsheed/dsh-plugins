@@ -2,6 +2,8 @@
 
 English | [中文](README.md)
 
+> **Still being polished — not released yet.** This plugin can't be installed from Plugins → Add plugin for now, and what follows may change.
+
 **Side chat (侧边对话)** — a "companion Agent" resident in every preset: a lightweight chat in the right Sidebar, always about *the current context*. Quote a few messages in an ordinary conversation and ask about them; when a content plugin (e.g. a canvas) is installed, its "ask about this" gestures land here too. Built once, useful everywhere — and it knows nothing about any concrete plugin's existence.
 
 ## The client (M2 onward)

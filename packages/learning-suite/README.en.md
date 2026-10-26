@@ -72,7 +72,7 @@ Lecture recordings and podcasts often have no subtitles. Open one in the Reader 
 <details open>
 <summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="640" alt="transcribe: a podcast episode transcribed locally in the Reader, timestamps on the left and paragraphs colored by speaker">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="640" alt="transcribe: A Bilibili video transcribed locally in the Reader: the video on top, the transcript below split by speaker A and B, each paragraph with a timestamp that plays from there, translations under the original">
 
 </details>
 

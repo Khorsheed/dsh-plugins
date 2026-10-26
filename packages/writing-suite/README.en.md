@@ -2,6 +2,8 @@
 
 English | [中文](README.md)
 
+> **Still being polished — not released yet.** This suite can't be installed from Plugins → Add plugin for now, and what follows may change.
+
 **A full kit for writing with an agent: ideas and drafts live on a canvas, it remembers your characters and foreshadowing on a long novel, and the good articles you read turn into notes you can talk through.** One canvas per topic, with every idea pinned up as a card, and the agent's suggested cards stay only when you say yes; pick a few cards and have the agent write them up, and the draft remembers which material it used; on a novel, characters, the world and foreshadowing each get cards, you see every chapter's plan before it's written, and after a chapter you say "reconcile" and it records what happened back onto the cards; feeds and saved articles, videos and podcasts read right inside DSH, highlight a sentence to take a note, discuss it with the agent, and sync notes over as canvas cards; videos and podcasts without subtitles are transcribed on your own computer; even pages that only show their text after scripts run can have it pulled out…… It comes with "写作模式" (writing mode), installed in one go.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-writing-hero.png" width="800" alt="A writing-mode session: the chat on the left, and on the right-sidebar canvas a row of idea, character and foreshadowing cards, one of them a model suggestion waiting for your approval">

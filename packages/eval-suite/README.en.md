@@ -2,6 +2,8 @@
 
 English | [中文](README.md)
 
+> **Still being polished — not released yet.** This suite can't be installed from Plugins → Add plugin for now, and what follows may change.
+
 **Everything for comparing coding agents on your own computer: the same questions, the same conditions, the results side by side.** Point at a folder and the agent turns the questions into a dataset; you go through it, and only your OK registers it — the version is pinned and the answers never leak to the agent being tested; say what you want to compare and it drafts the experiment, but "Approve and start" is yours alone to press; Kimi, Codex, Claude Code and DSH each work the questions on your machine, and for a cleaner comparison every cell gets its own Docker container, with a fingerprint that tells you whether the environments matched; check scripts grade first, a blind judge writes a first draft, and you read the answers side by side — without knowing who wrote which — before the final verdict; how many tries each cell took, where it got stuck and what it produced is all on record and can be exported for review; when there aren't enough samples, the report says plainly that it won't rank…… Everything you need to find out "who's better at this kind of job", with "评测模式" (eval mode) built in, installed in one go.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-bundle-eval-hero.png" width="800" alt="An eval-mode session: the Experiments page on the right comparing an experiment's results, one row per question with both groups' scores and the difference side by side">

@@ -2,6 +2,8 @@
 
 English | [中文](README.md)
 
+> **Still being polished — not released yet.** This plugin can't be installed from Plugins → Add plugin for now, and what follows may change.
+
 Turn questions scattered across folders into a dataset an evaluation can use: the version is pinned, and the answers and grading rules never leak to the agent being tested.
 
 Two things ruin an evaluation: the questions quietly change, so two rounds weren't really answering the same set; or the answers and grading rules end up where the player can see them. With this plugin you tell the agent which folder holds the questions, and it organizes them into a dataset, runs the checks, and hands it to you; only after you've gone through it and pressed "Confirm registration" does it count. From then on each experiment is pinned to the registered version, and the player only gets the parts you allowed.

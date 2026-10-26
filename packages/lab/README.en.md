@@ -2,6 +2,8 @@
 
 English | [中文](README.md)
 
+> **Still being polished — not released yet.** This plugin can't be installed from Plugins → Add plugin for now, and what follows may change.
+
 Run every cell of an evaluation in its own Docker container: the same environment each time, no cross-talk, cleaned up afterwards, and a way to prove the environments really matched.
 
 A comparison is meant to compare agents, not environments. Run the same questions through several agents a few times each, and if one cell had an extra folder mounted, a different network or a different memory limit, the results stop being comparable, and that kind of difference is hard to spot afterwards. With this plugin you just set the experiment to run in containers: it opens a clean container for each cell, puts the question in, lets the agent work inside, collects what it produced, and removes the container once the checks pass. Every cell ends up with an environment fingerprint, and matching fingerprints mean the environment really was the same.

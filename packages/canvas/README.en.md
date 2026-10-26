@@ -2,6 +2,8 @@
 
 English | [中文](README.md)
 
+> **Still being polished — not released yet.** This plugin can't be installed from Plugins → Add plugin for now, and what follows may change.
+
 Lay out a canvas in the right sidebar, pin up your ideas, questions and sources one card at a time, then have the agent turn them into a draft.
 
 Whether it's an article, a novel, or your take on a book you just finished, the material ends up scattered across chats and notes, and when it's time to write you have to dig it all back up. With the canvas, each topic gets its own board: jot every thought down as a card, and the agent suggests cards from the conversation too, which you keep or turn down. Once you have enough, link the related cards, group them, pick a few and have the agent write them up. You end up with a manuscript that remembers which material it used, and you can save it to your workspace.

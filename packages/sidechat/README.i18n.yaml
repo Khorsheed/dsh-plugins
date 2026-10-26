@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/sidechat/README.en.md
-packages/sidechat/README.en.md: 3df520cf746fdd3b069d03bfffc55f8c41654eb8
-packages/sidechat/README.md: 3f8bab1fbbbb895012f330c30232394ce8abce1c
+packages/sidechat/README.en.md: 8f4087f44807e55d4c86f7e3cd6012ea29c64554
+packages/sidechat/README.md: 50aded65075e5d00e9f877a651dcf736b211f18b

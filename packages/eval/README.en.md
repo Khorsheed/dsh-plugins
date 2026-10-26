@@ -2,6 +2,8 @@
 
 English | [中文](README.md)
 
+> **Still being polished — not released yet.** This plugin can't be installed from Plugins → Add plugin for now, and what follows may change.
+
 Put the agents on your machine (Codex, Claude Code, Kimi, dsh) through the same questions: you pick a question set and the groups to compare, it runs them, grades them, and lays the results side by side.
 
 Wondering whether a kind of task goes better with another agent or another model used to mean opening terminals one by one, feeding questions by hand and comparing from memory, and by the next try the conditions no longer matched. With this plugin you tell the agent what you want to compare and it drafts an experiment; once you've looked it over and pressed "Approve and start", it hands each cell to the right agent, collects the answers, grades them, and keeps a record of every step. You end up with one results page: which group did better and by how much, and when there isn't enough data, it says so plainly ("no conclusion yet").
