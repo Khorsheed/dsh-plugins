@@ -13,7 +13,7 @@ import {
   ProviderAuthBlock, type ProviderAuthBlockProps, type ProviderAuthInjected,
 } from '@khorsheed/dsh-local-agent/src/client/ProviderAuthBlock.tsx'
 import { AuthStatusDot } from '@khorsheed/dsh-local-agent/src/client/AuthStatusDot.tsx'
-import { publishAuthStatus, useHarnessAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
+import { publishAuthStatus, useHarnessAuthStatus, usePublishedAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
 import { ModelListSection } from '@khorsheed/dsh-local-agent/src/client/ModelListSection.tsx'
 import { NS } from './locales.ts'
 import css from './SettingsCard.module.css'
@@ -165,6 +165,10 @@ function useCardState(
   const endpointLoading = !endpointUnavailable && endpointState === null
   const apiKeyConfigured = endpointState !== null && endpointState !== 'unavailable' && endpointState.apiKeySet
   const authTokenConfigured = endpointState !== null && endpointState !== 'unavailable' && endpointState.authTokenSet
+  // A login or logout elsewhere in the card (the auth block) changes what
+  // the store holds — logout deletes the saved key: re-read, or the form
+  // keeps saying 已配置 for a key that is gone.
+  const authPublished = usePublishedAuthStatus('claude-code')
   useEffect(() => {
     if (!active || endpointAuth === undefined) return
     let stale = false
@@ -173,7 +177,7 @@ function useCardState(
       () => { if (!stale) setEndpointState('unavailable') },
     )
     return () => { stale = true }
-  }, [active, endpointAuth, endpointSaved])
+  }, [active, endpointAuth, endpointSaved, authPublished])
   const write = (field: string, value: unknown): void => {
     setSaved(false)
     setError(false)
