@@ -34,7 +34,7 @@
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="560" alt="右栏的开始页：会话产物、文件列表、Context Lens 之下就是「剪辑」入口">
 
-「剪辑」只在剪辑模式的会话里出现，在其它模式里看不到它是正常的。
+「剪辑」只在剪辑模式的会话里出现。它的工具只对剪辑模式有用，所以只交给剪辑模式的会话，其它模式不会多出用不上的工具和按钮；这也是要连同套件一起装、不要只装本包的原因——单独装时它不会出现。
 
 ## 已知限制
 

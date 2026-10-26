@@ -29,14 +29,14 @@ Getting several agents to work on one thing used to mean copying text between wi
 In DSH, open Plugins → Add plugin, enter the package name below and click install:
 
 ```
-@khorsheed/dsh-room
+@khorsheed/dsh-dev-suite
 ```
 
-It also comes with 开发套件 (the dev suite), 剪辑套件 (the video suite), 游戏开发套件 (the game dev suite) and 多Agent协作 (the multi-agent bundle). Once installed, open a session in "开发模式" (dev mode), "剪辑模式" (editing mode) or "游戏开发模式" (game dev mode) and click "＋ Invite agent" in the session header. Not seeing that entry in other modes is expected.
+The room comes with 开发套件 (the dev suite); for editing or making games, 剪辑套件 (the video suite, `@khorsheed/dsh-video-suite`) or 游戏开发套件 (the game dev suite, `@khorsheed/dsh-gamedev-suite`) carry it too. Once installed, open a session in "开发模式" (dev mode), "剪辑模式" (editing mode) or "游戏开发模式" (game dev mode) and click "＋ Invite agent" in the session header. Its tools only make sense in those modes, so they are handed only to those modes sessions and other modes don't get tools and buttons they can't use. That is also why it should be installed with its suite rather than on its own — installed alone it doesn't show up.
 
 ## Known limitations
 
-- Inviting Kimi, Codex or Claude Code also needs 多Agent协作 (`@khorsheed/dsh-bundle-local-agent`); without it you can only invite dsh's own members.
+- To invite Kimi, Codex or Claude Code, install their command-line tools on your computer first and fill in their credentials on the 「本机 Agent 委派」 (Local Agent Delegation) card on the Plugins page; one that isn't set up shows as "(logged out)" in the invite dialog and can't be picked.
 - Archived sessions don't appear in the @ menu and can't be asked for help — unarchive one first.
 - Room sessions depend on this plugin: once it is uninstalled, earlier room sessions can't be read.
 

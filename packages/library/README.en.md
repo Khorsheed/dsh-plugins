@@ -31,7 +31,7 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 
 The library comes with the Learning Suite. Then start a new session, pick "学习模式" (learning mode), and tell the coach what you want to read.
 
-The library only appears in "学习模式" (learning mode) sessions; not seeing it in other modes is expected.
+The library only appears in "学习模式" (learning mode) sessions. Its tools only make sense in learning mode, so they are handed only to learning mode sessions and other modes don't get tools and buttons they can't use. That is also why it should be installed with its suite rather than on its own — installed alone it doesn't show up.
 
 ## Known limitations
 

@@ -25,10 +25,10 @@ With several worktrees going at once, finding out which branch the current sessi
 In DSH, open Plugins → Add plugin, enter the package name below and click install:
 
 ```
-@khorsheed/dsh-worktrees
+@khorsheed/dsh-dev-suite
 ```
 
-It also comes with 开发套件 (the dev suite, `@khorsheed/dsh-dev-suite`). Once installed, open a session in "开发模式" (dev mode) inside a git repository and the branch tag appears in the top-right of the session header. Not seeing the tag in other modes is expected.
+Worktrees comes with 开发套件 (the dev suite). Once installed, open a session in "开发模式" (dev mode) inside a git repository and the branch tag appears in the top-right of the session header. Its tools only make sense in dev mode, so they are handed only to dev mode sessions and other modes don't get tools and buttons they can't use. That is also why it should be installed with its suite rather than on its own — installed alone it doesn't show up.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-other-preset.png" width="560" alt="A session in another mode (极简模式, minimal mode) has no branch tag or Worktrees page; the session header shows only DSH's own buttons">
 

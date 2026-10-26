@@ -25,10 +25,10 @@
 在 DSH 的「插件 → 添加插件」里输入下面的包名，点安装：
 
 ```
-@khorsheed/dsh-worktrees
+@khorsheed/dsh-dev-suite
 ```
 
-它也会跟着「开发套件」（`@khorsheed/dsh-dev-suite`）一起装好。装完在一个 git 仓库里开「开发模式」的会话，分支标签就出现在会话头部右上角。在其它模式里看不到标签是正常的。
+工作树会跟着「开发套件」一起装好。装完在一个 git 仓库里开「开发模式」的会话，分支标签就出现在会话头部右上角。它的工具只对开发模式有用，所以只交给开发模式的会话，其它模式不会多出用不上的工具和按钮；这也是要连同套件一起装、不要只装本包的原因——单独装时它不会出现。
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-other-preset.png" width="560" alt="其它模式（极简模式）的会话里没有分支标签和工作树页，会话头部只剩 DSH 自带的按钮">
 

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/video-studio/README.en.md
-packages/video-studio/README.en.md: 246b679e0d56c97aa59a3891571290a3729b2955
-packages/video-studio/README.md: 216e72bc9c7d9e0344ffcfd4df7ae1d3d1a22d60
+packages/video-studio/README.en.md: c12f85cd1892573bc225bf6fd8d5bb20c4824be1
+packages/video-studio/README.md: 0efe936d01e290fd7940fd75de2ae85e878fc9a7

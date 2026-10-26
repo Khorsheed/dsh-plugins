@@ -34,7 +34,7 @@ The studio comes with the Video Editing Suite. Then start a new session, pick "�
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="560" alt="The right sidebar's start page: Studio sits below Session products, Files and Context Lens">
 
-The Studio panel only appears in "剪辑模式" (editing mode) sessions; not seeing it in other modes is expected.
+The Studio panel only appears in "剪辑模式" (editing mode) sessions. Its tools only make sense in editing mode, so they are handed only to editing mode sessions and other modes don't get tools and buttons they can't use. That is also why it should be installed with its suite rather than on its own — installed alone it doesn't show up.
 
 ## Known limitations
 
