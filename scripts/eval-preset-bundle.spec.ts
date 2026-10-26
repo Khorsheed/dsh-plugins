@@ -54,8 +54,12 @@ const BUNDLE_DIR = join(PROFILE, 'presets')
  * Moved again 2026-10-23, COMMENT LINES ONLY: 82813fc4 retired the mission
  * session tab and rewrote one provenance comment inside the block to say so.
  * Same composition (eval-preset-parity.spec.ts compares comments dropped).
+ * Moved again 2026-10-27, COMMENT LINES ONLY: b7b2f877 (the local-agent card
+ * settings store) rewrote the three-line `subagent_dsh` note inside the block —
+ * the dsh settings toggle is gone and the tool is the package's `./tool` entry,
+ * which this preset does not name. Same composition.
  */
-const DIRECTORY_COMPOSITION_SHA = '0846cfd9ca1b2351476e8427c76986f9c029e0c4953aeee5b2bd8c2cee641a3c'
+const DIRECTORY_COMPOSITION_SHA = '0d19b749045f42930af0a70bf454b2e174c78437ad672f7b569626c2d0eb373f'
 
 /**
  * The preset-eval row's `plugins:` block, de-indented back to the directory
