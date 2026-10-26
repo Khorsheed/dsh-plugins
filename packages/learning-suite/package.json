@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-learning-suite",
   "description": "Mode bundle 学习模式: the dsh-learning agent preset plus the library it grants — project-organized deep reading with a close-reading coach — in one install. Thin meta package: a patch carrying the member's canonical row and the mode's preset row, an npm dependency on the member, locale card metadata — no runtime code, no client half.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },

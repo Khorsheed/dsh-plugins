@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-basic",
   "description": "Family bundle 基础体验: the everyday dsh experience — message tools, session artifacts, file surfaces, the context guard and mobile — in one install. Thin meta package: a patch carrying the members' canonical rows, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },

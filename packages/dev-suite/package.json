@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-dev-suite",
   "description": "Mode bundle 开发模式: the dsh-dev agent preset plus the dev family it grants — the local-agent core and the kimi / codex / claude-code / dsh delegation providers, worktrees, room and typesafe, plus the developer-facing ankh-guard and context-lens — in one install. Thin meta package: a patch carrying the members' canonical rows and the mode's preset row, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
