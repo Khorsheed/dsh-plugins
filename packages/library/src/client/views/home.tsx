@@ -11,11 +11,12 @@
 import { useState, type ReactNode } from 'react'
 import { ChipRow, PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { isThickResource, LIBRARY_COLORS, LIBRARY_ICONS, type LibraryColor, type LibraryIcon, type LibraryProjectSummary, type LibraryResourceKind, type LibraryResourceProgress, type LibraryTemplate } from '../../types.ts'
-import { colorOf, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
+import { colorOf, Cover, coverOf, GlyphStrokes, iconOf, ProjectGlyph, Ring } from '../look.tsx'
 import { QuizRows } from './book.tsx'
 import { IconLinkOutlineMedium, IconPlayOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import { IconArticleOutlineMedium, IconCardsOutlineMedium, IconCourseOutlineMedium, IconHardwareOutlineMedium, IconPenOutlineMedium, IconRepoOutlineMedium, IconToolOutlineMedium } from '../icons-local.tsx'
-import { ConfirmDialog, OriginTag, outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
+import { ConfirmDialog, OriginTag, outcome, Segments, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
+import { splitTitle, stationTitle } from '../titles.ts'
 import { MathText } from '../math.tsx'
 import css from '../LibraryPane.module.css'
 
@@ -39,8 +40,8 @@ function ContinueCard({ p, projectId, label, target }: ViewProps & { projectId: 
     <section className={`${css.continue} ${css.projectNext}`}>
       <span className={css.projectNextText}>
         <span className={css.continueLabel}>{label}</span>
-        <span className={css.continueTitle}>{target.station.title}</span>
-        <span className={css.muted}>{t('continue.where', { seq: String(target.textbook.seq ?? ''), book: target.textbook.title })}</span>
+        <span className={css.continueTitle}>{stationTitle(target.station.title)}</span>
+        <span className={css.muted}>{t('continue.where', { seq: String(target.textbook.seq ?? ''), book: splitTitle(target.textbook.title).main })}</span>
       </span>
       <button type="button" className={css.primary} onClick={() => { actions.push({ view: 'node', projectId, resourceId: target.textbook.id, nodeId: target.station.id, tab: 'guide' }) }}>{t('continue.go')}</button>
     </section>
@@ -243,6 +244,14 @@ export function NewProjectView({ p }: ViewProps): ReactNode {
 }
 
 /** Overall progress of a project: done nodes over all nodes of its adopted paths. */
+/** A project's stations, passed and in all, across its textbooks' paths. */
+function stationsOf(project: LibraryProjectSummary): { done: number; total: number } {
+  return {
+    done: project.resources.reduce((sum, resource) => sum + (resource.roadmap?.done ?? 0), 0),
+    total: project.resources.reduce((sum, resource) => sum + (resource.roadmap?.total ?? 0), 0),
+  }
+}
+
 function progressOf(project: LibraryProjectSummary): number {
   const total = project.resources.reduce((sum, resource) => sum + (resource.roadmap?.total ?? 0), 0)
   const done = project.resources.reduce((sum, resource) => sum + (resource.roadmap?.done ?? 0), 0)
@@ -369,6 +378,7 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
   const openMisses = loaded.data?.project.openMisses ?? 0
   const [notice, setNotice] = useState<string | undefined>()
   const [editing, setEditing] = useState(false)
+  const [goalOpen, setGoalOpen] = useState(false)
   const [ordering, setOrdering] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -450,15 +460,18 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
           <span className={css.projectTop}>
             <ProjectGlyph icon={iconOf(project)} />
             <span className={css.projectText}>
-              {project.goal !== undefined && <span className={css.bandGoal}>{project.goal}</span>}
-              <span className={css.muted}>{t(`template.${project.template}`)} · {when(project.lastActiveAt, t)}</span>
+              {project.goal !== undefined && <span className={css.bandGoal} data-open={goalOpen ? 'true' : undefined}>{project.goal}</span>}
+              <span className={css.bandMeta}>
+                <span>{t(`template.${project.template}`)} · {when(project.lastActiveAt, t)}</span>
+                {project.goal !== undefined && project.goal.length > 60 && <button type="button" className={css.textButton} aria-expanded={goalOpen} onClick={() => { setGoalOpen(open => !open) }}>{t(goalOpen ? 'project.goalLess' : 'project.goalMore')}</button>}
+              </span>
             </span>
-            <Ring percent={progressOf(project)} />
+            <Ring percent={progressOf(project)} label={t('project.ringLabel')} title={t('project.ringTitle', { done: String(stationsOf(project).done), total: String(stationsOf(project).total) })} />
           </span>
-          <span className={css.bandStats}>
-            <button type="button" className={css.bandStat} onClick={() => { actions.push({ view: 'cards', projectId, filter: 'all' }) }}><b>{project.cardCount}</b>{t('cards.title')}</button>
-            <button type="button" className={css.bandStat} disabled={project.dueCount === 0} onClick={() => { actions.push({ view: 'review', projectId }) }}><b>{project.dueCount}</b>{t('review.due')}</button>
-            <button type="button" className={css.bandStat} disabled={openMisses === 0 || busy} onClick={openMissed}><b>{openMisses}</b>{t('mistakes.stat')}</button>
+          <span className={css.statTiles}>
+            <button type="button" className={css.statTile} onClick={() => { actions.push({ view: 'cards', projectId, filter: 'all' }) }}><b>{project.cardCount}</b><span>{t('cards.title')}</span></button>
+            <button type="button" className={css.statTile} disabled={project.dueCount === 0} onClick={() => { actions.push({ view: 'review', projectId }) }}><b>{project.dueCount}</b><span>{t('review.due')}</span></button>
+            <button type="button" className={css.statTile} data-tone={openMisses > 0 ? 'bad' : undefined} disabled={openMisses === 0 || busy} onClick={openMissed}><b>{openMisses}</b><span>{t('mistakes.statOpen')}</span></button>
           </span>
         </section>
       )}
@@ -514,29 +527,31 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
                   <h3 className={css.sectionTitle}>{t('project.textbooks', { count: String(thick.length) })}</h3>
                   {thick.length > 1 && <button type="button" className={css.textButton} onClick={() => { setOrdering(true) }}>{t('project.reorder')}</button>}
                 </div>
-                <ol className={css.textbooks}>
-                  {rows.map(({ resource, row }) => {
-                    const done = row?.roadmap !== undefined && row.roadmap.total > 0 && row.roadmap.done === row.roadmap.total
-                    const state = done ? 'done' : row?.current !== undefined ? 'current' : undefined
-                    const percent = row?.roadmap === undefined || row.roadmap.total === 0 ? 0 : Math.round((row.roadmap.done / row.roadmap.total) * 100)
+                <div className={css.bookCards} data-color={colorOf(project)}>
+                  {rows.map(({ resource, row }, index) => {
+                    const title = splitTitle(resource.title)
+                    const path = row?.roadmap
                     return (
-                      <li key={resource.id} className={css.textbook}>
-                        <span className={css.seq} data-state={state}>{resource.seq ?? '·'}</span>
-                        <button type="button" className={css.textbookMain} onClick={() => { actions.push({ view: 'resource', projectId, resourceId: resource.id }) }}>
-                          <span className={css.textbookTitle}>{resource.title}<OriginTag origin={resource.origin} digital={resource.kind === 'course'} t={t} /></span>
-                          {row?.roadmap !== undefined && <span className={css.bar} aria-hidden="true"><i style={{ width: `${percent}%` }} /></span>}
-                          <span className={css.textbookMeta}>
-                            {row?.roadmap !== undefined
-                              ? `${row.roadmap.done}/${row.roadmap.total}${done ? ` · ${t('book.finished')}` : row.current !== undefined ? ` · ${t('project.currentStation', { station: row.current.title })}` : ''}`
-                              : row?.hasDraft === true ? t('project.draftRow', { count: String(row.draftTotal ?? 0) }) : t('book.noRoadmap')}
-                            {row?.roadmap !== undefined && row.hasDraft ? ` · ${t('book.draftWaiting')}` : ''}
-                          </span>
-                        </button>
-                        <span />
-                      </li>
+                      <button key={resource.id} type="button" className={css.bookCard} data-pending={path === undefined ? 'true' : undefined} onClick={() => { actions.push({ view: 'resource', projectId, resourceId: resource.id }) }}>
+                        <Cover book={coverOf(resource)} shade={index} size="card" />
+                        <span className={css.bookCardText}>
+                          <span className={css.bookCardTitle}>{title.main}<OriginTag origin={resource.origin} digital={resource.kind === 'course'} t={t} /></span>
+                          {path !== undefined ? (
+                            <>
+                              <span className={css.muted}>{path.done === path.total && path.total > 0 ? t('book.finished') : t('project.bookProgress', { done: String(path.done), total: String(path.total) })}{row?.hasDraft === true ? ` · ${t('book.draftWaiting')}` : ''}</span>
+                              <Segments done={path.done} total={path.total} />
+                            </>
+                          ) : (
+                            <>
+                              {title.sub !== undefined && <span className={css.muted}>{title.sub}</span>}
+                              <span className={css.muted}>{row?.hasDraft === true ? t('project.draftRow', { count: String(row.draftTotal ?? 0) }) : t('project.noPathYet')}</span>
+                            </>
+                          )}
+                        </span>
+                      </button>
                     )
                   })}
-                </ol>
+                </div>
               </section>
             )}
             {freeQuizzes.length > 0 && (
@@ -545,14 +560,18 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
                 <QuizRows p={p} projectId={projectId} quizzes={freeQuizzes} />
               </section>
             )}
+            {thin.length === 0 && loaded.data !== undefined && (
+              <div className={css.resEmpty}>
+                <span>{t('resource.emptyLine')}</span>
+                <button type="button" className={css.textButton} onClick={() => { prime('prime.addResource') }}>＋ {t('resource.add')}</button>
+              </div>
+            )}
+            {thin.length > 0 && (
             <section className={css.section}>
               <div className={css.sectionHead}>
                 <h3 className={css.sectionTitle}>{t('resource.title', { count: String(thin.length) })}</h3>
                 <button type="button" className={css.textButton} onClick={() => { prime('prime.addResource') }}>＋ {t('resource.add')}</button>
               </div>
-              {loaded.data !== undefined && thin.length === 0 && (
-                <span className={css.muted}>{t('resource.empty')}</span>
-              )}
               {thin.length > 0 && (
                 <div className={css.resList}>
                   {thin.map(resource => (
@@ -567,6 +586,7 @@ export function ProjectView({ p, projectId }: ViewProps & { projectId: string })
                 </div>
               )}
             </section>
+            )}
           </>
         )}
       </div>

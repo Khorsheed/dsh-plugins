@@ -176,3 +176,20 @@ export function ConfirmDialog({ title, lines, keep, note, confirmLabel, cancelLa
     </Modal>
   )
 }
+
+/**
+ * A progress bar cut into one segment per station: passed ones filled, the
+ * next one started — so an empty path still reads as progress, not a rule.
+ * Over 40 stations it collapses to one continuous bar.
+ */
+export function Segments({ done, total, label }: { done: number; total: number; label?: string | undefined }): ReactNode {
+  if (total <= 0) return null
+  if (total > 40) {
+    return <span className={css.segs} role="img" aria-label={label}><i data-state="done" style={{ gridColumn: `span ${Math.max(1, done)}` }} /><i style={{ gridColumn: `span ${Math.max(1, total - done)}` }} /></span>
+  }
+  return (
+    <span className={css.segs} role="img" aria-label={label}>
+      {Array.from({ length: total }, (_, index) => <i key={index} data-state={index < done ? 'done' : index === done ? 'next' : undefined} />)}
+    </span>
+  )
+}

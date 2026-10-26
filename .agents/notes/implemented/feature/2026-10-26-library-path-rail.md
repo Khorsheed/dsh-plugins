@@ -28,3 +28,10 @@ Decided with the user over `proposals/prototypes/library-slimming.html` §5 (opt
 ## Testing
 
 190/190 green. Lock-related assertions were rewritten to D6: adoption leaves every station current, nothing unlocks, and a quiz on a later station carries no lock warning. The rail was checked in the sidebar fixture at 420px in dark and light: parts, passed / studying / todo rows, a side stop, and the next-station card with 去订正.
+
+## Follow-up (2026-10-26): textbook and project pages say each thing once
+
+The user found both pages repetitive (知识型 three times, progress twice, chapters in the station title and under it, a long title in the header and the body) and read the empty progress bar as a divider. Decided over `proposals/prototypes/library-book-page.html`:
+- **Titles for display** (`client/titles.ts`): a textbook's trailing parenthesis becomes its subtitle, and a station loses its 「站 N：」 prefix and its trailing chapter note. Stored titles are unchanged.
+- **Textbook page**: a hero with a cover, the main title, the subtitle and one line of tags; 知识型 / 材料型 moves into the ⋯ menu, with only a 材料型 tag shown. The rail's head shows the passed and mastered counts above a bar segmented per station (`Segments`, one continuous bar over 40). The next station is a tinted row with its buttons. The contents fold into one line at the bottom (skipped chapters dimmed, source link inside).
+- **Project page**: the goal is clamped to two lines with a toggle; the ring shows the percentage with 「过关」 under it (the station counts go in its tooltip, so long paths never overflow the ring); stats are three tiles, 错题 renamed 待订正; each textbook is a card with a cover, main title, origin tag and segmented progress (dashed when it has no path yet); an empty resource section is one line.
