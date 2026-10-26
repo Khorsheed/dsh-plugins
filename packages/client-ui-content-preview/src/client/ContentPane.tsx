@@ -34,10 +34,11 @@
  * @module @khorsheed/dsh-client-ui-content-preview
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
-import { CodeBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { CodeBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PanelHeader, UnderlineTabs, useAdaptiveSplitBack, usePanelCompact, usePanelCompactContext, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { IconCheckOutlineMedium, IconCodeOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium, IconFolderOpenOutlineMedium, IconRefreshOutlineMedium, IconSearchOutlineMedium } from './icons.tsx'
 import type { ContentPaneProps, PreviewTranslator, PreviewRead, PreviewView, SaveOutcome } from './contract.ts'
+import { MarkdownDocument } from './MarkdownDocument.tsx'
 import { draftFor, fromEditorText, isDirty, rememberDraft, toEditorText, type Draft } from './edit.ts'
 import { basenameOf, dirnameOf, isHtmlPath, isMarkdown, languageFor } from './language.ts'
 import { hasStructuredPreview, structuredPreview } from './structured.tsx'
@@ -176,6 +177,8 @@ function PreviewBody(props: {
   imageView: ReactNode
   /** The edit-mode textarea; replaces the source face while editing. */
   editor: ReactNode
+  /** The surface's markdown media hooks plus the identity of the read they belong to. */
+  media: Pick<ContentPaneProps, 'resolveImage' | 'onOpenFile'> & { readonly version: unknown }
   onLoaded: () => void
   iframeRef: RefObject<HTMLIFrameElement>
   frameRef: RefObject<HTMLDivElement>
@@ -184,7 +187,7 @@ function PreviewBody(props: {
   fullscreen: boolean
 }) {
   const {
-    read, t, labels, search, rawSearch, htmlMode, scripted, sourceMode, imageView, editor,
+    read, t, labels, search, rawSearch, htmlMode, scripted, sourceMode, imageView, editor, media,
     onLoaded, iframeRef, frameRef, scrollRef, onScroll, fullscreen,
   } = props
   switch (read.kind) {
@@ -206,7 +209,9 @@ function PreviewBody(props: {
       const documentBody = rawSearch || sourceMode
         ? null
         : structuredPreview(read.path, content, labels)
-          ?? (isMarkdown(read.path) ? <MarkdownText text={content} labels={labels.markdown} /> : null)
+          ?? (isMarkdown(read.path)
+            ? <MarkdownDocument text={content} docPath={read.path} labels={labels.markdown} resolveImage={media.resolveImage} onOpenFile={media.onOpenFile} version={media.version} />
+            : null)
       // While editing, the source face — and a plain code file's only face — is the editor.
       if (editor !== null && documentBody === null) return editor
       const dot = read.path.lastIndexOf('.')
@@ -263,7 +268,7 @@ function PreviewBody(props: {
 export function ContentPane(props: ContentPaneProps): ReactNode {
   const {
     path, read, loading, error, sessionId, displayPath, chrome, labels, t,
-    onCopyPath, onReload, onSave, onBack, diffView, view, onViewChange, imageView, notice, embedded = false,
+    onCopyPath, onReload, onSave, resolveImage, onOpenFile, onBack, diffView, view, onViewChange, imageView, notice, embedded = false,
   } = props
 
   // HTML source ⇄ render ⇄ scripted; the sandboxed static render is default.
@@ -758,6 +763,7 @@ export function ContentPane(props: ContentPaneProps): ReactNode {
                     sourceMode={sourceMode}
                     imageView={imageView}
                     editor={editor}
+                    media={{ resolveImage, onOpenFile, version: content }}
                     onLoaded={onHtmlLoaded}
                     iframeRef={htmlIframeRef}
                     frameRef={htmlFrameRef}

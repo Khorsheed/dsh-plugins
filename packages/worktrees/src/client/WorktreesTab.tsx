@@ -334,6 +334,25 @@ export function WorktreesTab({
       ?? list[0] ?? null
   }, [worktrees, activeWorktreePath])
 
+  // The markdown preview's local media, in this tab's repo-relative path
+  // space (an absolute destination is outside the repository: left alone).
+  // Images read the working tree, so a commit's historical content does not
+  // borrow today's screenshots; a link keeps the current segment (a commit's
+  // README opens its sibling at that commit) and lands on the content view.
+  const loadRepoImage = (path: string): Promise<string | undefined> =>
+    path.startsWith('/')
+      ? Promise.resolve(undefined)
+      : fetchReadRepoImage(sessionId, { path }).then(result => (result.ok ? result.value.dataUrl : undefined))
+  const openLinkedFile = (path: string): void => {
+    if (path.startsWith('/')) return
+    const segment = selectedSegment === 'commit'
+      ? 'commit'
+      : pending.some(file => file.path === path) ? 'uncommitted' : null
+    actions.select(path, segment)
+    actions.setDetailView('content')
+    setDetailOpen(true)
+  }
+
   const onSelectFile = (path: string): void => {
     let segment: 'uncommitted' | 'committed' | 'commit' | null = null
     const untracked = pending.find(file => file.path === path)?.status === '??'
@@ -592,6 +611,8 @@ export function WorktreesTab({
               onCopyPath={() => copyText(absolutePath(worktreePath, selectedPath))}
               onReload={() => fetchDetail(() => false)}
               {...(canEdit ? { onSave: saveDetail } : {})}
+              {...(selectedSegment === 'commit' ? {} : { resolveImage: loadRepoImage })}
+              onOpenFile={openLinkedFile}
               chrome={paneChrome(selectedPath)}
               labels={structuredLabels(t)}
               t={previewTranslator(t)}

@@ -259,6 +259,19 @@ export interface ContentPaneProps {
    * are pinned (a commit) or off-host browsers simply omit it.
    */
   readonly onSave?: ((request: SaveRequest) => Promise<SaveOutcome>) | undefined
+  /**
+   * Loads one local image a markdown document names (`![](docs/shot.png)`,
+   * `<img src="./a.png">`), given its path resolved against the document's
+   * directory in this surface's own path space. Resolves a displayable URL
+   * (data:, blob:, or a route on this origin), or undefined — the image then
+   * stays its alt text. Omitted: local images stay alt text.
+   */
+  readonly resolveImage?: ((path: string) => Promise<string | undefined>) | undefined
+  /**
+   * Opens one local file a markdown link names (`[English](README.en.md)`),
+   * resolved like {@link resolveImage}. Omitted: such links stay plain text.
+   */
+  readonly onOpenFile?: ((path: string, options?: { line?: number }) => void) | undefined
   /** Renders the back control when supplied (leaving a nested file view). */
   readonly onBack?: (() => void) | undefined
   /** The diff body, when this surface has one; enables the diff/content toggle. */
