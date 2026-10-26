@@ -27,6 +27,9 @@ describe('@ menu', () => {
     expect(shape(otherRows('', [room, plain], new Set(), new Set()))).toEqual(['z', 's'])
     expect(shape(otherRows('', [room, plain], new Set(), new Set(['z'])))).toEqual(['z', 'z/dsh', 'z/游戏大师', 's'])
     expect(shape(otherRows('游戏', [room, plain], new Set(), new Set()))).toEqual(['z', 'z/游戏大师', 's'])
+    // Expanded while searching: the room lists all its members under it.
+    expect(shape(otherRows('游戏', [room, plain], new Set(), new Set(['z'])))).toEqual(['z', 'z/dsh', 'z/游戏大师', 's'])
+    expect(otherRows('游戏', [room, plain], new Set(), new Set(['z'])).filter(row => row.kind === 'roomMember').every(row => row.nested === true)).toBe(true)
     expect(memberMention(room, room.members[1]!)).toEqual({ mention: '@[游戏大师（游戏开发）](dsh-session:eg)', label: '游戏大师（游戏开发）' })
   })
 
