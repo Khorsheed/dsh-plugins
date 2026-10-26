@@ -2,113 +2,47 @@
 
 [English](README.en.md) | 中文
 
-这个会话在哪个 worktree 上干活、有没有还没提交的改动——抬头看一眼就知道。
+这个会话在哪个分支上干活、还有多少没提交——抬头看一眼就知道。
 
-多 worktree 并行开发时，「当前会话对着哪个分支、有多少未提交内容」以前要去终端敲 git 才知道。这个插件把答案放进会话头部：一个分支胶囊徽标（带合并 diff 行数，有改动时变警告色），点开是右栏的 worktrees 页面——待提交改动带 diff、IDE 风格提交记录、仓库全量文件浏览。一切展示都是只读的 git 事实，插件自己不写仓库；唯一能改仓库的能力（建/删 worktree）收在按会话授予的 `./tool` 组合入口（模型工具行）里，且删除永远要先确认。
+几个工作树并行开发时，想知道当前会话对着哪个分支、改了多少，以前得切去终端敲 git。装上工作树，会话头部多一个分支小标签，写着分支名和改动行数，有没提交的改动就变色；点一下，右栏打开改动、提交记录和整个仓库的文件。你得到的是不离开对话就能看清的 git 现状，看到要改的地方，顺手改掉。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-standard.png" width="640" alt="会话头部右上角的 worktrees 徽标：分支胶囊（分支名 + 合并 diff 行数 +175 −34）与仓库名胶囊">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-standard.png" width="640" alt="会话头部右上角的分支标签：分支名加改动行数 +175 −34，旁边是仓库名">
 
-## 特性
+## 能做什么
 
-- **会话头部徽标**（`conversation.session.header.utilities` 槽，仅仓库会话渲染）——分支名 + 未提交/已提交合并的 diff 行数；hover 显示两段明细；有改动时计数变警告色，干净时保持常态。刷新不靠周期轮询（一次 summary 要跑 5–6 个 git 调用）：右栏 tab 的每次刷新、宿主转发的 `api-session/status`（轮次边界）与 `api-session/activity`（用户消息）、窗口重新聚焦/可见都会触发重读。
-- **一键直达改动**——点分支胶囊经 `ctx.sidebarRight.openTab` 打开右栏 worktrees tab（也可以从右栏 guide 页进入）。
-- **工作树待提交档**——当前选中工作树的全部未提交改动（工作树维度，刻意不做会话过滤），VS Code Source Control 风格：叶子带 A/M/D/?? 徽标和行数；点文件，右侧详情在「改动 | 内容」双视图间切换（彩色 diff / 官方 CodeBlock），左树同时收起为图标栏、再点恢复；顶部切换器换 worktree，列表跟着换。
-- **仓库提交记录档**——本检出的提交历史（`git log HEAD`，最近 200 条：短 sha + subject + 相对时间 + 分支/tag 装饰），分支并入 base 后依然有用；选中提交内联展开其提交文件树（带真实增删行数与提交正文），点文件看该提交的 diff 与当时内容。
-- **仓库文件档**——`git ls-files` 的全量跟踪文件树，点文件看内容；图片直接内联预览。
-- **详情面板「重新加载」手势**——重读当前文件的当前视图（diff 走 diff Remote，内容/图片走 read Remote）；重读期间旧内容保持显示、按钮禁用并旋转，失败保留旧内容并报进既有错误槽。钉死在某一提交的文件内容不可变，不提供此手势。
-- **就地编辑**——工作树待提交档与仓库文件档的「内容」视图可直接改：标题行「编辑」进入，⌘S / Ctrl+S 或「保存」写回工作树，左侧改动列表随即刷新；文件在你编辑期间被 agent 改过会提示冲突，由你选覆盖还是放弃。提交记录档里的历史内容只读；手机经隧道打开时只读。
-- **Markdown 里的图片和链接**——预览里 `<img>` 与仓库内的本地图片直接显示，本地链接点了打开那个文件的内容（提交记录里打开的是同一提交时的版本；提交里的本地图片不显示）。
-- **git 动作行**——刷新 / 复制分支名 / 打开此文件夹（每页一次的官方 open-in-app 探测确认宿主有文件管理器、且页面在宿主本机打开时才显示）。
-- **「切换到此工作树」指引**——切换器指向别的 worktree 后，可一键向会话追加一条不唤醒 agent 的上下文通知（生产者归属 kind `worktrees`），agent 在下一个自然轮次就知道用新 workdir 干活——零额外模型调用。
-- **按 preset 自隐**——徽标与右栏 tab 类型默认读官方 `pluginInventory` 组合判据：当前会话的 preset 组合授予了本包的 `@khorsheed/dsh-worktrees/tool` 工具行才显示；组合数据读不到一律保持显示（fail-open）。tab 类型是注册级自隐（guide 枚举注册表，隐藏即注销；已打开的 tab 按会话存储，未授予会话的布局里本就没有它）。
-- 树默认只展开第一层，随时「展开全部 / 收起全部」；所有文件列表一次拿全（客户端 trie），仅单文件 diff 按需拉取。文件预览与「文件列表」插件共用同一个内容面板 `@khorsheed/dsh-client-ui-content-preview`。
+- **抬头就知道在哪干活**：会话头部的标签写着分支名和改动行数，有改动时变成提醒色，鼠标停上去能看到明细。
+- **点一下看改动**：点标签打开右栏的「工作树」页，「工作树待提交」列出所有没提交的文件，点一个看它的 diff 或现在的内容。
+- **提交记录和整个仓库也在**：「仓库提交记录」里点一条提交，看它改了哪些文件、每个文件改成什么样；「仓库文件」能翻遍仓库里的文件，图片直接显示；文档里引用的本地图片和链接也能看、能点。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="640" alt="右栏 worktrees tab 的「工作树待提交」档：左侧改动文件树带 A/M/D 徽标与行数，右侧详情面板显示选中文件的彩色 diff">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="640" alt="右栏「工作树」页的「工作树待提交」：左边是改动文件树，右边是选中文件的彩色 diff">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-other-preset.png" width="640" alt="未授予伴生工具行的 preset（极简模式）下徽标与右栏 tab 类型自隐，会话头部只剩官方按钮">
+- **看到不对，当场改**：「内容」视图里点「编辑」直接改，⌘S 或「保存」写回工作树，左边的改动列表跟着更新；你改的时候 agent 也动了这个文件，会提醒你选覆盖还是放弃。
+- **换个工作树接着干**：页面顶部「切换工作树」换到另一个，再点「切换到此工作树」，agent 下一轮就在新目录里干活，不打断它手上的事。
+- **agent 也能替你管工作树**：在对话里让它列出、新建、切换或删除工作树；删除一定先问你，主检出和还有未提交改动的工作树它删不了。
 
 ## 安装
 
-```sh
-dsh plugin --profile web add @khorsheed/dsh-worktrees
+在 DSH 的「插件 → 添加插件」里输入下面的包名，点安装：
+
+```
+@khorsheed/dsh-worktrees
 ```
 
-重启 web 实例后生效；卸载即精确还原之前的组合：
+它也会跟着「开发套件」（`@khorsheed/dsh-dev-suite`）一起装好。装完在一个 git 仓库里开「开发模式」的会话，分支标签就出现在会话头部右上角。在其它模式里看不到标签是正常的。
 
-```sh
-dsh plugin --profile web remove @khorsheed/dsh-worktrees
-```
-
-一个组合里 `worktrees` 行只能挂一次：官方镜像（npm 发布线与 upstream master）都不挂这行，上面的 add 就是安装路径；已用其他方式挂过该 id 的组合不要再 add——重复的 loader entry id 会炸 boot。拿不准先查：`dsh --profile web --dump-config | grep worktrees` 无输出即可安全 add。
-
-> **模型工具的两种形态**：模型可见的 `worktrees` 工具不在 profile 根注册——它由本包的 **`./tool` 子路径行**承载，在 agent preset 组合里**按会话授予**（迁移路径：在目标 preset 的 `agent.cordis.yml` 加 `- id: worktrees-tool / name: '@khorsheed/dsh-worktrees/tool'`；dev 的 dev preset 已带此行）。0.2.x 及以前该行是独立伴生包 `@khorsheed/dsh-worktrees-tool`（0.3.0 起回并进本包，旧包名已在 npm deprecate，行 id 不变、组合状态不受影响）。徽标/服务/Remote 行为不变；右栏 tab 类型与徽标共用同一判据做注册级自隐。
-
-### 模型工具（`./tool` 子路径行）
-
-preset 组合里引用 `@khorsheed/dsh-worktrees/tool` 的会话获得模型可见的 `worktrees` 工具——其余会话零感知：
-
-- **一个工具，四个动作**——`list` / `switch` / `create` / `remove`：列出会话仓库的全部 worktree（路径、分支、是否 main、脏文件数、stale 提示）；切换会话跟随的 worktree（徽标/tab 联动）；`git worktree add` 建新 worktree 并切过去；确认后删除。
-- **删除有服务侧硬闸门**——`remove` 必须带 `confirm: true`，main worktree 与有未提交改动的 worktree 一律被服务拒绝（代码强制，不只是提示词约定）。
-- **core 缺席就 pending，不炸**——行对 core 服务声明 `inject = ['worktreesCore']`：core 未挂载时该行保持 pending（注册表审计显示 `waiting for worktreesCore`），preset 组合照常挂载、不报错；core 出现后行自动激活。core 与本行同包，正常安装永远不会缺席。
-- **归因到本包**——工具携带 `dsh.tool.origin` 来源标记（owner = `@khorsheed/dsh-worktrees`），能力目录据此归因。
-
-## 配置
-
-| 字段 | 默认 | 说明 |
-|---|---|---|
-| `baseRef` | `main` | 「已提交」段（`base...HEAD`）与 ahead/behind 的基准分支；设为 `''` 则完全禁用已提交段 |
-| `visiblePresets` | `[]` | 徽标与右栏 tab 显隐的**手动 override**。缺省或空数组 = 走**组合判据**：读官方 `pluginInventory` 的 preset 组合数据，当前会话的 preset 组合里有 `@khorsheed/dsh-worktrees/tool` 行则显示、没有则隐藏；组合数据不可得（无 namespace、RPC 失败、preset 组缺席或 broken）、没有 preset 的会话以及无会话的首页状态都保持显示（fail-open）。配了非空名单则退回试点语义：preset id 不在列表里的会话不渲染徽标、不注册 tab 类型。配置经 Remote 的 `badgeConfig` 方法到达浏览器端——web 引导不给 client 条目传 config |
-| `stateRoot` | `''` | 会话 worktree 绑定（`bindings.json`）的状态根。缺省解析为 `$DSH_HOME/state/worktrees`（`DSH_HOME` 未设置时退回 `<cwd>/.dsh-worktrees`，sidechat/canvas 惯例）。状态文件损坏/不可读时自动降级纯内存模式，受控切换回执以 `persisted: false` 如实标注，绝不炸启动 |
-
-## 工作区接入接缝（服务端消费）
-
-一组 agent-free 的 Remote 动词，供**可信服务端调用方**按工作区消费：查询动词带显式绝对路径锚点，受控切换返回结构化回执——全程不经过宿主的统一 agent 查找（那个查找可能唤醒离线会话，外部成员的查询绝不能触发它）。
-
-- **agent-free 查询动词**——`summaryAt` / `changesAt` / `repoFilesAt` / `listWorktreesAt` / `commitLogAt` / `commitFilesAt` / `fileDiffAt` / `readFileAt`（带 `commit` 参数时等价 `readFileAtCommit`）/ `readRepoImageAt`：每个都收 `{ at, … }`，`at` 是目标仓库/worktree 内任意绝对路径（仓库 toplevel 在宿主侧解析），返回形状与对应 agent 绑定版逐字节一致（委托同一个服务核心）。与本地文件动词同理：**任何绝对路径都接受**——授权/圈禁是可信调用方的职责（从自己的授权事实推出允许访问的路径集合），本面只拒绝非绝对或带 `..` 的锚点，绝不替调用方做准入。既有 agent 绑定动词原样保留，原生 UI 不受影响。
-- **受控切换 `switchWorktreeControlled(sessionId, { path, expected? })`**——agent-free 的绑定写：sessionId 是裸字符串（其命名空间归调用方所有），目标仓库从**目标路径**自身解析。返回类型化回执而不是抛错：`switched`（切到的 `WorktreeInfo` + 生效绑定 + `persisted` 标记）| `conflict`（`expected` 与当前实际绑定不符，回执携带**实际绑定**）| `not-a-repo` | `no-worktree`（在仓库内但不是 worktree 根）| `invalid-request` | `persistence-failed`（写盘失败，内存保持原状，绝不假成功）。给了 `expected` 就是 compare-and-swap，绝不静默 last-write-wins；`{ kind: 'none' }` 表示「无 override」。**CAS 是单进程语义**：比较状态是进程内 map 加它的写穿文件，没有跨进程锁——两个宿主共用一个状态根会互相覆盖文件。
-- **绑定持久化**——override map 写穿到状态根下的 `bindings.json`（tmp 文件 + rename 原子写）；状态根解析走 sidechat/canvas 惯例：显式配置 `stateRoot` → `$DSH_HOME/state/worktrees` → `<cwd>/.dsh-worktrees`。挂载时加载，宿主重启后数据面继续跟随。回执只在持久化成功后返回（`persisted: true`）；状态文件损坏或不可读时降级为纯内存模式（绝不重写读不懂的文件——手工修复后重启恢复），此时回执带 `persisted: false`——诚实信号，不是静默降级。legacy 的 `switchWorktree` / `createWorktree` / `removeWorktree` 同样写穿（持久化开启时写失败会抛错中断操作，内存不落新值）。
-- **绑定查询 `worktreeBinding(sessionId)`**——返回 `{ kind: 'override', path }` 或 `{ kind: 'none' }`；以前调用方只能从 `summary` 反推。`none` 表示「无 override」：会话回落到自己的静态 cwd（通常是主检出，但那是会话自己的事实——本面不做 agent 查找，读不到也不假装知道）。
-- **事件 `worktrees/switched`**——每次绑定被成功 SET（legacy switch/create 与受控切换都算）经 `ctx.emit` 发出 `{ sessionId, path }`；清除（删掉被绑定的 worktree）不发。**这是进程内 cordis 事件，不是浏览器推送**——桥接给客户端、或收到后重读，都是消费方自己的事。
-- **既有成员/执行永不迁移**——切换改写的只是绑定（数据面跟随哪个 worktree）；一个已存在的执行恢复时，其工作目录锚定在它自己的执行记录上，永远不会被事后的绑定切换重新指向——新绑定只对**新成员/新执行**生效，消费方不得暗示其他语义。
-
-## Compatibility
-
-- npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——改动/提交/仓库视图迁移至官方右栏 tab 面（page-type 注册进 `ctx.sidebarRightTabs`，body 进 keyed `sidebar.right.pane.tab` 槽位，徽标点按经 `ctx.sidebarRight.openTab` 打开）；「在文件夹中显示」手势改走官方 open-in-app 路由探测（GET `/open-in-app/apps` + POST `/open-in-app/open`，仅目录），恢复了 0.1.2 上被迫隐藏的手势。徽标留在 `conversation.session.header.utilities`：0.1.5 的 header corner 是 single 槽，默认 web 组合里已被 ui-sidebar-right 的 ExpandButton 占用，而 single 槽语义是遮蔽（同优先级注册即抛错，不同优先级替换占用者），无法共存。徽标与右栏 tab 显隐默认读官方 `pluginInventory` 组合判据（tab 为注册级：guide 枚举注册表，隐藏即注销；0.1.5 实测：dev preset 显示、standard 隐藏、切换干净翻转）。全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿；core 的 cordis 键改名 `worktreesCore`（wire 命名空间不变）。headless profile 无浏览器消费方，本插件不贡献任何东西。徽标与右栏 tab 显隐判据：默认读官方 `pluginInventory.list()` 的 preset 组合数据（组合里有 `@khorsheed/dsh-worktrees/tool` 行则显示）；`visiblePresets` 非空时是手动 override（读会话投影 `projectionValues.agentPreset`）；两条路径读不到都保持显示（fail-open）。Session V4 适配：directAgent 上下文消息的 source 改为生产者归属 kind `worktrees`（保留 `form: 'notice'` 一行通知形态；V4 原生准入在落盘写入时拒收退役的 `kind: 'plugin'` 包装；0.1.5 宿主的 `user/message` 准入只查 kind 非空，两条线都能落盘，且两条线的渲染器都把未知非 `user` kind 归为上下文注入行、以 kind 为标签）。
-
-**版本线对照**：`0.2.0` 起支持宿主 `0.1.5-rc.1` 及以后；宿主 `0.1.2-rc.1` 请停留在 `0.1.0-rc.9`。
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-other-preset.png" width="640" alt="其它模式（极简模式）的会话里没有分支标签和工作树页，会话头部只剩 DSH 自带的按钮">
 
 ## 已知限制
 
-- **绑定持久化是单进程语义**——active-worktree override 会写穿到状态根的 `bindings.json`（挂载时加载回，宿主重启不再丢）；但 compare-and-swap 状态只在进程内（进程内 map + 写穿文件），没有跨进程锁：两个宿主共用同一状态根会互相覆盖文件。状态文件损坏/不可读时降级纯内存（文件原样保留，绝不重写），受控切换回执以 `persisted: false` 如实标注。
-- **预览有 2 MiB 上限**——仓库文件的内容/图片读取超过上限即拒绝；git 无关的本地文件读取按上限截断并标注不完整，二进制文件显示非文本占位。
-- **没有周期轮询**——插件自有事件进不了官方 Remote 事件转发白名单（上游 seam S17），徽标的新鲜度靠上述触发器维持；轮次之间的纯外部 git 变动要等下一个触发点才上屏。
-- **headless profile 不适用**——全部表面都是 web UI，无浏览器消费方的组合里本插件不贡献任何东西（也不会报错）。
-- **`./tool` 行只管会话工作目录的仓库**——工具从会话 cwd 推导目标仓库，不能指向任意路径的仓库；会话没有工作目录时调用返回 `{ error: 'worktrees: session has no working directory' }`；「删除前先征得用户同意」写在工具描述里，服务侧强制的只是三条硬规则（`confirm: true`、拒删 main worktree、拒删有未提交改动的 worktree）。
+- 标签不是时时刷新：一轮结束、你发消息、切回窗口时才更新，在终端里刚改的要等一下才显示。
+- 超过 2 MB 的文件不预览；手机上只能看不能改，历史提交里的内容也只读。
 
-## 实现原理
+## Compatibility
 
-<details>
-<summary>内部结构（点击展开）</summary>
+需要 DSH 0.1.5 或更新版本，已在 0.2.1 上验证。
 
-**架构。** Host 半部分是服务核心 `WorktreesService`（`ctx.provide('worktreesCore')`——键名 0.2.1 起带 `Core` 后缀，避开宿主实验包 `worktree` 提供的 `ctx.worktrees`）加 `WorktreesRemoteService` Typert Remote（cordis key `worktreesRemote`，wire 命名空间 `worktrees`，浏览器调 `remote.worktrees.*`）。git 面无状态——worktree 注册表就是 `git worktree list` 本身；唯一持有的状态是按会话的 active-worktree 绑定 map（配置状态根时写穿 `bindings.json`，挂载时加载回，见「工作区接入接缝」节）。Remote 是薄适配层，从调用方 agent 解析会话工作目录（会话的 active-worktree override 优先，回落 `header.cwd`）后委托给服务核心，零逻辑复制；agent-free 的 `*At` 动词则直接收绝对路径锚点。所有 git 命令都在解析出的仓库 toplevel 内执行，客户端给的路径一律先过 `assertSafePath`（拒绝绝对路径与 `..`）再参与 diff/读取——表面永远逃不出会话仓库。Remote 另带一组 git 无关的本地文件方法（`listLocalDirectory` / `readLocalFile` / `readLocalImage`）：绝对路径、同样过校验、不绑定会话，任何会话或全局框架都可调用。
+## 给开发者
 
-**客户端。** 经官方 `ctx.remote.$mount` 自挂载生成的 Remote contribution，无需改动任何核心包；组合里去掉本插件即移除它添加的所有表面。徽标注册进 `conversation.session.header.utilities`（order -20，最左）；右栏 tab 走官方两段式注册——类型进 `ctx.sidebarRightTabs`（套注册级显隐开关），body 进 keyed `sidebar.right.pane.tab` 槽位。「打开此文件夹」用 ui-content-preview 的 `OpenInAppProbe`（apply 时每页一次探测，结果经 snapshot store 供各表面订阅）；预览内核同样是 ui-content-preview 的 `ContentPane`。host→client 失效通知借用官方 `api/remotes` 白名单转发的两个事件（`api-session/status` 轮次边界、`api-session/activity` 用户消息）；`$on` 能力是探测出来的，老宿主没有它时徽标靠其余触发器照常工作。
-
-**指引 agent。** `directAgent` 把一条 durable `user/message`（`surfaceOp: 'append'`）追加进会话而不唤醒它：生产者归属 source kind `worktrees`、`form: 'notice'` 一行形态，transcript 立即渲染为上下文注入行，并在下一个模型边界折进上下文。读侧 `isWorktreesSource` 三种形态都认：新 kind、V3→V4 迁移形态 `plugin:@khorsheed/dsh-worktrees`、以及 0.1.5 宿主原位提供的 V3 包装（`kind: 'plugin'` + `plugin` 字段）。
-
-**模型工具在 `./tool` 子路径行。** 工具定义工厂 `defineWorktreesTool(service)` 住在内部模块 `./tool-definition.ts`（不进 exports 面），可挂载行是 `./tool` 导出（`name` / `inject = ['worktreesCore']` / `apply`，零 `ctx.provide`——preset 挂载面的 isolate-realm 规则只拒服务行，工具行可裸放 preset，官方 `tool-bash` 行同构），由各 agent preset 的 `agent.cordis.yml` 按名引用——能力按会话授予，profile 根永远没有这行。对 core 服务是**声明式 inject**（同族 companion 例外）：preset 的 standing scope 在注册表激活时挂载，早于 profile 靠后 bundle 行提供 core，一次性 `ctx.get` 探测曾在此竞态下看到 ABSENT 并静默惰死（2026-09-27 3080 实证）；声明式 inject 让行 pending 到 core 提供再激活，行内守卫仅留作防御性直调路径。工具注册走 `ctx.inject(['tools'])` 延迟注入。四个动作：`list`（路径/分支/是否主检出/脏文件数/是否已并回 base）、`switch`（会话徽标与 tab 跟随）、`create`（`git worktree add`，可 `-b` 新分支，随后切换）、`remove`（`confirm: true` 必填；主 worktree 与有未提交改动的 worktree 一律拒绝）。
-
-**身份锚点。** `cordis.patch.yml` 行 id `worktrees` 与 tsdown `clientBundle` id 同为 `@khorsheed/dsh-worktrees`。
-
-**导出。** `.` 导出插件本体（`apply`/`Config`/`name`）；`/client` 导出浏览器半部分（`apply`/`inject`、`WorktreesBadge`/`WorktreesTab`/`WorktreesController`）；`/tool` 导出按会话授予的模型工具行；`/types` 是 Remote 线上类型词汇表（含 `WorktreesService` 类型）；`/typert`、`/remote` 是生成的 Remote 两侧。
-
-</details>
-
-## 开发
-
-隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo（`packages/worktrees`）。问题与贡献请移步该仓库。
-
-## 变更记录
-
-见 [CHANGELOG.md](CHANGELOG.md)。
+- 入口：`src/index.ts`（git 服务）、`src/tool.ts`（agent 用的工作树工具）、`src/client/index.ts`（标签与右栏页面）。单独安装（`dsh plugin --profile web add @khorsheed/dsh-worktrees`）时，工作树工具要由某个模式授予，标签和页面只在那些模式的会话里出现；已经挂过本插件的配置不要重复添加。
+- 配置项、给服务端调用方的按路径查询与切换接口、兼容细节和内部结构，都在[完整参考](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/worktrees/docs/reference.md)里。
+- 隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins)，问题与贡献请到该仓库；变更见 [CHANGELOG.md](CHANGELOG.md)。

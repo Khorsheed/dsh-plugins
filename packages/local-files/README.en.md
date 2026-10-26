@@ -2,81 +2,45 @@
 
 English | [中文](README.md)
 
-Browse any local directory from the right sidebar — a lazy-loading file tree with structured previews, git-agnostic, defaulting to the current session's workspace but never locked to it.
+Browse any folder on your machine from the right sidebar — open a file to read it, and fix it right there.
 
-To glance at an assets folder next to the workspace or a data file outside the repo, you used to switch to the system file manager. This plugin registers a **Files** page-type tab in the right sidebar (entered from the guide page's "Files" card): a per-level lazy-loading file tree on the left, and a detail pane on the right that renders HTML/Markdown/JSON/CSV as structured views and inlines images. It browses any absolute local path — untracked, ignored, and git-external files alike; the data plane rides its own Typert Remote, decoupled from the worktrees plugin's git badges: that one only shows git status, this one only does plain local-file browsing. (The split in one line: this plugin is "browse any local directory"; file-preview is "the current session's products" — different semantics, hence two independent packages.)
+To glance at an assets folder next to the workspace or a data file outside the repo, you used to switch to the system file manager, and then got raw source you had to read through. With Files installed, the right sidebar can browse any folder on your machine: it starts at the current session's working directory and can move anywhere else; open a file and web pages, documents and tables are already rendered. What you get is your local files, searchable and editable, without leaving the conversation.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-1.png" width="640" alt="the app entry card on the home page: Files (opens the current session's workspace by default)">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-2.png" width="640" alt="The Files page: a file tree on the left, a rendered Markdown preview on the right with content search and a preview/source switch">
 
-## Features
+## What it does
 
-- **Files tab** — a page-type right-sidebar tab, entered from the guide page's "Files" card. The registration takes over the official `files` kind at the extension band (the registry's built-in per-kind shadowing): the guide shows a single files card, and the official "Workspace files" card resumes on uninstall — never two cards at once.
-- **Tree left, preview right** — the tree lazy-loads per level, toggles dot-files in one click, and drags wider or narrower; the header's magnifier opens a filename search (matched as a substring of the root-relative path, so a folder-name hit lists that folder's contents; ancestors of name-hit files start expanded, folders that are themselves name hits start collapsed, and every row toggles freely; the walk is capped and skips node_modules/.git); the detail pane renders HTML/Markdown/JSON/CSV structurally and inlines images; the title row's "Reload" gesture re-reads the current file — on-disk changes land without reselecting, and a failed re-read keeps the old content and reports through the existing error slot.
-
-- **Edit in place**: the title row's "Edit" turns the source face into a writable text box while the "Preview" tab shows the draft; ⌘S / Ctrl+S or "Save" writes it to disk. Before saving it checks that the file still holds what you started from: if the agent or another program changed it meanwhile, it says so and lets you "Overwrite anyway" or "Discard and reload". Switch to another file and back and an unsaved draft is still there. Only complete UTF-8 text files are editable; files beyond the preview cap, non-UTF-8 files and images stay read-only.
-- **Images and links in Markdown** — in the preview, screenshots written as `<img>` and local images such as `docs/x.png` show as images, and a local link such as `[English](README.en.md)` opens that file in the panel. The source view and the editor still show the file as written.
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-2.png" width="640" alt="the Files tab: a per-level lazy-loading file tree on the left, a structured preview on the right (rendered markdown, the content search box, and the preview/source toggle)">
-
-- **Default root = the session's workspace** — the same data source as the official files tree (the session row's `cwd`, read reactively — a late-loading row fills in); a manually chosen directory is remembered per session (localStorage `dsh-local-files-root:<sessionId>`) and restored across tab reopens and page reloads; the toolbar's "Back to original workspace" jumps to the current session's workspace root (hidden while already there).
-- **Breadcrumbs + action row** — breadcrumbs navigate level by level; the action buttons are "Choose workspace" (the native directory picker), "Back to original workspace", "Open this folder" (shown when the host's open-in-app probe resolved a file manager), and "Refresh files".
-- **Git-agnostic** — it browses any absolute local path (including untracked, ignored, and git-external files), with no repository judgment.
+- **Browse wherever you like**: it opens at the current session's working directory; "Choose workspace" moves to another folder and is remembered next time, and "Back to original workspace" brings you back. Files outside the repo, untracked or ignored, all show up.
+- **Find files by name**: click the magnifier above the tree and type a file or folder name; matches open up along with the folders they sit in.
+- **Opens in a readable form**: web pages, Markdown, JSON and CSV are rendered, images are shown, local images and links inside a document show and open too, and you can search inside the content; when the file changed on disk, "Reload" brings in the latest.
+- **Spot it, fix it**: click "Edit", change the text, watch "Preview" follow along, and save with ⌘S or "Save". If the agent changed the file while you were editing, you're told and choose "Overwrite anyway" or "Discard and reload"; switch to another file and back, and your unsaved draft is still there.
+- **One click back to your tools**: "Open this folder", "Show in folder" and "Open in IDE" work when the page is open on the host machine.
+- **Works on a phone too**: in a narrow panel the list and the file detail take turns on screen, and the path folds into one tappable breadcrumb.
 
 ## Install
 
-```sh
-dsh plugin --profile web add @khorsheed/dsh-local-files
+In DSH, open Plugins → Add plugin, enter the package name below and click install:
+
+```
+@khorsheed/dsh-local-files
 ```
 
-Restart the web instance to activate; no configuration needed. Uninstalling restores the previous composition exactly — the official "Workspace files" card resumes with it.
+It also comes with 基础体验 (the basic suite, `@khorsheed/dsh-basic`). Once installed, click the "Files" card on the start page or the right sidebar's guide page. It replaces DSH's own "Workspace files" card, which comes back if you uninstall.
 
-```sh
-dsh plugin --profile web remove @khorsheed/dsh-local-files
-```
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-1.png" width="640" alt="The start page's entry card: Files, opening the session's working directory by default">
+
+## Known limitations
+
+- It can't create, rename or delete files; on a phone it is view-only, and images, non-UTF-8 files and very large files can't be edited either.
+- Text shows up to 2 MB at a time and is cut off beyond that; images over 2 MB aren't shown.
+- It can reach every file the host machine's user can read — keep that in mind when several people share one DSH.
 
 ## Compatibility
 
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — the page-type right-sidebar tab (the `sidebar.right.pane.tab` seat and the per-kind shadowing registry) and the open-in-app routes all exist on this line, so `minHost` pins `0.1.5-rc.1`. Hosts `0.1.2`–`0.1.4` have no right sidebar and this plugin contributes no browser surface there (the first public release already requires 0.1.5+; do not install on older hosts).
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface changes; the rc-line icon renames (`Icon*Outline14/16` → `Icon*OutlineMedium`) and the plugin-inventory display metadata (`locale/*.json`) are both followed up.
-- **Web surface**: the right-sidebar tab is a browser surface; a headless profile has no browser consumer and the plugin contributes nothing there (the host half's Remote still registers).
-- **Gestures shown only on the host itself**: "Open this folder / Show in folder / Open in IDE / Choose workspace" all pop a Finder, IDE or folder dialog on the host computer; when the page is not opened from a loopback address (localhost / 127.0.0.1 / ::1) — a phone through a tunnel, another computer — they are hidden, and the phone's compact header keeps only search, refresh and show/hide hidden files. "Edit" is likewise offered only on the host itself; through a tunnel the pane is read-only.
-- **Probed gestures degrade**: "Open this folder / Show in folder / Open in IDE" ride the official open-in-app — the browser probes `GET /open-in-app/apps` once per page and shows a gesture only when the host resolved a backing app (file manager / editor); a failed probe keeps them hidden. "Choose workspace" probes the host's directoryPicker Remote and degrades to a cancel when absent. Both paths degrade silently, never affecting boot.
+Requires DSH 0.1.5 or later; verified on 0.2.1.
 
-## Known Limitations
+## For developers
 
-- **Read-only browser** — no create, rename, delete, or edit gestures; browsing and previewing is the whole purpose.
-- **A window cap on large files** — text reads at most 2 MB at a time (the overflow shows a truncation marker; the pane has no "load more" gesture yet); images over 2 MB are not inlined (a size placeholder instead); binary files are judged by their NUL/control-byte ratio and show a non-text placeholder.
-- **Open gestures accept directories only** — the official open route refuses file paths, so a file's "Show in folder / Open in IDE" gesture opens its containing directory.
-- **The browsable range is whatever the host process's user may read** — the path check is shape-only (must be absolute, `..` traversal rejected) and does not jail browsing to a subtree; this is the same trust model as the official file preview (your own machine) — shared or multi-tenant deployments, take note.
-- **Search highlighting has a paint cap** — in-preview search paints through the CSS Custom Highlight API onto the rendered view, at most 2000 matches, and stops coloring beyond that; the HTML sandbox preview and hosts without the API get no highlighting.
-
-## How it works
-
-<details>
-<summary>Internals (click to expand)</summary>
-
-**The data plane.** The host half `ctx.provide('localFiles')`s a stateless service core, thinly adapted by a Typert Remote (namespace `localFiles`) into two verbs: `listDirectory` / `readFile` (pure JSON args, no caller lookup — paths are absolute to begin with, so any session or the global frame may call). The client mounts it through the official `ctx.remote.$mount` channel.
-
-**Windowed reads.** A text read is bounded by its byte window (`MAX_CONTENT_BYTES = 2 MB`, plus one extra byte to decide truncation), and the returned `nextOffset` marks where a follow-up read continues; images are all-or-nothing — a stat over the cap answers `too-large`, otherwise the whole image returns as a base64 data URL; binary is judged by a NUL/control-byte ratio over 2% after decoding. Paths pass `assertSafeLocalPath`'s shape check (absolute, no `..`) and then a `realpath` canonicalization.
-
-**The kind takeover.** The registry admits exactly one extension per builtin kind and puts it in force — claims, the guide page, and the body/title seat lookup all follow the in-force definition, and the shadowed builtin resumes when the extension unregisters. This implementation keeps its own `id` (`@khorsheed/dsh-local-files`): duplicate ids fail hard, while kinds are the designed takeover channel.
-
-**Default root and memory.** The session row's `cwd` is read reactively and a late-loading row fills in — never overwriting a remembered or manually chosen root; a manual choice writes localStorage (`dsh-local-files-root:<sessionId>`) and broadcasts through an externally readable store, isolated per session.
-
-**Probe, never inject.** The directory-picker Remote is probed through `ctx.get` rather than `inject` — injecting would pend the whole plugin on compositions without a picker; open-in-app probes the apps list once per page, and the two external-open gestures show or hide per its resolution.
-
-**A reused preview layer.** The detail pane is `@khorsheed/dsh-client-ui-content-preview`'s shared content pane (workspace source bundled into the client build, not a runtime dependency): Markdown / JSON tree / CSV table / code views each in place; HTML renders statically by default (scripts never execute), a scripted document gets a hint, and scripts run inside the sandbox only after confirmation.
-
-**Identity triangle.** The cordis row id `local-files`, the package.json name, and `clientBundle('@khorsheed/dsh-local-files')` move together.
-
-**Exports.** `/` exports the host half (the `LocalFilesService` core and `LocalFilesRemoteService`); `/client` exports the plugin body (`apply`/`inject`) plus `WorkspaceView` and `LOCAL_FILES_KIND`/`LOCAL_FILES_TAB_ID`; `/types` carries the wire payload types.
-
-</details>
-
-## Development
-
-Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/local-files`). Issues and contributions welcome there.
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md).
+- Entry points: `src/index.ts` (the host service that reads and writes local files), `src/client/index.ts` (the sidebar page). From the command line: `dsh plugin --profile web add @khorsheed/dsh-local-files`.
+- Service methods, read windows, compatibility details and internals are in the [full reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/local-files/docs/reference.en.md).
+- Part of [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) — issues and contributions go there; changes are in [CHANGELOG.md](CHANGELOG.md).

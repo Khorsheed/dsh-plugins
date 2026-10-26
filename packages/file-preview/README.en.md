@@ -2,136 +2,48 @@
 
 English | [中文](README.md)
 
-Every file the agent touched, on one page: what changed, and what it looks like now.
+Every file the agent touched, on one page: what changed, what it looks like now — and you can fix it right there.
 
-The agent worked for an hour; which files did it actually touch, and what did they end up looking like? With this plugin, the right sidebar's guide page gains a "Session products" entry: every file the session read, wrote, or edited, latest activity first. Clicking a row opens a detail view in the same tab, rendered by the shared content pane (title row: name + language chip + copy-path / show-in-folder / open-in-IDE — a split control with an app menu when several IDEs resolved; path row: path plus the view controls; search row: content search). It carries a Content / Change history toggle: document-form previews (markdown rendered, JSON inspector tree, CSV table, tiered sandboxed HTML, highlighted code) on one side, and a step-through of every recorded write/edit diff on the other. Each finished turn also ends with a small card summarizing which files changed and by how many lines. Files the agent happened to write through bash (heredocs, redirects, and the like) are collected too. The whole service is read-only — it looks at files, never touches them.
+After a long stretch of agent work, finding out which files it touched and what they became meant digging through folders and reading diffs yourself. With Session products installed, every file this session read, wrote or edited sits on one page in the right sidebar; open one and you see the rendered document, and can step back through each change the agent made. What you get is a list that grows with the session — and when something is off, you edit it and save on the spot.
 
-Since 0.4.0 the host Remote service and the browser UI ship as **this one package** (previously two packages and two rows: file-preview + ui-file-preview; the old name `@khorsheed/dsh-client-ui-file-preview` is deprecated on npm).
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview1.png" width="640" alt="The Session products page: the file list and a rendered Markdown preview">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview1.png" width="640" alt="the Produced tab's file preview: file list and inline markdown preview">
+## What it does
 
-## Features
+- **Every file it touched, on one page**: click "Session products" in the right sidebar's guide page; the files this session touched are listed by latest activity and searchable — files the agent wrote from the command line count too.
+- **Opens in a readable form**: Markdown shows as a document, JSON as a foldable tree, CSV as a table, code with highlighting, images as images — local images and links inside a document show and open too; a web page with scripts asks first, then runs them in an isolated sandbox.
+- **Step back through every change**: switch to "Changes" and page back through each write and edit the agent made to the file.
+- **A small card after every turn**: each turn in the conversation ends with an "N products" card listing the files it changed and the lines added and removed; click to open one.
 
-- **Right-sidebar Produced page (one form on both host lines)** — a page-type right-sidebar tab (entered from the guide page) that is also a claimant: every file the session wrote or edited, latest activity first, searchable; a row click opens the detail view in-tab. The tab type claims `dsh-resource://file/**` addresses with a renderable-suffix filter at the extension band, outranking the official document tab's fallback band (a purely static test with no cold-cache window) — file-tree / mention / turn-card / product-row clicks all land in our detail view; types we cannot render (pdf, archives, binaries) fall through to the official document tab.
-- **Detail view** — breadcrumb path header with actions (copy path always; "show in folder" = the file selected in the host file manager, and "open in IDE" = file-exact open via a split button listing every probed IDE, when the host probe finds a handler and the page is open on the host itself); the title row's "Reload" gesture re-reads the current file's content (the old read stays visible in flight, and a failure keeps it, reporting through the existing error slot); a Content / Change history toggle — document-form previews with content search, and per-write diff stepping (the official side still has no such dimension: workspace-changes is memory-resident, git-only, and lost on a host restart — this dimension stays self-drawn, **tracked upstream**).
-- **Edit in place**: the title row's "Edit" turns the source face into a writable text box while the "Preview" tab shows the draft; ⌘S / Ctrl+S or "Save" writes it to disk. Before saving it checks that the file still holds what you started from: if the agent or another program changed it meanwhile, it says so and lets you "Overwrite anyway" or "Discard and reload". Switch to another file and back and an unsaved draft is still there. Only complete UTF-8 text files are editable; files beyond the preview cap, non-UTF-8 files and images stay read-only. Offered only when the page is open on the host itself; it edits the file's current content and leaves the change history alone.
-- **Images and links in Markdown** — in the preview, screenshots written as `<img>` and local images such as `docs/x.png` show as images, and a local link such as `[English](README.en.md)` opens that file in the panel. The source view and the editor still show the file as written.
-- **Turn mutation card (both lines)** — each finished turn ends with a collapsible "N products" card (including bash captures — broader than the official deliverables row) with per-file line deltas; clicks take the official open route. On list-kind hosts (0.1.6-alpha.2+) the official deliverables entry in the same slot (present card + memory-resident changes card) is shadowed by a first-class slot mechanism — the turn area keeps only this durable, complete card.
-- **Session file list (host Remote)** — every file the session's `read`/`write`/`edit` calls touched, with each write/edit change's diff attached.
-- **Content reads** — current text, capped and flagged when truncated; images as browser-loadable URLs on web hosts; binary, missing, and oversized files answer classified notices instead of errors.
-- **Bash-write capture** — files written through `bash` (heredocs, redirects, `tee`, `sed -i`) merged into the list, stat-verified and rebuilt after a host restart; artifacts bash wrote beyond the workspace root still render content and change history in our own detail view (through this plugin's Remote, which the workspace-scoped official read cannot serve).
-- **Read-only by design** — no session state, no writes; a restarted host loses nothing.
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview2.png" width="640" alt="A file's change history: step back and forth through each diff">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview2.png" width="640" alt="per-artifact change history: pageable per-turn diffs">
+- **Spot it, fix it**: click "Edit", change the text, watch "Preview" follow along, and save with ⌘S or "Save". If the agent changed the file while you were editing, you're told and choose "Overwrite anyway" or "Discard and reload"; switch to another file and back, and your unsaved draft is still there.
+- **One click back to your tools**: "Copy path", "Show in folder" and "Open in IDE" work when the page is open on the host machine.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview3.png" width="640" alt="the Produced tab: every file the session wrote, at a glance">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview3.png" width="640" alt="The Session products page: every file the session wrote at a glance">
 
 ## Install
 
-```sh
-dsh plugin --profile web add @khorsheed/dsh-file-preview
+In DSH, open Plugins → Add plugin, enter the package name below and click install:
+
+```
+@khorsheed/dsh-file-preview
 ```
 
-Since 0.4.0 one package is everything: the host row provides the `filePreview` Remote and the browser half is discovered through `dsh.client`. Restart the web instance to activate; uninstalling restores the previous composition exactly:
+It also comes with 基础体验 (the basic suite, `@khorsheed/dsh-basic`). Once installed, open "Session products" from the right sidebar's guide page in any session, or click an "N products" card in the conversation.
 
-```sh
-dsh plugin --profile web remove @khorsheed/dsh-file-preview
-```
+## Known limitations
 
-> **Upgrading from 0.3.x**: the two rows are now one — drop the `ui-file-preview` row (`dsh plugin --profile web remove @khorsheed/dsh-client-ui-file-preview`) and keep/upgrade the `file-preview` row. A `disabled` override pinned to the old `ui-file-preview` row id no longer matches anything; retarget it to `file-preview` if needed.
-
-## Config
-
-```yaml
-- id: file-preview
-  name: '@khorsheed/dsh-file-preview'
-  config:
-    maxReadBytes: 524288
-    maxFiles: 500
-    captureBashWrites: true
-```
-
-`maxReadBytes` caps a single `read` (larger files answer `too-large`), `maxFiles` caps the `list` fold — both positive integers, defaults 512 KiB and 500 — and `captureBashWrites` (default `true`) toggles the bash-write collector.
-
-## Workspace admission seam (0.4.1+, server-side consumption)
-
-`createFilePreviewReadSurface` (a package-root export) is the read-only consumption surface for **server-side callers that hold no Agent**. The Remote verbs resolve their `agent` parameter through the host's unified Agent lookup — which can wake an offline session — and a caller already holding an authorized session source should not disturb one for a read. The factory takes an **externally-authorized source** and returns `{ list, turnFiles, read }` in the same shapes as the Remote face:
-
-```ts
-import { createFilePreviewReadSurface } from '@khorsheed/dsh-file-preview'
-
-const surface = createFilePreviewReadSurface({
-  events: () => readSessionEvents(sessionId), // session events (ascending seq), re-read per call
-  cwd: sessionCwd,                            // the path anchor (the session header's cwd)
-  fs: scopedFs,                               // an fs face of the same shape as ctx.fs
-  imageUrl: path => issueAddress(path),       // optional: the image-address issuer
-})
-```
-
-- **Authorization lives entirely with the caller**: what the source reaches (which session's events, which anchor, which fs face) is decided from the caller's own authorization facts — the surface performs no admission check of its own and never constructs, resolves, or wakes a session runtime object (`tests/read-surface.spec.ts` pins this on the source: the module contains no session-runtime lookup call).
-- **One core, one answer**: the Remote verbs and the surface run the same core functions (`src/read-surface.ts`) — the list fold, the per-turn fold, the bash-write merge (rebuilt from the same events through the same collector pipeline), and the existence probe — so for the same session both paths answer byte-identically, pinned verbatim by the contract tests. The caps (`maxReadBytes` / `htmlMaxReadBytes` / `maxFiles` / `captureBashWrites`) share the service config's names and defaults.
-- **Images go through the issuer**: with `imageUrl` injected, an image `read` result carries the issued address in the existing `url` field (the client renders `read.url` unchanged, so the consuming side hands out controlled addresses with zero UI change; an issuer returning `undefined` for a path degrades that one read); `readImageBytes(path)` is a minimal authorized byte read (same anchor, same containment, same `maxReadBytes` cap, returning bytes and MIME) for a caller serving bytes through its own authenticated channel. With no issuer, image reads degrade to `kind: 'binary'` exactly as headless does today and never point at the legacy `/file-preview-image/...` route.
-- **The same path containment as the Remote path**: the same `resolve` with the same anchor — `..` escapes, symlink behavior, and the `missing` / `too-large` / `error` taxonomy are identical verbatim.
-- **Lifecycle**: pure and stateless apart from watermark-keyed caches derived from the injected reader (the per-turn fold and the bash captures, invalidated by the log watermark); the caches are scoped to the returned instance and dropped by `dispose()` (the surface stays usable — the next call re-derives); no timers, no background work.
-- **Local behavior is untouched**: the Remote face and the legacy image route stay byte-identical; a deployment that never consumes this seam is unaffected.
+- It lists only the files the current session touched; to browse any folder on your machine, use the Files plugin.
+- On a phone it is view-only; images, non-UTF-8 files and very large files can't be edited either.
+- Files it can't display, such as PDFs and archives, open in DSH's built-in preview instead.
 
 ## Compatibility
 
-| Host line | Verdict |
-| --- | --- |
-| deepseek-harness master (`0.2.1-rc.1`) | ✅ full — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface change; the same form as 0.1.5: the self-drawn page claims renderable addresses at the extension band (rc.1's tab registry kept the band mechanism); the turnTail list arm also carries the official deliverables shadow |
-| npm release (`>= 0.1.5-rc.1`) | ✅ full (`verifiedHost: 0.1.5-rc.1`) — same form; on chain-kind turnTail slots the registration probes and falls back to the select + priority -1 preemptive arm; the 0.1.5-rc.1 PTC rename is adapted (only `tool/ptc-dispatch` matches; the official v2→v3 log migration renames persisted rows) |
-| npm release (`<= 0.1.4.x`) | ❌ unsupported — the right-sidebar tab system (`ctx.sidebarRightTabs` / `openResource`) landed in 0.1.5; older hosts stay on the previous release line |
+Requires DSH 0.1.5 or later; verified on 0.2.1.
 
-**Version line mapping**: 0.3.0 and up require host `0.1.5-rc.1` or later; hosts on `0.1.2-rc.1` ~ `0.1.4.x` stay on the 0.2.x release line, and hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.1`). minHost does not move: the package carries no rc.1-only API (the turnTail list/chain arms already had a 0.1.5 fallback).
+## For developers
 
-## Known Limitations
-
-- **List is a point-in-time fold** — no push channel; the client refreshes by re-calling `list`.
-- **No binary preview content** — non-image binaries answer `kind: 'binary'` with their size only.
-- **Outside-workspace artifacts stay off the official route** — files bash wrote beyond the session's workspace root produce no `dsh-resource://file/...` address (the official `file` resource is workspace-scoped), so their rows carry a marker; our own detail view is unaffected — content and change history both render.
-- **Current session only** — shows the selected session's files; not an arbitrary file browser.
-
-## How it works
-
-<details>
-<summary>Internals (click to expand)</summary>
-
-`ctx.filePreview` (wire namespace `filePreview`) exposes six generated Remote methods:
-
-- `capabilities()` — a zero-session availability handshake returning `{ protocolVersion: 1 }`; the browser half installs UI surfaces only after it succeeds.
-
-- `list(agent)` — a pure fold over `agent.session.events`: `read`/`write`/`edit` `tool/call`s contribute display paths, as do settled nested PTC `tool/ptc-dispatch`es for those tools (failed dispatches record nothing; entries borrow the root call's turn/step). A `write`/`edit` `tool/result` carrying `diffs` meta appends each change to the entry in event order, `lastDiff` kept as the final one. The response carries the entries, the last scanned seq, and whether `maxFiles` was hit. No filesystem access in the fold; with `captureBashWrites` on, entries merge with the collector's verified bash-written paths. Before returning, each path is resolved against the session cwd and `stat`-ed, keeping only those that still exist as a regular file — the log fold is history, the product list reflects disk state (a temp script a turn wrote then cleaned up is no longer a product); existence is probed fresh per call (not cached with the log fold).
-- `read(agent, path, signal)` — resolves `path` against the session cwd and serves `kind: 'text'` (capped at `maxReadBytes`, flagged `truncated`), or `kind: 'image'` with a browser-loadable URL on web hosts — bytes ride a dedicated `/file-preview-image/<sessionId>/<path>` route, registered only when the optional `webServer` and `agents` services are composed; headless hosts answer `binary` — or a classified notice: `binary` (binary extension or NUL bytes; never read), `missing`, `too-large`, or `error` (message included).
-- `reveal(agent, path, signal)` — opens the file's folder with the file selected, shell-free through `@deepseek-ai/dsh-native-command`: macOS `open -R`, Windows `explorer /select,<path>`, WSL via `wslpath`, desktop Linux tries `nautilus`/`dolphin`/`nemo --select` in order. Answers `{ revealed: true }`, or `false` with `reason: 'missing'` (no such target) or `'select-failed'` (no capable file manager — the caller then opens the parent folder, so the gesture always lands somewhere visible). Writes nothing.
-- `openExternal(agent, path, app, signal)` — open a file in a specific host application (the "open in IDE" gesture): the official open-in-app route accepts directories only, so file-exact opens go here — macOS `open -a <App> <path>`, shell-free as well. `app` is an official open-in-app catalog id (the client probes `/open-in-app/apps`); the id → `.app` name map lives in `open-external.ts` (mirroring the official catalog's darwin entries). Non-macOS hosts and unknown ids answer `{ opened: false, reason }`, and the client hides the gesture. Writes nothing.
-- `turnFiles(agent)` — every turn's file mutations for the turn-tail card, the same single source of truth as `list` but NOT deduped: a file touched in two turns appears in both groups, so each card lists exactly what that turn mutated. Line deltas are summed from result diffs; the fold is cached per session and invalidated by the log watermark, which the response carries for the client's own cache. Like `list`, it probes existence against the session cwd before returning and keeps only files that still exist (a cleaned-up temp script does not occupy a card).
-
-Bash-write collector: watches each session's bash `tool/call`/`tool/result` pairs, extracts high-precision write targets (`cat > path` heredocs, single `>` redirects, `tee` non-append, `sed -i`), expands `$VAR`/`~`/relative paths against the host environment and session cwd, and records only paths `fs.stat` confirms as files (a miss beats a false positive). Captures live in a per-session in-memory registry rebuilt by replaying the session's own history on `session/created`, so a restarted host regains them; the session log itself is never mutated (the official `Session.append` cannot mark a plugin event `ignorable` — see the S2 seam in `docs/upstream-seam-registry.md`). Bash-captured files carry no diff history; previews read current content through `read`.
-
-The browser half (`src/client/`):
-
-- `src/client/index.ts` — apply mounts the `filePreview` Remote and performs the zero-session `capabilities()` handshake; on success `installFilePreviewSurfaces` registers every UI surface and owns disposal; the turnTail list arm also registers the official deliverables entry's shadow
-- `src/client/definition.tsx` — the page-type tab's registry definition (guide entry + `dsh-resource://file/**` renderable-suffix claims) and the claim suffix list
-- `src/client/FilePreviewTab.tsx` — the right-sidebar Produced page (list + detail view)
-- `src/client/preview.ts` — the adaptation layer: `filePreview` wire kind → the kernel's `PreviewRead`, dictionary adapters (the detail view's header and preview stack come from the shared kernel `@khorsheed/dsh-client-ui-content-preview`, inlined at the source plane)
-- `src/client/DiffHistory.tsx` — per-write diff stepping (unique to this plugin)
-- `src/client/mentions-wrap.ts` — the in-place wrap unifying mention opens into the sidebar (seam S1 tail)
-- `src/client/open-in-app.ts` — the official open-in-app probe (action visibility)
-- `src/client/TurnFileRow.tsx` — the per-turn "N products" card
-
-Purely additive: the host half is one Remote service; the browser half self-mounts that Remote through the official `ctx.remote.$mount` channel, registers one right-sidebar tab type (`ctx.sidebarRightTabs` + the keyed `sidebar.right.pane.tab` seat) and one turn-file row (`conversation.chat.turnTail` — list-kind since 0.1.6-alpha.2, where the arm also registers an empty body under the official deliverables entry's cell id at priority -1 — the slot system's first-class shadowing: one cell, entries at distinct priorities, the lowest renders; the official entry stays on the ledger so its declared `deliverables.file.actions` child slot never collapses; on 0.1.5 hosts the slot is still the election chain and the registration falls back to the old select + `priority: -1` preemptive shape on a probe) — a stock dsh core runs it with zero edits. The namespace is not declared as an inject (self-mounting it would deadlock the loader); the mount is awaited, the service is read back via `ctx.get('remote.filePreview')`, and the zero-session `capabilities()` probe must return `{ protocolVersion: 1 }` before any UI surface is installed. If the host is absent, all surfaces remain absent. The turn card reads the same host `filePreview.turnFiles` RPC through a per-session client cache — one source of truth for card and tab.
-
-The 0.1.5-rc.1 move retired four workarounds (upstream seam S1 landed): the `conversation.view` Produced tab, the `shell.overlay` preview drawer, the capture-phase DOM interception of prose mentions, and the turnTail `priority: -1` preemption — the official file-open entries (deliverables row / prose mentions / tool-result lines) all converge on `ctx.sidebarRight.openResource()`. Plan B (landed and vetoed by the repo owner on the same day, 2026-09-24): registering the content face into the official `documentPreviews` registry as the document tab's default renderer, plus the phase-two headless embedding — the seam cost (the renderer loading protocol, the extension-band takeover semantics, the headless layout coupling) and the UX compromises (change history demoted to the renderer dropdown, the copy button floating over the search row) did not hold up, so the self-drawn products page (the address-claim form) was restored on both lines; the turnTail shadow was not part of the veto and stays.
-
-Trust and state: a trusted, read-only capability — it reads whatever `ctx.fs` allows for the session, so composing it grants preview access to the session's filesystem view; it is not a security boundary. It emits no session events; its only per-session state is the turn-fold cache and the bash collector's verified-writes registry.
-
-</details>
-
-## Development
-
-Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/file-preview`). Issues and contributions welcome there.
-
-## Changelog
-
-See [CHANGELOG.md](CHANGELOG.md).
+- Entry points: `src/index.ts` (the host service that reads and writes files), `src/client/index.ts` (the sidebar page and the turn cards). From the command line: `dsh plugin --profile web add @khorsheed/dsh-file-preview`.
+- Service methods, configuration, the read-only surface for server-side callers, compatibility details and internals are in the [full reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/file-preview/docs/reference.en.md).
+- Part of [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) — issues and contributions go there; changes are in [CHANGELOG.md](CHANGELOG.md).
