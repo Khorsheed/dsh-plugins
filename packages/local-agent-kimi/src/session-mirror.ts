@@ -69,6 +69,24 @@ export function nextKimiSessionStep(childSession: Session, turn: number): number
   return next
 }
 
+/**
+ * The step a durable write takes: one past the highest step this turn has
+ * opened in the log. The released-log reader admits steps only in order —
+ * one past the last, never below it — so the coordinate is decided when the
+ * step is written, never reserved ahead (a reservation filled later lands
+ * below a higher step already written: a gap, then a step out of order).
+ * Stream and tool reservations only key the live preview.
+ */
+export function nextWrittenKimiStep(childSession: Session, turn: number): number {
+  let last = 0
+  for (const event of childSession.snapshotEvents()) {
+    if (event.type !== 'step/start') continue
+    const data = event.data as { turn?: number; step?: number }
+    if (data.turn === turn && typeof data.step === 'number' && data.step > last) last = data.step
+  }
+  return last + 1
+}
+
 /** The run-progress delta text for one transcript line (any kind). */
 export function kimiLineProgressText(line: KimiTranscriptLine): string {
   if (line.kind !== 'tool') return line.text
@@ -502,6 +520,8 @@ export async function mirrorKimiSessionDelta(
     while (reservedAfter.includes(sequential)) sequential += 1
     step = Math.min(step, sequential)
     markTaken(turn, step)
+    // The durable coordinate is decided now, in write order (see nextWrittenKimiStep).
+    step = nextWrittenKimiStep(childSession, turn)
     // The wire's own request config rides a request/header ahead of the fold
     // (the host session's own shape) — Context Lens reads the child log's
     // config from it instead of showing 未记录. Only a change is logged.

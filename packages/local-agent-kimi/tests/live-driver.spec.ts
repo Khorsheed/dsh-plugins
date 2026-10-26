@@ -927,6 +927,74 @@ describe('kimi live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('parallel tool calls in one wire step keep the log\'s steps dense and in write order', async () => {
+    // In the wild (session 2e9c1ffb, turn 1): kimi's step 3 called three
+    // tools at once; each ACP notification reserved a step, the fold wrote
+    // the whole wire step at one of them, and later writes filled the rest —
+    // the log read 1, 3, 7, 8, 2, 3, … and the released reader rejected it.
+    const m = mount({ config: { liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-kimi-parallel-tools'))
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    const prompt = JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '看看场景' }], origin: { kind: 'user' } })
+    const loop = (event: Record<string, unknown>) => JSON.stringify({ type: 'context.append_loop_event', event: { turnId: 0, ...event } })
+    const call = (id: string) => loop({ type: 'tool.call', toolCallId: id, toolCall: { name: 'game_read', args: { id } } })
+    const result = (id: string) => loop({ type: 'tool.result', toolCallId: id, result: { output: `ok ${id}` } })
+    const fake = new FakeAcpServer({
+      turn: () => {
+        writeFileSync(join(wireDir, 'wire.jsonl'), prompt + '\n')
+        return { hang: true }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const session = 'session_acp-session-1'
+    // Wire step 1 folds BEFORE its tool's ACP notification arrives (the wire
+    // flush won the race); the late notification then reserves a step.
+    fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '先读一下' } })
+    writeFileSync(join(wireDir, 'wire.jsonl'), [
+      prompt,
+      loop({ type: 'content.part', part: { type: 'think', think: '先读一下' } }), call('t1'), result('t1'),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 5, output: 2 } }),
+    ].join('\n') + '\n')
+    await vi.waitFor(() => { expect(child.snapshotEvents().some(e => e.type === 'tool/call')).toBe(true) })
+    fake.update(session, { sessionUpdate: 'tool_call', toolCallId: 't1', title: 'game_read', status: 'in_progress' })
+    // Wire step 2: three tools at once, their notifications late as well.
+    fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '并行看三个' } })
+    writeFileSync(join(wireDir, 'wire.jsonl'), [
+      prompt,
+      loop({ type: 'content.part', part: { type: 'think', think: '先读一下' } }), call('t1'), result('t1'),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 5, output: 2 } }),
+      loop({ type: 'content.part', part: { type: 'think', think: '并行看三个' } }), call('t2'), call('t3'), call('t4'), result('t2'), result('t3'), result('t4'),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 6, output: 3 } }),
+    ].join('\n') + '\n')
+    await new Promise(resolve => setTimeout(resolve, 100))
+    for (const id of ['t2', 't3', 't4']) fake.update(session, { sessionUpdate: 'tool_call', toolCallId: id, title: 'game_read', status: 'in_progress' })
+    // Wire step 3: the answer.
+    fake.update(session, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '看完了' } })
+    writeFileSync(join(wireDir, 'wire.jsonl'), [
+      prompt,
+      loop({ type: 'content.part', part: { type: 'think', think: '先读一下' } }), call('t1'), result('t1'),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 5, output: 2 } }),
+      loop({ type: 'content.part', part: { type: 'think', think: '并行看三个' } }), call('t2'), call('t3'), call('t4'), result('t2'), result('t3'), result('t4'),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 6, output: 3 } }),
+      loop({ type: 'content.part', part: { type: 'text', text: '看完了' } }),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 7, output: 4 } }),
+    ].join('\n') + '\n')
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await run.result).stopReason).toBe('completed')
+
+    const starts = child.snapshotEvents().filter(e => e.type === 'step/start').map(e => (e.data as { step: number }).step)
+    expect(starts).toEqual(starts.map((_, i) => i + 1))
+    // Every tool is written once, and the answer comes last.
+    expect(child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { callId: string }).callId).sort()).toEqual(['t1', 't2', 't3', 't4'])
+    const messages = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+    expect(JSON.stringify((messages.at(-1)!.data as { message: unknown }).message)).toContain('看完了')
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
   it('token granularity: a round whose stream stayed under the throttle still folds every wire item 1:1', async () => {
     const m = mount({ config: { liveMirrorGranularity: 'token' } })
     const child = Session.create(SessionId('child-kimi-token-nostream'))

@@ -66,7 +66,7 @@ import {
   mirrorKimiDelta,
   textTask,
 } from './kimi-cli-provider.ts'
-import { assistantEvent, KIMI_INTERRUPTED_TOOL_RESULT, nextKimiSessionStep } from './session-mirror.ts'
+import { assistantEvent, KIMI_INTERRUPTED_TOOL_RESULT, nextKimiSessionStep, nextWrittenKimiStep } from './session-mirror.ts'
 import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './session-mirror.ts'
 import { addTokenUsage } from './session-view.ts'
 import { writeKimiDefaultModel } from './provision.ts'
@@ -1156,10 +1156,12 @@ export class KimiAcpLiveDriver {
         }
         return
       }
-      childSession.append('step/start', { turn, step })
+      // The reservation keyed the preview; the log takes the next step in write order.
+      const durable = nextWrittenKimiStep(childSession, turn)
+      childSession.append('step/start', { turn, step: durable })
       childSession.append('assistant/message', {
         turn,
-        step,
+        step: durable,
         message: assistantEvent(blocks, runtime?.modelConfiguration?.currentModel ?? roundModel),
         stream: [],
         ...withUsage && roundUsage !== undefined ? { usage: roundUsage } : {},
@@ -1167,7 +1169,7 @@ export class KimiAcpLiveDriver {
       }, { surfaceOp: 'append' })
       if (withUsage) roundUsage = undefined
       streamPublisher?.finish(step)
-      childSession.append('step/end', { turn, step })
+      childSession.append('step/end', { turn, step: durable })
       for (const [key, stream] of entries) {
         stream.sealed = true
         generationSteps.delete(stream.generation)
@@ -1182,33 +1184,40 @@ export class KimiAcpLiveDriver {
      * notification's title stands in for the name and the result is the
      * shared interrupted placeholder — the native lifecycle in one step.
      */
+    /** Whether this turn's log already carries the tool call (folded from the wire). */
+    const toolLogged = (id: string): boolean => childSession.snapshotEvents().some(event =>
+      event.type === 'tool/call' && (event.data as { turn?: number; callId?: string }).turn === turn
+      && (event.data as { callId?: string }).callId === id)
+
     const finalizeOrphanTool = (id: string, entry: { step: number; title?: string }): void => {
       const name = entry.title ?? 'tool'
-      childSession.append('step/start', { turn, step: entry.step })
+      // The reservation keyed the preview; the log takes the next step in write order.
+      const step = nextWrittenKimiStep(childSession, turn)
+      childSession.append('step/start', { turn, step })
       childSession.append('assistant/message', {
         turn,
-        step: entry.step,
+        step,
         message: assistantEvent([{ type: 'tool-call', id: id as ToolCallBlockId, name, arguments: '' }],
           runtime?.modelConfiguration?.currentModel ?? roundModel),
         stream: [],
       }, { surfaceOp: 'append' })
       const call = childSession.append('tool/call', {
         turn,
-        step: entry.step,
+        step,
         callId: id as ToolCallEventCallId,
         name,
         arguments: '',
       })
       childSession.append('tool/result', {
         turn,
-        step: entry.step,
+        step,
         message: createToolResultMessage({
           callId: id as ToolResultCallId,
           content: [{ type: 'text', text: KIMI_INTERRUPTED_TOOL_RESULT }],
           isError: true,
         }),
       }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
-      childSession.append('step/end', { turn, step: entry.step })
+      childSession.append('step/end', { turn, step })
     }
 
     /**
@@ -1415,7 +1424,11 @@ export class KimiAcpLiveDriver {
       } else if (kind === 'tool_call') {
         const id = typeof update['toolCallId'] === 'string' ? update['toolCallId'] : undefined
         if (id === undefined || !seenToolCalls.has(id)) {
-          if (id !== undefined) {
+          // The wire flush can win the race: a call already folded into the
+          // log (its notification arriving late) needs no reservation — one
+          // would never be released and settle would write the call twice.
+          if (id !== undefined && toolLogged(id)) seenToolCalls.add(id)
+          else if (id !== undefined) {
             seenToolCalls.add(id)
             // Reserve the chronological step only — nothing durable lands at
             // notification time. The wire line's fold writes the whole native
@@ -1591,7 +1604,7 @@ export class KimiAcpLiveDriver {
         const lastStream = pending.map((entry, index) => 'entries' in entry ? index : -1).filter(index => index >= 0).at(-1)
         pending.forEach((entry, index) => {
           if ('entries' in entry) finalizeStep(entry.step, entry.entries, settled.stopReason !== 'completed', index === lastStream)
-          else finalizeOrphanTool(entry.toolId, entry.tool)
+          else if (!toolLogged(entry.toolId)) finalizeOrphanTool(entry.toolId, entry.tool)
         })
         streams.clear()
         toolSteps.clear()
