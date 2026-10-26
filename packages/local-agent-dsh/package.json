@@ -34,6 +34,10 @@
       "types": "./lib/types/dsh-cli-provider.d.ts",
       "default": "./lib/dsh-cli-provider.js"
     },
+    "./tool": {
+      "types": "./lib/types/tool.d.ts",
+      "default": "./lib/tool.js"
+    },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
@@ -41,7 +45,8 @@
     "./src/*": "./src/*",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./tool/locale/*.json": "./locale/*.json"
   },
   "dsh": {
     "references": [

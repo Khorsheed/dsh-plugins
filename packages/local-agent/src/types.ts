@@ -1028,3 +1028,11 @@ export interface DelegationCallOptions {
    */
   readonly model?: string
 }
+
+/** One settings-card value (JSON scalars and string lists — what the cards write). See card-settings.ts. */
+export type CardSettingValue = string | number | boolean | readonly string[]
+
+/** A harness's stored settings-card overrides, field → value. */
+export interface CardSettings {
+  readonly [field: string]: CardSettingValue
+}

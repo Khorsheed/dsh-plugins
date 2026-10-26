@@ -75,9 +75,9 @@
 # 只用 `LocalAgentFace`），`/codex login`、`/kimi status` 这些动词也在 provider
 # 上，两条路都不经这三个工具，评测流不变。
 #
-# `subagent_dsh` 仍是例外：`local-agent-dsh` 的 DeepSeek 开关默认关，工具由控制器
-# 在开关 ON 时动态挂载，与预设无关。默认状态下它一个工具都不注册；人在
-# 「设置 → 本地 Agent」里打开开关才会出现。这条钉的是默认值，不是可达集。
+# `subagent_dsh` 与另外三家相同：`local-agent-dsh` 的 `./tool` 入口由预设按会话
+# 授权（2026-10-27 起，卡片上的 DeepSeek 开关已去掉、不再在 profile 根挂载工具）。
+# 本 profile 的预设不授权它，所以这里的会话看不到 `subagent_dsh`。
 
 # ── 四家选手的评测 pin（冻结决策 2 / 3 / 4 / 5）──────────────────────
 

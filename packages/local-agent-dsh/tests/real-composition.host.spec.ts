@@ -7,6 +7,7 @@
  * controller calls dispose; this spec proves dispose detaches.
  */
 
+import * as toolEntry from '../src/tool.ts'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -103,42 +104,38 @@ function startDshCli(ctx: Context, parent: Agent): Promise<unknown> {
   })
 }
 
-describe('local-agent-dsh toggle (real composition)', () => {
-  it('registers the harness, provider, and tool while ON, and REALLY removes them on OFF', async () => {
-    const { ctx, setEnabled, parent } = await boot(true)
+describe('local-agent-dsh (real composition)', () => {
+  it('registers the harness and provider even when the profile still says enabled: false; ./tool grants the tool; the card store drives live', async () => {
+    const { ctx, setEnabled, parent } = await boot(false)
 
-    // ON: harness registered in the real registry, tool visible in the real
-    // tool runtime, provider dispatchable.
+    // Always on: harness registered in the real registry, provider
+    // dispatchable; the tool is NOT at the root (a preset grants ./tool).
     expect(ctx.localAgent.get('dsh')).toBeDefined()
     expect(ctx.localAgent.roster().map(row => row.name)).toContain('dsh')
-    await vi.waitFor(() => {
-      expect(ctx.tools.get('subagent_dsh')).toBeDefined()
-    }, { timeout: 5000 })
     expect(ctx.subagents.list()).toContain('dsh-cli')
-    // The registered provider dispatches and answers with its own start-time error.
-    expect(ctx.subagents.getProvider('dsh-cli')).toBeDefined()
+    expect(ctx.tools.get('subagent_dsh')).toBeUndefined()
+
+    // The ./tool entry, mounted the way a preset row mounts it, registers the tool.
+    await ctx.plugin(toolEntry)
+    await vi.waitFor(() => { expect(ctx.tools.get('subagent_dsh')).toBeDefined() }, { timeout: 5000 })
     await expect(startDshCli(ctx, parent)).rejects.toThrow('no working directory')
 
-    // OFF: everything the toggle owns is detached from the live registries —
-    // the harness is gone from the roster, the provider is no longer
-    // dispatchable, and the tool is no longer visible to any agent.
+    // A leftover enabled write changes nothing.
     setEnabled(false)
-    await vi.waitFor(() => {
-      expect(ctx.localAgent.get('dsh')).toBeUndefined()
-      expect(ctx.localAgent.roster()).toEqual([])
-      expect(ctx.tools.get('subagent_dsh')).toBeUndefined()
-      expect(ctx.subagents.list()).not.toContain('dsh-cli')
-    })
-    // The provider is really gone: the manager rejects it by name, and the
-    // start-time dispatch never reaches the provider.
-    expect(ctx.subagents.getProvider('dsh-cli')).toBeUndefined()
-    await expect(startDshCli(ctx, parent)).rejects.toThrow('no subagent provider registered')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(ctx.localAgent.get('dsh')).toBeDefined()
 
-    // ON again: the composition restores.
-    setEnabled(true)
-    await vi.waitFor(() => {
-      expect(ctx.localAgent.get('dsh')).toBeDefined()
-      expect(ctx.tools.get('subagent_dsh')).toBeDefined()
-    })
+    // The card's writes go to the harness's own store, not the profile patch,
+    // and win over the row config on the next read; clearing falls back to it
+    // (this fixture's row carries no live, so exec).
+    const harness = ctx.localAgent.get('dsh')!
+    const home = ctx.localAgent.homeDir('dsh')
+    expect((await harness.effectiveSettings!(home)).drive).toBe('exec')
+    ctx.localAgent.setCardSettings('dsh', { live: true })
+    expect(ctx.localAgent.cardSettings('dsh')).toEqual({ live: true })
+    expect((await harness.effectiveSettings!(home)).drive).toBe('live')
+    ctx.localAgent.setCardSettings('dsh', { live: null })
+    expect(ctx.localAgent.cardSettings('dsh')).toEqual({})
+    expect((await harness.effectiveSettings!(home)).drive).toBe('exec')
   })
 })

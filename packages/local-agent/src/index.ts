@@ -125,7 +125,10 @@ export { LiveFlush, LIVE_FLUSH_INTERVAL_MS } from './live-flush.ts'
 import { LocalAgentStreams } from './live-stream.ts'
 export { LocalAgentStreams, LiveStreamPublisher, LIVE_CHECKPOINT_INTERVAL_MS } from './live-stream.ts'
 export { containerExecSpawn, containerScopedHome } from './container.ts'
+import { readCardSettings, writeCardSettings, type CardSettings, type CardSettingValue } from './card-settings.ts'
 export { settingsFace, vol } from './settings-face.ts'
+export { readCardSettings, writeCardSettings, CARD_SETTINGS_FILE } from './card-settings.ts'
+export type { CardSettings, CardSettingValue } from './card-settings.ts'
 export type { SettingsFace } from './settings-face.ts'
 
 export {
@@ -1328,6 +1331,48 @@ export class LocalAgentRegistry {
    * @returns `<homesRoot>/<name>`, or `<homesRoot>/<name>@<scope>`.
    * @throws when the scope is present but not a `[a-z0-9-]` name.
    */
+  /** Listeners of one harness's card-settings writes (see card-settings.ts). */
+  private readonly cardSettingsListeners = new Map<string, Set<(next: CardSettings) => void>>()
+
+  /**
+   * One harness's settings-card overrides, stored in its default scoped home
+   * (never the profile patch — see card-settings.ts).
+   * @param name - the harness name.
+   * @returns the stored values.
+   */
+  cardSettings(name: string): CardSettings {
+    return readCardSettings(this.homeDir(name))
+  }
+
+  /**
+   * Write one harness's settings-card overrides (`null` removes a field) and
+   * tell the harness's settings face, so the change reaches the next round
+   * without a reload.
+   * @param name - the harness name.
+   * @param patch - field → value, or null to fall back to the row config.
+   * @returns the stored values after the write.
+   */
+  setCardSettings(name: string, patch: Readonly<Record<string, CardSettingValue | null>>): CardSettings {
+    const next = writeCardSettings(this.homeDir(name), patch)
+    for (const listener of [...this.cardSettingsListeners.get(name) ?? []]) {
+      try { listener(next) } catch (error: unknown) { this.ctx.logger.warn(`localAgent: ${name} card-settings listener failed: ${String(error)}`) }
+    }
+    return next
+  }
+
+  /**
+   * Observe one harness's card-settings writes.
+   * @param name - the harness name.
+   * @param listener - receives the stored values after each write.
+   * @returns the disposer.
+   */
+  onCardSettings(name: string, listener: (next: CardSettings) => void): () => void {
+    let set = this.cardSettingsListeners.get(name)
+    if (set === undefined) this.cardSettingsListeners.set(name, set = new Set())
+    set.add(listener)
+    return () => { set.delete(listener) }
+  }
+
   homeDir(name: string, scope?: string): string {
     const dir = join(this.homesRoot, scopedHomeName(name, scope))
     if (scope !== undefined) this.materializeScopedHome(name, scope, dir)

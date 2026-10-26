@@ -1,5 +1,5 @@
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
-import { bindSettingsScope, type SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
+import { bindCardSettingsScope, type SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 /**
  * Local-agent-dsh plugin, browser half: the dsh settings card — a section of
  * the family core's「本机 Agent 委派」family card on the Plugins page
@@ -77,7 +77,7 @@ export const inject = ['slots', 'remote', 'remote.commands', 'locale']
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'local-agent-dsh: dictionaries')
   const t = ctx.locale.bind(NS)
-  const scope = bindSettingsScope<DshCardSettings>(ctx, 'local-agent-dsh')
+  const scope = bindCardSettingsScope<DshCardSettings>(ctx, 'dsh', 'local-agent-dsh')
   // The auth block's copy lives in the family core's dictionary; binding is
   // stable per namespace and late dictionary registration still resolves.
   const authT = ctx.locale.bind('local-agent')

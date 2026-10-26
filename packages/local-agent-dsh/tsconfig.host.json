@@ -16,6 +16,7 @@
     "src/model-catalog.ts",
     "src/model-launch.ts",
     "src/session-mirror.ts",
-    "src/session-log.ts"
+    "src/session-log.ts",
+    "src/tool.ts"
   ]
 }

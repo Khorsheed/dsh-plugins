@@ -150,3 +150,77 @@ export function bindSettingsScope<T>(ctx: Context, entryId: string): SettingsSco
   })
   return channel
 }
+
+/** The family gateway's card-settings face, structurally probed. */
+interface CardSettingsGateway {
+  cardSettings(name: string): Promise<{ readonly ok: boolean; readonly value?: Readonly<Record<string, unknown>> }>
+  setCardSettings(name: string, patch: Readonly<Record<string, unknown>>): Promise<{ readonly ok: boolean; readonly value?: Readonly<Record<string, unknown>> }>
+}
+
+/**
+ * Bind a settings card to the harness's own card-settings store (card-settings.ts
+ * on the host) layered over the row's host settings form: reads are the
+ * form's value with the stored overrides on top; writes go to the store only,
+ * never the profile patch — so they cannot be refused when several suites
+ * insert the same row. A host without the store keeps the plain row scope.
+ * @param ctx - the provider's client context.
+ * @param harness - the harness name (`dsh`, `kimi`, …).
+ * @param entryId - the plugin row id the base values come from.
+ * @returns the bound scope.
+ */
+export function bindCardSettingsScope<T>(ctx: Context, harness: string, entryId: string): SettingsScope<T> {
+  const row = bindSettingsScope<T>(ctx, entryId)
+  const gateway = (): CardSettingsGateway | undefined => {
+    const remote = ctx.get('remote.localAgentGateway') as Partial<CardSettingsGateway> | undefined
+    return typeof remote?.cardSettings === 'function' && typeof remote.setCardSettings === 'function' ? remote as CardSettingsGateway : undefined
+  }
+  const listeners = new Set<() => void>()
+  let stored: Readonly<Record<string, unknown>> | undefined
+  let cached: { rowSnapshot: SettingsScopeSnapshot<T>; stored: typeof stored; snapshot: SettingsScopeSnapshot<T> } | undefined
+  const emit = (): void => { for (const listener of [...listeners]) listener() }
+  const load = (): void => {
+    void gateway()?.cardSettings(harness).then((result) => {
+      if (!result.ok || result.value === undefined) return
+      stored = result.value
+      emit()
+    }).catch(() => {})
+  }
+  const write = async (patch: Record<string, unknown>): Promise<boolean> => {
+    const remote = gateway()
+    if (remote === undefined) return false
+    try {
+      const result = await remote.setCardSettings(harness, patch)
+      if (!result.ok || result.value === undefined) return false
+      stored = result.value
+      emit()
+      return true
+    } catch {
+      return false
+    }
+  }
+  return {
+    getSnapshot: () => {
+      const rowSnapshot = row.getSnapshot()
+      // One object per (row snapshot, stored) pair: useSyncExternalStore needs a stable answer.
+      if (cached !== undefined && cached.rowSnapshot === rowSnapshot && cached.stored === stored) return cached.snapshot
+      const overrides = stored ?? {}
+      const snapshot: SettingsScopeSnapshot<T> = gateway() === undefined ? rowSnapshot : {
+        ...rowSnapshot,
+        value: rowSnapshot.value === undefined && stored === undefined ? undefined : { ...rowSnapshot.value, ...overrides } as T,
+        // The store accepts writes whether or not the host form would.
+        writable: true,
+        status: rowSnapshot.status === 'loading' && stored !== undefined ? 'ready' : rowSnapshot.status === 'unavailable' && stored !== undefined ? 'ready' : rowSnapshot.status,
+      }
+      cached = { rowSnapshot, stored, snapshot }
+      return snapshot
+    },
+    subscribe: (listener) => {
+      if (listeners.size === 0) load()
+      listeners.add(listener)
+      const off = row.subscribe(listener)
+      return () => { listeners.delete(listener); off() }
+    },
+    set: (field, value) => gateway() === undefined ? row.set(field, value) : write({ [field]: value }),
+    unset: field => gateway() === undefined ? row.unset(field) : write({ [field]: null }),
+  }
+}

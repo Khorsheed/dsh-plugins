@@ -32,7 +32,6 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
-import { mountSubagentDelegationTool } from '@khorsheed/dsh-local-agent/tool-factory'
 import { CONTAINER_NODE_OPTIONS, DshCliProvider, dshCliVersion } from './dsh-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
@@ -137,7 +136,7 @@ export interface LocalAgentDshConfig {
  */
 const SETTINGS_FIELDS = {
   enabled: z.boolean().default(false),
-  live: z.boolean().default(false),
+  live: z.boolean().default(true),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
   // `model` deliberately carries NO default: an unset key must resolve to
   // undefined, which is what keeps the pre-key behavior byte-identical.
@@ -196,30 +195,6 @@ export interface DshSettings {
   recentModels: readonly string[]
 }
 
-/** The delegation tool the toggle mounts while ON. */
-const DSH_TOOL_NAME = 'subagent_dsh'
-
-/**
- * This package's own name, passed to the family tool factory as the
- * tool-origin owner (AGENTS.md § Tool origin tagging — a shared factory never
- * hardcodes an owner), the same pattern the worktrees/room `./tool` entries
- * use.
- */
-const PACKAGE_NAME = '@khorsheed/dsh-local-agent-dsh'
-
-/**
- * The `subagent_dsh` mount, as a plugin object over the family factory: the
- * toggle owns its lifecycle, so it mounts dynamically through `ctx.plugin`
- * instead of shipping a `./tool` composition row like the CLI providers.
- */
-const dshSubagentTool = {
-  name: 'local-agent-dsh-tool',
-  inject: ['tools', 'subagents', 'localAgent'],
-  apply: (toolCtx: Context): void => {
-    mountSubagentDelegationTool(toolCtx, { provider: 'dsh-cli', toolName: DSH_TOOL_NAME }, PACKAGE_NAME)
-  },
-}
-
 /**
  * Mount the toggle controller: register the settings namespace, then mirror
  * its value into harness/provider/tool registrations, live.
@@ -235,7 +210,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
     // card's writes without a reload.
     const readSettings = (): DshSettings => ({
       enabled: vol(config.enabled) ?? false,
-      live: vol(config.live) ?? false,
+      live: vol(config.live) ?? true,
       liveMirrorGranularity: vol(config.liveMirrorGranularity) ?? 'token',
       model: vol(config.model),
       recentModels: vol(config.recentModels) ?? [],
@@ -247,6 +222,8 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
     }
     const face = settingsFace<DshSettings>(ctx, {
       namespace: DSH_SETTINGS_NAMESPACE,
+      // Card writes live in the harness's own store (card-settings.ts), never the profile patch.
+      harness: 'dsh',
       legacySchema: DSH_SETTINGS_SCHEMA,
       legacyBase,
       read: readSettings,
@@ -424,7 +401,6 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       if (enabled === currentEnabled) return
       currentEnabled = enabled
       generation += 1
-      const gen = generation
       for (const dispose of disposers.splice(0)) dispose()
       if (!enabled) return
       // Idempotent: heals a deleted or drifted sub-profile before each round.
@@ -450,23 +426,13 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
         if (currentLiveSwitch === liveSwitch) currentLiveSwitch = undefined
         liveSwitch.dispose()
       })
-      // The family delegation tool is mounted dynamically so the toggle owns
-      // its lifecycle — while OFF the model never sees `subagent_dsh`.
-      void ctx.plugin(dshSubagentTool).then(
-        (fiber) => {
-          if (gen !== generation) {
-            void fiber.dispose()
-            return
-          }
-          disposers.push(() => { void fiber.dispose() })
-        },
-        (error: unknown) => {
-          ctx.logger.warn(`local-agent-dsh: delegation tool mount failed: ${error instanceof Error ? error.message : String(error)}`)
-        },
-      )
+      // The delegation tool is this package's `./tool` entry, granted per
+      // session by a preset (src/tool.ts) — never mounted at the profile root.
     }
-    sync(face.get().enabled)
-    const unwatch = face.watch((next) => { sync(next.enabled) })
+    // Always on: installing the plugin is the intent (the card's 启用 switch
+    // is gone); a preset still decides which sessions see `subagent_dsh`.
+    sync(true)
+    const unwatch = (): void => {}
     return () => {
       modelCatalog.dispose()
       unwatch()

@@ -28,7 +28,7 @@ import type {
   LocalAgentMemberFeedRequest,
   LocalAgentMemberFeedEvent,
 } from './types.ts'
-import type { LocalAgentRosterRow, LocalAgentStatus, LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState } from './types.ts'
+import type { CardSettings, CardSettingValue, LocalAgentRosterRow, LocalAgentStatus, LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState } from './types.ts'
 import { extendModelDirectory } from './model-directory.ts'
 import { mergeMemberFeeds } from './member-feed.ts'
 
@@ -313,6 +313,28 @@ export default class LocalAgentGateway extends TypertRemoteService {
    * @param name - the harness name.
    * @returns the ordered list, or null.
    */
+  /**
+   * One harness's settings-card overrides (the card merges them over the row
+   * config it reads from the host form). See card-settings.ts.
+   * @param name - the harness name.
+   * @returns the stored values.
+   */
+  @Remote('cardSettings')
+  cardSettings(name: string): CardSettings {
+    return this.ctx.localAgent.cardSettings(name)
+  }
+
+  /**
+   * Write one harness's settings-card overrides; `null` removes a field.
+   * @param name - the harness name.
+   * @param patch - field → value, or null.
+   * @returns the stored values after the write.
+   */
+  @Remote('setCardSettings')
+  setCardSettings(name: string, patch: { readonly [field: string]: CardSettingValue | null }): CardSettings {
+    return this.ctx.localAgent.setCardSettings(name, patch)
+  }
+
   @Remote('modelList')
   async modelList(name: string): Promise<readonly string[] | null> {
     const harness = this.ctx.localAgent.get(name)
