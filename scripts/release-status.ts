@@ -29,11 +29,11 @@ function publishedVersion(name) {
   }
 }
 
-/** Bundle membership from this repo's own basic integration profile. */
+/** Bundle membership: the dependencies of the basic suite package. */
 function basicMembers() {
-  const profile = join(root, 'profiles', 'basic', 'package.json')
-  if (!existsSync(profile)) return new Set()
-  return new Set(Object.keys(JSON.parse(readFileSync(profile, 'utf8')).dependencies ?? {}))
+  const manifest = join(root, 'packages', 'basic', 'package.json')
+  if (!existsSync(manifest)) return new Set()
+  return new Set(Object.keys(JSON.parse(readFileSync(manifest, 'utf8')).dependencies ?? {}))
 }
 
 const basic = basicMembers()
@@ -58,7 +58,7 @@ const date = new Date().toISOString().slice(0, 10)
 const lines = [
   '# 发布状态',
   '',
-  `> 由 \`pnpm release:status\` 生成(${date})，请勿手改。数据源：各包 package.json(version、dsh.compat)+ 本仓 \`profiles/basic\` + npm registry。`,
+  `> 由 \`pnpm release:status\` 生成(${date})，请勿手改。数据源：各包 package.json(version、dsh.compat)+ 基础体验套件 \`packages/basic\` 的成员 + npm registry。`,
   '',
   '| 包 | npm 已发布 | 仓内版本 | minHost | verifiedHost | basic 成员 |',
   '| --- | --- | --- | --- | --- | --- |',

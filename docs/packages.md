@@ -8,7 +8,7 @@
 - 自挂载 bundle(`dsh.bundle.patch`):**42**
 - 组合组件(不自挂载,`dsh.composition.component`):**3** — `source-plane-library` 2、`sub-profile-patch` 1
 - 带浏览器半边(`dsh.client`):**31**
-- 整合 profile(默认安装单元):**3** — `basic`、`dev`、`eval`
+- 整合 profile(默认安装单元):**1** — `eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
 组合组件(下表 `形态 = composition`)必须由 profile 的 preset 行或 provider patch 落位,`dsh plugin add` 不会挂载它们。
@@ -17,58 +17,56 @@
 
 | 包 | 目录 | 版本 | 形态 | 组件 | 客户端 | minHost | 出现在 profile |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.4.3 | bundle | — | web | 0.1.5-rc.1 | basic, dev, eval |
+| `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.4.3 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-basic` | `packages/basic` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.4.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas` | `packages/canvas` | 0.6.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas-novel` | `packages/canvas-novel` | 0.1.0 | bundle | — | web | 0.2.0-rc.2 | — |
-| `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.99 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
+| `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.1.99 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-client-message-tools` | `packages/client-message-tools` | 0.3.4 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
-| `@khorsheed/dsh-client-session-title-edit` | `packages/client-session-title-edit` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
+| `@khorsheed/dsh-client-message-tools` | `packages/client-message-tools` | 0.3.4 | bundle | — | web | 0.1.5-rc.1 | eval |
+| `@khorsheed/dsh-client-session-title-edit` | `packages/client-session-title-edit` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | eval |
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/client-ui-content-preview` | 0.1.1 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-panel-kit` | `packages/client-ui-panel-kit` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
+| `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | eval |
 | `@khorsheed/dsh-context-lens` | `packages/context-lens` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-dev-suite` | `packages/dev-suite` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-eval-suite` | `packages/eval-suite` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | eval |
-| `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.3 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
+| `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.3 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-game` | `packages/game` | 0.1.0 | bundle | — | web | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-gamedev-suite` | `packages/gamedev-suite` | 0.1.0 | bundle | — | — | 0.2.0-rc.1 | — |
-| `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.16 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
+| `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.16 | bundle | — | web | 0.1.2-rc.1 | eval |
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.2.0 | bundle | — | — | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-learning-suite` | `packages/learning-suite` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-library` | `packages/library` | 0.1.0 | bundle | — | web | 0.1.7-rc.1 | — |
-| `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
-| `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
-| `@khorsheed/dsh-local-agent-codex` | `packages/local-agent-codex` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
-| `@khorsheed/dsh-local-agent-dsh` | `packages/local-agent-dsh` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
+| `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | eval |
+| `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | eval |
+| `@khorsheed/dsh-local-agent-codex` | `packages/local-agent-codex` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | eval |
+| `@khorsheed/dsh-local-agent-dsh` | `packages/local-agent-dsh` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-local-agent-dsh-headless` | `packages/local-agent-dsh-headless` | 0.2.0 | composition | sub-profile-patch | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-local-agent-kimi` | `packages/local-agent-kimi` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | dev, eval |
-| `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
-| `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
-| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | basic |
-| `@khorsheed/dsh-quote` | `packages/quote` | 0.1.4 | bundle | — | web | 0.1.5-rc.1 | basic |
+| `@khorsheed/dsh-local-agent-kimi` | `packages/local-agent-kimi` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | eval |
+| `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | eval |
+| `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.6 | bundle | — | web | 0.1.2-rc.1 | eval |
+| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
+| `@khorsheed/dsh-quote` | `packages/quote` | 0.1.4 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-reader` | `packages/reader` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-room` | `packages/room` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | dev |
+| `@khorsheed/dsh-room` | `packages/room` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.5 | bundle | — | web | 0.1.5-rc.1 | basic, eval |
+| `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.5 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-transcribe` | `packages/transcribe` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-typesafe` | `packages/typesafe` | 0.1.4 | bundle | — | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-video-studio` | `packages/video-studio` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-video-suite` | `packages/video-suite` | 0.1.0 | bundle | — | — | 0.1.7-rc.1 | — |
-| `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.5 | bundle | — | web | 0.1.2-rc.1 | basic, eval |
-| `@khorsheed/dsh-worktrees` | `packages/worktrees` | 0.3.3 | bundle | — | web | 0.1.5-rc.1 | dev |
+| `@khorsheed/dsh-whalesong` | `packages/whalesong` | 0.2.5 | bundle | — | web | 0.1.2-rc.1 | eval |
+| `@khorsheed/dsh-worktrees` | `packages/worktrees` | 0.3.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-writing-suite` | `packages/writing-suite` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | — |
 
 ## 整合 profile
 
 | profile | 直接依赖 | bundles |
 | --- | --- | --- |
-| `profiles/basic` | 13 | 15 |
-| `profiles/dev` | 8 | 10 |
 | `profiles/eval` | 18 | 20 |
 
 ## 形态的含义
