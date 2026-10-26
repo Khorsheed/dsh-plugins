@@ -2681,3 +2681,125 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
     margin-top: 10px;
   }
 }
+
+/* 路线：竖排课程轨道，一站一行（方案 A） */
+.railHead { display: grid; gap: 6px; }
+
+.railTrack {
+  display: block;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--dsw-alias-label-primary) 10%, transparent);
+}
+
+.railTrack i { display: block; height: 100%; border-radius: 3px; background: var(--lib-ok); }
+
+.rail {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.railItem { display: grid; gap: 6px; position: relative; padding-bottom: 14px; }
+
+/* the connector runs from each disc down to the next */
+.railItem::before {
+  content: "";
+  position: absolute;
+  left: 19px;
+  top: 40px;
+  bottom: 0;
+  width: 2px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.railItem:last-child::before { display: none; }
+.railItem[data-status='done']::before { background: var(--lib-ok); }
+
+.railPart {
+  padding: 4px 0 2px 52px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.railRow {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.railDisc {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 2px solid var(--dsw-alias-border-l3);
+  border-radius: 50%;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.railDisc[data-status='done'] { border-color: transparent; background: var(--lib-ok); color: var(--dsw-alias-bg-base); }
+.railDisc[data-status='ready'] { border-color: var(--lib-accent); background: color-mix(in srgb, var(--lib-accent) 14%, var(--dsw-alias-bg-base)); color: var(--lib-accent); }
+.railDisc[data-status='studying'] { border-color: var(--lib-warn); color: var(--dsw-alias-label-primary); }
+.railDisc[data-next='true'] { box-shadow: 0 0 0 5px color-mix(in srgb, var(--lib-accent) 22%, transparent); }
+.railItem[data-side='true'] .railDisc { width: 24px; height: 24px; margin: 8px; border-width: 1.5px; font-size: 14px; }
+.railDisc:focus-visible { outline: 2px solid var(--lib-accent); outline-offset: 2px; }
+
+.railBody { display: grid; gap: 4px; min-width: 0; padding-top: 2px; }
+
+.railTitle {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: var(--dsh-panel-text-body, 14px);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.railItem[data-status='todo'] .railTitle { color: var(--dsw-alias-label-secondary); font-weight: 500; }
+.railItem[data-side='true'] .railTitle { font-weight: 400; font-size: var(--dsh-panel-text-meta, 12px); }
+.railTitle:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.railMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.railState { padding: 0 6px; border-radius: 4px; line-height: 18px; }
+.railState[data-status='done'] { background: var(--lib-ok-soft); color: var(--lib-ok); }
+.railState[data-status='ready'] { background: color-mix(in srgb, var(--lib-accent) 12%, transparent); color: var(--lib-accent); }
+.railState[data-status='studying'] { background: color-mix(in srgb, var(--lib-warn) 16%, transparent); color: var(--lib-warn); }
+
+.railDots { display: inline-flex; gap: 3px; }
+
+.railNext {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: var(--dsw-radius-md, 12px);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.btnRow { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }

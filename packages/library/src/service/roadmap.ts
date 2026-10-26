@@ -151,9 +151,9 @@ export class LibraryServiceRoadmap extends LibraryServiceCards {
       const nodes: RoadmapNode[] = []
       for (const node of draft.nodes) {
         const kept = prior.get(node.id)
-        const doneIds = new Set(nodes.filter(candidate => candidate.state === 'done').map(candidate => candidate.id))
-        const ready = node.gate === 'read' || node.dependsOn.every(dep => doneIds.has(dep))
-        const state: RoadmapNode['state'] = kept?.state === 'done' && ready ? 'done' : ready ? 'current' : 'locked'
+        // No station is locked (user decision 10-26, D6): the path is a recommended
+        // order; any station can be studied and quizzed, and passing records it.
+        const state: RoadmapNode['state'] = kept?.state === 'done' ? 'done' : 'current'
         nodes.push({
           ...node,
           state,

@@ -36,6 +36,7 @@
     "src/client/views/station.tsx",
     "src/client/views/station-quiz.tsx",
     "src/client/views/lesson.tsx",
+    "src/client/views/path.tsx",
     "src/client/views/cards.tsx",
     "src/client/views/quiz.tsx",
     "src/client/bind/BindChip.tsx",
