@@ -4,7 +4,7 @@
 
 **剪播客和对谈的一整套工具：文稿就是剪辑台，删一句话就是剪掉那段音频。** 一条混录自动分出每个人，给新声音起一次名字，同一档节目下次就认得；点一句剪掉、再点恢复，原始录音不会被改动；语气词、长停顿、说重复的，agent 扫一遍列成一组提议，你点「采纳」才算数，长停顿是缩短不是删光；边听边剪，播到哪句高亮到哪句，转写错的字直接改；手机拍的画面按声音自动对齐，不用拍手；片头片尾、字幕样式、常驻成员的声音存在节目里，每期沿用；一键导出 MP3、带字幕的 MP4、SRT 字幕和文稿，shownotes 让 agent 在会话里写；转写全在你这台电脑上跑……——剪一期节目要的那一整套，自带「剪辑模式」，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-video-hero.png" width="1000" alt="剪辑模式的会话：左边对话里是 agent 给出的一组剪辑提议，右栏剪辑面板显示按说话人着色的文稿与播放器">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="1000" alt="剪辑模式里右栏的「剪辑」：按说话人分段的文稿，选中一段可以剪掉、改字或从这里播放，底部播放器可切剪后和原声">
 
 ## 安装
 

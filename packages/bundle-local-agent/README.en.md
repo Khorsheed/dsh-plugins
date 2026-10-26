@@ -67,9 +67,9 @@ With several agents on one job, the hard part is seeing what each one is actuall
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-request.png" width="840" alt="The Context Lens request page in the right sidebar: switch turns at the top, then cache hits, the prefix diff, and the system prompt, tools, history and new parts">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-1.png" width="840" alt="Click the request-details icon under a reply and Context Lens opens that turn on the right: one tab for the main conversation and one per member, the requests listed on the left, the cache hit and breakpoint comparison on the right">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-timing.png" width="840" alt="The time page: total, model, tool execution and gap tiles, then a lane per agent and a tool table sorted by execution time">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-4.png" width="840" alt=""Time breakdown": the turn's total split into model calls, tool calls and other, a color-coded timeline, and a tool-time table sorted by total">
 
 </details>
 

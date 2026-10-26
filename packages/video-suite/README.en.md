@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 **Everything for editing podcasts and conversations: the transcript is your editing desk, and deleting a sentence cuts that stretch of audio.** One mixed recording is split into each speaker, and once you name a new voice, the same show recognizes it next time; click a sentence to cut it and again to bring it back, and your original recording is never touched; the agent scans for filler words, long pauses and repeats and lists them as a set of suggestions, nothing counts until you press "Accept", and long pauses get shortened rather than cut out; edit while you listen, with the current sentence highlighted, and fix mistranscribed words in place; phone footage lines up with the audio by sound, no clapping needed; intro and outro, subtitle style and your regulars' voices are saved with the show and reused every episode; export an MP3, a subtitled MP4, SRT subtitles and the transcript in one go, and have the agent write the shownotes in the session; transcription runs entirely on your own computer…… Everything an episode needs, with "剪辑模式" (editing mode) built in, installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-video-hero.png" width="1000" alt="An editing-mode session: a set of edit suggestions from the agent in the chat, and the Studio panel in the right sidebar showing the speaker-colored transcript and player">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="1000" alt="Studio in the right sidebar in editing mode: the transcript split by speaker, a selected passage offering cut, edit text or play from here, the player switching between edited and original">
 
 ## Install
 
