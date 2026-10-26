@@ -1074,8 +1074,9 @@ export class KimiAcpLiveDriver {
     }
 
     /**
-     * The live-output channel. Snapshots ride `local-agent/stream` events
-     * only — durable step content lands once per stream, at finalization.
+     * The live-output channel. Snapshots are browser-only previews (never
+     * `local-agent/stream` log events) — durable step content lands once per
+     * stream, at finalization, as the fold's atomic triple.
      */
     const streamPublisher = localAgent?.liveStreams === undefined ? undefined
       : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
@@ -1103,7 +1104,11 @@ export class KimiAcpLiveDriver {
       const receivedAt = pendingStreamArrival.get(stream.step) ?? now
       pendingStreamArrival.delete(stream.step)
       // The kind rides the item id so two kinds sharing one step never collide.
-      streamPublisher?.update(stream.step, stream.kind, stream.text, { receivedAt, itemId: stream.kind })
+      // Browser-only (preview): the step is reserved, not yet open in the log,
+      // and a durable checkpoint there would land before its step/start — a
+      // replayed log then orders that step first and loses the turn's final
+      // answer under the fold. The durable content is the fold's atomic triple.
+      streamPublisher?.preview(stream.step, stream.kind, stream.text, { receivedAt, itemId: stream.kind })
       stream.lastSnapshotLen = stream.text.length
     }
 
