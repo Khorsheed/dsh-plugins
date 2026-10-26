@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 **A full kit for teaching yourself: the agent becomes your reading coach and sees you through a book or a course, keeping track of where you are, what didn't sink in, and which questions you got wrong.** Say what you want to learn and the coach asks about your background, then helps pick a textbook and plan a path that counts once you say yes; snap a page as you read and your highlights and margin notes turn into cards; finish a chapter, take a short quiz, and wrong answers stay until you get them right; the Today page lists what to continue and what to review; feeds and saved articles, videos and podcasts read right inside DSH, highlight a sentence to take a note, and press one button to have the agent quiz you; videos and podcasts without subtitles are transcribed on your own computer; even pages that only show their text after scripts run can have it pulled out…… It comes with "学习模式" (learning mode), installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-learning-hero.png" width="1000" alt="A learning-mode session: the chat with the reading coach on the left, and the Library in the right sidebar showing what to continue today, what's due for review, and each textbook's progress">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="1000" alt="A learning-mode session: the coach's grading table on the left; on the right, the Library's Today page with your projects, today's retakes and recent changes">
 
 ## Install
 
@@ -41,14 +41,14 @@ The coach reads with you, not for you: it skips what you already know and slows 
 
 ### library: Library
 
-The worst part of teaching yourself from a book is that nobody keeps you on track: you plan your own pace, copy your own notes, write your own questions, and nobody reminds you of the ones you got wrong. Tell the coach which book you're reading; the title and edition are enough, no need to upload the book, and if you don't have one yet it can recommend one. It drafts a study path from the table of contents, and nothing counts until you press "Adopt as this textbook’s path". Photograph the page you're on and your highlights and margin notes turn into cards, no copying by hand. After each chapter, take a short quiz built from what you highlighted, asked about and got wrong; multiple choice and fill-in are marked on the spot, and the coach marks the open questions. Missed questions go to "To retake", and a topic only counts as learned once you get them right. The "Today" page in the right sidebar lists the questions to retake and the cards due, so you know what to do the moment you open it.
+The worst part of teaching yourself from a book is that nobody keeps you on track: you plan your own pace, copy your own notes, write your own questions, and nobody reminds you of the ones you got wrong. Tell the coach which book you're reading; the title and edition are enough, no need to upload the book, or just name a field ("calculus from zero, pick the textbook for me") and it picks the topics and textbooks for your level. It drafts a study path from the table of contents, and nothing counts until you press "Adopt as this textbook’s path"; then follow it station by station, or jump to whichever station interests you first. Photograph the page you're on and your highlights and margin notes turn into cards, no copying by hand. After each chapter, take a short quiz built from what you highlighted, asked about and got wrong; multiple choice and fill-in are marked on the spot, and the coach marks the open questions. Missed questions go to "To retake", and a topic only counts as learned once you get them right. The "Today" page in the right sidebar lists the questions to retake and the cards due, so you know what to do the moment you open it.
 
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-today.png" width="840" alt="library: the Today page of the Library in the right sidebar: continue studying, today's review, and the project list">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="840" alt="library: a textbook's path page, a 14-station study path with stations passed and points mastered at the top, and Retake 7 and Continue on the current station">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-quiz.png" width="840" alt="library: a chapter quiz, multiple choice and fill-in marked on the spot, open questions passed to the coach">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="840" alt="library: a retake paper, the missed questions one by one, each with an answer box and Submit, Approach and Broken buttons">
 
 </details>
 

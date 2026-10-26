@@ -4,7 +4,7 @@
 
 **自学用的一整套工具：agent 当你的读书教练，一本书、一门课陪你读完；读到哪、哪里没懂、哪道题错过，它都替你记着。** 说想学什么，教练先问问你的底子，再帮你挑教材、排路线，你点头才算数；读的时候拍一页书，划线和页边批注自动变成卡片；学完一章做套小测，错题留到你订正对为止；今日页每天列好该继续的和该复习的；订阅、收藏的文章、视频和播客在 DSH 里读，划一句就记笔记，读完点一下让 agent 考考你；没字幕的视频和播客在你电脑上转成文字；要靠脚本才显示得出来的网页也能把正文抓下来……——自带「学习模式」，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-learning-hero.png" width="1000" alt="学习模式的会话：左边是和读书教练的对话，右栏图书馆显示今天要继续学的、到期要复习的和每本教材的进度">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="1000" alt="学习模式的会话：左边是教练给出的判分结果表，右栏图书馆的今日页列出各个学习项目、今日复习里待订正的题和最近的变化">
 
 ## 安装
 
@@ -41,14 +41,14 @@
 
 ### library：图书馆
 
-自学一本书，最烦的是没人管：进度自己排，笔记自己抄，题自己出，错题下次还没人提醒。告诉教练你在读哪本书，书名和版本说清楚就够，不用上传整本书；手边没书，也可以让它推荐一本。它照目录起草一版学习路线，你看着合适点「采用为本书路线」才生效。读到哪页拍一下，划线和页边批注自动变成卡片，不用手抄。每学完一章做套小测，题目从你划过的、问过的、做错的内容里出；选择填空当场出分，问答题教练来批。答错的题进「待订正」，订正对了才算掌握这个知识点。右栏的「今日」页把要订正的题、该复习的卡片列好，打开就知道今天干什么。
+自学一本书，最烦的是没人管：进度自己排，笔记自己抄，题自己出，错题下次还没人提醒。告诉教练你在读哪本书，书名和版本说清楚就够，不用上传整本书；也可以只说想学的领域，比如「从零学微积分，教材你帮我挑」，它照你的底子挑知识点和教材。它照目录起草一版学习路线，你看着合适点「采用为本书路线」才生效；之后跟着路线一站站过关，也可以挑感兴趣的站先学。读到哪页拍一下，划线和页边批注自动变成卡片，不用手抄。每学完一章做套小测，题目从你划过的、问过的、做错的内容里出；选择填空当场出分，问答题教练来批。答错的题进「待订正」，订正对了才算掌握这个知识点。右栏的「今日」页把要订正的题、该复习的卡片列好，打开就知道今天干什么。
 
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-today.png" width="840" alt="library:右栏「图书馆」的今日页，继续学习、今日复习和项目列表">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="840" alt="library:一本教材的路线页，14 站的学习路线，顶部是站过关和考点掌握进度，当前一站有「去订正 7 题」和「接着学这一站」">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-quiz.png" width="840" alt="library:章节小测，选择题和填空题当场判分，问答题交给教练批改">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="840" alt="library:订正页，错题逐题列出，每题下面是作答框和「提交」「讲讲思路」「题有问题」">
 
 </details>
 
