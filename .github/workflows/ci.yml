@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: deepseek-ai/deepseek-harness
-          ref: dsh-v0.2.1-rc.1
+          ref: dsh-v0.2.1-rc.3
           path: deepseek-harness
           fetch-depth: 1
 
@@ -122,14 +122,25 @@ jobs:
       # version here: a pinned forward line rots within days, and a job
       # testing a host nobody is adapting to any more quietly stops meaning
       # anything. The harness tags its releases `dsh-v<npm version>`.
+      # npm can carry a version before its git tag reaches GitHub (0.2.1-rc.4,
+      # 2026-10-26: on npm for hours, no tag). Without source there is no
+      # forward host to test, so the remaining steps skip with a notice
+      # instead of failing the clone.
       - name: Resolve the forward host
         id: next
         run: |
           version=$(npm view @deepseek-ai/dsh dist-tags.next)
           echo "ref=dsh-v${version}" >> "$GITHUB_OUTPUT"
-          echo "tracking forward host ${version}"
+          if git ls-remote --exit-code --tags https://github.com/deepseek-ai/deepseek-harness "refs/tags/dsh-v${version}" > /dev/null; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "tracking forward host ${version}"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::forward host ${version} is on npm but dsh-v${version} is not on GitHub yet; skipping the forward lane"
+          fi
 
       - name: Clone deepseek-harness (forward line)
+        if: steps.next.outputs.ready == 'true'
         uses: actions/checkout@v4
         with:
           repository: deepseek-ai/deepseek-harness
@@ -138,31 +149,37 @@ jobs:
           fetch-depth: 1
 
       - name: Install (harness seed)
+        if: steps.next.outputs.ready == 'true'
         working-directory: deepseek-harness
         run: pnpm install --frozen-lockfile
 
       - name: Build harness libs (type seed)
+        if: steps.next.outputs.ready == 'true'
         working-directory: deepseek-harness
         run: pnpm run build:lib
 
       # Same native-addon seed as the gates job: the host's journal flock
       # needs the compiled .node binary, which is not in the harness git tree.
       - name: Build harness native addon (flock)
+        if: steps.next.outputs.ready == 'true'
         working-directory: deepseek-harness
         run: pnpm run build:native-system
 
       - name: Install (repo)
+        if: steps.next.outputs.ready == 'true'
         run: pnpm install --frozen-lockfile
 
       # Only the harness-sensitive steps run here. Hygiene, plugin
       # independence, the doc gates and the mirror check never read the
       # harness, so repeating them would double the cost for no new signal.
       - name: Build (forward host)
+        if: steps.next.outputs.ready == 'true'
         run: pnpm run build
         env:
           DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
 
       - name: Test (forward host)
+        if: steps.next.outputs.ready == 'true'
         run: pnpm run test
         env:
           DSH_HARNESS: ${{ github.workspace }}/deepseek-harness
