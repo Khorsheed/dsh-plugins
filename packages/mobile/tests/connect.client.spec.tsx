@@ -120,7 +120,7 @@ it('explains a missing cloudflared when the one-click entry is unsupported', asy
   vi.stubGlobal('fetch', fetcher)
   render(<ConnectPhone t={t}/>)
   await screen.findByText(en.tunnelNoCloudflared)
-  expect(screen.getByText(en.connectSetup)).toBeTruthy()
+  expect(screen.queryByText(en.connectSetup)).toBeNull()
   expect(screen.queryByRole('button', { name: en.tunnelEnable })).toBeNull()
 })
 it('offers the one-click entry as recovery when the configured address is unreachable', async () => {
@@ -169,4 +169,18 @@ it('rides out a failed read while the tunnel starts and shows the settled addres
   expect(screen.queryByText(en.connectError)).toBeNull()
   expect(screen.getByText('live-four-five-six.trycloudflare.com')).toBeTruthy()
   expect(screen.getByRole('button', { name: en.connectGenerate })).toBeTruthy()
+})
+
+it('leaves the setup line to hosts without a readable one-click entry', async () => {
+  const connect = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'not-configured', origin: null }) })
+  const tunnel = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ state: 'off', origin: null }) })
+  vi.stubGlobal('fetch', vi.fn((url: unknown, options?: unknown) => String(url).includes(TUNNEL_PATH) ? tunnel(url, options) : connect(url, options)))
+  const view = render(<ConnectPhone t={t}/>)
+  await screen.findByRole('button', { name: en.tunnelEnable })
+  expect(screen.queryByText(en.connectSetup)).toBeNull()
+  view.unmount()
+  tunnel.mockResolvedValue({ ok: false, json: async () => ({ error: 'not-found' }) })
+  render(<ConnectPhone t={t}/>)
+  await screen.findByText(en.connectSetup)
+  expect(screen.queryByRole('button', { name: en.tunnelEnable })).toBeNull()
 })

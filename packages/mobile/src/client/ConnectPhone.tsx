@@ -107,11 +107,14 @@ export function ConnectPhone({ t }: PropsLocale<'mobile'>) {
   // enabling managed mode is also the recovery for a dead, untrusted or
   // missing static origin. A healthy static deployment sees no new chrome.
   const offerTunnel = managed || (info !== undefined && info.state !== 'ready')
+  // The setup line is for a host with no one-click entry to point at: whenever the
+  // tunnel status is readable, its own controls (or its unsupported reason) say what to do.
+  const status = info && info.state !== 'ready' ? (info.state === 'unreachable' ? 'connectUnreachable' : info.state === 'untrusted-origin' ? 'connectUntrusted' : info.state === 'unsupported' ? 'connectUnsupported' : tunnel ? undefined : 'connectSetup') : undefined
   return <section data-mobile-connect>
     <style>{styles}</style>
     <h2>{t('connectPhone')}</h2><p>{t('connectIntro')}</p>
     {info?.origin && <div data-connect-host><span>{t('server')}</span><strong>{new URL(info.origin).host}</strong></div>}
-    {info && info.state !== 'ready' && <div role="status"><p>{t(info.state === 'unreachable' ? 'connectUnreachable' : info.state === 'untrusted-origin' ? 'connectUntrusted' : info.state === 'unsupported' ? 'connectUnsupported' : 'connectSetup')}</p></div>}
+    {status && <div role="status"><p>{t(status)}</p></div>}
     {tunnel && offerTunnel && <div data-connect-tunnel>
       {tunnel.state === 'off' && <>
         <p data-connect-note>{t('tunnelExplainer')}</p>
