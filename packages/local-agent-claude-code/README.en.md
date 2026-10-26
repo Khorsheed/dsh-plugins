@@ -16,7 +16,7 @@ Getting Claude Code to help used to mean opening a terminal, pasting things in, 
 - **Keep talking, no cold start**: have the agent follow up, or open the sub-session and message it yourself; it's the same Claude Code session.
 - **Paste a key and go**: enter the endpoint and API key (or Auth Token) on the settings card, press "Save credential", then "Verify endpoint & fetch models" to check it connects.
 - **Pick your models**: under "Available models", tick and drag to reorder; the top one is the default. You can also switch model and reasoning effort inside a sub-session.
-- **Resident mode is faster**: turn on "Resident mode (live)" and the Claude Code process stays up; stopping doesn't kill it, and after a crash it resumes the same session.
+- **Resident mode is faster**: "Resident mode (live)" is on by default and the Claude Code process stays up; stopping doesn't kill it, and after a crash it resumes the same session.
 
 ## Install
 

@@ -26,7 +26,7 @@
 | `@khorsheed/dsh-local-agent-kimi` | `local-agent-kimi` | Kimi CLI harness;`subagent_kimi` 委派工具是包内 `./tool` 组合入口,由预设点名授予 |
 | `@khorsheed/dsh-local-agent-codex` | `local-agent-codex` (+ override `tool-subagent-codex`) | Codex CLI harness;`subagent_codex` 委派工具是包内 `./tool` 组合入口,由预设点名授予 |
 | `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code` (+ override `tool-subagent-claude-code`) | Claude Code harness;`subagent_claude_code` 委派工具是包内 `./tool` 组合入口,由预设点名授予 |
-| `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | dsh harness 控制器(Settings → 本地 Agent 开关,默认关;ON 时动态挂载 `subagent_dsh`) |
+| `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | dsh harness 控制器(始终注册;`subagent_dsh` 是本包的 `./tool` 入口,由开发 / 游戏开发 / 剪辑模式的预设按会话授予) |
 | `@khorsheed/dsh-room` | `room` | 协作间:多成员房间,成员取自上面的本地 agent 与 dsh 原生子成员;模型面工具是包内 `./tool` 组合入口,由预设点名授予 |
 | `@khorsheed/dsh-context-lens` | `context-lens` | 上下文透镜:逐轮看请求构成与耗时,子 agent 单列;行与开发套件里的同一行逐字一致 |
 
@@ -40,7 +40,7 @@
 dsh plugin --profile web add @khorsheed/dsh-bundle-local-agent
 ```
 
-重启 web 实例后生效。挂载后家族全部行就位:各 provider 的 CLI 登录走各自的 `/<harness> login`(如 `/kimi login`);dsh harness 默认关,Settings → 本地 Agent 打开后生效。
+重启 web 实例后生效。挂载后家族全部行就位:各 provider 的 CLI 登录走各自的 `/<harness> login`(如 `/kimi login`);dsh harness 无需登录、始终可用,`subagent_dsh` 只在授予它的模式会话里出现。
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-bundle-local-agent

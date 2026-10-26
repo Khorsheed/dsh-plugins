@@ -28,7 +28,7 @@
 | local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | 把活交给本机的 Kimi Code，过程实时可见、可以续聊 |
 | local-agent-codex | `@khorsheed/dsh-local-agent-codex` | 把活交给本机的 Codex，过程实时可见、可以续聊 |
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | 把活交给本机的 Claude Code，思考和回复实时流回，每次调用的用量都记清 |
-| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | 把子任务交给另一个单独运行的 DSH；默认关着，在卡片里打开 |
+| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | 把子任务交给另一个单独运行的 DSH；开发、游戏开发、剪辑模式的会话里直接可用 |
 | room | `@khorsheed/dsh-room` | 协作间：把会话变成一个小团队，@ 谁就派给谁，验收由你决定 |
 | typesafe | `@khorsheed/dsh-typesafe` | 快速决策：协作间靠它自动判断新消息要不要并进已有任务、成员的结果什么时候一起汇报 |
 | context-lens | `@khorsheed/dsh-context-lens` | 上下文透镜：点一下任意一轮，看模型（包括每个成员）收到了什么、token 和时间花在哪 |

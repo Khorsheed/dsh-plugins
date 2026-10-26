@@ -199,7 +199,7 @@ grep -vE '^\s*#' "$P" | grep -nE 'local-agent-(kimi|codex|claude-code)/tool'    
 
 **这个预设够不到的执行类工具，已经不存在于 profile 根**（2026-09-30 家族折叠）：四家选手的委派工具 `subagent_codex` / `subagent_claude_code` / `subagent_kimi` 不再是 provider bundle patch 插在 profile 根的行，而是各 provider 包自己的 `./tool` 组合入口，只有点名它的 agent 预设才授予——本 pack 的 eval 预设不点名，所以这三个工具对评测会话天然缺席，patch 层连覆盖行都不用写。provider 行照挂：编排器经 local-agent 门面委派选手，`/codex login` 这类动词也照常。（折叠前的路径是 T27 给 `@khorsheed/dsh-local-agent-tool-subagent` 加 `tools: all | none` 开关、patch 把三行设成 `none`；取舍见 [eval 预设的 Agent Note](../../.agents/notes/implemented/process/2026-09-08-web-eval-agent-preset.zh.md)，该包已随折叠退役。）
 
-**第四家 `subagent_dsh` 仍是一条待关的路。** 它没有预设行——`local-agent-dsh` 的 DeepSeek 开关默认关，工具由控制器在开关 ON 时动态挂载，预设层够不着。默认状态下它一个工具都不注册（所以上面那份工具清单里没有它），但**人在插件页「DSH 委派」卡片里打开「DeepSeek 委派」开关，`subagent_dsh` 就会出现**——而要 provision 或运行 dsh 条件恰恰得打开它：开关关着时 local-agent 名册里没有 dsh，provision 报 `unknown harness dsh`（见[受试 dsh 的版本跟着实例走](#受试-dsh-的版本跟着实例走)）。要彻底关上得改 provider 包，记在 T27 的 Agent Note 里。与决策 12 的其余部分一样，这钉的是默认值，不是可达集。
+**第四家 `subagent_dsh` 已同样关上**（2026-10-27）：「DeepSeek 委派」开关去掉了，dsh harness 始终注册，`subagent_dsh` 改为 `local-agent-dsh` 自己的 `./tool` 组合入口，与另外三家一样只由点名它的预设授予——本 pack 的 eval 预设不点名，所以评测会话里没有它；local-agent 名册里始终有 dsh，provision dsh 条件不用再打开任何开关（见[受试 dsh 的版本跟着实例走](#受试-dsh-的版本跟着实例走)）。
 
 ## 理想流程
 
@@ -383,7 +383,7 @@ dsh 条件的受试 CLI 不是条件自己选的：`local-agent-dsh` 的 `cliLau
    DSH_HOME=~/.dsh-lab sh profiles/eval/scripts/install.sh --source <dsh-plugins 检出> --fresh
    ```
    原地重装时 `state/` 保持不动；装到新 home 时，把老 home 的 `state/eval`、`state/datasets`、`state/mission` 复制过去（排除 token、cookie、凭据与日志）。
-4. **打开 DeepSeek 委派**：0.1.5 把这个开关存在旧版设置文件里，0.2.0 首次启动只会把 `$DSH_HOME/settings.yaml` 一次性导入行配置（导入后改名 `.imported`）。原地重装时预计会自动导入（T82 未实测，切换后在插件页核一眼）；装到新 home 时，由人在插件页「DSH 委派」卡片里打开「DeepSeek 委派」，或自己把旧设置文件放进新 home 让它导入。
+4. **（已不需要）打开 DeepSeek 委派**：2026-10-27 起这个开关去掉了，dsh 始终在 local-agent 名册里，这一步跳过。
 5. **起实例**：`PATH=~/.dsh-toolchains/rc-0.2.0-rc.2/node_modules/.bin:$PATH DSH_HOME=~/.dsh-lab sh profiles/eval/scripts/restart-into-web-eval.sh <端口>`。
 6. **核对**：结果列表 23 行；数据集注册表与老 home 一致；pilot-d 的报告仍是「暂时不能下结论」、4 比 0；「设置 → Agent 预设」默认是评测模式；`dsh --version` 为 0.2.0-rc.2。
 7. **dsh 条件**：导入题库里的 `*-0.2.0-rc.2` 条件并重新 provision；旧条件的锁保留作历史，不再用于新 run。

@@ -15,7 +15,7 @@ Getting Kimi Code to help used to mean opening a terminal, pasting things in, an
 - **Keep talking, no cold start**: not happy with the result? Have the agent follow up, or open the sub-session and message Kimi yourself; it's the same Kimi session.
 - **Paste a key and go**: enter the endpoint and API key on the settings card, press "Save credential", then "Verify endpoint & list models" to check it connects.
 - **Pick your models**: under "Available models", tick models the endpoint offers and drag to reorder; the top one is the default. You can also switch model and reasoning effort inside a sub-session.
-- **Resident mode is faster**: turn on "Resident mode (live)" and the Kimi process stays up, streaming output into the sub-session; stopping doesn't restart it.
+- **Resident mode is faster**: "Resident mode (live)" is on by default and the Kimi process stays up, streaming output into the sub-session; stopping doesn't restart it.
 - **Look back at past hand-offs**: `/kimi sessions` lists the tasks you gave Kimi, and `/kimi session <id>` turns one into a readable record.
 
 ## Install

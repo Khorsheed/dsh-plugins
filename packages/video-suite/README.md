@@ -38,7 +38,7 @@
 | local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | 活多的时候，把一部分交给本机的 Kimi Code |
 | local-agent-codex | `@khorsheed/dsh-local-agent-codex` | 活多的时候，把一部分交给本机的 Codex |
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | 活多的时候，把一部分交给本机的 Claude Code |
-| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | 把子任务交给另一个单独运行的 DSH；默认关着，在设置里打开 |
+| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | 把子任务交给另一个单独运行的 DSH；剪辑模式的会话里直接可用 |
 | room | `@khorsheed/dsh-room` | 请几个 agent 进同一个会话，一起做一期节目 |
 | typesafe | `@khorsheed/dsh-typesafe` | 快速决策：协作间靠它自动判断新消息要不要并进已有任务、成员的结果什么时候一起汇报 |
 
@@ -67,7 +67,7 @@
 
 ### 本地 agent 委派：Kimi、Codex、Claude Code 和 DSH
 
-活多的时候，你说一句「这部分交给 Codex」，它就在你电脑上跑起来，过程实时出现在子会话里，可以中途停下，也可以打开子会话接着聊；结果带着真实用量和耗时回到主会话。每家都在自己单独的目录里运行，你原来的配置和登录一点不碰。设置里的「本机 Agent 委派」卡片一眼看清每家有没有登录好，默认模型也在这里切；「本机 DSH 委派」默认关着，要用时再打开。
+活多的时候，你说一句「这部分交给 Codex」，它就在你电脑上跑起来，过程实时出现在子会话里，可以中途停下，也可以打开子会话接着聊；结果带着真实用量和耗时回到主会话。每家都在自己单独的目录里运行，你原来的配置和登录一点不碰。设置里的「本机 Agent 委派」卡片一眼看清每家有没有登录好，默认模型也在这里切；要交给另一个单独运行的 DSH，剪辑模式里直接说就行，不用另外打开。
 
 <details open>
 <summary>功能示意（2 张）</summary>

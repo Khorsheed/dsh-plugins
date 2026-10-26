@@ -62,9 +62,9 @@
           #
           # The family delegation tools `subagent_codex` / `subagent_claude_code` /
           # `subagent_kimi` are each provider's own `./tool` composition entry, granted
-          # only by a preset that names it; this one names none. `subagent_dsh` is
-          # mounted by local-agent-dsh's settings toggle (off by default), outside any
-          # preset — see the README section 「冻结决策 12 的执行点」.
+          # only by a preset that names it; this one names none. `subagent_dsh` is the
+          # same since 2026-10-27 (local-agent-dsh's `./tool` entry; the settings
+          # toggle is gone), and this preset names it neither.
           #
           # A service row here MUST sit inside a group carrying an `isolate` realm;
           # without one it publishes into the process-global root realm and

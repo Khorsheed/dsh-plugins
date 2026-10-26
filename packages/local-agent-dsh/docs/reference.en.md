@@ -6,7 +6,7 @@ English | [中文](reference.md)
 
 Delegate a task to dsh itself — a headless sub-dsh in its own scoped home, continuable across rounds, sibling to the kimi / codex / claude-code harnesses.
 
-Some subtasks deserve a full, isolated dsh instance: an evaluation control, its own session history, its own permission boundary — without ever touching the current instance's state. This plugin spawns a sub-dsh headless CLI: it runs under its own scoped home (profile, sessions, and state fully separate), inherits the selected API-key model route from the parent, and takes a caller-supplied session id it can resume across rounds. Nothing mounts by default — flip the DeepSeek delegation switch on the settings card and the model gets the `subagent_dsh` tool.
+Some subtasks deserve a full, isolated dsh instance: an evaluation control, its own session history, its own permission boundary — without ever touching the current instance's state. This plugin spawns a sub-dsh headless CLI: it runs under its own scoped home (profile, sessions, and state fully separate), inherits the selected API-key model route from the parent, and takes a caller-supplied session id it can resume across rounds. The harness always registers; `subagent_dsh` is this package's `./tool` composition entry, granted per session by the Dev / Game Dev / Video presets — only those modes' sessions show it to the model.
 
 ## Features
 
@@ -14,7 +14,7 @@ Some subtasks deserve a full, isolated dsh instance: an evaluation control, its 
 - **Scoped-home isolation** — the sub-dsh's own `DSH_HOME` (`$DSH_HOME/local-agent/dsh`): profile, sessions, and state never mixed into the parent.
 - **Resume across rounds** — the child session id is caller-supplied (`session-<uuid>`, never parsed from stdout); pass it back and the same sub-dsh session continues via `--resume`.
 - **No separate login** — the sub-dsh resolves the parent's selected model credential; no separate login flow. `/dsh status` reports whether the credential resolves.
-- **DeepSeek delegation switch, default off** — until the switch is on, the model sees no delegation tool and delegation stays on the official in-process subagent; the switch flips the composition live via the settings watcher, no reload.
+- **The tool follows the mode** — the DeepSeek delegation switch was removed on 2026-10-27; a session whose preset does not grant `./tool` sees no delegation tool, and delegation stays on the official in-process subagent.
 - **Progress visible live** — the sub-dsh's incremental output mirrors event-by-event into the parent session's subagent surface, reconciled against the file mirror at settle.
 - **Model readback and per-cell working directory** — every settled round reads the actual model back from the sub-session event sources (`provider/model`), counts the round's tool calls, and records both in the delegation record; orchestrators pass a `cwd` per cell, and a resume in a different directory is rejected.
 - **Evaluation-ready provisioning** — named scopes, per-scope presets (0.2.0 declarative preset packages), the `permissions` boundary, and in-container delegation (`docker exec`), all landing through idempotent sub-profile provisioning.
@@ -27,7 +27,7 @@ The family core and this bundle must be named in one command, then restart the p
 dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-dsh
 ```
 
-After the restart, flip the DeepSeek delegation switch in the dsh section of the core's「Local Agent Delegation」family card (the Plugins page; on an older core, this package's own `plugins.item` card). No login step needed — `/dsh status` reports whether the selected model's credential resolves.
+After the restart it is ready in Dev / Game Dev / Video mode sessions; the default model and resident mode are set in the dsh section of the core's「Local Agent Delegation」family card (the Plugins page). No login step needed — `/dsh status` reports whether the selected model's credential resolves.
 
 Tarball installs (family packages unpublished on npm) need an `overrides:` block in the profile's `pnpm-workspace.yaml` pinning each family name to a `file:` tarball — inside a tarball the family edges are registry ranges, and the pin resolves headless and its siblings as **transitive** dependencies (headless itself declares no `dsh.bundle`, so even a mistaken direct-dependency install would mount nothing — but none is needed).
 
