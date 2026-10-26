@@ -45,6 +45,7 @@
     "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
     "@khorsheed/dsh-local-agent-kimi": "workspace:*",
     "@khorsheed/dsh-room": "workspace:*",
+    "@khorsheed/dsh-typesafe": "workspace:*",
     "@khorsheed/dsh-context-lens": "workspace:*"
   },
   "peerDependencies": {
@@ -72,6 +73,7 @@
         "@khorsheed/dsh-local-agent-claude-code",
         "@khorsheed/dsh-local-agent-dsh",
         "@khorsheed/dsh-room",
+        "@khorsheed/dsh-typesafe",
         "@khorsheed/dsh-context-lens"
       ]
     },
@@ -82,6 +84,7 @@
       "@khorsheed/dsh-local-agent-claude-code",
       "@khorsheed/dsh-local-agent-dsh",
       "@khorsheed/dsh-room",
+      "@khorsheed/dsh-typesafe",
       "@khorsheed/dsh-context-lens"
     ],
     "compat": {

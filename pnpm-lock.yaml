@@ -246,6 +246,9 @@ importers:
       '@khorsheed/dsh-room':
         specifier: workspace:*
         version: link:../room
+      '@khorsheed/dsh-typesafe':
+        specifier: workspace:*
+        version: link:../typesafe
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -1371,6 +1374,9 @@ importers:
       '@khorsheed/dsh-room':
         specifier: workspace:*
         version: link:../room
+      '@khorsheed/dsh-typesafe':
+        specifier: workspace:*
+        version: link:../typesafe
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.4
@@ -2860,6 +2866,9 @@ importers:
       '@khorsheed/dsh-transcribe':
         specifier: workspace:*
         version: link:../transcribe
+      '@khorsheed/dsh-typesafe':
+        specifier: workspace:*
+        version: link:../typesafe
       '@khorsheed/dsh-video-studio':
         specifier: workspace:*
         version: link:../video-studio

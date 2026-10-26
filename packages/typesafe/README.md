@@ -25,9 +25,9 @@
 @khorsheed/dsh-dev-suite
 ```
 
-快速决策会跟着「开发套件」一起装好。如果你是在其它套件里用协作间，再单独装一下 `@khorsheed/dsh-typesafe` 就行。
+快速决策会跟着「开发套件」「游戏开发套件」「剪辑套件」和「多Agent协作」一起装好，这几个套件里的协作间都能直接用上它。
 
-装好后还要填一个 TypeSafe 的 API 密钥：在开发模式下打开「设置 → 工具与技能」，找到技能 `typesafe-decide`，在「凭据配置」里填进去；也可以在 `$DSH_HOME/.env` 里写一行 `TYPESAFE_API_KEY=…`，然后重启 DSH。
+装好后还要填一个 TypeSafe 的 API 密钥：在开发、游戏开发或剪辑模式下打开「设置 → 工具与技能」，找到技能 `typesafe-decide`，在「凭据配置」里填进去；也可以在 `$DSH_HOME/.env` 里写一行 `TYPESAFE_API_KEY=…`，然后重启 DSH。
 
 ## 已知限制
 

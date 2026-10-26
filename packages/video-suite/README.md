@@ -14,7 +14,7 @@
 @khorsheed/dsh-video-suite
 ```
 
-一次装齐下面 8 个成员，装完重启 DSH 就能用。最好连同 `@khorsheed/dsh-basic`（基础体验）一起装，改消息、看文件这些日常功能在那里。
+一次装齐下面 9 个成员，装完重启 DSH 就能用。最好连同 `@khorsheed/dsh-basic`（基础体验）一起装，改消息、看文件这些日常功能在那里。
 
 装完开一个新会话，选「剪辑模式」，告诉 agent 录音文件在哪。右栏的「剪辑」面板只在剪辑模式的会话里出现，在其它模式里看不到是正常的。
 
@@ -40,6 +40,7 @@
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | 活多的时候，把一部分交给本机的 Claude Code |
 | local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | 把子任务交给另一个单独运行的 DSH；默认关着，在设置里打开 |
 | room | `@khorsheed/dsh-room` | 请几个 agent 进同一个会话，一起做一期节目 |
+| typesafe | `@khorsheed/dsh-typesafe` | 快速决策：协作间靠它自动判断新消息要不要并进已有任务、成员的结果什么时候一起汇报 |
 
 ## 功能展示
 

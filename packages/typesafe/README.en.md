@@ -25,9 +25,9 @@ In DSH, open Plugins → Add plugin, enter the package name below, and click ins
 @khorsheed/dsh-dev-suite
 ```
 
-TypeSafe comes with the Dev Suite. If you use Rooms from another suite, also install `@khorsheed/dsh-typesafe` on its own.
+TypeSafe comes with the Dev Suite, the Gamedev Suite, the Video Suite and 「多Agent协作」 (multi-agent), so the room in any of them can use it right away.
 
-Then add a TypeSafe API key: in dev mode, open Settings → Tools & Skills, find the skill `typesafe-decide`, and enter it under Credential config; or put a line `TYPESAFE_API_KEY=…` in `$DSH_HOME/.env` and restart DSH.
+Then add a TypeSafe API key: in dev, game dev or editing mode, open Settings → Tools & Skills, find the skill `typesafe-decide`, and enter it under Credential config; or put a line `TYPESAFE_API_KEY=…` in `$DSH_HOME/.env` and restart DSH.
 
 ## Known limits
 

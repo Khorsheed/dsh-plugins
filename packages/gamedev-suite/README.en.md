@@ -14,7 +14,7 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-gamedev-suite
 ```
 
-That installs all 7 members below; restart DSH and they're ready. It's best to also install `@khorsheed/dsh-basic` (Basic Essentials), which carries everyday things like editing messages and previewing files.
+That installs all 8 members below; restart DSH and they're ready. It's best to also install `@khorsheed/dsh-basic` (Basic Essentials), which carries everyday things like editing messages and previewing files.
 
 Then start a new session, pick "游戏开发模式" (game dev mode), and tell the agent what game you'd like to make. All of this only shows up in game-dev-mode sessions; not seeing it in other modes is expected.
 
@@ -36,6 +36,7 @@ The agent asks at most two questions at a time, and every decision is yours.
 | game | `@khorsheed/dsh-game` | Game: the "Game" panel in the right sidebar — play, tune the feel, change looks, keep the design, manage versions |
 | local-agent | `@khorsheed/dsh-local-agent`, `@khorsheed/dsh-local-agent-kimi`, `@khorsheed/dsh-local-agent-codex`, `@khorsheed/dsh-local-agent-claude-code`, `@khorsheed/dsh-local-agent-dsh` | Local agent delegation: hand work to Kimi, Codex, Claude Code or another DSH on your computer, watch it live and keep talking to it |
 | room | `@khorsheed/dsh-room` | Room: bring several agents into one session, @ a name to give them work, a coordinator splits tasks, you have the final say |
+| typesafe | `@khorsheed/dsh-typesafe` | Quick decisions: how the room decides on its own whether a new message joins an open task and when members' results are reported together |
 
 ## Features
 

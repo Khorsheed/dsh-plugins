@@ -42,7 +42,8 @@
     "@khorsheed/dsh-local-agent-dsh": "workspace:*",
     "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
     "@khorsheed/dsh-local-agent-kimi": "workspace:*",
-    "@khorsheed/dsh-room": "workspace:*"
+    "@khorsheed/dsh-room": "workspace:*",
+    "@khorsheed/dsh-typesafe": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1"
@@ -70,7 +71,8 @@
         "@khorsheed/dsh-local-agent-codex",
         "@khorsheed/dsh-local-agent-claude-code",
         "@khorsheed/dsh-local-agent-dsh",
-        "@khorsheed/dsh-room"
+        "@khorsheed/dsh-room",
+        "@khorsheed/dsh-typesafe"
       ]
     },
     "references": [
@@ -80,7 +82,8 @@
       "@khorsheed/dsh-local-agent-codex",
       "@khorsheed/dsh-local-agent-claude-code",
       "@khorsheed/dsh-local-agent-dsh",
-      "@khorsheed/dsh-room"
+      "@khorsheed/dsh-room",
+      "@khorsheed/dsh-typesafe"
     ],
     "compat": {
       "minHost": "0.2.0-rc.1",

@@ -14,7 +14,7 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-video-suite
 ```
 
-That installs all 8 members below; restart DSH and they're ready. It's best installed together with `@khorsheed/dsh-basic` (Basic Essentials), which carries everyday things like editing messages and previewing files.
+That installs all 9 members below; restart DSH and they're ready. It's best installed together with `@khorsheed/dsh-basic` (Basic Essentials), which carries everyday things like editing messages and previewing files.
 
 Then start a new session, pick "剪辑模式" (editing mode), and tell the agent where the recording is. The Studio panel in the right sidebar only appears in editing-mode sessions, so not seeing it in other modes is expected.
 
@@ -40,6 +40,7 @@ Before you start: you need ffmpeg on your computer, and the first transcription 
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Hand part of a big job to Claude Code on your machine |
 | local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Hand a subtask to a separate DSH running on its own; off by default, turn it on in settings |
 | room | `@khorsheed/dsh-room` | Bring several agents into one session to work on an episode together |
+| typesafe | `@khorsheed/dsh-typesafe` | Quick decisions: how the room decides on its own whether a new message joins an open task and when members' results are reported together |
 
 ## Feature tour
 

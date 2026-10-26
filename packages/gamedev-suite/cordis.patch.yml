@@ -67,6 +67,11 @@
     - id: room
       name: '@khorsheed/dsh-room'
 
+    # 快速决策: the room's 自动判断 (task merging, report timing) asks it; without
+    # it the room falls back to "new message = new task, report on arrival".
+    - id: typesafe
+      name: '@khorsheed/dsh-typesafe'
+
     - id: preset-dsh-gamedev
       name: '@deepseek-ai/dsh-agent-preset'
       config:
@@ -188,6 +193,12 @@
           # and UI stay at the profile root.
           - id: room-tool
             name: '@khorsheed/dsh-room/tool'
+
+          # typesafe_judge, its typesafe:judge guidance and the typesafe-decide skill
+          # (where the API key is entered) for this preset's sessions; the service
+          # itself (ctx.typesafe) is the profile-root typesafe row above.
+          - id: typesafe-tool
+            name: '@khorsheed/dsh-typesafe/tool'
 
           # ── game ────────────────────────────────────────────────────────────────────
 

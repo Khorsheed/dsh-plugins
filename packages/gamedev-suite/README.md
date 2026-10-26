@@ -14,7 +14,7 @@
 @khorsheed/dsh-gamedev-suite
 ```
 
-一次装齐下面 7 个成员，装完重启 DSH 就能用。最好再装一个 `@khorsheed/dsh-basic`（基础体验），改消息、看文件这些日常功能在那里。
+一次装齐下面 8 个成员，装完重启 DSH 就能用。最好再装一个 `@khorsheed/dsh-basic`（基础体验），改消息、看文件这些日常功能在那里。
 
 装完开一个新会话，选「游戏开发模式」，告诉 agent 你想做个什么游戏。这些功能只在游戏开发模式的会话里出现，在其它模式里看不到是正常的。
 
@@ -36,6 +36,7 @@ agent 一次最多问你两个问题，决定都由你来做。
 | game | `@khorsheed/dsh-game` | 游戏：右栏的「游戏」面板，试玩、调手感、改外观、记策划、管版本 |
 | local-agent | `@khorsheed/dsh-local-agent`、`@khorsheed/dsh-local-agent-kimi`、`@khorsheed/dsh-local-agent-codex`、`@khorsheed/dsh-local-agent-claude-code`、`@khorsheed/dsh-local-agent-dsh` | 本地 agent 委派：把活交给你电脑上的 Kimi、Codex、Claude Code 或另一个 DSH，过程实时可见、可以接着聊 |
 | room | `@khorsheed/dsh-room` | 协作间：请几个 agent 进同一个会话，@ 名字派活，协调者拆任务，验收你说了算 |
+| typesafe | `@khorsheed/dsh-typesafe` | 快速决策：协作间靠它自动判断新消息要不要并进已有任务、成员的结果什么时候一起汇报 |
 
 ## 功能展示
 

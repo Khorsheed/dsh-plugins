@@ -14,7 +14,7 @@
 @khorsheed/dsh-bundle-local-agent
 ```
 
-一次装齐下面 7 个成员，装完重启 DSH，插件清单里只多一张「多Agent协作」卡片。每个成员仍可以在卡片详情页单独开关。
+一次装齐下面 8 个成员，装完重启 DSH，插件清单里只多一张「多Agent协作」卡片。每个成员仍可以在卡片详情页单独开关。
 
 用之前要准备的：Kimi、Codex、Claude Code 的 CLI 要你自己先装好，本套件不代装；装完到「插件」页的「本机 Agent 委派」卡片里给要用的那几家填好端点和 key，插件会自动探测 CLI 版本及端点联通状态。
 
@@ -30,6 +30,7 @@
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | 把活交给本机的 Claude Code，思考和回复实时流回，每次调用的用量都记清 |
 | local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | 把子任务交给另一个单独运行的 DSH；默认关着，在卡片里打开 |
 | room | `@khorsheed/dsh-room` | 协作间：把会话变成一个小团队，@ 谁就派给谁，验收由你决定 |
+| typesafe | `@khorsheed/dsh-typesafe` | 快速决策：协作间靠它自动判断新消息要不要并进已有任务、成员的结果什么时候一起汇报 |
 | context-lens | `@khorsheed/dsh-context-lens` | 上下文透镜：点一下任意一轮，看模型（包括每个成员）收到了什么、token 和时间花在哪 |
 
 另外还会带上 `@khorsheed/dsh-local-agent-dsh-headless`，它是「本机 DSH 委派」背后的那个无界面 DSH，清单里不单独出现。

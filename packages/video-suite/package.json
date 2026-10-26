@@ -42,6 +42,7 @@
     "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
     "@khorsheed/dsh-local-agent-kimi": "workspace:*",
     "@khorsheed/dsh-room": "workspace:*",
+    "@khorsheed/dsh-typesafe": "workspace:*",
     "@khorsheed/dsh-transcribe": "workspace:*",
     "@khorsheed/dsh-video-studio": "workspace:*"
   },
@@ -72,7 +73,8 @@
         "@khorsheed/dsh-local-agent-codex",
         "@khorsheed/dsh-local-agent-claude-code",
         "@khorsheed/dsh-local-agent-dsh",
-        "@khorsheed/dsh-room"
+        "@khorsheed/dsh-room",
+        "@khorsheed/dsh-typesafe"
       ]
     },
     "references": [
@@ -83,7 +85,8 @@
       "@khorsheed/dsh-local-agent-codex",
       "@khorsheed/dsh-local-agent-claude-code",
       "@khorsheed/dsh-local-agent-dsh",
-      "@khorsheed/dsh-room"
+      "@khorsheed/dsh-room",
+      "@khorsheed/dsh-typesafe"
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",

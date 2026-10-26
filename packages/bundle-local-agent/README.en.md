@@ -14,7 +14,7 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-bundle-local-agent
 ```
 
-That installs the 7 members below; restart DSH and the plugin list shows just one new card, 「多Agent协作」 (multi-agent). Each member can still be switched on or off on that card's detail page.
+That installs the 8 members below; restart DSH and the plugin list shows just one new card, 「多Agent协作」 (multi-agent). Each member can still be switched on or off on that card's detail page.
 
 Before you start: install the Kimi, Codex, and Claude Code CLIs yourself; this suite doesn't install them. Then on the Plugins page open the 「本机 Agent 委派」 (Local Agent Delegation) card and enter the endpoint and key for each agent you want to use; the plugin detects each CLI's version and whether the endpoint is reachable.
 
@@ -30,6 +30,7 @@ Handing work off and inviting agents into a room happen in a mode that grants th
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Hand work to the local Claude Code; thinking and replies stream back, every call's usage recorded |
 | local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Hand subtasks to a second, separately running DSH; off by default, switch it on on the card |
 | room | `@khorsheed/dsh-room` | The room (协作间): turn a session into a small team, @ someone to assign work, you decide acceptance |
+| typesafe | `@khorsheed/dsh-typesafe` | Quick decisions: how the room decides on its own whether a new message joins an open task and when members' results are reported together |
 | context-lens | `@khorsheed/dsh-context-lens` | Context Lens: click any turn to see what the model (each member included) received and where tokens and time went |
 
 It also brings `@khorsheed/dsh-local-agent-dsh-headless`, the interface-less DSH behind Local DSH Delegation, which doesn't show up in the list on its own.

@@ -4,6 +4,7 @@
 
 - **协作间并入**:`@khorsheed/dsh-room` 成为第六个成员(规范行 `room` 原样挂载)。协作间的成员本来就是这些本地 agent,只装家族不装 room 时多 agent 只剩委派一种用法。卡名随之从「本地多Agent」改为「多Agent协作」(英文 Multi-Agent Collaboration)。room 的地板同为 0.1.5-rc.1,minHost 不动。
 - **上下文透镜并入**:`@khorsheed/dsh-context-lens` 成为第七个成员(规范行 `context-lens` 原样挂载,与开发套件里的同一行一致)。多 agent 一起干活时,要看清每个成员收到了什么、时间花在哪,靠的就是它。地板同为 0.1.5-rc.1,minHost 不动;和 room 并入同属 0.4.0 这一次成员变化。
+- **快速决策并入**:`@khorsheed/dsh-typesafe` 成为成员(根行 `typesafe`,与开发套件同一行)。协作间的「自动判断」靠它;本套件不带模式,密钥写进 `$DSH_HOME/.env` 的 `TYPESAFE_API_KEY`,或在开发模式里填。同属 0.4.0 这一次成员变化。
 
 ## 0.3.0（2026-10-22）
 
