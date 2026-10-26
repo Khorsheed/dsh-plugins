@@ -40,7 +40,7 @@ The Reader only shows up in learning-mode sessions; not seeing it in other modes
 
 ## Compatibility
 
-Requires DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.1.
+Requires DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.3.
 
 ## For developers
 

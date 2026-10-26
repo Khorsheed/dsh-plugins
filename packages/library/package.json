@@ -172,7 +172,7 @@
     "compat": {
       "minHost": "0.1.7-rc.1",
       "notes": "A page-type right-Sidebar tab (minted kind `library`) over a Typert Remote data face, plus the `./tool` composition entry (library_read / library_write / library_assess, the coaching prompt section and a per-turn bound-context line via systemPrompt.context) an agent preset names. Books are registered, never uploaded: the coach verifies the edition's contents on the web; nothing is parsed. State is plain `node:fs` under `$DSH_HOME/state/dsh-library` (atomic temp+rename, per-project lock, append-only JSONL ledgers) — never `ctx.fs`, the session-fenced sandbox (the reader precedent). Session bindings (project / book) are keyed by the calling agent's session id. The tab type self-hides on the preset-composition criterion (the canvas double check: root rows ∪ the current session's preset rows, `@khorsheed/dsh-library/tool`), fail-open on every unreadable path. Photos go through the probed `attachments` service (saveImage for sidebar uploads; readImage only for pages the project recorded), degrading to `unavailable` without it. The tool row's optional hideSections / denyTools quiet a focused preset's scope through scoped prompt sections and tools.restrict, skipping any name the composition does not hold.",
-      "verifiedHost": "0.2.1-rc.1"
+      "verifiedHost": "0.2.1-rc.3"
     }
   }
 }
