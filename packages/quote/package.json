@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-quote",
   "description": "Quote anything: selecting text pops an action menu — quote into the current session (to the composer), quote into a side chat (as a side-chat ref), copy; other plugins register their own action rows through the ctx.quoteActions registry, and the side-chat item hides when sidechat is absent",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publishConfig": {
     "access": "public"
   },
