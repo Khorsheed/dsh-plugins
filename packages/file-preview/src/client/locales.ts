@@ -87,6 +87,7 @@ export type FilePreviewKey =
   | 'edit.unsupported'
   | 'edit.missing'
   | 'edit.failed'
+  | 'media.imageFailed'
   | 'action.more'
   | 'detail.content'
   | 'detail.deleted'
@@ -199,6 +200,7 @@ export const zh: Record<FilePreviewKey, string> = {
   'edit.unsupported': '这个文件不能按文本保存（不是 UTF-8 或超过大小上限）',
   'edit.missing': '文件已不存在',
   'edit.failed': '保存失败：{message}',
+  'media.imageFailed': '图片加载失败：{name}',
   'action.more': '更多',
   'detail.content': '内容',
   'detail.deleted': '文件已删除',
@@ -305,6 +307,7 @@ export const en: Record<FilePreviewKey, string> = {
   'edit.unsupported': "This file can't be saved as text (not UTF-8, or over the size limit)",
   'edit.missing': 'The file no longer exists',
   'edit.failed': 'Save failed: {message}',
+  'media.imageFailed': 'Image failed to load: {name}',
   'action.more': 'More',
   'detail.content': 'Content',
   'detail.deleted': 'File deleted',

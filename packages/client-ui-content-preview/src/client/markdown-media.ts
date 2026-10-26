@@ -70,8 +70,8 @@ function rewriteSegment(text: string): string {
   return out.replace(WRAPPER_TAG, '')
 }
 
-/** Rewrite one non-code line, leaving its inline code spans untouched. */
-function rewriteLine(line: string): string {
+/** Apply `fn` to every stretch of one non-code line outside its inline code spans. */
+function mapOutsideInlineCode(line: string, fn: (segment: string) => string): string {
   let out = ''
   let at = 0
   for (;;) {
@@ -86,10 +86,15 @@ function rewriteLine(line: string): string {
       close = line.indexOf(ticks, close + 1)
     }
     if (close < 0) break
-    out += rewriteSegment(line.slice(at, open)) + line.slice(open, close + ticks.length)
+    out += fn(line.slice(at, open)) + line.slice(open, close + ticks.length)
     at = close + ticks.length
   }
-  const rewritten = out + rewriteSegment(line.slice(at))
+  return out + fn(line.slice(at))
+}
+
+/** Rewrite one non-code line's media tags, leaving its inline code spans untouched. */
+function rewriteLine(line: string): string {
+  const rewritten = mapOutsideInlineCode(line, rewriteSegment)
   const trimmed = rewritten.trim()
   // A multi-line anchor leaves its bare open/close tags on their own lines:
   // the image between them still shows, the link does not.
@@ -108,6 +113,11 @@ function rewriteLine(line: string): string {
  */
 export function rewriteHtmlMedia(text: string): string {
   if (!/<(?:img|a|p|div|center|picture|source)\b/i.test(text)) return text
+  return mapProseLines(text, rewriteLine)
+}
+
+/** Apply `fn` to every non-blank line that is not code (fences and indented blocks skipped). */
+function mapProseLines(text: string, fn: (line: string) => string): string {
   const lines = text.split('\n')
   let fence: string | null = null
   let indentedCode = false
@@ -124,11 +134,39 @@ export function rewriteHtmlMedia(text: string): string {
       // An indented code block starts after a blank line and runs while
       // lines stay indented (blank lines inside it included).
       indentedCode = /^(?: {4}|\t)/.test(line) ? (indentedCode || previousBlank) : (blank && indentedCode)
-      if (!indentedCode && !blank) lines[index] = rewriteLine(line)
+      if (!indentedCode && !blank) lines[index] = fn(line)
     }
     previousBlank = blank
   }
   return lines.join('\n')
+}
+
+/** One inline markdown image: alt, then a bare or <angle> destination, then an optional title. */
+const MARKDOWN_IMAGE = /!\[((?:\\.|[^\\\]])*)\]\(\s*(<[^>\n]*>|[^\s()]+(?:\([^\s()]*\)[^\s()]*)*)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/g
+
+/**
+ * Replace every inline image whose destination failed to load with a link to
+ * that destination, so a broken image says so — and offers the address —
+ * instead of silently showing its alt text. An image already inside a link
+ * (a linked badge) becomes the link's text instead: links do not nest.
+ * Code is never touched.
+ * @param text - markdown (after {@link rewriteHtmlMedia}).
+ * @param failed - whether one destination, as authored, failed.
+ * @param describe - the link text for one failed image, given its alt (or file name).
+ * @returns the text with failed images turned into links.
+ */
+export function linkFailedImages(text: string, failed: (destination: string) => boolean, describe: (name: string) => string): string {
+  if (!text.includes('![')) return text
+  return mapProseLines(text, line => mapOutsideInlineCode(line, segment => segment.replace(
+    MARKDOWN_IMAGE,
+    (match: string, alt: string, token: string, offset: number, whole: string) => {
+      const target = token.startsWith('<') ? token.slice(1, -1) : token
+      if (!failed(target)) return match
+      const name = alt.replace(/\\(.)/g, '$1').trim() || target.split(/[\\/]/).pop() || target
+      const shown = label(`⚠ ${describe(name)}`)
+      return whole[offset - 1] === '[' ? shown : `[${shown}](${token})`
+    },
+  )))
 }
 
 /** Whether a destination names a URL (scheme or protocol-relative) rather than a path. */
