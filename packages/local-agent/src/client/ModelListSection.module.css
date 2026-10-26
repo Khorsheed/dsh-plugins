@@ -247,7 +247,19 @@
   padding: 6px 14px;
   border-radius: 8px;
   font-size: 13px;
-  color: var(--dsw-alias-text-on-brand, #fff);
-  background: var(--dsw-alias-brand-primary);
+  /* The host's primary button pair (ui-primitives Button .primary): the fill
+     flips per theme (white in dark mode), so the label must be its
+     foreground token, never a fixed white. */
+  color: var(--dsw-alias-label-primary-foreground, #fff);
+  background: var(--dsw-alias-button-primary-fill, #1f2329);
   cursor: pointer;
+}
+
+.dialogConfirm:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover, var(--dsw-alias-button-primary-fill, #1f2329));
+}
+
+.dialogConfirm:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
