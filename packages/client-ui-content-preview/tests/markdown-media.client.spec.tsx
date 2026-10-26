@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { resolveDocPath, rewriteHtmlMedia } from '../src/client/markdown-media.ts'
+import { linkFailedImages, resolveDocPath, rewriteHtmlMedia } from '../src/client/markdown-media.ts'
 import { MarkdownDocument } from '../src/client/MarkdownDocument.tsx'
 
 const labels = { code: { copyLabel: 'copy', copiedLabel: 'copied' }, footnotes: 'Footnotes' }
@@ -55,6 +55,27 @@ describe('rewriteHtmlMedia', () => {
   })
 })
 
+describe('linkFailedImages', () => {
+  const failed = (destination: string) => destination.includes('broken')
+  const describe = (name: string) => `failed: ${name}`
+
+  it('turns a failed image into a link to its address, and leaves loaded ones alone', () => {
+    expect(linkFailedImages('![ok](a.png) ![shot](https://x.test/broken.JPG)', failed, describe))
+      .toBe('![ok](a.png) [⚠ failed: shot](https://x.test/broken.JPG)')
+  })
+
+  it('names an alt-less image by its file, keeps <angle> destinations, and does not nest links', () => {
+    expect(linkFailedImages('![](<docs/broken shot.png>)', failed, describe)).toBe('[⚠ failed: broken shot.png](<docs/broken shot.png>)')
+    expect(linkFailedImages('[![badge](https://x.test/broken.svg)](https://ci.test)', failed, describe))
+      .toBe('[⚠ failed: badge](https://ci.test)')
+  })
+
+  it('never touches code', () => {
+    expect(linkFailedImages('`![a](broken.png)`\n\n```\n![a](broken.png)\n```', failed, describe))
+      .toBe('`![a](broken.png)`\n\n```\n![a](broken.png)\n```')
+  })
+})
+
 describe('resolveDocPath', () => {
   it('resolves relative destinations against the document directory', () => {
     expect(resolveDocPath('/w/pkg/README.md', 'docs/a.png')).toBe('/w/pkg/docs/a.png')
@@ -95,11 +116,28 @@ describe('MarkdownDocument', () => {
     expect(screen.getByRole('img', { name: 'local' }).getAttribute('src')).toBe('data:image/png;base64,AAAA')
   })
 
-  it('keeps alt text when the surface cannot show a local image', async () => {
-    render(<MarkdownDocument text="![missing shot](gone.png)" docPath="/w/README.md" labels={labels} resolveImage={async () => undefined} version="v" />)
+  it('says so, as a link to the file, when the surface cannot read a local image', async () => {
+    const onOpenFile = vi.fn()
+    render(<MarkdownDocument text="![missing shot](gone.png)" docPath="/w/README.md" labels={labels} resolveImage={async () => undefined} onOpenFile={onOpenFile} describeFailedImage={name => `图片加载失败：${name}`} version="v" />)
     await act(async () => {})
     expect(screen.queryByRole('img')).toBeNull()
-    expect(screen.getByText('missing shot')).toBeTruthy()
+    fireEvent.click(screen.getByText('⚠ 图片加载失败：missing shot'))
+    expect(onOpenFile).toHaveBeenCalledWith('/w/gone.png', undefined)
+  })
+
+  it('turns a remote image the browser cannot load into a link to its address', async () => {
+    render(<MarkdownDocument text={'<img src="https://x.test/ankh-guard.JPG" alt="守护的重启">'} docPath="/w/README.md" labels={labels} version="v" />)
+    await act(async () => { fireEvent.error(screen.getByRole('img', { name: '守护的重启' })) })
+    const link = screen.getByText('⚠ Image failed to load: 守护的重启').closest('a')
+    expect(link?.getAttribute('href')).toBe('https://x.test/ankh-guard.JPG')
+  })
+
+  it('marks a local image that was read but cannot be decoded as failed', async () => {
+    render(<MarkdownDocument text="![bad](docs/bad.png)" docPath="/w/README.md" labels={labels} resolveImage={async () => 'data:image/png;base64,AAAA'} version="v" />)
+    await act(async () => {})
+    await act(async () => { fireEvent.error(screen.getByRole('img', { name: 'bad' })) })
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(screen.getByText('⚠ Image failed to load: bad')).toBeTruthy()
   })
 
   it('opens a local link through the surface, resolved against the document directory', () => {

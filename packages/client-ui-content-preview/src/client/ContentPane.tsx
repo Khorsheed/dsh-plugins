@@ -210,7 +210,8 @@ function PreviewBody(props: {
         ? null
         : structuredPreview(read.path, content, labels)
           ?? (isMarkdown(read.path)
-            ? <MarkdownDocument text={content} docPath={read.path} labels={labels.markdown} resolveImage={media.resolveImage} onOpenFile={media.onOpenFile} version={media.version} />
+            ? <MarkdownDocument text={content} docPath={read.path} labels={labels.markdown} resolveImage={media.resolveImage} onOpenFile={media.onOpenFile} version={media.version}
+                describeFailedImage={(name) => t('media.imageFailed', { name })} />
             : null)
       // While editing, the source face — and a plain code file's only face — is the editor.
       if (editor !== null && documentBody === null) return editor

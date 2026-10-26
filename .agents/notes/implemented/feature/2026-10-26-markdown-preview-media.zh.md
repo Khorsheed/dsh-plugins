@@ -13,6 +13,7 @@ Status: implemented
 - **HTML 媒体转成 Markdown**（`markdown-media.ts` 的 `rewriteHtmlMedia`）：解析之前，先把 `<img>` 改写成 `![alt](src)`。`<a href>` 如果里面只剩 Markdown，就改成 Markdown 链接，带链接的图片因此仍然可以点。对齐用的外层标签 `<p>`、`<div>`、`<center>`、`<picture>`、`<source>` 直接去掉；只剩标签的行顶格输出，免得 HTML 的缩进变成缩进代码块。多行 `<a>` 单独占一行的开闭标签也去掉，中间的图片照样显示。代码里的内容一律不动：围栏代码块、缩进代码块和行内代码原样保留，所以讲解 `<img>` 写法的 README 依然显示标签本身。其他标签照官方渲染器的设计原样显示。
 - **本地图片**：`ContentPaneProps.resolveImage(path) => Promise<url | undefined>`，其中 `path` 是按文档所在目录、在该面板自己的路径空间里解析出的路径（`resolveDocPath`）。`MarkdownDocument` 给官方渲染器一个 `pathImages` 解析器。某个路径第一次被问到时，在渲染之外发起面板的读取，并先回答「还没有」，这时显示说明文字。结果存进按（文档路径，读取内容）分组的缓存：重新载入会重读图片，编辑草稿时的每次按键和面板每次渲染新建的闭包都不会。
 - **本地链接**：`ContentPaneProps.onOpenFile(path, { line })`，经官方 `MarkdownDelegateProvider.openFile` 接入。
+- **图片加载失败要说出来**（`linkFailedImages`）：没能加载的图片会变成一行指向它自己地址的「⚠ 图片加载失败：说明」链接，不再悄悄显示成说明文字。覆盖三种情况：浏览器连不上的远程地址（在文档容器上用捕获阶段的 `error` 监听拿到），面板读不到的本地文件（缓存里记为 `null`），以及浏览器解不了码的本地图片。远程链接在新标签打开，用户能看出是不是网络问题；本地链接在面板里打开那个文件。链接里的图片（比如徽章）改成那个链接的文字，因为链接不能嵌套。代码里的内容一律不动。官方渲染器自带的失败提示是纯文字，而且只有传了 `fileImages` 才显示，所以由内核把失败的图片重新写成渲染器本来就会画的 Markdown。
 - **各面板**：
   - local-files 用 `readFile` 读图（返回 data URL），点链接就选中那个文件。
   - worktrees 用 `readRepoImage` 读仓库相对路径的图片，但提交的历史内容不读图，否则会拿今天工作树里的截图冒充历史。点链接沿用当前的 segment（提交里的 README 打开的是同一提交时的相邻文件），并落在内容视图；绝对路径不处理。
@@ -33,3 +34,4 @@ Status: implemented
 - `<img>` 的 `width`/`height` 会丢失，图片按面板宽度显示。
 - 带非行号锚点（`#section`）的链接保持纯文字（官方的链接解析会拒绝它们），不支持页内锚点跳转。
 - 这个集合以外的 HTML（`<details>`、`<br>`、`<table>`）照旧原样显示。
+- 远程图片能不能加载取决于看页面那台浏览器的网络，而不是宿主的网络：代理只配在终端环境变量里的机器上，浏览器会直连，`raw.githubusercontent.com` 就会失败。失败链接把这种情况显示出来，不会再像是作者写的一行说明。

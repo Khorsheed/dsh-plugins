@@ -98,6 +98,7 @@ export type PreviewKey =
   | 'edit.unsupported'
   | 'edit.missing'
   | 'edit.failed'
+  | 'media.imageFailed'
 
 /** The key list above, materialized so consumers can test their dictionary. */
 export const PREVIEW_KEYS: readonly PreviewKey[] = [
@@ -154,6 +155,7 @@ export const PREVIEW_KEYS: readonly PreviewKey[] = [
   'edit.unsupported',
   'edit.missing',
   'edit.failed',
+  'media.imageFailed',
 ]
 
 /**
