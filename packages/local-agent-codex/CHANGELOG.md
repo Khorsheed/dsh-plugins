@@ -1,6 +1,14 @@
 # 变更记录
-## 0.2.0（2026-10-24）
+## 0.2.0（2026-10-26）
 
+rc.3 之后到正式版的变化：
+
+- **每次 API 调用记自己的用量**（live 路）：原来只在轮末把最后一次的用量写在最后一行，中间步骤没有 token 数据；现在每次调用结束就把它自己的用量记上。整轮合计改用上游的累计值，修正多次调用时的少算。
+- **修复冷缓存时输入 token 约多算一倍**：Codex 的 `input_tokens` 已含缓存读写，计算未命中输入时现在把两者都扣掉。
+- **修复子会话步骤乱序、重启后被判损坏**：live 镜像改为写入时才编号、一次只开一个步骤，先开始的先落盘（实时预览照常）。
+- **修复工具发现循环在子会话里看不见调用**：`custom_tool_call` 与动态工具的结果现在如实折叠，不再显示成两段相邻的裸回复。
+- 协作间的桥接调用最长可等 30 分钟（`tool_timeout_sec`），供成员等你回答问题。
+- **README 重写**：改为大白话说明，完整参考移到 `docs/`。
 - **版本号去掉 rc**:社区包不再发 prerelease 版本(docs/publishing.md「版本号规则」),家族各包同版 0.2.0;本节原记为 0.2.0-rc.4。
 - **缓存账目补全与硬化**:`cacheReadTokens` 在上游上报该字段时恒写（0 命中也写 0，与「未上报」可区分）；补上此前丢弃的 `cacheWriteTokens`(exec 的 `cache_write_input_tokens` / app-server 的 `cacheWriteInputTokens`);`turn/completed` 的镜像失败不再吞掉收尾（轮不再因折叠异常挂起）。
 - **子会话日志写入 `request/header`**:codex 的流从不携带 model/effort，子会话配置事实原来无处记录。现在每轮以 provider 启动参数为权威来源写入宿主原生 `request/header`(exec 路的 spawn argv、live 路的 `turn/start` 请求参数；只在变化时记录）——Context Lens 的配置卡片由此读出真实值。

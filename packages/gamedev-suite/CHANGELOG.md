@@ -1,10 +1,11 @@
 # 变更记录
 
-## 0.1.0（2026-10-24）
+## 0.1.0（2026-10-26）
 
-- **快速决策并入**:`@khorsheed/dsh-typesafe` 成为成员(根行 `typesafe`,与开发套件同一行;preset 另授 `typesafe-tool`,密钥在本模式的「工具与技能 → typesafe-decide」里也能填)。协作间的「自动判断」(新消息并不并进已有任务、成员结果何时汇报)靠它;没有它时协作间退回「新消息当新任务、结果一到就汇报」。
-- **多 agent 协作**:成员加入 local-agent 全家(核与 kimi / codex / claude-code / dsh 四个 provider,deps-only 库 local-agent-dsh-headless 随行)与协作间(`room`);preset 授予三个本地委派工具(`tool-subagent-kimi` / `-codex-local` / `-claude-code-local`)、`room-tool`,以及官方 `tool-subagent-control` / `list-agents`(等待、读取、停止已派出的任务)。官方 spawn/fork 子代理不授予。
-- **preset 行正本归本包**:`@khorsheed/dsh-presets` 退役,本包 patch 里的 preset 行不再是镜像,而是唯一副本(组合内容不变)。
-- **改名**:npm 包名 `@khorsheed/dsh-gamedev` → `@khorsheed/dsh-gamedev-suite`(首发前改名,旧名从未发布)。包名与卡名「…套件」对齐,并与同名的镜像仓/集合名分开;preset id、行 id 与目录不变,会话与设置无感。
+首个公开发布：「游戏开发套件」——游戏开发模式（`dsh-gamedev` 预设）和它用到的插件，一次装好。装完开一个「游戏开发模式」的会话，告诉 agent 你想做个什么游戏：
 
-首个公开发布:游戏开发模式包——`dsh-gamedev` preset 行+ game 规范行(含根级 game-agent 停用行)。
+- **游戏**：右栏游戏策划操作台——试玩与调参、元素外观编辑、分章节策划、版本与回滚，每轮结束自动检查，没过的版本到不了你手上。
+- **多 agent 协作**：local-agent 核心与 Kimi / Codex / Claude Code / dsh 四个提供方（无界面的 dsh 运行库随行），以及协作间；模式授予三个本机委派工具、协作工具，以及官方的子代理控制与列表工具（等待、读取、停止已派出的任务）。官方的 spawn/fork 子代理不授予。
+- **快速决策**：协作间的「自动判断」靠它；密钥可在本模式的「设置 → 工具与技能 → typesafe-decide」里填。没装或没填时协作间退回「新消息当新任务、结果一到就汇报」。
+
+游戏开发模式的预设行由本包自带（原 `@khorsheed/dsh-presets` 已退役）；npm 包名为 `@khorsheed/dsh-gamedev-suite`（首发前由 `@khorsheed/dsh-gamedev` 改名，旧名从未发布），预设 id 与行 id 不受影响。
