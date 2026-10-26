@@ -210,7 +210,25 @@ export async function writeFileWithinRoot(
     await removeIfOurs(created.temporary, created.identity)
     throw error
   }
-  await created.handle.close()
+  // The handle stays open until the last identity check: an open fd pins the
+  // inode, so a foreign file swapped in can never be handed the same inode
+  // number (Linux reuses a freed inode at once; dev+ino would then match).
+  try {
+    return await commitTemp(created, target, rel, parent, parentIdentity, options.guard)
+  } finally {
+    await created.handle.close().catch(() => undefined)
+  }
+}
+
+async function commitTemp(
+  created: { temporary: string; identity: FileIdentity },
+  target: string,
+  rel: string,
+  parent: string,
+  parentIdentity: FileIdentity,
+  guard: WriteBoundaryGuard | undefined,
+): Promise<boolean> {
+  const options = { guard }
   options.guard?.('beforeCommit', created.temporary)
   // Pre-rename verification, by identity: the temp must still be the file
   // this operation created (not a foreign replacement), and the parent must
