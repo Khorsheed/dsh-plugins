@@ -112,12 +112,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
       # Track whatever the next dist-tag points at rather than pinning a
       # version here: a pinned forward line rots within days, and a job
       # testing a host nobody is adapting to any more quietly stops meaning
@@ -138,6 +132,16 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "::notice::forward host ${version} is on npm but dsh-v${version} is not on GitHub yet; skipping the forward lane"
           fi
+
+      # Node tooling only once there is a host to test: setup-node's post step
+      # fails saving a pnpm cache that was never created when the lane skips.
+      - uses: pnpm/action-setup@v4
+        if: steps.next.outputs.ready == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.next.outputs.ready == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
 
       - name: Clone deepseek-harness (forward line)
         if: steps.next.outputs.ready == 'true'
