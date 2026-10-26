@@ -31,12 +31,10 @@
 | --- | --- |
 | 基础 | `dsh plugin --profile web add @khorsheed/dsh-basic` |
 | 开发 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite` |
-| 写作 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-writing-suite` |
 | 学习 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-learning-suite` |
 | 剪辑 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-video-suite` |
 | 游戏开发 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-gamedev-suite` |
-| 评测 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite` |
-| 全部 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite @khorsheed/dsh-writing-suite @khorsheed/dsh-learning-suite @khorsheed/dsh-video-suite @khorsheed/dsh-gamedev-suite @khorsheed/dsh-eval-suite` |
+| 全部 | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite @khorsheed/dsh-learning-suite @khorsheed/dsh-video-suite @khorsheed/dsh-gamedev-suite` |
 <!-- collections:end -->
 
 ## 能力地图
@@ -50,7 +48,7 @@
 | [`message-tools`](packages/client-message-tools) | 用户消息**原位编辑 / 真撤回 / 恢复重放**——全家桶里唯一改变模型所见的插件,用的是与官方 compaction 同一套机制 | `@khorsheed/dsh-client-message-tools` | ≥ 0.1.5-rc.1 | basic |
 | [`message-timeline`](packages/message-timeline) | 会话左缘悬浮**历史消息时间轴**,点击跳转任意用户消息 | `@khorsheed/dsh-message-timeline` | ≥ 0.1.2-rc.1 | basic |
 | [`session-title-edit`](packages/client-session-title-edit) | 聊天区标题**内联重命名**,用户改过的标题不再被自动生成覆盖 | `@khorsheed/dsh-client-session-title-edit` | ≥ 0.1.2-rc.1 | basic |
-| [`quote`](packages/quote) | 选中任意文本浮出**引用动作菜单**(引用进 composer / 侧边对话 / 复制),其他插件可注册自己的动作 | `@khorsheed/dsh-quote` | ≥ 0.1.5-rc.1 | basic |
+| [`quote`](packages/quote) | 选中任意文本浮出**引用动作菜单**(引用进 composer / 复制),其他插件可注册自己的动作 | `@khorsheed/dsh-quote` | ≥ 0.1.5-rc.1 | basic |
 
 ### 文件与产物
 
@@ -75,13 +73,11 @@
 | [`context-lens`](packages/context-lens) | **上下文透镜**:按 turn 查看每次模型请求的完整组成——system 分段归因、工具定义、历史与新增上下文、token 与耗时 | `@khorsheed/dsh-context-lens` | ≥ 0.1.5-rc.1 | dev |
 | [`mobile`](packages/mobile) | **移动端呈现**与 iOS 桥 | `@khorsheed/dsh-mobile` | ≥ 0.1.5-rc.1 | basic |
 
-### 写作与灵感
+### 阅读与灵感
 
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
-| [`canvas`](packages/canvas) | **灵感画布**:在主题画布上积累卡片、连线与模型提议 | `@khorsheed/dsh-canvas` | ≥ 0.1.5-rc.1 | writing |
-| [`canvas-novel`](packages/canvas-novel) | 画布的「**长篇小说**」体裁:人物/伏笔/章节的作品记忆引擎、对账闸门与写作工具 | `@khorsheed/dsh-canvas-novel` | ≥ 0.2.0-rc.2 | writing |
-| [`dsh-reader`](packages/reader) | **灵感空间**:RSS/Atom 订阅 + 粘贴文章链接,卡片流 + 可读详情视图 | `@khorsheed/dsh-reader` | ≥ 0.1.5-rc.1 | writing / learning |
+| [`dsh-reader`](packages/reader) | **灵感空间**:RSS/Atom 订阅 + 粘贴文章链接,卡片流 + 可读详情视图 | `@khorsheed/dsh-reader` | ≥ 0.1.5-rc.1 | learning |
 
 ### 学习
 
@@ -94,7 +90,7 @@
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
 | [`video-studio`](packages/video-studio) | 右栏**剪辑台**:播客/对谈混录自动分人、节目声纹认人、删字即删音频,导出音频/视频/字幕 | `@khorsheed/dsh-video-studio` | ≥ 0.1.5-rc.1 | video |
-| [`transcribe`](packages/transcribe) | **本机转写**:把长录音转成带时间的文字,可区分说话人;供剪辑、写作、学习套件调用 | `@khorsheed/dsh-transcribe` | ≥ 0.1.5-rc.1 | writing / learning / video |
+| [`transcribe`](packages/transcribe) | **本机转写**:把长录音转成带时间的文字,可区分说话人;供剪辑、学习套件调用 | `@khorsheed/dsh-transcribe` | ≥ 0.1.5-rc.1 | learning / video |
 
 ### 游戏开发
 
@@ -117,30 +113,22 @@
 
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
-| [`local-agent`](packages/local-agent) | 家族**核心**:harness 注册表、作用域目录供给、`/<harness> login|sessions|status|logout` 命令族 | `@khorsheed/dsh-local-agent` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
-| [`local-agent-kimi`](packages/local-agent-kimi) | **Kimi Code** harness:`kimi -p` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-kimi` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
-| [`local-agent-codex`](packages/local-agent-codex) | **Codex** harness:`codex exec` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-codex` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
-| [`local-agent-claude-code`](packages/local-agent-claude-code) | **Claude Code** harness:`claude -p` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-claude-code` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
-| [`local-agent-dsh`](packages/local-agent-dsh) | **dsh 自委派** harness:把 dsh 自己当本地 CLI 用 | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
+| [`local-agent`](packages/local-agent) | 家族**核心**:harness 注册表、作用域目录供给、`/<harness> login|sessions|status|logout` 命令族 | `@khorsheed/dsh-local-agent` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
+| [`local-agent-kimi`](packages/local-agent-kimi) | **Kimi Code** harness:`kimi -p` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-kimi` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
+| [`local-agent-codex`](packages/local-agent-codex) | **Codex** harness:`codex exec` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-codex` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
+| [`local-agent-claude-code`](packages/local-agent-claude-code) | **Claude Code** harness:`claude -p` 委派、续聊、记账 | `@khorsheed/dsh-local-agent-claude-code` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
+| [`local-agent-dsh`](packages/local-agent-dsh) | **dsh 自委派** harness:把 dsh 自己当本地 CLI 用 | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
 | [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (组合组件)dsh 委派的 **headless 子 profile** patch | `@khorsheed/dsh-local-agent-dsh-headless` | ≥ 0.1.5-rc.1 | 随 provider |
 
 > 家族随开发、剪辑、游戏开发套件同装;单装是高级路径——核心与 provider 要显式一起装(核心缺席时 provider 行 pending,不崩)。各 provider 的委派工具(`subagent_kimi` 等)是包内 `./tool` 组合入口,由 preset 按会话授予。
-
-### 评测
-
-| 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
-| --- | --- | --- | --- | --- |
-| [`datasets`](packages/datasets) | **数据集**:在 git 仓库中管理版本化数据集,按层管控可见性 | `@khorsheed/dsh-datasets` | ≥ 0.2.0-rc.2 | eval |
-| [`lab`](packages/lab) | **实验单元**:隔离、可重复实验单元的生命周期管理 | `@khorsheed/dsh-lab` | ≥ 0.2.0-rc.2 | eval |
-| [`eval`](packages/eval) | **评测**:校验评测计划,编排委派、判定并生成报告;含任务账本(mission:状态机、重试与注解,原 dsh-mission 包) | `@khorsheed/dsh-eval` | ≥ 0.2.0-rc.2 | eval |
 
 ### 能力与基础设施
 
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
 | [`capability-catalog`](packages/capability-catalog) | **能力目录**:枚举运行实例的全部 skill 与工具及其注册渠道,设置页三列预览 + 详情弹窗 | `@khorsheed/dsh-capability-catalog` | ≥ 0.1.5-rc.1 | basic |
-| [`typesafe`](packages/typesafe) | (实验性)**TypeSafe 判定原语**宿主服务:接入 TypeSafe System One 模型支持模型快速决策场景调用,类型化 noul/choice/score 判定,带熔断、缓存与决策日志;模型工具经包内 `./tool` 组合入口由 preset 按会话授予 | `@khorsheed/dsh-typesafe` | ≥ 0.1.5-rc.1 | dev |
-| [`capture`](packages/capture) | **渲染抓取** Remote:托管 headless Chrome 渲染 URL,返回内联样式的序列化页面 | `@khorsheed/dsh-capture` | ≥ 0.1.5-rc.1 | writing / learning |
+| [`typesafe`](packages/typesafe) | (实验性)**TypeSafe 判定原语**宿主服务:接入 TypeSafe System One 模型支持模型快速决策场景调用,类型化 noul/choice/score 判定,带熔断、缓存与决策日志;模型工具经包内 `./tool` 组合入口由 preset 按会话授予 | `@khorsheed/dsh-typesafe` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
+| [`capture`](packages/capture) | **渲染抓取** Remote:托管 headless Chrome 渲染 URL,返回内联样式的序列化页面 | `@khorsheed/dsh-capture` | ≥ 0.1.5-rc.1 | learning |
 
 ### 运维守护
 
@@ -210,7 +198,7 @@ dsh plugin --profile web remove @khorsheed/dsh-<name>
 
 ```
 packages/   一个目录一个可发布插件或套件
-profiles/   套件门面仓的同步源(basic / dev / eval / writing / learning / video / gamedev)
+profiles/   套件门面仓的同步源(basic / dev / learning / video / gamedev)
 build/      共享构建/测试预设(tsdown client bundle、vitest 源码面配置)
 scripts/    仓库工具(pack-dist、gen-typert、镜像同步、门禁检查器)
 ```

@@ -31,12 +31,10 @@ An ordinary user needs one **collection**: the basic suite plus one mode suite. 
 | --- | --- |
 | Basic | `dsh plugin --profile web add @khorsheed/dsh-basic` |
 | Dev | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite` |
-| Writing | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-writing-suite` |
 | Learning | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-learning-suite` |
 | Video | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-video-suite` |
 | Gamedev | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-gamedev-suite` |
-| Eval | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-eval-suite` |
-| Everything | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite @khorsheed/dsh-writing-suite @khorsheed/dsh-learning-suite @khorsheed/dsh-video-suite @khorsheed/dsh-gamedev-suite @khorsheed/dsh-eval-suite` |
+| Everything | `dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite @khorsheed/dsh-learning-suite @khorsheed/dsh-video-suite @khorsheed/dsh-gamedev-suite` |
 <!-- collections:end -->
 
 ## Capability map
@@ -50,7 +48,7 @@ Each package's details, configuration and screenshots live in its own directory 
 | [`message-tools`](packages/client-message-tools) | **In-place edit / true withdraw / restore-replay** for user messages — the only plugin here that changes what the model sees, riding the same mechanism as the official compaction | `@khorsheed/dsh-client-message-tools` | ≥ 0.1.5-rc.1 | basic |
 | [`message-timeline`](packages/message-timeline) | A floating **history timeline** on the chat's left edge — click to jump to any user message | `@khorsheed/dsh-message-timeline` | ≥ 0.1.2-rc.1 | basic |
 | [`session-title-edit`](packages/client-session-title-edit) | **Inline session-title renaming**; a user-set title is never overwritten by auto-generation | `@khorsheed/dsh-client-session-title-edit` | ≥ 0.1.2-rc.1 | basic |
-| [`quote`](packages/quote) | Select any text for a floating **quote action menu** (quote into the composer / sidechat / copy); other plugins can register their own actions | `@khorsheed/dsh-quote` | ≥ 0.1.5-rc.1 | basic |
+| [`quote`](packages/quote) | Select any text for a floating **quote action menu** (quote into the composer / copy); other plugins can register their own actions | `@khorsheed/dsh-quote` | ≥ 0.1.5-rc.1 | basic |
 
 ### Files and artifacts
 
@@ -75,13 +73,11 @@ Each package's details, configuration and screenshots live in its own directory 
 | [`context-lens`](packages/context-lens) | **Context lens**: per-turn inspection of each model request — system-section attribution, tool definitions, history vs. new context, tokens and latency | `@khorsheed/dsh-context-lens` | ≥ 0.1.5-rc.1 | dev |
 | [`mobile`](packages/mobile) | **Mobile presentation** and the iOS bridge | `@khorsheed/dsh-mobile` | ≥ 0.1.5-rc.1 | basic |
 
-### Writing and ideas
+### Reading and ideas
 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
-| [`canvas`](packages/canvas) | The **idea canvas**: accumulate cards, links and model proposals on a topical canvas | `@khorsheed/dsh-canvas` | ≥ 0.1.5-rc.1 | writing |
-| [`canvas-novel`](packages/canvas-novel) | The canvas's **novel** genre: a work-memory engine for characters/foreshadowing/chapters, reconciliation gates, and the writing tools | `@khorsheed/dsh-canvas-novel` | ≥ 0.2.0-rc.2 | writing |
-| [`dsh-reader`](packages/reader) | The **ideas space**: RSS/Atom subscriptions + pasted article links, a card stream and a readable detail view | `@khorsheed/dsh-reader` | ≥ 0.1.5-rc.1 | writing / learning |
+| [`dsh-reader`](packages/reader) | The **ideas space**: RSS/Atom subscriptions + pasted article links, a card stream and a readable detail view | `@khorsheed/dsh-reader` | ≥ 0.1.5-rc.1 | learning |
 
 ### Learning
 
@@ -94,7 +90,7 @@ Each package's details, configuration and screenshots live in its own directory 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
 | [`video-studio`](packages/video-studio) | The right-sidebar **cutting room**: multi-speaker mixdowns, voiceprint recognition, delete-the-word-deletes-the-audio, audio/video/subtitle export | `@khorsheed/dsh-video-studio` | ≥ 0.1.5-rc.1 | video |
-| [`transcribe`](packages/transcribe) | **Local transcription**: long recordings into timestamped, speaker-attributed text; called by the video/writing/learning suites | `@khorsheed/dsh-transcribe` | ≥ 0.1.5-rc.1 | writing / learning / video |
+| [`transcribe`](packages/transcribe) | **Local transcription**: long recordings into timestamped, speaker-attributed text; called by the video and learning suites | `@khorsheed/dsh-transcribe` | ≥ 0.1.5-rc.1 | learning / video |
 
 ### Game development
 
@@ -117,30 +113,22 @@ Versus the official offering: you can have the lead agent invite any harness you
 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
-| [`local-agent`](packages/local-agent) | The family **core**: the harness registry, scoped-home provisioning, the `/<harness> login|sessions|status|logout` command family | `@khorsheed/dsh-local-agent` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
-| [`local-agent-kimi`](packages/local-agent-kimi) | The **Kimi Code** harness: `kimi -p` delegation, resume, accounting | `@khorsheed/dsh-local-agent-kimi` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
-| [`local-agent-codex`](packages/local-agent-codex) | The **Codex** harness: `codex exec` delegation, resume, accounting | `@khorsheed/dsh-local-agent-codex` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
-| [`local-agent-claude-code`](packages/local-agent-claude-code) | The **Claude Code** harness: `claude -p` delegation, resume, accounting | `@khorsheed/dsh-local-agent-claude-code` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
-| [`local-agent-dsh`](packages/local-agent-dsh) | The **dsh self-delegation** harness: use dsh itself as a local CLI | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
+| [`local-agent`](packages/local-agent) | The family **core**: the harness registry, scoped-home provisioning, the `/<harness> login|sessions|status|logout` command family | `@khorsheed/dsh-local-agent` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
+| [`local-agent-kimi`](packages/local-agent-kimi) | The **Kimi Code** harness: `kimi -p` delegation, resume, accounting | `@khorsheed/dsh-local-agent-kimi` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
+| [`local-agent-codex`](packages/local-agent-codex) | The **Codex** harness: `codex exec` delegation, resume, accounting | `@khorsheed/dsh-local-agent-codex` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
+| [`local-agent-claude-code`](packages/local-agent-claude-code) | The **Claude Code** harness: `claude -p` delegation, resume, accounting | `@khorsheed/dsh-local-agent-claude-code` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
+| [`local-agent-dsh`](packages/local-agent-dsh) | The **dsh self-delegation** harness: use dsh itself as a local CLI | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
 | [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (composition component) the **headless sub-profile** patch for dsh delegation | `@khorsheed/dsh-local-agent-dsh-headless` | ≥ 0.1.5-rc.1 | with the provider |
 
 > The family ships with the dev, video and gamedev suites; installing it piecemeal is the advanced path — the core and a provider must both be installed explicitly (without the core, a provider row stays pending and never crashes). Each provider's delegation tool (`subagent_kimi` etc.) is the package's `./tool` composition entry, granted per session by the preset.
-
-### Evaluation
-
-| Package | What it does | Install | Host | Suite |
-| --- | --- | --- | --- | --- |
-| [`datasets`](packages/datasets) | **Datasets**: versioned datasets in git repositories with layered visibility control | `@khorsheed/dsh-datasets` | ≥ 0.2.0-rc.2 | eval |
-| [`lab`](packages/lab) | **Lab units**: the lifecycle of isolated, reproducible experiment units | `@khorsheed/dsh-lab` | ≥ 0.2.0-rc.2 | eval |
-| [`eval`](packages/eval) | **Evaluation**: validates plans, orchestrates delegation and judging, and writes the report; includes the mission ledger (state machine, retries, annotations — formerly the dsh-mission package) | `@khorsheed/dsh-eval` | ≥ 0.2.0-rc.2 | eval |
 
 ### Capability and infrastructure
 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
 | [`capability-catalog`](packages/capability-catalog) | The **capability catalog**: every skill and tool of the running instance with its registration channel — a settings page with three-column previews and a detail dialog | `@khorsheed/dsh-capability-catalog` | ≥ 0.1.5-rc.1 | basic |
-| [`typesafe`](packages/typesafe) | (Experimental) a **TypeSafe judgement-primitive** host service: typed noul/choice/score judgements through a TypeSafe System One model for quick-decision call sites, with circuit breaking, caching and a decision log; the model tool is granted per session through the package's `./tool` composition entry | `@khorsheed/dsh-typesafe` | ≥ 0.1.5-rc.1 | dev |
-| [`capture`](packages/capture) | The **render-capture** Remote: a managed headless Chrome renders URLs and returns serialized pages with inline styles | `@khorsheed/dsh-capture` | ≥ 0.1.5-rc.1 | writing / learning |
+| [`typesafe`](packages/typesafe) | (Experimental) a **TypeSafe judgement-primitive** host service: typed noul/choice/score judgements through a TypeSafe System One model for quick-decision call sites, with circuit breaking, caching and a decision log; the model tool is granted per session through the package's `./tool` composition entry | `@khorsheed/dsh-typesafe` | ≥ 0.1.5-rc.1 | dev / gamedev / video |
+| [`capture`](packages/capture) | The **render-capture** Remote: a managed headless Chrome renders URLs and returns serialized pages with inline styles | `@khorsheed/dsh-capture` | ≥ 0.1.5-rc.1 | learning |
 
 ### Operations guard
 
@@ -210,7 +198,7 @@ A standalone pnpm monorepo; every package publishes as `@khorsheed/dsh-*`.
 
 ```
 packages/   one directory per publishable plugin or suite
-profiles/   sync sources of the suite front-door repos (basic / dev / eval / writing / learning / video / gamedev)
+profiles/   sync sources of the suite front-door repos (basic / dev / learning / video / gamedev)
 build/      shared build/test presets (tsdown client bundle, vitest source-plane config)
 scripts/    repo tooling (pack-dist, gen-typert, mirror sync, gate checkers)
 ```
