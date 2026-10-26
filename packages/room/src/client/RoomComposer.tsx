@@ -70,6 +70,7 @@ import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
 import { RoomQueueStrip, type RoomQueueItem } from './RoomQueueStrip.tsx'
 import { RoomModelPicker } from './RoomModelPicker.tsx'
+import { IconChevronRightOutlineMedium } from './icons.tsx'
 import css from './RoomComposer.module.css'
 
 /** The 0.1.5 session-snapshot queue row (alpha.2 deleted the snapshot queue for the inbox projection). */
@@ -508,7 +509,7 @@ export function RoomComposer({
                               event.stopPropagation()
                               toggleRoom(row.candidate.sessionId)
                             }}
-                          >▸</span>
+                          ><IconChevronRightOutlineMedium size={14} /></span>
                         )}
                         <span className={css.hint}>
                           {row.candidate.linked === true

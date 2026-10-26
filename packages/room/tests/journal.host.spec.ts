@@ -339,6 +339,9 @@ describe('parseMentions', () => {
     expect(parseMentions('随便聊聊')).toEqual({ targets: [], text: '随便聊聊' })
     expect(parseMentions('@ada 看下这个')).toEqual({ targets: ['ada'], text: '看下这个' })
     expect(parseMentions('@ada @bill 对齐一下')).toEqual({ targets: ['ada', 'bill'], text: '对齐一下' })
+    // The @ menu's session chip names another session, never a member.
+    expect(parseMentions('@[游戏大师（游戏开发）](dsh-session:eg) 问问他在做什么')).toEqual({ targets: [], text: '@[游戏大师（游戏开发）](dsh-session:eg) 问问他在做什么' })
+    expect(parseMentions('@ada @[开发剪辑插件](dsh-session:a) 去问问')).toEqual({ targets: ['ada'], text: '@[开发剪辑插件](dsh-session:a) 去问问' })
   })
 
   it('dedupes repeated mentions and treats inline @ as plain text', () => {
