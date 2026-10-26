@@ -7,7 +7,8 @@
  * level; every node expands on demand and the header offers expand-all /
  * collapse-all, so the whole tree is always reachable.
  */
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { expansionMemory, useScrollMemory } from './scroll-memory.ts'
 import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconFolderCloseMedium, IconFolderOpenMedium, IconPanelLeftOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ChangedFile } from '../types.ts'
@@ -133,6 +134,10 @@ export interface FileTreeProps {
    * @param dirPath - the directory's resolved path (rootPath + relative path).
    */
   loadChildren?: (dirPath: string) => Promise<FileTreeItem[]>
+  /** Keeps the expanded folders and the scroll offset across unmounts (a
+   * tab switch, a page switch) under this key; the parent keys the tree by
+   * it too, so another mode, worktree or session starts from its own view. */
+  memoryKey?: string
   /** Prefix for resolving a directory's absolute path (local browser root). */
   rootPath?: string
   /** When given, renders a show-hidden toggle (eye) in the tree header; the
@@ -199,8 +204,12 @@ export function relativeTime(seconds: number, now = Date.now()): string {
 }
 
 /** The file tree. */
-export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', showHidden = false, onToggleHidden, iconActions = false, t }: FileTreeProps): ReactNode {
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed, onToggleCollapse, loadChildren, rootPath = '', memoryKey, showHidden = false, onToggleHidden, iconActions = false, t }: FileTreeProps): ReactNode {
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
+    () => (memoryKey === undefined ? undefined : expansionMemory.get(memoryKey)) ?? new Set())
+  useEffect(() => { if (memoryKey !== undefined) expansionMemory.set(memoryKey, expanded) }, [memoryKey, expanded])
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useScrollMemory(rootRef, memoryKey)
   // Lazy sub-directory children, keyed by the directory's resolved path.
   const [lazy, setLazy] = useState<Record<string, readonly FileTreeItem[]>>({})
   // Directories whose children were requested but are still loading.
@@ -360,7 +369,7 @@ export function FileTree({ groups, selectedPath, onSelect, treeTitle, collapsed,
   }
 
   return (
-    <div className={css.tree}>
+    <div ref={rootRef} className={css.tree}>
       <div className={css.treeHeader}>
         <span className={css.treeTitle}>{treeTitle ?? t('mode.worktree')}</span>
         <span className={css.treeActions}>

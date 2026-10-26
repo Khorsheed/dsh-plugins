@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-26-local-files-tree-memory.md
-.agents/notes/implemented/bug-fix/2026-10-26-local-files-tree-memory.md: 51d9cd1eae44b4299ff529cbdf6765c8314e432d
-.agents/notes/implemented/bug-fix/2026-10-26-local-files-tree-memory.zh.md: c07d4cb15e492de873aa803cac92f2bf7069d756
+.agents/notes/implemented/bug-fix/2026-10-26-local-files-tree-memory.md: 0e24c53c8a28b1a5090929e8bfdcab1dc6ab6ca9
+.agents/notes/implemented/bug-fix/2026-10-26-local-files-tree-memory.zh.md: 7b0b06f12d4e5535aab1b8176ce6e9d6e9a31eb5

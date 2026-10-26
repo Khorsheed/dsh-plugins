@@ -6,7 +6,8 @@
  * tree nodes — no expand arrows, no per-row dividers; rows separate by a 2px
  * gap and the selected row gets a light-blue surface with a 2px left accent.
  */
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
+import { useScrollMemory } from './scroll-memory.ts'
 import { IconPanelLeftOutlineMedium } from './icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { CommitInfo } from '../types.ts'
@@ -26,6 +27,8 @@ export interface CommitListProps {
   onSelectCommit: (sha: string) => void
   /** Locale-bound translator. */
   t: TranslateNS<'worktrees'>
+  /** Keeps the list's scroll offset across unmounts under this key. */
+  memoryKey?: string
 }
 
 /** Extract a short branch label from a `%D` decoration, e.g.
@@ -42,8 +45,11 @@ function branchLabel(decorations: string): string {
 
 /** The commit list. */
 export function CommitList({
-  commits, selectedCommit, collapsed, onToggleCollapse, onSelectCommit, t,
+  commits, selectedCommit, collapsed, onToggleCollapse, onSelectCommit, memoryKey, t,
 }: CommitListProps): ReactNode {
+  // Before the empty early return: the hook order must not depend on the data.
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useScrollMemory(rootRef, commits === null || commits.length === 0 ? undefined : memoryKey)
   if (commits === null || commits.length === 0) {
     return <div className={css.empty}>{t('commits.empty', { base: 'base' })}</div>
   }
@@ -68,7 +74,7 @@ export function CommitList({
           )}
         </span>
       </div>
-      <div className={css.rows}>
+      <div ref={rootRef} className={css.rows}>
         {commits.map(commit => {
           const selected = selectedCommit === commit.sha
           const branch = branchLabel(commit.branches)
