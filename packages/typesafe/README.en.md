@@ -32,7 +32,7 @@ Then add a TypeSafe API key: in dev, game dev or editing mode, open Settings →
 ## Known limits
 
 - Decisions need the network: what a decision uses (your latest message, the list of open tasks, or members' report progress) is sent to TypeSafe's service.
-- The settings-page key field only appears in dev mode; in other modes use the `.env` route.
+- The settings-page key field only appears in dev, game dev and editing modes; otherwise use the `.env` route.
 - Its answers are probabilities, not guarantees; if it calls things wrong, switch the relevant option off or raise the Report-now threshold.
 
 ## Compatibility
