@@ -473,7 +473,8 @@ export function normalizeRoadmap(value: unknown): LibraryRoadmap | undefined {
     const node = asRecord(item)
     const nodeId = id(node?.id)
     const title = text(node?.title, 300)
-    const state = node?.state === 'locked' || node?.state === 'current' || node?.state === 'done' ? node.state : undefined
+    // A stored 'locked' reads as current: stations no longer lock (D6, 10-26).
+    const state = node?.state === 'locked' || node?.state === 'current' ? 'current' as const : node?.state === 'done' ? 'done' as const : undefined
     if (node === undefined || nodeId === undefined || title === undefined || state === undefined) return undefined
     // v5 carries `gate`; v3/v4 carried kind: quiz | read | practice.
     const gate: RoadmapNode['gate'] = node.gate === 'read' || node.gate === 'acceptance' || node.gate === 'quiz'

@@ -18,17 +18,10 @@ import {
 } from '../../types.ts'
 import { colorOf, Cover, coverOf } from '../look.tsx'
 import { CoverChips, type CoverContext } from '../covers.tsx'
-import { IconCheckOutlineMedium, IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
-import { IconLockOutlineMedium } from '../icons-local.tsx'
+import { IconRefreshOutlineMedium, IconSparkleMedium, IconTrashOutlineMedium } from '../icons.tsx'
 import { ConfirmDialog, OriginTag, outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
-
-/** The zigzag column (0..2) a node at `index` sits in. */
-
-function column(index: number): number {
-  const phase = index % 4
-  return phase === 3 ? 1 : phase
-}
+import { Path } from './path.tsx'
 
 /** A node's contents rows of one thick resource, as titles. */
 export function rowsOf(node: RoadmapNode, resource: LibraryResource): string[] {
@@ -151,7 +144,15 @@ export function BookView({ p, projectId, resourceId }: ViewProps & { projectId: 
         )}
         {resource !== undefined && loaded.data?.roadmap !== undefined && (
           <>
-            <Path p={p} roadmap={loaded.data.roadmap} onOpen={node => { actions.push({ view: 'node', projectId, resourceId, nodeId: node.id, tab: 'guide' }) }} />
+            <Path
+              p={p}
+              projectId={projectId}
+              resource={resource}
+              roadmap={loaded.data.roadmap}
+              onOpen={node => { actions.push({ view: 'node', projectId, resourceId, nodeId: node.id, tab: 'guide' }) }}
+              onLesson={node => { actions.push({ view: 'lesson', projectId, resourceId, nodeId: node.id }) }}
+              onRetake={node => { actions.push({ view: 'node', projectId, resourceId, nodeId: node.id, tab: 'quiz' }) }}
+            />
             <SkippedRows p={p} rows={skippedRows(loaded.data.roadmap, resource)} />
           </>
         )}
@@ -304,73 +305,6 @@ function Extras({ p, resource }: { p: ViewProps['p']; resource: LibraryResource 
           ))}
         </ul>
       )}
-    </section>
-  )
-}
-
-/** Path geometry: rows are 84px tall; levels zigzag over three columns. */
-const ROW = 84
-const COLUMNS = [1 / 6, 1 / 2, 5 / 6]
-
-/**
- * The adopted path: levels (quiz and acceptance nodes) on an S-shaped trail
- * joined by connectors — solid up to the furthest reached level, dotted
- * beyond — and side stops (read nodes) as small dots beside the level they
- * follow.
- */
-function Path({ p, roadmap, onOpen }: { p: ViewProps['p']; roadmap: LibraryRoadmap; onOpen: (node: RoadmapNode) => void }): ReactNode {
-  const { t } = p
-  // Levels gate (quiz by its quiz, acceptance by its rubric); read nodes are side stops.
-  const levels = roadmap.nodes.filter(node => node.gate !== 'read')
-  // Each side stop hangs beside the level before it (or the first one).
-  const sides = new Map<string, RoadmapNode[]>()
-  let anchor = levels[0]?.id
-  for (const node of roadmap.nodes) {
-    if (node.gate !== 'read') { anchor = node.id; continue }
-    if (anchor === undefined) continue
-    sides.set(anchor, [...(sides.get(anchor) ?? []), node])
-  }
-  const width = 340
-  const x = (index: number): number => (COLUMNS[column(index)] ?? 0.5) * width
-  const y = (index: number): number => index * ROW + 30
-  const done = levels.filter(node => node.state === 'done').length
-  return (
-    <section className={css.section}>
-      <h3 className={css.sectionTitle}>{t('book.pathTitle', { done: String(done), total: String(levels.length) })}</h3>
-      <div className={css.path} style={{ height: Math.max(levels.length, 1) * ROW + 48 }}>
-        <svg className={css.pathLine} viewBox={`0 0 ${width} ${Math.max(levels.length, 1) * ROW + 10}`} aria-hidden="true">
-          {levels.slice(1).map((node, index) => {
-            const from = index
-            const to = index + 1
-            const reached = node.state !== 'locked'
-            const midY = (y(from) + y(to)) / 2
-            return (
-              <path
-                key={node.id}
-                d={`M${x(from)} ${y(from)} C ${x(from)} ${midY}, ${x(to)} ${midY}, ${x(to)} ${y(to)}`}
-                className={reached ? css.lineReached : css.lineAhead}
-              />
-            )
-          })}
-        </svg>
-        {levels.map((node, index) => (
-          <div key={node.id} className={css.pathSlot} style={{ left: `${(COLUMNS[column(index)] ?? 0.5) * 100}%`, top: y(index) }}>
-            <button type="button" className={css.pathNode} onClick={() => { onOpen(node) }}>
-              <span className={css.disc} data-state={node.state} data-kind={node.gate}>
-                {node.state === 'done' ? <IconCheckOutlineMedium /> : node.state === 'locked' ? <IconLockOutlineMedium /> : index + 1}
-              </span>
-              <span className={css.pathLabel} data-state={node.state}>{node.title}</span>
-              {node.state === 'done' && node.quizStats?.bestRatio !== undefined && <span className={css.best}>{Math.round(node.quizStats.bestRatio * 100)}%</span>}
-            </button>
-            {(sides.get(node.id) ?? []).map(side => (
-              <button key={side.id} type="button" className={css.sideStop} data-side={column(index) === 2 ? 'left' : 'right'} data-state={side.state} onClick={() => { onOpen(side) }}>
-                <span className={css.sideDot} aria-hidden="true" />
-                <span>{side.title}</span>
-              </button>
-            ))}
-          </div>
-        ))}
-      </div>
     </section>
   )
 }

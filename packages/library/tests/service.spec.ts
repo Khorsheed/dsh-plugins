@@ -156,7 +156,7 @@ describe('books and roadmaps', () => {
     expect(before.roadmap).toBeUndefined()
     expect(before.draft?.status).toBe('draft')
     const adopted = await service.adoptRoadmap({ projectId, resourceId: bookId })
-    expect(adopted.ok && adopted.roadmap.nodes.map(node => node.state)).toEqual(['current', 'locked'])
+    expect(adopted.ok && adopted.roadmap.nodes.map(node => node.state)).toEqual(['current', 'current'])
     expect((await service.getRoadmap({ projectId, resourceId: bookId })).draft).toBeUndefined()
   })
 
@@ -169,7 +169,7 @@ describe('books and roadmaps', () => {
     await service.draftRoadmap({ projectId, resourceId: bookId, nodes: [{ id: 'r1', title: '导论', gate: 'read', covers: [cover] }, { id: 'n1', title: 'a', gate: 'quiz', covers: [cover] }, { id: 'n2', title: 'b', gate: 'quiz', covers: [cover], dependsOn: ['n1'] }, { id: 'r2', title: '概述', gate: 'read', covers: [cover], dependsOn: ['n2'] }] })
     const again = await service.adoptRoadmap({ projectId, resourceId: bookId })
     // A read node is a side stop: open at once, whatever it follows.
-    expect(again.ok && again.roadmap.nodes.map(node => node.state)).toEqual(['done', 'current', 'locked', 'current'])
+    expect(again.ok && again.roadmap.nodes.map(node => node.state)).toEqual(['done', 'current', 'current', 'current'])
   })
 
   it('never lets a read node gate a level, and keeps extras and the cover abbreviation', async () => {
@@ -300,7 +300,7 @@ describe('textbook paths', () => {
     expect(seen.draft?.nodes.map(node => node.id)).toEqual(['s1', 's2'])
     expect(seen.roadmap).toBeUndefined()
     const adopted = await service.adoptRoadmap({ projectId, resourceId: rl })
-    expect(adopted.ok && adopted.roadmap.nodes.map(node => node.state)).toEqual(['current', 'locked'])
+    expect(adopted.ok && adopted.roadmap.nodes.map(node => node.state)).toEqual(['current', 'current'])
     expect((await service.getRoadmap({ projectId, resourceId: rl })).draft).toBeUndefined()
     // Another textbook's path is a separate one — untouched.
     expect((await service.getRoadmap({ projectId, resourceId: bookId })).roadmap).toBeUndefined()
@@ -585,7 +585,7 @@ describe('practice acceptance', () => {
     expect(first.completed).toBeUndefined()
     expect(first.unlocked).toEqual([])
     expect(first.cardUpdates.find(update => update.created === true)?.term).toBe('CartPole 奖励')
-    expect((await service.getRoadmap({ projectId, resourceId: rl })).roadmap?.nodes.map(node => node.state)).toEqual(['current', 'locked'])
+    expect((await service.getRoadmap({ projectId, resourceId: rl })).roadmap?.nodes.map(node => node.state)).toEqual(['current', 'current'])
     // The retake: 2 pass + 1 half credit = (1+1+0.5)/3 ≈ 0.83 ≥ 0.8 — completes, unlocks.
     const second = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [
       { task: 's1', criterion: '跑满 20 万步', pass: true, evidence: '终端输出', by: 'llm' },
@@ -594,7 +594,7 @@ describe('practice acceptance', () => {
     ] })
     if (!second.ok) throw new Error(second.message)
     expect(second.attempt.ratio).toBeCloseTo(5 / 6)
-    expect([second.completed, second.unlocked]).toEqual(['s1', ['s2']])
+    expect([second.completed, second.unlocked]).toEqual(['s1', []])
     expect((await service.getRoadmap({ projectId, resourceId: rl })).roadmap?.nodes.map(node => node.state)).toEqual(['done', 'current'])
     // The station's history reads back newest first, and the events ledgered.
     const history = await service.listAttempts({ projectId, nodeId: 's1' })
@@ -602,7 +602,7 @@ describe('practice acceptance', () => {
     expect(history.attempts[0]?.ratio).toBeCloseTo(5 / 6)
     expect(history.attempts[1]?.ratio).toBeCloseTo(2 / 3)
     const events = await service.listEvents({ projectId, types: ['node.completed', 'node.unlocked'] })
-    expect(events.events.map(event => [event.type, event.id])).toEqual([['node.unlocked', 's2'], ['node.completed', 's1']])
+    expect(events.events.map(event => [event.type, event.id])).toEqual([['node.completed', 's1']])
   })
 
   it('a ref acceptance line machine-checks against its quiz\'s latest sitting; the coach judges the rest', async () => {
@@ -633,7 +633,7 @@ describe('practice acceptance', () => {
     if (!sitting.ok) throw new Error(sitting.message)
     const done = await service.putAttempt({ projectId, nodeId: 's1', verdicts: [{ task: 'L2', criterion: '跑满 20 万步', pass: true, evidence: '终端输出', by: 'llm' }] })
     if (!done.ok) throw new Error(done.message)
-    expect([done.completed, done.unlocked]).toEqual(['s1', ['s2']])
+    expect([done.completed, done.unlocked]).toEqual(['s1', []])
     // The auto verdict survives the read-back normalize.
     const history = await service.listAttempts({ projectId, nodeId: 's1' })
     expect(history.attempts[0]?.verdicts.find(verdict => verdict.task === 'L1')).toMatchObject({ by: 'auto', pass: true })
@@ -795,11 +795,11 @@ describe('quizzes: the two axes', () => {
     expect(lettered.ok).toBe(true)
   })
 
-  it('warns when the scoped node is still locked', async () => {
+  it('no station is locked: a quiz on a later station stores without a lock warning (D6)', async () => {
     const { projectId, bookId } = await seed()
     await adopt(projectId, bookId)
     const stored = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n2' }, questions: [question()] } })
-    expect(stored.ok && stored.warnings[0]).toMatch(/still locked/)
+    expect(stored.ok && stored.warnings.some(warning => /locked/.test(warning))).toBe(false)
   })
 
   it('says where a station-less quiz landed: the book page, or the project page for a free one', async () => {
@@ -937,7 +937,7 @@ describe('the assess cascade', () => {
     const retake = await service.putQuiz({ projectId, quiz: { scope: { resourceId: bookId, nodeId: 'n1' }, questions: [question({ id: 'q1' })] } })
     if (!retake.ok) throw new Error(retake.message)
     const passed = await service.putAttempt({ projectId, quizId: retake.quiz.id, verdicts: [{ task: 'q1', criterion: 'x', pass: true, evidence: 'y', by: 'llm' }] })
-    expect(passed.ok && [passed.completed, passed.unlocked]).toEqual(['n1', ['n2']])
+    expect(passed.ok && [passed.completed, passed.unlocked]).toEqual(['n1', []])
   })
 })
 
