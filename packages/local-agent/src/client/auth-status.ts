@@ -13,8 +13,22 @@ import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 /** The probe-result kinds the credential dot distinguishes. */
 export type HarnessAuthStatusKind = 'checking' | 'authenticated' | 'anonymous' | 'unavailable'
 
-const statuses = new Map<string, HarnessAuthStatusKind>()
-const listeners = new Set<() => void>()
+/**
+ * The bus lives on the page, not in this module: every provider's client
+ * bundle inlines its own copy of this file (bundles share no module
+ * identity), so a module-level map split the bus — the auth block (core
+ * bundle) published a login into one copy while the card header (provider
+ * bundle) read another and stayed red. One page-global store keyed by a
+ * registered symbol joins every copy.
+ */
+interface AuthStatusBus {
+  readonly statuses: Map<string, HarnessAuthStatusKind>
+  readonly listeners: Set<() => void>
+}
+const BUS_KEY = Symbol.for('dsh.local-agent.auth-status')
+const bus: AuthStatusBus = ((globalThis as Record<symbol, AuthStatusBus | undefined>)[BUS_KEY] ??= { statuses: new Map(), listeners: new Set() })
+const statuses = bus.statuses
+const listeners = bus.listeners
 
 /** Record one harness's latest probe result and notify subscribers. */
 export function publishAuthStatus(harnessId: string, status: HarnessAuthStatusKind): void {
