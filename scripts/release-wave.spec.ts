@@ -16,8 +16,7 @@ import {
   topoOrder,
   writeManifest,
   type WaveEntry,
-  type WaveMember,
-} from './release-wave.mts'
+  type WaveMember, publishScript } from './release-wave.mts'
 
 function fixture(): string {
   return mkdtempSync(join(tmpdir(), 'release-wave-'))
@@ -343,5 +342,17 @@ describe('resolveName', () => {
     expect(resolveName(members, 'message-tools')).toBe('@khorsheed/dsh-client-message-tools')
     expect(resolveName(members, 'client-message-tools')).toBe('@khorsheed/dsh-client-message-tools')
     expect(() => resolveName(members, 'nope')).toThrow(/unknown package/)
+  })
+})
+
+describe('publishScript', () => {
+  it('publishes in the given order, skips live versions, then deprecates', () => {
+    const script = publishScript([
+      { name: '@a/x', dir: 'x', current: null, target: '0.1.0', bump: 'none', debut: true },
+      { name: '@a/s', dir: 's', current: '0.1.0', target: '0.1.1', bump: 'patch', debut: false },
+    ], [{ name: '@a/old', message: "Retired: it's gone" }], '/repo')
+    expect(script.indexOf('publish @a/x 0.1.0')).toBeLessThan(script.indexOf('publish @a/s 0.1.1'))
+    expect(script).toContain('already on npm, skip')
+    expect(script).toContain("deprecate @a/old 'Retired: it'\\''s gone'")
   })
 })

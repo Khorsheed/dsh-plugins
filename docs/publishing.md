@@ -16,7 +16,16 @@ tar -tzf /tmp/dist/<包>.tgz                    # 5. 检查 tarball:lib/、cordi
 
 **认证现状（2026-09 起，旧 TOTP 指引全部作废）**：npm 已下线 6 位认证器（TOTP）注册，2FA 只剩 **security key（WebAuthn）**——Mac 上就是 Touch ID（npmjs.com → 头像 → Account → Two-Factor Authentication → security key）。恢复码只是兜底，**拿恢复码当 OTP 会触发 72 小时只读冻结**（已踩实）。GAT（颗粒度 token）的 bypass-2FA 已不能做账号/包管理动作，直发也将在 2027-01 取消（我们的 publish token 现已直接 EOTP）。
 
-**现行发布流程：staged publishing（暂存 + 网页审批）**。暂存不需要 2FA，审批才需要（security key 点一下）：
+**现行发布流程（2026-10-27 起）：维护者终端里跑一次性发布脚本**。npm 在同一次运行里只要一次 web 认证 / Touch ID，首发和重发一起发完；staged publishing 每个包都要在网页上单独批准，降为可选项。
+
+1. agent 照常走完 `pnpm release:wave plan → bump → (build + test) → check → pack`；要弃用的旧包写进 `.release-wave.json` 的 `deprecate`（`[{ name, message }]`）。
+2. `pnpm release:wave script`：按依赖序写出 `dist-publish/publish.sh`，同时打印**本次发布范围表**（包、上一版、本次版本、首发/更新，以及要弃用的包）。
+3. **先确认再交脚本**：agent 把范围表原样给维护者过目，维护者确认范围和版本号之后，才请其在本人终端运行 `sh dist-publish/publish.sh`（agent 的沙箱过不了 npm 的浏览器认证）。脚本按依赖序逐个 `npm publish`，已在 npm 上的版本自动跳过，中途断了可直接重跑；最后执行弃用。
+4. 跑完 `pnpm release:wave verify` → `tag --write` → `status`，再同步镜像仓（`pnpm sync:mirror package <目录>`）。
+
+直接发布没有「上线前再看一眼」的关口，也撤不回（版本号即刻占用），所以第 3 步的范围确认不能省。想逐个审核时改走下面的 staged publishing。
+
+**可选：staged publishing（暂存 + 网页逐个审批）**。暂存不需要 2FA，审批才需要（security key 点一下）；被拒绝的暂存版本号可以复用：
 
 ```sh
 # 0. 一次性登录（真实终端里跑，web 登录需要 TTY；会话凭证写入 ~/.npmrc）
@@ -54,7 +63,7 @@ npx npm@12 publish /tmp/dist/<新包>.tgz --access public --otp=<token>
 | 报错 | 原因 | 解法 |
 |---|---|---|
 | `requires a one-time password`（EOTP） | 账号开了 2FA 且 npm 已无 TOTP | 不要找 6 位码了——发布走 staged publishing（见上文）：`npx npm@12 stage publish` 暂存 + 网页审批；`deprecate` 等包管理动作走同一条 device flow（EOTP 报错里带 `auth/cli/...` 链接，浏览器 security key 认证后从 doneUrl 取一次性 token 当 `--otp` 重跑）。**链接只在真实终端可见**：npm 对管道/重定向输出打码成 `***`（伪终端也不行），必须在本人终端里跑（2026-10-01 deprecate 实测） |
-| 403 且账号页显示 "temporarily suspended due to a recent security-sensitive action" | npm 2026-06 起的防劫持冻结：**使用恢复码、换邮箱等敏感动作会触发 72 小时只读冻结**（安装/下载不受影响，发布/token 管理全停，到期自动解除） | 无捷径，等 72 小时；预防 = 恢复码只留作真正的账号恢复，日常发布走 staged + security key 审批 |
+| 403 且账号页显示 "temporarily suspended due to a recent security-sensitive action" | npm 2026-06 起的防劫持冻结：**使用恢复码、换邮箱等敏感动作会触发 72 小时只读冻结**（安装/下载不受影响，发布/token 管理全停，到期自动解除） | 无捷径，等 72 小时；预防 = 恢复码只留作真正的账号恢复，日常发布走一次性发布脚本或 staged，都用 security key 认证 |
 | `403`(版本没变)/ `409` | 版本号 ≤ 线上已发布版本 | bump 版本再发;npm 不允许覆盖 |
 | `403`(包名从没发过) | 没有该 scope 的权限 | 只能发自己拥有的 scope(@khorsheed);@deepseek-ai 是官方 org,不要尝试 |
 | `Cannot resolve workspace protocol` | package.json 里残留 `workspace:*` 依赖 | 用 `scripts/pack-dist.ts` 打包(它会改写),不要直接对源目录 `npm publish` |
