@@ -1439,9 +1439,6 @@ importers:
 
   packages/learning-suite:
     dependencies:
-      '@khorsheed/dsh-canvas':
-        specifier: workspace:*
-        version: link:../canvas
       '@khorsheed/dsh-capture':
         specifier: workspace:*
         version: link:../capture

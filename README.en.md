@@ -2,9 +2,9 @@
 
 English | [中文](README.md)
 
-The community plugin monorepo for the **dsh** (DeepSeek Harness) ecosystem: **thirty-plus purely additive plugin packages, organized into 7 suites**. Every package integrates through official extension points only — slots, commands, Remote services, session projections. No official package is modified, no official UI slot is replaced, no core service is hacked; when an optional capability is absent the plugin degrades silently instead of failing the boot. The whole set is designed for coexistence: install, uninstall, or toggle any combination without interference, and the production instance runs the full stack long-term.
+The community plugin monorepo for the **dsh** (DeepSeek Harness) ecosystem: **thirty-plus purely additive plugin packages, organized into 5 suites**. Every package integrates through official extension points only — slots, commands, Remote services, session projections. No official package is modified, no official UI slot is replaced, no core service is hacked; when an optional capability is absent the plugin degrades silently instead of failing the boot. The whole set is designed for coexistence: install, uninstall, or toggle any combination without interference, and the production instance runs the full stack long-term.
 
-## Suites: seven ready-to-run experiences
+## Suites: five ready-to-run experiences
 
 The recommended install unit is a **suite** (one npm package), not a single plugin: a suite pulls in its members as npm dependencies and mounts their canonical rows through its own patch; every suite except the basic one also ships an inline agent preset granted per session. Install the suite, and you have installed the mode.
 
@@ -12,11 +12,9 @@ The recommended install unit is a **suite** (one npm package), not a single plug
 | --- | --- | --- | --- |
 | **基础体验 (Essentials)** | `@khorsheed/dsh-basic` | 12 everyday members: message edit/withdraw, the history timeline, title editing, quote actions, artifact preview, local files, task capsules, the compaction reminder, inline cards, the capability catalog, the completion chime, and mobile | [Khorsheed/dsh-basic](https://github.com/Khorsheed/dsh-basic) |
 | **开发套件 (Dev)** | `@khorsheed/dsh-dev-suite` | Local coding-agent delegation (Kimi / Codex / Claude Code / DSH), live worktree state, room multi-agent collaboration, typesafe quick judgement, the context lens and the ops guard — with the 开发模式 preset | [Khorsheed/dsh-dev](https://github.com/Khorsheed/dsh-dev) |
-| **写作套件 (Writing)** | `@khorsheed/dsh-writing-suite` | The idea canvas, the novel genre, the reading space (RSS/link reader), local transcription, render capture — with the 写作模式 preset | [Khorsheed/dsh-writing](https://github.com/Khorsheed/dsh-writing) |
-| **学习套件 (Learning)** | `@khorsheed/dsh-learning-suite` | The library: project-organized close reading (book ingestion, roadmaps, lecture notes, quizzes) with canvas/reader/transcribe/capture included — with the 学习模式 preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
+| **学习套件 (Learning)** | `@khorsheed/dsh-learning-suite` | The library: project-organized close reading (book ingestion, roadmaps, lecture notes, quizzes) with reader/transcribe/capture included — with the 学习模式 preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
 | **剪辑套件 (Video)** | `@khorsheed/dsh-video-suite` | The cutting room: multi-speaker mixdowns, voiceprint recognition, delete-the-word-deletes-the-audio, audio/video/subtitle/shownotes export; local transcription and multi-agent work (local-agent delegation, rooms) included — with the 剪辑模式 preset | [Khorsheed/dsh-video](https://github.com/Khorsheed/dsh-video) |
 | **游戏开发套件 (Gamedev)** | `@khorsheed/dsh-gamedev-suite` | Build small games with the agent: playtest tuning, appearance editing, chaptered design docs, versions and rollback, end-of-turn checks, multi-agent work (local-agent delegation, rooms) — with the 游戏开发模式 preset | [Khorsheed/dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) |
-| **评测套件 (Eval)** | `@khorsheed/dsh-eval-suite` | On-machine harness comparison: datasets, mission planning, lab units, execution and judging, plus the local-agent delegation family — with the 评测模式 preset | [Khorsheed/dsh-eval](https://github.com/Khorsheed/dsh-eval) |
 
 ![dsh-basic essentials: message edit and withdraw, quote actions, session artifacts, the file list and the ideas space in one screen](docs/screenshots/basic-mode.png)
 
@@ -81,7 +79,7 @@ Each package's details, configuration and screenshots live in its own directory 
 
 | Package | What it does | Install | Host | Suite |
 | --- | --- | --- | --- | --- |
-| [`canvas`](packages/canvas) | The **idea canvas**: accumulate cards, links and model proposals on a topical canvas | `@khorsheed/dsh-canvas` | ≥ 0.1.5-rc.1 | writing / learning |
+| [`canvas`](packages/canvas) | The **idea canvas**: accumulate cards, links and model proposals on a topical canvas | `@khorsheed/dsh-canvas` | ≥ 0.1.5-rc.1 | writing |
 | [`canvas-novel`](packages/canvas-novel) | The canvas's **novel** genre: a work-memory engine for characters/foreshadowing/chapters, reconciliation gates, and the writing tools | `@khorsheed/dsh-canvas-novel` | ≥ 0.2.0-rc.2 | writing |
 | [`dsh-reader`](packages/reader) | The **ideas space**: RSS/Atom subscriptions + pasted article links, a card stream and a readable detail view | `@khorsheed/dsh-reader` | ≥ 0.1.5-rc.1 | writing / learning |
 
@@ -126,7 +124,7 @@ Versus the official offering: you can have the lead agent invite any harness you
 | [`local-agent-dsh`](packages/local-agent-dsh) | The **dsh self-delegation** harness: use dsh itself as a local CLI | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
 | [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (composition component) the **headless sub-profile** patch for dsh delegation | `@khorsheed/dsh-local-agent-dsh-headless` | ≥ 0.1.5-rc.1 | with the provider |
 
-> The family ships with both the dev and the eval suite; installing it piecemeal is the advanced path — the core and a provider must both be installed explicitly (without the core, a provider row stays pending and never crashes). Each provider's delegation tool (`subagent_kimi` etc.) is the package's `./tool` composition entry, granted per session by the preset.
+> The family ships with the dev, video and gamedev suites; installing it piecemeal is the advanced path — the core and a provider must both be installed explicitly (without the core, a provider row stays pending and never crashes). Each provider's delegation tool (`subagent_kimi` etc.) is the package's `./tool` composition entry, granted per session by the preset.
 
 ### Evaluation
 
@@ -158,7 +156,7 @@ A mode suite installs more than plugins: it also delivers an inline **agent pres
 2. **UI hides with the grant.** Session-bound surfaces (conversation tabs, header badges) follow the preset grant — a session that was never granted the tools never sees the entry; cross-session deployment surfaces get no runtime switch and are governed by what you install. The full convention lives in [docs/plugin-visibility.md](docs/plugin-visibility.md).
 3. **Purely additive declarations.** A preset re-bases verbatim on the official standard composition and only appends community tool rows at the end — no official row is modified.
 
-Six mode presets ship with their suites (dev / writing / learning / video / gamedev / eval — see the table above); the essentials suite carries no preset — everyday use needs no mode switch.
+Four mode presets ship with their suites (dev / learning / video / gamedev — see the table above); the essentials suite carries no preset — everyday use needs no mode switch.
 
 ## Model-impact summary
 
@@ -175,11 +173,11 @@ Six mode presets ship with their suites (dev / writing / learning / video / game
 
 ### Install
 
-Prerequisite: a dsh host (per-package version requirements live in the "Host" columns of the capability map and in each package README's Compatibility section). **The recommended path is a suite** (see [Suites](#suites-seven-ready-to-run-experiences)); single-package installs are the advanced path for tailoring or debugging.
+Prerequisite: a dsh host (per-package version requirements live in the "Host" columns of the capability map and in each package README's Compatibility section). **The recommended path is a suite** (see [Suites](#suites-five-ready-to-run-experiences)); single-package installs are the advanced path for tailoring or debugging.
 
 ```sh
 # A suite (recommended): one package installs a whole mode
-dsh plugin --profile web add @khorsheed/dsh-basic        # or dsh-dev / dsh-writing / dsh-learning / dsh-video / dsh-gamedev / dsh-bundle-eval
+dsh plugin --profile web add @khorsheed/dsh-basic        # or dsh-dev-suite / dsh-learning-suite / dsh-video-suite / dsh-gamedev-suite
 
 # A single package (self-mounting packages mount their own loader row — no hand-edited cordis.yml)
 dsh plugin --profile web add @khorsheed/dsh-whalesong

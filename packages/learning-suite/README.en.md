@@ -2,9 +2,9 @@
 
 English | [中文](README.md)
 
-**A full kit for teaching yourself: the agent becomes your reading coach and sees you through a book or a course, keeping track of where you are, what didn't sink in, and which questions you got wrong.** Say what you want to learn and the coach asks about your background, then helps pick a textbook and plan a path that counts once you say yes; snap a page as you read and your highlights and margin notes turn into cards; finish a chapter, take a short quiz, and wrong answers stay until you get them right; the Today page lists what to continue and what to review; write what you read in your own words as canvas cards, because putting it into words is how you know you've got it; feeds and saved articles, videos and podcasts read right inside DSH, highlight a sentence to take a note, and press one button to have the agent quiz you; videos and podcasts without subtitles are transcribed on your own computer; even pages that only show their text after scripts run can have it pulled out…… It comes with "学习模式" (learning mode), installed in one go.
+**A full kit for teaching yourself: the agent becomes your reading coach and sees you through a book or a course, keeping track of where you are, what didn't sink in, and which questions you got wrong.** Say what you want to learn and the coach asks about your background, then helps pick a textbook and plan a path that counts once you say yes; snap a page as you read and your highlights and margin notes turn into cards; finish a chapter, take a short quiz, and wrong answers stay until you get them right; the Today page lists what to continue and what to review; feeds and saved articles, videos and podcasts read right inside DSH, highlight a sentence to take a note, and press one button to have the agent quiz you; videos and podcasts without subtitles are transcribed on your own computer; even pages that only show their text after scripts run can have it pulled out…… It comes with "学习模式" (learning mode), installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-learning-hero.png" width="1000" alt="A learning-mode session: the chat with the reading coach on the left, and the Library in the right sidebar showing what to continue today, what's due for review, and each textbook's progress">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="1000" alt="A learning-mode session: the coach's grading table on the left; on the right, the Library's Today page with your projects, today's retakes and recent changes">
 
 ## Install
 
@@ -14,9 +14,9 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-learning-suite
 ```
 
-That installs all 5 members below; restart DSH and they're ready. It's best to also install `@khorsheed/dsh-basic` (Basic Essentials), which carries everyday things like editing messages and previewing files.
+That installs all 4 members below; restart DSH and they're ready. It's best to also install `@khorsheed/dsh-basic` (Basic Essentials), which carries everyday things like editing messages and previewing files.
 
-Then start a new session, pick "学习模式" (learning mode), and tell the coach what you want to learn. All of this only shows up in learning-mode sessions; not seeing it in other modes is expected (the canvas and the Reader are in writing mode too).
+Then start a new session, pick "学习模式" (learning mode), and tell the coach what you want to learn. All of this only shows up in learning-mode sessions; not seeing it in other modes is expected.
 
 ## Things you can say to the agent
 
@@ -25,7 +25,6 @@ Then start a new session, pick "学习模式" (learning mode), and tell the coac
 - "Give me a quiz on chapter two."
 - "What should I review today?"
 - "Quiz me on the article I read in the Reader yesterday."
-- "Write the main points of this section as a canvas card in my own words, and pick holes in it."
 
 The coach reads with you, not for you: it skips what you already know and slows down where you're weak. If you don't name a textbook, it picks an existing book or course, and writes one itself when nothing fits.
 
@@ -34,7 +33,6 @@ The coach reads with you, not for you: it skips what you already know and slows 
 | Plugin | Package name (copy to install) | What you get |
 |---|---|---|
 | library | `@khorsheed/dsh-library` | Library: a study desk in the right sidebar — study paths, notes from page photos, chapter quizzes, retakes, daily review |
-| canvas | `@khorsheed/dsh-canvas` | Idea Canvas: write what you read in your own words as cards, link related cards and box them into groups |
 | dsh-reader | `@khorsheed/dsh-reader` | Reader: feeds and saved articles, videos and podcasts read inside DSH; take notes, discuss with them, let the agent quiz you |
 | transcribe | `@khorsheed/dsh-transcribe` | Local Transcription: videos and podcasts without subtitles become timed text on your computer, with who said what |
 | capture | `@khorsheed/dsh-capture` | Capture: for pages a plain fetch can't read, it opens them for real in the background and brings the text back |
@@ -43,33 +41,20 @@ The coach reads with you, not for you: it skips what you already know and slows 
 
 ### library: Library
 
-The worst part of teaching yourself from a book is that nobody keeps you on track: you plan your own pace, copy your own notes, write your own questions, and nobody reminds you of the ones you got wrong. Tell the coach which book you're reading; the title and edition are enough, no need to upload the book, and if you don't have one yet it can recommend one. It drafts a study path from the table of contents, and nothing counts until you press "Adopt as this textbook’s path". Photograph the page you're on and your highlights and margin notes turn into cards, no copying by hand. After each chapter, take a short quiz built from what you highlighted, asked about and got wrong; multiple choice and fill-in are marked on the spot, and the coach marks the open questions. Missed questions go to "To retake", and a topic only counts as learned once you get them right. The "Today" page in the right sidebar lists the questions to retake and the cards due, so you know what to do the moment you open it.
+The worst part of teaching yourself from a book is that nobody keeps you on track: you plan your own pace, copy your own notes, write your own questions, and nobody reminds you of the ones you got wrong. Tell the coach which book you're reading; the title and edition are enough, no need to upload the book, or just name a field ("calculus from zero, pick the textbook for me") and it picks the topics and textbooks for your level. It drafts a study path from the table of contents, and nothing counts until you press "Adopt as this textbook’s path"; then follow it station by station, or jump to whichever station interests you first. Photograph the page you're on and your highlights and margin notes turn into cards, no copying by hand. After each chapter, take a short quiz built from what you highlighted, asked about and got wrong; multiple choice and fill-in are marked on the spot, and the coach marks the open questions. Missed questions go to "To retake", and a topic only counts as learned once you get them right. The "Today" page in the right sidebar lists the questions to retake and the cards due, so you know what to do the moment you open it.
 
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-today.png" width="840" alt="library: the Today page of the Library in the right sidebar: continue studying, today's review, and the project list">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="840" alt="library: a textbook's path page, a 14-station study path with stations passed and points mastered at the top, and Retake 7 and Continue on the current station">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-quiz.png" width="840" alt="library: a chapter quiz, multiple choice and fill-in marked on the spot, open questions passed to the coach">
-
-</details>
-
-### canvas: Idea Canvas
-
-Writing a section up in your own words is the quickest way to find what you didn't understand. The Canvas tab in the right sidebar gives every topic its own canvas: cards come as Fragment, Question, Grounding, Reference and Document, and you can paste in web pages, tables and images, or sketch something by hand. Cards the agent suggests in the chat land with a dashed outline; "Accept" keeps one, "Reject" moves it to the archive. Switch to "Links" to draw lines between cards and box related ideas into a group; select a few and choose "Talk to the Agent" to put the card text in the chat box and have it pick holes in your understanding. Notes from the Reader can be synced over, and you can select text anywhere and pick "Save as canvas card" to collect it.
-
-<details open>
-<summary>Screenshots (2)</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-board.png" width="840" alt="canvas: the canvas in the right sidebar, a row of canvas tabs on top and a board filtered by category below, with fragment, question and reference cards and one dashed suggested card">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-links.png" width="840" alt="canvas: the Links view, cards drawn as nodes with lines between them, a few cards boxed into a titled group">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="840" alt="library: a retake paper, the missed questions one by one, each with an answer box and Submit, Approach and Broken buttons">
 
 </details>
 
 ### dsh-reader: Reader
 
-The articles, videos and podcasts you take in outside the textbook are part of learning too. The Reader in the right sidebar puts your feeds and any links you paste on one wall; open one and the text reads right inside DSH, and foreign-language pieces can be translated sentence by sentence with the browser's built-in translator (on a desktop browser that supports it). Select a sentence and press "Take a note" to save the excerpt with your comment; "Discuss with these notes" puts the notes into the chat box. When you've finished, press "Let the agent quiz me": acting as a student who hasn't read the piece, it asks a few "explain it to me" questions at once; you answer in one message, and it goes back to the text to cover only what you didn't get across, then records it as a note. No scores, and pressing it again gives you another round. "Sync to canvas" turns a note into a canvas card. YouTube and Bilibili videos and podcasts can come in too; when a video has subtitles they become the text, and clicking a timestamp plays from there.
+The articles, videos and podcasts you take in outside the textbook are part of learning too. The Reader in the right sidebar puts your feeds and any links you paste on one wall; open one and the text reads right inside DSH, and foreign-language pieces can be translated sentence by sentence with the browser's built-in translator (on a desktop browser that supports it). Select a sentence and press "Take a note" to save the excerpt with your comment; "Discuss with these notes" puts the notes into the chat box. When you've finished, press "Let the agent quiz me": acting as a student who hasn't read the piece, it asks a few "explain it to me" questions at once; you answer in one message, and it goes back to the text to cover only what you didn't get across, then records it as a note. No scores, and pressing it again gives you another round. YouTube and Bilibili videos and podcasts can come in too; when a video has subtitles they become the text, and clicking a timestamp plays from there.
 
 <details open>
 <summary>Screenshots (2)</summary>
@@ -116,10 +101,8 @@ The essentials are the layer everyone wants; add a suite for the scene you work 
 |---|---|---|
 | [Basic Essentials](https://github.com/Khorsheed/dsh-basic) | `@khorsheed/dsh-basic` | Everyday quality of life: edit and withdraw messages, session artifacts, background-job pills, compaction reminders, the capability catalog, mobile — recommended for everyone |
 | [Dev Suite](https://github.com/Khorsheed/dsh-dev) | `@khorsheed/dsh-dev-suite` | Local coding-agent delegation, multi-agent rooms, live worktree state, quick judgements, the restart guard and the context lens — with "开发模式" (dev mode) |
-| [Writing Suite](https://github.com/Khorsheed/dsh-writing) | `@khorsheed/dsh-writing-suite` | The idea canvas, the novel genre, the reading space and local transcription — with "写作模式" (writing mode) |
 | [Video Suite](https://github.com/Khorsheed/dsh-video) | `@khorsheed/dsh-video-suite` | A cutting room with speaker splitting and delete-the-word-deletes-the-audio, plus local-agent delegation — with "剪辑模式" (editing mode) |
 | [Gamedev Suite](https://github.com/Khorsheed/dsh-gamedev) | `@khorsheed/dsh-gamedev-suite` | Build small games with the agent, plus local-agent delegation — with "游戏开发模式" (game dev mode) |
-| [Eval Suite](https://github.com/Khorsheed/dsh-eval) | `@khorsheed/dsh-eval-suite` | Compare agents on this machine: question sets, experiments, judging and reports — with "评测模式" (eval mode) |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | — | The plugin monorepo: the capability map of every package and the development docs |
 
 ## Compatibility
@@ -155,6 +138,6 @@ Or Settings → Plugins → Add plugin, enter `@khorsheed/dsh-learning-suite`. R
 
 - **Dialog**: Settings → Plugins → Add plugin, enter the package name (e.g. `@khorsheed/dsh-library`), enable as prompted.
 - **CLI**: `dsh plugin --profile <profile> add <package name>`; `remove` to uninstall, `update` to upgrade.
-- The canvas and the Reader installed on their own aren't tied to learning mode and show up in every session; the Library needs learning mode to grant it, so on its own its sidebar never appears — install the whole suite.
+- The Reader installed on its own isn't tied to learning mode and shows up in every session; the Library needs learning mode to grant it, so on its own its sidebar never appears — install the whole suite.
 
 </details>

@@ -62,7 +62,7 @@
 
 ### transcribe：本机转写
 
-剪辑里的「分人与转写」用的就是它：在你这台电脑上把长录音转成带时间的文字，几个人共用一支麦也能分出谁在说话，录音不用传到别处。中文、英文都能转。第一次用会先下载语音模型，之后就直接开转。它没有自己的界面，结果都出现在「剪辑」面板的文稿里；装了写作或学习套件的话，灵感空间给没字幕的视频和播客出文稿，也是它在做。
+剪辑里的「分人与转写」用的就是它：在你这台电脑上把长录音转成带时间的文字，几个人共用一支麦也能分出谁在说话，录音不用传到别处。中文、英文都能转。第一次用会先下载语音模型，之后就直接开转。它没有自己的界面，结果都出现在「剪辑」面板的文稿里；装了学习套件的话，灵感空间给没字幕的视频和播客出文稿，也是它在做。
 
 ### 本地 agent 委派：Kimi、Codex、Claude Code 和 DSH
 
@@ -106,10 +106,8 @@
 |---|---|---|
 | [基础体验](https://github.com/Khorsheed/dsh-basic) | `@khorsheed/dsh-basic` | 消息编辑撤回、时间轴、标题编辑、引用、产物预览、本地文件、任务胶囊、压缩提醒、内联卡片、能力目录、提示音、移动端 |
 | [开发套件](https://github.com/Khorsheed/dsh-dev) | `@khorsheed/dsh-dev-suite` | 本地编码 agent 委派、协作间多 agent 协作、工作树实况、快速决策、重启守卫、上下文透镜，自带「开发模式」 |
-| [写作套件](https://github.com/Khorsheed/dsh-writing) | `@khorsheed/dsh-writing-suite` | 灵感画布、长篇小说、灵感空间、本机转写，自带「写作模式」 |
-| [学习套件](https://github.com/Khorsheed/dsh-learning) | `@khorsheed/dsh-learning-suite` | 图书馆式精读、灵感画布、灵感空间，自带「学习模式」 |
+| [学习套件](https://github.com/Khorsheed/dsh-learning) | `@khorsheed/dsh-learning-suite` | 图书馆式精读、灵感空间、本机转写，自带「学习模式」 |
 | [游戏开发套件](https://github.com/Khorsheed/dsh-gamedev) | `@khorsheed/dsh-gamedev-suite` | 和 agent 一起做小游戏，可委派本地 agent，自带「游戏开发模式」 |
-| [评测套件](https://github.com/Khorsheed/dsh-eval) | `@khorsheed/dsh-eval-suite` | 本机多个 agent 对照评测：题集、实验、判分与报告，自带「评测模式」 |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | — | 插件主仓：全部插件的能力地图与开发文档 |
 
 ## Compatibility

@@ -16,25 +16,21 @@ Papers, articles and videos you come across end up scattered across browser tabs
 - **Select a line, take a note**: select a sentence and click "Take a note" to keep the original and your thought; noted lines are highlighted in the text, and a note jumps back to its spot.
 - **Discuss with your notes**: "Discuss with these notes" puts them in the composer — send it and talk it over with the agent; ask it to record the conclusion and it goes under that note.
 - **Let the agent quiz you**: after reading, "Let the agent quiz me" has it play a student who hasn't read the piece and ask you to explain it, then point out, against the original, only what you missed. No scores — click again to practice again.
-- **Quote into the chat, sync to the canvas**: select text to quote it straight into the composer; with the canvas installed, a note can "Sync to canvas" as an inspiration card.
+- **Quote into the chat**: select text to quote it straight into the composer; with the canvas installed, a note can "Sync to canvas" as an inspiration card.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="640" alt="the detail view: the article rendered as text; with the globe toggle on, sentences are translated side by side and clicking one reveals its original">
 
 ## Install
 
-In DSH, open Plugins → Add plugin, enter either suite's package name below and click Install:
-
-```
-@khorsheed/dsh-writing-suite
-```
+In DSH, open Plugins → Add plugin, enter this package name and click Install:
 
 ```
 @khorsheed/dsh-learning-suite
 ```
 
-The Reader comes with the Writing Suite or the Learning Suite, along with local transcription and Capture. Then start a new session, pick "写作模式" (writing mode) or "学习模式" (learning mode), open "Inspiration" in the right sidebar and paste your first link.
+The Reader comes with the Learning Suite, along with local transcription and Capture. Then start a new session, pick "学习模式" (learning mode), open "Inspiration" in the right sidebar and paste your first link.
 
-The Reader only shows up in sessions of those two modes; not seeing it in other modes is expected.
+The Reader only shows up in learning-mode sessions; not seeing it in other modes is expected.
 
 ## Known limitations
 

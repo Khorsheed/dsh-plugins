@@ -62,7 +62,7 @@ A few friends talk for an hour around one recorder, and editing it used to mean 
 
 ### transcribe: Local Transcription
 
-This is what Studio's speaker separation and transcription run on: it turns a long recording into timed text on this computer, tells who is speaking even when everyone shared one mic, and your recording never has to go anywhere else. It handles both Chinese and English. The first time, it downloads the speech model; after that it starts right away. It has no screen of its own — the results show up in Studio's transcript; and if you also have the writing or learning suite, it's what makes transcripts for videos and podcasts without subtitles in the reading space.
+This is what Studio's speaker separation and transcription run on: it turns a long recording into timed text on this computer, tells who is speaking even when everyone shared one mic, and your recording never has to go anywhere else. It handles both Chinese and English. The first time, it downloads the speech model; after that it starts right away. It has no screen of its own — the results show up in Studio's transcript; and if you also have the learning suite, it's what makes transcripts for videos and podcasts without subtitles in the reading space.
 
 ### Local agent delegation: Kimi, Codex, Claude Code and DSH
 
@@ -106,10 +106,8 @@ The essentials are the layer everyone wants; add a suite for the scene you work 
 |---|---|---|
 | [Basic Essentials](https://github.com/Khorsheed/dsh-basic) | `@khorsheed/dsh-basic` | Edit and withdraw messages, the timeline, title editing, quoting, artifact preview, local files, task capsules, compaction reminders, inline cards, the capability catalog, completion chimes, mobile |
 | [Dev Suite](https://github.com/Khorsheed/dsh-dev) | `@khorsheed/dsh-dev-suite` | Local coding-agent delegation, multi-agent rooms, live worktree state, quick judgements, the restart guard and the context lens — with "开发模式" (dev mode) |
-| [Writing Suite](https://github.com/Khorsheed/dsh-writing) | `@khorsheed/dsh-writing-suite` | The idea canvas, the novel genre, the reading space and local transcription — with "写作模式" (writing mode) |
-| [Learning Suite](https://github.com/Khorsheed/dsh-learning) | `@khorsheed/dsh-learning-suite` | Library-style close reading, the idea canvas and the reading space — with "学习模式" (learning mode) |
+| [Learning Suite](https://github.com/Khorsheed/dsh-learning) | `@khorsheed/dsh-learning-suite` | Library-style close reading, the reading space and local transcription — with "学习模式" (learning mode) |
 | [Gamedev Suite](https://github.com/Khorsheed/dsh-gamedev) | `@khorsheed/dsh-gamedev-suite` | Build small games with the agent, plus local-agent delegation — with "游戏开发模式" (game dev mode) |
-| [Eval Suite](https://github.com/Khorsheed/dsh-eval) | `@khorsheed/dsh-eval-suite` | Compare agents on this machine: question sets, experiments, judging and reports — with "评测模式" (eval mode) |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | — | The plugin monorepo: the capability map of every package and the development docs |
 
 ## Compatibility

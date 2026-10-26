@@ -2,9 +2,9 @@
 
 [English](README.en.md) | 中文
 
-**自学用的一整套工具：agent 当你的读书教练，一本书、一门课陪你读完；读到哪、哪里没懂、哪道题错过，它都替你记着。** 说想学什么，教练先问问你的底子，再帮你挑教材、排路线，你点头才算数；读的时候拍一页书，划线和页边批注自动变成卡片；学完一章做套小测，错题留到你订正对为止；今日页每天列好该继续的和该复习的；读完用自己的话写成画布上的卡片，写出来才算真懂；订阅、收藏的文章、视频和播客在 DSH 里读，划一句就记笔记，读完点一下让 agent 考考你；没字幕的视频和播客在你电脑上转成文字；要靠脚本才显示得出来的网页也能把正文抓下来……——自带「学习模式」，一次装齐。
+**自学用的一整套工具：agent 当你的读书教练，一本书、一门课陪你读完；读到哪、哪里没懂、哪道题错过，它都替你记着。** 说想学什么，教练先问问你的底子，再帮你挑教材、排路线，你点头才算数；读的时候拍一页书，划线和页边批注自动变成卡片；学完一章做套小测，错题留到你订正对为止；今日页每天列好该继续的和该复习的；订阅、收藏的文章、视频和播客在 DSH 里读，划一句就记笔记，读完点一下让 agent 考考你；没字幕的视频和播客在你电脑上转成文字；要靠脚本才显示得出来的网页也能把正文抓下来……——自带「学习模式」，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-learning-hero.png" width="1000" alt="学习模式的会话：左边是和读书教练的对话，右栏图书馆显示今天要继续学的、到期要复习的和每本教材的进度">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="1000" alt="学习模式的会话：左边是教练给出的判分结果表，右栏图书馆的今日页列出各个学习项目、今日复习里待订正的题和最近的变化">
 
 ## 安装
 
@@ -14,9 +14,9 @@
 @khorsheed/dsh-learning-suite
 ```
 
-一次装齐下面 5 个成员，装完重启 DSH 就能用。最好再装一个 `@khorsheed/dsh-basic`（基础体验），改消息、看文件这些日常功能在那里。
+一次装齐下面 4 个成员，装完重启 DSH 就能用。最好再装一个 `@khorsheed/dsh-basic`（基础体验），改消息、看文件这些日常功能在那里。
 
-装完开一个新会话，选「学习模式」，告诉教练你想学什么。这些功能只在学习模式的会话里出现，在其它模式里看不到是正常的（画布和灵感空间在写作模式里也有）。
+装完开一个新会话，选「学习模式」，告诉教练你想学什么。这些功能只在学习模式的会话里出现，在其它模式里看不到是正常的。
 
 ## 可以这样跟 agent 说
 
@@ -25,7 +25,6 @@
 - 「给第二章出一套小测。」
 - 「今天该复习什么？」
 - 「考考我昨天在灵感空间读的那篇文章。」
-- 「把这一节的要点用我的话写成一张画布卡，你帮我挑挑毛病。」
 
 教练是陪你读，不是替你读：会的跳过，薄弱的放慢；你不指定教材，它会挑一本现成的书或课程，实在没有合适的就自己编一份。
 
@@ -34,7 +33,6 @@
 | 插件 | 包名（复制即可安装） | 能力说明 |
 |---|---|---|
 | library | `@khorsheed/dsh-library` | 图书馆：右栏的学习台，排路线、拍页记笔记、章节小测、错题订正、每日复习 |
-| canvas | `@khorsheed/dsh-canvas` | 灵感画布：读完用自己的话写成卡片，把相关的卡连起来、圈成一组 |
 | dsh-reader | `@khorsheed/dsh-reader` | 灵感空间：订阅和收藏的文章、视频、播客在 DSH 里读，记笔记、带着笔记讨论、让 agent 考考你 |
 | transcribe | `@khorsheed/dsh-transcribe` | 本机转写：没字幕的视频、播客在你电脑上转成带时间的文字，还能分出谁在说话 |
 | capture | `@khorsheed/dsh-capture` | 渲染抓取：普通抓取拿不到正文的网页，在后台真打开一遍再把正文抓下来 |
@@ -43,33 +41,20 @@
 
 ### library：图书馆
 
-自学一本书，最烦的是没人管：进度自己排，笔记自己抄，题自己出，错题下次还没人提醒。告诉教练你在读哪本书，书名和版本说清楚就够，不用上传整本书；手边没书，也可以让它推荐一本。它照目录起草一版学习路线，你看着合适点「采用为本书路线」才生效。读到哪页拍一下，划线和页边批注自动变成卡片，不用手抄。每学完一章做套小测，题目从你划过的、问过的、做错的内容里出；选择填空当场出分，问答题教练来批。答错的题进「待订正」，订正对了才算掌握这个知识点。右栏的「今日」页把要订正的题、该复习的卡片列好，打开就知道今天干什么。
+自学一本书，最烦的是没人管：进度自己排，笔记自己抄，题自己出，错题下次还没人提醒。告诉教练你在读哪本书，书名和版本说清楚就够，不用上传整本书；也可以只说想学的领域，比如「从零学微积分，教材你帮我挑」，它照你的底子挑知识点和教材。它照目录起草一版学习路线，你看着合适点「采用为本书路线」才生效；之后跟着路线一站站过关，也可以挑感兴趣的站先学。读到哪页拍一下，划线和页边批注自动变成卡片，不用手抄。每学完一章做套小测，题目从你划过的、问过的、做错的内容里出；选择填空当场出分，问答题教练来批。答错的题进「待订正」，订正对了才算掌握这个知识点。右栏的「今日」页把要订正的题、该复习的卡片列好，打开就知道今天干什么。
 
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-today.png" width="840" alt="library:右栏「图书馆」的今日页，继续学习、今日复习和项目列表">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="840" alt="library:一本教材的路线页，14 站的学习路线，顶部是站过关和考点掌握进度，当前一站有「去订正 7 题」和「接着学这一站」">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/library-quiz.png" width="840" alt="library:章节小测，选择题和填空题当场判分，问答题交给教练批改">
-
-</details>
-
-### canvas：灵感画布
-
-读完一节，用自己的话写下来，最能看出哪里没懂。右栏的「画布」一个主题一块：卡片分灵感、问题、共识、来源、文档几类，能直接粘贴网页、表格和图片，还能随手画张草图。agent 在聊天里提的卡以虚线落在板上，点「收下」才留下，点「拒绝」就收进归档。切到「连线」，从一张卡拉线到另一张，再拖个框把相关的概念圈在一起；选中几张点「与 Agent 对谈」，卡的原文放进输入框，让它帮你挑挑毛病。灵感空间里的笔记也能同步过来，在任何地方选中一段文字，菜单里点「存为画布卡片」也能收进来。
-
-<details open>
-<summary>功能示意（2 张）</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-board.png" width="840" alt="canvas:右栏的画布，顶部一排画布标签，下面是按分类筛选的卡板，有灵感、问题、来源卡和一张虚线的提议卡">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-links.png" width="840" alt="canvas:连线面，卡片画成节点，节点之间有连线，几张卡被圈进一个带标题的分区框">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="840" alt="library:订正页，错题逐题列出，每题下面是作答框和「提交」「讲讲思路」「题有问题」">
 
 </details>
 
 ### dsh-reader：灵感空间
 
-课外读到的文章、看的视频和播客，也是学习的一部分。右栏的「灵感空间」把订阅源和你随手粘进来的链接收在同一面墙上，点开就在 DSH 里读正文；外文可以用浏览器自带的翻译逐句对照着看（要用支持它的桌面浏览器）。划选一句点「记笔记」，存下摘抄和你的评论；点「带着笔记讨论」，把笔记放进输入框和 agent 聊。读完点「让Agent考考我」：它当一个没读过的学生，一次问你几个「讲给我听」的问题，你一条消息答完，它对照原文只讲你没讲到位的地方，并记成一条笔记——不打分，想再练就再点一次。笔记点「同步到画布」就成了画布上的一张卡。YouTube、B 站视频和播客也能收进来，有字幕时字幕就是正文，点时间从那里播放。
+课外读到的文章、看的视频和播客，也是学习的一部分。右栏的「灵感空间」把订阅源和你随手粘进来的链接收在同一面墙上，点开就在 DSH 里读正文；外文可以用浏览器自带的翻译逐句对照着看（要用支持它的桌面浏览器）。划选一句点「记笔记」，存下摘抄和你的评论；点「带着笔记讨论」，把笔记放进输入框和 agent 聊。读完点「让Agent考考我」：它当一个没读过的学生，一次问你几个「讲给我听」的问题，你一条消息答完，它对照原文只讲你没讲到位的地方，并记成一条笔记——不打分，想再练就再点一次。YouTube、B 站视频和播客也能收进来，有字幕时字幕就是正文，点时间从那里播放。
 
 <details open>
 <summary>功能示意（2 张）</summary>
@@ -116,10 +101,8 @@
 |---|---|---|
 | [基础体验](https://github.com/Khorsheed/dsh-basic) | `@khorsheed/dsh-basic` | 改消息、撤回、会话产物预览、后台任务胶囊、压缩提醒、能力目录、移动端等日常体验，建议人人都装 |
 | [开发套件](https://github.com/Khorsheed/dsh-dev) | `@khorsheed/dsh-dev-suite` | 本地编码 agent 委派、协作间多 agent 协作、工作树实况、快速决策、重启守卫、上下文透镜，自带「开发模式」 |
-| [写作套件](https://github.com/Khorsheed/dsh-writing) | `@khorsheed/dsh-writing-suite` | 灵感画布、长篇小说、灵感空间、本机转写，自带「写作模式」 |
 | [剪辑套件](https://github.com/Khorsheed/dsh-video) | `@khorsheed/dsh-video-suite` | 混录分人、删字即删音频的剪辑台，可委派本地 agent，自带「剪辑模式」 |
 | [游戏开发套件](https://github.com/Khorsheed/dsh-gamedev) | `@khorsheed/dsh-gamedev-suite` | 和 agent 一起做小游戏，可委派本地 agent，自带「游戏开发模式」 |
-| [评测套件](https://github.com/Khorsheed/dsh-eval) | `@khorsheed/dsh-eval-suite` | 本机多个 agent 对照评测：题集、实验、判分与报告，自带「评测模式」 |
 | [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | — | 插件主仓：全部插件的能力地图与开发文档 |
 
 ## Compatibility
@@ -155,6 +138,6 @@ dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-learning-suite
 
 - **对话框**：设置 → 插件 → 添加插件，填包名（如 `@khorsheed/dsh-library`），按提示启用。
 - **命令行**：`dsh plugin --profile <profile> add <包名>`；卸载 `remove`，更新 `update`。
-- 灵感画布、灵感空间单独装时不受学习模式限制，在所有会话里都能用；图书馆要由学习模式授予，单装时侧栏不会出现，请装整个套件。
+- 灵感空间单独装时不受学习模式限制，在所有会话里都能用；图书馆要由学习模式授予，单装时侧栏不会出现，请装整个套件。
 
 </details>
