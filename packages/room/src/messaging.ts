@@ -153,7 +153,8 @@ export function envelopeLine(events: readonly SessionEvent[], seq: number): stri
   switch (dispatch.origin) {
     case 'human':
     case undefined:
-      return `【来自 你 · #${messageId(seq)}】`
+      // The human's own words need no envelope: an unmarked message is theirs.
+      return undefined
     case 'report': {
       // Plan bookkeeping reports (goal-start:/reconcile:) carry their own text.
       if (dispatch.reportFor === undefined || !/^\d+:/.test(dispatch.reportFor)) return undefined

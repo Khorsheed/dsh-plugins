@@ -153,7 +153,8 @@ function briefingSection(state: RoomState, member: RoomMember, instructions: str
     ...instructions === undefined ? [] : [`你的指令：${instructions}`],
     ...state.goal === undefined ? [] : [`房间目标：${state.goal}`],
     ...others.length === 0 ? [] : ['其他成员：', ...others],
-    `联系成员、派活用 ${member.kind === 'cli' ? 'member_message' : 'room_message'}，看房间现状和任务编号用 room_read，用法见工具说明。收到的消息开头标着来自谁和消息编号（#m12）；派给你的活，你这一轮的最终回复会自动回报给派活人，不用另外回复。`,
+    `联系成员、派活用 ${member.kind === 'cli' ? 'member_message' : 'room_message'}，看房间现状和任务编号用 room_read，用法见工具说明。成员发来的消息开头标着来自谁和消息编号（#m12），没有标注的是人发的；派给你的活，你这一轮的最终回复会自动回报给派活人，不用另外回复。`,
+    '要找房间外的会话帮忙（人在消息里 @ 的会话 `@[…](dsh-session:…)`，包括另一个协作间或它的成员），直接用 room_help，不要转给别的成员代问。',
     // A CLI reaches the room's tools (and its mode's) through an MCP server,
     // which some CLIs keep behind tool discovery rather than in the visible list.
     ...member.kind === 'cli' ? [`这些房间工具由名为 dsh-member 的 MCP 服务提供${member.preset === undefined ? '' : `，你挂的「${member.preset}」模式的插件工具也在这个服务里`}；没在工具列表里直接看到时，用工具发现查找 dsh-member 的工具。`, '需要人拍板或补充信息时，用 dsh-member 的 ask_user_question 把问题和选项发给人点选，不要把一串问题写在回复里；它会等人回答后把答案返回给你。'] : [],

@@ -187,30 +187,11 @@ function textBlocks(content: readonly { readonly type: string; readonly text?: s
 
 /**
  * What a new coordinator reads once, on its first round: who handed over,
- * the goal and open tasks, and the recent conversation as it happened —
- * the human's messages, the room agent's replies, members' replies and the
- * work handed out. Reports are left out: they repeat a member's reply.
+ * the goal and open tasks, and where to look. The conversation itself is
+ * not replayed — a member that was in the room has most of it already, and
+ * re-sending it cost a five-figure prompt; it reads the room when it needs to.
  */
-export function handoffText(events: readonly SessionEvent[], state: RoomState, sessionId: string, from: string, to: string): string {
-  const main = state.members.find(member => member.kind === 'main-agent')?.name ?? 'dsh'
-  const clip = (text: string): string => text.length > 1200 ? `${text.slice(0, 1200)}…` : text
-  const lines = events.flatMap((event): string[] => {
-    if (isHumanMessage(event)) {
-      const text = textBlocks(event.data.content)
-      return text === '' ? [] : [`你（人）：${clip(text)}`]
-    }
-    if (event.type === 'assistant/message') {
-      const text = textBlocks((event.data as { message?: { content?: readonly { type: string; text?: string }[] } }).message?.content ?? [])
-      return text === '' ? [] : [`${main}：${clip(text)}`]
-    }
-    if (event.type === 'room/speech') return [`${event.data.member}：${clip(event.data.text)}`]
-    if (event.type === 'room/dispatch' && event.data.origin !== 'report' && event.data.origin !== 'human') {
-      const senderId = event.data.from ?? event.data.replyTo
-      const sender = state.members.find(member => memberId(events, member) === senderId)?.name ?? main
-      return [`${sender} → ${event.data.targets.join('、')}：${clip(event.data.text)}`]
-    }
-    return []
-  }).slice(-16)
+export function handoffText(_events: readonly SessionEvent[], state: RoomState, sessionId: string, from: string, to: string): string {
   const open = (state.jobs ?? []).filter(job => job.status === 'running' || job.status === 'attention')
   return [
     `【协调者交接】${from} 把协调者交给了你（${to}）。从现在起，人发的不带 @ 的消息都由你来接。`,
@@ -218,7 +199,7 @@ export function handoffText(events: readonly SessionEvent[], state: RoomState, s
     state.goal === undefined ? '' : `房间目标：${state.goal}`,
     state.plan === undefined ? '' : `正式目标 ${state.plan.id}（第 ${state.plan.revision} 版）：${state.plan.objective}（${state.plan.status}）。尝试、证据、依赖和预算用 room_read 查看；保持当前的暂停状态。`,
     ...open.map(job => `进行中的任务 ${job.number}（${job.status === 'attention' ? '需要人处理' : '进行中'}）：${job.title}`),
-    lines.length === 0 ? '' : ['【最近的对话】', ...lines].join('\n'),
+    '之前的对话没有附上：需要时用 room_read，或打开房间会话自己看。',
   ].filter(Boolean).join('\n').slice(0, 16000)
 }
 
@@ -715,13 +696,13 @@ export class RoomService extends TypertRemoteService {
    * message runs instead of queueing behind a reconciliation. Formal-goal
    * attempts keep their explicit reconciliation.
    */
-  private moveOnFromLostRounds(session: Session, targets: readonly string[]): void {
+  private moveOnFromLostRounds(session: Session, targets: readonly string[], why = '你发了新消息；被重启打断的这一轮按没做完处理'): void {
     const events = session.snapshotEvents()
     const state = replay(events)
     const ids = new Set(state.members.filter(member => targets.includes(member.name)).map(member => memberId(events, member)))
     for (const row of state.deliveries ?? []) {
       if (row.status !== 'uncertain' || row.plan?.taskId !== undefined || !ids.has(row.memberId)) continue
-      session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: '你发了新消息；被重启打断的这一轮按没做完处理' })
+      session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: why })
       const run = state.runs.find(entry => entry.runId === row.id)
       if (run !== undefined) session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled', ...this.terminalRunStateFields(session, state, run.member) })
     }
@@ -1478,6 +1459,10 @@ export class RoomService extends TypertRemoteService {
       : other.state.members.find(entry => entry.name === help.target.member)
     if (member === undefined) return fail(help.target.member === undefined ? 'that room has no coordinator' : `that room has no member "${help.target.member}"`)
     const origin = { id: help.id, room: room.id, roomTitle: this.roomTitle(room), from: help.fromName }
+    // A round a restart left uncertain blocks the member's later work until a
+    // human reconciles it — silently, for a request from outside. Move on
+    // from it, as a human message to that member does.
+    this.moveOnFromLostRounds(other.session, [member.name], '另一个协作间来求助；被重启打断的这一轮按没做完处理')
     const sent = sendOrHold(other.session, {
       to: member, text, fromName: `${help.fromName}（${origin.roomTitle}）`,
       intent: { origin: 'help', hop: 1, kind: 'task', help: origin, ...op === 'request' ? { task: SELF_TASK } : {} },
