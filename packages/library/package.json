@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-library",
   "description": "Library and learning engine: project-organized close reading of registered books (no upload) — a per-book roadmap the coach drafts and the learner adopts, photographed pages whose marks become knowledge cards, cards that dedupe and track weakness, two-axis quizzes (what they target × what they rest on) and verdict-led unlocking — a Typert Remote data face, a right-Sidebar page tab, and the ./tool composition entry (library_read + one library_<noun> tool per write + library_assess) for agent presets",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
