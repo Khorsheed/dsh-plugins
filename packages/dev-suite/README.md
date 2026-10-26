@@ -37,7 +37,7 @@
 | local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | 把活交给本机的 Kimi Code，过程实时可见、可以续聊 |
 | local-agent-codex | `@khorsheed/dsh-local-agent-codex` | 把活交给本机的 Codex，过程实时可见、可以续聊 |
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | 把活交给本机的 Claude Code，过程实时可见、可以续聊 |
-| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | 把子任务交给另一个单独运行的 DSH；默认关着，在设置里打开 |
+| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | 把子任务交给另一个单独运行的 DSH；开发模式的会话里直接可用 |
 | worktrees | `@khorsheed/dsh-worktrees` | 会话顶上显示分支和改动行数，点开看待提交改动、提交记录和仓库文件 |
 | room | `@khorsheed/dsh-room` | 邀请几个 agent 进同一个会话分工，@ 谁派给谁，验收你说了算 |
 | typesafe | `@khorsheed/dsh-typesafe` | 「是不是」「选哪个」这类判断，拿回带把握程度的答案 |
@@ -48,7 +48,7 @@
 
 ### 本地 agent 委派：Kimi、Codex、Claude Code 和 DSH
 
-以前想让本机的 Codex 或 Claude Code 帮一把，得自己开终端、复制粘贴、再把结果搬回来。现在你说一句「交给 Codex」，它就在你电脑上跑起来：思考、工具调用和改了哪些文件实时出现在子会话里，可以中途停下，也可以打开子会话接着跟它聊；结果带着真实用量和耗时回到主会话。每家都在自己单独的目录里运行，你电脑上原来的配置和登录一点不碰。设置里的「本机 Agent 委派」卡片一眼看清每家有没有登录好，默认模型和常驻模式都在这里切；「本机 DSH 委派」默认关着，想把子任务交给另一个 DSH 时再打开。
+以前想让本机的 Codex 或 Claude Code 帮一把，得自己开终端、复制粘贴、再把结果搬回来。现在你说一句「交给 Codex」，它就在你电脑上跑起来：思考、工具调用和改了哪些文件实时出现在子会话里，可以中途停下，也可以打开子会话接着跟它聊；结果带着真实用量和耗时回到主会话。每家都在自己单独的目录里运行，你电脑上原来的配置和登录一点不碰。设置里的「本机 Agent 委派」卡片一眼看清每家有没有登录好，默认模型和常驻模式都在这里切；想把子任务交给另一个单独运行的 DSH，开发模式里直接说就行，不用另外打开。
 
 <details open>
 <summary>功能示意（5 张）</summary>
@@ -61,7 +61,7 @@
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="640" alt="展开的 Claude Code 一节：已登录的 Claude Code 和版本号，端点地址、API Key、Auth Token 和可用模型名单">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="640" alt="展开的 DSH 一节：凭据沿用当前 DSH，「DeepSeek 委派」开关已打开，默认模型选择和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="640" alt="「本机 Agent 委派」卡片里展开的「本机 DSH 委派」一节：已登录（0.2.1-rc.1），凭据走宿主实例、无需单独登录，默认模型选的是 DeepSeek-V4.1-Flash，常驻模式（live）开着">
 
 </details>
 

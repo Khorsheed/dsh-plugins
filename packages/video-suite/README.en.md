@@ -38,7 +38,7 @@ Before you start: you need ffmpeg on your computer, and the first transcription 
 | local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Hand part of a big job to Kimi Code on your machine |
 | local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Hand part of a big job to Codex on your machine |
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Hand part of a big job to Claude Code on your machine |
-| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Hand a subtask to a separate DSH running on its own; off by default, turn it on in settings |
+| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Hand a subtask to a separate DSH running on its own; ready to use in Video mode sessions |
 | room | `@khorsheed/dsh-room` | Bring several agents into one session to work on an episode together |
 | typesafe | `@khorsheed/dsh-typesafe` | Quick decisions: how the room decides on its own whether a new message joins an open task and when members' results are reported together |
 
@@ -67,7 +67,7 @@ This is what Studio's speaker separation and transcription run on: it turns a lo
 
 ### Local agent delegation: Kimi, Codex, Claude Code and DSH
 
-When there's a lot to do, say "give this part to Codex" and it runs on your machine, with the process streaming into a sub-session; you can stop it midway, or open the sub-session and keep talking to it, and the result comes back to your main session with real usage and timing. Each tool runs in its own separate directory, so your existing setup and sign-ins are never touched. The "Local Agent Delegation" card in settings shows at a glance whether each one is signed in, and it's where you switch the default model; "Local DSH Delegation" is off by default — turn it on when you need it.
+When there's a lot to do, say "give this part to Codex" and it runs on your machine, with the process streaming into a sub-session; you can stop it midway, or open the sub-session and keep talking to it, and the result comes back to your main session with real usage and timing. Each tool runs in its own separate directory, so your existing setup and sign-ins are never touched. The "Local Agent Delegation" card in settings shows at a glance whether each one is signed in, and it's where you switch the default model; to hand work to a separate DSH running on its own, just ask in a Video mode session — nothing to switch on.
 
 <details open>
 <summary>Screenshots (2)</summary>

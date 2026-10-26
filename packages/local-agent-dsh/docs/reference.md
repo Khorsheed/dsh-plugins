@@ -6,7 +6,7 @@
 
 把任务委派给 dsh 自己——一个跑在隔离 home 里、可跨轮续接的无头子 dsh，与 kimi / codex / claude-code harness 平级。
 
-有些子任务值得一个完整而隔离的 dsh 实例：评测对照、独立的会话历史、自己的权限边界——同时绝不碰当前实例的状态。这个插件 spawn 一个子 dsh headless CLI：它在自己的 scoped home 下运行（profile、会话、状态全独立），继承父实例中所选模型的 API-key 路线，会话 id 由调用方指定、可跨轮续接。默认什么都不挂——在设置卡片上打开「DeepSeek 委派」开关后，模型才看得到 `subagent_dsh` 工具。
+有些子任务值得一个完整而隔离的 dsh 实例：评测对照、独立的会话历史、自己的权限边界——同时绝不碰当前实例的状态。这个插件 spawn 一个子 dsh headless CLI：它在自己的 scoped home 下运行（profile、会话、状态全独立），继承父实例中所选模型的 API-key 路线，会话 id 由调用方指定、可跨轮续接。harness 始终注册；`subagent_dsh` 是本包的 `./tool` 组合入口，由开发 / 游戏开发 / 剪辑模式的预设按会话授予——这些模式的会话里模型才看得到它。
 
 ## 特性
 
@@ -14,7 +14,7 @@
 - **Scoped home 隔离**——子 dsh 自己的 `DSH_HOME`（`$DSH_HOME/local-agent/dsh`）：profile、会话与状态绝不混入父实例。
 - **跨轮续接**——子会话 id 由调用方指定（`session-<uuid>`，绝不从 stdout 解析），后续轮传回即经 `--resume` 续接同一个子 dsh 会话。
 - **无需单独登录**——子 dsh 读取父实例所选模型的凭据引用，无单独登录流程；`/dsh status` 报告凭据是否可解析。
-- **DeepSeek 委派开关，默认关**——开关打开之前模型看不到任何委派工具，委派只走官方内置子代理；开关经 settings watcher 实时翻转，无需重载。
+- **工具随模式授予**——2026-10-27 起去掉了「DeepSeek 委派」开关；没有授予 `./tool` 的会话看不到委派工具，委派只走官方内置子代理。
 - **过程实时可见**——子 dsh 的增量输出逐事件镜像进父会话的子代理面，settle 时再以文件镜像对账。
 - **模型回读与独立工作目录**——每轮从子会话事件的 source 回读实际模型（`provider/model`），并数出本轮工具调用计数，一并写进委派记录；编排器可用 `cwd` 选项给每格独立目录，resume 换目录即拒绝。
 - **评测就绪的供给**——命名 scope、按 scope 的 preset（0.2.0 声明式 preset 包）、`permissions` 权限边界、容器内委派（`docker exec`），全部经幂等的子 profile provisioning 落地。
@@ -27,7 +27,7 @@
 dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-dsh
 ```
 
-重启后在 core 的「本机 Agent 委派」家族卡的 dsh 一节（Plugins 页；旧版 core 上为本包自己的 `plugins.item` 卡）打开「DeepSeek 委派」开关。无需登录步骤；`/dsh status` 报告父级的 `DEEPSEEK_API_KEY` 凭据是否可解析。
+重启后即可在开发 / 游戏开发 / 剪辑模式的会话里使用；默认模型与常驻模式在 core 的「本机 Agent 委派」家族卡的 dsh 一节（Plugins 页）设置。无需登录步骤；`/dsh status` 报告父级的 `DEEPSEEK_API_KEY` 凭据是否可解析。
 
 tarball 安装（npm 上未发布的家族包）需要在 profile 的 `pnpm-workspace.yaml` 里把各家族包名 `overrides:` 钉到 `file:` tarball——tarball 内的家族边是 registry range，钉版让 headless 等成员以**传递**依赖解析（headless 自身不声明 `dsh.bundle`，即便被误装成直接依赖也不会被挂进组合，但无需如此）。
 

@@ -6,7 +6,7 @@
 
 有些子任务你想让一个干净的 DSH 来做：不带当前会话的上下文，有自己的会话记录，也不会动到你正在用的这个实例。装上之后，在开发、游戏开发、剪辑这几个模式的会话里，agent 就能把这类子任务交给本机另起的一个 DSH；它的输出实时出现在子会话里，跑完把结果带回来，之后还能在同一个子会话里接着干。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="560" alt="展开的 DSH 一节：凭据沿用当前 DSH，默认模型选择和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="560" alt="「本机 Agent 委派」卡片里展开的「本机 DSH 委派」一节：已登录（0.2.1-rc.1），凭据走宿主实例、无需单独登录，默认模型选的是 DeepSeek-V4.1-Flash，常驻模式（live）开着">
 
 ## 能做什么
 

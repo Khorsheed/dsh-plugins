@@ -42,7 +42,7 @@
 | local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | 让本机的 Kimi Code 参赛 |
 | local-agent-codex | `@khorsheed/dsh-local-agent-codex` | 让本机的 Codex 参赛 |
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | 让本机的 Claude Code 参赛 |
-| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | 让另一个单独运行的 DSH 参赛；默认关着，在设置里打开 |
+| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | 让另一个单独运行的 DSH 参赛；装上就能用 |
 
 ## 功能展示
 
@@ -91,7 +91,7 @@
 
 ### 本地 agent 委派：Kimi、Codex、Claude Code 和 DSH
 
-被比较的就是它们。每家都是你电脑上自己装的那个工具，在单独的目录里运行，你原来的配置和登录一点不碰；同一家还能登录几份账号，在同一次实验里互相比。做题的过程实时出现在子会话里，结果带着真实用量、耗时和实际用上的模型回来，评测拿这些核对条件是否一致。设置里的「本机 Agent 委派」卡片一眼看清每家有没有登录好，默认模型也在这里切；「本机 DSH 委派」默认关着，要让 DSH 自己参赛时再打开。
+被比较的就是它们。每家都是你电脑上自己装的那个工具，在单独的目录里运行，你原来的配置和登录一点不碰；同一家还能登录几份账号，在同一次实验里互相比。做题的过程实时出现在子会话里，结果带着真实用量、耗时和实际用上的模型回来，评测拿这些核对条件是否一致。设置里的「本机 Agent 委派」卡片一眼看清每家有没有登录好，默认模型也在这里切；另一个单独运行的 DSH 装上就能参赛，不用另外打开。
 
 <details open>
 <summary>功能示意（4 张）</summary>

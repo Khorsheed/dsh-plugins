@@ -28,7 +28,7 @@ Handing work off and inviting agents into a room happen in a mode that grants th
 | local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Hand work to the local Kimi Code; watch it live, keep the conversation going |
 | local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Hand work to the local Codex; watch it live, keep the conversation going |
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Hand work to the local Claude Code; thinking and replies stream back, every call's usage recorded |
-| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Hand subtasks to a second, separately running DSH; off by default, switch it on on the card |
+| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Hand subtasks to a second, separately running DSH; ready to use in Dev, Game Dev and Video mode sessions |
 | room | `@khorsheed/dsh-room` | The room (协作间): turn a session into a small team, @ someone to assign work, you decide acceptance |
 | typesafe | `@khorsheed/dsh-typesafe` | Quick decisions: how the room decides on its own whether a new message joins an open task and when members' results are reported together |
 | context-lens | `@khorsheed/dsh-context-lens` | Context Lens: click any turn to see what the model (each member included) received and where tokens and time went |

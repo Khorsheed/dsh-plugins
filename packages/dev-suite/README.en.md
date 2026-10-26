@@ -37,7 +37,7 @@ Before you start: Kimi, Codex and Claude Code have to be installed by you; this 
 | local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Hand work to Kimi Code on your machine, watch it live, keep the conversation going |
 | local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Hand work to Codex on your machine, watch it live, keep the conversation going |
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Hand work to Claude Code on your machine, watch it live, keep the conversation going |
-| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Hand a subtask to a separate DSH running on its own; off by default, turn it on in settings |
+| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Hand a subtask to a separate DSH running on its own; ready to use in Dev mode sessions |
 | worktrees | `@khorsheed/dsh-worktrees` | The branch and changed lines in the session header; open it for pending changes, commit history and repo files |
 | room | `@khorsheed/dsh-room` | Invite several agents into one session, @ whoever takes the work, acceptance is yours |
 | typesafe | `@khorsheed/dsh-typesafe` | Yes/no and pick-one calls come back as answers with a confidence attached |
@@ -48,7 +48,7 @@ Before you start: Kimi, Codex and Claude Code have to be installed by you; this 
 
 ### Local agent delegation: Kimi, Codex, Claude Code and DSH
 
-Getting your local Codex or Claude Code to help used to mean opening a terminal, copy-pasting, and carrying the result back. Now you say "give this to Codex" and it runs on your machine: its thinking, tool calls and the files it touches stream into a sub-session, you can stop it midway, or open the sub-session and keep talking to it; the result comes back to your main session with real usage and timing. Each tool runs in its own separate directory, so your existing setup and sign-ins on this machine are never touched. The "Local Agent Delegation" card in settings shows at a glance whether each one is signed in, and it's where you switch the default model and always-on mode. "Local DSH Delegation" is off by default; turn it on when you want to hand subtasks to another DSH.
+Getting your local Codex or Claude Code to help used to mean opening a terminal, copy-pasting, and carrying the result back. Now you say "give this to Codex" and it runs on your machine: its thinking, tool calls and the files it touches stream into a sub-session, you can stop it midway, or open the sub-session and keep talking to it; the result comes back to your main session with real usage and timing. Each tool runs in its own separate directory, so your existing setup and sign-ins on this machine are never touched. The "Local Agent Delegation" card in settings shows at a glance whether each one is signed in, and it's where you switch the default model and always-on mode. To hand subtasks to a separate DSH running on its own, just ask in a Dev mode session — nothing to switch on.
 
 <details open>
 <summary>Screenshots (5)</summary>
@@ -61,7 +61,7 @@ Getting your local Codex or Claude Code to help used to mean opening a terminal,
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="640" alt="The expanded Claude Code section: Claude Code signed in with its version, endpoint, API key, Auth Token and the available-models list">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="640" alt="The expanded DSH section: credentials follow the current DSH, the "DeepSeek delegation" switch on, the default-model picker and the resident-mode switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="640" alt="The “Local Agent Delegation” card with the “Local DSH Delegation” section open: signed in (0.2.1-rc.1), credentials taken from the host instance with no separate login, DeepSeek-V4.1-Flash as the default model, and resident mode (live) on">
 
 </details>
 

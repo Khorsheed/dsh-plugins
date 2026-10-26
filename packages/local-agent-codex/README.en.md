@@ -15,7 +15,7 @@ Some jobs you simply want Codex to do, and that used to mean running it in a ter
 - **Keep talking, even after a restart**: have the agent follow up, or open the sub-session and message Codex yourself; it's the same Codex thread, and it picks up again after DSH restarts.
 - **Paste a key and go**: enter the endpoint and API key on the settings card (an official platform key or a relay key), press "Save credential", then "Verify endpoint & list models" to check it connects.
 - **Pick your models**: under "Available models", tick and drag to reorder; the top one is the default. You can also switch model and reasoning effort inside a sub-session.
-- **Resident mode is faster**: turn on "Resident mode (live)" and the Codex process stays up, streaming output into the sub-session; stopping doesn't kill it, and after a crash it resumes the same thread.
+- **Resident mode is faster**: "Resident mode (live)" is on by default and the Codex process stays up, streaming output into the sub-session; stopping doesn't kill it, and after a crash it resumes the same thread.
 
 ## Install
 

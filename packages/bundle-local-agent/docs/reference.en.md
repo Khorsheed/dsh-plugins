@@ -26,7 +26,7 @@ One conversation, many agents: the mainline agent judges which task fits which h
 | `@khorsheed/dsh-local-agent-kimi` | `local-agent-kimi` | Kimi CLI harness; the `subagent_kimi` delegation tool is the package's `./tool` composition entry, granted by a preset that names it |
 | `@khorsheed/dsh-local-agent-codex` | `local-agent-codex` (+ override `tool-subagent-codex`) | Codex CLI harness; the `subagent_codex` delegation tool is the package's `./tool` composition entry, granted by a preset that names it |
 | `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code` (+ override `tool-subagent-claude-code`) | Claude Code harness; the `subagent_claude_code` delegation tool is the package's `./tool` composition entry, granted by a preset that names it |
-| `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | the dsh harness controller (Settings → 本地 Agent switch, off by default; mounts `subagent_dsh` dynamically while ON) |
+| `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | the dsh harness controller (always registered; `subagent_dsh` is this package's `./tool` entry, granted per session by the Dev / Game Dev / Video presets) |
 | `@khorsheed/dsh-room` | `room` | the room (协作间): multi-member rooms whose members come from the local agents above and native dsh sub-members; its model-facing tools are the package's `./tool` composition entry, granted by a preset that names it |
 | `@khorsheed/dsh-context-lens` | `context-lens` | Context Lens: per-turn request breakdown and timing, sub-agents listed separately; the row is identical to the Dev Suite's |
 
@@ -40,7 +40,7 @@ Card-less library (deps-only: in `dependencies`, no patch rows of its own): `@kh
 dsh plugin --profile web add @khorsheed/dsh-bundle-local-agent
 ```
 
-Restart the web instance to activate. Once mounted, every family row is in place: each provider's CLI login runs through its own `/<harness> login` command (e.g. `/kimi login`); the dsh harness stays off until the Settings → 本地 Agent switch is flipped.
+Restart the web instance to activate. Once mounted, every family row is in place: each provider's CLI login runs through its own `/<harness> login` command (e.g. `/kimi login`); the dsh harness needs no login and is always available; `subagent_dsh` appears only in sessions of a mode that grants it.
 
 ```sh
 dsh plugin --profile web remove @khorsheed/dsh-bundle-local-agent

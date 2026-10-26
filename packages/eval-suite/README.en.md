@@ -42,7 +42,7 @@ Before you start: the tools being compared (Kimi, Codex, Claude Code) have to be
 | local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Put Kimi Code on your machine into the comparison |
 | local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Put Codex on your machine into the comparison |
 | local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Put Claude Code on your machine into the comparison |
-| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Put a separate DSH running on its own into the comparison; off by default, turn it on in settings |
+| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Put a separate DSH running on its own into the comparison; ready once installed |
 
 ## Feature tour
 
@@ -91,7 +91,7 @@ A comparison is meant to compare agents, not environments. If one cell had an ex
 
 ### Local agent delegation: Kimi, Codex, Claude Code and DSH
 
-These are what you're comparing. Each is the tool you installed yourself, running in its own separate directory, so your existing setup and sign-ins are never touched; one tool can even be signed in with several accounts and compared against itself in the same experiment. The work streams into a sub-session as it happens, and results come back with real usage, timing and the model actually used, which eval uses to check that conditions matched. The "Local Agent Delegation" card in settings shows at a glance whether each one is signed in, and it's where you switch the default model; "Local DSH Delegation" is off by default — turn it on when DSH itself should compete.
+These are what you're comparing. Each is the tool you installed yourself, running in its own separate directory, so your existing setup and sign-ins are never touched; one tool can even be signed in with several accounts and compared against itself in the same experiment. The work streams into a sub-session as it happens, and results come back with real usage, timing and the model actually used, which eval uses to check that conditions matched. The "Local Agent Delegation" card in settings shows at a glance whether each one is signed in, and it's where you switch the default model; a separate DSH running on its own can compete as soon as it is installed — nothing to switch on.
 
 <details open>
 <summary>Screenshots (4)</summary>
