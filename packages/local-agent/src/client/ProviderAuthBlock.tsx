@@ -217,8 +217,10 @@ export function ProviderAuthBlock({ harness, useSessions, status, runCommand, ac
   // A harness without a login/logout flow (dsh authenticates through the host
   // credentials) must not offer the actions its command family would answer
   // with an error.
-  const loginable = view.loginable ?? true
-  const logoutable = view.logoutable ?? true
+  // An unreadable status says nothing about the harness's login flow (dsh has
+  // none): offer no action until a probe answers.
+  const loginable = view.loginable ?? statusKind !== 'unavailable'
+  const logoutable = view.logoutable ?? statusKind !== 'unavailable'
 
   return (
     <>
@@ -237,7 +239,7 @@ export function ProviderAuthBlock({ harness, useSessions, status, runCommand, ac
           {statusKind === 'checking' && t('loading')}
           {statusKind === 'authenticated' && t('settings.authenticated')}
           {statusKind === 'anonymous' && t('settings.notAuthenticated')}
-          {statusKind === 'unavailable' && t('error')}
+          {statusKind === 'unavailable' && t('settings.statusFailed')}
         </span>
         <span className={css.rowActions}>
           {authenticated && logoutable && (
