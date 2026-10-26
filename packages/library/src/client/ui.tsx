@@ -10,6 +10,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { LibraryOutcome, LibraryResourceOrigin } from '../types.ts'
 import type { LibraryPaneProps } from './contract.ts'
+import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { IconCheckOutlineMedium } from './icons.tsx'
 import css from './LibraryPane.module.css'
 
 /** What every view receives. */
@@ -117,13 +119,16 @@ export function OriginTag({ origin, digital, t }: { origin: LibraryResourceOrigi
 }
 
 /**
- * The destructive-action confirm: an overlay over the pane, the consequence
- * spelled out (what goes, what stays), a red confirm button. Esc and the
- * scrim cancel; focus starts on 取消 so a stray Enter never deletes.
+ * The destructive-action confirm, on the host's own Modal (the blurred mask,
+ * the title bar with its close button, outline buttons — what the host's
+ * archive confirm uses): what goes as a grouped list with each count set
+ * off, what stays with a check, a red-text confirm. Esc, the mask and the
+ * close button cancel (not while busy); focus starts on 取消 so a stray
+ * Enter never deletes.
  */
 export function ConfirmDialog({ title, lines, keep, note, confirmLabel, cancelLabel, busy, error, onConfirm, onCancel }: {
   title: string
-  /** What the action removes, one consequence per line. */
+  /** What the action removes, one consequence per line (a leading count is set off). */
   lines: readonly string[]
   /** What survives it. */
   keep?: string | undefined
@@ -136,25 +141,38 @@ export function ConfirmDialog({ title, lines, keep, note, confirmLabel, cancelLa
   onCancel: () => void
 }): ReactNode {
   const cancelRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    cancelRef.current?.focus()
-    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') onCancel() }
-    window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('keydown', onKey) }
-  }, [])
+  useEffect(() => { cancelRef.current?.focus() }, [])
+  const close = (): void => { if (!busy) onCancel() }
   return (
-    <div className={css.scrim} onClick={event => { if (event.target === event.currentTarget && !busy) onCancel() }}>
-      <div className={css.dialog} role="alertdialog" aria-modal="true" aria-label={title}>
-        <div className={css.dialogTitle}>{title}</div>
-        {lines.length > 0 && <ul className={css.dialogList}>{lines.map(line => <li key={line}>{line}</li>)}</ul>}
-        {keep !== undefined && <div className={css.dialogKeep}>{keep}</div>}
-        {note !== undefined && <div className={css.muted}>{note}</div>}
+    <Modal
+      open
+      onClose={close}
+      closeLabel={cancelLabel}
+      title={title}
+      footer={(
+        <>
+          <Button ref={cancelRef} variant="outline" disabled={busy} onClick={close}>{cancelLabel}</Button>
+          <Button variant="outline" className={css.dialogDanger} disabled={busy} onClick={onConfirm}>{confirmLabel}</Button>
+        </>
+      )}
+    >
+      <div className={css.dialogBody}>
+        {lines.length > 0 && (
+          <ul className={css.dialogList}>
+            {lines.map(line => {
+              const counted = /^(\d+)\s*(.*)$/.exec(line)
+              return (
+                <li key={line} className={css.dialogRow}>
+                  {counted === null ? line : <><b className={css.dialogCount}>{counted[1]}</b><span>{counted[2]}</span></>}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+        {keep !== undefined && <div className={css.dialogKeep}><IconCheckOutlineMedium size={14} />{keep}</div>}
+        {note !== undefined && <div className={css.dialogNote}>{note}</div>}
         {error !== undefined && <div className={css.error}>{error}</div>}
-        <div className={css.dialogActions}>
-          <button ref={cancelRef} type="button" className={css.ghost} disabled={busy} onClick={onCancel}>{cancelLabel}</button>
-          <button type="button" className={css.danger} disabled={busy} onClick={onConfirm}>{confirmLabel}</button>
-        </div>
       </div>
-    </div>
+    </Modal>
   )
 }

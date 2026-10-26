@@ -1921,59 +1921,53 @@ textarea.input { resize: vertical; font: inherit; line-height: 1.5; }
 }
 
 /* 删除确认：盖在面板上的确认框，写清会删掉什么、保留什么 */
-.scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
+.dialogBody {
   display: grid;
-  place-items: center;
-  padding: 16px;
-  background: color-mix(in srgb, var(--dsw-alias-label-primary) 35%, transparent);
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
-.dialog {
-  display: grid;
-  gap: 10px;
-  width: 100%;
-  max-width: 420px;
-  padding: 16px;
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-1);
-  box-shadow: 0 10px 32px color-mix(in srgb, var(--dsw-alias-label-primary) 25%, transparent);
-}
-
-.dialogTitle {
-  font-size: var(--dsh-panel-text-title, 14px);
-  font-weight: 650;
-}
-
+/* 会删掉的东西：一组带分隔线的行，数量单独加粗 */
 .dialogList {
   display: grid;
-  gap: 2px;
   margin: 0;
-  padding-left: 18px;
+  padding: 0;
+  list-style: none;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 6%, var(--dsw-alias-bg-layer-1));
+  border: 0.5px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 18%, transparent);
+}
+
+.dialogRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
   color: var(--dsw-alias-label-secondary);
-  font-size: var(--dsh-panel-text-meta, 12px);
+}
+
+.dialogRow + .dialogRow { border-top: 0.5px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent); }
+
+.dialogCount {
+  min-width: 1.5em;
+  color: var(--dsw-alias-label-primary);
+  font-size: 15px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .dialogKeep {
-  color: var(--lib-ok);
-  font-size: var(--dsh-panel-text-meta, 12px);
-}
-
-.dialogActions {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
+  color: var(--lib-ok);
 }
 
-.dialogActions .danger {
-  border-color: var(--lib-bad);
-  background: var(--lib-bad);
-  color: var(--dsw-alias-label-primary-inverted);
-}
+.dialogNote { color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary)); font-size: 12px; }
 
-.dialogActions .danger:hover:not(:disabled) { background: color-mix(in srgb, var(--lib-bad) 88%, var(--dsw-alias-label-primary)); }
+.dialogDanger:not(:disabled) { color: var(--dsw-alias-state-error-primary); }
 
 /* 教材来源标记 */
 .originTag {
