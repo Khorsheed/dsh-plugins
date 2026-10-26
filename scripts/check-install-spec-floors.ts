@@ -2,7 +2,8 @@
 /**
  * Install-spec floor checker — keeps the README install specs honest.
  *
- * Why: the profile-pack READMEs (dsh-basic / dsh-dev) tell users to install
+ * Why: README install tables (the suite front pages, historically the retired
+ * dsh-basic / dsh-dev profile packs) may tell users to install
  * `@khorsheed/dsh-*@^<floor>` specs whose floor is the first version compatible
  * with the current host line. The floor defeats pnpm 11's default 24-hour
  * `minimumReleaseAge` gate (a floored spec auto-exempts; a bare name silently
@@ -71,13 +72,19 @@ export function workspaceVersions(): Map<string, string> {
   return versions
 }
 
-/** Profile-pack READMEs (both languages) are the install-spec surface. */
+/** The install-spec surface (both languages): every package README — the
+ * suite packages' READMEs are their mirror repos' front pages — plus the
+ * READMEs of the integration profiles that remain under `profiles/`. */
 function readmes(): string[] {
   const files: string[] = []
-  for (const profile of readdirSync(join(root, 'profiles'))) {
-    for (const name of ['README.md', 'README.en.md']) {
-      const path = join(root, 'profiles', profile, name)
-      try { readFileSync(path); files.push(path) } catch { /* absent */ }
+  for (const base of ['packages', 'profiles']) {
+    let dirs: string[] = []
+    try { dirs = readdirSync(join(root, base)) } catch { continue }
+    for (const dir of dirs) {
+      for (const name of ['README.md', 'README.en.md']) {
+        const path = join(root, base, dir, name)
+        try { readFileSync(path); files.push(path) } catch { /* absent */ }
+      }
     }
   }
   return files

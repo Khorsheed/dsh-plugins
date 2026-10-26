@@ -26,8 +26,8 @@ scratch-*
 .dsh-lab-state/
 
 # Debug screenshots are scratch and stay untracked; doc-referenced images in
-# docs/screenshots/ and profiles/*/docs/screenshots/ are the deliberate
-# exception (git add -f).
+# docs/screenshots/ and packages/basic/docs/screenshots/ (the README image
+# host, mirrored to dsh-basic) are the deliberate exception (git add -f).
 *.png
 *.jpg
 *.jpeg

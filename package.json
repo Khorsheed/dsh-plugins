@@ -16,7 +16,7 @@
     "verify-translation-pairing": "tsx scripts/verify-translation-pairing.mts",
     "check:hygiene": "tsx scripts/check-repo-hygiene.ts",
     "check:install-specs": "tsx scripts/check-install-spec-floors.ts",
-    "sync:profile": "tsx scripts/sync-profile-mirror.mts",
+    "sync:mirror": "tsx scripts/sync-mirror.mts",
     "check:plugins": "tsx scripts/check-plugin-independence.ts",
     "check:panels": "tsx scripts/check-panels.ts",
     "check:profiles": "tsx scripts/check-profile-bundles.ts",

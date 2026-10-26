@@ -255,8 +255,6 @@ describe('the real tree', () => {
   it('loads every checked-in profile', () => {
     const profiles = loadProfiles(repoRoot)
     expect(profiles.map(p => p.path).sort()).toEqual([
-      'profiles/basic/package.json',
-      'profiles/dev/package.json',
       'profiles/eval/package.json',
     ])
   })

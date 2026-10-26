@@ -11,6 +11,8 @@ Status: implemented
 
 ## 决定
 
+> 2026-10-26 起这套图移到了 `packages/basic/docs/screenshots/`,dsh-basic 镜像改从 `packages/basic` 同步,`profiles/basic` 已删除;规则不变,见[套件镜像单一来源](2026-10-26-suite-mirrors-single-source.zh.md)。下文的 `profiles/basic` 是当时的路径。
+
 包 README 截图的持久归宿是本仓的 **`profiles/basic/docs/screenshots/`,用 `git add -f` 跟踪**(图片扩展名被 gitignore)。镜像同步会从那里把它带进 dsh-basic,raw URL 在 sync 之后依然存活。直接拷进镜像仓照做(让 URL 在下一次 sync 前就能用),但它不再是事实源。仓库根的 `docs/screenshots/` 继续为本地引用图片的文档页和 Agent Note 保留自己的副本。
 
 owner 提供的十五张截图(Desktop `截图/`)已映射到现有 README 引用——README 规划的文件名与源图不一致时做了改名(`local-agent-chat.png` → `local-agent-member.png`、`local-agent-member.png` → `room-2.png`、`room.png` → `room-invite.png` 等);凡是截图不存在的 README `img` 行一律**删除,不留 404**(capability-catalog 的详情弹窗图与 MCP 图、reader-3、inline-html-card-2、codex 委派镜像图、kimi sessions、local-agent-dsh 设置卡、bundle-conversation-toolbox 卡、ui-content-preview 两张、mobile 两张、typesafe-tool 凭据图,以及 datasets 的 HTML 注释占位)。与实图不符的 alt(capability-catalog 的「三列」、inline-html 的「设计 token 对照卡片」、quote-2 的 composer 说法)已按真实图像重写。哪个被删的槽位要紧,补拍后把那一行加回来即可——引用样式是每处一行 `<img width="640">`。

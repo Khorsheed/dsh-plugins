@@ -86,8 +86,8 @@ jobs:
       - name: Script tests (checkers' own specs)
         run: pnpm run test:scripts
 
-      - name: Profile mirror check
-        run: pnpm run sync:profile basic --check
+      - name: Suite mirror check (dsh-basic)
+        run: pnpm run sync:mirror package basic --check
 
       - name: Doc gates
         run: |

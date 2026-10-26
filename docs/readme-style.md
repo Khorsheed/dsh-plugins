@@ -42,4 +42,4 @@ README 是用户（和 agent）认识一个插件的第一页：读完几十秒�
 ## 截图
 
 - 每个插件 1–3 张，地址统一为 `https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/<文件>.png`，`width="640"`，`alt` 写清画面里能看到什么。
-- 图放在 `profiles/basic/docs/screenshots/`，用 `git add -f` 提交，同步到 dsh-basic 镜像后生效。图是 npm 页面实时拉取的，发布之后再补也会显示。
+- 图放在 `packages/basic/docs/screenshots/`，用 `git add -f` 提交，同步到 dsh-basic 镜像后生效。图是 npm 页面实时拉取的，发布之后再补也会显示。

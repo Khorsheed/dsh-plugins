@@ -32,7 +32,7 @@ This repo is public — a hygiene check runs on every commit (`.githooks/pre-com
 
 Checked: **absolute local paths** (`/Users/<name>/…`, `C:\Users\…`; the `/home/user` fixture placeholder is allowed), **credential-shaped strings**, and **tooling/scratch state** that must stay ignored (`.playwright-mcp/`, `scratch-*`, `*.tsbuildinfo`, `*.log`, `.DS_Store`, `node_modules/`, package `lib/`, `.env`). Sanitize machine-specific fixtures to `/home/user/…`; keep the checker's spec green via `pnpm test:scripts`.
 
-Debug screenshots are scratch: image extensions (`*.png`, `*.jpg`, `*.gif`, `*.webp`) are gitignored, so they never enter a commit — delete them when the debugging session ends. Deliberate exceptions, both committed with `git add -f`: doc images in `docs/screenshots/`; package README screenshots in `profiles/basic/docs/screenshots/` (npm renders them from the dsh-basic mirror's raw URLs; the mirror sync wipes anything untracked there).
+Debug screenshots are scratch: image extensions (`*.png`, `*.jpg`, `*.gif`, `*.webp`) are gitignored, so they never enter a commit — delete them when the debugging session ends. Deliberate exceptions, both committed with `git add -f`: doc images in `docs/screenshots/`; package README screenshots in `packages/basic/docs/screenshots/` (npm renders them from the dsh-basic mirror's raw URLs; that mirror syncs from `packages/basic` and wipes anything untracked there; the npm tarball does not ship them — `docs/` is outside `files`).
 
 `pnpm check:plugins` (`scripts/check-plugin-independence.ts`) mechanically enforces the package conventions below; its spec re-runs it against the real tree, so `pnpm test:scripts` fails on a violation.
 
