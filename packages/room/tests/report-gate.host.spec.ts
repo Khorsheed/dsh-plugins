@@ -130,6 +130,39 @@ describe('report gate in the room', () => {
     expect(decisions[1]).not.toHaveProperty('call')
   })
 
+  it('a last result arriving while an earlier one is still being judged waits for that judgement, then carries it', async () => {
+    const bench = await boot(0.1)
+    // The decision model takes its time on ada's report.
+    const slow = deferred<void>()
+    bench.judge.mockImplementationOnce(async () => {
+      await slow.promise
+      return { ok: true, judgement: { decisions: [{ id: 'deliver_now', answer: 0.1 }] } }
+    })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill' })
+    await bench.service.messageMember({ sessionId: bench.sessionId, member: 'ada', text: '打招呼' })
+    await bench.service.messageMember({ sessionId: bench.sessionId, member: 'bill', text: '打招呼' })
+    await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledTimes(2))
+
+    bench.flights.get('kimi')!.resolve(finish('我是 ada'))
+    await vi.waitFor(() => expect(bench.judge).toHaveBeenCalledOnce())
+    // bill finishes while ada's judgement is in flight: its 「最后一个」 hand-over must wait.
+    bench.flights.get('codex')!.resolve(finish('我是 bill'))
+    await tick()
+    await tick()
+    expect(bench.agent.followup).not.toHaveBeenCalled()
+    slow.resolve()
+    await vi.waitFor(() => expect(bench.agent.followup).toHaveBeenCalledOnce())
+    await bench.service.engine.idle()
+    const merged = textOf((bench.agent.followup.mock.calls[0]![0] as UserMessage).content)
+    expect(merged).toContain('我是 ada')
+    expect(merged).toContain('我是 bill')
+    const session = bench.ctx.sessions.get(bench.sessionId)!
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    expect(pendingHolds(session.snapshotEvents(), state.value.members.find(member => member.name === 'dsh')!.id!)).toEqual([])
+  })
+
   it('a human can hand held reports over at once', async () => {
     const bench = await boot(0.1)
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
