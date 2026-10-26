@@ -13,6 +13,7 @@ import { useSyncExternalStore } from 'react'
 import type { WorktreesTabProps } from '../src/client/contract.ts'
 import { WorktreesTab } from '../src/client/WorktreesTab.tsx'
 import { createWorktreesStore } from '../src/client/store.ts'
+import { forgetViewMemory } from '../src/client/scroll-memory.ts'
 import type { ChangesResult, FileDiffResult, ReadFileResult, SessionSummary, WorktreeInfo } from '../src/types.ts'
 
 /** Selector hook over the store engine instance (the test-sanctioned engine path). */
@@ -129,7 +130,8 @@ async function drillToIndexTs(region: () => ReturnType<typeof within>): Promise<
   }
 }
 
-afterEach(() => { cleanup() })
+// The tab's view memory outlives a mount by design; each case is a fresh page.
+afterEach(() => { cleanup(); forgetViewMemory() })
 
 describe('WorktreesTab', () => {
   it('fetches changes on mount and drives fileDiff on select + diff view', async () => {

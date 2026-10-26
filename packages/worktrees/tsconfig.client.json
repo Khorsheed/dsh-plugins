@@ -26,6 +26,7 @@
     "src/client/DiffView.tsx",
     "src/client/FileTree.tsx",
     "src/client/index.ts",
+    "src/client/scroll-memory.ts",
     "src/client/sizing.ts",
     "src/client/locales.ts",
     "src/client/Overview.tsx",

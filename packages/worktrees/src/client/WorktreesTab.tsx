@@ -371,6 +371,9 @@ export function WorktreesTab({
   }
 
   const worktreePath = summary?.repo ?? ''
+  // The tree's expansion and every list's scroll survive tab/page switches,
+  // remembered per (session, worktree, mode) so each view keeps its own.
+  const viewMemoryKey = `${sessionId}\u0000${worktreePath}\u0000${mode}`
 
   // Toggle the worktree dropdown, lazily fetching the repo's worktrees.
   const onToggleWorktrees = (): void => {
@@ -414,6 +417,8 @@ export function WorktreesTab({
       <div className={css.treeColumn}>
         {mode === 'commits'
           ? <CommitList
+            key={viewMemoryKey}
+            memoryKey={viewMemoryKey}
             commits={commits}
             selectedCommit={selectedCommit}
             collapsed={treeCollapsed}
@@ -422,6 +427,8 @@ export function WorktreesTab({
             t={t}
           />
           : <FileTree
+            key={viewMemoryKey}
+            memoryKey={viewMemoryKey}
             groups={groups}
             selectedPath={selectedPath}
             onSelect={onSelectFile}
