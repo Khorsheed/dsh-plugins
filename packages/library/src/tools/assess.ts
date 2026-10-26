@@ -9,43 +9,38 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { type LibraryVerdict } from '../types.ts'
 import { jsonOutput, pickString, unwrap, type ToolKit } from './kit.ts'
 
+/** A passed station's result carries the next step: name what follows and ask (the learner starts it). */
+function withNext<T extends { completed?: string; unlocked?: readonly string[] }>(result: T): T & { next?: string } {
+  if (result.completed === undefined) return result
+  return { ...result, next: `Congratulate the learner, name the next station${result.unlocked !== undefined && result.unlocked.length > 0 ? ` (${result.unlocked.join(', ')})` : ''} and ask whether to start it — start only when they say so.` }
+}
+
 /** Build the `library_assess` tool over the shared kit. */
 export function libraryAssessTool(kit: ToolKit): ToolDefinition {
   const { service, projectOf } = kit
   return defineTool({
     name: 'library_assess',
     description:
-      'Ledger a graded sitting — the ONLY cascading write. Judge the answers in the conversation first (against each question\'s answer and evidence — the stored answer can be wrong: judge by the question itself, and when the key was wrong, say so and pass an equivalent answer), '
-      + 'then record one verdict per question: { task: <question id>, criterion: <what you judged>, pass, ratio?: <partial credit 0..1>, evidence: <what it rests on>, '
-      + 'by: "llm"|"self"|"user", void?: true when the learner flagged the question as broken, missedCard?: { term, gloss } — only to name a word or concept the learner missed (a subject\'s misses wait in 待订正 on their point; no card is made from the question) }. '
-      + 'The engine moves every probed card, carding a card-less miss, and completes the gated station at its pass ratio, unlocking what follows — report what moved, which knowledge points changed (pointChanges) and what unlocked. '
-      + 'Acceptance: pass node instead of quiz; each verdict\'s task is a rubric line id (L1, L2…) judged against the evidence the learner submitted. A line carrying ref is machine-checked — never judge it.',
+      'Record a graded sitting after judging it in the chat: one verdict per question. The stored answer can be wrong — judge by the question, and say so when it was. '
+      + 'A hands-on station: pass node instead of quiz; each task is a line id (L1, L2…). Then tell the learner what moved and what unlocked.',
     parameters: {
       project: { type: 'string', description: 'Project id (defaults to the binding).' },
-      quiz: { type: 'string', description: 'The quiz id library_quiz returned (a quiz sitting).' },
-      node: { type: 'string', description: 'Acceptance station id (an acceptance sitting — instead of quiz).' },
-      resource: { type: 'string', description: 'The textbook whose path holds the acceptance station (defaults to wherever the node is).' },
+      quiz: { type: 'string', description: 'The quiz id.' },
+      node: { type: 'string', description: 'A hands-on station, instead of quiz.' },
+      resource: { type: 'string', description: 'Its textbook (defaults to wherever the node is).' },
       verdicts: {
         type: 'array',
         required: true,
-        description: 'One verdict per question.',
         items: {
           type: 'object',
-          additionalProperties: false,
+          additionalProperties: true,
           properties: {
-            task: { type: 'string', description: 'The question id (a quiz sitting), or the rubric line id — L1, L2… (an acceptance sitting).' },
-            criterion: { type: 'string', description: 'What was judged, in one line.' },
-            pass: { type: 'boolean', description: 'Whether the answer passes.' },
+            task: { type: 'string', description: 'The question id, or the line id (L1…).' },
+            pass: { type: 'boolean' },
             ratio: { type: 'number', description: 'Partial credit 0..1.' },
-            evidence: { type: 'string', description: 'What the judgment rests on.' },
-            by: { type: 'string', enum: ['llm', 'self', 'user'], description: 'Who graded.' },
-            void: { type: 'boolean', description: 'The learner flagged the question as broken: it counts for nothing.' },
-            missedCard: {
-              type: 'object',
-              additionalProperties: false,
-              description: 'For a missed question with no target card: the card to create.',
-              properties: { term: { type: 'string' }, gloss: { type: 'string' } },
-            },
+            why: { type: 'string', description: 'One line on the judgment.' },
+            void: { type: 'boolean', description: 'The learner flagged it broken.' },
+            missedCard: { type: 'object', additionalProperties: false, description: 'Language projects: the word they missed.', properties: { term: { type: 'string' }, gloss: { type: 'string' } } },
           },
         },
       },
@@ -54,25 +49,37 @@ export function libraryAssessTool(kit: ToolKit): ToolDefinition {
     isConcurrencySafe: () => false,
     async execute(args, exec) {
       if (!Array.isArray(args.verdicts) || args.verdicts.length === 0) {
-        throw new Error('verdicts is required — one verdict per question: [{ task: <question id>, criterion: <what you judged>, pass, evidence: <what it rests on>, by: "llm"|"self"|"user", ratio?, void?, missedCard? }]')
+        throw new Error('verdicts is required — one per question: [{ task: <question id>, pass, why, ratio?, void? }]')
       }
+      // why is the one line the coach writes; criterion / evidence / by keep
+      // their ledger slots (older calls still send them).
+      const verdicts = (args.verdicts as Record<string, unknown>[]).map(verdict => {
+        const why = pickString(verdict.why, verdict.criterion, verdict.evidence) ?? ''
+        return {
+          ...verdict,
+          criterion: pickString(verdict.criterion) ?? why,
+          evidence: pickString(verdict.evidence) ?? why,
+          by: verdict.by === 'self' || verdict.by === 'user' ? verdict.by : 'llm',
+        }
+      }) as unknown as LibraryVerdict[]
       const node = pickString(args.node)
       if (node !== undefined) {
         const resource = pickString(args.resource, (args as Record<string, unknown>).book)
-        return unwrap(await service.putAttempt({
+        return withNext(unwrap(await service.putAttempt({
           projectId: projectOf(args.project, exec, resource),
           nodeId: node,
           ...(resource === undefined ? {} : { resourceId: resource }),
-          verdicts: [...args.verdicts] as LibraryVerdict[],
-        })) as unknown as JsonValue
+          verdicts,
+        }))) as unknown as JsonValue
       }
       const quiz = pickString(args.quiz)
       if (quiz === undefined) throw new Error('quiz is the id library_quiz returned — or pass node (an acceptance station\'s id) for acceptance')
-      return unwrap(await service.putAttempt({
+      const result = unwrap(await service.putAttempt({
         projectId: projectOf(args.project, exec),
         assessmentId: quiz,
-        verdicts: [...args.verdicts] as LibraryVerdict[],
-      })) as unknown as JsonValue
+        verdicts,
+      }))
+      return withNext(result) as unknown as JsonValue
     },
   })
 }

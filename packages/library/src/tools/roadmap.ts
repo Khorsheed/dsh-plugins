@@ -27,14 +27,11 @@ export function libraryRoadmapTool(kit: ToolKit): ToolDefinition {
   return defineTool({
     name: 'library_roadmap',
     description:
-      'Write one textbook\'s DRAFT path; it replaces that textbook\'s previous draft. The learner adopts it on the textbook\'s page (采用) — you only write drafts, and never ask before writing one. '
-      + 'A station covers the textbook\'s rows (chapters: "3-4"); also adds side references (a link, another entry\'s rows, topic: your own teaching) without moving the path anywhere. '
-      + 'One station is one lesson the learner finishes in one sitting: 3–5 knowledge points, ordered simple → hard across the path. A real book\'s long chapter splits into several stations on the same rows; a textbook you authored teaches one chapter per station (its chapters ARE lessons). '
-      + 'A path covers what the goal needs — skipping chapters is fine. Returns where it landed and which textbooks still wait for adoption.',
+      'Draft one textbook\'s path (replaces its previous draft); the learner adopts it in the sidebar. '
+      + 'One station = one lesson: 3–5 knowledge points, simple → hard. A real book\'s long chapter splits into several stations; a textbook you authored teaches one chapter per station.',
     parameters: {
-      resource: { type: 'string', required: true, description: 'The textbook this path belongs to (library_read · resources lists them).' },
-      nodes: { ...NODES_SCHEMA, required: true, description: 'The stations.' },
-      passRatio: { type: 'number', description: 'The pass line in (0, 1] (default 0.8).' },
+      resource: { type: 'string', required: true, description: 'The textbook.' },
+      nodes: { ...NODES_SCHEMA, required: true, description: 'The stations, in study order.' },
       note: { type: 'string', description: 'One line of pacing for the draft card.' },
     },
     output: jsonOutput(),
@@ -42,16 +39,18 @@ export function libraryRoadmapTool(kit: ToolKit): ToolDefinition {
     async execute(args, exec) {
       const list = payloadList(args.nodes)
       if (list === undefined) {
-        throw new Error(`library_roadmap takes resource and nodes: [{ id, title, gate: "quiz"|"acceptance"|"read", chapters: "3-4", also?, goals, points? (quiz), acceptance? (acceptance), dependsOn }] (+ passRatio?, note?) — ${arrival('nodes', args.nodes)}`)
+        throw new Error(`library_roadmap takes resource and nodes: [{ id, title, chapters: "3-4", points: [{ id, title }] (3–5), goals?, acceptance? }] — ${arrival('nodes', args.nodes)}`)
       }
       const argsAny = args as Record<string, unknown>
       const resourceId = pickString(args.resource, argsAny.book)
-      if (resourceId === undefined) throw new Error(`a path belongs to one textbook — pass resource${textbookList(exec) || ' (register the textbook first with library_resource)'}`)
+      if (resourceId === undefined) throw new Error(`a path belongs to one textbook — pass resource${textbookList(exec) || ' (shelve the textbook first with library_textbook)'}`)
       const adjusted: string[] = []
       const nodes = (list as Record<string, unknown>[]).map(node => {
         const { chapters, also, chapterRanges, covers, kind, gate, points, ...rest } = node
         // gate is the v5 spelling; the old kind still parses (practice → acceptance).
-        const gateValue = typeof gate === 'string' ? gate : kind === 'practice' ? 'acceptance' : kind
+        // Unsaid, acceptance lines make a hands-on station and anything else a quiz one.
+        const gateValue = typeof gate === 'string' ? gate : kind === 'practice' ? 'acceptance' : typeof kind === 'string' ? kind
+          : Array.isArray(rest.acceptance) && rest.acceptance.length > 0 ? 'acceptance' : 'quiz'
         // Points belong to quiz stations; on any other gate they are dropped, not refused.
         const keepPoints = gateValue === 'quiz' || points === undefined || (Array.isArray(points) && points.length === 0)
         if (!keepPoints) adjusted.push(`points dropped on ${String(rest.title ?? rest.id)} — a ${String(gateValue)} station has no quiz; what it checks belongs in ${gateValue === 'acceptance' ? 'acceptance lines' : 'goals'}`)
@@ -79,7 +78,7 @@ export function libraryRoadmapTool(kit: ToolKit): ToolDefinition {
         projectId,
         resourceId,
         nodes: nodes as unknown as Parameters<LibraryService['draftRoadmap']>[0]['nodes'],
-        ...(typeof args.passRatio === 'number' ? { passRatio: args.passRatio } : {}),
+        ...(typeof argsAny.passRatio === 'number' ? { passRatio: argsAny.passRatio } : {}),
         ...(typeof args.note === 'string' ? { note: args.note } : {}),
       }))
       await autoBind(exec, { projectId, resourceId })
@@ -92,7 +91,7 @@ export function libraryRoadmapTool(kit: ToolKit): ToolDefinition {
         ...(replaced ? { replacedDraft: true } : {}),
         waitingForAdoption: after.project.resources.filter(row => row.hasDraft).map(row => `${row.seq ?? '-'}. 《${row.title}》 ${row.draftTotal ?? 0} stations`),
         ...(adjusted.length === 0 ? {} : { adjusted }),
-        next: 'the learner adopts it on the textbook\'s page (采用) — say so in one line',
+        next: 'Describe the path to the learner in two lines and ask them to review and adopt it in the sidebar (采用). Then stop: before they adopt it, write no 讲义, teach nothing, set no quiz.',
       } as unknown as JsonValue
     },
   })

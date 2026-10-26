@@ -13,7 +13,6 @@ import {
   payloadList,
   sessionIdOf,
   unwrap,
-  LIST_WRAPPER_SCHEMA,
   type ToolKit,
 } from './kit.ts'
 
@@ -23,24 +22,23 @@ export function libraryPageTool(kit: ToolKit): ToolDefinition {
   return defineTool({
     name: 'library_page',
     description:
-      'Record a photographed page in ONE call: transcribe the printed text (a photo-backed question quotes it), list every mark with its sentence and in-context gloss — each certain mark becomes a card at once; flag the unreadable uncertain (kept, never carded). Omit attachment for the latest photo. If you cannot see images on this route, say so instead.',
+      'Record a photographed page in one call: its printed text and every mark the learner made (each certain mark becomes a card). Omit attachment for the latest photo. If you cannot see images, say so instead.',
     parameters: {
       ...textbookParams,
-      text: { type: 'string', required: true, description: 'The page\'s printed text, as recognized.' },
+      text: { type: 'string', required: true, description: 'The printed text.' },
       marks: {
         oneOf: [
           { type: 'array', items: { type: 'object', additionalProperties: true, properties: {
-            text: { type: 'string', required: true, description: 'The marked word / phrase, as printed.' },
-            sentence: { type: 'string', description: 'The sentence it sits in, as printed.' },
-            handNote: { type: 'string', description: 'The learner\'s handwritten gloss beside it, transcribed.' },
-            gloss: { type: 'string', description: 'The in-context meaning.' },
-            uncertain: { type: 'boolean', description: 'You could not tell — kept, never auto-carded.' },
+            text: { type: 'string', description: 'As printed.' },
+            sentence: { type: 'string' },
+            handNote: { type: 'string', description: 'The learner\'s handwriting beside it.' },
+            gloss: { type: 'string', description: 'In-context meaning.' },
+            uncertain: { type: 'boolean', description: 'You could not tell (kept, not carded).' },
           } } },
-          { type: 'string', description: 'The same array as its JSON text.' },
-          LIST_WRAPPER_SCHEMA,
+          { type: 'string', description: 'The same list as JSON text.' },
         ],
         required: true,
-        description: 'Every mark on the photographed page.',
+        description: 'Every mark on the page.',
       },
       attachment: { type: 'string', description: 'The image id (omit for the latest photo in this conversation).' },
       label: { type: 'string', description: 'What the learner calls the page (「p.16」).' },

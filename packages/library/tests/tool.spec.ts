@@ -46,7 +46,7 @@ async function call(name: string, args: Record<string, unknown>, from: unknown =
 /** Seed: a project, a registered book, the session bound to it. */
 async function seed(): Promise<{ project: string; book: string }> {
   const created = (await call('library_project', { name: '神经科学', template: 'subject' })) as { project: { id: string } }
-  const book = (await call('library_resource', {
+  const book = (await call('library_textbook', {
     op: 'create',
     project: created.project.id,
     kind: 'book',
@@ -62,7 +62,7 @@ async function seed(): Promise<{ project: string; book: string }> {
 
 describe('the tool set', () => {
   it('is one read, one write per noun, one assess — in workflow order', () => {
-    const expected = ['library_read', 'library_project', 'library_resource', 'library_roadmap', 'library_notes', 'library_page', 'library_cards', 'library_quiz', 'library_binding', 'library_assess']
+    const expected = ['library_read', 'library_project', 'library_textbook', 'library_roadmap', 'library_notes', 'library_page', 'library_cards', 'library_quiz', 'library_binding', 'library_assess']
     expect(tools.map(tool => tool.name)).toEqual(expected)
     expect(LIBRARY_TOOL_NAMES).toEqual(expected)
   })
@@ -150,9 +150,9 @@ describe('the v4 spellings still parse (aliases)', () => {
     const listed = (await call('library_read', { what: 'books' })) as { resources: { title: string }[] }
     expect(listed.resources.map(resource => resource.title)).toContain('Principles of Neural Science')
     // Correcting a shelved textbook needs only the changed field: title and contents stay.
-    const noted = (await call('library_resource', { op: 'create', resourceId: book, note: '按 three.js 方向修正' })) as { resource: { title: string; note: string; toc: unknown[] } }
+    const noted = (await call('library_textbook', { op: 'create', resourceId: book, note: '按 three.js 方向修正' })) as { resource: { title: string; note: string; toc: unknown[] } }
     expect([noted.resource.title, noted.resource.note, noted.resource.toc.length]).toEqual(['Principles of Neural Science', '按 three.js 方向修正', 2])
-    const removed = (await call('library_resource', { op: 'remove', bookId: book })) as { id: string }
+    const removed = (await call('library_textbook', { op: 'remove', bookId: book })) as { id: string }
     expect(removed.id).toBe(book)
   })
 
@@ -172,32 +172,32 @@ describe('the v4 spellings still parse (aliases)', () => {
 describe('resources', () => {
   it('a bound session adds, lists and removes a shelf link without naming the project', async () => {
     await seed()
-    const added = (await call('library_resource', { op: 'create', title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', note: '仿真物理引擎' })) as { resource: { id: string; origin: string } }
+    const added = (await call('library_textbook', { op: 'create', title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool', note: '仿真物理引擎' })) as { resource: { id: string; origin: string } }
     expect(added.resource.origin).toBe('picked')
     const listed = (await call('library_read', { what: 'resources' })) as { resources: { title: string }[] }
     expect(listed.resources.map(resource => resource.title)).toEqual(['Principles of Neural Science', 'MuJoCo'])
-    await expect(call('library_resource', { op: 'create', title: 'x', url: 'https://mujoco.org', kind: 'tool' })).rejects.toThrow(/already on this project's shelf/)
-    const removed = (await call('library_resource', { op: 'remove', resourceId: added.resource.id })) as { id: string }
+    await expect(call('library_textbook', { op: 'create', title: 'x', url: 'https://mujoco.org', kind: 'tool' })).rejects.toThrow(/already on this project's shelf/)
+    const removed = (await call('library_textbook', { op: 'remove', resourceId: added.resource.id })) as { id: string }
     expect(removed.id).toBe(added.resource.id)
     expect(((await call('library_read', { what: 'resources' })) as { resources: { title: string }[] }).resources.map(resource => resource.title)).toEqual(['Principles of Neural Science'])
   })
 
   it('teaches the payload shape and the op', async () => {
     await seed()
-    await expect(call('library_resource', { op: 'create', title: 'x' })).rejects.toThrow(/a link takes/)
-    await expect(call('library_resource', { op: 'move', resourceId: 'r_x' })).rejects.toThrow(/op=move takes resourceId and seq/)
-    await expect(call('library_resource', { op: 'remove' })).rejects.toThrow(/op=remove takes the resourceId/)
-    await expect(call('library_resource', {})).rejects.toThrow(/missing required property/)
+    await expect(call('library_textbook', { op: 'create', title: 'x' })).rejects.toThrow(/a textbook takes/)
+    await expect(call('library_textbook', { op: 'move', resourceId: 'r_x' })).rejects.toThrow(/op=move takes resourceId and seq/)
+    await expect(call('library_textbook', { op: 'remove' })).rejects.toThrow(/op=remove takes the resourceId/)
+    await expect(call('library_textbook', {})).rejects.toThrow(/missing required property/)
   })
 
   it('shelves textbooks in study order with their origin, and moves one', async () => {
     const { book } = await seed()
-    const own = (await call('library_resource', { op: 'create', kind: 'book', title: '概率论', origin: 'learner', seq: 1, toc: '分布\n期望', tocSource: { by: 'model' } })) as { resource: { id: string; seq: number; origin: string } }
+    const own = (await call('library_textbook', { op: 'create', kind: 'book', title: '概率论', origin: 'learner', seq: 1, toc: '分布\n期望', tocSource: { by: 'model' } })) as { resource: { id: string; seq: number; origin: string } }
     expect(own.resource).toMatchObject({ seq: 1, origin: 'learner' })
     // The older addedBy still parses.
-    const legacy = (await call('library_resource', { op: 'create', kind: 'course', title: 'CS231n', addedBy: 'coach', toc: 'L1\nL2', tocSource: { by: 'model' } })) as { resource: { seq: number; origin: string } }
+    const legacy = (await call('library_textbook', { op: 'create', kind: 'course', title: 'CS231n', addedBy: 'coach', toc: 'L1\nL2', tocSource: { by: 'model' } })) as { resource: { seq: number; origin: string } }
     expect(legacy.resource).toMatchObject({ seq: 3, origin: 'picked' })
-    const moved = (await call('library_resource', { op: 'move', resourceId: book, seq: 1 })) as { order: string[] }
+    const moved = (await call('library_textbook', { op: 'move', resourceId: book, seq: 1 })) as { order: string[] }
     expect(moved.order).toEqual([`1. ${book} 《Principles of Neural Science》`, expect.stringContaining('2. '), expect.stringContaining('3. ')])
   })
 })
@@ -227,7 +227,7 @@ describe('textbook paths through the tools', () => {
     const { book } = await seed()
     await expect(call('library_roadmap', { nodes: [{ id: 'n1', title: 'x', gate: 'quiz', chapters: '1' }] })).rejects.toThrow(/missing required property/)
     await expect(call('library_roadmap', { resource: '', nodes: [{ id: 'n1', title: 'x', gate: 'quiz', chapters: '1' }] })).rejects.toThrow(new RegExp(`belongs to one textbook[\\s\\S]*${book}`))
-    const link = (await call('library_resource', { op: 'create', title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool' })) as { resource: { id: string } }
+    const link = (await call('library_textbook', { op: 'create', title: 'MuJoCo', url: 'https://mujoco.org', kind: 'tool' })) as { resource: { id: string } }
     await expect(call('library_roadmap', { resource: link.resource.id, nodes: [{ id: 'n1', title: 'x', gate: 'read' }] })).rejects.toThrow(/never carries a path/)
   })
 
@@ -286,7 +286,7 @@ describe('the question axes default and take shorthands', () => {
 
   it('a defaulted question still hits the verbatim gate on a material book', async () => {
     await seed()
-    const material = (await call('library_resource', { op: 'create', kind: 'book', title: 'Cambridge IELTS 5', bookKind: 'material', toc: ['Test 1'], tocSource: { by: 'model' } })) as { resource: { id: string } }
+    const material = (await call('library_textbook', { op: 'create', kind: 'book', title: 'Cambridge IELTS 5', bookKind: 'material', toc: ['Test 1'], tocSource: { by: 'model' } })) as { resource: { id: string } }
     await expect(call('library_quiz', { resource: material.resource.id, questions: [{ id: 'q1', kind: 'free', prompt: '第二段说了什么？', answer: 'x' }] })).rejects.toThrow(/material book/)
   })
 })
@@ -295,7 +295,7 @@ describe('the write chain strings itself', () => {
   it('create → register → draft needs no id passing: each write binds the unbound session', async () => {
     const created = (await call('library_project', { name: '数学', template: 'subject' })) as { project: { id: string } }
     expect(service.getBinding('s_learn')).toEqual({ projectId: created.project.id })
-    const registered = (await call('library_resource', { op: 'create', kind: 'book', title: '微积分读本', bookKind: 'knowledge', toc: ['极限', '导数'], tocSource: { by: 'model' } })) as { resource: { id: string } }
+    const registered = (await call('library_textbook', { op: 'create', kind: 'book', title: '微积分读本', bookKind: 'knowledge', toc: ['极限', '导数'], tocSource: { by: 'model' } })) as { resource: { id: string } }
     expect(service.getBinding('s_learn')).toEqual({ projectId: created.project.id, resourceId: registered.resource.id })
     const drafted = (await call('library_roadmap', { resource: registered.resource.id, nodes: [{ id: 'n1', title: '极限', gate: 'quiz', chapters: '1' }] })) as { placedOn: string }
     expect(drafted.placedOn).toContain('微积分读本')
@@ -337,12 +337,12 @@ describe('photo pages', () => {
 
 describe('teaching errors', () => {
   it('rejects an unknown read-what with the valid list', async () => {
-    await expect(call('library_read', { what: 'everything' })).rejects.toThrow(/projects \| resources \| toc \| roadmap \| pages \| cards \| quiz \| stats/)
+    await expect(call('library_read', { what: 'everything' })).rejects.toThrow(/projects \| resources \| toc \| roadmap \| pages \| cards \| quiz/)
   })
 
   it('a missing required field is rejected at the schema line', async () => {
-    await expect(call('library_read', {})).rejects.toThrow(/missing required property/)
-    await expect(call('library_resource', {})).rejects.toThrow(/missing required property/)
+    // library_read has no required field: a forgotten what reads what the arguments point at.
+    await expect(call('library_textbook', {})).rejects.toThrow(/missing required property/)
     await expect(call('library_quiz', {})).rejects.toThrow(/missing required property/)
   })
 
@@ -421,7 +421,7 @@ describe('payload transport', () => {
 
   it('accepts a book\'s contents as one newline-joined string — the payload models mangle most', async () => {
     const { project } = await seed()
-    const added = (await call('library_resource', {
+    const added = (await call('library_textbook', {
       op: 'create',
       project,
       kind: 'book',
@@ -435,7 +435,7 @@ describe('payload transport', () => {
 
   it('unwraps a list payload wrapped as { items: [...] } — a toc keeps its parts', async () => {
     const { project } = await seed()
-    const added = (await call('library_resource', {
+    const added = (await call('library_textbook', {
       op: 'create',
       project,
       kind: 'book',
@@ -452,7 +452,7 @@ describe('payload transport', () => {
 describe('the per-noun tools take flat fields', () => {
   it('creates a project, registers a book, drafts a path and writes notes without any wrapper object', async () => {
     const created = (await call('library_project', { name: '数学', template: 'subject' })) as { project: { id: string } }
-    const added = (await call('library_resource', {
+    const added = (await call('library_textbook', {
       op: 'create',
       project: created.project.id,
       kind: 'book',
@@ -472,14 +472,14 @@ describe('the per-noun tools take flat fields', () => {
     if (!adopted.ok) throw new Error(adopted.message)
     const noted = (await call('library_notes', { node: 'n1', text: '## 函数讲义' })) as { notes: { revisions: number } }
     expect(noted.notes.revisions).toBe(1)
-    const res = (await call('library_resource', { op: 'create', title: 'Gymnasium 文档', url: 'https://gymnasium.example', kind: 'tool' })) as { resource: { id: string } }
-    expect((await call('library_resource', { op: 'remove', resourceId: res.resource.id })) as { ok: boolean })
+    const res = (await call('library_textbook', { op: 'create', title: 'Gymnasium 文档', url: 'https://gymnasium.example', kind: 'tool' })) as { resource: { id: string } }
+    expect((await call('library_textbook', { op: 'remove', resourceId: res.resource.id })) as { ok: boolean })
   })
 
   it('the observed failure modes now reject at the schema line or teach the field', async () => {
     await seed()
     // The thick-entry fields forgotten entirely (the live "满屏报错" session's shape) — the tool's own lesson, not a runtime crash.
-    await expect(call('library_resource', { op: 'create', kind: 'book' })).rejects.toThrow(/a textbook \(kind/)
+    await expect(call('library_textbook', { op: 'create', kind: 'book' })).rejects.toThrow(/a textbook takes/)
     // Prose poured into the id slot.
     await expect(call('library_project', { id: '新建数学项目' })).rejects.toThrow(/fields to change/)
   })
@@ -501,7 +501,7 @@ describe('station notes through the tools', () => {
     await expect(call('library_notes', { text: 'x' })).rejects.toThrow(/missing required property/)
     await expect(call('library_notes', { node: 'n9', text: 'x' })).rejects.toThrow(/no station .* its stations:/)
     // An authored textbook's station: its 讲义 are the text.
-    const rl = (await call('library_resource', { op: 'create', kind: 'book', title: '强化学习入门', origin: 'authored', toc: '奖励\n策略梯度', tocSource: { by: 'model' } })) as { resource: { id: string } }
+    const rl = (await call('library_textbook', { op: 'create', kind: 'book', title: '强化学习入门', origin: 'authored', toc: '奖励\n策略梯度', tocSource: { by: 'model' } })) as { resource: { id: string } }
     await call('library_roadmap', { resource: rl.resource.id, nodes: [{ id: 's1', title: '奖励', gate: 'quiz', chapters: '1' }] })
     const adoptedRl = await service.adoptRoadmap({ projectId: project, resourceId: rl.resource.id })
     if (!adoptedRl.ok) throw new Error(adoptedRl.message)
@@ -536,10 +536,10 @@ describe('live-run failure modes (3080, 2026-10-19)', () => {
     expect(splitTocText('Ch1\\nCh2\\nCh3')).toEqual(['Ch1', 'Ch2', 'Ch3'])
     expect(splitTocText('一个标题；带分号')).toEqual(['一个标题；带分号'])
     const { project } = await seed()
-    const joined = (await call('library_resource', { op: 'create', project, kind: 'book', title: '普林斯顿微积分读本', toc: '1. 函数；2. 三角；3. 极限', tocSource: { by: 'model' } })) as { contentsRows: number; warning?: string }
+    const joined = (await call('library_textbook', { op: 'create', project, kind: 'book', title: '普林斯顿微积分读本', toc: '1. 函数；2. 三角；3. 极限', tocSource: { by: 'model' } })) as { contentsRows: number; warning?: string }
     expect(joined.contentsRows).toBe(3)
     expect(joined.warning).toBeUndefined()
-    const thin = (await call('library_resource', { op: 'create', project, kind: 'book', title: '只有一行的书', toc: '全书', tocSource: { by: 'model' } })) as { warning?: string }
+    const thin = (await call('library_textbook', { op: 'create', project, kind: 'book', title: '只有一行的书', toc: '全书', tocSource: { by: 'model' } })) as { warning?: string }
     expect(thin.warning).toMatch(/only 1 row/)
   })
 
@@ -561,7 +561,7 @@ describe('live-run failure modes (3080, 2026-10-19)', () => {
 
   it('a joined contents earns the out-of-range refusal that says to fix the contents, never drop the chapters', async () => {
     const { project } = await seed()
-    const one = (await call('library_resource', { op: 'create', project, kind: 'book', title: '只有一行的书', toc: '全书', tocSource: { by: 'model' } })) as { resource: { id: string } }
+    const one = (await call('library_textbook', { op: 'create', project, kind: 'book', title: '只有一行的书', toc: '全书', tocSource: { by: 'model' } })) as { resource: { id: string } }
     await expect(call('library_roadmap', { resource: one.resource.id, nodes: [{ id: 'n1', title: 'a', gate: 'quiz', chapters: '1-2' }] })).rejects.toThrow(/fix the contents first[\s\S]*never drop the chapters/)
   })
 
@@ -617,9 +617,57 @@ describe('a reused session and the book type (3080, 2026-10-20)', () => {
 
   it('a textbook is knowledge unless said otherwise; the learner switches it', async () => {
     const { project } = await seed()
-    const added = (await call('library_resource', { op: 'create', kind: 'book', title: '认知神经科学', origin: 'learner', toc: '简史\n细胞\n解剖', tocSource: { by: 'model' } })) as { resource: { id: string; meta?: { bookKind?: string } } }
+    const added = (await call('library_textbook', { op: 'create', kind: 'book', title: '认知神经科学', origin: 'learner', toc: '简史\n细胞\n解剖', tocSource: { by: 'model' } })) as { resource: { id: string; meta?: { bookKind?: string } } }
     expect(added.resource.meta?.bookKind).toBe('knowledge')
     const flipped = await service.setBookKind({ projectId: project, resourceId: added.resource.id, bookKind: 'material' })
     expect(flipped.ok && flipped.resource.meta?.bookKind).toBe('material')
+  })
+})
+
+describe('the slim surface (2026-10-26)', () => {
+  const pts = [{ id: 'gate', title: '门控' }, { id: 'sel', title: '选择性' }, { id: 'struct', title: '结构' }]
+
+  it('a draft tells the coach to stop until adoption; acceptance lines alone make a hands-on station', async () => {
+    const { book } = await seed()
+    const drafted = (await call('library_roadmap', { resource: book, nodes: [
+      { id: 's1', title: '离子通道', chapters: '1', points: pts },
+      { id: 's2', title: '动手', chapters: '2', acceptance: ['做完实验记录'] },
+    ] })) as { next: string }
+    expect(drafted.next).toMatch(/stop: before they adopt it, write no 讲义/)
+    const read = (await call('library_read', { what: 'roadmap' })) as { adopted: null; draft: { stations: { id: string; gate?: string; points: string[] }[] } }
+    expect(read.adopted).toBeNull()
+    expect(read.draft.stations.map(station => [station.id, station.gate ?? 'quiz', station.points.length])).toEqual([['s1', 'quiz', 3], ['s2', 'acceptance', 0]])
+  })
+
+  it('a read of the path never carries the 讲义 text; a forgotten what reads what the arguments point at', async () => {
+    const { project, book } = await seed()
+    await call('library_roadmap', { resource: book, nodes: [{ id: 's1', title: '离子通道', chapters: '1', points: pts }] })
+    await service.adoptRoadmap({ projectId: project, resourceId: book })
+    const written = (await call('library_notes', { node: 's1', text: '## 门控\n讲义正文' })) as { next: string }
+    expect(written.next).toMatch(/then wait/)
+    const read = (await call('library_read', { resource: book })) as { adopted: { stations: { notes?: string }[] } }
+    expect(read.adopted.stations[0]?.notes).toMatch(/chars, revision 1/)
+    expect(JSON.stringify(read)).not.toContain('讲义正文')
+  })
+
+  it('questions without ids are numbered; a verdict needs only task, pass and why', async () => {
+    const { project, book } = await seed()
+    await call('library_roadmap', { resource: book, nodes: [{ id: 's1', title: '离子通道', chapters: '1', points: pts }] })
+    await service.adoptRoadmap({ projectId: project, resourceId: book })
+    const quiz = (await call('library_quiz', { node: 's1', questions: [
+      { point: 'gate', kind: 'fill', prompt: '电压门控通道感受什么？', answer: '膜电位' },
+      { point: 'sel', kind: 'choice', prompt: '选择性取决于？', options: ['孔径与电荷', '颜色'], answer: '孔径与电荷' },
+    ] })) as { quiz: { id: string; questions: { id: string }[] } }
+    expect(quiz.quiz.questions.map(question => question.id)).toEqual(['q1', 'q2'])
+    const graded = (await call('library_assess', { quiz: quiz.quiz.id, verdicts: [{ task: 'q1', pass: true, why: '答出膜电位' }, { task: 'q2', pass: true, why: '选对' }] })) as { attempt: { verdicts: { criterion: string; by: string }[] } }
+    expect(graded.attempt.verdicts.map(verdict => [verdict.criterion, verdict.by])).toEqual([['答出膜电位', 'llm'], ['选对', 'llm']])
+  })
+
+  it('add and update are the textbook ops; an update sends only what changes', async () => {
+    const { book } = await seed()
+    const updated = (await call('library_textbook', { op: 'update', resourceId: book, note: '按章读' })) as { resource: { note: string; toc: unknown[] } }
+    expect([updated.resource.note, updated.resource.toc.length]).toEqual(['按章读', 2])
+    const added = (await call('library_textbook', { op: 'add', title: '自编讲义', origin: 'authored', toc: '奖励\n价值\n策略' })) as { resource: { origin: string; toc: unknown[] } }
+    expect([added.resource.origin, added.resource.toc.length]).toEqual(['authored', 3])
   })
 })

@@ -38,7 +38,7 @@ export class LibraryService extends LibraryServiceAssess {
       const project = this.readProjectOrRefusal(binding.projectId)
       if ('error' in project) return project
       if (binding.resourceId !== undefined && this.store.readResource(binding.projectId, binding.resourceId) === undefined) {
-        return refuse('not-found', `no resource ${JSON.stringify(binding.resourceId)} in project ${JSON.stringify(project.value.name)} — resource ids are minted (r_…), never chosen by the caller; library_read · resources lists them. Registering the resource (library_resource) binds this session itself — no separate library_binding call needed`)
+        return refuse('not-found', `no resource ${JSON.stringify(binding.resourceId)} in project ${JSON.stringify(project.value.name)} — resource ids are minted (r_…), never chosen by the caller; library_read · resources lists them. Registering the resource (library_textbook) binds this session itself — no separate library_binding call needed`)
       }
     }
     try {

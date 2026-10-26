@@ -14,25 +14,30 @@ export function libraryNotesTool(kit: ToolKit): ToolDefinition {
   return defineTool({
     name: 'library_notes',
     description:
-      'Write or rewrite a station\'s 讲义 (markdown; math in $…$ / $$…$$) — written FOR the learner, never a glossary or your own notes. '
-      + 'On a textbook you authored the 讲义 ARE the lesson, written when the station opens: one line on what this lesson teaches; then one ## section per knowledge point, headed by its title, simple → hard — what it is → why it matters → an example or the steps → a common mistake → one self-check question; end with a recap and 「觉得掌握了 → 去章节考」. '
-      + 'On a real book they are a reading guide and marginalia (which pages, what to watch for, where THIS learner got stuck), never a substitute. Rewrite whenever the learner asks to 补讲 / 沉淀讲义. '
-      + 'No change logs or internal words (第 N 次更新, 修正说明, acceptance) — the sidebar counts revisions itself.',
+      'Write or rewrite a station\'s 讲义 (markdown, math in $…$), for THIS learner — written when the learner starts the station. '
+      + 'A textbook you authored: the 讲义 are the lesson — one line on what it teaches, then one ## section per knowledge point headed by its title (what it is → why it matters → an example or the steps → a common mistake → a self-check question), then a recap. '
+      + 'A real book: a reading guide and marginalia (which pages, what to watch for, where this learner got stuck). No change logs or internal words.',
     parameters: {
       ...textbookParams,
-      node: { type: 'string', required: true, description: 'The station id (library_read · roadmap lists them).' },
-      text: { type: 'string', required: true, description: 'The station\'s 讲义 in markdown.' },
+      node: { type: 'string', required: true, description: 'The station id.' },
+      text: { type: 'string', required: true, description: 'The 讲义, markdown.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => false,
     async execute(args, exec) {
       const resourceId = resourceOf(args, exec)
-      return unwrap(await service.putNotes({
+      const written = unwrap(await service.putNotes({
         projectId: projectOf(args.project, exec, resourceId),
         resourceId,
         nodeId: String(args.node),
         text: String(args.text),
-      })) as unknown as JsonValue
+      }))
+      return {
+        ...written,
+        next: written.notes.revisions === 1
+          ? 'Tell the learner in one line that the 讲义 are ready in the sidebar, then wait — they read first and ask.'
+          : 'Tell the learner in one line what changed in the 讲义.',
+      } as unknown as JsonValue
     },
   })
 }

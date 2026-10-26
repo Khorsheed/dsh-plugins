@@ -6,7 +6,7 @@
  */
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import { type LibraryCardKind, type LibraryCardSourceType } from '../types.ts'
+import { type LibraryCardKind, type LibraryCardSourceType, type LibraryRoadmap } from '../types.ts'
 import {
   jsonOutput,
   pickString,
@@ -15,38 +15,54 @@ import {
   type ToolKit,
 } from './kit.ts'
 
+/**
+ * A path as the coach needs it: each station's id, title, state, rows and
+ * points, and whether its 讲义 exist — never the 讲义 text itself (a read of
+ * an 11-station path once returned 7,300 characters).
+ */
+function compactRoadmap(read: { roadmap?: LibraryRoadmap; draft?: LibraryRoadmap }): Record<string, unknown> {
+  const stations = (roadmap: LibraryRoadmap) => roadmap.nodes.map(node => ({
+    id: node.id,
+    title: node.title,
+    state: node.state,
+    ...(node.gate === 'quiz' ? {} : { gate: node.gate }),
+    rows: node.covers.flatMap(cover => cover.locator === undefined ? [] : [cover.locator]).join(',') || undefined,
+    points: (node.points ?? []).map(point => `${point.id}: ${point.title}`),
+    ...(node.goals.length === 0 ? {} : { goals: node.goals }),
+    ...(node.acceptance === undefined || node.acceptance.length === 0 ? {} : { acceptance: node.acceptance }),
+    ...(node.notes === undefined ? {} : { notes: `${node.notes.text.length} chars, revision ${node.notes.revisions}` }),
+    ...(node.quizStats === undefined ? {} : { best: node.quizStats.bestRatio }),
+  }))
+  return {
+    ...(read.roadmap === undefined ? { adopted: null } : { adopted: { stations: stations(read.roadmap) } }),
+    ...(read.draft === undefined ? {} : { draft: { stations: stations(read.draft), note: read.draft.note } }),
+  }
+}
+
 /** Build the `library_read` tool over the shared kit. */
 export function libraryReadTool(kit: ToolKit): ToolDefinition {
   const { service, bindingOf, projectOf, resourceOf } = kit
   return defineTool({
     name: 'library_read',
     description:
-      'Read the library. what: '
-      + '"projects" — every project with its textbooks\' progress and card tallies, plus this session\'s binding; '
-      + '"resources" — one project\'s shelf: textbooks in study order (seq, origin, path state), then links; '
-      + '"toc" — one textbook\'s contents rows (numbered n); '
-      + '"roadmap" — one textbook\'s adopted path and pending draft; '
-      + '"pages" — a textbook\'s photographed pages (text + the learner\'s marks), node narrows; '
-      + '"cards" — knowledge cards, weakest first: query searches term / gloss / sentences; filters resource, node, kind, source, weakMin (0-3), due — check before teaching a point; '
-      + '"quiz" — one quiz whole (quiz id), or the list; '
-      + '"stats" — the whole library\'s tally. project and resource default to the binding.',
+      'Read the library: projects (all, with this session\'s binding) | resources (one project\'s textbooks in study order) | toc (a textbook\'s contents rows) | roadmap (a textbook\'s path and pending draft) | pages (photographed pages) | cards (the learner\'s cards, weakest first) | quiz (one quiz, or the list). project and resource default to the binding.',
     parameters: {
-      what: { type: 'string', required: true, description: `What to read: ${READ_WHATS.join(' | ')}.` },
-      project: { type: 'string', description: 'Project id (defaults to the binding).' },
-      resource: { type: 'string', description: 'Textbook / resource id (defaults to the binding\'s).' },
-      node: { type: 'string', description: 'Roadmap node id (pages / cards).' },
-      quiz: { type: 'string', description: 'Quiz id (quiz; omit for the list).' },
-      query: { type: 'string', description: 'Free-text card search (cards).' },
-      kind: { type: 'string', description: 'word | concept (cards).' },
-      source: { type: 'string', description: 'photo | chat | quiz | manual (cards).' },
-      weakMin: { type: 'integer', description: 'Only cards at least this weak, 0-3 (cards).' },
-      due: { type: 'boolean', description: 'Only cards due for review (cards).' },
-      limit: { type: 'integer', description: 'How many cards (default 30).' },
+      what: { type: 'string', description: 'One of the reads above.' },
+      project: { type: 'string' },
+      resource: { type: 'string' },
+      node: { type: 'string', description: 'A station (pages / cards).' },
+      quiz: { type: 'string', description: 'A quiz id.' },
+      query: { type: 'string', description: 'cards: search term, gloss, sentences.' },
+      due: { type: 'boolean', description: 'cards: only those due for review.' },
     },
     output: jsonOutput(),
     isConcurrencySafe: () => true,
     async execute(args, exec) {
-      switch (args.what) {
+      const argsAny = args as Record<string, unknown>
+      // A read that forgot what: the arguments it did pass say which one it meant.
+      const what = typeof args.what === 'string' && args.what !== '' ? args.what
+        : args.quiz !== undefined ? 'quiz' : args.resource !== undefined || args.node !== undefined ? 'roadmap' : 'projects'
+      switch (what) {
         case 'projects': {
           const listed = await service.listProjects()
           return { ...listed, binding: bindingOf(exec) ?? null } as unknown as JsonValue
@@ -62,7 +78,7 @@ export function libraryReadTool(kit: ToolKit): ToolDefinition {
         }
         case 'roadmap': {
           const resource = resourceOf(args, exec)
-          return (await service.getRoadmap({ projectId: projectOf(args.project, exec, resource), resourceId: resource })) as unknown as JsonValue
+          return compactRoadmap(await service.getRoadmap({ projectId: projectOf(args.project, exec, resource), resourceId: resource })) as unknown as JsonValue
         }
         case 'pages': {
           const resource = resourceOf(args, exec)
@@ -79,11 +95,11 @@ export function libraryReadTool(kit: ToolKit): ToolDefinition {
             ...(resource === undefined ? {} : { resourceId: resource }),
             ...(args.node === undefined ? {} : { nodeId: args.node }),
             ...(args.query === undefined ? {} : { query: args.query }),
-            ...(args.kind === 'word' || args.kind === 'concept' ? { kind: args.kind as LibraryCardKind } : {}),
-            ...(['photo', 'chat', 'quiz', 'manual'].includes(args.source ?? '') ? { source: args.source as LibraryCardSourceType } : {}),
-            ...(args.weakMin === undefined ? {} : { weakMin: args.weakMin }),
+            ...(argsAny.kind === 'word' || argsAny.kind === 'concept' ? { kind: argsAny.kind as LibraryCardKind } : {}),
+            ...(['photo', 'chat', 'quiz', 'manual'].includes(String(argsAny.source ?? '')) ? { source: argsAny.source as LibraryCardSourceType } : {}),
+            ...(typeof argsAny.weakMin === 'number' ? { weakMin: argsAny.weakMin } : {}),
             ...(args.due === true ? { due: true } : {}),
-            limit: args.limit ?? 30,
+            limit: typeof argsAny.limit === 'number' ? argsAny.limit : 30,
           })
           // The model needs the card, not its whole ledger: sources compress to counts.
           return {
@@ -115,7 +131,7 @@ export function libraryReadTool(kit: ToolKit): ToolDefinition {
         case 'stats':
           return (await service.stats()) as unknown as JsonValue
         default:
-          throw new Error(`what is required — one of ${READ_WHATS.join(' | ')} — got ${JSON.stringify(args.what) ?? 'nothing'}; e.g. { what: "resources" } reads the bound project's shelf`)
+          throw new Error(`what is one of ${READ_WHATS.join(' | ')} — got ${JSON.stringify(args.what)}`)
       }
     },
   })
