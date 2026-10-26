@@ -195,7 +195,7 @@ describe('ClaudeCodeSettingsCard', () => {
   it('marks the auth block unavailable when the probe reports undefined (core absent)', async () => {
     renderCard({ authStatus: undefined })
     await openCard()
-    expect(screen.getByText(coreZh['error'])).toBeTruthy()
+    expect(screen.getByText(coreZh['settings.statusFailed'])).toBeTruthy()
   })
 
   it('writes the live switch through the scope and shows the applied hint', async () => {
