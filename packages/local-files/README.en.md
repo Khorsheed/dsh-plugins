@@ -6,9 +6,9 @@ Browse any folder on your machine from the right sidebar — open a file to read
 
 To glance at an assets folder next to the workspace or a data file outside the repo, you used to switch to the system file manager, and then got raw source you had to read through. With Files installed, the right sidebar can browse any folder on your machine: it starts at the current session's working directory and can move anywhere else; open a file and web pages, documents and tables are already rendered. What you get is your local files, searchable and editable, without leaving the conversation.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-1.png" width="640" alt="The start page's entry card: Files, opening the session's working directory by default">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-1.png" width="260" alt="The start page's entry card: Files, opening the session's working directory by default">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-3.png" width="640" alt="The Files page: the repo's file tree on the left, a README.md open on the right with its images shown in the preview, and edit, reload and show-in-folder in the title row">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-3.png" width="560" alt="The Files page: the repo's file tree on the left, a README.md open on the right with its images shown in the preview, and edit, reload and show-in-folder in the title row">
 
 ## What it does
 

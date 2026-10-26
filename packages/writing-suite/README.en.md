@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 **A full kit for writing with an agent: ideas and drafts live on a canvas, it remembers your characters and foreshadowing on a long novel, and the good articles you read turn into notes you can talk through.** One canvas per topic, with every idea pinned up as a card, and the agent's suggested cards stay only when you say yes; pick a few cards and have the agent write them up, and the draft remembers which material it used; on a novel, characters, the world and foreshadowing each get cards, you see every chapter's plan before it's written, and after a chapter you say "reconcile" and it records what happened back onto the cards; feeds and saved articles, videos and podcasts read right inside DSH, highlight a sentence to take a note, discuss it with the agent, and sync notes over as canvas cards; videos and podcasts without subtitles are transcribed on your own computer; even pages that only show their text after scripts run can have it pulled out…… It comes with "写作模式" (writing mode), installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-writing-hero.png" width="1000" alt="A writing-mode session: the chat on the left, and on the right-sidebar canvas a row of idea, character and foreshadowing cards, one of them a model suggestion waiting for your approval">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-writing-hero.png" width="800" alt="A writing-mode session: the chat on the left, and on the right-sidebar canvas a row of idea, character and foreshadowing cards, one of them a model suggestion waiting for your approval">
 
 ## Install
 
@@ -48,11 +48,11 @@ Writing an essay or a novel, your material ends up scattered across chat history
 <details open>
 <summary>Screenshots (3)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-board.png" width="840" alt="canvas: the canvas in the right sidebar, a row of canvas tabs on top and a board filtered by category below, with fragment, question and reference cards and one dashed suggested card">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-board.png" width="640" alt="canvas: the canvas in the right sidebar, a row of canvas tabs on top and a board filtered by category below, with fragment, question and reference cards and one dashed suggested card">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-links.png" width="840" alt="canvas: the Links view, cards drawn as nodes with lines between them, a few cards boxed into a titled group">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-links.png" width="640" alt="canvas: the Links view, cards drawn as nodes with lines between them, a few cards boxed into a titled group">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-manuscript.png" width="840" alt="canvas: the manuscript page, a reading column with the title and version on top and the used and unused cards listed at the bottom">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-manuscript.png" width="640" alt="canvas: the manuscript page, a reading column with the title and version on top and the used and unused cards listed at the bottom">
 
 </details>
 
@@ -63,11 +63,11 @@ The worst part of writing a novel with a model is that it forgets: characters dr
 <details open>
 <summary>Screenshots (3)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-board.png" width="840" alt="canvas-novel: a novel canvas, a thin strip on top showing the current chapter and how many items wait for review, with character, world, principle and foreshadowing cards below">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-board.png" width="640" alt="canvas-novel: a novel canvas, a thin strip on top showing the current chapter and how many items wait for review, with character, world, principle and foreshadowing cards below">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-planning.png" width="840" alt="canvas-novel: the Plan page, a one-page outline and the agent's outline suggestion with Adopt / Don't adopt, and the chapter route by volume below">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-planning.png" width="640" alt="canvas-novel: the Plan page, a one-page outline and the agent's outline suggestion with Adopt / Don't adopt, and the chapter route by volume below">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-story-log.png" width="840" alt="canvas-novel: the Story page, chapters along the horizontal axis in four groups — foreshadowing, relationships, characters, world — with one clue opened on the right to show how it changed chapter by chapter">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-story-log.png" width="640" alt="canvas-novel: the Story page, chapters along the horizontal axis in four groups — foreshadowing, relationships, characters, world — with one clue opened on the right to show how it changed chapter by chapter">
 
 </details>
 
@@ -78,9 +78,9 @@ The articles you come across sit in browser tabs, and talking them over with the
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="840" alt="dsh-reader: the Reader wall, a stream of feed and saved-link cards, with filter, sort, translate-the-wall, refresh, settings and add in the header">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="640" alt="dsh-reader: the Reader wall, a stream of feed and saved-link cards, with filter, sort, translate-the-wall, refresh, settings and add in the header">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="840" alt="dsh-reader: the detail page with translation on, sentence by sentence, one sentence expanded to show its original">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="640" alt="dsh-reader: the detail page with translation on, sentence by sentence, one sentence expanded to show its original">
 
 </details>
 
@@ -91,7 +91,7 @@ Most Bilibili videos and most podcasts have no subtitles. Open one in the Reader
 <details open>
 <summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="840" alt="transcribe: a podcast episode transcribed locally in the Reader, timestamps on the left and paragraphs colored by speaker">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="640" alt="transcribe: a podcast episode transcribed locally in the Reader, timestamps on the left and paragraphs colored by speaker">
 
 </details>
 
@@ -102,7 +102,7 @@ Some pages only show their text once scripts have run, so a plain fetch gets an 
 <details open>
 <summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="840" alt="capture: text brought back by a rendered fetch on the Reader detail page, with a script-drawn figure kept in the text">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="640" alt="capture: text brought back by a rendered fetch on the Reader detail page, with a script-drawn figure kept in the text">
 
 </details>
 

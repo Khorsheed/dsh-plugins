@@ -2,9 +2,9 @@
 
 [English](README.en.md) | 中文
 
-**自学用的一整套工具：agent 当你的读书教练，一本书、一门课陪你读完；读到哪、哪里没懂、哪道题错过，它都替你记着。** 说想学什么，教练先问问你的底子，再帮你挑教材、排路线，你点头才算数；读的时候拍一页书，划线和页边批注自动变成卡片；学完一章做套小测，错题留到你订正对为止；今日页每天列好该继续的和该复习的；订阅、收藏的文章、视频和播客在 DSH 里读，划一句就记笔记，读完点一下让 agent 考考你；没字幕的视频和播客在你电脑上转成文字；要靠脚本才显示得出来的网页也能把正文抓下来……——自带「学习模式」，一次装齐。
+**这是一套自学用的一站式工具：agent 当你的读书教练，陪你读完一本书、一门课；读到哪、哪些地方没懂、哪道题错过，它都替你记着。** 说想学什么，教练先了解你的底子，再帮你挑教材、排路线，你确认后才执行。读的时候拍一页书，划线和页边批注会自动变成卡片；学完一章做套小测，错题会保留到你订正正确为止。今日页每天列出该继续和该复习的内容。订阅、收藏的文章、视频和播客可以在 DSH 里读，划选一句就能记笔记，读完点一下让 agent 考考你。没有字幕的视频和播客会在你的电脑上转成文字；依赖脚本渲染的网页也能抓取正文。自带「学习模式」，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="1000" alt="学习模式的会话：左边是教练给出的判分结果表，右栏图书馆的今日页列出各个学习项目、今日复习里待订正的题和最近的变化">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="800" alt="学习模式的会话：左边是教练给出的判分结果表，右栏图书馆的今日页列出各个学习项目、今日复习里待订正的题和最近的变化">
 
 ## 安装
 
@@ -46,9 +46,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="840" alt="library:一本教材的路线页，14 站的学习路线，顶部是站过关和考点掌握进度，当前一站有「去订正 7 题」和「接着学这一站」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="640" alt="library:一本教材的路线页，14 站的学习路线，顶部是站过关和考点掌握进度，当前一站有「去订正 7 题」和「接着学这一站」">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="840" alt="library:订正页，错题逐题列出，每题下面是作答框和「提交」「讲讲思路」「题有问题」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="640" alt="library:订正页，错题逐题列出，每题下面是作答框和「提交」「讲讲思路」「题有问题」">
 
 </details>
 
@@ -59,9 +59,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="840" alt="dsh-reader:灵感空间的墙，订阅与保存链接的卡片流，表头是筛选、排序、整墙翻译、刷新、设置与新增">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="640" alt="dsh-reader:灵感空间的墙，订阅与保存链接的卡片流，表头是筛选、排序、整墙翻译、刷新、设置与新增">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="840" alt="dsh-reader:详情页，打开翻译后按句对照，点一句展开该句原文">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="640" alt="dsh-reader:详情页，打开翻译后按句对照，点一句展开该句原文">
 
 </details>
 
@@ -72,7 +72,7 @@
 <details open>
 <summary>功能示意（1 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="840" alt="transcribe:灵感空间里一期播客的本机转写稿，左侧是时间，段落按说话人标色">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="640" alt="transcribe:灵感空间里一期播客的本机转写稿，左侧是时间，段落按说话人标色">
 
 </details>
 
@@ -83,7 +83,7 @@
 <details open>
 <summary>功能示意（1 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="840" alt="capture:灵感空间详情页里用渲染抓取拿到的正文，文中保留了脚本画出的图">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="640" alt="capture:灵感空间详情页里用渲染抓取拿到的正文，文中保留了脚本画出的图">
 
 </details>
 

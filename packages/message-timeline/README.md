@@ -6,7 +6,7 @@
 
 会话一长，想找回前面提过的那个要求，只能一路往上滚。装上消息时间轴，对话左边多一条细细的刻度：你说过的每句话占一格，平时压得很淡、不挡视线；鼠标移上去就展开成一行行预览，点哪一行，会话就滚到哪一句。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="640" alt="对话左缘展开的消息时间轴：每行一条用户消息，点行即跳转到对应消息">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="560" alt="对话左缘展开的消息时间轴：每行一条用户消息，点行即跳转到对应消息">
 
 ## 能做什么
 
@@ -17,7 +17,7 @@
 - **平时不打扰**：静止时只是一排淡灰刻度，悬停或用键盘聚焦才展开文字。
 - **窄窗口也能用**：右侧栏打开、窗口变窄时，它收成左边一条刻度，悬停时浮出来。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="时间轴的静止态：收成一排压淡的刻度条，不挡视线，悬停才展开">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="560" alt="时间轴的静止态：收成一排压淡的刻度条，不挡视线，悬停才展开">
 
 ## 安装
 

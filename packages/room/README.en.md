@@ -6,7 +6,7 @@ Turn one session into a room: bring in a few agents, @ a name to hand out work, 
 
 Getting several agents to work on one thing used to mean copying text between windows and keeping track yourself of who had done what. With the room installed, invite the first member and the session becomes a room: dsh itself acts as coordinator, splitting the work, handing it out and collecting the results, while Kimi, Codex, Claude Code or another dsh join as members who each do their part and pass messages to one another. What you get is one place that shows who is doing what, how far along it is and what it cost — and accepting the work is still your call.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="640" alt="A room in progress: member replies and run rows in the chat, with the @ member menu open above the input">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="560" alt="A room in progress: member replies and run rows in the chat, with the @ member menu open above the input">
 
 ## What it does
 
@@ -18,11 +18,11 @@ Getting several agents to work on one thing used to mean copying text between wi
 - **The team on one page**: "Team" on the members page draws who hands work to whom between you, the coordinator and the members, and what each is busy with. An outside session you keep asking can be added with "Add to members", so next time you just @ it.
 - **The calls it makes for you are on record**: whether a new message is a new task or belongs to a running one, and when a member's result goes to the coordinator, the room decides itself — each decision leaves a line on the timeline, and "View decision" shows why. To turn this off, use "Automatic decisions" in the room's Collaboration settings.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="Members page: the empty state offering to turn the session into a multi-agent room, and the session header's Invite agent entry">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="560" alt="Members page: the empty state offering to turn the session into a multi-agent room, and the session header's Invite agent entry">
 
 - **You stay in charge**: any member can take over with "Set as coordinator"; in the Collaboration settings you can have messages between members wait for your OK, or "Pause the room" so new member messages queue up and go out in order once you resume.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="640" alt="Members page: member cards (name, provider, role, model) with the Set as coordinator action">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="560" alt="Members page: member cards (name, provider, role, model) with the Set as coordinator action">
 
 ## Install
 

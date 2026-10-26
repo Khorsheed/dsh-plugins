@@ -6,7 +6,7 @@
 
 对照实验要比的是 agent，不是环境。同一批题几家各跑几次，只要有一格多挂了个目录、换了个网络、内存上限不一样，结果就没法比了，而这种差别事后很难查出来。装上之后，你在评测里把实验设成在容器里跑就行：它替每一格开一个干净的容器，把题放进去、让 agent 在里面做完、收回产出，过了检查再销毁。最后每一格都带着一个环境指纹，指纹一致，就说明环境确实是同一个。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-record-env.png" width="640" alt="实验室运行记录详情：参数表里的环境指纹和容器单元，和同一次运行里其它格子的指纹一致">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-record-env.png" width="560" alt="实验室运行记录详情：参数表里的环境指纹和容器单元，和同一次运行里其它格子的指纹一致">
 
 ## 能做什么
 
@@ -17,7 +17,7 @@
 - **重启也不丢**：DSH 重启后，还在跑的容器会被重新认领，接着管。
 - **剩下的容器一眼看到**：没收走的容器列在「结果对比」页的「未回收单元」里，点「回收」就能清掉。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-run-units.png" width="640" alt="结果对比页的「未回收单元」一节：列出这次运行还占着的容器、所属格子的状态和「回收」按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-run-units.png" width="560" alt="结果对比页的「未回收单元」一节：列出这次运行还占着的容器、所属格子的状态和「回收」按钮">
 
 ## 安装
 

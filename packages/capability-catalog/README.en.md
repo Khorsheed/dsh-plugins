@@ -6,7 +6,7 @@ See at a glance what your agent can do and who installed each tool — and add n
 
 Once you have a handful of plugins and skills, "what can this agent actually do?" and "where did that tool come from?" get hard to answer; you used to dig through logs. With the capability catalog, Settings gains a Tools & Skills page: every skill and every tool, each labelled with where it came from. To add a skill, upload it or paste an install command; to hook up an MCP server, paste its config. The agent can read the same list to tell you what it can do.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-1.png" width="640" alt="the 工具与技能 settings tab: a skill preview grid with source badges, search and sort, and the mode picker">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-1.png" width="560" alt="the 工具与技能 settings tab: a skill preview grid with source badges, search and sort, and the mode picker">
 
 ## What it does
 
@@ -15,13 +15,13 @@ Once you have a handful of plugins and skills, "what can this agent actually do?
 - **Look at one mode at a time**: pick a mode under Mode and the page shows only what that mode can use; pick All modes (compare) and each card shows the modes it appears in.
 - **Three ways to add a skill**: click Add Skill to upload a folder or zip, paste an install command, or tick skills from a local directory.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-2.png" width="640" alt="the Add Skill modal: three install paths — file upload, install from source, pick from a local directory — each with a choice of target root and whether the skill enters the model catalog">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-2.png" width="560" alt="the Add Skill modal: three install paths — file upload, install from source, pick from a local directory — each with a choice of target root and whether the skill enters the model catalog">
 
 - **Enter a skill's keys right here**: when a skill declares the keys it needs, its details show Credential config; enter them once and the values never show on the page.
 - **Paste a config to connect an MCP server**: click Add MCP and paste the server config; it works out the connection and the keys by itself. Once connected you can switch the whole server or single tools on and off, and the agent can use them straight away.
 - **Limit a skill to certain modes**: tick the modes it applies to in the skill's details and save.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-3.png" width="640" alt="the Add MCP server dialog: paste one mcp.json server entry and the transport and credentials are parsed automatically">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-3.png" width="560" alt="the Add MCP server dialog: paste one mcp.json server entry and the transport and credentials are parsed automatically">
 
 ## Install
 

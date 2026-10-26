@@ -6,7 +6,7 @@
 
 几个工作树并行开发时，想知道当前会话对着哪个分支、改了多少，以前得切去终端敲 git。装上工作树，会话头部多一个分支小标签，写着分支名和改动行数，有没提交的改动就变色；点一下，右栏打开改动、提交记录和整个仓库的文件。你得到的是不离开对话就能看清的 git 现状，看到要改的地方，顺手改掉。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-standard.png" width="640" alt="会话头部右上角的分支标签：分支名加改动行数 +175 −34，旁边是仓库名">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-standard.png" width="560" alt="会话头部右上角的分支标签：分支名加改动行数 +175 −34，旁边是仓库名">
 
 ## 能做什么
 
@@ -14,7 +14,7 @@
 - **点一下看改动**：点标签打开右栏的「工作树」页，「工作树待提交」列出所有没提交的文件，点一个看它的 diff 或现在的内容。
 - **提交记录和整个仓库也在**：「仓库提交记录」里点一条提交，看它改了哪些文件、每个文件改成什么样；「仓库文件」能翻遍仓库里的文件，图片直接显示；文档里引用的本地图片和链接也能看、能点。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="640" alt="右栏「工作树」页的「工作树待提交」：左边是改动文件树，右边是选中文件的彩色 diff">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="560" alt="右栏「工作树」页的「工作树待提交」：左边是改动文件树，右边是选中文件的彩色 diff">
 
 - **看到不对，当场改**：「内容」视图里点「编辑」直接改，⌘S 或「保存」写回工作树，左边的改动列表跟着更新；你改的时候 agent 也动了这个文件，会提醒你选覆盖还是放弃。
 - **换个工作树接着干**：页面顶部「切换工作树」换到另一个，再点「切换到此工作树」，agent 下一轮就在新目录里干活，不打断它手上的事。
@@ -30,7 +30,7 @@
 
 它也会跟着「开发套件」（`@khorsheed/dsh-dev-suite`）一起装好。装完在一个 git 仓库里开「开发模式」的会话，分支标签就出现在会话头部右上角。在其它模式里看不到标签是正常的。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-other-preset.png" width="640" alt="其它模式（极简模式）的会话里没有分支标签和工作树页，会话头部只剩 DSH 自带的按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-other-preset.png" width="560" alt="其它模式（极简模式）的会话里没有分支标签和工作树页，会话头部只剩 DSH 自带的按钮">
 
 ## 已知限制
 

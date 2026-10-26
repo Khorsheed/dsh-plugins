@@ -6,7 +6,7 @@ The small calls a Room has to make — "merge this?", "tell you now or wait?" �
 
 You've handed out several jobs in a Room and drop in a quick remark: is it adding to one of those jobs, or a new one? Members hand results back one by one: should you hear about each as it lands, or all together once they're in? These used to follow fixed rules. With TypeSafe installed, when no clear rule applies the Room asks it, gets an answer in about a second, and either files your remark under the right task or holds results to report together. Every call is recorded: open the 「房间」 (room) tab in Context Lens to see what was asked, the probability of each option, and the conclusion.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/typesafe-1.png" width="640" alt="Context Lens's room tab on one automatic task-filing decision: decision model jev-1.14.0, the state sent to the model, the fixed question, candidates and probabilities (task 18 at 0.99, new at 0.01), and the conclusion: merged into task 18">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/typesafe-1.png" width="560" alt="Context Lens's room tab on one automatic task-filing decision: decision model jev-1.14.0, the state sent to the model, the fixed question, candidates and probabilities (task 18 at 0.99, new at 0.01), and the conclusion: merged into task 18">
 
 ## What it does
 

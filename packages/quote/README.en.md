@@ -6,7 +6,7 @@ See a line you want to ask about? Select it and quote it into the composer in on
 
 To follow up on a passage from an assistant reply or a file preview, you used to copy it, switch back to the composer, paste, and then write "about what you said above…". With Quote, select any text in DSH and a small menu pops up beside it: click "Quote to current chat" and the passage lands in the composer with its source, ready for your question. It is never sent for you.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-1.png" width="640" alt="the quote action menu floating beside a selection in an assistant reply">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-1.png" width="560" alt="the quote action menu floating beside a selection in an assistant reply">
 
 ## What it does
 
@@ -18,7 +18,7 @@ To follow up on a passage from an assistant reply or a file preview, you used to
 - **Or just copy**: "Copy" takes the original text to the clipboard.
 - **Other plugins add their own options**: with the canvas installed the menu gains "Save as canvas card"; with the reader installed, articles gain "Take a note".
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-2.png" width="640" alt="the same quote menu floating over a selection in the file preview panel">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-2.png" width="560" alt="the same quote menu floating over a selection in the file preview panel">
 
 ## Install
 

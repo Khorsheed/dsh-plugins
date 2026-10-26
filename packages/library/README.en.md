@@ -6,7 +6,7 @@ Let an agent be your reading coach: it plans your pace, takes your notes, writes
 
 The hard part of teaching yourself a book is that nobody keeps you on track: you plan the pace, copy the notes, write the questions, and the ones you got wrong are forgotten by next time. With the library, tell the coach which book you're reading and it drafts a study path first; snap a page as you read and your highlights and margin notes become cards; take a short quiz after each chapter, and the questions you missed stay around until you get them right.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="640" alt="A learning-mode session: the coach's grading table on the left; on the right, the Library's Today page with your projects, today's retakes and recent changes">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="560" alt="A learning-mode session: the coach's grading table on the left; on the right, the Library's Today page with your projects, today's retakes and recent changes">
 
 ## What it does
 
@@ -17,9 +17,9 @@ The hard part of teaching yourself a book is that nobody keeps you on track: you
 - **Wrong answers don't get dropped**: missed questions go to "To retake", and a topic only counts as learned once you get them right.
 - **A review list every day**: the Today page lists the questions to retake and the cards due, so you know what to do the moment you open it.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="640" alt="A textbook's path page: a 14-station study path with stations passed and points mastered at the top, and Retake 7 and Continue on the current station">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="560" alt="A textbook's path page: a 14-station study path with stations passed and points mastered at the top, and Retake 7 and Continue on the current station">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="640" alt="A retake paper: the missed questions one by one, each with an answer box and Submit, Approach and Broken buttons">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="560" alt="A retake paper: the missed questions one by one, each with an answer box and Submit, Approach and Broken buttons">
 
 ## Install
 

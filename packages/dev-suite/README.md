@@ -4,7 +4,7 @@
 
 **在 DSH 里写代码的一整套工具：调度一组 agent 干活，并看清他们改了什么。** 一句话把活交给你电脑上的 Kimi、Codex、Claude Code，或者另一个 DSH，过程实时可见、可以中途停、可以接着聊；邀请几个 agent 进同一个会话分工，@ 谁就派给谁，验收还是你说了算；会话顶上直接显示当前分支和改了多少行，点开就是待提交的改动和提交记录；「是不是」「选哪个」这类判断拿回带把握程度的答案；agent 改完代码要重启，先过构建和测试才放行，起不来自动退回；随时点开任意一轮，看模型到底收到了什么、token 和时间花在哪……——写代码时最想要的那层能力，自带「开发模式」，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/dev-mode.png" width="1000" alt="开发模式全景：协作间正在邀请成员，会话顶上是分支徽标和改动抽屉，输入框上方是子 agent 的任务胶囊">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/dev-mode.png" width="800" alt="开发模式全景：协作间正在邀请成员，会话顶上是分支徽标和改动抽屉，输入框上方是子 agent 的任务胶囊">
 
 ## 安装
 
@@ -53,15 +53,15 @@
 <details open>
 <summary>功能示意（5 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-list.png" width="840" alt="「插件」页的「内置插件配置」：子智能体、网页搜索、Agent 循环、终端之后，是「本机 Agent 委派」和「压缩提醒时机」两张卡">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-list.png" width="640" alt="「插件」页的「内置插件配置」：子智能体、网页搜索、Agent 循环、终端之后，是「本机 Agent 委派」和「压缩提醒时机」两张卡">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi.png" width="840" alt="展开的 Kimi 一节：已登录的 Kimi Code 和版本号，端点地址、API Key、「验证端点并获取模型」，可用模型名单和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi.png" width="640" alt="展开的 Kimi 一节：已登录的 Kimi Code 和版本号，端点地址、API Key、「验证端点并获取模型」，可用模型名单和常驻模式开关">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex.png" width="840" alt="展开的 Codex 一节：已登录的 Codex 和版本号，端点地址、API Key、「验证端点并获取模型」和可用模型名单">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex.png" width="640" alt="展开的 Codex 一节：已登录的 Codex 和版本号，端点地址、API Key、「验证端点并获取模型」和可用模型名单">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="840" alt="展开的 Claude Code 一节：已登录的 Claude Code 和版本号，端点地址、API Key、Auth Token 和可用模型名单">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="640" alt="展开的 Claude Code 一节：已登录的 Claude Code 和版本号，端点地址、API Key、Auth Token 和可用模型名单">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="840" alt="展开的 DSH 一节：凭据沿用当前 DSH，「DeepSeek 委派」开关已打开，默认模型选择和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="640" alt="展开的 DSH 一节：凭据沿用当前 DSH，「DeepSeek 委派」开关已打开，默认模型选择和常驻模式开关">
 
 </details>
 
@@ -72,11 +72,11 @@
 <details open>
 <summary>功能示意（3 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="840" alt="进行中的协作间：聊天里的成员回执和运行行，输入框上方展开的 @ 成员菜单">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="640" alt="进行中的协作间：聊天里的成员回执和运行行，输入框上方展开的 @ 成员菜单">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="840" alt="成员页的空态「把会话变成多 agent 协作间」和会话头部的「邀请 agent」入口">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="成员页的空态「把会话变成多 agent 协作间」和会话头部的「邀请 agent」入口">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="840" alt="成员页：每个成员的名称、来源、角色和模型，以及「设为协调者」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="640" alt="成员页：每个成员的名称、来源、角色和模型，以及「设为协调者」">
 
 </details>
 
@@ -87,7 +87,7 @@
 <details open>
 <summary>功能示意（1 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="840" alt="右栏工作树页的待提交改动：左边文件树带 A/M/D 标记和行数，右边是选中文件的彩色 diff">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="640" alt="右栏工作树页的待提交改动：左边文件树带 A/M/D 标记和行数，右边是选中文件的彩色 diff">
 
 </details>
 
@@ -98,7 +98,7 @@
 <details open>
 <summary>功能示意（1 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/typesafe-1.png" width="840" alt="上下文透镜的「房间」页签：一次「自动任务分类」请求，发给模型的未完成任务、固定的问题、候选与概率（并入任务 18 的把握 0.99），结论是合并到任务 18">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/typesafe-1.png" width="640" alt="上下文透镜的「房间」页签：一次「自动任务分类」请求，发给模型的未完成任务、固定的问题、候选与概率（并入任务 18 的把握 0.99），结论是合并到任务 18">
 
 </details>
 
@@ -109,7 +109,7 @@
 <details open>
 <summary>功能示意（1 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/ankh-guard.JPG" width="840" alt="一次受守护的重启：重启前告知验证项，重启后会话自动恢复并继续验证">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/ankh-guard.JPG" width="640" alt="一次受守护的重启：重启前告知验证项，重启后会话自动恢复并继续验证">
 
 </details>
 
@@ -120,13 +120,13 @@
 <details open>
 <summary>功能示意（4 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-1.png" width="840" alt="点回答下面的「请求明细」图标，右栏的上下文透镜摊开这一轮：主对话和每个成员各一个页签，左边逐次列出请求，右边是这次请求的缓存命中和断点对比">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-1.png" width="640" alt="点回答下面的「请求明细」图标，右栏的上下文透镜摊开这一轮：主对话和每个成员各一个页签，左边逐次列出请求，右边是这次请求的缓存命中和断点对比">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-2.png" width="840" alt="「本次交换」：左边是这次新增的输入（助手消息和几条工具结果），右边是模型的输出和每个工具调用的参数">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-2.png" width="640" alt="「本次交换」：左边是这次新增的输入（助手消息和几条工具结果），右边是模型的输出和每个工具调用的参数">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-3.png" width="840" alt="「上下文构成」：一条彩色比例条，下面按系统、工具、历史、新增分组，每组的字符数，新增的几条逐条列出">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-3.png" width="640" alt="「上下文构成」：一条彩色比例条，下面按系统、工具、历史、新增分组，每组的字符数，新增的几条逐条列出">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-4.png" width="840" alt="「耗时分布」：本轮总耗时拆成模型调用、工具调用和其他，一条时间线按颜色标出模型思考、工具执行和空闲，下面是按合计排序的工具耗时表">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-4.png" width="640" alt="「耗时分布」：本轮总耗时拆成模型调用、工具调用和其他，一条时间线按颜色标出模型思考、工具执行和空闲，下面是按合计排序的工具耗时表">
 
 </details>
 

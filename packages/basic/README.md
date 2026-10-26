@@ -4,7 +4,7 @@
 
 **一组日常高频的体验插件，让你的 DSH 变得更好用、更自由。** 发出去的消息可以改、可以撤；会话标题一键修改；后台任务一目了然、自由中止；上下文压缩提醒自由配置；聊天过程中随时让 Agent 帮你画预览卡片，明确 UI 效果再动手，避免重复返工；自由管理所有的 Skill 和工具，并配置到不同的 preset；任务完成有提示音；移动端快速接入……——大多数用户最先想要的那层体验，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/basic-mode.png" width="1000" alt="dsh-basic 基础体验全景:自由编辑和撤回消息、引用动作、会话产物、文件列表、灵感空间、压缩提醒时机">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/basic-mode.png" width="800" alt="dsh-basic 基础体验全景:自由编辑和撤回消息、引用动作、会话产物、文件列表、灵感空间、压缩提醒时机">
 
 ## 安装
 
@@ -44,15 +44,15 @@
 <details open>
 <summary>功能示意（5 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions1.png" width="840" alt="message-tools:用户消息上的操作行">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions1.png" width="640" alt="message-tools:用户消息上的操作行">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions2.png" width="840" alt="message-tools:原位编辑并重新发送">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions2.png" width="640" alt="message-tools:原位编辑并重新发送">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions3.png" width="840" alt="message-tools:撤回前的确认弹窗">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions3.png" width="640" alt="message-tools:撤回前的确认弹窗">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions4.png" width="840" alt="message-tools:撤回后的分隔线与恢复入口">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions4.png" width="640" alt="message-tools:撤回后的分隔线与恢复入口">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions5.png" width="840" alt="message-tools:恢复后消息原样回到对话">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions5.png" width="640" alt="message-tools:恢复后消息原样回到对话">
 
 </details>
 
@@ -63,9 +63,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="840" alt="message-timeline:悬停展开的时间轴">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="640" alt="message-timeline:悬停展开的时间轴">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="840" alt="message-timeline:日常收成细线">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="message-timeline:日常收成细线">
 
 </details>
 
@@ -76,9 +76,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit1.png" width="840" alt="session-title-edit:标题旁的内联编辑入口">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit1.png" width="640" alt="session-title-edit:标题旁的内联编辑入口">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit2.png" width="840" alt="session-title-edit:直接修改标题，回车保存">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit2.png" width="640" alt="session-title-edit:直接修改标题，回车保存">
 
 </details>
 
@@ -89,9 +89,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-1.png" width="840" alt="quote:选中文本浮出的引用菜单">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-1.png" width="640" alt="quote:选中文本浮出的引用菜单">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-2.png" width="840" alt="quote:引用进入输入框">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-2.png" width="640" alt="quote:引用进入输入框">
 
 </details>
 
@@ -102,15 +102,13 @@
 <details open>
 <summary>功能示意（5 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new1.png" width="840" alt="file-preview:文件列表与内联预览">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new1.png" width="640" alt="file-preview:文件列表与内联预览">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new2.png" width="840" alt="file-preview:持久化会话产物列表入口">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new2.png" width="640" alt="file-preview:持久化会话产物列表入口">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new3.png" width="840" alt="file-preview:产物列表">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new3.png" width="640" alt="file-preview:产物列表">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new4.png" width="840" alt="file-preview:产物内容详情">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new5.png" width="840" alt="file-preview:产物编辑 diff">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new4.png" width="260" alt="file-preview:产物内容详情"> <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new5.png" width="260" alt="file-preview:产物编辑 diff">
 
 </details>
 
@@ -121,9 +119,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-1.png" width="840" alt="local-files:开始页的文件列表入口，默认打开本会话工作目录">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-1.png" width="260" alt="local-files:开始页的文件列表入口，默认打开本会话工作目录">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-2.png" width="840" alt="local-files:左树右预览，Markdown 渲染态带内容搜索">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-2.png" width="640" alt="local-files:左树右预览，Markdown 渲染态带内容搜索">
 
 </details>
 
@@ -134,9 +132,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot1.png" width="840" alt="taskpilot:子 agent 胶囊与展开的列表">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot1.png" width="640" alt="taskpilot:子 agent 胶囊与展开的列表">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot2.png" width="840" alt="taskpilot:后台任务胶囊与详情抽屉">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot2.png" width="640" alt="taskpilot:后台任务胶囊与详情抽屉">
 
 </details>
 
@@ -147,9 +145,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-settings-2.png" width="840" alt="context-guard:提醒比例可配置">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-settings-2.png" width="640" alt="context-guard:提醒比例可配置">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-button.png" width="840" alt="context-guard:输入框上的压缩按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-button.png" width="640" alt="context-guard:输入框上的压缩按钮">
 
 </details>
 
@@ -160,9 +158,9 @@ agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的�
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-1.png" width="840" alt="inline-html-render:会话里的交互卡片">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="inline-html-render:会话里的交互卡片">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-2.png" width="840" alt="inline-html-render:会话里的交互卡片">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-2.png" width="640" alt="inline-html-render:会话里的交互卡片">
 
 </details>
 
@@ -173,11 +171,11 @@ agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的�
 <details open>
 <summary>功能示意（3 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-1.png" width="840" alt="capability-catalog:能力目录三列预览">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-1.png" width="640" alt="capability-catalog:能力目录三列预览">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-2.png" width="840" alt="capability-catalog:skill 详情">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-2.png" width="640" alt="capability-catalog:skill 详情">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-3.png" width="840" alt="capability-catalog:添加 skill">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-3.png" width="640" alt="capability-catalog:添加 skill">
 
 </details>
 
@@ -188,9 +186,9 @@ agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的�
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong1.png" width="840" alt="whalesong:任务运行时鲸鱼喷水">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong1.png" width="640" alt="whalesong:任务运行时鲸鱼喷水">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong2.png" width="840" alt="whalesong:完成时提示音与标签页图标变化">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong2.png" width="640" alt="whalesong:完成时提示音与标签页图标变化">
 
 </details>
 
@@ -201,9 +199,7 @@ agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的�
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-conversation.png" width="840" alt="mobile:手机上的会话界面">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-library.png" width="840" alt="mobile:手机上的列表界面">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-conversation.png" width="260" alt="mobile:手机上的会话界面"> <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-library.png" width="260" alt="mobile:手机上的列表界面">
 
 </details>
 

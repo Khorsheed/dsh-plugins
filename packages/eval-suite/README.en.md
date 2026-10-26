@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 **Everything for comparing coding agents on your own computer: the same questions, the same conditions, the results side by side.** Point at a folder and the agent turns the questions into a dataset; you go through it, and only your OK registers it — the version is pinned and the answers never leak to the agent being tested; say what you want to compare and it drafts the experiment, but "Approve and start" is yours alone to press; Kimi, Codex, Claude Code and DSH each work the questions on your machine, and for a cleaner comparison every cell gets its own Docker container, with a fingerprint that tells you whether the environments matched; check scripts grade first, a blind judge writes a first draft, and you read the answers side by side — without knowing who wrote which — before the final verdict; how many tries each cell took, where it got stuck and what it produced is all on record and can be exported for review; when there aren't enough samples, the report says plainly that it won't rank…… Everything you need to find out "who's better at this kind of job", with "评测模式" (eval mode) built in, installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-bundle-eval-hero.png" width="1000" alt="An eval-mode session: the Experiments page on the right comparing an experiment's results, one row per question with both groups' scores and the difference side by side">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-bundle-eval-hero.png" width="800" alt="An eval-mode session: the Experiments page on the right comparing an experiment's results, one row per question with both groups' scores and the difference side by side">
 
 ## Install
 
@@ -51,11 +51,11 @@ Two things ruin an evaluation: the questions quietly change, so two rounds weren
 <details open>
 <summary>Screenshots (3)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-panel.png" width="840" alt="The Datasets panel in the left sidebar: datasets grouped by source, with the latest version, question count, what the agent can see and which experiments use them">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-panel.png" width="640" alt="The Datasets panel in the left sidebar: datasets grouped by source, with the latest version, question count, what the agent can see and which experiments use them">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-review.png" width="840" alt="The review page waiting for your confirmation: original folder and dataset side by side, visibility switches per part, and the Confirm registration and Send back to the Agent buttons">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-review.png" width="640" alt="The review page waiting for your confirmation: original folder and dataset side by side, visibility switches per part, and the Confirm registration and Send back to the Agent buttons">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-item-detail.png" width="840" alt="A question's page: a file tree colored by visibility on the left, What the player will see and Only judges and probes see side by side on the right, and a line at the bottom saying whether it can be graded">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-item-detail.png" width="640" alt="A question's page: a file tree colored by visibility on the left, What the player will see and Only judges and probes see side by side on the right, and a line at the bottom saying whether it can be graded">
 
 </details>
 
@@ -66,11 +66,11 @@ Finding out whether a kind of job goes better with Codex or Claude Code used to 
 <details open>
 <summary>Screenshots (3)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-lab-list.png" width="840" alt="The experiments list, grouped into needs you / running / done; each card shows the dataset version, comparison groups, progress and one main button">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-lab-list.png" width="640" alt="The experiments list, grouped into needs you / running / done; each card shows the dataset version, comparison groups, progress and one main button">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-results.png" width="840" alt="The Results page: a verdict card and Validity checks 5/5 at the top, then each group's scores per criterion and the paired differences">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-results.png" width="640" alt="The Results page: a verdict card and Validity checks 5/5 at the top, then each group's scores per criterion and the paired differences">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-human-review.png" width="840" alt="The Human review page: several answers to the same question side by side with their sources hidden, each column with the criteria table, judges A / B's first verdicts and score inputs">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-human-review.png" width="640" alt="The Human review page: several answers to the same question side by side with their sources hidden, each column with the criteria table, judges A / B's first verdicts and score inputs">
 
 </details>
 
@@ -81,9 +81,9 @@ A comparison is meant to compare agents, not environments. If one cell had an ex
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-record-env.png" width="840" alt="A run record's details: the environment fingerprint and container unit in the parameter table, matching the other cells of the same run">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-record-env.png" width="640" alt="A run record's details: the environment fingerprint and container unit in the parameter table, matching the other cells of the same run">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-run-units.png" width="840" alt="The Unreclaimed units section of the Results page: the containers this run still holds, the state of each one's cell, and a Reclaim button">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-run-units.png" width="640" alt="The Unreclaimed units section of the Results page: the containers this run still holds, the state of each one's cell, and a Reclaim button">
 
 </details>
 
@@ -94,13 +94,13 @@ These are what you're comparing. Each is the tool you installed yourself, runnin
 <details open>
 <summary>Screenshots (4)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="840" alt="The Local Agent Delegation card in settings: one row per tool, with a status dot showing whether it is signed in">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="The Local Agent Delegation card in settings: one row per tool, with a status dot showing whether it is signed in">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="840" alt="The Kimi section: sign-in status, default model and the always-on switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="640" alt="The Kimi section: sign-in status, default model and the always-on switch">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="840" alt="The Codex section: sign-in status, default model and the always-on switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="640" alt="The Codex section: sign-in status, default model and the always-on switch">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="840" alt="The Claude Code section: sign-in, default model picker and the always-on switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="640" alt="The Claude Code section: sign-in, default model picker and the always-on switch">
 
 </details>
 

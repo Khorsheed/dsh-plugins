@@ -6,7 +6,7 @@
 
 想知道「这类任务换个 agent、换个模型会不会做得更好」，以前只能挨个开终端喂题、凭印象比，上次的条件早就对不上了。装上之后，你跟 agent 说想比什么，它替你起草一个实验；你看过点「批准并启动」，它一格一格交给各家去做，收卷、判分，每一步都记账。最后你拿到一页结果对比：哪组好、好多少；数据不够的时候，它会直说「暂时不能下结论」。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-lab-list.png" width="640" alt="实验室列表：实验按「需要你处理 / 运行中 / 已完成」分组，每张卡片写着题集版本、对比组、进度和一个主按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-lab-list.png" width="560" alt="实验室列表：实验按「需要你处理 / 运行中 / 已完成」分组，每张卡片写着题集版本、对比组、进度和一个主按钮">
 
 ## 能做什么
 
@@ -17,11 +17,11 @@
 - **结论只在能比的时候给**：「结果对比」页先核一遍「有效性校验」，条件不一致或次数太少就只给事实、不排名次。
 - **每一步都有账**：每一格跑过几次、卡在哪、产出了什么都记下来，可以重试、可以导出给别人复核。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-results.png" width="640" alt="结果对比页：顶部结论卡和「有效性校验 5/5」，下面是每条判据下各对比组的得分和配对差值">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-results.png" width="560" alt="结果对比页：顶部结论卡和「有效性校验 5/5」，下面是每条判据下各对比组的得分和配对差值">
 
 - **想要更干净的对比，就放进容器里跑**：实验可以让每一格在独立的 Docker 容器里跑，环境是否一致会逐格记下来（由「实验单元」负责）。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-human-review.png" width="640" alt="人工评估页：同一道题的几份作答去掉来源后并排，每列带判据表、判官 A / B 的初判和打分输入">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-human-review.png" width="560" alt="人工评估页：同一道题的几份作答去掉来源后并排，每列带判据表、判官 A / B 的初判和打分输入">
 
 ## 安装
 

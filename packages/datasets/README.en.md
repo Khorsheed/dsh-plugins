@@ -6,7 +6,7 @@ Turn questions scattered across folders into a dataset an evaluation can use: th
 
 Two things ruin an evaluation: the questions quietly change, so two rounds weren't really answering the same set; or the answers and grading rules end up where the player can see them. With this plugin you tell the agent which folder holds the questions, and it organizes them into a dataset, runs the checks, and hands it to you; only after you've gone through it and pressed "Confirm registration" does it count. From then on each experiment is pinned to the registered version, and the player only gets the parts you allowed.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-panel.png" width="640" alt="The Datasets panel in the left sidebar: datasets grouped by source, with the latest version, question count, what the agent can see and which experiments use them">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-panel.png" width="560" alt="The Datasets panel in the left sidebar: datasets grouped by source, with the latest version, question count, what the agent can see and which experiments use them">
 
 ## What it does
 
@@ -17,9 +17,9 @@ Two things ruin an evaluation: the questions quietly change, so two rounds weren
 - **Checked for gradability first**: before registering, it checks that every question has grading rules and that objective ones have a check script; problems are flagged, not blocking.
 - **Also inside eval sessions**: the same view lives in the Datasets panel in the left sidebar and in an eval session's Datasets tab.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-review.png" width="640" alt="The review page waiting for your confirmation: original folder and dataset side by side, visibility switches per part, and the Confirm registration and Send back to the Agent buttons">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-review.png" width="560" alt="The review page waiting for your confirmation: original folder and dataset side by side, visibility switches per part, and the Confirm registration and Send back to the Agent buttons">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-item-detail.png" width="640" alt="A question's detail page: a file tree colored by visibility on the left; on the right, what the player will see next to what only judges and probes see, and a line saying whether it can be graded">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-item-detail.png" width="560" alt="A question's detail page: a file tree colored by visibility on the left; on the right, what the player will see next to what only judges and probes see, and a line saying whether it can be graded">
 
 ## Install
 

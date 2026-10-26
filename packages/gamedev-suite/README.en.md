@@ -2,9 +2,9 @@
 
 English | [中文](README.md)
 
-**A full kit for making small games with an agent: settle the gameplay in chat, it writes the code and keeps the design notes, and you play the latest version that passed its checks right in the sidebar.** Say what kind of game you want and the agent gives you two or three options for each question, then quickly builds a small playable version; it checks its own work after every round, so broken versions never reach you; jump height and run speed become sliders you tune while you play; draw the hero, enemies and items yourself, or have the agent offer three looks to pick from; commit your panel edits as a new version and the agent won't undo them; every version is kept, so you can go back any time or export one file to send to a friend; when there's a lot to do, hand work to Kimi, Codex or Claude Code on your computer; or bring several agents into one session to build it together…… It comes with "游戏开发模式" (game dev mode), installed in one go.
+**A one-stop kit for making small games with an agent: settle the gameplay in chat, the agent writes the code and keeps the design notes, and you play the latest version that passed each round's check in the right sidebar.** Say what kind of game you want; the agent gives you two or three options to pick from for each question and quickly builds a small playable version first. After every round of changes it checks the game itself, so a broken version never reaches you. Jump height and running speed can become sliders you tune while playing; the looks of the hero, enemies and items you can draw yourself, or have the agent offer three options at once. What you change in the panel is committed as a new version, and the agent won't change it back; every version is kept, you can roll back any time, and export one as a single file to send to friends. When there's a lot to do, hand work to the Kimi, Codex or Claude Code on your computer, or bring several agents into one session to build together. Comes with "游戏开发模式" (game dev mode), installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-1.png" width="1000" alt="The right sidebar's Game panel, Play: live v13 waiting for "Start", then sliders such as walk and sneak speed that take effect as you drag; a game-dev mode session on the left">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-1.png" width="800" alt="The right sidebar's Game panel, Play: live v13 waiting for "Start", then sliders such as walk and sneak speed that take effect as you drag; a game-dev mode session on the left">
 
 ## Install
 
@@ -47,11 +47,11 @@ Making a small game used to mean writing the code yourself, or having a model sp
 <details open>
 <summary>Screenshots (3)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-2.png" width="840" alt="game: The Elements page: one tile per element — mountains, strange beasts, terrain, characters, buildings — each with a preview">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-2.png" width="640" alt="game: The Elements page: one tile per element — mountains, strange beasts, terrain, characters, buildings — each with a preview">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-3.png" width="840" alt="game: An element opened: the traveler's 3D model you can drag to rotate, with idle, sneak, walk and other animations, front, side and back views, then "Ask the agent to change the look" and its lore">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-3.png" width="640" alt="game: An element opened: the traveler's 3D model you can drag to rotate, with idle, sneak, walk and other animations, front, side and back views, then "Ask the agent to change the look" and its lore">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-4.png" width="840" alt="game: The Versions page: every change ships as a checked version; below live v13 the history, each with "Switch back", "Compare with v13" and "Export"">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-4.png" width="640" alt="game: The Versions page: every change ships as a checked version; below live v13 the history, each with "Switch back", "Compare with v13" and "Export"">
 
 </details>
 
@@ -62,7 +62,7 @@ Getting a hand from Codex or Claude Code on your machine used to mean opening a 
 <details open>
 <summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="840" alt="local agent delegation: The Local Agent Delegation card on the Plugins page: the Kimi section with sign-in status, endpoint, API key, available models and the resident-mode switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="640" alt="local agent delegation: The Local Agent Delegation card on the Plugins page: the Kimi section with sign-in status, endpoint, API key, available models and the resident-mode switch">
 
 </details>
 
@@ -73,11 +73,11 @@ Getting several agents onto one job used to mean copy-pasting between windows. P
 <details open>
 <summary>Screenshots (3)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="840" alt="room: a room in progress, member receipts and run lines in the chat, the @ member menu open above the input box">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="640" alt="room: a room in progress, member receipts and run lines in the chat, the @ member menu open above the input box">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="840" alt="room: the empty Members page offering to turn the session into a multi-agent room, and the Invite agent entry in the session header">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="room: the empty Members page offering to turn the session into a multi-agent room, and the Invite agent entry in the session header">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="840" alt="room: the Members page, member cards with name, source, role and model, and Set as coordinator">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="640" alt="room: the Members page, member cards with name, source, role and model, and Set as coordinator">
 
 </details>
 

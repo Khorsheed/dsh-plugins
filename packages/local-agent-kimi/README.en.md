@@ -6,7 +6,7 @@ Hand work to the Kimi Code on your machine: watch it work live, get the result b
 
 Getting Kimi Code to help used to mean opening a terminal, pasting things in, and carrying the result back yourself. With this plugin you say "give this part to Kimi" in a session, and the agent hands the task, with its requirements, to Kimi Code on your machine. Kimi's thinking, tool calls, and replies show up live in a sub-session, and the result comes back with its real usage and time. Kimi runs in its own separate folder; your existing Kimi setup and sessions are never touched.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi.png" width="640" alt="The expanded Kimi section: Kimi Code signed in with its version, endpoint, API key, "Verify endpoint & list models", the available-models list and the resident-mode switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi.png" width="560" alt="The expanded Kimi section: Kimi Code signed in with its version, endpoint, API key, "Verify endpoint & list models", the available-models list and the resident-mode switch">
 
 ## What it does
 

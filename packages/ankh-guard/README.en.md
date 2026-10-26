@@ -6,7 +6,7 @@ Let the agent change its own code and restart itself, without taking the service
 
 Having an agent edit dsh's own code is handy; the risky moment is the restart. If the change is broken, the service goes down along with every conversation in progress, and you're left to clean up. With the restart guard, the agent has to show that the build and tests passed before it may restart. After the restart it checks the new service on its own, falls back to the last working version if it won't come up, and the conversations that were cut off carry on.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/ankh-guard.JPG" width="640" alt="A guarded restart: the checks are announced before the restart, and afterwards the canary wakes the session with context so it can keep verifying">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/ankh-guard.JPG" width="560" alt="A guarded restart: the checks are announced before the restart, and afterwards the canary wakes the session with context so it can keep verifying">
 
 ## What it does
 

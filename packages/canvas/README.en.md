@@ -6,7 +6,7 @@ Lay out a canvas in the right sidebar, pin up your ideas, questions and sources 
 
 Whether it's an article, a novel, or your take on a book you just finished, the material ends up scattered across chats and notes, and when it's time to write you have to dig it all back up. With the canvas, each topic gets its own board: jot every thought down as a card, and the agent suggests cards from the conversation too, which you keep or turn down. Once you have enough, link the related cards, group them, pick a few and have the agent write them up. You end up with a manuscript that remembers which material it used, and you can save it to your workspace.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-board.png" width="640" alt="The canvas in the right sidebar: a row of canvas tabs on top, a board of cards filtered by category below, with fragment, question and reference cards and one dashed suggested card">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-board.png" width="560" alt="The canvas in the right sidebar: a row of canvas tabs on top, a board of cards filtered by category below, with fragment, question and reference cards and one dashed suggested card">
 
 ## What it does
 
@@ -15,13 +15,13 @@ Whether it's an article, a novel, or your take on a book you just finished, the 
 - **The agent suggests, you decide**: cards the agent suggests land on the board with a dashed outline; "Accept" keeps one, "Reject" moves it to the archive rather than deleting it.
 - **Link cards into groups**: switch to "Links" to drag cards into place, draw a line from one card to another, and drag out a box around the ones that belong together.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-links.png" width="640" alt="The Links view: cards drawn as nodes, lines between them, and a few cards inside a titled group box">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-links.png" width="560" alt="The Links view: cards drawn as nodes, lines between them, and a few cards inside a titled group box">
 
 - **Pick some cards, have the agent write**: select cards and choose "Talk to the Agent" or "Have the Agent write it"; the card text goes into the chat box for you to add a line and send. Nothing is sent on its own.
 - **The manuscript gets its own page**: it keeps track of which cards it used and which it didn't; you and the agent can both edit it, and if you both changed it at once it asks you which to keep instead of choosing for you. When it's ready, save it to your workspace.
 - **Collect cards from anywhere**: select some text anywhere, pick "Save as canvas card" from the menu, and it lands on your canvas; notes from the Reader can be synced over too.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-manuscript.png" width="640" alt="A manuscript page: the text in a reading column, title and version on top, and the cards used and unused listed at the bottom">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-manuscript.png" width="560" alt="A manuscript page: the text in a reading column, title and version on top, and the cards used and unused listed at the bottom">
 
 ## Install
 

@@ -6,7 +6,7 @@ agent 碰过的文件一页看全：改了什么、现在长什么样，看完�
 
 agent 干了半天活，到底动了哪些文件、改成了什么样，以前得自己去翻目录、对 diff。装上会话产物，这个会话读过、写过、改过的文件都排在右栏一页里；点开一个，看到的是渲染好的文档，也能一次次往回翻 agent 的每一次修改。你得到的是一份随会话长出来的清单，哪里不对，当场改掉保存。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview1.png" width="640" alt="「会话产物」页的文件预览：文件列表与渲染好的 Markdown 预览">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview1.png" width="560" alt="「会话产物」页的文件预览：文件列表与渲染好的 Markdown 预览">
 
 ## 能做什么
 
@@ -15,12 +15,12 @@ agent 干了半天活，到底动了哪些文件、改成了什么样，以前�
 - **每一次修改都能翻回去看**：切到「改动」，一次次往前翻 agent 对这个文件的每一次写入和修改。
 - **每轮结束一张小卡**：对话里每一轮末尾有一张「N 个产物」卡片，列出这一轮改了哪些文件、各增删多少行，点一下就打开。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview2.png" width="640" alt="一个文件的改动记录：逐次的 diff 可以前后翻看">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview2.png" width="560" alt="一个文件的改动记录：逐次的 diff 可以前后翻看">
 
 - **看到不对，当场改**：点「编辑」直接改，「预览」里同步看效果，⌘S 或「保存」写回去。你改的时候 agent 也动了这个文件，会提醒你，选「仍然覆盖」或「放弃修改，重新载入」；切到别的文件再回来，没保存的草稿还在。
 - **一键回到你的工具**：「复制路径」「打开所在文件夹」「在 IDE 中打开」，在本机打开页面时就能用。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview3.png" width="640" alt="「会话产物」页：会话写过的全部文件一览">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview3.png" width="560" alt="「会话产物」页：会话写过的全部文件一览">
 
 ## 安装
 

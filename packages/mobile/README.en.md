@@ -6,7 +6,7 @@ Keep the conversation going away from your desk: scan a code with your phone and
 
 The DSH web page is built for a computer screen — on a phone the sidebar eats half the view and the buttons are too small to hit, and reaching your home computer from outside means wrestling with domains and forwarding. With Mobile, open "Settings → Connect phone" on the computer and one click gives you an address reachable from anywhere; scan the QR code with your phone camera, open it in the browser, and you get a layout made for the phone. The computer still does the work; the phone is where you read and talk.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-library.png" width="640" alt="the mobile session home: time and workspace groups, a bottom search box and a scan entry">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-library.png" width="260" alt="the mobile session home: time and workspace groups, a bottom search box and a scan entry">
 
 ## What it does
 
@@ -18,7 +18,7 @@ The DSH web page is built for a computer screen — on a phone the sidebar eats 
 - **A layout rebuilt for the phone**: the session home groups by time or workspace and searches titles; composer buttons are bigger and within reach; you can even pick a folder on the computer from the phone.
 - **Plays well with other plugins**: copy / edit / withdraw on messages, inviting members to a room and the like keep working.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-conversation.png" width="640" alt="the session page in the mobile layout: session header with member tabs, the message stream, the bottom composer toolbar">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-conversation.png" width="260" alt="the session page in the mobile layout: session header with member tabs, the message stream, the bottom composer toolbar">
 
 ## Install
 

@@ -4,7 +4,7 @@
 
 **和 agent 一起写东西的一整套工具：灵感和成稿都落在画布上，写长篇它记得人物和伏笔，读到的好文章随手记笔记、再拿来聊。** 一个主题一块画布，想到什么记成一张卡，agent 提的卡你点头才留下；选几张卡让 agent 写成稿，成稿记得自己用了哪些素材；写长篇时人物、世界、伏笔各有卡片，每章先看计划再动笔，写完说一句「对账」它把这章发生的事记回卡上；订阅、收藏的文章、视频和播客直接在 DSH 里读，划一句就记笔记、带着笔记和 agent 讨论，笔记还能同步成画布上的卡片；没字幕的视频和播客在你电脑上转成文字；要靠脚本才显示得出来的网页也能把正文抓下来……——自带「写作模式」，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-writing-hero.png" width="1000" alt="写作模式的会话：左边是对话，右栏画布上排着灵感、人物与伏笔卡片，其中一张是模型提议、等你确认的卡">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-writing-hero.png" width="800" alt="写作模式的会话：左边是对话，右栏画布上排着灵感、人物与伏笔卡片，其中一张是模型提议、等你确认的卡">
 
 ## 安装
 
@@ -48,11 +48,11 @@ agent 写东西时会先分清你是要写、要分析还是要改稿；改稿�
 <details open>
 <summary>功能示意（3 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-board.png" width="840" alt="canvas:右栏的画布，顶部一排画布标签，下面是按分类筛选的卡板，有灵感、问题、来源卡和一张虚线的提议卡">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-board.png" width="640" alt="canvas:右栏的画布，顶部一排画布标签，下面是按分类筛选的卡板，有灵感、问题、来源卡和一张虚线的提议卡">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-links.png" width="840" alt="canvas:连线面，卡片画成节点，节点之间有连线，几张卡被圈进一个带标题的分区框">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-links.png" width="640" alt="canvas:连线面，卡片画成节点，节点之间有连线，几张卡被圈进一个带标题的分区框">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-manuscript.png" width="840" alt="canvas:成稿页，正文阅读栏，顶部是标题和版本，底部列出用到的卡和没用上的卡">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-manuscript.png" width="640" alt="canvas:成稿页，正文阅读栏，顶部是标题和版本，底部列出用到的卡和没用上的卡">
 
 </details>
 
@@ -63,11 +63,11 @@ agent 写东西时会先分清你是要写、要分析还是要改稿；改稿�
 <details open>
 <summary>功能示意（3 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-board.png" width="840" alt="canvas-novel:长篇小说画布，顶部细条显示当前章和待审数，下面是人物、世界、原则、伏笔几类卡片">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-board.png" width="640" alt="canvas-novel:长篇小说画布，顶部细条显示当前章和待审数，下面是人物、世界、原则、伏笔几类卡片">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-planning.png" width="840" alt="canvas-novel:规划页，一页纸大纲和 agent 的大纲提议，带「采用 / 不采用」，下面是按卷排列的章节路线">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-planning.png" width="640" alt="canvas-novel:规划页，一页纸大纲和 agent 的大纲提议，带「采用 / 不采用」，下面是按卷排列的章节路线">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-story-log.png" width="840" alt="canvas-novel:故事页，横轴是章节，伏笔、关系、人物、世界四组，右侧打开一条伏笔看它的逐章变化">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-story-log.png" width="640" alt="canvas-novel:故事页，横轴是章节，伏笔、关系、人物、世界四组，右侧打开一条伏笔看它的逐章变化">
 
 </details>
 
@@ -78,9 +78,9 @@ agent 写东西时会先分清你是要写、要分析还是要改稿；改稿�
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="840" alt="dsh-reader:灵感空间的墙，订阅与保存链接的卡片流，表头是筛选、排序、整墙翻译、刷新、设置与新增">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="640" alt="dsh-reader:灵感空间的墙，订阅与保存链接的卡片流，表头是筛选、排序、整墙翻译、刷新、设置与新增">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="840" alt="dsh-reader:详情页，打开翻译后按句对照，点一句展开该句原文">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="640" alt="dsh-reader:详情页，打开翻译后按句对照，点一句展开该句原文">
 
 </details>
 
@@ -91,7 +91,7 @@ B 站多数视频、播客、小宇宙都没有字幕。在灵感空间里打开
 <details open>
 <summary>功能示意（1 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="840" alt="transcribe:灵感空间里一期播客的本机转写稿，左侧是时间，段落按说话人标色">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="640" alt="transcribe:灵感空间里一期播客的本机转写稿，左侧是时间，段落按说话人标色">
 
 </details>
 
@@ -102,7 +102,7 @@ B 站多数视频、播客、小宇宙都没有字幕。在灵感空间里打开
 <details open>
 <summary>功能示意（1 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="840" alt="capture:灵感空间详情页里用渲染抓取拿到的正文，文中保留了脚本画出的图">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="640" alt="capture:灵感空间详情页里用渲染抓取拿到的正文，文中保留了脚本画出的图">
 
 </details>
 

@@ -6,7 +6,7 @@
 
 聊得越久，上下文占用越高，涨到头 provider 会直接拒收请求——这堵墙比进度环的 100% 来得更早（请求还要给输出留位置）。这个插件就是干这个的：占用一过你设的比例，输入框工具栏里就出现一枚琥珀色按钮，点一下等于亲手输入 `/compact`。它不替你自动压缩，只在你还来得及的时候提醒你。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-button.png" width="640" alt="上下文占用越过配置比例后，输入框工具栏里出现琥珀色的压缩按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-button.png" width="560" alt="上下文占用越过配置比例后，输入框工具栏里出现琥珀色的压缩按钮">
 
 ## 功能
 
@@ -32,9 +32,9 @@ dsh plugin --profile web remove @khorsheed/dsh-context-guard
 
 一个可调项，在 GUI 里改且实时生效，无需重启——0.1.5：设置 → 插件配置 →「压缩提醒时机 / Compaction reminder timing」；0.1.6-alpha.2 起：插件管理页 → 本包详情页的配置区。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-1.png" width="640" alt="「插件」页的「内置插件配置」：最后一张是「压缩提醒时机」卡片">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-1.png" width="560" alt="「插件」页的「内置插件配置」：最后一张是「压缩提醒时机」卡片">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-2.png" width="640" alt="「压缩提醒时机」详情页：提醒比例改成 0.3（已自定义），可配置范围 0.01–1，旁边是重置">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-2.png" width="560" alt="「压缩提醒时机」详情页：提醒比例改成 0.3（已自定义），可配置范围 0.01–1，旁边是重置">
 
 | 键 | 默认值 | 含义 |
 |---|---|---|

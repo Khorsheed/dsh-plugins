@@ -6,7 +6,7 @@ Keep the articles, videos and podcasts you mean to get to on one wall, read them
 
 Papers, articles and videos you come across end up scattered across browser tabs; to talk about one with the agent you copy and paste, and once the chat is over nothing sticks. With the Reader, paste a link or subscribe to an RSS feed and a card appears under "Inspiration" in the right sidebar; open it to read, and translate a foreign-language piece in one click. Select a line that matters to make a note, discuss your notes with the agent, and finally let it quiz you on whether you can explain it — the conclusions go back into your notes.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="640" alt="the Inspiration wall: a card stream of subscriptions and saved links; the header row holds filter, sort, translate-the-wall, refresh, settings and add, with the search box on its own row">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="560" alt="the Inspiration wall: a card stream of subscriptions and saved links; the header row holds filter, sort, translate-the-wall, refresh, settings and add, with the search box on its own row">
 
 ## What it does
 
@@ -18,7 +18,7 @@ Papers, articles and videos you come across end up scattered across browser tabs
 - **Let the agent quiz you**: after reading, "Let the agent quiz me" has it play a student who hasn't read the piece and ask you to explain it, then point out, against the original, only what you missed. No scores — click again to practice again.
 - **Quote into the chat**: select text to quote it straight into the composer; with the canvas installed, a note can "Sync to canvas" as an inspiration card.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="640" alt="the detail view: the article rendered as text; with the globe toggle on, sentences are translated side by side and clicking one reveals its original">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="560" alt="the detail view: the article rendered as text; with the globe toggle on, sentences are translated side by side and clicking one reveals its original">
 
 ## Install
 

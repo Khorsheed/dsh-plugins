@@ -6,7 +6,7 @@ Every message you sent in a long conversation, visible at a glance and one click
 
 Once a session gets long, finding that request you made earlier means scrolling all the way up. With Message Timeline, a thin rail appears on the left of the conversation: one tick per message you sent, faded so it stays out of the way. Hover it and it opens into one-line previews; click a line and the conversation scrolls right to it.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="640" alt="the message timeline expanded on the conversation's left edge: one row per user message; click a row to jump to it">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="560" alt="the message timeline expanded on the conversation's left edge: one row per user message; click a row to jump to it">
 
 ## What it does
 
@@ -17,7 +17,7 @@ Once a session gets long, finding that request you made earlier means scrolling 
 - **Quiet until you need it**: at rest it is a row of faint gray ticks; text appears only on hover or keyboard focus.
 - **Works in narrow windows**: with the right sidebar open or the window narrow, it shrinks to a rail on the left and floats out on hover.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="the timeline at rest: a faint strip of ticks that stays out of the way and expands on hover">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="560" alt="the timeline at rest: a faint strip of ticks that stays out of the way and expands on hover">
 
 ## Install
 

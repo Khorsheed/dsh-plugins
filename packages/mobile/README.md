@@ -6,7 +6,7 @@
 
 DSH 的网页是照着电脑屏幕做的，用手机打开，侧栏占掉半屏，按钮小得点不中；想从外面连回家里那台电脑，还得自己折腾域名和转发。装上移动端，在电脑上打开「设置 → 连接手机」，点一下就有一个能从外网访问的地址；用手机相机扫二维码，浏览器里打开就是专门给手机排好的界面。活还是电脑在干，手机只负责看和说。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-library.png" width="640" alt="移动端会话首页:时间与工作区分组、底部搜索框与扫码入口">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-library.png" width="260" alt="移动端会话首页:时间与工作区分组、底部搜索框与扫码入口">
 
 ## 能做什么
 
@@ -18,7 +18,7 @@ DSH 的网页是照着电脑屏幕做的，用手机打开，侧栏占掉半屏�
 - **界面为手机重排**：会话首页按时间或工作区分组、能搜标题；输入框的按钮更大、够得着；在手机上也能选电脑上的目录。
 - **跟其他插件合得来**：消息的复制 / 编辑 / 撤回、协作间邀请成员这些照常能用。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-conversation.png" width="640" alt="移动布局下的会话页:会话头部与成员 tab、消息流、底部输入工具栏">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-conversation.png" width="260" alt="移动布局下的会话页:会话头部与成员 tab、消息流、底部输入工具栏">
 
 ## 安装
 

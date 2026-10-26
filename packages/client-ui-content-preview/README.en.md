@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 The file-content panel inside Local Files, Worktrees, and Session Artifacts. You never install it yourself: it is built into those three plugins, so installing any of them brings it along.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="the shared content pane as it appears inside the local-files plugin: rendered markdown, content search, and the preview/source toggle">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/content-preview-1.png" width="560" alt="the shared content pane as it appears inside the local-files plugin: rendered markdown, content search, and the preview/source toggle">
 
 ## What it is
 

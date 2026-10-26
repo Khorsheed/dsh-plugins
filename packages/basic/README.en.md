@@ -4,7 +4,7 @@
 
 **A set of everyday, high-frequency experience plugins that make your DSH nicer — and freer.** Edit or withdraw messages you already sent; rename a session title in one click; background jobs at a glance and stoppable at will; a context-compaction reminder you configure yourself; mid-chat, have the agent sketch a preview card so you agree on the UI before it builds — no more rework loops; manage every skill and tool freely and assign them to different presets; a chime when a task completes; mobile access in a snap…… The quality-of-life layer most users want first, installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/basic-mode.png" width="1000" alt="dsh-basic essentials at a glance: edit and withdraw messages, quote actions, session artifacts, the file list, the ideas space, and the compaction-reminder timing">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/basic-mode.png" width="800" alt="dsh-basic essentials at a glance: edit and withdraw messages, quote actions, session artifacts, the file list, the ideas space, and the compaction-reminder timing">
 
 ## Install
 
@@ -44,15 +44,15 @@ Every user message carries a copy/edit/withdraw action row. Edits replace in pla
 <details open>
 <summary>Screenshots (5)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions1.png" width="840" alt="message-tools: the action row on a user message">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions1.png" width="640" alt="message-tools: the action row on a user message">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions2.png" width="840" alt="message-tools: editing in place and re-sending">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions2.png" width="640" alt="message-tools: editing in place and re-sending">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions3.png" width="840" alt="message-tools: the withdrawal confirmation">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions3.png" width="640" alt="message-tools: the withdrawal confirmation">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions4.png" width="840" alt="message-tools: the divider and restore entry">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions4.png" width="640" alt="message-tools: the divider and restore entry">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions5.png" width="840" alt="message-tools: restored messages return as they were">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions5.png" width="640" alt="message-tools: restored messages return as they were">
 
 </details>
 
@@ -63,9 +63,9 @@ The official timeline gets costly to navigate in long sessions; I personally pre
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="840" alt="message-timeline: expanded on hover">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="640" alt="message-timeline: expanded on hover">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="840" alt="message-timeline: at rest, a thin rail">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="message-timeline: at rest, a thin rail">
 
 </details>
 
@@ -76,9 +76,9 @@ Click the pencil beside the title in the chat header and the title itself become
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit1.png" width="840" alt="session-title-edit: the inline edit entry">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit1.png" width="640" alt="session-title-edit: the inline edit entry">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit2.png" width="840" alt="session-title-edit: type and hit Enter">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit2.png" width="640" alt="session-title-edit: type and hit Enter">
 
 </details>
 
@@ -89,9 +89,9 @@ Select any text and a floating action menu appears — quote into the current se
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-1.png" width="840" alt="quote: the floating menu over selected text">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-1.png" width="640" alt="quote: the floating menu over selected text">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-2.png" width="840" alt="quote: the quote lands in the composer">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-2.png" width="640" alt="quote: the quote lands in the composer">
 
 </details>
 
@@ -102,15 +102,13 @@ The Produced tab lists every file the session wrote or edited (most recent first
 <details open>
 <summary>Screenshots (5)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new1.png" width="840" alt="file-preview: file list and inline preview">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new1.png" width="640" alt="file-preview: file list and inline preview">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new2.png" width="840" alt="file-preview: the persistent Produced-list entry">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new2.png" width="640" alt="file-preview: the persistent Produced-list entry">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new3.png" width="840" alt="file-preview: the artifact list">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new3.png" width="640" alt="file-preview: the artifact list">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new4.png" width="840" alt="file-preview: artifact content detail">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new5.png" width="840" alt="file-preview: the per-edit diff">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new4.png" width="260" alt="file-preview: artifact content detail"> <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/file-preview-new5.png" width="260" alt="file-preview: the per-edit diff">
 
 </details>
 
@@ -121,9 +119,9 @@ Browse local directories beyond the workspace from the right sidebar: a lazy fil
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-1.png" width="840" alt="local-files: the files entry on the start page, defaulting to the session's working directory">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-1.png" width="260" alt="local-files: the files entry on the start page, defaulting to the session's working directory">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-2.png" width="840" alt="local-files: tree on the left, rendered Markdown preview with content search on the right">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-2.png" width="640" alt="local-files: tree on the left, rendered Markdown preview with content search on the right">
 
 </details>
 
@@ -134,9 +132,9 @@ Two pills above the composer — background jobs and sub-agents — each appeari
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot1.png" width="840" alt="taskpilot: the sub-agent pill, expanded">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot1.png" width="640" alt="taskpilot: the sub-agent pill, expanded">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot2.png" width="840" alt="taskpilot: the jobs pill and detail drawer">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/taskpilot2.png" width="640" alt="taskpilot: the jobs pill and detail drawer">
 
 </details>
 
@@ -147,9 +145,9 @@ When context occupancy crosses your configured ratio, a compact button appears i
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-settings-2.png" width="840" alt="context-guard: the configurable ratio">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-settings-2.png" width="640" alt="context-guard: the configurable ratio">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-button.png" width="840" alt="context-guard: the compact button">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-button.png" width="640" alt="context-guard: the compact button">
 
 </details>
 
@@ -160,9 +158,9 @@ A ```` ```dsh-card ```` HTML block in the agent's reply renders as a sandboxed i
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-1.png" width="840" alt="inline-html-render: an interactive card in the conversation">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="inline-html-render: an interactive card in the conversation">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-2.png" width="840" alt="inline-html-render: sketching design variants as cards before touching code">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-2.png" width="640" alt="inline-html-render: sketching design variants as cards before touching code">
 
 </details>
 
@@ -173,11 +171,11 @@ A new Tools & Skills entry in settings: every skill and tool in the running inst
 <details open>
 <summary>Screenshots (3)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-1.png" width="840" alt="capability-catalog: the three-column grid">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-1.png" width="640" alt="capability-catalog: the three-column grid">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-2.png" width="840" alt="capability-catalog: skill detail">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-2.png" width="640" alt="capability-catalog: skill detail">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-3.png" width="840" alt="capability-catalog: adding a skill">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/capability-catalog-3.png" width="640" alt="capability-catalog: adding a skill">
 
 </details>
 
@@ -188,9 +186,9 @@ While any session runs, the sidebar whale spouts and the tab icon moves; when a 
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong1.png" width="840" alt="whalesong: spouting while tasks run">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong1.png" width="640" alt="whalesong: spouting while tasks run">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong2.png" width="840" alt="whalesong: chime and tab icon on completion">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/whalesong2.png" width="640" alt="whalesong: chime and tab icon on completion">
 
 </details>
 
@@ -201,9 +199,7 @@ A mobile presentation of the web UI for phone browsers, plus the iOS bridge — 
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-conversation.png" width="840" alt="mobile: the conversation view on a phone">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-library.png" width="840" alt="mobile: the list view on a phone">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-conversation.png" width="260" alt="mobile: the conversation view on a phone"> <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/mobile-library.png" width="260" alt="mobile: the list view on a phone">
 
 </details>
 

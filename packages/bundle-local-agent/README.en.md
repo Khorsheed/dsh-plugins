@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 **Let DSH run a team of the agents on your machine.** Hand work to the local Kimi Code, Codex, Claude Code, or a second, separately running DSH in one sentence: watch it live, stop it midway, open the sub-session and keep talking, and pick up again after DSH restarts. Invite several agents into one session and split the work: @ someone to assign it, the coordinator breaks down the task, members bring evidence, and acceptance is still your call. A stuck member can even ask another session for help. Every agent's credential, models, and resident switch live on one card, and your existing CLI setup is never touched…… Everything local multi-agent work needs, installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent-hero.png" width="1000" alt="A room in game dev mode: Claude Code coordinates, and typing @ in the composer lists this room's members, recent sessions and other rooms">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent-hero.png" width="800" alt="A room in game dev mode: Claude Code coordinates, and typing @ in the composer lists this room's members, recent sessions and other rooms">
 
 ## Install
 
@@ -44,7 +44,7 @@ Getting the local Codex or Claude Code to help used to mean opening a terminal, 
 <details open>
 <summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="840" alt="The Local Agent Delegation card on the Plugins page: the Kimi section with sign-in status, endpoint, API key, available models and the resident-mode switch, with Codex and Claude Code folded below">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="640" alt="The Local Agent Delegation card on the Plugins page: the Kimi section with sign-in status, endpoint, API key, available models and the resident-mode switch, with Codex and Claude Code folded below">
 
 </details>
 
@@ -55,9 +55,9 @@ Getting several agents onto one job used to mean copying and pasting between win
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="840" alt="The members page's empty state, turning the session into a multi-agent room, and the Invite agent entry in the session header">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="The members page's empty state, turning the session into a multi-agent room, and the Invite agent entry in the session header">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="840" alt="The members page: each member's name, source, role, and model, plus Set as coordinator">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="640" alt="The members page: each member's name, source, role, and model, plus Set as coordinator">
 
 </details>
 
@@ -68,9 +68,9 @@ With several agents on one job, the hard part is seeing what each one is actuall
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-1.png" width="840" alt="Click the request-details icon under a reply and Context Lens opens that turn on the right: one tab for the main conversation and one per member, the requests listed on the left, the cache hit and breakpoint comparison on the right">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-1.png" width="640" alt="Click the request-details icon under a reply and Context Lens opens that turn on the right: one tab for the main conversation and one per member, the requests listed on the left, the cache hit and breakpoint comparison on the right">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-4.png" width="840" alt=""Time breakdown": the turn's total split into model calls, tool calls and other, a color-coded timeline, and a tool-time table sorted by total">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-4.png" width="640" alt=""Time breakdown": the turn's total split into model calls, tool calls and other, a color-coded timeline, and a tool-time table sorted by total">
 
 </details>
 

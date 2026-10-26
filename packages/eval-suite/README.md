@@ -4,7 +4,7 @@
 
 **在自己电脑上比较编码 agent 的一整套工具：同一批题、同样的条件，结果并排摆出来。** 指个文件夹，agent 替你把题目整理成题集，你逐题看过、点头才登记，版本钉死、答案不会漏给被测的 agent；说一句想比什么，它替你起草实验，「批准并启动」只有你能按；Kimi、Codex、Claude Code、DSH 各自在本机做题，想更干净就每格一个 Docker 容器、环境是否一致看指纹就知道；检查脚本先判、盲评判官出初稿、你把几份作答并排看完再终评，看不出出自哪家；每一格跑过几次、卡在哪、产出了什么都记在账上，可以导出复核；样本不够时报告直说不排名……——想知道「这类活交给谁好」时要的那一整套，自带「评测模式」，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-bundle-eval-hero.png" width="1000" alt="评测模式的会话：右侧「实验室」页显示一个实验的结果对比，每道题一行，两组的得分与差值并排">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-bundle-eval-hero.png" width="800" alt="评测模式的会话：右侧「实验室」页显示一个实验的结果对比，每道题一行，两组的得分与差值并排">
 
 ## 安装
 
@@ -51,11 +51,11 @@
 <details open>
 <summary>功能示意（3 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-panel.png" width="840" alt="左侧栏「题集」面板：按来源分组的题集列表，写着最新版本、题数、agent 看得到哪些部分、用在哪些实验里">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-panel.png" width="640" alt="左侧栏「题集」面板：按来源分组的题集列表，写着最新版本、题数、agent 看得到哪些部分、用在哪些实验里">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-review.png" width="840" alt="等你确认登记的审阅页：原目录和题集左右对照，各部分的可见性开关，以及「确认登记」「退回给 Agent」按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-review.png" width="640" alt="等你确认登记的审阅页：原目录和题集左右对照，各部分的可见性开关，以及「确认登记」「退回给 Agent」按钮">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-item-detail.png" width="840" alt="题目详情页：左边是按可见性着色的文件树，右边并排「选手将看到」和「只有判官和探针看得到」两栏，底部一行说这道题能不能判分">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-item-detail.png" width="640" alt="题目详情页：左边是按可见性着色的文件树，右边并排「选手将看到」和「只有判官和探针看得到」两栏，底部一行说这道题能不能判分">
 
 </details>
 
@@ -66,11 +66,11 @@
 <details open>
 <summary>功能示意（3 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-lab-list.png" width="840" alt="实验室列表：实验按「需要你处理 / 运行中 / 已完成」分组，每张卡片写着题集版本、对比组、进度和一个主按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-lab-list.png" width="640" alt="实验室列表：实验按「需要你处理 / 运行中 / 已完成」分组，每张卡片写着题集版本、对比组、进度和一个主按钮">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-results.png" width="840" alt="结果对比页：顶部结论卡和「有效性校验 5/5」，下面是每条判据下各对比组的得分和配对差值">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-results.png" width="640" alt="结果对比页：顶部结论卡和「有效性校验 5/5」，下面是每条判据下各对比组的得分和配对差值">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-human-review.png" width="840" alt="人工评估页：同一道题的几份作答去掉来源后并排，每列带判据表、判官 A / B 的初判和打分输入">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-human-review.png" width="640" alt="人工评估页：同一道题的几份作答去掉来源后并排，每列带判据表、判官 A / B 的初判和打分输入">
 
 </details>
 
@@ -81,9 +81,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-record-env.png" width="840" alt="运行记录详情：参数表里的环境指纹和容器单元，和同一次运行里其它格子的指纹一致">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-record-env.png" width="640" alt="运行记录详情：参数表里的环境指纹和容器单元，和同一次运行里其它格子的指纹一致">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-run-units.png" width="840" alt="结果对比页的「未回收单元」一节：列出这次运行还占着的容器、所属格子的状态和「回收」按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-run-units.png" width="640" alt="结果对比页的「未回收单元」一节：列出这次运行还占着的容器、所属格子的状态和「回收」按钮">
 
 </details>
 
@@ -94,13 +94,13 @@
 <details open>
 <summary>功能示意（4 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="840" alt="设置里的「本机 Agent 委派」卡片：每家一行，状态点显示有没有登录好">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="设置里的「本机 Agent 委派」卡片：每家一行，状态点显示有没有登录好">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="840" alt="Kimi 一节：认证状态、默认模型和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="640" alt="Kimi 一节：认证状态、默认模型和常驻模式开关">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="840" alt="Codex 一节：认证状态、默认模型和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="640" alt="Codex 一节：认证状态、默认模型和常驻模式开关">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="840" alt="Claude Code 一节：认证、默认模型选择和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="640" alt="Claude Code 一节：认证、默认模型选择和常驻模式开关">
 
 </details>
 

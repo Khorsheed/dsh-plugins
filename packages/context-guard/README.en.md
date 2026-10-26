@@ -6,7 +6,7 @@ A "compact now" button that shows up in the composer before your context runs ou
 
 The longer a conversation runs, the fuller the context gets — and at the far end the provider starts rejecting requests outright. That wall arrives earlier than the 100% the context ring suggests, because every request also reserves room for the output. This plugin's job is simple: once occupancy crosses the ratio you set, an amber button appears in the composer's toolbar, and clicking it is the same as typing `/compact` yourself. It never compacts for you — it just reminds you while you still can.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-button.png" width="640" alt="the compact button appears in the composer toolbar once context occupancy crosses the configured ratio">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-button.png" width="560" alt="the compact button appears in the composer toolbar once context occupancy crosses the configured ratio">
 
 ## Features
 
@@ -31,9 +31,9 @@ dsh plugin --profile web remove @khorsheed/dsh-context-guard
 
 One tunable, editable in the GUI and live with no restart — on 0.1.5 under Settings → Plugins ("压缩提醒时机 / Compaction reminder timing"); on 0.1.6-alpha.2+ in the bundle's own configuration section on its Plugins-page detail view.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-1.png" width="640" alt="The Plugins page's built-in plugin settings: the last card is Compaction reminder timing">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-1.png" width="560" alt="The Plugins page's built-in plugin settings: the last card is Compaction reminder timing">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-2.png" width="640" alt="The Compaction reminder timing detail page: the reminder ratio set to 0.3 (customized), range 0.01–1, with Reset">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-2.png" width="560" alt="The Compaction reminder timing detail page: the reminder ratio set to 0.3 (customized), range 0.01–1, with Reset">
 
 | Key | Default | Meaning |
 |---|---|---|

@@ -6,7 +6,7 @@ Make a small game with the agent: tell it what you want to play, it builds the g
 
 Making a small game used to mean writing the code yourself, or getting a model to spit out some code and then figuring out how to run it, chasing bugs, and watching every fix break something else. With this plugin you only describe the game you want and how it feels when you play; the agent settles the gameplay and the look with you, builds the smallest version that plays, checks its own work every round, and only puts a version in the right sidebar's "Game" panel once it passes. No game-design experience needed.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-1.png" width="640" alt="The right sidebar's Game panel, Play: live v13 waiting for "Start", then sliders such as walk and sneak speed that take effect as you drag; a game-dev mode session on the left">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-1.png" width="560" alt="The right sidebar's Game panel, Play: live v13 waiting for "Start", then sliders such as walk and sneak speed that take effect as you drag; a game-dev mode session on the left">
 
 ## What it does
 
@@ -18,11 +18,11 @@ Making a small game used to mean writing the code yourself, or getting a model t
 - **See changes as soon as they land**: whether you edited in the panel or the agent or a Claude Code member changed files, the sidebar says "New changes are not in the game yet"; press "Check and publish" and they go into the game. Every version in "Versions" says whether you or the agent published it.
 - **Go back any time**: every version stays under "Versions"; switch back to an old one, or export a single `.html` file and send it to a friend.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-2.png" width="640" alt="The Elements page: one tile per element — mountains, strange beasts, terrain, characters, buildings — each with a preview">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-2.png" width="560" alt="The Elements page: one tile per element — mountains, strange beasts, terrain, characters, buildings — each with a preview">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-3.png" width="640" alt="An element opened: the traveler's 3D model you can drag to rotate, with idle, sneak, walk and other animations, front, side and back views, then "Ask the agent to change the look" and its lore">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-3.png" width="560" alt="An element opened: the traveler's 3D model you can drag to rotate, with idle, sneak, walk and other animations, front, side and back views, then "Ask the agent to change the look" and its lore">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-4.png" width="640" alt="The Versions page: every change ships as a checked version; below live v13 the history, each with "Switch back", "Compare with v13" and "Export"">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-4.png" width="560" alt="The Versions page: every change ships as a checked version; below live v13 the history, each with "Switch back", "Compare with v13" and "Export"">
 
 ## Install
 

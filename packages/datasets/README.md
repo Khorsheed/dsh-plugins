@@ -6,7 +6,7 @@
 
 做评测最怕两件事：题目悄悄改了，前后两轮比的其实不是同一套题；答案或评分标准放在了选手看得到的地方。装上之后，你告诉 agent 题目放在哪个文件夹，它替你整理成题集、跑一遍校验，再交给你过目；你逐题看过、按「确认登记」，这套题才算数。之后每次实验都钉在登记时的那个版本上，选手只拿得到你允许它看的那部分。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-panel.png" width="640" alt="左侧栏「题集」面板：按来源分组的题集列表，写着最新版本、题数、agent 看得到哪些部分、用在哪些实验里">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-panel.png" width="560" alt="左侧栏「题集」面板：按来源分组的题集列表，写着最新版本、题数、agent 看得到哪些部分、用在哪些实验里">
 
 ## 能做什么
 
@@ -17,9 +17,9 @@
 - **先查一遍能不能判分**：登记前会检查每道题有没有评分标准、客观题有没有检查脚本，有问题会提醒你，但不拦着你。
 - **评测会话里也能看**：同一个视图既在左侧栏的「题集」面板里，也在评测会话的「题集」页签里。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-review.png" width="640" alt="等你确认登记的审阅页：原目录和题集左右对照，各部分的可见性开关，以及「确认登记」「退回给 Agent」按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-review.png" width="560" alt="等你确认登记的审阅页：原目录和题集左右对照，各部分的可见性开关，以及「确认登记」「退回给 Agent」按钮">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-item-detail.png" width="640" alt="题目详情页：左边是按可见性着色的文件树，右边并排「选手将看到」和「只有判官和探针看得到」两栏，底部一行说这道题能不能判分">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/datasets-item-detail.png" width="560" alt="题目详情页：左边是按可见性着色的文件树，右边并排「选手将看到」和「只有判官和探针看得到」两栏，底部一行说这道题能不能判分">
 
 ## 安装
 

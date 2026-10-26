@@ -6,7 +6,7 @@ Put the agents on your machine (Codex, Claude Code, Kimi, dsh) through the same 
 
 Wondering whether a kind of task goes better with another agent or another model used to mean opening terminals one by one, feeding questions by hand and comparing from memory, and by the next try the conditions no longer matched. With this plugin you tell the agent what you want to compare and it drafts an experiment; once you've looked it over and pressed "Approve and start", it hands each cell to the right agent, collects the answers, grades them, and keeps a record of every step. You end up with one results page: which group did better and by how much, and when there isn't enough data, it says so plainly ("no conclusion yet").
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-lab-list.png" width="640" alt="The experiments list, grouped into needs you / running / done; each card shows the dataset version, comparison groups, progress and one main button">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-lab-list.png" width="560" alt="The experiments list, grouped into needs you / running / done; each card shows the dataset version, comparison groups, progress and one main button">
 
 ## What it does
 
@@ -17,11 +17,11 @@ Wondering whether a kind of task goes better with another agent or another model
 - **A verdict only when the comparison holds**: the "Results" page runs its "Validity checks" first; if conditions didn't match or there were too few runs, you get the facts and no ranking.
 - **Every step on record**: how many tries each cell took, where it got stuck, what it produced; you can retry, and export the whole run for someone else to check.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-results.png" width="640" alt="The Results page: a verdict card and Validity checks 5/5 at the top, then each group's scores per criterion and the paired differences">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-results.png" width="560" alt="The Results page: a verdict card and Validity checks 5/5 at the top, then each group's scores per criterion and the paired differences">
 
 - **Cleaner comparisons in containers**: an experiment can run each cell in its own Docker container, with a per-cell record of whether the environments matched (handled by Lab).
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-human-review.png" width="640" alt="The Human review page: several answers to one question, with their source hidden, side by side; each column has its criteria, judge A / B's first take and score inputs">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/eval-human-review.png" width="560" alt="The Human review page: several answers to one question, with their source hidden, side by side; each column has its criteria, judge A / B's first take and score inputs">
 
 ## Install
 

@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 **Everything for writing code in DSH: direct a team of agents, and see exactly what they changed.** Hand work to the Kimi, Codex or Claude Code on your own machine, or to another DSH, in one sentence — watch it live, stop it midway, keep the conversation going; invite several agents into one session to split a job, @ whoever should take it, and acceptance stays your call; the session header shows the current branch and how many lines changed, one click away from pending changes and commit history; yes/no and pick-one calls come back as answers with a confidence attached; when the agent wants to restart after changing code, the build and tests have to pass first, and a version that won't boot is rolled back automatically; open any turn to see what the model actually received and where the tokens and time went…… The layer you want most when writing code, with "开发模式" (dev mode) built in, installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/dev-mode.png" width="1000" alt="Dev mode at a glance: a room inviting members, the branch badge and changes drawer in the session header, sub-agent task capsules above the input box">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/dev-mode.png" width="800" alt="Dev mode at a glance: a room inviting members, the branch badge and changes drawer in the session header, sub-agent task capsules above the input box">
 
 ## Install
 
@@ -53,15 +53,15 @@ Getting your local Codex or Claude Code to help used to mean opening a terminal,
 <details open>
 <summary>Screenshots (5)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-list.png" width="840" alt="The Plugins page's built-in plugin settings: after sub-agents, web search, agent loop and terminal come the Local Agent Delegation and Compaction reminder timing cards">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-list.png" width="640" alt="The Plugins page's built-in plugin settings: after sub-agents, web search, agent loop and terminal come the Local Agent Delegation and Compaction reminder timing cards">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi.png" width="840" alt="The expanded Kimi section: Kimi Code signed in with its version, endpoint, API key, "Verify endpoint & list models", the available-models list and the resident-mode switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi.png" width="640" alt="The expanded Kimi section: Kimi Code signed in with its version, endpoint, API key, "Verify endpoint & list models", the available-models list and the resident-mode switch">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex.png" width="840" alt="The expanded Codex section: Codex signed in with its version, endpoint, API key, "Verify endpoint & list models" and the available-models list">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex.png" width="640" alt="The expanded Codex section: Codex signed in with its version, endpoint, API key, "Verify endpoint & list models" and the available-models list">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="840" alt="The expanded Claude Code section: Claude Code signed in with its version, endpoint, API key, Auth Token and the available-models list">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="640" alt="The expanded Claude Code section: Claude Code signed in with its version, endpoint, API key, Auth Token and the available-models list">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="840" alt="The expanded DSH section: credentials follow the current DSH, the "DeepSeek delegation" switch on, the default-model picker and the resident-mode switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="640" alt="The expanded DSH section: credentials follow the current DSH, the "DeepSeek delegation" switch on, the default-model picker and the resident-mode switch">
 
 </details>
 
@@ -72,11 +72,11 @@ Getting several agents onto one job used to mean copy-pasting between windows. N
 <details open>
 <summary>Screenshots (3)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="840" alt="A room in progress: member receipts and run rows in the chat, and the @ member menu open above the input box">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="640" alt="A room in progress: member receipts and run rows in the chat, and the @ member menu open above the input box">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="840" alt="The members page's empty state, turning the session into a multi-agent room, and the Invite agent entry in the session header">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="The members page's empty state, turning the session into a multi-agent room, and the Invite agent entry in the session header">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="840" alt="The members page: each member's name, source, role and model, with "Set as coordinator"">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="640" alt="The members page: each member's name, source, role and model, with "Set as coordinator"">
 
 </details>
 
@@ -87,7 +87,7 @@ With a few worktrees open, you used to run git just to know which branch this se
 <details open>
 <summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="840" alt="Pending changes on the worktrees page: a file tree with A/M/D marks and line counts on the left, the selected file's colored diff on the right">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="640" alt="Pending changes on the worktrees page: a file tree with A/M/D marks and line counts on the left, the selected file's colored diff on the right">
 
 </details>
 
@@ -98,7 +98,7 @@ With a few worktrees open, you used to run git just to know which branch this se
 <details open>
 <summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/typesafe-1.png" width="840" alt="Context Lens's Room tab: one "automatic task classification" request — the open tasks sent to the model, the fixed question, candidates with probabilities (0.99 for merging into task 18) and the conclusion, merge into task 18">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/typesafe-1.png" width="640" alt="Context Lens's Room tab: one "automatic task classification" request — the open tasks sent to the model, the fixed question, candidates with probabilities (0.99 for merging into task 18) and the conclusion, merge into task 18">
 
 </details>
 
@@ -109,7 +109,7 @@ Letting the agent change DSH's own code is handy; the trouble is the restart. Br
 <details open>
 <summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/ankh-guard.JPG" width="840" alt="A guarded restart: the checks announced before the restart, and the session resuming on its own afterwards to keep verifying">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/ankh-guard.JPG" width="640" alt="A guarded restart: the checks announced before the restart, and the session resuming on its own afterwards to keep verifying">
 
 </details>
 
@@ -120,13 +120,13 @@ When you're tuning prompts or writing plugins, what you most want to know is: wh
 <details open>
 <summary>Screenshots (4)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-1.png" width="840" alt="Click the request-details icon under a reply and Context Lens opens that turn on the right: one tab for the main conversation and one per member, the requests listed on the left, the cache hit and breakpoint comparison of the selected request on the right">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-1.png" width="640" alt="Click the request-details icon under a reply and Context Lens opens that turn on the right: one tab for the main conversation and one per member, the requests listed on the left, the cache hit and breakpoint comparison of the selected request on the right">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-2.png" width="840" alt=""This exchange": the new input on the left (an assistant message and a few tool results), the model's output and each tool call's arguments on the right">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-2.png" width="640" alt=""This exchange": the new input on the left (an assistant message and a few tool results), the model's output and each tool call's arguments on the right">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-3.png" width="840" alt=""Context composition": a colored proportion bar, then groups for system, tools, history and new with their character counts, the new entries listed one by one">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-3.png" width="640" alt=""Context composition": a colored proportion bar, then groups for system, tools, history and new with their character counts, the new entries listed one by one">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-4.png" width="840" alt=""Time breakdown": the turn's total split into model calls, tool calls and other, a color-coded timeline of thinking, tool execution and idle, and a tool-time table sorted by total">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-4.png" width="640" alt=""Time breakdown": the turn's total split into model calls, tool calls and other, a color-coded timeline of thinking, tool execution and idle, and a tool-time table sorted by total">
 
 </details>
 

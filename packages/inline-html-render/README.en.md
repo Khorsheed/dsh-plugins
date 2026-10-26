@@ -6,7 +6,7 @@ When the agent says "let me show you", it really does: the small web page it wri
 
 Before, an agent that wanted you to see something could only paste code for you to imagine, or write an HTML file and wait for you to open it. With Inline Cards, say "make me a card", "show me a few color schemes side by side", and it draws a card in the middle of its reply: buttons click, tabs switch, animations move — right where it is talking, and the conversation carries on below.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="a dsh-card block in the middle of an agent reply, rendered as a tabbed data-observation card that flows with the surrounding text">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-1.png" width="560" alt="a dsh-card block in the middle of an agent reply, rendered as a tabbed data-observation card that flows with the surrounding text">
 
 ## What it does
 

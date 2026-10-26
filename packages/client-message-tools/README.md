@@ -6,7 +6,7 @@
 
 话说快了、方向跑偏了，以前只能再发一条往回找补，跑偏的那段还一直留在模型的记忆里。装上消息工具，你发的每条消息下面都有一排小按钮：想换个说法就点编辑，改完重新发，模型照新内容重新回答；想当没说过就点撤回，这条和它后面的内容模型都不会再看到，原话还会放回输入框，等你改好再发。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions1.png" width="640" alt="用户消息下方的复制、编辑、撤回操作按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions1.png" width="560" alt="用户消息下方的复制、编辑、撤回操作按钮">
 
 ## 能做什么
 
@@ -17,13 +17,13 @@
 - **长消息自动折起**：贴了一大段的消息折成十来行，点「展开全部」再看；最新那条一直展开着。
 - **@ 过的会话一眼认出**：消息里 @ 了另一个会话，气泡里显示成带会话标题的小标签，不是一串链接。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions2.png" width="640" alt="原位编辑：消息变成带模型选择的输入框，保存后以新消息重新发送，被编辑消息不再进入模型上下文">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions2.png" width="560" alt="原位编辑：消息变成带模型选择的输入框，保存后以新消息重新发送，被编辑消息不再进入模型上下文">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions3.png" width="640" alt="撤回前的确认弹窗：说明这条消息及其后内容将对模型隐藏、原文会回填到输入框">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions3.png" width="560" alt="撤回前的确认弹窗：说明这条消息及其后内容将对模型隐藏、原文会回填到输入框">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions4.png" width="640" alt="撤回后的内容折叠为可展开的分隔线，底部有「恢复到对话末尾」按钮">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions4.png" width="560" alt="撤回后的内容折叠为可展开的分隔线，底部有「恢复到对话末尾」按钮">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions5.png" width="640" alt="恢复后消息原样回到对话末尾，归入「已恢复」分组">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-actions5.png" width="560" alt="恢复后消息原样回到对话末尾，归入「已恢复」分组">
 
 ## 安装
 

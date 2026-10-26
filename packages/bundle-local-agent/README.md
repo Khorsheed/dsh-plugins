@@ -4,7 +4,7 @@
 
 **让 DSH 调度你电脑上的一组 agent 一起干活。** 一句话把活交给本机的 Kimi Code、Codex、Claude Code，或者另一个单独运行的 DSH，过程实时可见、可以中途停、可以打开子会话接着聊，DSH 重启了也接得上；邀请几个 agent 进同一个会话分工，@ 谁就派给谁，协调者拆任务、成员交证据，验收还是你说了算；成员卡住了还能去问别的会话；各家的凭据、模型和常驻开关在一张卡片里管好，你电脑上原来的 CLI 配置一点不碰……——本机多 agent 协作要用的那一族，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent-hero.png" width="1000" alt="游戏开发模式里的协作间：Claude Code 当协调者，输入框里敲 @ 弹出本房间成员、最近的会话和别的协作间">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent-hero.png" width="800" alt="游戏开发模式里的协作间：Claude Code 当协调者，输入框里敲 @ 弹出本房间成员、最近的会话和别的协作间">
 
 ## 安装
 
@@ -44,7 +44,7 @@
 <details open>
 <summary>功能示意（1 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="840" alt="插件页的「本机 Agent 委派」卡片：Kimi 一节里的登录状态、端点地址、API Key、可用模型名单和常驻模式开关，下面折叠着 Codex 和 Claude Code">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="640" alt="插件页的「本机 Agent 委派」卡片：Kimi 一节里的登录状态、端点地址、API Key、可用模型名单和常驻模式开关，下面折叠着 Codex 和 Claude Code">
 
 </details>
 
@@ -55,9 +55,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="840" alt="成员页的空态「把会话变成多 agent 协作间」和会话头部的「邀请 agent」入口">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="成员页的空态「把会话变成多 agent 协作间」和会话头部的「邀请 agent」入口">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="840" alt="成员页：每个成员的名称、来源、角色和模型，以及「设为协调者」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="640" alt="成员页：每个成员的名称、来源、角色和模型，以及「设为协调者」">
 
 </details>
 
@@ -68,9 +68,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-1.png" width="840" alt="点回答下面的「请求明细」图标，右栏的上下文透镜摊开这一轮：主对话和每个成员各一个页签，左边逐次列出请求，右边是这次请求的缓存命中和断点对比">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-1.png" width="640" alt="点回答下面的「请求明细」图标，右栏的上下文透镜摊开这一轮：主对话和每个成员各一个页签，左边逐次列出请求，右边是这次请求的缓存命中和断点对比">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-4.png" width="840" alt="「耗时分布」：本轮总耗时拆成模型调用、工具调用和其他，一条时间线按颜色标出模型思考、工具执行和空闲，下面是按合计排序的工具耗时表">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-4.png" width="640" alt="「耗时分布」：本轮总耗时拆成模型调用、工具调用和其他，一条时间线按颜色标出模型思考、工具执行和空闲，下面是按合计排序的工具耗时表">
 
 </details>
 

@@ -6,7 +6,7 @@ Hand a subtask to a second, separately running DSH on your machine: it has its o
 
 Some subtasks deserve a clean DSH: none of the current session's context, its own session history, and no way to disturb the instance you're using. With this plugin, turn on "DeepSeek delegation" in settings and the agent can hand such subtasks to a separate DSH started on your machine. Its output shows up live in a sub-session, the result comes back to you, and you can keep working in the same sub-session afterwards.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="640" alt="The expanded DSH section: credentials follow the current DSH, the "DeepSeek delegation" switch on, the default-model picker and the resident-mode switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="560" alt="The expanded DSH section: credentials follow the current DSH, the "DeepSeek delegation" switch on, the default-model picker and the resident-mode switch">
 
 ## What it does
 

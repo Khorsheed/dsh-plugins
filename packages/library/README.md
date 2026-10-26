@@ -6,7 +6,7 @@
 
 自学一本书，最烦的是没人管：进度自己排，笔记自己抄，题自己出，错题下次还没人提醒。装上图书馆，告诉教练你在读哪本书，它会先帮你排一版学习路线；读的时候拍一页书，划线和页边批注会自动整理成卡片；每学完一章做套小测，错题会一直留着，直到你订正对为止。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="640" alt="学习模式的会话：左边是教练给出的判分结果表，右栏图书馆的今日页列出各个学习项目、今日复习里待订正的题和最近的变化">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="560" alt="学习模式的会话：左边是教练给出的判分结果表，右栏图书馆的今日页列出各个学习项目、今日复习里待订正的题和最近的变化">
 
 ## 能做什么
 
@@ -17,9 +17,9 @@
 - **错题不翻篇**：答错的题进「待订正」，订正对了才算掌握这个知识点。
 - **每天照着清单复习**：今日页把要订正的题、该复习的卡片列好，打开就知道干什么。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="640" alt="一本教材的路线页：14 站的学习路线，顶部是站过关和考点掌握进度，当前一站有「去订正 7 题」和「接着学这一站」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="560" alt="一本教材的路线页：14 站的学习路线，顶部是站过关和考点掌握进度，当前一站有「去订正 7 题」和「接着学这一站」">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="640" alt="订正页：错题逐题列出，每题下面是作答框和「提交」「讲讲思路」「题有问题」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="560" alt="订正页：错题逐题列出，每题下面是作答框和「提交」「讲讲思路」「题有问题」">
 
 ## 安装
 

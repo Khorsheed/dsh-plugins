@@ -6,7 +6,7 @@ Run every cell of an evaluation in its own Docker container: the same environmen
 
 A comparison is meant to compare agents, not environments. Run the same questions through several agents a few times each, and if one cell had an extra folder mounted, a different network or a different memory limit, the results stop being comparable, and that kind of difference is hard to spot afterwards. With this plugin you just set the experiment to run in containers: it opens a clean container for each cell, puts the question in, lets the agent work inside, collects what it produced, and removes the container once the checks pass. Every cell ends up with an environment fingerprint, and matching fingerprints mean the environment really was the same.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-record-env.png" width="640" alt="A run record's details in Experiments: the environment fingerprint and container unit in the parameter table, matching the other cells of the same run">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-record-env.png" width="560" alt="A run record's details in Experiments: the environment fingerprint and container unit in the parameter table, matching the other cells of the same run">
 
 ## What it does
 
@@ -17,7 +17,7 @@ A comparison is meant to compare agents, not environments. Run the same question
 - **Survives a restart**: when DSH restarts, containers still running are picked up again.
 - **Leftovers in plain sight**: containers not yet removed are listed under "Unreclaimed units" on the Results page; press "Reclaim" to clear them.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-run-units.png" width="640" alt="The Unreclaimed units section of the Results page: the containers this run still holds, the state of each one's cell, and a Reclaim button">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/lab-run-units.png" width="560" alt="The Unreclaimed units section of the Results page: the containers this run still holds, the state of each one's cell, and a Reclaim button">
 
 ## Install
 

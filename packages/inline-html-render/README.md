@@ -6,7 +6,7 @@
 
 以前 agent 想让你看一个效果，只能贴一段代码让你自己想象，或者写个 HTML 文件等你去打开。装上内联卡片，你说一句「做个卡片看看」「对比几种配色给我看」，它就在回复中间画出一张卡片：按钮能点、标签能切、动画能动，就长在它说话的位置，看完接着往下聊。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-1.png" width="640" alt="agent 回复中间的 dsh-card 代码块被渲染成一张带 tab 的数据观测卡片，与上下文文字自然衔接">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/inline-html-card-1.png" width="560" alt="agent 回复中间的 dsh-card 代码块被渲染成一张带 tab 的数据观测卡片，与上下文文字自然衔接">
 
 ## 能做什么
 

@@ -6,7 +6,7 @@
 
 刷到的论文、文章、视频散落在浏览器标签页里，想跟 agent 聊还得复制粘贴，聊完也没留下什么。装上灵感空间，把链接粘进来、或订阅一个 RSS，右侧栏「灵感空间」里就多一张卡片；点开就能读，外文一键翻成中文。读到要紧的句子划一下记成笔记，带着笔记跟 agent 讨论，最后让它考考你讲不讲得清楚，结论都记回笔记里。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="640" alt="灵感空间的墙:订阅与保存链接的卡片流,表头一行是筛选、排序、整墙翻译、刷新、设置与新增,搜索框独占一行">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="560" alt="灵感空间的墙:订阅与保存链接的卡片流,表头一行是筛选、排序、整墙翻译、刷新、设置与新增,搜索框独占一行">
 
 ## 能做什么
 
@@ -18,7 +18,7 @@
 - **让 agent 考考我**：读完点「让Agent考考我」，它扮成没读过的学生，请你讲给它听，再对照原文只指出你没讲到位的地方。不打分，想再练就再点一次。
 - **引用进对话**：选中正文能直接引用进输入框；装了灵感画布，笔记还能「同步到画布」变成一张灵感卡。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="640" alt="详情页:正文以 DOM 文本渲染,地球开关点亮后按句对照翻译,点一句展开该句原文">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="560" alt="详情页:正文以 DOM 文本渲染,地球开关点亮后按句对照翻译,点一句展开该句原文">
 
 ## 安装
 

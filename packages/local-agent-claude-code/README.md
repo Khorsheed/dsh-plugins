@@ -6,7 +6,7 @@
 
 想让 Claude Code 帮一把，以前得自己开终端、复制粘贴、再把结果搬回来。装上之后，你在会话里说一句「这个交给 Claude Code」，agent 就把任务交给本机的 Claude Code；它的思考、工具调用和回复实时出现在子会话里，跑完把结果带回来。每一次调用用了多少 token、实际跑的是哪个模型，都按真实数字记下。Claude Code 在自己单独的目录里运行，你电脑上原来的 `~/.claude` 配置和登录一点不碰。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="640" alt="展开的 Claude Code 一节：已登录的 Claude Code 和版本号，端点地址、API Key、Auth Token 和可用模型名单">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="560" alt="展开的 Claude Code 一节：已登录的 Claude Code 和版本号，端点地址、API Key、Auth Token 和可用模型名单">
 
 ## 能做什么
 

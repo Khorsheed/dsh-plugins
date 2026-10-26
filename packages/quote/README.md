@@ -6,7 +6,7 @@
 
 想拿助手回复里的一段话、文件预览里的一段内容来追问，以前得手动复制、切回输入框、粘贴，再写一句「你上面说的这段……」。装上引用，在 DSH 里选中任意一段文字，旁边就会浮出一个小菜单：点「引用到当前会话」，这段话带着出处进了输入框，你接着写问题就行；它不会替你发出去。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-1.png" width="640" alt="选中助手回复中的一段文本后，选区旁浮出的引用动作菜单">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-1.png" width="560" alt="选中助手回复中的一段文本后，选区旁浮出的引用动作菜单">
 
 ## 能做什么
 
@@ -18,7 +18,7 @@
 - **顺手复制**：不想引用，点「复制」直接拿走原文。
 - **别的插件也能加选项**：装了灵感画布，菜单里会多一个「存为画布卡片」；装了灵感空间，在文章里会多一个「记笔记」。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-2.png" width="640" alt="文件预览面板里选中一段内容后浮出的同一引用动作菜单">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/quote-2.png" width="560" alt="文件预览面板里选中一段内容后浮出的同一引用动作菜单">
 
 ## 安装
 

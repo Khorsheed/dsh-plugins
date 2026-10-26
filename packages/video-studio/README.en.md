@@ -6,7 +6,7 @@ Edit podcasts and conversations: your recording becomes a transcript, deleting a
 
 A few friends talk for an hour around one recorder, and editing it used to mean staring at waveforms to work out who's speaking and slicing out filler words one by one. With this plugin you hand over the recording; it turns it into a transcript and works out who is who. You click a sentence in the transcript to cut it, talk over what else to cut with the agent in the session, and nothing it finds is cut until you agree. At the end you export the finished audio, a video with subtitles, and a subtitle file.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="640" alt="The Transcript page: text split by speaker; selecting a passage offers "Play from here", "Cut" and "Edit text…"; find & replace, scan for fillers and pauses and AI edit at the top, a player switching between edited and original at the bottom">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="560" alt="The Transcript page: text split by speaker; selecting a passage offers "Play from here", "Cut" and "Edit text…"; find & replace, scan for fillers and pauses and AI edit at the top, a player switching between edited and original at the bottom">
 
 ## What it does
 
@@ -18,9 +18,9 @@ A few friends talk for an hour around one recorder, and editing it used to mean 
 - **Export in one go**: tick podcast audio, full video, subtitles or transcript, whichever you need; for shownotes, just ask the agent to write them in the session.
 - **The show remembers your habits**: intro and outro, loudness, subtitle style and your regulars' voices are saved with the show, so each new episode starts from them.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-1.png" width="640" alt="The Sources page: a recording with video, five voices recognized, one row per voice with its length, ▶ Listen and "Merge into…"">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-1.png" width="560" alt="The Sources page: a recording with video, five voices recognized, one row per voice with its length, ▶ Listen and "Merge into…"">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-3.png" width="640" alt="The Settings page: this episode, the show and global layers — audio and video loudness, intro and outro music, caption style, pauses and fillers, each able to follow the show">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-3.png" width="560" alt="The Settings page: this episode, the show and global layers — audio and video loudness, intro and outro music, caption style, pauses and fillers, each able to follow the show">
 
 ## Install
 
@@ -32,7 +32,7 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 
 The studio comes with the Video Editing Suite. Then start a new session, pick "剪辑模式" (editing mode), and tell the agent where your recording is. Open it from "Studio" on the right sidebar's start page.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="640" alt="The right sidebar's start page: Studio sits below Session products, Files and Context Lens">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="560" alt="The right sidebar's start page: Studio sits below Session products, Files and Context Lens">
 
 The Studio panel only appears in "剪辑模式" (editing mode) sessions; not seeing it in other modes is expected.
 

@@ -6,7 +6,7 @@
 
 让 agent 改 dsh 自己的代码很方便，麻烦在重启那一下：改坏了，服务连同正在聊的会话一起挂掉，只能你去收拾。装上重启守卫，agent 想重启得先证明「构建和测试都过了」，过了才放行；重启后它自己检查新服务是否正常，起不来就自动退回上一个能用的版本，被打断的会话也会接着聊。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/ankh-guard.JPG" width="640" alt="一次受守护的重启:重启前告知验证项,重启后金丝雀自动激活会话并注入上下文继续验证">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/ankh-guard.JPG" width="560" alt="一次受守护的重启:重启前告知验证项,重启后金丝雀自动激活会话并注入上下文继续验证">
 
 ## 能做什么
 

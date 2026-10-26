@@ -6,7 +6,7 @@ Let DSH hand work to the Kimi Code, Codex, Claude Code, or second DSH on your ma
 
 This is the core of local-agent delegation; Kimi, Codex, Claude Code, and DSH all run on it. Using several coding agents used to mean switching between terminals, signing in to each, and keeping track of each one's sessions. With it installed, you set up every agent's credential and models on one 「本机 Agent 委派」 (Local Agent Delegation) card on the Plugins page. Hand work off in a session and the sub-session isn't a read-only replay: open it and keep talking. If DSH restarts, unfinished hand-offs pick up again.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-card.png" width="640" alt="The Local Agent Delegation card: Kimi, Codex, Claude Code and DSH sections, a green dot beside each title meaning it is set up">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-card.png" width="560" alt="The Local Agent Delegation card: Kimi, Codex, Claude Code and DSH sections, a green dot beside each title meaning it is set up">
 
 ## What it does
 
@@ -18,7 +18,7 @@ This is the core of local-agent delegation; Kimi, Codex, Claude Code, and DSH al
 - **Your own CLI setup stays untouched**: each agent runs in the plugin's own folder; your existing config, sign-ins, and sessions stay as they are.
 - **Local members in a room can ask for help**: in a 协作间 (room), Kimi, Codex, and Claude Code members can ask other sessions too, and the reply comes back to them.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="640" alt="A sub-session handed to a local CLI: output appearing live, with the member composer at the bottom for continuing and switching models">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="560" alt="A sub-session handed to a local CLI: output appearing live, with the member composer at the bottom for continuing and switching models">
 
 ## Install
 

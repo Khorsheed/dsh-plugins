@@ -6,7 +6,7 @@
 
 让几个 agent 合干一件事，以前只能在几个窗口之间来回复制粘贴，谁做到哪一步全靠你记。装上协作间，在会话里邀请第一位成员，这个会话就成了协作间：dsh 自己当协调者，帮你拆活、派活、收结果；Kimi、Codex、Claude Code 或另一个 dsh 都能当成员，各干各的、互相传话。你得到的是一个房间：谁在干什么、干到哪、花了多少，一眼看清，最后验不验收还是你说了算。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="640" alt="一个进行中的协作间：聊天流里的成员回复与运行行，输入框上方展开的 @ 成员菜单">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="560" alt="一个进行中的协作间：聊天流里的成员回复与运行行，输入框上方展开的 @ 成员菜单">
 
 ## 能做什么
 
@@ -18,11 +18,11 @@
 - **团队一张图**：成员页的「团队」画出你、协调者和成员之间谁给谁派活、各自在忙什么；常找的外部会话可以「加入房间成员」，下次直接 @。
 - **它替你拿的主意都留了底**：新消息算新任务还是并进旧任务、成员的结果什么时候交给协调者，房间会自己判断，每次判断都在时间线上留一行，点「查看判断」看依据；不想让它判断，就去「协作设置」的「自动判断」里关掉。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="成员页：空态的「把会话变成多 agent 协作间」与会话头部的「＋ 邀请 agent」入口">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="560" alt="成员页：空态的「把会话变成多 agent 协作间」与会话头部的「＋ 邀请 agent」入口">
 
 - **你说了算**：任何成员都能「设为协调者」接班；「协作设置」里可以让成员之间的消息先等你确认，也可以「暂停房间」，成员的新消息先排队，恢复后照顺序送达。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="640" alt="成员页：成员卡片（名称、provider、角色、模型）与「设为协调者」操作">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="560" alt="成员页：成员卡片（名称、provider、角色、模型）与「设为协调者」操作">
 
 ## 安装
 

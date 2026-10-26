@@ -6,14 +6,14 @@ Write a long serial novel with the agent: by chapter one hundred it still knows 
 
 The trouble with writing a long novel with a model is that it forgets: characters drift out of character, planted clues never get picked up, and every new conversation means pasting the background in again. The novel is a genre of the idea canvas: one book is one canvas, and its characters, world, principles and foreshadowing are cards on it. You and the agent settle the outline first, then plan and write one chapter at a time; after each chapter the agent goes back over it and records what happened on the cards. Pick it up in a new session later and what it reads from the cards is the book as it stands now.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-board.png" width="640" alt="A novel canvas: a thin strip on top with the current chapter and items to review, and below it character, world, principle and foreshadowing cards">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-board.png" width="560" alt="A novel canvas: a thin strip on top with the current chapter and items to review, and below it character, world, principle and foreshadowing cards">
 
 ## What it does
 
 - **One book, one canvas**: when you create a canvas, pick the "长篇小说" (novel) genre and the character, world, principle, foreshadowing and relationship cards are set up for you, each with ready-made fields to fill in.
 - **Outline first, then write**: talk through the main line, the protagonist, where it ends and how long it runs; the agent drafts a one-page outline and the volumes on the "Plan" page, and nothing counts until you press "Adopt". You can change it any time.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-planning.png" width="640" alt="The Plan page: whole-book progress on top, the one-page outline, the agent's outline proposal in a dashed box with Adopt / Discard, and the chapter route by volume below">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-planning.png" width="560" alt="The Plan page: whole-book progress on top, the one-page outline, the agent's outline proposal in a dashed box with Adopt / Discard, and the chapter route by volume below">
 
 - **Settled details become cards**: characters and world details you agree on in the chat are written straight onto cards; fix whatever's wrong, and there's only ever one card per character name.
 - **See each chapter's plan before it's written**: the agent lays out the target length, plot beats, conflict, foreshadowing and who appears; a plan card shows up in the chat, and it only starts writing once you open "Review and confirm the plan" and confirm.
@@ -21,7 +21,7 @@ The trouble with writing a long novel with a model is that it forgets: character
 - **Reconcile after each chapter**: say "reconcile chapter 3" in the chat and the agent reads the text and records what the characters went through, how relationships moved and where the foreshadowing stands; anything it isn't sure about waits for you under "to review".
 - **The whole book at a glance**: the "Story" page lays out, chapter by chapter, where clues were planted and revealed, how relationships rose and fell and what each character went through, and flags foreshadowing that's been idle too long; the "Chapters" page is a table of contents with a reader, and "Keep writing" picks up where you stopped.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-story-log.png" width="640" alt="The story log: chapters along the top, foreshadowing, relationships, characters and world in four groups, and one foreshadow opened on the right with its current state and chapter-by-chapter history">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-story-log.png" width="560" alt="The story log: chapters along the top, foreshadowing, relationships, characters and world in four groups, and one foreshadow opened on the right with its current state and chapter-by-chapter history">
 
 ## Install
 

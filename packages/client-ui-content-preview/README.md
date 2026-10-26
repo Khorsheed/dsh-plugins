@@ -4,7 +4,7 @@
 
 「文件列表」「工作树」「会话产物」里那块看文件内容的面板。你不需要单独安装它：它已经内置在这三个插件里，装了其中任何一个就有。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/content-preview-1.png" width="640" alt="共享内容面板在 local-files 插件里的实际样子:markdown 渲染态、内容搜索、预览/源码切换">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/content-preview-1.png" width="560" alt="共享内容面板在 local-files 插件里的实际样子:markdown 渲染态、内容搜索、预览/源码切换">
 
 ## 它是什么
 

@@ -2,9 +2,9 @@
 
 [English](README.en.md) | 中文
 
-**剪播客和对谈的一整套工具：文稿就是剪辑台，删一句话就是剪掉那段音频。** 一条混录自动分出每个人，给新声音起一次名字，同一档节目下次就认得；点一句剪掉、再点恢复，原始录音不会被改动；语气词、长停顿、说重复的，agent 扫一遍列成一组提议，你点「采纳」才算数，长停顿是缩短不是删光；边听边剪，播到哪句高亮到哪句，转写错的字直接改；手机拍的画面按声音自动对齐，不用拍手；片头片尾、字幕样式、常驻成员的声音存在节目里，每期沿用；一键导出 MP3、带字幕的 MP4、SRT 字幕和文稿，shownotes 让 agent 在会话里写；转写全在你这台电脑上跑……——剪一期节目要的那一整套，自带「剪辑模式」，一次装齐。
+**这是一套为播客和对谈剪辑准备的一站式工具。** 你可以直接把文稿当作剪辑台：删一句话，就剪掉对应的那段音频；点一句剪掉，再点恢复，原始录音始终不会被改动。导入混录后会自动区分每位说话人，新声音命名一次，同一档节目下次就能自动识别。Agent 会扫描语气词、长停顿和重复表达，列出一组修改建议，只有你点「采纳」才会生效；长停顿默认缩短，而不是删光。支持边听边剪，播到哪句高亮到哪句，转写错的字可以直接改。手机拍摄的画面可按声音自动对齐，无需拍手打板。片头片尾、字幕样式、常驻成员的声音都保存在节目设置里，每期沿用。一键导出 MP3、带字幕的 MP4、SRT 字幕和文稿，shownotes 可在会话中让 agent 生成。转写全程在本机完成。剪一期节目所需的一整套能力，内置「剪辑模式」，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="1000" alt="剪辑模式里右栏的「剪辑」：按说话人分段的文稿，选中一段可以剪掉、改字或从这里播放，底部播放器可切剪后和原声">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="800" alt="剪辑模式里右栏的「剪辑」：按说话人分段的文稿，选中一段可以剪掉、改字或从这里播放，底部播放器可切剪后和原声">
 
 ## 安装
 
@@ -51,13 +51,13 @@
 <details open>
 <summary>功能示意（4 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="840" alt="右栏的开始页：会话产物、文件列表、Context Lens 之下就是「剪辑」入口">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="640" alt="右栏的开始页：会话产物、文件列表、Context Lens 之下就是「剪辑」入口">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-1.png" width="840" alt="「素材」页：一条带画面的录音，认出 5 个声音，每个声音一行，带时长、▶ 听和「合并到…」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-1.png" width="640" alt="「素材」页：一条带画面的录音，认出 5 个声音，每个声音一行，带时长、▶ 听和「合并到…」">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="840" alt="「文稿」页：按说话人分段的文字稿，选中一段弹出「从这里播放」「剪掉」「改字…」，上方是查找替换、扫描语气词和停顿、AI 帮改，底部播放器可切剪后和原声">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="640" alt="「文稿」页：按说话人分段的文字稿，选中一段弹出「从这里播放」「剪掉」「改字…」，上方是查找替换、扫描语气词和停顿、AI 帮改，底部播放器可切剪后和原声">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-3.png" width="840" alt="「设置」页：这期、节目、全局三层，音频和视频响度、片头片尾音乐、字幕样式、停顿和语气词，每项可以「沿用节目」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-3.png" width="640" alt="「设置」页：这期、节目、全局三层，音频和视频响度、片头片尾音乐、字幕样式、停顿和语气词，每项可以「沿用节目」">
 
 </details>
 
@@ -72,9 +72,9 @@
 <details open>
 <summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="840" alt="插件页的「本机 Agent 委派」卡片：Kimi 一节里的登录状态、端点地址、API Key、可用模型名单和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="640" alt="插件页的「本机 Agent 委派」卡片：Kimi 一节里的登录状态、端点地址、API Key、可用模型名单和常驻模式开关">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="840" alt="打开委派出去的子会话，直接在里面接着聊">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="640" alt="打开委派出去的子会话，直接在里面接着聊">
 
 </details>
 
@@ -85,11 +85,11 @@
 <details open>
 <summary>功能示意（3 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="840" alt="进行中的协作间：聊天里的成员回执和运行行，输入框上方展开的 @ 成员菜单">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="640" alt="进行中的协作间：聊天里的成员回执和运行行，输入框上方展开的 @ 成员菜单">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="840" alt="成员页的空态「把会话变成多 agent 协作间」和会话头部的「邀请 agent」入口">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="成员页的空态「把会话变成多 agent 协作间」和会话头部的「邀请 agent」入口">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="840" alt="成员页：每个成员的名称、来源、角色和模型，以及「设为协调者」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="640" alt="成员页：每个成员的名称、来源、角色和模型，以及「设为协调者」">
 
 </details>
 

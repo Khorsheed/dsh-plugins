@@ -2,9 +2,9 @@
 
 English | [中文](README.md)
 
-**Everything for editing podcasts and conversations: the transcript is your editing desk, and deleting a sentence cuts that stretch of audio.** One mixed recording is split into each speaker, and once you name a new voice, the same show recognizes it next time; click a sentence to cut it and again to bring it back, and your original recording is never touched; the agent scans for filler words, long pauses and repeats and lists them as a set of suggestions, nothing counts until you press "Accept", and long pauses get shortened rather than cut out; edit while you listen, with the current sentence highlighted, and fix mistranscribed words in place; phone footage lines up with the audio by sound, no clapping needed; intro and outro, subtitle style and your regulars' voices are saved with the show and reused every episode; export an MP3, a subtitled MP4, SRT subtitles and the transcript in one go, and have the agent write the shownotes in the session; transcription runs entirely on your own computer…… Everything an episode needs, with "剪辑模式" (editing mode) built in, installed in one go.
+**A one-stop kit for editing podcasts and conversations.** The transcript is your editing desk: delete a sentence and the matching stretch of audio is cut; click a sentence to cut it, click again to bring it back, and the original recording is never touched. Import a mixed recording and it tells each speaker apart; name a new voice once and the same show recognizes it next time. The agent scans for filler words, long pauses and repetition and lists a set of suggested edits that only take effect when you click "Adopt"; long pauses are shortened by default, not removed outright. Edit while you listen — the sentence being played is highlighted, and mis-transcribed words can be fixed directly. Footage shot on a phone lines up with the audio automatically, no clapperboard needed. Intro and outro, caption style and regular members' voices are saved in the show's settings and carry over to every episode. Export MP3, MP4 with captions, SRT captions and the transcript in one go, and ask the agent in the session for shownotes. Transcription runs entirely on your machine. Everything an episode needs, with "剪辑模式" (editing mode) built in, installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="1000" alt="Studio in the right sidebar in editing mode: the transcript split by speaker, a selected passage offering cut, edit text or play from here, the player switching between edited and original">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="800" alt="Studio in the right sidebar in editing mode: the transcript split by speaker, a selected passage offering cut, edit text or play from here, the player switching between edited and original">
 
 ## Install
 
@@ -51,13 +51,13 @@ A few friends talk for an hour around one recorder, and editing it used to mean 
 <details open>
 <summary>Screenshots (4)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="840" alt="The right sidebar's start page: Studio sits below Session products, Files and Context Lens">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="640" alt="The right sidebar's start page: Studio sits below Session products, Files and Context Lens">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-1.png" width="840" alt="The Sources page: a recording with video, five voices recognized, one row per voice with its length, ▶ Listen and "Merge into…"">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-1.png" width="640" alt="The Sources page: a recording with video, five voices recognized, one row per voice with its length, ▶ Listen and "Merge into…"">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="840" alt="The Transcript page: text split by speaker; selecting a passage offers "Play from here", "Cut" and "Edit text…"; find & replace, scan for fillers and pauses and AI edit at the top, a player switching between edited and original at the bottom">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="640" alt="The Transcript page: text split by speaker; selecting a passage offers "Play from here", "Cut" and "Edit text…"; find & replace, scan for fillers and pauses and AI edit at the top, a player switching between edited and original at the bottom">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-3.png" width="840" alt="The Settings page: this episode, the show and global layers — audio and video loudness, intro and outro music, caption style, pauses and fillers, each able to follow the show">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-3.png" width="640" alt="The Settings page: this episode, the show and global layers — audio and video loudness, intro and outro music, caption style, pauses and fillers, each able to follow the show">
 
 </details>
 
@@ -72,9 +72,9 @@ When there's a lot to do, say "give this part to Codex" and it runs on your mach
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="840" alt="The Local Agent Delegation card on the Plugins page: the Kimi section with sign-in status, endpoint, API key, available models and the resident-mode switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="640" alt="The Local Agent Delegation card on the Plugins page: the Kimi section with sign-in status, endpoint, API key, available models and the resident-mode switch">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="840" alt="Opening a delegated sub-session and continuing the conversation right there">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="640" alt="Opening a delegated sub-session and continuing the conversation right there">
 
 </details>
 
@@ -85,11 +85,11 @@ An episode involves a lot: a rough cut, picking highlights, writing shownotes. P
 <details open>
 <summary>Screenshots (3)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="840" alt="A room in progress: member receipts and run rows in the chat, and the @ member menu open above the input box">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="640" alt="A room in progress: member receipts and run rows in the chat, and the @ member menu open above the input box">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="840" alt="The members page's empty state, turning the session into a multi-agent room, and the Invite agent entry in the session header">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="640" alt="The members page's empty state, turning the session into a multi-agent room, and the Invite agent entry in the session header">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="840" alt="The members page: each member's name, source, role and model, with Set as coordinator">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="640" alt="The members page: each member's name, source, role and model, with Set as coordinator">
 
 </details>
 

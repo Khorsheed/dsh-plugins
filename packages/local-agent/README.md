@@ -6,7 +6,7 @@
 
 这是本机 agent 委派的底座，Kimi、Codex、Claude Code、DSH 四家都靠它运行。以前要同时用几个编码 agent，得在几个终端之间来回切，各自登录、各自记会话。装上之后，你在「插件」页的一张「本机 Agent 委派」卡片里给每家配好凭据和模型；在会话里把活交出去，交出去的子会话不是只读回放，你可以打开它直接接着聊；DSH 重启了，没做完的委派也接得上。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-card.png" width="640" alt="「本机 Agent 委派」卡片：Kimi、Codex、Claude Code、DSH 四节，每节标题旁的绿点表示已经配好">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-card.png" width="560" alt="「本机 Agent 委派」卡片：Kimi、Codex、Claude Code、DSH 四节，每节标题旁的绿点表示已经配好">
 
 ## 能做什么
 
@@ -18,7 +18,7 @@
 - **你电脑上原来的 CLI 一点不碰**：每家都在插件自己的目录里运行，原有的配置、登录和会话保持原样。
 - **协作间里的本机成员也能求助**：在协作间里，Kimi、Codex、Claude Code 成员也能去问别的会话，回信回到它自己手上。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="640" alt="交给本机 CLI 的子会话：输出实时出现，底部的成员输入栏可以继续对话、切换模型">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="560" alt="交给本机 CLI 的子会话：输出实时出现，底部的成员输入栏可以继续对话、切换模型">
 
 ## 安装
 

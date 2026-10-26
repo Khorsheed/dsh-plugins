@@ -6,7 +6,7 @@
 
 以前想做个小游戏，要么自己写代码，要么让模型吐一份代码，再自己想办法跑起来、找 bug，改一处坏一处。装上之后，你只管说想做什么样的游戏、玩下来感觉哪里不对；agent 陪你把玩法和风格定下来，做出能玩的最小版本，每一轮自己检查一遍，没问题才放进右栏「游戏」让你玩。没做过游戏策划也能上手。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-1.png" width="640" alt="右栏「游戏」的「试玩」：线上 v13 等你点「开始试玩」，下面是行走速度、潜行速度这些拖动即时生效的参数滑块；左边是游戏开发模式的会话">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-1.png" width="560" alt="右栏「游戏」的「试玩」：线上 v13 等你点「开始试玩」，下面是行走速度、潜行速度这些拖动即时生效的参数滑块；左边是游戏开发模式的会话">
 
 ## 能做什么
 
@@ -18,11 +18,11 @@
 - **改了就能看到**：不管是你在面板里改的，还是 agent、Claude Code 这些成员改的文件，右栏都会提示「有新改动还没进游戏」，点「检查并发版」就进游戏；「版本」里每一版都标着是你发的还是 agent 发的。
 - **随时退回旧版本**：「版本」里每一版都留着，可以切回去，也能导出成一个 `.html` 文件发给朋友玩。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-2.png" width="640" alt="「元素」页：一格一个元素——名山、异兽、山水地形、角色、建筑，每个都有预览">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-2.png" width="560" alt="「元素」页：一格一个元素——名山、异兽、山水地形、角色、建筑，每个都有预览">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-3.png" width="640" alt="打开一个元素：行者的 3D 模型可以拖着转，切换 idle、sneak、walk 等动作和正面、侧面、背面视角，下面是「让 agent 改外观」和它的设定">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-3.png" width="560" alt="打开一个元素：行者的 3D 模型可以拖着转，切换 idle、sneak、walk 等动作和正面、侧面、背面视角，下面是「让 agent 改外观」和它的设定">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-4.png" width="640" alt="「版本」页：每次修改都发成一个版本并通过检查，线上 v13 之下是历史版本，每一版都能「切回这一版」「与 v13 对比」「导出」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-4.png" width="560" alt="「版本」页：每次修改都发成一个版本并通过检查，线上 v13 之下是历史版本，每一版都能「切回这一版」「与 v13 对比」「导出」">
 
 ## 安装
 

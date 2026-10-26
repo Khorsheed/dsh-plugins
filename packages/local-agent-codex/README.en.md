@@ -6,7 +6,7 @@ Hand coding tasks to the Codex on your machine: watch it work live, get the resu
 
 Some jobs you simply want Codex to do, and that used to mean running it in a terminal and carrying the result back yourself. With this plugin you say "give this to Codex" in a session, and the agent hands the task to Codex on your machine. Its reasoning, tool calls, and file changes show up live in a sub-session, and the result comes back with its real usage and time. Codex runs in its own separate folder; your existing `~/.codex` config, sign-in, and sessions are never touched.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex.png" width="640" alt="The expanded Codex section: Codex signed in with its version, endpoint, API key, "Verify endpoint & list models" and the available-models list">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex.png" width="560" alt="The expanded Codex section: Codex signed in with its version, endpoint, API key, "Verify endpoint & list models" and the available-models list">
 
 ## What it does
 

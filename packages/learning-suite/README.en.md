@@ -2,9 +2,9 @@
 
 English | [中文](README.md)
 
-**A full kit for teaching yourself: the agent becomes your reading coach and sees you through a book or a course, keeping track of where you are, what didn't sink in, and which questions you got wrong.** Say what you want to learn and the coach asks about your background, then helps pick a textbook and plan a path that counts once you say yes; snap a page as you read and your highlights and margin notes turn into cards; finish a chapter, take a short quiz, and wrong answers stay until you get them right; the Today page lists what to continue and what to review; feeds and saved articles, videos and podcasts read right inside DSH, highlight a sentence to take a note, and press one button to have the agent quiz you; videos and podcasts without subtitles are transcribed on your own computer; even pages that only show their text after scripts run can have it pulled out…… It comes with "学习模式" (learning mode), installed in one go.
+**A one-stop kit for teaching yourself: the agent becomes your reading coach and sees you through a book or a course; where you are, what you didn't get and which questions you missed — it remembers all of it for you.** Say what you want to learn: the coach first gets a sense of your background, then helps you pick textbooks and lay out a path, which only starts once you confirm. While reading, photograph a page and your underlines and margin notes become cards; after a chapter take a short quiz, and wrong answers stay until you've corrected them. The Today page lists what to continue and what to review each day. Subscribed and saved articles, videos and podcasts can be read inside DSH; select a sentence to take a note, and when you're done, one click has the agent quiz you. Videos and podcasts without subtitles are transcribed on your computer, and pages that need scripts to render can still have their text fetched. Comes with "学习模式" (learning mode), installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="1000" alt="A learning-mode session: the coach's grading table on the left; on the right, the Library's Today page with your projects, today's retakes and recent changes">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-1.png" width="800" alt="A learning-mode session: the coach's grading table on the left; on the right, the Library's Today page with your projects, today's retakes and recent changes">
 
 ## Install
 
@@ -46,9 +46,9 @@ The worst part of teaching yourself from a book is that nobody keeps you on trac
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="840" alt="library: a textbook's path page, a 14-station study path with stations passed and points mastered at the top, and Retake 7 and Continue on the current station">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-2.png" width="640" alt="library: a textbook's path page, a 14-station study path with stations passed and points mastered at the top, and Retake 7 and Continue on the current station">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="840" alt="library: a retake paper, the missed questions one by one, each with an answer box and Submit, Approach and Broken buttons">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/learning-3.png" width="640" alt="library: a retake paper, the missed questions one by one, each with an answer box and Submit, Approach and Broken buttons">
 
 </details>
 
@@ -59,9 +59,9 @@ The articles, videos and podcasts you take in outside the textbook are part of l
 <details open>
 <summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="840" alt="dsh-reader: the Reader wall, a stream of feed and saved-link cards, with filter, sort, translate-the-wall, refresh, settings and add in the header">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-1.png" width="640" alt="dsh-reader: the Reader wall, a stream of feed and saved-link cards, with filter, sort, translate-the-wall, refresh, settings and add in the header">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="840" alt="dsh-reader: the detail page with translation on, sentence by sentence, one sentence expanded to show its original">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-2.png" width="640" alt="dsh-reader: the detail page with translation on, sentence by sentence, one sentence expanded to show its original">
 
 </details>
 
@@ -72,7 +72,7 @@ Lecture recordings and podcasts often have no subtitles. Open one in the Reader 
 <details open>
 <summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="840" alt="transcribe: a podcast episode transcribed locally in the Reader, timestamps on the left and paragraphs colored by speaker">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="640" alt="transcribe: a podcast episode transcribed locally in the Reader, timestamps on the left and paragraphs colored by speaker">
 
 </details>
 
@@ -83,7 +83,7 @@ Some pages only show their text once scripts have run, so a plain fetch gets an 
 <details open>
 <summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="840" alt="capture: text brought back by a rendered fetch on the Reader detail page, with a script-drawn figure kept in the text">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="640" alt="capture: text brought back by a rendered fetch on the Reader detail page, with a script-drawn figure kept in the text">
 
 </details>
 
