@@ -110,7 +110,7 @@ export function AgentTabs({ scopes, value, onSelect, onOpenRequest, roomCount, t
   }
   return <div className={css.root}>
     <div className={css.row} role="tablist" aria-label={t('tab.title')}>
-      {[...main, ...shown].map(scope => <Tab key={scope.scopeId} scope={scope} selected={scope.scopeId === selected?.scopeId} onSelect={onSelect} t={t} />)}
+      {[...main, ...shown].map(scope => <Tab key={scope.scopeId} scope={scope} selected={value !== ROOM_TAB && scope.scopeId === selected?.scopeId} onSelect={onSelect} t={t} />)}
       {shown.length < others.length && <Overflow hidden={others.length - shown.length} items={others} value={value} onSelect={onSelect} t={t} />}
       {/* The room's own decision-model calls this turn, after every agent. */}
       {roomCount !== undefined && roomCount > 0 && (

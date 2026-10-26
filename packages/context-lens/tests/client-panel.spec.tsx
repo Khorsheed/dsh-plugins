@@ -700,6 +700,12 @@ describe('Context Lens room decisions', () => {
     expect(screen.getByText('剪刀手 的结果稍后统一汇报给 dsh')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh['view.raw'] }))
     expect(screen.getAllByText(/"deliver_now"/, { selector: 'pre' })).toHaveLength(2)
+    // Only the room tab reads selected, and the main tab switches back.
+    const selected = () => screen.getAllByRole('tab').filter(entry => entry.getAttribute('aria-selected') === 'true')
+    expect(selected()).toEqual([tab])
+    const main = screen.getAllByRole('tab')[0]!
+    fireEvent.click(main)
+    await waitFor(() => expect(selected()).toEqual([main]))
   })
 })
 

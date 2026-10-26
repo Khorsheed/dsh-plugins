@@ -402,7 +402,9 @@ export function InspectorPanel({
   }
 
   const onSelectScope = (next: string): void => {
-    if (next === effectiveScope?.scopeId) return
+    // On the room tab the effective scope falls back to the main agent, so
+    // compare with the tab actually shown, or the main tab could never be re-picked.
+    if (next === (scopeId === ROOM_TAB ? ROOM_TAB : effectiveScope?.scopeId)) return
     setScopeId(next)
     setSelectedSeq(null)
     setFilterCat(null)
