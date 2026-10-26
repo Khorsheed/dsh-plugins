@@ -2,13 +2,10 @@
 
 English | [中文](README.md)
 
-When a site won't let the reader fetch it, this opens the page in a real browser and brings the article back.
-
-Some sites turn away a plain fetch; on some pages the images and text only appear after scripts run or once you scroll to them, so fetching directly gets you an empty shell. With Capture, you open articles in the reader as usual; when one of these pages comes up, it loads the page fully in a browser in the background and hands the text and figures back to the reader. Nothing extra for you to do — give it fifteen to thirty seconds and start reading.
+A companion to the reader: it brings back the articles you want to read, with extra handling for pages with complex layouts.
 
 ## What it does
 
-- **Blocked? It switches routes**: when a site refuses the plain fetch, the reader says "This site turned away the plain fetch — rendering it in a headless browser instead" and carries on by itself.
 - **Try again by hand**: if the article looks incomplete, click "Fetch rendered" in it to fetch it again through the browser.
 - **Figures that load on scroll come along**: it scrolls the page top to bottom so lazy-loaded content shows up; interactive figures drawn by scripts are saved as still images.
 - **Figure colors come along**: the colors the original page gave its figures and charts come back too, instead of turning black and white.
@@ -17,17 +14,13 @@ Some sites turn away a plain fetch; on some pages the images and text only appea
 
 ## Install
 
-In DSH, open Plugins → Add plugin, enter either suite's package name below and click Install:
-
-```
-@khorsheed/dsh-writing-suite
-```
+In DSH, open Plugins → Add plugin, enter this package name and click Install:
 
 ```
 @khorsheed/dsh-learning-suite
 ```
 
-Capture comes with the Writing Suite or the Learning Suite, together with the reader — it works for the reader, so on its own it has nothing to do. Once installed, just open links in the reader as usual.
+Capture comes with the Learning Suite, together with the reader — it works for the reader, so on its own it has nothing to do. Once installed, just open links in the reader as usual.
 
 ## Known limitations
 

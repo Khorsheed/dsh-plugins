@@ -53,15 +53,15 @@
 <details open>
 <summary>功能示意（5 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="840" alt="设置里的「本机 Agent 委派」卡片：每家一行，状态点显示有没有登录好">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-list.png" width="840" alt="「插件」页的「内置插件配置」：子智能体、网页搜索、Agent 循环、终端之后，是「本机 Agent 委派」和「压缩提醒时机」两张卡">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="840" alt="Kimi 一节：认证状态、默认模型和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi.png" width="840" alt="展开的 Kimi 一节：已登录的 Kimi Code 和版本号，端点地址、API Key、「验证端点并获取模型」，可用模型名单和常驻模式开关">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="840" alt="Codex 一节：认证状态、默认模型和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex.png" width="840" alt="展开的 Codex 一节：已登录的 Codex 和版本号，端点地址、API Key、「验证端点并获取模型」和可用模型名单">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="840" alt="Claude Code 一节：认证、默认模型选择和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="840" alt="展开的 Claude Code 一节：已登录的 Claude Code 和版本号，端点地址、API Key、Auth Token 和可用模型名单">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="840" alt="打开委派出去的子会话，直接在里面接着聊">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="840" alt="展开的 DSH 一节：凭据沿用当前 DSH，「DeepSeek 委派」开关已打开，默认模型选择和常驻模式开关">
 
 </details>
 
@@ -85,9 +85,7 @@
 同时开着几个 worktree，以前要敲 git 才知道这个会话对着哪个分支、还有多少没提交。现在会话顶上一个分支徽标，写着分支名和改动行数，有改动时变成警告色。点开是右栏的工作树页：待提交的改动带彩色 diff，提交记录像 IDE 一样能逐条展开，仓库里的文件也能直接翻、图片直接预览。这些都只是看，不会动你的仓库；让 agent 新建、切换、删除 worktree 也行，删除前一定先问你，有没提交改动的不会被删。
 
 <details open>
-<summary>功能示意（2 张）</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-standard.png" width="840" alt="会话头部右上角的分支徽标：分支名加改动行数 +175 −34，旁边是仓库名">
+<summary>功能示意（1 张）</summary>
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="840" alt="右栏工作树页的待提交改动：左边文件树带 A/M/D 标记和行数，右边是选中文件的彩色 diff">
 
@@ -96,6 +94,13 @@
 ### typesafe：快速决策
 
 「这条消息要不要模型参与」「这个工单归哪个团队」——这类判断如果让 agent 写一段话回答，你还得再读一遍。装上快速决策，agent 遇到「是不是」「选哪个」「打几分」这类问题，拿回的是带把握程度的答案，可以直接据此往下走；协作间也用它来判断成员的回报什么时候交给协调者最合适。先在「工具与技能」里填好 TypeSafe 的 key；没配时它只会说做不了，不会出错。
+
+<details open>
+<summary>功能示意（1 张）</summary>
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/typesafe-1.png" width="840" alt="上下文透镜的「房间」页签：一次「自动任务分类」请求，发给模型的未完成任务、固定的问题、候选与概率（并入任务 18 的把握 0.99），结论是合并到任务 18">
+
+</details>
 
 ### ankh-guard：重启守卫
 
@@ -113,11 +118,15 @@
 调提示词、写插件时最想知道的往往是：这次请求里到底塞了什么？缓存为什么没命中？这一轮怎么这么慢？现在每一轮回答下面多一个图标，点一下右栏就把这一轮的每次模型请求摊开：系统提示每一段从哪来、带了多少工具、哪些是历史、哪些是这次新加的；真实的缓存命中多少，和上一次请求不一样的地方精确到字标出来；点「只看重复」挑出重复塞进去的内容；切到「耗时分布」看时间花在模型、工具还是中间的空档。委派出去的子 agent 单独列出，装之前的对话也能看。它只看不改，看到的数据不写进会话。
 
 <details open>
-<summary>功能示意（2 张）</summary>
+<summary>功能示意（4 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-request.png" width="840" alt="右栏的上下文透镜请求页：顶部切换轮次，下面是缓存命中、前缀差异，以及系统提示、工具、历史、新增几块的构成">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-1.png" width="840" alt="点回答下面的「请求明细」图标，右栏的上下文透镜摊开这一轮：主对话和每个成员各一个页签，左边逐次列出请求，右边是这次请求的缓存命中和断点对比">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-timing.png" width="840" alt="耗时页：总耗时、模型、工具执行、间隙四格，下面是各个 agent 的泳道和按执行时间排序的工具表">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-2.png" width="840" alt="「本次交换」：左边是这次新增的输入（助手消息和几条工具结果），右边是模型的输出和每个工具调用的参数">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-3.png" width="840" alt="「上下文构成」：一条彩色比例条，下面按系统、工具、历史、新增分组，每组的字符数，新增的几条逐条列出">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-4.png" width="840" alt="「耗时分布」：本轮总耗时拆成模型调用、工具调用和其他，一条时间线按颜色标出模型思考、工具执行和空闲，下面是按合计排序的工具耗时表">
 
 </details>
 

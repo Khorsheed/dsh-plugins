@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 **A full kit for making small games with an agent: settle the gameplay in chat, it writes the code and keeps the design notes, and you play the latest version that passed its checks right in the sidebar.** Say what kind of game you want and the agent gives you two or three options for each question, then quickly builds a small playable version; it checks its own work after every round, so broken versions never reach you; jump height and run speed become sliders you tune while you play; draw the hero, enemies and items yourself, or have the agent offer three looks to pick from; commit your panel edits as a new version and the agent won't undo them; every version is kept, so you can go back any time or export one file to send to a friend; when there's a lot to do, hand work to Kimi, Codex or Claude Code on your computer; or bring several agents into one session to build it together…… It comes with "游戏开发模式" (game dev mode), installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-gamedev-hero.png" width="1000" alt="A game-dev session: this round's change card at the end of the chat, and the Game panel in the right sidebar playing the latest version">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-1.png" width="1000" alt="The right sidebar's Game panel, Play: live v13 waiting for "Start", then sliders such as walk and sneak speed that take effect as you drag; a game-dev mode session on the left">
 
 ## Install
 
@@ -46,11 +46,11 @@ Making a small game used to mean writing the code yourself, or having a model sp
 <details open>
 <summary>Screenshots (3)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-workbench.png" width="840" alt="game: the agent changing the game in the chat on the left, the right-sidebar Game panel playing the latest version, parameter sliders below">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-2.png" width="840" alt="game: The Elements page: one tile per element — mountains, strange beasts, terrain, characters, buildings — each with a preview">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-elements.png" width="840" alt="game: an element opened under Elements, the look editor with three look options side by side, its lore below">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-3.png" width="840" alt="game: An element opened: the traveler's 3D model you can drag to rotate, with idle, sneak, walk and other animations, front, side and back views, then "Ask the agent to change the look" and its lore">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-versions.png" width="840" alt="game: the Versions page, the latest check's verdict and screenshot, then the live, candidate and past versions">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-4.png" width="840" alt="game: The Versions page: every change ships as a checked version; below live v13 the history, each with "Switch back", "Compare with v13" and "Export"">
 
 </details>
 
@@ -59,15 +59,9 @@ Making a small game used to mean writing the code yourself, or having a model sp
 Getting a hand from Codex or Claude Code on your machine used to mean opening a terminal, copy-pasting, and carrying the results back. Now you say "give it to Codex" and the agent passes that piece of work to the Kimi, Codex or Claude Code installed on your computer: it works in a sub-session where its thinking, tool calls and replies show up live, and you can stop it midway; when it's done, the result comes back to your session with its usage and time. You can keep talking to the sub-session directly, switching model and reasoning effort in its own input bar, and it picks up again after DSH restarts. The plugins log in and keep their records in their own folders, so your existing setup and accounts on the computer are never touched. The "Local Agent Delegation" card in settings shows each tool's login state and default model at a glance. A separate DSH running on its own can take work too; it's off by default, and you turn it on in the "Local DSH Delegation" card.
 
 <details open>
-<summary>Screenshots (4)</summary>
+<summary>Screenshots (1)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="840" alt="local agent delegation: a sub-session handed to a local CLI, output streaming live, the input bar at the bottom to keep talking and switch models">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="840" alt="local agent delegation: the four cards in settings — Kimi, Codex, dsh, Claude Code — header dots showing each one's login state">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="840" alt="local agent delegation: Kimi's detail card, logged in, default model switchable, live-mode toggle">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="840" alt="local agent delegation: Codex's detail card, logged in, default model switchable">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="840" alt="local agent delegation: The Local Agent Delegation card on the Plugins page: the Kimi section with sign-in status, endpoint, API key, available models and the resident-mode switch">
 
 </details>
 

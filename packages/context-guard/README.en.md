@@ -15,8 +15,6 @@ The longer a conversation runs, the fuller the context gets — and at the far e
 - **Runs the official `/compact`** — idle-gating, the compaction lock, and presentation stay host-owned; a click behaves exactly like the typed command.
 - **One live tunable** — the reminder threshold, editable in settings with no restart.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-settings.png" width="640" alt="the trigger ratio is configurable in settings (0.01–1)">
-
 ## Install
 
 ```sh
@@ -32,6 +30,10 @@ dsh plugin --profile web remove @khorsheed/dsh-context-guard
 ## Config
 
 One tunable, editable in the GUI and live with no restart — on 0.1.5 under Settings → Plugins ("压缩提醒时机 / Compaction reminder timing"); on 0.1.6-alpha.2+ in the bundle's own configuration section on its Plugins-page detail view.
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-1.png" width="640" alt="The Plugins page's built-in plugin settings: the last card is Compaction reminder timing">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-2.png" width="640" alt="The Compaction reminder timing detail page: the reminder ratio set to 0.3 (customized), range 0.01–1, with Reset">
 
 | Key | Default | Meaning |
 |---|---|---|

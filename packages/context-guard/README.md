@@ -15,7 +15,6 @@
 - **执行官方 `/compact`**——空闲门控、压缩锁和流程展示都由宿主负责，点击的效果和手打命令一模一样。
 - **一个实时可调项**——提醒阈值在设置里改，保存即生效，不用重启。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-settings.png" width="640" alt="提醒比例可在设置中按偏好调整（0.01–1）">
 
 ## 安装
 
@@ -32,6 +31,10 @@ dsh plugin --profile web remove @khorsheed/dsh-context-guard
 ## 配置
 
 一个可调项，在 GUI 里改且实时生效，无需重启——0.1.5：设置 → 插件配置 →「压缩提醒时机 / Compaction reminder timing」；0.1.6-alpha.2 起：插件管理页 → 本包详情页的配置区。
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-1.png" width="640" alt="「插件」页的「内置插件配置」：最后一张是「压缩提醒时机」卡片">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-guard-config-2.png" width="640" alt="「压缩提醒时机」详情页：提醒比例改成 0.3（已自定义），可配置范围 0.01–1，旁边是重置">
 
 | 键 | 默认值 | 含义 |
 |---|---|---|

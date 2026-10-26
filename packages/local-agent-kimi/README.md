@@ -6,7 +6,7 @@
 
 想让 Kimi Code 帮一把，以前得自己开终端、复制粘贴、再把结果搬回来。装上之后，你在会话里说一句「这块交给 Kimi」，agent 就把任务连同要求交给本机的 Kimi Code；它的思考、工具调用和回复实时出现在子会话里，跑完把结果带回来，附上真实的用量和耗时。Kimi 在自己单独的目录里运行，你电脑上原来的 Kimi 配置和会话一点不碰。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="640" alt="「本机 Agent 委派」卡片里的 Kimi 一节：认证状态、端点和 API Key、可用模型、常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi.png" width="640" alt="展开的 Kimi 一节：已登录的 Kimi Code 和版本号，端点地址、API Key、「验证端点并获取模型」，可用模型名单和常驻模式开关">
 
 ## 能做什么
 

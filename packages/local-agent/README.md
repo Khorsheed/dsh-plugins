@@ -6,7 +6,7 @@
 
 这是本机 agent 委派的底座，Kimi、Codex、Claude Code、DSH 四家都靠它运行。以前要同时用几个编码 agent，得在几个终端之间来回切，各自登录、各自记会话。装上之后，你在「插件」页的一张「本机 Agent 委派」卡片里给每家配好凭据和模型；在会话里把活交出去，交出去的子会话不是只读回放，你可以打开它直接接着聊；DSH 重启了，没做完的委派也接得上。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="「插件」页的「本机 Agent 委派」卡片：每家一节，节头的状态点显示有没有配好凭据，没装 CLI 的标着「未检测到 CLI」">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-card.png" width="640" alt="「本机 Agent 委派」卡片：Kimi、Codex、Claude Code、DSH 四节，每节标题旁的绿点表示已经配好">
 
 ## 能做什么
 

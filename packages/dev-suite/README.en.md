@@ -53,15 +53,15 @@ Getting your local Codex or Claude Code to help used to mean opening a terminal,
 <details open>
 <summary>Screenshots (5)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="840" alt="The Local Agent Delegation card in settings: one row per tool, with a status dot showing whether it is signed in">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-list.png" width="840" alt="The Plugins page's built-in plugin settings: after sub-agents, web search, agent loop and terminal come the Local Agent Delegation and Compaction reminder timing cards">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="840" alt="The Kimi section: sign-in status, default model and the always-on switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi.png" width="840" alt="The expanded Kimi section: Kimi Code signed in with its version, endpoint, API key, "Verify endpoint & list models", the available-models list and the resident-mode switch">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="840" alt="The Codex section: sign-in status, default model and the always-on switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex.png" width="840" alt="The expanded Codex section: Codex signed in with its version, endpoint, API key, "Verify endpoint & list models" and the available-models list">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="840" alt="The Claude Code section: sign-in, default model picker and the always-on switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="840" alt="The expanded Claude Code section: Claude Code signed in with its version, endpoint, API key, Auth Token and the available-models list">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="840" alt="Opening a delegated sub-session and continuing the conversation right there">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="840" alt="The expanded DSH section: credentials follow the current DSH, the "DeepSeek delegation" switch on, the default-model picker and the resident-mode switch">
 
 </details>
 
@@ -85,9 +85,7 @@ Getting several agents onto one job used to mean copy-pasting between windows. N
 With a few worktrees open, you used to run git just to know which branch this session was on and how much was uncommitted. Now a branch badge sits in the session header with the branch name and changed lines, switching to a warning color when there are changes. Click it for the worktrees page in the right sidebar: pending changes with colored diffs, an IDE-style commit history you can expand one commit at a time, and the repo's files to browse, images previewed inline. All of this only looks — it never touches your repo. The agent can also create, switch and remove worktrees; removal always asks you first, and one with uncommitted changes is never removed.
 
 <details open>
-<summary>Screenshots (2)</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/pilot-badge-standard.png" width="840" alt="The branch badge in the top right of the session header: branch name plus changed lines +175 −34, next to the repo name">
+<summary>Screenshots (1)</summary>
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/worktrees-tab.png" width="840" alt="Pending changes on the worktrees page: a file tree with A/M/D marks and line counts on the left, the selected file's colored diff on the right">
 
@@ -96,6 +94,13 @@ With a few worktrees open, you used to run git just to know which branch this se
 ### typesafe: TypeSafe quick judgements
 
 "Should the model handle this message?" "Which team does this ticket belong to?" — if the agent answers that kind of question with a paragraph, you end up reading it again. With TypeSafe, yes/no, pick-one and rate-it questions come back as answers with a confidence attached, so the agent can act on them directly; the room also uses it to decide when a member's report is best handed to the coordinator. Enter your TypeSafe key under "Tools & Skills" first; without one it simply reports that it can't answer, nothing breaks.
+
+<details open>
+<summary>Screenshots (1)</summary>
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/typesafe-1.png" width="840" alt="Context Lens's Room tab: one "automatic task classification" request — the open tasks sent to the model, the fixed question, candidates with probabilities (0.99 for merging into task 18) and the conclusion, merge into task 18">
+
+</details>
 
 ### ankh-guard: Ankh Guard
 
@@ -113,11 +118,15 @@ Letting the agent change DSH's own code is handy; the trouble is the restart. Br
 When you're tuning prompts or writing plugins, what you most want to know is: what was actually in this request? Why didn't the cache hit? Why was this turn so slow? Now every answer has a small icon under it; click it and the right sidebar lays out every model request in that turn: where each part of the system prompt came from, how many tools were attached, what is history and what's new this time; the real cache hits, with the differences from the previous request marked down to the character; "Duplicates only" picks out content stuffed in more than once; the "Timing" view shows whether the time went to the model, the tools or the gaps between. Delegated sub-agents are listed separately, and conversations from before you installed it can be inspected too. It only looks, never changes anything, and doesn't write what it sees into the session.
 
 <details open>
-<summary>Screenshots (2)</summary>
+<summary>Screenshots (4)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-request.png" width="840" alt="The context lens request page in the right sidebar: turn switcher on top, then cache hits, prefix differences, and the breakdown into system prompt, tools, history and new content">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-1.png" width="840" alt="Click the request-details icon under a reply and Context Lens opens that turn on the right: one tab for the main conversation and one per member, the requests listed on the left, the cache hit and breakpoint comparison of the selected request on the right">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-timing.png" width="840" alt="The timing page: total, model, tool execution and gaps, then a lane per agent and a tool table sorted by execution time">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-2.png" width="840" alt=""This exchange": the new input on the left (an assistant message and a few tool results), the model's output and each tool call's arguments on the right">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-3.png" width="840" alt=""Context composition": a colored proportion bar, then groups for system, tools, history and new with their character counts, the new entries listed one by one">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/context-lens-4.png" width="840" alt=""Time breakdown": the turn's total split into model calls, tool calls and other, a color-coded timeline of thinking, tool execution and idle, and a tool-time table sorted by total">
 
 </details>
 

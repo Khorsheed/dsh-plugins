@@ -6,7 +6,7 @@
 
 几个朋友围着一支录音笔聊了一小时，以前要在剪辑软件里对着波形一点点找谁在说话、一刀刀切语气词。装上之后，你把录音交给它，它转成文稿、分出每个人；你在文稿上点一句就剪掉一句，剪什么在会话里和 agent 商量，它找出来的地方都等你点头。最后导出成品音频、带字幕的视频和字幕文件。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-studio-transcript.png" width="640" alt="右栏「剪辑」的文稿页：按说话人着色的段落，剪掉的带删除线，待确认的是虚线，底部是播放器">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="640" alt="「文稿」页：按说话人分段的文字稿，选中一段弹出「从这里播放」「剪掉」「改字…」，上方是查找替换、扫描语气词和停顿、AI 帮改，底部播放器可切剪后和原声">
 
 ## 能做什么
 
@@ -18,9 +18,9 @@
 - **一键导出**：播客音频、完整视频、字幕、文稿，想要的勾上就行；shownotes 直接让 agent 在会话里写给你。
 - **节目记住你的习惯**：片头片尾、音量、字幕样式和常驻成员的声音都存在节目里，新一期直接沿用。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-studio-proposals.png" width="640" alt="文稿里一组待确认的提议：语气词和长停顿，每组带采纳和拒绝">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-1.png" width="640" alt="「素材」页：一条带画面的录音，认出 5 个声音，每个声音一行，带时长、▶ 听和「合并到…」">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-studio-speakers.png" width="640" alt="认人：每个声音一行，认出来的带名字，新声音可以点 ▶ 试听再起名">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-3.png" width="640" alt="「设置」页：这期、节目、全局三层，音频和视频响度、片头片尾音乐、字幕样式、停顿和语气词，每项可以「沿用节目」">
 
 ## 安装
 
@@ -30,7 +30,9 @@
 @khorsheed/dsh-video-suite
 ```
 
-剪辑会跟着「剪辑套件」一起装好。装完开一个新会话，选「剪辑模式」，告诉 agent 录音放在哪里。
+剪辑会跟着「剪辑套件」一起装好。装完开一个新会话，选「剪辑模式」，告诉 agent 录音放在哪里。右栏的开始页里点「剪辑」就能打开它。
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="640" alt="右栏的开始页：会话产物、文件列表、Context Lens 之下就是「剪辑」入口">
 
 「剪辑」只在剪辑模式的会话里出现，在其它模式里看不到它是正常的。
 

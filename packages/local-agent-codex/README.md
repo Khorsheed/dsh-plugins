@@ -6,7 +6,7 @@
 
 有些活你就是想让 Codex 来干，以前得自己开终端跑、再把结果搬回来。装上之后，你在会话里说一句「这个交给 Codex」，agent 就把任务交给本机的 Codex；它的推理、工具调用和改了哪些文件实时出现在子会话里，跑完把结果带回来，附上真实的用量和耗时。Codex 在自己单独的目录里运行，你电脑上原来的 `~/.codex` 配置、登录和会话一点不碰。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="「插件」页的「本机 Agent 委派」卡片：每家一节，状态点显示有没有配好凭据">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex.png" width="640" alt="展开的 Codex 一节：已登录的 Codex 和版本号，端点地址、API Key、「验证端点并获取模型」和可用模型名单">
 
 ## 能做什么
 
@@ -16,8 +16,6 @@
 - **填好 key 就能用**：在设置卡片里填端点地址和 API Key（官方平台的 key 或中转的 key 都行），点「保存凭据」，再点「验证端点并获取模型」确认能连上。
 - **自己挑模型**：在「可用模型」里勾选、拖动排序，排第一的就是默认模型；子会话里也能临时换模型和推理强度。
 - **常驻模式更快**：打开「常驻模式（live）」，Codex 进程常驻，输出实时流进子会话；停下不杀进程，崩溃后自动续上原来的线程。
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="640" alt="展开的 Codex 一节：认证、可用模型和常驻模式开关">
 
 ## 安装
 

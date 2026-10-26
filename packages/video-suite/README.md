@@ -48,13 +48,15 @@
 几个朋友围着一支录音笔聊了一小时，以前要在剪辑软件里对着波形一点点找谁在说话、一刀刀切语气词。现在你把录音交给它，右栏的「剪辑」面板里就是按说话人着色的文稿：点一句剪掉，再点恢复，剪错了能撤销，原始录音不会被改动。剪什么在会话里和 agent 商量，它把语气词、长停顿、说重复的列成一组提议，你点「采纳」才算数；点「AI 帮改」，它把请求填进输入框，你补一句想重点处理什么再发。底部播放器能听「剪后」也能听「原声」，当前的词跟着高亮；转写错的字直接改，只改文字和字幕，不动声音。手机拍的画面按声音自动对齐；每档节目的片头片尾、音量、字幕样式和常驻成员的声音存一次，每期都沿用。导出在后台跑，进度在面板和会话里都看得到：MP3、1080p MP4（字幕烧进画面或做成可开关的字幕轨）、SRT 字幕和文稿。
 
 <details open>
-<summary>功能示意（3 张）</summary>
+<summary>功能示意（4 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-studio-transcript.png" width="840" alt="右栏「剪辑」的文稿页：按说话人着色的段落，剪掉的带删除线，待确认的是虚线，底部是播放器">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="840" alt="右栏的开始页：会话产物、文件列表、Context Lens 之下就是「剪辑」入口">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-studio-proposals.png" width="840" alt="文稿里一组待确认的提议：语气词和长停顿，每组带采纳和拒绝">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-1.png" width="840" alt="「素材」页：一条带画面的录音，认出 5 个声音，每个声音一行，带时长、▶ 听和「合并到…」">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-studio-speakers.png" width="840" alt="认人：每个声音一行，认出来的带名字，新声音可以点 ▶ 试听再起名">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="840" alt="「文稿」页：按说话人分段的文字稿，选中一段弹出「从这里播放」「剪掉」「改字…」，上方是查找替换、扫描语气词和停顿、AI 帮改，底部播放器可切剪后和原声">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-3.png" width="840" alt="「设置」页：这期、节目、全局三层，音频和视频响度、片头片尾音乐、字幕样式、停顿和语气词，每项可以「沿用节目」">
 
 </details>
 
@@ -67,11 +69,9 @@
 活多的时候，你说一句「这部分交给 Codex」，它就在你电脑上跑起来，过程实时出现在子会话里，可以中途停下，也可以打开子会话接着聊；结果带着真实用量和耗时回到主会话。每家都在自己单独的目录里运行，你原来的配置和登录一点不碰。设置里的「本机 Agent 委派」卡片一眼看清每家有没有登录好，默认模型也在这里切；「本机 DSH 委派」默认关着，要用时再打开。
 
 <details open>
-<summary>功能示意（3 张）</summary>
+<summary>功能示意（2 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="840" alt="设置里的「本机 Agent 委派」卡片：每家一行，状态点显示有没有登录好">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="840" alt="Kimi 一节：认证状态、默认模型和常驻模式开关">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="840" alt="插件页的「本机 Agent 委派」卡片：Kimi 一节里的登录状态、端点地址、API Key、可用模型名单和常驻模式开关">
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="840" alt="打开委派出去的子会话，直接在里面接着聊">
 

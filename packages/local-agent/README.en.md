@@ -6,7 +6,7 @@ Let DSH hand work to the Kimi Code, Codex, Claude Code, or second DSH on your ma
 
 This is the core of local-agent delegation; Kimi, Codex, Claude Code, and DSH all run on it. Using several coding agents used to mean switching between terminals, signing in to each, and keeping track of each one's sessions. With it installed, you set up every agent's credential and models on one 「本机 Agent 委派」 (Local Agent Delegation) card on the Plugins page. Hand work off in a session and the sub-session isn't a read-only replay: open it and keep talking. If DSH restarts, unfinished hand-offs pick up again.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="The Local Agent Delegation card on the Plugins page: one section per agent, a status dot showing whether its credential is set, and CLI not detected on agents that aren't installed">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-card.png" width="640" alt="The Local Agent Delegation card: Kimi, Codex, Claude Code and DSH sections, a green dot beside each title meaning it is set up">
 
 ## What it does
 

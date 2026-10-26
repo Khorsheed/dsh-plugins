@@ -6,6 +6,8 @@
 
 有些子任务你想让一个干净的 DSH 来做：不带当前会话的上下文，有自己的会话记录，也不会动到你正在用的这个实例。装上之后，在设置里打开「DeepSeek 委派」，agent 就能把这类子任务交给本机另起的一个 DSH；它的输出实时出现在子会话里，跑完把结果带回来，之后还能在同一个子会话里接着干。
 
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="640" alt="展开的 DSH 一节：凭据沿用当前 DSH，「DeepSeek 委派」开关已打开，默认模型选择和常驻模式开关">
+
 ## 能做什么
 
 - **默认关着，想用再开**：开关关着时一切照旧；在「本机 Agent 委派」卡片的 DSH 一节打开「DeepSeek 委派」，agent 才能把子任务交给它，不用重启。

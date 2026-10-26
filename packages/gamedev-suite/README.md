@@ -4,7 +4,7 @@
 
 **和 agent 一起做小游戏的一整套工具：对话里定玩法，它写代码、记策划，你在右栏玩每一轮检查通过的最新版本。** 说想做什么样的游戏，agent 每个问题给你两三个选项来挑，很快先做出一个能玩的小版本；每一轮改完它自己检查一遍，坏的版本到不了你手上；跳多高、跑多快做成滑块边玩边调；主角、敌人、道具的外观可以自己画，也可以让 agent 一次给三个方案挑；你在面板里改的东西提交为新版本，agent 不会给你改回去；每一版都留着，随时退回，还能导出成一个文件发给朋友玩；活多的时候交给你电脑上的 Kimi、Codex、Claude Code；还能请几个 agent 进同一个会话一起做……——自带「游戏开发模式」，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/suite-gamedev-hero.png" width="1000" alt="游戏开发模式的会话：左边对话末尾是本轮改动卡片，右栏「游戏」面板正在试玩最新版本">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-1.png" width="1000" alt="右栏「游戏」的「试玩」：线上 v13 等你点「开始试玩」，下面是行走速度、潜行速度这些拖动即时生效的参数滑块；左边是游戏开发模式的会话">
 
 ## 安装
 
@@ -46,11 +46,11 @@ agent 一次最多问你两个问题，决定都由你来做。
 <details open>
 <summary>功能示意（3 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-workbench.png" width="840" alt="game:左边会话里 agent 在改游戏，右栏「游戏」正在试玩最新版本，下面是参数滑块">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-2.png" width="840" alt="game:「元素」页：一格一个元素——名山、异兽、山水地形、角色、建筑，每个都有预览">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-elements.png" width="840" alt="game:「元素」里打开一个元素，外观编辑器旁边并排三个外观方案，下面是它的设定">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-3.png" width="840" alt="game:打开一个元素：行者的 3D 模型可以拖着转，切换 idle、sneak、walk 等动作和正面、侧面、背面视角，下面是「让 agent 改外观」和它的设定">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-versions.png" width="840" alt="game:「版本」页，最近一次检查的结论和截图，下面是线上、候选和历史版本">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/game-4.png" width="840" alt="game:「版本」页：每次修改都发成一个版本并通过检查，线上 v13 之下是历史版本，每一版都能「切回这一版」「与 v13 对比」「导出」">
 
 </details>
 
@@ -59,15 +59,9 @@ agent 一次最多问你两个问题，决定都由你来做。
 以前想让本机的 Codex 或 Claude Code 帮一把，得自己开终端、复制粘贴、再把结果搬回来。现在你说一句「交给 Codex」，agent 就把这块活派给你电脑上装好的 Kimi、Codex 或 Claude Code：它们在子会话里干活，思考、工具调用和回复实时出现，可以中途停下；做完结果带着用量和耗时回到你的会话。子会话也能直接接着聊，模型和推理强度在成员输入栏里切换；DSH 重启了也能接上。插件用自己单独的目录登录和保存记录，你电脑上原来的配置和账号不会被动到。设置里的「本机 Agent 委派」卡片一眼看到每家的登录状态和默认模型。另一个单独运行的 DSH 也能接活，默认关着，要用就在「本机 DSH 委派」卡片里打开。
 
 <details open>
-<summary>功能示意（4 张）</summary>
+<summary>功能示意（1 张）</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="840" alt="本地 agent 委派:委派给本机 CLI 的子会话，实时输出，底部输入栏可以继续对话并切换模型">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="840" alt="本地 agent 委派:设置里的四张卡片——Kimi、Codex、dsh、Claude Code，卡头状态点显示各自的登录状态">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="840" alt="本地 agent 委派:Kimi 的详情卡，已登录，默认模型可切换，常驻模式开关">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="840" alt="本地 agent 委派:Codex 的详情卡，已登录，默认模型可换">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="840" alt="本地 agent 委派:插件页的「本机 Agent 委派」卡片，Kimi 一节里的登录状态、端点地址、API Key、可用模型名单和常驻模式开关">
 
 </details>
 

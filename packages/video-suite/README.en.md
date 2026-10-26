@@ -48,13 +48,15 @@ Before you start: you need ffmpeg on your computer, and the first transcription 
 A few friends talk for an hour around one recorder, and editing it used to mean staring at waveforms to work out who's speaking and slicing out filler words one by one. Now hand over the recording, and the Studio panel in the right sidebar shows the transcript colored by speaker: click a sentence to cut it, click again to bring it back, undo if you slip, and your original recording is never touched. Talk over what to cut with the agent in the session; it lists filler words, long pauses and repeats as a set of suggestions, and nothing counts until you press "Accept". Press "Agent assist" and it writes a request into the input box; add what you most want fixed and send. The player at the bottom plays either the "Edited" cut or the "Original", with the current word highlighted; fix mistranscribed words in place, which changes the text and subtitles but not the sound. Phone footage lines up with the audio by sound; each show's intro and outro, loudness, subtitle style and regulars' voices are saved once and reused every episode. Exports run in the background, with progress in both the panel and the session: MP3, 1080p MP4 (subtitles burned in or as a track you can switch off), SRT subtitles and the transcript.
 
 <details open>
-<summary>Screenshots (3)</summary>
+<summary>Screenshots (4)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-studio-transcript.png" width="840" alt="The transcript in the right sidebar's Studio panel: paragraphs colored by speaker, cuts struck through, pending suggestions dashed, the player at the bottom">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="840" alt="The right sidebar's start page: Studio sits below Session products, Files and Context Lens">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-studio-proposals.png" width="840" alt="A set of pending suggestions in the transcript, filler words and long pauses, each with Accept and Reject">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-1.png" width="840" alt="The Sources page: a recording with video, five voices recognized, one row per voice with its length, ▶ Listen and "Merge into…"">
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-studio-speakers.png" width="840" alt="Telling speakers apart: one row per voice, recognized ones named, new ones with ▶ to listen before naming">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="840" alt="The Transcript page: text split by speaker; selecting a passage offers "Play from here", "Cut" and "Edit text…"; find & replace, scan for fillers and pauses and AI edit at the top, a player switching between edited and original at the bottom">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-3.png" width="840" alt="The Settings page: this episode, the show and global layers — audio and video loudness, intro and outro music, caption style, pauses and fillers, each able to follow the show">
 
 </details>
 
@@ -67,11 +69,9 @@ This is what Studio's speaker separation and transcription run on: it turns a lo
 When there's a lot to do, say "give this part to Codex" and it runs on your machine, with the process streaming into a sub-session; you can stop it midway, or open the sub-session and keep talking to it, and the result comes back to your main session with real usage and timing. Each tool runs in its own separate directory, so your existing setup and sign-ins are never touched. The "Local Agent Delegation" card in settings shows at a glance whether each one is signed in, and it's where you switch the default model; "Local DSH Delegation" is off by default — turn it on when you need it.
 
 <details open>
-<summary>Screenshots (3)</summary>
+<summary>Screenshots (2)</summary>
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="840" alt="The Local Agent Delegation card in settings: one row per tool, with a status dot showing whether it is signed in">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="840" alt="The Kimi section: sign-in status, default model and the always-on switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-settings.png" width="840" alt="The Local Agent Delegation card on the Plugins page: the Kimi section with sign-in status, endpoint, API key, available models and the resident-mode switch">
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="840" alt="Opening a delegated sub-session and continuing the conversation right there">
 

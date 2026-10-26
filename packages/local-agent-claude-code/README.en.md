@@ -6,7 +6,7 @@ Hand coding tasks to the Claude Code on your machine: its thinking, tool calls, 
 
 Getting Claude Code to help used to mean opening a terminal, pasting things in, and carrying the result back yourself. With this plugin you say "give this to Claude Code" in a session, and the agent hands the task to Claude Code on your machine. Its thinking, tool calls, and replies show up live in a sub-session, and the result comes back to you. The tokens each call used and the model that actually ran are recorded as real numbers. Claude Code runs in its own separate folder; your existing `~/.claude` config and sign-in are never touched.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="The Local Agent Delegation card on the Plugins page: the Claude Code section's status dot shows whether its credential is set">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="640" alt="The expanded Claude Code section: Claude Code signed in with its version, endpoint, API key, Auth Token and the available-models list">
 
 ## What it does
 
@@ -17,8 +17,6 @@ Getting Claude Code to help used to mean opening a terminal, pasting things in, 
 - **Paste a key and go**: enter the endpoint and API key (or Auth Token) on the settings card, press "Save credential", then "Verify endpoint & fetch models" to check it connects.
 - **Pick your models**: under "Available models", tick and drag to reorder; the top one is the default. You can also switch model and reasoning effort inside a sub-session.
 - **Resident mode is faster**: turn on "Resident mode (live)" and the Claude Code process stays up; stopping doesn't kill it, and after a crash it resumes the same session.
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="640" alt="The expanded Claude Code section: authentication, available models, and the resident-mode switch">
 
 ## Install
 

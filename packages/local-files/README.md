@@ -6,7 +6,9 @@
 
 想看一眼工作区旁边的素材目录、仓库外的一份数据，以前得切去系统的文件管理器，打开后还是一堆看不懂的源码。装上文件列表，右栏就能翻本机任何一个目录：默认是当前会话的工作目录，也能换到别处；点开一个文件，网页、文档、表格都是渲染好的样子。你得到的是不离开对话就能查、能改的本机文件。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-2.png" width="640" alt="「文件列表」页：左边是文件树，右边是渲染好的 Markdown 预览，带内容搜索和预览/源码切换">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-1.png" width="640" alt="开始页的入口卡片：文件列表，默认打开本会话的工作目录">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-3.png" width="640" alt="「文件列表」页：左边是仓库的文件树，右边打开一份 README.md，预览里图片直接显示，标题行有编辑、重新加载、打开所在文件夹">
 
 ## 能做什么
 
@@ -26,8 +28,6 @@
 ```
 
 它也会跟着「基础体验」（`@khorsheed/dsh-basic`）一起装好。装完在开始页或右栏向导页点「文件列表」卡片就能用；它会替换掉 DSH 自带的「工作区文件」卡片，卸载后原来的卡片会回来。
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-files-1.png" width="640" alt="开始页的入口卡片：文件列表，默认打开本会话的工作目录">
 
 ## 已知限制
 
