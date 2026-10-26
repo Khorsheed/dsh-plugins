@@ -2,74 +2,128 @@
 
 English | [中文](README.md)
 
-Let dsh hand work to the other CLI agents on this machine — Kimi, Codex, Claude Code, dsh itself — or bring them into one room to work together; the whole local-agent family and the room in one install.
+**Let DSH run a team of the agents on your machine.** Hand work to the local Kimi Code, Codex, Claude Code, or a second, separately running DSH in one sentence: watch it live, stop it midway, open the sub-session and keep talking, and pick up again after DSH restarts. Invite several agents into one session and split the work: @ someone to assign it, the coordinator breaks down the task, members bring evidence, and acceptance is still your call. A stuck member can even ask another session for help. Every agent's credential, models, and resident switch live on one card, and your existing CLI setup is never touched…… Everything local multi-agent work needs, installed in one go.
 
-One conversation, many agents: the mainline agent judges which task fits which harness, a delegation tool passes the task over with its requirements, and the finished CLI run brings the result back into the current dialogue (the run is visible in the 子代理 surface). When several members need to talk it through, open a room: its members are these local agents plus native dsh sub-members. This family bundle installs the local-agent core, all four delegation providers and the room at once, adding a single 「多Agent协作」 card to the inventory instead of making you pick packages one by one.
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="640" alt="The four Local Agent cards under Settings: Kimi, Codex, dsh, Claude Code — header dots showing each provider's auth state">
-
-## Features
-
-- **The whole family in one install** — the local-agent core (shared scoped-homes root, `/<harness> login|sessions` command family, delegation facade and Remote) plus the four delegation providers (kimi / codex / claude-code / dsh) and the room, with the family tool library, all from a single `dsh plugin add`.
-- **In-place delegation tools** — `subagent_kimi` / `subagent_codex` / `subagent_claude_code` keep the official subagent tool names (toolName unchanged, so presets and prompts carry over), adding an optional `resume` parameter: continue the same CLI conversation in a later round instead of cold-starting every time.
-- **No resident processes** — delegation defaults to one-shot processes; with no delegation or login activity, no extra provider process runs on the machine.
-- **One card in the inventory** — locale card metadata folds the family into a single 「多Agent协作」 card; the card-less library lives and dies with the family and never appears on its own.
-- **Pure composition, zero runtime** — the package registers no service, tool, slot, or command of its own; the patch reuses the members' canonical rows verbatim and never double-mounts (mechanism in How it works below).
-
-## Members
-
-| member package | row ids | contents |
-| --- | --- | --- |
-| `@khorsheed/dsh-local-agent` | `local-agent` | the family core: shared scoped-homes root, delegation facade and Remote |
-| `@khorsheed/dsh-local-agent-kimi` | `local-agent-kimi` | Kimi CLI harness; the `subagent_kimi` delegation tool is the package's `./tool` composition entry, granted by a preset that names it |
-| `@khorsheed/dsh-local-agent-codex` | `local-agent-codex` (+ override `tool-subagent-codex`) | Codex CLI harness; the `subagent_codex` delegation tool is the package's `./tool` composition entry, granted by a preset that names it |
-| `@khorsheed/dsh-local-agent-claude-code` | `local-agent-claude-code` (+ override `tool-subagent-claude-code`) | Claude Code harness; the `subagent_claude_code` delegation tool is the package's `./tool` composition entry, granted by a preset that names it |
-| `@khorsheed/dsh-local-agent-dsh` | `local-agent-dsh` | the dsh harness controller (Settings → 本地 Agent switch, off by default; mounts `subagent_dsh` dynamically while ON) |
-| `@khorsheed/dsh-room` | `room` | the room (协作间): multi-member rooms whose members come from the local agents above and native dsh sub-members; its model-facing tools are the package's `./tool` composition entry, granted by a preset that names it |
-
-Card-less library (deps-only: in `dependencies`, no patch rows of its own): `@khorsheed/dsh-local-agent-dsh-headless` (the provisioned sub-dsh face). It never appears on the inventory page and lives or dies with the family. (Before the family fold there was also the shared tool package `@khorsheed/dsh-local-agent-tool-subagent`; it is retired — the delegation tool implementation moved into the family core's `./tool-factory` export and each provider mounts its own `./tool` composition entry.)
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent.png" width="640" alt="The 「本地多Agent」 family card (now 「多Agent协作」) detail page in the plugin inventory: every member row listed with its own enable switch">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-1.png" width="1000" alt="A room in progress: member receipts and run rows in the chat, with the @ member menu open above the composer">
 
 ## Install
+
+In DSH, open Plugins → Add plugin, enter this package name, and press Install:
+
+```
+@khorsheed/dsh-bundle-local-agent
+```
+
+That installs the 6 members below; restart DSH and the plugin list shows just one new card, 「多Agent协作」 (multi-agent). Each member can still be switched on or off on that card's detail page.
+
+Before you start: install the Kimi, Codex, and Claude Code CLIs yourself; this suite doesn't install them. Then on the Plugins page open the 「本机 Agent 委派」 (Local Agent Delegation) card and enter the endpoint and key for each agent you want. 「本机 DSH 委派」 (Local DSH Delegation) is off by default; turn it on on the same card when you need it.
+
+Handing work off and inviting agents into a room happen in a mode that grants them, such as the Dev Suite's "开发模式" (dev mode) (the Gamedev and Video Suite modes include them too). If you mostly write code, installing the Dev Suite `@khorsheed/dsh-dev-suite` is simpler: it already includes this whole family.
+
+## Member plugins
+
+| Plugin | Package name (copy to install) | What you get |
+|---|---|---|
+| local-agent | `@khorsheed/dsh-local-agent` | The core the four local agents share: one Local Agent Delegation card for sign-in, models, and the resident switch; sub-sessions you can keep talking in |
+| local-agent-kimi | `@khorsheed/dsh-local-agent-kimi` | Hand work to the local Kimi Code; watch it live, keep the conversation going |
+| local-agent-codex | `@khorsheed/dsh-local-agent-codex` | Hand work to the local Codex; watch it live, keep the conversation going |
+| local-agent-claude-code | `@khorsheed/dsh-local-agent-claude-code` | Hand work to the local Claude Code; thinking and replies stream back, every call's usage recorded |
+| local-agent-dsh | `@khorsheed/dsh-local-agent-dsh` | Hand subtasks to a second, separately running DSH; off by default, switch it on on the card |
+| room | `@khorsheed/dsh-room` | The room (协作间): turn a session into a small team, @ someone to assign work, you decide acceptance |
+
+It also brings `@khorsheed/dsh-local-agent-dsh-headless`, the interface-less DSH behind Local DSH Delegation, which doesn't show up in the list on its own.
+
+## Feature tour
+
+### Local agent delegation: Kimi, Codex, Claude Code
+
+Getting the local Codex or Claude Code to help used to mean opening a terminal, pasting things in, and carrying the result back yourself. Now you say "give this to Codex" and it runs on your machine: thinking, tool calls, and changed files appear live in a sub-session; you can stop it midway, or open the sub-session to keep talking and switch model and reasoning effort on the fly. The result comes back to the main session with its real usage and time. Each agent runs in its own separate folder; your existing config and sign-ins are never touched.
+
+<details open>
+<summary>Screenshots (4)</summary>
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-member.png" width="840" alt="A sub-session handed to a local CLI: output appearing live, with the member composer at the bottom for continuing and switching models">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-kimi-settings.png" width="840" alt="The Kimi section: auth status, endpoint and API key, available models, resident-mode switch">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex-card.png" width="840" alt="The Codex section: authentication, available models, and the resident-mode switch">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude-code-card.png" width="840" alt="The Claude Code section: authentication, available models, and the resident-mode switch">
+
+</details>
+
+### local-agent: one card for every local agent
+
+The 「本机 Agent 委派」 card on the Plugins page has one section per agent; the status dot in each header shows whether its credential is set, and an agent without its CLI is marked "CLI not detected". Expand a section to enter the endpoint and key, press "Verify endpoint & list models" to check it connects, tick and drag models under "Available models" (the top one is the default), and decide whether to turn on "Resident mode (live)". Hand-off records stay on your machine, so after DSH restarts an unfinished sub-session can still continue.
+
+<details open>
+<summary>Screenshots (2)</summary>
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/08-local-agent.png" width="840" alt="The Local Agent Delegation card: one section per agent, a status dot showing whether its credential is set">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/bundle-local-agent.png" width="840" alt="The detail page of the 多Agent协作 card in the plugin list: every member on its own row, each with its own switch">
+
+</details>
+
+### local-agent-dsh: hand it to another DSH
+
+Some subtasks deserve a clean DSH: none of the current session's context, its own session history, and no way to disturb the instance you're using. Turn on "DeepSeek delegation" in the DSH section of the card, and the agent can hand such subtasks to a separate DSH started on your machine. It uses the model and key you already picked, with no separate sign-in; the result comes back, and you can keep working in the same sub-session afterwards.
+
+### room: the multi-agent room
+
+Getting several agents onto one job used to mean copying and pasting between windows. Now press "＋ Invite agent" in a session and it becomes a small team: DSH coordinates, and you bring in Kimi, Codex, Claude Code, or a DSH carrying another mode. @ someone at the start of a message to assign them work, @ several to run them in parallel; the coordinator breaks down the task and members bring evidence. Finishing a generation isn't passing, and acceptance is up to you. A pill above the composer shows how many tasks are running and how many need you; the "Team" button on the members page draws how you, the coordinator, and the members connect. When a member hits something unfamiliar, it can ask another session or another room, and the reply comes back to it. Every member keeps its own session across rounds and restarts.
+
+<details open>
+<summary>Screenshots (2)</summary>
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-invite.png" width="840" alt="The members page's empty state, turning the session into a multi-agent room, and the Invite agent entry in the session header">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/room-2.png" width="840" alt="The members page: each member's name, source, role, and model, plus Set as coordinator">
+
+</details>
+
+## Make it yours
+
+- **Switch off one agent**: turn off its row on the 多Agent协作 card's detail page and the rest keep working; `local-agent` is the core all four share, so turning it off stops all four.
+- **Uninstall**: removing this suite removes the whole family; to keep some agents, use the detail-page switches instead.
+- **Add more**: any `@khorsheed/dsh-*` plugin installs the same way, by its package name.
+
+## Other suites
+
+| Suite | Package | What it's for |
+|---|---|---|
+| [Basic Essentials](https://github.com/Khorsheed/dsh-basic) | `@khorsheed/dsh-basic` | Edit and withdraw messages, browse files, background-job pills, mobile…… the layer everyone should have |
+| [Dev Suite](https://github.com/Khorsheed/dsh-dev) | `@khorsheed/dsh-dev-suite` | Everything in this suite, plus live worktrees, quick decisions, the restart guard, and Context Lens; comes with "开发模式" (dev mode) |
+| [Gamedev Suite](https://github.com/Khorsheed/dsh-gamedev) | `@khorsheed/dsh-gamedev-suite` | Make small games with the agent, local agents included; comes with "游戏开发模式" (game dev mode) |
+| [Video Suite](https://github.com/Khorsheed/dsh-video) | `@khorsheed/dsh-video-suite` | Per-speaker mixes and an editor where deleting words deletes the audio, local agents included; comes with "剪辑模式" (editing mode) |
+| [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) | — | The main plugin repo: a map of every plugin and the developer docs |
+
+## Compatibility
+
+Needs DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.1.
+
+## For developers
+
+- How the suite installs once without mounting anything twice, and where the members' rows come from: see the [full reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/bundle-local-agent/docs/reference.en.md).
+- Part of [dsh-plugins](https://github.com/Khorsheed/dsh-plugins); open issues and contributions there. Changes: [CHANGELOG.md](CHANGELOG.md).
+
+## Install guide for agents
+
+<details>
+<summary><strong>Expand: installing the whole suite + single packages from the command line</strong> (follow this when the user says "install it for me")</summary>
+
+### 1. Install the suite (recommended)
 
 ```sh
 dsh plugin --profile web add @khorsheed/dsh-bundle-local-agent
 ```
 
-Restart the web instance to activate. Once mounted, every family row is in place: each provider's CLI login runs through its own `/<harness> login` command (e.g. `/kimi login`); the dsh harness stays off until the Settings → 本地 Agent switch is flipped.
+Or enter `@khorsheed/dsh-bundle-local-agent` under Plugins → Add plugin. Restart the web instance, then have the user **hard-refresh** the page (Cmd/Ctrl+Shift+R). Remind the user: the CLIs (`kimi` / `codex` / `claude`) must be installed by them, credentials go on the 「本机 Agent 委派」 card, and delegation and the room are used in sessions of a mode like "开发模式" (dev mode). Finish by presenting the feature list (the "Member plugins" table above).
 
-```sh
-dsh plugin --profile web remove @khorsheed/dsh-bundle-local-agent
-```
+### 2. Install a single plugin
 
-Removing the bundle removes the whole family; to keep the family and disable a single row, use the row-level switches on the bundle detail page.
-
-## Compatibility
-
-- npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — pure composition; the floor is the members' highest (minHost `0.1.5-rc.1`, the floor of the core, the four providers and room; the deps-only library local-agent-dsh-headless floors lower). Per-member behavior differences above that floor (e.g. token-granularity live mirroring on 0.1.5) are documented in each member's own Compatibility section.
-- source line (deepseek-harness master): ✅ full (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; delegation moved to `ctx.subagents.startActivation` (managed activations), and run.id is now unique per execution.
-
-**Version-line map**: `0.1.0` and later require host `0.1.5-rc.1` and up.
-
-## Known Limitations
-
-- **dsh-side integration only** — each provider's CLI (`kimi` / `codex` / `claude`) must be installed on `PATH` separately, and login goes through each `/<harness> login`; the bundle neither installs the CLIs nor logs you in.
-- **Removal is all-or-nothing** — removing this package removes every member along with it; there is no "drop one member from the bundle" — disable single rows via the row-level switches on the bundle detail page.
-
-## How it works
-
-<details>
-<summary>Internals (click to expand)</summary>
-
-**A composition-only meta package.** Every row in `cordis.patch.yml` (including the two bare overrides that disable the official same-named tool rows) comes verbatim from the corresponding member's own `cordis.patch.yml`, id and name unchanged. The repo-wide check:plugins `dsh.bundle.kind: 'family'` sanction pins this mechanically: rows may only come from the allowlist union of member canonical rows, members must be real self-mounting packages, and every member must contribute at least one row.
-
-**Installing me installs the family — without double-mounting.** All members are listed in `dependencies` (installation brings them along) and registered in `dsh.references` (the family roster, read by pack-time and catalog checks). The mechanism: `dsh plugin add` reconciles only the profile's *direct* dependencies into the bundles layer (`reconcilePlugins`) — installing this bundle applies THIS patch only; members arrive as transitive dependencies and their own patches stay inert, so no row ever mounts twice. A member installed directly still self-mounts (the repo rule is unbroken); any row overlap from installing both is resolved by the row-level switches on the official bundle detail page.
-
-**`src/index.ts` exports only constants** (`FAMILY_MEMBERS` / `FAMILY_DEPS_ONLY`) so the package has a buildable `lib/` (a pack-dist requirement).
+- A single local agent must be named together with the core in one command: `dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-codex`.
+- The room can be installed alone: `dsh plugin --profile web add @khorsheed/dsh-room`; without local agents it still works with native DSH members.
+- Uninstall with `remove`, update with `update`.
 
 </details>
-
-## Development
-
-Part of the [dsh-plugins](https://github.com/Khorsheed/dsh-plugins) monorepo (`packages/bundle-local-agent`). Issues and contributions welcome there.
