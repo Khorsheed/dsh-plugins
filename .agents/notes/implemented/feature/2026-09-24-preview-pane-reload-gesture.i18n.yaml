@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-24-preview-pane-reload-gesture.md
-.agents/notes/implemented/feature/2026-09-24-preview-pane-reload-gesture.md: 7fb664fc38aec2040dbc56368ea0c0f728d32111
-.agents/notes/implemented/feature/2026-09-24-preview-pane-reload-gesture.zh.md: 7391a8ab53df955bacd7acbdf784b6cb1cabceef
+.agents/notes/implemented/feature/2026-09-24-preview-pane-reload-gesture.md: 5b389fff04f911e41a23835d182fdf9ddf03374a
+.agents/notes/implemented/feature/2026-09-24-preview-pane-reload-gesture.zh.md: 35825c7206f96a3d44f62fe5fec3cfaedc4388d3

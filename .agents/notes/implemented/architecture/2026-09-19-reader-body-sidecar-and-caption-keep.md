@@ -47,7 +47,7 @@ Three things landed together, and one of them was a correction of my own previou
 
 ## Testing
 
-`packages/dsh-reader` runs 216 tests:
+`packages/reader` runs 216 tests:
 
 - `boot.spec.ts`: a 300 KB body is written to `bodies/`, the document holds `{ file, chars }` and no html, a later read serves the exact markup, eviction under `maxEntries: 1` sweeps the files of the bodies the document let go, and a body under the threshold still inlines.
 - `extract-article.spec.ts`: a caption-only figure is counted AND its caption survives; a figure with a real image is not counted.

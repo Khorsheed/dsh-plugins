@@ -39,7 +39,7 @@ Two reports, one root cause each, both about the same journey — leave the read
 
 ## Testing
 
-`packages/dsh-reader` runs 240 tests (18 new):
+`packages/reader` runs 240 tests (18 new):
 
 - `tests/session.spec.ts` (new, 12): merge semantics, per-session isolation, `undefined` dropping a field, the 12-session cap and its LRU order, per-entry scroll, the translation record (including "original" forgetting it), the pair-keyed translator cache.
 - `tests/ReaderPane.client.spec.tsx` (75, +6): a cached body is shown with **no** `fetchEntryBody` call; an unfetched entry still pays exactly one; 「重新抓取」 fetches again from the detail view; and three remount cases (a second pane over the same session id restores the open article and the wall's query, turns the globe back on **without a click**, and reopens without asking the host for a body it already has).

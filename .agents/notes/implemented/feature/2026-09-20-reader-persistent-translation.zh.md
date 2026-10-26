@@ -39,7 +39,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 共 320 个测试（相对功能前的基线 +30；每个新用例都对着改动前的代码红过——宿主用例对着不存在的动词，客户端用例对着不热的面板/不分键的记忆）：
+`packages/reader` 共 320 个测试（相对功能前的基线 +30；每个新用例都对着改动前的代码红过——宿主用例对着不存在的动词，客户端用例对着不热的面板/不分键的记忆）：
 
 - `tests/boot.spec.ts`（+12，真 context + 临时目录）：跨重启的语言对分键；条目映射（内联与 sidecar、淘汰连带清扫）；跨层 LRU 淘汰；旧 schema 读作 miss 且不主动清、下一次写入替换；`recalled` 推进使用时钟。联动规则：预算淘汰正文带走映射（记忆不动）、bodyHash 变了的重抓丢掉映射（同体重存保留）、过期但未移除的正文保留映射、removeSource 恰好只丢该源条目的映射。外加 `getStorageStats` 聚合与 `clearTranslations` 清两层且其它不动。
 - `tests/annotations.spec.ts`（+6，纯函数）：共享预算跨两层 LRU、旧版本见到即淘汰、数量上限、预算内原样、normalizer 的惰性保留、`boundAnnotations` 让译文随正文走而标签留下。

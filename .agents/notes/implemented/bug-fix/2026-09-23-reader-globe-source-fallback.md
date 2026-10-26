@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-The detail view's translate globe disappeared on some articles — reproducibly on arXiv papers from Chinese labs. The globe's visibility gate (`translationOffered` in `packages/dsh-reader/src/client/ReaderPane.tsx`) hides the control when the settled source is the target language (`zh`) or when the availability probe answers `unavailable`. The source was decided by the browser's LanguageDetector over a 600-character prefix sample of the stripped body (`detectSourceLanguage` in `src/client/translate.ts`). arXiv links are upgraded to the LaTeXML HTML version (`src/arxiv.ts`), whose body opens with the title and the full author block — for a paper with ~200 romanized Chinese names that sample is pinyin, not prose, and the detector can confidently answer `zh` (or another unsupported-on-device language such as `vi`). A `zh` answer trips the gate's source condition directly; any other wrong answer probes a pair the device does not have and settles on `unavailable`. Either way the globe hid over a body that translates fine.
+The detail view's translate globe disappeared on some articles — reproducibly on arXiv papers from Chinese labs. The globe's visibility gate (`translationOffered` in `packages/reader/src/client/ReaderPane.tsx`) hides the control when the settled source is the target language (`zh`) or when the availability probe answers `unavailable`. The source was decided by the browser's LanguageDetector over a 600-character prefix sample of the stripped body (`detectSourceLanguage` in `src/client/translate.ts`). arXiv links are upgraded to the LaTeXML HTML version (`src/arxiv.ts`), whose body opens with the title and the full author block — for a paper with ~200 romanized Chinese names that sample is pinyin, not prose, and the detector can confidently answer `zh` (or another unsupported-on-device language such as `vi`). A `zh` answer trips the gate's source condition directly; any other wrong answer probes a pair the device does not have and settles on `unavailable`. Either way the globe hid over a body that translates fine.
 
 Two facts aggravated it. The probe asked about a single source while `startTranslation` already built sessions over a `[detected, 'en']` chain — the gate was stricter than the translator it gated. And both `translationSource` and `translateAvailability` survived an entry switch, so the previous article's answer briefly decided the next article's chrome.
 
@@ -32,7 +32,7 @@ Cost: up to two availability round-trips per opened article when the detector di
 
 ## Testing
 
-`packages/dsh-reader` carries 424 tests. The pane spec gained a scripted `LanguageDetector` global and two cases: a confident `zh` answer over a pinyin author list keeps the globe and builds the session for `en`, and a detected source with no on-device pair (`vi`) falls back to the script guess's pair. Both cases fail on the pre-fix code (mutation-checked by reverting `ReaderPane.tsx` to HEAD).
+`packages/reader` carries 424 tests. The pane spec gained a scripted `LanguageDetector` global and two cases: a confident `zh` answer over a pinyin author list keeps the globe and builds the session for `en`, and a detected source with no on-device pair (`vi`) falls back to the script guess's pair. Both cases fail on the pre-fix code (mutation-checked by reverting `ReaderPane.tsx` to HEAD).
 
 ## Related
 

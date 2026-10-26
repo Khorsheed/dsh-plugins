@@ -36,7 +36,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 共 290 个测试（+8；其中六个先对着修复前的代码红过，两个是两侧都绿的守卫）：
+`packages/reader` 共 290 个测试（+8；其中六个先对着修复前的代码红过，两个是两侧都绿的守卫）：
 
 - `tests/ReaderPane.client.spec.tsx`（+3）：从卡片打开并抓到正文→药丸翻成「已抓取」；自动补齐落地→翻面；open 触发的抓取失败→翻成「抓取失败」且悬停带宿主的分类原因。三个用例都把 mock 驱成一份模型宿主文档（`entryFetchStates` 回答的是写入造成的现状），不做真传播就过不了。
 - `tests/store.spec.ts`（新增，3 个）：过期标记的设置/清除、被落地的补齐清除、在失败的补齐后保留。

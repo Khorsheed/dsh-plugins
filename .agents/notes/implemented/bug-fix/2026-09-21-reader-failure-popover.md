@@ -29,4 +29,4 @@ The pill keeps one-line height for every state; the reason and the cause's actio
 
 ## Testing
 
-`packages/dsh-reader` (+1 net, rewritten red-first): `tests/ReaderPane.client.spec.tsx` — the reason is absent from the card and present after the tap; the wall-code popover opens the browser and never retries; the transport popover's 重新抓取 retries; the final-failure popover carries the reason and no action; an outside click dismisses.
+`packages/reader` (+1 net, rewritten red-first): `tests/ReaderPane.client.spec.tsx` — the reason is absent from the card and present after the tap; the wall-code popover opens the browser and never retries; the transport popover's 重新抓取 retries; the final-failure popover carries the reason and no action; an outside click dismisses.

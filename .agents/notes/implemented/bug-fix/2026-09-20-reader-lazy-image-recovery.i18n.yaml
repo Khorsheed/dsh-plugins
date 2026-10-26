@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-20-reader-lazy-image-recovery.md
-.agents/notes/implemented/bug-fix/2026-09-20-reader-lazy-image-recovery.md: adf892ae9044b275c1dc69b42b11928adf1ce3ad
-.agents/notes/implemented/bug-fix/2026-09-20-reader-lazy-image-recovery.zh.md: f5c800d250702294ee0ae717b019fe5a9fd32f9b
+.agents/notes/implemented/bug-fix/2026-09-20-reader-lazy-image-recovery.md: dd33e714559ca200b28126de88a5f9bfd2744ffe
+.agents/notes/implemented/bug-fix/2026-09-20-reader-lazy-image-recovery.zh.md: ed8a8b3a54e20f86382398045cfb1a83c60c37bf

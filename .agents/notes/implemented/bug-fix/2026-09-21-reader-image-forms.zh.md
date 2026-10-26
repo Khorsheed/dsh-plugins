@@ -35,4 +35,4 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader`：`tests/extract-article.spec.ts` 驱动两个新 fixture 与行内用例，每个都先对着改动前的提取器红过。`tests/fixtures/arxiv-object-figure.html`（LaTeXML 形状）：SVG object 图存活为绝对化 `<img>`、带宽高、其 figure 不计脚本图；PDF object 整棵丢弃；feed 正文路径同规则（含无 `data` 与 `data:` 寻址的 object）。data-URI 用例：1px gif 占位照旧让位 `data-src`；实质 base64 png 原样保留（剥空白）；512 字符边界两侧各钉一例；非图片 data URI 永不保留；实质 data 候选能赢下 srcset。
+`packages/reader`：`tests/extract-article.spec.ts` 驱动两个新 fixture 与行内用例，每个都先对着改动前的提取器红过。`tests/fixtures/arxiv-object-figure.html`（LaTeXML 形状）：SVG object 图存活为绝对化 `<img>`、带宽高、其 figure 不计脚本图；PDF object 整棵丢弃；feed 正文路径同规则（含无 `data` 与 `data:` 寻址的 object）。data-URI 用例：1px gif 占位照旧让位 `data-src`；实质 base64 png 原样保留（剥空白）；512 字符边界两侧各钉一例；非图片 data URI 永不保留；实质 data 候选能赢下 srcset。

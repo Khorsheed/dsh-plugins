@@ -4386,7 +4386,7 @@ DSH_HARNESS=~/code/deepseek-harness-0.2.0；跨宿主版本先删 tsbuildinfo。
    - check-plugin-independence 的白名单、allowed edges、community-service injectors 删退役名、加新入口。
    - check-release-groups 的家族名册同步。
    - 各 spec 夹具改到折叠后的形态。
-4. family bundle：新增 packages/bundle-eval（@khorsheed/dsh-eval-suite，kind: family）。
+4. family bundle：新增 packages/eval-suite（@khorsheed/dsh-eval-suite，kind: family）。
    - 成员：datasets、mission、lab、eval。patch 逐字复用四个成员的规范行，不发明行 id。
    - locale 卡面元数据把整族归成一张卡「评测」。
    - README 双语照 bundle-local-agent 的结构写，lab 需要 Docker 这一点写进已知限制。

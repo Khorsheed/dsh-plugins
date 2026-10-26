@@ -47,7 +47,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 现在跑 216 个测试：
+`packages/reader` 现在跑 216 个测试：
 
 - `boot.spec.ts`：300 KB 的正文被写进 `bodies/`，文档里只有 `{ file, chars }`、没有 html；之后一次读取交回**逐字节相同**的标记；`maxEntries: 1` 下淘汰会清扫文档放手的那些文件；阈值以下的正文仍然内联。
 - `extract-article.spec.ts`：只有图注的 figure 会被计数**并且图注保留**；带真图的 figure 不计数。

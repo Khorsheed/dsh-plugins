@@ -8,7 +8,7 @@ Status: implemented
 
 ## Decision
 
-`@khorsheed/dsh-capture`（`packages/capture`）：宿主半渲染抓取服务。一个 Remote 命名空间 `capture`，一个动词 `render({url, timeoutMs?}) → { html, finalUrl?, title?, truncated? }`——与阅读器在 `packages/dsh-reader/src/client/contract.ts:56-64` 结构镜像的形状逐项一致；拒绝是抛出带 `capture/*` 码的 `RemoteError`（`invalid-url`、`private-target`、`unavailable`、`navigation-failed`、`timeout`、`busy`），成功值里绝不夹第二个 `{ ok }` 联合。
+`@khorsheed/dsh-capture`（`packages/capture`）：宿主半渲染抓取服务。一个 Remote 命名空间 `capture`，一个动词 `render({url, timeoutMs?}) → { html, finalUrl?, title?, truncated? }`——与阅读器在 `packages/reader/src/client/contract.ts:56-64` 结构镜像的形状逐项一致；拒绝是抛出带 `capture/*` 码的 `RemoteError`（`invalid-url`、`private-target`、`unavailable`、`navigation-failed`、`timeout`、`busy`），成功值里绝不夹第二个 `{ ok }` 联合。
 
 - **进程模型**，复用已关闭的 [browser-pane](../closed/2026-09-13-browser-pane.md) 评审沉淀：一个受管 Chrome 进程（`pipe: true` 走 stdio——不监听任何 TCP 端口），每次渲染一个全新临时 `BrowserContext`（零 Cookie/凭据残留），空闲 60s 退出，崩溃后下次渲染自动重启。Chrome for Testing 二进制住在 `$DSH_HOME/state/dsh-capture/`，**首次渲染时才**下载；装/拉失败是该次调用的 `capture/unavailable`，绝不是启动崩溃。`executablePath`/`channel` 配置可覆盖。capture 不交付那个提案的帧串流、IME、模型工具——capture 只是一个请求-响应动词。
 - **SSRF 闸**（`src/url-policy.ts`，纯）：只放 http(s)；带凭据 URL 拒绝（地址栏里的登录态也是登录态）；主机名逐个解析、**每个**答案必须公网——回环/私网/CGNAT/链路本地（含元数据 169.254.169.254）/组播/保留段全拒，IPv4 映射/NAT64/6to4 按内嵌 IPv4 分类，异形 IPv4 拼法经 WHATWG 解析器归一化后到达；`localhost` 按名拒绝。请求拦截让**每一跳重定向**重新过整道闸（公网 URL 302 进私网就是它要堵的逃逸）；子资源只放 http(s)/data/blob。

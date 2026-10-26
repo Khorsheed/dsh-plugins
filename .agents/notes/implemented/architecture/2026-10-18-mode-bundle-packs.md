@@ -10,12 +10,12 @@ The community modes (开发 / 写作 / 学习 / 剪辑 / 游戏开发 / 评测) 
 
 `dsh.bundle.kind: 'mode'` (checker mechanics landed the same day, commit `99b7183b`) gets its fleet: six mode bundles, each a family bundle whose patch closes with exactly one `@deepseek-ai/dsh-agent-preset` row (id `preset-<mode>`, `dsh.bundle.mode` declaring `<mode>`, unique across the tree):
 
-- `packages/dev` (`@khorsheed/dsh-dev-suite`): local-agent core + the kimi/codex/claude-code/dsh providers, worktrees, room, typesafe; `local-agent-dsh-headless` rides along deps-only (same treatment as bundle-local-agent, sanctioned in `ALLOWED_EDGES`).
-- `packages/writing` (`@khorsheed/dsh-writing-suite`): canvas + canvas-novel.
-- `packages/learning` (`@khorsheed/dsh-learning-suite`): library.
-- `packages/video` (`@khorsheed/dsh-video-suite`): video-studio.
-- `packages/gamedev` (`@khorsheed/dsh-gamedev-suite`): game.
-- `packages/bundle-eval` (`@khorsheed/dsh-eval-suite`): upgraded family → mode `dsh-eval`; members and the 评测套件 card unchanged, version line untouched (still unpublished 0.1.0).
+- `packages/dev-suite` (`@khorsheed/dsh-dev-suite`): local-agent core + the kimi/codex/claude-code/dsh providers, worktrees, room, typesafe; `local-agent-dsh-headless` rides along deps-only (same treatment as bundle-local-agent, sanctioned in `ALLOWED_EDGES`).
+- `packages/writing-suite` (`@khorsheed/dsh-writing-suite`): canvas + canvas-novel.
+- `packages/learning-suite` (`@khorsheed/dsh-learning-suite`): library.
+- `packages/video-suite` (`@khorsheed/dsh-video-suite`): video-studio.
+- `packages/gamedev-suite` (`@khorsheed/dsh-gamedev-suite`): game.
+- `packages/eval-suite` (`@khorsheed/dsh-eval-suite`): upgraded family → mode `dsh-eval`; members and the 评测套件 card unchanged, version line untouched (still unpublished 0.1.0).
 
 `packages/basic` (`@khorsheed/dsh-basic`) stays `kind: 'family'`, with no preset row — there is no "basic mode". It started with eighteen members; the reader and capture moved to the learning/writing packs, sidechat left and ui-shortcuts retired (2026-10-19 to 10-22), and on 2026-10-24 ankh-guard and context-lens moved to the dev pack, leaving twelve. The rule behind the last move: basic holds what an everyday user wants in every session; ankh-guard only matters on a watchdog-guarded, self-modifying instance and context-lens is a debugging view of model requests, so both are developer tools. capability-catalog stays in basic as an everyday "what can this instance do" view.
 

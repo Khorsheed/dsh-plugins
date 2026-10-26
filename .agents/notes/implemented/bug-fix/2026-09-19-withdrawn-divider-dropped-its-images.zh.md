@@ -45,7 +45,7 @@ Status: implemented
 
 ## Testing
 
-`packages/message-tools` 共 186 个测试（新增或更新 5 个）：
+`packages/client-message-tools` 共 186 个测试（新增或更新 5 个）：
 
 - `tests/withdrawn-node.client.spec.ts`：每个条目都携带 `images`；图文混排消息两者都保留；纯图片消息产出一个条目，且 `countHiddenInSpan` 从 0 变成 1；被再次撤回的恢复行会从它重放的 `content` 里重放图片；只有 reasoning 的助手步骤仍然计数且不携带图片。
 - `tests/divider-restored.client.spec.tsx`：展开时以 `{ images, align: 'end' }` 调用 `renderMessageImages` 并渲染出画廊的图片；纯图片区间显示「已撤回 1 条消息」且没有空态文案；画廊 prop 缺席的组合仍然回放文本。

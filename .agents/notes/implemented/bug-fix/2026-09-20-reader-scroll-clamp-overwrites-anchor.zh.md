@@ -32,6 +32,6 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 共 324 个测试（在译文持久化那条线之上 +4）：
+`packages/reader` 共 324 个测试（在译文持久化那条线之上 +4）：
 
 - `tests/ReaderPane.client.spec.tsx`：被报告的流程端到端——滚动、卸载、全新挂载、位置回来（纯文本的，以及开着地球的、落在同一个译文句子上）；墙面的位置扛过同样的重挂载；以及上面两个钳制用例。

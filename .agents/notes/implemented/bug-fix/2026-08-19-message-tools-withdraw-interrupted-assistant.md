@@ -6,7 +6,7 @@ English | [中文](2026-08-19-message-tools-withdraw-interrupted-assistant.zh.md
 
 ## Problem
 
-The「测试撤回」session showed related defects in `packages/message-tools`:
+The「测试撤回」session showed related defects in `packages/client-message-tools`:
 
 1. **Withdraw did not cancel a running turn.** The edit path already cancels and waits for a running turn before computing the replacement span, but the withdraw path did not. If the user withdraws while the assistant is still streaming, the replacement lands before the remaining assistant chunks/teardown writes, so live assistant content can appear outside the withdrawn span.
 2. **Restore could not recover interrupted assistant content.** A turn that is interrupted before finalization may never emit an `assistant/message` surface event; its visible content exists only as `assistant/chunk` rows. The withdrawal replacement's `sourceEventSeqs` only contains shadowed *surface* nodes, so `planRestore` never saw those chunks. The result in the repro was: withdraw left the partial assistant row visible, a hard refresh dropped the ephemeral/live content, and restore only brought back the user message.

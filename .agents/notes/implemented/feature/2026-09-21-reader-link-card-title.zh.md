@@ -31,7 +31,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader`（+13；面板的三个升级用例另外用「暂存客户端 diff」验证了红——没有改动它们全挂，而 feed 守卫用例按设计两态都绿）：
+`packages/reader`（+13；面板的三个升级用例另外用「暂存客户端 diff」验证了红——没有改动它们全挂，而 feed 守卫用例按设计两态都绿）：
 
 - `tests/extract-article.spec.ts`（+4）：h1 胜过文档标题，文档标题兜底（剥离前读取），摘要按 280 截断，没有就报没有。
 - `tests/host-pure.spec.ts`（+2）：归一化携带/封顶/修剪 meta 且绝不把只有 meta 的标注扫掉；正文预算淘汰保留 meta。

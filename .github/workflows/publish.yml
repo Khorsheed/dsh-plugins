@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       packages:
-        description: 'Space-separated package dirs, e.g. "packages/message-tools packages/taskpilot"'
+        description: 'Space-separated package dirs, e.g. "packages/client-message-tools packages/taskpilot"'
         required: true
 
 permissions:

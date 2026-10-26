@@ -21,7 +21,7 @@ Status: implemented
 
 **卡片是一个表面，已读状态在不隐藏任何东西的前提下可读。** 填充用宿主自己的卡片值（浅色 `--dsw-static-neutral-50` / 深色 `850`，经由一个组件变量加 `:global(body[data-ds-dark-theme])` 覆盖），描边静息 `--dsw-alias-border-l1`、悬停 `l2`，配 120ms 背景/描边过渡；圆角 12，网格列最小宽度降到 264px、间距 8px，窄侧栏仍能舒服地放下一列。未读条目把标题上墨（`data-unread` → `--dsw-alias-label-primary`、字重 650），叠在原有的 7px 瓷砖圆点之上；已读条目留在原位、只是安静一档。两种药丸共用一套尺寸（高 18px、圆角 999px、字号 10.5px），而且那一行可以折行，长标签表再也不会溢出卡片。卡片补上了宿主列表行的 `:focus-visible` 环（`--dsw-alias-brand-primary`）。随这次过修一起删掉的死 CSS：`.cardMenuButton`、`.segmented`、`.segment`、`.segmentOn` —— 悬浮卡片按钮与今日/全部分段控件都是更早的版本就退休了，只留下样式。
 
-**正文不再有阅读量度：侧栏本身就是量度。** 段落上那两条 `max-width` 直接删掉（用户在「统一量度」与「跟随侧栏」之间选了后者），于是正文和列表共用同一条右缘，正文铺满读者给这个 pane 的宽度。`packages/dsh-reader/tests/host-pure.spec.ts` 锁住「不存在」这件事，将来若要把量度加回来，必须加在**每个块**上而不是只加在 `p` 上。
+**正文不再有阅读量度：侧栏本身就是量度。** 段落上那两条 `max-width` 直接删掉（用户在「统一量度」与「跟随侧栏」之间选了后者），于是正文和列表共用同一条右缘，正文铺满读者给这个 pane 的宽度。`packages/reader/tests/host-pure.spec.ts` 锁住「不存在」这件事，将来若要把量度加回来，必须加在**每个块**上而不是只加在 `p` 上。
 
 ## Testing
 

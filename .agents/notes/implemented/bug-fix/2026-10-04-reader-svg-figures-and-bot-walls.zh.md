@@ -4,7 +4,7 @@ Status: implemented
 
 ## Problem
 
-阅读器（`packages/dsh-reader`）在两类文章上失败：
+阅读器（`packages/reader`）在两类文章上失败：
 
 - **用 CSS 自定义属性着色的内联 SVG 插图。** claude.dev 博客的插图（如 *automating-eval-design-and-hillclimbing* 的 fig1）把描边、填充和文字颜色写成 `var(--…)`。提取器的 SVG 子集原样保留这些属性值，但自定义属性定义在源站样式表里，阅读器不带，于是每个 `var()` 都解析为空。插图塌成没上色的散点，线、坐标轴和标签全部消失。这类页面还并排放一张桌面 SVG 和一张窄屏 `mobile` 副本，阅读器把两张都渲染了，而原页面靠自己的 CSS 隐藏其中一张。
 - **微信公众号文章（`mp.weixin.qq.com`）。** 宿主 `web-fetch-http` 的请求（固定的 harness UA，没有浏览器指纹）拿回的是 HTTP 200 的「环境异常 … 完成验证后即可继续访问」验证页。这张页面的可见文字只有约 65 字，`captcha` 出现在第 8000 字符之后、预览窗口之外，所以 `BOT_WALL_PATTERN` 没认出来。结果是：添加对话框说「拒绝自动抓取」，正文抓取却把验证页当文章存了下来。也没有任何东西升级到渲染抓取，因为 `maybeAutoRender` 只在脚本插图空壳时触发。

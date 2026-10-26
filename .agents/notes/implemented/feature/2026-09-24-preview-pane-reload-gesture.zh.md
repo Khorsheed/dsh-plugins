@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`ContentPane` 新增一个可选 prop `onReload?: () => Promise<void>`（`packages/ui-content-preview/src/client/contract.ts`）。注入后，标题行动作区在复制路径之前渲染一个刷新钮（官方 `IconRefreshOutlineMedium`）；返回的 promise 未落定期间按钮禁用、图标旋转（dsh-reader `.toolSpinning` 先例：作用域化的 `pane-spin` keyframe，带 `prefers-reduced-motion` 回落）。进行中状态归面板自己——调用方 promise 落定是唯一存在的「完成」信号。文案走调用方注入的 `t`，新增键 `action.reload`（各消费方字典 zh 重新加载 / en Reload；`PREVIEW_KEYS` 覆盖测试让缺键在三个命名空间里都是测试失败）。不传 `onReload` 的调用方渲染结果与之前逐像素相同。
+`ContentPane` 新增一个可选 prop `onReload?: () => Promise<void>`（`packages/client-ui-content-preview/src/client/contract.ts`）。注入后，标题行动作区在复制路径之前渲染一个刷新钮（官方 `IconRefreshOutlineMedium`）；返回的 promise 未落定期间按钮禁用、图标旋转（dsh-reader `.toolSpinning` 先例：作用域化的 `pane-spin` keyframe，带 `prefers-reduced-motion` 回落）。进行中状态归面板自己——调用方 promise 落定是唯一存在的「完成」信号。文案走调用方注入的 `t`，新增键 `action.reload`（各消费方字典 zh 重新加载 / en Reload；`PREVIEW_KEYS` 覆盖测试让缺键在三个命名空间里都是测试失败）。不传 `onReload` 的调用方渲染结果与之前逐像素相同。
 
 三个消费方同构接入各自的读路径，重读进行中保持旧内容可见（重读绝不先清 read——与重新选中不同）：
 

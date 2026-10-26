@@ -37,7 +37,7 @@ The reader's request: press something on the card, leave, come back to a ready a
 
 ## Testing
 
-`packages/dsh-reader` runs 222 tests (6 new):
+`packages/reader` runs 222 tests (6 new):
 
 - `boot.spec.ts`: `fetchEntryBody` writes the raw before answering (`rawFile` returned, one file in `bodies/`), `entryFetchStates` reports `raw`, `getRawBody` returns the payload and its URL, `storeEntryBody` flips the state to `ready` and sweeps the raw file, and a 403 reports `failed` with code `blocked`.
 - `ReaderPane.client.spec.tsx`: the card shows 抓取 / 已抓取 / 抓取失败 from the host's states; a click on the grey pill (and on the red one) calls `fetchEntryBody`; a hover on the red pill carries the classified reason; and a `raw` entry is extracted through `getRawBody` → `storeEntryBody` without any fetch.

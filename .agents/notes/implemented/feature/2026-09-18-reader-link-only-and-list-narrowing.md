@@ -64,7 +64,7 @@ Three more gaps followed from the same rule, that an add either succeeds with a 
 
 ## Testing
 
-`packages/dsh-reader` runs 195 tests, of which 20 are new here:
+`packages/reader` runs 195 tests, of which 20 are new here:
 
 - `host-pure.spec.ts`: `classifyFetchFailure` maps each seam failure, including the regression that a `WEB_REDIRECT_BLOCKED` **code** to a login host is `login` and to an ordinary host is `redirected`; `crossOriginRetarget` follows a same-host scheme upgrade and refuses a host change, and does not act on a message-only lookalike; `inspectPreview` leaves a real page alone and recognises a 200 bot challenge, a login interstitial, a short page and a cross-host hop.
 - `boot.spec.ts`: the OpenReview-shaped challenge page is neither stored as a payload nor a backfill candidate, and the entry's detail answer carries the reason; a manual refresh after a transient failure clears the record; the no-web composition keeps the URL and classifies it; a 404 keeps the link and records `http`; an ordinary page is still saved with a body.

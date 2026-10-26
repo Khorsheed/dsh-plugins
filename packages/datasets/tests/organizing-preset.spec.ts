@@ -21,7 +21,7 @@ import { DatasetsRemoteService } from '../src/remote.ts'
 const REPO = join(import.meta.dirname, '..', '..', '..')
 
 /** The mode packs 3080 installs beside the eval pack: 开发模式, 写作模式, 评测模式. */
-const MODE_PACKS = ['packages/dev/cordis.patch.yml', 'packages/writing/cordis.patch.yml', 'packages/bundle-eval/cordis.patch.yml']
+const MODE_PACKS = ['packages/dev-suite/cordis.patch.yml', 'packages/writing-suite/cordis.patch.yml', 'packages/eval-suite/cordis.patch.yml']
 
 /** The Loader's `!!js` tag, round-tripped as an opaque marker (what the host dumps back). */
 class JsExpr {

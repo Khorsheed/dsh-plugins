@@ -10,7 +10,7 @@ Status: implemented
 
 - 新增第四个模型工具 `game_publish`，按需跑同一条 `checkTurn` 流程：数据校验 → 无头加载并冒烟 2 秒 → `tests/*.test.js`。通过就生成版本进试玩区（自动上线关着或换风格时成为候选）；不通过返回问题清单；构建没变时直接用上次检查的结论回答，不重跑。
 - 它调用 `checkTurn` 时不设自动修复上限，所以主动发版永远不会把某个构建标成「已停止自动修复」；发版没过的构建，回合结束时照样检查（并送回修复）。发版通过的构建，回合结束时被现有指纹判断跳过。
-- 规矩写在提示词各层：`gamedev` 技能、`game-agent` 引导段、`dsh-gamedev` 人设的两份副本（`packages/gamedev`、`packages/presets`）都要求请用户试玩或体验任何东西之前先 `game_publish` 并且通过，并说明纯设计问题不需要发版。
+- 规矩写在提示词各层：`gamedev` 技能、`game-agent` 引导段、`dsh-gamedev` 人设的两份副本（`packages/gamedev-suite`、`packages/presets`）都要求请用户试玩或体验任何东西之前先 `game_publish` 并且通过，并说明纯设计问题不需要发版。
 
 ## Alternatives considered
 

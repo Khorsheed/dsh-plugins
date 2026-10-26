@@ -3,7 +3,7 @@
  * (scripts/eval-preset-parity.spec.ts).
  *
  * A preset row is compared as COMPOSITION, not bytes: copies of the same row
- * live in profiles/eval/presets and the eval mode pack (packages/bundle-eval),
+ * live in profiles/eval/presets and the eval mode pack (packages/eval-suite),
  * and they differ on purpose in comments (where the provenance notes sit) and
  * in quoting (some files quote every `name:` value, `'cordis:group'` included,
  * which YAML reads as the same string). Line- and indent-based, like

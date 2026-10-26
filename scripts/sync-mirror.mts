@@ -32,6 +32,25 @@ import { pathToFileURL } from 'node:url'
 
 const root = join(import.meta.dirname, '..')
 
+/**
+ * Mirror repos whose public name differs from the package directory. The
+ * mode-suite directories were renamed to match their npm names
+ * (`writing` → `writing-suite`, 2026-10-26), but each suite's mirror repo is
+ * the collection's front door and keeps its short name.
+ */
+export const MIRROR_REPO_NAMES = {
+  'dev-suite': 'dev',
+  'writing-suite': 'writing',
+  'learning-suite': 'learning',
+  'video-suite': 'video',
+  'gamedev-suite': 'gamedev',
+}
+
+/** The mirror repo suffix for an artifact: `Khorsheed/dsh-<suffix>`. */
+export function mirrorRepoName(kind, name) {
+  return kind === 'package' ? MIRROR_REPO_NAMES[name] ?? name : name
+}
+
 /** Per-kind sync contract. `keep` survives the wipe in the mirror; `skip`
  * drops a tracked top-level entry that should stay home; `gitignore` is what
  * the mirror's own .gitignore holds. Untracked files need no skip entry —
@@ -117,8 +136,8 @@ export function main(argv = process.argv.slice(2)) {
   try {
     // Read-only modes clone over https so CI needs no deploy key; push uses ssh.
     const remote = check
-      ? `https://github.com/Khorsheed/dsh-${name}.git`
-      : `git@github.com:Khorsheed/dsh-${name}.git`
+      ? `https://github.com/Khorsheed/dsh-${mirrorRepoName(kind, name)}.git`
+      : `git@github.com:Khorsheed/dsh-${mirrorRepoName(kind, name)}.git`
     run('git', ['clone', ...(check ? ['--depth', '1'] : []), remote, '.'], work)
 
     for (const entry of readdirSync(work)) {

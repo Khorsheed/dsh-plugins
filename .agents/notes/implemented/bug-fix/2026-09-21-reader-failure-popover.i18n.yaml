@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-21-reader-failure-popover.md
-.agents/notes/implemented/bug-fix/2026-09-21-reader-failure-popover.md: 317ad38bc4247db971f41bff2f04740ee43f8279
-.agents/notes/implemented/bug-fix/2026-09-21-reader-failure-popover.zh.md: 0a59f02c381918e15562e9b80c7319294e2534ad
+.agents/notes/implemented/bug-fix/2026-09-21-reader-failure-popover.md: 11838a7fc79ffd662cde541155ba70c50055f389
+.agents/notes/implemented/bug-fix/2026-09-21-reader-failure-popover.zh.md: 4613c505e1158e0bbc6958ab28f11c2f5147ac52

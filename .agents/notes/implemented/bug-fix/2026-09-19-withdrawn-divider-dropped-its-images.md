@@ -45,7 +45,7 @@ The asymmetry is what made this a fold bug rather than a missing capability: the
 
 ## Testing
 
-`packages/message-tools` runs 186 tests (5 new or updated):
+`packages/client-message-tools` runs 186 tests (5 new or updated):
 
 - `tests/withdrawn-node.client.spec.ts`: every entry carries `images`; a mixed text-and-image message keeps both; an image-only message yields one entry and `countHiddenInSpan` returns 1 where it returned 0 before; a re-withdrawn restore row replays the images from its replayed content; reasoning-only assistant steps still count and carry no images.
 - `tests/divider-restored.client.spec.tsx`: expanding calls `renderMessageImages` with `{ images, align: 'end' }` and renders the gallery's image; an image-only span shows 「已撤回 1 条消息」 with no empty copy; a composition whose gallery prop is absent still replays the text.

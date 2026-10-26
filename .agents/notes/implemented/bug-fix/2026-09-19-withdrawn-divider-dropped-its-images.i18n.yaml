@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-19-withdrawn-divider-dropped-its-images.md
-.agents/notes/implemented/bug-fix/2026-09-19-withdrawn-divider-dropped-its-images.md: 38898e41299feefa467d0d517f0a83b3cf068c6c
-.agents/notes/implemented/bug-fix/2026-09-19-withdrawn-divider-dropped-its-images.zh.md: def489e3fb6d478c063eabdd7692df7569eeb895
+.agents/notes/implemented/bug-fix/2026-09-19-withdrawn-divider-dropped-its-images.md: f47138c528be62188cc184610b7e78b58c7c1ffc
+.agents/notes/implemented/bug-fix/2026-09-19-withdrawn-divider-dropped-its-images.zh.md: 625c963ae29281668124a5dc38d0284c76dfa442

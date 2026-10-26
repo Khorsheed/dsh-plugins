@@ -39,7 +39,7 @@ The add flow (`ReaderService.addSource`) recognizes paper links BEFORE the first
 
 ## Testing
 
-`packages/dsh-reader` — the new cases each ran red against the pre-change code:
+`packages/reader` — the new cases each ran red against the pre-change code:
 
 - `tests/host-pure.spec.ts`: the arXiv id shapes (abs/pdf/html, versions, old-style, `.pdf` suffix, `www.`), the non-paper rejections, the upgrade map; the DOI match shape; title normalization and the edit-similarity gate (identical-after-normalization, subtitle drift, the "Deep learning" near-collision); author family-name overlap; the resolver table's DOI and OpenReview answers against fixture payloads (Crossref JSON, arXiv Atom), including Crossref 404, truncated JSON, an empty search and a gated-out candidate.
 - `tests/boot.spec.ts`: abs → the HTML URL is fetched and stored (abs never requested); pdf with version+suffix; 404 falls back to the pasted URL; 403 does NOT fall back; a pasted `/html/` link is fetched as itself; the same paper via its second URL is a duplicate. DOI end-to-end with a scripted seam: gated hit lands the HTML URL, title label and `resolvedFrom`; a gated-out title keeps the ordinary path. OpenReview is saved link-only with `unreadable` and the seam is never called.

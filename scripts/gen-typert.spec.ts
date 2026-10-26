@@ -91,7 +91,7 @@ describe('copyTypertPackageSources', () => {
     copyTypertPackageSources(selected, source, overlay)
 
     expect(existsSync(join(overlay, pkg.dir, 'src', 'index.ts'))).toBe(true)
-    expect(existsSync(join(overlay, 'packages', 'message-tools'))).toBe(false)
+    expect(existsSync(join(overlay, 'packages', 'client-message-tools'))).toBe(false)
   })
 })
 

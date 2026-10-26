@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-14-message-tools-group-row-hiding.md
-.agents/notes/implemented/bug-fix/2026-10-14-message-tools-group-row-hiding.md: d8f0b883abd4ae8e2af4990cc46dd28726302c46
-.agents/notes/implemented/bug-fix/2026-10-14-message-tools-group-row-hiding.zh.md: 5b7ff1cb1c20a6d67ba399d25b981eb675d4c021
+.agents/notes/implemented/bug-fix/2026-10-14-message-tools-group-row-hiding.md: fea1d5acde465471b37bd0e23adbe294d1d63e74
+.agents/notes/implemented/bug-fix/2026-10-14-message-tools-group-row-hiding.zh.md: 5cdacdd06194d5385f9e7ff9e82a123edee2daab

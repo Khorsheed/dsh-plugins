@@ -80,7 +80,7 @@ export interface TypertPackage {
 /** Packages with ./typert + ./remote exports. */
 export const TYPERT_PACKAGES: readonly TypertPackage[] = [
   {
-    dir: 'packages/message-tools',
+    dir: 'packages/client-message-tools',
     name: '@khorsheed/dsh-client-message-tools',
     hostConfigs: ['tsconfig.host.json'],
   },
@@ -155,7 +155,7 @@ export const TYPERT_PACKAGES: readonly TypertPackage[] = [
     hostConfigs: ['tsconfig.host.json'],
   },
   {
-    dir: 'packages/dsh-reader',
+    dir: 'packages/reader',
     name: '@khorsheed/dsh-reader',
     hostConfigs: ['tsconfig.host.json'],
   },

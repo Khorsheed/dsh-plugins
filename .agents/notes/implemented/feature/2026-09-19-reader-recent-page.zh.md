@@ -38,7 +38,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 共 254 个测试（新增 14 个）：
+`packages/reader` 共 254 个测试（新增 14 个）：
 
 - `tests/annotations.spec.ts`（+4）：丢掉打不开或无法排序的记录、缺 URL 合法、重复项合并并保留文件顺序、100 行上限从最旧一端截断、列表可穿过磁盘文档往返。
 - `tests/boot.spec.ts`（+4）：最新打开的排最前、重开把条目连标题一起挪到最前、打不开的记录被拒、上限丢掉最旧一条、列表在同一个 state root 的第二个宿主里依然存在，`clearRecent` 同样持久。

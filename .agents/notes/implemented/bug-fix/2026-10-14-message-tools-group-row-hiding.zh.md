@@ -8,7 +8,7 @@ Status: implemented
 
 ## Decision
 
-规则集现在覆盖分组渲染多出的两种行形状（`packages/message-tools/src/client/dom-hider.ts` 的 `hiddenGroupFlowKeys`）：
+规则集现在覆盖分组渲染多出的两种行形状（`packages/client-message-tools/src/client/dom-hider.ts` 的 `hiddenGroupFlowKeys`）：
 
 - **成员节点键全部隐藏的分组，容器一起隐藏。** 成员关系从有类型的公开分组契约读取（`uiConversation.binding(sessionId).snapshot.getSnapshot().views.grouped('chat')`——根条目加逐分组 source），不从 DOM 反推。横跨区间边界的分组为仍可见的成员保留折叠头。
 - **被隐藏成员的 groupPart 复合行键（`["<nodeKey>","<part>"]`，如推理窗格）一律追加**，无论其分组整体是否隐藏——ChatNodeSeat 给部分行盖的是这个复合键，纯节点键规则永远够不到它。`'response'` 部分不需要规则：它复用的就是纯节点键。
@@ -25,4 +25,4 @@ Status: implemented
 
 - 编辑与撤回区间在 ≥ 0.1.7-alpha.1 宿主上重新连「已调用工具」折叠头一起隐藏；分组前的宿主（minHost 0.1.5-rc.1）行为逐字节不变。
 - 部分隐藏的分组保留折叠头；折叠标题的汇总仍可能计入被隐藏成员——属外观层，与宿主自身折叠的取舍一致。
-- 测试：`packages/message-tools/tests/dom-hider.client.spec.ts` 覆盖纯折叠（全隐藏/部分/空/缺快照的分组、复合部分键）与安装后的隐藏器（写入规则中的分组键、分组前宿主的降级、snapshot 读取抛错）。
+- 测试：`packages/client-message-tools/tests/dom-hider.client.spec.ts` 覆盖纯折叠（全隐藏/部分/空/缺快照的分组、复合部分键）与安装后的隐藏器（写入规则中的分组键、分组前宿主的降级、snapshot 读取抛错）。

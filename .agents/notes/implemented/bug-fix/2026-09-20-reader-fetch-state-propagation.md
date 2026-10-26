@@ -36,7 +36,7 @@ The fix is propagation, not a new state model — the five-state pill (none / fe
 
 ## Testing
 
-`packages/dsh-reader` runs 290 tests (+8; six of them red against the pre-fix code, two both-sides-green guards):
+`packages/reader` runs 290 tests (+8; six of them red against the pre-fix code, two both-sides-green guards):
 
 - `tests/ReaderPane.client.spec.tsx` (+3): opening from the card and fetching flips the pill to 已抓取； the automatic backfill flips it; a failed open-triggered fetch flips it to 抓取失败 with the host's classified reason in the title. All three drive the mocks as a model host document (`entryFetchStates` answers whatever the writes made true), so they cannot pass without real propagation.
 - `tests/store.spec.ts` (new, 3): the expired marker's set/clear, cleared by a landed backfill, kept through a failed one.

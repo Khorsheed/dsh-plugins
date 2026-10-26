@@ -39,7 +39,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader`——新用例都先对着改动前的代码红过：
+`packages/reader`——新用例都先对着改动前的代码红过：
 
 - `tests/host-pure.spec.ts`：arXiv id 的各种形状（abs/pdf/html、版本、旧式、`.pdf` 后缀、`www.`）、非论文页拒绝、升级映射；DOI 匹配形状；标题归一化与编辑相似度闸（归一化后相同、副标题漂移、"Deep learning" 近似碰撞）；作者姓重合；resolver 表对 fixture 载荷（Crossref JSON、arXiv Atom）的 DOI 与 OpenReview 回答，含 Crossref 404、截断 JSON、空搜索与被闸掉的候选。
 - `tests/boot.spec.ts`：abs → 抓取并存储 HTML URL（abs 从未请求）；带版本与后缀的 pdf；404 回退粘贴 URL；403 **不**回退；粘贴的 `/html/` 链接按原样抓；同一篇论文的第二种 URL 判重。DOI 端到端（脚本化缝）：过闸命中落 HTML URL、标题标签与 `resolvedFrom`；被闸掉的标题走普通路径。OpenReview 存仅链接、`unreadable`、且缝从未被调用。

@@ -40,7 +40,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 现在跑 212 个测试（新增 4 个）：
+`packages/reader` 现在跑 212 个测试（新增 4 个）：
 
 - `extract-article.spec.ts`：只有图注的 figure 被丢弃并计数，而带 `<img>` 的 figure 留下（相对 `src` 被绝对化）；所有 figure 都有画面的页面不报计数。
 - `ReaderPane.client.spec.tsx`：打开一条抓取结果里带脚本插图的条目，会显示该计数的提示与「阅读原文」动作。

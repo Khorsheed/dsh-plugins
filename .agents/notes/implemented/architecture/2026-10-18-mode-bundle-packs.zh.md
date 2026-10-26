@@ -10,12 +10,12 @@ Status: implemented
 
 `dsh.bundle.kind: 'mode'`(checker 机制同日落地,提交 `99b7183b`)迎来它的舰队:六个模式包,每个都是 patch 末尾恰好带一条 `@deepseek-ai/dsh-agent-preset` 行(id `preset-<mode>`、`dsh.bundle.mode` 声明 `<mode>`、全树唯一)的家族包:
 
-- `packages/dev`(`@khorsheed/dsh-dev-suite`):local-agent 核 + kimi/codex/claude-code/dsh 四个委派 provider、worktrees、room、typesafe;`local-agent-dsh-headless` 以 deps-only 随行(与 bundle-local-agent 同一处理,在 `ALLOWED_EDGES` 登记)。
-- `packages/writing`(`@khorsheed/dsh-writing-suite`):canvas + canvas-novel。
-- `packages/learning`(`@khorsheed/dsh-learning-suite`):library。
-- `packages/video`(`@khorsheed/dsh-video-suite`):video-studio。
-- `packages/gamedev`(`@khorsheed/dsh-gamedev-suite`):game。
-- `packages/bundle-eval`(`@khorsheed/dsh-eval-suite`):family 升级为 mode `dsh-eval`;成员与「评测套件」卡面不变,版本线不动(仍未发布的 0.1.0)。
+- `packages/dev-suite`(`@khorsheed/dsh-dev-suite`):local-agent 核 + kimi/codex/claude-code/dsh 四个委派 provider、worktrees、room、typesafe;`local-agent-dsh-headless` 以 deps-only 随行(与 bundle-local-agent 同一处理,在 `ALLOWED_EDGES` 登记)。
+- `packages/writing-suite`(`@khorsheed/dsh-writing-suite`):canvas + canvas-novel。
+- `packages/learning-suite`(`@khorsheed/dsh-learning-suite`):library。
+- `packages/video-suite`(`@khorsheed/dsh-video-suite`):video-studio。
+- `packages/gamedev-suite`(`@khorsheed/dsh-gamedev-suite`):game。
+- `packages/eval-suite`(`@khorsheed/dsh-eval-suite`):family 升级为 mode `dsh-eval`;成员与「评测套件」卡面不变,版本线不动(仍未发布的 0.1.0)。
 
 `packages/basic`(`@khorsheed/dsh-basic`)保持 `kind: 'family'`,无 preset 行——没有「基础模式」。起步时十八个成员;灵感空间与渲染抓取移到学习/写作模式包、侧边对话移出、快捷键退役(2026-10-19 至 10-22),2026-10-24 重启守卫与上下文透镜移到开发模式包,剩十二个。最后这次移动的规则:basic 只放普通用户每个会话都想要的东西;ankh-guard 只对受看门狗守护、会改自己的实例有意义,context-lens 是看模型请求组成的调试工具,两者都属于开发者工具。capability-catalog 作为日常的「这个实例能做什么」视图留在 basic。
 

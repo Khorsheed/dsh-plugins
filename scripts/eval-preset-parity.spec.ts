@@ -29,7 +29,7 @@ import { composition, field, rowLines } from './preset-row-blocks.ts'
 
 const REPO = join(import.meta.dirname, '..')
 const EVAL_PACK = readFileSync(join(REPO, 'profiles/eval/presets/cordis.patch.yml'), 'utf8')
-const BUNDLE_EVAL = readFileSync(join(REPO, 'packages/bundle-eval/cordis.patch.yml'), 'utf8')
+const BUNDLE_EVAL = readFileSync(join(REPO, 'packages/eval-suite/cordis.patch.yml'), 'utf8')
 
 describe('eval presets: eval pack bundle (canonical) and the eval mode pack carry one composition', () => {
   it('preset-dsh-eval composes exactly what preset-eval does', () => {

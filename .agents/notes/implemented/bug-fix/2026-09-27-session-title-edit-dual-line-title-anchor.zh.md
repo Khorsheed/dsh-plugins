@@ -18,7 +18,7 @@ Status: implemented
 
 包套件 62 绿。就地编辑套件（11 + 3 例）按 `legacy` / `current` 各跑一遍，夹具复刻各线真实标记；把旧定位恢复后这批用例 11/11 全红（用 `git stash` 实测），所以它们是回归闸门而非现状描述。
 
-实机验证（2026-09-27，就在此前坏掉的那条线上）：在 scratch `DSH_HOME` 里建一次性 profile（`dsh plugin --profile web add <worktree>/packages/session-title-edit`，link 安装），宿主 `0.1.7-rc.2`，打开一个真实种子会话后点铅笔。官方标题节点是文本等于会话标题的 `SPAN`，带 `data-ste-inplace`，矩形 300/11/184×28；覆盖输入框落在同一矩形（300/11、190×28），预填当前标题；没有行内编辑器出现；Escape 后节点复原、覆盖层消失。修复前同一操作得到的是行内编辑器、标题照旧显形。
+实机验证（2026-09-27，就在此前坏掉的那条线上）：在 scratch `DSH_HOME` 里建一次性 profile（`dsh plugin --profile web add <worktree>/packages/client-session-title-edit`，link 安装），宿主 `0.1.7-rc.2`，打开一个真实种子会话后点铅笔。官方标题节点是文本等于会话标题的 `SPAN`，带 `data-ste-inplace`，矩形 300/11/184×28；覆盖输入框落在同一矩形（300/11、190×28），预填当前标题；没有行内编辑器出现；Escape 后节点复原、覆盖层消失。修复前同一操作得到的是行内编辑器、标题照旧显形。
 
 旧线的覆盖缺口如实记下：0.1.5/0.1.6 臂由双线单测，以及对已发布 0.1.5 产物 bundle 的 DOM 直读（`disabled: last`）钉住，**不是**实机跑出来的——一次性 0.1.5 实例确实起过，但那个 scratch home 的 workspace 浏览器不肯列出种子会话（渲染器/store 的一次性 home 限制，与本插件无关）；而本仓 CI 的 `gates` job 本来就把本包套件跑在钉住的 `dsh-v0.1.5-rc.1` 线上。
 

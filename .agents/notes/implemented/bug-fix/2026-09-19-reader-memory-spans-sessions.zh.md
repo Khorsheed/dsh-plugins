@@ -33,7 +33,7 @@ Status: implemented
 
 ## Testing
 
-`packages/dsh-reader` 共 253 个测试（两个按会话的用例删掉，新增一个跨会话用例）：
+`packages/reader` 共 253 个测试（两个按会话的用例删掉，新增一个跨会话用例）：
 
 - `tests/ReaderPane.client.spec.tsx`（+1）：为 `session-a` 挂载的面板打开一篇英文文章并点亮地球；卸载后为 `session-b` 挂载面板，文章已经打开、译文已经在屏幕上，这一次既没点卡片也没点地球。
 - `tests/session.spec.ts`：快照的合并语义、阅读位置、翻译记录（含「原文」会清掉记录）、按语言对索引的翻译会话缓存——现在全都没有会话参数。
