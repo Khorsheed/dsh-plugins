@@ -22,19 +22,15 @@ Papers, articles and videos you come across end up scattered across browser tabs
 
 ## Install
 
-In DSH, open Plugins → Add plugin, enter either suite's package name below and click Install:
-
-```
-@khorsheed/dsh-writing-suite
-```
+In DSH, open Plugins → Add plugin, enter this package name and click Install:
 
 ```
 @khorsheed/dsh-learning-suite
 ```
 
-The Reader comes with the Writing Suite or the Learning Suite, along with local transcription and Capture. Then start a new session, pick "写作模式" (writing mode) or "学习模式" (learning mode), open "Inspiration" in the right sidebar and paste your first link.
+The Reader comes with the Learning Suite, along with local transcription and Capture. Then start a new session, pick "学习模式" (learning mode), open "Inspiration" in the right sidebar and paste your first link.
 
-The Reader only shows up in sessions of those two modes; not seeing it in other modes is expected.
+The Reader only shows up in learning-mode sessions; not seeing it in other modes is expected.
 
 ## Known limitations
 

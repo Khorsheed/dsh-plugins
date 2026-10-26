@@ -2,9 +2,9 @@
 
 [English](README.en.md) | 中文
 
-**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**三十多个纯增量插件包,组成 7 个套件**。所有包只走官方扩展点(slots、commands、Remote 服务、会话投影)接入——不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;探测不到可选能力时静默降级,绝不拖垮启动。整套插件按共存设计:任意组合安装、卸载、开关,互不干扰,生产环境长期全量叠装运行。
+**dsh**(DeepSeek Harness)生态的社区插件 monorepo:**三十多个纯增量插件包,组成 5 个套件**。所有包只走官方扩展点(slots、commands、Remote 服务、会话投影)接入——不修改任何官方包、不替换官方 UI 槽位、不 hack 核心服务;探测不到可选能力时静默降级,绝不拖垮启动。整套插件按共存设计:任意组合安装、卸载、开关,互不干扰,生产环境长期全量叠装运行。
 
-## 套件:七种开箱体验
+## 套件:五种开箱体验
 
 推荐的安装单元是**套件**(一个 npm 包),不是单包:套件用 npm 依赖装齐成员、用自带 patch 逐字挂载成员行;除基础体验外,每个套件还内联交付一个按会话授予的 agent preset——装上套件,就装上这个模式。
 
@@ -12,11 +12,9 @@
 | --- | --- | --- | --- |
 | **基础体验** | `@khorsheed/dsh-basic` | 12 个日常体验成员:消息编辑/撤回、历史时间轴、标题编辑、引用、产物预览、本地文件、任务胶囊、压缩提醒、内联卡片、能力目录、提示音、移动端 | [Khorsheed/dsh-basic](https://github.com/Khorsheed/dsh-basic) |
 | **开发套件** | `@khorsheed/dsh-dev-suite` | 本地编码 agent 委派(Kimi / Codex / Claude Code / DSH)、worktree 改动实况、room 多 agent 协作、typesafe 快速决策、上下文透镜、运维守护,自带「开发模式」preset | [Khorsheed/dsh-dev](https://github.com/Khorsheed/dsh-dev) |
-| **写作套件** | `@khorsheed/dsh-writing-suite` | 灵感画布、长篇小说体裁、灵感空间(RSS/链接阅读)、本机转写、渲染抓取,自带「写作模式」preset | [Khorsheed/dsh-writing](https://github.com/Khorsheed/dsh-writing) |
-| **学习套件** | `@khorsheed/dsh-learning-suite` | 图书馆:按项目组织的精读学习(书籍摄入、路线图、讲义、测验判题),含画布/灵感空间/转写/渲染抓取,自带「学习模式」preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
+| **学习套件** | `@khorsheed/dsh-learning-suite` | 图书馆:按项目组织的精读学习(书籍摄入、路线图、讲义、测验判题),含灵感空间/转写/渲染抓取,自带「学习模式」preset | [Khorsheed/dsh-learning](https://github.com/Khorsheed/dsh-learning) |
 | **剪辑套件** | `@khorsheed/dsh-video-suite` | 剪辑台:混录自动分人、声纹认人、删字即删音频,导出音频/视频/字幕/shownotes;含本机转写与多 agent 协作(本地 agent 委派、协作间),自带「剪辑模式」preset | [Khorsheed/dsh-video](https://github.com/Khorsheed/dsh-video) |
 | **游戏开发套件** | `@khorsheed/dsh-gamedev-suite` | 和 agent 一起做小游戏:试玩调参、外观编辑、分章节策划、版本与回滚,每轮结束自动检查,含多 agent 协作(本地 agent 委派、协作间),自带「游戏开发模式」preset | [Khorsheed/dsh-gamedev](https://github.com/Khorsheed/dsh-gamedev) |
-| **评测套件** | `@khorsheed/dsh-eval-suite` | 本机 harness 对照评测:题集、任务规划、实验单元、执行与判分,含 local-agent 委派家族,自带「评测模式」preset | [Khorsheed/dsh-eval](https://github.com/Khorsheed/dsh-eval) |
 
 ![dsh-basic 基础体验:消息编辑与撤回、引用动作、会话产物、文件列表、灵感空间一屏装齐](docs/screenshots/basic-mode.png)
 
@@ -81,7 +79,7 @@
 
 | 包 | 插件能力 | 安装包名 | 宿主要求 | 随套件 |
 | --- | --- | --- | --- | --- |
-| [`canvas`](packages/canvas) | **灵感画布**:在主题画布上积累卡片、连线与模型提议 | `@khorsheed/dsh-canvas` | ≥ 0.1.5-rc.1 | writing / learning |
+| [`canvas`](packages/canvas) | **灵感画布**:在主题画布上积累卡片、连线与模型提议 | `@khorsheed/dsh-canvas` | ≥ 0.1.5-rc.1 | writing |
 | [`canvas-novel`](packages/canvas-novel) | 画布的「**长篇小说**」体裁:人物/伏笔/章节的作品记忆引擎、对账闸门与写作工具 | `@khorsheed/dsh-canvas-novel` | ≥ 0.2.0-rc.2 | writing |
 | [`dsh-reader`](packages/reader) | **灵感空间**:RSS/Atom 订阅 + 粘贴文章链接,卡片流 + 可读详情视图 | `@khorsheed/dsh-reader` | ≥ 0.1.5-rc.1 | writing / learning |
 
@@ -126,7 +124,7 @@
 | [`local-agent-dsh`](packages/local-agent-dsh) | **dsh 自委派** harness:把 dsh 自己当本地 CLI 用 | `@khorsheed/dsh-local-agent-dsh` | ≥ 0.1.5-rc.1 | dev / eval / gamedev / video |
 | [`local-agent-dsh-headless`](packages/local-agent-dsh-headless) | (组合组件)dsh 委派的 **headless 子 profile** patch | `@khorsheed/dsh-local-agent-dsh-headless` | ≥ 0.1.5-rc.1 | 随 provider |
 
-> 家族随开发套件与评测套件同装;单装是高级路径——核心与 provider 要显式一起装(核心缺席时 provider 行 pending,不崩)。各 provider 的委派工具(`subagent_kimi` 等)是包内 `./tool` 组合入口,由 preset 按会话授予。
+> 家族随开发、剪辑、游戏开发套件同装;单装是高级路径——核心与 provider 要显式一起装(核心缺席时 provider 行 pending,不崩)。各 provider 的委派工具(`subagent_kimi` 等)是包内 `./tool` 组合入口,由 preset 按会话授予。
 
 ### 评测
 
@@ -158,7 +156,7 @@
 2. **UI 随授权自隐。** 会话绑定内容的面(会话 tab、头部徽标)跟随 preset 授予显隐——没被授予的会话根本看不到入口;跨会话的部署面不设运行时开关,装不装由安装决定。完整规范见 [docs/plugin-visibility.md](docs/plugin-visibility.md)。
 3. **纯增量声明。** preset 以官方「标准模式」组合为底逐字重基,只在末尾追加社区工具行,不改任何官方行。
 
-六个模式 preset 各随其套件交付(开发 / 写作 / 学习 / 剪辑 / 游戏开发 / 评测,见上表);基础体验不带 preset——日常不需要换模式。
+四个模式 preset 各随其套件交付(开发 / 学习 / 剪辑 / 游戏开发,见上表);基础体验不带 preset——日常不需要换模式。
 
 ## 模型影响总表
 
@@ -175,11 +173,11 @@
 
 ### 安装
 
-前置:dsh 宿主(各包的版本要求见能力地图各表的「宿主要求」列与包 README 的 Compatibility 节)。**推荐路径是套件**(见上文[套件](#套件七种开箱体验));单包安装是按需裁剪或调试的高级路径。
+前置:dsh 宿主(各包的版本要求见能力地图各表的「宿主要求」列与包 README 的 Compatibility 节)。**推荐路径是套件**(见上文[套件](#套件五种开箱体验));单包安装是按需裁剪或调试的高级路径。
 
 ```sh
 # 套件(推荐):一包装齐一个模式
-dsh plugin --profile web add @khorsheed/dsh-basic        # 或 dsh-dev / dsh-writing / dsh-learning / dsh-video / dsh-gamedev / dsh-bundle-eval
+dsh plugin --profile web add @khorsheed/dsh-basic        # 或 dsh-dev-suite / dsh-learning-suite / dsh-video-suite / dsh-gamedev-suite
 
 # 单包(自挂载包自动挂载自身 loader 行,无需手改 cordis.yml)
 dsh plugin --profile web add @khorsheed/dsh-whalesong
