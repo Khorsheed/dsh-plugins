@@ -15,7 +15,7 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 import type { SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/client/settings-scope.ts'
 import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
-import { resetAuthStatuses } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
+import { publishAuthStatus, resetAuthStatuses } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
 import {
   KimiBundleConfig, KimiSettingsCard,
   type KimiLiveSettings, type KimiBundleConfigProps, type KimiSettingsCardProps,
@@ -323,5 +323,20 @@ describe('KimiBundleConfig', () => {
     fireEvent.click(screen.getByRole('switch', { name: zh['live.title'] }))
     await act(async () => {})
     expect(scope.set).toHaveBeenCalledWith('live', true)
+  })
+  it('re-reads the endpoint credential when the sign-in status changes (logout deletes the saved key)', async () => {
+    let apiKeySet = true
+    const read = vi.fn(async () => ({ baseUrl: 'https://api.kimi.com/coding/v1', apiKeySet, authTokenSet: false }))
+    renderCard({ endpointAuth: { read, write: vi.fn(async () => ({ apiKeySet, authTokenSet: false })) } })
+    await openCard()
+    await act(async () => {})
+    expect(screen.queryAllByText(zh['endpoint.configured']).length).toBeGreaterThan(0)
+    await act(async () => { publishAuthStatus('kimi', 'authenticated') })
+    const before = read.mock.calls.length
+    apiKeySet = false
+    // The auth block's logout publishes the signed-out status.
+    await act(async () => { publishAuthStatus('kimi', 'anonymous') })
+    expect(read.mock.calls.length).toBeGreaterThan(before)
+    expect(screen.queryAllByText(zh['endpoint.configured'])).toHaveLength(0)
   })
 })
