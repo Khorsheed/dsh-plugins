@@ -231,6 +231,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // member in a room — which raises no session event on the main session at all). The page
   // polls the on-screen session's bound project while visible; session events nudge it early.
   const lastVersion = new Map<string, number>()
+  /** The project each on-screen session was last seen bound to (null: none). */
+  const lastBound = new Map<string, string | null>()
   let lastPoll = 0
   const poll = (): void => {
     const now = Date.now()
@@ -239,7 +241,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     const sid = mainSessionId(ctx.sessions.list.getSnapshot())
     if (sid === undefined) return
     void api.liveVersion(sid).then(r => {
-      const live = r.ok ? r.value : null
+      if (!r.ok) return
+      const live = r.value
+      // A binding made with no event (a room member's game_open): refresh the tab, and
+      // when it happened while this page was open, go to the new project.
+      const before = lastBound.get(sid)
+      const bound = live?.projectId ?? null
+      lastBound.set(sid, bound)
+      if (before !== undefined && before !== bound) {
+        emit(sid)
+        if (bound !== null) autoNav.projectOpened(t('nav.project'))
+      }
       if (live === null) return
       const seen = lastVersion.get(live.projectId)
       lastVersion.set(live.projectId, live.version)

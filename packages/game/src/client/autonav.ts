@@ -165,6 +165,11 @@ export class AutoNav {
     this.offer({ target: { view: 'play' }, text })
   }
 
+  /** The session got bound to a project while the page was open (a room member created or opened it). */
+  projectOpened(text: string): void {
+    this.offer({ target: { view: 'play' }, text })
+  }
+
   /** Go, or — when the user is in the middle of something, or it is switched off — leave a notice. */
   private offer(offer: NavOffer): void {
     const busy = this.playing || Date.now() - this.lastTouch < BUSY_MS
