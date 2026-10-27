@@ -27,10 +27,12 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import libraryRemote from '@khorsheed/dsh-library/remote'
 import type { LibraryPaneInjected } from './contract.ts'
+import type { LibraryBinding } from '../types.ts'
 import { LIBRARY_KIND, LIBRARY_TAB_ID, libraryDefinition } from './definition.tsx'
 import { LibraryPane } from './LibraryPane.tsx'
 import { LibraryBindChip, type LibraryBindInjected } from './bind/BindChip.tsx'
 import { createLibraryStore } from './store.ts'
+import { RevealedProject } from './reveal.ts'
 import { en, NS, zh } from './locales.ts'
 import {
   LibraryTabVisibility, RegistrationToggle, type LibraryPluginInventorySnapshot,
@@ -119,6 +121,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
   }
 
+  /** The project the next reveal lands on (one per page; the pane takes it). */
+  const revealed = new RevealedProject()
+
   /** The injected business face, identical for whichever session mounts it. */
   const face = (sessionId: SessionId): LibraryPaneInjected => ({
     listProjects: () => remote.listProjects(),
@@ -151,6 +156,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     latestActivity: () => remote.latestActivity(),
     boundTarget: () => remote.boundTarget(sessionId),
     bindTarget: binding => remote.bindTarget(sessionId, { binding }),
+    revealed,
     sendMessage: text => {
       const input = inputFor(sessionId)
       if (input?.submit === undefined) return false
@@ -208,12 +214,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   // Reveal the library beside the conversation that just started using it: a
   // library tool from the on-screen session wrote (a project created, a book
-  // shelved, a path drafted) → open the 图书馆 tab, once per session per page
-  // load, so closing it again sticks. The first read is the baseline (writes
+  // shelved, a path drafted) → open the 图书馆 tab on the session's bound
+  // project (the write bound it), once per session per page load, so closing
+  // it again sticks. The first read is the baseline (writes
   // from before this page loaded never open anything). Degrades to nothing
   // without the sidebar surface or the host half.
   ctx.effect(() => {
-    const revealed = new Set<string>()
+    const revealedSessions = new Set<string>()
     let baseline: string | undefined
     let primed = false
     const poll = (): void => {
@@ -229,13 +236,19 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         if (write === undefined || (baseline !== undefined && write.at <= baseline)) return
         baseline = write.at
         const main = mainSessionId(ctx.sessions.list.getSnapshot())
-        if (main === undefined || String(main) !== write.id || revealed.has(write.id) || !tabVisibility.show(main)) return
-        revealed.add(write.id)
-        try {
-          (ctx.get('sidebarRight') as { openTab?: (kind: string) => void } | undefined)?.openTab?.(LIBRARY_KIND)
-        } catch {
-          // No on-screen sidebar surface: nothing to reveal.
+        if (main === undefined || String(main) !== write.id || revealedSessions.has(write.id) || !tabVisibility.show(main)) return
+        revealedSessions.add(write.id)
+        const open = (): void => {
+          try {
+            (ctx.get('sidebarRight') as { openTab?: (kind: string) => void } | undefined)?.openTab?.(LIBRARY_KIND)
+          } catch {
+            // No on-screen sidebar surface: nothing to reveal.
+          }
         }
+        // Land on the project the write bound; without a binding the tab opens on today.
+        void remote.boundTarget(main).then((bound: RemoteResult<LibraryBinding | null>) => {
+          if (bound.ok && bound.value !== null) revealed.reveal(bound.value.projectId)
+        }, () => {}).finally(open)
       }, () => {})
     }
     poll()

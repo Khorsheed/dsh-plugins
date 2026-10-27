@@ -72,6 +72,8 @@ export type LibraryActions = {
   pop: (draft: LibraryState) => void
   /** Back to today. */
   home: (draft: LibraryState) => void
+  /** Land on a project's page with today under it, so 「‹」 returns home (the reveal on a first write). */
+  openProject: (draft: LibraryState, projectId: string) => void
   refresh: (draft: LibraryState) => void
   /** Remember a station's 章节考 settings. */
   setQuizSettings: (draft: LibraryState, key: string, settings: LibraryQuizSettings) => void
@@ -99,6 +101,10 @@ export function createLibraryStore(): EngineStoreHandle<LibraryState, LibraryAct
       },
       home: (d) => {
         d.stack = [TODAY]
+        d.rev += 1
+      },
+      openProject: (d, projectId) => {
+        d.stack = [TODAY, { view: 'project', projectId }]
         d.rev += 1
       },
       refresh: (d) => { d.rev += 1 },

@@ -34,6 +34,17 @@ import css from './LibraryPane.module.css'
 /** The tab body. */
 export function LibraryPane(props: LibraryPaneProps): ReactNode {
   const route = props.useStore(s => s.stack[s.stack.length - 1]!)
+  const { revealed, actions } = props
+  // A reveal (the session's first library write) lands on its project: taken on
+  // mount when the reveal opened this tab, at once when the tab was already open.
+  useEffect(() => {
+    const land = (): void => {
+      const projectId = revealed.take()
+      if (projectId !== undefined) actions.openProject(projectId)
+    }
+    land()
+    return revealed.subscribe(land)
+  }, [revealed, actions])
   return (
     <PanelRoot className={css.root}>
       {(() => {
