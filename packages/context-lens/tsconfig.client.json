@@ -14,6 +14,7 @@
   "files": [
     "src/css-modules.d.ts",
     "src/types.ts",
+    "src/ask.ts",
     "src/client/aggregate.ts",
     "src/client/contract.ts",
     "src/client/definition.tsx",

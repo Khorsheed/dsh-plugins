@@ -73,3 +73,37 @@ describe('tool execution detail', () => {
     expect(screen.getByRole('button', { name: '#2 · —' }).textContent).toContain('请求失败')
   })
 })
+
+describe('ask_user_question card', () => {
+  it('shows the question, the options with the chosen one marked, the answer, the other text and the wait', () => {
+    const r: CapturedRequest = { ...request, response: { toolCalls: [{
+      callId: 'q', name: 'mcp__dsh-member__ask_user_question', arguments: '',
+      execution: { status: 'ok', result: '{"answers":[]}' },
+      ask: {
+        outcome: 'answered', late: true, waitMs: 12900, source: 'room',
+        questions: [{ id: 'style', header: '美术方向', question: '整体风格往哪走？', options: [{ label: '水墨绘本（推荐）', description: '线条清楚' }, { label: '写实' }] }],
+        answers: [{ id: 'style', selected: ['水墨绘本（推荐）'], custom: '再粗一点' }],
+      },
+    }] } }
+    const { container } = render(<OutputBlock request={r} t={t} />)
+    expect(screen.getByText('问你')).toBeTruthy()
+    expect(screen.getByText('已补答')).toBeTruthy()
+    expect(screen.getByText('等了 12.9s')).toBeTruthy()
+    expect(screen.getByText('美术方向')).toBeTruthy()
+    expect(screen.getByText('整体风格往哪走？')).toBeTruthy()
+    expect(container.querySelector('li[data-selected="true"]')?.textContent).toContain('水墨绘本（推荐）')
+    expect(screen.getByText('你的回答')).toBeTruthy()
+    expect(screen.getByText('其他：再粗一点')).toBeTruthy()
+    // The raw JSON result is not shown in its place.
+    expect(screen.queryByText('{"answers":[]}')).toBeNull()
+  })
+
+  it('an expired question reads as still answerable; a question with no recorded text says so', () => {
+    const r: CapturedRequest = { ...request, response: { toolCalls: [
+      { callId: 'e', name: 'ask_user_question', arguments: '', ask: { outcome: 'expired' } },
+    ] } }
+    render(<OutputBlock request={r} t={t} />)
+    expect(screen.getByText('已过期，仍可回答')).toBeTruthy()
+    expect(screen.getByText('这次调用没有记录问题内容')).toBeTruthy()
+  })
+})
