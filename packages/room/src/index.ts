@@ -502,7 +502,7 @@ export class RoomService extends TypertRemoteService {
   /** Run ids of the members working in each room (the session list's 运行中). */
   private readonly activeRuns = new Map<string, Set<string>>()
   /** Question/approval cards waiting for the human, per room. */
-  private readonly waitingCards = new Map<string, Map<string, 'question' | 'approval'>>()
+  private readonly waitingCards = new Map<string, Map<string, { readonly kind: 'question' | 'approval'; readonly member: string }>>()
 
   /**
    * Follow a room's run and card edges as they are journaled: a room turns
@@ -523,6 +523,11 @@ export class RoomService extends TypertRemoteService {
         else runs.delete(key)
         if (runs.size === 0) this.activeRuns.delete(id)
         else this.activeRuns.set(id, runs)
+        // A member whose round ended is no longer waiting on its cards: its
+        // bridge call is gone (a CLI's own MCP timeout can end it early, and
+        // the round then goes on without the answer). Expire them, so an
+        // answer given now reaches the member as a new message.
+        if (event.data.state !== 'running') this.expireCardsOf(id, event.data.member)
         if (before === 0 && runs.size > 0) this.emitStatus(id, true)
         // The room's own agent still running keeps the row running.
         else if (before > 0 && runs.size === 0 && this.ctx.agents.get(session.id)?.status !== 'running') this.emitStatus(id, false)
@@ -530,8 +535,8 @@ export class RoomService extends TypertRemoteService {
       }
       case 'room/question':
       case 'room/approval': {
-        const cards = this.waitingCards.get(id) ?? new Map<string, 'question' | 'approval'>()
-        cards.set(event.data.id, event.type === 'room/question' ? 'question' : 'approval')
+        const cards = this.waitingCards.get(id) ?? new Map<string, { readonly kind: 'question' | 'approval'; readonly member: string }>()
+        cards.set(event.data.id, { kind: event.type === 'room/question' ? 'question' : 'approval', member: event.data.member })
         this.waitingCards.set(id, cards)
         return
       }
@@ -543,6 +548,21 @@ export class RoomService extends TypertRemoteService {
         return
       }
       default:
+    }
+  }
+
+  /**
+   * End the waits behind one member's open cards (its round settled): the
+   * question/approval calls resolve as unanswered, which journals them
+   * expired — still answerable, by a new message (answerExpiredQuestion).
+   * @param roomId - the room session.
+   * @param member - the member whose round ended.
+   */
+  private expireCardsOf(roomId: string, member: string): void {
+    for (const [cardId, card] of this.waitingCards.get(roomId) ?? []) {
+      if (card.member !== member) continue
+      if (card.kind === 'question') this.questionWaiters.get(cardId)?.(undefined)
+      else this.approvalWaiters.get(cardId)?.('cancelled')
     }
   }
 
@@ -560,7 +580,7 @@ export class RoomService extends TypertRemoteService {
   @Remote('pendingCards')
   async pendingCards(request: RoomPendingCardsRequest): Promise<readonly RoomPendingCard[]> {
     const rooms = request.sessionId === undefined ? [...this.waitingCards.keys()] : [String(request.sessionId)]
-    return rooms.flatMap(sessionId => [...this.waitingCards.get(sessionId) ?? []].map(([id, kind]) => ({ sessionId, id, kind })))
+    return rooms.flatMap(sessionId => [...this.waitingCards.get(sessionId) ?? []].map(([id, card]) => ({ sessionId, id, kind: card.kind })))
   }
 
   @Remote('isRoom')

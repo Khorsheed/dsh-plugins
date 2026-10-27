@@ -429,3 +429,41 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 全部继续: members a host restart interrupted, one click resumes them all. */
+.resumeStrip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.08));
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  font-size: var(--dsh-panel-meta-size, 12px);
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.7));
+}
+
+.resumeText {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.resumeAction {
+  flex: none;
+  padding: 2px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--dsw-alias-info-fill, #3964fe);
+  color: #fff; /* panel-check: allow-color */
+  font: inherit;
+  cursor: pointer;
+}
+
+.resumeAction:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

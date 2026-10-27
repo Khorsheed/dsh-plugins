@@ -342,6 +342,17 @@ describe('RoomComposer', () => {
     expect(official).not.toHaveBeenCalled()
   })
 
+  it('members a restart interrupted get one 全部继续 that sends 继续 to all of them', async () => {
+    const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
+    const lost = 'Execution outcome is unknown after restart; reconcile before retrying'
+    await bench(submit, { state: { ...STATE, runs: [
+      { member: 'ada', state: 'failed', startedAt: 1, error: lost },
+      { member: 'bill', state: 'failed', startedAt: 2, error: lost },
+    ] } })
+    fireEvent.click(screen.getByRole('button', { name: 'composer.continueAll' }))
+    await waitFor(() => { expect(submit).toHaveBeenCalledWith(SESSION, 'composer.continueText', ['ada', 'bill']) })
+  })
+
   it('routes bare input through the room service', async () => {
     const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
     const { area, inputActions } = await bench(submit)

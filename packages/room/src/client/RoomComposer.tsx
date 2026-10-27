@@ -167,6 +167,8 @@ interface ChipEditActions {
 
 const NO_CHIPS: readonly DraftChip[] = []
 const NO_IDS: readonly string[] = []
+/** The failed-run reason recovery journals for a round a host restart cut off (dispatch.ts). */
+const RESTART_INTERRUPTED = 'Execution outcome is unknown after restart'
 const NO_UPLOADS: Readonly<Record<string, { readonly status: string }>> = {}
 const NO_UPLOAD_STORE = { subscribe: (): (() => void) => () => {}, getSnapshot: () => NO_UPLOADS }
 
@@ -425,6 +427,23 @@ export function RoomComposer({
     addFiles([...event.dataTransfer.files])
   }
 
+  // Members whose latest round a host restart cut off (outcome unknown).
+  const interrupted = (state?.runs ?? [])
+    .filter(run => run.state === 'failed' && run.error?.startsWith(RESTART_INTERRUPTED) === true)
+    .map(run => run.member)
+    .filter(name => state?.members.some(member => member.name === name) === true)
+  const continueAll = async (): Promise<void> => {
+    if (busy || interrupted.length === 0) return
+    setBusy(true)
+    setError(null)
+    try {
+      const outcome = await submit(sessionId, t('composer.continueText'), interrupted)
+      if (!outcome.ok) setError(outcome.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const send = async (): Promise<void> => {
     const text = draft.trim()
     const ids = attachable ? attachmentIds : NO_IDS
@@ -535,6 +554,15 @@ export function RoomComposer({
           items={[...external ? [] : queued, ...coordinatorQueue]}
           t={t}
         />
+        {/* A host restart interrupts every working member at once and each
+            row reads 运行失败 far up the conversation: one 全部继续 resumes
+            them all (the same 继续 a human would type to each). */}
+        {interrupted.length > 0 && (
+          <div className={css.resumeStrip} role="status">
+            <span className={css.resumeText}>{t('composer.interrupted', { count: interrupted.length, names: interrupted.join('、') })}</span>
+            <button type="button" className={css.resumeAction} disabled={busy} onClick={() => { void continueAll() }}>{t('composer.continueAll')}</button>
+          </div>
+        )}
       </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}
