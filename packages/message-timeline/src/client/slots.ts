@@ -70,8 +70,9 @@ export interface TimelineRailInjected {
    */
   loadThrough: ISession['loadThrough']
   /**
-   * Scroll the transcript to the user message row addressed by `key`.
-   * @returns whether the row was found and scrolled.
+   * Scroll to the user message addressed by `key` and keep that landing active
+   * until the reading position moves or the row disappears.
+   * @returns whether the target row was found (false while unbound or missing).
    */
   jumpTo: (key: string) => boolean
   hooks: {

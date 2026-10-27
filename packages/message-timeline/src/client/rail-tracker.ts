@@ -167,6 +167,15 @@ export function activeRowKey(scrollport: HTMLElement, includeSteering: boolean):
   return lastAbove
 }
 
+function jumpTarget(scrollport: HTMLElement, key: string): HTMLElement | null {
+  const row = scrollport.querySelector<HTMLElement>(`[data-chat-anchor-key=${JSON.stringify(key)}]`)
+  if (row === null) return null
+  const target = row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top
+    + scrollport.scrollTop - JUMP_OFFSET
+  scrollport.scrollTop = Math.max(0, target)
+  return row
+}
+
 /**
  * Scroll one user-message row to the top of the transcript scrollport.
  * @param scrollport - the official conversation scrollport element.
@@ -174,12 +183,7 @@ export function activeRowKey(scrollport: HTMLElement, includeSteering: boolean):
  * @returns whether the row was found and scrolled.
  */
 export function jumpRow(scrollport: HTMLElement, key: string): boolean {
-  const row = scrollport.querySelector<HTMLElement>(`[data-chat-anchor-key=${JSON.stringify(key)}]`)
-  if (row === null) return false
-  const target = row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top
-    + scrollport.scrollTop - JUMP_OFFSET
-  scrollport.scrollTop = Math.max(0, target)
-  return true
+  return jumpTarget(scrollport, key) !== null
 }
 
 /** The tracker's outward face: the observable state, the jump verb, and the disposer. */
@@ -187,8 +191,9 @@ export interface RailTracker {
   /** Live rail geometry and active marker for the current session. */
   readonly state: HostObservable<TimelineRailState>
   /**
-   * Scroll the transcript to the message addressed by `key`.
-   * @returns whether the row was found and scrolled (false while unbound).
+   * Scroll to the message addressed by `key` and keep that landing active
+   * until the reading position moves or the row disappears.
+   * @returns whether the target row was found (false while unbound or missing).
    */
   jumpTo(key: string): boolean
   /** Unbind every listener and observer. */
@@ -209,6 +214,7 @@ export function installRailTracker(ctx: Context, includeSteering: boolean): Rail
   let state: TimelineRailState = IDLE
   let activeSession: SessionId | undefined
   let scrollport: HTMLElement | null = null
+  let landing: { key: string; row: HTMLElement; top: number } | null = null
   let resizeObserver: ResizeObserver | undefined
   let rafPending = false
   let warned = false
@@ -240,6 +246,7 @@ export function installRailTracker(ctx: Context, includeSteering: boolean): Rail
   const attach = (el: HTMLElement): void => {
     if (scrollport !== null) scrollport.removeEventListener('scroll', onScroll)
     resizeObserver?.disconnect()
+    landing = null
     scrollport = el
     scrollport.addEventListener('scroll', onScroll, { passive: true })
     if (typeof ResizeObserver === 'function') {
@@ -266,6 +273,7 @@ export function installRailTracker(ctx: Context, includeSteering: boolean): Rail
     }
     const geometry = measureGeometry(el)
     if (geometry === null) return
+    if (landing !== null && (landing.top !== el.scrollTop || !el.contains(landing.row))) landing = null
     publish({
       sessionId: activeSession,
       ready: true,
@@ -274,7 +282,7 @@ export function installRailTracker(ctx: Context, includeSteering: boolean): Rail
       height: geometry.height,
       scrollportWidth: geometry.width,
       flowLeft: flowLeftX(el),
-      activeKey: activeRowKey(el, includeSteering),
+      activeKey: landing?.key ?? activeRowKey(el, includeSteering),
       chatView: el.querySelector('[data-chat-flow]') !== null,
     })
   }
@@ -294,6 +302,7 @@ export function installRailTracker(ctx: Context, includeSteering: boolean): Rail
     bindToken++
     if (scrollport !== null) scrollport.removeEventListener('scroll', onScroll)
     scrollport = null
+    landing = null
     resizeObserver?.disconnect()
     resizeObserver = undefined
     rafPending = false
@@ -364,7 +373,15 @@ export function installRailTracker(ctx: Context, includeSteering: boolean): Rail
         return () => { listeners.delete(fn) }
       },
     },
-    jumpTo: (key) => scrollport !== null && jumpRow(scrollport, key),
+    jumpTo: (key) => {
+      const el = scrollport
+      if (el === null) return false
+      const row = jumpTarget(el, key)
+      if (row === null) return false
+      landing = { key, row, top: el.scrollTop }
+      publish({ ...state, activeKey: key })
+      return true
+    },
     dispose: () => {
       stopList()
       stopProvide?.()

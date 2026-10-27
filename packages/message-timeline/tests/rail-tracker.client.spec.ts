@@ -392,6 +392,71 @@ describe('installRailTracker', () => {
 
     expect(tracker.jumpTo('u1')).toBe(true)
     expect(scrollport.scrollTop).toBe(200 - 20 - 16)
+    expect(tracker.state.getSnapshot().activeKey).toBe('u1')
+
+    tracker.dispose()
+  })
+
+  it('keeps each clicked row active at the clamped bottom until the reader moves', async () => {
+    document.body.innerHTML = '<div data-conversation-scroll=""><div data-chat-flow="">'
+      + '<div data-chat-anchor-key="current" data-chat-flow-kind="user"></div>'
+      + '<div data-chat-anchor-key="continue-1" data-chat-flow-kind="user"></div>'
+      + '<div data-chat-anchor-key="continue-2" data-chat-flow-kind="user"></div>'
+      + '</div></div>'
+    const scrollport = document.querySelector<HTMLElement>('[data-conversation-scroll]')!
+    rect(scrollport, { top: 0, left: 0, width: 800, height: 915 })
+    rect(scrollport.querySelector('[data-chat-anchor-key="current"]')!, { top: 100, left: 200, width: 100, height: 40 })
+    rect(scrollport.querySelector('[data-chat-anchor-key="continue-1"]')!, { top: 300, left: 200, width: 100, height: 40 })
+    rect(scrollport.querySelector('[data-chat-anchor-key="continue-2"]')!, { top: 500, left: 200, width: 100, height: 40 })
+    let scrollTop = 1000
+    Object.defineProperty(scrollport, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => { scrollTop = Math.max(0, Math.min(1000, value)) },
+    })
+
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
+    await frame()
+    expect(tracker.state.getSnapshot().activeKey).toBe('current')
+
+    for (const key of ['continue-1', 'continue-2']) {
+      expect(tracker.jumpTo(key)).toBe(true)
+      expect(scrollport.scrollTop).toBe(1000)
+      expect(tracker.state.getSnapshot().activeKey).toBe(key)
+
+      scrollport.dispatchEvent(new Event('scroll'))
+      await frame()
+      expect(tracker.state.getSnapshot().activeKey).toBe(key)
+    }
+
+    scrollport.scrollTop = 900
+    scrollport.dispatchEvent(new Event('scroll'))
+    await frame()
+    expect(tracker.state.getSnapshot().activeKey).toBe('current')
+
+    tracker.dispose()
+  })
+
+  it('drops a remembered landing when its row disappears', async () => {
+    document.body.innerHTML = '<div data-conversation-scroll=""><div data-chat-flow="">'
+      + '<div data-chat-anchor-key="current" data-chat-flow-kind="user"></div>'
+      + '<div data-chat-anchor-key="continue" data-chat-flow-kind="user"></div>'
+      + '</div></div>'
+    const scrollport = document.querySelector<HTMLElement>('[data-conversation-scroll]')!
+    rect(scrollport, { top: 0, left: 0, width: 800, height: 915 })
+    rect(scrollport.querySelector('[data-chat-anchor-key="current"]')!, { top: 100, left: 200, width: 100, height: 40 })
+    const target = scrollport.querySelector<HTMLElement>('[data-chat-anchor-key="continue"]')!
+    rect(target, { top: 300, left: 200, width: 100, height: 40 })
+
+    const tracker = installRailTracker(fakeCtx('s1') as unknown as Context, true)
+    await frame()
+    expect(tracker.jumpTo('continue')).toBe(true)
+    expect(tracker.state.getSnapshot().activeKey).toBe('continue')
+
+    target.remove()
+    scrollport.dispatchEvent(new Event('scroll'))
+    await frame()
+    expect(tracker.state.getSnapshot().activeKey).toBe('current')
 
     tracker.dispose()
   })
