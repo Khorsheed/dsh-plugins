@@ -77,6 +77,19 @@ const DROP_TAGS = new Set([
 /** The strip selector's exact-case members (SVG camelCase names in an HTML document). */
 const DROP_STRIP_EXTRA: readonly string[] = []
 
+/**
+ * Page furniture that sits beside an article in the same container and that
+ * no tag or score tells apart from it. Named by id, per site, only where the
+ * id is the platform's own and stable.
+ *
+ * WeChat (mp.weixin.qq.com): `#content_bottom_area` holds the 腾讯公益
+ * donation card (一起捐, the donors' avatars), the like/share bar and the
+ * album modal; `#js_tags_preview_toast` is 「预览时标签不可点」. A rendered
+ * fetch runs the page's scripts, which fill both in, and the winning container
+ * (`.rich_media_area_primary_inner`) holds them next to `#js_content`.
+ */
+const NOISE_SELECTORS: readonly string[] = ['#content_bottom_area', '#js_tags_preview_toast']
+
 /** Inline elements that survive an inline-only pass. */
 const INLINE_TAGS = new Set(['strong', 'em', 'b', 'i', 'u', 's', 'code', 'a', 'sub', 'sup', 'br'])
 
@@ -230,7 +243,7 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
 
   // Strip the noise subtrees BEFORE scoring, so every candidate is measured on
   // the same terms (a sidebar full of links otherwise wins on raw text mass).
-  for (const node of Array.from(doc.querySelectorAll([...DROP_TAGS, ...DROP_STRIP_EXTRA].join(',')))) {
+  for (const node of Array.from(doc.querySelectorAll([...DROP_TAGS, ...DROP_STRIP_EXTRA, ...NOISE_SELECTORS].join(',')))) {
     node.remove()
   }
 
@@ -689,7 +702,8 @@ function normalizeNode(node: Node, baseUrl: string | undefined, inFigure = false
   if (tag === 'img') {
     const src = imageSrc(element, baseUrl)
     if (src === undefined) return ''
-    return emitImg(src, element.getAttribute('alt'))
+    const width = displayWidth(element)
+    return emitImg(src, element.getAttribute('alt'), width === undefined ? {} : { width })
   }
   // LaTeXML embeds vector figures as image-typed objects: an image in every
   // sense that matters here. Any other object (a PDF, a movie) keeps the old
@@ -849,6 +863,29 @@ function emitImg(src: string, alt: string | null, dimensions: { readonly width?:
   const width = dimensions.width === undefined ? '' : ` width="${dimensions.width}"`
   const height = dimensions.height === undefined ? '' : ` height="${dimensions.height}"`
   return `<img src="${escapeAttribute(src)}"${alt === null ? '' : ` alt="${escapeAttribute(alt)}"`}${width}${height} referrerpolicy="no-referrer">`
+}
+
+/**
+ * The width the page shows an image at: its inline `width: Npx`.
+ *
+ * Without it every image renders at its natural size up to the column. A
+ * logo row is where that shows: claude.com ships a 132×128 PNG with
+ * `style="width:48.89px"`, and the reader drew it three times too large. Only
+ * a pixel width counts (`100%`, `auto` and `max-width` say nothing about the
+ * picture), and the column's `max-width: 100%` still caps it. The `width`
+ * attribute is not carried: it is usually the file's own size, which is what
+ * the image renders at anyway.
+ *
+ * @param element - the `<img>`.
+ * @returns the width as an integer string, or `undefined`.
+ */
+function displayWidth(element: Element): string | undefined {
+  const styled = /(?:^|;)\s*width\s*:\s*(\d+(?:\.\d+)?)px/i.exec(element.getAttribute('style') ?? '')
+  if (styled !== null) {
+    const px = Math.round(Number(styled[1]))
+    if (px >= 1 && px <= 99_999) return String(px)
+  }
+  return undefined
 }
 
 /** An integer dimension worth carrying onto the emitted image (nothing else is trusted). */
@@ -1356,15 +1393,18 @@ function bestSrcset(value: string | null, baseUrl: string | undefined): string |
 function pictureImg(element: Element, baseUrl: string | undefined): string {
   const fallback = Array.from(element.children).find(child => child.localName === 'img')
   const alt = fallback?.getAttribute('alt') ?? null
+  // The picture's size is its <img>'s (claude.com's testimonial logos).
+  const width = fallback === undefined ? undefined : displayWidth(fallback)
+  const dimensions = width === undefined ? {} : { width }
   for (const source of Array.from(element.children)) {
     if (source.localName !== 'source') continue
     const url = bestSrcset(source.getAttribute('srcset'), baseUrl)
       ?? bestSrcset(source.getAttribute('data-srcset'), baseUrl)
-    if (url !== undefined) return emitImg(url, alt)
+    if (url !== undefined) return emitImg(url, alt, dimensions)
   }
   if (fallback !== undefined) {
     const url = imageSrc(fallback, baseUrl)
-    if (url !== undefined) return emitImg(url, alt)
+    if (url !== undefined) return emitImg(url, alt, dimensions)
   }
   return ''
 }
