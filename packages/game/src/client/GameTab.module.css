@@ -303,10 +303,20 @@ button.strip { cursor: pointer; }
 .saveState[data-state='saved'] { color: var(--g-ok); }
 .saveState[data-state='failed'] { color: var(--g-err); }
 .toolRow { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
-.seg { border: 1px solid var(--dsw-alias-border-l2); background: var(--g-card); color: var(--dsw-alias-label-secondary); border-radius: 0; min-height: 28px; }
-.seg:first-child { border-radius: 7px 0 0 7px; }
-.seg:nth-child(2) { border-radius: 0 7px 7px 0; border-left: 0; margin-right: 10px; }
-.seg[aria-pressed='true'] { background: var(--g-soft); color: var(--g-accent); border-color: var(--g-accent); }
+.tight { gap: 8px 12px; }
+/* A jump held back while the user was busy here (改完自动跳转). */
+.navNotice { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 8px 14px 0; padding: 8px 10px 8px 12px; border-radius: var(--dsw-radius-md, 10px);
+  background: color-mix(in srgb, var(--g-ok) 9%, var(--dsw-alias-bg-layer-1)); border: 0.5px solid color-mix(in srgb, var(--g-ok) 40%, var(--dsw-alias-border-l2)); font-size: var(--dsh-panel-text-body, 13px); }
+.navNoticeText { flex: 1 1 160px; min-width: 0; font-weight: 600; }
+/* An element a turn changed, not opened since. */
+.elDot { position: absolute; top: 10px; left: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--g-accent); box-shadow: 0 0 0 2px var(--g-card); }
+/* A segmented control: one frame, hairlines between, the chosen one filled. Any number of segments. */
+.segGroup { display: inline-flex; flex: none; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; overflow: hidden; background: var(--g-card); }
+.seg { border: 0; border-radius: 0; margin: 0; padding: 0 12px; min-height: 28px; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: var(--dsh-panel-text-body, 13px); cursor: pointer; }
+.seg + .seg { border-left: 1px solid var(--dsw-alias-border-l2); }
+.seg:hover { color: var(--dsw-alias-label-primary); }
+.seg:focus-visible { outline: 2px solid var(--g-accent); outline-offset: -2px; }
+.seg[aria-pressed='true'] { background: color-mix(in srgb, var(--g-accent) 18%, var(--g-card)); color: var(--g-accent); font-weight: 600; }
 .swatches { display: flex; flex-wrap: wrap; gap: 6px; }
 .swatchBtn { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l2); cursor: pointer; padding: 0; }
 .swatchBtn[aria-pressed='true'] { box-shadow: 0 0 0 2px var(--dsw-alias-bg-base), 0 0 0 4px var(--g-accent); }

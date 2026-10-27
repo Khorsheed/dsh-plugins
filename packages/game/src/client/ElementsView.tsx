@@ -22,6 +22,9 @@ export interface ElementsViewProps extends ViewProps {
   readonly project: ProjectView
   readonly openId: string | null
   readonly onOpen: (id: string | null) => void
+  /** The version a jump here came with (the page offers 去试玩). */
+  readonly playVersion?: number | null
+  readonly onPlay?: () => void
 }
 
 /** A 3D look's main color, for its card's placeholder while the still renders (or without a live version). */
@@ -46,6 +49,7 @@ export function ElementsView(props: ElementsViewProps): ReactNode {
 
   const shown = project.elements.filter(e => filter === 'all' || e.type === filter)
   const openProposals = new Set(project.proposals.filter(p => p.picked === undefined).map(p => p.elementId))
+  const unseen = props.autoNav.unseen(project.id)
   const toggle = (id: string): void => { setSelected(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id])) }
 
   return <div className={css.scroll}>
@@ -78,6 +82,7 @@ export function ElementsView(props: ElementsViewProps): ReactNode {
                   <span className={css.elName}>{e.name}</span>
                   <span className={css.elMeta}>{e.type}{stats.length > 0 ? ` · ${stats.map(([k, v]) => `${k} ${String(v)}`).join(' · ')}` : ''}</span>
                   {openProposals.has(e.id) && <span className={css.badge}>{t('elements.proposalsWaiting')}</span>}
+                  {unseen.has(e.id) && <span className={css.elDot} title={t('nav.changed')} aria-label={t('nav.changed')} />}
                 </button>
                 <label className={css.elCheck} title={t('elements.select')}>
                   <input type="checkbox" checked={isSel} onChange={() => { toggle(e.id) }} aria-label={t('elements.selectOne', { name: e.name })} />
@@ -104,7 +109,7 @@ export function ElementsView(props: ElementsViewProps): ReactNode {
 type Tool = 'pen' | 'recolor'
 
 /** One element, open. */
-function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraft, toast, refresh, types }: ElementsViewProps & {
+function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraft, toast, refresh, types, autoNav, playVersion, onPlay }: ElementsViewProps & {
   element: ElementView
   onBack: () => void
   types: readonly string[]
@@ -121,11 +126,14 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
 
   useEffect(() => { setLook(element.look) }, [element.id, element.look])
   const [look3d, setLook3d] = useState<Look3D | null>(element.look3d)
+  // Opening the page (by hand or by a jump) is seeing the change: the card's dot goes.
+  useEffect(() => { autoNav.markSeen(project.id, element.id) }, [autoNav, project.id, element.id])
   const [clips, setClips] = useState<readonly string[]>([])
   const [parts, setParts] = useState<ModelParts | null>(null)
   const [clip, setClip] = useState<{ name: string; n: number } | null>(null)
   const [view, setView] = useState<{ yaw: number; n: number } | null>(null)
-  const turnTo = (yaw: number): void => { setView(v => ({ yaw, n: (v?.n ?? 0) + 1 })) }
+  const viewN = useRef(0)
+  const turnTo = (yaw: number): void => { viewN.current++; setView({ yaw, n: viewN.current }) }
   useEffect(() => { setClips([]); setClip(null); setParts(null) }, [element.id])
   useEffect(() => { setLook3d(element.look3d) }, [element.id, element.look3d])
 
@@ -165,20 +173,20 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
 
   return <div className={css.scroll}>
     <PanelHeader className={css.detailHead} title={element.name} meta={<span title={`${element.id} · ${element.file}`}>{element.type}</span>}
-      onBack={onBack} backLabel={t('elements.back')} moreLabel={t('more')} />
+      onBack={onBack} backLabel={t('elements.back')} moreLabel={t('more')}
+      extra={playVersion != null && onPlay !== undefined ? <button type="button" className={css.primary} onClick={onPlay}>{t('nav.playVersion', { version: playVersion })}</button> : undefined} />
 
     {look3d !== null ? <section className={css.lookPanel}>
       <Preview3D api={api} projectId={project.id} version={project.current?.version} look={look3d} mode="spin"
-        className={css.turntable} emptyLabel={t('look.preview3dEmpty')} onClips={(names, found) => { setClips(names); setParts(found) }} clip={clip} view={view} />
-      {clips.length > 0 && <ChipRow label={t('gltf.clips')} value={clip?.name ?? ''} onSelect={name => { setClip(c => ({ name, n: (c?.n ?? 0) + 1 })) }}
+        className={css.turntable} emptyLabel={t('look.preview3dEmpty')} onClips={(names, found) => { setClips(names); setParts(found) }} onTurned={() => { setView(null) }} clip={clip} view={view} />
+      {clips.length > 0 && <ChipRow label={t('gltf.clips')} value={clip?.name ?? autoClip(look3d, clips)} onSelect={name => { setClip(c => ({ name, n: (c?.n ?? 0) + 1 })) }}
         chips={clips.map(name => ({ id: name, label: name }))} />}
-      <div className={css.toolRow}>
+      <div className={`${css.toolRow} ${css.tight}`}>
         <span className={css.metaLine}>{t('look.drag3d')}</span>
         <span className={css.spacer} />
-        <span role="group" aria-label={t('look.views')} className={css.toolRow}>
-          <button type="button" className={css.seg} onClick={() => { turnTo(0) }}>{t('look.front')}</button>
-          <button type="button" className={css.seg} onClick={() => { turnTo(90) }}>{t('look.side')}</button>
-          <button type="button" className={css.seg} onClick={() => { turnTo(180) }}>{t('look.back')}</button>
+        <span role="group" aria-label={t('look.views')} className={css.segGroup}>
+          {([[0, 'look.front'], [90, 'look.side'], [180, 'look.back']] as const).map(([yaw, key]) =>
+            <button key={yaw} type="button" className={css.seg} aria-pressed={view?.yaw === yaw} onClick={() => { turnTo(yaw) }}>{t(key)}</button>)}
         </span>
         <span className={css.saveState} data-state={saving}>{saving === 'idle' ? '' : t(`look.${saving}`)}</span>
       </div>
@@ -199,9 +207,11 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
       </div>
       {states.length > 0 && <ChipRow label={t('look.states')} value={state} onSelect={setState} chips={states.map(s => ({ id: s, label: s }))} />}
       {look !== null && <>
-        <div className={css.toolRow} role="group" aria-label={t('look.tools')}>
-          <button type="button" className={css.seg} aria-pressed={tool === 'pen'} onClick={() => { setTool('pen'); setRecolorFrom(null) }}>{t('look.pen')}</button>
-          <button type="button" className={css.seg} aria-pressed={tool === 'recolor'} onClick={() => { setTool('recolor') }}>{t('look.recolor')}</button>
+        <div className={`${css.toolRow} ${css.tight}`}>
+          <span className={css.segGroup} role="group" aria-label={t('look.tools')}>
+            <button type="button" className={css.seg} aria-pressed={tool === 'pen'} onClick={() => { setTool('pen'); setRecolorFrom(null) }}>{t('look.pen')}</button>
+            <button type="button" className={css.seg} aria-pressed={tool === 'recolor'} onClick={() => { setTool('recolor') }}>{t('look.recolor')}</button>
+          </span>
           <span className={css.spacer} />
           <span className={css.metaLine}>{tool === 'pen' ? t('look.penHint') : recolorFrom === null ? t('look.recolorPick') : t('look.recolorTo')}</span>
         </div>
@@ -312,7 +322,7 @@ function GltfControls({ t, look, onChange }: { t: ElementsViewProps['t']; look: 
   return <div className={css.gltfRow}>
     <span className={css.metaLine}>{t('gltf.file', { src: look.src })}</span>
     <span className={css.spacer} />
-    <span role="group" aria-label={t('gltf.material')} className={css.toolRow}>
+    <span role="group" aria-label={t('gltf.material')} className={css.segGroup}>
       <button type="button" className={css.seg} aria-pressed={material === 'toon'} onClick={() => { onChange({ ...look, material: 'toon' }) }}>{t('gltf.toon')}</button>
       <button type="button" className={css.seg} aria-pressed={material === 'original'} onClick={() => { onChange({ ...look, material: 'original' }) }}>{t('gltf.original')}</button>
     </span>
@@ -393,4 +403,10 @@ function GltfTweaks({ t, look, parts, onChange }: { t: ElementsViewProps['t']; l
       {shown.length > 40 && <span className={css.metaLine}>{t('gltf.moreBones', { count: shown.length - 40 })}</span>}
     </div>}
   </div>
+}
+
+/** The clip a model plays on its own (dsh3d's rule): the look's choice, else an idle-like name, else the first. */
+function autoClip(look: Look3D, clips: readonly string[]): string {
+  const chosen = look.kind === 'gltf' ? look.animation : undefined
+  return chosen !== undefined && clips.includes(chosen) ? chosen : clips.find(c => /idle|待机|stand/i.test(c)) ?? clips[0] ?? ''
 }

@@ -221,6 +221,7 @@ export type FrameMessage =
   | { readonly gamedev: 'picked'; readonly id: string | null; readonly ref: PickRef | null; readonly hover: boolean; readonly supported: boolean; readonly x: number; readonly y: number }
   | { readonly gamedev: 'preview'; readonly png: string }
   | { readonly gamedev: 'preview-clips'; readonly names: readonly string[]; readonly parts: ModelParts | null }
+  | { readonly gamedev: 'preview-turned' }
 
 /** What a loaded glTF model can be tuned by (the preview reports it once loaded). */
 export interface ModelParts {

@@ -91,12 +91,14 @@ export interface Preview3DProps {
   readonly onClips?: (names: readonly string[], parts: ModelParts | null) => void
   /** A turntable plays this clip (bump `n` to play the same one again). */
   readonly clip?: { readonly name: string; readonly n: number } | null
+  /** The user turned a turntable by hand (a named view no longer applies). */
+  readonly onTurned?: () => void
   /** A turntable turns to this side (yaw in degrees: 0 front, 90 side, 180 back; bump `n` to repeat). */
   readonly view?: { readonly yaw: number; readonly n: number } | null
 }
 
 /** One 3D look preview. */
-export function Preview3D({ api, projectId, version, look, mode, className, emptyLabel, placeholder, onClips, clip, view }: Preview3DProps): ReactNode {
+export function Preview3D({ api, projectId, version, look, mode, className, emptyLabel, placeholder, onClips, onTurned, clip, view }: Preview3DProps): ReactNode {
   const lookJson = JSON.stringify(look)
   const stillKey = `${projectId}:${version}:${lookJson}`
   const [files, setFiles] = useState<Readonly<Record<string, BundleFile>> | null>(null)
@@ -154,10 +156,11 @@ export function Preview3D({ api, projectId, version, look, mode, className, empt
         setImage(data.png)
       }
       if (data?.gamedev === 'preview-clips' && mode === 'spin') onClips?.(data.names, data.parts)
+      if (data?.gamedev === 'preview-turned' && mode === 'spin') onTurned?.()
     }
     window.addEventListener('message', onMessage)
     return () => { window.removeEventListener('message', onMessage) }
-  }, [mode, stillKey, onClips])
+  }, [mode, stillKey, onClips, onTurned])
 
   useEffect(() => {
     if (view == null || mode !== 'spin' || !booted.current) return
