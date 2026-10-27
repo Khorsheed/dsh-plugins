@@ -59,6 +59,17 @@ export function artStyleLabel(id: string): string {
   return [...ART_STYLES, ...ART_STYLES_3D].find(style => style.id === id)?.label ?? id
 }
 
+/**
+ * A style's short name for tight places (tags, chips): a custom description's
+ * lead — up to its first dash, colon, comma or bracket — at most 10 characters.
+ * The full label stays for the model and for hover text.
+ */
+export function artStyleName(id: string): string {
+  const full = artStyleLabel(id).trim()
+  const lead = full.split(/——|—|--|[:：,，;；(（]/)[0]?.trim() || full
+  return [...lead].length > 10 ? `${[...lead].slice(0, 10).join('')}…` : lead
+}
+
 /** The kit a create request asks for: `3d` / `3d-three` → 3D, anything else 2D. */
 export function requestedKit(runtime: string | undefined): KitId {
   return /^3d/i.test((runtime ?? '').trim()) ? '3d-three' : '2d-canvas'
