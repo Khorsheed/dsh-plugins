@@ -72,6 +72,9 @@ import { addTokenUsage } from './session-view.ts'
 import { writeKimiDefaultModel } from './provision.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
+/** The host's todo item (`@deepseek-ai/dsh-tool-todo`'s TodoItem). */
+interface KimiTodoItem { content: string; status: 'pending' | 'in_progress' | 'completed' }
+
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
 
 /** Default timeout for a wire request acknowledgement (never for session/prompt). */
@@ -1048,29 +1051,29 @@ export class KimiAcpLiveDriver {
      * think-style lines. Each update carries the WHOLE plan, so the fold
      * replaces rather than appends.
      */
-    const renderPlan = (update: JsonObject): string => {
-      const entries = Array.isArray(update['entries']) ? update['entries'] as JsonObject[] : []
-      const lines = entries.map((entry) => {
-        const content = typeof entry['content'] === 'string' ? entry['content'] : ''
-        const status = entry['status']
-        const mark = status === 'completed' ? '☑' : status === 'in_progress' ? '▶' : '☐'
-        return `${mark} ${content}`
-      }).filter(line => line.trim() !== '☐' && line !== '')
-      return lines.join('\n')
-    }
+    /**
+     * An ACP plan update is the member's todo list: written as the host's
+     * `todo/write` whole-list snapshot (log-only UI state, Claude's TodoWrite
+     * shape), only when it changed. Never a conversation step — a plan
+     * folded as a step landed after the round's answer (it finalized at
+     * settle) and the chat folded the answer into the process.
+     */
     const foldPlan = (update: JsonObject): void => {
-      const plan = renderPlan(update)
-      if (plan === '') return
-      // The plan's own snapshot stream (think-styled): every update replaces
-      // the text and publishes at the reserved (turn, step); the stream
-      // finalizes at settle (the wire carries no plan line that could
-      // complete it) — or early, when a fold needs its step closed.
-      reserveStream(planKey, 'think')
-      const stream = streams.get(planKey)
-      if (stream !== undefined && stream.text !== plan) {
-        stream.text = plan
-        publishStreamSnapshot(stream, true)
+      const entries = Array.isArray(update['entries']) ? update['entries'] as JsonObject[] : []
+      const todos: KimiTodoItem[] = []
+      for (const entry of entries) {
+        const content = typeof entry['content'] === 'string' ? entry['content'].trim() : ''
+        if (content === '') continue
+        const status = entry['status']
+        todos.push({ content, status: status === 'in_progress' || status === 'completed' ? status : 'pending' })
       }
+      if (todos.length === 0) return
+      const last = childSession.snapshotEvents().filter(event => event.type === ('todo/write' as never)).at(-1)
+      if (last !== undefined && JSON.stringify(last.data) === JSON.stringify({ todos })) return
+      // `todo/write` is declared by the host's todo package (a type-only
+      // dependency this package does not carry); the event itself is the host's.
+      ;(childSession.append as unknown as (type: string, data: unknown) => unknown)('todo/write', { todos })
+      persist()
     }
 
     /**
@@ -1422,7 +1425,12 @@ export class KimiAcpLiveDriver {
           }
         }
       } else if (kind === 'tool_call') {
-        const id = typeof update['toolCallId'] === 'string' ? update['toolCallId'] : undefined
+        // ACP prefixes the call id with kimi's turn index ("1:tool_x") from the
+        // second round on; the wire records the bare id. Unprefixed, the two
+        // name one call — otherwise the fold never releases the reservation
+        // and settle re-writes the call as an interrupted orphan after the
+        // answer (the chat then folds the answer into the process).
+        const id = typeof update['toolCallId'] === 'string' ? update['toolCallId'].replace(/^\d+:/, '') : undefined
         if (id === undefined || !seenToolCalls.has(id)) {
           // The wire flush can win the race: a call already folded into the
           // log (its notification arriving late) needs no reservation — one
