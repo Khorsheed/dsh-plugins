@@ -120,6 +120,29 @@ describe('session-mirror', () => {
     expectValidReleasedLog(child)
   })
 
+  it('counts a boundary usage record once while a held unit keeps the offset still (3.2M = 10 × 320k)', async () => {
+    // In the wild (fbc8ba18 turn 43): the round's only wire step never closed,
+    // so every poll re-read the same window and re-carried its usage record.
+    const wire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '继续' }] },
+      { type: 'usage.record', usage: { inputOther: 320112, inputCacheRead: 11264, output: 10 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'think', think: '在想' } } },
+    ]
+    const { home } = wireHome('held-usage', wire)
+    const child = Session.create(SessionId('held-usage'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+    let carried = 0
+    let offset = 0
+    for (let pass = 0; pass < 10; pass += 1) {
+      const delta = await mirrorKimiSessionDelta(ctx, child, home, 'held-usage', offset, { turn: 1 })
+      offset = delta.total
+      carried += (delta.usageUnattached?.inputTokens ?? 0) + (delta.usageAttached === true ? delta.usage?.inputTokens ?? 0 : 0)
+    }
+    expect(carried).toBe(320112)
+  })
+
   it('an empty stream reservation never strands a step gap (dense, strictly sequential log)', async () => {
     const { home } = wireHome('empty-reservation', fullWire)
     const child = Session.create(SessionId('empty-reservation'))
