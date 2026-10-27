@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-gamedev-suite",
   "description": "Mode bundle 游戏开发模式: the dsh-gamedev agent preset plus the game workbench it grants — build and play a small 2D web game with the agent — plus the multi-agent family (the local-agent core, the four delegation providers and the room), in one install. Thin meta package: a patch carrying the members' canonical rows and the mode's preset row, npm dependencies on the members, locale card metadata — no runtime code, no client half.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publishConfig": {
     "access": "public"
   },

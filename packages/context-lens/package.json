@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-context-lens",
   "description": "Context Lens: inspect every model request turn by turn — context composition, cache hits, inputs and outputs, and per-agent timing",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
