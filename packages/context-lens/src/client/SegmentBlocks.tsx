@@ -238,9 +238,45 @@ function Reasoning({ text, ms, t }: { readonly text: string; readonly ms: number
     <div className={css.thinkText} data-open={open}>{text}</div>
   </div>
 }
+type AskViewProp = NonNullable<CapturedResponse['toolCalls'][number]['ask']>
+
+/** An `ask_user_question` call as the room words it: what was asked, and the human's answer. */
+function AskCard({ ask, t }: { ask: AskViewProp; t: T }) {
+  const answered = ask.outcome === 'answered'
+  const status = answered ? (ask.late === true ? 'late' : 'answered') : ask.outcome
+  return <div className={css.call} data-status={answered ? 'ok' : ask.outcome === 'pending' ? 'running' : 'failed'}>
+    <div className={css.callHead}><span>{t('lens.calls')}</span><b>{t('ask.title')}</b>
+      <span className={css.callStatus} data-status={answered ? 'ok' : ask.outcome === 'pending' ? 'running' : 'failed'}>{t(`ask.outcome.${status}`)}</span>
+      {ask.waitMs !== undefined && <span className={css.number}>{t('ask.wait', { time: fmtSpan(ask.waitMs) })}</span>}
+    </div>
+    <div className={css.ask}>
+      {ask.questions === undefined ? <div className={css.emptyNote}>{t('ask.noQuestions')}</div> : ask.questions.map(question => {
+        const answer = ask.answers?.find(a => a.id === question.id)
+        const chosen = new Set(answer?.selected ?? [])
+        return <div key={question.id} className={css.askQuestion}>
+          <div className={css.askLine}>{question.header !== undefined && <span className={css.askTag}>{question.header}</span>}<span>{question.question}</span></div>
+          {question.options.length > 0 && <ul className={css.askOptions}>{question.options.map(option =>
+            <li key={option.label} data-selected={chosen.has(option.label)}>
+              <span>{chosen.has(option.label) ? '✓ ' : ''}{option.label}</span>
+              {option.description !== undefined && <small>{option.description}</small>}
+            </li>)}</ul>}
+          {answer !== undefined && (answer.selected.length > 0 || answer.custom !== undefined) && <div className={css.askAnswer}>
+            <b>{t('ask.answer')}</b>
+            {answer.selected.length > 0 && <span>{answer.selected.join('、')}</span>}
+            {answer.custom !== undefined && <span className={css.askCustom}>{t('ask.other')}：{answer.custom}</span>}
+          </div>}
+        </div>
+      })}
+      {ask.callOutcome !== undefined && <div className={css.askCallNote}>{t('ask.callOutcome', { outcome: t(`ask.outcome.${ask.callOutcome}`) })}</div>}
+      {ask.outcome === 'failed' && ask.detail !== undefined && <div className={css.errorNote}>{ask.detail}</div>}
+    </div>
+  </div>
+}
+
 /** Result text is attached by call ID, including same-name and parallel calls. */
 function ToolCallCard({ call, t }: { call: CapturedResponse['toolCalls'][number]; t: T }) {
   const [open, setOpen] = useState(false)
+  if (call.ask !== undefined) return <AskCard ask={call.ask} t={t} />
   const execution = call.execution
   const failed = execution?.status === 'failed'
   const result = execution?.result

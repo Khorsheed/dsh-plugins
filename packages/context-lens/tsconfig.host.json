@@ -16,6 +16,7 @@
     "src/store.ts",
     "src/prefix-diff.ts",
     "src/room.ts",
+    "src/ask.ts",
     "src/tool-summary.ts",
     "src/types.ts"
   ]

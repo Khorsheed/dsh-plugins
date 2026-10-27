@@ -53,6 +53,7 @@ import { AMBIENT_SOURCES, lastParagraph, previewLine, type CapturedMessage } fro
 import type { LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
 import { diffRequests, type FactLookup, type ReplacementFact } from './changes.ts'
+import { answersMatch, askView, isAskTool, type RoomQuestionRecord } from './ask.ts'
 import { applyRoomEvent, emptyRoom, roomTurnSeq, runsOf, type RoomRun, type RoomState } from './room.ts'
 
 /** Replacement facts kept per session; older facts only matter for requests long evicted. */
@@ -73,6 +74,8 @@ export interface StoreConfig {
 }
 
 const DEFAULT_MAX_TURNS_PER_SESSION = 30
+/** How far an old room question (no runId) may sit from its call's time and still match it. */
+const ROOM_QUESTION_WINDOW_MS = 30 * 60_000
 const DEFAULT_MAX_BACKFILL_REQUESTS_PER_SESSION = 500
 const DEFAULT_MAX_STORED_CHARS_TOTAL = 150_000_000
 
@@ -1729,6 +1732,42 @@ export class InspectorStore {
       .sort((a, b) => b.startedAt - a.startedAt || b.seq - a.seq)[0]
   }
 
+  /**
+   * The room's record of the question a member's `ask_user_question` call
+   * asked. By `runId` first: the run's child session and child turn must be
+   * this request's. Records without one (before 10-27 evening) fall back to
+   * the same member, the matching answers, then the nearest ask time. The
+   * main session's own questions have no room record.
+   */
+  private roomQuestionFor(session: SessionRecord, request: StoredRequest, exec: ToolExecSpan | undefined): RoomQuestionRecord | undefined {
+    const room = session.room
+    if (room === undefined || room.questions.size === 0 || request.scopeId === 'main') return undefined
+    const childId = request.scopeId
+    const at = exec?.start ?? request.startedAt
+    const nearest = (records: RoomQuestionRecord[]): RoomQuestionRecord | undefined =>
+      records.sort((a, b) => Math.abs(a.askedAt - at) - Math.abs(b.askedAt - at))[0]
+    const all = [...room.questions.values()]
+    const byRun = all.filter(record => {
+      const run = record.runId === undefined ? undefined : room.runs.get(record.runId)
+      if (run === undefined || run.childSessionId !== childId) return false
+      // The run's child turn confirms it; without one, only a nearby ask does.
+      return run.childTurn !== undefined && request.hostTurn !== undefined
+        ? run.childTurn === request.hostTurn
+        : Math.abs(record.askedAt - at) <= ROOM_QUESTION_WINDOW_MS
+    })
+    if (byRun.length > 0) {
+      const matching = byRun.filter(record => answersMatch(record, exec?.result))
+      return nearest(matching.length > 0 ? matching : byRun)
+    }
+    const memberIds = new Set([...room.runs.values()].filter(run => run.childSessionId === childId).map(run => run.memberId))
+    const names = new Set([...memberIds].map(id => room.members.get(id)).filter((name): name is string => name !== undefined))
+    const byMember = all.filter(record => (record.runId === undefined || !room.runs.has(record.runId))
+      && ((record.memberId !== undefined && memberIds.has(record.memberId)) || (record.member !== undefined && names.has(record.member)))
+      && Math.abs(record.askedAt - at) <= ROOM_QUESTION_WINDOW_MS)
+    const matching = byMember.filter(record => answersMatch(record, exec?.result))
+    return nearest(matching.length > 0 ? matching : byMember)
+  }
+
   private requestView(request: StoredRequest): CapturedRequest {
     const session = this.sessions.get(request.sessionId)
     const baseline = request.needsHistoryBaseline && session !== undefined
@@ -1758,10 +1797,23 @@ export class InspectorStore {
     })
     const response = request.response && { ...request.response, toolCalls: request.response.toolCalls.map(call => {
       const exec = call.callId === undefined ? undefined : request.execs.find(e => e.callId === call.callId)
-      return exec === undefined ? call : { ...call, execution: {
-        status: exec.isError === true ? 'failed' as const : exec.end !== undefined || exec.isError === false ? 'ok' as const : 'running' as const,
+      const status = exec === undefined ? undefined
+        : exec.isError === true ? 'failed' as const : exec.end !== undefined || exec.isError === false ? 'ok' as const : 'running' as const
+      const withExec = exec === undefined ? call : { ...call, execution: {
+        status: status!,
         ...exec.result === undefined ? {} : { result: exec.result },
       } }
+      if (!isAskTool(call.name)) return withExec
+      return { ...withExec, ask: askView({
+        arguments: call.arguments,
+        execution: exec === undefined ? undefined : {
+          running: status === 'running',
+          start: exec.start,
+          ...exec.result === undefined ? {} : { result: exec.result },
+          ...exec.end === undefined ? {} : { end: exec.end },
+        },
+        room: session === undefined ? undefined : this.roomQuestionFor(session, request, exec),
+      }) }
     }) }
     return {
       seq: request.seq,
