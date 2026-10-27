@@ -75,6 +75,60 @@ export function roomSource(): MessageSource {
  * @param room - the room session.
  * @param except - the member whose own reply just landed (its card ends there).
  */
+/** How much of a round's text a question keeps to find its place in the reply later. */
+export const BEFORE_TAIL = 160
+
+/**
+ * The text a member's current round has said so far in its own session: the
+ * assistant text blocks since the latest turn start, in order.
+ * @param events - the member's child session log.
+ * @returns the round's text so far.
+ */
+export function roundTextSoFar(events: readonly SessionEvent[]): string {
+  let start = -1
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index]!.type === 'turn/start') { start = index; break }
+  }
+  const parts: string[] = []
+  for (const event of events.slice(start + 1)) {
+    if (event.type !== 'assistant/message') continue
+    const content = (event.data as { message?: { content?: readonly { type: string; text?: string }[] } }).message?.content ?? []
+    for (const block of content) if (block.type === 'text' && typeof block.text === 'string') parts.push(block.text)
+  }
+  return parts.join('')
+}
+
+/**
+ * Where each question a round asked sits in its final reply: just after the
+ * text the round had said when it asked (its recorded tail, shortened until
+ * found). Asked before saying anything → 0; tail not found → -1 (shown
+ * first, marked as asked mid-round). Offsets never go backwards.
+ * @param events - the room log.
+ * @param runId - the round.
+ * @param text - the round's reply.
+ * @returns the question ids with their offsets.
+ */
+export function askOffsets(events: readonly SessionEvent[], runId: string, text: string): { id: string; at: number }[] {
+  const out: { id: string; at: number }[] = []
+  let floor = 0
+  for (const event of events) {
+    if (event.type !== 'room/question' || event.data.runId !== runId) continue
+    const tail = (event.data.before ?? '').trimEnd()
+    // Nothing said before asking: the question opens the reply.
+    let at = tail === '' ? 0 : -1
+    for (const size of [80, 40, 20]) {
+      if (tail === '') break
+      const probe = tail.slice(-size)
+      if (probe.length < Math.min(size, 8)) break
+      const found = text.indexOf(probe, floor)
+      if (found >= 0) { at = found + probe.length; break }
+    }
+    if (at > 0) floor = at
+    out.push({ id: event.data.id, at })
+  }
+  return out
+}
+
 /** Why a human message's move-on closes a restart-lost round (index.ts moveOnFromLostRounds). */
 export const MOVED_ON_TEXT = '你发了新消息；被重启打断的这一轮按没做完处理'
 /** A message that queued behind a lost round and rode along with the move-on message. */
@@ -911,9 +965,11 @@ export class DispatchEngine {
     const reportedTo = dispatchSeq === undefined ? undefined : reportRecipient(room.snapshotEvents(), dispatchSeq)?.name
     // The member's own closing message: per-message tools address it in its session.
     const closingMessageId = lastAssistantMessageId(this.ctx.sessions.get(run.id))
+    const asks = askOffsets(room.snapshotEvents(), runId, output)
     const speech = output !== '' || interrupted === undefined ? room.append('room/speech', {
       member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
       text: output,
+      ...asks.length === 0 ? {} : { asks },
       childSessionId: run.id,
       runId,
       ...closingMessageId === undefined ? {} : { messageId: closingMessageId },

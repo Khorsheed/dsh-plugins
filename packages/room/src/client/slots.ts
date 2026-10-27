@@ -375,6 +375,8 @@ export interface RoomSpeechInjected {
   readonly openDetail?: ((sessionId: SessionId, messageId: string) => void) | undefined
   /** Open a file path a member named in its text (sidebar file viewer); absent without the sidebar. */
   readonly openPath?: ((sessionId: SessionId, path: string) => void) | undefined
+  /** Answer a question asked in this round (an expired one answers late). */
+  readonly answerQuestion: RoomQuestionInjected['answerQuestion']
 }
 
 /** Full props of the 'room-speech' chat-node renderer. */
@@ -394,6 +396,8 @@ export interface RoomRunInjected {
   readonly openSession: (sessionId: SessionId) => void
   /** Cancel the named member's in-flight run through the Remote. */
   readonly cancelMember: (member: string) => Promise<void>
+  /** Answer the question the round is waiting on, right in its live card. */
+  readonly answerQuestion: RoomQuestionInjected['answerQuestion']
 }
 
 /** Full props of the 'room-run' chat-node renderer. */

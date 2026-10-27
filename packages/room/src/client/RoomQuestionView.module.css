@@ -183,3 +183,42 @@
   opacity: 0.4;
   cursor: default;
 }
+
+/* Inline: the question inside the asker's round (its live card, then its
+   reply, at the point it asked). Pending reads amber — the round is waiting
+   on the human; answered folds to question + answer on a quiet fill. */
+.inline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 6px 0 12px;
+  padding: 9px 12px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.08));
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.03));
+  font-size: var(--dsh-content-font-size, 14px);
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+.inline[data-state="pending"] {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #c08419) 55%, transparent);
+  background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #c08419) 7%, var(--dsw-alias-bg-layer-1, #ffffff));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-state-warning-primary, #c08419) 14%, transparent);
+}
+
+.inline[data-state="late"] {
+  border-style: dashed;
+}
+
+.inlineHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, rgba(31, 35, 41, 0.5));
+}
+
+.inline[data-state="pending"] .inlineHead {
+  color: var(--dsw-alias-state-warning-primary, #c08419);
+  font-weight: 600;
+}

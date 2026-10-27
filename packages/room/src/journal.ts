@@ -15,7 +15,7 @@ import { replayJobs } from './jobs.ts'
 import { replayHelps, replayLinks } from './helps.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  RoomApproval, RoomQuestion, RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
+  RoomApproval, RoomAsk, RoomQuestion, RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
 } from './types.ts'
 
 /**
@@ -127,6 +127,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const relays: RoomRelay[] = []
   const approvals = new Map<string, RoomApproval>()
   const questions = new Map<string, RoomQuestion>()
+  const asks = new Map<string, RoomAsk>()
   const relayById = new Map<string, RoomRelay>()
   const tasks: RoomTask[] = []
   const taskById = new Map<string, RoomTask>()
@@ -271,10 +272,24 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         break
       case 'room/question':
         questions.set(event.data.id, { id: event.data.id, member: event.data.member, questions: event.data.questions, time: event.time })
+        asks.set(event.data.id, {
+          id: event.data.id, member: event.data.member, questions: event.data.questions, state: 'pending', time: event.time,
+          ...event.data.runId === undefined ? {} : { runId: event.data.runId },
+          ...event.data.consent === true ? { consent: true as const } : {},
+        })
         break
-      case 'room/question-resolved':
+      case 'room/question-resolved': {
         questions.delete(event.data.id)
+        const ask = asks.get(event.data.id)
+        if (ask !== undefined) {
+          asks.set(ask.id, {
+            ...ask, state: event.data.outcome,
+            ...event.data.answers === undefined ? {} : { answers: event.data.answers },
+            ...event.data.late === true ? { late: true as const } : {},
+          })
+        }
         break
+      }
       case 'room/approval-resolved':
         approvals.delete(event.data.id)
         break
@@ -391,7 +406,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   return {
     ...helps.length === 0 ? {} : { helps },
     ...links.linked.length === 0 ? {} : { linked: links.linked },
-    ...links.nudgesDismissed.length === 0 ? {} : { helpNudgesDismissed: links.nudgesDismissed }, members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, ...questions.size === 0 ? {} : { questions: [...questions.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, ...latestSpeechSeq === undefined ? {} : { latestSpeechSeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
+    ...links.nudgesDismissed.length === 0 ? {} : { helpNudgesDismissed: links.nudgesDismissed }, members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, ...questions.size === 0 ? {} : { questions: [...questions.values()] }, ...asks.size === 0 ? {} : { askLog: [...asks.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, ...latestSpeechSeq === undefined ? {} : { latestSpeechSeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
 }
 
 /**

@@ -212,6 +212,8 @@ export interface RoomSpeechEvent {
   readonly reportedTo?: string
   readonly member: string
   readonly text: string
+  /** Questions the round asked, at their offsets in `text` (-1 = no split point found: shown first, marked mid-round). */
+  readonly asks?: readonly { readonly id: string; readonly at: number }[]
   readonly childSessionId?: SessionId
   /** Native admission→settle milliseconds, excluding queue time. */
   readonly durationMs?: number
@@ -508,6 +510,10 @@ export interface RoomQuestionEvent {
   readonly member: string
   readonly memberId: string
   readonly questions: readonly RoomQuestionItem[]
+  /** The asker's round (its run id): the question renders inside that round's card and reply. */
+  readonly runId?: string
+  /** The tail of what the round had said when it asked — where the reply splits around the question. */
+  readonly before?: string
   /** A consent gate (room_help's 允许/不允许): its answer only matters while the call waits, so it is never answered late. */
   readonly consent?: true
 }
@@ -520,6 +526,19 @@ export interface RoomQuestionResolvedEvent {
   readonly answers?: readonly RoomQuestionAnswer[]
   /** Answered after the card expired: the answers went to the member as a new message instead of its (gone) waiting call. */
   readonly late?: true
+}
+
+/** Every question card the room has seen, with its outcome — inline question blocks read it. */
+export interface RoomAsk {
+  readonly id: string
+  readonly member: string
+  readonly questions: readonly RoomQuestionItem[]
+  readonly state: 'pending' | 'answered' | 'cancelled'
+  readonly answers?: readonly RoomQuestionAnswer[]
+  readonly late?: true
+  readonly consent?: true
+  readonly runId?: string
+  readonly time: number
 }
 
 /** A member's questions still waiting for the human. */
@@ -866,6 +885,8 @@ export interface RoomExecution extends RoomMemberRun {
  * design note).
  */
 export interface RoomState {
+  /** All question cards with their outcomes (inline blocks in run cards and replies). */
+  readonly askLog?: readonly RoomAsk[]
   readonly executions?: readonly RoomExecution[]
   readonly plan?: Omit<RoomPlan, 'requests'>
   readonly deliveries?: readonly RoomDelivery[]

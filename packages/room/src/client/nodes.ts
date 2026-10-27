@@ -11,7 +11,7 @@
  * RoomService.postMessage) and renders through the official user node.
  * @module @khorsheed/dsh-room/client/nodes
  */
-import type { RoomDecisionEvent, RoomHelp, RoomQuestionAnswer, RoomQuestionItem } from '../types.ts'
+import type { RoomAsk, RoomDecisionEvent, RoomHelp, RoomQuestionAnswer, RoomQuestionItem } from '../types.ts'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -31,6 +31,8 @@ export interface RoomSpeechData {
   readonly time: number
   readonly member: string
   readonly text: string
+  /** Questions the round asked, at their offsets in `text` (see RoomSpeechEvent.asks). */
+  readonly asks?: readonly { readonly id: string; readonly at: number }[]
   /** The member's child session (jump target), when recorded. */
   readonly childSessionId?: SessionId
   /** Dispatch→settle milliseconds, when measured. */
@@ -128,6 +130,24 @@ export interface RoomQuestionData {
   readonly consent?: true
   /** Answered after it expired (the answers went to the member as a message). */
   readonly late?: true
+  /** The asker's round: the question renders inside that round (its card, then its reply), not as a row of its own. */
+  readonly runId?: string
+}
+
+/**
+ * The card data of a question from the room's ask log, for the inline
+ * renderings (a round's live card and its reply).
+ * @param ask - the logged question.
+ * @returns the card data.
+ */
+export function askCardData(ask: RoomAsk): RoomQuestionData {
+  return {
+    seq: 0, time: ask.time, questionId: ask.id, member: ask.member, questions: ask.questions, state: ask.state,
+    ...ask.answers === undefined ? {} : { answers: ask.answers },
+    ...ask.consent === true ? { consent: true as const } : {},
+    ...ask.late === true ? { late: true as const } : {},
+    ...ask.runId === undefined ? {} : { runId: ask.runId },
+  }
 }
 
 export interface RoomRelayData {
@@ -219,6 +239,7 @@ export const roomSpeechDefinition: ConversationNodeDefinition<RoomSpeechData> = 
       time: event.time,
       member: event.data.member,
       text: event.data.text,
+      ...event.data.asks === undefined ? {} : { asks: event.data.asks },
       ...event.data.interrupted === undefined ? {} : { interrupted: event.data.interrupted },
       ...event.data.reportedTo === undefined ? {} : { reportedTo: event.data.reportedTo },
       ...event.data.childSessionId === undefined ? {} : { childSessionId: event.data.childSessionId },
@@ -392,14 +413,15 @@ export const roomQuestionDefinition: ConversationNodeDefinition<RoomQuestionData
   start: (_context, match) => {
     const event = match.event
     if (event.type !== 'room/question') throw new Error('room-question start requires a room/question event')
-    return { seq: event.seq, time: event.time, questionId: event.data.id, member: event.data.member, questions: event.data.questions, state: 'pending', ...event.data.consent === true ? { consent: true as const } : {} }
+    return { seq: event.seq, time: event.time, questionId: event.data.id, member: event.data.member, questions: event.data.questions, state: 'pending', ...event.data.consent === true ? { consent: true as const } : {}, ...event.data.runId === undefined ? {} : { runId: event.data.runId } }
   },
   update: (context, match) => {
     const event = match.event
     if (event.type !== 'room/question-resolved') return context.state
     return { ...context.state, state: event.data.outcome, ...event.data.answers === undefined ? {} : { answers: event.data.answers }, ...event.data.late === true ? { late: true as const } : {} }
   },
-  buildViewNode: context => viewNode(context, 'room-question'),
+  // A question placed in a round renders inside it (RoomRunView, RoomSpeechView): its own row hides.
+  buildViewNode: context => viewNode(context, 'room-question', context.state?.runId === undefined ? 'visible' : 'hidden'),
 }
 
 /**
