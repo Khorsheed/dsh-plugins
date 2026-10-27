@@ -17,7 +17,7 @@
 - **官方落地（0.1.5-rc.1）**：三处打开入口统一收敛到 `ctx.sidebarRight.openResource()`（ui-chat 的 `openFile` 即 `fileAddressFor` + `openResource`）；`ctx.sidebarRightTabs.register()` 认领注册表（glob patterns + `priority: 'extension'` 默认压过内置）允许第三方接管地址类型；官方 `text` 类型（ui-sidebar-documentpreview）认领 `dsh-resource://file/**`。
 - **退役动作**：ui-file-preview 0.3.0 拆除 DOM 拦截、`shell.overlay` 抽屉、`conversation.view` 注册；turnTail 抢占一度拆除又于 2026-09-11 经用户决策恢复为 `priority: -1`（我们的回合产物表格取代官方 deliverables 行——官方大卡间距/密度差且>4 才折叠，见 Agent Note 2026-09-10-ui-file-preview-sidebar-right-s1-retirement）；列表/卡片点击改走 `openResource` / owner `openFile`。工作区外路径造不出 `dsh-resource://file/...` 地址（官方 `file` 资源限定工作区），只剩列表条目——这是资源层语义，不是缝。
 - **状态**：已退役（0.1.5-rc.1，@khorsheed/dsh-client-ui-file-preview 0.3.0）。
-- **尾巴（0.1.5-rc.1 实测补充，绕行中）**：打开*方向*仍无官方覆盖点——`ui-deliverables` 的 `chatFileMentions` 对被 `present` 工具交付过的文件走原生默认程序（`opener.open`），未交付的才走 sidebar。ui-file-preview 用**就地包装**统一进 sidebar：`ctx.provide` 拒绝重名、`ctx.set` 拒绝非提供方 fiber（vendor/cordis reflect.ts "cannot set property in multiple fibers"），所以只能直接改写所提供对象的 `forClosing`（保留原实现的认领逻辑，resolved `open` 全部改走 `openTab` 到 ui-file-preview 自己的详情页（抛错时回退 `owner.openFile`），label 修为「在侧边栏打开」；resolved 路径取 `hit.title`——官方 builder 的契约）。加载序靠 `dsh.client.inject` 的 ui-deliverables 包边；deliverables fiber 重载（HMR）会丢包装，接受。**退役条件**：官方为 mention 打开方向提供覆盖点（可替换的 opener 或 deliverables 配置项）；落地后删 `mentions-wrap.ts`。每次官方升级核对：`producedFileMentions` 的 `title: path` 契约、chat 视图 `ctx.get('chatFileMentions')` 的逐次读取。
+- **尾巴（旧宿主兼容，绕行中）**：0.1.5 线的 `ui-deliverables` 会把 present 交付文件的 mention 打开到原生默认程序；file-preview 用就地包装统一进 sidebar，resolved 路径取官方 builder 的 `title: path`。rc4 发布物复核时，官方 `forClosing` 已统一走 `owner.openFile`，与本插件的 `openResource` 认领路由等价；但本包 minHost 仍是 0.1.5-rc.1，不能为清理 rc4 而回退旧线行为，故 `mentions-wrap.ts` 与 nested fiber 暂时保留。**退役条件**：minHost 前移到所有支持宿主都走统一 `owner.openFile` 的版本后删除包装；若官方先提供可替换 opener，也可提前按该接口退役。每次升级继续核对 `title: path` 契约和 chat 视图的逐次读取。
 
 ### S2. bash/子进程写入的文件不进任何日志结构
 
@@ -28,17 +28,16 @@
 
 ### S3. Code Mode 嵌套派发无 diff 数据
 
-- **需求**:`tool/code-dispatch` 事件带 oldText/newText（或 diff hunk)，让 code-kimi 会话的文件也有改动记录。
-- **现状绕行**：无——列表能进（S2 之前修的 dispatch fold)，改动记录 tab 对这类文件隐藏。
-- **退役条件**：官方在派发事件里带 diff 数据。
-- **状态**：绕行中（无绕行，纯缺失，UI 如实隐藏）。
+- **需求**:`tool/ptc-dispatch` 事件带 oldText/newText（或 diff hunk)，让 code-kimi 会话的文件也有改动记录。
+- **官方能力（rc4 复核，非 rc4 新增）**：`PtcDispatchEventData.meta` 持久化工具的 presentation meta；官方 `write`/`edit` 在其中提供 `diffs`（path、oldText、newText），create 以 `operation: 'create'` + 空 diff 表示。此前「事件无 diff」的判断已过时。
+- **退役动作**：file-preview 的列表与回合 fold 同时消费 dispatch meta；create 从参数 content 计数，空 update 不污染统计，旧日志或无 meta 工具继续按不可计数降级。
+- **状态**：已退役（2026-10-27 社区消费落地；rc4 发布物复核）。
 
 ### S4. Code Mode 派发事件无 turn/step 归属
 
-- **需求**:`tool/code-dispatch` 事件带 turn/step，回合级 fold（变更卡片）才能归属嵌套变更。
-- **现状绕行**：宿主 fold 借外层 `run_code` 根调用的 turn/step（列表可用）；客户端回合卡片无法归属（match 拿不到 turn),code-kimi 会话不出卡片。
-- **退役条件**：官方给派发事件补 turn/step 字段。
-- **状态**：绕行中（部分）。客户端卡片侧的缺失等官方补字段。
+- **需求**:回合级 fold（变更卡片）需要把嵌套变更归属到外层 turn/step；可由事件直接携带或稳定推导。
+- **退役动作**：`tool/ptc-dispatch` 的 `rootCallId` 稳定指向外层 `run_code` 的 `tool/call`，file-preview 用它借出 turn/step；宿主 `turnFiles` 与客户端回合卡片共用同一份按 turn 分组结果，不再存在「列表能归属、卡片不能归属」的两套逻辑。
+- **状态**：已退役（归属推导满足需求，rc4 复核；无需再等 dispatch 自带 turn/step 字段）。若官方破坏 rootCallId 与外层调用的对应关系再重开。
 
 ### S5. Typert Remote 生成器只在官方构建链
 
