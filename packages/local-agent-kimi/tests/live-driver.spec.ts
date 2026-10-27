@@ -998,6 +998,45 @@ describe('kimi live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('an ACP call id carrying kimi\'s turn prefix names the wire\'s bare call — no orphan after the answer', async () => {
+    // In the wild (fbc8ba18 round 2): ACP reported "1:tool_x", the wire
+    // "tool_x"; settle re-wrote both calls as interrupted orphans AFTER the
+    // answer, and the chat folded the answer into the process.
+    const m = mount({ config: { liveMirrorGranularity: 'token' } })
+    const child = Session.create(SessionId('child-kimi-prefixed-id'))
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    const prompt = JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建项目' }], origin: { kind: 'user' } })
+    const loop = (event: Record<string, unknown>) => JSON.stringify({ type: 'context.append_loop_event', event: { turnId: 0, ...event } })
+    const fake = new FakeAcpServer({
+      turn: () => {
+        writeFileSync(join(wireDir, 'wire.jsonl'), prompt + '\n')
+        return { hang: true }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    fake.update('session_acp-session-1', { sessionUpdate: 'tool_call', toolCallId: '1:tool_x', title: 'game_open', status: 'in_progress' })
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '项目建好了' } })
+    writeFileSync(join(wireDir, 'wire.jsonl'), [
+      prompt,
+      loop({ type: 'tool.call', step: 1, toolCallId: 'tool_x', toolCall: { name: 'game_open', args: {} } }),
+      loop({ type: 'tool.result', step: 1, toolCallId: 'tool_x', result: { output: 'ok' } }),
+      loop({ type: 'step.end', step: 1 }),
+      loop({ type: 'content.part', step: 2, part: { type: 'text', text: '项目建好了' } }),
+      loop({ type: 'step.end', step: 2 }),
+    ].join('\n') + '\n')
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await run.result).stopReason).toBe('completed')
+
+    expect(child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { callId: string }).callId)).toEqual(['tool_x'])
+    const messages = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+    expect(JSON.stringify((messages.at(-1)!.data as { message: unknown }).message)).toContain('项目建好了')
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
   it('token granularity: a round whose stream stayed under the throttle still folds every wire item 1:1', async () => {
     const m = mount({ config: { liveMirrorGranularity: 'token' } })
     const child = Session.create(SessionId('child-kimi-token-nostream'))
@@ -1472,7 +1511,7 @@ describe('kimi live driver transcript completeness', () => {
     await m.driver.disposeAll()
   })
 
-  it('token granularity folds ACP plan updates as a think-style snapshot stream', async () => {
+  it('folds ACP plan updates as the host todo list, never as a step after the answer', async () => {
     const m = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const child = Session.create(SessionId('child-kimi-plan-token'))
     const fake = new FakeAcpServer({ turn: () => ({ hang: true }) })
@@ -1489,9 +1528,12 @@ describe('kimi live driver transcript completeness', () => {
     writeKimiWire(m.homeDir, 'acp-session-1', '建个文件', '建好了')
     fake.resolvePrompt({ stopReason: 'end_turn' })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => {
-      expect(reasoningTexts(child).some(text => text.includes('☑ 第一步') && text.includes('▶ 第二步'))).toBe(true)
-    }, { timeout: 5_000 })
+    const todos = child.snapshotEvents().filter(e => e.type === ('todo/write' as never)).map(e => e.data)
+    expect(todos.at(-1)).toEqual({ todos: [{ content: '第一步', status: 'completed' }, { content: '第二步', status: 'in_progress' }] })
+    // The answer is the round's last step: the chat shows it, not the plan.
+    const messages = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+    expect(JSON.stringify((messages.at(-1)!.data as { message: unknown }).message)).toContain('建好了')
+    expect(reasoningTexts(child).some(text => text.includes('第一步'))).toBe(false)
     expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
@@ -1512,9 +1554,8 @@ describe('kimi live driver transcript completeness', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
     await vi.waitFor(() => {
-      expect(reasoningTexts(child).some(text => text.includes('▶ 唯一步骤'))).toBe(true)
-      const planMessages = child.snapshotEvents().filter(e => e.type === 'assistant/message' && JSON.stringify(e.data).includes('▶ 唯一步骤'))
-      expect(new Set(planMessages.map(e => (e.data as { step: number }).step)).size).toBe(1)
+      expect(child.snapshotEvents().filter(e => e.type === ('todo/write' as never)).map(e => e.data))
+        .toEqual([{ todos: [{ content: '唯一步骤', status: 'in_progress' }] }])
     }, { timeout: 5_000 })
     await m.driver.disposeAll()
   })
