@@ -1470,7 +1470,8 @@ export interface RoomJob {
   /** 1-based ordinal in the room, for 「任务 N」 and the coordinator's `task` argument. */
   readonly number: number
   readonly title: string
-  readonly messages: readonly { readonly id: string; readonly time: number; readonly text: string; readonly by?: RoomTaskLinkEvent['by']; readonly probability?: number }[]
+  /** `from`: the member id a member/coordinator dispatch came from; absent = the human. */
+  readonly messages: readonly { readonly id: string; readonly time: number; readonly text: string; readonly from?: string; readonly by?: RoomTaskLinkEvent['by']; readonly probability?: number }[]
   readonly status: 'running' | 'attention' | 'done' | 'stopped'
   readonly startedAt: number
   /** Last settlement, when nothing is open any more. */
