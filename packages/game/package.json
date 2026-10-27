@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-game",
   "description": "Game-development mode: build and play a small 2D web game with the agent — a right-sidebar game-design workbench (live-tuned params, element look editor with 3-variant proposals, chaptered design doc, versions with candidate confirm, rollback and single-file export), projects in the session workspace, end-of-turn checks (data validation, headless smoke run, the project's own test scripts) that steer failures back into the same turn and deploy passing versions, and panel edits attached to the next send; tools and skills ship as the `./agent` entry the game preset grants",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
