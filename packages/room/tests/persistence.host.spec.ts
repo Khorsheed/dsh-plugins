@@ -38,6 +38,7 @@ function roomLogFixture(): SessionEvent[] {
     ['room/relay', { id: 'r1', from: 'ada', to: 'bill', content: '接口定稿' }],
     ['room/relay-resolved', { id: 'r1', state: 'sent' }],
     ['room/run-state', { member: 'ada', state: 'done', startedAt: 1, elapsedMs: 2 }],
+    ['room/run-moved', { member: 'ada', startedAt: 1 }],
     ['room/member-removed', { name: 'ada' }],
   ]
   return rows.map(([type, data], seq) => ({ type, seq, time: 1000 + seq, data }) as SessionEvent)
@@ -136,6 +137,7 @@ describe('room journal persistence', () => {
         call: { model: 'jev-latest', latencyMs: 900, cached: false, inputTokens: 538, outputTokens: 6, request: { state: { arrived: [] }, questions: [{ id: 'deliver_now', type: 'noul' }] }, response: [{ id: 'deliver_now', answer: 0.31 }] } })
       session.append('room/question-resolved', { id: 'q1', outcome: 'answered', answers: [{ id: 'fun', selected: ['解谜'] }] })
       session.append('room/run-state', { member: 'ada', runId: 'a', state: 'done', startedAt: 1, elapsedMs: 2 })
+      session.append('room/run-moved', { member: 'ada', startedAt: 1 })
       session.append('room/execution-metadata', { runId: 'a', model: 'observed', tokens: 42 })
       session.append('room/member-removed', { name: 'ada' })
       session.append('room/goal', { text: '插件 API v2 上线' })

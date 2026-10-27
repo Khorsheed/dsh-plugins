@@ -499,6 +499,35 @@ describe('DispatchEngine (real composition)', () => {
     await bench.service.engine.idle()
   })
 
+  it('a member still running keeps its card at the bottom: replies and human messages that land later push it down', async () => {
+    const bench = await bootRoom()
+    const adaFlight = deferred<SubagentResult>()
+    bench.facade.start.mockImplementationOnce(async () => ({
+      id: SessionId('child-ada'), localAgent: undefined, result: adaFlight.promise, dispose: async () => {},
+    }))
+    bench.facade.start.mockImplementationOnce(async () => settledRun('child-bill', 'bill 先答完'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 慢活' })
+    await tick()
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@bill 快活' })
+    await tick()
+    await tick()
+    const events = () => bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
+    const speech = events().find(event => event.type === 'room/speech' && (event.data as { member: string }).member === 'bill')!
+    const moves = events().filter(event => event.type === 'room/run-moved')
+    // ada moved below bill's human message and again below bill's reply; bill never moves for its own reply.
+    expect(moves.every(event => (event.data as { member: string }).member === 'ada')).toBe(true)
+    expect(moves.at(-1)!.seq).toBeGreaterThan(speech.seq)
+    adaFlight.resolve({ output: [{ type: 'text', text: 'ada 完成' }], stopReason: 'completed' })
+    await bench.service.engine.idle()
+    const count = events().filter(event => event.type === 'room/run-moved').length
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@bill 再来' })
+    await bench.service.engine.idle()
+    // Nobody running when the next message lands except bill's own new run, which starts after it.
+    expect(events().filter(event => event.type === 'room/run-moved').length).toBe(count)
+  })
+
   it('the main-agent member gets a producer-sourced followup and no speech projection', async () => {
     const bench = await bootRoom()
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@dsh 总结一下进度' })

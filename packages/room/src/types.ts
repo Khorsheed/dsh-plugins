@@ -239,6 +239,12 @@ export interface RoomRunUsage {
 }
 
 /** A member run's lifecycle edge. */
+/** A running member's card moves to the bottom of the conversation; its run is untouched. */
+export interface RoomRunMovedEvent {
+  readonly member: string
+  readonly startedAt: number
+}
+
 export interface RoomRunStateEvent {
   readonly childSessionId?: SessionId
   /** The child session's round this run reached (the last turn/start it wrote); terminal edges only, live sessions only. */
@@ -724,6 +730,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/speech': RoomSpeechEvent
     /** Member run lifecycle. */
     'room/run-state': RoomRunStateEvent
+    /** A running member's card re-anchors below a reply or human message that landed after it (presentation only). */
+    'room/run-moved': RoomRunMovedEvent
     /** Log-only observed metadata for a single execution. */
     'room/execution-metadata': RoomExecutionMetadataEvent
     /** Notification gate: a member-to-member relay arrived (pending). */
