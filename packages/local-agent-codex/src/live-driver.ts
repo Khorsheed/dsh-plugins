@@ -264,12 +264,30 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
       return { kind: 'tool', id: itemId ?? `codex-live-${randomUUID()}`, name: `collab/${tool}` }
     }
     case 'mcpToolCall': {
+      // An MCP call (the member bridge's room tools): {server, tool,
+      // arguments, status, result?: {content}, error?: {message}} — the
+      // arguments and the outcome ride the completed item; without them a
+      // member's ask_user_question read as a bare name.
       const server = typeof item['server'] === 'string' ? item.server : undefined
       const tool = typeof item['tool'] === 'string' ? item.tool : undefined
+      const args = item['arguments'] === undefined || item['arguments'] === null
+        ? undefined
+        : typeof item['arguments'] === 'string' ? item['arguments'] : JSON.stringify(item['arguments'])
+      const outcome = item['result'] as { content?: unknown } | null | undefined
+      const content = Array.isArray(outcome?.content) ? outcome.content : []
+      const text = content
+        .filter((block): block is JsonObject => typeof block === 'object' && block !== null)
+        .map(block => typeof block['text'] === 'string' ? block['text'] : undefined)
+        .filter((entry): entry is string => entry !== undefined && entry !== '')
+        .join('\n')
+      const error = item['error'] as { message?: unknown } | null | undefined
+      const failure = typeof error?.message === 'string' && error.message !== '' ? error.message : undefined
       return {
         kind: 'tool',
         id: itemId ?? `codex-live-${randomUUID()}`,
         name: server !== undefined && tool !== undefined ? `${server}/${tool}` : tool ?? 'mcp',
+        ...args === undefined || args === '' || args === '{}' ? {} : { args },
+        ...failure !== undefined ? { result: failure, failed: true } : text === '' ? {} : { result: text },
       }
     }
     case 'plan':

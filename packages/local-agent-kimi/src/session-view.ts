@@ -161,6 +161,9 @@ function editArgsOf(name: string, record: Record<string, unknown>): string | und
   return undefined
 }
 
+/** Cap on a structured tool call's mirrored JSON arguments. */
+const STRUCTURED_ARGS_MAX = 16_000
+
 /** Render a tool call's arguments into a compact summary. */
 function argsOf(name: string, args: unknown): string | undefined {
   if (args === undefined) return undefined
@@ -171,6 +174,13 @@ function argsOf(name: string, args: unknown): string | undefined {
   // scalar preference below would otherwise reduce them to.
   const edit = editArgsOf(name, record)
   if (edit !== undefined) return edit
+  // Structured arguments (an MCP tool's nested questions, options, lists)
+  // keep their full JSON: the one-line summary below keeps only scalars and
+  // dropped them, so the member's ask_user_question read as called with nothing.
+  if (Object.values(record).some(value => typeof value === 'object' && value !== null)) {
+    const json = JSON.stringify(record)
+    return json.length <= STRUCTURED_ARGS_MAX ? json : `${json.slice(0, STRUCTURED_ARGS_MAX)}…`
+  }
   // WebSearch/FetchURL expose a query/url; prefer the most meaningful scalar.
   for (const key of ['query', 'url', 'path', 'command']) {
     const value = record[key]
