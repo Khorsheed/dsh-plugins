@@ -37,7 +37,7 @@ import {
 } from './project.ts'
 import {
   CHAPTERS, LORE_MAX, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
-  type AnyLook, type BundleFile, type ChapterView, type CommitResult, type VersionSource, type WorkingChanges, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
+  type AnyLook, type BundleFile, type ChapterView, type CommitResult, type VersionSource, type WorkingChanges, type LiveVersion, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
   type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView, type TurnReport,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
@@ -551,6 +551,21 @@ export class GameService {
   }
 
   /** The tab's state for one session. */
+  /**
+   * The bound project's newest version (the waiting candidate, else the live
+   * one), read from two small files: the page polls it to announce a version
+   * the moment it lands, whoever's turn cut it. Version 0 means none yet.
+   */
+  async liveVersion(sessionId: string): Promise<LiveVersion | null> {
+    const row = await this.boundProject(sessionId)
+    if (row === undefined) return null
+    const state = join(row.root, STATE_DIR)
+    const candidate = await readJson<VersionRecord>(join(state, 'candidate.json'))
+    const record = candidate ?? (await readJson<VersionRecord>(join(state, 'current.json')))
+    if (record === undefined) return { projectId: row.id, version: 0, kind: 'none', at: null }
+    return { projectId: row.id, version: record.version, kind: candidate !== undefined ? 'candidate' : 'deployed', at: record.at, ...(record.by === undefined ? {} : { by: record.by }) }
+  }
+
   async sessionState(sessionId: string): Promise<SessionGameState> {
     const bound = await this.boundProject(sessionId)
     return {

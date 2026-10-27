@@ -10,7 +10,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { panelSession } from './panel-session.ts'
 import type { GameService } from './store.ts'
-import type { BundleFile, CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
+import type { BundleFile, LiveVersion, CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -42,6 +42,12 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
   @Remote('state')
   state(sessionId: SessionId): Promise<SessionGameState> {
     return this.store.sessionState(sessionId)
+  }
+
+  /** The bound project's newest version (cheap; the page polls it). */
+  @Remote('liveVersion')
+  liveVersion(sessionId: SessionId): Promise<LiveVersion | null> {
+    return this.store.liveVersion(sessionId)
   }
 
   /** What one of the session's turns changed (null when nothing, or not recorded). */

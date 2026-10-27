@@ -91,6 +91,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   const api: GameApi = {
     state: sid => remote.state(sid),
+    liveVersion: sid => remote.liveVersion(sid),
     projectCards: () => remote.projectCards(),
     turnReport: (sid, turn) => remote.turnReport(sid, { turn }),
     bind: (sid, projectId) => remote.bind(sid, { projectId }),
@@ -226,26 +227,31 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     autoNav,
   }
 
-  // A version cut mid-turn (the agent's game_publish) is announced as it lands, not at turn end:
-  // session activity is watched, throttled, against the last live version seen per project.
+  // A version is announced the moment it lands, whoever cut it (the agent mid-turn, a CLI
+  // member in a room — which raises no session event on the main session at all). The page
+  // polls the on-screen session's bound project while visible; session events nudge it early.
   const lastVersion = new Map<string, number>()
-  const lastLook = new Map<string, number>()
-  listeners.add(sessionId => {
+  let lastPoll = 0
+  const poll = (): void => {
     const now = Date.now()
-    if (now - (lastLook.get(sessionId) ?? 0) < 4000) return
-    lastLook.set(sessionId, now)
-    void api.state(sessionId as SessionId).then(r => {
-      const project = r.ok ? r.value.bound : null
-      if (project == null) return
-      const record = project.candidate ?? project.current
-      if (record === null) return
-      const seen = lastVersion.get(project.id)
-      lastVersion.set(project.id, record.version)
-      // The first sighting is the baseline; a version the user published is no news to them.
-      if (seen === undefined || record.version <= seen || record.by === 'user') return
-      autoNav.versionLanded(project.id, record.version, project.candidate !== null ? t('nav.candidate', { version: record.version }) : t('nav.version', { version: record.version }))
+    if (now - lastPoll < 3000) return
+    lastPoll = now
+    const sid = mainSessionId(ctx.sessions.list.getSnapshot())
+    if (sid === undefined) return
+    void api.liveVersion(sid).then(r => {
+      const live = r.ok ? r.value : null
+      if (live === null) return
+      const seen = lastVersion.get(live.projectId)
+      lastVersion.set(live.projectId, live.version)
+      if (live.kind === 'none' || live.by === 'user' || (seen !== undefined && live.version <= seen)) return
+      // First sighting: only a version that landed just now is news (not one found on a reload).
+      if (seen === undefined && (live.at === null || now - Date.parse(live.at) > 90_000)) return
+      autoNav.versionLanded(live.projectId, live.version, live.kind === 'candidate' ? t('nav.candidate', { version: live.version }) : t('nav.version', { version: live.version }))
     }).catch(() => {})
-  })
+  }
+  listeners.add(() => { poll() })
+  const pollTimer = setInterval(() => { if (document.visibilityState === 'visible') poll() }, 6000)
+  disposers.push(async () => { clearInterval(pollTimer) })
 
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',

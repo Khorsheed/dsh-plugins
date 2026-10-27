@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from './locales.ts'
 import type { AutoNav } from './autonav.ts'
-import type { BundleFile, CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from '../types.ts'
+import type { BundleFile, LiveVersion, CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from '../types.ts'
 
 type R<T> = Promise<RemoteResult<T>>
 type Ok<T extends object = object> = GameResult<{ readonly ok: true } & T>
@@ -19,6 +19,7 @@ type Ok<T extends object = object> = GameResult<{ readonly ok: true } & T>
 /** Every call the panel makes, already bound to the Remote. */
 export interface GameApi {
   state: (sid: SessionId) => R<SessionGameState>
+  liveVersion: (sid: SessionId) => R<LiveVersion | null>
   projectCards: () => R<ProjectCard[]>
   turnReport: (sid: SessionId, turn: number) => R<TurnReport | null>
   bind: (sid: SessionId, projectId: string | null) => R<Ok>
