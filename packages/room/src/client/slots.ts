@@ -176,7 +176,36 @@ export interface RoomModelDirectory {
  * own main agent (bare messages ARE its turns); undefined on a host without
  * ui-model-selection — the picker simply does not render.
  */
+/** One unsent composer attachment (the official conversation service's draft). */
+export type RoomDraftAttachment =
+  | { readonly kind: 'image'; readonly id: string; readonly file: File; readonly previewUrl: string }
+  | { readonly kind: 'file'; readonly id: string; readonly file: File }
+
+/** A file draft's upload state (files upload on pick; images ride the send). */
+export type RoomDraftUpload =
+  | { readonly status: 'uploading'; readonly loaded: number; readonly total?: number }
+  | { readonly status: 'ready' }
+  | { readonly status: 'error'; readonly message: string }
+
+/**
+ * The official conversation service's draft-attachment face, re-used so the
+ * room's attachments pick, upload, and serialize exactly like the official
+ * composer's. Absent on a host without it: the composer offers no attachments.
+ */
+export interface RoomAttachmentsFace {
+  /** Register picked/pasted/dropped files as drafts of this session (files start uploading). */
+  readonly create: (sessionId: SessionId, files: readonly File[]) => readonly RoomDraftAttachment[]
+  readonly resolve: (ids: readonly string[]) => readonly RoomDraftAttachment[]
+  readonly release: (id: string) => void
+  readonly retry: (sessionId: SessionId, id: string) => void
+  readonly uploads: { subscribe(listener: () => void): () => void; getSnapshot(): Readonly<Record<string, RoomDraftUpload>> }
+  /** The wire form postMessage takes (images encoded, files as their upload receipts). */
+  readonly serialize: (ids: readonly string[]) => Promise<readonly import('../types.ts').RoomAttachmentInput[]>
+}
+
 export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInjected {
+  /** Draft attachments; absent without the official conversation service. */
+  readonly attachments?: RoomAttachmentsFace | undefined
   /** Open the task page (at one task); absent without the right sidebar. */
   readonly openTasks?: ((task?: string) => void) | undefined
   /** The composer's task tag store (see task-tag.ts). */
@@ -215,7 +244,7 @@ export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInject
    * `task` is the composer's tag (`new` or a task root id): it files the
    * message under that task instead of letting dsh decide.
    */
-  readonly submit: (sessionId: SessionId, text: string, targets?: readonly string[], task?: string) => Promise<RoomMutationOutcome>
+  readonly submit: (sessionId: SessionId, text: string, targets?: readonly string[], task?: string, attachments?: readonly import('../types.ts').RoomAttachmentInput[]) => Promise<RoomMutationOutcome>
   /** Interrupt the room's own main-agent turn (the hidden official bar's Stop). */
   readonly stop: () => void
   /**

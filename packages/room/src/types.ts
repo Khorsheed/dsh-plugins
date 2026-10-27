@@ -137,6 +137,8 @@ export interface RoomMemberRemovedEvent {
  * log.
  */
 export interface RoomDispatchEvent {
+  /** The human message's admitted attachments, re-sent with the text on a retry. */
+  readonly attachments?: readonly RoomDispatchAttachment[]
   /** Goal work/report correlation, absent for ordinary chat. */
   readonly plan?: { readonly goalId: string; readonly taskId?: string; readonly attemptId?: string }
   /** Fingerprint of the original human request, independent of later roster/role changes. */
@@ -923,6 +925,8 @@ export type RoomFailure =
   | { readonly code: 'empty-provider' }
   | { readonly code: 'member-not-found' }
   | { readonly code: 'empty-text' }
+  /** An attachment was refused (not uploaded to this room, too large, an unsupported image…). */
+  | { readonly code: 'attachment-invalid'; readonly message: string }
   /** The public role is longer than 30 characters. */
   | { readonly code: 'role-too-long' }
   /** A settings value is out of range (hop limit 2–50). */
@@ -1172,6 +1176,26 @@ export interface RoomPostMessageRequest {
   readonly targets?: readonly string[]
   /** The composer's task tag: `new` or a task root id (see RoomSetTaskHintRequest). */
   readonly task?: string
+  /**
+   * Draft attachments in the official composer's wire form: an image's
+   * base64 bytes, or a file's upload receipt (uploaded to this room session
+   * on pick). The host admits them into the human message; members get them
+   * by local path.
+   */
+  readonly attachments?: readonly RoomAttachmentInput[]
+}
+
+/** One composer attachment as it crosses the wire (the official prompt part shape). */
+export type RoomAttachmentInput =
+  | { readonly type: 'image'; readonly data: string; readonly mediaType: string; readonly name?: string }
+  | { readonly type: 'file'; readonly receiptId: string }
+
+/** An admitted attachment as a dispatch records it: what members are told to read. */
+export interface RoomDispatchAttachment {
+  readonly kind: 'image' | 'file'
+  readonly name?: string
+  /** Absolute host path; absent when the attachment store is not file-backed. */
+  readonly path?: string
 }
 
 /** What the postMessage parser made of the raw text. */

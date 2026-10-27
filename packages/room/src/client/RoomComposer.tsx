@@ -55,7 +55,7 @@
  */
 import { coordinatorMember } from '../journal.ts'
 import {
-  useEffect, useRef, useState, useSyncExternalStore, type ChangeEvent, type CSSProperties, type KeyboardEvent, type ReactNode,
+  useEffect, useRef, useState, useSyncExternalStore, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode,
 } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -70,7 +70,8 @@ import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
 import { RoomQueueStrip, type RoomQueueItem } from './RoomQueueStrip.tsx'
 import { RoomModelPicker } from './RoomModelPicker.tsx'
-import { IconChevronRightOutlineMedium } from './icons.tsx'
+import { IconChevronRightOutlineMedium, IconPaperclipOutlineMedium } from './icons.tsx'
+import { RoomAttachments } from './RoomAttachments.tsx'
 import css from './RoomComposer.module.css'
 
 /** The 0.1.5 session-snapshot queue row (alpha.2 deleted the snapshot queue for the inbox projection). */
@@ -150,12 +151,23 @@ interface ChipEditActions {
 }
 
 const NO_CHIPS: readonly DraftChip[] = []
+const NO_IDS: readonly string[] = []
+const NO_UPLOADS: Readonly<Record<string, { readonly status: string }>> = {}
+const NO_UPLOAD_STORE = { subscribe: (): (() => void) => () => {}, getSnapshot: () => NO_UPLOADS }
+
+/** The input machine's attachment edits (absent on an older kit: no attachments). */
+interface AttachmentActions {
+  addAttachments?: (ids: readonly string[]) => boolean
+  removeAttachment?: (id: string) => boolean
+  pruneAttachments?: (ids: readonly string[]) => void
+}
 
 /** The room composer takeover component. */
 export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
+  attachments: attachmentFace,
 }: RoomComposerProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const tag = useSyncExternalStore(taskTags?.subscribe ?? NO_TAGS, () => taskTags?.get(sessionId))
@@ -173,6 +185,17 @@ export function RoomComposer({
   // What the textarea shows: the typed text around the chips.
   const value = chipMode ? freeText(draft, chips) : draft
   const [busy, setBusy] = useState(false)
+  // Draft attachments: ids live on the session's input machine (beside the
+  // draft text, surviving navigation like it); the drafts and their uploads
+  // are the official conversation service's (RoomAttachmentsFace).
+  const attachmentActions = inputActions as unknown as AttachmentActions
+  const attachable = attachmentFace !== undefined && attachmentActions.addAttachments !== undefined
+  const attachmentIds = useInput(input => (input as { attachmentIds?: readonly string[] }).attachmentIds) ?? NO_IDS
+  const drafts = attachable && attachmentIds.length > 0 ? attachmentFace.resolve(attachmentIds) : []
+  const uploads = useSyncExternalStore(attachmentFace?.uploads.subscribe ?? NO_UPLOAD_STORE.subscribe, attachmentFace?.uploads.getSnapshot ?? NO_UPLOAD_STORE.getSnapshot)
+  const uploadsPending = drafts.some(draft => draft.kind === 'file' && uploads[draft.id]?.status !== 'ready')
+  const [dragging, setDragging] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [mention, setMention] = useState<(ActiveMention & { index: number }) | null>(null)
   /** Menu-picked addressees: a pick is explicit addressing wherever the
@@ -344,22 +367,67 @@ export function RoomComposer({
     requestAnimationFrame(() => areaRef.current?.setSelectionRange(restored, restored))
   }
 
+  /** Add picked, pasted, or dropped files as drafts on this session. */
+  const addFiles = (files: readonly File[]): void => {
+    if (!attachable || files.length === 0) return
+    try {
+      const created = attachmentFace.create(sessionId, files)
+      if (attachmentActions.addAttachments?.(created.map(entry => entry.id)) !== true) {
+        for (const entry of created) attachmentFace.release(entry.id)
+        setError(t('composer.error.generic'))
+        return
+      }
+      setError(null)
+    } catch (caught) {
+      setError(caught instanceof Error && caught.name === 'UnsupportedImageMediaTypeError' ? t('attach.unsupported') : caught instanceof Error ? caught.message : String(caught))
+    }
+  }
+  const removeAttachment = (id: string): void => {
+    if (attachmentActions.removeAttachment?.(id) === true) attachmentFace?.release(id)
+  }
+  const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const files = [...event.clipboardData.files]
+    if (!attachable || files.length === 0) return
+    event.preventDefault()
+    addFiles(files)
+  }
+  const carriesFiles = (event: DragEvent): boolean => attachable && [...event.dataTransfer.types].includes('Files')
+  const onDragOver = (event: DragEvent<HTMLDivElement>): void => {
+    if (!carriesFiles(event)) return
+    event.preventDefault()
+    if (!dragging) setDragging(true)
+  }
+  const onDrop = (event: DragEvent<HTMLDivElement>): void => {
+    setDragging(false)
+    if (!carriesFiles(event)) return
+    event.preventDefault()
+    addFiles([...event.dataTransfer.files])
+  }
+
   const send = async (): Promise<void> => {
     const text = draft.trim()
-    if (text === '' || busy) return
+    const ids = attachable ? attachmentIds : NO_IDS
+    if ((text === '' && ids.length === 0) || busy || uploadsPending) return
     setBusy(true)
     setError(null)
     try {
       // Two-argument form while nothing was menu-picked: the injected face's
       // third parameter is the pick channel only.
-      const outcome = tag !== undefined
-        ? await submit(sessionId, text, picked, tag.task)
-        : picked.length > 0
-          ? await submit(sessionId, text, picked)
-          : await submit(sessionId, text)
+      const wire = ids.length === 0 ? undefined : await attachmentFace!.serialize(ids)
+      const outcome = wire !== undefined
+        ? await submit(sessionId, text, picked, tag?.task, wire)
+        : tag !== undefined
+          ? await submit(sessionId, text, picked, tag.task)
+          : picked.length > 0
+            ? await submit(sessionId, text, picked)
+            : await submit(sessionId, text)
       if (!outcome.ok) {
         setError(outcome.message)
         return
+      }
+      if (ids.length > 0) {
+        attachmentActions.pruneAttachments?.([])
+        for (const id of ids) attachmentFace!.release(id)
       }
       inputActions.setDraft('')
       // Persist the cleared draft when the host's kit exposes the flush (the
@@ -449,7 +517,8 @@ export function RoomComposer({
       </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}
-      <div className={css.card}>
+      <div className={css.card} data-dragging={dragging ? '' : undefined} onDragOver={onDragOver} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false) }} onDrop={onDrop}>
+        {dragging && <div className={css.dropHint} aria-hidden>{t('attach.drop')}</div>}
         {/* Who a bare message goes to: the coordinator's name in its member colour. */}
         <div className={css.coordinator} style={{ '--member-color': memberColor(coordinator?.name ?? 'dsh') } as CSSProperties}>
           <span className={css.coordinatorDot} aria-hidden />
@@ -564,6 +633,9 @@ export function RoomComposer({
             ))}
           </div>
         )}
+        {attachable && (
+          <RoomAttachments attachments={drafts} face={attachmentFace} onRemove={removeAttachment} onRetry={(id) => { attachmentFace.retry(sessionId, id) }} t={t} />
+        )}
         <textarea
           ref={areaRef}
           className={css.input}
@@ -572,12 +644,34 @@ export function RoomComposer({
           placeholder={tag === undefined ? t('composer.placeholder', { name: coordinator?.name ?? 'dsh' }) : tag.task === 'new' ? t('job.tagPlaceholderNew') : t('job.tagPlaceholder', { label: tag.label })}
           onChange={onChange}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           onCompositionStart={() => { composing.current = true }}
           onCompositionEnd={() => { composing.current = false; justComposed.current = true }}
           onKeyUp={() => { justComposed.current = false }}
           onBlur={() => { composing.current = false; justComposed.current = false }}
         />
         <div className={css.row}>
+          {attachable && (
+            <>
+              <button
+                type="button"
+                className={css.attach}
+                aria-label={t('attach.add')}
+                title={t('attach.add')}
+                onMouseDown={(event) => { event.preventDefault() }}
+                onClick={() => { fileInputRef.current?.click() }}
+              >
+                <IconPaperclipOutlineMedium size={16} />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                onChange={(event) => { addFiles([...event.target.files ?? []]); event.target.value = '' }}
+              />
+            </>
+          )}
           {/* The main agent's model seat: the official per-session directory's
               own trigger, immediately before the Send/Stop circle (the
               official composer's order: model seat → send). It writes the
@@ -606,7 +700,7 @@ export function RoomComposer({
               type="button"
               className={css.primary}
               aria-label={t('composer.send')}
-              disabled={busy || draft.trim() === ''}
+              disabled={busy || uploadsPending || (draft.trim() === '' && (!attachable || attachmentIds.length === 0))}
               onMouseDown={(event) => { event.preventDefault() }}
               onClick={() => { void send() }}
             >

@@ -101,6 +101,46 @@
   padding: 0 8px 6px;
 }
 
+/* 添加图片或文件: the row's leading tool (the official composer's tool-row
+   seat), a 28px ghost icon button pushing the send cluster right. */
+.attach {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: auto;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.7));
+  cursor: pointer;
+}
+
+.attach:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+/* Dragging files over the card: a dashed invitation over the whole card. */
+.card[data-dragging] {
+  outline: 1.5px dashed var(--dsw-alias-info-fill, #3964fe);
+  outline-offset: -2px;
+}
+
+.dropHint {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1, #ffffff) 88%, transparent);
+  color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.7));
+  font-size: var(--dsh-panel-body-size, 14px);
+  pointer-events: none;
+}
+
 /* Primary send (figma IconButton 34:10465): 34px circle, #3964FE light /
    #679EFE dark — the info-fill pair (500→400), NOT button-primary (ink);
    white glyph; empty text = 0.4 opacity. */

@@ -75,7 +75,7 @@ import type {
   RoomListProvidersRequest,
   RoomMember, RoomMemberMessage, RoomMemberMessageReceipt,
   RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomSetTaskHintRequest, RoomStopJobRequest, RoomStopJobResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
-  RoomPostMessageRequest, RoomPostMessageResult,
+  RoomPostMessageRequest, RoomPostMessageResult, RoomAttachmentInput, RoomDispatchAttachment,
   RoomPresetInfo, RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
   RoomRemoveMemberRequest, RoomRemoveMemberResult, RoomRestoreMemberRequest, RoomRestoreMemberResult,
@@ -177,6 +177,36 @@ export function lateAnswerText(questions: readonly RoomQuestionItem[], answers: 
     '',
     '按这些答案继续。如果你已经按自己的假设往下做了，对照答案调整，并说一下改了什么。',
   ].join('\n')
+}
+
+/** The host attachment services composer attachments ride; probed, so a host without them refuses attachments only. */
+interface AttachmentServices {
+  readonly attachments?: {
+    admitPromptContent(parts: readonly unknown[]): Promise<readonly { readonly type: string; readonly attachment?: { readonly name?: string } }[]>
+    imageHostPath?(ref: unknown): string | undefined
+    fileHostPath?(ref: unknown): string | undefined
+  }
+  readonly fileUploads?: {
+    resolve(agent: unknown, receiptId: string): unknown
+    bindPrompt(agent: unknown, receiptIds: readonly string[], requestId: string): { commit(): void; [Symbol.dispose](): void }
+  }
+}
+
+/**
+ * The dispatch text with the message's attachments appended as local paths:
+ * every member — CLI or native — opens them with its own read tool, so one
+ * form reaches all of them.
+ * @param text - the dispatched text.
+ * @param attachments - the admitted attachments.
+ * @returns the text members receive.
+ */
+export function withAttachmentPaths(text: string, attachments: readonly RoomDispatchAttachment[] | undefined): string {
+  if (attachments === undefined || attachments.length === 0) return text
+  const lines = attachments.map((entry) => {
+    const label = `${entry.kind === 'image' ? '图片' : '文件'}${entry.name === undefined ? '' : ` ${entry.name}`}`
+    return `- ${label}：${entry.path ?? '（宿主没有给出本地路径，打不开就告诉人）'}`
+  })
+  return [text, '', '人随消息附了这些附件，用你自己的读取工具打开（图片用能看图的读取工具）：', ...lines].join('\n')
 }
 
 function messageReceipt(receipt: RoomMessageReceipt, kind: 'task' | 'notify'): RoomMemberMessageReceipt {
@@ -1214,8 +1244,12 @@ export class RoomService extends TypertRemoteService {
   async postMessage(request: RoomPostMessageRequest): Promise<RoomPostMessageResult> {
     const loaded = await this.ensureLive(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
-    if (request.text.trim() === '') return { ok: false, error: { code: 'empty-text' } }
-    const requestSignature = createHash('sha256').update(JSON.stringify({ text: request.text.trim(), targets: [...new Set(request.targets ?? [])].sort() })).digest('hex')
+    const attached = request.attachments ?? []
+    if (request.text.trim() === '' && attached.length === 0) return { ok: false, error: { code: 'empty-text' } }
+    const requestSignature = createHash('sha256').update(JSON.stringify({
+      text: request.text.trim(), targets: [...new Set(request.targets ?? [])].sort(),
+      ...attached.length === 0 ? {} : { attachments: attached.map(entry => entry.type === 'file' ? entry.receiptId : `${entry.mediaType}:${entry.data.length}`) },
+    })).digest('hex')
     if (request.requestId !== undefined) {
       if (request.requestId.trim() === '' || request.requestId.length > 128) return { ok: false, error: { code: 'request-conflict' } }
       const previous = loaded.session.snapshotEvents().find(event => event.type === 'room/dispatch' && event.data.id === request.requestId)
@@ -1230,7 +1264,7 @@ export class RoomService extends TypertRemoteService {
         await this.ctx.sessions.flush(loaded.session)
         for (const target of original.targetIds ?? []) {
           const member = replay(loaded.session.snapshotEvents()).members.find(member => memberId(loaded.session.snapshotEvents(), member) === target)
-          if (member !== undefined) this.engine.dispatch(loaded.session, member.name, original.text, { dispatchSeq: previous.seq, targetId: target })
+          if (member !== undefined) this.engine.dispatch(loaded.session, member.name, withAttachmentPaths(original.text, original.attachments), { dispatchSeq: previous.seq, targetId: target })
         }
         return { ok: true, value: { parsed: { targets: original.targets, text: original.text }, seq: previous.seq } }
       }
@@ -1252,9 +1286,10 @@ export class RoomService extends TypertRemoteService {
     // The human pointing at a session outside the room is a help request: say
     // so every time (a member's briefing reaches it once, on its first round).
     const outside = [...said.matchAll(/@\[((?:\\.|[^\\\]\n])+)\]\((dsh-session:[^)\s]+)\)/gu)]
-    const text = said
+    // An attachment-only message still dispatches: its words are the attachments.
+    const text = said === '' && attached.length > 0 ? '（见附件）' : said
     // The hint rides the member's prompt only; the journal keeps the human's words.
-    const prompt = outside.length === 0 ? said : [
+    const prompt = outside.length === 0 ? text : [
       said,
       '',
       `（人点名了房间外的会话：${outside.map(match => `「${match[1]!.replace(/\\(.)/gu, '$1')}」`).join('、')}。用 room_help 去问：session 参数原样传那个 @[…](dsh-session:…) 引用；标签是「成员（房间）」时会交给那个成员。不要转给别的成员代问。）`,
@@ -1263,23 +1298,89 @@ export class RoomService extends TypertRemoteService {
     const roster = new Set(loaded.state.members.map(member => member.name))
     const unknown = targets.filter(target => !roster.has(target))
     if (unknown.length > 0) return { ok: false, error: { code: 'unknown-targets', names: unknown } }
+    const admitted = await this.admitAttachments(request.sessionId, attached)
+    if (!admitted.ok) return { ok: false, error: admitted.error }
     const human = createUserMessage({
-      content: [{ type: 'text', text: request.text.trim() }],
+      content: [...admitted.blocks, ...request.text.trim() === '' ? [] : [{ type: 'text' as const, text: request.text.trim() }]] as Parameters<typeof createUserMessage>[0]['content'],
       source: { kind: 'user' },
     })
-    loaded.session.append('user/message', human, { surfaceOp: 'append' })
+    {
+      // Uploaded files are bound to this message once it is in the log (an unbound receipt is reclaimed).
+      using binding = admitted.bind(request.requestId ?? String(human.id))
+      loaded.session.append('user/message', human, { surfaceOp: 'append' })
+      binding?.commit()
+    }
     floatRunningCards(loaded.session)
     const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
     this.moveOnFromLostRounds(loaded.session, targets)
     const dispatch = loaded.session.append('room/dispatch', {
       id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human', task: filed.task,
+      ...admitted.records.length === 0 ? {} : { attachments: admitted.records },
       targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
     })
     await this.ctx.sessions.flush(loaded.session)
     for (const target of targets) {
-      this.engine.dispatch(loaded.session, target, prompt, { dispatchSeq: dispatch.seq })
+      this.engine.dispatch(loaded.session, target, withAttachmentPaths(prompt, admitted.records), { dispatchSeq: dispatch.seq })
     }
     return { ok: true, value: { parsed: { targets, text }, seq: dispatch.seq } }
+  }
+
+  /**
+   * Admit a human message's composer attachments the way the host's own
+   * prompt path does: file receipts resolve against this room session's
+   * uploads, images are stored, and every attachment becomes a durable
+   * content block for the message — plus the local path members read it by.
+   * @param sessionId - the room session (its agent owns the uploads).
+   * @param inputs - the wire attachments.
+   * @returns the content blocks, the dispatch records, and the receipt binder; or a refusal.
+   */
+  private async admitAttachments(sessionId: SessionId, inputs: readonly RoomAttachmentInput[]): Promise<
+    | { readonly ok: true; readonly blocks: readonly unknown[]; readonly records: readonly RoomDispatchAttachment[]; readonly bind: (requestId: string) => { commit(): void; [Symbol.dispose](): void } | undefined }
+    | { readonly ok: false; readonly error: { readonly code: 'attachment-invalid'; readonly message: string } }
+  > {
+    if (inputs.length === 0) return { ok: true, blocks: [], records: [], bind: () => undefined }
+    const probe = this.ctx.get as (name: string) => unknown
+    const services: AttachmentServices = {
+      attachments: probe('attachments') as AttachmentServices['attachments'],
+      fileUploads: probe('fileUploads') as AttachmentServices['fileUploads'],
+    }
+    const store = services.attachments
+    // The uploads are staged on the room session's agent; a cold room wakes it.
+    let agent: Agent | undefined = this.ctx.agents.get(sessionId)
+    if (agent === undefined) {
+      const controller = (this.ctx.get as (name: string) => unknown)('sessionController') as { resolveAgent?(id: SessionId): Promise<{ readonly agent: Agent } | { readonly error: unknown }> } | undefined
+      const resolved = await controller?.resolveAgent?.(sessionId).catch(() => undefined)
+      if (resolved !== undefined && 'agent' in resolved) agent = resolved.agent
+    }
+    if (store === undefined || agent === undefined) return { ok: false, error: { code: 'attachment-invalid', message: 'attachments are unavailable on this host' } }
+    const receipts: string[] = []
+    const parts: unknown[] = []
+    for (const input of inputs) {
+      if (input.type === 'image') {
+        parts.push({ type: 'image', data: input.data, mediaType: input.mediaType, ...input.name === undefined ? {} : { name: input.name } })
+        continue
+      }
+      const ref = services.fileUploads?.resolve(agent, input.receiptId)
+      if (ref === undefined) return { ok: false, error: { code: 'attachment-invalid', message: 'a file was not uploaded to this room' } }
+      receipts.push(input.receiptId)
+      parts.push({ type: 'file', attachment: ref })
+    }
+    let blocks: readonly { readonly type: string; readonly attachment?: { readonly name?: string } }[]
+    try {
+      blocks = await store.admitPromptContent(parts)
+    } catch (error) {
+      return { ok: false, error: { code: 'attachment-invalid', message: error instanceof Error ? error.message : String(error) } }
+    }
+    const records = blocks.flatMap((block): RoomDispatchAttachment[] => {
+      if (block.type !== 'image' && block.type !== 'file') return []
+      const path = block.type === 'image' ? store.imageHostPath?.(block.attachment) : store.fileHostPath?.(block.attachment)
+      return [{ kind: block.type, ...block.attachment?.name === undefined ? {} : { name: block.attachment.name }, ...path === undefined ? {} : { path } }]
+    })
+    const uploads = services.fileUploads
+    return {
+      ok: true, blocks, records,
+      bind: requestId => receipts.length === 0 || uploads === undefined ? undefined : uploads.bindPrompt(agent, receipts, requestId),
+    }
   }
 
   /**
