@@ -53,6 +53,8 @@ describe('dsh-local-agent-dsh-headless bundle patch', () => {
     expect(bridge?.name).toBe('@deepseek-ai/dsh-mcp-client')
     const config = bridge?.config
     expect(config?.failOnStartupError).toBe(false)
+    // A question card waits for the human far past the mcp-client's 60s default.
+    expect(config?.toolCallTimeoutMs).toBe(1800000)
     // Every dynamic value is a tagged SCALAR expression — the flow-sequence
     // form (`args: !!js [...]`) never reaches the loader again.
     for (const arg of config?.args as unknown[]) {

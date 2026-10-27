@@ -81,4 +81,7 @@
         env:
           DSH_MEMBER_SOCKET: !!js process.env.DSH_MEMBER_SOCKET ?? ''
           DSH_MEMBER_TOKEN: !!js process.env.DSH_MEMBER_TOKEN ?? ''
+        # A bridge call may wait for the human (ask_user_question, a mode
+        # tool's approval): the mcp-client's 60s default would fail it first.
+        toolCallTimeoutMs: 1800000
         failOnStartupError: false
