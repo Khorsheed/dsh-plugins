@@ -320,3 +320,23 @@ describe('live version polling', () => {
     expect(await store.liveVersion('s1')).toMatchObject({ projectId: project.id, version: 1, kind: 'deployed', by: 'agent' })
   })
 })
+
+describe('game_show', () => {
+  const show = async (args: object): Promise<string> => {
+    const tool = gameToolDefinitions(store).find(d => d.name === 'game_show')!
+    return (tool.execute as unknown as (a: object, e: object) => Promise<string>)(args, { agent: { session: session('s1') } })
+  }
+
+  it('records the agent\'s request per project and hands it to the page poll; bad places are refused', async () => {
+    expect(await show({ view: 'play' })).toContain('还没有游戏项目')
+    const project = await created()
+    await put(join(project.root, 'elements/fox.json'), JSON.stringify({ id: 'fox', name: '九尾狐', type: '角色' }))
+    expect(await show({ view: 'stage' })).toContain('view 只能是')
+    expect(await show({ view: 'elements', element: '毕方' })).toContain('没有元素「毕方」')
+    expect(await show({ view: 'elements', element: '九尾狐', note: '看看尾巴' })).toContain('已请用户的右栏打开这里')
+    const live = await store.liveVersion('s1')
+    expect(live?.show).toMatchObject({ seq: 1, target: { view: 'elements', elementId: 'fox' }, note: '看看尾巴' })
+    expect(await show({ view: 'design', chapter: '核心循环' })).toContain('已请')
+    expect((await store.liveVersion('s1'))?.show).toMatchObject({ seq: 2, target: { view: 'design', chapterId: 'core-loop' }, note: '' })
+  })
+})

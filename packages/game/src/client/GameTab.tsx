@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   PanelHeader, PanelRoot, UnderlineTabs, type PanelAction,
 } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { RevealNoticeBar } from '@khorsheed/dsh-client-ui-reveal-kit/src/client/index.ts'
 import { Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { artStyleLabel, artStyleName } from '../project.ts'
 import type { ProjectView, SessionGameState, WorkingChanges } from '../types.ts'
@@ -165,7 +166,6 @@ function ProjectWorkbench(p: ViewProps & {
   useEffect(() => autoNav.subscribe(() => { rerender(n => n + 1) }), [autoNav])
   useEffect(() => { autoNav.setViewing({ view, ...(p.openElement === null ? {} : { elementId: p.openElement }) }) }, [autoNav, view, p.openElement])
   useEffect(() => () => { autoNav.setViewing(null) }, [autoNav])
-  const notice = autoNav.notice
   const autoConfirm = project.manifest?.autoConfirm ?? true
   const style = project.manifest?.artStyle
   const exportCurrent = (): void => {
@@ -242,11 +242,7 @@ function ProjectWorkbench(p: ViewProps & {
       }} />
     </div>}
     <CommitBar {...p} project={project} onOpenVersions={() => { setView('versions') }} />
-    {notice !== null && <div className={css.navNotice} role="status">
-      <span className={css.navNoticeText}>{notice.text}</span>
-      <button type="button" className={css.primary} onClick={() => { autoNav.follow() }}>{t('nav.go')}</button>
-      <button type="button" className={css.link} onClick={() => { autoNav.dismiss() }}>{t('nav.dismiss')}</button>
-    </div>}
+    <RevealNoticeBar controller={autoNav.reveal} goLabel={t('nav.go')} dismissLabel={t('nav.dismiss')} />
     {view === 'play' && <PlayView {...p}
       onOpenElement={id => { p.setOpenElement(id); setView('elements') }} onOpenVersions={() => { setView('versions') }} />}
     {view === 'elements' && <ElementsView {...p} openId={p.openElement} onOpen={p.setOpenElement} playVersion={p.playHint} onPlay={() => { setView('play') }} />}

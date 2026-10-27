@@ -37,7 +37,7 @@ import {
 } from './project.ts'
 import {
   CHAPTERS, LORE_MAX, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
-  type AnyLook, type BundleFile, type ChapterView, type CommitResult, type VersionSource, type WorkingChanges, type LiveVersion, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
+  type AnyLook, type BundleFile, type ChapterView, type CommitResult, type VersionSource, type WorkingChanges, type LiveVersion, type ShowRequest, type ShowTarget, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
   type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView, type TurnReport,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
@@ -562,8 +562,27 @@ export class GameService {
     const state = join(row.root, STATE_DIR)
     const candidate = await readJson<VersionRecord>(join(state, 'candidate.json'))
     const record = candidate ?? (await readJson<VersionRecord>(join(state, 'current.json')))
-    if (record === undefined) return { projectId: row.id, version: 0, kind: 'none', at: null }
-    return { projectId: row.id, version: record.version, kind: candidate !== undefined ? 'candidate' : 'deployed', at: record.at, ...(record.by === undefined ? {} : { by: record.by }) }
+    const show = this.shows.get(row.id)
+    const extra = show === undefined ? {} : { show }
+    if (record === undefined) return { projectId: row.id, version: 0, kind: 'none', at: null, ...extra }
+    return { projectId: row.id, version: record.version, kind: candidate !== undefined ? 'candidate' : 'deployed', at: record.at, ...(record.by === undefined ? {} : { by: record.by }), ...extra }
+  }
+
+  /** The agent's latest 「请用户看这里」 per project (in memory: a request is for the moment, not history). */
+  private readonly shows = new Map<string, ShowRequest>()
+  private showSeq = 0
+
+  /**
+   * `game_show`: ask the pages showing this project to take their game tab to
+   * a place. Pages pick it up on their poll and still respect a busy user.
+   */
+  async requestShow(sessionId: string, target: ShowTarget, note: string): Promise<GameResult<{ readonly ok: true; readonly request: ShowRequest }>> {
+    const row = await this.boundProject(sessionId)
+    if (row === undefined) return { ok: false, error: 'not-found' }
+    const request: ShowRequest = { seq: ++this.showSeq, target, note: note.trim().slice(0, 120), at: new Date().toISOString() }
+    this.shows.set(row.id, request)
+    this.notify(row.id)
+    return { ok: true, request }
   }
 
   async sessionState(sessionId: string): Promise<SessionGameState> {

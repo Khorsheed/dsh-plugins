@@ -23,6 +23,7 @@ import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.
 import type { GameApi, GameTabInjected, NavTarget } from './contract.ts'
 import { gameTurnDefinition, GameTurnCard } from './TurnCard.tsx'
 import { AutoNav } from './autonav.ts'
+import { visiblePoll } from '@khorsheed/dsh-client-ui-reveal-kit/src/client/index.ts'
 import { encodeGameRef, GAME_REF_SOURCE, gameRefCodec } from './refs.ts'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
@@ -233,14 +234,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const lastVersion = new Map<string, number>()
   /** The project each on-screen session was last seen bound to (null: none). */
   const lastBound = new Map<string, string | null>()
-  let lastPoll = 0
-  const poll = (): void => {
+  const look = (): Promise<void> | void => {
     const now = Date.now()
-    if (now - lastPoll < 3000) return
-    lastPoll = now
     const sid = mainSessionId(ctx.sessions.list.getSnapshot())
     if (sid === undefined) return
-    void api.liveVersion(sid).then(r => {
+    return api.liveVersion(sid).then(r => {
       if (!r.ok) return
       const live = r.value
       // A binding made with no event (a room member's game_open): refresh the tab, and
@@ -253,17 +251,24 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         if (bound !== null) autoNav.projectOpened(t('nav.project'))
       }
       if (live === null) return
+      // The agent's own 「请用户看这里」 comes first; a version it lands with is then announced.
+      if (live.show !== undefined) {
+        const show = live.show
+        const text = show.note !== '' ? show.note : t('nav.show')
+        const acted = autoNav.requested(live.projectId, show, text, now - Date.parse(show.at) < 90_000, live.version)
+        if (acted) lastVersion.set(live.projectId, live.version)
+      }
       const seen = lastVersion.get(live.projectId)
       lastVersion.set(live.projectId, live.version)
       if (live.kind === 'none' || live.by === 'user' || (seen !== undefined && live.version <= seen)) return
       // First sighting: only a version that landed just now is news (not one found on a reload).
       if (seen === undefined && (live.at === null || now - Date.parse(live.at) > 90_000)) return
       autoNav.versionLanded(live.projectId, live.version, live.kind === 'candidate' ? t('nav.candidate', { version: live.version }) : t('nav.version', { version: live.version }))
-    }).catch(() => {})
+    })
   }
-  listeners.add(() => { poll() })
-  const pollTimer = setInterval(() => { if (document.visibilityState === 'visible') poll() }, 6000)
-  disposers.push(async () => { clearInterval(pollTimer) })
+  const poll = visiblePoll(look)
+  listeners.add(() => { poll.nudge() })
+  disposers.push(async () => { poll.stop() })
 
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',

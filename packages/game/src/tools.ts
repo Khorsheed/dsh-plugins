@@ -18,7 +18,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { artStyleLabel, lookText } from './project.ts'
 import type { GameService } from './store.ts'
-import { ART_STYLES, ART_STYLES_3D, CHAPTERS, type ProjectView } from './types.ts'
+import { ART_STYLES, ART_STYLES_3D, CHAPTERS, type ProjectView, type ShowTarget } from './types.ts'
 
 /** The community tool-origin tag. */
 function tagOrigin<T extends object>(definition: T): T {
@@ -290,5 +290,50 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
     },
   })
 
-  return [tagOrigin(open), tagOrigin(read), tagOrigin(propose), tagOrigin(publish)]
+  const show = defineTool({
+    name: 'game_show',
+    description:
+      'Take the user\'s game tab to a place worth looking at: play (the newest version), elements (one element\'s page with '
+      + 'element, or the grid), design (a chapter with chapter), versions. note says what to look at, in a few words. Use it '
+      + 'after publishing or changing something you want the user to see, before you ask about it. The tab waits with a '
+      + 'notice instead of jumping while the user is busy in it (playing, editing).',
+    parameters: {
+      view: { type: 'string', required: true, description: 'play, elements, design or versions.' },
+      element: { type: 'string', description: 'elements: an element id or name to open.' },
+      chapter: { type: 'string', description: 'design: a chapter id or title to open.' },
+      note: { type: 'string', description: 'What to look at, a short phrase (e.g. 看看太阳船的船壳).' },
+    },
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: String(value) }],
+    },
+    execute: async (args: { view?: string; element?: string; chapter?: string; note?: string }, exec: { agent?: Agent }): Promise<string> => {
+      const session = exec.agent?.session
+      if (session === undefined) return '失败：这次调用没有会话。'
+      const row = await store.boundProject(session.id)
+      if (row === undefined) return '本会话还没有游戏项目。用 game_open 选一个或新建。'
+      const view = (args.view ?? '').trim()
+      if (view !== 'play' && view !== 'elements' && view !== 'design' && view !== 'versions') return '失败：view 只能是 play、elements、design 或 versions。'
+      const project = await store.view(row.id)
+      if (project === undefined) return '失败：项目登记丢了，用 game_open 重新选。'
+      let target: ShowTarget = { view }
+      const wantedElement = args.element?.trim() ?? ''
+      if (view === 'elements' && wantedElement !== '') {
+        const element = project.elements.find(e => e.id === wantedElement || e.name === wantedElement)
+        if (element === undefined) return `没有元素「${wantedElement}」。有：${project.elements.map(e => `${e.id}（${e.name}）`).join('、') || '（无）'}`
+        target = { view, elementId: element.id }
+      }
+      const wantedChapter = args.chapter?.trim() ?? ''
+      if (view === 'design' && wantedChapter !== '') {
+        const chapter = project.chapters.find(c => c.id === wantedChapter || c.title === wantedChapter)
+        if (chapter === undefined) return `没有章节「${wantedChapter}」。可选：${project.chapters.map(c => `${c.id}（${c.title}）`).join('、')}`
+        target = { view, chapterId: chapter.id }
+      }
+      const result = await store.requestShow(session.id, target, args.note ?? '')
+      if (!result.ok) return `失败：${result.error}`
+      return '已请用户的右栏打开这里（几秒内生效；用户正在面板里操作或试玩时，会先显示提示，等用户自己点）。'
+    },
+  })
+
+  return [tagOrigin(open), tagOrigin(read), tagOrigin(propose), tagOrigin(publish), tagOrigin(show)]
 }
