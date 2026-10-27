@@ -55,7 +55,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { DispatchEngine, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
+import { DispatchEngine, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
 import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
@@ -1268,6 +1268,7 @@ export class RoomService extends TypertRemoteService {
       source: { kind: 'user' },
     })
     loaded.session.append('user/message', human, { surfaceOp: 'append' })
+    floatRunningCards(loaded.session)
     const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
     this.moveOnFromLostRounds(loaded.session, targets)
     const dispatch = loaded.session.append('room/dispatch', {

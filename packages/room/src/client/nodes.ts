@@ -43,7 +43,7 @@ export interface RoomSpeechData {
 
 /** Chat node data of one member run row. */
 export interface RoomRunData {
-  /** Seq of the running edge's event. */
+  /** Seq the card anchors at: the running edge's event, or its latest move (`room/run-moved`). */
   readonly seq: number
   /** Unix epoch ms from the running edge's event. */
   readonly time: number
@@ -234,7 +234,8 @@ export const roomSpeechDefinition: ConversationNodeDefinition<RoomSpeechData> = 
 /**
  * The member-run Definition: one Context per run (matched on
  * member+startedAt), started by the running edge and updated by its terminal
- * edge. A running run renders the live row; a failed run stays as a dim
+ * edge. A `room/run-moved` edge re-anchors a running card (its seq, which the
+ * view orders by) below a reply or human message that landed after it. A running run renders the live row; a failed run stays as a dim
  * error row; done/cancelled hide the row IN PLACE — the assembler's live
  * incremental flush forbids withdrawing a materialized node with null (the
  * withdrawal contract is the same key with `visibility: 'hidden'`; a null
@@ -249,7 +250,9 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
       id: `${event.data.member}:${event.data.startedAt}`,
       role: event.data.state === 'running' ? 'start' : 'update',
     }
-    : null,
+    : event.type === 'room/run-moved'
+      ? { id: `${event.data.member}:${event.data.startedAt}`, role: 'update' }
+      : null,
   start: (_context, match) => {
     const event = match.event
     if (event.type !== 'room/run-state') throw new Error('room-run start requires a room/run-state event')
@@ -263,6 +266,8 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
   },
   update: (context, match) => {
     const event = match.event
+    // A move re-anchors a running card below what landed after it (the view orders by seq).
+    if (event.type === 'room/run-moved') return context.state.state === 'running' ? { ...context.state, seq: event.seq } : context.state
     if (event.type !== 'room/run-state') return context.state
     const { error: _error, elapsedMs: _elapsed, ...previous } = context.state
     return {

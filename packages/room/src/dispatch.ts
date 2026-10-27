@@ -65,6 +65,23 @@ export function roomSource(): MessageSource {
  * member's early running edge predates the child handle's publication (the
  * terminal edge and the journal backfill cover it).
  */
+/**
+ * Keep the running members' cards at the bottom of the room's conversation:
+ * after a reply or a human message lands, each member still working gets a
+ * `room/run-moved` edge — its card re-anchors below what just landed (a
+ * typing-indicator seat), so a member that started first but is still going
+ * never reads as if it answered before the later replies. Several running
+ * members keep their start order.
+ * @param room - the room session.
+ * @param except - the member whose own reply just landed (its card ends there).
+ */
+export function floatRunningCards(room: Session, except?: string): void {
+  const running = replay(room.snapshotEvents()).runs
+    .filter(run => run.state === 'running' && run.member !== except)
+    .sort((left, right) => left.startedAt - right.startedAt)
+  for (const run of running) room.append('room/run-moved', { member: run.member, startedAt: run.startedAt })
+}
+
 export function runChildSessionId(roomId: SessionId, member: RoomMember | undefined): SessionId | undefined {
   if (member?.kind === 'main-agent') return roomId
   return member?.childSessionId
@@ -759,6 +776,7 @@ export class DispatchEngine {
       ...lastAssistantMessageId(agent.session, before) === undefined ? {} : { messageId: lastAssistantMessageId(agent.session, before)! },
       ...reportedTo === undefined ? {} : { reportedTo },
     })
+    floatRunningCards(room, replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name)
     await this.ctx.sessions.flush(room)
     return { state: 'done', ...output === '' ? {} : { text: output } }
   }
@@ -873,7 +891,10 @@ export class DispatchEngine {
       ...interrupted === undefined ? {} : { interrupted },
       ...reportedTo === undefined ? {} : { reportedTo },
     }) : undefined
-    if (speech !== undefined) await this.ctx.sessions.flush(room)
+    if (speech !== undefined) {
+      floatRunningCards(room, speech.data.member)
+      await this.ctx.sessions.flush(room)
+    }
     if (result.stopReason === 'completed') {
       await this.ctx.sessions.flush(room)
       return { state: 'done', text: runOutputText(result.output) }

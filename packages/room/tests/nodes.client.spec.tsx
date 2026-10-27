@@ -122,6 +122,12 @@ describe('room node Definitions', () => {
       { event: done, role: 'update', location: { kind: 'unresolved' } } as never,
     )
     expect(settled).toEqual({ seq: 3, time: 1003, member: 'ada', startedAt: 100, state: 'done', elapsedMs: 900 })
+    // A move re-anchors a running card below what landed after it; a settled one stays put.
+    const moved = ev('room/run-moved', 9, { member: 'ada', startedAt: 100 })
+    expect(roomRunDefinition.match(moved)).toEqual({ id: 'ada:100', role: 'update' })
+    const floated = roomRunDefinition.update(contextOf(started) as never, { event: moved, role: 'update', location: { kind: 'unresolved' } } as never)
+    expect(roomRunDefinition.buildViewNode!(contextOf(floated))).toMatchObject({ anchorSeq: 9, data: { state: 'running' } })
+    expect(roomRunDefinition.update(contextOf(settled) as never, { event: moved, role: 'update', location: { kind: 'unresolved' } } as never)).toBe(settled)
     const reconciled = roomRunDefinition.update(contextOf({ ...started, state: 'failed', error: 'unknown outcome', elapsedMs: 900 }) as never,
       { event: ev('room/run-state', 6, { member: 'ada', state: 'done', startedAt: 100 }), role: 'update', location: { kind: 'unresolved' } } as never)
     expect(reconciled.error).toBeUndefined()
