@@ -390,9 +390,22 @@ export class InspectorService {
     if (fact !== undefined) this.store.noteReplacement(session.id, fact)
   }
 
+  /** Backfill outcomes already reported, one warning each (`<sessionId>\0<kind>`). */
+  private readonly backfillReported = new Set<string>()
+  /** Report a backfill that yields nothing, once per session and kind — a silent empty panel is undiagnosable. */
+  private reportBackfill(sessionId: string, kind: string, detail: string): void {
+    const key = `${sessionId}\0${kind}`
+    if (this.backfillReported.has(key)) return
+    this.backfillReported.add(key)
+    this.logWarn(`context-lens: session "${sessionId}" history backfill ${detail}`)
+  }
+
   private async backfillMainSession(sessionId: string): Promise<void> {
     const reader = this.reader()
-    if (reader === undefined) return
+    if (reader === undefined) {
+      this.reportBackfill('*', 'no-reader', 'skipped: the host exposes no readable sessionPersistence')
+      return
+    }
     // Retryable until complete: a partial fill re-reads on later queries
     // (eviction may have freed room); the read is one zstd decode.
     const state = this.store.backfillState(sessionId)
@@ -413,6 +426,7 @@ export class InspectorService {
       const handle = await reader.open(sessionId, 'read')
       try {
         const { events } = await handle.read(0)
+        if (events.length === 0) this.reportBackfill(sessionId, 'empty', 'read an empty log')
         // Materialize only the window's requests: every request carries its
         // whole context, so a long log rebuilt at once grows quadratically.
         const hosts = events.filter(row => row.type === 'turn/start')
@@ -431,7 +445,10 @@ export class InspectorService {
         void handle.close().catch(() => undefined)
       }
     } catch (error) {
-      if (error instanceof Error && error.name === 'SessionPersistenceNotFoundError') return
+      if (error instanceof Error && error.name === 'SessionPersistenceNotFoundError') {
+        this.reportBackfill(sessionId, 'not-found', `skipped: the host reports no stored log (${error.message})`)
+        return
+      }
       const reason = error instanceof Error ? error.message : String(error)
       this.store.markBackfillBroken(sessionId, reason)
       this.logWarn(`context-lens: session "${sessionId}" log unreadable, history backfill skipped (${reason})`)
@@ -482,7 +499,11 @@ export class InspectorService {
   async listTurns(sessionId: string, filter?: ScopeFilter): Promise<ListTurnsResult> {
     await this.backfillMainSession(sessionId)
     await this.refreshChildren(sessionId, filter)
-    return this.store.listTurns(sessionId, filter)
+    const list = this.store.listTurns(sessionId, filter)
+    if (list.turns.length === 0) {
+      this.reportBackfill(sessionId, 'no-turns', `listed no turns (state ${list.backfill.state}${filter === undefined ? '' : ', filtered'})`)
+    }
+    return list
   }
 
   /**
