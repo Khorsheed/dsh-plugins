@@ -28,6 +28,7 @@
     "src/member-inbox.ts",
     "src/settings-face.ts",
     "src/card-settings.ts",
+    "src/child-log-guard.ts",
     "src/tool-factory.ts"
   ]
 }

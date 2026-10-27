@@ -44,6 +44,27 @@ for (const catalog of streamCatalogs) {
   (catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
 }
 
+// The host's released-log check, the exact relationship rules every stored
+// read enforces: the member write guard verifies each corrected event with it.
+// Probed, never required — a host that does not expose it keeps the guard's
+// own corrections and diversions (see child-log-guard.ts).
+const releasedFormatSpecifier = ['@deepseek-ai', 'dsh-session-format-v3-to-v4'].join('/')
+const releasedFormat = await import(releasedFormatSpecifier).catch(() => undefined) as {
+  assertReleasedV4Relationships?: (artifact: unknown, knownEventTypes: ReadonlySet<string>) => void
+} | undefined
+const releasedLogCheck = releasedFormat?.assertReleasedV4Relationships === undefined ? undefined
+  : (session: Session, events: readonly SessionEvent[]): string | undefined => {
+      try {
+        releasedFormat.assertReleasedV4Relationships!(
+          { header: { ...session.header, version: 4, id: String(session.id) }, inheritedEventCount: session.inheritedEventCount, events },
+          sessionModule.KNOWN_SESSION_EVENT_TYPES as ReadonlySet<string>,
+        )
+        return undefined
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+      }
+    }
+
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
@@ -72,6 +93,7 @@ import type {
   LocalAgentToolCalls,
 } from './types.ts'
 import LocalAgentGateway from './gateway.ts'
+import { guardChildLog, type QuarantineEntry } from './child-log-guard.ts'
 import { MemberChannel } from './member-channel.ts'
 import { PresetToolHost } from './preset-tool-host.ts'
 import type { RoomMemberMessageGate as ModeApprovalGate } from './types.ts'
@@ -2121,6 +2143,7 @@ export class LocalAgentRegistry {
       childSession ??= sessions.create(SessionId(childSessionId), { meta: { cwd, parentSession: parent.session.id, origin: 'subagent', delegationDepth: (parent.session.header.delegationDepth ?? 0) + 1 } })
     }
     if (childSession.header.parentSession !== parent.session.id || childSession.header.cwd !== cwd) throw new Error('Prepared transcript identity does not match its parent')
+    this.guardChildSession(childSession)
     const control = this.memberControls.get(binding)
     // An explicit repeated preparation retries only pre-execution failure.
     // The durable starting/used barrier above never admits uncertain paid work.
@@ -2617,6 +2640,7 @@ export class LocalAgentRegistry {
       // contiguous cursor and the session log diverge.
       const unstored = session.snapshotEvents().slice(cold.events.length + closers.length)
       if (unstored.length > 0) await handle.append(unstored)
+      this.guardChildSession(session)
       const detach = sessions.enter(session)
       try {
         sessions.announce(session)
@@ -2647,7 +2671,37 @@ export class LocalAgentRegistry {
    * fail the delegation round.
    * @param session - the live child session to sync.
    */
+  /**
+   * Install the member write guard on a child session (idempotent): every
+   * provider's appends pass it, so no provider's bookkeeping slip can make
+   * the stored log unreadable. Diverted events land in the quarantine file
+   * (`<homes>/quarantine/<childSessionId>.jsonl`) with a warning — nothing is
+   * dropped silently.
+   * @param session - the member's dsh child session.
+   */
+  guardChildSession(session: Session): void {
+    guardChildLog(session, { quarantine: entry => this.quarantineChildEvent(entry), validate: releasedLogCheck })
+  }
+
+  /** Reasons already warned about, per child session (one warning each). */
+  private readonly quarantineWarned = new Set<string>()
+
+  private quarantineChildEvent(entry: QuarantineEntry): void {
+    try {
+      const dir = join(this.homesRoot, 'quarantine')
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      appendFileSync(join(dir, `${entry.sessionId}.jsonl`), JSON.stringify(entry) + '\n', { mode: 0o600 })
+    } catch (error) {
+      this.ctx.logger.warn(`localAgent: quarantine write failed for ${entry.sessionId}: ${String(error)}`)
+    }
+    const key = `${entry.sessionId}\0${entry.reason}`
+    if (this.quarantineWarned.has(key)) return
+    this.quarantineWarned.add(key)
+    this.ctx.logger.warn(`localAgent: member log write diverted (${entry.sessionId}, ${entry.type}): ${entry.reason}`)
+  }
+
   async syncChildSession(session: Session, strict: boolean = false): Promise<void> {
+    this.guardChildSession(session)
     const id = String(session.id)
     try {
       try {
