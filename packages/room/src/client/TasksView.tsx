@@ -214,7 +214,7 @@ function JobDetail({ state, job, now, actions, back, t }: { readonly state: Room
       <ul className={css.messages}>{job.messages.map(entry =>
         <li key={entry.id}>
           <span className={css.muted}>{formatClock(entry.time)}</span>
-          <span className={css.messageText}>{t('job.you')}{entry.text}</span>
+          <span className={css.messageText}>{entry.from === undefined ? t('job.you') : t('job.from', { name: memberOf(state, entry.from)?.name ?? entry.from })}{entry.text}</span>
           {entry.by !== undefined && <span className={css.attr}>{entry.by === 'model'
             ? t('job.by.model', { probability: (entry.probability ?? 0).toFixed(2) })
             : t(`job.by.${entry.by}`)}</span>}
