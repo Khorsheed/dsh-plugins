@@ -37,7 +37,7 @@ import { RoomRequestIds } from './request-ids.ts'
 import { en, zh } from './locales.ts'
 import { InviteAgentAction } from './InviteAgentAction.tsx'
 import { MembersView } from './MembersView.tsx'
-import { RoomComposer, selectRoomComposer } from './RoomComposer.tsx'
+import { RoomComposer, roomInteractionKey, selectRoomComposer } from './RoomComposer.tsx'
 import { ROOM_TASKS_KIND, ROOM_TASKS_TAB_ID, RoomTasksTab, type RoomTasksInjected } from './TasksTab.tsx'
 import { RoomTaskTags } from './task-tag.ts'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
@@ -424,6 +424,38 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // 0.1.2 folded the event-Definition registry into `uiConversation.events`
   // (commit be531688f3); the deferred arm never fires in a composition
   // without the service, losing only the room chat rows, never the boot.
+  // The session list's 等你处理: a room's waiting question/approval cards are
+  // published as the host's pending interactions (lowest precedence, so an
+  // official approval in the same session still wins). The host tracks the
+  // cards of every live room; a light poll keeps the list current.
+  ctx.inject(['uiSession'], (sctx) => {
+    if (remote === undefined) return
+    const uiSession = (sctx as unknown as { uiSession: { registerPendingInteraction?: <T extends { readonly key: string; readonly kind: string; readonly sessionId: SessionId }>(precedence: (interaction: T) => number) => (interaction: T, delegate: () => Promise<void>) => () => void } }).uiSession
+    if (uiSession.registerPendingInteraction === undefined) return
+    const publish = uiSession.registerPendingInteraction(() => -1)
+    const shown = new Map<string, () => void>()
+    const sync = async (): Promise<void> => {
+      const carried = await remote.pendingCards({}).catch(() => undefined)
+      if (carried === undefined || !carried.ok) return
+      const keys = new Set(carried.value.map(card => roomInteractionKey(card.kind, card.id)))
+      for (const [key, remove] of shown) {
+        if (keys.has(key)) continue
+        remove()
+        shown.delete(key)
+      }
+      for (const card of carried.value) {
+        const key = roomInteractionKey(card.kind, card.id)
+        if (!shown.has(key)) shown.set(key, publish({ key, kind: card.kind, sessionId: card.sessionId as SessionId }, async () => {}))
+      }
+    }
+    void sync()
+    const timer = setInterval(() => { void sync() }, 4_000)
+    sctx.effect(() => () => {
+      clearInterval(timer)
+      for (const remove of shown.values()) remove()
+      shown.clear()
+    }, 'room: pending cards')
+  })
   ctx.inject(['uiConversation'], (lctx) => {
     lctx.uiConversation.events.register(roomSpeechDefinition)
     lctx.uiConversation.events.register(roomRunDefinition)

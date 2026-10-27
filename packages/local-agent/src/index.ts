@@ -2463,12 +2463,32 @@ export class LocalAgentRegistry {
       onProgress: undefined,
       startedAt: Date.now(),
     })
+    this.announceRunning(childSessionId, true)
     const clear = (): void => {
       const entry = this.runs.get(childSessionId)
       if (entry?.run !== run) return
       this.runs.delete(childSessionId)
+      this.announceRunning(childSessionId, false)
     }
     void run.result.then(clear, clear)
+  }
+
+  /**
+   * Tell the browser a delegated child session started or stopped working,
+   * on the host's own session-status channel: the host raises it only for
+   * its own agents, and a CLI child has none — without this the session list
+   * never shows a delegation running (nor its parent's 「N 个子 agent 运行中」,
+   * which counts children by this status). Degrades silently on a host
+   * without the channel's listeners.
+   * @param childSessionId - the dsh child session id.
+   * @param running - whether a round is now in flight.
+   */
+  private announceRunning(childSessionId: string, running: boolean): void {
+    try {
+      (this.ctx.emit as unknown as (name: string, ...args: unknown[]) => void)('api-session/status', SessionId(childSessionId), running)
+    } catch {
+      // A host without the status channel: the list simply stays as it was.
+    }
   }
 
   /**
@@ -2762,11 +2782,13 @@ export class LocalAgentRegistry {
     // route (whose settle report never arrived) must not outlive it.
     this.dropSettledRun(childSessionId)
     this.runs.set(childSessionId, { controller, run, onProgress, startedAt, heartbeat })
+    this.announceRunning(childSessionId, true)
     const clear = (): void => {
       const entry = this.runs.get(childSessionId)
       if (entry?.run !== run) return
       clearInterval(entry.heartbeat)
       this.runs.delete(childSessionId)
+      this.announceRunning(childSessionId, false)
       // The provider computes this round's settle observation AFTER the result
       // resolves (the CLI's stream is only complete once the process is
       // reaped), so the route stays open for it — bounded, and closed by the
