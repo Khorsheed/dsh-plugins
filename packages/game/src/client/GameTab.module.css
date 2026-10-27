@@ -304,8 +304,10 @@ button.strip { cursor: pointer; }
 .saveState[data-state='failed'] { color: var(--g-err); }
 .toolRow { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
 .tight { gap: 8px 12px; }
-/* An element a turn changed, not opened since. */
-.elDot { position: absolute; top: 10px; left: 10px; width: 8px; height: 8px; border-radius: 50%; background: var(--g-accent); box-shadow: 0 0 0 2px var(--g-card); }
+/* The agent's request, held back while the user was busy here. */
+.navNotice { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: 8px 14px 0; padding: 8px 10px 8px 12px; border-radius: var(--dsw-radius-md, 10px);
+  background: color-mix(in srgb, var(--g-ok) 9%, var(--dsw-alias-bg-layer-1)); border: 0.5px solid color-mix(in srgb, var(--g-ok) 40%, var(--dsw-alias-border-l2)); font-size: var(--dsh-panel-text-body, 13px); }
+.navNoticeText { flex: 1 1 160px; min-width: 0; font-weight: 600; }
 /* A segmented control: one frame, hairlines between, the chosen one filled. Any number of segments. */
 .segGroup { display: inline-flex; flex: none; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; overflow: hidden; background: var(--g-card); }
 .seg { border: 0; border-radius: 0; margin: 0; padding: 0 12px; min-height: 28px; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: var(--dsh-panel-text-body, 13px); cursor: pointer; }

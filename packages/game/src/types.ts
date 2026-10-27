@@ -317,6 +317,8 @@ export interface ElementView {
   readonly look3d: Look3D | null
   /** The 设定 text (the element's `lore` field): who it is, its temper, how it meets the player. '' when unwritten. */
   readonly lore: string
+  /** When its file last changed (ms), for listing the newest first. */
+  readonly updatedAt?: number
 }
 
 /** Longest 设定 the panel saves. */

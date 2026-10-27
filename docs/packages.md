@@ -4,9 +4,9 @@
 
 ## 概览
 
-- 包总数:**46**
+- 包总数:**45**
 - 自挂载 bundle(`dsh.bundle.patch`):**42**
-- 组合组件(不自挂载,`dsh.composition.component`):**4** — `source-plane-library` 3、`sub-profile-patch` 1
+- 组合组件(不自挂载,`dsh.composition.component`):**3** — `source-plane-library` 2、`sub-profile-patch` 1
 - 带浏览器半边(`dsh.client`):**31**
 - 整合 profile(默认安装单元):**1** — `eval`
 
@@ -28,7 +28,6 @@
 | `@khorsheed/dsh-client-session-title-edit` | `packages/client-session-title-edit` | 0.2.7 | bundle | — | web | 0.1.2-rc.1 | eval |
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/client-ui-content-preview` | 0.1.1 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-panel-kit` | `packages/client-ui-panel-kit` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-client-ui-reveal-kit` | `packages/client-ui-reveal-kit` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.7 | bundle | — | web | 0.1.2-rc.1 | eval |
 | `@khorsheed/dsh-context-lens` | `packages/context-lens` | 0.1.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |

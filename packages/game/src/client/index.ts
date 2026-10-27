@@ -22,8 +22,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.tsx'
 import type { GameApi, GameTabInjected, NavTarget } from './contract.ts'
 import { gameTurnDefinition, GameTurnCard } from './TurnCard.tsx'
-import { AutoNav } from './autonav.ts'
-import { visiblePoll } from '@khorsheed/dsh-client-ui-reveal-kit/src/client/index.ts'
+import { Reveal } from './reveal.ts'
 import { encodeGameRef, GAME_REF_SOURCE, gameRefCodec } from './refs.ts'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
@@ -167,7 +166,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
   const navListeners = new Set<(target: NavTarget) => void>()
   let parkedNav: NavTarget | null = null
-  const autoNav = new AutoNav(target => { face.openAt(target) })
+  const reveal = new Reveal(target => { face.openAt(target) })
   const face: GameTabInjected = {
     openAt: (target) => {
       parkedNav = target
@@ -225,50 +224,33 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return () => { listeners.delete(listener) }
     },
     touch: sessionId => { emit(sessionId) },
-    autoNav,
+    reveal,
   }
 
-  // A version is announced the moment it lands, whoever cut it (the agent mid-turn, a CLI
-  // member in a room — which raises no session event on the main session at all). The page
-  // polls the on-screen session's bound project while visible; session events nudge it early.
-  const lastVersion = new Map<string, number>()
-  /** The project each on-screen session was last seen bound to (null: none). */
+  // The page follows the agent: game_publish leaves a 「请用户看这里」 request the host cannot push,
+  // so the page polls the on-screen session's bound project while visible (session events nudge
+  // it early). The same read notices a binding made with no event (a room member's game_open) and
+  // refreshes the tab — refresh only; where to go is the agent's to say.
   const lastBound = new Map<string, string | null>()
-  const look = (): Promise<void> | void => {
+  let lastLook = 0
+  const look = (): void => {
     const now = Date.now()
+    if (now - lastLook < 3000) return
+    lastLook = now
     const sid = mainSessionId(ctx.sessions.list.getSnapshot())
     if (sid === undefined) return
-    return api.liveVersion(sid).then(r => {
+    void api.liveVersion(sid).then(r => {
       if (!r.ok) return
-      const live = r.value
-      // A binding made with no event (a room member's game_open): refresh the tab, and
-      // when it happened while this page was open, go to the new project.
+      const bound = r.value?.projectId ?? null
       const before = lastBound.get(sid)
-      const bound = live?.projectId ?? null
       lastBound.set(sid, bound)
-      if (before !== undefined && before !== bound) {
-        emit(sid)
-        if (bound !== null) autoNav.projectOpened(t('nav.project'))
-      }
-      if (live === null) return
-      // The agent's own 「请用户看这里」 comes first; a version it lands with is then announced.
-      if (live.show !== undefined) {
-        const show = live.show
-        const text = show.note !== '' ? show.note : t('nav.show')
-        const acted = autoNav.requested(live.projectId, show, text, now - Date.parse(show.at) < 90_000, live.version)
-        if (acted) lastVersion.set(live.projectId, live.version)
-      }
-      const seen = lastVersion.get(live.projectId)
-      lastVersion.set(live.projectId, live.version)
-      if (live.kind === 'none' || live.by === 'user' || (seen !== undefined && live.version <= seen)) return
-      // First sighting: only a version that landed just now is news (not one found on a reload).
-      if (seen === undefined && (live.at === null || now - Date.parse(live.at) > 90_000)) return
-      autoNav.versionLanded(live.projectId, live.version, live.kind === 'candidate' ? t('nav.candidate', { version: live.version }) : t('nav.version', { version: live.version }))
-    })
+      if (before !== undefined && before !== bound) emit(sid)
+      if (r.value?.show !== undefined) reveal.request(r.value.projectId, r.value.show)
+    }).catch(() => {})
   }
-  const poll = visiblePoll(look)
-  listeners.add(() => { poll.nudge() })
-  disposers.push(async () => { poll.stop() })
+  listeners.add(() => { look() })
+  const pollTimer = setInterval(() => { if (document.visibilityState === 'visible') look() }, 6000)
+  disposers.push(async () => { clearInterval(pollTimer) })
 
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',

@@ -187,10 +187,6 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
   // plus the shared compact controls), inlined into each consuming plugin's
   // own client bundle (proposal panel-responsive-spec, 2026-10-06).
   'client-ui-panel-kit',
-  // ui-reveal-kit is the same shape: the source-plane reveal controller (take a
-  // panel to what changed or to what the agent asks the user to look at),
-  // inlined into each consuming plugin's own client bundle (2026-10-27).
-  'client-ui-reveal-kit',
 ]
 
 /**
@@ -286,9 +282,7 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'video-studio': ['@khorsheed/dsh-client-ui-panel-kit'],
   // game → ui-panel-kit: the game tab's panel root, header, tabs and rows
   // (panel-design convention for every new panel).
-  // game → ui-reveal-kit: 改完自动跳转 and game_show ride the shared reveal
-  // controller and notice bar — the same inlined, zero-runtime edge.
-  'game': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-reveal-kit'],
+  'game': ['@khorsheed/dsh-client-ui-panel-kit'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent

@@ -373,20 +373,8 @@ export const zh = {
   'gltf.boneSearch': '找骨头…',
   'gltf.rotate': '旋转',
   'gltf.moreBones': '另有 {count} 根，搜索名字找',
-  'nav.version': 'v{version} 已上线',
-  'nav.project': '项目已打开',
-  'nav.show': 'agent 请你看看这里',
-  'nav.candidate': 'v{version} 等你确认上线',
-  'nav.element': '「{name}」改好了',
-  'nav.elements': '改了 {count} 个元素',
-  'nav.chapter': '策划《{title}》更新了',
   'nav.go': '去看看',
   'nav.dismiss': '不用了',
-  'nav.switch': '改完自动跳转',
-  'nav.switchOn': '已打开改完自动跳转',
-  'nav.switchOff': '已关闭改完自动跳转：改完只在这里提示',
-  'nav.playVersion': '去试玩 v{version}',
-  'nav.changed': '刚改过',
 }
 
 /** English dictionary. */
@@ -751,20 +739,8 @@ export const en: Record<keyof typeof zh, string> = {
   'gltf.boneSearch': 'Find a bone…',
   'gltf.rotate': 'Rotation',
   'gltf.moreBones': '{count} more; search by name',
-  'nav.version': 'v{version} is live',
-  'nav.project': 'The project is open',
-  'nav.show': 'The agent asks you to look here',
-  'nav.candidate': 'v{version} is waiting for your OK',
-  'nav.element': '「{name}」 is updated',
-  'nav.elements': '{count} elements changed',
-  'nav.chapter': 'Design 《{title}》 updated',
   'nav.go': 'Show me',
   'nav.dismiss': 'Not now',
-  'nav.switch': 'Jump to changes',
-  'nav.switchOn': 'Jumping to changes is on',
-  'nav.switchOff': 'Jumping to changes is off: changes show here as a notice',
-  'nav.playVersion': 'Play v{version}',
-  'nav.changed': 'Just changed',
 }
 
 /** The dictionary namespace this view binds. */

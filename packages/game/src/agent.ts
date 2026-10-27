@@ -32,8 +32,8 @@ const GUIDANCE = 'This session is the game-development mode. The user designs an
   + 'version that passed the checks. Use game_open / game_read for the project; write its files with the '
   + 'ordinary file tools. Whenever you changed something playable, call game_publish before you report or ask anything, '
   + 'without waiting to be asked — a question does not end the turn, so the play area would still show the old version. '
-  + 'When a CLI member reports its changes, publish them for it (members have no publish tool). Then call game_show to '
-  + 'take the user\'s game tab to what you want them to look at, before you report or ask. Load the game-design skill when shaping the game with the user, and the gamedev skill before '
+  + 'When a CLI member reports its changes, publish them for it (members have no publish tool). A publish also takes the '
+  + 'user\'s game tab to the result; pass show/note to choose where and say what to look at. Load the game-design skill when shaping the game with the user, and the gamedev skill before '
   + 'writing game code. Answer in the user\'s language.'
 
 /**
