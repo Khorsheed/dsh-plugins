@@ -7,7 +7,8 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--dsw-alias-bg-layer-1);
+  /* No page fill of its own: the panel sits on the sidebar's surface, like
+     every other plugin panel; cards keep their own layer. */
   color: var(--dsw-alias-label-primary);
   font-size: var(--dsh-panel-text-body, 13px);
   /* Subtle fills: the host's light theme paints bg-layer-1/2/3 all white, so
