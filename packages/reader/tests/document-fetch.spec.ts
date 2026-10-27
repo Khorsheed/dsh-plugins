@@ -65,6 +65,12 @@ describe('DocumentFetch', () => {
     expect(built).toEqual([{ ...DOCUMENT_FETCH_DEFAULTS, userAgent: 'ua/1' }])
   })
 
+  it('reads whole pages, not the http row\'s model-sized 100 000 characters', () => {
+    // A 620 KB article page was cut mid-sentence at the row's default.
+    expect(DOCUMENT_FETCH_DEFAULTS.maxBodyChars).toBe(2_000_000)
+    expect(DOCUMENT_FETCH_DEFAULTS.maxResponseBytes).toBeGreaterThanOrEqual(DOCUMENT_FETCH_DEFAULTS.maxBodyChars)
+  })
+
   it('builds the provider once and applies the configured limits', async () => {
     const { built, module } = fakeModule()
     const load = vi.fn(async () => module)

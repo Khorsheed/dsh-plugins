@@ -55,13 +55,20 @@ interface HttpProviderModule {
 }
 
 /**
- * The `http` row's defaults (`@deepseek-ai/dsh-web-fetch-http` Config, 0.1.5
- * through 0.2.1-rc.3). A deployment that raised that row's limits sets the
- * reader's own `fetchLimits` instead: the row's config does not reach this instance.
+ * The reader's own fetch limits: the `http` row's defaults
+ * (`@deepseek-ai/dsh-web-fetch-http` Config, 0.1.5 through 0.2.1-rc.3) except
+ * `maxBodyChars`. The row's 100 000 is sized for a page handed to a model; the
+ * reader extracts the article itself from the raw HTML, and a modern page
+ * carries several hundred KB of inline script before its last paragraph
+ * (measured: claude.com's articles, 620 KB, cut mid-sentence at 100 000). 2 000 000
+ * is what deployments ran the row at while the reader still fetched through
+ * it, and the per-source storage budget (`MAX_BODY_CHARS_PER_SOURCE`) is
+ * sized to match. A deployment changes these with the reader's own
+ * `fetchLimits`: the row's config does not reach this instance.
  */
 export const DOCUMENT_FETCH_DEFAULTS = {
   maxResponseBytes: 5_000_000,
-  maxBodyChars: 100_000,
+  maxBodyChars: 2_000_000,
   timeoutMs: 30_000,
   maxRedirects: 5,
 } as const
