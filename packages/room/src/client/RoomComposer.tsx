@@ -55,7 +55,7 @@
  */
 import { coordinatorMember } from '../journal.ts'
 import {
-  useEffect, useRef, useState, useSyncExternalStore, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode,
+  useEffect, useRef, useState, useSyncExternalStore, type ChangeEvent, type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -211,7 +211,6 @@ export function RoomComposer({
   const drafts = attachable && attachmentIds.length > 0 ? attachmentFace.resolve(attachmentIds) : []
   const uploads = useSyncExternalStore(attachmentFace?.uploads.subscribe ?? NO_UPLOAD_STORE.subscribe, attachmentFace?.uploads.getSnapshot ?? NO_UPLOAD_STORE.getSnapshot)
   const uploadsPending = drafts.some(draft => draft.kind === 'file' && uploads[draft.id]?.status !== 'ready')
-  const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [mention, setMention] = useState<(ActiveMention & { index: number }) | null>(null)
@@ -410,22 +409,11 @@ export function RoomComposer({
     event.preventDefault()
     addFiles(files)
   }
-  const carriesFiles = (event: DragEvent): boolean => attachable && [...event.dataTransfer.types].includes('Files')
-  // The hidden official bar keeps its document-level drop listener (bubble
-  // phase): a drop this card takes stops there, or the same files land twice.
-  const onDragOver = (event: DragEvent<HTMLDivElement>): void => {
-    if (!carriesFiles(event)) return
-    event.preventDefault()
-    event.stopPropagation()
-    if (!dragging) setDragging(true)
-  }
-  const onDrop = (event: DragEvent<HTMLDivElement>): void => {
-    setDragging(false)
-    if (!carriesFiles(event)) return
-    event.preventDefault()
-    event.stopPropagation()
-    addFiles([...event.dataTransfer.files])
-  }
+  // Drag-and-drop is the official composer's: the hidden official bar keeps
+  // its document-level drop listener and overlay, and adds dropped files to
+  // this same input machine (the drafts render in the rail above). Taking a
+  // drop here added it twice; stopping it left that overlay stuck over the
+  // page (it saw the drag enter but never the drop).
 
   // The oldest question a member's round is waiting on (shown inline in its card).
   const waitingAsk = state?.askLog?.find(ask => ask.state === 'pending' && ask.runId !== undefined)
@@ -583,8 +571,7 @@ export function RoomComposer({
       </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}
-      <div className={css.card} data-dragging={dragging ? '' : undefined} onDragOver={onDragOver} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false) }} onDrop={onDrop}>
-        {dragging && <div className={css.dropHint} aria-hidden>{t('attach.drop')}</div>}
+      <div className={css.card}>
         {/* Who a bare message goes to: the coordinator's name in its member colour. */}
         <div className={css.coordinator} style={{ '--member-color': memberColor(coordinator?.name ?? 'dsh') } as CSSProperties}>
           <span className={css.coordinatorDot} aria-hidden />
