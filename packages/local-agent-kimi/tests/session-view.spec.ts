@@ -28,6 +28,22 @@ function wireSession(sessionId: string): { home: string; dir: string } {
 }
 
 describe('session-view', () => {
+  it('keeps a structured tool call\'s arguments as JSON (a member\'s ask_user_question), scalar ones as their summary', async () => {
+    const home = tempHome('kimi-session-')
+    const dir = join(home, 'sessions', 'wd_tmp_abc', 'session_ask')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    const questions = { questions: [{ id: 'god', header: '神祇', question: '先深化哪一组？', options: [{ label: '阿努比斯' }, { label: '拉' }] }] }
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: '问我' }] } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0 } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', toolCall: { name: 'mcp__dsh-member__ask_user_question', args: questions }, uuid: 'u1', toolCallId: 'tc1' } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', toolCall: { name: 'Shell', args: { command: 'ls' } }, uuid: 'u2', toolCallId: 'tc2' } }),
+    ].join('\n'))
+    const tools = (await readKimiTranscript(dir)).lines.filter(line => line.kind === 'tool')
+    expect(JSON.parse((tools[0] as { args: string }).args)).toEqual(questions)
+    expect(tools[1]).toMatchObject({ args: 'ls' })
+  })
+
   it('folds a media read whose output is content parts, and keeps reading the wire after it', async () => {
     // kimi's ReadMediaFile reports [{text}, {image_url}, {text}]: a string-only
     // read threw here and every later mirror pass (usage, model) failed with it.

@@ -340,6 +340,12 @@ describe('codex app-server item fold (transport → shared line shape)', () => {
     expect(codexAppServerItemToLine({ type: 'webSearch' })).toMatchObject({ kind: 'tool', name: 'WebSearch' })
     expect(codexAppServerItemToLine({ type: 'mcpToolCall', server: 'dsh-member', tool: 'member_message' }))
       .toMatchObject({ kind: 'tool', name: 'dsh-member/member_message' })
+    // A member-bridge call keeps its arguments and its outcome (ask_user_question's questions and answers).
+    const asked = { questions: [{ id: 'god', question: '先深化哪一组？', options: [{ label: '阿努比斯' }] }] }
+    expect(codexAppServerItemToLine({ type: 'mcpToolCall', id: 'm1', server: 'dsh-member', tool: 'ask_user_question', arguments: asked, status: 'completed', result: { content: [{ type: 'text', text: '{"answers":[{"id":"god","selected":["阿努比斯"]}]}' }] } }))
+      .toEqual({ kind: 'tool', id: 'm1', name: 'dsh-member/ask_user_question', args: JSON.stringify(asked), result: '{"answers":[{"id":"god","selected":["阿努比斯"]}]}' })
+    expect(codexAppServerItemToLine({ type: 'mcpToolCall', id: 'm2', server: 'dsh-member', tool: 'ask_user_question', arguments: asked, status: 'failed', error: { message: 'The human did not answer' } }))
+      .toMatchObject({ result: 'The human did not answer', failed: true })
     // File edits and non-shell calls are mirrored, not dropped.
     expect(codexAppServerItemToLine({ type: 'fileChange', id: 'fc1', changes: [{ path: '/work/a.ts', kind: 'update', diff: '@@ -1 +1 @@' }], status: 'completed' }))
       .toEqual({ kind: 'tool', id: 'fc1', name: 'ApplyPatch', args: 'update: /work/a.ts', result: '@@ -1 +1 @@' })
