@@ -40,7 +40,7 @@
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.17 | bundle | — | web | 0.1.2-rc.1 | eval |
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.2.0 | bundle | — | — | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-learning-suite` | `packages/learning-suite` | 0.1.1 | bundle | — | — | 0.1.7-rc.1 | — |
-| `@khorsheed/dsh-library` | `packages/library` | 0.1.0 | bundle | — | web | 0.1.7-rc.1 | — |
+| `@khorsheed/dsh-library` | `packages/library` | 0.1.1 | bundle | — | web | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.2.1 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.2.1 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-local-agent-codex` | `packages/local-agent-codex` | 0.2.1 | bundle | — | web | 0.1.5-rc.1 | eval |
@@ -49,9 +49,9 @@
 | `@khorsheed/dsh-local-agent-kimi` | `packages/local-agent-kimi` | 0.2.1 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.4 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.7 | bundle | — | web | 0.1.2-rc.1 | eval |
-| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
+| `@khorsheed/dsh-mobile` | `packages/mobile` | 0.2.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.5 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-reader` | `packages/reader` | 0.3.1 | bundle | — | web | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-reader` | `packages/reader` | 0.3.2 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-room` | `packages/room` | 0.2.4 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.6 | bundle | — | web | 0.1.5-rc.1 | eval |
