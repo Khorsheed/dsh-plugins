@@ -50,6 +50,10 @@
   background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
 }
 
+.capsule[data-waiting] .dot {
+  background: currentColor;
+}
+
 .capsule[data-attention] {
   border-color: color-mix(in srgb, var(--dsw-alias-state-warning, #c08419) 35%, transparent);
   background: color-mix(in srgb, var(--dsw-alias-state-warning, #c08419) 12%, transparent);
