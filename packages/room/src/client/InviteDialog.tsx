@@ -493,7 +493,7 @@ export function InviteDialog({
               </dl>
             </div>}
             {native ? null : mode === 'edit' && memberConfiguration !== undefined
-              ? <div className={css.field}><span className={css.label}>{t('invite.modelLabel')}</span>{memberConfiguration}</div>
+              ? <div className={css.field}><span className={css.label}>{t('invite.modelLabel')}</span><div className={css.memberConfiguration}>{memberConfiguration}</div></div>
               : memberConfiguration ?? (mode === 'invite' && chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, effort: { value: effort, onChange: setEffort }, disabled: busy, fields: { row: css.fieldPair, field: css.field, label: css.label, select: css.select } }) : undefined) ?? modelField}
             <label className={css.field}>
               <span className={css.label}>{t('invite.name')}</span>

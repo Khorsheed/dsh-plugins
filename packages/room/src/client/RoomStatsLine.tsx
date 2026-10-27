@@ -124,10 +124,12 @@ export interface RoomStatsLineProps {
   readonly useProjection: UseProjection
   /** The room's replayed state: the members chip reads its execution records. */
   readonly state?: RoomState | undefined
+  /** Members chip only: an external coordinator's room, where the room session's own figures are not the coordinator's. */
+  readonly membersOnly?: boolean | undefined
   readonly t: RoomComposerProps['t']
 }
 
-export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state, t }: RoomStatsLineProps): ReactNode {
+export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state, membersOnly = false, t }: RoomStatsLineProps): ReactNode {
   const members = memberUsage(state)
   const [open, setOpen] = useState(false)
   const membersRef = useRef<HTMLDivElement | null>(null)
@@ -173,6 +175,7 @@ export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state,
       output: formatTokens(usage.outputTokens),
     }))
   }
+  if (membersOnly) groups.length = 0
   const line = groups.join(' | ')
   // The row elides with ellipsis when overlong; a delayed hover tooltip
   // carries the full line, enabled only while content is actually clipped
