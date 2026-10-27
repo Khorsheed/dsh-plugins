@@ -158,6 +158,27 @@ export function parseQuestions(raw: unknown): readonly RoomQuestionItem[] | stri
   return questions
 }
 
+/**
+ * The message a late answer reaches its member as: each question with the
+ * human's pick, so the member can go on (or correct what it assumed).
+ * @param questions - the card's questions.
+ * @param answers - the human's answers, one per question.
+ * @returns the dispatch text.
+ */
+export function lateAnswerText(questions: readonly RoomQuestionItem[], answers: readonly RoomQuestionAnswer[]): string {
+  const lines = questions.map((question) => {
+    const answer = answers.find(entry => entry.id === question.id)
+    const picked = [...answer?.selected ?? [], ...answer?.custom === undefined ? [] : [answer.custom]].join('；')
+    return `- ${question.header === undefined ? '' : `${question.header}：`}${question.question} → ${picked === '' ? '（没选）' : picked}`
+  })
+  return [
+    '你之前用 ask_user_question 问的问题没等到回答就过期了，人现在补答了：',
+    ...lines,
+    '',
+    '按这些答案继续。如果你已经按自己的假设往下做了，对照答案调整，并说一下改了什么。',
+  ].join('\n')
+}
+
 function messageReceipt(receipt: RoomMessageReceipt, kind: 'task' | 'notify'): RoomMemberMessageReceipt {
   if (receipt.held !== undefined) {
     const why = receipt.held === 'paused' ? '房间已暂停，恢复后自动投递'
@@ -1448,7 +1469,7 @@ export class RoomService extends TypertRemoteService {
         id: 'help', header: '求助',
         question: `${asker.name} 想向会话「${target.title}」求助：${text.length > 80 ? `${text.slice(0, 80)}…` : text}`,
         options: [{ label: '允许' }, { label: '不允许' }],
-      }], 10 * 60_000)
+      }], 10 * 60_000, true)
       if (answers?.[0]?.selected[0] !== '允许') return `The human did not allow asking "${target.title}". Do not retry unless they @ that session in the room.`
     }
     const help = {
@@ -1800,13 +1821,13 @@ export class RoomService extends TypertRemoteService {
    * @param timeoutMs - how long the call waits before it gives up.
    * @returns the answers, or undefined when nobody answered.
    */
-  private async askQuestions(session: Session, member: RoomMember, questions: readonly RoomQuestionItem[], timeoutMs: number): Promise<readonly RoomQuestionAnswer[] | undefined> {
+  private async askQuestions(session: Session, member: RoomMember, questions: readonly RoomQuestionItem[], timeoutMs: number, consent = false): Promise<readonly RoomQuestionAnswer[] | undefined> {
     const id = randomUUID()
     const answered = new Promise<readonly RoomQuestionAnswer[] | undefined>((resolve) => {
       this.questionWaiters.set(id, resolve)
       setTimeout(() => { resolve(undefined) }, timeoutMs).unref?.()
     })
-    session.append('room/question', { id, member: member.name, memberId: memberId(session.snapshotEvents(), member), questions })
+    session.append('room/question', { id, member: member.name, memberId: memberId(session.snapshotEvents(), member), questions, ...consent ? { consent: true as const } : {} })
     await this.ctx.sessions.flush(session)
     const answers = await answered
     this.questionWaiters.delete(id)
@@ -1828,7 +1849,7 @@ export class RoomService extends TypertRemoteService {
     if (!loaded.ok) return { ok: false, error: loaded.error }
     const waiter = this.questionWaiters.get(request.id)
     const pending = loaded.state.questions?.find(entry => entry.id === request.id)
-    if (waiter === undefined || pending === undefined) return { ok: false, error: { code: 'question-not-pending' } }
+    if (waiter === undefined || pending === undefined) return this.answerExpiredQuestion(loaded.session, request)
     // Keep only answers to this card's own questions, in the shape the asker expects.
     const answers = pending.questions.map((question) => {
       const given = request.answers.find(answer => answer.id === question.id)
@@ -1838,6 +1859,42 @@ export class RoomService extends TypertRemoteService {
     loaded.session.append('room/question-resolved', { id: request.id, outcome: 'answered', answers })
     await this.ctx.sessions.flush(loaded.session)
     waiter(answers)
+    return { ok: true }
+  }
+
+  /**
+   * Answer a card whose waiting call is gone (it timed out, or a restart
+   * ended the member's process): the card records the answers, and they
+   * reach the member as a new message that wakes it with its own context —
+   * the member asked so it could go on, so a late answer is still worth it.
+   * A consent gate is never answered late: its call already decided.
+   * @param session - the live room session.
+   * @param request - card id and the human's answers.
+   * @returns ok, or `question-not-pending` when the card is not an expired, unanswered question.
+   */
+  private async answerExpiredQuestion(session: Session, request: RoomAnswerQuestionRequest): Promise<RoomAnswerQuestionResult> {
+    const events = session.snapshotEvents()
+    const asked = events.find(event => event.type === 'room/question' && event.data.id === request.id)
+    if (asked?.type !== 'room/question' || asked.data.consent === true) return { ok: false, error: { code: 'question-not-pending' } }
+    const outcomes = events.filter(event => event.type === 'room/question-resolved' && event.data.id === request.id)
+    // Expired, or still open with no call behind it (a restart this room has not swept yet).
+    const last = outcomes.at(-1)
+    if (last !== undefined && (last.type !== 'room/question-resolved' || last.data.outcome !== 'cancelled')) return { ok: false, error: { code: 'question-not-pending' } }
+    const member = replay(events).members.find(entry => memberId(events, entry) === asked.data.memberId)
+    if (member === undefined) return { ok: false, error: { code: 'question-not-pending' } }
+    const answers = asked.data.questions.map((question) => {
+      const given = request.answers.find(answer => answer.id === question.id)
+      const custom = given?.custom?.trim()
+      return { id: question.id, selected: [...given?.selected ?? []].filter(label => typeof label === 'string'), ...custom === undefined || custom === '' ? {} : { custom } }
+    })
+    session.append('room/question-resolved', { id: request.id, outcome: 'answered', answers, late: true })
+    const text = lateAnswerText(asked.data.questions, answers)
+    this.moveOnFromLostRounds(session, [member.name])
+    const dispatch = session.append('room/dispatch', {
+      id: randomUUID(), targets: [member.name], targetIds: [memberId(events, member)], text, origin: 'human',
+    })
+    await this.ctx.sessions.flush(session)
+    this.engine.dispatch(session, member.name, text, { dispatchSeq: dispatch.seq })
     return { ok: true }
   }
 

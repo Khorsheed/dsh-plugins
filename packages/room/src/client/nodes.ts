@@ -124,6 +124,10 @@ export interface RoomQuestionData {
   readonly questions: readonly RoomQuestionItem[]
   readonly state: 'pending' | 'answered' | 'cancelled'
   readonly answers?: readonly RoomQuestionAnswer[]
+  /** A consent gate: never answerable once it expired. */
+  readonly consent?: true
+  /** Answered after it expired (the answers went to the member as a message). */
+  readonly late?: true
 }
 
 export interface RoomRelayData {
@@ -383,12 +387,12 @@ export const roomQuestionDefinition: ConversationNodeDefinition<RoomQuestionData
   start: (_context, match) => {
     const event = match.event
     if (event.type !== 'room/question') throw new Error('room-question start requires a room/question event')
-    return { seq: event.seq, time: event.time, questionId: event.data.id, member: event.data.member, questions: event.data.questions, state: 'pending' }
+    return { seq: event.seq, time: event.time, questionId: event.data.id, member: event.data.member, questions: event.data.questions, state: 'pending', ...event.data.consent === true ? { consent: true as const } : {} }
   },
   update: (context, match) => {
     const event = match.event
     if (event.type !== 'room/question-resolved') return context.state
-    return { ...context.state, state: event.data.outcome, ...event.data.answers === undefined ? {} : { answers: event.data.answers } }
+    return { ...context.state, state: event.data.outcome, ...event.data.answers === undefined ? {} : { answers: event.data.answers }, ...event.data.late === true ? { late: true as const } : {} }
   },
   buildViewNode: context => viewNode(context, 'room-question'),
 }

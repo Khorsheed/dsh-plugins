@@ -67,6 +67,25 @@ describe('member questions', () => {
     expect((await bench.state()).questions).toBeUndefined()
   })
 
+  it('an expired card still takes an answer: it reaches the member as a new message, once', async () => {
+    const bench = await boot()
+    const session = bench.ctx.sessions.get(bench.sessionId)!
+    const gmId = (session.snapshotEvents().find(event => event.type === 'room/member-added' && (event.data as { name: string }).name === 'gm')!.data as { id: string }).id
+    session.append('room/question', { id: 'late', member: 'gm', memberId: gmId, questions: [{ id: 'q1', header: '外形', question: '哪种身形？', options: [{ label: '狐首人身' }] }] })
+    session.append('room/question', { id: 'gate', member: 'gm', memberId: gmId, questions: [{ id: 'help', question: '允许吗', options: [{ label: '允许' }] }], consent: true })
+    session.append('room/question-resolved', { id: 'late', outcome: 'cancelled' })
+    expect(await bench.service.answerQuestion({ sessionId: bench.sessionId, id: 'late', answers: [{ id: 'q1', selected: ['狐首人身'], custom: '要背货箱' }] })).toEqual({ ok: true })
+    const events = session.snapshotEvents()
+    expect(events.filter(event => event.type === 'room/question-resolved' && (event.data as { id: string }).id === 'late').at(-1)!.data)
+      .toEqual({ id: 'late', outcome: 'answered', answers: [{ id: 'q1', selected: ['狐首人身'], custom: '要背货箱' }], late: true })
+    const dispatch = events.filter(event => event.type === 'room/dispatch').at(-1)!.data as { targets: string[]; origin: string; text: string }
+    expect(dispatch).toMatchObject({ targets: ['gm'], origin: 'human' })
+    expect(dispatch.text).toContain('外形：哪种身形？ → 狐首人身；要背货箱')
+    // Answered once is answered; a consent gate never answers late.
+    expect(await bench.service.answerQuestion({ sessionId: bench.sessionId, id: 'late', answers: [] })).toEqual({ ok: false, error: { code: 'question-not-pending' } })
+    expect(await bench.service.answerQuestion({ sessionId: bench.sessionId, id: 'gate', answers: [{ id: 'help', selected: ['允许'] }] })).toEqual({ ok: false, error: { code: 'question-not-pending' } })
+  })
+
   it('validates questions, accepting their JSON text too', () => {
     expect(parseQuestions(JSON.stringify([{ question: '要不要轻失败？', multi_select: true, options: ['要', '不要'] }])))
       .toEqual([{ id: 'q1', question: '要不要轻失败？', multiSelect: true, options: [{ label: '要' }, { label: '不要' }] }])

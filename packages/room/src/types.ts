@@ -500,6 +500,8 @@ export interface RoomQuestionEvent {
   readonly member: string
   readonly memberId: string
   readonly questions: readonly RoomQuestionItem[]
+  /** A consent gate (room_help's 允许/不允许): its answer only matters while the call waits, so it is never answered late. */
+  readonly consent?: true
 }
 
 /** How a member's questions ended. */
@@ -508,6 +510,8 @@ export interface RoomQuestionResolvedEvent {
   /** `cancelled`: the call ended, timed out, or the host restarted before an answer. */
   readonly outcome: 'answered' | 'cancelled'
   readonly answers?: readonly RoomQuestionAnswer[]
+  /** Answered after the card expired: the answers went to the member as a new message instead of its (gone) waiting call. */
+  readonly late?: true
 }
 
 /** A member's questions still waiting for the human. */
