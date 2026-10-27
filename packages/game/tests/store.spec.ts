@@ -309,3 +309,14 @@ describe('model looks', () => {
     expect(await store.workingFile(result.project.id, '.game/checks.json')).toMatchObject({ ok: false })
   })
 })
+
+describe('live version polling', () => {
+  it('reports none, then the version the agent published, with who and when', async () => {
+    expect(await store.liveVersion('nobody')).toBeNull()
+    const project = await created()
+    expect(await store.liveVersion('s1')).toEqual({ projectId: project.id, version: 0, kind: 'none', at: null })
+    await put(join(project.root, 'index.html'), '<p>v1</p>')
+    await store.checkTurn(session(), 0, Number.POSITIVE_INFINITY, 'agent')
+    expect(await store.liveVersion('s1')).toMatchObject({ projectId: project.id, version: 1, kind: 'deployed', by: 'agent' })
+  })
+})

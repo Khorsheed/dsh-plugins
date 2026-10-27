@@ -20,7 +20,7 @@ const BUSY_MS = 20_000
 /** A turn report older than this is history (a reload), not news. */
 const FRESH_MS = 120_000
 /** Below this window width the sidebar would cover the conversation: never opened for the user. */
-const WIDE_PX = 1100
+const WIDE_PX = 820
 
 const SWITCH_KEY = 'dsh-game:auto-nav'
 const UNSEEN_KEY = 'dsh-game:unseen'

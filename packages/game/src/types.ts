@@ -387,6 +387,15 @@ export interface VersionRecord {
   readonly note?: string
 }
 
+/** A session's bound project's newest version, as the page polls it. */
+export interface LiveVersion {
+  readonly projectId: string
+  readonly version: number
+  readonly kind: 'deployed' | 'candidate' | 'none'
+  readonly at: string | null
+  readonly by?: VersionSource
+}
+
 /** Who cut a version. */
 export type VersionSource = 'user' | 'agent' | 'turn'
 
