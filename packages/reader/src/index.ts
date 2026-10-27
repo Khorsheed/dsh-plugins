@@ -58,9 +58,10 @@ export interface ReaderConfig {
   readonly ytdlpPath?: string
   /**
    * Fetch limits for feeds and pages: `maxResponseBytes` (default 5 000 000),
-   * `maxBodyChars` (100 000), `timeoutMs` (30 000), `maxRedirects` (5) — the
-   * official `http` fetch row's defaults. The reader fetches through its own
-   * instance of that provider, so limits raised on that row do not reach it; set them here.
+   * `maxBodyChars` (2 000 000 — whole pages, not the row's model-sized 100 000),
+   * `timeoutMs` (30 000), `maxRedirects` (5). The reader fetches through its own
+   * instance of the official `http` provider, so limits raised on that row do
+   * not reach it; set them here.
    */
   readonly fetchLimits?: DocumentFetchLimits
 }

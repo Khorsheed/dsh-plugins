@@ -108,8 +108,9 @@ export interface ReaderSource {
   /** Human-readable failure of the last attempt, when `status` is `error`. */
   readonly error?: string
   /**
-   * True when the host's fetch seam cut the payload at its size limit
-   * (`maxBodyChars`, 100 000 by default). A truncated XML document cannot be
+   * True when the fetch cut the payload at its size limit (`maxBodyChars`:
+   * the reader's own 2 000 000, or the seam's limit where the reader fetches
+   * through it). A truncated XML document cannot be
    * parsed and a truncated HTML page yields a partial article, so every
    * consumer treats this as "incomplete" and says so rather than guessing.
    */
