@@ -720,6 +720,27 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.4)(jsdom@29.1.1)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1)
 
+  packages/client-ui-reveal-kit:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.4
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.4)(jsdom@29.1.1)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1)
+
   packages/context-guard:
     dependencies:
       '@deepseek-ai/dsh-settings':
@@ -1321,6 +1342,9 @@ importers:
       '@khorsheed/dsh-client-ui-panel-kit':
         specifier: workspace:*
         version: link:../client-ui-panel-kit
+      '@khorsheed/dsh-client-ui-reveal-kit':
+        specifier: workspace:*
+        version: link:../client-ui-reveal-kit
       '@testing-library/react':
         specifier: ^16.1.0
         version: 16.3.3(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)

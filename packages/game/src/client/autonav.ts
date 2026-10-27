@@ -9,18 +9,19 @@
  * now becomes a notice in the tab instead. Elements a turn changed carry a
  * dot until their page has been open once (an automatic open counts).
  *
+ * The busy rules, the per-viewer switch, notices and console traces come from
+ * the shared reveal kit; this layer knows the game: where a turn's result is,
+ * the dots, and the agent's `game_show` requests.
+ *
  * Per viewer and best effort: the switch and the dots live in this browser.
  * @module @khorsheed/dsh-game/client
  */
+import { RevealController } from '@khorsheed/dsh-client-ui-reveal-kit/src/client/index.ts'
 import type { NavTarget } from './contract.ts'
-import type { TurnReport } from '../types.ts'
+import type { ShowRequest, TurnReport } from '../types.ts'
 
-/** A touch in the panel this recent means the user is busy there. */
-const BUSY_MS = 20_000
 /** A turn report older than this is history (a reload), not news. */
 const FRESH_MS = 120_000
-/** Below this window width the sidebar would cover the conversation: never opened for the user. */
-const WIDE_PX = 820
 
 const SWITCH_KEY = 'dsh-game:auto-nav'
 const UNSEEN_KEY = 'dsh-game:unseen'
@@ -83,40 +84,33 @@ export function offerFor(report: TurnReport, words: NavWords): NavOffer | null {
 
 /** The page-wide controller. */
 export class AutoNav {
-  private lastTouch = 0
-  private playing = false
-  private viewing: NavTarget | null = null
-  private mounted = 0
-  private noticeNow: NavNotice | null = null
+  /** The shared controller (busy rules, switch, notices, traces); the notice bar subscribes to it. */
+  readonly reveal: RevealController<NavTarget>
   private readonly listeners = new Set<() => void>()
   private readonly handled = new Set<string>()
-  /** The last version announced per project (a mid-turn publish is not announced again at turn end). */
+  /** The last version announced per project (a version is announced once, however it was learned of). */
   private readonly announced = new Map<string, number>()
 
   /** @param open - opens the game tab at a place (the plugin's openAt). */
-  constructor(private readonly open: (target: NavTarget) => void) {}
-
-  get enabled(): boolean { return read(SWITCH_KEY, true) }
-  setEnabled(on: boolean): void { write(SWITCH_KEY, on); this.changed() }
-
-  get notice(): NavNotice | null { return this.noticeNow }
-  dismiss(): void { this.noticeNow = null; this.changed() }
-  /** Follow the held-back jump. */
-  follow(): void {
-    const n = this.noticeNow
-    this.noticeNow = null
-    this.changed()
-    if (n !== null) this.open(n.target)
+  constructor(open: (target: NavTarget) => void) {
+    this.reveal = new RevealController<NavTarget>({
+      name: 'game', open, switchKey: SWITCH_KEY,
+      // An element's page is not left for another element's.
+      leavesView: (target, viewing) => target.view === 'elements' && viewing.view === 'elements'
+        && viewing.elementId !== undefined && viewing.elementId !== target.elementId,
+    })
+    this.reveal.subscribe(() => { this.changed() })
   }
 
-  /** The tab body mounted (or went away): only a mounted panel, or a wide window, is navigated. */
-  mount(): () => void {
-    this.mounted++
-    return () => { this.mounted-- }
-  }
-  touched(): void { this.lastTouch = Date.now() }
-  setPlaying(on: boolean): void { this.playing = on }
-  setViewing(target: NavTarget | null): void { this.viewing = target }
+  get enabled(): boolean { return this.reveal.enabled }
+  setEnabled(on: boolean): void { this.reveal.setEnabled(on) }
+  get notice(): NavNotice | null { return this.reveal.notice }
+  dismiss(): void { this.reveal.dismiss() }
+  follow(): void { this.reveal.follow() }
+  mount(): () => void { return this.reveal.mount() }
+  touched(): void { this.reveal.touched() }
+  setPlaying(on: boolean): void { this.reveal.hold(on ? 'a game is running' : null) }
+  setViewing(target: NavTarget | null): void { this.reveal.setViewing(target) }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
@@ -152,36 +146,34 @@ export class AutoNav {
     this.addUnseen(report.projectId, report.elements.filter(e => e.what !== 'removed').map(e => e.id))
     const offer = offerFor(report, words)
     if (offer === null) return
-    // Already announced mid-turn: the version is old news, unless the turn's point is an element.
+    // Already announced (mid-turn, or by the agent's own game_show): the version is old news.
     if (offer.target.view === 'play' && report.version !== null && this.announced.get(report.projectId) === report.version.version) return
     if (report.version !== null) this.announced.set(report.projectId, report.version.version)
-    this.offer(offer)
+    this.reveal.offer(offer.target, offer.text, 'turn end')
   }
 
-  /** A version went live (or became a candidate) mid-turn: the agent published. */
+  /** A version went live (or became a candidate) with no turn end to tell of it. */
   versionLanded(projectId: string, version: number, text: string): void {
     if (this.announced.get(projectId) === version) return
     this.announced.set(projectId, version)
-    this.offer({ target: { view: 'play' }, text })
+    this.reveal.offer({ view: 'play' }, text, `v${version} landed`)
   }
 
   /** The session got bound to a project while the page was open (a room member created or opened it). */
   projectOpened(text: string): void {
-    this.offer({ target: { view: 'play' }, text })
+    this.reveal.offer({ view: 'play' }, text, 'project bound')
   }
 
-  /** Go, or — when the user is in the middle of something, or it is switched off — leave a notice. */
-  private offer(offer: NavOffer): void {
-    const busy = this.playing || Date.now() - this.lastTouch < BUSY_MS
-      || (offer.target.view === 'elements' && this.viewing?.view === 'elements' && this.viewing.elementId !== undefined && this.viewing.elementId !== offer.target.elementId)
-    if (!this.enabled || busy) {
-      this.noticeNow = { text: offer.text, target: offer.target }
-      this.changed()
-      return
-    }
-    if (this.mounted === 0 && (typeof window === 'undefined' || window.innerWidth < WIDE_PX)) return
-    this.noticeNow = null
-    this.open(offer.target)
-    this.changed()
+  /**
+   * The agent asked to show the user something (\`game_show\`). Taken once per
+   * request; when it lands with a new version, that version counts as announced.
+   * @returns whether the request was acted on.
+   */
+  requested(projectId: string, request: ShowRequest, text: string, fresh: boolean, version: number): boolean {
+    const target: NavTarget = { view: request.target.view, ...(request.target.elementId === undefined ? {} : { elementId: request.target.elementId }), ...(request.target.chapterId === undefined ? {} : { chapterId: request.target.chapterId }) }
+    const outcome = this.reveal.request(projectId, request.seq, target, text, fresh)
+    if (outcome === null) return false
+    if (version > 0) this.announced.set(projectId, version)
+    return true
   }
 }

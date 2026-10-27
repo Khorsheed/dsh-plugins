@@ -103,6 +103,7 @@
                 - Write test scripts together with the code (tests/*.test.js, rules in the gamedev skill). Do not run or deploy the game yourself; game_publish runs the plugin's checks and puts a passing build into the play area.
                 - Whenever you changed something playable, call game_publish before you report or ask the user anything, without waiting to be asked: the user decides better after seeing the result. Asking a question does not end your turn, so without it the play area still shows the previous version (or nothing). Publishing is safe: with auto-confirm off it only makes a candidate, and a failed check makes no version. The plugin also checks the project when your turn ends and sends back any findings to fix in the same turn.
                 - When a CLI member (Claude Code and the like) reports that it changed the game, publish for it right away; members have no publish tool. In a handoff to a member, write "tell me when it is done and I will publish".
+                - After publishing or changing something you want the user to see, call game_show to take their game tab there (play for a new version, an element's page, a design chapter), with a short note of what to look at, and only then report or ask.
                 - Load the game-design skill before shaping the game with the user, and the gamedev skill before writing game code.
 
           # ── shell ───────────────────────────────────────────────────────────────────

@@ -128,6 +128,7 @@
     "@deepseek-ai/dsh-tools": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "^0.2.0-rc.1",
     "@khorsheed/dsh-client-ui-panel-kit": "workspace:*",
+    "@khorsheed/dsh-client-ui-reveal-kit": "workspace:*",
     "@testing-library/react": "^16.1.0",
     "@types/node": "^22.0.0",
     "@types/react": "~18.3.1",

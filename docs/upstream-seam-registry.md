@@ -146,7 +146,8 @@
 - **现状绕行**：只用官方已转发的事件——`api-session/status(sessionId, running)`（Agent 起停，即轮次边界，模型工具刚跑完）与 `api-session/activity(sessionId, updatedAt)`（用户消息推进会话活动）。worktrees 的会话头徽标在这两件事上重读 summary，另加"窗口重新获得焦点/可见"与"tab 侧任何刷新推版本号"两条本地通道；**不做周期轮询**。见 `.agents/notes/implemented/bug-fix/2026-09-23-worktrees-badge-invalidation.md`。
 - **建议的官方改动**：让转发集合可被插件贡献（例如 `TypertRemoteEventSelection` 之外再加一个运行时装配入口/插件 manifest 字段），或提供一个通用的"插件自定义通知"通道。最小版本：把 `API_REMOTE_FORWARDED_EVENTS` 的消费点改成"官方默认集 + 插件声明集"。
 - **退役条件**：插件可声明并 emit 自己的事件并被客户端 `$on` 收到后，worktrees 的 worktree 变化改走真推送；`fs.watch` 实时 dirty 也才有可能（当前"盯着看 + 外部进程改文件"无法纯事件覆盖）。
-- **状态**：绕行中（@khorsheed/dsh-worktrees）。
+- **新增消费方（2026-10-27）**：`@khorsheed/dsh-client-ui-reveal-kit`——agent 的「请用户看这里」（`game_show` 等）与「新版本落地」要让右栏跳过去。协作间成员干活时主会话**连上面两个官方事件都没有**，所以这里不得不做周期轮询（页面可见时每 6 秒读一次极小的状态，见 `packages/client-ui-reveal-kit` 的 `visiblePoll`）。宿主开放插件事件转发后，`visiblePoll` 换成 `$on`，各插件工具不变。
+- **状态**：绕行中（@khorsheed/dsh-worktrees；@khorsheed/dsh-client-ui-reveal-kit 及其消费插件 game）。
 
 ### S18. 插件无法往会话里投「只通知、不触发执行」的系统事件（实验生命周期回流到发起它的会话）
 
