@@ -36,6 +36,7 @@ import type {
   LibraryVerdict,
 } from '../types.ts'
 import type { createLibraryStore } from './store.ts'
+import type { RevealedProject } from './reveal.ts'
 
 export type { RemoteResult }
 
@@ -88,6 +89,8 @@ export interface LibraryPaneInjected {
   latestActivity: () => Promise<RemoteResult<{ at?: string; session?: { id: string; at: string } }>>
   /** The session's binding, when it has one. */
   boundTarget: () => Promise<RemoteResult<LibraryBinding | null>>
+  /** The project a reveal asks the pane to land on, taken once (see reveal.ts). */
+  revealed: Pick<RevealedProject, 'take' | 'subscribe'>
   /** Bind the session (null unbinds). */
   bindTarget: (binding: LibraryBinding | null) => Answer<{ binding: LibraryBinding | null }>
   /**
