@@ -15,6 +15,7 @@ import { foldFilePreviewByTurn, type TurnFilesByTurn } from './fold.ts'
 import { openExternalNative, macAppName } from './open-external.ts'
 import {
   IMAGE_MIME, eventsWatermark, isImagePath, listFilePreview, readErrorMessage, readFilePreview, turnFilesFilePreview,
+  IMAGE_MAX_READ_BYTES,
 } from './read-surface.ts'
 import { revealNativePath } from './reveal.ts'
 import type { FilePreviewConfig, FilePreviewList, FilePreviewOpenExternal, FilePreviewRead, FilePreviewReveal, FilePreviewTurnMap, FilePreviewWrite } from './types.ts'
@@ -51,6 +52,7 @@ export class FilePreviewService extends TypertRemoteService {
   static Config: z<FilePreviewConfig> = z.object({
     maxReadBytes: z.natural().min(1).default(512 * 1024),
     htmlMaxReadBytes: z.natural().min(1).default(4 * 1024 * 1024),
+    imageMaxReadBytes: z.natural().min(1).default(IMAGE_MAX_READ_BYTES),
     maxFiles: z.natural().min(1).default(500),
     captureBashWrites: z.boolean().default(true),
   })
@@ -92,6 +94,7 @@ export class FilePreviewService extends TypertRemoteService {
     this.resolved = {
       maxReadBytes: config.maxReadBytes ?? 512 * 1024,
       htmlMaxReadBytes: config.htmlMaxReadBytes ?? 4 * 1024 * 1024,
+      imageMaxReadBytes: config.imageMaxReadBytes ?? IMAGE_MAX_READ_BYTES,
       maxFiles: config.maxFiles ?? 500,
       captureBashWrites: config.captureBashWrites ?? true,
     }
@@ -197,13 +200,13 @@ export class FilePreviewService extends TypertRemoteService {
       res.writeHead(404).end('file preview: not a file')
       return
     }
-    if (info.size !== undefined && info.size > this.resolved.maxReadBytes) {
+    if (info.size !== undefined && info.size > this.resolved.imageMaxReadBytes) {
       res.writeHead(413).end('file preview: image exceeds the read cap')
       return
     }
     let bytes
     try {
-      bytes = await this.fs.readBytes(target, undefined, this.resolved.maxReadBytes)
+      bytes = await this.fs.readBytes(target, undefined, this.resolved.imageMaxReadBytes)
     } catch (error) {
       res.writeHead(404).end(readErrorMessage(error))
       return
@@ -296,6 +299,7 @@ export class FilePreviewService extends TypertRemoteService {
         cwd: session.header.cwd,
         maxReadBytes: this.resolved.maxReadBytes,
         htmlMaxReadBytes: this.resolved.htmlMaxReadBytes,
+        imageMaxReadBytes: this.resolved.imageMaxReadBytes,
         // The web face's image route is the local deployment's issuer; a
         // headless composition has none and image reads answer `binary`.
         imageUrl: this.agents !== undefined
