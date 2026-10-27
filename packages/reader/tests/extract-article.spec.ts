@@ -128,6 +128,24 @@ describe('extractArticle — WeChat furniture', () => {
     expect(textOf(result.html)).toContain('第8段')
     expect(result.html).not.toMatch(/一起捐|捐赠|预览时标签不可点|avatar\.gongyi/)
   })
+
+  it('takes #js_content as the body, whatever the page piles up around it', () => {
+    // A rendered fetch fills body-level modal layers with interface text; the
+    // scorer once let a wide container holding them win.
+    const prose = Array.from({ length: 4 }, (_, i) => `<p><span>第${i + 1}段：梦境研究的样本主要来自英文社区，对特殊梦境的追踪也比较少。</span></p>`).join('')
+    const chrome = Array.from({ length: 12 }, () => '<p>调整当前正文文字大小 此设置仅对当前内容生效，如需全局调整，请前往微信系统设置。选择留言身份，确认提交投诉，你可以补充投诉原因。</p>').join('')
+    const page = `<html><head><title>人类的梦正在发生变化</title></head><body>
+      <div id="js_article"><div id="img-content"><h1 id="activity-name">人类的梦正在发生变化</h1>
+        <div id="meta_content">原创 X博士</div><div id="js_novel_card">在小说阅读器读本章 去阅读</div>
+        <div id="js_content">${prose}</div></div></div>
+      <div class="wx_bottom_modal_wrp">${chrome}</div></body></html>`
+    const result = extractArticle(page, 'https://mp.weixin.qq.com/s/x')
+    expect(result.ok ? 'ok' : result.error).toBe('ok')
+    if (!result.ok) return
+    expect(textOf(result.html)).toContain('第4段')
+    expect(result.html).not.toMatch(/调整当前正文|选择留言身份|小说阅读器|原创 X博士/)
+    expect(result.title).toBe('人类的梦正在发生变化')
+  })
 })
 
 describe('extractArticle — failure modes', () => {
