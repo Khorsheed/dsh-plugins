@@ -64,6 +64,8 @@ describe('member-bridge-config', () => {
       command: 'node',
       args: ['/bridge.js'],
       env: { DSH_MEMBER_SOCKET: '/h/member-bridge.sock', DSH_MEMBER_TOKEN: 'token-1' },
+      // A question card waits for the human far past kimi's 60s MCP default.
+      toolTimeoutMs: 30 * 60_000,
     })
   })
 
@@ -138,6 +140,7 @@ describe('kimi-cli-provider member bridge injection', () => {
         DSH_MEMBER_SOCKET: join(homeDir, 'member-bridge.sock'),
         DSH_MEMBER_TOKEN: 'token-xyz-1234',
       },
+      toolTimeoutMs: 30 * 60_000,
     })
 
     await run.result

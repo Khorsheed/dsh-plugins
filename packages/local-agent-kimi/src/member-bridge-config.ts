@@ -15,6 +15,9 @@ import { join } from 'node:path'
 /** Kimi's user-level MCP config filename inside the scoped home. */
 const MCP_CONFIG_FILENAME = 'mcp.json'
 
+/** The member bridge's per-call bound: as long as a question card waits for the human (30 min). */
+export const MEMBER_TOOL_TIMEOUT_MS = 30 * 60_000
+
 /** Server-key prefix marking the family's per-run bridge entries. */
 export const MEMBER_BRIDGE_SERVER_PREFIX = 'dsh-member-'
 
@@ -73,7 +76,9 @@ export function injectMemberBridge(
   for (const name of Object.keys(servers)) {
     if (name.startsWith(MEMBER_BRIDGE_SERVER_PREFIX) && name !== key) delete servers[name]
   }
-  servers[key] = { command: command.command, args: command.args, env }
+  // A bridge call may wait for the human (ask_user_question, a mode tool's
+  // approval): kimi's 60s MCP default fails it first and the answer is lost.
+  servers[key] = { command: command.command, args: command.args, env, toolTimeoutMs: MEMBER_TOOL_TIMEOUT_MS }
   writeMcpConfig(file, { ...config, mcpServers: servers })
 }
 
