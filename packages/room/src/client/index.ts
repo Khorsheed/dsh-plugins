@@ -125,26 +125,31 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // The official conversation service's draft attachments (pick, upload,
   // serialize): the room composer re-uses them so its attachments behave
   // exactly like the official composer's. A host without them: no attachments.
-  const conversation = (ctx.get as (name: string) => unknown)('conversation') as {
-    createDrafts?: (sessionId: SessionId, files: readonly File[]) => readonly RoomDraftAttachment[]
-    resolveDraftAttachments?: (ids: readonly string[]) => readonly RoomDraftAttachment[]
-    releaseDraftAttachment?: (id: string) => void
-    retryFileUpload?: (sessionId: SessionId, id: string) => void
-    fileUploads?: RoomAttachmentsFace['uploads']
-    serializeDraftAttachments?: (ids: readonly string[]) => Promise<{ readonly attachments: readonly RoomAttachmentInput[] }>
-  } | undefined
-  const attachmentsFace: RoomAttachmentsFace | undefined = conversation?.createDrafts === undefined || conversation.resolveDraftAttachments === undefined
-    || conversation.releaseDraftAttachment === undefined || conversation.retryFileUpload === undefined
-    || conversation.fileUploads === undefined || conversation.serializeDraftAttachments === undefined
-    ? undefined
-    : {
-      create: (sessionId, files) => conversation.createDrafts!.call(conversation, sessionId, files),
-      resolve: ids => conversation.resolveDraftAttachments!.call(conversation, ids),
-      release: (id) => { conversation.releaseDraftAttachment!.call(conversation, id) },
-      retry: (sessionId, id) => { conversation.retryFileUpload!.call(conversation, sessionId, id) },
-      uploads: conversation.fileUploads,
-      serialize: async ids => (await conversation.serializeDraftAttachments!.call(conversation, ids)).attachments,
-    }
+  // Read per inject, never once at apply: the conversation service may come up after this plugin.
+  const attachmentsFor = (): RoomAttachmentsFace | undefined => {
+    const conversation = (ctx.get as (name: string) => unknown)('conversation') as {
+      createDrafts?: (sessionId: SessionId, files: readonly File[]) => readonly RoomDraftAttachment[]
+      resolveDraftAttachments?: (ids: readonly string[]) => readonly RoomDraftAttachment[]
+      releaseDraftAttachment?: (id: string) => void
+      retryFileUpload?: (sessionId: SessionId, id: string) => void
+      fileUploads?: RoomAttachmentsFace['uploads']
+      serializeDraftAttachments?: (ids: readonly string[]) => Promise<{ readonly attachments: readonly RoomAttachmentInput[] }>
+    } | undefined
+    const attachmentsFace: RoomAttachmentsFace | undefined = conversation?.createDrafts === undefined || conversation.resolveDraftAttachments === undefined
+      || conversation.releaseDraftAttachment === undefined || conversation.retryFileUpload === undefined
+      || conversation.fileUploads === undefined || conversation.serializeDraftAttachments === undefined
+      ? undefined
+      : {
+        create: (sessionId, files) => conversation.createDrafts!.call(conversation, sessionId, files),
+        resolve: ids => conversation.resolveDraftAttachments!.call(conversation, ids),
+        release: (id) => { conversation.releaseDraftAttachment!.call(conversation, id) },
+        retry: (sessionId, id) => { conversation.retryFileUpload!.call(conversation, sessionId, id) },
+        uploads: conversation.fileUploads,
+        serialize: async ids => (await conversation.serializeDraftAttachments!.call(conversation, ids)).attachments,
+      }
+
+    return attachmentsFace
+  }
   const submit = async (sessionId: SessionId, text: string, targets?: readonly string[], task?: string, attachments?: readonly RoomAttachmentInput[]): Promise<RoomMutationOutcome> => {
     if (remote === undefined) return { ok: false, message: t('composer.error.generic') }
     const requestId = requestIds.forInput(sessionId, text, targets)
@@ -553,7 +558,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       },
       taskTags,
       submit,
-      ...attachmentsFace === undefined ? {} : { attachments: attachmentsFace },
+      ...(() => { const face = attachmentsFor(); return face === undefined ? {} : { attachments: face } })(),
       renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
       stopMember: (name, expectedRunId) => { void remote?.cancel({ sessionId, name, ...expectedRunId === undefined ? {} : { expectedRunId } }).then(() => roomStore.refresh(sessionId)) },
