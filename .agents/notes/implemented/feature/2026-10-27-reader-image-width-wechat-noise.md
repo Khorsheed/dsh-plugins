@@ -13,10 +13,11 @@ Two extraction defects reported on 2026-10-27:
 
 - **Carry an inline pixel width.** A bare `<img>` and a `<picture>` (through its `<img>`) emit `width="N"` when the page's inline style sets `width: Npx`. Percentages, `auto` and `max-width` are ignored, and the column's `max-width: 100%` still caps the image. The `width` attribute is not carried: it is usually the file's own size, which changes nothing, and existing output stays byte-identical.
 - **A per-site noise list, by stable platform ids.** `NOISE_SELECTORS` (`#content_bottom_area`, `#js_tags_preview_toast`) is stripped together with the drop tags before scoring. Each entry is a platform's own id.
+- **WeChat's article root is taken by name.** The same day showed the noise list was not enough: a rendered fetch also fills body-level modal layers (the font-size panel, the complaint dialog, the comment-identity popover, a11y labels), and the scorer let a container holding them win, along with the series card (目录 / 上一篇 / 下一篇). `ARTICLE_ROOTS` (`#js_content`) is now taken as the body without scoring when it holds at least 120 characters; the title comes from the document `<title>`.
 
 ## Alternatives considered
 
-**Prefer `#js_content` as the article root on WeChat.** Rejected for now: the title and lead image live outside it, and the scorer already finds the right container once the furniture is gone.
+**Scoring alone, with a longer noise list.** Rejected after the modal layers turned up: WeChat ships dozens of such layers, and naming the article root is one stable id instead of a growing list.
 
 **Drop images whose class mentions `logo`.** Rejected: on this page the logos are content (who said the quote).
 

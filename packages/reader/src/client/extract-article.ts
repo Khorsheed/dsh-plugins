@@ -90,6 +90,21 @@ const DROP_STRIP_EXTRA: readonly string[] = []
  */
 const NOISE_SELECTORS: readonly string[] = ['#content_bottom_area', '#js_tags_preview_toast']
 
+/**
+ * Article roots a platform names itself, taken as the body without scoring.
+ *
+ * WeChat's `#js_content` is exactly the article: the title, byline and the
+ * 「在小说阅读器读本章」 card sit beside it in `#img-content`, and a rendered
+ * fetch fills the page with modal layers (the font-size panel, the complaint
+ * dialog, the comment-identity popover, the a11y labels) that the scorer
+ * measured as one more container of text and let win. The pane renders the
+ * title itself, and the document `<title>` is the article's.
+ */
+const ARTICLE_ROOTS: readonly string[] = ['#js_content']
+
+/** Below this much text a named root is not trusted (a lazy page not yet filled in). */
+const ARTICLE_ROOT_MIN_TEXT = 120
+
 /** Inline elements that survive an inline-only pass. */
 const INLINE_TAGS = new Set(['strong', 'em', 'b', 'i', 'u', 's', 'code', 'a', 'sub', 'sup', 'br'])
 
@@ -250,7 +265,10 @@ export function extractArticle(pageHtml: string, baseUrl: string): ExtractArticl
   settleMathJaxTwins(doc.body)
   settleListLabels(doc.body)
 
-  const scored = scoreCandidates(doc)
+  const named = ARTICLE_ROOTS
+    .map(selector => doc.querySelector(selector))
+    .find((element): element is Element => element !== null && textLengthOf(element) >= ARTICLE_ROOT_MIN_TEXT)
+  const scored = named === undefined ? scoreCandidates(doc) : { element: named, score: 0 }
   if (scored === undefined) {
     return { ok: false, error: 'no text-bearing block found' }
   }
