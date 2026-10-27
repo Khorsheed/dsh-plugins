@@ -444,6 +444,18 @@ export async function mirrorKimiSessionDelta(
     written.add(step)
     takenSteps.set(turn, written)
   }
+  // Turns the log has already closed take no more writes: the released-log
+  // reader admits events only inside the open turn. A backlog the offset never
+  // covered (a fold that failed for rounds, then an offset lost on restart)
+  // would otherwise land old content inside a finished turn — or, after the
+  // next turn opened, corrupt the whole log. Those units are skipped; the
+  // offset still moves past them.
+  const closedTurns = new Set<number>()
+  for (const event of childSession.snapshotEvents()) {
+    if (event.type !== 'turn/end') continue
+    const closed = (event.data as { turn?: number }).turn
+    if (typeof closed === 'number') closedTurns.add(closed)
+  }
   /** The window's accounting that no fold carried (dropped units' sums). */
   let carryUsage: TokenUsage | undefined
   // The pass's last content unit carries the records no tagged unit claimed.
@@ -466,6 +478,7 @@ export async function mirrorKimiSessionDelta(
     // numbering) is the dsh round; no offset is needed because both count the
     // same rounds.
     const turn = head.turn
+    if (closedTurns.has(turn)) continue
     if (head.kind === 'user') {
       // The live driver appends the round's user/message at turn start (so the
       // question renders before the streamed think/text instead of after it).

@@ -83,6 +83,43 @@ describe('session-mirror', () => {
     expect(latest.model).toBeUndefined()
   })
 
+  it('never writes into a turn the log already closed — a backlog of earlier rounds is skipped', async () => {
+    // In the wild (2e9c1ffb): the fold had failed for rounds, and after a
+    // restart the offset restarted at 0; turn 1's never-folded steps landed as
+    // "turn 1, step 32" inside turn 11 and the stored log became unreadable.
+    const wire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '第一轮' }] },
+      { type: 'context.append_loop_event', event: { type: 'tool.call', turnId: 0, step: 1, toolCallId: 'old-tool', toolCall: { name: 'Read', args: { path: 'a' } } } },
+      { type: 'context.append_loop_event', event: { type: 'tool.result', turnId: 0, step: 1, toolCallId: 'old-tool', result: { output: 'a' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: 0, step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 2, part: { type: 'text', text: '旧回复' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: 0, step: 2 } },
+      { type: 'turn.prompt', input: [{ type: 'text', text: '继续' }] },
+      { type: 'context.append_loop_event', event: { type: 'tool.call', turnId: 1, step: 1, toolCallId: 'new-tool', toolCall: { name: 'Read', args: { path: 'b' } } } },
+      { type: 'context.append_loop_event', event: { type: 'tool.result', turnId: 1, step: 1, toolCallId: 'new-tool', result: { output: 'b' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: 1, step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 1, step: 2, part: { type: 'text', text: '新回复' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: 1, step: 2 } },
+    ]
+    const { home } = wireHome('closed-turn-backlog', wire)
+    const child = Session.create(SessionId('closed-turn-backlog'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    // Turn 1 was shown live but never folded, and is closed; turn 2 is open.
+    child.append('turn/start', { turn: 1 })
+    child.append('user/message', createUserMessage({ content: [{ type: 'text', text: '第一轮' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+    child.append('turn/end', { turn: 1, reason: { kind: 'interrupted' } })
+    child.append('turn/start', { turn: 2 })
+    child.append('user/message', createUserMessage({ content: [{ type: 'text', text: '继续' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+    await mirrorKimiSessionDelta(ctx, child, home, 'closed-turn-backlog', 0, { turn: 2, settle: true })
+    const written = child.snapshotEvents().filter(event => event.type === 'tool/call' || event.type === 'assistant/message')
+    expect(written.every(event => (event.data as { turn: number }).turn === 2)).toBe(true)
+    expect(child.snapshotEvents().filter(event => event.type === 'tool/call').map(event => event.data.callId)).toEqual(['new-tool'])
+    expect(JSON.stringify(written.at(-1)!.data)).toContain('新回复')
+    child.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    expectValidReleasedLog(child)
+  })
+
   it('an empty stream reservation never strands a step gap (dense, strictly sequential log)', async () => {
     const { home } = wireHome('empty-reservation', fullWire)
     const child = Session.create(SessionId('empty-reservation'))
