@@ -181,12 +181,12 @@ export function lateAnswerText(questions: readonly RoomQuestionItem[], answers: 
 
 /** The host attachment services composer attachments ride; probed, so a host without them refuses attachments only. */
 interface AttachmentServices {
-  readonly attachments?: {
+  readonly attachments?: undefined | {
     admitPromptContent(parts: readonly unknown[]): Promise<readonly { readonly type: string; readonly attachment?: { readonly name?: string } }[]>
     imageHostPath?(ref: unknown): string | undefined
     fileHostPath?(ref: unknown): string | undefined
   }
-  readonly fileUploads?: {
+  readonly fileUploads?: undefined | {
     resolve(agent: unknown, receiptId: string): unknown
     bindPrompt(agent: unknown, receiptIds: readonly string[], requestId: string): { commit(): void; [Symbol.dispose](): void }
   }
