@@ -190,7 +190,7 @@ describe('FilePreviewService image route', () => {
     expect(head).toHaveBeenCalledWith(400)
   })
 
-  it('answers 413 when the image exceeds the read cap', async () => {
+  it('answers 413 when the image exceeds the image read cap', async () => {
     const fs: RouteFsDouble = {
       resolve: vi.fn().mockResolvedValue(target),
       stat: vi.fn().mockResolvedValue({ version: 'v1', type: 'file', size: 900 }),
@@ -200,7 +200,7 @@ describe('FilePreviewService image route', () => {
     Object.assign(ctx, { fs })
     ctx.provide('agents', { get: () => ({ session: session('s1') }) } as never)
     ctx.provide('webServer', { register: vi.fn() } as never)
-    const service = new FilePreviewService(ctx, { maxReadBytes: 100 })
+    const service = new FilePreviewService(ctx, { maxReadBytes: 100, imageMaxReadBytes: 100 })
     await new Promise(resolve => setTimeout(resolve, 0))
     const { res, head } = makeRes()
     await (service as unknown as { serveImage: (req: IncomingMessage, res: ServerResponse) => Promise<void> })
