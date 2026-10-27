@@ -344,6 +344,7 @@ button.strip { cursor: pointer; }
 }
 .onePagerHead { display: flex; align-items: center; gap: 8px; }
 .styleChip {
+  max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: none;
   margin-left: auto; font: inherit; font-size: var(--dsh-panel-text-meta, 12px); padding: 2px 10px; border-radius: 10px; cursor: pointer;
   border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-secondary); min-height: 24px;
 }

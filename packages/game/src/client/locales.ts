@@ -134,6 +134,7 @@ export const zh = {
 
   'design.onePager': '一页纸',
   'design.style': '风格 · {style}',
+  'design.styleFull': '画风：{style}',
   'design.noPitch': '还没有一句话玩法。',
   'design.pillars': '设计支柱',
   'design.noPillars': '还没定支柱：和 agent 聊出 2–3 条「这个游戏一定要做到的体验」。',
@@ -515,6 +516,7 @@ export const en: Record<keyof typeof zh, string> = {
   'fields.note': 'Saved when you leave the box; reaches the game once you commit it as a new version.',
   'design.onePager': 'One-pager',
   'design.style': 'Style · {style}',
+  'design.styleFull': 'Look: {style}',
   'design.noPitch': 'No pitch yet.',
   'design.pillars': 'Design pillars',
   'design.noPillars': 'No pillars yet: find 2–3 experiences this game must deliver with the agent.',

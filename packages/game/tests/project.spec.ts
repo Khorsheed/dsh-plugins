@@ -3,7 +3,7 @@ import { kitOf } from '../src/kits/index.ts'
 import { addonFiles } from '../src/kits/three3d.ts'
 import {
   pillarNotes,
-  chapterStatus, elementsChapter, gate, isBuildFile, listOf, parseManifest, resolveArtStyle, slugOf, validateElements,
+  artStyleName, chapterStatus, elementsChapter, gate, isBuildFile, listOf, parseManifest, resolveArtStyle, slugOf, validateElements,
 } from '../src/project.ts'
 
 describe('the light gate', () => {
@@ -34,6 +34,15 @@ describe('three add-ons', () => {
       'notes.md': { type: 'text/markdown', text: "from 'three/addons/controls/OrbitControls.js'" },
     })
     expect(Object.keys(files).sort()).toEqual(['_dsh/addons/loaders/GLTFLoader.js', '_dsh/addons/utils/BufferGeometryUtils.js'])
+  })
+})
+
+describe('style names', () => {
+  it('shortens a long custom style to its lead, and keeps preset names', () => {
+    expect(artStyleName('custom:青金纸草——低多边形与手绘描边，纸莎草米白、青金石蓝')).toBe('青金纸草')
+    expect(artStyleName('custom:霓虹赛博，紫粉渐变')).toBe('霓虹赛博')
+    expect(artStyleName('custom:一种非常非常长而且没有任何标点的画风描述文字')).toBe('一种非常非常长而且没…')
+    expect(artStyleName('pixel')).not.toContain('…')
   })
 })
 

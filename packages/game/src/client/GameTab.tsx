@@ -12,7 +12,7 @@ import {
   PanelHeader, PanelRoot, UnderlineTabs, type PanelAction,
 } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
-import { artStyleLabel } from '../project.ts'
+import { artStyleLabel, artStyleName } from '../project.ts'
 import type { ProjectView, SessionGameState, WorkingChanges } from '../types.ts'
 import { exportHtml } from '../vfs.ts'
 import { failureOf, type GameTabProps, type NavTarget, type ViewProps } from './contract.ts'
@@ -201,7 +201,7 @@ function ProjectWorkbench(p: ViewProps & {
         <span>{project.title}</span><span className={css.titleCaret} aria-hidden="true">▾</span>
       </button>}
       meta={<span className={css.headMeta}>
-        {style !== undefined && <Tag tone="quiet">{artStyleLabel(style)}</Tag>}
+        {style !== undefined && <span title={artStyleLabel(style)}><Tag tone="quiet">{artStyleName(style)}</Tag></span>}
         <Tag tone="quiet">{project.current === null ? t('meta.noVersion') : t('meta.version', { version: project.current.version })}</Tag>
       </span>}
       extra={<span className={css.switches}>

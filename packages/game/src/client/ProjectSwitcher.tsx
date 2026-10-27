@@ -6,7 +6,7 @@
  * element kinds and style), so it writes an opener into the composer.
  */
 import { useEffect, useState, type ReactNode } from 'react'
-import { artStyleLabel } from '../project.ts'
+import { artStyleLabel, artStyleName } from '../project.ts'
 import type { ProjectCard } from '../types.ts'
 import { failureOf, type ViewProps } from './contract.ts'
 import css from './GameTab.module.css'
@@ -107,7 +107,7 @@ export function ProjectSwitcher({ t, api, sessionId, currentId, rev, onChoose, o
           <strong className={css.projectTitle}>{card.title}</strong>
           <span className={css.projectChips}>
             <span className={css.headChip} data-tone={card.version === null ? 'muted' : 'ok'}>{card.version === null ? t('switcher.noVersion') : `v${card.version}`}</span>
-            {card.artStyle !== '' && <span className={css.headChip}>{artStyleLabel(card.artStyle)}</span>}
+            {card.artStyle !== '' && <span className={css.headChip} title={artStyleLabel(card.artStyle)}>{artStyleName(card.artStyle)}</span>}
             <span className={css.headChip}>{t('switcher.elements', { count: card.elements })}</span>
           </span>
           {card.pitch !== '' && <span className={css.projectPitch}>{card.pitch}</span>}
