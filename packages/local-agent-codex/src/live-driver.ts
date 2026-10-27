@@ -46,6 +46,7 @@ import {
   appendCodexTranscriptLine,
   codexAssistantEvent,
   codexLineText,
+  commandOutcome,
   DEFAULT_DISPOSE_GRACE_MS,
   registerCodexMemberRun,
   textTask,
@@ -200,16 +201,15 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
         : undefined
     case 'commandExecution': {
       const command = typeof item['command'] === 'string' ? item.command : undefined
-      const output = typeof item['aggregatedOutput'] === 'string' && item['aggregatedOutput'].trim() !== ''
-        ? item['aggregatedOutput'] as string
-        : undefined
-      if (command === undefined && output === undefined) return undefined
+      const outcome = commandOutcome(item['aggregatedOutput'], item['exitCode'], item['status'])
+      if (command === undefined && outcome.result === undefined) return undefined
       return {
         kind: 'tool',
         id: itemId ?? `codex-live-${randomUUID()}`,
         name: 'Bash',
         ...command === undefined ? {} : { args: command },
-        ...output === undefined ? {} : { result: output },
+        ...outcome.result === undefined ? {} : { result: outcome.result },
+        ...outcome.failed ? { failed: true } : {},
       }
     }
     case 'webSearch':

@@ -71,6 +71,30 @@ type ToolCallBlockId = Extract<ContentBlock, { type: 'tool-call' }>['id']
  * closes, so an interrupted call folds with this error result. Same text as
  * the kimi provider's placeholder, for family consistency.
  */
+/**
+ * A finished command's result text and failure. Codex reports a command that
+ * printed nothing with an empty aggregated output — a crash (exit 139) or a
+ * silent failure read as "no result" and the mirror wrote the interrupted
+ * placeholder. A finished command (an exit code, or a completed/failed status)
+ * always carries a result: its output, or "（无输出）", with a non-zero exit
+ * code appended and the result marked failed. A command still running yields
+ * none, so the fold keeps waiting for it.
+ * @param output - the item's aggregated output.
+ * @param exitCode - the item's exit code, when finished.
+ * @param status - the item's status.
+ * @returns the result text (undefined while running) and whether it failed.
+ */
+export function commandOutcome(output: unknown, exitCode: unknown, status: unknown): { result?: string; failed: boolean } {
+  const text = typeof output === 'string' && output.trim() !== '' ? output : undefined
+  const code = typeof exitCode === 'number' && Number.isFinite(exitCode) ? exitCode : undefined
+  const finished = code !== undefined || status === 'completed' || status === 'failed'
+  const failed = (code !== undefined && code !== 0) || status === 'failed'
+  if (!finished) return text === undefined ? { failed: false } : { result: text, failed: false }
+  const exit = code !== undefined && code !== 0 ? `（退出码 ${code}）` : status === 'failed' ? '（执行失败）' : ''
+  const result = text === undefined ? (exit === '' ? '（无输出）' : `${exit.slice(0, -1)}，无输出）`) : exit === '' ? text : `${text}\n${exit}`
+  return { result, failed }
+}
+
 export const CODEX_INTERRUPTED_TOOL_RESULT = '（工具调用被中断，未能记录返回结果）'
 
 /** Quote one TOML basic string for the `-c` config override. */
@@ -735,7 +759,7 @@ export type CodexTranscriptLine =
    * stable within a run either way, so the child session's
    * `tool/call`/`tool/result` events pair by it.
    */
-  | { kind: 'tool'; id: string; name: string; args?: string; result?: string }
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; failed?: boolean }
 
 /** Mutable fold state shared by the batch parse and the incremental parser. */
 interface CodexStreamFoldState {
@@ -801,7 +825,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
   let event: {
     type?: string
     model?: unknown
-    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: unknown; name?: string; id?: string; changes?: { kind?: string; path?: string; diff?: string }[]; arguments?: string; input?: string }
+    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; exit_code?: unknown; status?: unknown; raw?: string; output?: unknown; name?: string; id?: string; changes?: { kind?: string; path?: string; diff?: string }[]; arguments?: string; input?: string }
     usage?: unknown
     thread_id?: unknown
   }
@@ -833,16 +857,15 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
     // command with neither text nor output is still a call the CLI made.
     countToolCall(state, 'command_execution')
     const command = typeof item.command === 'string' ? item.command : undefined
-    const output = typeof item.aggregated_output === 'string' && item.aggregated_output.trim() !== ''
-      ? item.aggregated_output
-      : undefined
-    if (command !== undefined || output !== undefined) {
+    const outcome = commandOutcome(item.aggregated_output, item.exit_code, item.status)
+    if (command !== undefined || outcome.result !== undefined) {
       state.lines.push({
         kind: 'tool',
         id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
         name: 'Bash',
         ...command === undefined ? {} : { args: command },
-        ...output === undefined ? {} : { result: output },
+        ...outcome.result === undefined ? {} : { result: outcome.result },
+        ...outcome.failed ? { failed: true } : {},
       })
     }
   } else if (item.type === 'web_search_call') {
@@ -1356,7 +1379,7 @@ export function appendCodexTranscriptLine(
       message: createToolResultMessage({
         callId: line.id as ToolResultCallId,
         content: [{ type: 'text', text: line.result ?? CODEX_INTERRUPTED_TOOL_RESULT }],
-        isError: line.result === undefined,
+        isError: line.result === undefined || line.failed === true,
       }),
     }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
     childSession.append('step/end', { turn, step })

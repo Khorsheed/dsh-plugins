@@ -105,6 +105,7 @@
 .callHead b { font-family: var(--dsw-font-family-mono,ui-monospace,monospace); overflow-wrap: anywhere; min-width: 0; }
 .callHead .number { margin-left: auto; }
 .args { display: grid; grid-template-columns: minmax(0,auto) minmax(0,1fr); gap: 3px 10px; padding: 6px 9px; font-size: var(--dsh-panel-text-meta,12px); }
+.argsRaw { padding: 6px 9px; font: var(--dsh-panel-text-meta,12px)/1.6 var(--dsw-font-family-mono,ui-monospace,monospace); color: var(--dsw-alias-label-primary); min-width: 0; }
 .argKey { color: var(--dsw-alias-label-tertiary); font-family: var(--dsw-font-family-mono,ui-monospace,monospace); max-width: 120px; overflow-wrap: anywhere; }
 .argValue { min-width: 0; font: inherit; border: 0; padding: 0; background: transparent; color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; cursor: pointer; }
 .argValue[aria-expanded='true'] { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; text-overflow: clip; }

@@ -303,3 +303,28 @@ describe('codex rollout token_count recovery', () => {
       .toEqual({})
   })
 })
+
+describe('commandOutcome — a finished command always carries a result', async () => {
+  const { commandOutcome } = await import('../src/codex-cli-provider.ts')
+  it('reads a crash with no output as a failed result, not "no result" (exit 139, bcc89add)', () => {
+    expect(commandOutcome('', 139, 'failed')).toEqual({ result: '（退出码 139，无输出）', failed: true })
+  })
+  it('keeps output and appends a non-zero exit code', () => {
+    expect(commandOutcome('boom\n', 1, 'failed')).toEqual({ result: 'boom\n\n（退出码 1）', failed: true })
+  })
+  it('a silent success is "no output", not interrupted', () => {
+    expect(commandOutcome('', 0, 'completed')).toEqual({ result: '（无输出）', failed: false })
+  })
+  it('a running command yields no result yet', () => {
+    expect(commandOutcome('', undefined, 'in_progress')).toEqual({ failed: false })
+  })
+})
+
+describe('the exec stream folds a crashed command as a failed result', async () => {
+  const { parseCodexJsonStream } = await import('../src/codex-cli-provider.ts')
+  it('item.completed with an empty output and exit 139', () => {
+    const stream = JSON.stringify({ type: 'item.completed', item: { id: 'item_1', type: 'command_execution', command: "/bin/zsh -lc 'blender -b'", aggregated_output: '', exit_code: 139, status: 'failed' } }) + '\n'
+    const parsed = parseCodexJsonStream(stream) as { lines: { kind: string; result?: string; failed?: boolean }[] }
+    expect(parsed.lines.find(line => line.kind === 'tool')).toMatchObject({ result: '（退出码 139，无输出）', failed: true })
+  })
+})

@@ -226,8 +226,9 @@ function ArgumentValue({ name, value }: { readonly name: string; readonly value:
 }
 function Arguments({ raw, t }: { readonly raw: string; readonly t: T }) {
   let obj: unknown
-  try { obj = JSON.parse(raw) } catch { return <Clamped text={raw} t={t} /> }
-  if (!obj || typeof obj !== 'object') return <Clamped text={raw} t={t} />
+  // Non-JSON arguments (a shell command line) keep the key/value table's inset.
+  try { obj = JSON.parse(raw) } catch { return <div className={css.argsRaw}><Clamped text={raw} t={t} /></div> }
+  if (!obj || typeof obj !== 'object') return <div className={css.argsRaw}><Clamped text={raw} t={t} /></div>
   return <div className={css.args}>{Object.entries(obj).map(([k,v]) => <ArgumentValue key={k} name={k} value={typeof v === 'string' ? v : JSON.stringify(v)} />)}</div>
 }
 function Reasoning({ text, ms, t }: { readonly text: string; readonly ms: number | undefined; readonly t: T }) {
