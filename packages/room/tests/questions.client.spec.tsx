@@ -50,4 +50,18 @@ describe('room-question', () => {
     expect(screen.queryByRole('button')).toBeNull()
     expect(screen.getByText('你的回答：九尾狐；毕方；再加烛龙')).toBeDefined()
   })
+
+  it('an expired card stays answerable and folds to 已补答; an expired consent gate does not', () => {
+    const answerQuestion = vi.fn(async () => undefined)
+    const data: RoomQuestionData = { seq: 5, time: 1005, questionId: 'q1', member: '游戏大师', questions, state: 'cancelled' }
+    const view = (next: RoomQuestionData) => <RoomQuestionView {...{ node: { data: next }, answerQuestion, t } as unknown as RoomQuestionViewProps} />
+    const { rerender } = render(view(data))
+    expect(screen.getByText('已过期，仍可回答')).toBeDefined()
+    expect(screen.getByRole('button', { name: '提交回答' })).toBeDefined()
+    rerender(view({ ...data, state: 'answered', late: true, answers: [{ id: 'fun', selected: ['读懂习性'] }] }))
+    expect(screen.getByText('已补答')).toBeDefined()
+    rerender(view({ ...data, consent: true }))
+    expect(screen.getByText('已过期，未作答')).toBeDefined()
+    expect(screen.queryByRole('button')).toBeNull()
+  })
 })

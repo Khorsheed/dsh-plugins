@@ -4,7 +4,10 @@
  * picking — one option (or several on a multi-pick question) plus an optional
  * 其他 free-text line — instead of a numbered list in the member's reply that
  * the human answers by typing. Submitting resolves the member's waiting call;
- * the card then folds to the given answers (or 已过期 when the call ended).
+ * the card then folds to the given answers. When the call ended unanswered
+ * (a timeout, or a restart took the member's process) the card stays
+ * answerable — the answers then reach the member as a new message (已补答);
+ * only a consent gate (room_help's 允许/不允许) folds to 已过期 for good.
  */
 import { useState, type CSSProperties, type ReactNode } from 'react'
 import type { RoomQuestionAnswer } from '../types.ts'
@@ -25,6 +28,9 @@ export function RoomQuestionView({ node, answerQuestion, t }: RoomQuestionViewPr
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
   const pending = data.state === 'pending'
+  // An expired question still takes an answer; an expired consent gate does not.
+  const lateOpen = data.state === 'cancelled' && data.consent !== true
+  const open = pending || lateOpen
   const draftOf = (id: string): Draft => drafts[id] ?? { selected: [], custom: '' }
   const setDraft = (id: string, next: Draft): void => { setDrafts(current => ({ ...current, [id]: next })) }
   const answered = (id: string): boolean => draftOf(id).selected.length > 0 || draftOf(id).custom.trim() !== ''
@@ -54,24 +60,24 @@ export function RoomQuestionView({ node, answerQuestion, t }: RoomQuestionViewPr
   }
 
   return (
-    <div className={css.row} data-state={data.state} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
+    <div className={css.row} data-state={lateOpen ? 'late' : data.state} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
       <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
       <div className={css.card}>
         <div className={css.head}>
           <span className={css.title}>{t('question.title', { member: data.member })}</span>
-          {!pending && <span className={css.status}>{t(data.state === 'answered' ? 'question.answered' : 'question.cancelled')}</span>}
+          {!pending && <span className={css.status}>{t(data.state === 'answered' ? (data.late === true ? 'question.answeredLate' : 'question.answered') : lateOpen ? 'question.lateOpen' : 'question.cancelled')}</span>}
         </div>
         {data.questions.map((question) => {
           const multi = question.multiSelect === true
           const draft = draftOf(question.id)
           return (
-            <fieldset key={question.id} className={css.question} disabled={!pending || busy}>
+            <fieldset key={question.id} className={css.question} disabled={!open || busy}>
               <legend className={css.prompt}>
                 {question.header !== undefined && <span className={css.chip}>{question.header}</span>}
                 <span>{question.question}</span>
-                {pending && multi && <span className={css.hint}>{t('question.multi')}</span>}
+                {open && multi && <span className={css.hint}>{t('question.multi')}</span>}
               </legend>
-              {pending ? (
+              {open ? (
                 <>
                   {(question.options ?? []).map(option => (
                     <label key={option.label} className={css.option} data-picked={draft.selected.includes(option.label)}>
@@ -105,7 +111,7 @@ export function RoomQuestionView({ node, answerQuestion, t }: RoomQuestionViewPr
             </fieldset>
           )
         })}
-        {pending && (
+        {open && (
           <div className={css.actions}>
             {error !== undefined && <span className={css.error}>{error}</span>}
             <button type="button" className={css.submit} disabled={!complete || busy} onClick={() => { void submit() }}>{t('question.submit')}</button>
