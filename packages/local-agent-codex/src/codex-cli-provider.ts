@@ -112,6 +112,26 @@ export const DEFAULT_DISPOSE_GRACE_MS = 3_000
  */
 export const CODEX_AUTH_FAILURE = /401 unauthorized|unauthorized|authentication failed|not logged in|access token/i
 
+/**
+ * A session's standing sandbox mode — the host's `sandbox/mode` vocabulary is
+ * codex's own (`read-only` | `workspace-write` | `danger-full-access`). Reads
+ * the delegating session first (the mode the user sees and changes), then
+ * the child's inherited record.
+ * @param ctx - context carrying the live session store.
+ * @param childSession - the member's child session, when one exists.
+ * @param parentSessionId - the delegating session.
+ * @returns the mode, or undefined when neither session records one.
+ */
+export function sessionSandboxMode(ctx: Context, childSession: Session | undefined, parentSessionId: string | undefined): CodexSandbox | undefined {
+  const sessions = ctx.get('sessions')
+  const parent = parentSessionId === undefined ? undefined : sessions?.get(SessionId(parentSessionId))
+  for (const session of [parent, childSession]) {
+    const mode = session?.snapshotEvents().filter(event => (event.type as string) === 'sandbox/mode').at(-1)?.data as { mode?: unknown } | undefined
+    if (mode?.mode === 'read-only' || mode?.mode === 'workspace-write' || mode?.mode === 'danger-full-access') return mode.mode
+  }
+  return undefined
+}
+
 /** Codex sandbox policy values accepted by `codex exec --sandbox`. */
 export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access'
 
@@ -252,12 +272,26 @@ export class CodexCliProvider implements SubagentProvider {
    */
   constructor(
     private readonly ctx: Context,
-    private readonly sandbox: CodexSandbox = 'workspace-write',
+    /** An explicit policy from the plugin config; undefined follows the member's session. */
+    private readonly sandbox: CodexSandbox | undefined = undefined,
     private readonly live?: CodexLiveDriver | ((childSessionId: string) => CodexLiveDriver | undefined),
     private readonly model?: (scope?: string) => string | undefined,
     private readonly overrides?: (childSessionId: string) => string | undefined,
     private readonly endpoint?: (scopeHome: string) => Promise<CodexEndpointAuth>,
   ) {}
+
+  /**
+   * The sandbox this round runs under: the plugin config's explicit policy
+   * when set, else the member's session's own standing mode — the delegating
+   * session's latest `sandbox/mode`, then the child's inherited one — so a
+   * member runs with exactly the access its session shows (a full-access
+   * session's Codex member was confined to workspace-write and Blender
+   * crashed under the seatbelt). `workspace-write` when neither says.
+   */
+  sandboxFor(childSession: Session | undefined, parentSessionId: string | undefined): CodexSandbox {
+    if (this.sandbox !== undefined) return this.sandbox
+    return sessionSandboxMode(this.ctx, childSession, parentSessionId) ?? 'workspace-write'
+  }
 
   /** The scope's endpoint credential for this round; absent resolver = never. */
   private resolveEndpoint(homeDir: string): Promise<CodexEndpointAuth | undefined> {
@@ -417,6 +451,7 @@ export class CodexCliProvider implements SubagentProvider {
           homeDir,
           childSession,
           parentSessionId: request.parent.session.id,
+          sandbox: this.sandboxFor(childSession, request.parent.session.id),
           ...startModel === undefined ? {} : { startModel },
           ...configuration === undefined ? {} : { configuration: configuration.resolved },
           // The thread id arrives with thread/start (server-assigned), far
@@ -456,7 +491,7 @@ export class CodexCliProvider implements SubagentProvider {
         ...exec === undefined ? {} : { exec },
         endpointLabel: baseUrl,
         endpointArgv: endpointConfigOverrides(endpoint),
-        sandbox: this.sandbox,
+        sandbox: this.sandboxFor(childSession, request.parent.session.id),
         ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(runId) ?? requestedModel, () => this.model?.(scope))),
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
@@ -555,6 +590,7 @@ export class CodexCliProvider implements SubagentProvider {
             homeDir,
             childSession,
             parentSessionId: request.parent.session.id,
+            sandbox: this.sandboxFor(childSession, request.parent.session.id),
             resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
             ...startModel === undefined ? {} : { startModel },
             ...configuration === undefined ? {} : { configuration: configuration.resolved },
@@ -581,7 +617,7 @@ export class CodexCliProvider implements SubagentProvider {
           ...exec === undefined ? {} : { exec },
           endpointLabel: baseUrl,
           endpointArgv: endpointConfigOverrides(endpoint),
-          sandbox: this.sandbox,
+          sandbox: this.sandboxFor(childSession, request.parent.session.id),
           ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(intent.childSessionId) ?? requestedModel, () => this.model?.(scope))),
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),

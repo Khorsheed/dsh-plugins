@@ -136,6 +136,8 @@ export interface CodexLiveRoundSpec {
   readonly childSession: Session
   /** The delegating session (member-channel registration). */
   readonly parentSessionId: string
+  /** The sandbox the member's thread starts under (its session's mode; see CodexCliProvider.sandboxFor). */
+  readonly sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access'
   /**
    * Resume round: continue the thread recorded as `cliSessionId`, appending
    * under this turn number. Also the reattach path after a runtime crash.
@@ -868,7 +870,7 @@ export class CodexLiveDriver {
     if (rt.threadId === undefined) {
       const permissionParams = {
         approvalPolicy: 'never',
-        sandbox: this.config.sandbox ?? 'workspace-write',
+        sandbox: this.config.sandbox ?? spec.sandbox ?? 'workspace-write',
       }
       if (spec.resume === undefined) {
         const response = await rt.peer.request<{ thread: { id: string } }>('thread/start', {
