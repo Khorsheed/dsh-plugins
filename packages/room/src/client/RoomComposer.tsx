@@ -394,15 +394,19 @@ export function RoomComposer({
     addFiles(files)
   }
   const carriesFiles = (event: DragEvent): boolean => attachable && [...event.dataTransfer.types].includes('Files')
+  // The hidden official bar keeps its document-level drop listener (bubble
+  // phase): a drop this card takes stops there, or the same files land twice.
   const onDragOver = (event: DragEvent<HTMLDivElement>): void => {
     if (!carriesFiles(event)) return
     event.preventDefault()
+    event.stopPropagation()
     if (!dragging) setDragging(true)
   }
   const onDrop = (event: DragEvent<HTMLDivElement>): void => {
     setDragging(false)
     if (!carriesFiles(event)) return
     event.preventDefault()
+    event.stopPropagation()
     addFiles([...event.dataTransfer.files])
   }
 

@@ -251,8 +251,8 @@ export function InviteDialog({
   // Edit mode: instructions may clear (empty = no preset injected); the name
   // is the only hard requirement.
   const canSubmit = mode === 'edit'
-    ? validName(name)
-    : (native || localAgentAvailable) && chosen !== '' && validName(name)
+    ? validName(name) && !(name !== member?.name && existingNames.includes(name))
+    : (native || localAgentAvailable) && chosen !== '' && validName(name) && !existingNames.includes(name)
 
   // The model row: the same control the provider settings cards use. An unset
   // field DISPLAYS the provider's current default dimmed (inherited, never
@@ -355,6 +355,12 @@ export function InviteDialog({
     ...instructions.trim() === '' ? {} : { instructions: instructions.trim() },
     ...role.trim() === '' ? {} : { role: role.trim() },
   }
+
+  // A typed name that cannot be saved: invalid (whitespace, @) or another member's.
+  const nameProblem = name === '' ? undefined
+    : !validName(name) ? 'invite.error.invalid' as const
+      : name !== member?.name && existingNames.includes(name) ? 'invite.error.duplicate' as const
+        : undefined
 
   const rollDice = (): void => {
     const rolled = rollName(existingNames, name)
@@ -508,7 +514,10 @@ export function InviteDialog({
                   🎲
                 </button>
               </span>
-              <span className={css.hint}>{t('invite.nameHint')}</span>
+              {/* Say why 保存/邀请 is unavailable instead of a silently grey button. */}
+              {nameProblem === undefined
+                ? <span className={css.hint}>{t('invite.nameHint')}</span>
+                : <span className={`${css.hint} ${css.hintError}`} role="alert">{t(nameProblem)}</span>}
             </label>
             <label className={css.field}>
               <span className={css.label}>{t('invite.role')}</span>

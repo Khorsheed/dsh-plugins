@@ -268,6 +268,20 @@ describe('MembersView', () => {
     })
   })
 
+  it('a name that cannot be saved says why instead of only greying 保存', async () => {
+    const { face } = await bench()
+    fireEvent.click(Array.from(cardOf('ada').querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    await screen.findByRole('dialog')
+    const nameInput = screen.getByPlaceholderText('ada') as HTMLInputElement
+    fireEvent.change(nameInput, { target: { value: 'KIMI 游戏大师' } })
+    expect(screen.getByRole('alert').textContent).toBe('名字需非空、无空白、不含 @')
+    expect((screen.getByRole('button', { name: '保存' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(nameInput, { target: { value: 'KIMI游戏大师' } })
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => { expect(face.updateMember).toHaveBeenCalledWith('ada', expect.objectContaining({ rename: 'KIMI游戏大师' })) })
+  })
+
   it('the invite dialog greys logged-out providers and submits the invite', async () => {
     const { face } = await bench()
     face.invite.mockResolvedValue({ ok: true, pendingFirstTask: true })
@@ -279,7 +293,7 @@ describe('MembersView', () => {
     expect(codex.disabled).toBe(true)
     expect(dialog.textContent).toContain('置灰的 provider 未登录')
 
-    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'dora' } })
     // The cwd field: empty = inherit the room cwd (the placeholder); the
     // read-only display fills through the 浏览… button (the official
     // pickDirectory wire primitive).
@@ -295,10 +309,10 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
       expect(face.invite).toHaveBeenCalledWith({
-        provider: 'kimi', name: 'cathy', instructions: '前端', cwd: '/home/user/web', firstTask: '搭页面',
+        provider: 'kimi', name: 'dora', instructions: '前端', cwd: '/home/user/web', firstTask: '搭页面',
       })
     })
-    await screen.findByText('已邀请 cathy 并开始工作')
+    await screen.findByText('已邀请 dora 并开始工作')
   })
 
   it('omits cwd from the invite when the field is left empty (inherit)', async () => {
@@ -306,12 +320,12 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     const dialog = await screen.findByRole('dialog')
     await screen.findByText('Kimi Code', { selector: 'option' })
-    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'dora' } })
     // The advanced drawer (folded on invite) holds the role instructions.
     fireEvent.change(dialog.querySelectorAll('textarea')[1]!, { target: { value: '前端' } })
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
-      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy', instructions: '前端' })
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'dora', instructions: '前端' })
     })
   })
 
@@ -359,10 +373,10 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'kimi-k2' }))
     expect((screen.getByLabelText('默认模型') as HTMLInputElement).value).toBe('kimi-k2')
 
-    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'dora' } })
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
-      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy', model: 'kimi-k2' })
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'dora', model: 'kimi-k2' })
     })
   })
 
@@ -382,10 +396,10 @@ describe('MembersView', () => {
     await screen.findByText('Kimi Code', { selector: 'option' })
     await waitFor(() => { expect(face.modelSurface).toHaveBeenCalledWith('kimi') })
     fireEvent.click(screen.getByRole('button', { name: 'stub-picker' }))
-    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'dora' } })
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
-      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy', model: 'kimi-k2', effort: 'high' })
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'dora', model: 'kimi-k2', effort: 'high' })
     })
   })
 
@@ -401,10 +415,10 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('menuitemradio', { name: '默认（跟随该 provider 默认：kimi-k2）' }))
     expect((screen.getByLabelText('默认模型') as HTMLInputElement).value).toBe('')
 
-    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'dora' } })
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
-      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy' })
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'dora' })
     })
   })
 
@@ -457,10 +471,10 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     await screen.findByRole('dialog')
     await screen.findByText('Kimi Code', { selector: 'option' })
-    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'cathy' } })
+    fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'dora' } })
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
-      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'cathy' })
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'dora' })
     })
   })
 
