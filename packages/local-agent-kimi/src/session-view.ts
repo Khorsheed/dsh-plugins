@@ -217,6 +217,8 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
   // turn/start numbering.
   let turn = 0
   let turnSeen = false
+  /** The wire marks rounds with turn.prompt (current kimi): a user message it did not prompt is an injection. */
+  let promptsMarkTurns = false
   // Tool calls by uuid and toolCallId, so a result attaches to its own call
   // even when several calls run in parallel within one step.
   const callsByUuid = new Map<string, number>()
@@ -269,6 +271,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       continue
     }
     if (event.type === 'turn.prompt') {
+      promptsMarkTurns = true
       lineModel = undefined
       // Each round's user prompt opens the next turn; the matching
       // context.append_message below is deduped against this text.
@@ -295,6 +298,12 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
           // Duplicate of the prompt; skip.
           continue
         }
+        // A wire that opens every round with turn.prompt: any other user
+        // message is kimi's own injection inside the round (a Skill's loaded
+        // instructions, a steer) — its loop events keep the same turnId. It
+        // opens no turn (the dsh round is still running: a turn here wrote
+        // steps into a turn the log never opened) and is not the human's.
+        if (promptsMarkTurns) continue
         turnSeen = true
         turn += 1
         lineModel = undefined
