@@ -53,4 +53,18 @@ describe('room session status', () => {
     bench.room.append('room/approval-resolved', { id: 'p1', outcome: 'rejected' })
     expect(await bench.service.pendingCards({})).toEqual([])
   })
+
+  it('a member\'s round ending expires its open question card, so a later answer goes out as a new message', async () => {
+    const bench = await boot()
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi-cli', name: 'gm' })
+    bench.room.append('room/member-updated', { name: 'gm', childSessionId: SessionId('child-gm') })
+    const asked = bench.service.receiveMemberCommand({ childSessionId: 'child-gm', parentSessionId: String(bench.sessionId), provider: 'kimi-cli' }, { name: 'ask_user_question', arguments: { questions: [{ id: 'q', question: '?', options: [{ label: 'A' }, { label: 'B' }] }] } })
+    await vi.waitFor(async () => expect(await bench.service.pendingCards({})).toHaveLength(1))
+    bench.room.append('room/run-state', { member: 'gm', state: 'running', startedAt: 5, runId: 'r' })
+    bench.room.append('room/run-state', { member: 'gm', state: 'done', startedAt: 5, runId: 'r' })
+    expect((await asked).ok).toBe(false)
+    await vi.waitFor(async () => expect(await bench.service.pendingCards({})).toEqual([]))
+    const resolved = bench.room.snapshotEvents().filter(event => event.type === 'room/question-resolved').at(-1)!.data as { outcome: string }
+    expect(resolved.outcome).toBe('cancelled')
+  })
 })
