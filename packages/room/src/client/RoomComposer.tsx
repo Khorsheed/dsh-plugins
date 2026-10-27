@@ -735,7 +735,9 @@ export function RoomComposer({
           fallback; re-rendered here from the same projections. The framework
           omits the seat entirely on a host without the projection subsystem —
           degrade to no row. */}
-      {!external && useProjection !== undefined && <RoomStatsLine useProjection={useProjection} state={state} t={t} />}
+      {/* An external coordinator keeps the members chip: the room session's
+          own turn figures belong to its idle main agent, not the coordinator. */}
+      {useProjection !== undefined && <RoomStatsLine useProjection={useProjection} state={state} membersOnly={external} t={t} />}
     </div>
   )
 }
