@@ -348,11 +348,11 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
         if (typeof call.toolCallId === 'string') callsByToolCallId.set(call.toolCallId, lineIndex)
       } else if (loop.type === 'tool.result') {
         const result = loop as {
-          result?: { output?: string }
+          result?: { output?: unknown }
           parentUuid?: string
           toolCallId?: string
         }
-        const output = result.result?.output
+        const output = toolOutputText(result.result?.output)
         let target = typeof result.parentUuid === 'string'
           ? callsByUuid.get(result.parentUuid)
           : undefined
@@ -389,6 +389,28 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
     }
   }
   return { sessionId, lines, usageRecords, closedSteps, ...model === undefined ? {} : { model }, ...modelTurn === undefined ? {} : { modelTurn } }
+}
+
+/**
+ * A wire tool result's output as display text. Most tools report a string;
+ * a media read (ReadMediaFile) reports content parts — text parts keep their
+ * text, an image part becomes a short marker (its bytes stay in kimi's blob
+ * store). Anything else reads as no output, never a parse failure: one
+ * unreadable result must not stop the whole transcript (and the round's
+ * usage) from folding.
+ * @param raw - the result's `output` field.
+ * @returns the text, or undefined when there is none.
+ */
+export function toolOutputText(raw: unknown): string | undefined {
+  if (typeof raw === 'string') return raw
+  if (!Array.isArray(raw)) return undefined
+  const parts = raw.map((part: unknown) => {
+    if (part === null || typeof part !== 'object') return ''
+    const entry = part as { type?: unknown; text?: unknown }
+    if (entry.type === 'text' && typeof entry.text === 'string') return entry.text
+    return typeof entry.type === 'string' && entry.type !== '' ? `[${entry.type}]` : ''
+  })
+  return parts.join('')
 }
 
 /**
