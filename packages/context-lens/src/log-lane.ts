@@ -143,7 +143,7 @@ export interface SessionLogCursor {
    * grows with the square of its length; the backfill materializes only its
    * window and records the rest as bodiless rows. Absent: materialize all.
    */
-  materialize?: (hostTurn: number | undefined) => boolean
+  materialize?: (hostTurn: number | undefined, index: number) => boolean
   /** The last request's messages when it was not materialized (the next full one diffs against them). */
   previousMessages?: CapturedMessage[]
   previousToolNames?: string[]
@@ -504,7 +504,7 @@ function buildCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: Rec
  * carry it; a torn bracket falls back to the fold's open-turn state). Turns
  * never closed by a turn/end (a crash) come out with `endReasonKind` unset.
  */
-export function reconstructSession(rows: readonly SessionLogRow[], materialize?: (hostTurn: number | undefined) => boolean): LogTurn[] {
+export function reconstructSession(rows: readonly SessionLogRow[], materialize?: (hostTurn: number | undefined, index: number) => boolean): LogTurn[] {
   const cursor = openCursor()
   if (materialize !== undefined) cursor.materialize = materialize
   const turns: LogTurn[] = []
@@ -653,7 +653,10 @@ function buildRequest(
   const hostTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
   const messages = cursor.messages.map(folded => folded.message)
   let segments: ReturnType<typeof splitRequest>
-  if (cursor.materialize?.(hostTurn) === false) {
+  // The request's position among this log's requests (a merged external call keeps its first step's).
+  const logIndex = cursor.requests.length
+  const bodiless = cursor.materialize?.(hostTurn, logIndex) === false
+  if (bodiless) {
     // Outside the window: keep the structure, not the copied context.
     cursor.previousMessages = messages
     cursor.previousToolNames = (cursor.tools ?? []).map(tool => tool.name)
@@ -694,6 +697,8 @@ function buildRequest(
   const finishKind = finish?.kind
   return {
     ...cursor.numberedFromStart ? { requestNumber: cursor.requests.length + 1 } : {},
+    logIndex,
+    ...bodiless ? { bodiless: true as const } : {},
     ...hostTurn === undefined ? {} : { hostTurn },
     startedAt,
     status: failed ? 'failed' : 'ok',

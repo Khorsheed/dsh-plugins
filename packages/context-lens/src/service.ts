@@ -53,6 +53,9 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Rebuilt request bodies held at once (a request and its baseline per read). */
+const HYDRATED_BODIES = 8
+
 /** Plugin config: capture retention knobs. */
 export interface InspectorConfig {
   /** Turns retained per session (oldest evicted first, backfilled before live). Default 30. */
@@ -328,6 +331,11 @@ export class InspectorService {
     if (cursor?.broken !== undefined) return
     if (cursor === undefined) {
       cursor = openCursor()
+      // A member's requests are kept bodiless: each carries its whole context
+      // (a kimi member's 391 requests held 139M chars — the store's whole
+      // budget — and the eviction then emptied the room). The body is rebuilt
+      // when one request is read (see hydrate).
+      cursor.materialize = () => false
       this.cursors.set(childId, cursor)
     }
     try {
@@ -433,9 +441,12 @@ export class InspectorService {
           .map(row => (row.data as { turn?: unknown } | undefined)?.turn).filter((turn): turn is number => typeof turn === 'number')
         // An external agent's own session: its requests reach only this log.
         const provider = (events.find(row => row.type === 'subagent/descriptor')?.data as Record<string, unknown> | undefined)?.['provider']
-        if (typeof provider === 'string' && !IN_PROCESS_PROVIDERS.has(provider)) this.store.markLogDriven(sessionId)
+        const external = typeof provider === 'string' && !IN_PROCESS_PROVIDERS.has(provider)
+        if (external) this.store.markLogDriven(sessionId)
         const keep = this.store.windowHosts(sessionId, hosts)
-        this.store.insertLogTurns(sessionId, reconstructSession(events, host => host === undefined || keep.has(host)))
+        // An external agent's own session keeps every request bodiless, as its
+        // child scope does (its contexts are as large); bodies rebuild on read.
+        this.store.insertLogTurns(sessionId, reconstructSession(events, host => !external && (host === undefined || keep.has(host))))
         for (const fact of replacementFactsOf(events)) this.store.noteReplacement(sessionId, fact)
         for (const row of events) {
           if (row.type.startsWith('room/')) this.store.noteRoomEvent(sessionId, row.type, row.data, row.seq, row.time)
@@ -526,9 +537,48 @@ export class InspectorService {
   }
 
   /** One request's full four-segment breakdown (a {@link ScopedRefusal} when the filter excludes its scope). */
+  /** Requests whose rebuilt body is held, oldest first (`<sessionId>\0<seq>`). */
+  private readonly hydrated: string[] = []
+
+  /**
+   * Rebuild a bodiless request's context (and its scope predecessor's, the
+   * prefix comparison's baseline) from its log: one fold of the log with
+   * only those positions materialized. The last few rebuilt bodies stay;
+   * older ones are dropped again.
+   */
+  private async hydrate(sessionId: string, seq: number): Promise<void> {
+    const plan = this.store.bodilessFor(sessionId, seq)
+    const reader = this.reader()
+    if (plan === undefined || reader === undefined) return
+    try {
+      const handle = await reader.open(plan.logId, 'read')
+      try {
+        const { events } = await handle.read(0)
+        const wanted = new Set(plan.targets.map(target => target.logIndex))
+        const cursor = openCursor()
+        cursor.materialize = (_host, index) => wanted.has(index)
+        const built = foldLogRows(cursor, events).filter(request => request.bodiless !== true && request.logIndex !== undefined && wanted.has(request.logIndex))
+        for (const target of plan.targets) {
+          const body = built.find(request => request.logIndex === target.logIndex)
+          if (body === undefined || !this.store.hydrateRequest(sessionId, target.seq, body)) continue
+          this.hydrated.push(`${sessionId}\0${target.seq}`)
+        }
+      } finally {
+        void handle.close().catch(() => undefined)
+      }
+    } catch (error) {
+      this.logWarn(`context-lens: request body rebuild failed for "${plan.logId}" (${error instanceof Error ? error.message : String(error)})`)
+    }
+    while (this.hydrated.length > HYDRATED_BODIES) {
+      const [oldSession, oldSeq] = this.hydrated.shift()!.split('\0')
+      this.store.dehydrateRequest(oldSession!, Number(oldSeq))
+    }
+  }
+
   async getRequest(sessionId: string, seq: number, filter?: ScopeFilter): Promise<CapturedRequest | ScopedRefusal | undefined> {
     await this.backfillMainSession(sessionId)
     await this.refreshChildren(sessionId, filter)
+    await this.hydrate(sessionId, seq)
     const request = this.store.getRequest(sessionId, seq, filter)
     const tools = request !== undefined && 'prefix' in request ? request.prefix?.toolChanges : undefined
     if (tools === undefined || tools.length === 0) return request
