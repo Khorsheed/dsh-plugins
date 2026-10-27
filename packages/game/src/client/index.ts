@@ -22,6 +22,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.tsx'
 import type { GameApi, GameTabInjected, NavTarget } from './contract.ts'
 import { gameTurnDefinition, GameTurnCard } from './TurnCard.tsx'
+import { AutoNav } from './autonav.ts'
 import { encodeGameRef, GAME_REF_SOURCE, gameRefCodec } from './refs.ts'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
@@ -164,6 +165,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
   const navListeners = new Set<(target: NavTarget) => void>()
   let parkedNav: NavTarget | null = null
+  const autoNav = new AutoNav(target => { face.openAt(target) })
   const face: GameTabInjected = {
     openAt: (target) => {
       parkedNav = target
@@ -221,7 +223,29 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return () => { listeners.delete(listener) }
     },
     touch: sessionId => { emit(sessionId) },
+    autoNav,
   }
+
+  // A version cut mid-turn (the agent's game_publish) is announced as it lands, not at turn end:
+  // session activity is watched, throttled, against the last live version seen per project.
+  const lastVersion = new Map<string, number>()
+  const lastLook = new Map<string, number>()
+  listeners.add(sessionId => {
+    const now = Date.now()
+    if (now - (lastLook.get(sessionId) ?? 0) < 4000) return
+    lastLook.set(sessionId, now)
+    void api.state(sessionId as SessionId).then(r => {
+      const project = r.ok ? r.value.bound : null
+      if (project == null) return
+      const record = project.candidate ?? project.current
+      if (record === null) return
+      const seen = lastVersion.get(project.id)
+      lastVersion.set(project.id, record.version)
+      // The first sighting is the baseline; a version the user published is no news to them.
+      if (seen === undefined || record.version <= seen || record.by === 'user') return
+      autoNav.versionLanded(project.id, record.version, project.candidate !== null ? t('nav.candidate', { version: record.version }) : t('nav.version', { version: record.version }))
+    }).catch(() => {})
+  })
 
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',

@@ -10,6 +10,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: pulls the right-Sidebar SlotMap seats ('sidebar.right.pane.tab').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from './locales.ts'
+import type { AutoNav } from './autonav.ts'
 import type { BundleFile, CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from '../types.ts'
 
 type R<T> = Promise<RemoteResult<T>>
@@ -50,6 +51,8 @@ export interface NavTarget {
   readonly view: 'play' | 'elements' | 'design' | 'versions'
   readonly elementId?: string
   readonly chapterId?: string
+  /** An element opened because a turn changed it, when that turn also cut this version (the page offers 去试玩). */
+  readonly playVersion?: number
 }
 
 /** What the tab body gets from the plugin. */
@@ -73,6 +76,8 @@ export interface GameTabInjected {
   subscribeSessionEvents: (listener: (sessionId: string) => void) => () => void
   /** Tell every game surface of this page that a session's state moved. */
   touch: (sessionId: SessionId) => void
+  /** 改完自动跳转 (page-wide). */
+  autoNav: AutoNav
 }
 
 /** Full props of the game tab body. */
@@ -93,6 +98,8 @@ export interface ViewProps {
   readonly refresh: () => void
   /** Show a short confirmation line at the panel's foot. */
   readonly toast: (text: string) => void
+  /** 改完自动跳转 (page-wide). */
+  readonly autoNav: AutoNav
 }
 
 /** A Remote call's game-level failure code, or undefined on success. */

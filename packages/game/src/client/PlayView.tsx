@@ -35,7 +35,7 @@ function fmt(value: number, step: number): string {
 
 /** The play view. */
 export function PlayView(props: PlayViewProps): ReactNode {
-  const { t, sessionId, api, project, refresh, toast, insertDraft, insertRef, onOpenElement, onOpenVersions } = props
+  const { t, sessionId, api, project, refresh, toast, insertDraft, insertRef, onOpenElement, onOpenVersions, autoNav } = props
   const [which, setWhich] = useState<'current' | 'candidate'>('current')
   const [bundle, setBundle] = useState<PlayBundle | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -52,6 +52,8 @@ export function PlayView(props: PlayViewProps): ReactNode {
   // Playing is opt-in (2026-10-10): a big game should not start, and cost, on
   // every visit. A new version stops the old run and shows its poster.
   const [playing, setPlaying] = useState(false)
+  // A running game is never navigated away from (改完自动跳转 waits as a notice).
+  useEffect(() => { autoNav.setPlaying(playing); return () => { autoNav.setPlaying(false) } }, [autoNav, playing])
   const [poster, setPoster] = useState<string | null>(null)
   useEffect(() => { setPlaying(false); setPicking(false); setPicked(null) }, [version, which])
   useEffect(() => {

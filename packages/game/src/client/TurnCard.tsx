@@ -11,6 +11,7 @@ import type { Look3D, TurnReport } from '../types.ts'
 import { normalizeLook3d } from '../look3d.ts'
 import { Preview3D } from './Preview3D.tsx'
 import type { GameTabInjected, NavTarget } from './contract.ts'
+import type { NavWords } from './autonav.ts'
 import css from './TurnCard.module.css'
 
 /** The key this package's turn data lives under. */
@@ -94,7 +95,7 @@ function BeforeAfter({ t, api, projectId, version, looks }: {
 
 /** The card. Renders nothing until the turn ended and only when it changed something. */
 export function GameTurnCard(props: GameTurnCardProps): ReactNode {
-  const { t, api, sessionId, openAt, subscribeSessionEvents } = props
+  const { t, api, sessionId, openAt, subscribeSessionEvents, autoNav } = props
   let state: TurnState | undefined
   try {
     state = (props.turn.data.get(GAME_TURN_KEY) as TurnState | undefined) ?? undefined
@@ -110,7 +111,12 @@ export function GameTurnCard(props: GameTurnCardProps): ReactNode {
     if (turn === undefined || !ended) return
     let live = true
     // The host writes the report right after turn/end; a second read covers the race.
-    const read = () => api.turnReport(sessionId as never, turn).then(r => { if (live && r.ok) setReport(r.value) }).catch(() => {})
+    const read = () => api.turnReport(sessionId as never, turn).then(r => {
+      if (!live || !r.ok) return
+      setReport(r.value)
+      // A fresh report (not history on reload) takes the panel to the result, once.
+      if (r.value !== null) autoNav.turnEnded(sessionId, r.value, navWords(t))
+    }).catch(() => {})
     void read()
     const again = setTimeout(() => { void read() }, 1500)
     return () => { live = false; clearTimeout(again) }
@@ -153,4 +159,15 @@ export function GameTurnCard(props: GameTurnCardProps): ReactNode {
       {report.tests.length > 0 && <Row t={t} onGo={openAt} icon="✓" go={{ view: 'versions' }}>{t('turn.tests', { count: report.tests.length })}</Row>}
     </ul>
   </section>
+}
+
+/** The navigation notices' words. */
+export function navWords(t: GameTurnCardProps['t']): NavWords {
+  return {
+    version: version => t('nav.version', { version }),
+    candidate: version => t('nav.candidate', { version }),
+    element: name => t('nav.element', { name }),
+    elements: count => t('nav.elements', { count }),
+    chapter: title => t('nav.chapter', { title }),
+  }
 }

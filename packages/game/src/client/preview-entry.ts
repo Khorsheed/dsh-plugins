@@ -89,7 +89,10 @@ builtKey = rebuildKey(lookNow())
 await fit()
 addEventListener('dshelements', () => { setTimeout(edited) })
 const canvas = world.canvas
-canvas.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY }; spinning = false; canvas.setPointerCapture(e.pointerId) })
+canvas.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY }; spinning = false; canvas.setPointerCapture(e.pointerId)
+  parent.postMessage({ gamedev: 'preview-turned' }, '*')
+})
 canvas.addEventListener('pointermove', e => {
   if (drag === null) return
   yaw -= (e.clientX - drag.x) * 0.5
