@@ -2,6 +2,7 @@
 
 ## 0.3.2（2026-10-27）
 
+- **整页抓取**：阅读器自己的抓取正文上限默认改为 200 万字（原来沿用官方 `http` 行给模型用的 10 万字），claude.com 这类正文从约 9.7 万字处才开始的长页不再被截断。见 Agent Note `2026-10-27-reader-fetch-body-cap`。
 - **订阅源和文章不再被新版搜索 API 开关弄坏**：宿主 0.2.1-rc.2 起，网页搜索设置页的「启用新版 Web 搜索 API」会把抓取一起切到 DeepSeek Fetch API（返回 Markdown），订阅源会被当成网页、文章抽不出正文。现在阅读器在官方 web 服务上用自己持有的官方 HTTP 抓取提供方实例抓取，拿到的始终是原始文档；没装提供方包时照旧走 `ctx.web.fetch`。新增配置 `fetchLimits`（`maxResponseBytes` / `maxBodyChars` / `timeoutMs` / `maxRedirects`），抬过 `web-fetch-http` 行上限的部署改配这里。见 Agent Note `2026-10-24-reader-own-http-fetch-provider`。
 
 ## 0.3.1（2026-10-26）

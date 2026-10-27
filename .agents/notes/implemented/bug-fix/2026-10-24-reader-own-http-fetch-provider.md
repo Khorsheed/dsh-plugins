@@ -19,7 +19,7 @@ The reader fetched every feed and article page through `ctx.web.fetch` and relie
 ## Consequences
 
 - Feeds and articles keep working with the switch on; the reader never spends a Fetch API call.
-- Limits raised on the `web-fetch-http` row no longer reach the reader; deployments set `fetchLimits` on the reader row instead (`packages/reader/docs/reference.md`, both languages). 3080 runs the defaults, so its behavior is unchanged.
+- Limits raised on the `web-fetch-http` row no longer reach the reader; deployments set `fetchLimits` on the reader row instead (`packages/reader/docs/reference.md`, both languages). 3080 had raised that row's limits in its startup patch, so they stopped reaching the reader; [the body-cap note](../feature/2026-10-27-reader-fetch-body-cap.md) restores whole pages with a 2 000 000 default.
 - A user who picked a different fetch provider on purpose (for example a proxying one) no longer has it applied to reader fetches.
 - Retire when the seam lets a request name its provider (S22).
 
