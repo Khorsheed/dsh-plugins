@@ -56,7 +56,9 @@ import { sessionTitle, type RoomMenuMember, type SessionCandidate } from './at-m
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
   RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
+  RoomAttachmentsFace, RoomDraftAttachment,
 } from './slots.ts'
+import type { RoomAttachmentInput } from '../types.ts'
 import type { RoomFailure } from '../types.ts'
 
 /** The room Remote namespace, as mounted by this plugin. */
@@ -120,19 +122,45 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const roomChrome = new RoomPresetVisibility(ctx, sessionId => roomStore.isRoomCached(sessionId) === true)
 
   const requestIds = new RoomRequestIds()
-  const submit = async (sessionId: SessionId, text: string, targets?: readonly string[], task?: string): Promise<RoomMutationOutcome> => {
+  // The official conversation service's draft attachments (pick, upload,
+  // serialize): the room composer re-uses them so its attachments behave
+  // exactly like the official composer's. A host without them: no attachments.
+  const conversation = (ctx.get as (name: string) => unknown)('conversation') as {
+    createDrafts?: (sessionId: SessionId, files: readonly File[]) => readonly RoomDraftAttachment[]
+    resolveDraftAttachments?: (ids: readonly string[]) => readonly RoomDraftAttachment[]
+    releaseDraftAttachment?: (id: string) => void
+    retryFileUpload?: (sessionId: SessionId, id: string) => void
+    fileUploads?: RoomAttachmentsFace['uploads']
+    serializeDraftAttachments?: (ids: readonly string[]) => Promise<{ readonly attachments: readonly RoomAttachmentInput[] }>
+  } | undefined
+  const attachmentsFace: RoomAttachmentsFace | undefined = conversation?.createDrafts === undefined || conversation.resolveDraftAttachments === undefined
+    || conversation.releaseDraftAttachment === undefined || conversation.retryFileUpload === undefined
+    || conversation.fileUploads === undefined || conversation.serializeDraftAttachments === undefined
+    ? undefined
+    : {
+      create: (sessionId, files) => conversation.createDrafts!.call(conversation, sessionId, files),
+      resolve: ids => conversation.resolveDraftAttachments!.call(conversation, ids),
+      release: (id) => { conversation.releaseDraftAttachment!.call(conversation, id) },
+      retry: (sessionId, id) => { conversation.retryFileUpload!.call(conversation, sessionId, id) },
+      uploads: conversation.fileUploads,
+      serialize: async ids => (await conversation.serializeDraftAttachments!.call(conversation, ids)).attachments,
+    }
+  const submit = async (sessionId: SessionId, text: string, targets?: readonly string[], task?: string, attachments?: readonly RoomAttachmentInput[]): Promise<RoomMutationOutcome> => {
     if (remote === undefined) return { ok: false, message: t('composer.error.generic') }
     const requestId = requestIds.forInput(sessionId, text, targets)
     const carried = await remote.postMessage({
       sessionId, text, requestId, ...targets === undefined || targets.length === 0 ? {} : { targets },
       ...task === undefined ? {} : { task },
+      ...attachments === undefined || attachments.length === 0 ? {} : { attachments },
     })
     if (!carried.ok) return { ok: false, message: t('composer.error.generic') }
     const result = carried.value
     if (!result.ok) {
       return result.error.code === 'unknown-targets'
         ? { ok: false, message: t('composer.error.unknownTargets', { names: result.error.names.join(' ') }) }
-        : { ok: false, message: t('composer.error.generic') }
+        : result.error.code === 'attachment-invalid'
+          ? { ok: false, message: t('composer.error.attachment', { reason: result.error.message }) }
+          : { ok: false, message: t('composer.error.generic') }
     }
     requestIds.complete(sessionId, requestId)
     void roomStore.refresh(sessionId)
@@ -525,6 +553,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       },
       taskTags,
       submit,
+      ...attachmentsFace === undefined ? {} : { attachments: attachmentsFace },
       renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
       stopMember: (name, expectedRunId) => { void remote?.cancel({ sessionId, name, ...expectedRunId === undefined ? {} : { expectedRunId } }).then(() => roomStore.refresh(sessionId)) },

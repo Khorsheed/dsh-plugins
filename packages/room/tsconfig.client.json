@@ -20,6 +20,7 @@
     "src/client/RoomInboxView.tsx",
     "src/client/RoomApprovalView.tsx",
     "src/client/RoomQuestionView.tsx",
+    "src/client/RoomAttachments.tsx",
     "src/client/RoomDecisionView.tsx",
     "src/client/RoomHelpView.tsx",
     "src/client/at-menu.ts",

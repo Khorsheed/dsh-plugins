@@ -16,6 +16,7 @@ import { RoomTaskTags } from '../src/client/task-tag.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
   RoomComposerProps, RoomModelDirectory, RoomModelDirectoryState, RoomModelSelection, RoomMutationOutcome,
+  RoomAttachmentsFace,
 } from '../src/client/slots.ts'
 import type { RoomState } from '../src/types.ts'
 
@@ -290,6 +291,40 @@ describe('RoomComposer', () => {
     // machine — busy admission stays out of the dispatch path.
     expect(inputActions.setDraft).toHaveBeenLastCalledWith('')
     expect(inputActions.submit).not.toHaveBeenCalled()
+  })
+
+  const NO_UPLOADS = {}
+  it('pastes an image into the draft, shows it on the rail, and sends it with the message', async () => {
+    const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
+    const inputStore = createSnapshotStore<InputSlice>({ draft: '' })
+    const ids = (): readonly string[] => (inputStore.getSnapshot() as { attachmentIds?: readonly string[] }).attachmentIds ?? []
+    const prune = vi.fn(() => { inputStore.set({ ...inputStore.getSnapshot(), attachmentIds: [] } as InputSlice) })
+    const { area, rerenderWith } = await bench(submit, { inputStore, extraInputActions: {
+      // The real machine keeps attachment ids beside the draft text.
+      setDraft: vi.fn((text: string) => { inputStore.set({ ...inputStore.getSnapshot(), draft: text }) }),
+      addAttachments: (added: readonly string[]) => { inputStore.set({ ...inputStore.getSnapshot(), attachmentIds: [...ids(), ...added] } as InputSlice); return true },
+      removeAttachment: () => true,
+      pruneAttachments: prune,
+    } })
+    const file = new File(['x'], 'shot.png', { type: 'image/png' })
+    const draftOf = { kind: 'image' as const, id: 'd1', file, previewUrl: 'blob:shot' }
+    const face: RoomAttachmentsFace = {
+      create: vi.fn(() => [draftOf]),
+      resolve: requested => requested.includes('d1') ? [draftOf] : [],
+      release: vi.fn(),
+      retry: vi.fn(),
+      uploads: { subscribe: () => () => {}, getSnapshot: () => NO_UPLOADS },
+      serialize: vi.fn(async () => [{ type: 'image' as const, data: 'eA==', mediaType: 'image/png', name: 'shot.png' }]),
+    }
+    rerenderWith({ attachments: face })
+    fireEvent.paste(area, { clipboardData: { files: [file], types: ['Files'] } })
+    expect(face.create).toHaveBeenCalledWith(SESSION, [file])
+    expect(await screen.findByAltText('shot.png')).toBeDefined()
+    type(area, '@ada 看图')
+    fireEvent.keyDown(area, { key: 'Enter' })
+    await waitFor(() => { expect(submit).toHaveBeenCalledWith(SESSION, '@ada 看图', [], undefined, [{ type: 'image', data: 'eA==', mediaType: 'image/png', name: 'shot.png' }]) })
+    await waitFor(() => { expect(face.release).toHaveBeenCalledWith('d1') })
+    expect(prune).toHaveBeenCalledWith([])
   })
 
   it('routes bare input through the room service', async () => {
