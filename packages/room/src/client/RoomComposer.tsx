@@ -158,7 +158,7 @@ const NO_UPLOAD_STORE = { subscribe: (): (() => void) => () => {}, getSnapshot: 
 /** The input machine's attachment edits (absent on an older kit: no attachments). */
 interface AttachmentActions {
   addAttachments?: (ids: readonly string[]) => boolean
-  removeAttachment?: (id: string) => boolean
+  removeAttachment?: (id: string) => unknown
   pruneAttachments?: (ids: readonly string[]) => void
 }
 
@@ -383,7 +383,9 @@ export function RoomComposer({
     }
   }
   const removeAttachment = (id: string): void => {
-    if (attachmentActions.removeAttachment?.(id) === true) attachmentFace?.release(id)
+    // The machine's removal answers nothing on current kits: drop the id, then the draft.
+    attachmentActions.removeAttachment?.(id)
+    attachmentFace?.release(id)
   }
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
     const files = [...event.clipboardData.files]
