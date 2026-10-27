@@ -61,6 +61,7 @@ import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIV
 import { endpointAuthEnv, hasEndpointCredential, type KimiEndpointAuth } from './endpoint-auth.ts'
 import { ensureKimiEndpointProvider, KIMI_MANAGED_BASE_URL } from './provision.ts'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import { MEMBER_TOOL_TIMEOUT_MS } from './member-bridge-config.ts'
 import {
   DEFAULT_DISPOSE_GRACE_MS,
   mirrorKimiDelta,
@@ -685,7 +686,10 @@ export class KimiAcpLiveDriver {
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
-      env: delegationEnv({ KIMI_CODE_HOME: spec.homeDir, ...endpointAuthEnv(endpoint) }),
+      // The ACP session declares the member bridge inline, and ACP's MCP
+      // server shape carries no timeout: lift kimi's 60s MCP default for the
+      // whole process, or a question card dies before the human answers.
+      env: delegationEnv({ KIMI_CODE_HOME: spec.homeDir, KIMI_MCP_TOOL_TIMEOUT_MS: String(MEMBER_TOOL_TIMEOUT_MS), ...endpointAuthEnv(endpoint) }),
     }
     let child: SubprocessHandle
     try {

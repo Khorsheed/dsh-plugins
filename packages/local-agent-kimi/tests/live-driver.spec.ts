@@ -532,7 +532,9 @@ describe('kimi live driver rounds', () => {
     expect(sessionIds).toEqual(['acp-session-1'])
     const spawn = m.spawns[0]!
     expect(spawn.spec.argv).toEqual(['kimi', 'acp'])
-    expect(spawn.spec.env).toEqual({ KIMI_CODE_HOME: m.homeDir })
+    // The inline ACP bridge has no timeout field: the process-wide MCP bound
+    // is lifted so a question card outlives kimi's 60s default.
+    expect(spawn.spec.env).toEqual({ KIMI_CODE_HOME: m.homeDir, KIMI_MCP_TOOL_TIMEOUT_MS: String(30 * 60_000) })
     expect(spawn.fake!.requests.map(r => r.method)).toEqual(['initialize', 'session/new', 'session/prompt'])
     expect(spawn.fake!.requests[1]?.params).toMatchObject({ cwd: '/tmp', mcpServers: [] })
     // Turn boundaries are the parent's own.
