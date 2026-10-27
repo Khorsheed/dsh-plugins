@@ -151,6 +151,11 @@
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
 
+/* The name hint turned into the reason the dialog cannot save. */
+.hintError {
+  color: var(--dsw-alias-state-error-primary, #d9363e);
+}
+
 /* The 默认模型 row: the same select-like control the provider settings cards
    use — the border/background live on the container, the input inside goes
    bare, and the always-visible chevron opens the full choice vocabulary as a

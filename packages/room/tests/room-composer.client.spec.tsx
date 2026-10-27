@@ -327,6 +327,21 @@ describe('RoomComposer', () => {
     expect(prune).toHaveBeenCalledWith([])
   })
 
+  it('a drop on the card is taken once: the hidden official bar\'s document listener never sees it', async () => {
+    const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
+    const inputStore = createSnapshotStore<InputSlice>({ draft: '' })
+    const { area, rerenderWith } = await bench(submit, { inputStore, extraInputActions: { addAttachments: () => true, removeAttachment: () => {}, pruneAttachments: () => {} } })
+    const create = vi.fn(() => [])
+    rerenderWith({ attachments: { create, resolve: () => [], release: vi.fn(), retry: vi.fn(), uploads: { subscribe: () => () => {}, getSnapshot: () => NO_UPLOADS }, serialize: vi.fn(async () => []) } })
+    const official = vi.fn()
+    document.addEventListener('drop', official)
+    const file = new File(['x'], 'shot.png', { type: 'image/png' })
+    fireEvent.drop(area, { dataTransfer: { files: [file], types: ['Files'] } })
+    document.removeEventListener('drop', official)
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(official).not.toHaveBeenCalled()
+  })
+
   it('routes bare input through the room service', async () => {
     const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
     const { area, inputActions } = await bench(submit)
