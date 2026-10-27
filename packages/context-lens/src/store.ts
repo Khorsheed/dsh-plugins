@@ -137,6 +137,10 @@ export interface StoredRequest {
   fingerprint: ScopeFingerprint
   /** Live capture preceded availability of its conversation-history baseline. */
   needsHistoryBaseline?: boolean
+  /** Position among its log's requests (log lane): what a lazy body rebuild selects. */
+  logIndex?: number
+  /** Kept without its copied context (see InspectorService.hydrate): only structure, usage and response. */
+  bodiless?: true
 }
 
 /** One delegation call awaiting its catalog binding / result. */
@@ -1625,6 +1629,65 @@ export class InspectorStore {
    * filter excludes answers with a {@link ScopedRefusal} — distinguishable
    * from `undefined` (no such seq on this instance).
    */
+  /**
+   * The body rebuilds a request read needs: the request itself and the
+   * previous one of its scope (the prefix comparison's baseline), when kept
+   * bodiless. Answers the log they come from and their log positions.
+   */
+  bodilessFor(sessionId: string, seq: number): { logId: string; targets: { seq: number; logIndex: number }[] } | undefined {
+    const session = this.sessions.get(sessionId)
+    if (session === undefined) return undefined
+    for (const turn of session.turns) {
+      for (const scope of turn.scopes.values()) {
+        const request = scope.requests.find(candidate => candidate.seq === seq)
+        if (request === undefined) continue
+        const previous = session.turns.flatMap(t => [...t.scopes.values()])
+          .filter(s => s.scopeId === scope.scopeId)
+          .flatMap(s => s.requests)
+          .filter(r => r.purpose === request.purpose && (r.startedAt < request.startedAt || (r.startedAt === request.startedAt && r.seq < request.seq)))
+          .sort((a, b) => b.startedAt - a.startedAt || b.seq - a.seq)[0]
+        const targets = [request, previous]
+          .filter((r): r is StoredRequest => r?.bodiless === true && r.logIndex !== undefined)
+          .map(r => ({ seq: r.seq, logIndex: r.logIndex! }))
+        return targets.length === 0 ? undefined : { logId: scope.scopeId === 'main' ? sessionId : scope.scopeId, targets }
+      }
+    }
+    return undefined
+  }
+
+  /** Give a bodiless request its rebuilt context (counted in the budget until dehydrated). */
+  hydrateRequest(sessionId: string, seq: number, built: Pick<StoredRequest, 'segments' | 'totalChars' | 'fingerprint'>): boolean {
+    const request = this.findRequest(sessionId, seq)
+    if (request?.bodiless !== true) return false
+    request.segments = built.segments
+    request.totalChars = built.totalChars
+    request.fingerprint = built.fingerprint
+    delete request.bodiless
+    this.totalChars += built.totalChars
+    return true
+  }
+
+  /** Drop a hydrated request's context again (its structure stays). */
+  dehydrateRequest(sessionId: string, seq: number): void {
+    const request = this.findRequest(sessionId, seq)
+    if (request === undefined || request.bodiless === true || request.logIndex === undefined) return
+    this.totalChars -= request.totalChars
+    request.segments = { system: [], tools: [], history: [], added: [] }
+    request.totalChars = 0
+    request.fingerprint = { messageKeys: [], toolNames: [] }
+    request.bodiless = true
+  }
+
+  private findRequest(sessionId: string, seq: number): StoredRequest | undefined {
+    for (const turn of this.sessions.get(sessionId)?.turns ?? []) {
+      for (const scope of turn.scopes.values()) {
+        const request = scope.requests.find(candidate => candidate.seq === seq)
+        if (request !== undefined) return request
+      }
+    }
+    return undefined
+  }
+
   getRequest(sessionId: string, seq: number, filter?: ScopeFilter): CapturedRequest | ScopedRefusal | undefined {
     const session = this.sessions.get(sessionId)
     if (session === undefined) return undefined
