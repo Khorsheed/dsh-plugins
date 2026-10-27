@@ -86,6 +86,19 @@ describe('member questions', () => {
     expect(await bench.service.answerQuestion({ sessionId: bench.sessionId, id: 'gate', answers: [{ id: 'help', selected: ['允许'] }] })).toEqual({ ok: false, error: { code: 'question-not-pending' } })
   })
 
+  it('a question asked mid-round records that round and the text said so far', async () => {
+    const bench = await boot()
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    room.append('room/run-state', { member: 'gm', state: 'running', startedAt: 7, runId: 'run-7' })
+    const child = bench.ctx.sessions.create(SessionId('child-gm'), { meta: {} })
+    child.append('turn/start', { turn: 1 } as never)
+    child.append('assistant/message', { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: '第一批你想先刻画哪一组？' }] } } as never, { surfaceOp: 'append' } as never)
+    void bench.service.receiveMemberCommand(bench.run, { name: 'ask_user_question', arguments: { questions: QUESTIONS } })
+    await vi.waitFor(() => expect(room.snapshotEvents().some(event => event.type === 'room/question')).toBe(true))
+    const asked = room.snapshotEvents().find(event => event.type === 'room/question')!.data as { runId?: string; before?: string }
+    expect(asked).toMatchObject({ runId: 'run-7', before: '第一批你想先刻画哪一组？' })
+  })
+
   it('validates questions, accepting their JSON text too', () => {
     expect(parseQuestions(JSON.stringify([{ question: '要不要轻失败？', multi_select: true, options: ['要', '不要'] }])))
       .toEqual([{ id: 'q1', question: '要不要轻失败？', multiSelect: true, options: [{ label: '要' }, { label: '不要' }] }])

@@ -427,6 +427,8 @@ export function RoomComposer({
     addFiles([...event.dataTransfer.files])
   }
 
+  // The oldest question a member's round is waiting on (shown inline in its card).
+  const waitingAsk = state?.askLog?.find(ask => ask.state === 'pending' && ask.runId !== undefined)
   // Members whose latest round a host restart cut off (outcome unknown).
   const interrupted = (state?.runs ?? [])
     .filter(run => run.state === 'failed' && run.error?.startsWith(RESTART_INTERRUPTED) === true)
@@ -557,6 +559,21 @@ export function RoomComposer({
         {/* A host restart interrupts every working member at once and each
             row reads 运行失败 far up the conversation: one 全部继续 resumes
             them all (the same 继续 a human would type to each). */}
+        {/* A member waiting on a question inside its round: the block may be
+            scrolled far up a long reply — one click brings it back. */}
+        {waitingAsk !== undefined && (
+          <button
+            type="button"
+            className={css.askHint}
+            onClick={() => {
+              const target = document.querySelector(`[data-ask-id="${CSS.escape(waitingAsk.id)}"]`)
+              target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+              target?.querySelector<HTMLElement>('input, button')?.focus({ preventScroll: true })
+            }}
+          >
+            <i aria-hidden />{t('question.jump', { member: waitingAsk.member })} ↑
+          </button>
+        )}
         {interrupted.length > 0 && (
           <div className={css.resumeStrip} role="status">
             <span className={css.resumeText}>{t('composer.interrupted', { count: interrupted.length, names: interrupted.join('、') })}</span>

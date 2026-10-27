@@ -55,7 +55,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { DispatchEngine, MERGED_BACKLOG_TEXT, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
+import { BEFORE_TAIL, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
 import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
@@ -2038,7 +2038,17 @@ export class RoomService extends TypertRemoteService {
       this.questionWaiters.set(id, resolve)
       setTimeout(() => { resolve(undefined) }, timeoutMs).unref?.()
     })
-    session.append('room/question', { id, member: member.name, memberId: memberId(session.snapshotEvents(), member), questions, ...consent ? { consent: true as const } : {} })
+    // Place the question inside the asker's round: its run, and the tail of
+    // what the round had said so far (the reply splits there when it lands).
+    const run = replay(session.snapshotEvents()).runs.find(entry => entry.member === member.name && entry.state === 'running')
+    const child = member.childSessionId === undefined ? undefined : this.ctx.sessions.get(member.childSessionId)
+    const before = child === undefined ? '' : roundTextSoFar(child.snapshotEvents()).slice(-BEFORE_TAIL)
+    session.append('room/question', {
+      id, member: member.name, memberId: memberId(session.snapshotEvents(), member), questions,
+      ...consent ? { consent: true as const } : {},
+      ...run?.runId === undefined ? {} : { runId: run.runId },
+      ...before.trim() === '' ? {} : { before },
+    })
     await this.ctx.sessions.flush(session)
     const answers = await answered
     this.questionWaiters.delete(id)

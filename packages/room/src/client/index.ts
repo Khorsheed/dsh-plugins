@@ -59,7 +59,7 @@ import type {
   RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
   RoomAttachmentsFace, RoomDraftAttachment,
 } from './slots.ts'
-import type { RoomAttachmentInput } from '../types.ts'
+import type { RoomAttachmentInput, RoomQuestionAnswer } from '../types.ts'
 import type { RoomFailure } from '../types.ts'
 
 /** The room Remote namespace, as mounted by this plugin. */
@@ -123,6 +123,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const roomChrome = new RoomPresetVisibility(ctx, sessionId => roomStore.isRoomCached(sessionId) === true)
 
   const requestIds = new RoomRequestIds()
+  /** Answer a member's question card (the row of its own, or inline in its round). */
+  const answerFor = (sessionId: SessionId) => async (questionId: string, answers: readonly RoomQuestionAnswer[]): Promise<string | undefined> => {
+    if (remote === undefined) return t('composer.error.generic')
+    const carried = await remote.answerQuestion({ sessionId, id: questionId, answers })
+    void roomStore.refresh(sessionId)
+    if (!carried.ok) return t('composer.error.generic')
+    return carried.value.ok ? undefined : t('question.expired')
+  }
   /**
    * Open a path a member named in the sidebar's file viewer — the same file
    * address the main conversation's file links open (a relative path resolves
@@ -706,9 +714,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       name: 'conversation.chat.node',
       key: 'room-speech',
       locale: NS,
-      inject: (): RoomSpeechInjected => ({
+      inject: (sessionId: SessionId): RoomSpeechInjected => ({
         roomStore,
         openSession,
+        answerQuestion: answerFor(sessionId),
         ...openPath === undefined ? {} : { openPath },
         // Context Lens is another plugin: reach it through the sidebar by its
         // tab kind, only when its namespace is mounted; a refused open is a no-op.
@@ -733,6 +742,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         roomStore,
         openSession,
         cancelMember: member => cancelMember(sessionId, member),
+        answerQuestion: answerFor(sessionId),
         ...openPath === undefined ? {} : { openPath },
       }),
     },
@@ -788,15 +798,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       name: 'conversation.chat.node',
       key: 'room-question',
       locale: NS,
-      inject: (sessionId: SessionId): RoomQuestionInjected => ({
-        answerQuestion: async (questionId, answers) => {
-          if (remote === undefined) return t('composer.error.generic')
-          const carried = await remote.answerQuestion({ sessionId, id: questionId, answers })
-          void roomStore.refresh(sessionId)
-          if (!carried.ok) return t('composer.error.generic')
-          return carried.value.ok ? undefined : t('question.expired')
-        },
-      }),
+      inject: (sessionId: SessionId): RoomQuestionInjected => ({ answerQuestion: answerFor(sessionId) }),
     },
     RoomQuestionView,
   ))
