@@ -34,6 +34,7 @@ import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import { RoomRequestIds } from './request-ids.ts'
+import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import { en, zh } from './locales.ts'
 import { InviteAgentAction } from './InviteAgentAction.tsx'
 import { MembersView } from './MembersView.tsx'
@@ -122,6 +123,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const roomChrome = new RoomPresetVisibility(ctx, sessionId => roomStore.isRoomCached(sessionId) === true)
 
   const requestIds = new RoomRequestIds()
+  /**
+   * Open a path a member named in the sidebar's file viewer — the same file
+   * address the main conversation's file links open (a relative path resolves
+   * against the room session's workspace).
+   */
+  const openPath = ctx.get('sidebarRight') === undefined ? undefined : (sessionId: SessionId, path: string): void => {
+    const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+    try {
+      (ctx.get('sidebarRight') as { openResource(url: string): void }).openResource(fileAddressFor(sessionId, cwd, path))
+    } catch { /* no viewer claims file addresses: the link stays inert */ }
+  }
   // The official conversation service's draft attachments (pick, upload,
   // serialize): the room composer re-uses them so its attachments behave
   // exactly like the official composer's. A host without them: no attachments.
@@ -697,6 +709,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       inject: (): RoomSpeechInjected => ({
         roomStore,
         openSession,
+        ...openPath === undefined ? {} : { openPath },
         // Context Lens is another plugin: reach it through the sidebar by its
         // tab kind, only when its namespace is mounted; a refused open is a no-op.
         ...ctx.get('remote.requestInspector') === undefined || ctx.get('sidebarRight') === undefined ? {} : {
@@ -720,6 +733,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         roomStore,
         openSession,
         cancelMember: member => cancelMember(sessionId, member),
+        ...openPath === undefined ? {} : { openPath },
       }),
     },
     RoomRunView,

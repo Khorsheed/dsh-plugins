@@ -36,6 +36,7 @@
     "src/client/RoomRelayView.tsx",
     "src/client/RoomRunView.tsx",
     "src/client/RoomSpeechView.tsx",
+    "src/client/path-mentions.ts",
     "src/client/RoomStatsLine.tsx",
     "src/client/RoomTodoStrip.tsx",
     "src/client/draft-chips.ts",

@@ -22,6 +22,7 @@ import { IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconCopyOutlineMe
 import { IconRequestDetailOutline16 } from './icons-local.tsx'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { memberColor } from './member-color.ts'
+import { pathMentions } from './path-mentions.ts'
 import { formatClock, formatDurationMs } from './format.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
 import type { RoomSpeechViewProps } from './slots.ts'
@@ -71,7 +72,7 @@ function markdownLabels(t: RoomSpeechViewProps['t']): MarkdownLabels {
 }
 
 /** The member speech row. */
-export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDetail, t }: RoomSpeechViewProps): ReactNode {
+export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDetail, openPath, t }: RoomSpeechViewProps): ReactNode {
   const data = node.data
   const [copied, setCopied] = useState(false)
   // The human's own choice for this speech (remembered), else the default.
@@ -108,6 +109,9 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
     foldChoices.write(sessionId, data.seq, next)
   }
   const labels = useMemo(() => markdownLabels(t), [t])
+  // Paths the member wrote in inline code open in the sidebar's file viewer.
+  const memberCwd = member?.cwd
+  const mentions = useMemo(() => openPath === undefined ? undefined : pathMentions((path) => { openPath(sessionId, path) }, memberCwd), [openPath, sessionId, memberCwd])
 
   const copy = (): void => {
     void writeClipboard(data.text).then((ok) => {
@@ -130,7 +134,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
         {data.interrupted !== undefined && <span className={css.interrupted}>{t(data.interrupted === 'cancelled' ? 'speech.stopped' : 'speech.failed')}</span>}
       </div>
       <div className={clamped ? `${css.body} ${css.clamped}` : css.body}>
-        <MarkdownText text={data.text} labels={labels} />
+        <MarkdownText text={data.text} labels={labels} fileMentions={mentions} />
         {clamped && <div className={css.fade} aria-hidden onClick={() => { toggle(true) }} />}
         {/* message-tools' fold control, shared look: a small chevron seated in
             the body's bottom-right corner (over the fade while folded). */}

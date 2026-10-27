@@ -1,6 +1,6 @@
 /** Generation-time text rendered through the public Markdown component. */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { DisclosureRow, MarkdownText, TextShimmer } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DisclosureRow, MarkdownText, TextShimmer, type MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconThinkOutlineRegular } from './icons.tsx'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from './live-node.ts'
@@ -24,16 +24,18 @@ export function MemberLiveNode({ node, outputs, t }: MemberLiveNodeProps) {
 }
 
 /** Same subscription in Room: run boundary excludes retained output from earlier turns. */
-export function MemberLiveOutputView({ sessionId, startedAt, outputs, t }: {
+export function MemberLiveOutputView({ sessionId, startedAt, outputs, fileMentions, t }: {
   sessionId: string
   startedAt: number
   outputs: MemberLiveOutputs
+  /** The host surface's inline-code file links (Room passes the member's path openers). */
+  fileMentions?: MarkdownFileMentions | undefined
 } & PropsLocale<typeof NS>) {
   const store = outputs.get(sessionId)
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
   return <div data-member-output={sessionId}>
     {[...snapshot.items.values()].filter(item => item.receivedAt >= startedAt).map(item => (
-      <StreamText key={item.id} {...item} sessionId={sessionId} surface="room" diagnostics={outputs.diagnostics} recovering={!snapshot.connected} t={t} />
+      <StreamText key={item.id} {...item} sessionId={sessionId} surface="room" diagnostics={outputs.diagnostics} recovering={!snapshot.connected} fileMentions={fileMentions} t={t} />
     ))}
   </div>
 }
@@ -90,8 +92,9 @@ function LiveReasoning({ text, labels, title }: { text: string; labels: Paramete
   )
 }
 
-function StreamText({ id, kind, text, receivedAt, recovering, sessionId, turn, revision, baseline, surface, diagnostics, t }: {
+function StreamText({ id, kind, text, receivedAt, recovering, sessionId, turn, revision, baseline, surface, diagnostics, fileMentions, t }: {
   id: string; kind: 'think' | 'text'; text: string; receivedAt?: number | undefined; recovering: boolean
+  fileMentions?: MarkdownFileMentions | undefined
   sessionId: string; turn: number; revision?: number | undefined; baseline: boolean; surface: PaintSurface; diagnostics: LivePaintDiagnostics
 } & PropsLocale<typeof NS>) {
   const element = useRef<HTMLElement>(null)
@@ -132,7 +135,7 @@ function StreamText({ id, kind, text, receivedAt, recovering, sessionId, turn, r
   return <section ref={element} className={css.item} data-member-live={id} data-live-received-at={receivedAt}>
     {kind === 'think'
       ? <LiveReasoning text={text} labels={labels} title={t('stream.thinking')} />
-      : <div className={css.text}><MarkdownText text={text} labels={labels} /></div>}
+      : <div className={css.text}><MarkdownText text={text} labels={labels} fileMentions={fileMentions} /></div>}
     {recovering && <span className={css.recovering}>{t('stream.recovering')}</span>}
   </section>
 }

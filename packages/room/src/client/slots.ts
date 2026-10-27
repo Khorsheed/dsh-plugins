@@ -373,6 +373,8 @@ export interface RoomSpeechInjected {
    * absent when the composition has no Context Lens.
    */
   readonly openDetail?: ((sessionId: SessionId, messageId: string) => void) | undefined
+  /** Open a file path a member named in its text (sidebar file viewer); absent without the sidebar. */
+  readonly openPath?: ((sessionId: SessionId, path: string) => void) | undefined
 }
 
 /** Full props of the 'room-speech' chat-node renderer. */
@@ -384,6 +386,8 @@ export type RoomSpeechViewProps =
 /** Injected face of the member-run chat node. */
 export interface RoomRunInjected {
   readonly renderMemberOutput?: LocalAgentUi['renderMemberOutput'] | undefined
+  /** Open a file path the member named while it works (sidebar file viewer). */
+  readonly openPath?: ((sessionId: SessionId, path: string) => void) | undefined
   /** The client-side room state store (the roster carries the jump target). */
   readonly roomStore: RoomStore
   /** Open a session (the whole-row jump into the member's child session). */
