@@ -54,62 +54,64 @@ export function RoomQuestionView({ node, answerQuestion, t }: RoomQuestionViewPr
   }
 
   return (
-    <div className={css.card} data-state={data.state} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
-      <div className={css.head}>
-        <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
-        <span className={css.title}>{t('question.title', { member: data.member })}</span>
-        {!pending && <span className={css.status}>{t(data.state === 'answered' ? 'question.answered' : 'question.cancelled')}</span>}
-      </div>
-      {data.questions.map((question) => {
-        const multi = question.multiSelect === true
-        const draft = draftOf(question.id)
-        return (
-          <fieldset key={question.id} className={css.question} disabled={!pending || busy}>
-            <legend className={css.prompt}>
-              {question.header !== undefined && <span className={css.chip}>{question.header}</span>}
-              <span>{question.question}</span>
-              {pending && multi && <span className={css.hint}>{t('question.multi')}</span>}
-            </legend>
-            {pending ? (
-              <>
-                {(question.options ?? []).map(option => (
-                  <label key={option.label} className={css.option} data-picked={draft.selected.includes(option.label)}>
-                    <input
-                      type={multi ? 'checkbox' : 'radio'}
-                      name={`${data.questionId}-${question.id}`}
-                      checked={draft.selected.includes(option.label)}
-                      onChange={() => { pick(question.id, option.label, multi) }}
-                      onClick={(event) => {
-                        // A picked radio unpicks on a second click (the draft allows none).
-                        if (!multi && draft.selected.includes(option.label)) { event.preventDefault(); pick(question.id, option.label, multi) }
-                      }}
-                    />
-                    <span className={css.optionText}>
-                      <span className={css.optionLabel}>{option.label}</span>
-                      {option.description !== undefined && <span className={css.optionDescription}>{option.description}</span>}
-                    </span>
-                  </label>
-                ))}
-                <input
-                  className={css.other}
-                  value={draft.custom}
-                  aria-label={t('question.other')}
-                  placeholder={(question.options ?? []).length > 0 ? `${t('question.other')}：${t('question.otherPlaceholder')}` : t('question.otherPlaceholder')}
-                  onChange={(event) => { setDraft(question.id, { ...draft, custom: event.target.value }) }}
-                />
-              </>
-            ) : data.state === 'answered' && (
-              <div className={css.answer}>{t('question.answer', { answer: answerText(question.id) })}</div>
-            )}
-          </fieldset>
-        )
-      })}
-      {pending && (
-        <div className={css.actions}>
-          {error !== undefined && <span className={css.error}>{error}</span>}
-          <button type="button" className={css.submit} disabled={!complete || busy} onClick={() => { void submit() }}>{t('question.submit')}</button>
+    <div className={css.row} data-state={data.state} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
+      <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
+      <div className={css.card}>
+        <div className={css.head}>
+          <span className={css.title}>{t('question.title', { member: data.member })}</span>
+          {!pending && <span className={css.status}>{t(data.state === 'answered' ? 'question.answered' : 'question.cancelled')}</span>}
         </div>
-      )}
+        {data.questions.map((question) => {
+          const multi = question.multiSelect === true
+          const draft = draftOf(question.id)
+          return (
+            <fieldset key={question.id} className={css.question} disabled={!pending || busy}>
+              <legend className={css.prompt}>
+                {question.header !== undefined && <span className={css.chip}>{question.header}</span>}
+                <span>{question.question}</span>
+                {pending && multi && <span className={css.hint}>{t('question.multi')}</span>}
+              </legend>
+              {pending ? (
+                <>
+                  {(question.options ?? []).map(option => (
+                    <label key={option.label} className={css.option} data-picked={draft.selected.includes(option.label)}>
+                      <input
+                        type={multi ? 'checkbox' : 'radio'}
+                        name={`${data.questionId}-${question.id}`}
+                        checked={draft.selected.includes(option.label)}
+                        onChange={() => { pick(question.id, option.label, multi) }}
+                        onClick={(event) => {
+                          // A picked radio unpicks on a second click (the draft allows none).
+                          if (!multi && draft.selected.includes(option.label)) { event.preventDefault(); pick(question.id, option.label, multi) }
+                        }}
+                      />
+                      <span className={css.optionText}>
+                        <span className={css.optionLabel}>{option.label}</span>
+                        {option.description !== undefined && <span className={css.optionDescription}>{option.description}</span>}
+                      </span>
+                    </label>
+                  ))}
+                  <input
+                    className={css.other}
+                    value={draft.custom}
+                    aria-label={t('question.other')}
+                    placeholder={(question.options ?? []).length > 0 ? `${t('question.other')}：${t('question.otherPlaceholder')}` : t('question.otherPlaceholder')}
+                    onChange={(event) => { setDraft(question.id, { ...draft, custom: event.target.value }) }}
+                  />
+                </>
+              ) : data.state === 'answered' && (
+                <div className={css.answer}>{t('question.answer', { answer: answerText(question.id) })}</div>
+              )}
+            </fieldset>
+          )
+        })}
+        {pending && (
+          <div className={css.actions}>
+            {error !== undefined && <span className={css.error}>{error}</span>}
+            <button type="button" className={css.submit} disabled={!complete || busy} onClick={() => { void submit() }}>{t('question.submit')}</button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
