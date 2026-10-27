@@ -29,6 +29,7 @@ import { HarnessCardRegistry, type HarnessCardRegistration } from './harness-car
 import { MemberConfiguration } from './MemberConfiguration.tsx'
 import { MemberConfigurationStores } from './member-configuration.ts'
 import type { Context } from '@deepseek-ai/cordis'
+import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the generated Remote API, the ctx.remote merge, and the
 // locale Context merge.
 import type {} from '@khorsheed/dsh-local-agent/remote'
@@ -69,7 +70,7 @@ export type HarnessModelPickerInput = Omit<HarnessModelPickerProps, 'face' | 't'
 import { MemberInboxView, type MemberInboxFace } from './MemberInboxView.tsx'
 
 export interface LocalAgentUi {
-  renderMemberOutput(childSessionId: string, startedAt: number): ReactNode
+  renderMemberOutput(childSessionId: string, startedAt: number, options?: { readonly fileMentions?: MarkdownFileMentions | undefined }): ReactNode
   renderMemberInbox(childSessionId: string): ReactNode
   renderHarnessModelPicker(name: string, props: HarnessModelPickerInput): ReactNode
   renderMemberConfiguration(childSessionId: string): ReactNode
@@ -176,7 +177,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const harnessCards = new HarnessCardRegistry()
   const t = ctx.locale.bind(NS)
   const configurationUi: LocalAgentUi = {
-    renderMemberOutput: (id, startedAt) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, t: ctx.locale.bind(NS) }),
+    renderMemberOutput: (id, startedAt, options) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, ...options?.fileMentions === undefined ? {} : { fileMentions: options.fileMentions }, t: ctx.locale.bind(NS) }),
     renderMemberInbox: id => createElement(MemberInboxView, { key: id, face: inboxFace(id), t: ctx.locale.bind(NS) }),
     renderHarnessModelPicker: (name, props) => createElement(HarnessModelPicker, { ...props, key: name, face: directoryFace(name), t: ctx.locale.bind(NS) }),
     renderMemberConfiguration: id => createElement(MemberConfiguration, { key: id, store: configurations.get(id), diagnostics: outputs.diagnostics, t: ctx.locale.bind(NS) }),
