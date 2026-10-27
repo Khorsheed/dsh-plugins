@@ -321,22 +321,45 @@ describe('live version polling', () => {
   })
 })
 
-describe('game_show', () => {
-  const show = async (args: object): Promise<string> => {
-    const tool = gameToolDefinitions(store).find(d => d.name === 'game_show')!
+describe('publishing takes the user to the result', () => {
+  const publish = async (args: object = {}): Promise<string> => {
+    const tool = gameToolDefinitions(store).find(d => d.name === 'game_publish')!
     return (tool.execute as unknown as (a: object, e: object) => Promise<string>)(args, { agent: { session: session('s1') } })
   }
 
-  it('records the agent\'s request per project and hands it to the page poll; bad places are refused', async () => {
-    expect(await show({ view: 'play' })).toContain('还没有游戏项目')
+  it('opens what the agent says, else what the version changed, and falls back on a place it cannot find', async () => {
     const project = await created()
-    await put(join(project.root, 'elements/fox.json'), JSON.stringify({ id: 'fox', name: '九尾狐', type: '角色' }))
-    expect(await show({ view: 'stage' })).toContain('view 只能是')
-    expect(await show({ view: 'elements', element: '毕方' })).toContain('没有元素「毕方」')
-    expect(await show({ view: 'elements', element: '九尾狐', note: '看看尾巴' })).toContain('已请用户的右栏打开这里')
-    const live = await store.liveVersion('s1')
-    expect(live?.show).toMatchObject({ seq: 1, target: { view: 'elements', elementId: 'fox' }, note: '看看尾巴' })
-    expect(await show({ view: 'design', chapter: '核心循环' })).toContain('已请')
-    expect((await store.liveVersion('s1'))?.show).toMatchObject({ seq: 2, target: { view: 'design', chapterId: 'core-loop' }, note: '' })
+    await put(join(project.root, 'index.html'), '<p>v1</p>')
+    await put(join(project.root, 'elements/a.json'), JSON.stringify([{ id: 'fox', name: '九尾狐', type: '角色' }, { id: 'bi', name: '毕方', type: '角色' }]))
+    // A first version has nothing to compare with: play.
+    expect(await publish()).toContain('右栏会打开：试玩')
+    expect((await store.liveVersion('s1'))?.show).toMatchObject({ seq: 1, target: { view: 'play' }, note: 'v1 已上线' })
+
+    // Only one element changed: its page, named in the note.
+    await put(join(project.root, 'elements/a.json'), JSON.stringify([{ id: 'fox', name: '九尾狐', type: '角色', hp: 3 }, { id: 'bi', name: '毕方', type: '角色' }]))
+    expect(await publish()).toContain('右栏会打开：元素「fox」')
+    expect((await store.liveVersion('s1'))?.show).toMatchObject({ target: { view: 'elements', elementId: 'fox' }, note: 'v2：改了九尾狐' })
+
+    // Code changed too: play.
+    await put(join(project.root, 'elements/a.json'), JSON.stringify([{ id: 'fox', name: '九尾狐', type: '角色', hp: 4 }, { id: 'bi', name: '毕方', type: '角色', hp: 1 }]))
+    await put(join(project.root, 'index.html'), '<p>v3</p>')
+    expect(await publish()).toContain('右栏会打开：试玩')
+
+    // The agent's own choice and words win; an unknown place falls back to the default.
+    await put(join(project.root, 'index.html'), '<p>v4</p>')
+    expect(await publish({ show: 'elements:毕方', note: '看看毕方的翅膀' })).toContain('元素「bi」')
+    expect((await store.liveVersion('s1'))?.show).toMatchObject({ target: { view: 'elements', elementId: 'bi' }, note: '看看毕方的翅膀' })
+    await put(join(project.root, 'index.html'), '<p>v5</p>')
+    expect(await publish({ show: 'design:没有这章' })).toContain('找不到，改用默认位置')
+  })
+
+  it('lists elements newest first by their file\'s last change', async () => {
+    const project = await created()
+    await put(join(project.root, 'elements/old.json'), JSON.stringify({ id: 'old', name: '旧', type: '角色' }))
+    await new Promise(r => setTimeout(r, 20))
+    await put(join(project.root, 'elements/new.json'), JSON.stringify({ id: 'new', name: '新', type: '角色' }))
+    const view = await store.view(project.id)
+    const at = (id: string): number => view?.elements.find(e => e.id === id)?.updatedAt ?? 0
+    expect(at('new')).toBeGreaterThan(at('old'))
   })
 })

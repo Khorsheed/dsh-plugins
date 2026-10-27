@@ -517,7 +517,11 @@ export class GameService {
       manifest,
       ...(manifestText === undefined ? { manifestError: `${MANIFEST_FILE} 不见了` } : parsed?.ok === false ? { manifestError: parsed.error } : {}),
       chapters,
-      elements,
+      // Each element carries its file's last change, so the panel can list the newest first.
+      elements: await Promise.all(elements.map(async e => {
+        const info = await stat(join(row.root, e.file)).catch(() => undefined)
+        return info === undefined ? e : { ...e, updatedAt: info.mtimeMs }
+      })),
       elementErrors: failures,
       current: (await readJson<VersionRecord>(join(state, 'current.json'))) ?? null,
       candidate: (await readJson<VersionRecord>(join(state, 'candidate.json'))) ?? null,
@@ -573,16 +577,68 @@ export class GameService {
   private showSeq = 0
 
   /**
-   * `game_show`: ask the pages showing this project to take their game tab to
-   * a place. Pages pick it up on their poll and still respect a busy user.
+   * After a passing `game_publish`: leave the pages showing this project a
+   * request to take their game tab to the result. `show` is the agent's choice
+   * (play, versions, elements, elements:<id or name>, design:<chapter>); left
+   * out — or not found — the version decides: the one element it changed, the
+   * grid when several, else the play area (a candidate always opens play,
+   * where it waits for the user's OK). Pages pick it up on their poll.
+   * @returns a line for the tool's answer.
    */
-  async requestShow(sessionId: string, target: ShowTarget, note: string): Promise<GameResult<{ readonly ok: true; readonly request: ShowRequest }>> {
+  async showAfterPublish(sessionId: string, version: number, candidate: boolean, show?: string, note?: string): Promise<string> {
     const row = await this.boundProject(sessionId)
-    if (row === undefined) return { ok: false, error: 'not-found' }
-    const request: ShowRequest = { seq: ++this.showSeq, target, note: note.trim().slice(0, 120), at: new Date().toISOString() }
-    this.shows.set(row.id, request)
+    const project = row === undefined ? undefined : await this.view(row.id)
+    if (row === undefined || project === undefined) return ''
+    let target: ShowTarget | null = null
+    let refused = ''
+    const asked = (show ?? '').trim()
+    if (asked !== '') {
+      const [view, ...rest] = asked.split(':')
+      const name = rest.join(':').trim()
+      if (view === 'play' || view === 'versions' || (view === 'elements' && name === '')) target = { view }
+      else if (view === 'elements') {
+        const e = project.elements.find(x => x.id === name || x.name === name)
+        if (e !== undefined) target = { view, elementId: e.id }
+      } else if (view === 'design') {
+        const c = project.chapters.find(x => x.id === name || x.title === name)
+        if (c !== undefined) target = { view, chapterId: c.id }
+      }
+      if (target === null) refused = `（show「${asked}」找不到，改用默认位置）`
+    }
+    let changedNames: string[] = []
+    if (target === null) {
+      const decided = candidate ? { target: { view: 'play' } as ShowTarget, names: [] as string[] } : await this.changedBy(row.root, version)
+      target = decided.target
+      changedNames = decided.names
+    }
+    const words = (note ?? '').trim()
+    const text = words !== '' ? words
+      : candidate ? `v${version} 等你确认上线`
+      : changedNames.length > 0 ? `v${version}：改了${changedNames.slice(0, 3).join('、')}${changedNames.length > 3 ? ` 等 ${changedNames.length} 个` : ''}`
+      : `v${version} 已上线`
+    this.shows.set(row.id, { seq: ++this.showSeq, target, note: text.slice(0, 120), at: new Date().toISOString() })
     this.notify(row.id)
-    return { ok: true, request }
+    const where = target.view === 'play' ? '试玩' : target.view === 'versions' ? '版本' : target.view === 'design' ? `策划·${target.chapterId}` : target.elementId === undefined ? '元素列表' : `元素「${target.elementId}」`
+    return `右栏会打开：${where}${refused}。`
+  }
+
+  /** Where a version's change is: the one element it changed, the grid for several, else play (code, assets, a first version). */
+  private async changedBy(root: string, version: number): Promise<{ target: ShowTarget; names: string[] }> {
+    const earlier = (await this.readVersions(root)).map(v => v.version).filter(v => v < version)
+    const play = { target: { view: 'play' } as ShowTarget, names: [] as string[] }
+    if (earlier.length === 0) return play
+    const prev = Math.max(...earlier)
+    const dir = (v: number): string => join(root, STATE_DIR, 'versions', String(v))
+    if (!await stat(dir(prev)).then(() => true, () => false)) return play
+    const [before, after] = await Promise.all([this.elementIndex(dir(prev)), this.elementIndex(dir(version))])
+    const changed = [...after].filter(([id, e]) => before.get(id)?.json !== e.json)
+    const others = async (v: number): Promise<Map<string, string>> => new Map((await walk(dir(v), p => !p.startsWith('elements/'))).map(f => [f.path, f.data.toString('base64')]))
+    const [a, b] = await Promise.all([others(prev), others(version)])
+    const otherChanged = a.size !== b.size || [...b].some(([p, d]) => a.get(p) !== d)
+    const names = changed.map(([, e]) => e.name)
+    if (otherChanged || changed.length === 0) return { target: { view: 'play' }, names }
+    if (changed.length === 1) return { target: { view: 'elements', elementId: changed[0]![0] }, names }
+    return { target: { view: 'elements' }, names }
   }
 
   async sessionState(sessionId: string): Promise<SessionGameState> {

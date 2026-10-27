@@ -17,7 +17,7 @@
     "src/project.ts",
     "src/vfs.ts",
     "src/client/chat-node.tsx",
-    "src/client/autonav.ts",
+    "src/client/reveal.ts",
     "src/client/contract.ts",
     "src/client/definition.tsx",
     "src/client/DesignView.tsx",

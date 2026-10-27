@@ -22,9 +22,6 @@ export interface ElementsViewProps extends ViewProps {
   readonly project: ProjectView
   readonly openId: string | null
   readonly onOpen: (id: string | null) => void
-  /** The version a jump here came with (the page offers 去试玩). */
-  readonly playVersion?: number | null
-  readonly onPlay?: () => void
 }
 
 /** A 3D look's main color, for its card's placeholder while the still renders (or without a live version). */
@@ -47,9 +44,10 @@ export function ElementsView(props: ElementsViewProps): ReactNode {
   const open = project.elements.find(e => e.id === openId)
   if (open !== undefined) return <ElementDetail {...props} element={open} onBack={() => { onOpen(null) }} types={types} />
 
+  // Newest change first (stable: elements of one file keep their order).
   const shown = project.elements.filter(e => filter === 'all' || e.type === filter)
+    .map((e, i) => ({ e, i })).sort((a, b) => (b.e.updatedAt ?? 0) - (a.e.updatedAt ?? 0) || a.i - b.i).map(x => x.e)
   const openProposals = new Set(project.proposals.filter(p => p.picked === undefined).map(p => p.elementId))
-  const unseen = props.autoNav.unseen(project.id)
   const toggle = (id: string): void => { setSelected(s => (s.includes(id) ? s.filter(x => x !== id) : [...s, id])) }
 
   return <div className={css.scroll}>
@@ -82,7 +80,6 @@ export function ElementsView(props: ElementsViewProps): ReactNode {
                   <span className={css.elName}>{e.name}</span>
                   <span className={css.elMeta}>{e.type}{stats.length > 0 ? ` · ${stats.map(([k, v]) => `${k} ${String(v)}`).join(' · ')}` : ''}</span>
                   {openProposals.has(e.id) && <span className={css.badge}>{t('elements.proposalsWaiting')}</span>}
-                  {unseen.has(e.id) && <span className={css.elDot} title={t('nav.changed')} aria-label={t('nav.changed')} />}
                 </button>
                 <label className={css.elCheck} title={t('elements.select')}>
                   <input type="checkbox" checked={isSel} onChange={() => { toggle(e.id) }} aria-label={t('elements.selectOne', { name: e.name })} />
@@ -109,7 +106,7 @@ export function ElementsView(props: ElementsViewProps): ReactNode {
 type Tool = 'pen' | 'recolor'
 
 /** One element, open. */
-function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraft, toast, refresh, types, autoNav, playVersion, onPlay }: ElementsViewProps & {
+function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraft, toast, refresh, types }: ElementsViewProps & {
   element: ElementView
   onBack: () => void
   types: readonly string[]
@@ -126,8 +123,6 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
 
   useEffect(() => { setLook(element.look) }, [element.id, element.look])
   const [look3d, setLook3d] = useState<Look3D | null>(element.look3d)
-  // Opening the page (by hand or by a jump) is seeing the change: the card's dot goes.
-  useEffect(() => { autoNav.markSeen(project.id, element.id) }, [autoNav, project.id, element.id])
   const [clips, setClips] = useState<readonly string[]>([])
   const [parts, setParts] = useState<ModelParts | null>(null)
   const [clip, setClip] = useState<{ name: string; n: number } | null>(null)
@@ -174,7 +169,7 @@ function ElementDetail({ t, sessionId, api, project, element, onBack, insertDraf
   return <div className={css.scroll}>
     <PanelHeader className={css.detailHead} title={element.name} meta={<span title={`${element.id} · ${element.file}`}>{element.type}</span>}
       onBack={onBack} backLabel={t('elements.back')} moreLabel={t('more')}
-      extra={playVersion != null && onPlay !== undefined ? <button type="button" className={css.primary} onClick={onPlay}>{t('nav.playVersion', { version: playVersion })}</button> : undefined} />
+ />
 
     {look3d !== null ? <section className={css.lookPanel}>
       <Preview3D api={api} projectId={project.id} version={project.current?.version} look={look3d} mode="spin"

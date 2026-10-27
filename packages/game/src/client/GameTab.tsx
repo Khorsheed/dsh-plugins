@@ -11,7 +11,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   PanelHeader, PanelRoot, UnderlineTabs, type PanelAction,
 } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { RevealNoticeBar } from '@khorsheed/dsh-client-ui-reveal-kit/src/client/index.ts'
 import { Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { artStyleLabel, artStyleName } from '../project.ts'
 import type { ProjectView, SessionGameState, WorkingChanges } from '../types.ts'
@@ -30,13 +29,12 @@ type View = 'play' | 'elements' | 'design' | 'versions'
 const RefreshIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 3v2.6h-2.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 const SwitchIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 5h9l-2-2M13 11H4l2 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 const PaletteIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5a5.5 5.5 0 1 0 0 11c.8 0 1.2-.6 1-1.3-.3-.8.2-1.7 1.1-1.7h1.2a2.2 2.2 0 0 0 2.2-2.2C13.5 5 11 2.5 8 2.5Z" stroke="currentColor" strokeWidth="1.2" /><circle cx="5.5" cy="7" r=".9" fill="currentColor" /><circle cx="8" cy="5" r=".9" fill="currentColor" /><circle cx="10.6" cy="6.3" r=".9" fill="currentColor" /></svg>
-const JumpIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h8M8 4.5 11.5 8 8 11.5M13 3v10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 const PlusIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
 const ExportIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.5v7M5 6.5l3 3 3-3M3 11v2.5h10V11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" /></svg>
 
 /** The game tab body. */
 export function GameTab(props: GameTabProps): ReactNode {
-  const { sessionId, t, api, insertDraft, subscribeSessionEvents, touch, subscribeNav, takeNav, autoNav } = props
+  const { sessionId, t, api, insertDraft, subscribeSessionEvents, touch, subscribeNav, takeNav, reveal } = props
   const [state, setState] = useState<SessionGameState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rev, setRev] = useState(0)
@@ -46,9 +44,7 @@ export function GameTab(props: GameTabProps): ReactNode {
   const [openElement, setOpenElement] = useState<string | null>(null)
   const [toastText, setToastText] = useState<string | null>(null)
   const [openChapter, setOpenChapter] = useState<string | null>(null)
-  /** The version a jump to an element came with (its page offers 去试玩). */
-  const [playHint, setPlayHint] = useState<number | null>(null)
-  useEffect(() => autoNav.mount(), [autoNav])
+  useEffect(() => reveal.mount(), [reveal])
   const toastTimer = useRef<ReturnType<typeof setTimeout>>()
 
   const refresh = useCallback(() => { touch(sessionId) }, [touch, sessionId])
@@ -67,7 +63,6 @@ export function GameTab(props: GameTabProps): ReactNode {
       setView(target.view)
       setOpenElement(target.elementId ?? null)
       setOpenChapter(target.chapterId ?? null)
-      setPlayHint(target.playVersion ?? null)
       setRev(n => n + 1)
     }
     const parked = takeNav()
@@ -84,7 +79,7 @@ export function GameTab(props: GameTabProps): ReactNode {
   }, [api, sessionId, rev])
 
   const viewProps: ViewProps = {
-    t, sessionId, api, refresh, toast, insertDraft: text => insertDraft(sessionId, text), insertRef: ref => props.insertRef(sessionId, ref), autoNav,
+    t, sessionId, api, refresh, toast, insertDraft: text => insertDraft(sessionId, text), insertRef: ref => props.insertRef(sessionId, ref), reveal,
   }
   const project = state?.bound ?? null
   const choose = (projectId: string | null): void => {
@@ -139,8 +134,7 @@ export function GameTab(props: GameTabProps): ReactNode {
     </PanelRoot>
   }
 
-  return <ProjectWorkbench {...viewProps} project={project} view={view} setView={v => { setView(v); setPlayHint(null); if (v !== 'elements') setOpenElement(null); if (v !== 'design') setOpenChapter(null) }}
-    playHint={playHint}
+  return <ProjectWorkbench {...viewProps} project={project} view={view} setView={v => { setView(v); if (v !== 'elements') setOpenElement(null); if (v !== 'design') setOpenChapter(null) }}
     openChapter={openChapter} setOpenChapter={setOpenChapter}
     styling={styling} setStyling={setStyling} openElement={openElement} setOpenElement={setOpenElement}
     onPickProject={() => { setPicking(true) }} foot={foot} />
@@ -159,13 +153,11 @@ function ProjectWorkbench(p: ViewProps & {
   foot: ReactNode
   openChapter: string | null
   setOpenChapter: (id: string | null) => void
-  playHint: number | null
 }): ReactNode {
-  const { t, sessionId, api, project, view, setView, styling, setStyling, refresh, toast, insertDraft, autoNav } = p
+  const { t, sessionId, api, project, view, setView, styling, setStyling, refresh, toast, insertDraft, reveal } = p
   const [, rerender] = useState(0)
-  useEffect(() => autoNav.subscribe(() => { rerender(n => n + 1) }), [autoNav])
-  useEffect(() => { autoNav.setViewing({ view, ...(p.openElement === null ? {} : { elementId: p.openElement }) }) }, [autoNav, view, p.openElement])
-  useEffect(() => () => { autoNav.setViewing(null) }, [autoNav])
+  useEffect(() => reveal.subscribe(() => { rerender(n => n + 1) }), [reveal])
+  const notice = reveal.notice
   const autoConfirm = project.manifest?.autoConfirm ?? true
   const style = project.manifest?.artStyle
   const exportCurrent = (): void => {
@@ -188,14 +180,12 @@ function ProjectWorkbench(p: ViewProps & {
     { id: 'export', label: t('versions.exportCurrent'), icon: ExportIcon, onSelect: exportCurrent, menuOnly: true },
     { id: 'switch', label: t('switch'), icon: SwitchIcon, onSelect: p.onPickProject, menuOnly: true },
     { id: 'new', label: t('switcher.new'), icon: PlusIcon, onSelect: () => { if (insertDraft(t('draft.newProject'))) toast(t('toast.newDrafted')) }, menuOnly: true },
-    { id: 'autonav', label: t('nav.switch'), icon: JumpIcon, pressed: autoNav.enabled, menuOnly: true,
-      onSelect: () => { const on = !autoNav.enabled; autoNav.setEnabled(on); toast(on ? t('nav.switchOn') : t('nav.switchOff')) } },
   ]
   const failing = project.lastCheck !== null && !project.lastCheck.ok
   const openProposals = project.proposals.filter(x => x.picked === undefined).length
 
-  // Any touch in the panel means the user is busy here: an automatic jump waits as a notice.
-  return <PanelRoot className={css.root} onPointerDownCapture={() => { autoNav.touched() }} onKeyDownCapture={() => { autoNav.touched() }}>
+  // Any touch in the panel means the user is busy here: the agent's request waits as a notice.
+  return <PanelRoot className={css.root} onPointerDownCapture={() => { reveal.touched() }} onKeyDownCapture={() => { reveal.touched() }}>
     <PanelHeader
       title={<button type="button" className={css.titleSwitch} onClick={p.onPickProject} title={t('switch')} aria-haspopup="dialog">
         <span>{project.title}</span><span className={css.titleCaret} aria-hidden="true">▾</span>
@@ -242,10 +232,14 @@ function ProjectWorkbench(p: ViewProps & {
       }} />
     </div>}
     <CommitBar {...p} project={project} onOpenVersions={() => { setView('versions') }} />
-    <RevealNoticeBar controller={autoNav.reveal} goLabel={t('nav.go')} dismissLabel={t('nav.dismiss')} />
+    {notice !== null && <div className={css.navNotice} role="status">
+      <span className={css.navNoticeText}>{notice.text}</span>
+      <button type="button" className={css.primary} onClick={() => { reveal.follow() }}>{t('nav.go')}</button>
+      <button type="button" className={css.link} onClick={() => { reveal.dismiss() }}>{t('nav.dismiss')}</button>
+    </div>}
     {view === 'play' && <PlayView {...p}
       onOpenElement={id => { p.setOpenElement(id); setView('elements') }} onOpenVersions={() => { setView('versions') }} />}
-    {view === 'elements' && <ElementsView {...p} openId={p.openElement} onOpen={p.setOpenElement} playVersion={p.playHint} onPlay={() => { setView('play') }} />}
+    {view === 'elements' && <ElementsView {...p} openId={p.openElement} onOpen={p.setOpenElement} />}
     {view === 'design' && <DesignView {...p} openChapter={p.openChapter} onOpenChapter={p.setOpenChapter} onStyle={() => { setStyling(true) }} />}
     {view === 'versions' && <VersionsView {...p} />}
     {p.foot}

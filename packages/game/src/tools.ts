@@ -2,8 +2,8 @@
  * The game mode's model tools, registered by the `./agent` entry:
  * `game_open` (list, switch to, create or adopt a project — the light gate
  * lives here), `game_read` (the bound project's state), `game_propose` (look
- * variants) and `game_publish` (run the checks now and put a passing build
- * into the play area). There is no write tool: the agent writes project files
+ * variants) and `game_publish` (run the checks now, put a passing build into
+ * the play area, and take the user's game tab to it). There is no write tool: the agent writes project files
  * with the ordinary fs tools. The checks also run by themselves at the end of
  * every turn — but a turn can stay open for a long time (asking the user a
  * question does not close it), so `game_publish` is how a build reaches the
@@ -18,7 +18,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { artStyleLabel, lookText } from './project.ts'
 import type { GameService } from './store.ts'
-import { ART_STYLES, ART_STYLES_3D, CHAPTERS, type ProjectView, type ShowTarget } from './types.ts'
+import { ART_STYLES, ART_STYLES_3D, CHAPTERS, type ProjectView } from './types.ts'
 
 /** The community tool-origin tag. */
 function tagOrigin<T extends object>(definition: T): T {
@@ -245,13 +245,19 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       'Run the checks on this session\'s game project now (data validation → load and a 2-second smoke run → tests/) and, '
       + 'when they pass, cut a new version into the play area (or a candidate when auto-confirm is off). Call it whenever a '
       + 'playable build is ready and ALWAYS before asking the user to play or try something: asking a question does not end '
-      + 'the turn, so without it the play area still shows the previous version. A failure lists what to fix.',
-    parameters: {},
+      + 'the turn, so without it the play area still shows the previous version. A failure lists what to fix. A passing '
+      + 'publish also takes the user\'s game tab to the result: say where with show (play, versions, elements, '
+      + 'elements:<element id or name>, design:<chapter id or title>) and what to look at with note; left out, it opens '
+      + 'the one element this version changed, the element grid when it changed several, else the play area.',
+    parameters: {
+      show: { type: 'string', description: 'Where the user\'s game tab goes after a pass (see above). Optional.' },
+      note: { type: 'string', description: 'What to look at, a short phrase shown with it (e.g. 看看阿努比斯的头饰). Optional.' },
+    },
     output: {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
-    execute: async (_args: Record<string, never>, exec: { agent?: Agent }): Promise<string> => {
+    execute: async (args: { show?: string; note?: string }, exec: { agent?: Agent }): Promise<string> => {
       const session = exec.agent?.session
       if (session === undefined) return '失败：这次调用没有会话。'
       const row = await store.boundProject(session.id)
@@ -273,8 +279,10 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       }
       if (outcome.kind === 'pass') {
         const tail = outcome.record.skipped === undefined ? '' : `（${outcome.record.skipped}）`
-        if (outcome.deployed !== null) return `完成：v${outcome.deployed.version} 通过检查${outcome.record.passed > 0 ? `（${outcome.record.passed} 个用例）` : ''}，已进试玩区，可以请用户试玩了。${tail}`
-        if (outcome.candidate !== null) return `完成：v${outcome.candidate.version} 通过检查，作为候选等用户在右栏确认（自动上线关着或是换风格的版本）；确认后才进试玩区。${tail}`
+        const cut = outcome.deployed ?? outcome.candidate
+        const shown = cut === null ? '' : await store.showAfterPublish(session.id, cut.version, outcome.candidate !== null, args.show, args.note)
+        if (outcome.deployed !== null) return `完成：v${outcome.deployed.version} 通过检查${outcome.record.passed > 0 ? `（${outcome.record.passed} 个用例）` : ''}，已进试玩区，可以请用户试玩了。${shown}${tail}`
+        if (outcome.candidate !== null) return `完成：v${outcome.candidate.version} 通过检查，作为候选等用户在右栏确认（自动上线关着或是换风格的版本）；确认后才进试玩区。${shown}${tail}`
         return `检查通过，但这个会话是只读模式，没有生成版本。${tail}`
       }
       // Skipped: no entry yet, or the build is the one already checked.
@@ -290,50 +298,5 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
     },
   })
 
-  const show = defineTool({
-    name: 'game_show',
-    description:
-      'Take the user\'s game tab to a place worth looking at: play (the newest version), elements (one element\'s page with '
-      + 'element, or the grid), design (a chapter with chapter), versions. note says what to look at, in a few words. Use it '
-      + 'after publishing or changing something you want the user to see, before you ask about it. The tab waits with a '
-      + 'notice instead of jumping while the user is busy in it (playing, editing).',
-    parameters: {
-      view: { type: 'string', required: true, description: 'play, elements, design or versions.' },
-      element: { type: 'string', description: 'elements: an element id or name to open.' },
-      chapter: { type: 'string', description: 'design: a chapter id or title to open.' },
-      note: { type: 'string', description: 'What to look at, a short phrase (e.g. 看看太阳船的船壳).' },
-    },
-    output: {
-      schema: { type: 'string' },
-      render: (_args, value) => [{ type: 'text', text: String(value) }],
-    },
-    execute: async (args: { view?: string; element?: string; chapter?: string; note?: string }, exec: { agent?: Agent }): Promise<string> => {
-      const session = exec.agent?.session
-      if (session === undefined) return '失败：这次调用没有会话。'
-      const row = await store.boundProject(session.id)
-      if (row === undefined) return '本会话还没有游戏项目。用 game_open 选一个或新建。'
-      const view = (args.view ?? '').trim()
-      if (view !== 'play' && view !== 'elements' && view !== 'design' && view !== 'versions') return '失败：view 只能是 play、elements、design 或 versions。'
-      const project = await store.view(row.id)
-      if (project === undefined) return '失败：项目登记丢了，用 game_open 重新选。'
-      let target: ShowTarget = { view }
-      const wantedElement = args.element?.trim() ?? ''
-      if (view === 'elements' && wantedElement !== '') {
-        const element = project.elements.find(e => e.id === wantedElement || e.name === wantedElement)
-        if (element === undefined) return `没有元素「${wantedElement}」。有：${project.elements.map(e => `${e.id}（${e.name}）`).join('、') || '（无）'}`
-        target = { view, elementId: element.id }
-      }
-      const wantedChapter = args.chapter?.trim() ?? ''
-      if (view === 'design' && wantedChapter !== '') {
-        const chapter = project.chapters.find(c => c.id === wantedChapter || c.title === wantedChapter)
-        if (chapter === undefined) return `没有章节「${wantedChapter}」。可选：${project.chapters.map(c => `${c.id}（${c.title}）`).join('、')}`
-        target = { view, chapterId: chapter.id }
-      }
-      const result = await store.requestShow(session.id, target, args.note ?? '')
-      if (!result.ok) return `失败：${result.error}`
-      return '已请用户的右栏打开这里（几秒内生效；用户正在面板里操作或试玩时，会先显示提示，等用户自己点）。'
-    },
-  })
-
-  return [tagOrigin(open), tagOrigin(read), tagOrigin(propose), tagOrigin(publish), tagOrigin(show)]
+  return [tagOrigin(open), tagOrigin(read), tagOrigin(propose), tagOrigin(publish)]
 }
