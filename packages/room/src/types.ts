@@ -993,6 +993,18 @@ export interface RoomMemberMessage {
 export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy' | `sent ${string}` | `pending-confirm ${string}`
 
 /** isRoom probe: does this session carry the room marker? */
+/** pendingCards request: no arguments (every live room the host knows). */
+export interface RoomPendingCardsRequest {
+  readonly sessionId?: SessionId
+}
+
+/** One question/approval card waiting for the human in a room (the session list's 「等你处理」). */
+export interface RoomPendingCard {
+  readonly sessionId: string
+  readonly id: string
+  readonly kind: 'question' | 'approval'
+}
+
 export interface RoomIsRoomRequest {
   /** Session to probe. */
   readonly sessionId: SessionId

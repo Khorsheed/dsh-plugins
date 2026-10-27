@@ -135,11 +135,26 @@ function detectMention(draft: string, caret: number): ActiveMention | null {
  *   must stay a pure function of the owner props plus stable state reads).
  * @returns the room match, or null to pass the election down the chain.
  */
+/** Key prefix of the room's own pending interactions (its question/approval cards). */
+const ROOM_INTERACTION_PREFIX = 'room:'
+
+/**
+ * The pending-interaction key a room card publishes under.
+ * @param kind - question or approval.
+ * @param id - the card id.
+ * @returns the key (prefixed, so the composer selector can tell it apart).
+ */
+export function roomInteractionKey(kind: string, id: string): string {
+  return `${ROOM_INTERACTION_PREFIX}${kind}:${id}`
+}
+
 export function selectRoomComposer(
   owner: ComposerChainProps,
   isRoomCached: (sessionId: SessionId) => boolean,
 ): RoomComposerMatch | null {
-  if (owner.pendingInteraction !== undefined) return null
+  // The room's own waiting cards ride the pending channel only for the
+  // session list (roomInteractionKey): they never hand the composer away.
+  if (owner.pendingInteraction !== undefined && (owner.pendingInteraction as { key?: string }).key?.startsWith(ROOM_INTERACTION_PREFIX) !== true) return null
   const sessionId = owner.sessionId ?? owner.session?.sessionId
   return sessionId !== undefined && isRoomCached(sessionId) ? { room: true } : null
 }

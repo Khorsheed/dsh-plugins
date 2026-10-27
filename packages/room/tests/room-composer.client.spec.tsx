@@ -9,7 +9,7 @@ import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/clie
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { RoomComposer, selectRoomComposer } from '../src/client/RoomComposer.tsx'
+import { RoomComposer, roomInteractionKey, selectRoomComposer } from '../src/client/RoomComposer.tsx'
 import type { DraftChip } from '../src/client/draft-chips.ts'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { RoomTaskTags } from '../src/client/task-tag.ts'
@@ -568,6 +568,11 @@ describe('selectRoomComposer', () => {
   it('declines while an interaction is pending — the ApprovalPanel elects at priority 1', () => {
     const pending = owner({ pendingInteraction: { kind: 'question' } as never })
     expect(selectRoomComposer(pending, () => true)).toBeNull()
+  })
+
+  it('keeps the composer while the pending interaction is the room\'s own card (published for the session list only)', () => {
+    const own = owner({ pendingInteraction: { key: roomInteractionKey('question', 'q1'), kind: 'question', sessionId: SESSION } as never })
+    expect(selectRoomComposer(own, () => true)).toEqual({ room: true })
   })
 })
 

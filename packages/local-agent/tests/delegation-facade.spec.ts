@@ -648,6 +648,19 @@ describe('LocalAgentRegistry delegation facade', () => {
   })
 
   describe('active-delegation registry (tool registration + stop)', () => {
+    it('a tracked run is announced running on the host status channel, and settled again when it ends', async () => {
+      const h = await mountFacade()
+      const flips: [string, boolean][] = []
+      ;(h.ctx as unknown as { on: (name: string, listener: (id: string, running: boolean) => void) => void })
+        .on('api-session/status', (id, running) => { flips.push([String(id), running]) })
+      const controllable = makeRun('child-flip')
+      h.registry.trackDelegationRun('child-flip', controllable.run, () => {})
+      controllable.settle({ stopReason: 'completed', output: [] })
+      await controllable.run.result
+      await Promise.resolve()
+      expect(flips).toEqual([['child-flip', true], ['child-flip', false]])
+    })
+
     it('tracks a tool-registered run and cancel() fires its cancel lever', async () => {
       const h = await mountFacade()
       const controllable = makeRun('child-tool')

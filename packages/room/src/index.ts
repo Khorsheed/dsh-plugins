@@ -75,7 +75,7 @@ import type {
   RoomListProvidersRequest,
   RoomMember, RoomMemberMessage, RoomMemberMessageReceipt,
   RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomSetTaskHintRequest, RoomStopJobRequest, RoomStopJobResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
-  RoomPostMessageRequest, RoomPostMessageResult, RoomAttachmentInput, RoomDispatchAttachment,
+  RoomPostMessageRequest, RoomPostMessageResult, RoomAttachmentInput, RoomDispatchAttachment, RoomPendingCard, RoomPendingCardsRequest,
   RoomPresetInfo, RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
   RoomRemoveMemberRequest, RoomRemoveMemberResult, RoomRestoreMemberRequest, RoomRestoreMemberResult,
@@ -383,6 +383,14 @@ export class RoomService extends TypertRemoteService {
       }
       return { kind: 'enter', messages: [] }
     })
+    // The session list's status (the host shows a session running only while
+    // its own agent runs): a room is running while any member runs, and its
+    // waiting question/approval cards are tracked for the browser.
+    ctx.on('session/event', (session, event) => { this.observeActivity(session, event) })
+    ctx.on('agent/status', ({ agent, status }) => {
+      // The room's own agent settling must not hide members still at work.
+      if (status !== 'running' && (this.activeRuns.get(String(agent.id))?.size ?? 0) > 0) this.emitStatus(String(agent.id), true)
+    })
     // Cross-session help (help.ts): a help message reaching a helper's turn
     // equips that agent with the helper tools and marks the thread running;
     // an agent whose log already holds help requests (a restart dropped its
@@ -491,6 +499,70 @@ export class RoomService extends TypertRemoteService {
    * @param request - session identity.
    * @returns true when the session carries the marker (false for unknown sessions too).
    */
+  /** Run ids of the members working in each room (the session list's 运行中). */
+  private readonly activeRuns = new Map<string, Set<string>>()
+  /** Question/approval cards waiting for the human, per room. */
+  private readonly waitingCards = new Map<string, Map<string, 'question' | 'approval'>>()
+
+  /**
+   * Follow a room's run and card edges as they are journaled: a room turns
+   * running when its first member starts and settles when its last one ends
+   * (the host's `api-session/status`, so the list shows 运行中 and then
+   * 已完成), and its waiting cards are kept for {@link pendingCards}.
+   * @param session - the session the event landed in.
+   * @param event - the journaled event.
+   */
+  private observeActivity(session: Session, event: SessionEvent): void {
+    const id = String(session.id)
+    switch (event.type) {
+      case 'room/run-state': {
+        const runs = this.activeRuns.get(id) ?? new Set<string>()
+        const before = runs.size
+        const key = event.data.runId ?? `${event.data.member}:${event.data.startedAt}`
+        if (event.data.state === 'running') runs.add(key)
+        else runs.delete(key)
+        if (runs.size === 0) this.activeRuns.delete(id)
+        else this.activeRuns.set(id, runs)
+        if (before === 0 && runs.size > 0) this.emitStatus(id, true)
+        // The room's own agent still running keeps the row running.
+        else if (before > 0 && runs.size === 0 && this.ctx.agents.get(session.id)?.status !== 'running') this.emitStatus(id, false)
+        return
+      }
+      case 'room/question':
+      case 'room/approval': {
+        const cards = this.waitingCards.get(id) ?? new Map<string, 'question' | 'approval'>()
+        cards.set(event.data.id, event.type === 'room/question' ? 'question' : 'approval')
+        this.waitingCards.set(id, cards)
+        return
+      }
+      case 'room/question-resolved':
+      case 'room/approval-resolved': {
+        const cards = this.waitingCards.get(id)
+        cards?.delete(event.data.id)
+        if (cards?.size === 0) this.waitingCards.delete(id)
+        return
+      }
+      default:
+    }
+  }
+
+  /** Broadcast a room's running flip on the host's session-status channel. */
+  private emitStatus(sessionId: string, running: boolean): void {
+    (this.ctx.emit as unknown as (name: string, ...args: unknown[]) => void)('api-session/status', SessionId(sessionId), running)
+  }
+
+  /**
+   * The question/approval cards waiting for the human across live rooms —
+   * the browser publishes them as the session list's 等你处理 status.
+   * @param request - optionally one room only.
+   * @returns the waiting cards.
+   */
+  @Remote('pendingCards')
+  async pendingCards(request: RoomPendingCardsRequest): Promise<readonly RoomPendingCard[]> {
+    const rooms = request.sessionId === undefined ? [...this.waitingCards.keys()] : [String(request.sessionId)]
+    return rooms.flatMap(sessionId => [...this.waitingCards.get(sessionId) ?? []].map(([id, kind]) => ({ sessionId, id, kind })))
+  }
+
   @Remote('isRoom')
   async isRoom(request: RoomIsRoomRequest): Promise<boolean> {
     const session = this.ctx.sessions.get(request.sessionId)
