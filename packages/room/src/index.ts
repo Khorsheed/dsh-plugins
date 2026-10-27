@@ -55,7 +55,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { DispatchEngine, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
+import { DispatchEngine, MERGED_BACKLOG_TEXT, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
 import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
@@ -823,13 +823,13 @@ export class RoomService extends TypertRemoteService {
     if (targets.some(target => !current.members.some(member => member.name === target))) return { ok: false, code: 'unknown-targets' }
     const body = parsed.targets.length > 0 ? parsed.text : text
     const filed = await this.fileHumanMessage(session, edit.data.id, text, task)
-    this.moveOnFromLostRounds(session, targets)
+    const carry = this.moveOnFromLostRounds(session, targets)
     const dispatch = session.append('room/dispatch', {
       id: requestId, targets, text: body, origin: 'human', task: filed.task,
       targetIds: targets.map(name => memberId(session.snapshotEvents(), current.members.find(member => member.name === name)!)),
     })
     await this.ctx.sessions.flush(session)
-    for (const target of targets) this.engine.dispatch(session, target, body, { dispatchSeq: dispatch.seq })
+    for (const target of targets) this.engine.dispatch(session, target, carry(target, body), { dispatchSeq: dispatch.seq })
     return { ok: true }
   }
 
@@ -839,15 +839,32 @@ export class RoomService extends TypertRemoteService {
    * message runs instead of queueing behind a reconciliation. Formal-goal
    * attempts keep their explicit reconciliation.
    */
-  private moveOnFromLostRounds(session: Session, targets: readonly string[], why = '你发了新消息；被重启打断的这一轮按没做完处理'): void {
+  private moveOnFromLostRounds(session: Session, targets: readonly string[], why = MOVED_ON_TEXT): (member: string, text: string) => string {
     const events = session.snapshotEvents()
     const state = replay(events)
-    const ids = new Set(state.members.filter(member => targets.includes(member.name)).map(member => memberId(events, member)))
+    const members = state.members.filter(member => targets.includes(member.name))
+    const ids = new Set(members.map(member => memberId(events, member)))
+    const backlog = new Map<string, string[]>()
     for (const row of state.deliveries ?? []) {
       if (row.status !== 'uncertain' || row.plan?.taskId !== undefined || !ids.has(row.memberId)) continue
       session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: why })
       const run = state.runs.find(entry => entry.runId === row.id)
       if (run !== undefined) session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled', ...this.terminalRunStateFields(session, state, run.member) })
+      // The messages that queued behind the lost round never ran (the round
+      // blocked them, the restart lost the queue): they ride along with this
+      // message, one round, instead of replaying stale rounds one by one.
+      const name = members.find(member => memberId(events, member) === row.memberId)?.name
+      if (name === undefined) continue
+      for (const queued of state.deliveries ?? []) {
+        if (queued.status !== 'queued' || queued.memberId !== row.memberId || queued.dispatchSeq <= row.dispatchSeq || queued.plan?.taskId !== undefined) continue
+        session.append('room/delivery-state', { id: queued.id, dispatchSeq: queued.dispatchSeq, memberId: queued.memberId, state: 'done', text: MERGED_BACKLOG_TEXT })
+        const from = queued.from === undefined ? undefined : state.members.find(member => memberId(events, member) === queued.from)?.name
+        backlog.set(name, [...backlog.get(name) ?? [], `- ${from === undefined ? '' : `来自 ${from}：`}${queued.text}`])
+      }
+    }
+    return (member, text) => {
+      const lines = backlog.get(member)
+      return lines === undefined ? text : [text, '', '（你被重启打断期间，房间里还有这些消息排着没送到，一并给你：', ...lines, '）'].join('\n')
     }
   }
 
@@ -1404,7 +1421,7 @@ export class RoomService extends TypertRemoteService {
     }
     floatRunningCards(loaded.session)
     const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
-    this.moveOnFromLostRounds(loaded.session, targets)
+    const carry = this.moveOnFromLostRounds(loaded.session, targets)
     const dispatch = loaded.session.append('room/dispatch', {
       id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human', task: filed.task,
       ...admitted.records.length === 0 ? {} : { attachments: admitted.records },
@@ -1412,7 +1429,7 @@ export class RoomService extends TypertRemoteService {
     })
     await this.ctx.sessions.flush(loaded.session)
     for (const target of targets) {
-      this.engine.dispatch(loaded.session, target, withAttachmentPaths(prompt, admitted.records), { dispatchSeq: dispatch.seq })
+      this.engine.dispatch(loaded.session, target, carry(target, withAttachmentPaths(prompt, admitted.records)), { dispatchSeq: dispatch.seq })
     }
     return { ok: true, value: { parsed: { targets, text }, seq: dispatch.seq } }
   }
@@ -1699,7 +1716,7 @@ export class RoomService extends TypertRemoteService {
     // A round a restart left uncertain blocks the member's later work until a
     // human reconciles it — silently, for a request from outside. Move on
     // from it, as a human message to that member does.
-    this.moveOnFromLostRounds(other.session, [member.name], '另一个协作间来求助；被重启打断的这一轮按没做完处理')
+    const carry = this.moveOnFromLostRounds(other.session, [member.name], '另一个协作间来求助；被重启打断的这一轮按没做完处理')
     const sent = sendOrHold(other.session, {
       to: member, text, fromName: `${help.fromName}（${origin.roomTitle}）`,
       intent: { origin: 'help', hop: 1, kind: 'task', help: origin, ...op === 'request' ? { task: SELF_TASK } : {} },
@@ -1708,7 +1725,7 @@ export class RoomService extends TypertRemoteService {
     await this.ctx.sessions.flush(other.session)
     room.append('room/help-state', { help: help.id, state: sent.delivered ? 'running' : 'queued' })
     await this.ctx.sessions.flush(room)
-    if (sent.delivered) this.engine.dispatch(other.session, member.name, text, { dispatchSeq: sent.seq })
+    if (sent.delivered) this.engine.dispatch(other.session, member.name, carry(member.name, text), { dispatchSeq: sent.seq })
     const who = `${member.name} in the room "${help.target.title}"`
     return `${sent.delivered ? `Sent to ${who}.` : `Sent to ${who}; that room is paused, so the request waits until it resumes.`}`
       + ` Help id: ${help.id}. The reply reaches you on its own — end your turn now; do not poll.`
@@ -2083,12 +2100,12 @@ export class RoomService extends TypertRemoteService {
     })
     session.append('room/question-resolved', { id: request.id, outcome: 'answered', answers, late: true })
     const text = lateAnswerText(asked.data.questions, answers)
-    this.moveOnFromLostRounds(session, [member.name])
+    const carry = this.moveOnFromLostRounds(session, [member.name])
     const dispatch = session.append('room/dispatch', {
       id: randomUUID(), targets: [member.name], targetIds: [memberId(events, member)], text, origin: 'human',
     })
     await this.ctx.sessions.flush(session)
-    this.engine.dispatch(session, member.name, text, { dispatchSeq: dispatch.seq })
+    this.engine.dispatch(session, member.name, carry(member.name, text), { dispatchSeq: dispatch.seq })
     return { ok: true }
   }
 

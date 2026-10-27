@@ -75,6 +75,27 @@ export function roomSource(): MessageSource {
  * @param room - the room session.
  * @param except - the member whose own reply just landed (its card ends there).
  */
+/** Why a human message's move-on closes a restart-lost round (index.ts moveOnFromLostRounds). */
+export const MOVED_ON_TEXT = '你发了新消息；被重启打断的这一轮按没做完处理'
+/** A message that queued behind a lost round and rode along with the move-on message. */
+export const MERGED_BACKLOG_TEXT = '已并入下一条消息一起送达'
+/** A message that queued behind a lost round an earlier move-on skipped: closed, not replayed. */
+export const SUPERSEDED_BACKLOG_TEXT = '被重启打断前排队，已被后续消息取代'
+
+/**
+ * Whether a queued delivery sat behind a restart-lost round of the same
+ * member that a human message has since moved on from (its dispatch lies
+ * between the lost round and the move-on edge).
+ * @param events - the room journal.
+ * @param targetId - the member id.
+ * @param dispatchSeq - the queued delivery's dispatch seq.
+ * @returns whether the move-on superseded it.
+ */
+export function supersededByMoveOn(events: readonly SessionEvent[], targetId: string, dispatchSeq: number): boolean {
+  return events.some(event => event.type === 'room/delivery-state' && event.data.memberId === targetId && event.data.state === 'cancelled'
+    && (event.data as { text?: string }).text === MOVED_ON_TEXT && event.data.dispatchSeq < dispatchSeq && dispatchSeq < event.seq)
+}
+
 export function floatRunningCards(room: Session, except?: string): void {
   const running = replay(room.snapshotEvents()).runs
     .filter(run => run.state === 'running' && run.member !== except)
@@ -428,6 +449,15 @@ export class DispatchEngine {
           } else {
             await this.reportOutcome(room, dispatch.seq, id, targetId, last.data.state, last.data.text ?? last.data.error ?? '')
           }
+          continue
+        }
+        // Queued behind a restart-lost round the human has since moved on
+        // from: that move-on carries its backlog along; a row it left behind
+        // (a move-on predating the hand-over) closes as superseded instead of
+        // replaying a stale round on this access.
+        if (supersededByMoveOn(events, targetId, dispatch.seq)) {
+          room.append('room/delivery-state', { id, dispatchSeq: dispatch.seq, memberId: targetId, state: 'cancelled', text: SUPERSEDED_BACKLOG_TEXT })
+          await this.ctx.sessions.flush(room)
           continue
         }
         const target = state.members.find(member => memberId(events, member) === targetId)
