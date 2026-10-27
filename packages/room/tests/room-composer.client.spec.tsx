@@ -327,7 +327,7 @@ describe('RoomComposer', () => {
     expect(prune).toHaveBeenCalledWith([])
   })
 
-  it('a drop on the card is taken once: the hidden official bar\'s document listener never sees it', async () => {
+  it('a drop on the card is left to the official composer: it reaches the document listener, the card adds nothing itself', async () => {
     const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
     const inputStore = createSnapshotStore<InputSlice>({ draft: '' })
     const { area, rerenderWith } = await bench(submit, { inputStore, extraInputActions: { addAttachments: () => true, removeAttachment: () => {}, pruneAttachments: () => {} } })
@@ -338,8 +338,9 @@ describe('RoomComposer', () => {
     const file = new File(['x'], 'shot.png', { type: 'image/png' })
     fireEvent.drop(area, { dataTransfer: { files: [file], types: ['Files'] } })
     document.removeEventListener('drop', official)
-    expect(create).toHaveBeenCalledTimes(1)
-    expect(official).not.toHaveBeenCalled()
+    // The official overlay sees the drop (and closes); the files land once, through it.
+    expect(official).toHaveBeenCalledOnce()
+    expect(create).not.toHaveBeenCalled()
   })
 
   it('members a restart interrupted get one 全部继续 that sends 继续 to all of them', async () => {
