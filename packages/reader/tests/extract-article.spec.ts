@@ -109,6 +109,27 @@ describe('extractArticle — Chinese page', () => {
   })
 })
 
+describe('extractArticle — WeChat furniture', () => {
+  it('drops the donation card and the tag-preview toast beside #js_content', () => {
+    // The rendered page's shape (measured 2026-10-27): both sit in the winning
+    // container next to the article, filled in by the page's scripts.
+    const prose = Array.from({ length: 8 }, (_, i) => `<p><span>第${i + 1}段：梦境研究的样本主要来自英文社区，对特殊梦境的追踪也比较少，所以这还是一个比较粗泛的研究。</span></p>`).join('')
+    const page = `<html><body><div id="js_article"><div class="rich_media_area_primary_inner">
+      <h1 id="activity-name">精神天气预报</h1>
+      <div id="js_content">${prose}</div>
+      <div id="js_tags_preview_toast">预览时标签不可点</div>
+      <div id="content_bottom_area"><div class="gongyi_area">X博士 邀请你前往腾讯公益一起捐 重症儿童救助
+        <div class="gongyi_donate_btn"><i></i> 一起捐 </div>47人捐赠
+        <img src="https://avatar.gongyi.qq.com/avatar/a.png" alt="头像"></div></div>
+    </div></div></body></html>`
+    const result = extractArticle(page, 'https://mp.weixin.qq.com/s/x')
+    expect(result.ok ? 'ok' : result.error).toBe('ok')
+    if (!result.ok) return
+    expect(textOf(result.html)).toContain('第8段')
+    expect(result.html).not.toMatch(/一起捐|捐赠|预览时标签不可点|avatar\.gongyi/)
+  })
+})
+
 describe('extractArticle — failure modes', () => {
   it('refuses an empty page', () => {
     expect(extractArticle('', 'https://example.com')).toEqual({ ok: false, error: 'empty page' })
@@ -154,6 +175,20 @@ describe('normalizeRichText', () => {
   it('absolutizes relative media against the page url', () => {
     const out = normalizeRichText('<p><img src="/img/a.png" alt="A"></p>', 'https://example.com/post/')
     expect(out).toBe('<p><img src="https://example.com/img/a.png" alt="A" referrerpolicy="no-referrer"></p>')
+  })
+
+  it('carries the width the page displays an image at', () => {
+    // claude.com's logo row: a 132×128 PNG the page shows at 48.89px.
+    const logo = normalizeRichText('<p><img src="https://a.example/l.png" alt="Best Friends" width="132" height="128" style="width:48.89px"></p>')
+    expect(logo).toBe('<p><img src="https://a.example/l.png" alt="Best Friends" width="49" referrerpolicy="no-referrer"></p>')
+    // …and through a <picture>, whose size is its <img>'s.
+    const picture = normalizeRichText('<p><picture><source srcset="https://a.example/d.png"><img src="https://a.example/l.png" alt="Braven" style="width:122.89px"></picture></p>')
+    expect(picture).toContain('width="123"')
+    // No inline pixel width: nothing is carried (the attribute is the file's size).
+    expect(normalizeRichText('<p><img src="https://a.example/a.png" width="300"></p>')).not.toContain('width=')
+    // max-width and percentages say nothing about the picture.
+    const loose = normalizeRichText('<p><img src="https://a.example/b.png" style="max-width:120px;width:100%"></p>')
+    expect(loose).not.toContain('width=')
   })
 
   it('drops Cloudflare email-obfuscation placeholders', () => {

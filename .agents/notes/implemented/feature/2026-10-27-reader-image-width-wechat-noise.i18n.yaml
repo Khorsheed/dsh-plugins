@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-27-reader-image-width-wechat-noise.md
+.agents/notes/implemented/feature/2026-10-27-reader-image-width-wechat-noise.md: c1d728f8f9f967b35384bb92bb101a8e85262264
+.agents/notes/implemented/feature/2026-10-27-reader-image-width-wechat-noise.zh.md: f311294f0549086bc6c60e4c1dc4c3cfda40c949
