@@ -19,6 +19,10 @@ The backlog of closed turns is not written (option A, chosen by the user). Earli
 
 The 2e9c1ffb log was repaired offline. The 591 backlog events written into closed turns were dropped, turn 11's own 24 messages were kept, and seqs and tool-result references were reassigned. The same pass repointed 22 tool results in 2377f26d whose top-level `sourceEventSeqs` were left one off by the 10-25 repair (that repair shifted seqs but remapped only `data.sourceEventSeqs`).
 
+## Also: an injected user message is not a new round
+
+The same day a fresh Kimi member (fbc8ba18…) broke within its first round. After a `Skill` call, kimi appends the skill's instructions as a user `context.append_message` plus a `turn.steer`; its loop events keep `turnId: 0`. `readKimiTranscript` counted every distinct user message as a new turn, so the rest of round 1 was folded as turn 2, a turn the log never opened. A wire that marks rounds with `turn.prompt` now treats any other user message as kimi's own injection: it opens no turn and is not mirrored as the human's message. Wires without `turn.prompt` (older kimi) keep one round per user message. On the real wire, the old parse split the round 3 + 17 lines; the new one keeps all 19 in turn 1.
+
 ## Alternatives considered
 
 - **Persist the mirror offset across restarts.** This avoids re-reading the wire, but a backlog the offset never covered would still be written into closed turns. The guard is still needed.

@@ -222,13 +222,37 @@ describe('session-view', () => {
       JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '第一个任务' }] }),
       // The ACP replay of the same prompt: dropped.
       JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: '第一个任务' }] } }),
-      // A DIFFERENT user message right after: real content, never a dupe.
-      JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: '补充一句' }] } }),
+      // A DIFFERENT user message kimi injects inside the round (a Skill's
+      // loaded instructions, then a steer): the round goes on — no new turn,
+      // and not the human's message.
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.call', turnId: 0, step: 1, toolCallId: 'skill', toolCall: { name: 'Skill', args: {} } } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'tool.result', turnId: 0, step: 1, toolCallId: 'skill', result: { output: 'loaded' } } }),
+      JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: 'Skill tool loaded instructions for this request. Follow them.' }] } }),
+      JSON.stringify({ type: 'turn.steer' }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 2, part: { type: 'text', text: '按说明做完了' } } }),
+      // The next round opens with its own prompt.
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '第二个任务' }] }),
     ].join('\n'))
     const transcript = await readKimiTranscript(dir)
-    expect(transcript.lines).toEqual([
-      { kind: 'user', text: '第一个任务', turn: 1 },
-      { kind: 'user', text: '补充一句', turn: 2 },
+    expect(transcript.lines.map(line => [line.kind, line.turn, line.kind === 'tool' ? line.name : line.text])).toEqual([
+      ['user', 1, '第一个任务'],
+      ['tool', 1, 'Skill'],
+      ['assistant', 1, '按说明做完了'],
+      ['user', 2, '第二个任务'],
+    ])
+  })
+
+  it('a wire without turn.prompt still opens a round per user message (older kimi)', async () => {
+    const home = tempHome('kimi-session-legacy-')
+    const dir = join(home, 'sessions', 'wd_x', 'session_legacy')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: '一' }] } }),
+      JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: '二' }] } }),
+    ].join('\n'))
+    expect((await readKimiTranscript(dir)).lines).toEqual([
+      { kind: 'user', text: '一', turn: 1 },
+      { kind: 'user', text: '二', turn: 2 },
     ])
   })
 

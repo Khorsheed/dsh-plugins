@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-27-kimi-fold-skips-closed-turns.md
-.agents/notes/implemented/bug-fix/2026-10-27-kimi-fold-skips-closed-turns.md: 99e3de89757d412e8ebd0ce5c354f4c0e0f4ad1e
-.agents/notes/implemented/bug-fix/2026-10-27-kimi-fold-skips-closed-turns.zh.md: a39d8081e46b678effb532740a053ab43912aeba
+.agents/notes/implemented/bug-fix/2026-10-27-kimi-fold-skips-closed-turns.md: 75d03e7919c9005800b9d5a37bc64886f320d040
+.agents/notes/implemented/bug-fix/2026-10-27-kimi-fold-skips-closed-turns.zh.md: 28ef1f11b8cdf95c30f6efdc3ee05cc1e49beb3a
