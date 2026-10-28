@@ -40,6 +40,36 @@ function mount(storageOverride?: MemberControlStorage) {
 }
 
 describe('member configuration boundaries', () => {
+  it('rechecks a refused admission on the next admission, also after a restart (5d4f: refused by an old rule, failing in 0 ms after the fix)', async () => {
+    const m = mount()
+    let refuse = true
+    m.adapter.prepare = async value => {
+      if (refuse) throw new Error('Codex has not advertised this reasoning effort for the selected model')
+      return { model: model(value) }
+    }
+    const control = m.create()
+    await expect(control.admit('refused')).rejects.toThrow('not advertised')
+    expect(control.read().status).toBe('failed')
+    // Still refused: the recheck fails again and the verdict stays failed.
+    await expect(control.admit('again')).rejects.toThrow('not advertised')
+    refuse = false
+    const restored = m.create()
+    expect(restored.read().status).toBe('failed')
+    const lease = await restored.admit('rechecked')
+    expect(lease.configuration.resolved.model).toBe('a')
+    expect(restored.read().status).not.toBe('failed')
+    lease.release()
+  })
+
+  it('leaves a failed configuration change for the user — only a refused admission is rechecked', async () => {
+    const m = mount()
+    const control = m.create()
+    m.adapter.apply = async () => { throw new Error('native apply failed') }
+    await control.select('r1', control.read().revision, selection('b'))
+    await vi.waitFor(() => expect(control.read().status).toBe('failed'))
+    await expect(control.admit('next')).rejects.toThrow('native apply failed')
+  })
+
   it('pins resolved defaults for a frozen evaluation across later rounds and controller restart', async () => {
     const m = mount()
     let defaultEffort = 'high'

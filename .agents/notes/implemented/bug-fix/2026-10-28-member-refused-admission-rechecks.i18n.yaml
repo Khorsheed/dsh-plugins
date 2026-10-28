@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-28-member-refused-admission-rechecks.md
+.agents/notes/implemented/bug-fix/2026-10-28-member-refused-admission-rechecks.md: 9654f2eeb31d8ab085afad7df317c79c20cdfb4b
+.agents/notes/implemented/bug-fix/2026-10-28-member-refused-admission-rechecks.zh.md: ba8589a05fe8bf6a08e4efd5bcf44aa6d22d8026
