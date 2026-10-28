@@ -35,4 +35,18 @@ describe('Codex configuration admission adapter', () => {
     expect(applied).toEqual({ model: 'setting-model', effort: 'low' })
     expect(retireRuntime).toHaveBeenCalledWith('member')
   })
+
+  it('passes an explicit effort through when the directory cannot list the model (the endpoint\'s /models answered 403)', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'codex-admission-'))
+    const ctx = new Context()
+    ctx.provide('localAgent', { homeDir: () => home, activeDelegations: () => [], getDelegation: () => undefined } as never)
+    const directory: LocalAgentModelDirectory = { entries: [], complete: false, customInput: true, status: 'unsupported', refreshing: false, revision: 1 }
+    const broker = new CodexModelBroker({
+      ctx, settingsModel: () => undefined, recentModels: () => [], catalog: () => [], catalogDefault: () => undefined,
+      homeDir: () => home, directory: () => directory, live: () => true, overrides: new Map(), liveBoundModel: () => null, retireRuntime: async () => {},
+    })
+    const binding: LocalAgentMemberBinding = { childSessionId: 'member', provider: 'codex-local', parentSessionId: 'parent', cwd: '/home/user/work', scope: 'private', model: 'gpt-6.1-sol', effort: 'high' }
+    const adapter = broker.configurationAdapter(binding)
+    expect(await adapter.prepare!({ model: { mode: 'inherit' }, effort: { mode: 'inherit' } })).toEqual({ model: 'gpt-6.1-sol', effort: 'high' })
+  })
 })
