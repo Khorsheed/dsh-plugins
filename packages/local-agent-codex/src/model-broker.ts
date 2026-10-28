@@ -157,7 +157,11 @@ export class CodexModelBroker implements LocalAgentModelBroker {
       const explicitEffort = selection.effort.mode === 'value' ? selection.effort.value
         : selection.effort.mode === 'inherit' ? binding.effort : undefined
       const effort = explicitEffort ?? await readCodexReasoningEffort(home) ?? entry?.reasoning?.default
-      if (explicitEffort !== undefined && !entry?.reasoning?.options.some(option => option.value === explicitEffort)) {
+      // Only a directory that lists the model's efforts can refuse one: a relay
+      // whose /models answers 403 (openproxy's codex route) leaves the
+      // directory empty while serving the model and its efforts fine, and the
+      // member was refused before its turn (5d4f, 10-28).
+      if (explicitEffort !== undefined && entry?.reasoning !== undefined && !entry.reasoning.options.some(option => option.value === explicitEffort)) {
         throw new Error('Codex has not advertised this reasoning effort for the selected model; refresh its native directory')
       }
       return { ...model === undefined ? {} : { model }, ...effort === undefined ? {} : { effort } }
