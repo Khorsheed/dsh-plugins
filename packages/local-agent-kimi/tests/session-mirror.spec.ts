@@ -143,6 +143,36 @@ describe('session-mirror', () => {
     expect(carried).toBe(320112)
   })
 
+  it('a poll between a step\'s usage record and its close leaves the usage to that step (bb05 turn 15: the final reply had none)', async () => {
+    // kimi writes usage.record BEFORE the step's content; a live poll landing
+    // in between used to count the record as the round's unattached rest,
+    // mark it seen, and fold the reply without usage.
+    const wire: object[] = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '邀请他' }] },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0, step: 1 } },
+      { type: 'usage.record', usage: { inputOther: 171920, inputCacheRead: 23040, output: 798 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'text', text: '我去邀请。' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: 0, step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0, step: 2 } },
+      { type: 'usage.record', usage: { inputOther: 1006, inputCacheRead: 194816, output: 541 } },
+    ]
+    const { home, dir } = wireHome('boundary-usage', wire)
+    const child = Session.create(SessionId('boundary-usage'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+    const first = await mirrorKimiSessionDelta(ctx, child, home, 'boundary-usage', 0, { turn: 1 })
+    expect(first.usageUnattached).toBeUndefined()
+    appendFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), '\n' + [
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 2, part: { type: 'text', text: '分工如下。' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: 0, step: 2 } },
+    ].map(line => JSON.stringify(line)).join('\n'))
+    await mirrorKimiSessionDelta(ctx, child, home, 'boundary-usage', first.total, { turn: 1 })
+    const usages = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+      .map(event => (event.data as { usage?: { inputTokens: number } }).usage?.inputTokens)
+    expect(usages).toEqual([171920, 1006])
+  })
+
   it('an empty stream reservation never strands a step gap (dense, strictly sequential log)', async () => {
     const { home } = wireHome('empty-reservation', fullWire)
     const child = Session.create(SessionId('empty-reservation'))

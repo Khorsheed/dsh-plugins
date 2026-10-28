@@ -51,9 +51,11 @@ export interface KimiSessionTranscript {
    * Every `usage.record` the wire reported, tagged with the transcript-line
    * position it occurred at. Each record is ONE LLM request's accounting
    * (kimi does not accumulate within a turn), so a mirror sums the records
-   * whose position falls inside the delta it appends.
+   * whose position falls inside the delta it appends. `step` names the wire
+   * step (`${turn}:${wireStep}`) open when the record was written — kimi
+   * writes a step's record after its `step.begin`, before its content.
    */
-  usageRecords: readonly { readonly line: number; readonly usage: TokenUsage }[]
+  usageRecords: readonly { readonly line: number; readonly usage: TokenUsage; readonly step?: string }[]
   /**
    * Wire steps (`${turn}:${wireStep}`, turn 1-based) whose `step.end` the wire
    * recorded — a closed step's content is complete, so a mirror may fold it
@@ -206,8 +208,10 @@ function argsOf(name: string, args: unknown): string | undefined {
 export async function readKimiTranscript(sessionDir: string): Promise<KimiSessionTranscript> {
   const sessionId = sessionDir.split('session_').pop() ?? sessionDir
   const lines: KimiTranscriptLine[] = []
-  const usageRecords: { line: number; usage: TokenUsage }[] = []
+  const usageRecords: { line: number; usage: TokenUsage; step?: string }[] = []
   const closedSteps = new Set<string>()
+  /** The wire step begun and not yet ended (`${turn}:${wireStep}`). */
+  let openStep: string | undefined
   let model: string | undefined
   let modelTurn: number | undefined
   let lineModel: string | undefined
@@ -265,7 +269,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
         if (lineConfig !== undefined) lineConfig = { ...lineConfig, model: event.model }
       }
       const usage = usageFromWire(event.usage)
-      if (usage !== undefined) usageRecords.push({ line: lines.length, usage })
+      if (usage !== undefined) usageRecords.push({ line: lines.length, usage, ...openStep === undefined ? {} : { step: openStep } })
       continue
     }
     if (event.type === 'llm.request') {
@@ -337,7 +341,11 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       const wireStep = typeof loop.step === 'number' ? loop.step : undefined
       const part = loop.part as { type?: string; text?: string; think?: string } | undefined
       const lineTurn = turn === 0 ? 1 : turn
-      if (loop.type === 'step.end' && wireStep !== undefined) closedSteps.add(`${lineTurn}:${wireStep}`)
+      if (loop.type === 'step.begin' && wireStep !== undefined) openStep = `${lineTurn}:${wireStep}`
+      if (loop.type === 'step.end' && wireStep !== undefined) {
+        closedSteps.add(`${lineTurn}:${wireStep}`)
+        if (openStep === `${lineTurn}:${wireStep}`) openStep = undefined
+      }
       if (part?.type === 'text' && part.text !== undefined && part.text.trim() !== '') {
         push({ kind: 'assistant', text: part.text, turn: lineTurn, ...wireStep === undefined ? {} : { wireStep } })
       } else if (part?.type === 'think' && part.think !== undefined && part.think.trim() !== '') {
