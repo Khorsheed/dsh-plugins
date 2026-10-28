@@ -586,6 +586,34 @@ describe('LocalAgentRegistry delegation facade', () => {
       expect(seen).toHaveLength(1)
     })
 
+    it('routes a late settle to the round it observed, even after the next round started', async () => {
+      // A room member's queued round starts the moment the previous result
+      // resolves, before the provider's settle observation arrives: that
+      // report (its usage) belongs to the previous round, not the new one.
+      const h = await mountFacade()
+      h.enterParent(PARENT)
+      h.registry.recordDelegation({ childSessionId: 'child-1', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-42' })
+      const first = makeRun('child-1')
+      const second = makeRun('child-1')
+      const runs = [first, second]
+      h.setStartHandler((request) => { h.consumeIntent(request); return runs.shift()!.run })
+      const seenA: LocalAgentRunProgress[] = []
+      const seenB: LocalAgentRunProgress[] = []
+      await h.registry.resume(PARENT, PROVIDER, 'child-1', PROMPT, { onProgress: progress => { seenA.push(progress) } })
+      first.settle({ stopReason: 'completed', output: [] })
+      await first.run.result
+      await Promise.resolve()
+      await h.registry.resume(PARENT, PROVIDER, 'child-1', PROMPT, { onProgress: progress => { seenB.push(progress) } })
+
+      h.registry.recordRoundSettled('child-1', { usage: { inputTokens: 10, outputTokens: 4 } })
+      expect(seenA).toEqual([{ kind: 'settled', usage: { inputTokens: 10, outputTokens: 4 } }])
+      expect(seenB).toEqual([])
+      // Live progress still reaches the running round; its own settle follows.
+      h.registry.reportRunProgress('child-1', { kind: 'mirror', mirroredLines: 2 })
+      h.registry.recordRoundSettled('child-1', { usage: { inputTokens: 5, outputTokens: 1 } })
+      expect(seenB).toEqual([{ kind: 'mirror', mirroredLines: 2 }, { kind: 'settled', usage: { inputTokens: 5, outputTokens: 1 } }])
+    })
+
     it('emits the cordis event for reports on untracked child sessions', async () => {
       const h = await mountFacade()
       const cordisEvents: [string, LocalAgentRunProgress][] = []
