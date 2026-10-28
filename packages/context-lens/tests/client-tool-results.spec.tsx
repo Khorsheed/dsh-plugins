@@ -107,3 +107,17 @@ describe('ask_user_question card', () => {
     expect(screen.getByText('这次调用没有记录问题内容')).toBeTruthy()
   })
 })
+
+describe('exchange input folding', () => {
+  it('shows the first 8 inputs and folds the rest behind one button (a compaction region holds hundreds)', () => {
+    const added = Array.from({ length: 20 }, (_, index) => ({ index, category: 'user' as const, source: 'user', full: `输入 ${index}`, preview: `输入 ${index}`, chars: 4, freshness: 'new' as const }))
+    const r: CapturedRequest = { ...request, response: { toolCalls: [] }, segments: { ...request.segments, added } }
+    render(<Exchange request={r} previousResponseNumber={null} t={t} />)
+    expect(screen.getByText('输入 7')).toBeTruthy()
+    expect(screen.queryByText('输入 8')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '展开其余 12 条' }))
+    expect(screen.getByText('输入 19')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '收起' }))
+    expect(screen.queryByText('输入 19')).toBeNull()
+  })
+})
