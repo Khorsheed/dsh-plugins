@@ -111,6 +111,18 @@ export class LiveStreamPublisher {
     this.streams.publish(String(this.session.id), item)
   }
 
+  /**
+   * Withdraw an item's preview once its own step opens in the log: the
+   * driver then streams it under the durable step, and a preview left
+   * standing until the item finishes shows the same text twice (the frozen
+   * preview above the live copy).
+   */
+  dropPreview(step: number, itemId?: string): void {
+    const id = `${this.turn}:${step}${itemId === undefined ? '' : `:${itemId}`}`
+    if (!this.previews.delete(id)) return
+    this.streams.finish(String(this.session.id), id)
+  }
+
   update(step: number, kind: 'think' | 'text', text: string, options: { itemId?: string; receivedAt?: number } = {}): void {
     const id = `${this.turn}:${step}${options.itemId === undefined ? '' : `:${options.itemId}`}`
     this.previews.delete(id)

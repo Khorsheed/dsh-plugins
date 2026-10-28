@@ -40,6 +40,20 @@ describe('transient member stream', () => {
     expect((await reconnect.next()).done).toBe(true)
   })
 
+  it('withdraws an item\'s preview when its own step opens, so the text never shows twice', async () => {
+    const session = Session.create(SessionId('stream-preview'))
+    const bus = new LocalAgentStreams()
+    const writer = new LiveStreamPublisher(bus, session, 1, () => {}, error => { throw error })
+    writer.preview(7, 'text', '第二段', { itemId: 'm1' })
+    writer.dropPreview(7, 'm1')
+    writer.update(2, 'text', '第二段的路线')
+    const abort = new AbortController()
+    const stream = bus.follow(String(session.id), abort.signal)[Symbol.asyncIterator]()
+    expect((await stream.next()).value).toMatchObject({ baseline: true, updates: [{ id: '1:2', text: '第二段的路线' }] })
+    abort.abort()
+    bus.dispose()
+  })
+
   it('checkpoints suffix bytes on a separate cadence and cancels late writes at finalization', async () => {
     vi.useFakeTimers()
     const session = Session.create(SessionId('stream-checkpoint'))
