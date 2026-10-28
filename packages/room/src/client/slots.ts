@@ -493,6 +493,18 @@ export interface RoomInboxInjected {
   readonly releaseReports: (member: string) => Promise<void>
 }
 
+/** Injected face of a member-to-member message row. */
+export interface RoomDispatchInjected {
+  /** The client-side room state store: sender names and delivery state. */
+  readonly roomStore: RoomStore
+}
+
+/** Full props of the 'room-dispatch' chat-node renderer. */
+export type RoomDispatchViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-dispatch'>
+  & InjectFace<RoomDispatchInjected>
+  & PropsLocale<'room'>
+
 /** Full props of the 'room-inbox' chat-node renderer. */
 export type RoomInboxViewProps =
   PropsRuntime<'conversation.chat.node', 'room-inbox'>

@@ -6,9 +6,10 @@
  * (boundary lines: member joined/left), and `room-relay` (the member-to-
  * member notification gate row, folding resolved edges in place). The
  * auto-seated main agent's member-added is bookkeeping, not a boundary
- * event, and is not claimed. `room/dispatch` is deliberately NOT claimed:
- * the human's @-message lands as a standard `user/message` event (see
- * RoomService.postMessage) and renders through the official user node.
+ * event, and is not claimed. Of `room/dispatch`, only member-to-member
+ * sends are claimed (`room-dispatch`): the human's @-message lands as a
+ * standard `user/message` event (see RoomService.postMessage) and renders
+ * through the official user node.
  * @module @khorsheed/dsh-room/client/nodes
  */
 import type { RoomAsk, RoomDecisionEvent, RoomHelp, RoomQuestionAnswer, RoomQuestionItem } from '../types.ts'
@@ -165,6 +166,17 @@ export interface RoomRelayData {
   readonly reason?: 'confirm' | 'hop-limit' | 'paused'
 }
 
+/** Chat node data of one message a member (or an external coordinator) sent another member. */
+export interface RoomDispatchData {
+  readonly seq: number
+  readonly time: number
+  /** The sender's member id (its name resolves through the roster, renames included). */
+  readonly from: string
+  readonly targets: readonly string[]
+  readonly kind: 'task' | 'notify'
+  readonly text: string
+}
+
 /** Chat node data of the held-reports line for one member. */
 export interface RoomInboxData {
   /** Seq of the latest hold (the line sits there). */
@@ -199,6 +211,8 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
     'room-help-request': RoomHelpRequestData
     /** room: reports the gate holds in a member's inbox. */
     'room-inbox': RoomInboxData
+    /** room: a message one member sent another (派活 / 告知). */
+    'room-dispatch': RoomDispatchData
   }
 }
 
@@ -307,7 +321,7 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
 /**
  * The boundary Definition: one single-event Context per member-added (cli
  * members only — the auto-seated main agent is skipped) or member-removed
- * event. `room/dispatch` stays unclaimed: the human's @-message renders
+ * event. The human's `room/dispatch` stays unclaimed: the @-message renders
  * through the official user node (it is also appended as `user/message`).
  */
 export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
@@ -462,6 +476,40 @@ export const roomRelayDefinition: ConversationNodeDefinition<RoomRelayData> = {
     return { ...context.state, seq: event.seq, state: event.data.state }
   },
   buildViewNode: context => viewNode(context, 'room-relay'),
+}
+
+/**
+ * The member-to-member message row: one single-event Context per
+ * `room/dispatch` a member or an external coordinator sent
+ * (`↪ 游戏策划大师 派活给 人物建模师：…`), so the room reads who asked whom
+ * for what. Not claimed: the human's own messages (official user node),
+ * reports (the reply's 「已汇报给」 line and the gate row carry them), help
+ * and legacy relays (their own rows), and the native main agent's sends —
+ * its tool call already sits in the chat. The main agent joins with no id
+ * and is addressed by its `legacy:<seq>` join identity, which is how its
+ * sends are told apart. Delivery state (排队中…) is read from the room
+ * state at render time, so no update edge is claimed.
+ */
+export const roomDispatchDefinition: ConversationNodeDefinition<RoomDispatchData> = {
+  kind: 'room-dispatch',
+  target: 'chat',
+  match: (event) => {
+    if (event.type !== 'room/dispatch') return null
+    const { origin, from } = event.data
+    if (origin !== 'coordinator' && origin !== 'member') return null
+    if (from === undefined || from.startsWith('legacy:')) return null
+    return { id: String(event.seq), role: 'start' as const }
+  },
+  start: (_context, match) => {
+    const event = match.event
+    if (event.type !== 'room/dispatch' || event.data.from === undefined) throw new Error('room-dispatch start requires a member room/dispatch event')
+    return {
+      seq: event.seq, time: event.time, from: event.data.from, targets: event.data.targets,
+      kind: event.data.kind ?? 'task', text: event.data.text,
+    }
+  },
+  update: context => context.state,
+  buildViewNode: context => viewNode(context, 'room-dispatch'),
 }
 
 /**

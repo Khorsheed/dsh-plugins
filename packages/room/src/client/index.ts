@@ -44,10 +44,11 @@ import { RoomTaskTags } from './task-tag.ts'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
+import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomDispatchDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { mainSessionId, RoomStore } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
+import { RoomDispatchView } from './RoomDispatchView.tsx'
 import { RoomInboxView } from './RoomInboxView.tsx'
 import { RoomApprovalView } from './RoomApprovalView.tsx'
 import { RoomQuestionView } from './RoomQuestionView.tsx'
@@ -56,7 +57,7 @@ import { RoomHelpRequestView, RoomHelpView } from './RoomHelpView.tsx'
 import { sessionTitle, type RoomMenuMember, type SessionCandidate } from './at-menu.ts'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
-  RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
+  RoomRelayInjected, RoomDispatchInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
   RoomAttachmentsFace, RoomDraftAttachment,
 } from './slots.ts'
 import type { RoomAttachmentInput, RoomQuestionAnswer } from '../types.ts'
@@ -481,6 +482,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     lctx.uiConversation.events.register(roomRunDefinition)
     lctx.uiConversation.events.register(roomEventDefinition)
     lctx.uiConversation.events.register(roomRelayDefinition)
+    lctx.uiConversation.events.register(roomDispatchDefinition)
     lctx.uiConversation.events.register(roomInboxDefinition)
     lctx.uiConversation.events.register(roomApprovalDefinition)
     lctx.uiConversation.events.register(roomQuestionDefinition)
@@ -760,6 +762,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       inject: (sessionId: SessionId): RoomRelayInjected => relayFace(sessionId),
     },
     RoomRelayView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-dispatch',
+      locale: NS,
+      inject: (): RoomDispatchInjected => ({ roomStore }),
+    },
+    RoomDispatchView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     {
