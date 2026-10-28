@@ -2832,9 +2832,11 @@ export class LocalAgentRegistry {
       this.reportRunProgress(childSessionId, { kind: 'heartbeat', elapsedMs: Date.now() - startedAt })
     }, RUN_PROGRESS_HEARTBEAT_MS)
     heartbeat.unref()
-    // A resume round reuses the child session id, so a previous round's parked
-    // route (whose settle report never arrived) must not outlive it.
-    this.dropSettledRun(childSessionId)
+    // A resume round reuses the child session id. A previous round's parked
+    // route stays open (bounded by its grace timer): a room member's queued
+    // round starts the moment the last one's result resolves, BEFORE that
+    // round's settle report lands, and the report belongs to the round it
+    // observed — see reportRunProgress.
     this.runs.set(childSessionId, { controller, run, onProgress, startedAt, heartbeat })
     this.announceRunning(childSessionId, true)
     const clear = (): void => {
@@ -2876,6 +2878,15 @@ export class LocalAgentRegistry {
    */
   reportRunProgress(childSessionId: string, progress: LocalAgentRunProgress): void {
     this.ctx.emit('localAgent/run-progress', childSessionId, progress)
+    // A settle report closes the OLDEST open round: a parked one (its result
+    // resolved, its observation still owed) settles before the round that
+    // started after it.
+    const owed = progress.kind === 'settled' ? this.settledRuns.get(childSessionId) : undefined
+    if (owed !== undefined) {
+      owed.onProgress(progress)
+      this.dropSettledRun(childSessionId)
+      return
+    }
     const tracked = this.runs.get(childSessionId)
     if (tracked !== undefined) {
       tracked.onProgress?.(progress)
