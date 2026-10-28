@@ -6,6 +6,8 @@ import type {
 export interface MemberControlRecord {
   state: LocalAgentMemberControlState
   requests: Record<string, { signature: string; receipt: LocalAgentControlReceipt }>
+  /** The failure is a refused admission (before any prompt): the next admission rechecks it. */
+  admissionFailed?: true
 }
 
 /** write must commit atomically or throw; no accepted receipt precedes durable storage. */
@@ -63,13 +65,18 @@ export class MemberConfigurationController {
     return this.storageFailure === undefined ? state : { ...state, status: 'failed', error: this.storageFailure.message }
   }
 
-  /** A failed pre-prompt native binding requires reconciliation before another admission. */
-  rejectAdmission(error: unknown): void {
+  /**
+   * A failed pre-prompt native binding requires reconciliation before another
+   * admission. `recheck` marks a refusal by the admission's own configuration
+   * check (nothing native started), which the next admission rechecks.
+   */
+  rejectAdmission(error: unknown, recheck = false): void {
     this.recovering = true
     if (this.storageFailure !== undefined || this.record.state.status === 'failed') return
     this.change(record => {
       record.state.status = 'failed'
       record.state.error = error instanceof Error ? error.message : 'Native round admission failed'
+      if (recheck) record.admissionFailed = true
     })
   }
 
@@ -165,7 +172,7 @@ export class MemberConfigurationController {
   retry(expectedRevision: number): Promise<void> {
     if (this.record.state.revision !== expectedRevision) return Promise.reject(new Error('Configuration revision conflict'))
     if (this.record.state.status !== 'failed' && this.storageFailure === undefined) return this.worker ?? Promise.resolve()
-    this.change(record => { record.state.status = record.state.pending === undefined ? 'idle' : 'pending'; delete record.state.error })
+    this.change(record => { record.state.status = record.state.pending === undefined ? 'idle' : 'pending'; delete record.state.error; delete record.admissionFailed })
     this.recovering = true
     return this.work()
   }
@@ -270,6 +277,15 @@ export class MemberConfigurationController {
     if (this.activeLease || this.admitting) throw new Error('The member already has an active or admitting round')
     this.admitting = true
     try {
+      // A refusal by this admission's own configuration check started nothing
+      // and owes nothing: the next admission reconciles and rechecks it (the
+      // 对账并重试 path) instead of failing on the stale verdict — a member
+      // refused by an old rule (5d4f, 10-28) kept failing in 0 ms after the
+      // fix shipped. A failed native start or a selection that did not apply
+      // still waits for the user.
+      if (this.record.admissionFailed === true && this.record.state.status === 'failed' && this.storageFailure === undefined) {
+        await this.retry(this.record.state.revision)
+      }
       for (;;) {
         await this.work()
         if (this.record.state.status === 'failed') throw new Error(this.record.state.error)
@@ -305,7 +321,7 @@ export class MemberConfigurationController {
         this.kick()
       } }
     } catch (error) {
-      this.rejectAdmission(error)
+      this.rejectAdmission(error, true)
       throw error
     } finally { this.admitting = false; if (!this.activeLease) this.kick() }
   }
