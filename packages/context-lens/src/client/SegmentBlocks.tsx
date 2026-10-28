@@ -322,13 +322,20 @@ function InputCard({ item, from, repeats, onOpenRequest, t }: { readonly item: S
     {open ? <div className={css.messageFull}><div className={css.fullLabel}>{item.sourceTurn === undefined ? '' : t('lens.sourceTurn', { turn: String(item.sourceTurn) })}</div><ItemFull item={item} /></div> : <div className={css.messageBody} onClick={() => setOpen(true)}>{body}</div>}
   </div>
 }
+/** Inputs shown before the rest folds (a compaction's region can hold hundreds). */
+const INPUT_FOLD_AT = 8
+
 export function Exchange({ request, previousResponseNumber, onOpenRequest, t }: { readonly request: CapturedRequest; readonly previousResponseNumber: number | null; readonly onOpenRequest?: ((link: RequestLink) => void) | undefined; readonly t: T }) {
   const duplicates = duplicateStats([...request.segments.system, ...request.segments.history, ...request.segments.added])
+  const [inputsOpen, setInputsOpen] = useState(false)
+  // A new request starts folded again.
+  useEffect(() => { setInputsOpen(false) }, [request.seq])
   return <section aria-label={t('lens.exchange')}>
     <h3 className={css.exchangeTitle}>{t('lens.exchange')}</h3>
     <div className={css.exchange}>
       <div className={css.column}><div className={css.columnLabel}>{t(request.compaction?.inputPartial ? 'compaction.region' : 'lens.newInput')} · {request.segments.added.length}</div>
-        {request.segments.added.map((item,i) => <InputCard key={i} item={item} onOpenRequest={onOpenRequest} repeats={duplicates.counts.get(item.full) ?? 0} t={t} from={item.category === 'assistant' && previousResponseNumber !== null ? t('row.prevResponse', { seq:String(previousResponseNumber) }) : item.category === 'tool-result' && item.sourceRequestNumber !== undefined ? `${item.source} · ${t('row.callResult', { seq: String(item.sourceRequestNumber) })}` : item.source} />)}
+        {(inputsOpen ? request.segments.added : request.segments.added.slice(0, INPUT_FOLD_AT)).map((item,i) => <InputCard key={i} item={item} onOpenRequest={onOpenRequest} repeats={duplicates.counts.get(item.full) ?? 0} t={t} from={item.category === 'assistant' && previousResponseNumber !== null ? t('row.prevResponse', { seq:String(previousResponseNumber) }) : item.category === 'tool-result' && item.sourceRequestNumber !== undefined ? `${item.source} · ${t('row.callResult', { seq: String(item.sourceRequestNumber) })}` : item.source} />)}
+        {request.segments.added.length > INPUT_FOLD_AT && <button className={css.more} type="button" aria-expanded={inputsOpen} onClick={() => setInputsOpen(v => !v)}>{inputsOpen ? t('lens.collapse') : t('lens.expandInputs', { count: String(request.segments.added.length - INPUT_FOLD_AT) })}</button>}
       </div>
       <div className={css.arrow} aria-hidden="true">→</div>
       <div className={css.column} role="region" aria-label={t('out.title')}><div className={css.columnLabel}><span>{t('out.title')}</span><span>{request.usage ? fmt(request.usage.outputTokens) : '—'} tok</span></div><OutputBlock request={request} t={t} /></div>
