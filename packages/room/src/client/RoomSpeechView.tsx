@@ -26,6 +26,7 @@ import { pathMentions } from './path-mentions.ts'
 import { RoomQuestionView } from './RoomQuestionView.tsx'
 import { askCardData, type RoomSpeechData } from './nodes.ts'
 import { formatClock, formatDurationMs } from './format.ts'
+import { revealRoomRow, speechCause } from './speech-cause.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
 import type { RoomQuestionViewProps, RoomSpeechViewProps } from './slots.ts'
 import type { RoomAsk, RoomExecution } from '../types.ts'
@@ -121,6 +122,8 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
     ? undefined
     : member.kind === 'main-agent' ? t('member.kind.main') : member.provider
   const child = data.childSessionId
+  // What started this round (a member's 派活/告知, or reports): its line tops the card.
+  const cause = speechCause(data.runId, state)
   // The run's billed tokens, as the host's 用量 chip shows them (recorded
   // when the run settles; absent for runs the producer reported none for).
   const execution = data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === data.runId)
@@ -157,10 +160,22 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
 
   const color = memberColor(data.member)
   return (
-    <div className={css.speech} data-time-hover-root="" data-actions-reveal={newestSpeech ? 'always' : 'hover'} style={{ '--member-color': color } as CSSProperties}>
+    <div className={css.speech} data-time-hover-root="" data-room-run={data.runId} data-actions-reveal={newestSpeech ? 'always' : 'hover'} style={{ '--member-color': color } as CSSProperties}>
       <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
       <div className={css.stack}>
       <div className={css.card}>
+      {cause !== undefined && (
+        <button
+          type="button"
+          className={css.cause}
+          disabled={cause.target === undefined}
+          onClick={() => { if (cause.target !== undefined) revealRoomRow(cause.target) }}
+        >
+          <span className={css.causeHead}>{t(`speech.cause.${cause.kind}`, { member: cause.member })}</span>
+          {cause.text !== undefined && <span className={css.causeText}>{t('dispatch.colon')}{cause.text.replace(/\s+/g, ' ')}</span>}
+          {cause.target !== undefined && <span className={css.causeChevron} aria-hidden>›</span>}
+        </button>
+      )}
       <div className={css.identity}>
         <span className={css.name}>{data.member}</span>
         {member?.role !== undefined && <span className={css.role}>{member.role}</span>}

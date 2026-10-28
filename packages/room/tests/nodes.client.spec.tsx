@@ -11,20 +11,22 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
-  roomEventDefinition, roomInboxDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition,
-  type RoomEventData, type RoomRelayData, type RoomRunData, type RoomSpeechData,
+  roomDispatchDefinition, roomEventDefinition, roomInboxDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition,
+  type RoomDispatchData, type RoomEventData, type RoomRelayData, type RoomRunData, type RoomSpeechData,
 } from '../src/client/nodes.ts'
 import { RoomSpeechView } from '../src/client/RoomSpeechView.tsx'
 import { RoomRunView } from '../src/client/RoomRunView.tsx'
 import { RoomEventView } from '../src/client/RoomEventView.tsx'
 import { RoomRelayView } from '../src/client/RoomRelayView.tsx'
+import { RoomDispatchView } from '../src/client/RoomDispatchView.tsx'
+import { speechCause } from '../src/client/speech-cause.ts'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { memberColor } from '../src/client/member-color.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
-  RoomEventViewProps, RoomRelayViewProps, RoomRunViewProps, RoomSpeechViewProps,
+  RoomDispatchViewProps, RoomEventViewProps, RoomRelayViewProps, RoomRunViewProps, RoomSpeechViewProps,
 } from '../src/client/slots.ts'
-import type { RoomState } from '../src/types.ts'
+import type { RoomDelivery, RoomState } from '../src/types.ts'
 
 afterEach(() => {
   cleanup()
@@ -489,6 +491,63 @@ describe('RoomEventView', () => {
     cleanup()
     bench({ seq: 2, time: 1002, sub: 'member-removed', member: 'bill' })
     expect(screen.getByText('bill 离开了 room')).toBeDefined()
+  })
+})
+
+describe('member-to-member messages', () => {
+  const ROSTER: RoomState = {
+    ...STATE,
+    members: [
+      { id: 'legacy:1', name: 'dsh', kind: 'main-agent', invitedBy: 'human' },
+      { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'codex', invitedBy: 'human' },
+      { id: 'm-bill', name: 'bill', kind: 'cli', provider: 'kimi', invitedBy: 'agent' },
+    ],
+  }
+  const delivery = (row: Partial<RoomDelivery> & Pick<RoomDelivery, 'id' | 'dispatchSeq' | 'memberId' | 'origin'>): RoomDelivery =>
+    ({ status: 'done', text: 'x', queuedAt: 1, ...row })
+
+  it('claims a member\'s or external coordinator\'s send, never the human\'s, a report, or the native main agent\'s', () => {
+    const send = (data: object) => ev('room/dispatch', 9, { targets: ['bill'], targetIds: ['m-bill'], text: '补预览', ...data })
+    expect(roomDispatchDefinition.match(send({ origin: 'member', from: 'm-ada', kind: 'task' }))).toEqual({ id: '9', role: 'start' })
+    expect(roomDispatchDefinition.match(send({ origin: 'coordinator', from: 'm-ada' }))).toEqual({ id: '9', role: 'start' })
+    expect(roomDispatchDefinition.match(send({ origin: 'human' }))).toBeNull()
+    expect(roomDispatchDefinition.match(send({ origin: 'report' }))).toBeNull()
+    expect(roomDispatchDefinition.match(send({ origin: 'coordinator', from: 'legacy:1' }))).toBeNull()
+    const started = roomDispatchDefinition.start(contextOf(undefined), matchOf(send({ origin: 'member', from: 'm-ada', kind: 'notify' })), undefined as never)
+    expect(started).toMatchObject({ seq: 9, from: 'm-ada', targets: ['bill'], kind: 'notify', text: '补预览' })
+  })
+
+  it('renders one line naming sender and recipient, marks a queued recipient, and opens the full text', async () => {
+    const roomStore = await primedStore({ ...ROSTER, deliveries: [delivery({ id: '9:m-bill', dispatchSeq: 9, memberId: 'm-bill', origin: 'member', status: 'queued' })] })
+    const data: RoomDispatchData = { seq: 9, time: 1009, from: 'm-ada', targets: ['bill'], kind: 'task', text: '补一个 HTML\n交互预览' }
+    const props = { node: nodeOf('room-dispatch', data), sessionId: 'room-1' as SessionId, roomStore, t } as unknown as RoomDispatchViewProps
+    const { container } = render(<RoomDispatchView {...props} />)
+    expect(screen.getByText('ada 派活给 bill：')).toBeDefined()
+    expect(screen.getByText('排队中')).toBeDefined()
+    expect(screen.getByText('补一个 HTML 交互预览')).toBeDefined()
+    fireEvent.click(screen.getByRole('button'))
+    expect(container.querySelector('[data-room-dispatch="9"]')?.textContent).toContain('补一个 HTML\n交互预览')
+  })
+
+  it('names what started a reply: a member\'s send, a report, a release of held reports; nothing for the human', () => {
+    const state: RoomState = {
+      ...ROSTER,
+      deliveries: [
+        delivery({ id: '9:m-bill', dispatchSeq: 9, memberId: 'm-bill', origin: 'member', from: 'm-ada', kind: 'task', text: '补预览' }),
+        delivery({ id: '10:m-ada', dispatchSeq: 10, memberId: 'm-ada', origin: 'report', reportFor: '9:m-bill' }),
+        delivery({ id: '11:m-bill', dispatchSeq: 11, memberId: 'm-bill', origin: 'coordinator', from: 'legacy:1', text: '画图' }),
+        delivery({ id: '12:m-ada', dispatchSeq: 12, memberId: 'm-ada', origin: 'report', reportFor: '11:m-bill', status: 'held' }),
+        delivery({ id: '13:m-ada', dispatchSeq: 13, memberId: 'm-ada', origin: 'report', releases: [10, 12] }),
+        delivery({ id: '14:m-ada', dispatchSeq: 14, memberId: 'm-ada', origin: 'human' }),
+      ],
+    }
+    expect(speechCause('9:m-bill', state)).toEqual({ kind: 'task', member: 'ada', text: '补预览', target: '[data-room-dispatch="9"]' })
+    expect(speechCause('10:m-ada', state)).toEqual({ kind: 'report', member: 'bill', target: '[data-room-run="9:m-bill"]' })
+    // The native main agent's send has no row to scroll to (its tool call shows).
+    expect(speechCause('11:m-bill', state)).toEqual({ kind: 'task', member: 'dsh', text: '画图' })
+    expect(speechCause('13:m-ada', state)).toEqual({ kind: 'report', member: 'bill', target: '[data-room-run="9:m-bill"]' })
+    expect(speechCause('14:m-ada', state)).toBeUndefined()
+    expect(speechCause(undefined, state)).toBeUndefined()
   })
 })
 

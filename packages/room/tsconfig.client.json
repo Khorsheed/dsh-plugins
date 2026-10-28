@@ -34,6 +34,8 @@
     "src/client/RoomRecoveryView.tsx",
     "src/client/RoomPlanView.tsx",
     "src/client/RoomRelayView.tsx",
+    "src/client/RoomDispatchView.tsx",
+    "src/client/speech-cause.ts",
     "src/client/RoomRunView.tsx",
     "src/client/RoomSpeechView.tsx",
     "src/client/path-mentions.ts",

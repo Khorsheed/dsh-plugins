@@ -1472,6 +1472,10 @@ export interface RoomDelivery {
   readonly task?: string
   /** The sender's own delivery this was sent from (the task tree's parent). */
   readonly parent?: string
+  /** A report: the delivery it reports on (`<seq>:<memberId>`, the reporter's run id). */
+  readonly reportFor?: string
+  /** A release round: the held report dispatch seqs it hands over. */
+  readonly releases?: readonly number[]
   /** Epoch ms: dispatched, admitted (first running edge), settled. */
   readonly queuedAt: number
   readonly startedAt?: number

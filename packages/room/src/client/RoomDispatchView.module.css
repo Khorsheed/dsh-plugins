@@ -1,0 +1,77 @@
+/* Member-to-member message row: the RoomEventView register (one dim line);
+   a click opens the full text below it. */
+
+.row {
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  border-radius: 6px;
+  transition: background-color 0.6s;
+}
+
+.row[data-flash] {
+  background: var(--dsw-alias-fill-secondary, rgba(127, 127, 127, 0.12));
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.arrow,
+.head,
+.state {
+  flex: none;
+}
+
+.head {
+  color: var(--dsw-alias-label-secondary, rgba(127, 127, 127, 1));
+}
+
+.row[data-kind='notify'] .head {
+  color: inherit;
+}
+
+.state {
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--dsw-alias-fill-secondary, rgba(127, 127, 127, 0.12));
+}
+
+.text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.line:hover .text,
+.line:hover .head {
+  color: var(--dsw-alias-label-primary, rgba(30, 30, 30, 1));
+}
+
+.full {
+  margin: 2px 0 6px 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary, rgba(127, 127, 127, 1));
+}
+
+/* Mouse clicks never raise a focus ring; keyboard navigation keeps the
+   visible one. */
+.line:focus:not(:focus-visible) {
+  outline: none;
+}
