@@ -477,6 +477,37 @@ describe('codex live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('settles a resumed thread\'s round with its own spend, not the thread\'s running total', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-resumed'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // The thread already spent 1000 input / 100 output in earlier rounds:
+    // the wire's total carries it, the round's two calls add 30 / 7.
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't1', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a', status: 'completed' } })
+    fake.notify('thread/tokenUsage/updated', {
+      threadId: 'thread-1', turnId: 'turn-1',
+      tokenUsage: {
+        last: { inputTokens: 10, cachedInputTokens: 6, outputTokens: 3, reasoningOutputTokens: 0, totalTokens: 13 },
+        total: { inputTokens: 1010, cachedInputTokens: 806, outputTokens: 103, reasoningOutputTokens: 0, totalTokens: 1113 },
+      },
+    })
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'm2', type: 'agentMessage', text: '结论', phase: 'final_answer' } })
+    fake.notify('thread/tokenUsage/updated', {
+      threadId: 'thread-1', turnId: 'turn-1',
+      tokenUsage: {
+        last: { inputTokens: 20, cachedInputTokens: 10, outputTokens: 4, reasoningOutputTokens: 0, totalTokens: 24 },
+        total: { inputTokens: 1030, cachedInputTokens: 816, outputTokens: 107, reasoningOutputTokens: 0, totalTokens: 1137 },
+      },
+    })
+    fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    expect(m.settles[0]?.round).toMatchObject({ usage: { inputTokens: 14, outputTokens: 7, cacheReadTokens: 16 } })
+    await m.driver.disposeAll()
+  })
+
   it('reports the settled round’s observation read back from its rollout file', async () => {
     // The live drive's half of the exec path's onRoundSettled: the app-server
     // wire names no model, so the settle reads the round's own rollout file —

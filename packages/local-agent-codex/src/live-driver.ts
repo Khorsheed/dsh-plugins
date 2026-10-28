@@ -299,6 +299,23 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
   }
 }
 
+/**
+ * One breakdown minus another, field by field (non-numeric fields dropped,
+ * floored at zero). The wire's `tokenUsage.total` is the THREAD's running
+ * total, so a round's own spend is its last total minus the thread total
+ * before the round's first call.
+ */
+function breakdownMinus(total: JsonObject, before: JsonObject): JsonObject {
+  const out: JsonObject = {}
+  for (const [key, value] of Object.entries(total)) {
+    const a = Number(value)
+    if (!Number.isFinite(a)) continue
+    const b = Number(before[key])
+    out[key] = Math.max(0, a - (Number.isFinite(b) ? b : 0))
+  }
+  return out
+}
+
 /** Map the app-server's per-turn usage breakdown onto the shared usage contract. */
 function usageFromAppServer(breakdown: JsonObject): TokenUsage {
   const input = Number(breakdown['inputTokens'])
@@ -969,8 +986,14 @@ export class CodexLiveDriver {
     const lines: CodexTranscriptLine[] = []
     let mirrored = 0
     let usage: TokenUsage | undefined
-    /** The cumulative turn total the wire's `tokenUsage.total` names, for the settled report. */
+    /**
+     * The round's own total for the settled report: the wire's
+     * `tokenUsage.total` is cumulative over the whole THREAD, so it is
+     * diffed against the thread total before this round's first call
+     * (that first notification's total minus its own `last`).
+     */
     let totalUsage: TokenUsage | undefined
+    let threadTotalBefore: JsonObject | undefined
     /**
      * Per-call usage by transcript line: each `thread/tokenUsage/updated`
      * notification closes one API call (its items have all completed), and
@@ -1318,7 +1341,8 @@ export class CodexLiveDriver {
         // A total with no numbers is "not reported" (never override the
         // per-call read with an empty object).
         if (total !== undefined && (Number.isFinite(Number(total['inputTokens'])) || Number.isFinite(Number(total['outputTokens'])))) {
-          totalUsage = usageFromAppServer(total)
+          threadTotalBefore ??= last === undefined ? {} : breakdownMinus(total, last)
+          totalUsage = usageFromAppServer(breakdownMinus(total, threadTotalBefore))
         }
         if (last !== undefined) {
           usage = usageFromAppServer(last)
@@ -1540,8 +1564,9 @@ export class CodexLiveDriver {
             cwd: spec.cwd,
           })
           // The settled report wants the round TOTAL: prefer the wire's
-          // cumulative tokenUsage.total (the per-call `last` under-reports a
-          // multi-call round); the rollout read is the non-completed turn's
+          // tokenUsage.total diffed to this round (the per-call `last`
+          // under-reports a multi-call round; the raw total over-reports a
+          // resumed thread); the rollout read is the non-completed turn's
           // fallback, as before.
           const settledUsage = totalUsage ?? usage ?? facts.usage
           const round = {
