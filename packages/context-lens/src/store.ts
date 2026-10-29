@@ -306,6 +306,8 @@ export class InspectorStore {
   private readonly childToParent = new Map<string, string>()
   /** A session opened on its own that its log header names as a child (`parentSession`). */
   private readonly parents = new Map<string, NonNullable<ListTurnsResult['parent']>>()
+  /** The parent room's questions and runs, read with the parent link (a live parent record wins). */
+  private readonly parentRooms = new Map<string, RoomState>()
   /** callId → the request whose response issued the call (exec attribution). */
   private readonly callOwners = new Map<string, StoredRequest>()
   private readonly callNames = new Map<string, string>()
@@ -1618,8 +1620,9 @@ export class InspectorStore {
   }
 
   /** A session opened on its own that is some other session's child. */
-  noteParent(sessionId: string, parent: NonNullable<ListTurnsResult['parent']>): void {
+  noteParent(sessionId: string, parent: NonNullable<ListTurnsResult['parent']>, room?: RoomState): void {
     this.parents.set(sessionId, parent)
+    if (room !== undefined) this.parentRooms.set(sessionId, room)
   }
 
   /** Whether a child's parent link is already known (the service resolves it once). */
@@ -1740,9 +1743,14 @@ export class InspectorStore {
    * main session's own questions have no room record.
    */
   private roomQuestionFor(session: SessionRecord, request: StoredRequest, exec: ToolExecSpan | undefined): RoomQuestionRecord | undefined {
-    const room = session.room
-    if (room === undefined || room.questions.size === 0 || request.scopeId === 'main') return undefined
-    const childId = request.scopeId
+    // A member session opened on its own: its main scope is the member, and
+    // the questions live in the parent room's log (75844e33's member 443e7c65
+    // showed a minutes-long question as 等了 0.0s).
+    const parent = request.scopeId === 'main' ? this.parents.get(session.id) : undefined
+    const room = parent === undefined ? session.room
+      : this.sessions.get(parent.sessionId)?.room ?? this.parentRooms.get(session.id)
+    if (room === undefined || room.questions.size === 0 || (request.scopeId === 'main' && parent === undefined)) return undefined
+    const childId = parent === undefined ? request.scopeId : session.id
     const at = exec?.start ?? request.startedAt
     const nearest = (records: RoomQuestionRecord[]): RoomQuestionRecord | undefined =>
       records.sort((a, b) => Math.abs(a.askedAt - at) - Math.abs(b.askedAt - at))[0]

@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { askView, isAskTool, readFailure } from '../src/ask.ts'
 import { InspectorStore } from '../src/store.ts'
 import { reconstructSession, type BuiltLogRequest, type SessionLogRow } from '../src/log-lane.ts'
+import { applyRoomEvent, emptyRoom } from '../src/room.ts'
 
 const questions = [{ id: 'style', header: '美术方向', question: '整体风格往哪走？', options: [{ label: '水墨绘本（推荐）', description: '线条清楚' }, { label: '写实' }] }]
 const answered = JSON.stringify({ answers: [{ id: 'style', selected: ['水墨绘本（推荐）'] }] })
@@ -104,5 +105,20 @@ describe('room question matching in the store', () => {
   it('leaves a call far from any record of its member unmatched', () => {
     expect(load(room(), 22000 + 3_600_000)).toMatchObject({ outcome: 'answered' })
     expect(load(room(), 22000 + 3_600_000).source).toBeUndefined()
+  })
+
+  it('a member opened on its own reconciles against its parent room (443e7c65: 80 s showed as 0.0s)', () => {
+    const rows = room()
+    const parentRoom = emptyRoom()
+    for (const row of rows) if (row.type.startsWith('room/')) applyRoomEvent(parentRoom, row.type, row.data, row.seq, row.time)
+    const store = new InspectorStore()
+    store.noteParent(child, { sessionId: 's' }, parentRoom)
+    store.insertLogTurns(child, reconstructSession([
+      { type: 'turn/start', seq: 0, time: 21000, data: { turn: 2 } },
+    ]))
+    const appended = store.appendLogRequest(child, 'main', askRequest(22000))!
+    const view = store.getRequest(child, appended.seq)
+    if (view === undefined || 'refused' in view) throw new Error('missing')
+    expect(view.response!.toolCalls[0]!.ask).toMatchObject({ source: 'room', waitMs: 12900 })
   })
 })
