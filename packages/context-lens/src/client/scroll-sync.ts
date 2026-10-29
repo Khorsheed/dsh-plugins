@@ -44,10 +44,40 @@ function scrollport(root: ParentNode): Element | null {
   }
 }
 
+/**
+ * The box a jump lands on for one turn element. Slot anchors render with
+ * `display: contents` and have no box — scrollIntoView on them is a silent
+ * no-op (a member session's turn starts with its turn-process anchor: 443e7c65
+ * turn 18 never moved) — so the first descendant that renders stands in. An
+ * element (or subtree) rendering nothing yields null.
+ */
+function landingOf(element: Element): Element | null {
+  const display = (target: Element): string => {
+    try { return getComputedStyle(target).display } catch { return '' }
+  }
+  const own = display(element)
+  if (own === 'none') return null
+  if (own !== 'contents') return element
+  for (const child of element.querySelectorAll('*')) {
+    const value = display(child)
+    if (value !== 'contents' && value !== 'none' && child.closest('[hidden]') === null) return child
+  }
+  return null
+}
+
+/** The first rendering box of one host turn, in DOM order. */
+function turnLanding(scope: ParentNode, hostTurn: number): Element | null {
+  for (const row of scope.querySelectorAll(`[data-chat-turn="${hostTurn}"]:not([hidden]):not([hidden] *)`)) {
+    const landing = landingOf(row)
+    if (landing !== null) return landing
+  }
+  return null
+}
+
 /** Whether the chat has rendered this host turn's anchor row (a jump can land on it). */
 export function hasTurnAnchor(hostTurn: number, root: ParentNode = document): boolean {
   try {
-    return (scrollport(root) ?? root).querySelector(`[data-chat-turn="${hostTurn}"]:not([hidden]):not([hidden] *)`) !== null
+    return turnLanding(scrollport(root) ?? root, hostTurn) !== null
   } catch {
     return false
   }
@@ -70,15 +100,16 @@ export function scrollConversationToTurn(
 ): boolean {
   try {
     const scope: ParentNode = scrollport(root) ?? root
-    const exact = scope.querySelector(`[data-chat-turn="${hostTurn}"]:not([hidden]):not([hidden] *)`)
+    const exact = turnLanding(scope, hostTurn)
     if (exact !== null) {
       exact.scrollIntoView({ behavior, block: 'start' })
       return true
     }
     for (const row of scope.querySelectorAll(TURN_ROW_ELIGIBLE)) {
       const value = Number((row as HTMLElement).dataset.chatTurn)
-      if (Number.isSafeInteger(value) && value >= hostTurn) {
-        row.scrollIntoView({ behavior, block: 'start' })
+      const landing = Number.isSafeInteger(value) && value >= hostTurn ? landingOf(row) : null
+      if (landing !== null) {
+        landing.scrollIntoView({ behavior, block: 'start' })
         return true
       }
     }
