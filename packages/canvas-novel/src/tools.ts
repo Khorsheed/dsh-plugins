@@ -22,7 +22,7 @@ import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { isPlanText, outlineFromText, planFromText } from './text-forms.ts'
-import { actingSession, announceDeskBind, deskOf } from './desk.ts'
+import { actingSession, announceDeskBind, announceDeskWrite, deskOf, novelWriteItems } from './desk.ts'
 import { planOvershoots, renderOutlineRead, renderPlanBrief, renderWriteBrief, targetWordsOf } from './brief.ts'
 import { PHASE_NAMES, ROLE_NAMES, foreshadowFacts, relationFacts } from './genre-agent.ts'
 import type { NovelService } from './store.ts'
@@ -243,7 +243,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
-    execute: async (arrived: WriteArgs, exec: { agent?: Agent }): Promise<string> => {
+    execute: async (arrived: WriteArgs, exec: { agent?: Agent }): Promise<string> => told(exec, () => runWrite(arrived, exec)),
+  })
+
+  const runWrite = async (arrived: WriteArgs, exec: { agent?: Agent }): Promise<string> => {
+    {
       const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       const { workId } = resolved
@@ -367,8 +371,27 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         return args.action === 'accept' ? `已采纳并落库：${args.id}。` : `已丢弃：${args.id}。`
       }
       return '失败：what 只能是 chapter/outline/review；卡片用 canvas_write。'
-    },
-  })
+    }
+  }
+
+  /**
+   * Run one novel write, then tell the room what it did when the caller is a
+   * room member (desk.ts): the work's cards and chapters read around the call.
+   * Outside a room this is exactly the call.
+   */
+  const told = async (exec: { agent?: Agent }, run: () => Promise<string>): Promise<string> => {
+    const desk = deskOf(exec.agent)
+    const resolved = desk === undefined ? undefined : await target(exec)
+    if (desk === undefined || resolved === undefined || 'message' in resolved) return run()
+    const before = await store.deskSnapshot(resolved.workId)
+    const answer = await run()
+    const after = before === undefined ? undefined : await store.deskSnapshot(resolved.workId)
+    if (before !== undefined && after !== undefined) {
+      const names = await store.categoryNames(resolved.workId)
+      announceDeskWrite(desk, { id: resolved.workId, title: after.title }, novelWriteItems(before, after, kind => names.get(kind)))
+    }
+    return answer
+  }
 
   const extract = defineTool({
     name: 'novel_extract',
@@ -384,7 +407,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
-    execute: async (args: { chapter: number; phase: 'prepare' | 'import'; payload?: ExtractPayload }, exec: { agent?: Agent }): Promise<string> => {
+    execute: async (args: { chapter: number; phase: 'prepare' | 'import'; payload?: ExtractPayload }, exec: { agent?: Agent }): Promise<string> => told(exec, async () => {
       const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       if (args.phase === 'prepare') {
@@ -437,7 +460,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         lines.push('丢弃（防编造闸）：', ...report.dropped.map(drop => `- ${drop.kind}「${drop.ref}」：${dropReason(drop)}`))
       }
       return lines.join('\n')
-    },
+    }),
   })
 
   return [tagOrigin(read), tagOrigin(write), tagOrigin(extract)]

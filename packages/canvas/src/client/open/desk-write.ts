@@ -14,7 +14,8 @@ export const DESK_OWNER = '@khorsheed/dsh-canvas'
 
 /** One thing a write did (the host's `CanvasDeskWriteItem`). */
 export interface DeskWriteItem {
-  readonly action: 'added' | 'changed' | 'commented' | 'archived' | 'manuscript'
+  /** `chapter`: a 长篇小说 chapter written or re-planned (its title reads 「第 1 章《…》」). */
+  readonly action: 'added' | 'changed' | 'commented' | 'archived' | 'manuscript' | 'chapter'
   readonly title: string
   readonly cardId?: string
   readonly manuscriptId?: string
@@ -33,7 +34,7 @@ export interface DeskWrite {
   readonly items: readonly DeskWriteItem[]
 }
 
-const ACTIONS = new Set(['added', 'changed', 'commented', 'archived', 'manuscript'])
+const ACTIONS = new Set(['added', 'changed', 'commented', 'archived', 'manuscript', 'chapter'])
 
 /**
  * Read one event, or null when it is not this owner's write.
@@ -65,7 +66,7 @@ export function deskWriteOf(event: { readonly type: string; readonly seq: number
 }
 
 /** The strongest thing that happened to one card in a turn: a new card stays new. */
-const RANK: Record<DeskWriteItem['action'], number> = { added: 4, archived: 3, commented: 2, changed: 1, manuscript: 0 }
+const RANK: Record<DeskWriteItem['action'], number> = { added: 4, archived: 3, commented: 2, changed: 1, manuscript: 0, chapter: 0 }
 
 /** One canvas's writes in a turn, folded. */
 export interface DeskWriteGroup {
@@ -111,14 +112,15 @@ export function writeSummaryParts(items: readonly DeskWriteItem[], t: DeskWriteC
   const kinds = [...new Set(added.map(item => item.kind ?? ''))]
   for (const kind of kinds) {
     const ofKind = added.filter(item => (item.kind ?? '') === kind)
-    parts.push(ofKind.length === 1
-      ? t('deskwrite.added1', { kind, title: ofKind[0]!.title })
-      : t('deskwrite.addedN', { kind, count: String(ofKind.length) }))
+    parts.push(ofKind.length > 1 ? t('deskwrite.addedN', { kind, count: String(ofKind.length) })
+      : ofKind[0]!.title === '' ? t('deskwrite.addedUntitled', { kind })
+        : t('deskwrite.added1', { kind, title: ofKind[0]!.title }))
   }
-  for (const action of ['changed', 'commented', 'archived', 'manuscript'] as const) {
+  for (const action of ['chapter', 'changed', 'commented', 'archived', 'manuscript'] as const) {
     const of = items.filter(item => item.action === action)
     if (of.length === 0) continue
-    parts.push(of.length === 1
+    // A single unnamed card is counted rather than shown with empty quotes.
+    parts.push(of.length === 1 && of[0]!.title !== ''
       ? t(`deskwrite.${action}1`, { title: of[0]!.title })
       : t(`deskwrite.${action}N`, { count: String(of.length) }))
   }

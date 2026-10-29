@@ -88,6 +88,14 @@ describe('deskRowDefinition', () => {
       { action: 'commented', cardId: 'p1', title: '全书命题' },
     ])]} live={false} t={t} openCanvas={openCanvas} openCard={openCard} addCanvas={addCanvas} />)
     expect(screen.getByText('《潜梦者》 新增 2 张世界卡 · 批注「全书命题」')).toBeTruthy()
+    cleanup()
+    // A novel turn: a chapter written, a card that nothing names, two unnamed edits.
+    render(<DeskAttachment sessionId="room-c" attachments={[wrote(70, [
+      { action: 'chapter', title: '第 1 章《别替我起名》' },
+      { action: 'added', cardId: 'q1', title: '', kind: '原则' },
+      { action: 'changed', cardId: 'c1', title: '' },
+    ])]} live={false} t={t} openCanvas={openCanvas} openCard={openCard} addCanvas={addCanvas} />)
+    expect(screen.getByText('《潜梦者》 新增 1 张原则卡 · 写了第 1 章《别替我起名》 · 修改 1 张卡')).toBeTruthy()
     fireEvent.click(screen.getByText('查看 →'))
     expect(openCanvas).toHaveBeenCalledExactlyOnceWith('canvas_q')
   })

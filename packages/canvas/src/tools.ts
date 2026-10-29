@@ -579,7 +579,11 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         if (after.ok) {
           const items = writeItemsOf(writeBaselineOf(before.board), after.board, (card) => {
             const category = after.board.categories.find(candidate => candidate.id === card.kind)
-            return { title: cardNameOf(card, category?.definition), kind: category === undefined ? '' : categoryNameOf(category) }
+            // A genre card may carry neither a title field value nor text: its first filled field then names it.
+            const named = cardNameOf(card, category?.definition)
+              || Object.values(card.fields ?? {}).map(value => fieldValueText(value)).find(text => text.trim() !== '')?.trim().slice(0, 40)
+              || ''
+            return { title: named, kind: category === undefined ? '' : categoryNameOf(category) }
           })
           announceDeskWrite(desk, { canvasId: resolved.canvasId, title: after.board.title }, items)
         }
