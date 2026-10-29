@@ -41,6 +41,8 @@ import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent
 import { configureKimiSession } from './session-configuration.ts'
 import { kimiNativeConfiguration, type KimiNativeConfiguration } from './model-catalog.ts'
 import { StringDecoder } from 'node:string_decoder'
+import { appendFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -943,6 +945,17 @@ export class KimiAcpLiveDriver {
 
     const runAbort = new AbortController()
     let roundSettled = false
+    /**
+     * Usage-attribution diagnostics (room 75844e33, 2026-10-29: a round's final
+     * reply lost its usage although the wire held the record): one JSONL line
+     * per message written from live text and per usage no fold carried, in the
+     * kimi home (`usage-diag.jsonl`). Best-effort; never fails the round.
+     */
+    const usageDiag = (entry: Record<string, unknown>): void => {
+      try {
+        appendFileSync(join(spec.homeDir, 'usage-diag.jsonl'), `${JSON.stringify({ time: new Date().toISOString(), child: String(childSession.id), ...entry })}\n`)
+      } catch { /* diagnostics never fail a round */ }
+    }
     let runtime: KimiLiveRuntime | undefined
     /** True while this round's session/prompt is in flight (cancel targets it). */
     let promptInFlight = false
@@ -1144,7 +1157,10 @@ export class KimiAcpLiveDriver {
      * cancelled turn reads 已停止 legitimately); `withUsage` attaches the
      * round's uncarried usage.
      */
-    const finalizeStep = (step: number, entries: readonly [string, StreamEntry][], interrupted: boolean, withUsage: boolean): void => {
+    const finalizeStep = (step: number, entries: readonly [string, StreamEntry][], interrupted: boolean, withUsage: boolean, via: 'gap' | 'settle'): void => {
+      // A message written from live text carries no usage of its own step:
+      // record when it happens, so the next lost usage names its path.
+      usageDiag({ at: 'finalize-from-live', via, turn, step, kinds: entries.map(([, stream]) => stream.kind), interrupted, withUsage, roundUsage: roundUsage ?? null, roundSettled })
       liveFlush.cancel(step)
       pendingStreamArrival.delete(step)
       const reasoning = entries.filter(([, stream]) => stream.kind === 'think').map(([, stream]) => stream.text).join('')
@@ -1253,7 +1269,7 @@ export class KimiAcpLiveDriver {
         group.push(entry)
         byStep.set(entry[1].step, group)
       }
-      for (const [at, entries] of byStep) finalizeStep(at, entries, false, false)
+      for (const [at, entries] of byStep) finalizeStep(at, entries, false, false, 'gap')
     }
 
     /**
@@ -1372,6 +1388,7 @@ export class KimiAcpLiveDriver {
      */
     const noteMirrorUsage = (delta: KimiMirrorDelta): void => {
       if (delta.usageUnattached !== undefined) {
+        usageDiag({ at: 'unattached', turn, usage: delta.usageUnattached, mirroredLines: delta.total, roundSettled })
         roundUsage = addTokenUsage(roundUsage, delta.usageUnattached)
       }
       if (delta.model !== undefined) roundModel = delta.model
@@ -1630,7 +1647,7 @@ export class KimiAcpLiveDriver {
         ].sort((a, b) => a.step - b.step)
         const lastStream = pending.map((entry, index) => 'entries' in entry ? index : -1).filter(index => index >= 0).at(-1)
         pending.forEach((entry, index) => {
-          if ('entries' in entry) finalizeStep(entry.step, entry.entries, settled.stopReason !== 'completed', index === lastStream)
+          if ('entries' in entry) finalizeStep(entry.step, entry.entries, settled.stopReason !== 'completed', index === lastStream, 'settle')
           else if (!toolLogged(entry.toolId)) finalizeOrphanTool(entry.toolId, entry.tool)
         })
         streams.clear()
