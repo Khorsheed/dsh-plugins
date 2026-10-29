@@ -44,6 +44,29 @@ afterEach(() => {
 })
 
 describe('scrollConversationToTurn', () => {
+  it('lands inside a display:contents slot anchor, on its first rendering box (443e7c65 turn 18 never moved)', () => {
+    const { rows } = conversation([1, 18])
+    const anchor = rows.get(18)!
+    anchor.style.display = 'contents'
+    const ghost = document.createElement('div')
+    ghost.style.display = 'contents'
+    const body = document.createElement('div')
+    ghost.appendChild(body)
+    anchor.appendChild(ghost)
+    expect(scrollConversationToTurn(18)).toBe(true)
+    expect(scrollIntoView.mock.instances[0]).toBe(body)
+  })
+
+  it('skips a turn element that renders nothing for the next one of the same turn', () => {
+    const { port, rows } = conversation([1, 18])
+    rows.get(18)!.style.display = 'none'
+    const tail = document.createElement('div')
+    tail.setAttribute('data-chat-turn', '18')
+    port.appendChild(tail)
+    expect(scrollConversationToTurn(18)).toBe(true)
+    expect(scrollIntoView.mock.instances[0]).toBe(tail)
+  })
+
   it('scrolls the exact turn anchor into view, start-aligned and smooth by default', () => {
     const { rows } = conversation([1, 2, 3])
     expect(scrollConversationToTurn(2)).toBe(true)
