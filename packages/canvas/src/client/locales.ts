@@ -260,6 +260,7 @@ export const zh = {
   'strip.canvases': '画布',
   'strip.add': '打开或新建画布',
   'strip.close': '关闭这块画布',
+  'strip.fresh': '《{title}》：房间成员刚放进来，还没看过',
   'strip.none': '没有打开的画布了，点上面的 ＋ 挑一块或新建一块',
   'crumb.label': '所在位置',
   'crumb.back': '回到卡板',
@@ -432,6 +433,9 @@ export const zh = {
   'openrow.created': '新建了《{title}》',
   'openrow.switched': '切到了《{title}》',
   'openrow.open': '打开 →',
+  'deskrow.created': '{member} 新建了画布《{title}》',
+  'deskrow.switched': '{member} 切到了画布《{title}》',
+  'deskrow.beside': '已放进侧栏的画布标签',
 }
 
 /** English dictionary (same key set). */
@@ -694,6 +698,7 @@ export const en: Record<keyof typeof zh, string> = {
   'strip.canvases': 'Canvas',
   'strip.add': 'Open or create a canvas',
   'strip.close': 'Close this canvas',
+  'strip.fresh': '“{title}”: a room member just put it here, not looked at yet',
   'strip.none': 'No canvas is open — use ＋ above to open or create one',
   'crumb.label': 'Location',
   'crumb.back': 'Back to the board',
@@ -866,6 +871,9 @@ export const en: Record<keyof typeof zh, string> = {
   'openrow.created': 'Created “{title}”',
   'openrow.switched': 'Switched to “{title}”',
   'openrow.open': 'Open →',
+  'deskrow.created': '{member} created the canvas “{title}”',
+  'deskrow.switched': '{member} switched to the canvas “{title}”',
+  'deskrow.beside': 'Added to the canvas tabs in the sidebar',
 }
 
 /** The dictionary namespace this view binds. */

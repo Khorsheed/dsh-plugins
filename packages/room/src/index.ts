@@ -76,7 +76,7 @@ import type {
   RoomMember, RoomMemberMessage, RoomMemberMessageReceipt,
   RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomSetTaskHintRequest, RoomStopJobRequest, RoomStopJobResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
   RoomPostMessageRequest, RoomPostMessageResult, RoomAttachmentInput, RoomDispatchAttachment, RoomPendingCard, RoomPendingCardsRequest,
-  RoomPresetInfo, RoomProviderInfo, RoomProviderList,
+  RoomMemberDesk, RoomPresetInfo, RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
   RoomRemoveMemberRequest, RoomRemoveMemberResult, RoomRestoreMemberRequest, RoomRestoreMemberResult,
   RoomSetGoalRequest, RoomSetGoalResult,
@@ -1945,11 +1945,14 @@ export class RoomService extends TypertRemoteService {
   /**
    * The mode of an external member — the host preset whose plugin tools its
    * bridge offers (local-agent's preset tool host runs them) — with its
-   * working directory. Host method for the member channel, never a Remote.
+   * working directory and its desk: the room session the plugin tools treat
+   * as the shared workspace (what a coordinator opens shows there; a member's
+   * opens land beside it), with the member's role right now. Host method for
+   * the member channel, never a Remote.
    * @param actor - the authenticated member run.
    * @returns the mode, or undefined when the member has none or is not here.
    */
-  async memberMode(actor: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string } | undefined> {
+  async memberMode(actor: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string; readonly desk: RoomMemberDesk } | undefined> {
     const loaded = await this.ensureLive(SessionId(actor.parentSessionId))
     if (!loaded.ok) return undefined
     const cli = loaded.state.members.filter(entry => entry.kind === 'cli' && entry.provider === actor.provider)
@@ -1962,7 +1965,10 @@ export class RoomService extends TypertRemoteService {
       ?? (fresh.length === 1 ? fresh[0] : undefined)
     if (member?.preset === undefined) return undefined
     const cwd = member.cwd ?? loaded.session.header.cwd
-    return { preset: member.preset, ...cwd === undefined ? {} : { cwd } }
+    const events = loaded.session.snapshotEvents()
+    const role = coordinatorMember(loaded.state, events)?.name === member.name ? 'coordinator' : 'member'
+    const desk: RoomMemberDesk = { sessionId: actor.parentSessionId, role, member: member.name }
+    return { preset: member.preset, ...cwd === undefined ? {} : { cwd }, desk }
   }
 
   /** Pending member tool approvals this process can still answer: approval id → its waiting call. */

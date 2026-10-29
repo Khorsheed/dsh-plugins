@@ -1406,6 +1406,19 @@ export interface RoomProviderList {
   readonly sessionPreset?: string
 }
 
+/**
+ * A member's desk: the room session its mode's plugin tools treat as the
+ * shared workspace, and the member's role there at this call. The coordinator
+ * acts ON the desk (what it opens shows in the room's sidebar); a member opens
+ * beside it (a new tab the human can pick, never the front one).
+ */
+export interface RoomMemberDesk {
+  readonly sessionId: string
+  readonly role: 'coordinator' | 'member'
+  /** The member's display name, for the room's「某某 打开了…」row. */
+  readonly member: string
+}
+
 /** One host agent preset, as the invite dialog lists it. */
 export interface RoomPresetInfo {
   readonly id: string

@@ -695,6 +695,16 @@ export interface MemberRoomCommand {
   arguments: Record<string, unknown>
 }
 
+/**
+ * The room session a member's mode tools treat as the shared workspace, and
+ * the member's role there (see preset-tool-host's desk mark).
+ */
+export interface MemberDesk {
+  readonly sessionId: string
+  readonly role: 'coordinator' | 'member'
+  readonly member: string
+}
+
 export interface RoomMemberMessageGate {
   /** Explicit ownership prevents a rejected room operation falling through to direct execution. */
   isRoom?(request: { sessionId: string }): Promise<boolean>
@@ -702,9 +712,10 @@ export interface RoomMemberMessageGate {
   receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessageReceipt>
   /**
    * The member's mode (a host agent preset id) whose plugin tools its bridge
-   * offers, with the member's working directory; undefined = no mode tools.
+   * offers, with the member's working directory and (newer rooms) its desk;
+   * undefined = no mode tools.
    */
-  memberMode?(member: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string } | undefined>
+  memberMode?(member: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string; readonly desk?: MemberDesk } | undefined>
   /**
    * A member's mode tool needs the human's approval: the room asks in its
    * conversation and answers with the registry's approval outcome.

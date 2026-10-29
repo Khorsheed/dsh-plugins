@@ -20,6 +20,7 @@
     "src/store.ts",
     "src/skill.ts",
     "src/tools.ts",
+    "src/desk.ts",
     "src/types.ts"
   ]
 }

@@ -24,6 +24,7 @@
 | 全局空间等**内容跨会话且无会话级能力语义**的 surface | **安装层** | 没有也不该有运行时开关；装/不装由 profile 的 dependencies 决定 |
 | 实例级行为开关（如 `tools: all\|none`） | config 层 | profile patch 行带 config；web client 读不到自己 config，走 host → Remote |
 | 平台维度（web / headless） | manifest | `dsh.client.platform`，headless profile 不加载 client 半 |
+| 房间里的侧栏入口与打开动作 | 会话级 + 房间桌面 | 判据加房间成员 preset 并集（`ctx.roomModes`）；打开动作经 `dsh.agent.desk` 落到房间，见「房间桌面」 |
 
 ## 判据轴：内容绑定谁，不看座位在哪
 
@@ -72,6 +73,20 @@ host 没有声明式可见性：右栏 tab 注册表只有静态字段——0.1.
 
 - host 侧 `apply(ctx, config)` 正常拿 config，注册任何东西之前可整体 return（`datasets-tool` / `mission-tool` 的 `tools` 分组先例）；也可以设置驱动动态挂载（`local-agent-dsh` 先例）。
 - **web client 拿不到自己的 config**（boot 组合 client entries 不带 config），需要时经自己的 Remote 送下去（worktrees `badgeConfig` 先例）。
+
+## 房间桌面：成员的模式与房间的侧栏
+
+协作间（room）里，协调者和成员各有自己的模式，可以和房间本身的模式不同（房间开发模式、协调者写作模式）。三条规则（2026-10-29 用户定，`.agents/notes/implemented/feature/2026-10-29-room-desk.md`）：
+
+1. **工具、提示词、skills 只按成员自己的 preset**——不混入房间或其他成员的模式。外部 CLI 成员经 local-agent 的 preset tool host 拿到的就是它自己 mode 的插件工具。
+2. **房间的侧栏入口 = 房间 preset ∪ 各成员 preset**。room 客户端提供 `ctx.roomModes`（`presetsOf(sessionId)` + `subscribe`）；判据在第二层的授予路径之后加第三条：当前会话是房间、任一成员 preset 授予了本插件的行 → 显示。`ctx.get` 探测、`ctx.inject(['roomModes'], …)` 延迟订阅，没有 room 时判据与原来逐字节相同。成员的 preset 读不到组合时不算授予（不对并集 fail-open）。样板：`packages/canvas/src/client/preset-visibility.ts` 的 path 3。
+3. **房间是共享桌面**。成员调插件工具时，代理身份带 `Symbol.for('dsh.agent.desk')` = `{ session（房间会话）, role, member }`。「绑定/打开的是哪一个」走桌面，「谁做的、在哪讨论的」留在成员自己会话：
+   - 协调者的打开/新建落在房间会话上（房间侧栏切过去）；成员的落在自己会话上，房间里只加一个标签、亮小点，不抢前台；
+   - 读目标：协调者用房间的；成员先用自己选过的，没有再用房间的；
+   - 写的围栏（沙箱、工作区）始终是成员自己的会话；
+   - 打开动作往房间会话追加**本插件自己的**事件（画布：`canvas/desk-opened`），由本插件客户端认领、渲染一行并按角色跟随——不走通用渲染器，因为「打开指定那一个」靠的是各插件自己的客户端状态。
+
+新插件凡是「工具按会话绑定一个东西、侧栏显示当前会话绑定的那个」，都按这三条接入；样板是 canvas（`packages/canvas/src/desk.ts`、`src/client/open/desk-row.ts`）。
 
 ## 各维度细则
 

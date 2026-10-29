@@ -436,6 +436,64 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
   })
 })
 
+describe('a room member\'s canvas tools work on the room\'s desk', () => {
+  const ROOM_WS = '/room'
+  /** A room session that records appended events, and a member session with its own workspace. */
+  function bench(role: 'coordinator' | 'member') {
+    const fs = new FakeFs()
+    const ctx = { fs, get: () => undefined, emit: () => {} } as unknown as Context
+    ;(ctx as { canvasStore?: CanvasService }).canvasStore = new CanvasService(ctx)
+    const board = new CanvasBoardService(ctx, { stateRoot: STATE })
+    const tools = canvasMainSessionToolDefinitions(board)
+    const events: { type: string; data: unknown }[] = []
+    const room = { id: 's-room', header: { cwd: ROOM_WS }, append: (type: string, data: unknown) => { events.push({ type, data }) } } as unknown as Session
+    const own = { id: 's-bill', header: { cwd: WS } } as unknown as Session
+    const agent = { session: own, [Symbol.for('dsh.agent.desk')]: { session: room, role, member: 'bill' } } as unknown as Agent
+    const run = (name: string) => async (args: Record<string, unknown>): Promise<string> =>
+      String(await tools.find(def => def.name === name)!.execute(args, { agent } as never))
+    return { board, room, own, events, open: run('canvas_open'), write: run('canvas_write') }
+  }
+
+  it('the coordinator\'s switch moves the room\'s canvas and tells the room', async () => {
+    const { board, room, own, events, open } = bench('coordinator')
+    const answer = await open({ create: '雨夜' })
+    const id = (await board.listCanvases()).items[0]!.id
+    expect(answer).toContain('房间侧栏已切到这块。')
+    // The member's own workspace comes along, not the room's.
+    expect(answer).toContain(`挂上了工作区 ${WS}`)
+    expect(board.focusedCanvasId(room)).toBe(id)
+    expect(board.focusedCanvasId(own)).toBeUndefined()
+    expect(events).toEqual([{ type: 'canvas/desk-opened', data: { version: 1, canvasId: id, title: '雨夜', created: true, member: 'bill', role: 'coordinator' } }])
+  })
+
+  it('the coordinator writes on whatever the human has open in the room', async () => {
+    const { board, room, write } = bench('coordinator')
+    const shown = await board.createCanvas({ title: '晴天' }, room)
+    if (!shown.ok) throw new Error('expected a created canvas')
+    await board.focusCanvas({ canvasId: shown.board.id }, room)
+    expect(await write({ op: 'card', kind: 'fragment', text: '阳光' })).toMatch(/^完成：c_/)
+    const read = await board.readBoard({ canvasId: shown.board.id })
+    expect(read.ok && read.board.cards).toHaveLength(1)
+  })
+
+  it('a member\'s switch stays its own; it reads the room\'s canvas until it picks one', async () => {
+    const { board, room, own, events, open, write } = bench('member')
+    const shown = await board.createCanvas({ title: '晴天' }, room)
+    if (!shown.ok) throw new Error('expected a created canvas')
+    await board.focusCanvas({ canvasId: shown.board.id }, room)
+    expect(await write({ op: 'card', kind: 'fragment', text: '阳光' })).toMatch(/^完成：c_/)
+    const answer = await open({ create: '雨夜' })
+    const rain = (await board.listCanvases()).items.find(item => item.title === '雨夜')!
+    expect(answer).toContain('已放进房间侧栏的画布标签里')
+    expect(board.focusedCanvasId(own)).toBe(rain.id)
+    expect(board.focusedCanvasId(room)).toBe(shown.board.id)
+    expect(events).toEqual([{ type: 'canvas/desk-opened', data: { version: 1, canvasId: rain.id, title: '雨夜', created: true, member: 'bill', role: 'member' } }])
+    expect(await write({ op: 'card', kind: 'fragment', text: '雨声' })).toMatch(/^完成：c_/)
+    const read = await board.readBoard({ canvasId: rain.id })
+    expect(read.ok && read.board.cards).toHaveLength(1)
+  })
+})
+
 describe('card writes that arrive with only flat strings', () => {
   /** A board with a typed 世界 category and a plain one. */
   function typedBoard(): CanvasBoard {

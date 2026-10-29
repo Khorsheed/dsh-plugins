@@ -563,10 +563,24 @@ describe('RoomService Remote surface (real composition)', () => {
     session.append('room/member-updated', { name: 'bill', childSessionId: SessionId('child-bill') })
     session.append('room/member-updated', { name: 'ada', childSessionId: SessionId('child-ada') })
     expect(await service.memberMode({ childSessionId: 'child-bill', parentSessionId: sessionId, provider: 'codex' }))
-      .toEqual({ preset: 'dsh-video', ...session.header.cwd === undefined ? {} : { cwd: session.header.cwd } })
+      .toEqual({ preset: 'dsh-video', ...session.header.cwd === undefined ? {} : { cwd: session.header.cwd }, desk: { sessionId, role: 'member', member: 'bill' } })
     expect(await service.memberMode({ childSessionId: 'child-ada', parentSessionId: sessionId, provider: 'kimi' })).toBeUndefined()
     // The run's provider must match the roster: another provider's run does not borrow the mode.
     expect(await service.memberMode({ childSessionId: 'child-bill', parentSessionId: sessionId, provider: 'kimi' })).toBeUndefined()
+  })
+
+  it('memberMode names the member\'s desk role: the coordinator acts on the room, anyone else beside it', async () => {
+    const { ctx, service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'codex', name: 'bill', preset: 'dsh-writing' })
+    const session = ctx.sessions.get(sessionId)!
+    session.append('room/member-updated', { name: 'bill', childSessionId: SessionId('child-bill') })
+    const actor = { childSessionId: 'child-bill', parentSessionId: sessionId, provider: 'codex' }
+    expect((await service.memberMode(actor))?.desk).toEqual({ sessionId, role: 'member', member: 'bill' })
+    const state = await service.getState({ sessionId })
+    if (!state.ok) throw new Error('narrowing')
+    const bill = state.value.members.find(member => member.name === 'bill')!
+    session.append('room/coordinator', { version: 1, memberId: bill.id!, revision: 1, previousMemberId: 'main', handoff: '' })
+    expect((await service.memberMode(actor))?.desk).toEqual({ sessionId, role: 'coordinator', member: 'bill' })
   })
 
   it('an invite asking to inherit takes the room session\'s own mode', async () => {

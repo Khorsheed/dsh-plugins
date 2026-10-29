@@ -244,7 +244,7 @@ export class MemberChannel {
         return { ok: true, tools: [] }
       }
       try {
-        const tools = await this.modeTools!.list(run.childSessionId, mode.preset, mode.cwd)
+        const tools = await this.modeTools!.list(run.childSessionId, mode.preset, mode.cwd, mode.desk)
         await this.installSkills(run, mode.preset)
         return { ok: true, tools }
       } catch (error) {
@@ -255,7 +255,7 @@ export class MemberChannel {
     if (mode === undefined) return { ok: false, error: 'This member has no mode tools' }
     const { name, arguments: args } = request.modeTools.call
     try {
-      return { ok: true, result: await this.modeTools!.call(run.childSessionId, mode.preset, name, args ?? {}, AbortSignal.timeout(MODE_TOOL_TIMEOUT_MS), mode.cwd) }
+      return { ok: true, result: await this.modeTools!.call(run.childSessionId, mode.preset, name, args ?? {}, AbortSignal.timeout(MODE_TOOL_TIMEOUT_MS), mode.cwd, mode.desk) }
     } catch (error) { return { ok: false, error: String(error) } }
   }
 

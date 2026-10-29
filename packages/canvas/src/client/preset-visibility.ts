@@ -57,6 +57,17 @@ export interface CanvasPluginInventorySnapshot {
   }[]
 }
 
+/** The room plugin's `ctx.roomModes`, structurally (no dependency on the room package). */
+interface RoomModesLike {
+  presetsOf: (sessionId: string) => readonly string[] | undefined
+  subscribe: (listener: () => void) => () => void
+}
+
+/** Whether one preset group mounts any of `modules`. */
+function grants(group: { readonly rows: readonly { readonly moduleName: string; readonly enabled?: boolean }[] }, modules: readonly string[]): boolean {
+  return group.rows.some(row => modules.includes(row.moduleName) && row.enabled !== false)
+}
+
 /** The current session's agent preset, the dual read per host line. */
 function presetOf(row: unknown): string | undefined {
   const value = (row as { projectionValues?: { agentPreset?: unknown }; agentPreset?: unknown } | undefined)
@@ -98,6 +109,12 @@ export class CanvasTabVisibility {
       () => ctx.sessions.list.subscribe(() => { this.notify() }),
       'canvas: tab visibility session follower',
     )
+    // A room's roster moves the union (path 3 below). The deferred arm never
+    // fires without the room plugin, and the criterion is then exactly paths 1–2.
+    ;(ctx.inject as (deps: string[], callback: (scoped: Context) => void) => void)(['roomModes'], (scoped) => {
+      const modes = (scoped as unknown as { roomModes: RoomModesLike }).roomModes
+      scoped.effect(() => modes.subscribe(() => { this.notify() }), 'canvas: tab visibility room follower')
+    })
   }
 
   show(sessionId: SessionId | undefined): boolean {
@@ -120,7 +137,16 @@ export class CanvasTabVisibility {
     const group = this.composition.agentPresets?.find(candidate => candidate.id === preset)
     if (group === undefined || group.broken !== undefined) return true
     // Path 2: the preset-mounted row grants this session.
-    return group.rows.some(row => modules.includes(row.moduleName) && row.enabled !== false)
+    if (grants(group, modules)) return true
+    // Path 3: a room shows what any member's mode reaches — the room's own
+    // mode may be 开发 while its coordinator writes (proposal
+    // 2026-10-29-room-desk). Only readable member modes count: an unknown one
+    // leaves the verdict to the room's own mode.
+    const members = (this.ctx.get as (name: string) => RoomModesLike | undefined).call(this.ctx, 'roomModes')?.presetsOf(sessionId) ?? []
+    return members.some(id => {
+      const member = this.composition?.agentPresets?.find(candidate => candidate.id === id)
+      return member !== undefined && member.broken === undefined && grants(member, modules)
+    })
   }
 
   /** Subscribe to criterion-input changes (session switches, the inventory answer). */
