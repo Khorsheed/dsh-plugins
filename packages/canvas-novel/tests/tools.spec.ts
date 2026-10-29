@@ -65,6 +65,28 @@ describe('novel_bind', () => {
   })
 })
 
+describe('novel_bind in a room', () => {
+  it('the coordinator binds the room and tells it; a member binds itself and reads the room\'s until then', async () => {
+    const { store, canvas, read } = await bench()
+    const events: { type: string; data: unknown }[] = []
+    const room = { id: 's-room', append: (type: string, data: unknown) => { events.push({ type, data }) } }
+    const as = (role: 'coordinator' | 'member') => ({
+      agent: { session: { id: 's-bill' }, [Symbol.for('dsh.agent.desk')]: { session: room, role, member: 'bill' } },
+    })
+    const bind = novelBindDefinition(store, async () => {})
+    expect(String(await bind.execute({ work: '梦境监护者' } as never, as('coordinator') as never))).toContain('房间侧栏已切到这部作品')
+    expect(canvas.bindings.get('s-room')).toBe(DREAM.workId)
+    expect(canvas.bindings.get('s-bill')).toBeUndefined()
+    expect(events).toEqual([{ type: 'canvas/desk-opened', data: { version: 1, canvasId: DREAM.workId, title: DREAM.title, created: false, member: 'bill', role: 'coordinator' } }])
+    // A member with no binding of its own works on the room's novel.
+    expect(String(await read.execute({ what: 'brief' } as never, as('member') as never))).toContain('梦境监护者')
+    canvas.addBoard({ id: 'canvas_novel0002', title: '外传' })
+    expect(String(await bind.execute({ work: '外传' } as never, as('member') as never))).toContain('已放进房间侧栏的画布标签里')
+    expect(canvas.bindings.get('s-bill')).toBe('canvas_novel0002')
+    expect(canvas.bindings.get('s-room')).toBe(DREAM.workId)
+  })
+})
+
 describe('the novel tools', () => {
   it('answers guidance (never a throw) when the session is bound to no novel canvas or no agent is there', async () => {
     const { read, write, extract, canvas } = await bench()

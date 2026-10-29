@@ -18,6 +18,12 @@
  * while everything else (execution identity, approvals, the recorded mode,
  * plugin state) stays on the member's own session. Refreshed on every list and
  * call, so a coordinator handoff moves the role with it; absent outside rooms.
+ *
+ * A stand-in is not an agent, so `agent/created` never names it. Entries that
+ * grant tools per agent (the novel tools, which appear only for bound
+ * sessions) hear `local-agent/stand-in-created` / `-disposed` instead —
+ * scoped like `agent/created`, so a preset plane's listener sees only the
+ * stand-ins composed under it.
  * Only PLUGIN tools are offered (`Symbol.for('dsh.tool.origin')` channel
  * `plugin`; the CLI brings its own shell, files and todo).
  *
@@ -28,7 +34,7 @@
 import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
-import { createScope } from '@deepseek-ai/dsh-scope'
+import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 /** One plugin tool as the bridge lists it (MCP `tools/list` shape). */
@@ -179,7 +185,20 @@ export class PresetToolHost {
       // The member's session runs this mode now: the host's per-session
       // plugin visibility reads it from here.
       if (sessionPreset(session) !== resolved.id) session.append('agent-preset/selected', { agentPreset: resolved.id })
-      return { agent: member, dispose: () => scope.dispose() }
+      const carrier = scopeTarget(member, member)
+      const serial = this.ctx.serial.bind(this.ctx) as unknown as (target: object, name: string, payload: { agent: AgentLike }) => Promise<unknown>
+      try {
+        await serial(carrier, 'local-agent/stand-in-created', { agent: member })
+      } catch (error) {
+        this.ctx.logger.warn(`localAgent: a stand-in listener failed for ${childSessionId}: ${String(error)}`)
+      }
+      return {
+        agent: member,
+        dispose: async () => {
+          try { await serial(carrier, 'local-agent/stand-in-disposed', { agent: member }) } catch { /* the scope goes regardless */ }
+          await scope.dispose()
+        },
+      }
     })()
     this.hosts.set(childSessionId, { preset, agent })
     try {
