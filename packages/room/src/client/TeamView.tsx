@@ -41,9 +41,7 @@ function configLine(node: TeamNode, t: T): string {
   if (node.external !== undefined) {
     return [t(node.external.room ? 'team.external.room' : 'team.external.session'), ...node.external.helps.length === 0 ? [] : [t('team.external.asks', { count: node.external.helps.length })]].join(' · ')
   }
-  const provider = node.member.kind === 'main-agent' ? t('member.kind.main')
-    : node.member.kind === 'native' ? t('member.kind.native', { preset: node.member.preset ?? t('member.kind.defaultPreset') })
-      : node.member.provider ?? ''
+  const provider = node.member.kind === 'main-agent' ? t('member.kind.main') : node.member.provider ?? ''
   return [provider, node.model].filter(Boolean).join(' · ')
 }
 

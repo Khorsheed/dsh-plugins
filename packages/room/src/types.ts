@@ -36,13 +36,18 @@ export interface RoomMemberAddedEvent {
   /** Stable identity; older journals derive it from their original join event. */
   readonly id?: string
   readonly name: string
+  /**
+   * `native` (a DSH sub-member inside this host process) was retired on
+   * 2026-10-29: older journals may still carry it, and replay leaves such a
+   * member off the roster. A dsh command-line member is its successor.
+   */
   readonly kind: 'main-agent' | 'cli' | 'native'
-  /** CLI provider id on `kind: 'cli'` members; `dsh` on native ones. */
+  /** CLI provider id on `kind: 'cli'` members. */
   readonly provider?: string
   /**
-   * The host agent preset a native DSH member composes (`kind: 'native'`):
-   * a child session + agent in this host process, mounted with that preset
-   * at creation and locked from then on. Absent = the host's default preset.
+   * The member's mode: the host agent preset whose plugin tools and skills a
+   * CLI member reaches through its bridge (local-agent's preset tool host).
+   * Absent = no mode (its own CLI tools only).
    */
   readonly preset?: string
   /** Role instructions, prepended to the member's first dispatch. */
@@ -806,12 +811,12 @@ declare module '@deepseek-ai/dsh-session/types' {
 export interface RoomMember {
   readonly id?: string
   readonly name: string
-  readonly kind: 'main-agent' | 'cli' | 'native'
+  readonly kind: 'main-agent' | 'cli'
   readonly provider?: string
   readonly instructions?: string
   /** Short public role shown to the other members (see {@link RoomMemberAddedEvent.role}). */
   readonly role?: string
-  /** Native members: the host agent preset (see {@link RoomMemberAddedEvent.preset}). */
+  /** The member's mode (see {@link RoomMemberAddedEvent.preset}). */
   readonly preset?: string
   readonly invitedBy: 'human' | 'agent'
   /** Member-level working directory (roster record; not yet passed to the facade). */
@@ -1047,14 +1052,8 @@ export interface RoomInviteRequest {
   /** Room session. */
   readonly sessionId: SessionId
   /**
-   * `cli` (default): an external CLI through the local-agent family.
-   * `native`: a DSH child agent in this host process, composing `preset`.
-   */
-  readonly kind?: 'cli' | 'native'
-  /**
-   * The member's mode: the host agent preset id. A native member composes it
-   * (omitted = the host default); a CLI member reaches its plugin tools
-   * through the bridge (omitted = no mode).
+   * The member's mode: the host agent preset id whose plugin tools and
+   * skills the CLI member reaches through its bridge (omitted = no mode).
    */
   readonly preset?: string
   /** With no `preset`: take the room session's own mode (the coordinator's invite default). */
@@ -1397,9 +1396,8 @@ export interface RoomProviderList {
   readonly localAgentAvailable: boolean
   readonly providers: readonly RoomProviderInfo[]
   /**
-   * The host's agent presets a native DSH member may compose; absent when
-   * the composition mounts no preset registry (native members then run the
-   * plain composition).
+   * The host's agent presets a member's mode may name; absent when the
+   * composition mounts no preset registry (members then have no mode).
    */
   readonly presets?: readonly RoomPresetInfo[]
   /** The requested session's own mode (preset id), when known: the dialog's default mode. */

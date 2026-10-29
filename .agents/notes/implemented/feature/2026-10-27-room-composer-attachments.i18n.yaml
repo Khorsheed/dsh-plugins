@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-27-room-composer-attachments.md
-.agents/notes/implemented/feature/2026-10-27-room-composer-attachments.md: 01771cb6b9a22426b4f1d0ae3078754f24c9669f
-.agents/notes/implemented/feature/2026-10-27-room-composer-attachments.zh.md: 41ce60eb1bb1d7b67b949a334125b1c36b83747f
+.agents/notes/implemented/feature/2026-10-27-room-composer-attachments.md: 3122bc72421379e1dfa89dc5199142a0525662c5
+.agents/notes/implemented/feature/2026-10-27-room-composer-attachments.zh.md: 025d84e8edf5856dc548f35746f537bbbb073500

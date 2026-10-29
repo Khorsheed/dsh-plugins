@@ -338,8 +338,8 @@ export class RoomService extends TypertRemoteService {
       if (notes.length === 0) return decision
       return { ...decision, messages: [...decision.messages, createUserMessage({ content: [{ type: 'text', text: notes.join('\n') }], source: roomSource() })] }
     })
-    // A turn the room did not start (the human talking to the room's agent or
-    // to a native member directly) still carries the reports the gate holds
+    // A turn the room did not start (the human talking to the room's agent
+    // directly) still carries the reports the gate holds
     // for that agent: one extra message on the turn's first step, so the
     // agent never answers without results that already arrived.
     ctx.on('agent/pre-step', async ({ agent, step }, next) => {
@@ -679,7 +679,7 @@ export class RoomService extends TypertRemoteService {
     } catch { return undefined }
   }
 
-  /** The host's agent presets for a native member, or undefined without a registry. */
+  /** The host's agent presets a member's mode may name, or undefined without a registry. */
   private async listPresets(): Promise<readonly RoomPresetInfo[] | undefined> {
     const presets = probeAgentPresets(this.ctx)
     if (presets?.list === undefined) return undefined
@@ -905,28 +905,7 @@ export class RoomService extends TypertRemoteService {
       const member = replay(own.snapshotEvents()).members.find(entry => entry.kind === 'main-agent')
       return member === undefined ? undefined : { room: own, member }
     }
-    const routed = this.nativeRoute(sessionId)
-    const room = routed === undefined ? undefined : this.ctx.sessions.get(routed.roomId)
-    const member = room === undefined ? undefined : replay(room.snapshotEvents()).members.find(entry => entry.childSessionId === routed!.actor)
-    return room === undefined || member === undefined ? undefined : { room, member }
-  }
-
-  /**
-   * A native member's own session calling a room tool: the tools see the
-   * child session, so route to its room with the child as the authenticated
-   * actor instead of promoting the child into a room of its own.
-   * @param sessionId - the calling agent's session.
-   * @returns the room and actor, or undefined when the caller is no native member.
-   */
-  nativeRoute(sessionId: string): { readonly roomId: SessionId; readonly actor: string } | undefined {
-    const parent = this.ctx.sessions.get(SessionId(sessionId))?.header.parentSession
-    const room = parent === undefined ? undefined : this.ctx.sessions.get(parent)
-    if (room === undefined || parent === undefined) return undefined
-    const events = room.snapshotEvents()
-    if (!isRoomLog(events)) return undefined
-    return replay(events).members.some(member => member.kind === 'native' && member.childSessionId === sessionId)
-      ? { roomId: parent, actor: sessionId }
-      : undefined
+    return undefined
   }
 
   /**
@@ -968,8 +947,6 @@ export class RoomService extends TypertRemoteService {
    * @returns the invitation receipt, or a rejection.
    */
   async inviteMember(request: RoomInviteRequest, invitedBy: 'human' | 'agent', actorChildSessionId?: string): Promise<RoomInviteResult> {
-    const routed = invitedBy === 'agent' && actorChildSessionId === undefined ? this.nativeRoute(request.sessionId) : undefined
-    if (routed !== undefined) return this.inviteMember({ ...request, sessionId: routed.roomId }, invitedBy, routed.actor)
     // Invite PROMOTES: inviting an agent into a plain session makes it a room.
     const loaded = await this.ensureRoom(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
@@ -995,14 +972,13 @@ export class RoomService extends TypertRemoteService {
     if (request.effort !== undefined && request.effort.trim() === '') {
       return { ok: false, error: { code: 'empty-text' } }
     }
-    const native = request.kind === 'native'
     // The coordinator's default: the member works in the room's own mode.
     const inherited = request.preset === undefined && request.inheritPreset === true ? roomSessionPreset(loaded.session) : undefined
     if (inherited !== undefined) request = { ...request, preset: inherited }
     if (request.preset !== undefined) {
-      // A native member composes a host preset; a CLI member reaches that
-      // preset's plugin tools through its bridge. Reject an id the host does
-      // not declare instead of failing at the member's first round.
+      // A member reaches that preset's plugin tools through its bridge.
+      // Reject an id the host does not declare instead of failing at the
+      // member's first round.
       const presets = probeAgentPresets(this.ctx)
       if (presets !== undefined) {
         try { await presets.resolve(request.preset) } catch {
@@ -1011,10 +987,10 @@ export class RoomService extends TypertRemoteService {
         }
       }
     }
-    if (!native && probeLocalAgent(this.ctx) === undefined) {
+    if (probeLocalAgent(this.ctx) === undefined) {
       return { ok: false, error: { code: 'local-agent-unavailable' } }
     }
-    const roster = native ? undefined : probeLocalAgentRoster(this.ctx)
+    const roster = probeLocalAgentRoster(this.ctx)
     if (roster !== undefined) {
       // The same delegationProvider set listProviders serves: invite accepts
       // exactly what dispatch can resolve, and the rejection carries the
@@ -1042,8 +1018,8 @@ export class RoomService extends TypertRemoteService {
     loaded.session.append('room/member-added', {
       id: randomUUID(),
       name: request.name,
-      kind: native ? 'native' : 'cli',
-      provider: native ? 'dsh' : request.provider,
+      kind: 'cli',
+      provider: request.provider,
       ...request.preset !== undefined ? { preset: request.preset } : {},
       invitedBy,
       ...request.instructions === undefined ? {} : { instructions: request.instructions },
@@ -1215,9 +1191,6 @@ export class RoomService extends TypertRemoteService {
       let candidate = loaded.state.members.find(member => memberId(events, member) === request.memberId)
       const previous = coordinatorMember(loaded.state, events)
       if (candidate === undefined || previous === undefined) return { ok: false, error: { code: 'member-not-found' } }
-      // A native member answers inside this host already; making it the
-      // external coordinator would need the CLI coordination contract it does not speak.
-      if (candidate.kind === 'native') return { ok: false, error: { code: 'coordinator-not-ready', message: 'A native DSH member cannot coordinate yet; promote the room\'s own dsh or a CLI member' } }
       if ((loaded.state.coordinator?.revision ?? 0) !== request.expectedRevision) return { ok: false, error: { code: 'coordinator-conflict' } }
       const agent = this.ctx.agents.get(request.sessionId)
       if (agent?.status === 'running' || (agent?.inbox?.nextTurn.length ?? 0) > 0 || (agent?.inbox?.nextStep.length ?? 0) > 0 || this.engine.hasPending(loaded.session, previous.name) || this.engine.hasPending(loaded.session, candidate.name)) {
@@ -1519,8 +1492,6 @@ export class RoomService extends TypertRemoteService {
    * @returns the delivery receipt (with its `m<seq>` id) or the hold, or a rejection.
    */
   async messageMember(request: RoomMessageRequest, actorChildSessionId?: string): Promise<RoomMessageResult> {
-    const routed = actorChildSessionId === undefined ? this.nativeRoute(request.sessionId) : undefined
-    if (routed !== undefined) return this.messageMember({ ...request, sessionId: routed.roomId }, routed.actor)
     // Messaging PROMOTES too (the room_message tool's gate): the main agent
     // answering "把 kimi 拉进来问一下…" promotes its own session, then the
     // roster check runs against the promoted state.
@@ -1636,9 +1607,8 @@ export class RoomService extends TypertRemoteService {
   async askHelp(request: { readonly sessionId: string; readonly session?: string; readonly member?: string; readonly help?: string; readonly text: string }, caller: Agent | undefined, actorChildSessionId?: string): Promise<string> {
     const text = request.text.trim()
     if (text === '') return 'The help text must be non-blank.'
-    // The asker: a CLI member (authenticated by the bridge), a native member
-    // (its own session routes to the room), else the room's own agent.
-    const routed = actorChildSessionId === undefined ? this.nativeRoute(request.sessionId) : { roomId: SessionId(request.sessionId), actor: actorChildSessionId }
+    // The asker: a CLI member (authenticated by the bridge), else the room's own agent.
+    const routed = actorChildSessionId === undefined ? undefined : { roomId: SessionId(request.sessionId), actor: actorChildSessionId }
     const roomId = routed?.roomId ?? SessionId(request.sessionId)
     const loaded = this.ctx.sessions.get(roomId) !== undefined && isRoomLog(this.ctx.sessions.get(roomId)!.snapshotEvents())
       ? await this.ensureLive(roomId)
@@ -1885,13 +1855,8 @@ export class RoomService extends TypertRemoteService {
       : `Your question went to ${help.fromName} in "${source.roomTitle}"; the answer arrives as a new message. End your turn now.`
   }
 
-  /** Bounded shared room context for native and external model tools; reading never wakes an agent. */
+  /** Bounded shared room context for the room's agent and external model tools; reading never wakes an agent. */
   async readRoomContext(sessionId: string): Promise<string> {
-    const routed = this.nativeRoute(sessionId)
-    if (routed !== undefined) {
-      const self = replay(this.ctx.sessions.get(routed.roomId)!.snapshotEvents()).members.find(member => member.childSessionId === routed.actor)?.name
-      return JSON.stringify({ self, ...JSON.parse(await this.readRoomContext(routed.roomId)) })
-    }
     const state = await this.getState({ sessionId: SessionId(sessionId) })
     if (!state.ok && state.error.code === 'not-a-room') {
       // A plain session: everything an invite needs, instead of an error that
@@ -1925,10 +1890,8 @@ export class RoomService extends TypertRemoteService {
     } catch (error) { return { ok: false, message: String(error) } }
   }
 
-  /** The actor is derived from the calling native agent or authenticated bridge. */
+  /** The actor is the room's own agent, or the member the bridge authenticated. */
   async commandPlan(sessionId: string, command: string, actorChildSessionId?: string): Promise<string> {
-    const routed = actorChildSessionId === undefined ? this.nativeRoute(sessionId) : undefined
-    if (routed !== undefined) return this.commandPlan(routed.roomId, command, routed.actor)
     const loaded = await this.ensureLive(SessionId(sessionId))
     if (!loaded.ok) throw new Error(loaded.error.code)
     if (this.handoffs.has(sessionId)) throw new Error('Coordinator handoff is in progress')
@@ -2514,11 +2477,10 @@ export class RoomService extends TypertRemoteService {
       return { ok: true, value: { cancelled: false } }
     }
     const facade = probeLocalAgent(this.ctx)
-    const native = expected === undefined ? undefined
-      : member.kind === 'main-agent' ? this.ctx.agents.get(loaded.session.id)
-        : member.kind === 'native' && member.childSessionId !== undefined ? this.ctx.agents.get(member.childSessionId) : undefined
-    if (native !== undefined) native.cancel({ kind: 'user' })
-    const hit = native !== undefined || (facade !== undefined && member.childSessionId !== undefined
+    // The room's own agent stops in this process; a CLI member through the family facade.
+    const own = expected !== undefined && member.kind === 'main-agent' ? this.ctx.agents.get(loaded.session.id) : undefined
+    if (own !== undefined) own.cancel({ kind: 'user' })
+    const hit = own !== undefined || (facade !== undefined && member.childSessionId !== undefined
       ? facade.cancel(member.childSessionId)
       : false)
     if (hit) {

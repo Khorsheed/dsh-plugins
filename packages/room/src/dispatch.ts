@@ -25,10 +25,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import { SessionId, type Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the `agents` registry merge onto Context.
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ContextFormed, type MessageSource } from '@deepseek-ai/dsh-llm'
 import { probeLocalAgent, runOutputText } from './adapter.ts'
-import { composeRoomAgent } from './agent-setup.ts'
 import { coordinatorMember, memberId, pendingInstructions, previousCursor, replay, roomChangesSince } from './journal.ts'
 import { envelopeLine, messageId, sendOrHold } from './messaging.ts'
 import { gateState, judgeReport, outstandingFor, type GateVerdict } from './report-gate.ts'
@@ -239,7 +237,7 @@ function briefingSection(state: RoomState, member: RoomMember, instructions: str
       const facts = [
         ...coordinator?.name === entry.name ? ['协调者'] : [],
         ...entry.role === undefined ? [] : [entry.role],
-        entry.kind === 'main-agent' ? '原生 DSH' : entry.kind === 'native' ? `原生 DSH${entry.preset === undefined ? '' : ` · ${entry.preset}`}` : entry.provider ?? '',
+        entry.kind === 'main-agent' ? '原生 DSH' : entry.provider ?? '',
       ].filter(Boolean)
       return `- ${entry.name}（${facts.join(' · ')}）`
     })
@@ -568,9 +566,7 @@ export class DispatchEngine {
     try {
       outcome = member.kind === 'main-agent'
         ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [], options.dispatchSeq)
-        : member.kind === 'native'
-          ? await this.runNativeMember(room, member, cursor, text, admitted, options.relayIds ?? [], options.dispatchSeq, runId)
-          : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId, options.dispatchSeq)
+        : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId, options.dispatchSeq)
     } catch (error: unknown) {
       this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
       outcome = { state: 'failed', error: faultMessage(error) }
@@ -797,75 +793,6 @@ export class DispatchEngine {
     // outcome a waiting sender's report quotes.
     await agent.whenIdle()
     const output = lastAssistantText(room.snapshotEvents(), before)
-    return { state: 'done', ...output === '' ? {} : { text: output } }
-  }
-
-  /**
-   * The native member's agent: live, resumed from its session after a
-   * restart, or created on its first round — a child session + agent in this
-   * host process (owned by the room's agent when live), composing the
-   * member's preset at creation. The handle is journaled before any prompt.
-   */
-  private async nativeAgent(room: Session, member: RoomMember): Promise<Agent> {
-    if (member.childSessionId !== undefined) {
-      const live = this.ctx.agents.get(member.childSessionId)
-      if (live !== undefined) return live
-      const composition = await composeRoomAgent(this.ctx, member.preset)
-      const handle = await this.ctx.agents.resume({
-        resumeSessionId: member.childSessionId,
-        ...composition.setup === undefined ? {} : { setup: composition.setup },
-      })
-      return handle.agent
-    }
-    const composition = await composeRoomAgent(this.ctx, member.preset)
-    const parent = this.ctx.agents.get(room.id)
-    const sessionId = SessionId(randomUUID())
-    const cwd = member.cwd ?? room.header.cwd
-    const handle = await this.ctx.agents.create({
-      sessionId,
-      ...parent === undefined ? {} : { parentAgent: parent },
-      meta: {
-        parentSession: room.id, origin: 'subagent', delegationDepth: (room.header.delegationDepth ?? 0) + 1,
-        ...cwd === undefined ? {} : { cwd },
-        ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
-      },
-      ...composition.setup === undefined ? {} : { setup: composition.setup },
-    })
-    room.append('room/member-updated', { name: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name, childSessionId: sessionId })
-    await this.ctx.sessions.flush(room)
-    return handle.agent
-  }
-
-  /**
-   * Native member turn: a room-sourced followup on the member's own agent,
-   * mirrored into the room as speech like a CLI member's reply.
-   */
-  private async runNativeMember(
-    room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, admitted: () => Promise<number>, relayIds: readonly string[], dispatchSeq: number | undefined, runId?: string,
-  ): Promise<RunOutcome> {
-    const agent = await this.nativeAgent(room, member)
-    const startedAt = await admitted()
-    const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
-    const before = agent.session.snapshotEvents().at(-1)?.seq ?? -1
-    agent.followup(createUserMessage({ content: [{ type: 'text', text: prompt }], source: roomSource() }))
-    await this.markHeldReleased(room, member, heldCarried)
-    await this.markSent(room, [
-      ...carried,
-      ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
-    ])
-    await agent.whenIdle()
-    const output = lastAssistantText(agent.session.snapshotEvents(), before)
-    const reportedTo = dispatchSeq === undefined ? undefined : reportRecipient(room.snapshotEvents(), dispatchSeq)?.name
-    room.append('room/speech', {
-      member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
-      text: output, childSessionId: agent.session.id, durationMs: Date.now() - startedAt,
-      ...runId === undefined ? {} : { runId },
-      ...lastAssistantMessageId(agent.session, before) === undefined ? {} : { messageId: lastAssistantMessageId(agent.session, before)! },
-      ...reportedTo === undefined ? {} : { reportedTo },
-    })
-    floatRunningCards(room, replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name)
-    await this.ctx.sessions.flush(room)
     return { state: 'done', ...output === '' ? {} : { text: output } }
   }
 

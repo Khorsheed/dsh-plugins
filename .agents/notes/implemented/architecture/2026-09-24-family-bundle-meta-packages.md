@@ -71,8 +71,8 @@ with Compatibility, `dsh.compat`/`dsh.references`/`files`/`exports`):
   members' canonical rows already name.
   2026-10-24: `@khorsheed/dsh-room` joins as the sixth member and the card
   becomes「多Agent协作」(Multi-Agent Collaboration). A room's members ARE
-  these local agents (room probes `localAgent` and is reduced to native dsh
-  sub-members without it), so a "multi-agent" install that brings delegation
+  these local agents (room probes `localAgent`; without it a room has
+  only its own dsh — native dsh sub-members were retired on 2026-10-29), so a "multi-agent" install that brings delegation
   but not rooms covered only half of the capability. The room row is mounted
   verbatim from room's own patch; room floors at 0.1.5-rc.1 like the rest, so
   minHost is unchanged. dev keeps room as its own member (the overlap

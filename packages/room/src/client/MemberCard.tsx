@@ -72,7 +72,7 @@ export function MemberCard({
           </span>
           {coordinator && <span className={css.hint}>{t('coordinator.label')}</span>}
           <span className={css.hint}>
-            {member.kind === 'main-agent' ? t('member.kind.main') : member.kind === 'native' ? t('member.kind.native', { preset: member.preset ?? t('member.kind.defaultPreset') }) : member.provider ?? ''}
+            {member.kind === 'main-agent' ? t('member.kind.main') : member.provider ?? ''}
             {modelHint !== undefined && modelHint !== '' && <>{' · '}{modelHint}</>}
           </span>
         </span>

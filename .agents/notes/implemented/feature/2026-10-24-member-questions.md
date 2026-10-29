@@ -29,5 +29,5 @@ The room serves the question itself, the same way it serves member tool approval
 ## Consequences
 
 - Kimi Code and dsh members get the tool, but their MCP clients keep their own default call timeout (about a minute for Kimi). A question that stays unanswered longer fails on their side, and the card then expires with the call.
-- Native DSH members and the main agent are unchanged. The main agent already has the host's own `ask_user_question`.
+- The main agent is unchanged (native DSH members were retired on 2026-10-29). The main agent already has the host's own `ask_user_question`.
 - Tests: `questions.host.spec.ts` covers the command, answer filtering, expiry and validation. `questions.client.spec.tsx` covers the definition fold and the card's picking, typing and submission.

@@ -151,6 +151,10 @@ export function replay(events: readonly SessionEvent[]): RoomState {
       }
       case 'room/member-added': {
         if (byName.has(event.data.name)) break
+        // A native DSH sub-member (retired 2026-10-29): its rows stay in the
+        // transcript, but it is no longer on the roster — nothing dispatches
+        // to it; a dsh command-line member is its successor.
+        if (event.data.kind === 'native') break
         const added: RoomMember = {
           id: event.data.id ?? `legacy:${event.seq}`,
           name: event.data.name,
