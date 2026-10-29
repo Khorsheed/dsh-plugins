@@ -1254,6 +1254,8 @@ export class LocalAgentRegistry {
     onProgress: ((event: LocalAgentRunProgress) => void) | undefined
     startedAt: number
     heartbeat?: ReturnType<typeof setInterval>
+    /** Its settle report already arrived (a provider may report before the result resolves): nothing is owed. */
+    settled?: boolean
   }>()
   /**
    * Progress routes held open past their run's result-settle, by child session
@@ -2849,7 +2851,9 @@ export class LocalAgentRegistry {
       // resolves (the CLI's stream is only complete once the process is
       // reaped), so the route stays open for it — bounded, and closed by the
       // report itself. See RUN_PROGRESS_SETTLE_GRACE_MS.
-      if (onProgress === undefined) return
+      // A round whose settle report already arrived owes nothing: parking it
+      // would hand the NEXT round's report to this finished call.
+      if (onProgress === undefined || entry.settled === true) return
       const timer = setTimeout(() => { this.dropSettledRun(childSessionId) }, RUN_PROGRESS_SETTLE_GRACE_MS)
       timer.unref()
       this.settledRuns.set(childSessionId, { onProgress, timer })
@@ -2889,6 +2893,7 @@ export class LocalAgentRegistry {
     }
     const tracked = this.runs.get(childSessionId)
     if (tracked !== undefined) {
+      if (progress.kind === 'settled') tracked.settled = true
       tracked.onProgress?.(progress)
       return
     }

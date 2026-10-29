@@ -1654,15 +1654,19 @@ export class KimiAcpLiveDriver {
       // a round that never opened owns no span to observe. Degrades
       // silently on a core predating recordRoundSettled.
       if (turnOpened) {
-        // The round's spend for the room's usage chip: every folded step of
-        // this turn carries its own usage (the uncarried rest rides the last
-        // one), so the turn's sum is the round total.
+        // The round's spend for the room's usage chip: the usage every folded
+        // step of this turn carries, plus the uncarried rest. The rest rides
+        // the last message only when settle finalized that message itself;
+        // when the file fold already wrote it, the final call's usage record
+        // lands in a later pass with no message left to carry it (and there
+        // is no backfill event) — without it a one-call round reported none.
         let usage: Parameters<typeof addTokenUsage>[0]
         for (const event of childSession.snapshotEvents()) {
           if (event.type !== 'assistant/message') continue
           const data = event.data as { turn?: number; usage?: Parameters<typeof addTokenUsage>[1] }
           if (data.turn === turn && data.usage !== undefined) usage = addTokenUsage(usage, data.usage)
         }
+        if (roundUsage !== undefined) usage = addTokenUsage(usage, roundUsage)
         const round = {
           ...roundModel === undefined ? {} : { observedModel: roundModel },
           ...usage === undefined ? {} : { usage },
