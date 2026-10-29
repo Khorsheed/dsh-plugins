@@ -133,6 +133,10 @@ export function askOffsets(events: readonly SessionEvent[], runId: string, text:
 export const MOVED_ON_TEXT = '你发了新消息；被重启打断的这一轮按没做完处理'
 /** A message that queued behind a lost round and rode along with the move-on message. */
 export const MERGED_BACKLOG_TEXT = '已并入下一条消息一起送达'
+/** A message that answered the question its recipient was waiting on: delivered as that answer, not as a round of its own. */
+export const ANSWERED_QUESTION_TEXT = '作为对它提问的回答送达'
+/** How a message standing in for an answer reads on the card and to the member. */
+export const ANSWER_BY_MESSAGE_PREFIX = '没有选选项，直接回复了：'
 /** A message that queued behind a lost round an earlier move-on skipped: closed, not replayed. */
 export const SUPERSEDED_BACKLOG_TEXT = '被重启打断前排队，已被后续消息取代'
 

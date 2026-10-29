@@ -55,7 +55,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { BEFORE_TAIL, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
+import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
 import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
@@ -531,6 +531,18 @@ export class RoomService extends TypertRemoteService {
         if (before === 0 && runs.size > 0) this.emitStatus(id, true)
         // The room's own agent still running keeps the row running.
         else if (before > 0 && runs.size === 0 && this.ctx.agents.get(session.id)?.status !== 'running') this.emitStatus(id, false)
+        return
+      }
+      case 'turn/end': {
+        // The room's own agent closed a turn while members still run: a
+        // member card started inside that turn (the coordinator invited or
+        // sent mid-turn) would fold away with the turn's process, its live
+        // output and question blocks out of reach. Re-anchor below it.
+        if ((this.activeRuns.get(id)?.size ?? 0) === 0) return
+        queueMicrotask(() => {
+          floatRunningCards(session)
+          void this.ctx.sessions.flush(session)
+        })
         return
       }
       case 'room/question':
@@ -1428,7 +1440,9 @@ export class RoomService extends TypertRemoteService {
       targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
     })
     await this.ctx.sessions.flush(loaded.session)
+    const answered = await this.answerByMessage(loaded.session, dispatch.seq, targets, withAttachmentPaths(prompt, admitted.records))
     for (const target of targets) {
+      if (answered.has(target)) continue
       this.engine.dispatch(loaded.session, target, carry(target, withAttachmentPaths(prompt, admitted.records)), { dispatchSeq: dispatch.seq })
     }
     return { ok: true, value: { parsed: { targets, text }, seq: dispatch.seq } }
@@ -2043,6 +2057,9 @@ export class RoomService extends TypertRemoteService {
     const run = replay(session.snapshotEvents()).runs.find(entry => entry.member === member.name && entry.state === 'running')
     const child = member.childSessionId === undefined ? undefined : this.ctx.sessions.get(member.childSessionId)
     const before = child === undefined ? '' : roundTextSoFar(child.snapshotEvents()).slice(-BEFORE_TAIL)
+    // The question renders inside the asker's card: bring the card to the
+    // bottom, where the human is (it may sit far up, or in a folded turn).
+    if (run !== undefined) session.append('room/run-moved', { member: run.member, startedAt: run.startedAt })
     session.append('room/question', {
       id, member: member.name, memberId: memberId(session.snapshotEvents(), member), questions,
       ...consent ? { consent: true as const } : {},
@@ -2081,6 +2098,39 @@ export class RoomService extends TypertRemoteService {
     await this.ctx.sessions.flush(loaded.session)
     waiter(answers)
     return { ok: true }
+  }
+
+  /**
+   * The human messaged a member whose round waits on its question: the
+   * message is the answer. Queued behind that round it would wait for the
+   * question's timeout — the human moved on without picking, so the member
+   * hears it now, through its waiting call, marked as a direct reply. The
+   * delivery settles as that answer (no round of its own). Consent gates
+   * are not questions the human chose to skip: they keep waiting.
+   * @param session - the live room session.
+   * @param seq - the message's dispatch seq.
+   * @param targets - the message's recipients.
+   * @param text - what the member would have been sent.
+   * @returns the recipients the message answered.
+   */
+  private async answerByMessage(session: Session, seq: number, targets: readonly string[], text: string): Promise<Set<string>> {
+    const answered = new Set<string>()
+    const state = replay(session.snapshotEvents())
+    for (const target of targets) {
+      const question = state.questions?.find(entry => entry.member === target && this.questionWaiters.has(entry.id)
+        && state.askLog?.find(ask => ask.id === entry.id)?.consent !== true)
+      const member = state.members.find(entry => entry.name === target)
+      if (question === undefined || member === undefined) continue
+      const waiter = this.questionWaiters.get(question.id)!
+      const answers = question.questions.map((item, index) => ({ id: item.id, selected: [], ...index === 0 ? { custom: `${ANSWER_BY_MESSAGE_PREFIX}${text}` } : {} }))
+      const targetId = memberId(session.snapshotEvents(), member)
+      session.append('room/question-resolved', { id: question.id, outcome: 'answered', answers })
+      session.append('room/delivery-state', { id: `${seq}:${targetId}`, dispatchSeq: seq, memberId: targetId, state: 'done', text: ANSWERED_QUESTION_TEXT })
+      await this.ctx.sessions.flush(session)
+      waiter(answers)
+      answered.add(target)
+    }
+    return answered
   }
 
   /**

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-29-room-card-out-of-folded-turn.md
+.agents/notes/implemented/bug-fix/2026-10-29-room-card-out-of-folded-turn.md: 99d8b2afde52873613b250bf7fcbdfe9474a156a
+.agents/notes/implemented/bug-fix/2026-10-29-room-card-out-of-folded-turn.zh.md: ad25308249c367a5d91656ac9ae77d5c7f5597db
