@@ -39,6 +39,7 @@ describe('tool execution detail', () => {
       { name: 'empty', arguments: '{}', execution: { status: 'ok', result: '' } },
     ] } }
     render(<OutputBlock request={r} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: '展开其余 1 个调用' }))
     expect(screen.getByText('结果未记录')).toBeTruthy()
     expect(screen.getByText('执行中')).toBeTruthy()
     expect(screen.getByText('已记录执行状态，未保留结果正文。')).toBeTruthy()
@@ -135,5 +136,27 @@ describe('output text folding', () => {
       if (height) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', height)
       else delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight
     }
+  })
+})
+
+describe('compact calls', () => {
+  it('an answered question lists its options as labels; descriptions open on demand', () => {
+    const r: CapturedRequest = { ...request, response: { toolCalls: [{
+      callId: 'q', name: 'ask_user_question', arguments: '',
+      ask: { outcome: 'answered', questions: [{ id: 'a', question: '选哪个？', options: [{ label: '甲', description: '甲的说明' }, { label: '乙' }] }], answers: [{ id: 'a', selected: ['甲'] }] },
+    }] } }
+    render(<OutputBlock request={r} t={t} />)
+    expect(screen.queryByText('甲的说明')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '查看选项说明' }))
+    expect(screen.getByText('甲的说明')).toBeTruthy()
+  })
+
+  it('shows the first 3 calls and folds the rest', () => {
+    const r: CapturedRequest = { ...request, response: { toolCalls: Array.from({ length: 5 }, (_, index) => ({ callId: `c${index}`, name: `tool_${index}`, arguments: '{}' })) } }
+    render(<OutputBlock request={r} t={t} />)
+    expect(screen.getByText('tool_2')).toBeTruthy()
+    expect(screen.queryByText('tool_3')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '展开其余 2 个调用' }))
+    expect(screen.getByText('tool_4')).toBeTruthy()
   })
 })
