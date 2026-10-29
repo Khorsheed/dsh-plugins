@@ -76,7 +76,9 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
-  min-width: min(420px, calc(100vw - 32px));
+  min-width: min(540px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  overflow-x: auto;
   padding: 6px 0;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1)));
   border-radius: 12px;
@@ -110,6 +112,11 @@
 
 .breakdown td.name {
   color: var(--dsw-alias-label-primary, #1f2329);
+}
+
+.breakdown .former {
+  margin-left: 4px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
 
 .breakdown .num {
