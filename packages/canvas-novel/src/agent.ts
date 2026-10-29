@@ -89,7 +89,7 @@ export const NOVEL_POINTER_ORDER = 9500
  * canvas title each one's pointer names.
  */
 export class NovelToolGrant {
-  private readonly agents = new Map<string, { agent: NovelAgent; generation: number; disposers: Array<() => void> }>()
+  private readonly agents = new Map<string, { agent: NovelAgent; generation: number; disposers: Array<() => void>; always?: true }>()
   private readonly titles = new Map<string, string>()
 
   /**
@@ -115,6 +115,19 @@ export class NovelToolGrant {
     await this.evaluate(sessionId)
   }
 
+  /**
+   * Track a room member's stand-in (local-agent's preset tool host): it holds
+   * the tools whether or not anything is bound yet. Its CLI lists them once
+   * when it starts, so a grant that waited for the binding would arrive after
+   * the list; unbound, the tools answer how to bind, and the binding may be
+   * the room's (desk.ts).
+   */
+  async trackStandIn(agent: NovelAgent): Promise<void> {
+    const sessionId = String(agent.session.id)
+    this.agents.set(sessionId, { agent, generation: 0, disposers: [], always: true })
+    await this.evaluate(sessionId)
+  }
+
   /** Forget an agent (its scope is going away, and its registrations with it). */
   forget(agent: NovelAgent): void {
     const sessionId = String(agent.session.id)
@@ -137,11 +150,12 @@ export class NovelToolGrant {
     }
     // A later evaluation (or a forget) superseded this one while it read.
     if (this.agents.get(sessionId) !== entry || entry.generation !== generation) return
-    if (work === undefined) {
+    if (work === undefined && entry.always !== true) {
       this.revoke(sessionId)
       return
     }
-    this.titles.set(sessionId, work.title)
+    if (work === undefined) this.titles.delete(sessionId)
+    else this.titles.set(sessionId, work.title)
     if (entry.disposers.length > 0) return
     // `get`, not the property: the agent's fiber, not this entry's, owns the inject.
     const tools = entry.agent.ctx.get('tools') as ToolsSlice | undefined
@@ -225,6 +239,10 @@ export function apply(ctx: Context): void {
   const listen = ctx.on.bind(ctx) as unknown as Listen
   listen('agent/created', async ({ agent }: { agent: NovelAgent }) => { await grant.track(agent) })
   listen('agent/disposed', ({ agent }: { agent: NovelAgent }) => { grant.forget(agent) })
+  // A room member's CLI reaches this mode through a model-less stand-in that
+  // agent/created never names (local-agent's preset tool host announces it).
+  listen('local-agent/stand-in-created', async ({ agent }: { agent: NovelAgent }) => { await grant.trackStandIn(agent) })
+  listen('local-agent/stand-in-disposed', ({ agent }: { agent: NovelAgent }) => { grant.forget(agent) })
   // A preset switch moves a live agent between planes and announces only this
   // (unscoped) event: adopt the agent if it now composes under this scope,
   // drop it if it left (its own scope must not keep this plane's tools).

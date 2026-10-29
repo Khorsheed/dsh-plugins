@@ -125,6 +125,31 @@ describe('the ./agent composition entry', () => {
     expect(skills[0]!.content).not.toContain('赵启明')
   })
 
+  it('a room member\'s stand-in holds the tools before anything is bound, and works on the room\'s novel', async () => {
+    const { store, canvas } = storeOver()
+    const ctx = new Context()
+    const gets = new Map<string, unknown>([['canvasNovel', store]])
+    const originalGet = ctx.get.bind(ctx)
+    ctx.get = ((key: string) => gets.has(key) ? gets.get(key) : originalGet(key)) as Context['get']
+    agentApply(ctx)
+    const room = { id: 's-room', append: vi.fn() }
+    const standIn = Object.assign(fakeAgent('s-bill'), {
+      [Symbol.for('dsh.agent.desk')]: { session: room, role: 'coordinator', member: 'bill' },
+    })
+    await ctx.serial('local-agent/stand-in-created' as never, { agent: standIn } as never)
+    // The CLI lists its tools once at start: they are there unbound.
+    expect(standIn.live()).toEqual(['novel_read', 'novel_write', 'novel_extract'])
+    const read = novelToolDefinitions(store).find(def => def.name === 'novel_read')!
+    const unbound = String(await read.execute({ what: 'chapters' }, { agent: standIn } as never))
+    expect(unbound).toContain('novel_bind')
+    // The room binds the novel (its sidebar shows it): the coordinator reads that one.
+    canvas.bind('s-room', DREAM.workId)
+    const bound = String(await read.execute({ what: 'chapters' }, { agent: standIn } as never))
+    expect(bound).not.toBe(unbound)
+    ctx.emit('local-agent/stand-in-disposed' as never, { agent: standIn } as never)
+    expect(standIn.live()).toEqual([])
+  })
+
   it('registers nothing (and warns) when canvasNovel is absent — degrade, never explode', () => {
     const ctx = new Context()
     const prompts = fakePromptSections()

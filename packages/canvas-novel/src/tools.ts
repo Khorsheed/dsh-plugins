@@ -22,6 +22,7 @@ import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { isPlanText, outlineFromText, planFromText } from './text-forms.ts'
+import { actingSession, announceDeskBind, deskOf } from './desk.ts'
 import { planOvershoots, renderOutlineRead, renderPlanBrief, renderWriteBrief, targetWordsOf } from './brief.ts'
 import { PHASE_NAMES, ROLE_NAMES, foreshadowFacts, relationFacts } from './genre-agent.ts'
 import type { NovelService } from './store.ts'
@@ -81,7 +82,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
   const target = async (exec: { agent?: Agent }): Promise<{ workId: string; session: Session } | { message: string }> => {
     const session = exec.agent?.session
     if (session === undefined) return { message: NO_WORK_MESSAGE }
-    const work = await store.boundWork(String(session.id))
+    // In a room: the coordinator works on the room's novel; a member on its
+    // own, else the room's (desk.ts). The fence stays the caller's session.
+    const desk = deskOf(exec.agent)
+    const work = await store.boundWork(String(actingSession(session, desk).id))
+      ?? (desk?.role === 'member' ? await store.boundWork(String(desk.session.id)) : undefined)
     if (work === undefined) return { message: NO_WORK_MESSAGE }
     await store.ensureRefs(work.id, session)
     return { workId: work.id, session }
@@ -474,19 +479,28 @@ export function novelBindDefinition(store: NovelService, granted: (agent: Agent)
     },
     execute: async (args: { work?: string }, exec: { agent?: Agent }): Promise<string> => {
       const agent = exec.agent
-      const current = agent === undefined ? undefined : await store.boundWork(String(agent.session.id))
+      const desk = deskOf(agent)
+      // The coordinator binds the room (its sidebar shows the novel); anyone else its own session.
+      const binding = agent === undefined ? undefined : actingSession(agent.session, desk)
+      const current = binding === undefined ? undefined
+        : await store.boundWork(String(binding.id)) ?? (desk?.role === 'member' ? await store.boundWork(String(desk.session.id)) : undefined)
       if (args.work === undefined || args.work.trim() === '') {
         const works = await store.listWorks()
         return [listing(works), current === undefined ? '本会话未绑定。' : `本会话已绑定《${current.title}》。`].join('\n')
       }
       if (agent === undefined) return '失败：这次调用没有会话，无法绑定。'
-      const bound = await store.bindWork(args.work, agent.session)
+      const bound = await store.bindWork(args.work, binding ?? agent.session)
       if (!bound.ok) {
         if (bound.error === 'ambiguous') return `「${args.work}」对应多部作品，请问用户是哪一部：${bound.works.map(work => `《${work.title}》`).join('、')}`
         if (bound.error === 'missing') return `没有叫「${args.work}」的长篇小说作品。${listing(bound.works)}`
         return `失败：${bound.error}`
       }
       await granted(agent)
+      if (desk !== undefined) {
+        announceDeskBind(desk, bound.work)
+        const where = desk.role === 'coordinator' ? '房间侧栏已切到这部作品。' : '已放进房间侧栏的画布标签里。'
+        return `已绑定《${bound.work.title}》：用 novel_read / novel_write / novel_extract 写作，先加载 novel skill。${where}`
+      }
       return `已绑定《${bound.work.title}》：novel_read / novel_write / novel_extract 从下一步起可用，先加载 novel skill。用户可在会话头的画布 chip 里改绑或解绑。`
     },
   })

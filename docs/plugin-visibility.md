@@ -86,7 +86,7 @@ host 没有声明式可见性：右栏 tab 注册表只有静态字段——0.1.
    - 写的围栏（沙箱、工作区）始终是成员自己的会话；
    - 打开动作往房间会话追加**本插件自己的**事件（画布：`canvas/desk-opened`），由本插件客户端认领、渲染一行并按角色跟随——不走通用渲染器，因为「打开指定那一个」靠的是各插件自己的客户端状态。
 
-新插件凡是「工具按会话绑定一个东西、侧栏显示当前会话绑定的那个」，都按这三条接入；样板是 canvas（`packages/canvas/src/desk.ts`、`src/client/open/desk-row.ts`）。
+新插件凡是「工具按会话绑定一个东西、侧栏显示当前会话绑定的那个」，都按这三条接入；样板是 canvas（`packages/canvas/src/desk.ts`、`src/client/open/desk-row.ts`）。按 agent 逐个授予工具的组合入口（只在 `agent/created` 里注册）还要监听 `local-agent/stand-in-created` / `-disposed`——CLI 成员的替身不是 agent，不触发 `agent/created`；它启动时只列一次工具，所以替身要无条件拿到工具（样板：canvas-novel 的 `NovelToolGrant.trackStandIn`）。
 
 ## 各维度细则
 

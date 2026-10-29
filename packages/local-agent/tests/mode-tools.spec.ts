@@ -76,6 +76,23 @@ describe('PresetToolHost', () => {
     expect(h.execute).toHaveBeenCalledOnce()
   })
 
+  it('announces each stand-in it composes and disposes, so per-agent grants can reach it', async () => {
+    const h = host()
+    const created = vi.fn()
+    const disposed = vi.fn()
+    const on = h.ctx.on.bind(h.ctx) as unknown as (name: string, listener: (payload: { agent: unknown }) => void) => void
+    on('local-agent/stand-in-created', ({ agent }) => { created(agent) })
+    on('local-agent/stand-in-disposed', ({ agent }) => { disposed(agent) })
+    const tools = new PresetToolHost(h.ctx)
+    await tools.call('child-codex', 'dsh-writing', 'video_read', {}, new AbortController().signal)
+    const standIn = h.execute.mock.calls[0]![0].agent
+    expect(created).toHaveBeenCalledExactlyOnceWith(standIn)
+    await tools.call('child-codex', 'dsh-writing', 'video_read', {}, new AbortController().signal)
+    expect(created).toHaveBeenCalledOnce()
+    await tools.dispose()
+    expect(disposed).toHaveBeenCalledExactlyOnceWith(standIn)
+  })
+
   it('marks the room as the stand-in\'s desk with the member\'s current role; no desk, no mark', async () => {
     const room = { id: 'room-1', header: {}, snapshotEvents: () => [], append: () => {} }
     const h = host({ 'room-1': room })
