@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChipRow, PanelHeader, PanelRoot, UnderlineTabs, browserOnHost, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { formatClock } from '../core/timeline.ts'
+import { onPanelProject, takePanelProject } from './desk-row.ts'
 import type {
   EffectiveSetting, GlobalConfig, SettingValue, Job, MediaFile, ModelStatus, Overview, Project, ProjectView, SettingKey, Show, Speaker,
 } from '../types.ts'
@@ -115,10 +116,16 @@ function speakerClass(sp: Speaker | undefined): string {
 export function VideoPane(props: VideoPaneProps): ReactNode {
   const projectId = props.useStore((s) => s.projectId)
   const opened = useRef(false)
-  // first open: follow the session's bound project
+  // first open: a project the room's desk asked for (desk-row.ts), else the
+  // session's bound project
   useEffect(() => {
     if (opened.current) return
     opened.current = true
+    const asked = takePanelProject(props.sessionId)
+    if (asked !== undefined) {
+      props.actions.open(asked)
+      return
+    }
     value(props.bound()).then(
       (id) => {
         if (id) props.actions.open(id)
@@ -127,6 +134,8 @@ export function VideoPane(props: VideoPaneProps): ReactNode {
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount
   }, [])
+  // later asks (a coordinator's open seen arriving, a row's 打开 →) switch at once
+  useEffect(() => onPanelProject(props.sessionId, (id) => props.actions.open(id)), [props.sessionId, props.actions])
   return <PanelRoot className={css.root}>{projectId ? <ProjectScreen p={props} projectId={projectId} /> : <ListScreen p={props} />}</PanelRoot>
 }
 
