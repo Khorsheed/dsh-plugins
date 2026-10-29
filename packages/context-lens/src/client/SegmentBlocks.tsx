@@ -261,6 +261,11 @@ type AskViewProp = NonNullable<CapturedResponse['toolCalls'][number]['ask']>
 /** An `ask_user_question` call as the room words it: what was asked, and the human's answer. */
 function AskCard({ ask, t }: { ask: AskViewProp; t: T }) {
   const answered = ask.outcome === 'answered'
+  // Answered, the options are a row of labels (the chosen one marked); their
+  // descriptions open on demand — a three-option question ran a full screen.
+  const [details, setDetails] = useState(false)
+  const compact = answered && !details
+  const described = ask.questions?.some(question => question.options.some(option => option.description !== undefined)) === true
   const status = answered ? (ask.late === true ? 'late' : 'answered') : ask.outcome
   return <div className={css.call} data-status={answered ? 'ok' : ask.outcome === 'pending' ? 'running' : 'failed'}>
     <div className={css.callHead}><span>{t('lens.calls')}</span><b>{t('ask.title')}</b>
@@ -273,10 +278,10 @@ function AskCard({ ask, t }: { ask: AskViewProp; t: T }) {
         const chosen = new Set(answer?.selected ?? [])
         return <div key={question.id} className={css.askQuestion}>
           <div className={css.askLine}>{question.header !== undefined && <span className={css.askTag}>{question.header}</span>}<span>{question.question}</span></div>
-          {question.options.length > 0 && <ul className={css.askOptions}>{question.options.map(option =>
+          {question.options.length > 0 && <ul className={css.askOptions} data-compact={compact}>{question.options.map(option =>
             <li key={option.label} data-selected={chosen.has(option.label)}>
               <span>{chosen.has(option.label) ? '✓ ' : ''}{option.label}</span>
-              {option.description !== undefined && <small>{option.description}</small>}
+              {!compact && option.description !== undefined && <small>{option.description}</small>}
             </li>)}</ul>}
           {answer !== undefined && (answer.selected.length > 0 || answer.custom !== undefined) && <div className={css.askAnswer}>
             <b>{t('ask.answer')}</b>
@@ -285,6 +290,7 @@ function AskCard({ ask, t }: { ask: AskViewProp; t: T }) {
           </div>}
         </div>
       })}
+      {answered && described && <button type="button" className={css.more} aria-expanded={details} onClick={() => setDetails(v => !v)}>{details ? t('lens.collapse') : t('ask.details')}</button>}
       {ask.callOutcome !== undefined && <div className={css.askCallNote}>{t('ask.callOutcome', { outcome: t(`ask.outcome.${ask.callOutcome}`) })}</div>}
       {ask.outcome === 'failed' && ask.detail !== undefined && <div className={css.errorNote}>{ask.detail}</div>}
     </div>
@@ -300,7 +306,7 @@ function ToolCallCard({ call, t }: { call: CapturedResponse['toolCalls'][number]
   const result = execution?.result
   const status = execution?.status ?? 'unknown'
   return <div className={css.call} data-status={status}>
-    <div className={css.callHead}><span>{t('lens.calls')}</span><b>{call.name}</b>
+    <div className={css.callHead}><span>{t('lens.calls')}</span><b title={call.name}>{call.name}</b>
       <span className={css.callStatus} data-status={status}>{t(`tool.status.${status}`)}</span>
       <span className={css.number}>{fmt(call.arguments.length)}</span>
     </div>
@@ -315,15 +321,21 @@ function ToolCallCard({ call, t }: { call: CapturedResponse['toolCalls'][number]
   </div>
 }
 
+/** Calls shown before the rest folds (one turn can write a dozen cards). */
+const CALL_FOLD_AT = 3
+
 /** The output body is visible, including reasoning and arguments, without opening a wrapper. */
 export function OutputBlock({ request, t }: { readonly request: CapturedRequest; readonly t: T }) {
   const response = request.response
+  const [callsOpen, setCallsOpen] = useState(false)
+  useEffect(() => { setCallsOpen(false) }, [request.seq])
   return <div className={css.output}>
     {request.status === 'failed' && request.error && <div className={css.errorNote}>{request.error}</div>}
     {response === undefined ? <div className={css.emptyNote}>{t(request.status === 'streaming' ? 'out.streaming' : 'lens.noResponse')}</div> : <>
       {response.reasoning && <Reasoning text={response.reasoning} ms={request.timing.reasoningMs} t={t} />}
       {response.text && <Clamped text={response.text} t={t} />}
-      {response.toolCalls.map((call, i) => <ToolCallCard key={call.callId ?? i} call={call} t={t} />)}
+      {(callsOpen ? response.toolCalls : response.toolCalls.slice(0, CALL_FOLD_AT)).map((call, i) => <ToolCallCard key={call.callId ?? i} call={call} t={t} />)}
+      {response.toolCalls.length > CALL_FOLD_AT && <button className={css.more} type="button" aria-expanded={callsOpen} onClick={() => setCallsOpen(v => !v)}>{callsOpen ? t('lens.collapse') : t('lens.expandCalls', { count: String(response.toolCalls.length - CALL_FOLD_AT) })}</button>}
     </>}
   </div>
 }
