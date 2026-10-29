@@ -510,3 +510,27 @@ export type RoomInboxViewProps =
   PropsRuntime<'conversation.chat.node', 'room-inbox'>
   & InjectFace<RoomInboxInjected>
   & PropsLocale<'room'>
+
+/**
+ * The modes at work in a room (`ctx.roomModes`): the presets its members run,
+ * for the other plugins' sidebar visibility (proposal 2026-10-29-room-desk) —
+ * a room whose own mode is 开发 still shows the canvas when a member writes.
+ * Consumers probe it with `ctx.get('roomModes')` and keep their own criterion
+ * without it.
+ */
+export interface RoomModesService {
+  /**
+   * The members' presets of one room session, deduplicated.
+   * @returns undefined while the session is not known to be a room on this page.
+   */
+  presetsOf: (sessionId: string) => readonly string[] | undefined
+  /** Called whenever a room's roster may have changed. */
+  subscribe: (listener: () => void) => () => void
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The modes at work in a room, provided by @khorsheed/dsh-room's browser half. */
+    roomModes: RoomModesService
+  }
+}

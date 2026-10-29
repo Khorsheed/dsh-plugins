@@ -56,6 +56,8 @@ import { createCanvasInbox, type CanvasInboxService } from './inbox.ts'
 import { categoryLabelOf } from './category-label.ts'
 import { ProposeTypeRow, type ProposeTypeRowFace } from './type/ProposeTypeRow.tsx'
 import { OpenCanvasRow, type OpenCanvasRowFace } from './open/OpenCanvasRow.tsx'
+import { DeskOpenRow, type DeskOpenRowFace } from './open/DeskOpenRow.tsx'
+import { DESK_ROW_KIND, deskRowDefinition } from './open/desk-row.ts'
 import { CanvasTab } from './tab/CanvasTab.tsx'
 import { CanvasTabTitle } from './tab/CanvasTabTitle.tsx'
 import { CANVAS_CHILD_SLOTS, type CanvasNavService } from './slots.ts'
@@ -486,6 +488,36 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => openFace,
   }, OpenCanvasRow)), 'canvas: open-canvas tool row')
+
+  // In a room, a member's canvas_open writes a canvas/desk-opened event into
+  // the ROOM (desk.ts): its row tells the room who opened what, and follows —
+  // the coordinator's into the sidebar, a member's onto the strip beside the
+  // canvas being read (open/desk-row.ts). ui-chat declares the node seat and
+  // composes ui-conversation, so `uiConversation` is read only once it can
+  // exist (the canvas-novel turn-tail precedent); without them the room just
+  // has no row, and the member's own session keeps its canvas_open row.
+  const deskFace: DeskOpenRowFace = {
+    openCanvas: openFace.openCanvas,
+    addCanvas: canvasId => { selection.addCanvas(canvasId) },
+  }
+  ctx.effect(() => toolSlots.inject('conversation.chat.node', () => {
+    const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
+      events?: { register?: (definition: unknown) => () => void }
+    } | undefined
+    const register = conversation?.events?.register
+    if (register === undefined) return () => undefined
+    const disposeDefinition = register.call(conversation?.events, deskRowDefinition)
+    const disposeEntry = toolSlots.register({
+      name: 'conversation.chat.node',
+      key: DESK_ROW_KIND,
+      locale: NS,
+      inject: () => deskFace,
+    }, DeskOpenRow)
+    return () => {
+      disposeEntry()
+      disposeDefinition()
+    }
+  }), 'canvas: room desk row')
 
   // The binding chip (创作体裁) in the session header: which canvas this
   // writing session works on. Offered only where a genre is installed and the

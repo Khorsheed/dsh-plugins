@@ -311,6 +311,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     () => selection.tabs.map(row => ({
       id: row.id,
       label: canvases?.find(canvas => canvas.id === row.canvasId)?.title ?? '—',
+      ...row.fresh === true ? { fresh: true } : {},
     })),
     [selection.tabs, canvases],
   )

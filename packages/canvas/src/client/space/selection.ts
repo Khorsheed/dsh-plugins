@@ -54,6 +54,12 @@ export interface CanvasTabRow {
   readonly id: string
   readonly canvasId: string
   readonly at: CanvasPlace
+  /**
+   * Put here by someone else and not looked at yet — a room member opened it
+   * beside the canvas the human reads. Cleared when the row shows; a reload
+   * forgets it (the room's conversation row still says who opened it).
+   */
+  readonly fresh?: true
 }
 
 /** The row a canvas occupies. */
@@ -146,6 +152,30 @@ export class CanvasSelectionStore {
   openCanvas(canvasId: string): void {
     const existing = this.source.getSnapshot().tabs.find(row => row.canvasId === canvasId)
     this.ensure(canvasId, existing?.at ?? AT_BOARD)
+  }
+
+  /**
+   * Put a canvas on the strip WITHOUT showing it, marked fresh: a room member
+   * opened it beside the canvas the human is reading (proposal
+   * 2026-10-29-room-desk, choice A). A row already on the strip is only
+   * marked — unless it is the one showing, which needs no mark.
+   */
+  addCanvas(canvasId: string): void {
+    const current = this.source.getSnapshot()
+    const id = boardTabId(canvasId)
+    if (current.active === id) return
+    const index = current.tabs.findIndex(candidate => candidate.id === id)
+    if (index >= 0) {
+      const existing = current.tabs[index]!
+      if (existing.fresh === true) return
+      const tabs = [...current.tabs]
+      tabs[index] = { ...existing, fresh: true }
+      this.commit(tabs, current.active)
+      return
+    }
+    const added: CanvasTabRow = { id, canvasId, at: AT_BOARD, fresh: true }
+    // An empty strip has nothing to stand beside: the new row is the one showing.
+    this.commit(withinCap([...current.tabs, added], current.active, id), current.active === '' ? id : current.active)
   }
 
   /** Go back from a card (or the draft) to its canvas's board. */
@@ -279,8 +309,10 @@ export class CanvasSelectionStore {
 
   /** Write a strip and derive its answers from it. */
   private commit(tabs: readonly CanvasTabRow[], active: string): void {
-    const row = tabs.find(candidate => candidate.id === active)
-    this.set({ tabs, active, canvasId: row?.canvasId ?? null, rev: this.source.getSnapshot().rev })
+    // The showing row has been seen: its fresh mark goes.
+    const seen = tabs.map(candidate => candidate.id === active && candidate.fresh === true ? { id: candidate.id, canvasId: candidate.canvasId, at: candidate.at } : candidate)
+    const row = seen.find(candidate => candidate.id === active)
+    this.set({ tabs: seen, active, canvasId: row?.canvasId ?? null, rev: this.source.getSnapshot().rev })
   }
 
   private set(next: CanvasBoardState): void {

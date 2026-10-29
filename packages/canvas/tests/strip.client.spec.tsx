@@ -114,6 +114,29 @@ describe('CanvasSelectionStore — the rows', () => {
     expect(store.source.getSnapshot().tabs[0]?.at).toEqual({ kind: 'board' })
   })
 
+  it('a canvas a room member opened goes beside the showing one, marked fresh until it is looked at', () => {
+    const store = new CanvasSelectionStore()
+    // Nothing showing: the member's canvas is all there is, so it shows.
+    store.addCanvas('canvas_a')
+    expect(store.source.getSnapshot()).toMatchObject({ active: boardTabId('canvas_a'), canvasId: 'canvas_a' })
+    expect(store.source.getSnapshot().tabs[0]?.fresh).toBeUndefined()
+    store.addCanvas('canvas_b')
+    let state = store.source.getSnapshot()
+    expect(state.active).toBe(boardTabId('canvas_a'))
+    expect(state.tabs.map(row => [row.canvasId, row.fresh])).toEqual([['canvas_a', undefined], ['canvas_b', true]])
+    // Adding the showing canvas changes nothing.
+    store.addCanvas('canvas_a')
+    expect(store.source.getSnapshot()).toBe(state)
+    store.activate(boardTabId('canvas_b'))
+    state = store.source.getSnapshot()
+    expect(state.tabs.find(row => row.canvasId === 'canvas_b')?.fresh).toBeUndefined()
+    // A row already on the strip but not showing is only marked.
+    store.addCanvas('canvas_a')
+    expect(store.source.getSnapshot().tabs.map(row => [row.canvasId, row.fresh])).toEqual([['canvas_a', true], ['canvas_b', undefined]])
+    store.openCanvas('canvas_a')
+    expect(store.source.getSnapshot().tabs[0]?.fresh).toBeUndefined()
+  })
+
   it('returns to the card a canvas was left on', () => {
     const store = new CanvasSelectionStore()
     store.openCardTab(CANVAS_ID, 'c_1', '一')

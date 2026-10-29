@@ -32,6 +32,7 @@ import {
   type FieldValue, type RefResolver, type TypeDefinition,
 } from './card-types.ts'
 import { imageRefOf } from './image-token.ts'
+import { actingSession, announceDeskOpen, deskOf } from './desk.ts'
 import {
   isBoardCardKind,
   type BoardCard, type BoardCardSource, type BoardCategory, type CanvasBoard, type CanvasGenreAgent, type CanvasGenreDefinition, type CanvasImageRef,
@@ -320,7 +321,11 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
   const target = async (exec: { agent?: Agent }): Promise<{ canvasId: string; session: Session } | { message: string }> => {
     const session = exec.agent?.session
     if (session === undefined) return { message: NO_CANVAS_MESSAGE }
-    const canvasId = await board.targetCanvasId(session)
+    // In a room: the coordinator works on the canvas the room shows; a member
+    // on its own choice, else on the room's (desk.ts). The fence stays its own.
+    const desk = deskOf(exec.agent)
+    const canvasId = await board.targetCanvasId(actingSession(session, desk))
+      ?? (desk?.role === 'member' ? await board.targetCanvasId(desk.session) : undefined)
     if (canvasId === undefined) return { message: NO_CANVAS_MESSAGE }
     return { canvasId, session }
   }
@@ -812,10 +817,19 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
     execute: async (args: { canvas?: string; create?: string; genre?: string }, exec: { agent?: Agent }): Promise<string> => {
-      const session = exec.agent?.session
+      const own = exec.agent?.session
+      const desk = deskOf(exec.agent)
+      // The session the switch lands on: the room's for a coordinator (its
+      // sidebar follows), the caller's own otherwise (desk.ts).
+      const session = own === undefined ? undefined : actingSession(own, desk)
       const wanted = plainTitle(args.create ?? args.canvas ?? '')
       if (wanted === '') return renderCanvasList(session)
       if (session === undefined) return canvasFailure('失败：这次调用没有会话，切不了画布。')
+      const toRoom = (canvasId: string, title: string, created: boolean): string => {
+        if (desk === undefined) return ''
+        announceDeskOpen(desk, { canvasId, title, created })
+        return desk.role === 'coordinator' ? '房间侧栏已切到这块。' : '已放进房间侧栏的画布标签里，用户点开就能看到。'
+      }
       const { items } = await board.listCanvases()
       const live = items.filter(item => item.archivedAt === null)
 
@@ -826,7 +840,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         if (namesake !== undefined) {
           const switched = await switchTo(namesake.id, session)
           if (!switched.ok) return renderOutcome({ ok: false, error: switched.error })
-          return `完成：已切到画布《${namesake.title}》（${namesake.id}）——已有同名画布，没有新建；确要另建一块就换个标题。${switched.note}`
+          return `完成：已切到画布《${namesake.title}》（${namesake.id}）——已有同名画布，没有新建；确要另建一块就换个标题。${switched.note}${toRoom(namesake.id, namesake.title, false)}`
         }
         let genreId: string | null = null
         if (args.genre !== undefined && args.genre.trim() !== '') {
@@ -841,13 +855,13 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         // The session's own workspace comes along: a novel's chapters and a
         // manuscript's export need one, and a canvas made here had none (the
         // first chapter then had nowhere to land, 2026-10-09).
-        const cwd = session.header?.cwd
-        const created = await board.createCanvas({ title: wanted, genreId, ...(cwd === undefined ? {} : { attachedWorkspaces: [cwd] }) }, session)
+        const cwd = (own ?? session).header?.cwd
+        const created = await board.createCanvas({ title: wanted, genreId, ...(cwd === undefined ? {} : { attachedWorkspaces: [cwd] }) }, own ?? session)
         if (!created.ok) return renderOutcome({ ok: false, error: created.error })
         const switched = await switchTo(created.board.id, session)
         if (!switched.ok) return renderOutcome({ ok: false, error: switched.error })
         const where = cwd === undefined ? '' : `挂上了工作区 ${cwd}。`
-        return `完成：已新建画布《${created.board.title}》（${created.board.id}）并切过去。${switched.note}${where}接下来用 canvas_write 落卡。`
+        return `完成：已新建画布《${created.board.title}》（${created.board.id}）并切过去。${switched.note}${where}${toRoom(created.board.id, created.board.title, true)}接下来用 canvas_write 落卡。`
       }
 
       const byId = items.find(item => item.id === wanted)
@@ -863,7 +877,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       if (target.archivedAt !== null) return canvasFailure(`失败：《${target.title}》已归档（只读）。请用户先在画布里恢复它，或另建一块。`)
       const switched = await switchTo(target.id, session)
       if (!switched.ok) return renderOutcome({ ok: false, error: switched.error })
-      return `完成：已切到画布《${target.title}》（${target.id}）。${switched.note}`
+      return `完成：已切到画布《${target.title}》（${target.id}）。${switched.note}${toRoom(target.id, target.title, false)}`
     },
   })
 

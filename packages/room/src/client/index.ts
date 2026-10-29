@@ -58,7 +58,7 @@ import { sessionTitle, type RoomMenuMember, type SessionCandidate } from './at-m
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
   RoomRelayInjected, RoomDispatchInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
-  RoomAttachmentsFace, RoomDraftAttachment,
+  RoomAttachmentsFace, RoomDraftAttachment, RoomModesService,
 } from './slots.ts'
 import type { RoomAttachmentInput, RoomQuestionAnswer } from '../types.ts'
 import type { RoomFailure } from '../types.ts'
@@ -117,6 +117,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   const roomStore = new RoomStore(ctx, remote)
   ctx.effect(() => roomStore.start(), 'room: store')
+
+  // The modes at work in each room, for the other plugins' sidebar entries:
+  // the room's sidebar shows what any member's mode reaches (slots.ts).
+  const roomModes: RoomModesService = {
+    presetsOf: (sessionId) => {
+      const state = roomStore.getCached(sessionId as SessionId)
+      if (state === undefined) return undefined
+      return [...new Set(state.members.flatMap(member => member.preset === undefined ? [] : [member.preset]))]
+    },
+    subscribe: roomStore.subscribe,
+  }
+  ctx.provide('roomModes', roomModes)
 
   // The M3' self-hide criterion for room's session chrome (the invite chip
   // and the members tab): the official preset-composition data, with the
