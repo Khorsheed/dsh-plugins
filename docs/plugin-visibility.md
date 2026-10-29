@@ -85,7 +85,7 @@ host 没有声明式可见性：右栏 tab 注册表只有静态字段——0.1.
    - 读目标：协调者用房间的；成员先用自己选过的，没有再用房间的；
    - 写的围栏（沙箱、工作区）始终是成员自己的会话；
    - 打开动作往房间会话追加 room 的 `room/desk-opened` 事件，写入动作（新增/修改/批注/归档）追加 `room/desk-wrote`，`owner` 填本插件包名、自己的字段放 `data`、带上桌面标记里的 `runId`。**不要自造事件类型**：宿主拒绝读带有未登记类型的日志（`canvas/desk-opened` 第一版就因此让房间历史加载失败），而 `room/desk-opened` 由 room 登记，桌面只存在于房间里。
-   - 渲染由本插件客户端负责（「打开指定那一个」靠的是各插件自己的客户端状态）：往 room 的 `room.member.attachment`（回复卡）和 `room.run.attachment`（运行中的卡，`live: true`）两个挂载位按 `owner` 各登记一次，一次收到这一轮本插件的全部事件（`attachments`），多次写入合成一行，它出现在成员那一轮的卡片末尾，只有运行中的卡片跟随（一个子挂载位只能由一个条目声明，所以两张卡各有一个）；再为没带 `runId` 的事件（或没有该挂载位的房间）认领一个独立的会话行。样板：canvas 的 `client/open/desk-row.ts`、`DeskAttachment.tsx`。
+   - 渲染由本插件客户端负责（「打开指定那一个」靠的是各插件自己的客户端状态）：往 room 的 `room.member.attachment`（回复卡）和 `room.run.attachment`（运行中的卡，`live: true`）两个挂载位按 `owner` 各登记一次，一次收到这一轮本插件的全部事件（`attachments`），多次写入合成一行，它出现在成员那一轮的卡片末尾，只有运行中的卡片跟随（一个子挂载位只能由一个条目声明，所以两张卡各有一个）；再为没带 `runId` 的事件（或没有该挂载位的房间）认领一个独立的会话行。样板：canvas 的 `client/open/desk-row.ts`、`DeskAttachment.tsx`；video-studio、game、library 各有一份内联版（`src/desk.ts`、`src/client/desk-row.ts` 或 `src/client/desk/`）。
 
 新插件凡是「工具按会话绑定一个东西、侧栏显示当前会话绑定的那个」，都按这三条接入；样板是 canvas（`packages/canvas/src/desk.ts`、`src/client/open/desk-row.ts`）。按 agent 逐个授予工具的组合入口（只在 `agent/created` 里注册）还要监听 `local-agent/stand-in-created` / `-disposed`——CLI 成员的替身不是 agent，不触发 `agent/created`；它启动时只列一次工具，所以替身要无条件拿到工具（样板：canvas-novel 的 `NovelToolGrant.trackStandIn`）。
 
