@@ -114,11 +114,6 @@
   color: var(--dsw-alias-label-primary, #1f2329);
 }
 
-.breakdown .former {
-  margin-left: 4px;
-  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
-}
-
 .breakdown .num {
   text-align: right;
 }

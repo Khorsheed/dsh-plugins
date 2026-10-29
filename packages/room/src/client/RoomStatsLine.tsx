@@ -91,8 +91,6 @@ export function cacheHitPercent(usage: TokenUsageProjection): number | null {
 export interface MemberUsage {
   /** The member's current name (a rename keeps one row). */
   readonly member: string
-  /** Names its earlier rounds ran under, before a rename. */
-  readonly formerNames?: readonly string[]
   readonly model?: string
   readonly rounds: number
   readonly tokens: number
@@ -119,13 +117,12 @@ export function memberUsage(state: RoomState | undefined): readonly MemberUsage[
   if (state === undefined) return []
   const byId = new Map(state.members.flatMap(member => member.id === undefined ? [] : [[member.id, member] as const]))
   const main = new Set(state.members.filter(member => member.kind === 'main-agent').map(member => member.name))
-  const rows = new Map<string, { member: string; names: string[]; model?: string; rounds: number; tokens: number; input?: number; cacheRead?: number; output?: number; elapsedMs: number }>()
+  const rows = new Map<string, { member: string; model?: string; rounds: number; tokens: number; input?: number; cacheRead?: number; output?: number; elapsedMs: number }>()
   for (const run of state.executions ?? []) {
     const current = run.memberId === undefined ? undefined : byId.get(run.memberId)
     if (current?.kind === 'main-agent' || (current === undefined && main.has(run.member))) continue
     const key = run.memberId ?? run.member
-    const row = rows.get(key) ?? { member: current?.name ?? run.member, names: [], rounds: 0, tokens: 0, elapsedMs: 0 }
-    if (!row.names.includes(run.member)) row.names.push(run.member)
+    const row = rows.get(key) ?? { member: current?.name ?? run.member, rounds: 0, tokens: 0, elapsedMs: 0 }
     row.rounds += 1
     row.tokens += run.tokens ?? 0
     row.elapsedMs += run.elapsedMs ?? 0
@@ -140,10 +137,6 @@ export function memberUsage(state: RoomState | undefined): readonly MemberUsage[
   }
   const order = state.members.map(member => member.name)
   return [...rows.values()]
-    .map(({ names, ...row }) => {
-      const formerNames = names.filter(name => name !== row.member)
-      return { ...row, ...formerNames.length === 0 ? {} : { formerNames } }
-    })
     .sort((a, b) => order.indexOf(a.member) - order.indexOf(b.member))
 }
 
@@ -249,10 +242,7 @@ export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state,
             <tbody>
               {members.map(row => (
                 <tr key={row.member}>
-                  <td className={css.name}>
-                    {row.member}
-                    {row.formerNames !== undefined && <span className={css.former}>{t('stats.formerNames', { names: row.formerNames.join('、') })}</span>}
-                  </td>
+                  <td className={css.name}>{row.member}</td>
                   <td>{row.model ?? '—'}</td>
                   <td className={css.num}>{row.rounds}</td>
                   <td className={css.num}>{row.tokens > 0 ? formatTokens(row.tokens) : '—'}</td>

@@ -8,7 +8,7 @@ Room 75844e33: the human renamed the Codex member 顾言 to Susan. The members c
 
 ## Decision
 
-- Rows key on `memberId` (falling back to the name for records without one) and show the member's current roster name. Earlier names follow dimly, as 「（原 顾言）」. The main agent is recognized by its roster kind through the id.
+- Rows key on `memberId` (falling back to the name for records without one) and show only the member's current roster name (earlier names are not listed: a member renamed several times needs no special case). The main agent is recognized by its roster kind through the id.
 - The 用量 column becomes 总量 and is followed by 输入 (all input, cache reads and writes included), 缓存命中 (the cache-read share of that input, as a percent) and 输出, each summed over the rounds that recorded a split. Records with no split exist only because of past bugs: their split cells read 「—」 while 总量 still shows the total, with no special handling.
 - The breakdown widens to 540px and scrolls sideways on a phone instead of overflowing.
 
@@ -22,4 +22,4 @@ A renamed member reads as one member with its whole history. The table shows whe
 
 ## Testing
 
-`room`: the usage spec renames a member between its two rounds and expects one row (current name, former name, rounds 2, split sums). The breakdown renders 「剪刀手（原 剪子）」, 10.5K and 86%. A member whose records hold only a total still shows it in the total column.
+`room`: the usage spec renames a member between its two rounds and expects one row (current name only, rounds 2, split sums). The breakdown renders 剪刀手 without the old name, 10.5K and 86%. A member whose records hold only a total still shows it in the total column.

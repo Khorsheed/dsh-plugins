@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-29-room-member-usage-by-id-and-split.md
-.agents/notes/implemented/feature/2026-10-29-room-member-usage-by-id-and-split.md: c4d32b3cd93bd5cbc300264e529d0b00d103015f
-.agents/notes/implemented/feature/2026-10-29-room-member-usage-by-id-and-split.zh.md: 902a00529df0eac13dbc140b71944e4edaeb58fd
+.agents/notes/implemented/feature/2026-10-29-room-member-usage-by-id-and-split.md: 1c00491cd77b097d74d9427122628368763f3332
+.agents/notes/implemented/feature/2026-10-29-room-member-usage-by-id-and-split.zh.md: b7870bc043719264596f75e9462cf2e04e7915b8
