@@ -5,7 +5,7 @@
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import type { ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-conversation's SlotMap merges ('conversation.composer',
 // 'conversation.view', 'conversation.session.header.actions').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
-import type { RoomProviderList, RoomQuestionAnswer, RoomRemoval, RoomSettings } from '../types.ts'
+import type { RoomProviderList, RoomQuestionAnswer, RoomRemoval, RoomRunAttachment, RoomSettings } from '../types.ts'
 import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import type { RoomChromeVisibility } from './preset-visibility.ts'
 import type { RoomStore } from './room-store.ts'
@@ -382,6 +382,7 @@ export type RoomSpeechViewProps =
   PropsRuntime<'conversation.chat.node', 'room-speech'>
   & InjectFace<RoomSpeechInjected>
   & PropsLocale<'room'>
+  & PropsRenderSlots<'room.member.attachment'>
 
 /** Injected face of the member-run chat node. */
 export interface RoomRunInjected {
@@ -403,6 +404,7 @@ export type RoomRunViewProps =
   PropsRuntime<'conversation.chat.node', 'room-run'>
   & InjectFace<RoomRunInjected>
   & PropsLocale<'room'>
+  & PropsRenderSlots<'room.run.attachment'>
 
 /** Full props of the 'room-event' chat-node renderer. */
 export type RoomEventViewProps =
@@ -530,5 +532,43 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The modes at work in a room, provided by @khorsheed/dsh-room's browser half. */
     roomModes: RoomModesService
+  }
+}
+
+/**
+ * What one desk attachment's renderer receives: the room, and one event
+ * another plugin wrote into it during a member's run (proposal
+ * 2026-10-29-room-desk). `live` is true in the running card — a renderer that
+ * follows what it shows (the canvas opening in the sidebar) does so there.
+ */
+export interface RoomMemberAttachmentOwnerProps {
+  readonly sessionId: SessionId
+  readonly attachment: RoomRunAttachment
+  readonly live: boolean
+}
+
+/**
+ * The seats a member's cards offer other plugins, one per card: a child slot
+ * is declared by exactly one registration, so the reply and the running card
+ * each declare their own.
+ */
+export const ROOM_SPEECH_CARD_SLOTS = {
+  'room.member.attachment': { kind: 'keyed', scope: 'session' },
+} as const
+export const ROOM_RUN_CARD_SLOTS = {
+  'room.run.attachment': { kind: 'keyed', scope: 'session' },
+} as const
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    /**
+     * The end of a member's card — its running card and its reply — keyed by
+     * the owner of what the run put on the room's desk (a `room/desk-opened`
+     * event's `owner`, e.g. `@khorsheed/dsh-canvas`): the owning plugin
+     * renders its own row there. An owner nobody registered renders nothing.
+     */
+    'room.member.attachment': { kind: 'keyed'; scope: 'session'; owner: RoomMemberAttachmentOwnerProps }
+    /** The same seat at the end of a member's RUNNING card (`live: true`): a plugin registers its row in both. */
+    'room.run.attachment': { kind: 'keyed'; scope: 'session'; owner: RoomMemberAttachmentOwnerProps }
   }
 }

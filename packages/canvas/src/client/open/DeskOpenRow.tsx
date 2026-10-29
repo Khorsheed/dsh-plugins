@@ -25,20 +25,26 @@ export interface DeskOpenRowProps extends DeskOpenRowFace {
   readonly node: { readonly data: DeskRowData }
   readonly sessionId?: string
   readonly t: TranslateNS<'canvas'>
+  /** False in a settled reply: only the running card (or the row's own node) follows. */
+  readonly follow?: boolean
+  /** Inside the member's own card: the card already says who, so the row names only the canvas. */
+  readonly own?: boolean
 }
 
 /**
- * Render one `canvas/desk-opened` event.
+ * Render one canvas desk event.
  * @param props - the node, the face, the copy.
  */
-export function DeskOpenRow({ node, sessionId, t, openCanvas, addCanvas }: DeskOpenRowProps): ReactNode {
+export function DeskOpenRow({ node, sessionId, t, openCanvas, addCanvas, follow = true, own = false }: DeskOpenRowProps): ReactNode {
   const row = node.data
   useEffect(() => {
-    if (!shouldFollow(sessionId ?? '', row)) return
+    if (!follow || !shouldFollow(sessionId ?? '', row)) return
     if (row.role === 'coordinator') openCanvas(row.canvasId)
     else addCanvas(row.canvasId)
-  }, [row, sessionId, openCanvas, addCanvas])
-  const said = t(row.created ? 'deskrow.created' : 'deskrow.switched', { member: row.member, title: row.title })
+  }, [row, sessionId, follow, openCanvas, addCanvas])
+  const said = own
+    ? t(row.created ? 'openrow.created' : 'openrow.switched', { title: row.title })
+    : t(row.created ? 'deskrow.created' : 'deskrow.switched', { member: row.member, title: row.title })
   return (
     <div className={css.row} data-desk-role={row.role}>
       <span className={css.kind}>{t('openrow.kind')}</span>

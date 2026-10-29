@@ -1,6 +1,6 @@
 /**
  * The room's record of a canvas a member opened there: the conversation
- * Definition claiming `canvas/desk-opened` (written into the ROOM session by
+ * Definition claiming room's `room/desk-opened` with this owner (written into the ROOM session by
  * the canvas tools when a room member switches or creates — `../../desk.ts`)
  * into one chat node, and the follow rule its row applies.
  *
@@ -28,6 +28,8 @@ export interface DeskRowData {
   readonly created: boolean
   readonly member: string
   readonly role: 'coordinator' | 'member'
+  /** The member run it happened in: a room that seats it shows the row at the end of that run's card. */
+  readonly runId?: string
 }
 
 interface EventLike {
@@ -44,31 +46,60 @@ interface ContextLike {
   readonly start?: { readonly location?: unknown }
 }
 
-/** The event's data as the row reads it, or null when the shape cannot be vouched for. */
+/** The desk events' owner this plugin renders (its own package, `../../desk.ts`). */
+export const DESK_OWNER = '@khorsheed/dsh-canvas'
+
+/**
+ * The event's data as the row reads it, or null when the shape cannot be
+ * vouched for. Two spellings: room's `room/desk-opened` with this owner (the
+ * canvas fields under `data`), and the first one, `canvas/desk-opened` with
+ * the fields flat (written for a few hours on 2026-10-29).
+ */
 export function deskRowOf(event: EventLike): DeskRowData | null {
-  const data = event.data as Partial<DeskRowData> | undefined
-  if (typeof data?.canvasId !== 'string' || typeof data.title !== 'string') return null
+  const outer = event.data as { owner?: unknown; data?: unknown; member?: unknown; role?: unknown; runId?: unknown } | undefined
+  let fields: Partial<{ canvasId: unknown; title: unknown; created: unknown }> | undefined
+  if (event.type === 'room/desk-opened') {
+    if (outer?.owner !== DESK_OWNER) return null
+    fields = outer.data as typeof fields
+  } else if (event.type === 'canvas/desk-opened') {
+    fields = outer as typeof fields
+  } else return null
+  if (typeof fields?.canvasId !== 'string' || typeof fields.title !== 'string') return null
   return {
     seq: event.seq,
     time: event.time,
-    canvasId: data.canvasId,
-    title: data.title,
-    created: data.created === true,
-    member: typeof data.member === 'string' ? data.member : '',
-    role: data.role === 'coordinator' ? 'coordinator' : 'member',
+    canvasId: fields.canvasId,
+    title: fields.title,
+    created: fields.created === true,
+    member: typeof outer?.member === 'string' ? outer.member : '',
+    role: outer?.role === 'coordinator' ? 'coordinator' : 'member',
+    ...typeof outer?.runId === 'string' ? { runId: outer.runId } : {},
   }
+}
+
+/**
+ * Whether the room seats desk rows in its members' cards (`room.member.attachment`
+ * is declared and this plugin's row is registered there). Then a row naming a
+ * run renders in that run's card, and its own conversation node hides; a row
+ * naming no run (or a room without the seat) keeps its own node.
+ */
+let seated = false
+
+/** Note that the room's card seat holds this plugin's row (or no longer does). */
+export function setDeskRowSeated(value: boolean): void {
+  seated = value
 }
 
 /** One chat node per `canvas/desk-opened` event. */
 export const deskRowDefinition = {
   kind: DESK_ROW_KIND,
   target: 'chat',
-  match: (event: EventLike) => event.type === 'canvas/desk-opened' && deskRowOf(event) !== null
+  match: (event: EventLike) => deskRowOf(event) !== null
     ? { id: `desk-${event.seq}`, role: 'start' as const }
     : null,
   start: (_context: unknown, match: { readonly event: EventLike }): DeskRowData => {
     const row = deskRowOf(match.event)
-    if (row === null) throw new Error('canvas-desk-open start requires a canvas/desk-opened event')
+    if (row === null) throw new Error('canvas-desk-open start requires a canvas desk event')
     return row
   },
   update: (context: { readonly state: DeskRowData }) => context.state,
@@ -79,7 +110,7 @@ export const deskRowDefinition = {
     target: 'chat',
     anchorSeq: context.state.seq,
     location: context.start?.location ?? { kind: 'unresolved' },
-    visibility: 'visible',
+    visibility: seated && context.state.runId !== undefined ? 'hidden' : 'visible',
     data: context.state,
   },
 }

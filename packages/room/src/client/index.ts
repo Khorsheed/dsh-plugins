@@ -60,6 +60,7 @@ import type {
   RoomRelayInjected, RoomDispatchInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
   RoomAttachmentsFace, RoomDraftAttachment, RoomModesService,
 } from './slots.ts'
+import { ROOM_RUN_CARD_SLOTS, ROOM_SPEECH_CARD_SLOTS } from './slots.ts'
 import type { RoomAttachmentInput, RoomQuestionAnswer } from '../types.ts'
 import type { RoomFailure } from '../types.ts'
 
@@ -728,6 +729,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       name: 'conversation.chat.node',
       key: 'room-speech',
       locale: NS,
+      children: ROOM_SPEECH_CARD_SLOTS,
       inject: (sessionId: SessionId): RoomSpeechInjected => ({
         roomStore,
         openSession,
@@ -751,6 +753,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       name: 'conversation.chat.node',
       key: 'room-run',
       locale: NS,
+      children: ROOM_RUN_CARD_SLOTS,
       inject: (sessionId: SessionId): RoomRunInjected => ({
         renderMemberOutput: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberOutput,
         roomStore,

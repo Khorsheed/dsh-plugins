@@ -107,7 +107,7 @@ export function replyParts(data: RoomSpeechData, askLog: readonly RoomAsk[] | un
   return parts
 }
 
-export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDetail, openPath, answerQuestion, t }: RoomSpeechViewProps): ReactNode {
+export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDetail, openPath, answerQuestion, renderSlot, t }: RoomSpeechViewProps): ReactNode {
   const data = node.data
   const [copied, setCopied] = useState(false)
   // The human's own choice for this speech (remembered), else the default.
@@ -205,6 +205,17 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
           </div>
         )}
       </div>
+      {/* What the round put on the room's desk (a canvas it opened): the
+          owning plugin's row, at the end of the reply. */}
+      {execution?.attachments !== undefined && execution.attachments.length > 0 && (
+        <div className={css.attachments}>
+          {execution.attachments.map(attachment => (
+            <div key={attachment.seq}>
+              {renderSlot('room.member.attachment', { sessionId, attachment, live: false }, { entryKey: attachment.owner, fallback: null })}
+            </div>
+          ))}
+        </div>
+      )}
       {data.reportedTo !== undefined && (
         <span className={css.reported}>{t('speech.reportedTo', { member: data.reportedTo })}</span>
       )}

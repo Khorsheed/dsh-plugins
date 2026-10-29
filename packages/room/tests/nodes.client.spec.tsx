@@ -290,6 +290,16 @@ describe('RoomSpeechView', () => {
     expect(screen.queryByText(/用量/)).toBeNull()
   })
 
+  it('ends the reply with what the run put on the room\'s desk, through the seat keyed by the event type', async () => {
+    const attachment = { owner: '@khorsheed/dsh-canvas', seq: 5, time: 1005, data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'ada', role: 'member', data: { canvasId: 'canvas_r', title: '潜梦者' } } }
+    const renderSlot = vi.fn((_key: string, owner: { attachment: { data: { data: { title: string } } }; live: boolean }) => <span>{`画布《${owner.attachment.data.data.title}》${owner.live ? '·live' : ''}`}</span>)
+    const roomStore = await primedStore({ ...STATE, executions: [{ id: 'r1', memberId: 'm-ada', member: 'ada', state: 'done', startedAt: 1, attachments: [attachment] }] })
+    render(<RoomSpeechView {...{ node: nodeOf('room-speech', { ...speech, runId: 'r1' }), sessionId: 'room-1', roomStore, openSession: vi.fn(), renderSlot, t } as unknown as RoomSpeechViewProps} />)
+    // Settled: the plugin's row without following.
+    expect(screen.getByText('画布《潜梦者》')).toBeDefined()
+    expect(renderSlot).toHaveBeenCalledWith('room.member.attachment', { sessionId: 'room-1', attachment, live: false }, { entryKey: '@khorsheed/dsh-canvas', fallback: null })
+  })
+
   it('opens Context Lens at the member\'s closing message; without one (or without the lens) there is no detail button', async () => {
     const openDetail = vi.fn()
     await bench({ ...speech, messageId: 'msg-9' }, STATE, openDetail)

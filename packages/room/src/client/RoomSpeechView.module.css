@@ -341,3 +341,12 @@
   outline: 2px solid var(--member-color, rgba(127, 127, 127, 0.4));
   outline-offset: 2px;
 }
+
+/* What the round put on the room's desk (another plugin's row, a canvas it
+   opened): stacked at the end of the card, under the reply. */
+.attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}

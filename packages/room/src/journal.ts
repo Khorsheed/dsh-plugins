@@ -15,7 +15,7 @@ import { replayJobs } from './jobs.ts'
 import { replayHelps, replayLinks } from './helps.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  RoomApproval, RoomAsk, RoomQuestion, RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
+  RoomApproval, RoomAsk, RoomQuestion, RoomExecution, RoomJsonValue, RoomMember, RoomMemberRun, RoomRelay, RoomRunAttachment, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
 } from './types.ts'
 
 /**
@@ -75,6 +75,13 @@ export const ROOM_EVENT_TYPES = [
   'room/help-link',
   'room/help-unlink',
   'room/help-nudge-dismissed',
+  // What a member's mode tool put on the room's desk (proposal
+  // 2026-10-29-room-desk): written by the owning plugin INTO the room, so the
+  // room's vocabulary is what vouches for it.
+  'room/desk-opened',
+  // The desk event's first spelling, written by canvas 0.6.0 builds for a few
+  // hours on 2026-10-29: rooms that carry it must still open.
+  'canvas/desk-opened',
 ] as const
 
 /** Collaboration settings of a room that never changed them. */
@@ -395,6 +402,15 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           ...event.data.elapsedMs === undefined ? {} : { elapsedMs: event.data.elapsedMs },
           ...event.data.error === undefined ? {} : { error: event.data.error },
         })
+        break
+      }
+      case 'room/desk-opened': {
+        // What a member's run put on the desk belongs at the end of that
+        // run's card and reply rather than on a row of its own.
+        const execution = event.data.runId === undefined ? undefined : executions.get(event.data.runId)
+        if (execution === undefined) break
+        const attachment: RoomRunAttachment = { owner: event.data.owner, seq: event.seq, time: event.time, data: event.data as unknown as RoomJsonValue }
+        executions.set(execution.id, { ...execution, attachments: [...execution.attachments ?? [], attachment] })
         break
       }
       default:

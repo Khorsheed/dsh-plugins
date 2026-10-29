@@ -57,7 +57,8 @@ import { categoryLabelOf } from './category-label.ts'
 import { ProposeTypeRow, type ProposeTypeRowFace } from './type/ProposeTypeRow.tsx'
 import { OpenCanvasRow, type OpenCanvasRowFace } from './open/OpenCanvasRow.tsx'
 import { DeskOpenRow, type DeskOpenRowFace } from './open/DeskOpenRow.tsx'
-import { DESK_ROW_KIND, deskRowDefinition } from './open/desk-row.ts'
+import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, setDeskRowSeated } from './open/desk-row.ts'
+import { DeskAttachment } from './open/DeskAttachment.tsx'
 import { CanvasTab } from './tab/CanvasTab.tsx'
 import { CanvasTabTitle } from './tab/CanvasTabTitle.tsx'
 import { CANVAS_CHILD_SLOTS, type CanvasNavService } from './slots.ts'
@@ -489,7 +490,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: () => openFace,
   }, OpenCanvasRow)), 'canvas: open-canvas tool row')
 
-  // In a room, a member's canvas_open writes a canvas/desk-opened event into
+  // In a room, a member's canvas_open writes a room/desk-opened event into
   // the ROOM (desk.ts): its row tells the room who opened what, and follows —
   // the coordinator's into the sidebar, a member's onto the strip beside the
   // canvas being read (open/desk-row.ts). ui-chat declares the node seat and
@@ -518,6 +519,26 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       disposeDefinition()
     }
   }), 'canvas: room desk row')
+  // The same row at the end of the member's card, where the room seats it
+  // (room's `room.member.attachment` on the reply, `room.run.attachment` on
+  // the running card): the row's own node then steps aside for every event
+  // that names a run.
+  for (const seat of ['room.member.attachment', 'room.run.attachment'] as const) {
+    ctx.effect(() => toolSlots.inject(seat, () => {
+      const dispose = toolSlots.register({
+        name: seat,
+        key: DESK_OWNER,
+        locale: NS,
+        inject: () => deskFace,
+      }, DeskAttachment)
+      // The reply's seat decides: the row's own node steps aside once a run's card can hold it.
+      if (seat === 'room.member.attachment') setDeskRowSeated(true)
+      return () => {
+        if (seat === 'room.member.attachment') setDeskRowSeated(false)
+        dispose()
+      }
+    }), `canvas: room card desk row (${seat})`)
+  }
 
   // The binding chip (创作体裁) in the session header: which canvas this
   // writing session works on. Offered only where a genre is installed and the
