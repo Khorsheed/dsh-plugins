@@ -121,3 +121,19 @@ describe('exchange input folding', () => {
     expect(screen.queryByText('输入 19')).toBeNull()
   })
 })
+
+describe('output text folding', () => {
+  it('folds a short text that renders taller than the fold (narrow column, CJK lines)', () => {
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight')
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get() { return 400 } })
+    try {
+      const r: CapturedRequest = { ...request, response: { text: '可以。'.repeat(70), toolCalls: [] } }
+      const { container } = render(<OutputBlock request={r} t={t} />)
+      expect(container.querySelector('pre[data-long="true"]')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /展开全部/ })).toBeTruthy()
+    } finally {
+      if (height) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', height)
+      else delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight
+    }
+  })
+})

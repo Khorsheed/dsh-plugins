@@ -32,6 +32,7 @@ import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, TurnOverview, TurnTiming } from './types.ts'
 import { InspectorStore, scopeAuthorized, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
 import { recordAssembly } from './segmenter.ts'
+import { applyRoomEvent, emptyRoom } from './room.ts'
 import { fromRequestMessage, serializeMessage } from './messages.ts'
 import { messageOfRow, meterOf, replacementFact, replacementFactsOf, type PendingMeter, type ReplacementRow } from './changes.ts'
 import {
@@ -55,6 +56,9 @@ declare module '@deepseek-ai/cordis' {
 
 /** Rebuilt request bodies held at once (a request and its baseline per read). */
 const HYDRATED_BODIES = 8
+
+/** The parent room's events a member opened alone keeps (its question cards' reconciliation). */
+const PARENT_ROOM_EVENTS = new Set(['room/member-added', 'room/run-state', 'room/question', 'room/question-resolved'])
 
 /** Plugin config: capture retention knobs. */
 export interface InspectorConfig {
@@ -477,12 +481,16 @@ export class InspectorService {
     const parentId = header?.type === 'session' ? (header as unknown as { parentSession?: unknown }).parentSession : undefined
     if (typeof parentId !== 'string' || parentId.length === 0 || this.store.hasParent(sessionId)) return
     const parent: { sessionId: string; title?: string; hostTurn?: number; label?: string } = { sessionId: parentId }
+    const room = emptyRoom()
     try {
       const handle = await reader.open(parentId, 'read')
       try {
         const { events: rows } = await handle.read(0)
         let turn: number | undefined
         for (const row of rows) {
+          // The room's questions and runs, so this member's ask_user_question
+          // cards reconcile against the room when the member is opened alone.
+          if (PARENT_ROOM_EVENTS.has(row.type)) applyRoomEvent(room, row.type, row.data, row.seq, row.time)
           const data = (row.data ?? {}) as Record<string, unknown>
           if (row.type === 'turn/start' && typeof data['turn'] === 'number') turn = data['turn']
           if (row.type === 'session/title' && typeof data['title'] === 'string') parent.title = data['title']
@@ -497,7 +505,7 @@ export class InspectorService {
     } catch {
       // The id alone still says whose child this is.
     }
-    this.store.noteParent(sessionId, parent)
+    this.store.noteParent(sessionId, parent, room.questions.size > 0 ? room : undefined)
   }
 
   // ---------- queries (the Remote face delegates here) ----------

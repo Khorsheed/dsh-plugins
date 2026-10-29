@@ -215,10 +215,28 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest
   })}</>
 }
 
+/** The folded text's height (.clamp[data-long] max-height). */
+const CLAMP_HEIGHT = 168
+
 function Clamped({ text, t }: { readonly text: string; readonly t: T }) {
   const [open, setOpen] = useState(false)
-  const long = text.length > 300
-  return <><pre className={css.clamp} data-open={open} data-long={long}>{text}</pre>{long && <button className={css.more} type="button" onClick={() => setOpen(v => !v)}>{open ? t('lens.collapse') : t('lens.expand', { count: fmt(text.length) })}</button>}</>
+  // Folds by rendered height, not length: 230 Chinese characters in the
+  // narrow output column run 12 lines and were never folded (75844e33 #25).
+  // The length rule stays for the first paint and for layout-less renders.
+  const [tall, setTall] = useState(false)
+  const ref = useRef<HTMLPreElement>(null)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (element === null) return
+    const measure = (): void => { setTall(element.scrollHeight > CLAMP_HEIGHT + 8) }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => { observer.disconnect() }
+  }, [text])
+  const long = tall || text.length > 300
+  return <><pre ref={ref} className={css.clamp} data-open={open} data-long={long}>{text}</pre>{long && <button className={css.more} type="button" onClick={() => setOpen(v => !v)}>{open ? t('lens.collapse') : t('lens.expand', { count: fmt(text.length) })}</button>}</>
 }
 function ArgumentValue({ name, value }: { readonly name: string; readonly value: string }) {
   const [open, setOpen] = useState(false)
