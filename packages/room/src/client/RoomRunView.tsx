@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties,
 import { StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconStopFillMedium } from './icons.tsx'
 import { formatDurationMs } from './format.ts'
-import type { RoomQuestionViewProps, RoomRunViewProps } from './slots.ts'
+import { attachmentsByOwner, type RoomQuestionViewProps, type RoomRunViewProps } from './slots.ts'
 import { memberColor } from './member-color.ts'
 import { pathMentions } from './path-mentions.ts'
 import { RoomQuestionView } from './RoomQuestionView.tsx'
@@ -104,9 +104,9 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
         {/* What this run has put on the room's desk so far, live. */}
         {attachments.length > 0 && (
           <div className={speech.attachments}>
-            {attachments.map(attachment => (
-              <div key={attachment.seq}>
-                {renderSlot('room.run.attachment', { sessionId, attachment, live: true }, { entryKey: attachment.owner, fallback: null })}
+            {attachmentsByOwner(attachments).map(([owner, group]) => (
+              <div key={owner}>
+                {renderSlot('room.run.attachment', { sessionId, owner, attachments: group, live: true }, { entryKey: owner, fallback: null })}
               </div>
             ))}
           </div>

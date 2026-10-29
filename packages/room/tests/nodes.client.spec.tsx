@@ -290,14 +290,17 @@ describe('RoomSpeechView', () => {
     expect(screen.queryByText(/用量/)).toBeNull()
   })
 
-  it('ends the reply with what the run put on the room\'s desk, through the seat keyed by the event type', async () => {
-    const attachment = { owner: '@khorsheed/dsh-canvas', seq: 5, time: 1005, data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'ada', role: 'member', data: { canvasId: 'canvas_r', title: '潜梦者' } } }
-    const renderSlot = vi.fn((_key: string, owner: { attachment: { data: { data: { title: string } } }; live: boolean }) => <span>{`画布《${owner.attachment.data.data.title}》${owner.live ? '·live' : ''}`}</span>)
-    const roomStore = await primedStore({ ...STATE, executions: [{ id: 'r1', memberId: 'm-ada', member: 'ada', state: 'done', startedAt: 1, attachments: [attachment] }] })
+  it('ends the reply with what the run did on the room\'s desk, one seat per owner with all its events', async () => {
+    const owner = '@khorsheed/dsh-canvas'
+    const opened = { type: 'room/desk-opened' as const, owner, seq: 5, time: 1005, data: { data: { title: '潜梦者' } } }
+    const wrote = { type: 'room/desk-wrote' as const, owner, seq: 6, time: 1006, data: { data: { title: '潜梦者' } } }
+    const other = { type: 'room/desk-opened' as const, owner: '@khorsheed/dsh-game', seq: 7, time: 1007, data: { data: { title: '雨之谷' } } }
+    const renderSlot = vi.fn((_key: string, props: { owner: string; attachments: readonly unknown[] }) => <span>{`${props.owner}·${props.attachments.length}`}</span>)
+    const roomStore = await primedStore({ ...STATE, executions: [{ id: 'r1', memberId: 'm-ada', member: 'ada', state: 'done', startedAt: 1, attachments: [opened, wrote, other] }] })
     render(<RoomSpeechView {...{ node: nodeOf('room-speech', { ...speech, runId: 'r1' }), sessionId: 'room-1', roomStore, openSession: vi.fn(), renderSlot, t } as unknown as RoomSpeechViewProps} />)
-    // Settled: the plugin's row without following.
-    expect(screen.getByText('画布《潜梦者》')).toBeDefined()
-    expect(renderSlot).toHaveBeenCalledWith('room.member.attachment', { sessionId: 'room-1', attachment, live: false }, { entryKey: '@khorsheed/dsh-canvas', fallback: null })
+    expect(screen.getByText(`${owner}·2`)).toBeDefined()
+    expect(screen.getByText('@khorsheed/dsh-game·1')).toBeDefined()
+    expect(renderSlot).toHaveBeenCalledWith('room.member.attachment', { sessionId: 'room-1', owner, attachments: [opened, wrote], live: false }, { entryKey: owner, fallback: null })
   })
 
   it('opens Context Lens at the member\'s closing message; without one (or without the lens) there is no detail button', async () => {

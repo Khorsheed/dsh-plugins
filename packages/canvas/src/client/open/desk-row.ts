@@ -16,6 +16,10 @@
  * @module @khorsheed/dsh-canvas/client
  */
 
+import { DESK_OWNER, deskWriteOf, type DeskWrite } from './desk-write.ts'
+
+export { DESK_OWNER }
+
 /** The chat node kind (and the `conversation.chat.node` key) of the row. */
 export const DESK_ROW_KIND = 'canvas-desk-open'
 
@@ -46,8 +50,6 @@ interface ContextLike {
   readonly start?: { readonly location?: unknown }
 }
 
-/** The desk events' owner this plugin renders (its own package, `../../desk.ts`). */
-export const DESK_OWNER = '@khorsheed/dsh-canvas'
 
 /**
  * The event's data as the row reads it, or null when the shape cannot be
@@ -115,6 +117,32 @@ export const deskRowDefinition = {
   },
 }
 
+/** The node kind of a lone write line (a write naming no run, or a room without the card seat). */
+export const DESK_WROTE_KIND = 'canvas-desk-wrote'
+
+/** One chat node per `room/desk-wrote` event of this owner — hidden, like the open row, when a run's card holds it. */
+export const deskWroteDefinition = {
+  kind: DESK_WROTE_KIND,
+  target: 'chat',
+  match: (event: EventLike) => deskWriteOf(event) !== null ? { id: `desk-wrote-${event.seq}`, role: 'start' as const } : null,
+  start: (_context: unknown, match: { readonly event: EventLike }): DeskWrite => {
+    const write = deskWriteOf(match.event)
+    if (write === null) throw new Error('canvas-desk-wrote start requires a canvas desk write')
+    return write
+  },
+  update: (context: { readonly state: DeskWrite }) => context.state,
+  buildViewNode: (context: { readonly key: string; readonly id: string; readonly state?: DeskWrite; readonly start?: { readonly location?: unknown } }) => context.state === undefined ? null : {
+    key: context.key,
+    kind: DESK_WROTE_KIND,
+    id: context.id,
+    target: 'chat',
+    anchorSeq: context.state.seq,
+    location: context.start?.location ?? { kind: 'unresolved' },
+    visibility: seated && context.state.runId !== undefined ? 'hidden' : 'visible',
+    data: context.state,
+  },
+}
+
 /** How old a row may be when it mounts and still count as seen arriving. */
 export const LIVE_WINDOW_MS = 20_000
 
@@ -128,7 +156,7 @@ const followed = new Set<string>()
  * @param now - the clock.
  * @returns true exactly once per row, and only while it is fresh.
  */
-export function shouldFollow(scope: string, row: DeskRowData, now: number = Date.now()): boolean {
+export function shouldFollow(scope: string, row: { readonly seq: number; readonly time: number }, now: number = Date.now()): boolean {
   const key = `${scope}:${row.seq}`
   if (followed.has(key) || now - row.time > LIVE_WINDOW_MS || row.time - now > LIVE_WINDOW_MS) return false
   followed.add(key)

@@ -436,6 +436,19 @@ export const zh = {
   'deskrow.created': '{member} 新建了画布《{title}》',
   'deskrow.switched': '{member} 切到了画布《{title}》',
   'deskrow.beside': '已放进侧栏的画布标签',
+  'deskwrite.canvas': '《{title}》',
+  'deskwrite.memberCanvas': '{member} 在《{title}》',
+  'deskwrite.added1': '新增{kind}卡「{title}」',
+  'deskwrite.addedN': '新增 {count} 张{kind}卡',
+  'deskwrite.changed1': '修改「{title}」',
+  'deskwrite.changedN': '修改 {count} 张卡',
+  'deskwrite.commented1': '批注「{title}」',
+  'deskwrite.commentedN': '批注 {count} 张卡',
+  'deskwrite.archived1': '归档「{title}」',
+  'deskwrite.archivedN': '归档 {count} 张卡',
+  'deskwrite.manuscript1': '成稿《{title}》',
+  'deskwrite.manuscriptN': '{count} 篇成稿',
+  'deskwrite.view': '查看 →',
 }
 
 /** English dictionary (same key set). */
@@ -874,6 +887,19 @@ export const en: Record<keyof typeof zh, string> = {
   'deskrow.created': '{member} created the canvas “{title}”',
   'deskrow.switched': '{member} switched to the canvas “{title}”',
   'deskrow.beside': 'Added to the canvas tabs in the sidebar',
+  'deskwrite.canvas': '“{title}”',
+  'deskwrite.memberCanvas': '{member} on “{title}”',
+  'deskwrite.added1': 'added {kind} card “{title}”',
+  'deskwrite.addedN': 'added {count} {kind} cards',
+  'deskwrite.changed1': 'edited “{title}”',
+  'deskwrite.changedN': 'edited {count} cards',
+  'deskwrite.commented1': 'commented on “{title}”',
+  'deskwrite.commentedN': 'commented on {count} cards',
+  'deskwrite.archived1': 'archived “{title}”',
+  'deskwrite.archivedN': 'archived {count} cards',
+  'deskwrite.manuscript1': 'manuscript “{title}”',
+  'deskwrite.manuscriptN': '{count} manuscripts',
+  'deskwrite.view': 'View →',
 }
 
 /** The dictionary namespace this view binds. */
