@@ -18,7 +18,7 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
 import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
-import { acpStopReasonToHarness, KimiAcpLiveDriver } from '../src/live-driver.ts'
+import { acpStopReasonToHarness, DEFAULT_TIMEOUTS, KimiAcpLiveDriver } from '../src/live-driver.ts'
 import { readKimiDefaultModel } from '../src/provision.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
 
@@ -305,7 +305,9 @@ function mount(options: {
     })
   }
   ctx.provide('logger', { warn: () => {}, info: () => {} })
-  const driver = new KimiAcpLiveDriver(ctx, options.config ?? {}, options.timeouts)
+  // Rounds here stream text with no wire behind it unless a test writes one:
+  // the settle's wait for wire steps is off unless a test asks for it.
+  const driver = new KimiAcpLiveDriver(ctx, options.config ?? {}, options.timeouts ?? { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 0 })
   return {
     ctx,
     homeDir,
@@ -492,6 +494,28 @@ describe('kimi live driver rounds', () => {
     await m.driver.disposeAll()
     liveStreams.dispose()
   })
+
+  it('a completed round waits for a late wire flush, so its final reply keeps its usage', async () => {
+    // kimi flushed the final step after the prompt resolved and past the old
+    // quiet window: the reply was finalized from its live text without usage,
+    // and the step's usage.record, read next round, was dropped.
+    const m = mount({ config: { snapshotMinIntervalMs: 0 }, timeouts: { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 10_000 } })
+    const liveStreams = new LocalAgentStreams()
+    const settled = vi.fn()
+    Object.assign(m.ctx.localAgent, { liveStreams, recordRoundSettled: settled })
+    const child = Session.create(SessionId('child-late-flush-kimi'))
+    m.queueChild(new FakeAcpServer({ turn: () => {
+      setTimeout(() => { writeKimiWire(m.homeDir, 'acp-session-1', '建个文件', 'hello') }, 1_500)
+      return { chunks: ['hello'] }
+    } }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    const answers = child.snapshotEvents().filter(event => event.type === 'assistant/message' && JSON.stringify(event.data.message.content).includes('hello'))
+    expect(answers).toHaveLength(1)
+    expect(answers[0]!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  }, 15_000)
 
   it('publishes transient output while keeping only authoritative assistant messages in history', async () => {
     const m = mount({ config: { snapshotMinIntervalMs: 0 } })
@@ -881,7 +905,7 @@ describe('kimi live driver rounds', () => {
   it('token granularity: a tool-first round renders the answer after its tool cards (lazy stream step)', async () => {
     const m = mount({
       config: { liveMirrorGranularity: 'token' },
-      timeouts: { initializeMs: 5_000, requestMs: 5_000, convergeMs: 50, channelRetryMs: 60_000, mirrorThrottleMs: 0 },
+      timeouts: { initializeMs: 5_000, requestMs: 5_000, convergeMs: 50, channelRetryMs: 60_000, mirrorThrottleMs: 0, settleFoldWaitMs: 0 },
     })
     const child = Session.create(SessionId('child-kimi-token-toolfirst'))
     const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
@@ -1202,7 +1226,7 @@ describe('kimi live driver review fixes', () => {
   it('a live-backed child folds each line once, persisting only through the core sync (never the redundant full-list append)', async () => {
     const m = mount({
       strictPersistence: true,
-      timeouts: { initializeMs: 5_000, requestMs: 5_000, convergeMs: 50, channelRetryMs: 60_000, mirrorThrottleMs: 0 },
+      timeouts: { initializeMs: 5_000, requestMs: 5_000, convergeMs: 50, channelRetryMs: 60_000, mirrorThrottleMs: 0, settleFoldWaitMs: 0 },
     })
     const child = Session.create(SessionId('child-kimi-livepersist'))
     // The ACP runtime flushes the wire incrementally: the prompt line first.

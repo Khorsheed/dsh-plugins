@@ -125,9 +125,11 @@ export interface KimiLiveDriverTimeouts {
   readonly convergeMs: number
   readonly channelRetryMs: number
   readonly mirrorThrottleMs: number
+  /** How long a completed round's settle waits for its streams' wire steps (0 turns the wait off). */
+  readonly settleFoldWaitMs?: number
 }
 
-const DEFAULT_TIMEOUTS: KimiLiveDriverTimeouts = {
+export const DEFAULT_TIMEOUTS: KimiLiveDriverTimeouts = {
   initializeMs: DEFAULT_LIVE_INITIALIZE_TIMEOUT_MS,
   requestMs: DEFAULT_LIVE_REQUEST_TIMEOUT_MS,
   convergeMs: DEFAULT_LIVE_DISPOSE_CONVERGE_MS,
@@ -139,6 +141,13 @@ const DEFAULT_TIMEOUTS: KimiLiveDriverTimeouts = {
 const SETTLE_MIRROR_POLL_MS = 300
 const SETTLE_MIRROR_STABLE_READS = 3
 const SETTLE_MIRROR_QUIESCE_MS = 3_000
+/**
+ * A completed round waits this long for the wire to land the steps its live
+ * streams still hold: kimi can flush a final step well after the prompt
+ * resolves, and a stream finalized from its live text carries no usage (the
+ * step's usage.record, read later, belongs to a closed turn and is dropped).
+ */
+const SETTLE_MIRROR_FOLD_WAIT_MS = 10_000
 
 /** How much of the live event stream crosses into the child session. */
 export type KimiLiveMirrorGranularity = 'event' | 'token'
@@ -1546,20 +1555,26 @@ export class KimiAcpLiveDriver {
      * final mirror folds until consecutive reads see no growth — bounded, so
      * a stuck flush cannot pin the round beyond the quiescence window.
      */
-    const settleMirror = async (): Promise<void> => {
+    const settleMirror = async (completed: boolean): Promise<void> => {
       await mirrorQueue.catch(() => {})
       const sessionId = runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId)
       let lastTotal = -1
       let stableReads = 0
-      const deadline = Date.now() + SETTLE_MIRROR_QUIESCE_MS
+      const started = Date.now()
+      // A completed round's live streams all have wire steps coming: a quiet
+      // file is not done while one is still unfolded (only its fold carries
+      // the step's usage). A stopped round's partial may never get one.
+      const foldWait = this.timeouts.settleFoldWaitMs ?? SETTLE_MIRROR_FOLD_WAIT_MS
+      const unfolded = (): boolean => completed && foldWait > 0 && [...streams.values()].some(stream => stream.sealed !== true)
       for (;;) {
         const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(true))
         noteMirrorUsage(delta)
         localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
         stableReads = delta.total === lastTotal ? stableReads + 1 : 0
         lastTotal = delta.total
-        if (stableReads >= SETTLE_MIRROR_STABLE_READS) break
-        if (Date.now() >= deadline) break
+        const waited = Date.now() - started
+        if (stableReads >= SETTLE_MIRROR_STABLE_READS && !unfolded()) break
+        if (waited >= (unfolded() ? foldWait : SETTLE_MIRROR_QUIESCE_MS)) break
         await delay(SETTLE_MIRROR_POLL_MS)
       }
     }
@@ -1594,7 +1609,7 @@ export class KimiAcpLiveDriver {
         //   - a tool reservation kimi never logged to the wire finalizes as
         //     an interrupted placeholder step.
         try {
-          await settleMirror()
+          await settleMirror(settled.stopReason === 'completed')
         } catch (error) {
           this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
         }
