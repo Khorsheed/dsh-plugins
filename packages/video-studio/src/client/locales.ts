@@ -10,6 +10,13 @@ export const zh = {
   'tab.label': '剪辑',
   'guide.description': '播客与对谈剪辑：一条录音自动分人，删字就是删音频',
 
+  'deskrow.kind': '剪辑',
+  'deskrow.created': '新建了工程「{title}」',
+  'deskrow.switched': '打开了工程「{title}」',
+  'deskrow.memberCreated': '{member} 新建了剪辑工程「{title}」',
+  'deskrow.memberSwitched': '{member} 打开了剪辑工程「{title}」',
+  'deskrow.open': '打开 →',
+
   'state.loading': '加载中…',
   'state.error': '出错了：{reason}',
   'action.back': '返回',
@@ -216,6 +223,13 @@ export type VideoStudioKey = keyof typeof zh
 export const en: Record<VideoStudioKey, string> = {
   'tab.label': 'Studio',
   'guide.description': 'Podcast and conversation editing: speakers found in one recording, cut by deleting words',
+
+  'deskrow.kind': 'Studio',
+  'deskrow.created': 'Created the project “{title}”',
+  'deskrow.switched': 'Opened the project “{title}”',
+  'deskrow.memberCreated': '{member} created the editing project “{title}”',
+  'deskrow.memberSwitched': '{member} opened the editing project “{title}”',
+  'deskrow.open': 'Open →',
 
   'state.loading': 'Loading…',
   'state.error': 'Something went wrong: {reason}',

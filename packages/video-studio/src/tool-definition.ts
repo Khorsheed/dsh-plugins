@@ -9,6 +9,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { basename } from 'node:path'
 import { formatClock } from './core/timeline.ts'
 import type { EditKind } from './core/types.ts'
+import { actingSessionId, announceDeskOpen, deskOf, roomIdOf, type VideoDesk } from './desk.ts'
 import type { ExportKind, VideoStudioService } from './service.ts'
 
 interface ExecLike {
@@ -24,12 +25,28 @@ function fail(tool: string, error: unknown): string {
   return `${tool} 失败：${error instanceof Error ? error.message : String(error)}`
 }
 
+/**
+ * The call's target project: an explicit id, else the binding. In a room
+ * (desk.ts) the coordinator reads the room's binding — the project the room's
+ * panel shows; a member reads its own, else the room's.
+ */
 async function resolveProject(svc: VideoStudioService, exec: ExecLike, projectId?: string): Promise<string> {
   if (projectId) return projectId
-  const sid = exec.agent?.id
-  const bound = sid ? await svc.bound(sid) : null
+  const desk = deskOf(exec.agent)
+  const acting = actingSessionId(exec.agent?.id, desk)
+  const bound = (acting ? await svc.bound(acting) : null)
+    ?? (desk?.role === 'member' ? await svc.bound(roomIdOf(desk)) : null)
   if (!bound) throw new Error('这个会话还没有打开工程：先用 video_project 的 list / create / open')
   return bound
+}
+
+/** Tell the room about an open, and say in the result where it landed (empty outside a room). */
+function toRoom(desk: VideoDesk | undefined, opened: { projectId: string; title: string; created: boolean }): string {
+  if (desk === undefined) return ''
+  announceDeskOpen(desk, opened)
+  return desk.role === 'coordinator'
+    ? '房间的剪辑面板已切到这个工程。'
+    : '已在房间里留了打开入口，房间的剪辑面板不变。'
 }
 
 export function defineVideoTools(svc: VideoStudioService) {
@@ -49,7 +66,10 @@ export function defineVideoTools(svc: VideoStudioService) {
     output: text,
     async execute(args: { action: string; name?: string; showId?: string; projectId?: string }, exec: ExecLike): Promise<string> {
       try {
-        const sid = exec.agent?.id
+        // In a room the coordinator binds the room session (its panel
+        // follows), a member its own (desk.ts).
+        const desk = deskOf(exec.agent)
+        const sid = actingSessionId(exec.agent?.id, desk)
         if (args.action === 'list') {
           const o = await svc.overview()
           const bound = sid ? await svc.bound(sid) : null
@@ -71,13 +91,16 @@ export function defineVideoTools(svc: VideoStudioService) {
         if (args.action === 'create') {
           const p = await svc.createProject({ name: args.name ?? '', showId: args.showId ?? null })
           if (sid) await svc.bind(sid, p.id)
-          return `已建工程 ${p.id}「${p.name}」并绑定到当前会话。下一步用 video_import 导入素材。`
+          return `已建工程 ${p.id}「${p.name}」并绑定到${desk?.role === 'coordinator' ? '房间' : '当前会话'}。${toRoom(desk, { projectId: p.id, title: p.name, created: true })}下一步用 video_import 导入素材。`
         }
         if (args.action === 'open') {
           if (!args.projectId) return 'open 需要 projectId'
           if (!sid) return '没有会话可以绑定'
           await svc.bind(sid, args.projectId)
-          return await svc.readForModel(args.projectId, { from: 0, to: 120 })
+          const read = await svc.readForModel(args.projectId, { from: 0, to: 120 })
+          if (desk === undefined) return read
+          const opened = await svc.mustProject(args.projectId)
+          return `${toRoom(desk, { projectId: opened.id, title: opened.name, created: false })}\n${read}`
         }
         return `未知 action：${args.action}`
       } catch (e) {

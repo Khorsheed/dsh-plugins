@@ -23,6 +23,7 @@
     "src/store.ts",
     "src/tool.ts",
     "src/tool-definition.ts",
+    "src/desk.ts",
     "src/types.ts"
   ]
 }

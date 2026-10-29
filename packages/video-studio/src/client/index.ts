@@ -21,7 +21,10 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import videoRemote from '@khorsheed/dsh-video-studio/remote'
 import type { VideoPaneInjected } from './contract.ts'
-import { VIDEO_TAB_ID, videoDefinition } from './definition.tsx'
+import { VIDEO_KIND, VIDEO_TAB_ID, videoDefinition } from './definition.tsx'
+import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, requestPanelProject, setDeskRowSeated } from './desk-row.ts'
+import { DeskAttachment } from './DeskAttachment.tsx'
+import { DeskOpenRow, type DeskOpenRowFace } from './DeskOpenRow.tsx'
 import { mainSessionId, RegistrationToggle, VideoTabVisibility, type VideoPluginInventorySnapshot } from './preset-visibility.ts'
 import { en, NS, zh } from './locales.ts'
 import { createVideoStudioStore } from './store.ts'
@@ -128,6 +131,68 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     store: createVideoStudioStore,
     inject: face,
   }, VideoPane)), 'video-studio: sidebar tab body')
+
+  // The room desk (proposal 2026-10-29-room-desk): a room member's
+  // video_project create/open writes room's `room/desk-opened` (owner = this
+  // package) into the ROOM session (../desk.ts). Its row says what was opened
+  // and keeps an 打开 → door; a coordinator's open seen arriving brings the
+  // room's 剪辑 panel to that project (desk-row.ts). The seats are declared by
+  // packages this one does not depend on (ui-chat, room), so registrations go
+  // through a structural view of the registry and simply never fire without
+  // them. The sidebar is probed, not injected: without it the door is inert.
+  const anySlots = ctx.slots as unknown as {
+    inject: (key: string, callback: () => () => void) => () => void
+    register: (options: Record<string, unknown>, component: unknown) => () => void
+  }
+  const deskFace: DeskOpenRowFace = {
+    openProject: (sessionId, projectId) => {
+      const sidebar = ctx.get('sidebarRight') as { openTab?: (kind: string) => void } | undefined
+      try {
+        sidebar?.openTab?.(VIDEO_KIND)
+      } catch (error) {
+        // A session whose mode hides the 剪辑 tab has no tab type to open.
+        ctx.logger.warn('video-studio: openTab failed (tab type not registered?)', error)
+      }
+      requestPanelProject(sessionId, projectId)
+    },
+  }
+  ctx.effect(() => anySlots.inject('conversation.chat.node', () => {
+    const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
+      events?: { register?: (definition: unknown) => () => void }
+    } | undefined
+    const register = conversation?.events?.register
+    if (register === undefined) return () => undefined
+    const disposeDefinition = register.call(conversation?.events, deskRowDefinition)
+    const disposeEntry = anySlots.register({
+      name: 'conversation.chat.node',
+      key: DESK_ROW_KIND,
+      locale: NS,
+      inject: () => deskFace,
+    }, DeskOpenRow)
+    return () => {
+      disposeEntry()
+      disposeDefinition()
+    }
+  }), 'video-studio: room desk row')
+  // The same row at the end of the member's card, where the room seats it
+  // (`room.member.attachment` on the reply, `room.run.attachment` on the
+  // running card): the row's own node then steps aside for every event that
+  // names a run.
+  for (const seat of ['room.member.attachment', 'room.run.attachment'] as const) {
+    ctx.effect(() => anySlots.inject(seat, () => {
+      const dispose = anySlots.register({
+        name: seat,
+        key: DESK_OWNER,
+        locale: NS,
+        inject: () => deskFace,
+      }, DeskAttachment)
+      if (seat === 'room.member.attachment') setDeskRowSeated(true)
+      return () => {
+        if (seat === 'room.member.attachment') setDeskRowSeated(false)
+        dispose()
+      }
+    }), `video-studio: room card desk row (${seat})`)
+  }
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))
