@@ -14,7 +14,7 @@ The room takes over the official composer and carries text only, from the compos
 - **Entry points.** A paperclip button leads the composer's tool row, and files can also be pasted into the textarea or dropped on the card.
 - **The rail is redrawn.** It uses the official geometry and tokens: 64px thumbnails with the primitives' `ImageLightbox`, and 240×64 file cards showing upload state, retry and a hover ✕. `@deepseek-ai/dsh-client-ui-attachment` exposes no client component a plugin bundle can import: its rail renders only inside the official bar's own child slot.
 - **The host admits attachments like its prompt path.** `postMessage` takes `attachments` in the official wire form: an image's base64, or a file's upload receipt. Receipts resolve through `fileUploads.resolve` against the room session's agent, and a cold room is woken first. `attachments.admitPromptContent` stores the images, the human `user/message` carries the durable blocks (rendered by the official user node), and the receipts are bound to the message.
-- **Members get local paths.** Every addressed member's dispatch text gains a list of local paths (`imageHostPath` / `fileHostPath`), opened with the member's own read tool. One form reaches CLI and native members alike. The dispatch records the paths, so a retry re-sends them.
+- **Members get local paths.** Every addressed member's dispatch text gains a list of local paths (`imageHostPath` / `fileHostPath`), opened with the member's own read tool. One form reaches every member (CLI members, and the room's own agent). The dispatch records the paths, so a retry re-sends them.
 
 ## Alternatives considered
 

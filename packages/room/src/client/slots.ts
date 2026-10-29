@@ -280,9 +280,7 @@ export interface RoomInviteValues {
   readonly name: string
   /** Short public role (omitted = none). */
   readonly role?: string
-  /** `native`: a DSH child agent in this host (omitted = a CLI member). */
-  readonly kind?: 'cli' | 'native'
-  /** Native only: the host agent preset (omitted = the host default). */
+  /** The member's mode: a host agent preset id (omitted = none). */
   readonly preset?: string
   readonly instructions?: string
   /** Member-level working directory (omitted = inherits the room session's cwd). */

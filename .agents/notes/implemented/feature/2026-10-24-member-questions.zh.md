@@ -29,5 +29,5 @@ CLI 成员需要人拍板时，会把一串编号的问题和选项写进回复�
 ## Consequences
 
 - Kimi Code 和 dsh 成员也能用这个工具，但它们的 MCP 客户端仍按各自默认的调用时长限制（Kimi 约一分钟）。问题超过这个时间没回答，会在它们那边失败，卡片随调用一起过期。
-- 原生 DSH 成员和主 agent 不受影响；主 agent 本来就有宿主自己的 `ask_user_question`。
+- 主 agent 不受影响（原生 DSH 成员已于 2026-10-29 移除）；主 agent 本来就有宿主自己的 `ask_user_question`。
 - 测试：`questions.host.spec.ts` 覆盖命令、答案过滤、过期和参数校验；`questions.client.spec.tsx` 覆盖节点状态的折叠，以及卡片的点选、输入和提交。

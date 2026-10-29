@@ -478,7 +478,7 @@ describe('MembersView', () => {
     })
   })
 
-  it('a native dsh member picks a host preset instead of a model, and invites with kind native', async () => {
+  it('a member\'s mode is one dropdown defaulting to none, and there is no native dsh option', async () => {
     const { face } = await bench({ providers: { ...PROVIDERS, presets: [
       { id: 'standard', name: '标准模式', isDefault: true },
       { id: 'review', name: '审查模式', description: '只读', isDefault: false },
@@ -486,18 +486,16 @@ describe('MembersView', () => {
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
     await screen.findByRole('dialog')
     await screen.findByText('Kimi Code', { selector: 'option' })
-    // A CLI member's mode is one dropdown, defaulting to no mode.
     const mode = () => screen.getByRole('combobox', { name: '模式' }) as HTMLSelectElement
     expect(mode().value).toBe('')
     expect([...mode().options].map(option => option.textContent)).toEqual(['不带模式', '标准模式', '审查模式'])
-    fireEvent.change(screen.getAllByRole('combobox')[0]!, { target: { value: '__native__' } })
-    // A native member always runs a mode: the host default is preselected.
-    expect(mode().value).toBe('standard')
+    // Native dsh sub-members were retired: the provider list offers only CLIs.
+    expect([...(screen.getAllByRole('combobox')[0] as HTMLSelectElement).options].map(option => option.value)).not.toContain('__native__')
     fireEvent.change(mode(), { target: { value: 'review' } })
     fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'rev' } })
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
-      expect(face.invite).toHaveBeenCalledWith({ provider: 'dsh', name: 'rev', kind: 'native', preset: 'review' })
+      expect(face.invite).toHaveBeenCalledWith({ provider: 'kimi', name: 'rev', preset: 'review' })
     })
   })
 

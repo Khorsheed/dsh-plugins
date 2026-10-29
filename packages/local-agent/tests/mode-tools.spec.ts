@@ -148,6 +148,8 @@ describe('mode skills', () => {
     installModeSkills(dir, 'dsh-video', found)
     expect(statSync(file).mtimeMs).toBe(written)
     expect(harnessSkillsDir('kimi', home)).toBe(join(home, 'skills'))
+    // A dsh command-line member: the sub-dsh reads $DSH_HOME/skills (its user-dsh root).
+    expect(harnessSkillsDir('dsh', home)).toBe(join(home, 'skills'))
     expect(harnessSkillsDir('other', home)).toBeUndefined()
   })
 })

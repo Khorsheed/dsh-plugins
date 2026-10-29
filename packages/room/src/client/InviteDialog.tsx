@@ -34,9 +34,6 @@ import type {
   MembersViewProps, RoomInviteOutcome, RoomInviteValues, RoomMutationOutcome,
 } from './slots.ts'
 import type { RoomMember, RoomPresetInfo, RoomProviderInfo } from '../types.ts'
-
-/** The provider select's value for a native DSH member (never a delegation provider id). */
-const NATIVE = '__native__'
 import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
 import { MemberCard } from './MemberCard.tsx'
@@ -48,9 +45,7 @@ import css from './InviteDialog.module.css'
 export interface InviteDialogSubmit {
   readonly provider: string
   readonly name: string
-  /** `native`: a DSH child agent composing `preset`; otherwise a CLI member of `provider`. */
-  readonly kind: 'cli' | 'native'
-  /** Native only: the chosen host preset ('' = the host default). */
+  /** The member's mode: a host preset id ('' = none). */
   readonly preset: string
   /** Short public role ('' = none). */
   readonly role: string
@@ -82,7 +77,6 @@ export function inviteRequest(values: InviteDialogSubmit): RoomInviteValues {
     name: values.name,
     ...values.instructions === '' ? {} : { instructions: values.instructions },
     ...values.role === '' ? {} : { role: values.role },
-    ...values.kind === 'native' ? { kind: 'native' as const } : {},
     ...values.preset === '' ? {} : { preset: values.preset },
     ...values.cwd === '' ? {} : { cwd: values.cwd },
     ...values.firstTask === '' ? {} : { firstTask: values.firstTask },
@@ -99,9 +93,9 @@ export interface InviteDialogProps {
   readonly member?: RoomMember | undefined
   /** The invitable providers; undefined while loading (invite mode). */
   readonly providers?: readonly RoomProviderInfo[] | undefined
-  /** Host agent presets a native DSH member may compose; absent = no native option. */
+  /** Host agent presets a member's mode may name; absent = no mode picker. */
   readonly presets?: readonly RoomPresetInfo[] | undefined
-  /** The room session's own mode: the default mode of a new member, native or CLI. */
+  /** The room session's own mode: the default mode of a new member. */
   readonly sessionPreset?: string | undefined
   /** False = the delegation facade is absent (invite mode). */
   readonly localAgentAvailable: boolean
@@ -198,15 +192,10 @@ export function InviteDialog({
   }, [modelMenuOpen])
 
   const authenticated = (providers ?? []).filter(entry => entry.authenticated)
-  const nativeAvailable = presets !== undefined
-  const chosen = provider === '' ? (authenticated[0]?.provider ?? (nativeAvailable ? NATIVE : '')) : provider
-  // Editing: the member's own kind, never the invite form's provider pick.
-  const native = mode === 'edit' ? member?.kind === 'native' : chosen === NATIVE
+  const chosen = provider === '' ? (authenticated[0]?.provider ?? '') : provider
   // A new member works in the room's own mode unless the human picks another.
   const roomMode = sessionPreset !== undefined && presets?.some(entry => entry.id === sessionPreset) === true ? sessionPreset : undefined
-  const [preset, setPreset] = useState('')
-  const chosenPreset = preset === '' ? roomMode ?? presets?.find(entry => entry.isDefault)?.id ?? '' : preset
-  /** A CLI member's mode: '' = none (only its own tools plus the room's); undefined = untouched (the room's mode). */
+  /** A member's mode: '' = none (only its own tools plus the room's); undefined = untouched (the room's mode). */
   const [cliPicked, setCliPreset] = useState<string | undefined>(undefined)
   const cliPreset = cliPicked ?? roomMode ?? ''
   const someLoggedOut = (providers ?? []).some(entry => !entry.authenticated)
@@ -252,7 +241,7 @@ export function InviteDialog({
   // is the only hard requirement.
   const canSubmit = mode === 'edit'
     ? validName(name) && !(name !== member?.name && existingNames.includes(name))
-    : (native || localAgentAvailable) && chosen !== '' && validName(name) && !existingNames.includes(name)
+    : localAgentAvailable && chosen !== '' && validName(name) && !existingNames.includes(name)
 
   // The model row: the same control the provider settings cards use. An unset
   // field DISPLAYS the provider's current default dimmed (inherited, never
@@ -339,7 +328,7 @@ export function InviteDialog({
   const previewName = name.trim() === '' ? t('invite.previewName') : name.trim()
   const previewProvider = mode === 'edit'
     ? member?.provider
-    : native ? 'dsh' : (providers ?? []).find(entry => entry.provider === chosen)?.displayName ?? chosen
+    : (providers ?? []).find(entry => entry.provider === chosen)?.displayName ?? chosen
   const previewMember: RoomMember = mode === 'edit' && member !== undefined ? (({ instructions: _i, role: _r, ...rest }: RoomMember): RoomMember => ({
     ...rest,
     name: previewName,
@@ -347,9 +336,8 @@ export function InviteDialog({
     ...role.trim() === '' ? {} : { role: role.trim() },
   }))(member) : {
     name: previewName,
-    kind: native ? 'native' : 'cli',
-    ...native && chosenPreset !== '' ? { preset: chosenPreset } : {},
-    ...!native && cliPreset !== '' ? { preset: cliPreset } : {},
+    kind: 'cli',
+    ...cliPreset !== '' ? { preset: cliPreset } : {},
     invitedBy: 'human',
     ...previewProvider === undefined || previewProvider === '' ? {} : { provider: previewProvider },
     ...instructions.trim() === '' ? {} : { instructions: instructions.trim() },
@@ -393,7 +381,7 @@ export function InviteDialog({
     setError(null)
     try {
       const outcome = await onSubmit({
-        provider: native ? 'dsh' : chosen, kind: native ? 'native' : 'cli', preset: native ? chosenPreset : cliPreset, name, role: role.trim(), instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
+        provider: chosen, preset: cliPreset, name, role: role.trim(), instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
         model: model.trim(), modelBaseline, effort: effort.trim(), effortBaseline,
       })
       if (!outcome.ok) {
@@ -425,7 +413,7 @@ export function InviteDialog({
         <div className={css.body}>
           <div className={css.form}>
             {mode === 'invite' && (
-              !localAgentAvailable && !nativeAvailable ? (
+              !localAgentAvailable ? (
                 <div className={css.hint} role="status">{t('invite.facadeMissing')}</div>
               ) : (
                 <label className={css.field}>
@@ -435,28 +423,26 @@ export function InviteDialog({
                     value={chosen}
                     onChange={event => { setProvider(event.target.value); setModel(''); setEffort('') }}
                   >
-                    {nativeAvailable && <option value={NATIVE}>{t('invite.native')}</option>}
                     {localAgentAvailable && (providers ?? []).map(entry => (
                       <option key={entry.provider} value={entry.provider} disabled={!entry.authenticated}>
                         {entry.displayName}{entry.authenticated ? '' : t('invite.loggedOut')}
                       </option>
                     ))}
                   </select>
-                  {!native && someLoggedOut && <span className={css.hint}>{t('invite.loginHint')}</span>}
-                  {native && <span className={css.hint}>{t('invite.nativeHint')}</span>}
+                  {someLoggedOut && <span className={css.hint}>{t('invite.loginHint')}</span>}
                 </label>
               )
             )}
-            {mode === 'invite' && presets !== undefined && presets.length > 0 && (native || localAgentAvailable) && (
+            {mode === 'invite' && presets !== undefined && presets.length > 0 && localAgentAvailable && (
               <label className={css.field}>
                 <span className={css.label}>{t('invite.cliPreset')}</span>
                 <select
                   className={css.select}
                   aria-label={t('invite.cliPreset')}
-                  value={native ? chosenPreset : cliPreset}
-                  onChange={event => { if (native) setPreset(event.target.value); else setCliPreset(event.target.value) }}
+                  value={cliPreset}
+                  onChange={event => { setCliPreset(event.target.value) }}
                 >
-                  {!native && <option value="">{t('invite.cliPresetNone')}</option>}
+                  <option value="">{t('invite.cliPresetNone')}</option>
                   {presets.map(entry => (
                     <option key={entry.id} value={entry.id} disabled={entry.broken !== undefined} title={entry.broken ?? entry.description}>
                       {entry.name ?? entry.id}
@@ -465,9 +451,9 @@ export function InviteDialog({
                 </select>
                 <span className={css.hint}>
                   {(() => {
-                    const picked = presets.find(entry => entry.id === (native ? chosenPreset : cliPreset))
+                    const picked = presets.find(entry => entry.id === cliPreset)
                     const about = picked?.broken ?? picked?.description
-                    return [about, t(native ? 'invite.presetHint' : 'invite.cliPresetHint')].filter(Boolean).join(' · ')
+                    return [about, t('invite.cliPresetHint')].filter(Boolean).join(' · ')
                   })()}
                 </span>
               </label>
@@ -485,14 +471,14 @@ export function InviteDialog({
               />
               {/* What the invitation fixed: shown, not offered. */}
               <dl className={css.locked}>
-                <div><dt>{t('invite.provider')}</dt><dd>{member?.kind === 'main-agent' || member?.kind === 'native' ? 'DSH' : member?.provider ?? '—'}</dd></div>
+                <div><dt>{t('invite.provider')}</dt><dd>{member?.kind === 'main-agent' ? 'DSH' : member?.provider ?? '—'}</dd></div>
                 <div><dt>{t('invite.cliPreset')}</dt><dd>{member?.preset === undefined
                   ? t('invite.cliPresetNone')
                   : presets?.find(entry => entry.id === member.preset)?.name ?? member.preset}</dd></div>
                 <span className={css.lockedNote}>{t('invite.lockedNote')}</span>
               </dl>
             </div>}
-            {native ? null : mode === 'edit' && memberConfiguration !== undefined
+            {mode === 'edit' && memberConfiguration !== undefined
               ? <div className={css.field}><span className={css.label}>{t('invite.modelLabel')}</span><div className={css.memberConfiguration}>{memberConfiguration}</div></div>
               : memberConfiguration ?? (mode === 'invite' && chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, effort: { value: effort, onChange: setEffort }, disabled: busy, fields: { row: css.fieldPair, field: css.field, label: css.label, select: css.select } }) : undefined) ?? modelField}
             <label className={css.field}>
