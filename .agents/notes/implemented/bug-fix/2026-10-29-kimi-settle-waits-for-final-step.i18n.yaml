@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-29-kimi-settle-waits-for-final-step.md
-.agents/notes/implemented/bug-fix/2026-10-29-kimi-settle-waits-for-final-step.md: f3882c79d7fb9a3ecd059f2be06c7eb907a67c8c
-.agents/notes/implemented/bug-fix/2026-10-29-kimi-settle-waits-for-final-step.zh.md: 9d0411344bec1695f6ec2c4ac008249290c1d21a
+.agents/notes/implemented/bug-fix/2026-10-29-kimi-settle-waits-for-final-step.md: d706589e45effe0bee5e1e104ee09ebf3dcd1df9
+.agents/notes/implemented/bug-fix/2026-10-29-kimi-settle-waits-for-final-step.zh.md: 2c2453010c7829db3e9af9570be45de217d4ff11

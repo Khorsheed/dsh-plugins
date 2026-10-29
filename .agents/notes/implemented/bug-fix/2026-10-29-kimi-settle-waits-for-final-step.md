@@ -19,6 +19,12 @@ A completed round's settle keeps polling while any live stream is still unfolded
 
 Kimi replies keep their final call's usage: in the child session, in Context Lens, and in the room. A round whose wire never lands its last step (a lost flush) settles up to 10 s later than before. Records already written stay as they are.
 
+**Not closed yet.** The same room's turn 12 (17:14, with this fix deployed since 13:46) lost its final reply's usage again. The wire wrote the step's `usage.record`, its content and its `step.end` within 8 ms. The reply was written 330 ms later without usage, and the record became the round's unattached rest, which the room total still counts. Specs that replay that shape do not reproduce it: a four-step round with parallel tools and the next step streaming before the previous fold, with the burst landing before, with, or up to 1.5 s after the prompt. So the driver now logs the two events that decide it to `<kimi home>/usage-diag.jsonl`:
+- every message written from live text (`finalize-from-live`, with `via` gap or settle, the step, and whether round usage was in hand);
+- every mirror pass whose usage no fold carried (`unattached`).
+
+The next occurrence names its path.
+
 ## Testing
 
-`local-agent-kimi` (295): a new spec resolves the prompt, writes the wire 1.5 s later, and expects the reply to carry the step's usage. The other live-driver specs run with the wait off.
+`local-agent-kimi` (295): a new spec resolves the prompt, writes the wire 1.5 s later, and expects the reply to carry the step's usage. The other live-driver specs run with the wait off. A multi-step spec (turn 12's shape) expects each step's usage on its own message and an empty diagnostics file. Another expects a reply finalized from live text to leave a `finalize-from-live` line.

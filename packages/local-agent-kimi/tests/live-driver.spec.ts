@@ -8,7 +8,7 @@
  * exec path's offset bookkeeping, and the provider's exec fallback.
  */
 
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -1110,6 +1110,83 @@ describe('kimi live driver rounds', () => {
     expect(child.snapshotEvents().filter(e => e.type === 'turn/start')).toHaveLength(0)
     // A round failure, not a broken channel.
     expect(m.driver.disabled).toBe(false)
+  })
+})
+
+describe('kimi live driver final-step usage (room 75844e33 turn 12)', () => {
+  it('a multi-step round\'s final reply carries its own step\'s usage when the wire lands with the prompt', async () => {
+    // In the wild (room 75844e33, turn 12, 17:14): think+tool, think+text+tools,
+    // think+text. kimi wrote the final step's usage.record, its content and
+    // step.end within 8 ms, as the prompt resolved; the reply landed with no
+    // usage and the record became the round's unattached rest.
+    const m = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0 }, timeouts: { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 10_000 } })
+    const child = Session.create(SessionId('child-kimi-final-usage'))
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    const loop = (event: Record<string, unknown>) => JSON.stringify({ type: 'context.append_loop_event', event: { turnId: 0, ...event } })
+    const usage = (input: number, output: number) => JSON.stringify({ type: 'usage.record', usage: { inputOther: input, output } })
+    const call = (id: string, step: number) => loop({ type: 'tool.call', step, toolCallId: id, toolCall: { name: 'canvas_write', args: { id } } })
+    const result = (id: string) => loop({ type: 'tool.result', toolCallId: id, result: { output: `ok ${id}` } })
+    const lines: string[] = [JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '建画布' }], origin: { kind: 'user' } })]
+    const flush = (...more: string[]): void => { lines.push(...more); writeFileSync(join(wireDir, 'wire.jsonl'), lines.join('\n') + '\n') }
+    const fake = new FakeAcpServer({ turn: () => { flush(); return { hang: true } } })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const session = 'session_acp-session-1'
+    // Step 1: think, one tool.
+    fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '先建画布' } })
+    flush(loop({ type: 'step.begin', step: 1 }), usage(1, 1), loop({ type: 'content.part', step: 1, part: { type: 'think', think: '先建画布' } }), call('a', 1))
+    fake.update(session, { sessionUpdate: 'tool_call', toolCallId: 'a', title: 'canvas_open', status: 'in_progress' })
+    flush(result('a'), loop({ type: 'step.end', step: 1 }))
+    await new Promise(resolve => setTimeout(resolve, 150))
+    // Step 2: think, text, four parallel tools — their ACP notifications
+    // arrive, and step 3's thinking starts streaming, BEFORE the wire flushes
+    // step 2 (the real fold of step 3 landed 5 s after its step.end).
+    fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '落四张卡' } })
+    fake.update(session, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '我先落卡' } })
+    for (const id of ['b', 'c', 'd', 'e']) fake.update(session, { sessionUpdate: 'tool_call', toolCallId: id, title: 'canvas_write', status: 'in_progress' })
+    await new Promise(resolve => setTimeout(resolve, 150))
+    fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '收尾' } })
+    await new Promise(resolve => setTimeout(resolve, 150))
+    flush(loop({ type: 'step.begin', step: 2 }), usage(2, 2), loop({ type: 'content.part', step: 2, part: { type: 'think', think: '落四张卡' } }),
+      loop({ type: 'content.part', step: 2, part: { type: 'text', text: '我先落卡' } }),
+      call('b', 2), call('c', 2), call('d', 2), call('e', 2), result('b'), result('c'), result('d'), result('e'),
+      loop({ type: 'step.end', step: 2 }), loop({ type: 'step.begin', step: 3 }))
+    await new Promise(resolve => setTimeout(resolve, 300))
+    // Step 3's answer streams live; the wire gets its record, content and
+    // step.end in one burst, and the prompt resolves with it.
+    fake.update(session, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '画布已建好' } })
+    await new Promise(resolve => setTimeout(resolve, 150))
+    const burst = (): void => flush(usage(3, 3), loop({ type: 'content.part', step: 3, part: { type: 'think', think: '收尾' } }),
+      loop({ type: 'content.part', step: 3, part: { type: 'text', text: '画布已建好' } }), loop({ type: 'step.end', step: 3 }))
+    // The wire's event times say the burst came with the prompt's end; its
+    // disk write can trail that a little.
+    setTimeout(burst, 50)
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await run.result).stopReason).toBe('completed')
+    const messages = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+    const final = messages.at(-1)!
+    expect(JSON.stringify((final.data as { message: unknown }).message)).toContain('画布已建好')
+    expect(messages.map(e => (e.data as { usage?: { inputTokens: number } }).usage?.inputTokens)).toEqual([1, 2, 3])
+    // Nothing was written from live text and no usage went unattached: the
+    // diagnostics file stays empty.
+    expect(existsSync(join(m.homeDir, 'usage-diag.jsonl'))).toBe(false)
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  }, 20_000)
+
+  it('a reply written from live text leaves a diagnostics line naming the path', async () => {
+    // No wire behind the stream: settle finalizes the answer from its live
+    // text, without usage of its own — exactly the event the next lost usage
+    // must be traceable to.
+    const m = mount({ config: { snapshotMinIntervalMs: 0 } })
+    const child = Session.create(SessionId('child-kimi-usage-diag'))
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['只有实时文本'] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    const lines = readFileSync(join(m.homeDir, 'usage-diag.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
+    expect(lines).toContainEqual(expect.objectContaining({ at: 'finalize-from-live', via: 'settle', child: 'child-kimi-usage-diag', turn: 1, withUsage: true, roundUsage: null }))
+    await m.driver.disposeAll()
   })
 })
 
