@@ -1584,7 +1584,12 @@ export class KimiAcpLiveDriver {
       const foldWait = this.timeouts.settleFoldWaitMs ?? SETTLE_MIRROR_FOLD_WAIT_MS
       const unfolded = (): boolean => completed && foldWait > 0 && [...streams.values()].some(stream => stream.sealed !== true)
       for (;;) {
-        const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(true))
+        // Polls read the wire as live passes do: a step still flushing holds
+        // (it never splits), and a usage record at the boundary waits for its
+        // step — a settle pass takes it as the round's rest the moment it
+        // lands, before the step's content, and the reply folds without
+        // usage (75844e33 turn 15).
+        const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions())
         noteMirrorUsage(delta)
         localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
         stableReads = delta.total === lastTotal ? stableReads + 1 : 0
@@ -1594,6 +1599,11 @@ export class KimiAcpLiveDriver {
         if (waited >= (unfolded() ? foldWait : SETTLE_MIRROR_QUIESCE_MS)) break
         await delay(SETTLE_MIRROR_POLL_MS)
       }
+      // The settle pass takes what the polls left: a step that never closed
+      // folds as it stands, a tool result that never came is synthesized, and
+      // a boundary usage record whose step never landed counts as the rest.
+      const last = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(true))
+      noteMirrorUsage(last)
     }
 
     const result: Promise<SubagentResult> = settleRunResult({

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-29-kimi-settle-polls-read-as-live.md
+.agents/notes/implemented/bug-fix/2026-10-29-kimi-settle-polls-read-as-live.md: 94ccf1a3349597826522855dee53be84880d2cb4
+.agents/notes/implemented/bug-fix/2026-10-29-kimi-settle-polls-read-as-live.zh.md: 166c49563d5a128cdd5d3dfb30b0123a7293e51a
