@@ -614,6 +614,30 @@ describe('LocalAgentRegistry delegation facade', () => {
       expect(seenB).toEqual([{ kind: 'mirror', mirroredLines: 2 }, { kind: 'settled', usage: { inputTokens: 5, outputTokens: 1 } }])
     })
 
+    it('a round that settled before its result resolved leaves no route for the next round\'s report', async () => {
+      // Kimi reports its settle observation before the facade's own result
+      // handler runs: that round owes nothing, so the next round's report is
+      // the next round's.
+      const h = await mountFacade()
+      h.enterParent(PARENT)
+      h.registry.recordDelegation({ childSessionId: 'child-1', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-42' })
+      const first = makeRun('child-1')
+      const second = makeRun('child-1')
+      const runs = [first, second]
+      h.setStartHandler((request) => { h.consumeIntent(request); return runs.shift()!.run })
+      const seenA: LocalAgentRunProgress[] = []
+      const seenB: LocalAgentRunProgress[] = []
+      await h.registry.resume(PARENT, PROVIDER, 'child-1', PROMPT, { onProgress: progress => { seenA.push(progress) } })
+      h.registry.recordRoundSettled('child-1', { usage: { inputTokens: 10, outputTokens: 4 } })
+      first.settle({ stopReason: 'completed', output: [] })
+      await first.run.result
+      await Promise.resolve()
+      await h.registry.resume(PARENT, PROVIDER, 'child-1', PROMPT, { onProgress: progress => { seenB.push(progress) } })
+      h.registry.recordRoundSettled('child-1', { usage: { inputTokens: 5, outputTokens: 1 } })
+      expect(seenA).toEqual([{ kind: 'settled', usage: { inputTokens: 10, outputTokens: 4 } }])
+      expect(seenB).toEqual([{ kind: 'settled', usage: { inputTokens: 5, outputTokens: 1 } }])
+    })
+
     it('emits the cordis event for reports on untracked child sessions', async () => {
       const h = await mountFacade()
       const cordisEvents: [string, LocalAgentRunProgress][] = []
