@@ -741,6 +741,8 @@ declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Log-only: what a member's mode tool put on the room's desk (see {@link RoomDeskOpenedEvent}). */
     'room/desk-opened': RoomDeskOpenedEvent
+    /** Log-only: what a member's mode tool wrote on the room's desk — same shape, the owner's own fields under `data`. */
+    'room/desk-wrote': RoomDeskOpenedEvent
     /**
      * Room identity marker: the session carrying this log-only event is a
      * room. Log-only (no surface intent), so it never reaches the model.
@@ -894,6 +896,8 @@ export interface RoomExecution extends RoomMemberRun {
 
 /** One desk event a member's run produced, as the run's card renders it. */
 export interface RoomRunAttachment {
+  /** Opened (switched to, created) or wrote (added, commented, archived…). */
+  readonly type: 'room/desk-opened' | 'room/desk-wrote'
   /** The plugin that wrote it: the key its row registers under. */
   readonly owner: string
   readonly seq: number

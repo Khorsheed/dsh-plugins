@@ -152,6 +152,7 @@ describe('room journal persistence', () => {
       session.append('room/coordinator', { version: 1, memberId: 'legacy:1', previousMemberId: 'legacy:1', revision: 1, handoff: 'Continue' })
       session.append('room/delivery-state', { id: 'delivery', dispatchSeq: 3, memberId: 'ada', state: 'done' })
       session.append('room/desk-opened', { version: 1, owner: '@khorsheed/dsh-canvas', member: 'ada', role: 'coordinator', runId: 'a', data: { canvasId: 'canvas_x', title: '潜梦者', created: true } })
+      session.append('room/desk-wrote', { version: 1, owner: '@khorsheed/dsh-canvas', member: 'ada', role: 'coordinator', runId: 'a', data: { canvasId: 'canvas_x', items: [{ action: 'added', cardId: 'c1', title: '数据标注员' }] } })
       // The desk event's first spelling (canvas 0.6.0, 2026-10-29): a room that carries it still opens.
       ;(session.append as unknown as (type: string, data: unknown) => void)('canvas/desk-opened', { version: 1, canvasId: 'canvas_x', title: '潜梦者', created: true, member: 'ada', role: 'coordinator' })
       await fix.ctx.sessions.flush(session)

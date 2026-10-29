@@ -57,7 +57,9 @@ import { categoryLabelOf } from './category-label.ts'
 import { ProposeTypeRow, type ProposeTypeRowFace } from './type/ProposeTypeRow.tsx'
 import { OpenCanvasRow, type OpenCanvasRowFace } from './open/OpenCanvasRow.tsx'
 import { DeskOpenRow, type DeskOpenRowFace } from './open/DeskOpenRow.tsx'
-import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, setDeskRowSeated } from './open/desk-row.ts'
+import type { DeskWroteRowFace } from './open/DeskWroteRow.tsx'
+import { DESK_OWNER, DESK_ROW_KIND, DESK_WROTE_KIND, deskRowDefinition, deskWroteDefinition, setDeskRowSeated } from './open/desk-row.ts'
+import { DeskWroteNode } from './open/DeskWroteNode.tsx'
 import { DeskAttachment } from './open/DeskAttachment.tsx'
 import { CanvasTab } from './tab/CanvasTab.tsx'
 import { CanvasTabTitle } from './tab/CanvasTabTitle.tsx'
@@ -497,8 +499,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // composes ui-conversation, so `uiConversation` is read only once it can
   // exist (the canvas-novel turn-tail precedent); without them the room just
   // has no row, and the member's own session keeps its canvas_open row.
-  const deskFace: DeskOpenRowFace = {
+  const deskFace: DeskOpenRowFace & DeskWroteRowFace = {
     openCanvas: openFace.openCanvas,
+    openCard: (canvasId, cardId, heading) => {
+      openCanvasTab()
+      selection.openCardTab(canvasId, cardId, heading)
+    },
     addCanvas: canvasId => { selection.addCanvas(canvasId) },
   }
   ctx.effect(() => toolSlots.inject('conversation.chat.node', () => {
@@ -508,14 +514,23 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     const register = conversation?.events?.register
     if (register === undefined) return () => undefined
     const disposeDefinition = register.call(conversation?.events, deskRowDefinition)
+    const disposeWroteDefinition = register.call(conversation?.events, deskWroteDefinition)
     const disposeEntry = toolSlots.register({
       name: 'conversation.chat.node',
       key: DESK_ROW_KIND,
       locale: NS,
       inject: () => deskFace,
     }, DeskOpenRow)
+    const disposeWroteEntry = toolSlots.register({
+      name: 'conversation.chat.node',
+      key: DESK_WROTE_KIND,
+      locale: NS,
+      inject: () => deskFace,
+    }, DeskWroteNode)
     return () => {
+      disposeWroteEntry()
       disposeEntry()
+      disposeWroteDefinition()
       disposeDefinition()
     }
   }), 'canvas: room desk row')

@@ -476,6 +476,27 @@ describe('a room member\'s canvas tools work on the room\'s desk', () => {
     expect(read.ok && read.board.cards).toHaveLength(1)
   })
 
+  it('a write tells the room what it did: the card it added, named and categorised, with the member\'s run', async () => {
+    const { board, room, events, write } = bench('coordinator')
+    const shown = await board.createCanvas({ title: '晴天' }, room)
+    if (!shown.ok) throw new Error('expected a created canvas')
+    await board.focusCanvas({ canvasId: shown.board.id }, room)
+    const answer = await write({ op: 'card', kind: 'fragment', text: '阳光\\n照在窗台' })
+    const cardId = answer.replace(/^完成：/, '')
+    expect(events).toEqual([{ type: 'room/desk-wrote', data: {
+      version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'coordinator',
+      data: { canvasId: shown.board.id, title: '晴天', items: [{ action: 'added', title: '阳光', cardId, kind: expect.any(String) }] },
+    } }])
+    // The escaped line break arrived as a real one.
+    const read = await board.readBoard({ canvasId: shown.board.id })
+    expect(read.ok && read.board.cards[0]!.text).toBe('阳光\n照在窗台')
+    // A comment is told as a comment; a failed write tells nothing.
+    await write({ op: 'comment', cardId, text: '好' })
+    expect(events.at(-1)).toMatchObject({ type: 'room/desk-wrote', data: { data: { items: [{ action: 'commented', cardId }] } } })
+    await expect(write({ op: 'comment', cardId: 'c_none', text: '好' })).rejects.toThrow()
+    expect(events).toHaveLength(2)
+  })
+
   it('a member\'s switch stays its own; it reads the room\'s canvas until it picks one', async () => {
     const { board, room, own, events, open, write } = bench('member')
     const shown = await board.createCanvas({ title: '晴天' }, room)
@@ -487,7 +508,9 @@ describe('a room member\'s canvas tools work on the room\'s desk', () => {
     expect(answer).toContain('已放进房间侧栏的画布标签里')
     expect(board.focusedCanvasId(own)).toBe(rain.id)
     expect(board.focusedCanvasId(room)).toBe(shown.board.id)
-    expect(events).toEqual([{ type: 'room/desk-opened', data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'member', data: { canvasId: rain.id, title: '雨夜', created: true } } }])
+    // The write before it was told as a write; the open as an open.
+    expect(events.map(event => event.type)).toEqual(['room/desk-wrote', 'room/desk-opened'])
+    expect(events[1]).toEqual({ type: 'room/desk-opened', data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'member', data: { canvasId: rain.id, title: '雨夜', created: true } } })
     expect(await write({ op: 'card', kind: 'fragment', text: '雨声' })).toMatch(/^完成：c_/)
     const read = await board.readBoard({ canvasId: rain.id })
     expect(read.ok && read.board.cards).toHaveLength(1)

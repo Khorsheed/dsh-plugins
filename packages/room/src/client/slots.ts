@@ -543,8 +543,22 @@ declare module '@deepseek-ai/cordis' {
  */
 export interface RoomMemberAttachmentOwnerProps {
   readonly sessionId: SessionId
-  readonly attachment: RoomRunAttachment
+  /** The owner these belong to (the entry key). */
+  readonly owner: string
+  /** Everything this owner's events say the run did, in order: the owner may fold several writes into one line. */
+  readonly attachments: readonly RoomRunAttachment[]
   readonly live: boolean
+}
+
+/** A run's attachments grouped by owner, owners in first-appearance order. */
+export function attachmentsByOwner(attachments: readonly RoomRunAttachment[]): readonly (readonly [string, readonly RoomRunAttachment[]])[] {
+  const groups = new Map<string, RoomRunAttachment[]>()
+  for (const attachment of attachments) {
+    const group = groups.get(attachment.owner)
+    if (group === undefined) groups.set(attachment.owner, [attachment])
+    else group.push(attachment)
+  }
+  return [...groups]
 }
 
 /**

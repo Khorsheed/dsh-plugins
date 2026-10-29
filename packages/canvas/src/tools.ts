@@ -32,7 +32,8 @@ import {
   type FieldValue, type RefResolver, type TypeDefinition,
 } from './card-types.ts'
 import { imageRefOf } from './image-token.ts'
-import { actingSession, announceDeskOpen, deskOf } from './desk.ts'
+import { actingSession, announceDeskOpen, announceDeskWrite, deskOf, writeBaselineOf, writeItemsOf } from './desk.ts'
+import { unescapeDeep, unescapeLineBreaks } from './text-escapes.ts'
 import {
   isBoardCardKind,
   type BoardCard, type BoardCardSource, type BoardCategory, type CanvasBoard, type CanvasGenreAgent, type CanvasGenreDefinition, type CanvasImageRef,
@@ -564,16 +565,37 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
-    execute: async (args: WriteArgs, exec: { agent?: Agent }): Promise<string> => {
+    execute: async (arrived: WriteArgs, exec: { agent?: Agent }): Promise<string> => {
+      const args = unescapeWriteArgs(arrived)
       const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
-      if (args.op === 'comment') return writeComment(args, resolved)
-      if (args.op === 'archive') return archiveCard(args, resolved)
-      if (args.op === 'manuscript') return writeManuscript(args, resolved)
-      if (args.op === 'card') return writeCard(args, resolved)
-      return canvasFailure('失败：op 只能是 card、comment、archive 或 manuscript。')
+      // In a room, what this write did is told to the room (desk.ts): the
+      // member's turn there ends with a line naming the cards it touched.
+      const desk = deskOf(exec.agent)
+      const before = desk === undefined ? undefined : await board.readBoard({ canvasId: resolved.canvasId })
+      const answer = await dispatchWrite(args, resolved)
+      if (desk !== undefined && before?.ok === true) {
+        const after = await board.readBoard({ canvasId: resolved.canvasId })
+        if (after.ok) {
+          const items = writeItemsOf(writeBaselineOf(before.board), after.board, (card) => {
+            const category = after.board.categories.find(candidate => candidate.id === card.kind)
+            return { title: cardNameOf(card, category?.definition), kind: category === undefined ? '' : categoryNameOf(category) }
+          })
+          announceDeskWrite(desk, { canvasId: resolved.canvasId, title: after.board.title }, items)
+        }
+      }
+      return answer
     },
   })
+
+  /** Run one write by its op (a failure throws, so nothing is told to the room). */
+  const dispatchWrite = async (args: WriteArgs, resolved: Target): Promise<string> => {
+    if (args.op === 'comment') return writeComment(args, resolved)
+    if (args.op === 'archive') return archiveCard(args, resolved)
+    if (args.op === 'manuscript') return writeManuscript(args, resolved)
+    if (args.op === 'card') return writeCard(args, resolved)
+    return canvasFailure('失败：op 只能是 card、comment、archive 或 manuscript。')
+  }
 
   const writeCard = async (raw: WriteArgs, resolved: Target): Promise<string> => {
     const read = await board.readBoard({ canvasId: resolved.canvasId })
@@ -897,6 +919,17 @@ interface WriteArgs {
   baseVersion?: number
   title?: string
   sources?: { used?: string[]; unused?: string[] }
+}
+
+/** A write's free text with escaped line breaks restored (text-escapes.ts): body, comment, title, field values. */
+function unescapeWriteArgs(args: WriteArgs): WriteArgs {
+  return {
+    ...args,
+    ...args.text === undefined ? {} : { text: unescapeLineBreaks(args.text) },
+    ...args.comment === undefined ? {} : { comment: unescapeLineBreaks(args.comment) },
+    ...args.title === undefined ? {} : { title: unescapeLineBreaks(args.title) },
+    ...args.fields === undefined ? {} : { fields: unescapeDeep(args.fields) },
+  }
 }
 
 

@@ -99,11 +99,13 @@ describe('replay (pure journal fold)', () => {
       ev('room/desk-opened', opened('c', 'ghost')),                                                   // 4 (unknown run)
       ev('room/desk-opened', { version: 1, owner: '@khorsheed/dsh-game', member: 'ada', role: 'member', runId: 'r1', data: { project: 'p' } }), // 5
       ev('canvas/desk-opened', { canvasId: 'canvas_old', title: 'old', member: 'ada', role: 'member', runId: 'r1' }), // 6 (the old spelling: its own row only)
-      ev('room/run-state', { member: 'ada', state: 'done', startedAt: 100, runId: 'r1', elapsedMs: 5 }), // 7
+      ev('room/desk-wrote', { version: 1, owner: '@khorsheed/dsh-canvas', member: 'ada', role: 'member', runId: 'r1', data: { canvasId: 'canvas_a', items: [] } }), // 7
+      ev('room/run-state', { member: 'ada', state: 'done', startedAt: 100, runId: 'r1', elapsedMs: 5 }), // 8
     ])
     expect(state.executions?.find(entry => entry.id === 'r1')?.attachments).toEqual([
-      { owner: '@khorsheed/dsh-canvas', seq: 2, time: 1000, data: opened('a', 'r1') },
-      { owner: '@khorsheed/dsh-game', seq: 5, time: 1000, data: { version: 1, owner: '@khorsheed/dsh-game', member: 'ada', role: 'member', runId: 'r1', data: { project: 'p' } } },
+      { type: 'room/desk-opened', owner: '@khorsheed/dsh-canvas', seq: 2, time: 1000, data: opened('a', 'r1') },
+      { type: 'room/desk-opened', owner: '@khorsheed/dsh-game', seq: 5, time: 1000, data: { version: 1, owner: '@khorsheed/dsh-game', member: 'ada', role: 'member', runId: 'r1', data: { project: 'p' } } },
+      { type: 'room/desk-wrote', owner: '@khorsheed/dsh-canvas', seq: 7, time: 1000, data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'ada', role: 'member', runId: 'r1', data: { canvasId: 'canvas_a', items: [] } } },
     ])
   })
 

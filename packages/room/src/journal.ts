@@ -79,6 +79,8 @@ export const ROOM_EVENT_TYPES = [
   // 2026-10-29-room-desk): written by the owning plugin INTO the room, so the
   // room's vocabulary is what vouches for it.
   'room/desk-opened',
+  // …and what it wrote there (a card added, commented, archived).
+  'room/desk-wrote',
   // The desk event's first spelling, written by canvas 0.6.0 builds for a few
   // hours on 2026-10-29: rooms that carry it must still open.
   'canvas/desk-opened',
@@ -404,12 +406,13 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         })
         break
       }
-      case 'room/desk-opened': {
-        // What a member's run put on the desk belongs at the end of that
+      case 'room/desk-opened':
+      case 'room/desk-wrote': {
+        // What a member's run did on the desk belongs at the end of that
         // run's card and reply rather than on a row of its own.
         const execution = event.data.runId === undefined ? undefined : executions.get(event.data.runId)
         if (execution === undefined) break
-        const attachment: RoomRunAttachment = { owner: event.data.owner, seq: event.seq, time: event.time, data: event.data as unknown as RoomJsonValue }
+        const attachment: RoomRunAttachment = { type: event.type, owner: event.data.owner, seq: event.seq, time: event.time, data: event.data as unknown as RoomJsonValue }
         executions.set(execution.id, { ...execution, attachments: [...execution.attachments ?? [], attachment] })
         break
       }

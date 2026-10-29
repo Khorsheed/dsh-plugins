@@ -109,3 +109,90 @@ export function announceDeskOpen(desk: CanvasDesk, opened: { canvasId: string; t
     // A closed or read-only room: the member's own row still records the switch.
   }
 }
+
+/** One thing a write did to a canvas, as the room's line names it. */
+export interface CanvasDeskWriteItem {
+  readonly action: 'added' | 'changed' | 'commented' | 'archived' | 'manuscript'
+  readonly title: string
+  readonly cardId?: string
+  readonly manuscriptId?: string
+  /** The card's category name (人物, 世界…). */
+  readonly kind?: string
+}
+
+/** A room member wrote on a canvas: room's `room/desk-wrote` payload, the canvas's fields under `data`. */
+export interface CanvasDeskWrote extends Omit<CanvasDeskOpened, 'data'> {
+  readonly data: { readonly canvasId: string; readonly title: string; readonly items: readonly CanvasDeskWriteItem[] }
+}
+
+/** What a board looked like before a write, as far as the diff needs. */
+export interface CanvasWriteBaseline {
+  readonly cards: ReadonlyMap<string, { readonly status: string; readonly comments: number; readonly updatedAt: string }>
+  readonly manuscripts: ReadonlyMap<string, number>
+}
+
+/** The minimal board shape the diff reads. */
+interface BoardLike {
+  readonly title: string
+  readonly cards: readonly { readonly id: string; readonly kind: string; readonly status: string; readonly comments: readonly unknown[]; readonly updatedAt: string }[]
+  readonly manuscripts: readonly { readonly id: string; readonly title: string; readonly version: number }[]
+}
+
+/** Snapshot a board before a write. */
+export function writeBaselineOf(board: BoardLike): CanvasWriteBaseline {
+  return {
+    cards: new Map(board.cards.map(card => [card.id, { status: card.status, comments: card.comments.length, updatedAt: card.updatedAt }])),
+    manuscripts: new Map(board.manuscripts.map(manuscript => [manuscript.id, manuscript.version])),
+  }
+}
+
+/**
+ * What a write changed: new cards, archived ones, new comments, other edits,
+ * new or revised manuscripts — in board order.
+ * @param before - the snapshot taken before the write.
+ * @param after - the board after it.
+ * @param nameOf - a card's display name and category name.
+ */
+export function writeItemsOf<Card extends BoardLike['cards'][number]>(
+  before: CanvasWriteBaseline,
+  after: BoardLike & { readonly cards: readonly Card[] },
+  nameOf: (card: Card) => { title: string; kind: string },
+): CanvasDeskWriteItem[] {
+  const items: CanvasDeskWriteItem[] = []
+  for (const card of after.cards) {
+    const was = before.cards.get(card.id)
+    const action = was === undefined ? 'added'
+      : was.status !== 'archived' && card.status === 'archived' ? 'archived'
+        : card.comments.length > was.comments ? 'commented'
+          : card.updatedAt !== was.updatedAt ? 'changed'
+            : undefined
+    if (action === undefined) continue
+    const { title, kind } = nameOf(card)
+    items.push({ action, title, cardId: card.id, ...kind === '' ? {} : { kind } })
+  }
+  for (const manuscript of after.manuscripts) {
+    const was = before.manuscripts.get(manuscript.id)
+    if (was === undefined || manuscript.version > was) items.push({ action: 'manuscript', title: manuscript.title, manuscriptId: manuscript.id })
+  }
+  return items
+}
+
+/**
+ * Tell the room what a write did on a canvas (best-effort, like the open).
+ * @param desk - the caller's desk.
+ * @param canvas - which canvas.
+ * @param items - what changed; nothing is written when empty.
+ */
+export function announceDeskWrite(desk: CanvasDesk, canvas: { canvasId: string; title: string }, items: readonly CanvasDeskWriteItem[]): void {
+  if (items.length === 0) return
+  try {
+    const event: CanvasDeskWrote = {
+      version: 1, owner: CANVAS_DESK_OWNER, member: desk.member, role: desk.role,
+      ...desk.runId === undefined ? {} : { runId: desk.runId },
+      data: { canvasId: canvas.canvasId, title: canvas.title, items },
+    }
+    ;(desk.session.append as unknown as (type: string, data: unknown) => unknown).call(desk.session, 'room/desk-wrote', event)
+  } catch {
+    // A closed room loses only the line.
+  }
+}

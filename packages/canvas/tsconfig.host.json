@@ -21,6 +21,7 @@
     "src/skill.ts",
     "src/tools.ts",
     "src/desk.ts",
+    "src/text-escapes.ts",
     "src/types.ts"
   ]
 }

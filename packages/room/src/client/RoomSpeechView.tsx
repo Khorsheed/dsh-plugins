@@ -28,7 +28,7 @@ import { askCardData, type RoomSpeechData } from './nodes.ts'
 import { formatClock, formatDurationMs } from './format.ts'
 import { revealRoomRow, speechCause } from './speech-cause.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
-import type { RoomQuestionViewProps, RoomSpeechViewProps } from './slots.ts'
+import { attachmentsByOwner, type RoomQuestionViewProps, type RoomSpeechViewProps } from './slots.ts'
 import type { RoomAsk, RoomExecution } from '../types.ts'
 import css from './RoomSpeechView.module.css'
 
@@ -209,9 +209,9 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
           owning plugin's row, at the end of the reply. */}
       {execution?.attachments !== undefined && execution.attachments.length > 0 && (
         <div className={css.attachments}>
-          {execution.attachments.map(attachment => (
-            <div key={attachment.seq}>
-              {renderSlot('room.member.attachment', { sessionId, attachment, live: false }, { entryKey: attachment.owner, fallback: null })}
+          {attachmentsByOwner(execution.attachments).map(([owner, attachments]) => (
+            <div key={owner}>
+              {renderSlot('room.member.attachment', { sessionId, owner, attachments, live: false }, { entryKey: owner, fallback: null })}
             </div>
           ))}
         </div>
