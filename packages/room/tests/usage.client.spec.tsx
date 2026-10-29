@@ -33,7 +33,7 @@ describe('member usage', () => {
     expect(memberUsage(STATE)).toEqual([
       { member: '游戏大师', model: 'claude-opus-5-5', rounds: 2, tokens: 144_000, elapsedMs: 102_000 },
       // A rename keeps one row under the current name; the split sums the rounds that recorded one.
-      { member: '剪刀手', formerNames: ['剪子'], model: 'gpt-6.1', rounds: 2, tokens: 12_000, input: 10_500, cacheRead: 9_000, output: 1_500, elapsedMs: 30_000 },
+      { member: '剪刀手', model: 'gpt-6.1', rounds: 2, tokens: 12_000, input: 10_500, cacheRead: 9_000, output: 1_500, elapsedMs: 30_000 },
     ])
     expect(memberUsage(undefined)).toEqual([])
   })
@@ -48,7 +48,8 @@ describe('member usage', () => {
     // The total column carries a member whose records hold no split.
     expect(breakdown.textContent).toContain('144K')
     expect(breakdown.textContent).toContain('1m42s')
-    expect(breakdown.textContent).toContain('剪刀手（原 剪子）')
+    expect(breakdown.textContent).toContain('剪刀手')
+    expect(breakdown.textContent).not.toContain('剪子')
     expect(breakdown.textContent).toContain('10.5K')
     expect(breakdown.textContent).toContain('86%')
     fireEvent.keyDown(document, { key: 'Escape' })
