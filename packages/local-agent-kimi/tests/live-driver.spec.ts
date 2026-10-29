@@ -517,6 +517,39 @@ describe('kimi live driver rounds', () => {
     liveStreams.dispose()
   }, 15_000)
 
+  it('a usage record flushed ahead of its step\'s content still lands on that reply (75844e33 turn 15)', async () => {
+    // The settle polls caught the wire between the final step's usage.record
+    // and its content: a settle-mode read took the record as the round's rest,
+    // and the reply folded on the next poll without usage.
+    const m = mount({ config: { snapshotMinIntervalMs: 0 }, timeouts: { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 10_000 } })
+    const liveStreams = new LocalAgentStreams()
+    Object.assign(m.ctx.localAgent, { liveStreams, recordRoundSettled: vi.fn() })
+    const child = Session.create(SessionId('child-record-ahead-kimi'))
+    const dir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    const head = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '继续' }] },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: 0, step: 1 } },
+      { type: 'usage.record', usage: { inputOther: 3304, output: 1973, inputCacheRead: 66048 } },
+    ]
+    const tail = [
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'text', text: 'hello' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: 0, step: 1 } },
+    ]
+    m.queueChild(new FakeAcpServer({ turn: () => {
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, 'wire.jsonl'), head.map(row => JSON.stringify(row)).join('\n') + '\n')
+      setTimeout(() => { writeFileSync(join(dir, 'wire.jsonl'), [...head, ...tail].map(row => JSON.stringify(row)).join('\n') + '\n') }, 1_500)
+      return { chunks: ['hello'] }
+    } }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    const answers = child.snapshotEvents().filter(event => event.type === 'assistant/message' && JSON.stringify(event.data.message.content).includes('hello'))
+    expect(answers).toHaveLength(1)
+    expect(answers[0]!.data).toMatchObject({ usage: { inputTokens: 3304, outputTokens: 1973, cacheReadTokens: 66048 } })
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  }, 15_000)
+
   it('publishes transient output while keeping only authoritative assistant messages in history', async () => {
     const m = mount({ config: { snapshotMinIntervalMs: 0 } })
     const liveStreams = new LocalAgentStreams()
