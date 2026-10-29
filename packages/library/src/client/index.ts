@@ -34,6 +34,9 @@ import { LibraryBindChip, type LibraryBindInjected } from './bind/BindChip.tsx'
 import { createLibraryStore } from './store.ts'
 import { RevealedProject } from './reveal.ts'
 import { en, NS, zh } from './locales.ts'
+import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, setDeskRowSeated } from './desk/desk-row.ts'
+import { DeskOpenRow, type DeskOpenRowFace } from './desk/DeskOpenRow.tsx'
+import { DeskAttachment } from './desk/DeskAttachment.tsx'
 import {
   LibraryTabVisibility, RegistrationToggle, type LibraryPluginInventorySnapshot,
 } from './preset-visibility.ts'
@@ -269,6 +272,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // library tools (the strict half of the criterion). The header seat is
   // declared by ui-conversation, which this package does not depend on —
   // without it the inject never fires.
+  // Structural slot reach: the header, chat-node and room card seats are
+  // declared by packages this one does not depend on.
   const headerSlots = ctx.slots as unknown as {
     inject: (key: string, callback: () => () => void) => () => void
     register: (options: Record<string, unknown>, component: unknown) => () => void
@@ -288,6 +293,60 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: bindFace,
   }, LibraryBindChip)), 'library: session binding chip')
+
+  // In a room, a member's bind writes room's `room/desk-opened` (owner: this
+  // package) into the ROOM (../desk.ts): its row tells the room who opened
+  // which book, and the coordinator's opens the library on it (desk/desk-row.ts).
+  // ui-chat declares the node seat and composes ui-conversation, so
+  // `uiConversation` is read only once the seat exists; without them the room
+  // just has no row.
+  const deskFace: DeskOpenRowFace = {
+    openBook: (projectId, resourceId) => {
+      revealed.reveal(projectId, resourceId)
+      try {
+        (ctx.get('sidebarRight') as { openTab?: (kind: string) => void } | undefined)?.openTab?.(LIBRARY_KIND)
+      } catch {
+        // No on-screen sidebar surface (or the tab is not offered here): the reveal waits for the next mount.
+      }
+    },
+  }
+  ctx.effect(() => headerSlots.inject('conversation.chat.node', () => {
+    const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
+      events?: { register?: (definition: unknown) => () => void }
+    } | undefined
+    const register = conversation?.events?.register
+    if (register === undefined) return () => undefined
+    const disposeDefinition = register.call(conversation?.events, deskRowDefinition)
+    const disposeEntry = headerSlots.register({
+      name: 'conversation.chat.node',
+      key: DESK_ROW_KIND,
+      locale: NS,
+      inject: () => deskFace,
+    }, DeskOpenRow)
+    return () => {
+      disposeEntry()
+      disposeDefinition()
+    }
+  }), 'library: room desk row')
+  // The same row at the end of the member's card, where the room seats it
+  // (`room.member.attachment` on the reply, `room.run.attachment` on the
+  // running card): the row's own node then steps aside for every event that
+  // names a run.
+  for (const seat of ['room.member.attachment', 'room.run.attachment'] as const) {
+    ctx.effect(() => headerSlots.inject(seat, () => {
+      const dispose = headerSlots.register({
+        name: seat,
+        key: DESK_OWNER,
+        locale: NS,
+        inject: () => deskFace,
+      }, DeskAttachment)
+      if (seat === 'room.member.attachment') setDeskRowSeated(true)
+      return () => {
+        if (seat === 'room.member.attachment') setDeskRowSeated(false)
+        dispose()
+      }
+    }), `library: room card desk row (${seat})`)
+  }
 
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()

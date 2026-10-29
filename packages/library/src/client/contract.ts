@@ -90,7 +90,7 @@ export interface LibraryPaneInjected {
   /** The session's binding, when it has one. */
   boundTarget: () => Promise<RemoteResult<LibraryBinding | null>>
   /** The project a reveal asks the pane to land on, taken once (see reveal.ts). */
-  revealed: Pick<RevealedProject, 'take' | 'subscribe'>
+  revealed: Pick<RevealedProject, 'take' | 'takeTarget' | 'subscribe'>
   /** Bind the session (null unbinds). */
   bindTarget: (binding: LibraryBinding | null) => Answer<{ binding: LibraryBinding | null }>
   /**

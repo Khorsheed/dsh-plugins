@@ -23,6 +23,7 @@ import z from '@deepseek-ai/schemastery'
 // Type-only: pulls this package's `Context.library` service augmentation.
 import type {} from './index.ts'
 import { libraryToolDefinitions } from './tool-definition.ts'
+import { bindingSessionIdOf, type Exec } from './tools/kit.ts'
 import type { LibraryService } from './service.ts'
 import { ImageRefCache } from './image-refs.ts'
 import { masteryReason } from './mastery.ts'
@@ -212,10 +213,11 @@ export function apply(ctx: Context, config: LibraryToolConfig = {}): void {
       name: 'library:binding',
       order: CONTEXT_ORDER,
       text: (context) => {
-        const id = context.agent?.session?.id
+        // Desk-aware: a room member reads the binding its tools default to.
+        const id = bindingSessionIdOf(sessionId => service.getBinding(sessionId), context as unknown as Exec)
         if (id === undefined) return ''
         try {
-          return renderBindingContext(service, String(id))
+          return renderBindingContext(service, id)
         } catch {
           return ''
         }

@@ -10,20 +10,28 @@
 
 /** One-shot hand-off from the reveal effect to the pane. */
 export class RevealedProject {
-  private pending: string | undefined
+  private pending: { readonly projectId: string; readonly resourceId?: string } | undefined
   private readonly listeners = new Set<() => void>()
 
-  /** Ask the pane to open this project; a mounted pane is told at once. */
-  reveal(projectId: string): void {
-    this.pending = projectId
+  /**
+   * Ask the pane to open this project — or this book in it (a room's desk
+   * row); a mounted pane is told at once.
+   */
+  reveal(projectId: string, resourceId?: string): void {
+    this.pending = { projectId, ...(resourceId === undefined ? {} : { resourceId }) }
     for (const listener of [...this.listeners]) listener()
   }
 
   /** The project to open, cleared as it is taken; undefined when nothing waits. */
   take(): string | undefined {
-    const projectId = this.pending
+    return this.takeTarget()?.projectId
+  }
+
+  /** The project (and book, when one was named) to open, cleared as it is taken. */
+  takeTarget(): { readonly projectId: string; readonly resourceId?: string } | undefined {
+    const target = this.pending
     this.pending = undefined
-    return projectId
+    return target
   }
 
   /** Be told when a reveal arrives. */

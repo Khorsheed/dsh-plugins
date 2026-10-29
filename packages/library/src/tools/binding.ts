@@ -10,14 +10,14 @@ import {
   jsonOutput,
   payload,
   pickString,
-  sessionIdOf,
+  actingSessionIdOf,
   unwrap,
   type ToolKit,
 } from './kit.ts'
 
 /** Build the `library_binding` tool over the shared kit. */
 export function libraryBindingTool(kit: ToolKit): ToolDefinition {
-  const { service, textbookList } = kit
+  const { service, textbookList, announceBinding } = kit
   return defineTool({
     name: 'library_binding',
     description:
@@ -30,7 +30,10 @@ export function libraryBindingTool(kit: ToolKit): ToolDefinition {
     output: jsonOutput(),
     isConcurrencySafe: () => false,
     async execute(args, exec) {
-      const sessionId = sessionIdOf(exec)
+      // In a room the bind lands on the acting session — the room's for the
+      // coordinator (its sidebar follows), a member's own otherwise — and the
+      // room hears of it (../desk.ts). Unbinding is not announced.
+      const sessionId = actingSessionIdOf(exec)
       if (sessionId === undefined) throw new Error('binding needs a session — this call came from none')
       // unbind: true (or the older binding: null) unbinds; the older nested
       // binding { project, resource } still parses.
@@ -46,9 +49,12 @@ export function libraryBindingTool(kit: ToolKit): ToolDefinition {
       // registered) binds the project and says so — not a failed call.
       if (resourceId !== undefined && !(await service.getResource({ projectId, resourceId })).ok) {
         const bound = unwrap(await service.setBinding(sessionId, { projectId }))
+        announceBinding(exec)
         return { ...bound, note: `no resource ${JSON.stringify(resourceId)} in this project — bound the project only. Resource ids are minted (r_…); registering the textbook (library_textbook) binds this session to it by itself${textbookList(exec)}` } as unknown as JsonValue
       }
-      return unwrap(await service.setBinding(sessionId, { projectId, ...(resourceId === undefined ? {} : { resourceId }) })) as unknown as JsonValue
+      const bound = unwrap(await service.setBinding(sessionId, { projectId, ...(resourceId === undefined ? {} : { resourceId }) }))
+      announceBinding(exec)
+      return bound as unknown as JsonValue
     },
   })
 }

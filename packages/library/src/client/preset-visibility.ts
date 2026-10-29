@@ -15,6 +15,12 @@
  *   preset's plugins): visible exactly when the CURRENT session's preset
  *   composition names that row.
  *
+ * 3. **Room union** (proposal 2026-10-29-room-desk): in a room, any member's
+ *   preset that mounts the row shows the tab too — the room's own mode may be
+ *   开发 while a member coaches — read from room's `roomModes` client
+ *   service, probed through `ctx.get` (without room the criterion is exactly
+ *   paths 1–2).
+ *
  * Checking only path 2 re-runs the 2026-09-16 canvas incident: the
  * composition data is perfectly readable, the row simply is not IN any
  * preset, so the verdict would be a permanent hide. Every unreadable path
@@ -59,6 +65,17 @@ export interface LibraryPluginInventorySnapshot {
   }[]
 }
 
+/** room's client service: the member presets of a room session (structural — room is not a dependency). */
+interface RoomModesLike {
+  presetsOf: (sessionId: string) => readonly string[] | undefined
+  subscribe: (listener: () => void) => () => void
+}
+
+/** Whether one preset group mounts the library tool row. */
+function grantsRow(group: { readonly rows: readonly { readonly moduleName: string; readonly enabled?: boolean }[] }): boolean {
+  return group.rows.some(row => row.moduleName === LIBRARY_TOOL_ROW_MODULE && row.enabled !== false)
+}
+
 /** The current session's agent preset, the dual read per host line. */
 function presetOf(row: unknown): string | undefined {
   const value = (row as { projectionValues?: { agentPreset?: unknown }; agentPreset?: unknown } | undefined)
@@ -100,6 +117,29 @@ export class LibraryTabVisibility {
       () => ctx.sessions.list.subscribe(() => { this.notify() }),
       'library: tab visibility session follower',
     )
+    // A room's roster moves the union (path 3). The deferred arm never fires
+    // without the room plugin.
+    ;(ctx.inject as (deps: string[], callback: (scoped: Context) => void) => void)(['roomModes'], (scoped) => {
+      const modes = (scoped as unknown as { roomModes: RoomModesLike }).roomModes
+      scoped.effect(() => modes.subscribe(() => { this.notify() }), 'library: tab visibility room follower')
+    })
+  }
+
+  /**
+   * Path 3: whether any readable member preset of this room session mounts
+   * the row (an unknown or broken member preset does not count).
+   */
+  private roomGrants(sessionId: SessionId): boolean {
+    let members: readonly string[] = []
+    try {
+      members = (this.ctx.get as (name: string) => RoomModesLike | undefined).call(this.ctx, 'roomModes')?.presetsOf(String(sessionId)) ?? []
+    } catch {
+      members = []
+    }
+    return members.some(id => {
+      const member = this.composition?.agentPresets?.find(candidate => candidate.id === id)
+      return member !== undefined && member.broken === undefined && grantsRow(member)
+    })
   }
 
   show(sessionId: SessionId | undefined): boolean {
@@ -113,7 +153,9 @@ export class LibraryTabVisibility {
     const group = this.composition.agentPresets?.find(candidate => candidate.id === preset)
     if (group === undefined || group.broken !== undefined) return true
     // Path 2: the preset-mounted row grants this session.
-    return group.rows.some(row => row.moduleName === LIBRARY_TOOL_ROW_MODULE && row.enabled !== false)
+    if (grantsRow(group)) return true
+    // Path 3: a room shows what any member's mode reaches.
+    return this.roomGrants(sessionId)
   }
 
   /**
@@ -127,7 +169,9 @@ export class LibraryTabVisibility {
     if (this.composition.entries?.some(row => row.moduleName === LIBRARY_TOOL_ROW_MODULE && row.enabled === true) === true) return true
     const preset = presetOf(this.ctx.sessions.list.getSnapshot().byId[sessionId])
     const group = preset === undefined ? undefined : this.composition.agentPresets?.find(candidate => candidate.id === preset)
-    return group?.rows.some(row => row.moduleName === LIBRARY_TOOL_ROW_MODULE && row.enabled !== false) === true
+    if (group !== undefined && grantsRow(group)) return true
+    // In a room the chip binds the room's desk, which a member coaching there reads.
+    return this.roomGrants(sessionId)
   }
 
   /** Subscribe to criterion-input changes (session switches, the inventory answer). */
