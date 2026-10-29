@@ -68,10 +68,14 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
     return this.store.deleteProject(request.projectId, request.mode === 'forget' ? 'forget' : 'trash', await panelSession(this.ctx, sessionId))
   }
 
-  /** Bind the session to a project, or unbind with `projectId: null`. */
+  /**
+   * Bind the session to a project, or unbind with `projectId: null`. `desk`
+   * marks the session as a room's desk (the room row's 打开): the room's own
+   * turns then stay out of the game's end-of-turn checks.
+   */
   @Remote('bind')
-  bind(sessionId: SessionId, request: { projectId: string | null }): Promise<GameResult> {
-    return this.store.bind(sessionId, request.projectId)
+  bind(sessionId: SessionId, request: { projectId: string | null; desk?: boolean }): Promise<GameResult> {
+    return this.store.bind(sessionId, request.projectId, request.desk === true ? { desk: true } : {})
   }
 
   /** One working build file, for a panel preview ahead of any version. */

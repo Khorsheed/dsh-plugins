@@ -26,6 +26,9 @@ import { Reveal } from './reveal.ts'
 import { encodeGameRef, GAME_REF_SOURCE, gameRefCodec } from './refs.ts'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
+import { DeskAttachment } from './DeskAttachment.tsx'
+import { DeskOpenRow, type DeskOpenRowFace } from './DeskOpenRow.tsx'
+import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, setDeskRowSeated } from './desk-row.ts'
 import { en, NS, zh } from './locales.ts'
 import { GameTabVisibility, RegistrationToggle, type GamePluginInventorySnapshot } from './preset-visibility.ts'
 
@@ -287,6 +290,68 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       disposeDefinition()
     }
   }), 'game: turn-tail card')
+
+  // In a room, a member's game_open writes a room/desk-opened event into the
+  // ROOM (../desk.ts): its row tells the room who opened which project. The
+  // coordinator's, seen arriving, opens the game tab on it (the room session
+  // is already bound host-side); a member's only offers 打开 →, which binds
+  // the room to that project — the user's explicit choice — and opens the tab.
+  // Without ui-conversation or the room's seats the room just has no row.
+  const deskFace: DeskOpenRowFace = {
+    openProject: (sessionId, projectId) => {
+      void (async () => {
+        const live = await api.liveVersion(sessionId as SessionId).catch(() => undefined)
+        if (live?.ok !== true || live.value?.projectId !== projectId) {
+          const bound = await remote.bind(sessionId as SessionId, { projectId, desk: true }).catch(() => undefined)
+          if (bound?.ok !== true || !bound.value.ok) ctx.logger.warn('game: could not bind the room to the desk project', projectId)
+        }
+        emit(sessionId)
+        try {
+          ctx.sidebarRight.openTab(GAME_KIND)
+        } catch (error) {
+          ctx.logger.warn('game: openTab failed (tab type not registered?)', error)
+        }
+      })()
+    },
+  }
+  ctx.effect(() => seats.inject('conversation.chat.node', () => {
+    const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
+      events?: { register?: (definition: unknown) => () => void }
+    } | undefined
+    const register = conversation?.events?.register
+    if (register === undefined) return () => undefined
+    const disposeDefinition = register.call(conversation?.events, deskRowDefinition)
+    const disposeEntry = seats.register({
+      name: 'conversation.chat.node',
+      key: DESK_ROW_KIND,
+      locale: NS,
+      inject: () => deskFace,
+    }, DeskOpenRow)
+    return () => {
+      disposeEntry()
+      disposeDefinition()
+    }
+  }), 'game: room desk row')
+  // The same row at the end of the member's card, where the room seats it
+  // (room's `room.member.attachment` on the reply, `room.run.attachment` on
+  // the running card): the row's own node then steps aside for every event
+  // that names a run.
+  for (const seat of ['room.member.attachment', 'room.run.attachment'] as const) {
+    ctx.effect(() => seats.inject(seat, () => {
+      const dispose = seats.register({
+        name: seat,
+        key: DESK_OWNER,
+        locale: NS,
+        inject: () => deskFace,
+      }, DeskAttachment)
+      // The reply's seat decides: the row's own node steps aside once a run's card can hold it.
+      if (seat === 'room.member.attachment') setDeskRowSeated(true)
+      return () => {
+        if (seat === 'room.member.attachment') setDeskRowSeated(false)
+        dispose()
+      }
+    }), `game: room card desk row (${seat})`)
+  }
 
   // The conversation rows for dsh-game messages (check findings, attached changes).
   ctx.inject(['uiConversation'], (lctx) => {

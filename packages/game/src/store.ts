@@ -68,6 +68,21 @@ export function resolveGameStateRoot(configured: string | undefined): string {
 interface Registry {
   projects: ProjectRow[]
   bindings: Record<string, string>
+  /**
+   * Sessions bound as a room's desk (a room coordinator's `game_open`): the
+   * room's sidebar shows the project, but the room's own turns are not the
+   * game's — the end-of-turn checks and turn reports leave them alone.
+   */
+  desk?: Record<string, true>
+}
+
+/** Set or clear a session's desk mark, dropping the map when it empties. */
+function markDesk(registry: Registry, sessionId: string, on: boolean): void {
+  if (on) registry.desk = { ...registry.desk, [sessionId]: true }
+  else if (registry.desk !== undefined) {
+    delete registry.desk[sessionId]
+    if (Object.keys(registry.desk).length === 0) delete registry.desk
+  }
 }
 
 /** The user layer (`.game/user.json`): slider overrides, changes waiting for the next send, a pending restyle. */
@@ -203,6 +218,7 @@ export class GameService {
     return {
       projects: Array.isArray(raw?.projects) ? raw.projects.filter(p => typeof p?.id === 'string' && typeof p.root === 'string') : [],
       bindings: raw?.bindings !== null && typeof raw?.bindings === 'object' ? { ...raw.bindings } : {},
+      ...raw?.desk !== null && typeof raw?.desk === 'object' && Object.keys(raw.desk).length > 0 ? { desk: { ...raw.desk } } : {},
     }
   }
 
@@ -242,10 +258,10 @@ export class GameService {
     return out
   }
 
-  /** Snapshot the bound project when a turn starts (undefined when unbound). */
+  /** Snapshot the bound project when a turn starts (undefined when unbound, or bound as a room's desk). */
   async turnBaseline(sessionId: string): Promise<TurnBaseline | undefined> {
     const row = await this.boundProject(sessionId)
-    if (row === undefined) return undefined
+    if (row === undefined || await this.isDesk(sessionId)) return undefined
     const files = new Map((await walk(row.root, () => true)).map(f => [f.path, createHash('sha1').update(f.data).digest('hex')]))
     const manifest = await this.manifestOf(row.root)
     return {
@@ -346,17 +362,29 @@ export class GameService {
     return id === undefined ? undefined : registry.projects.find(p => p.id === id)
   }
 
-  /** Bind a session to a project (or unbind with null). */
-  async bind(sessionId: string, projectId: string | null): Promise<GameResult> {
+  /**
+   * Bind a session to a project (or unbind with null). `desk: true` marks
+   * the session as a room's desk (a room coordinator's `game_open`, the room
+   * row's 打开); `false` clears the mark; left out, a switch keeps whatever
+   * mark the session had (the room's own panel switcher). Unbinding clears it.
+   */
+  async bind(sessionId: string, projectId: string | null, options: { desk?: boolean } = {}): Promise<GameResult> {
     return this.updateRegistry(registry => {
       if (projectId === null) {
         delete registry.bindings[sessionId]
+        markDesk(registry, sessionId, false)
         return { ok: true } as const
       }
       if (!registry.projects.some(p => p.id === projectId)) return { ok: false, error: 'not-found' } as const
       registry.bindings[sessionId] = projectId
+      if (options.desk !== undefined) markDesk(registry, sessionId, options.desk)
       return { ok: true } as const
     })
+  }
+
+  /** Whether the session's binding is a room's desk (see {@link Registry.desk}). */
+  async isDesk(sessionId: string): Promise<boolean> {
+    return (await this.readRegistry()).desk?.[sessionId] === true
   }
 
   private async touch(projectId: string): Promise<void> {
@@ -416,7 +444,11 @@ export class GameService {
     }
     await this.updateRegistry(registry => {
       registry.projects = registry.projects.filter(p => p.id !== projectId)
-      for (const [sid, bound] of Object.entries(registry.bindings)) if (bound === projectId) delete registry.bindings[sid]
+      for (const [sid, bound] of Object.entries(registry.bindings)) {
+        if (bound !== projectId) continue
+        delete registry.bindings[sid]
+        markDesk(registry, sid, false)
+      }
     })
     this.notify(projectId)
     return { ok: true, ...(trashedTo === undefined ? {} : { trashedTo }) }
@@ -718,6 +750,19 @@ export class GameService {
    */
   async checkTurn(session: Session, attempt: number, cap: number, by: VersionSource = 'turn'): Promise<TurnCheckOutcome> {
     const row = await this.boundProject(session.id)
+    // A room's desk binding: the room's turns are not the game's (the members publish with game_publish).
+    if (row === undefined || await this.isDesk(session.id)) return { kind: 'skip' }
+    return this.checkRow(row, session, attempt, cap, by)
+  }
+
+  /**
+   * The same checks on a named project (`game_publish`): the project may be
+   * a room's while the fence is the calling member's own session.
+   * @param projectId - registry id.
+   * @param session - the session whose fence and read-only flag apply.
+   */
+  async checkProject(projectId: string, session: Session, attempt: number, cap: number, by: VersionSource): Promise<TurnCheckOutcome> {
+    const row = await this.row(projectId)
     if (row === undefined) return { kind: 'skip' }
     return this.checkRow(row, session, attempt, cap, by)
   }
