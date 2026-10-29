@@ -1396,6 +1396,11 @@ export class KimiAcpLiveDriver {
 
     /** Throttled push-triggered mirror pass; the file fold stays the only transcript source. */
     const triggerMirror = (): void => {
+      // Settlement owns the wire from here: a live pass started now would run
+      // beside the settle polls, read the same offset and fold the same step
+      // twice (75844e33 turn 14, an interrupted turn whose late updates kept
+      // arriving while it settled).
+      if (roundSettled) return
       const now = Date.now()
       if (now - lastMirrorAt < this.timeouts.mirrorThrottleMs) return
       lastMirrorAt = now
@@ -1572,6 +1577,17 @@ export class KimiAcpLiveDriver {
      * final mirror folds until consecutive reads see no growth — bounded, so
      * a stuck flush cannot pin the round beyond the quiescence window.
      */
+    /**
+     * Run one mirror pass on the round's single mirror queue: a pass reads
+     * the stored offset, folds, then writes it back, so two passes in flight
+     * at once fold the same lines twice.
+     */
+    const serialMirror = <T,>(pass: () => Promise<T>): Promise<T> => {
+      const next = mirrorQueue.then(pass)
+      mirrorQueue = next.catch(() => {})
+      return next
+    }
+
     const settleMirror = async (completed: boolean): Promise<void> => {
       await mirrorQueue.catch(() => {})
       const sessionId = runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId)
@@ -1589,7 +1605,7 @@ export class KimiAcpLiveDriver {
         // step — a settle pass takes it as the round's rest the moment it
         // lands, before the step's content, and the reply folds without
         // usage (75844e33 turn 15).
-        const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions())
+        const delta = await serialMirror(() => mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions()))
         noteMirrorUsage(delta)
         localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
         stableReads = delta.total === lastTotal ? stableReads + 1 : 0
@@ -1602,7 +1618,7 @@ export class KimiAcpLiveDriver {
       // The settle pass takes what the polls left: a step that never closed
       // folds as it stands, a tool result that never came is synthesized, and
       // a boundary usage record whose step never landed counts as the rest.
-      const last = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(true))
+      const last = await serialMirror(() => mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(true)))
       noteMirrorUsage(last)
     }
 
