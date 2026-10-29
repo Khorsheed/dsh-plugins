@@ -9,6 +9,9 @@
  * 2. **Preset mount** (the shipped shape: the root row disabled, the game
  *   preset names the entry) → visible exactly when the CURRENT session's
  *   preset composition names that row.
+ * 3. **Room union** — in a room, any member's mode that names the row counts
+ *   too (the room's own mode may be 开发 while a member builds the game;
+ *   room's `ctx.roomModes`, read structurally — no room dependency).
  *
  * Every unreadable path fails OPEN (visible): no pluginInventory namespace, a
  * pending/failed RPC, a missing or `broken` preset group, a session with no
@@ -44,6 +47,17 @@ export interface GamePluginInventorySnapshot {
       readonly enabled?: boolean
     }[]
   }[]
+}
+
+/** The room plugin's `ctx.roomModes`, structurally (no dependency on the room package). */
+interface RoomModesLike {
+  presetsOf: (sessionId: string) => readonly string[] | undefined
+  subscribe: (listener: () => void) => () => void
+}
+
+/** Whether one preset group mounts any of `modules`. */
+function grants(group: { readonly rows: readonly { readonly moduleName: string; readonly enabled?: boolean }[] }, modules: readonly string[]): boolean {
+  return group.rows.some(row => modules.includes(row.moduleName) && row.enabled !== false)
 }
 
 /** The current session's agent preset, the dual read per host line. */
@@ -87,6 +101,12 @@ export class GameTabVisibility {
       () => ctx.sessions.list.subscribe(() => { this.notify() }),
       'game: tab visibility session follower',
     )
+    // A room's roster moves the union (path 3). The deferred arm never fires
+    // without the room plugin, and the criterion is then exactly paths 1–2.
+    ;(ctx.inject as (deps: string[], callback: (scoped: Context) => void) => void)(['roomModes'], (scoped) => {
+      const modes = (scoped as unknown as { roomModes: RoomModesLike }).roomModes
+      scoped.effect(() => modes.subscribe(() => { this.notify() }), 'game: tab visibility room follower')
+    })
   }
 
   show(sessionId: SessionId | undefined): boolean {
@@ -108,7 +128,14 @@ export class GameTabVisibility {
     const group = this.composition.agentPresets?.find(candidate => candidate.id === preset)
     if (group === undefined || group.broken !== undefined) return true
     // Path 2: the preset-mounted row grants this session.
-    return group.rows.some(row => modules.includes(row.moduleName) && row.enabled !== false)
+    if (grants(group, modules)) return true
+    // Path 3: a room shows what any member's mode reaches. Only readable
+    // member modes count: an unknown one leaves the verdict to the room's own.
+    const members = (this.ctx.get as (name: string) => RoomModesLike | undefined).call(this.ctx, 'roomModes')?.presetsOf(sessionId) ?? []
+    return members.some(id => {
+      const member = this.composition?.agentPresets?.find(candidate => candidate.id === id)
+      return member !== undefined && member.broken === undefined && grants(member, modules)
+    })
   }
 
   /** Subscribe to criterion-input changes (session switches, the inventory answer). */
