@@ -11,6 +11,7 @@ import {
   arrival,
   jsonOutput,
   payloadList,
+  roomSessionIdOf,
   sessionIdOf,
   unwrap,
   type ToolKit,
@@ -51,7 +52,12 @@ export function libraryPageTool(kit: ToolKit): ToolDefinition {
       if (marks === undefined) {
         throw new Error(`library_page takes: text (the page's printed text), marks: [{ text, sentence?, handNote?, gloss?, uncertain? }] (+ attachment?, label?, node?) — ${arrival('marks', args.marks)}`)
       }
-      const attachment = images.resolve(sessionIdOf(exec), typeof args.attachment === 'string' ? args.attachment : undefined)
+      // A photo belongs to the session it was sent in: the member's own first,
+      // then — in a room — the room's, where the user's input box sends it.
+      const written = typeof args.attachment === 'string' ? args.attachment : undefined
+      const room = roomSessionIdOf(exec)
+      const attachment = images.resolve(sessionIdOf(exec), written)
+        ?? (room === undefined ? undefined : images.resolve(room, written))
       if (attachment === undefined) {
         throw new Error('no photo to record: this conversation has no image the library saw arrive (or the id names none) — ask the learner to send the page photo here, then record it')
       }

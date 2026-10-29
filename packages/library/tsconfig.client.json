@@ -42,6 +42,9 @@
     "src/client/views/cards.tsx",
     "src/client/views/quiz.tsx",
     "src/client/bind/BindChip.tsx",
+    "src/client/desk/desk-row.ts",
+    "src/client/desk/DeskOpenRow.tsx",
+    "src/client/desk/DeskAttachment.tsx",
     "src/client/LibraryPane.tsx"
   ]
 }
