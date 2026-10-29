@@ -1137,6 +1137,39 @@ export class NovelService {
   }
 
   /** The chapter index, seq-ordered, with the effective phase derived per row. */
+  /**
+   * What a room's desk line needs to tell a write's effect (desk.ts): the
+   * work's cards as the canvas holds them and its chapters, read before and
+   * after one novel tool call.
+   * @param workId - the work (its canvas id).
+   * @returns the snapshot, or undefined when the canvas cannot be read.
+   */
+  async deskSnapshot(workId: string): Promise<{ readonly title: string; readonly cards: readonly NovelCardView[]; readonly chapters: readonly ChapterRow[] } | undefined> {
+    this.assertAlive('deskSnapshot')
+    const read = await this.canvas?.readBoard({ canvasId: workId })
+    if (read === undefined || !read.ok) return undefined
+    return { title: read.board.title, cards: read.board.cards, chapters: await this.listChapters({ workId }) }
+  }
+
+  /**
+   * Each category of a work as a desk line names it: its label (the board's,
+   * else the genre seed's by role) and the field a card of it is named by
+   * (the seed's first required line field, the canvas's title rule).
+   * @param workId - the work (its canvas id).
+   */
+  async categoryNames(workId: string): Promise<ReadonlyMap<string, { readonly label: string; readonly titleKey?: string }>> {
+    this.assertAlive('categoryNames')
+    const read = await this.canvas?.readBoard({ canvasId: workId })
+    if (read === undefined || !read.ok) return new Map()
+    return new Map(read.board.categories.map((category) => {
+      const seed = NOVEL_GENRE.categories.find(row => row.role === category.role)
+      const fields = seed?.definition?.fields ?? []
+      const title = fields.find(field => field.type === 'line' && field.required === true) ?? fields.find(field => field.type === 'line')
+      const label = (category as { label?: string }).label?.trim() || seed?.label || ''
+      return [category.id, { label, ...title === undefined ? {} : { titleKey: title.key } }]
+    }))
+  }
+
   async listChapters(request: { readonly workId: string }): Promise<ChapterRow[]> {
     this.assertAlive('listChapters')
     const id = normalizeWorkId(request.workId)

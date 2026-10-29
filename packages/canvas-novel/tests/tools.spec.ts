@@ -87,6 +87,25 @@ describe('novel_bind in a room', () => {
   })
 })
 
+describe('a room member\'s novel writes are told to the room', () => {
+  it('a chapter the coordinator plans lands on the room\'s novel and is told as a chapter; outside a room nothing is told', async () => {
+    const { canvas, write } = await bench()
+    const events: { type: string; data: { data: { items: { action: string; title: string }[] } } }[] = []
+    const room = { id: 's-room', append: (type: string, data: never) => { events.push({ type, data }) } }
+    canvas.bind('s-room', DREAM.workId)
+    const exec = { agent: { session: { id: 's-bill' }, [Symbol.for('dsh.agent.desk')]: { session: room, role: 'coordinator', member: 'bill', runId: 'r9' } } }
+    const answer = String(await write.execute({ what: 'chapter', title: '雨夜来客', plan: { summary: '来客敲门。' } } as never, exec as never))
+    expect(answer).not.toMatch(/^失败/)
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'room/desk-wrote', data: { owner: '@khorsheed/dsh-canvas', role: 'coordinator', runId: 'r9', data: { canvasId: DREAM.workId } } })
+    expect(events[0]!.data.data.items.some(item => item.action === 'chapter' && item.title.includes('《雨夜来客》'))).toBe(true)
+    // No desk: the same call tells no one.
+    canvas.bind('s-tools', DREAM.workId)
+    await call(write, { what: 'chapter', title: '雨夜之后', plan: { summary: '雨停了。' } })
+    expect(events).toHaveLength(1)
+  })
+})
+
 describe('the novel tools', () => {
   it('answers guidance (never a throw) when the session is bound to no novel canvas or no agent is there', async () => {
     const { read, write, extract, canvas } = await bench()
