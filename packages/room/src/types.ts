@@ -739,6 +739,8 @@ declare module '@deepseek-ai/dsh-session/types' {
   // and room/member-added (id/name) as its room-turn correlation interface —
   // rename or reshape them with a heads-up.
   interface SessionEventMap {
+    /** Log-only: what a member's mode tool put on the room's desk (see {@link RoomDeskOpenedEvent}). */
+    'room/desk-opened': RoomDeskOpenedEvent
     /**
      * Room identity marker: the session carrying this log-only event is a
      * room. Log-only (no surface intent), so it never reaches the model.
@@ -881,6 +883,43 @@ export interface RoomExecution extends RoomMemberRun {
   readonly effort?: string
   readonly tokens?: number
   readonly usage?: RoomRunUsage
+  /**
+   * What the run opened on the room's desk: another plugin's
+   * `<plugin>/desk-opened` events naming this run (proposal
+   * 2026-10-29-room-desk), in order. The run's card and its reply render each
+   * through the `room.member.attachment` seat keyed by the event type.
+   */
+  readonly attachments?: readonly RoomRunAttachment[]
+}
+
+/** One desk event a member's run produced, as the run's card renders it. */
+export interface RoomRunAttachment {
+  /** The plugin that wrote it: the key its row registers under. */
+  readonly owner: string
+  readonly seq: number
+  readonly time: number
+  /** The whole `room/desk-opened` payload (the owner's own fields under `data`). */
+  readonly data: RoomJsonValue
+}
+
+/**
+ * Something a member's mode tool put on the room's desk — a canvas it opened —
+ * written by the owning plugin into the ROOM session (proposal
+ * 2026-10-29-room-desk). Room's vocabulary vouches for it; the owner renders
+ * it (a conversation row, and its row at the end of the run's card through
+ * `room.member.attachment` keyed by `owner`).
+ */
+export interface RoomDeskOpenedEvent {
+  readonly version: 1
+  /** The writing plugin's package name. */
+  readonly owner: string
+  readonly member: string
+  /** The coordinator's open moves the room's view; a member's goes beside it. */
+  readonly role: 'coordinator' | 'member'
+  /** The member's run it happened in, when it had one. */
+  readonly runId?: string
+  /** The owner's own fields. */
+  readonly data: RoomJsonValue
 }
 
 /**
@@ -1415,6 +1454,8 @@ export interface RoomMemberDesk {
   readonly role: 'coordinator' | 'member'
   /** The member's display name, for the room's「某某 打开了…」row. */
   readonly member: string
+  /** The member's run in progress, when it has one: a desk event naming it renders inside that run's card and reply. */
+  readonly runId?: string
 }
 
 /** One host agent preset, as the invite dialog lists it. */

@@ -463,7 +463,7 @@ describe('a room member\'s canvas tools work on the room\'s desk', () => {
     expect(answer).toContain(`挂上了工作区 ${WS}`)
     expect(board.focusedCanvasId(room)).toBe(id)
     expect(board.focusedCanvasId(own)).toBeUndefined()
-    expect(events).toEqual([{ type: 'canvas/desk-opened', data: { version: 1, canvasId: id, title: '雨夜', created: true, member: 'bill', role: 'coordinator' } }])
+    expect(events).toEqual([{ type: 'room/desk-opened', data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'coordinator', data: { canvasId: id, title: '雨夜', created: true } } }])
   })
 
   it('the coordinator writes on whatever the human has open in the room', async () => {
@@ -487,7 +487,7 @@ describe('a room member\'s canvas tools work on the room\'s desk', () => {
     expect(answer).toContain('已放进房间侧栏的画布标签里')
     expect(board.focusedCanvasId(own)).toBe(rain.id)
     expect(board.focusedCanvasId(room)).toBe(shown.board.id)
-    expect(events).toEqual([{ type: 'canvas/desk-opened', data: { version: 1, canvasId: rain.id, title: '雨夜', created: true, member: 'bill', role: 'member' } }])
+    expect(events).toEqual([{ type: 'room/desk-opened', data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'member', data: { canvasId: rain.id, title: '雨夜', created: true } } }])
     expect(await write({ op: 'card', kind: 'fragment', text: '雨声' })).toMatch(/^完成：c_/)
     const read = await board.readBoard({ canvasId: rain.id })
     expect(read.ok && read.board.cards).toHaveLength(1)

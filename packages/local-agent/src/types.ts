@@ -703,6 +703,7 @@ export interface MemberDesk {
   readonly sessionId: string
   readonly role: 'coordinator' | 'member'
   readonly member: string
+  readonly runId?: string
 }
 
 export interface RoomMemberMessageGate {

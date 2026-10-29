@@ -55,6 +55,7 @@
     "src/client/open/open-row.ts",
     "src/client/open/DeskOpenRow.tsx",
     "src/client/open/desk-row.ts",
+    "src/client/open/DeskAttachment.tsx",
     "src/client/detail/DetailCrumbs.tsx",
     "src/client/detail/DrawFigure.tsx",
     "src/client/detail/image-lightbox.tsx",

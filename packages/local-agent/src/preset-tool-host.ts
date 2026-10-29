@@ -66,6 +66,8 @@ export interface DeskInfo {
   readonly sessionId: string
   readonly role: 'coordinator' | 'member'
   readonly member: string
+  /** The member's run in progress: a desk event naming it renders in that run's card. */
+  readonly runId?: string
 }
 
 interface SessionLike {
@@ -79,7 +81,7 @@ interface AgentLike {
   readonly id: string
   readonly session: SessionLike
   ctx?: Context
-  [DESK]?: { readonly session: SessionLike; readonly role: 'coordinator' | 'member'; readonly member: string }
+  [DESK]?: { readonly session: SessionLike; readonly role: 'coordinator' | 'member'; readonly member: string; readonly runId?: string }
 }
 interface ToolsLike {
   schemas(scope?: object): readonly { readonly name: string; readonly description?: string; readonly parameters?: unknown }[]
@@ -296,7 +298,7 @@ export class PresetToolHost {
   private markDesk(agent: AgentLike, desk: DeskInfo | undefined): void {
     const session = desk === undefined || desk.sessionId === agent.session.id ? undefined : this.probe<SessionsLike>('sessions')?.get(SessionId(desk.sessionId))
     if (desk === undefined || session === undefined) delete agent[DESK]
-    else agent[DESK] = { session, role: desk.role, member: desk.member }
+    else agent[DESK] = { session, role: desk.role, member: desk.member, ...desk.runId === undefined ? {} : { runId: desk.runId } }
   }
 
   /** Dispose every preset agent. */

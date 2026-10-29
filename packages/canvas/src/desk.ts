@@ -9,8 +9,11 @@
  *   switch moves the room's sidebar;
  * - a member reads its own choice first and falls back to the room's, and a
  *   switch stays its own — the room gets a tab beside the front one;
- * - either way the room hears of it through a `canvas/desk-opened` event the
- *   canvas client renders as a row in the room's conversation.
+ * - either way the room hears of it through a `room/desk-opened` event
+ *   (owner `@khorsheed/dsh-canvas`) the canvas client renders — at the end of
+ *   the member's card when the room seats it there, else as a row of its own.
+ *   The event is room's vocabulary: only room makes the host accept it in a
+ *   log, and a desk exists only in a room.
  *
  * Execution stays the member's: the fence of every write is its own session.
  * No mark (any session outside a room, the room's own agent) = exactly the
@@ -29,24 +32,36 @@ export interface CanvasDesk {
   readonly role: 'coordinator' | 'member'
   /** The member's display name. */
   readonly member: string
+  /** The member's run in progress (room renders the event inside that run's card and reply). */
+  readonly runId?: string
 }
 
-/** A `canvas/desk-opened` event: a room member switched to or created a canvas. */
-export interface CanvasDeskOpenedEvent {
+/** This package's name: the `owner` of the desk events it writes. */
+export const CANVAS_DESK_OWNER = '@khorsheed/dsh-canvas'
+
+/**
+ * A room member switched to or created a canvas: room's `room/desk-opened`
+ * payload, with the canvas's own fields under `data`.
+ */
+export interface CanvasDeskOpened {
   readonly version: 1
-  readonly canvasId: string
-  readonly title: string
-  readonly created: boolean
+  readonly owner: typeof CANVAS_DESK_OWNER
   readonly member: string
   /** The coordinator's open moves the room's sidebar; a member's adds a tab beside it. */
   readonly role: 'coordinator' | 'member'
+  /** The run it happened in: the room shows it at the end of that run's card. */
+  readonly runId?: string
+  readonly data: { readonly canvasId: string; readonly title: string; readonly created: boolean }
 }
 
-declare module '@deepseek-ai/dsh-session/types' {
-  interface SessionEventMap {
-    /** Log-only: never reaches the model; the canvas client renders it in the room. */
-    'canvas/desk-opened': CanvasDeskOpenedEvent
-  }
+/**
+ * Write one desk event into the room. Untyped on purpose: `room/desk-opened`
+ * belongs to the room package, which this one does not depend on.
+ * @param room - the room session.
+ * @param event - the payload.
+ */
+export function appendDeskOpened(room: { append: unknown }, event: CanvasDeskOpened): void {
+  ;(room.append as (type: string, data: unknown) => unknown).call(room, 'room/desk-opened', event)
 }
 
 /**
@@ -60,7 +75,10 @@ export function deskOf(agent: unknown): CanvasDesk | undefined {
   if (desk?.session === undefined || (desk.role !== 'coordinator' && desk.role !== 'member')) return undefined
   const own = (agent as { session?: { id?: unknown } }).session?.id
   if (own !== undefined && String(desk.session.id) === String(own)) return undefined
-  return { session: desk.session, role: desk.role, member: typeof desk.member === 'string' ? desk.member : '' }
+  return {
+    session: desk.session, role: desk.role, member: typeof desk.member === 'string' ? desk.member : '',
+    ...typeof desk.runId === 'string' ? { runId: desk.runId } : {},
+  }
 }
 
 /**
@@ -82,7 +100,11 @@ export function actingSession(session: Session, desk: CanvasDesk | undefined): S
  */
 export function announceDeskOpen(desk: CanvasDesk, opened: { canvasId: string; title: string; created: boolean }): void {
   try {
-    desk.session.append('canvas/desk-opened', { version: 1, ...opened, member: desk.member, role: desk.role })
+    appendDeskOpened(desk.session, {
+      version: 1, owner: CANVAS_DESK_OWNER, member: desk.member, role: desk.role,
+      ...desk.runId === undefined ? {} : { runId: desk.runId },
+      data: opened,
+    })
   } catch {
     // A closed or read-only room: the member's own row still records the switch.
   }

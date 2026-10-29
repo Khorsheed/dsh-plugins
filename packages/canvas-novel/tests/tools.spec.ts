@@ -77,7 +77,7 @@ describe('novel_bind in a room', () => {
     expect(String(await bind.execute({ work: '梦境监护者' } as never, as('coordinator') as never))).toContain('房间侧栏已切到这部作品')
     expect(canvas.bindings.get('s-room')).toBe(DREAM.workId)
     expect(canvas.bindings.get('s-bill')).toBeUndefined()
-    expect(events).toEqual([{ type: 'canvas/desk-opened', data: { version: 1, canvasId: DREAM.workId, title: DREAM.title, created: false, member: 'bill', role: 'coordinator' } }])
+    expect(events).toEqual([{ type: 'room/desk-opened', data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'coordinator', data: { canvasId: DREAM.workId, title: DREAM.title, created: false } } }])
     // A member with no binding of its own works on the room's novel.
     expect(String(await read.execute({ what: 'brief' } as never, as('member') as never))).toContain('梦境监护者')
     canvas.addBoard({ id: 'canvas_novel0002', title: '外传' })

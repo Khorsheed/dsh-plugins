@@ -1930,7 +1930,8 @@ export class RoomService extends TypertRemoteService {
     const cwd = member.cwd ?? loaded.session.header.cwd
     const events = loaded.session.snapshotEvents()
     const role = coordinatorMember(loaded.state, events)?.name === member.name ? 'coordinator' : 'member'
-    const desk: RoomMemberDesk = { sessionId: actor.parentSessionId, role, member: member.name }
+    const running = loaded.state.runs.find(run => run.member === member.name && run.state === 'running')?.runId
+    const desk: RoomMemberDesk = { sessionId: actor.parentSessionId, role, member: member.name, ...running === undefined ? {} : { runId: running } }
     return { preset: member.preset, ...cwd === undefined ? {} : { cwd }, desk }
   }
 

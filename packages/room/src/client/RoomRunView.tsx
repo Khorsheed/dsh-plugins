@@ -23,7 +23,7 @@ import css from './RoomRunView.module.css'
 import speech from './RoomSpeechView.module.css'
 
 /** The member run row. */
-export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMember, renderMemberOutput, openPath, answerQuestion, t }: RoomRunViewProps): ReactNode {
+export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMember, renderMemberOutput, openPath, answerQuestion, renderSlot, t }: RoomRunViewProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const recovered = state?.runs.find(run => run.member === node.data.member && run.startedAt === node.data.startedAt)
   const data = node.data.state === 'running' && recovered !== undefined ? { ...node.data, ...recovered } : node.data
@@ -41,6 +41,7 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
   // The question this round stopped on: answered right here, at the end of its live output.
   const runId = recovered?.runId
   const waiting = runId === undefined ? [] : (state?.askLog ?? []).filter(ask => ask.runId === runId && ask.state === 'pending')
+  const attachments = runId === undefined ? [] : state?.executions?.find(entry => entry.id === runId)?.attachments ?? []
   const mentions = useMemo(() => openPath === undefined ? undefined : pathMentions((path) => { openPath(sessionId, path) }, memberCwd), [openPath, sessionId, memberCwd])
   // The Definition hides done/cancelled; guard the same states here.
   if (data.state === 'done' || data.state === 'cancelled') return null
@@ -100,6 +101,16 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
         {waiting.map(ask => (
           <RoomQuestionView key={ask.id} {...{ node: { data: askCardData(ask) }, answerQuestion, t } as unknown as RoomQuestionViewProps} inline={{}} />
         ))}
+        {/* What this run has put on the room's desk so far, live. */}
+        {attachments.length > 0 && (
+          <div className={speech.attachments}>
+            {attachments.map(attachment => (
+              <div key={attachment.seq}>
+                {renderSlot('room.run.attachment', { sessionId, attachment, live: true }, { entryKey: attachment.owner, fallback: null })}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
