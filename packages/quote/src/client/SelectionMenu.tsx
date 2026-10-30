@@ -21,7 +21,7 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 // Type-only: pulls the SessionReferenceSourceMap 'mainView' merge (retainedBy.mainView).
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { IconCopyOutlineMedium, IconListPenOutlineMedium, IconRightUpOutlineMedium, IconSparkleMedium } from './icons.tsx'
-import { formatQuoteBlock } from '../types.ts'
+import { excerptOf, formatQuoteBlock } from '../types.ts'
 import type { QuoteMenuProps } from './contract.ts'
 import type { QuoteActionTarget } from './registry.ts'
 import type { SelectionRect, SelectionSnapshot } from './selection.ts'
@@ -38,7 +38,7 @@ type LegacyCurrent = { current?: SessionId }
  * for the retainedBy.mainView count on each summary, so probe the count first
  * and fall back to the legacy field on older hosts.
  */
-const mainSessionId = (list: SessionListState): SessionId | undefined =>
+export const mainSessionId = (list: SessionListState): SessionId | undefined =>
   Object.values(list.byId ?? {}).find(session => (session.retainedBy?.mainView ?? 0) > 0)?.id
   ?? (list as LegacyCurrent).current
 
@@ -51,15 +51,6 @@ interface Placement {
 /** Two snapshots address the same selection when text and rect both match. */
 function sameRect(a: SelectionRect, b: SelectionRect): boolean {
   return a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height
-}
-
-/** Longest chip excerpt, in characters (the chip renders on one line). */
-const EXCERPT_CHARS = 16
-
-/** A one-line excerpt of the quote for a sourceless chip: whitespace folded, long text cut with an ellipsis. */
-export function excerptOf(text: string): string {
-  const chars = Array.from(text.replace(/\s+/g, ' ').trim())
-  return chars.length <= EXCERPT_CHARS ? chars.join('') : `${chars.slice(0, EXCERPT_CHARS).join('').trimEnd()}…`
 }
 
 /** One action row's descriptor (built-in id or a contributed `<plugin>.<action>`). */
