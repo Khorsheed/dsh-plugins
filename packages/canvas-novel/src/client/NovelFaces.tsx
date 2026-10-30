@@ -21,6 +21,7 @@ import { chapterHeading } from './PendingList.tsx'
 import { fieldLabel, MENTION_KEY } from './StoryLogPage.tsx'
 import { useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
+import { RECENT_SCOPE } from '../nav-line.ts'
 
 /** The card roles the story log follows (a principle card is never "in the story"). */
 const STORY_ROLES: ReadonlySet<string> = new Set(['character', 'world', 'foreshadow', 'relation'])
@@ -87,8 +88,8 @@ interface CardScope {
   readonly notes?: Readonly<Record<string, { readonly label: string; readonly text?: string }>>
 }
 
-/** The 最近更新 scope's id (the 已对账 card opens the 设定 face on it). */
-export const RECENT_SCOPE = 'recent'
+/** The 最近更新 scope's id (the 已对账 card opens the 设定 face on it); one constant with the host's destination. */
+export { RECENT_SCOPE }
 
 /** One card's line under 最近更新: what the newest 对账 did to it (its first two kinds of change), and the words. */
 export function recentNoteOf(notes: readonly RecentNote[], role: string | undefined, t: NovelSurfaceProps['t']): { label: string; text?: string } {

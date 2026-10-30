@@ -30,6 +30,8 @@ export interface GenreSeats {
   readonly ownsManuscripts: (genreId: string) => boolean
   /** A genre's own top faces (`CanvasGenreDefinition.faces`), when it names them. */
   readonly facesOf: (genreId: string) => CanvasGenreFaces | undefined
+  /** The latest outside ask naming an item on a face (selection's `ask`), if any. */
+  readonly ask?: { readonly canvasId: string; readonly face: string; readonly item?: string; readonly focus?: string; readonly n: number } | undefined
 }
 
 export const GenreSeatsContext = createContext<GenreSeats | null>(null)
@@ -94,7 +96,11 @@ export function boardManuscriptsOf(
   seats: GenreSeats | null, board: CanvasBoard, list: ReactNode, onEmpty?: () => void,
 ): ReactNode {
   if (!manuscriptsOwned(seats, board)) return list
-  return seats!.renderSlot('canvas.board.manuscripts', { ...ownerOf(seats!, board), onEmpty }, { entryKey: board.genre!.id, fallback: list })
+  const ask = seats!.ask
+  const target = ask !== undefined && ask.canvasId === board.id && ask.face === 'manuscripts' && ask.item !== undefined
+    ? { item: ask.item, focus: ask.focus, n: ask.n }
+    : undefined
+  return seats!.renderSlot('canvas.board.manuscripts', { ...ownerOf(seats!, board), onEmpty, target }, { entryKey: board.genre!.id, fallback: list })
 }
 
 /**

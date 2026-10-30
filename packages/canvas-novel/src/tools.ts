@@ -23,6 +23,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { isPlanText, outlineFromText, planFromText } from './text-forms.ts'
 import { actingSession, announceDeskBind, announceDeskWrite, deskOf, novelWriteItems } from './desk.ts'
+import { RECENT_SCOPE, withChapterDestination, withNovelDestination, withoutDestinations } from './nav-line.ts'
 import { planOvershoots, renderOutlineRead, renderPlanBrief, renderWriteBrief, targetWordsOf } from './brief.ts'
 import { PHASE_NAMES, ROLE_NAMES, foreshadowFacts, relationFacts } from './genre-agent.ts'
 import type { NovelService } from './store.ts'
@@ -312,21 +313,26 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         const body = args.content !== undefined && args.content.trim() !== '' ? args.content : undefined
         if (body !== undefined || args.byUser === true) {
           const count = body === undefined ? chapter.wordCount : body.replace(/\s+/g, '').length
-          return `${attached}已写入第 ${chapter.n} 章《${chapter.title}》正文（画布 ${workId}${count === undefined ? '' : ` · ${count} 字`}）。`
-            + '\n正文在右栏章节页能读。回复里汇报三行（字数 / 动用了哪几条伏笔操作 / 有没有偏离计划），然后接着对账这一章，不用等用户点头。'
+          return withChapterDestination(`${attached}已写入第 ${chapter.n} 章《${chapter.title}》正文（画布 ${workId}${count === undefined ? '' : ` · ${count} 字`}）。`
+            + `\n正文在画布「章节」页签的第 ${chapter.n} 章（会话里有卡片直达）。回复里汇报三行（字数 / 动用了哪几条伏笔操作 / 有没有偏离计划），然后接着对账这一章，不用等用户点头。`,
+          workId, chapter.n, chapter.title, 'body', String(count ?? Date.now()))
         }
-        if (plan === undefined) return `${attached}已建第 ${chapter.n} 章《${chapter.title}》（画布 ${workId} · 规划中 · ${chapter.file}）。`
+        if (plan === undefined) {
+          return withChapterDestination(`${attached}已建第 ${chapter.n} 章《${chapter.title}》（画布 ${workId} · 规划中 · ${chapter.file}）。`,
+            workId, chapter.n, chapter.title, 'plan', String(Date.now()))
+        }
         const [outline, entries, chapters] = await Promise.all([
           store.readOutline(workId), store.readEntries(workId), store.listChapters({ workId }),
         ])
         const words = targetWordsOf(chapter, outline)
         const position = volumePosition(outline.volumes, chapters.map(row => row.chapter), chapter)
         const overshoots = planOvershoots(plan, words, entries?.foreshadows ?? [], position?.index, outline.volumes.length)
-        return `${attached}已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}${position === undefined ? '' : ` · 卷${volumeNumeral(position.index)}`}）plan：`
+        return withChapterDestination(`${attached}已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}${position === undefined ? '' : ` · 卷${volumeNumeral(position.index)}`}）plan：`
           + `${words === undefined ? '' : `目标 ${words} 字 / `}情节 ${plan.beats.length} 段 / 伏笔 ${plan.foreshadowOps.length} 条 / 出场 ${plan.cast.length} 人。`
           + (overshoots.length === 0 ? '' : `\n提醒（只提醒，不拦）：${overshoots.join('；')}。在回复里跟用户说一句，按他的意思改或保留。`)
-          + '\n完整计划已在右栏打开的章节页上。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。'
-          + `用户在对话里同意后，先 novel_write(what=confirm, chapter=${chapter.n}) 再开写；他也可能直接在章节页点了确认。`
+          + `\n完整计划在画布「章节」页签的第 ${chapter.n} 章（会话里有卡片直达）。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。`
+          + `用户在对话里同意后，先 novel_write(what=confirm, chapter=${chapter.n}) 再开写；他也可能直接在章节页点了确认。`,
+        workId, chapter.n, chapter.title, 'plan', String(Date.now()))
       }
       if (args.what === 'confirm') {
         if (args.chapter === undefined) return '失败：what=confirm 要给 chapter（章号）。'
@@ -361,8 +367,9 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           }
           return `失败：${outcome.error ?? 'io'}`
         }
-        return `已提交大纲提议（画布 ${workId}），在「规划」页等用户采用；采用前不生效，再提会合并进这一版。`
-          + '回复里用两三句说改了什么、为什么，不要贴整份大纲。'
+        return withNovelDestination(`已提交大纲提议（画布 ${workId}），在「规划」页等用户采用；采用前不生效，再提会合并进这一版。`
+          + '回复里用两三句说改了什么、为什么，不要贴整份大纲。',
+        `canvas:${workId}:outline:${Date.now()}`, { canvasId: workId, face: 'lead' }, '大纲提议')
       }
       if (args.what === 'review') {
         if (args.id === undefined || args.action === undefined) return '失败：what=review 要给 id（待审项）和 action（accept|discard）。'
@@ -382,9 +389,9 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
   const told = async (exec: { agent?: Agent }, run: () => Promise<string>): Promise<string> => {
     const desk = deskOf(exec.agent)
     const resolved = desk === undefined ? undefined : await target(exec)
-    if (desk === undefined || resolved === undefined || 'message' in resolved) return run()
+    if (desk === undefined || resolved === undefined || 'message' in resolved) return desk === undefined ? run() : withoutDestinations(await run())
     const before = await store.deskSnapshot(resolved.workId)
-    const answer = await run()
+    const answer = withoutDestinations(await run())
     const after = before === undefined ? undefined : await store.deskSnapshot(resolved.workId)
     if (before !== undefined && after !== undefined) {
       const names = await store.categoryNames(resolved.workId)
@@ -459,7 +466,8 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       if (report.dropped.length > 0) {
         lines.push('丢弃（防编造闸）：', ...report.dropped.map(drop => `- ${drop.kind}「${drop.ref}」：${dropReason(drop)}`))
       }
-      return lines.join('\n')
+      return withNovelDestination(lines.join('\n'), `canvas:${resolved.workId}:extract:${args.chapter}:${Date.now()}`,
+        { canvasId: resolved.workId, face: 'board', scope: RECENT_SCOPE }, `第 ${args.chapter} 章对账 · 最近更新`)
     }),
   })
 

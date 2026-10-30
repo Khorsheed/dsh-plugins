@@ -16,6 +16,17 @@ import { CanvasService } from '../src/service.ts'
 import { CanvasBoardService } from '../src/store.ts'
 import { canvasMainSessionToolDefinitions, cardArgsOf, cardIdLineOf } from '../src/tools.ts'
 import type { CanvasBoard } from '../src/types.ts'
+import { readDestinations, stripDestinations, type Destination } from '@khorsheed/dsh-client-ui-agent-nav/src/destination.ts'
+
+/**
+ * The answer without its destination line (proposal 2026-10-30-agent-sidebar-navigation),
+ * the line kept aside for the specs that read it.
+ */
+function landed(answer: unknown, into: Destination[]): unknown {
+  if (typeof answer !== 'string') return answer
+  into.push(...readDestinations(answer))
+  return stripDestinations(answer)
+}
 
 type Entry = { kind: 'dir' } | { kind: 'file'; content: string; version: number }
 
@@ -127,6 +138,7 @@ async function harness(): Promise<Bench> {
   expect(await board.focusCanvas({ canvasId }, FALLBACK)).toEqual({ ok: true })
   const tools = canvasMainSessionToolDefinitions(board)
   const agent = { session: FALLBACK } as unknown as Agent
+  const destinations: Destination[] = []
   const execute = async (name: ToolName, args: Record<string, unknown>): Promise<unknown> => {
     const tool = tools.find(def => def.name === name)
     if (tool === undefined) throw new Error(`no tool ${name}`)
@@ -134,15 +146,31 @@ async function harness(): Promise<Bench> {
     try { answer = await tool.execute(args, { agent } as never) }
     catch (error) { if (error instanceof CanvasToolError) return error.message; throw error }
     // canvas_read answers { text, images }; these specs only read its text.
-    return typeof answer === 'object' && answer !== null && 'text' in answer ? (answer as { text: string }).text : answer
+    return landed(typeof answer === 'object' && answer !== null && 'text' in answer ? (answer as { text: string }).text : answer, destinations)
   }
   const readCurrent = async (): Promise<CanvasBoard> => {
     const outcome = await board.readBoard({ canvasId })
     if (!outcome.ok) throw new Error('expected a readable board')
     return outcome.board
   }
-  return { canvasId, execute, readCurrent, board }
+  return { canvasId, execute, readCurrent, board, destinations }
 }
+
+describe('where a canvas write landed (the destination line)', () => {
+  it('names the one card or manuscript a write touched, and nothing for an archive', async () => {
+    const { canvasId, execute, readCurrent, destinations } = await harness()
+    await execute('canvas_write', { op: 'card', kind: 'fragment', text: '雨夜的钟声' })
+    const cardId = (await readCurrent()).cards[0]!.id
+    expect(destinations.at(-1)).toMatchObject({ kind: 'canvas', params: { canvasId, card: cardId }, label: '雨夜的钟声' })
+    await execute('canvas_write', { op: 'manuscript', title: '第一稿', text: '# 第一稿\n正文' })
+    const manuscriptId = (await readCurrent()).manuscripts[0]!.id
+    expect(destinations.at(-1)).toMatchObject({ kind: 'canvas', params: { canvasId, manuscript: manuscriptId } })
+    const before = destinations.length
+    await execute('canvas_write', { op: 'archive', cardId })
+    expect(destinations).toHaveLength(before)
+    expect(new Set(destinations.map(row => row.id)).size).toBe(destinations.length)
+  })
+})
 
 describe('the canvas tools on the open canvas', () => {
   it('declared failures reject for the host isError path, without scanning successful content', async () => {
@@ -340,8 +368,8 @@ describe('the main-session canvas tools (M3 second entrance)', () => {
     if (!read.ok) throw new Error('expected a readable board')
     expect(read.board.cards).toHaveLength(1)
     expect(read.board.cards[0]).toMatchObject({ kind: 'reference', status: 'proposed', createdBy: 'agent' })
-    expect(answer).toBe(`完成：${read.board.cards[0]!.id}`)
-    expect(await tools[1]!.execute({ op: 'comment', cardId: read.board.cards[0]!.id, text: '这里隐含一个假设。有数据吗？' }, { agent } as never)).toBe('完成')
+    expect(landed(answer, [])).toBe(`完成：${read.board.cards[0]!.id}`)
+    expect(landed(await tools[1]!.execute({ op: 'comment', cardId: read.board.cards[0]!.id, text: '这里隐含一个假设。有数据吗？' }, { agent } as never), [])).toBe('完成')
     const after = await board.readBoard({ canvasId: created.board.id })
     if (!after.ok) throw new Error('expected a readable board')
     expect(after.board.cards[0]?.comments[0]).toMatchObject({ author: 'agent', text: '这里隐含一个假设。有数据吗？' })
@@ -369,7 +397,7 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
     const tools = canvasMainSessionToolDefinitions(board)
     const agent = { session: FALLBACK } as unknown as Agent
     const run = (name: string) => async (args: Record<string, unknown>): Promise<string> =>
-      String(await tools.find(def => def.name === name)!.execute(args, { agent } as never))
+      String(landed(String(await tools.find(def => def.name === name)!.execute(args, { agent } as never)), []))
     return { board, open: run('canvas_open'), write: run('canvas_write') }
   }
 

@@ -3,28 +3,25 @@
  *
  * A chapter plan gets a card: the chapter, the plan's 梗概 and its shape
  * (走向 N 拍 · 推进 2 · 新埋 1 · 出场 3 人), whether the person has confirmed
- * it, and one door — 查看并确认计划 → — to the chapter page, where the whole
- * plan is read and confirmed. The card confirms nothing itself: the plan is
- * judged in full, on the page, not from a summary.
+ * it, and one door — 查看并确认计划 → — to that chapter in the canvas's 章节
+ * face, where the whole plan is read and confirmed. The card confirms nothing
+ * itself: the plan is judged in full, in the reader, not from a summary.
  *
- * A plan registered while the row is on screen (it saw the call running)
- * opens that chapter page in the right sidebar by itself, once: when the
- * turn ends the host folds its tool calls under 「已调用工具」, card and all,
- * and the person read 「点一下确认计划」 with no button in sight (2026-10-08).
- * The page's ✓ 确认计划 stays put whatever the conversation folds. A row
- * mounted already settled is history and only offers its door.
+ * The cards only offer doors. Opening the chapter by itself when the person
+ * watched the plan land is the destination follower's job (the answer's
+ * destination line, proposal 2026-10-30-agent-sidebar-navigation): it reads
+ * the session's live events, so it works while the turn folds its tool calls
+ * under 「已调用工具」, card and all, and never on a replay.
  *
  * Every other write (a review) is one compact line with the answer
  * behind 详情.
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { ForeshadowOp } from '../types.ts'
 import type { NovelFace } from './contract.ts'
-import { chapterHeading } from './PendingList.tsx'
-import { PLAN_FOCUS } from './ChapterReader.tsx'
 import { useNovelRead } from './use-novel.ts'
 import { asksInTurn, type NovelTurnOwner } from './novel-turn.ts'
 import { writeRowModel, type NovelToolBlock, type WriteRowChapter } from './write-row.ts'
@@ -34,18 +31,26 @@ const OP_KEYS = { 推进: 'plan.op.advance', 暗示: 'plan.op.hint', 新埋: 'pl
 /** While a plan waits for the person, the card re-reads this often (they confirm on the page). */
 const AWAIT_POLL_MS = 10_000
 
+/** One canvas address, as far as the cards name them (the canvas's `CanvasNavParams`). */
+export interface NovelPlace {
+  readonly canvasId: string
+  readonly face: 'board' | 'manuscripts' | 'lead'
+  readonly scope?: string
+  readonly item?: string
+  readonly focus?: 'plan' | 'body'
+}
+
 /** What the row reaches outside its own block. */
 export interface WriteToolFace extends NovelFace {
-  /** Open the canvas tab on one of its pages; undefined when the canvas is not composed. */
-  readonly openPage: () => ((canvasId: string, page: string, heading: string, param?: string) => void) | undefined
-  /** The chapter page's key. */
-  readonly chapterPage: string
-  /** The 规划 page's key (an outline proposal's door). */
-  readonly planPage: string
-  /** Open the canvas tab on a board face with a scope pressed; undefined on a canvas without that door. */
-  readonly openFace: () => ((canvasId: string, face: 'board', scope: string | null) => void) | undefined
+  /** Open the canvas tab at one address (`ctx.canvasNav.go`); undefined when the canvas is not composed. */
+  readonly go: () => ((params: NovelPlace) => void) | undefined
   /** The 设定 face's 最近更新 scope id (a 已对账 card's door). */
   readonly recentScope: string
+}
+
+/** A chapter's place: the 章节 face, chapter `n`, on its plan or its text. */
+function chapterPlace(canvasId: string, n: number, focus: 'plan' | 'body'): NovelPlace {
+  return { canvasId, face: 'manuscripts', item: String(n), focus }
 }
 
 /** The props the keyed tool slot composes for this row. */
@@ -58,10 +63,8 @@ export interface WriteToolRowProps extends WriteToolFace {
 /** Render one `novel_write` call. */
 export function WriteToolRow(props: WriteToolRowProps): ReactNode {
   const row = writeRowModel(props.block, props.phase)
-  const sawRunning = useRef(false)
-  if (row.state === 'running') sawRunning.current = true
-  if (row.state === 'chapter') return <PlanCard {...props} chapter={row.chapter!} live={sawRunning.current} />
-  if (row.state === 'outline') return <OutlineCard {...props} canvasId={row.canvasId!} live={sawRunning.current} />
+  if (row.state === 'chapter') return <PlanCard {...props} chapter={row.chapter!} />
+  if (row.state === 'outline') return <OutlineCard {...props} canvasId={row.canvasId!} />
   if (row.state === 'body') return <BodyCard {...props} chapter={row.chapter!} words={row.words} />
   return <Line state={row.state === 'extracted' ? 'line' : row.state} text={row.text} t={props.t} />
 }
@@ -87,10 +90,8 @@ function Line({ state, text, t }: { readonly state: 'running' | 'failed' | 'line
   )
 }
 
-export function PlanCard({ chapter, live: watched, remote, openPage, chapterPage, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
+export function PlanCard({ chapter, remote, go, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
   readonly chapter: WriteRowChapter
-  /** The row saw this call run: a plan that lands awaiting confirmation opens its page. */
-  readonly live: boolean
 }): ReactNode {
   const { canvasId, n } = chapter
   const [tick, setTick] = useState(0)
@@ -105,13 +106,7 @@ export function PlanCard({ chapter, live: watched, remote, openPage, chapterPage
     return () => { clearInterval(timer) }
   }, [awaiting])
   const title = live?.title ?? chapter.title
-  const open = openPage()
-  const followed = useRef(false)
-  useEffect(() => {
-    if (!watched || followed.current || !awaiting || open === undefined) return
-    followed.current = true
-    open(canvasId, chapterPage, chapterHeading(t, n, title), `${n}${PLAN_FOCUS}`)
-  }, [watched, awaiting, open, canvasId, chapterPage, n, title, t])
+  const open = go()
   // The live plan wins; the answer's counts stand in until it is read (or when it cannot be).
   const facts: string[] = plan !== undefined
     ? [
@@ -144,7 +139,7 @@ export function PlanCard({ chapter, live: watched, remote, openPage, chapterPage
           type="button"
           className={css.go}
           data-primary={awaiting || undefined}
-          onClick={() => { open(canvasId, chapterPage, chapterHeading(t, n, title), `${n}${PLAN_FOCUS}`) }}
+          onClick={() => { open(chapterPlace(canvasId, n, 'plan')) }}
         >
           {t(awaiting ? 'card.confirm' : 'card.view')} →
         </button>
@@ -154,13 +149,11 @@ export function PlanCard({ chapter, live: watched, remote, openPage, chapterPage
 }
 
 /**
- * An outline proposal: it waits on the 规划 page for the person's 采用, so the
- * card says whether it still waits and opens that page. Like a plan, one it
- * watched land opens the page by itself — the turn folds the card away.
+ * An outline proposal: it waits on the 规划 face for the person's 采用, so the
+ * card says whether it still waits and opens that face.
  */
-export function OutlineCard({ canvasId, live: watched, remote, openPage, planPage, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
+export function OutlineCard({ canvasId, remote, go, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
   readonly canvasId: string
-  readonly live: boolean
 }): ReactNode {
   const [tick, setTick] = useState(0)
   const read = useNovelRead(remote(), r => r.outline({ canvasId }), `outline:${canvasId}`, tick)
@@ -171,13 +164,7 @@ export function OutlineCard({ canvasId, live: watched, remote, openPage, planPag
     const timer = setInterval(() => { setTick(value => value + 1) }, AWAIT_POLL_MS)
     return () => { clearInterval(timer) }
   }, [awaiting])
-  const open = openPage()
-  const followed = useRef(false)
-  useEffect(() => {
-    if (!watched || followed.current || !awaiting || open === undefined) return
-    followed.current = true
-    open(canvasId, planPage, t('face.plan'))
-  }, [watched, awaiting, open, canvasId, planPage, t])
+  const open = go()
   return (
     <div className={css.card} data-tool="novel_write" data-state={awaiting ? 'awaiting' : 'plain'}>
       <div className={css.head}>
@@ -190,7 +177,7 @@ export function OutlineCard({ canvasId, live: watched, remote, openPage, planPag
           type="button"
           className={css.go}
           data-primary={awaiting || undefined}
-          onClick={() => { open(canvasId, planPage, t('face.plan')) }}
+          onClick={() => { open({ canvasId, face: 'lead' }) }}
         >
           {t(awaiting ? 'card.outlineAdopt' : 'card.outlineView')} →
         </button>
@@ -201,10 +188,10 @@ export function OutlineCard({ canvasId, live: watched, remote, openPage, planPag
 
 /**
  * A chapter's text the Turn wrote: its length against the target, its first
- * lines, and one door — 读正文 → — to the chapter page. Its state is read
- * live (待对账 until the 对账 lands).
+ * lines, and one door — 读正文 → — to that chapter in the 章节 face. Its
+ * state is read live (待对账 until the 对账 lands).
  */
-export function BodyCard({ chapter, words, remote, openPage, chapterPage, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
+export function BodyCard({ chapter, words, remote, go, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
   readonly chapter: WriteRowChapter
   /** The length the answer gave. */
   readonly words?: number | undefined
@@ -216,7 +203,7 @@ export function BodyCard({ chapter, words, remote, openPage, chapterPage, t }: O
   const opening = (view?.body ?? '').split('\n').map(line => line.trim()).filter(line => line !== '' && !line.startsWith('#')).slice(0, 2).join('')
   const count = view?.chapter?.wordCount ?? words
   const settled = view?.phase === 'extracted' || view?.phase === 'reviewed'
-  const open = openPage()
+  const open = go()
   return (
     <div className={css.card} data-tool="novel_write" data-state="plain">
       <div className={css.head}>
@@ -230,7 +217,7 @@ export function BodyCard({ chapter, words, remote, openPage, chapterPage, t }: O
         {view?.targetWords !== undefined && <span>{t('card.target', { words: view.targetWords.toLocaleString() })}</span>}
       </div>
       {open !== undefined && (
-        <button type="button" className={css.go} onClick={() => { open(canvasId, chapterPage, chapterHeading(t, n, title), String(n)) }}>
+        <button type="button" className={css.go} onClick={() => { open(chapterPlace(canvasId, n, 'body')) }}>
           {t('card.read')} →
         </button>
       )}
@@ -243,10 +230,9 @@ export function BodyCard({ chapter, words, remote, openPage, chapterPage, t }: O
  * nothing (2026-10-09) — so the card says what it did (情节 x/y · 伏笔 a/b,
  * new cards, existing cards changed) and opens 设定 · 最近更新, where those
  * cards are, each with a line on what changed; the person fixes a card there
- * or says so in the chat. Without the canvas's face door it opens the
- * chapter page.
+ * or says so in the chat.
  */
-export function ExtractCard({ chapter, newCards, updated, remote, openPage, openFace, chapterPage, recentScope, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
+export function ExtractCard({ chapter, newCards, updated, remote, go, recentScope, t }: Omit<WriteToolRowProps, 'block' | 'phase'> & {
   readonly chapter: WriteRowChapter
   readonly newCards: number
   readonly updated: number
@@ -268,11 +254,7 @@ export function ExtractCard({ chapter, newCards, updated, remote, openPage, open
     ...(updated > 0 ? [t('card.updated', { count: updated })] : []),
   ]
   const title = live?.title ?? ''
-  const face = openFace()
-  const page = openPage()
-  const go = face !== undefined
-    ? () => { face(canvasId, 'board', recentScope) }
-    : page !== undefined ? () => { page(canvasId, chapterPage, chapterHeading(t, n, title), String(n)) } : undefined
+  const open = go()
   return (
     <div className={css.card} data-tool="novel_extract" data-state="confirmed">
       <div className={css.head}>
@@ -285,9 +267,9 @@ export function ExtractCard({ chapter, newCards, updated, remote, openPage, open
           {facts.map(fact => <span key={fact}>{fact}</span>)}
         </div>
       )}
-      {go !== undefined && (
-        <button type="button" className={css.go} data-primary onClick={go}>
-          {t(face !== undefined ? 'card.recent' : 'card.read')} →
+      {open !== undefined && (
+        <button type="button" className={css.go} data-primary onClick={() => { open({ canvasId, face: 'board', scope: recentScope }) }}>
+          {t('card.recent')} →
         </button>
       )}
     </div>
@@ -309,7 +291,7 @@ export type NovelTurnTailProps = WriteToolFace & NovelTurnOwner & { readonly t: 
  * and the chapters it reconciled,
  * as their cards (live state, one door each), beneath the closing prose where
  * the folded tool rows cannot hide them. Never opens anything by itself — the
- * tool row already did, once, when it watched the call land.
+ * destination follower already did, when the person watched the call land.
  */
 export function NovelTurnTail(props: NovelTurnTailProps): ReactNode {
   const asks = asksInTurn(props)
@@ -317,12 +299,12 @@ export function NovelTurnTail(props: NovelTurnTailProps): ReactNode {
   return (
     <div className={css.tail}>
       {asks.map(ask => ask.row.state === 'outline'
-        ? <OutlineCard key={ask.key} {...props} canvasId={ask.row.canvasId!} live={false} />
+        ? <OutlineCard key={ask.key} {...props} canvasId={ask.row.canvasId!} />
         : ask.row.state === 'extracted'
           ? <ExtractCard key={ask.key} {...props} chapter={ask.row.chapter!} newCards={ask.row.newCards ?? 0} updated={ask.row.updated ?? 0} />
           : ask.row.state === 'body'
             ? <BodyCard key={ask.key} {...props} chapter={ask.row.chapter!} words={ask.row.words} />
-            : <PlanCard key={ask.key} {...props} chapter={ask.row.chapter!} live={false} />)}
+            : <PlanCard key={ask.key} {...props} chapter={ask.row.chapter!} />)}
     </div>
   )
 }

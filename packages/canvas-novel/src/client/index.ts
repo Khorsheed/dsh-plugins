@@ -186,10 +186,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // host's generic row.
   const writeFace: WriteToolFace = {
     ...face,
-    openPage: () => (ctx.get('canvasNav') as { openPage: ReturnType<WriteToolFace['openPage']> } | undefined)?.openPage,
-    chapterPage: CHAPTER_PAGE,
-    planPage: PLAN_PAGE,
-    openFace: () => (ctx.get('canvasNav') as { openFace?: ReturnType<WriteToolFace['openFace']> } | undefined)?.openFace,
+    go: () => (ctx.get('canvasNav') as { go?: ReturnType<WriteToolFace['go']> } | undefined)?.go,
     recentScope: RECENT_SCOPE,
   }
   ctx.effect(() => seats.inject('tool.call.toolview', () => seats.register({

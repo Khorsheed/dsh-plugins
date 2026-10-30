@@ -11,6 +11,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 
+import type { CanvasNavParams } from './slots.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GlobalStandardProps, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -156,6 +157,11 @@ export interface CanvasTabInjected
   extends CanvasTalkInjected, CanvasImageInjected, CanvasManuscriptInjected, CanvasTypeInjected, CanvasGenreInjected {
   /** List every canvas the deployment holds (archived included). */
   listCanvases: () => Promise<RemoteResult<BoardListResult>>
+  /**
+   * Put the strip at one address (the tab's navigation params, applied once per
+   * navigation revision). Optional: a test mount has no strip store behind it.
+   */
+  goTo?: (params: CanvasNavParams) => void
   /** Create one canvas (a topic, optionally with workspaces attached). */
   createCanvas: (sessionId: SessionId, request: BoardCreateRequest) => Promise<RemoteResult<BoardMutationResult>>
   /** Read one board with the freshness token a later mutation must present. */

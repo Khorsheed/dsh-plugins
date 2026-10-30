@@ -120,6 +120,9 @@ export interface CanvasFaceAsk {
   readonly canvasId: string
   readonly face: CanvasBoardFace
   readonly scope: string | null
+  /** One thing on that face the genre should show (the novel's chapter number), and how. */
+  readonly item?: string
+  readonly focus?: string
   readonly n: number
 }
 
@@ -215,16 +218,20 @@ export class CanvasSelectionStore {
 
   /**
    * Put a canvas's row on its board and ask the tab to show one face with one
-   * scope pressed (the novel's 已对账 card opens 设定 · 最近更新).
+   * scope pressed (the novel's 已对账 card opens 设定 · 最近更新), and
+   * optionally one item on it (the novel's 章节 face reads chapter `item`).
    */
   /** Asks made so far: a later strip write drops the ask, so its number cannot restart from the snapshot. */
   private asks = 0
 
-  openBoardFace(canvasId: string, face: CanvasBoardFace, scope: string | null): void {
+  openBoardFace(canvasId: string, face: CanvasBoardFace, scope: string | null, item?: string, focus?: string): void {
     this.ensure(canvasId, AT_BOARD)
     const current = this.source.getSnapshot()
     this.asks += 1
-    this.source.set({ ...current, ask: { canvasId, face, scope, n: this.asks } })
+    this.source.set({
+      ...current,
+      ask: { canvasId, face, scope, ...(item === undefined ? {} : { item }), ...(focus === undefined ? {} : { focus }), n: this.asks },
+    })
   }
 
   /** Show a row that is already open. A row that is gone changes nothing. */

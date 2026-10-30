@@ -187,6 +187,10 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
   // plus the shared compact controls), inlined into each consuming plugin's
   // own client bundle (proposal panel-responsive-spec, 2026-10-06).
   'client-ui-panel-kit',
+  // ui-agent-nav is the same shape: the source-plane destination reader and
+  // follow rule, inlined into each mode plugin's own client bundle (proposal
+  // agent-sidebar-navigation, 2026-10-30).
+  'client-ui-agent-nav',
 ]
 
 /**
@@ -238,7 +242,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // renderer package need not be installed for canvas to work).
   // canvas also takes ui-panel-kit (panel-responsive-spec P3: the panel root,
   // the face tabs and the chip row) — the same inlined, zero-runtime edge.
-  'canvas': ['@khorsheed/dsh-inline-html-render', '@khorsheed/dsh-client-ui-panel-kit'],
+  // canvas and canvas-novel also take ui-agent-nav (the destination follower,
+  // proposal agent-sidebar-navigation) — the same inlined, zero-runtime edge.
+  'canvas': ['@khorsheed/dsh-inline-html-render', '@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // local-files / worktrees → ui-content-preview: the two file surfaces render
   // through ONE shared content pane (proposal preview-kernel). Same shape as
   // the canvas edge above — a compile-time SOURCE-plane import
@@ -265,7 +271,7 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'reader': ['@khorsheed/dsh-client-ui-panel-kit'],
   // canvas-novel → ui-panel-kit: the chapter book's compact header and the
   // story view's tabs (panel-responsive-spec P3) — the same inlined edge.
-  'canvas-novel': ['@khorsheed/dsh-client-ui-panel-kit'],
+  'canvas-novel': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // library → ui-panel-kit: the learning sidebar's panel root, header, tabs,
   // chip row and list rows — the same inlined, zero-runtime source-plane edge.
   'library': ['@khorsheed/dsh-client-ui-panel-kit'],
