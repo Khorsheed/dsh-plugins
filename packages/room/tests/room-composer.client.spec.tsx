@@ -518,9 +518,15 @@ describe('RoomComposer', () => {
       ],
     }
     await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'], state: roster, setCoordinator })
+    // The menu still opens: it says why, and the other members are greyed out.
     const trigger = screen.getByRole('button', { name: /main.*协调者 · DSH/ }) as HTMLButtonElement
-    expect(trigger.disabled).toBe(true)
-    expect(trigger.title).toBe('有成员正在运行或有消息在排队，结束后可切换协调者')
+    expect(trigger.disabled).toBe(false)
+    fireEvent.click(trigger)
+    expect(screen.getByText('有成员正在运行或有消息在排队，结束后可切换协调者')).toBeDefined()
+    const ada = screen.getByRole('menuitem', { name: /ada/ })
+    expect(ada.getAttribute('aria-disabled') === 'true' || (ada as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(ada)
+    expect(setCoordinator).not.toHaveBeenCalled()
   })
 
   it('a fresh room shows only the invite capsule', async () => {
