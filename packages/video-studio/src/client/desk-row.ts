@@ -3,7 +3,8 @@
  * Definition claiming room's `room/desk-opened` with this package as owner
  * (written into the ROOM session by video_project's create/open when a room
  * member calls it — `../desk.ts`) into one chat node, the follow rule its row
- * applies, and the hand-off that brings the room's 剪辑 panel to a project.
+ * applies. Its door goes through the panel's one entry, `go` (client/index.ts):
+ * the tab's navigation params, which the pane applies once per revision.
  *
  * Who it follows (proposal 2026-10-29-room-desk): the coordinator's open shows
  * in the room's 剪辑 panel; a member's never takes the front — the panel has
@@ -128,44 +129,4 @@ export function shouldFollow(scope: string, row: { readonly seq: number; readonl
   if (followed.has(key) || now - row.time > LIVE_WINDOW_MS || row.time - now > LIVE_WINDOW_MS) return false
   followed.add(key)
   return true
-}
-
-// ───────────── the hand-off to the 剪辑 panel ─────────────
-
-/** Panels listening per session: a mounted pane switches at once. */
-const listeners = new Map<string, Set<(projectId: string) => void>>()
-/** A request made before the session's pane mounted (the tab is opening). */
-const pending = new Map<string, { projectId: string; at: number }>()
-
-/**
- * Ask the session's 剪辑 panel to show a project. A mounted pane switches now;
- * otherwise the pane that mounts next for that session takes it (once, while
- * fresh). Showing is not binding: the session's binding is the tools' business.
- */
-export function requestPanelProject(sessionId: string, projectId: string, now: number = Date.now()): void {
-  const live = listeners.get(sessionId)
-  if (live !== undefined && live.size > 0) {
-    pending.delete(sessionId)
-    for (const listener of live) listener(projectId)
-    return
-  }
-  pending.set(sessionId, { projectId, at: now })
-}
-
-/** The request waiting for a pane that is mounting now, consumed. */
-export function takePanelProject(sessionId: string, now: number = Date.now()): string | undefined {
-  const request = pending.get(sessionId)
-  pending.delete(sessionId)
-  return request === undefined || now - request.at > LIVE_WINDOW_MS ? undefined : request.projectId
-}
-
-/** A mounted pane's subscription to requests for its session. */
-export function onPanelProject(sessionId: string, listener: (projectId: string) => void): () => void {
-  let set = listeners.get(sessionId)
-  if (set === undefined) listeners.set(sessionId, set = new Set())
-  set.add(listener)
-  return () => {
-    set.delete(listener)
-    if (set.size === 0) listeners.delete(sessionId)
-  }
 }

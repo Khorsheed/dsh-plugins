@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { deskOf } from '../src/desk.ts'
 import type { VideoStudioService } from '../src/service.ts'
 import { defineVideoTools } from '../src/tool-definition.ts'
+import { readDestinations, stripDestinations } from '@khorsheed/dsh-client-ui-agent-nav/src/destination.ts'
 
 const DESK = Symbol.for('dsh.agent.desk')
 
@@ -116,12 +117,42 @@ describe('video tools at the room desk', () => {
     expect(member).toMatch(/p_old「#22 旧工程」.*← 当前会话/)
   })
 
-  it('outside a room nothing changes: own session, no event', async () => {
+  it('outside a room: own session, no event, and the answer names the project as its destination', async () => {
     const svc = fakeService()
     const answer = await tools(svc).project({ action: 'create', name: '#24' }, { id: 'plain' })
     expect(svc.bind).toHaveBeenCalledExactlyOnceWith('plain', 'p_new1')
     expect(answer).toContain('绑定到当前会话')
     expect(answer).not.toContain('房间')
+    expect(readDestinations(answer)).toEqual([expect.objectContaining({ kind: 'video-studio', params: { projectId: 'p_new1' } })])
+    const opened = await tools(svc).project({ action: 'open', projectId: 'p_old' }, { id: 'plain' })
+    expect(stripDestinations(opened)).toBe('工程 p_old 的文稿')
+    expect(readDestinations(opened)[0]?.params).toEqual({ projectId: 'p_old' })
+  })
+
+  it('in a room the desk row brings the project: no destination line', async () => {
+    const { session } = room()
+    for (const role of ['coordinator', 'member'] as const) {
+      const svc = fakeService()
+      expect(readDestinations(await tools(svc).project({ action: 'create', name: '#26' }, standIn(role, session)))).toEqual([])
+      expect(readDestinations(await tools(svc).project({ action: 'open', projectId: 'p_old' }, standIn(role, session)))).toEqual([])
+    }
+  })
+
+  it('a proposal lands on 文稿 at its group; render on 导出; import on 素材', async () => {
+    const svc = {
+      ...fakeService({ plain: 'p_old' }),
+      propose: vi.fn(async () => ({ groupId: 'g_7' })),
+      importSources: vi.fn(async () => ({ name: '#22 旧工程', sources: [] })),
+      startExport: vi.fn(async () => ({ id: 'job_3', label: '音频' })),
+      exportDirFor: vi.fn(async () => '/home/user/out'),
+    }
+    const [, importTool, , propose, render] = defineVideoTools(svc as unknown as VideoStudioService)
+    const run = (tool: unknown, args: Record<string, unknown>): Promise<string> =>
+      (tool as { execute: (a: unknown, e: unknown) => Promise<string> }).execute(args, { agent: { id: 'plain' } })
+    const proposed = await run(propose, { action: 'propose', title: '删掉吐槽', edits: [{ kind: 'cut', start: 1, end: 2 }] })
+    expect(readDestinations(proposed)[0]).toMatchObject({ label: '删掉吐槽', params: { projectId: 'p_old', tab: 'transcript', groupId: 'g_7' } })
+    expect(readDestinations(await run(render, { kinds: ['audio'] }))[0]?.params).toEqual({ projectId: 'p_old', tab: 'export', jobId: 'job_3' })
+    expect(readDestinations(await run(importTool, { paths: ['/home/user/a.wav'] }))[0]?.params).toEqual({ projectId: 'p_old', tab: 'sources' })
   })
 
   it('a closed room loses only the row', async () => {
