@@ -72,6 +72,10 @@ The user settled the rules on 2026-10-30 (proposal agent-sidebar-navigation, loc
   - Every decision logs `[nav] dest=… kind=… decision=… reason=… session=…`.
   - In canvas, follow means `go`, and badge means `addCanvas` (the strip dot).
   - Conversation cards only offer doors: `OpenCanvasRow`, `PlanCard`, `OutlineCard`, `BodyCard`, `ExtractCard`, the Turn tail. Their own `sawRunning` auto-open is gone. The row model strips the line from what it shows.
+- **library, game and video-studio (P2) adopt the same contract.**
+  - **library**: `'library'` params reach every route (project, book, station tab, lesson, quiz, cards, today) through one `go()`; the pane applies them once per revision. Tools name the project, the book (a textbook, or a roadmap waiting for 采用), the lesson (讲义), the quiz, and the station's 页 tab. `library_cards` deliberately names nothing: it often records a weak point mid-reading, and the existing 「已记下 · 撤销」 toast is its door. The 5 s `latestActivity` reveal and `RevealedProject` are gone. The station's user-initiated waits for 讲义 and quizzes stay: right after the click the follower only badges (busy), and the wait lands on the same place.
+  - **game**: `'game'` params `{ projectId?, view, elementId?, chapterId?, version? }` behind `go()`; turn-card doors and the desk row call it. `game_publish` lost `show`: its destination comes from the version diff (`changedBy`), and `game_open` lands on 试玩. The reveal controller, `liveVersion.show` and the host-side show requests are gone. A running game calls `markInteraction()` every 5 s, so the follower treats the panel as busy.
+  - **video-studio**: `VideoNavParams` `{ projectId, tab?, groupId?, jobId? }` behind `go()`. Tools name the project (create/open, now followed outside rooms too), 素材 (import), the proposal group in 文稿 (scrolled to and flashed), and 导出 (render). `requestPanelProject` is gone.
 - **The chapter has one place.** The 章节 face's `ChapterBook` takes `target` and opens its reader on chapter N, focused on the plan when asked.
   - It answers each ask once per page: a module map is keyed by canvas, because the face remounts on every face switch while the canvas keeps its last ask.
   - In-panel chapter links (story log, plan view) call `navigate.openManuscripts(item)`.
@@ -102,9 +106,7 @@ The user settled the rules on 2026-10-30 (proposal agent-sidebar-navigation, loc
 - A destination can be followed only while the person watches the call land in the on-screen session. Writes from a backgrounded tab, or a reconnect mid-turn, leave the card and a dot, by design.
 - Removed: canvas rows' auto-open, and the novel cards' auto-open of the separate chapter page and of 规划 (the planning face). The cards and the Turn tail keep their doors.
 - The rule's mechanics are pinned by `packages/client-ui-agent-nav/tests`. The line format is pinned by `packages/canvas/tests/nav-line.spec.ts` and `packages/canvas-novel/tests/nav-line.spec.ts`. The landing places are pinned by `packages/canvas/tests/tools.spec.ts` ("where a canvas write landed") and `packages/canvas-novel/tests/tools.spec.ts`.
-- **Not yet migrated.** These packages still use their own channels until they adopt the contract (P2/P3 in docs/agent-nav.md):
-  - library: the `latestActivity` reveal, the project-level landing;
-  - game: the `liveVersion.show` poll, `show`;
-  - video-studio: `requestPanelProject`;
+- The busy signal is page-wide: a running game also holds back canvas or library follows. Game and video show no badge; video also has no conversation card, so a destination that is not followed leaves only the answer text there.
+- **Not yet migrated** (P3 in docs/agent-nav.md):
   - the room desk rows: four `shouldFollow` copies, and novel desk items without chapter numbers;
   - reader: cards only.
