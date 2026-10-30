@@ -508,6 +508,38 @@ describe('codex live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('a compaction round compacts the thread, holds the member until its turn completes, and records one event', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-compact'))
+    const fake = new FakeAppServer({ turn: () => ({}) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request({ prompt: '/compact' }) as never, { ...roundSpec(m, child, { resume: { cliSessionId: 'thread-9', turn: 2 } }), operation: 'compact' })
+    await vi.waitFor(() => { expect(fake.requests.some(entry => entry.method === 'thread/compact/start')).toBe(true) })
+    expect(fake.requests.some(entry => entry.method === 'turn/start')).toBe(false)
+    // Codex runs the compaction as a turn of its own.
+    fake.notify('turn/started', { threadId: 'thread-9', turn: { id: 'turn-c', status: 'inProgress' } })
+    fake.notify('item/started', { threadId: 'thread-9', turnId: 'turn-c', item: { id: 'cc-1', type: 'contextCompaction' } })
+    fake.notify('thread/tokenUsage/updated', {
+      threadId: 'thread-9', turnId: 'turn-c',
+      tokenUsage: { last: { inputTokens: 6000, cachedInputTokens: 4000, outputTokens: 60, reasoningOutputTokens: 0, totalTokens: 6060 }, total: {}, modelContextWindow: 400000 },
+    })
+    let settled = false
+    void run.result.then(() => { settled = true })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    // Still compacting: the member's queue stays held (codex refuses a turn meanwhile).
+    expect(settled).toBe(false)
+    fake.notify('item/completed', { threadId: 'thread-9', turnId: 'turn-c', item: { id: 'cc-1', type: 'contextCompaction' } })
+    fake.notify('turn/completed', { threadId: 'thread-9', turn: { id: 'turn-c', status: 'completed', items: [] } })
+    expect((await run.result).stopReason).toBe('completed')
+    const events = child.snapshotEvents()
+    expect(events.filter(event => event.type === 'turn/start')).toHaveLength(0)
+    expect(events.filter(event => event.type === 'local-agent/compaction').map(event => event.data)).toEqual([expect.objectContaining({
+      source: 'manual', outcome: 'completed', provider: 'codex-local', contextWindow: 400000,
+      usage: { inputTokens: 2000, outputTokens: 60, cacheReadTokens: 4000 },
+    })])
+    await m.driver.disposeAll()
+  })
+
   it('reports the settled round’s observation read back from its rollout file', async () => {
     // The live drive's half of the exec path's onRoundSettled: the app-server
     // wire names no model, so the settle reads the round's own rollout file —

@@ -47,10 +47,40 @@ export interface LocalAgentStreamCheckpoint extends Omit<LocalAgentStreamItem, '
   append: boolean
 }
 
+/**
+ * One context compaction of a CLI member, in its own session: the CLI
+ * replaced its history before `boundarySeq` with a summary. Display and
+ * accounting only — never the host's own `compaction/*` events, whose
+ * surface replacement must not run on a mirrored CLI log.
+ */
+export interface LocalAgentCompactionEvent {
+  /** `manual`: /compact or the reminder button; `auto`: the CLI's own. */
+  source: 'manual' | 'auto'
+  outcome: 'completed' | 'failed' | 'cancelled'
+  /** The delegation provider (`kimi-cli`, `codex-local`, …). */
+  provider: string
+  model?: string
+  /** Context occupancy before and after, as the CLI reported it. */
+  beforeTokens?: number
+  afterTokens?: number
+  contextWindow?: number
+  /** The compaction call's own spend (never a round's). */
+  usage?: TokenUsage
+  /** The CLI's summary text, when it gives one (Kimi does, Codex does not). */
+  summary?: string
+  error?: string
+  startedAt: number
+  endedAt: number
+  /** Every message before this seq is replaced by the summary in later requests. */
+  boundarySeq: number
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Plugin-owned live presentation anchor and incremental recovery checkpoints. */
     'local-agent/stream': LocalAgentStreamCheckpoint
+    /** A CLI member's context compaction (display + accounting). */
+    'local-agent/compaction': LocalAgentCompactionEvent
   }
 }
 
@@ -831,6 +861,13 @@ export type LocalAgentDelegationIntent =
      * scope, and a round naming another (or none) is refused.
      */
     readonly scope?: string
+    /**
+     * `compact`: this round compacts the CLI's context instead of sending a
+     * prompt (Kimi `/compact`, Codex `thread/compact/start`). It holds the
+     * member's queue like any round — input sent meanwhile waits for it —
+     * writes no turn, and records one `local-agent/compaction` event.
+     */
+    readonly operation?: 'compact'
   }
 
 /**
@@ -948,6 +985,8 @@ export interface DelegationExecTarget {
  * it without changing the existing fields.
  */
 export interface DelegationCallOptions {
+  /** Resume only: compact the member's context instead of prompting it (see the resume intent). */
+  readonly operation?: 'compact'
   /** Host-only durable input edge, executed at the provider admission boundary. */
   readonly onAdmitted?: () => void | Promise<void>
   /** Reserved identity returned by prepareMember; never a caller-selected resume override. */

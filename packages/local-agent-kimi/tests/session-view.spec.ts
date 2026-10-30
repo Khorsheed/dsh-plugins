@@ -322,3 +322,21 @@ describe('session-view', () => {
     expect(round2?.outputTokens).toBe(138 + 175 + 251 + 224 + 881)
   })
 })
+
+describe('session-view compaction spend', () => {
+  it('leaves a compaction call\'s session-scoped spend out of the round accounting', async () => {
+    const home = tempHome('kimi-session-')
+    const dir = join(home, 'sessions', 'wd_tmp_abc', 'session_compacted')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '记住 4271' }] }),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 864, output: 29, inputCacheRead: 18944 }, usageScope: 'turn' }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: '0', step: 1, part: { type: 'text', text: '记住了' } } }),
+      JSON.stringify({ type: 'full_compaction.begin', source: 'manual' }),
+      JSON.stringify({ type: 'usage.record', usage: { inputOther: 1103, output: 154, inputCacheRead: 19712 }, usageScope: 'session' }),
+      JSON.stringify({ type: 'full_compaction.complete' }),
+    ].join('\n'))
+    const transcript = await readKimiTranscript(dir)
+    expect(transcript.usageRecords.map(record => record.usage.inputTokens)).toEqual([864])
+  })
+})

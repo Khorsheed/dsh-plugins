@@ -42,6 +42,7 @@ import { configureKimiSession } from './session-configuration.ts'
 import { kimiNativeConfiguration, type KimiNativeConfiguration } from './model-catalog.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { appendFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
@@ -71,7 +72,8 @@ import {
 } from './kimi-cli-provider.ts'
 import { assistantEvent, KIMI_INTERRUPTED_TOOL_RESULT, nextKimiSessionStep, nextWrittenKimiStep } from './session-mirror.ts'
 import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './session-mirror.ts'
-import { addTokenUsage } from './session-view.ts'
+import { addTokenUsage, findKimiSessionDir, wirePath } from './session-view.ts'
+import { readKimiCompaction } from './kimi-compaction.ts'
 import { writeKimiDefaultModel } from './provision.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
@@ -150,6 +152,9 @@ const SETTLE_MIRROR_QUIESCE_MS = 3_000
  * step's usage.record, read later, belongs to a closed turn and is dropped).
  */
 const SETTLE_MIRROR_FOLD_WAIT_MS = 10_000
+/** A compaction round polls the wire for its end this often, for at most this long. */
+const COMPACTION_POLL_MS = 500
+const COMPACTION_TIMEOUT_MS = 10 * 60_000
 
 /** How much of the live event stream crosses into the child session. */
 export type KimiLiveMirrorGranularity = 'event' | 'token'
@@ -172,6 +177,8 @@ export interface KimiLiveRoundSpec {
   readonly resume?: { readonly cliSessionId: string; readonly turn: number } | undefined
   /** Fresh round: called with the server-assigned session id (delegation record). */
   readonly onCliSessionId?: ((cliSessionId: string) => void) | undefined
+  /** `compact`: compact the session's context instead of prompting (see {@link KimiAcpLiveDriver.compactLocked}). */
+  readonly operation?: 'compact' | undefined
 }
 
 type JsonObject = Record<string, unknown>
@@ -915,12 +922,88 @@ export class KimiAcpLiveDriver {
     }
     const key = String(spec.childSession.id)
     const previous = this.roundChains.get(key) ?? Promise.resolve()
-    const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
+    const round = previous.catch(() => {}).then(() => spec.operation === 'compact' ? this.compactLocked(request, spec) : this.startRoundLocked(request, spec))
     this.roundChains.set(key, round.then(
       handle => handle.result.catch(() => ({})),
       () => ({}),
     ))
     return round
+  }
+
+  /**
+   * A compaction round: `/compact` on the member's session, then hold the
+   * round until the wire records the compaction's end — kimi answers the
+   * prompt at once and compacts in the background, silently dropping any
+   * prompt sent before it finishes, so the member's queue (this round) must
+   * outlast it. Writes no turn: one `local-agent/compaction` event.
+   */
+  private async compactLocked(request: SubagentStartRequest, spec: KimiLiveRoundSpec): Promise<SubagentRun> {
+    if (request.signal.aborted) throw new Error('subagent-kimi: request was aborted before the compaction started')
+    if (this.draining) throw new LiveChannelUnavailableError('the live driver is draining (a settings change retired this generation)')
+    if (this.disposed) throw new Error('subagent-kimi: the live driver is disposed')
+    const childSession = spec.childSession
+    const key = String(childSession.id)
+    const rt = await this.ensureRuntime(spec, request.signal)
+    try {
+      await this.configureSession(rt, spec)
+    } catch (error) {
+      await this.reclaim(key)
+      throw thrown(error)
+    }
+    const sessionId = bareKimiSessionId(rt.sessionId as string)
+    const dir = await findKimiSessionDir(spec.homeDir, sessionId)
+    if (dir === undefined) throw new Error(`subagent-kimi: compaction cannot find session ${sessionId}'s wire`)
+    const readWire = (): Promise<string> => readFile(wirePath(dir), 'utf8').catch(() => '')
+    const fromLine = (await readWire()).split('\n').length - 1
+    const startedAt = Date.now()
+    const boundarySeq = childSession.snapshotEvents().at(-1)?.seq ?? -1
+    const prompt = rt.turnChain.catch(() => {}).then(() => rt.peer.request<{ stopReason?: string }>('session/prompt', {
+      sessionId: rt.sessionId as string,
+      prompt: [{ type: 'text', text: '/compact' }],
+    }, 0))
+    rt.turnChain = prompt
+    const result: Promise<SubagentResult> = (async () => {
+      let reading = readKimiCompaction('', 0)
+      try {
+        await prompt
+        const deadline = Date.now() + COMPACTION_TIMEOUT_MS
+        for (;;) {
+          reading = readKimiCompaction(await readWire(), fromLine)
+          if (reading.done || Date.now() >= deadline) break
+          await delay(COMPACTION_POLL_MS)
+        }
+      } catch (error) {
+        reading = { done: true, outcome: 'failed', error: thrown(error).message }
+      }
+      const outcome = reading.done ? reading.outcome ?? 'completed' : 'failed'
+      childSession.append('local-agent/compaction', {
+        source: 'manual', outcome, provider: 'kimi-cli',
+        ...reading.model === undefined ? {} : { model: reading.model },
+        ...reading.beforeTokens === undefined ? {} : { beforeTokens: reading.beforeTokens },
+        ...reading.afterTokens === undefined ? {} : { afterTokens: reading.afterTokens },
+        ...reading.usage === undefined ? {} : { usage: reading.usage },
+        ...reading.summary === undefined ? {} : { summary: reading.summary },
+        ...outcome === 'completed' ? {} : { error: reading.error ?? (reading.done ? `compaction ${outcome}` : 'compaction did not finish in time') },
+        startedAt, endedAt: Date.now(), boundarySeq,
+      })
+      await persistChildSession(this.ctx, childSession).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-kimi: compaction persistence failed: ${thrown(error).message}`)
+      })
+      this.armIdleTimer(key)
+      return outcome === 'completed'
+        ? { stopReason: 'completed', output: [{ type: 'text', text: reading.summary ?? '' }] }
+        : { stopReason: 'error', output: [], diagnostic: reading.error ?? `compaction ${outcome}` }
+    })()
+    return subprocessRunHandle({
+      id: SessionId(randomUUID()),
+      result,
+      signal: request.signal,
+      // A compaction cannot be withdrawn once kimi runs it: the round
+      // settles when the wire says it ended.
+      onAbort: () => {},
+      requestCancel: () => {},
+      teardown: async () => {},
+    })
   }
 
   /** The serialized round body. */
