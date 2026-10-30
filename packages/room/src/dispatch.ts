@@ -219,6 +219,12 @@ export interface DispatchOptions {
   readonly targetId?: string
   /** Relays this dispatch DELIVERS (confirmRelay's own payloads). */
   readonly relayIds?: readonly string[]
+  /**
+   * The human's own message, delivered to the room's own agent as itself
+   * (its turn's user message, not a room-sourced copy): the room's additions
+   * ride that turn's first step (see {@link DispatchEngine.directExtras}).
+   */
+  readonly direct?: ReturnType<typeof createUserMessage>
 }
 
 /**
@@ -371,6 +377,14 @@ export interface DispatchHooks {
  * in-flight runs).
  */
 export class DispatchEngine {
+  /**
+   * The room's additions to a direct human turn, by the human message's id:
+   * taken (once) by the pre-step that enters that turn, so the human's words
+   * are never re-sent and an empty addition adds no message at all.
+   */
+  readonly directExtras: Map<string, string> = new Map()
+  /** Human messages delivered directly: their turn's own pre-steps must not file or re-carry them. */
+  readonly directMessages: Set<string> = new Set()
   /** memberKey → the queue tail promise. */
   private readonly queues = new Map<string, Promise<void>>()
   private readonly scheduled = new Set<string>()
@@ -565,7 +579,7 @@ export class DispatchEngine {
     let outcome: RunOutcome
     try {
       outcome = member.kind === 'main-agent'
-        ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [], options.dispatchSeq)
+        ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [], options.dispatchSeq, options.direct)
         : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId, options.dispatchSeq)
     } catch (error: unknown) {
       this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
@@ -765,15 +779,20 @@ export class DispatchEngine {
   private async runMainAgent(
     room: Session, member: RoomMember, cursor: number | undefined,
     text: string, _startedAt: number, relayIds: readonly string[], dispatchSeq: number | undefined,
+    direct?: ReturnType<typeof createUserMessage>,
   ): Promise<RunOutcome> {
     const agent = this.ctx.agents.get(room.id)
     if (agent === undefined) {
       // Fail loud: the room's own agent is not live, the message goes nowhere.
       return { state: 'failed', error: 'the room session has no live agent' }
     }
+    // A human message reaches the agent as itself: the room's additions
+    // (briefing, room changes, notifications, held reports — never the
+    // human's words again) wait for that turn's first step.
     const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
+    if (direct !== undefined && prompt.trim() !== '') this.directExtras.set(String(direct.id), prompt.trim())
     const before = room.snapshotEvents().at(-1)?.seq ?? -1
-    const message = createUserMessage({ content: [{ type: 'text', text: prompt }], source: roomSource() })
+    const message = direct ?? createUserMessage({ content: [{ type: 'text', text: prompt }], source: roomSource() })
     // A report reaching an agent mid-turn joins that turn at its next step:
     // as its own turn it would make the agent answer a second time, after
     // the turn that was already waiting for it.
@@ -792,6 +811,10 @@ export class DispatchEngine {
     // speech mirrors CLI members only). Its last assistant text is the
     // outcome a waiting sender's report quotes.
     await agent.whenIdle()
+    if (direct !== undefined) {
+      this.directMessages.delete(String(direct.id))
+      this.directExtras.delete(String(direct.id))
+    }
     const output = lastAssistantText(room.snapshotEvents(), before)
     return { state: 'done', ...output === '' ? {} : { text: output } }
   }

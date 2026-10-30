@@ -528,19 +528,34 @@ describe('DispatchEngine (real composition)', () => {
     expect(events().filter(event => event.type === 'room/run-moved').length).toBe(count)
   })
 
-  it('the main-agent member gets a producer-sourced followup and no speech projection', async () => {
+  it('the main-agent member gets the human\'s own message, the room\'s additions beside it, and no speech projection', async () => {
     const bench = await bootRoom()
+    // What the room hands the turn's first step, read while the followup runs
+    // (the addition is taken by that step and cleared when the run ends).
+    let additions: string | undefined
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    bench.agent!.followup.mockImplementation((message: UserMessage) => {
+      additions = bench.service.engine.directExtras.get(String(message.id))
+      // The host's turn writes the human's message into the log, once.
+      room.append('user/message', message, { surfaceOp: 'append' })
+    })
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@dsh 总结一下进度' })
     await bench.service.engine.idle()
 
     expect(bench.agent!.followup).toHaveBeenCalledTimes(1)
     const message = bench.agent!.followup.mock.calls[0]![0] as UserMessage
-    expect(message.source).toEqual({ kind: ROOM_KIND })
-    const text = textOf(message.content)
-    expect(text).toContain('总结一下进度')
-    // The room's own agent sends with room_message, not the CLI bridge tool.
-    expect(text).toContain('【房间简报】')
-    expect(text).toContain('room_message')
+    // The human's words reach the agent once, as their own message — the
+    // room writes no copy of it into the log.
+    expect(message.source).toEqual({ kind: 'user' })
+    expect(textOf(message.content)).toBe('@dsh 总结一下进度')
+    // The room wrote no copy: the only record of it is the turn's own.
+    expect(room.snapshotEvents().filter(event => event.type === 'user/message' && (event.data as { id?: string }).id === message.id)).toHaveLength(1)
+    // The room's own agent sends with room_message, not the CLI bridge tool;
+    // the briefing never repeats the human's words.
+    expect(additions).toContain('【房间简报】')
+    expect(additions).toContain('room_message')
+    expect(additions).not.toContain('总结一下进度')
+    expect(bench.service.engine.directMessages.size).toBe(0)
 
     const state = await bench.service.getState({ sessionId: bench.sessionId })
     expect(state).toMatchObject({
