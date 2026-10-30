@@ -1,0 +1,54 @@
+{
+  "name": "@khorsheed/dsh-client-ui-agent-nav",
+  "private": true,
+  "description": "Shared agent-to-sidebar navigation for community mode plugins: the destination line a write tool appends to its answer, its reader, and the one follow rule (open by itself only when the person watched the call land, otherwise leave the card). Consumed at the SOURCE plane — each plugin's tsdown client bundle inlines it — never mounted as a plugin row.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "navigation",
+    "sidebar",
+    "client"
+  ],
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Khorsheed/dsh-plugins.git",
+    "directory": "packages/client-ui-agent-nav"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "src"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  },
+  "dsh": {
+    "composition": {
+      "component": "source-plane-library"
+    },
+    "compat": {
+      "minHost": "0.2.0-rc.1",
+      "verifiedHost": "0.2.1-rc.3",
+      "notes": "A source-plane library, not a plugin: it registers no slot, service, locale or row, and owns no client bundle of its own. Consumers declare it as a workspace dependency and import `@khorsheed/dsh-client-ui-agent-nav/src/client/*` directly, so tsdown inlines it into each plugin's own `lib/client.js` — zero runtime coupling. The follower reads two host faces, probed: the right Sidebar's `mounted` (the session on screen) and the session binding's `eventSource` (whose `append` deltas are the live events). Without either, an owner keeps its cards and nothing moves by itself. Spec: proposal agent-sidebar-navigation (2026-10-30), docs/agent-nav.md."
+    }
+  }
+}

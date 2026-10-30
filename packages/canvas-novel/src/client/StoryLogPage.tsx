@@ -24,7 +24,7 @@ import {
   type StoryCard, type StoryCharacter, type StoryForeshadow, type StoryLogResult, type StoryRelation,
 } from '../types.ts'
 import { UnderlineTabs } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelNavigate, type NovelPageOwnerProps, type NovelRemote, type NovelSurfaceProps } from './contract.ts'
+import { STORY_LOG_PAGE, type NovelNavigate, type NovelPageOwnerProps, type NovelRemote, type NovelSurfaceProps } from './contract.ts'
 import { chapterHeading } from './PendingList.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
@@ -525,7 +525,7 @@ function StoryLog(props: NovelSurfaceProps<NovelPageOwnerProps> & { readonly api
   }
   const openChapter = (n: number): void => {
     const chapter = log.chapters.find(row => row.n === n)
-    if (chapter !== undefined) navigate.openPage(CHAPTER_PAGE, chapterHeading(t, n, chapter.title), String(n))
+    if (chapter !== undefined) navigate.openManuscripts(String(n))
   }
 
   const star = async (cardId: string, starred: boolean): Promise<void> => {

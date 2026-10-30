@@ -39,6 +39,7 @@ import {
   type BoardCard, type BoardCardSource, type BoardCategory, type CanvasBoard, type CanvasGenreAgent, type CanvasGenreDefinition, type CanvasImageRef,
   type CardCategoryId,
 } from './types.ts'
+import { withCanvasDestination } from './nav-line.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
 function tagOrigin<T extends object>(definition: T): T {
@@ -569,28 +570,54 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       const args = unescapeWriteArgs(arrived)
       const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
-      // In a room, what this write did is told to the room (desk.ts): the
-      // member's turn there ends with a line naming the cards it touched.
+      // What this write did, read as a before/after diff: in a room it is told
+      // to the room (desk.ts — the member's turn there ends with a line naming
+      // the cards it touched); elsewhere it is the answer's destination (the
+      // one card or manuscript it landed, else the canvas).
       const desk = deskOf(exec.agent)
-      const before = desk === undefined ? undefined : await board.readBoard({ canvasId: resolved.canvasId })
+      const before = await board.readBoard({ canvasId: resolved.canvasId })
       const answer = await dispatchWrite(args, resolved)
-      if (desk !== undefined && before?.ok === true) {
-        const after = await board.readBoard({ canvasId: resolved.canvasId })
-        if (after.ok) {
-          const items = writeItemsOf(writeBaselineOf(before.board), after.board, (card) => {
-            const category = after.board.categories.find(candidate => candidate.id === card.kind)
-            // A genre card may carry neither a title field value nor text: its first filled field then names it.
-            const named = cardNameOf(card, category?.definition)
-              || Object.values(card.fields ?? {}).map(value => fieldValueText(value)).find(text => text.trim() !== '')?.trim().slice(0, 40)
-              || ''
-            return { title: named, kind: category === undefined ? '' : categoryNameOf(category) }
-          })
-          announceDeskWrite(desk, { canvasId: resolved.canvasId, title: after.board.title }, items)
-        }
+      if (!before.ok || args.op === 'archive') return answer
+      const after = await board.readBoard({ canvasId: resolved.canvasId })
+      if (!after.ok) return answer
+      const items = writeItemsOf(writeBaselineOf(before.board), after.board, (card) => {
+        const category = after.board.categories.find(candidate => candidate.id === card.kind)
+        // A genre card may carry neither a title field value nor text: its first filled field then names it.
+        const named = cardNameOf(card, category?.definition)
+          || Object.values(card.fields ?? {}).map(value => fieldValueText(value)).find(text => text.trim() !== '')?.trim().slice(0, 40)
+          || ''
+        return { title: named, kind: category === undefined ? '' : categoryNameOf(category) }
+      })
+      if (desk !== undefined) {
+        announceDeskWrite(desk, { canvasId: resolved.canvasId, title: after.board.title }, items)
+        return answer
       }
-      return answer
+      return writeDestination(answer, resolved.canvasId, after.board, items)
     },
   })
+
+  /**
+   * The answer with where the write landed: the one card or manuscript it
+   * touched, else the canvas (a batch, a write that changed nothing visible).
+   */
+  const writeDestination = (
+    answer: string, canvasId: string, after: CanvasBoard,
+    items: ReadonlyArray<{ readonly title: string; readonly cardId?: string; readonly manuscriptId?: string }>,
+  ): string => {
+    const only = items.length === 1 ? items[0]! : undefined
+    if (only?.cardId !== undefined) {
+      const card = after.cards.find(row => row.id === only.cardId)
+      return withCanvasDestination(answer, `canvas:${canvasId}:card:${only.cardId}:${card?.updatedAt ?? ''}`,
+        { canvasId, card: only.cardId, heading: only.title }, only.title || after.title)
+    }
+    if (only?.manuscriptId !== undefined) {
+      const manuscript = after.manuscripts.find(row => row.id === only.manuscriptId)
+      return withCanvasDestination(answer, `canvas:${canvasId}:manuscript:${only.manuscriptId}:${manuscript?.version ?? ''}`,
+        { canvasId, manuscript: only.manuscriptId, heading: only.title }, only.title || after.title)
+    }
+    if (items.length === 0) return answer
+    return withCanvasDestination(answer, `canvas:${canvasId}:board:${after.cards.length}:${Date.now()}`, { canvasId, face: 'board' }, after.title)
+  }
 
   /** Run one write by its op (a failure throws, so nothing is told to the room). */
   const dispatchWrite = async (args: WriteArgs, resolved: Target): Promise<string> => {
@@ -766,7 +793,11 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         const fields = category?.proposal?.definition.fields.length ?? 0
         // The canvas id rides the answer so the conversation's tool row can
         // open THIS canvas's type page later, whatever canvas is open by then.
-        return `完成：${outcome.kind}（${category === undefined ? '' : categoryNameOf(category)}）的类型提议已放到类型页（画布 ${resolved.canvasId}），${fields} 个字段，等用户采用。`
+        const name = category === undefined ? '' : categoryNameOf(category)
+        const answer = `完成：${outcome.kind}（${name}）的类型提议已放到类型页（画布 ${resolved.canvasId}），${fields} 个字段，等用户采用。`
+        return deskOf(exec.agent) !== undefined ? answer : withCanvasDestination(answer,
+          `canvas:${resolved.canvasId}:type:${outcome.kind}:${Date.now()}`,
+          { canvasId: resolved.canvasId, type: outcome.kind, heading: name }, `「${name || outcome.kind}」类型提议`)
       }
       if (outcome.error === 'invalid-name') {
         return args.kind === undefined && (args.label ?? '').trim() === ''
@@ -856,6 +887,11 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         announceDeskOpen(desk, { canvasId, title, created })
         return desk.role === 'coordinator' ? '房间侧栏已切到这块。' : '已放进房间侧栏的画布标签里，用户点开就能看到。'
       }
+      // Outside a room the switch names the canvas as the answer's
+      // destination (in a room the desk row above brings it instead).
+      const landed = (answer: string, canvasId: string, title: string): string => desk !== undefined
+        ? answer
+        : withCanvasDestination(answer, `canvas:${canvasId}:open:${Date.now()}`, { canvasId }, `画布《${title}》`)
       const { items } = await board.listCanvases()
       const live = items.filter(item => item.archivedAt === null)
 
@@ -866,7 +902,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         if (namesake !== undefined) {
           const switched = await switchTo(namesake.id, session)
           if (!switched.ok) return renderOutcome({ ok: false, error: switched.error })
-          return `完成：已切到画布《${namesake.title}》（${namesake.id}）——已有同名画布，没有新建；确要另建一块就换个标题。${switched.note}${toRoom(namesake.id, namesake.title, false)}`
+          return landed(`完成：已切到画布《${namesake.title}》（${namesake.id}）——已有同名画布，没有新建；确要另建一块就换个标题。${switched.note}${toRoom(namesake.id, namesake.title, false)}`, namesake.id, namesake.title)
         }
         let genreId: string | null = null
         if (args.genre !== undefined && args.genre.trim() !== '') {
@@ -887,7 +923,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         const switched = await switchTo(created.board.id, session)
         if (!switched.ok) return renderOutcome({ ok: false, error: switched.error })
         const where = cwd === undefined ? '' : `挂上了工作区 ${cwd}。`
-        return `完成：已新建画布《${created.board.title}》（${created.board.id}）并切过去。${switched.note}${where}${toRoom(created.board.id, created.board.title, true)}接下来用 canvas_write 落卡。`
+        return landed(`完成：已新建画布《${created.board.title}》（${created.board.id}）并切过去。${switched.note}${where}${toRoom(created.board.id, created.board.title, true)}接下来用 canvas_write 落卡。`, created.board.id, created.board.title)
       }
 
       const byId = items.find(item => item.id === wanted)
@@ -903,7 +939,7 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
       if (target.archivedAt !== null) return canvasFailure(`失败：《${target.title}》已归档（只读）。请用户先在画布里恢复它，或另建一块。`)
       const switched = await switchTo(target.id, session)
       if (!switched.ok) return renderOutcome({ ok: false, error: switched.error })
-      return `完成：已切到画布《${target.title}》（${target.id}）。${switched.note}${toRoom(target.id, target.title, false)}`
+      return landed(`完成：已切到画布《${target.title}》（${target.id}）。${switched.note}${toRoom(target.id, target.title, false)}`, target.id, target.title)
     },
   })
 

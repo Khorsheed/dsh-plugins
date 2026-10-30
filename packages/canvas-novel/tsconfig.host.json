@@ -18,6 +18,7 @@
     "src/store.ts",
     "src/tools.ts",
     "src/desk.ts",
+    "src/nav-line.ts",
     "src/text-forms.ts",
     "src/types.ts"
   ]

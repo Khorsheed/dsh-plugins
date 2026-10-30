@@ -59,7 +59,8 @@ import {
   boardGraphOf, boardManuscriptsOf, boardScopesOf, boardStripsOf, boardTabBadgeOf, boardTabLabelOf, boardLeadOf, boardViewOf, cardDeleteNoteOf,
   genrePageOf, GenreSeatsContext, manuscriptsOwned, type GenreSeats,
 } from '../genre-seats.tsx'
-import type { CanvasCardScope } from '../slots.ts'
+import type { CanvasCardScope, CanvasNavParams } from '../slots.ts'
+import { interactionHandlers } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { ManuscriptList, ManuscriptView } from '../manuscript/ManuscriptView.tsx'
 import { TypeView } from '../type/TypeView.tsx'
 import { CategoriesView } from '../type/CategoriesView.tsx'
@@ -225,6 +226,19 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   const setView = useCallback((face: BoardFace) => { patchView(() => ({ face, faceChosen: true })) }, [patchView])
   const setScope = useCallback((next: string | null) => { patchView(() => ({ scope: next })) }, [patchView])
   const markEmpty = useCallback(() => { patchView(was => (was.empty ? {} : { empty: true })) }, [patchView])
+  // The tab's navigation (`sidebarRight.openTab('canvas', { params })`, from
+  // a destination or any other package): applied once per revision, so a
+  // repeat open of the same place still lands there.
+  const navigation = (props as { tab?: { navigation?: { params?: unknown; revision?: number } } }).tab?.navigation
+  const navRevision = navigation?.revision ?? 0
+  const navParams = navigation?.params as Partial<CanvasNavParams> | undefined
+  const appliedNav = useRef(0)
+  const goTo = props.goTo
+  useEffect(() => {
+    if (navRevision === 0 || appliedNav.current === navRevision) return
+    appliedNav.current = navRevision
+    if (typeof navParams?.canvasId === 'string') goTo?.(navParams as CanvasNavParams)
+  }, [navRevision, navParams, goTo])
   // An ask from outside the tab (a genre's conversation card): once its
   // canvas is the open one, show the face and press the scope it names.
   const ask = selection.ask
@@ -855,7 +869,11 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       openManuscript: (manuscriptId, heading) => { openManuscript(canvasId, manuscriptId, heading) },
       openPage: (page, heading, param) => { openPage(canvasId, page, heading, param) },
       backToBoard: () => { backToBoard(canvasId) },
-      openManuscripts: () => {
+      openManuscripts: (item, focus) => {
+        if (item !== undefined && goTo !== undefined) {
+          goTo({ canvasId, face: 'manuscripts', item, ...(focus === undefined ? {} : { focus }) })
+          return
+        }
         setViews(all => ({ ...all, [canvasId]: { ...(all[canvasId] ?? FRESH_VIEW), face: 'manuscripts', faceChosen: true } }))
         backToBoard(canvasId)
       },
@@ -864,7 +882,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     sessionId,
     ownsManuscripts: genreId => genres.some(genre => genre.id === genreId && genre.ownsManuscripts === true),
     facesOf: genreId => genres.find(genre => genre.id === genreId)?.faces,
-  }), [renderSlot, selectionRev, openCardDetail, openManuscript, openPage, backToBoard, refreshBoards, sessionId, genres])
+    ask: selection.ask,
+  }), [renderSlot, selectionRev, openCardDetail, openManuscript, openPage, backToBoard, refreshBoards, sessionId, genres, selection.ask, goTo])
 
   const openTitle = activeRow === undefined
     ? ''
@@ -927,7 +946,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   return (
     <GenreSeatsContext.Provider value={seats}>
     <PanelRoot className={css.panel}>
-    <div className={css.root} ref={rootRef} onScrollCapture={onScrollCapture} data-mobile-gesture-owner>
+    <div className={css.root} ref={rootRef} onScrollCapture={onScrollCapture} {...interactionHandlers} data-mobile-gesture-owner>
       <TabStrip
         t={t}
         rows={stripRows}

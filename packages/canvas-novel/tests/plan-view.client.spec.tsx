@@ -115,7 +115,7 @@ describe('PlanView', () => {
     expect(screen.getByText('约 2 章，写到附近再细化')).toBeTruthy()
     expect(screen.getByText('第一次进入废域')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /第 3 章/ }))
-    expect(navigate.openPage).toHaveBeenCalledWith('novel:chapter', '第3章标题', '3')
+    expect(navigate.openManuscripts).toHaveBeenCalledWith('3')
     // The core suspense: its reveal, the two clues, the pacing line; volume two names it.
     expect(screen.getByText('揭晓：卷二')).toBeTruthy()
     expect(screen.getByText('暗示：不属于自己的记忆')).toBeTruthy()

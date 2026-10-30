@@ -10,6 +10,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 import type { ProposeToolBlock } from '../type/propose-row.ts'
+import { stripDestinations } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 
 /** What the row shows. */
 export interface OpenRowModel {
@@ -32,9 +33,9 @@ export function openRowModel(block: ProposeToolBlock | null | undefined, phase?:
   const settled = block?.kind === 'tool-result' || (phase === 'result' && block !== null && block !== undefined)
   const empty = { canvasId: null, title: null }
   if (!settled) return { state: 'running', ...empty, text: '' }
-  const text = (block?.content ?? [])
+  const text = stripDestinations((block?.content ?? [])
     .map(part => (part.type === 'text' ? part.text ?? '' : ''))
-    .join('')
+    .join('\n'))
     .trim()
   if (block?.isError === true || text.startsWith('失败：')) return { state: 'failed', ...empty, text }
   const match = ANSWER.exec(text)

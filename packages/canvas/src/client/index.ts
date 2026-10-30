@@ -63,7 +63,8 @@ import { DeskWroteNode } from './open/DeskWroteNode.tsx'
 import { DeskAttachment } from './open/DeskAttachment.tsx'
 import { CanvasTab } from './tab/CanvasTab.tsx'
 import { CanvasTabTitle } from './tab/CanvasTabTitle.tsx'
-import { CANVAS_CHILD_SLOTS, type CanvasNavService } from './slots.ts'
+import { CANVAS_CHILD_SLOTS, type CanvasNavParams, type CanvasNavService } from './slots.ts'
+import { followerHostOf, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { CanvasBindChip, type CanvasBindInjected } from './bind/BindChip.tsx'
 import { GenreBindingGate } from './bind/gate.ts'
 
@@ -82,7 +83,7 @@ export * from './paste-table.ts'
 export { CANVAS_CHILD_SLOTS, genreKey } from './slots.ts'
 export type {
   CanvasCardOwnerProps, CanvasCardScope, CanvasChildSlot, CanvasGenreOwnerProps, CanvasManuscriptsOwnerProps, CanvasNavigate,
-  CanvasNavService, CanvasPageOwnerProps, CanvasScopesOwnerProps, CanvasTabLabelOwnerProps,
+  CanvasNavParams, CanvasNavService, CanvasPageOwnerProps, CanvasScopesOwnerProps, CanvasTabLabelOwnerProps,
 } from './slots.ts'
 
 /**
@@ -144,6 +145,47 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   // The selection/freshness store: one instance, published into the tab's face.
   const selection = new CanvasSelectionStore()
+
+  /**
+   * Put the strip at one address (proposal 2026-10-30-agent-sidebar-navigation):
+   * the most specific field wins. Every way into the surface from outside —
+   * a destination, a conversation card, the desk row, the tab's navigation
+   * params — lands here, so "where did it open" has one answer.
+   */
+  const goTo = (params: CanvasNavParams): void => {
+    const { canvasId, heading = '' } = params
+    if (params.card !== undefined) selection.openCardTab(canvasId, params.card, heading)
+    else if (params.manuscript !== undefined) selection.openManuscriptTab(canvasId, params.manuscript, heading)
+    else if (params.type !== undefined) selection.openTypeTab(canvasId, params.type as Parameters<typeof selection.openTypeTab>[1], heading)
+    else if (params.face !== undefined) selection.openBoardFace(canvasId, params.face, params.scope ?? null, params.item, params.focus)
+    else selection.openCanvas(canvasId)
+  }
+  /** Open the canvas tab, then put the strip at the address. */
+  const go = (params: CanvasNavParams): void => {
+    try {
+      ctx.sidebarRight.openTab(CANVAS_KIND)
+    } catch (error) {
+      // A session whose preset hides the canvas has no tab type to open; the
+      // strip write below still lands for the next time it shows.
+      ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
+    }
+    goTo(params)
+  }
+
+  // The follower (proposal 2026-10-30-agent-sidebar-navigation): a canvas or
+  // genre tool's answer names its destination; watched live, the tab goes
+  // there; otherwise the canvas gets its strip dot and the card waits.
+  const followerHost = followerHostOf(name => (ctx.get.bind(ctx) as (key: string) => unknown)(name))
+  if (followerHost !== undefined) {
+    ctx.effect(() => startNavFollower(followerHost, {
+      kinds: [CANVAS_KIND],
+      open: destination => { go(destination.params as unknown as CanvasNavParams) },
+      badge: destination => {
+        const canvasId = (destination.params as { canvasId?: unknown }).canvasId
+        if (typeof canvasId === 'string') selection.addCanvas(canvasId)
+      },
+    }), 'canvas: destination follower')
+  }
   /** Sessions already handed the wide-mode suggestion (one shot each). */
   const wideSuggested = new Set<string>()
 
@@ -208,6 +250,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   const tabFace = (): CanvasTabInjected => ({
     ...talkFace,
+    goTo,
     listCanvases: () => requireRemote().listCanvases(),
     readBoard: request => requireRemote().readBoard(request),
     openFile: (sessionId, cwd, path) => {
@@ -368,37 +411,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     register: (options: Record<string, unknown>, component: unknown) => () => void
   }
   const proposeFace: ProposeTypeRowFace = {
-    openType: (canvasId, kind, heading) => {
-      try {
-        ctx.sidebarRight.openTab(CANVAS_KIND)
-      } catch (error) {
-        // A session whose preset hides the canvas has no tab type to open;
-        // the row's store write below still lands for the next time it shows.
-        ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
-      }
-      selection.openTypeTab(canvasId, kind, heading)
-    },
+    openType: (canvasId, kind, heading) => { go({ canvasId, type: kind, heading }) },
   }
   // A genre's conversation card (the novel plan card, say) opens one of its
   // pages the same way: the tab first, then the row on the page. The cordis
   // fiber owns the provide's lifetime (the quote `ctx.quoteActions` precedent).
   const canvasNav: CanvasNavService = {
     openPage: (canvasId, page, heading, param) => {
-      try {
-        ctx.sidebarRight.openTab(CANVAS_KIND)
-      } catch (error) {
-        ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
-      }
+      go({ canvasId })
       selection.openPageTab(canvasId, page, heading, param)
     },
-    openFace: (canvasId, face, scope) => {
-      try {
-        ctx.sidebarRight.openTab(CANVAS_KIND)
-      } catch (error) {
-        ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
-      }
-      selection.openBoardFace(canvasId, face, scope)
-    },
+    openFace: (canvasId, face, scope) => { go({ canvasId, face, scope }) },
+    go,
   }
   ctx.provide('canvasNav', canvasNav)
 
@@ -420,10 +444,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }),
     category => categoryLabelOf(category, t),
     () => selection.source.getSnapshot().canvasId,
-    (canvasId, cardId) => {
-      openCanvasTab()
-      selection.openCardTab(canvasId, cardId, '')
-    },
+    (canvasId, cardId) => { go({ canvasId, card: cardId }) },
   )
   ctx.provide('canvasInbox', inbox)
 
@@ -476,14 +497,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // tab (the row decides when — only a call it saw running), and every row
   // keeps an 打开 → door to it.
   const openFace: OpenCanvasRowFace = {
-    openCanvas: (canvasId) => {
-      try {
-        ctx.sidebarRight.openTab(CANVAS_KIND)
-      } catch (error) {
-        ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
-      }
-      selection.openCanvas(canvasId)
-    },
+    openCanvas: (canvasId) => { go({ canvasId }) },
   }
   ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({
     name: 'tool.call.toolview',
@@ -501,10 +515,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // has no row, and the member's own session keeps its canvas_open row.
   const deskFace: DeskOpenRowFace & DeskWroteRowFace = {
     openCanvas: openFace.openCanvas,
-    openCard: (canvasId, cardId, heading) => {
-      openCanvasTab()
-      selection.openCardTab(canvasId, cardId, heading)
-    },
+    openCard: (canvasId, cardId, heading) => { go({ canvasId, card: cardId, heading }) },
     addCanvas: canvasId => { selection.addCanvas(canvasId) },
   }
   ctx.effect(() => toolSlots.inject('conversation.chat.node', () => {
@@ -568,14 +579,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     boundCanvas: () => requireRemote().boundCanvas(sessionId),
     bindCanvas: async canvasId => touchOnSuccess(await requireRemote().bindCanvas(sessionId, { canvasId })),
     listCanvases: () => requireRemote().listCanvases(),
-    openCanvas: canvasId => {
-      try {
-        ctx.sidebarRight.openTab(CANVAS_KIND)
-      } catch (error) {
-        ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
-      }
-      selection.openCanvas(canvasId)
-    },
+    openCanvas: canvasId => { go({ canvasId }) },
   })
   ctx.effect(() => toolSlots.inject('conversation.session.header.actions', () => toolSlots.register({
     name: 'conversation.session.header.actions',

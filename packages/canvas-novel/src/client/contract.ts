@@ -21,8 +21,12 @@ import type {} from './locales.ts'
 export interface NovelNavigate {
   openCard: (cardId: string, heading: string) => void
   openPage: (page: string, heading: string, param?: string) => void
-  /** Back to the board on its 成稿 face (the book's contents). */
-  openManuscripts: () => void
+  /**
+   * Back to the board on its 成稿 face (the book's contents); with a chapter
+   * number, that chapter in the 章节 face's reader (`focus` plan or body).
+   * Older canvas builds ignore the arguments and show the contents.
+   */
+  openManuscripts: (item?: string, focus?: string) => void
   refresh: () => void
 }
 
@@ -94,5 +98,16 @@ export type NovelSurfaceProps<O extends NovelOwnerProps = NovelOwnerProps> = O &
 export const STORY_LOG_PAGE = 'novel:story-log'
 /** The 规划 page's key: the lead face opened as a page (a conversation card's door). */
 export const PLAN_PAGE = 'novel:plan'
-/** The chapter page's key (param: the chapter number). */
+/**
+ * The retired chapter page's key (param: the chapter number). A chapter now
+ * opens inside the 章节 face (proposal 2026-10-30-agent-sidebar-navigation);
+ * the page stays registered only to forward a strip row saved on it.
+ */
 export const CHAPTER_PAGE = 'novel:chapter'
+
+/** The 章节 face's ask: one chapter to show, on its plan or its text (the canvas's `target`). */
+export interface ChapterTarget {
+  readonly item: string
+  readonly focus?: string | undefined
+  readonly n: number
+}

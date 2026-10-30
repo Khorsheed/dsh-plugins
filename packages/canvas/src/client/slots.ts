@@ -23,8 +23,11 @@ export interface CanvasNavigate {
   openPage: (page: string, heading: string, param?: string) => void
   /** Back to this canvas's board. */
   backToBoard: () => void
-  /** Back to this canvas's board, on its 成稿 face. */
-  openManuscripts: () => void
+  /**
+   * Back to this canvas's board, on its 成稿 face — with an item, showing that
+   * item there (the novel's 章节 face: a chapter number, `focus` plan or body).
+   */
+  openManuscripts: (item?: string, focus?: string) => void
   /** Tell every canvas seat the board changed (after a genre's own mutation landed). */
   refresh: () => void
 }
@@ -44,6 +47,29 @@ export interface CanvasGenreOwnerProps {
 }
 
 /**
+ * One place in the canvas surface, as an address (proposal
+ * 2026-10-30-agent-sidebar-navigation): the canvas tab's navigation params,
+ * and the `params` of every destination a canvas or genre tool names. The most
+ * specific field wins: a card, a manuscript, a type page, a face (with a scope
+ * pressed and an item shown on it), else the canvas where its row stood.
+ */
+export interface CanvasNavParams {
+  readonly canvasId: string
+  readonly card?: string
+  readonly manuscript?: string
+  /** A category's type page. */
+  readonly type?: string
+  readonly face?: 'board' | 'link' | 'manuscripts' | 'view' | 'lead'
+  readonly scope?: string | null
+  /** One thing on that face the genre shows (the novel's 章节 face: a chapter number). */
+  readonly item?: string
+  /** How the genre shows it (the novel: `plan` or `body`). */
+  readonly focus?: string
+  /** The strip chip's words for a card, manuscript or type page. */
+  readonly heading?: string
+}
+
+/**
  * The canvas's navigation from outside the canvas tab (`ctx.canvasNav`): a
  * genre's conversation card opens one of its pages without knowing how the
  * tab is opened or where its rows live. A consumer probes it with
@@ -57,6 +83,8 @@ export interface CanvasNavService {
    * genre's scopes pressed (null: 全部). Absent on older canvas builds.
    */
   openFace?: (canvasId: string, face: 'board' | 'link' | 'manuscripts' | 'view' | 'lead', scope: string | null) => void
+  /** Open the canvas tab at one address — the one entry every other method is a shorthand of. Absent on older canvas builds. */
+  go?: (params: CanvasNavParams) => void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -79,6 +107,11 @@ export interface CanvasCardOwnerProps extends CanvasGenreOwnerProps {
  */
 export interface CanvasManuscriptsOwnerProps extends CanvasGenreOwnerProps {
   readonly onEmpty?: (() => void) | undefined
+  /**
+   * An item the face was asked to show (`CanvasNavParams.item`/`focus`); `n`
+   * tells one ask from the next, so the face applies each ask once.
+   */
+  readonly target?: { readonly item: string; readonly focus?: string | undefined; readonly n: number } | undefined
 }
 
 /** One top-face label of a genre with `faces`: which face it names. */
