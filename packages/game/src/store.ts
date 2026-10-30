@@ -37,10 +37,11 @@ import {
 } from './project.ts'
 import {
   CHAPTERS, LORE_MAX, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
-  type AnyLook, type BundleFile, type ChapterView, type CommitResult, type VersionSource, type WorkingChanges, type LiveVersion, type ShowRequest, type ShowTarget, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
+  type AnyLook, type BundleFile, type ChapterView, type CommitResult, type VersionSource, type WorkingChanges, type LiveVersion, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
   type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView, type TurnReport,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
+import type { GamePlace } from './nav-line.ts'
 
 /** Plugin config; every key optional. */
 export interface GameConfig {
@@ -598,66 +599,41 @@ export class GameService {
     const state = join(row.root, STATE_DIR)
     const candidate = await readJson<VersionRecord>(join(state, 'candidate.json'))
     const record = candidate ?? (await readJson<VersionRecord>(join(state, 'current.json')))
-    const show = this.shows.get(row.id)
-    const extra = show === undefined ? {} : { show }
-    if (record === undefined) return { projectId: row.id, version: 0, kind: 'none', at: null, ...extra }
-    return { projectId: row.id, version: record.version, kind: candidate !== undefined ? 'candidate' : 'deployed', at: record.at, ...(record.by === undefined ? {} : { by: record.by }), ...extra }
+    if (record === undefined) return { projectId: row.id, version: 0, kind: 'none', at: null }
+    return { projectId: row.id, version: record.version, kind: candidate !== undefined ? 'candidate' : 'deployed', at: record.at, ...(record.by === undefined ? {} : { by: record.by }) }
   }
 
-  /** The agent's latest 「请用户看这里」 per project (in memory: a request is for the moment, not history). */
-  private readonly shows = new Map<string, ShowRequest>()
-  private showSeq = 0
-
   /**
-   * After a passing `game_publish`: leave the pages showing this project a
-   * request to take their game tab to the result. `show` is the agent's choice
-   * (play, versions, elements, elements:<id or name>, design:<chapter>); left
-   * out — or not found — the version decides: the one element it changed, the
-   * grid when several, else the play area (a candidate always opens play,
-   * where it waits for the user's OK). Pages pick it up on their poll.
-   * @returns a line for the tool's answer.
+   * Where a passing `game_publish` landed, for the answer's destination line
+   * (proposal 2026-10-30-agent-sidebar-navigation): the version decides — the
+   * one element it changed, the grid when several, else the play area (a
+   * candidate always lands on play, where it waits for the user's OK). The
+   * agent no longer picks the place.
+   * @returns the place, the card's words and the answer's 「在哪」, or undefined without a bound project.
    */
-  async showAfterPublish(sessionId: string, version: number, candidate: boolean, show?: string, note?: string): Promise<string> {
+  async publishedPlace(sessionId: string, version: number, candidate: boolean, note?: string): Promise<{
+    readonly projectId: string
+    readonly target: GamePlace
+    readonly label: string
+    readonly where: string
+  } | undefined> {
     const row = await this.boundProject(sessionId)
-    const project = row === undefined ? undefined : await this.view(row.id)
-    if (row === undefined || project === undefined) return ''
-    let target: ShowTarget | null = null
-    let refused = ''
-    const asked = (show ?? '').trim()
-    if (asked !== '') {
-      const [view, ...rest] = asked.split(':')
-      const name = rest.join(':').trim()
-      if (view === 'play' || view === 'versions' || (view === 'elements' && name === '')) target = { view }
-      else if (view === 'elements') {
-        const e = project.elements.find(x => x.id === name || x.name === name)
-        if (e !== undefined) target = { view, elementId: e.id }
-      } else if (view === 'design') {
-        const c = project.chapters.find(x => x.id === name || x.title === name)
-        if (c !== undefined) target = { view, chapterId: c.id }
-      }
-      if (target === null) refused = `（show「${asked}」找不到，改用默认位置）`
-    }
-    let changedNames: string[] = []
-    if (target === null) {
-      const decided = candidate ? { target: { view: 'play' } as ShowTarget, names: [] as string[] } : await this.changedBy(row.root, version)
-      target = decided.target
-      changedNames = decided.names
-    }
+    if (row === undefined) return undefined
+    const { target, names } = candidate ? { target: { view: 'play' } as GamePlace, names: [] as string[] } : await this.changedBy(row.root, version)
     const words = (note ?? '').trim()
-    const text = words !== '' ? words
+    const label = words !== '' ? words
       : candidate ? `v${version} 等你确认上线`
-      : changedNames.length > 0 ? `v${version}：改了${changedNames.slice(0, 3).join('、')}${changedNames.length > 3 ? ` 等 ${changedNames.length} 个` : ''}`
+      : names.length > 0 ? `v${version}：改了${names.slice(0, 3).join('、')}${names.length > 3 ? ` 等 ${names.length} 个` : ''}`
       : `v${version} 已上线`
-    this.shows.set(row.id, { seq: ++this.showSeq, target, note: text.slice(0, 120), at: new Date().toISOString() })
-    this.notify(row.id)
-    const where = target.view === 'play' ? '试玩' : target.view === 'versions' ? '版本' : target.view === 'design' ? `策划·${target.chapterId}` : target.elementId === undefined ? '元素列表' : `元素「${target.elementId}」`
-    return `右栏会打开：${where}${refused}。`
+    const element = target.elementId === undefined ? undefined : names.length === 1 ? names[0] : target.elementId
+    const where = target.view === 'play' ? '「试玩」' : target.view === 'versions' ? '「版本」' : element === undefined ? '「元素」列表' : `「元素」里的「${element}」`
+    return { projectId: row.id, target, label: label.slice(0, 120), where }
   }
 
   /** Where a version's change is: the one element it changed, the grid for several, else play (code, assets, a first version). */
-  private async changedBy(root: string, version: number): Promise<{ target: ShowTarget; names: string[] }> {
+  private async changedBy(root: string, version: number): Promise<{ target: GamePlace; names: string[] }> {
     const earlier = (await this.readVersions(root)).map(v => v.version).filter(v => v < version)
-    const play = { target: { view: 'play' } as ShowTarget, names: [] as string[] }
+    const play = { target: { view: 'play' } as GamePlace, names: [] as string[] }
     if (earlier.length === 0) return play
     const prev = Math.max(...earlier)
     const dir = (v: number): string => join(root, STATE_DIR, 'versions', String(v))

@@ -20,9 +20,9 @@ import gameRemote from '@khorsheed/dsh-game/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.tsx'
-import type { GameApi, GameTabInjected, NavTarget } from './contract.ts'
+import type { GameApi, GameNavParams, GameTabInjected } from './contract.ts'
 import { gameTurnDefinition, GameTurnCard } from './TurnCard.tsx'
-import { Reveal } from './reveal.ts'
+import { followerHostOf, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { encodeGameRef, GAME_REF_SOURCE, gameRefCodec } from './refs.ts'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
@@ -167,28 +167,30 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return undefined
     }
   }
-  const navListeners = new Set<(target: NavTarget) => void>()
-  let parkedNav: NavTarget | null = null
-  const reveal = new Reveal(target => { face.openAt(target) })
+  /**
+   * Open the game tab at one place (proposal 2026-10-30-agent-sidebar-navigation):
+   * the host's own navigation, so the tab body applies the params once per
+   * revision whether it was mounted already or mounts now.
+   */
+  const go = (params: GameNavParams): void => {
+    try {
+      ctx.sidebarRight.openTab(GAME_KIND, { params })
+    } catch (error) {
+      // A session whose preset hides the game has no tab type to open.
+      ctx.logger.warn('game: openTab failed (tab type not registered?)', error)
+    }
+  }
+  // The follower: a game tool's answer names its destination; watched live,
+  // the tab goes there. No badge: the turn card already lists the change.
+  const followerHost = followerHostOf(name => (ctx.get.bind(ctx) as (key: string) => unknown)(name))
+  if (followerHost !== undefined) {
+    ctx.effect(() => startNavFollower(followerHost, {
+      kinds: [GAME_KIND],
+      open: destination => { go(destination.params as unknown as GameNavParams) },
+    }), 'game: destination follower')
+  }
   const face: GameTabInjected = {
-    openAt: (target) => {
-      parkedNav = target
-      try {
-        ctx.sidebarRight.openTab(GAME_KIND)
-      } catch (error) {
-        ctx.logger.warn('game: openTab failed (tab type not registered?)', error)
-      }
-      for (const listener of navListeners) listener(target)
-    },
-    subscribeNav: (listener) => {
-      navListeners.add(listener)
-      return () => { navListeners.delete(listener) }
-    },
-    takeNav: () => {
-      const target = parkedNav
-      parkedNav = null
-      return target
-    },
+    go,
     api,
     insertDraft: (sessionId, text) => {
       const input = inputFor(sessionId)
@@ -227,13 +229,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return () => { listeners.delete(listener) }
     },
     touch: sessionId => { emit(sessionId) },
-    reveal,
   }
 
-  // The page follows the agent: game_publish leaves a 「请用户看这里」 request the host cannot push,
-  // so the page polls the on-screen session's bound project while visible (session events nudge
-  // it early). The same read notices a binding made with no event (a room member's game_open) and
-  // refreshes the tab — refresh only; where to go is the agent's to say.
+  // The page polls the on-screen session's bound project while visible (session events nudge it
+  // early) to notice a binding made with no event (a room member's game_open) and refresh the tab —
+  // refresh only. Where to go rides the answers' destination lines (the follower above).
   const lastBound = new Map<string, string | null>()
   let lastLook = 0
   const look = (): void => {
@@ -248,7 +248,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       const before = lastBound.get(sid)
       lastBound.set(sid, bound)
       if (before !== undefined && before !== bound) emit(sid)
-      if (r.value?.show !== undefined) reveal.request(r.value.projectId, r.value.show)
     }).catch(() => {})
   }
   listeners.add(() => { look() })
@@ -306,11 +305,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           if (bound?.ok !== true || !bound.value.ok) ctx.logger.warn('game: could not bind the room to the desk project', projectId)
         }
         emit(sessionId)
-        try {
-          ctx.sidebarRight.openTab(GAME_KIND)
-        } catch (error) {
-          ctx.logger.warn('game: openTab failed (tab type not registered?)', error)
-        }
+        go({ projectId, view: 'play' })
       })()
     },
   }

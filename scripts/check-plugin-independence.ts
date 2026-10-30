@@ -289,8 +289,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // …and ui-agent-nav (the destination follower, proposal agent-sidebar-navigation).
   'video-studio': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // game → ui-panel-kit: the game tab's panel root, header, tabs and rows
-  // (panel-design convention for every new panel).
-  'game': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // (panel-design convention for every new panel); and ui-agent-nav, the
+  // destination follower (proposal agent-sidebar-navigation) — same edge.
+  'game': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent

@@ -121,10 +121,11 @@ describe('game_open on a room desk', () => {
     expect(await tool('game_read')({}, { agent: { session: session('member-1') } })).toContain('本会话还没有游戏项目')
 
     await put(join(project.root, 'index.html'), '<p>hi</p>')
-    expect(await tool('game_publish')({}, { agent: member })).toContain('v1 通过检查')
+    const published = await tool('game_publish')({}, { agent: member })
+    expect(published).toContain('v1 通过检查')
     expect((await store.view(project.id))?.current).toMatchObject({ version: 1, by: 'agent' })
-    // The show request went to the project the room shows.
-    expect((await store.liveVersion('room'))?.show).toMatchObject({ target: { view: 'play' } })
+    // A desk call names no destination: in a room the desk row brings the project.
+    expect(published).not.toContain('⟦dsh-nav⟧')
 
     // Its own choice wins once it has one.
     await tool('game_open')({ create: 'Harbor', ...GATE }, { agent: member })

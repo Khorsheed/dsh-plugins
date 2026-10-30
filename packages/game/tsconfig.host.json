@@ -9,6 +9,7 @@
     "src/agent.ts",
     "src/checks.ts",
     "src/desk.ts",
+    "src/nav-line.ts",
     "src/hooks.ts",
     "src/index.ts",
     "src/project.ts",

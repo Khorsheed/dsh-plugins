@@ -379,8 +379,6 @@ export const zh = {
   'gltf.boneSearch': '找骨头…',
   'gltf.rotate': '旋转',
   'gltf.moreBones': '另有 {count} 根，搜索名字找',
-  'nav.go': '去看看',
-  'nav.dismiss': '不用了',
 }
 
 /** English dictionary. */
@@ -751,8 +749,6 @@ export const en: Record<keyof typeof zh, string> = {
   'gltf.boneSearch': 'Find a bone…',
   'gltf.rotate': 'Rotation',
   'gltf.moreBones': '{count} more; search by name',
-  'nav.go': 'Show me',
-  'nav.dismiss': 'Not now',
 }
 
 /** The dictionary namespace this view binds. */

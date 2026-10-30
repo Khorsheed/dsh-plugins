@@ -18,6 +18,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import { actingSession, announceDeskOpen, deskOf, type GameDesk } from './desk.ts'
+import { withGameDestination } from './nav-line.ts'
 import { artStyleLabel, lookText } from './project.ts'
 import type { GameService } from './store.ts'
 import { ART_STYLES, ART_STYLES_3D, CHAPTERS, type ProjectRow, type ProjectView } from './types.ts'
@@ -115,6 +116,14 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
     return { ok: true, tail: coordinator ? '房间侧栏已切到这个项目。' : '只绑定了你自己的会话；房间里会出现这个项目的入口，用户点开就能看到。' }
   }
 
+  /**
+   * An open/create/switch outside a room names the project's play area as the
+   * answer's destination (in a room the desk row brings it instead).
+   */
+  const opened = (desk: GameDesk | undefined, project: { id: string; title: string }, answer: string): string => desk !== undefined
+    ? answer
+    : withGameDestination(answer, `game:${project.id}:open:${Date.now()}`, { projectId: project.id, view: 'play' }, `游戏《${project.title}》`)
+
   const listText = async (sessionId: string | undefined): Promise<string> => {
     const projects = await store.listProjects()
     const bound = sessionId === undefined ? undefined : await store.boundProject(sessionId)
@@ -133,7 +142,7 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       + 'one (title or id). create: make a new project in the session workspace — requires title, pitch, elementTypes and '
       + 'artStyle the user agreed to (the answer lists what is missing); runtime: 3d makes a three.js project (default 2d). '
       + 'path: adopt an existing folder with a game.json. '
-      + 'The right-sidebar game tab follows. Load the gamedev skill before writing game code.',
+      + 'The right-sidebar game tab shows it. Load the gamedev skill before writing game code.',
     parameters: {
       project: { type: 'string', description: 'Project title or id to switch to.' },
       create: { type: 'string', description: 'Title of a new project.' },
@@ -174,8 +183,8 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
         const settled = place.desk === undefined
           ? { ok: true as const, tail: '' }
           : await settle(place, created.project, true)
-        return `完成：已建项目《${created.project.title}》（${created.project.id}），目录 ${created.project.root}，本会话已绑定。${settled.ok ? settled.tail : ''}`
-          + '\n已写 game.json 与 design/pillars.md。接下来：load gamedev 技能，写 index.html + src/ 与 window.dshGame，并一起写 tests/。'
+        return opened(place.desk, created.project, `完成：已建项目《${created.project.title}》（${created.project.id}），目录 ${created.project.root}，本会话已绑定。${settled.ok ? settled.tail : ''}`
+          + '\n已写 game.json 与 design/pillars.md。接下来：load gamedev 技能，写 index.html + src/ 与 window.dshGame，并一起写 tests/。')
       }
 
       if (path !== '') {
@@ -185,7 +194,7 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
         if (!adopted.ok) return adopted.error === 'not-found' ? `失败：${root} 下没有 game.json。` : `失败：${root} 的 game.json 读不了。`
         const settled = await settle(place, adopted.project, false)
         if (!settled.ok) return `失败：${settled.error}`
-        return `完成：已登记并切到《${adopted.project.title}》（${adopted.project.id}）。${settled.tail}`
+        return opened(place.desk, adopted.project, `完成：已登记并切到《${adopted.project.title}》（${adopted.project.id}）。${settled.tail}`)
       }
 
       const projects = await store.listProjects()
@@ -197,7 +206,7 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       const settled = await settle(place, target, false)
       if (!settled.ok) return `失败：${settled.error}`
       const view = await store.view(target.id)
-      return view === undefined ? `完成：已切到《${target.title}》。${settled.tail}` : `完成：已切到这个项目。${settled.tail}\n${renderProject(view)}`
+      return opened(place.desk, target, view === undefined ? `完成：已切到《${target.title}》。${settled.tail}` : `完成：已切到这个项目。${settled.tail}\n${renderProject(view)}`)
     },
   })
 
@@ -290,18 +299,17 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       + 'when they pass, cut a new version into the play area (or a candidate when auto-confirm is off). Call it whenever a '
       + 'playable build is ready and ALWAYS before asking the user to play or try something: asking a question does not end '
       + 'the turn, so without it the play area still shows the previous version. A failure lists what to fix. A passing '
-      + 'publish also takes the user\'s game tab to the result: say where with show (play, versions, elements, '
-      + 'elements:<element id or name>, design:<chapter id or title>) and what to look at with note; left out, it opens '
-      + 'the one element this version changed, the element grid when it changed several, else the play area.',
+      + 'publish names where the result is — the one element this version changed, the element grid when it changed '
+      + 'several, else the play area — and the user\'s game tab goes there when they are watching; note is the short '
+      + 'phrase shown with it.',
     parameters: {
-      show: { type: 'string', description: 'Where the user\'s game tab goes after a pass (see above). Optional.' },
       note: { type: 'string', description: 'What to look at, a short phrase shown with it (e.g. 看看阿努比斯的头饰). Optional.' },
     },
     output: {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
-    execute: async (args: { show?: string; note?: string }, exec: { agent?: Agent }): Promise<string> => {
+    execute: async (args: { note?: string }, exec: { agent?: Agent }): Promise<string> => {
       const place = await placeOf(exec.agent)
       if (place === undefined) return '失败：这次调用没有会话。'
       const { session, row } = place
@@ -325,9 +333,16 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       if (outcome.kind === 'pass') {
         const tail = outcome.record.skipped === undefined ? '' : `（${outcome.record.skipped}）`
         const cut = outcome.deployed ?? outcome.candidate
-        const shown = cut === null ? '' : await store.showAfterPublish(place.bindingId, cut.version, outcome.candidate !== null, args.show, args.note)
-        if (outcome.deployed !== null) return `完成：v${outcome.deployed.version} 通过检查${outcome.record.passed > 0 ? `（${outcome.record.passed} 个用例）` : ''}，已进试玩区，可以请用户试玩了。${shown}${tail}`
-        if (outcome.candidate !== null) return `完成：v${outcome.candidate.version} 通过检查，作为候选等用户在右栏确认（自动上线关着或是换风格的版本）；确认后才进试玩区。${shown}${tail}`
+        // In a room the desk carries the project; a desk call names no destination.
+        const landed = cut === null || place.desk !== undefined
+          ? undefined
+          : await store.publishedPlace(place.bindingId, cut.version, outcome.candidate !== null, args.note)
+        const where = landed === undefined ? '' : `用户在右栏游戏页签的${landed.where}能看到（会话里有卡片直达）。`
+        const named = (answer: string): string => landed === undefined || cut === null
+          ? answer
+          : withGameDestination(answer, `game:${landed.projectId}:v${cut.version}`, { projectId: landed.projectId, ...landed.target }, landed.label)
+        if (outcome.deployed !== null) return named(`完成：v${outcome.deployed.version} 通过检查${outcome.record.passed > 0 ? `（${outcome.record.passed} 个用例）` : ''}，已进试玩区，可以请用户试玩了。${where}${tail}`)
+        if (outcome.candidate !== null) return named(`完成：v${outcome.candidate.version} 通过检查，作为候选等用户在右栏确认（自动上线关着或是换风格的版本）；确认后才进试玩区。${where}${tail}`)
         return `检查通过，但这个会话是只读模式，没有生成版本。${tail}`
       }
       // Skipped: no entry yet, or the build is the one already checked.
