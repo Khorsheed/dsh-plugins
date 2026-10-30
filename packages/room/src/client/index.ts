@@ -639,16 +639,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       stopMember: (name, expectedRunId) => { void remote?.cancel({ sessionId, name, ...expectedRunId === undefined ? {} : { expectedRunId } }).then(() => roomStore.refresh(sessionId)) },
       modelDirectory: modelDirectoryFor(sessionId),
       setCoordinator: setCoordinatorFor(sessionId),
-      ...(() => {
-        const commands = (ctx.remote as unknown as { commands?: { execute?: (id: SessionId, line: string, attachments: readonly unknown[]) => Promise<{ ok: boolean; value?: unknown; error?: { message: string; code: string } }> } }).commands
-        return commands?.execute === undefined ? {} : {
-          runCommand: async (id: SessionId, line: string): Promise<string | null> => {
-            const result = await commands.execute!(id, line, [])
-            if (!result.ok) return `${result.error?.message ?? 'command failed'} (${result.error?.code ?? 'error'})`
-            return result.value === undefined ? `unknown command: ${line}` : null
-          },
-        }
-      })(),
+      // The host command channel, probed at send time through ctx.get: it is
+      // not in `inject`, and the ctx.remote.commands proxy throws on an
+      // undeclared service — which crashed the whole composer entry.
+      runCommand: async (id: SessionId, line: string): Promise<string | null> => {
+        type Commands = { execute?: (id: SessionId, line: string, attachments: readonly unknown[]) => Promise<{ ok: boolean; value?: unknown; error?: { message: string; code: string } }> }
+        const commands = ctx.get('remote.commands') as Commands | undefined
+        if (commands?.execute === undefined) return t('composer.error.generic')
+        const result = await commands.execute(id, line, [])
+        if (!result.ok) return `${result.error?.message ?? 'command failed'} (${result.error?.code ?? 'error'})`
+        return result.value === undefined ? `unknown command: ${line}` : null
+      },
       // A draft chip's preview: the official editor's chip click routes
       // through the session's input-trigger controller to the chip's owning
       // source — probed at click time, so a composition without the service

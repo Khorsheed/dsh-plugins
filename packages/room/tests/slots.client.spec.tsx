@@ -253,6 +253,20 @@ describe('room client apply', () => {
     expect(calls[2]![0].requestId).not.toBe(calls[0]![0].requestId)
   })
 
+  it('the composer entry never touches the undeclared remote.commands proxy; /compact probes it at send time', async () => {
+    const { ctx, slots, remoteService } = await bench()
+    // The host proxy throws on a service missing from `inject`.
+    Object.defineProperty(remoteService, 'commands', { get: () => { throw new Error('cannot get property "remote.commands" without inject') } })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.composer')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => RoomComposerInjected)('room-1')
+    expect(await face.runCommand!('room-1' as never, '/compact')).toEqual(expect.any(String))
+    const execute = vi.fn(async () => ({ ok: true, value: {} }))
+    ctx.provide('remote.commands', { execute } as never)
+    expect(await face.runCommand!('room-1' as never, '/compact')).toBeNull()
+    expect(execute).toHaveBeenCalledWith('room-1', '/compact', [])
+  })
+
   it('collapses every contribution on teardown', async () => {
     const { ctx, slots } = await bench()
     const fiber = ctx.plugin({ inject: [...inject], apply })
