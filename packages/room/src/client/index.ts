@@ -368,20 +368,26 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     unlinkSession: (target: string) => { void remote?.unlinkSession({ sessionId, target }).then(() => roomStore.refresh(sessionId)) },
     dismissNudge: (target: string) => { void remote?.dismissHelpNudge({ sessionId, target }).then(() => roomStore.refresh(sessionId)) },
   })
+  /** Hand the coordinator role over (the members tab's 设为协调者 and the composer's switch). */
+  const setCoordinatorFor = (sessionId: SessionId) => async (memberId: string, expectedRevision: number): Promise<RoomMutationOutcome> => {
+    if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+    const carried = await remote.setCoordinator({ sessionId, memberId, expectedRevision })
+    if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+    if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+    await roomStore.refresh(sessionId)
+    return { ok: true }
+  }
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
     unlinkSession: linkFace(sessionId).unlinkSession,
     // 团队 is the collaboration page's second view (one sidebar page, two switches).
     ...teamSidebar === undefined ? {} : { openTeam: (member?: string) => { teamSidebar.openTab(ROOM_TASKS_KIND, { params: { view: 'team', ...member === undefined ? {} : { member } } }) } },
-    setCoordinator: async (memberId, expectedRevision) => {
-      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.setCoordinator({ sessionId, memberId, expectedRevision })
-      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
-      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
-      await roomStore.refresh(sessionId)
-      return { ok: true }
-    },
+    setCoordinator: setCoordinatorFor(sessionId),
     renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
+    // Probed per call site: an older core lacks them and the dialog keeps the live control.
+    renderMemberModelPicker: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberModelPicker,
+    readMemberSelection: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.readMemberSelection,
+    saveMemberSelection: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.saveMemberSelection,
     ...inviteFace(sessionId),
     // The localAgentGateway member model surface (the family client half's
     // namespace, probed lazily like the invite dialog's harnessModel read):
@@ -630,6 +636,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
       stopMember: (name, expectedRunId) => { void remote?.cancel({ sessionId, name, ...expectedRunId === undefined ? {} : { expectedRunId } }).then(() => roomStore.refresh(sessionId)) },
       modelDirectory: modelDirectoryFor(sessionId),
+      setCoordinator: setCoordinatorFor(sessionId),
       // A draft chip's preview: the official editor's chip click routes
       // through the session's input-trigger controller to the chip's owning
       // source — probed at click time, so a composition without the service

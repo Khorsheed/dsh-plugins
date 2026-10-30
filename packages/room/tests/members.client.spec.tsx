@@ -109,6 +109,9 @@ async function bench(options: {
   modelDirectory?: RoomModelDirectory
   renderMemberConfiguration?: RoomMembersInjected['renderMemberConfiguration']
   renderHarnessModelPicker?: RoomMembersInjected['renderHarnessModelPicker']
+  renderMemberModelPicker?: RoomMembersInjected['renderMemberModelPicker']
+  readMemberSelection?: RoomMembersInjected['readMemberSelection']
+  saveMemberSelection?: RoomMembersInjected['saveMemberSelection']
 } = {}): Promise<Bench> {
   const isRoom = options.room !== false
   const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
@@ -136,6 +139,9 @@ async function bench(options: {
     modelDirectory: options.modelDirectory,
     renderMemberConfiguration: options.renderMemberConfiguration,
     renderHarnessModelPicker: options.renderHarnessModelPicker,
+    renderMemberModelPicker: options.renderMemberModelPicker,
+    readMemberSelection: options.readMemberSelection,
+    saveMemberSelection: options.saveMemberSelection,
   }
   const props = { sessionId: SESSION, ...face, t } as unknown as MembersViewProps
   render(<MembersView {...props} />)
@@ -156,11 +162,12 @@ describe('MembersView', () => {
 
   it('renders member cards with avatar letters, provider/kind, and status chips', async () => {
     await bench()
-    // main: kind label, no instructions row, no edit/remove.
+    // main: kind label, no instructions row; editable (name, role,
+    // instructions, the session model) but never removable.
     const mainCard = cardOf('main')
     expect(mainCard.textContent).toContain('原生 DSH')
     expect(mainCard.textContent).not.toContain('未设置角色')
-    expect(mainCard.textContent).not.toContain('编辑')
+    expect(mainCard.textContent).toContain('编辑')
     expect(mainCard.textContent).not.toContain('移除')
     // ada: provider, role instructions, idle chip, trajectory + edit + remove,
     // and the avatar tile carries the member's initial.
@@ -590,6 +597,55 @@ describe('MembersView', () => {
     await waitFor(() => { expect(adaCard.textContent).toContain('空闲') })
     expect(adaCard.textContent).toContain('kimi')
     expect(adaCard.textContent).not.toContain(' · ')
+  })
+
+  it('a started member edits model and effort in the invite picker\'s selects and saves them through its control', async () => {
+    // Stand-in for local-agent's member-control form face: two plain selects.
+    const renderMemberModelPicker = vi.fn((_id: string, props: { value: string; onChange(value: string): void; effort?: { value: string; onChange(value: string): void } }) => (
+      <span>
+        <select aria-label="picker-model" value={props.value} onChange={event => { props.onChange(event.target.value) }}>
+          <option value="kimi-k2">kimi-k2</option><option value="kimi-k1">kimi-k1</option>
+        </select>
+        <select aria-label="picker-effort" value={props.effort?.value} onChange={event => { props.effort?.onChange(event.target.value) }}>
+          <option value="high">high</option><option value="low">low</option>
+        </select>
+      </span>
+    ))
+    const saveMemberSelection = vi.fn(async () => ({ ok: true as const, deferred: true }))
+    const { face } = await bench({
+      renderMemberConfiguration: () => <div>live control</div>,
+      renderMemberModelPicker,
+      readMemberSelection: async () => ({ model: 'kimi-k2', effort: 'high', busy: false }),
+      saveMemberSelection,
+    })
+    fireEvent.click(Array.from(cardOf('ada').querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    const dialog = await screen.findByRole('dialog')
+    const model = await within(dialog).findByLabelText('picker-model') as HTMLSelectElement
+    expect(model.value).toBe('kimi-k2')
+    expect(within(dialog).queryByText('live control')).toBeNull()
+    expect(renderMemberModelPicker).toHaveBeenCalledWith('child-1', expect.objectContaining({ fields: expect.any(Object) }))
+    fireEvent.change(model, { target: { value: 'kimi-k1' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    await waitFor(() => { expect(saveMemberSelection).toHaveBeenCalledWith('child-1', { model: 'kimi-k1', effort: 'high' }) })
+    // Nothing else changed: no roster write; the deferred save is announced.
+    expect(face.updateMember).not.toHaveBeenCalled()
+    expect(await screen.findByText('已保存，ada 这一轮结束后用新的模型和强度')).toBeDefined()
+  })
+
+  it('edits the room\'s own agent: name and role on the roster, the model on the session directory', async () => {
+    const directory = modelDirectory()
+    const { face } = await bench({ modelDirectory: directory })
+    fireEvent.click(Array.from(cardOf('main').querySelectorAll('button')).find(b => b.textContent === '编辑')!)
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toContain('原生 DSH · 这个会话本身')
+    expect(within(dialog).queryByText('工作目录（可选）')).toBeNull()
+    const model = within(dialog).getByRole('combobox', { name: '模型' }) as HTMLSelectElement
+    expect(model.value).toBe('p1\u0000m1')
+    fireEvent.change(within(dialog).getByDisplayValue('main'), { target: { value: 'boss' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+    await waitFor(() => { expect(face.updateMember).toHaveBeenCalledWith('main', { rename: 'boss' }) })
+    // The model did not move: the session directory is untouched.
+    expect(directory.select).not.toHaveBeenCalled()
   })
 
   it('the main-agent card shows the session model from the official directory', async () => {

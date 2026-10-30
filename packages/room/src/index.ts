@@ -1099,7 +1099,8 @@ export class RoomService extends TypertRemoteService {
       return { ok: false, error: { code: 'nothing-to-update' } }
     }
     if (request.rename !== undefined && request.rename !== request.name) {
-      if (member.kind === 'main-agent') return { ok: false, error: { code: 'main-member' } }
+      // The room's own agent renames too: its identity is its join seq
+      // (legacy:<seq>), never its name, so only the display and @-address move.
       if (!validName(request.rename)) return { ok: false, error: { code: 'invalid-name' } }
       if (loaded.state.members.some(entry => entry.name === request.rename)) {
         return { ok: false, error: { code: 'duplicate-name' } }

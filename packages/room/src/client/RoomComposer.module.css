@@ -297,11 +297,57 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0 14px;
+  margin: 0 8px;
+  padding: 2px 6px;
   align-self: flex-start;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-tertiary, #81858c);
+  cursor: pointer;
+}
+
+.coordinator:hover:not(:disabled),
+.coordinator[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+}
+
+.coordinator:disabled {
+  cursor: default;
+}
+
+.coordinator:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.coordinatorChevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, #81858c);
+}
+
+/* One member row in the coordinator menu: name, then role · provider. */
+.coordinatorOption {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.coordinatorOptionMeta {
+  color: var(--dsw-alias-label-tertiary, #81858c);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.coordinatorOptionDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--member-color);
 }
 
 .coordinatorDot {
