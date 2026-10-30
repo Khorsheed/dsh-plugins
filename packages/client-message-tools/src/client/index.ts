@@ -219,6 +219,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }, ctx.sessions.binding(sessionId)?.session.getSnapshot().running === true),
       backfillDraft: (text) => { backfill(sessionId, text) },
       foldScope: sessionId,
+      // The official user-text factory, probed per render through the keyed
+      // node seat it declares (factories have no spec of their own); a host
+      // without it keeps the bubble's local token projection.
+      userTextAvailable: () => ctx.slots.spec('conversation.user.text.node') !== undefined,
       modelsAvailable: directory !== undefined,
       loadModels: () => {
         // Load failures surface on the directory store itself.
