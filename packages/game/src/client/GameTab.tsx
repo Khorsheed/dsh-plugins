@@ -15,7 +15,8 @@ import { Switch, Tag } from '@deepseek-ai/dsh-client-ui-primitives'
 import { artStyleLabel, artStyleName } from '../project.ts'
 import type { ProjectView, SessionGameState, WorkingChanges } from '../types.ts'
 import { exportHtml } from '../vfs.ts'
-import { failureOf, type GameTabProps, type NavTarget, type ViewProps } from './contract.ts'
+import { failureOf, type GameNavParams, type GameTabProps, type ViewProps } from './contract.ts'
+import { interactionHandlers } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { DesignView } from './DesignView.tsx'
 import { ElementsView } from './ElementsView.tsx'
 import { PlayView } from './PlayView.tsx'
@@ -34,7 +35,7 @@ const ExportIcon = <svg width="16" height="16" viewBox="0 0 16 16" fill="none" a
 
 /** The game tab body. */
 export function GameTab(props: GameTabProps): ReactNode {
-  const { sessionId, t, api, insertDraft, subscribeSessionEvents, touch, subscribeNav, takeNav, reveal } = props
+  const { sessionId, t, api, insertDraft, subscribeSessionEvents, touch } = props
   const [state, setState] = useState<SessionGameState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [rev, setRev] = useState(0)
@@ -44,7 +45,6 @@ export function GameTab(props: GameTabProps): ReactNode {
   const [openElement, setOpenElement] = useState<string | null>(null)
   const [toastText, setToastText] = useState<string | null>(null)
   const [openChapter, setOpenChapter] = useState<string | null>(null)
-  useEffect(() => reveal.mount(), [reveal])
   const toastTimer = useRef<ReturnType<typeof setTimeout>>()
 
   const refresh = useCallback(() => { touch(sessionId) }, [touch, sessionId])
@@ -55,20 +55,24 @@ export function GameTab(props: GameTabProps): ReactNode {
   }, [])
 
   useEffect(() => subscribeSessionEvents(id => { if (id === sessionId) setRev(n => n + 1) }), [subscribeSessionEvents, sessionId])
-  // Jumps from the turn card: follow them, including one made before this tab mounted.
+  // The tab's navigation (`go` — a turn card door, the desk row, the destination
+  // follower): applied once per revision, so a repeat open of the same place
+  // still lands there, and one made before this tab mounted lands on mount.
+  const navigation = (props as { tab?: { navigation?: { params?: unknown; revision?: number } } }).tab?.navigation
+  const navRevision = navigation?.revision ?? 0
+  const navParams = navigation?.params as Partial<GameNavParams> | undefined
+  const appliedNav = useRef(0)
   useEffect(() => {
-    const go = (target: NavTarget): void => {
-      setPicking(false)
-      setStyling(false)
-      setView(target.view)
-      setOpenElement(target.elementId ?? null)
-      setOpenChapter(target.chapterId ?? null)
-      setRev(n => n + 1)
-    }
-    const parked = takeNav()
-    if (parked !== null) go(parked)
-    return subscribeNav(go)
-  }, [subscribeNav, takeNav])
+    if (navRevision === 0 || appliedNav.current === navRevision) return
+    appliedNav.current = navRevision
+    if (navParams?.view === undefined) return
+    setPicking(false)
+    setStyling(false)
+    setView(navParams.view)
+    setOpenElement(navParams.elementId ?? null)
+    setOpenChapter(navParams.chapterId ?? null)
+    setRev(n => n + 1)
+  }, [navRevision, navParams])
   useEffect(() => {
     let live = true
     void api.state(sessionId).then(result => {
@@ -79,7 +83,7 @@ export function GameTab(props: GameTabProps): ReactNode {
   }, [api, sessionId, rev])
 
   const viewProps: ViewProps = {
-    t, sessionId, api, refresh, toast, insertDraft: text => insertDraft(sessionId, text), insertRef: ref => props.insertRef(sessionId, ref), reveal,
+    t, sessionId, api, refresh, toast, insertDraft: text => insertDraft(sessionId, text), insertRef: ref => props.insertRef(sessionId, ref),
   }
   const project = state?.bound ?? null
   const choose = (projectId: string | null): void => {
@@ -154,10 +158,7 @@ function ProjectWorkbench(p: ViewProps & {
   openChapter: string | null
   setOpenChapter: (id: string | null) => void
 }): ReactNode {
-  const { t, sessionId, api, project, view, setView, styling, setStyling, refresh, toast, insertDraft, reveal } = p
-  const [, rerender] = useState(0)
-  useEffect(() => reveal.subscribe(() => { rerender(n => n + 1) }), [reveal])
-  const notice = reveal.notice
+  const { t, sessionId, api, project, view, setView, styling, setStyling, refresh, toast, insertDraft } = p
   const autoConfirm = project.manifest?.autoConfirm ?? true
   const style = project.manifest?.artStyle
   const exportCurrent = (): void => {
@@ -184,8 +185,8 @@ function ProjectWorkbench(p: ViewProps & {
   const failing = project.lastCheck !== null && !project.lastCheck.ok
   const openProposals = project.proposals.filter(x => x.picked === undefined).length
 
-  // Any touch in the panel means the user is busy here: the agent's request waits as a notice.
-  return <PanelRoot className={css.root} onPointerDownCapture={() => { reveal.touched() }} onKeyDownCapture={() => { reveal.touched() }}>
+  // Any touch in the panel means the user is busy here: a destination then waits as the turn card's door.
+  return <PanelRoot className={css.root} {...interactionHandlers}>
     <PanelHeader
       title={<button type="button" className={css.titleSwitch} onClick={p.onPickProject} title={t('switch')} aria-haspopup="dialog">
         <span>{project.title}</span><span className={css.titleCaret} aria-hidden="true">▾</span>
@@ -232,11 +233,6 @@ function ProjectWorkbench(p: ViewProps & {
       }} />
     </div>}
     <CommitBar {...p} project={project} onOpenVersions={() => { setView('versions') }} />
-    {notice !== null && <div className={css.navNotice} role="status">
-      <span className={css.navNoticeText}>{notice.text}</span>
-      <button type="button" className={css.primary} onClick={() => { reveal.follow() }}>{t('nav.go')}</button>
-      <button type="button" className={css.link} onClick={() => { reveal.dismiss() }}>{t('nav.dismiss')}</button>
-    </div>}
     {view === 'play' && <PlayView {...p}
       onOpenElement={id => { p.setOpenElement(id); setView('elements') }} onOpenVersions={() => { setView('versions') }} />}
     {view === 'elements' && <ElementsView {...p} openId={p.openElement} onOpen={p.setOpenElement} />}

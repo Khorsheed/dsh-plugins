@@ -1336,6 +1336,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: 0.2.1-rc.3
         version: 0.2.1-rc.3(@deepseek-ai/cordis@4.0.4)
+      '@khorsheed/dsh-client-ui-agent-nav':
+        specifier: workspace:*
+        version: link:../client-ui-agent-nav
       '@khorsheed/dsh-client-ui-panel-kit':
         specifier: workspace:*
         version: link:../client-ui-panel-kit

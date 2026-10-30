@@ -389,22 +389,6 @@ export interface VersionRecord {
   readonly note?: string
 }
 
-/** Where in the game tab the agent asked the user to look (`game_show`). */
-export interface ShowTarget {
-  readonly view: 'play' | 'elements' | 'design' | 'versions'
-  readonly elementId?: string
-  readonly chapterId?: string
-}
-
-/** The agent's latest 「请用户看这里」 for a project. */
-export interface ShowRequest {
-  readonly seq: number
-  readonly target: ShowTarget
-  /** What to look at, in the agent's words (shown with the notice). */
-  readonly note: string
-  readonly at: string
-}
-
 /** A session's bound project's newest version, as the page polls it. */
 export interface LiveVersion {
   readonly projectId: string
@@ -412,8 +396,6 @@ export interface LiveVersion {
   readonly kind: 'deployed' | 'candidate' | 'none'
   readonly at: string | null
   readonly by?: VersionSource
-  /** The agent's latest request to show the user something, if any since the host started. */
-  readonly show?: ShowRequest
 }
 
 /** Who cut a version. */

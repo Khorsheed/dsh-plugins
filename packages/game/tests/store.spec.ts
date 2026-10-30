@@ -7,6 +7,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { BrowserCheckResult, BrowserChecker } from '../src/checks.ts'
 import { GameService } from '../src/store.ts'
 import { gameToolDefinitions } from '../src/tools.ts'
+import { readDestinations, stripDestinations } from '@khorsheed/dsh-client-ui-agent-nav/src/destination.ts'
 
 /** A checker that answers whatever the spec queued, recording what it saw. */
 class FakeChecker implements BrowserChecker {
@@ -327,30 +328,37 @@ describe('publishing takes the user to the result', () => {
     return (tool.execute as unknown as (a: object, e: object) => Promise<string>)(args, { agent: { session: session('s1') } })
   }
 
-  it('opens what the agent says, else what the version changed, and falls back on a place it cannot find', async () => {
+  it('names where the version landed: what it changed, play when code or nothing comparable changed; never claims the tab opened', async () => {
     const project = await created()
     await put(join(project.root, 'index.html'), '<p>v1</p>')
     await put(join(project.root, 'elements/a.json'), JSON.stringify([{ id: 'fox', name: '九尾狐', type: '角色' }, { id: 'bi', name: '毕方', type: '角色' }]))
     // A first version has nothing to compare with: play.
-    expect(await publish()).toContain('右栏会打开：试玩')
-    expect((await store.liveVersion('s1'))?.show).toMatchObject({ seq: 1, target: { view: 'play' }, note: 'v1 已上线' })
+    const first = await publish()
+    expect(stripDestinations(first)).toContain('用户在右栏游戏页签的「试玩」能看到')
+    expect(first).not.toContain('右栏会打开')
+    expect(readDestinations(first)).toEqual([{ id: `game:${project.id}:v1`, kind: 'game', params: { projectId: project.id, view: 'play' }, label: 'v1 已上线' }])
 
-    // Only one element changed: its page, named in the note.
+    // Only one element changed: its page, named in the label.
     await put(join(project.root, 'elements/a.json'), JSON.stringify([{ id: 'fox', name: '九尾狐', type: '角色', hp: 3 }, { id: 'bi', name: '毕方', type: '角色' }]))
-    expect(await publish()).toContain('右栏会打开：元素「fox」')
-    expect((await store.liveVersion('s1'))?.show).toMatchObject({ target: { view: 'elements', elementId: 'fox' }, note: 'v2：改了九尾狐' })
+    const second = await publish()
+    expect(second).toContain('「元素」里的「九尾狐」')
+    expect(readDestinations(second)[0]).toMatchObject({ params: { projectId: project.id, view: 'elements', elementId: 'fox' }, label: 'v2：改了九尾狐' })
 
-    // Code changed too: play.
+    // Code changed too: play. A note becomes the card's words; the place is still the version's.
     await put(join(project.root, 'elements/a.json'), JSON.stringify([{ id: 'fox', name: '九尾狐', type: '角色', hp: 4 }, { id: 'bi', name: '毕方', type: '角色', hp: 1 }]))
     await put(join(project.root, 'index.html'), '<p>v3</p>')
-    expect(await publish()).toContain('右栏会打开：试玩')
+    const third = await publish({ note: '看看毕方的翅膀' })
+    expect(readDestinations(third)[0]).toMatchObject({ params: { view: 'play' }, label: '看看毕方的翅膀' })
+    // The place is no longer the agent's to pick: show is gone from the tool.
+    const tool = gameToolDefinitions(store).find(d => d.name === 'game_publish')!
+    expect(Object.keys((tool as unknown as { parameters: { properties: Record<string, unknown> } }).parameters.properties)).toEqual(['note'])
+  })
 
-    // The agent's own choice and words win; an unknown place falls back to the default.
-    await put(join(project.root, 'index.html'), '<p>v4</p>')
-    expect(await publish({ show: 'elements:毕方', note: '看看毕方的翅膀' })).toContain('元素「bi」')
-    expect((await store.liveVersion('s1'))?.show).toMatchObject({ target: { view: 'elements', elementId: 'bi' }, note: '看看毕方的翅膀' })
-    await put(join(project.root, 'index.html'), '<p>v5</p>')
-    expect(await publish({ show: 'design:没有这章' })).toContain('找不到，改用默认位置')
+  it('game_open names the project it switched to as the play area', async () => {
+    const project = await created()
+    const open = gameToolDefinitions(store).find(d => d.name === 'game_open')!
+    const answer = await (open.execute as unknown as (a: object, e: object) => Promise<string>)({ project: project.id }, { agent: { session: session('s1') } })
+    expect(readDestinations(answer)).toEqual([expect.objectContaining({ kind: 'game', params: { projectId: project.id, view: 'play' } })])
   })
 
   it('lists elements newest first by their file\'s last change', async () => {

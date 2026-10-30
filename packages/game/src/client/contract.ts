@@ -10,7 +10,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: pulls the right-Sidebar SlotMap seats ('sidebar.right.pane.tab').
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from './locales.ts'
-import type { Reveal } from './reveal.ts'
 import type { BundleFile, LiveVersion, CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from '../types.ts'
 
 type R<T> = Promise<RemoteResult<T>>
@@ -47,8 +46,14 @@ export interface GameApi {
   dropPending: (sid: SessionId, projectId: string, key: string) => R<Ok>
 }
 
-/** Where a jump into the game tab lands. */
-export interface NavTarget {
+/**
+ * One place in the game tab, as an address (proposal
+ * 2026-10-30-agent-sidebar-navigation): the tab's navigation params, and the
+ * `params` of every destination a game tool names. The tab shows the
+ * session's bound project; `projectId` names which one the place is in.
+ */
+export interface GameNavParams {
+  readonly projectId?: string
   readonly view: 'play' | 'elements' | 'design' | 'versions'
   readonly elementId?: string
   readonly chapterId?: string
@@ -56,12 +61,8 @@ export interface NavTarget {
 
 /** What the tab body gets from the plugin. */
 export interface GameTabInjected {
-  /** Open the game tab at a place (the turn card's 查看). */
-  openAt: (target: NavTarget) => void
-  /** The tab body follows jumps; returns the unsubscribe. */
-  subscribeNav: (listener: (target: NavTarget) => void) => () => void
-  /** A jump made before the tab body mounted, taken once. */
-  takeNav: () => NavTarget | null
+  /** Open the game tab at a place — the one way in (turn card doors, the desk row, the destination follower). */
+  go: (params: GameNavParams) => void
   api: GameApi
   /** Put text into the session's composer draft (appended; never sent). False when there is no composer. */
   insertDraft: (sessionId: SessionId, text: string) => boolean
@@ -75,8 +76,6 @@ export interface GameTabInjected {
   subscribeSessionEvents: (listener: (sessionId: string) => void) => () => void
   /** Tell every game surface of this page that a session's state moved. */
   touch: (sessionId: SessionId) => void
-  /** Carries out the agent's 「请用户看这里」 (page-wide). */
-  reveal: Reveal
 }
 
 /** Full props of the game tab body. */
@@ -97,8 +96,6 @@ export interface ViewProps {
   readonly refresh: () => void
   /** Show a short confirmation line at the panel's foot. */
   readonly toast: (text: string) => void
-  /** Carries out the agent's 「请用户看这里」 (page-wide). */
-  readonly reveal: Reveal
 }
 
 /** A Remote call's game-level failure code, or undefined on success. */
