@@ -122,3 +122,12 @@ export function decodeQuoteRef(ref: string): QuoteRefPayload | undefined {
     return undefined
   }
 }
+
+/** Longest chip excerpt, in characters (the chip renders on one line). */
+const EXCERPT_CHARS = 16
+
+/** A one-line excerpt of the quote for a sourceless chip: whitespace folded, long text cut with an ellipsis. */
+export function excerptOf(text: string): string {
+  const chars = Array.from(text.replace(/\s+/g, ' ').trim())
+  return chars.length <= EXCERPT_CHARS ? chars.join('') : `${chars.slice(0, EXCERPT_CHARS).join('').trimEnd()}…`
+}
