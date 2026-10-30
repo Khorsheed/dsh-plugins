@@ -120,6 +120,38 @@ export function scrollConversationToTurn(
 }
 
 /**
+ * Scroll the conversation to one message's chat row — a room round's anchor:
+ * a human post to a room has no host turn of its own, but its user/message
+ * renders as an input-message node keyed by the message id
+ * (`data-chat-node-key`, ui-chat ChatNodeSeat). Matched on the key's suffix
+ * so the host's kind prefix is not hard-coded. Not mounted is a silent no-op.
+ * @param messageId - the user/message id.
+ * @param root - the DOM scope (document in production).
+ * @param behavior - scroll motion.
+ * @returns whether anything scrolled.
+ */
+export function scrollConversationToMessage(
+  messageId: string,
+  root: ParentNode = document,
+  behavior: 'smooth' | 'auto' = preferredScrollBehavior(),
+): boolean {
+  try {
+    const scope: ParentNode = scrollport(root) ?? root
+    const id = messageId.replace(/["\\]/g, '')
+    for (const row of scope.querySelectorAll(`[data-chat-node-key$="${id}"]:not([hidden]):not([hidden] *)`)) {
+      const landing = landingOf(row)
+      if (landing !== null) {
+        landing.scrollIntoView({ behavior, block: 'start' })
+        return true
+      }
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+/**
  * Scroll the conversation to its floor (the 最新 button): the scrollport's
  * own `scrollTo` when present, else the largest mounted turn row as the
  * anchor fallback. No conversation mounted is a silent no-op.

@@ -1490,7 +1490,7 @@ export class InspectorStore {
         turnSeq: roomTurnSeq(dispatch.seq),
         purpose: 'room',
         query: dispatch.text,
-        room: { targets: dispatch.targets },
+        room: { targets: dispatch.targets, ...dispatch.messageId === undefined ? {} : { messageId: dispatch.messageId } },
         startedAt: dispatch.at,
         ...ends.length === 0 ? {} : { endedAt: Math.max(...ends) },
         liveContent: false,

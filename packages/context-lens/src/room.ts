@@ -39,6 +39,8 @@ export interface RoomDispatch {
   at: number
   text: string
   targets: string[]
+  /** The human's user/message the post appended alongside (the chat's anchor for the round). */
+  messageId?: string
 }
 
 /** What one session's room events say, accumulated (log backfill and live alike). */
@@ -83,7 +85,8 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
     case 'room/dispatch': {
       if (d['origin'] !== 'human' || seq === undefined || at === undefined) return true
       const targets = Array.isArray(d['targets']) ? d['targets'].filter((t): t is string => typeof t === 'string') : []
-      room.dispatches.push({ seq, at, text: str(d['text']) ?? '', targets })
+      const messageId = str(d['messageId'])
+      room.dispatches.push({ seq, at, text: str(d['text']) ?? '', targets, ...messageId === undefined ? {} : { messageId } })
       return true
     }
     case 'room/run-state': {

@@ -148,3 +148,16 @@ describe('scrollConversationToBottom', () => {
     expect(scrollIntoView).not.toHaveBeenCalled()
   })
 })
+
+describe('scrollConversationToMessage', () => {
+  it('lands on the human message row of a room round, by the node key suffix', async () => {
+    const { scrollConversationToMessage } = await import('../src/client/scroll-sync.ts')
+    const { port } = conversation([1])
+    const row = document.createElement('div')
+    row.setAttribute('data-chat-node-key', '13:input-message15ad6a4d-7fd8-401b-bd33-3c5cff117b79')
+    port.appendChild(row)
+    expect(scrollConversationToMessage('15ad6a4d-7fd8-401b-bd33-3c5cff117b79')).toBe(true)
+    expect(scrollIntoView.mock.instances[0]).toBe(row)
+    expect(scrollConversationToMessage('missing')).toBe(false)
+  })
+})
