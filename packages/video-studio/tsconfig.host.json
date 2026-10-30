@@ -24,6 +24,7 @@
     "src/tool.ts",
     "src/tool-definition.ts",
     "src/desk.ts",
+    "src/nav-line.ts",
     "src/types.ts"
   ]
 }

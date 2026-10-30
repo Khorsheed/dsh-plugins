@@ -11,6 +11,7 @@ import { formatClock } from './core/timeline.ts'
 import type { EditKind } from './core/types.ts'
 import { actingSessionId, announceDeskOpen, deskOf, roomIdOf, type VideoDesk } from './desk.ts'
 import type { ExportKind, VideoStudioService } from './service.ts'
+import { withVideoDestination, type VideoDestinationParams } from './nav-line.ts'
 
 interface ExecLike {
   agent?: { id: string }
@@ -19,6 +20,14 @@ interface ExecLike {
 const text = {
   schema: { type: 'string' as const },
   render: (_a: unknown, v: unknown) => [{ type: 'text' as const, text: String(v) }],
+}
+
+/**
+ * The answer with where it landed in the 剪辑 panel — outside a room only (in a
+ * room the desk row brings the project).
+ */
+function landed(exec: ExecLike, answer: string, what: string, params: VideoDestinationParams, label: string): string {
+  return deskOf(exec.agent) !== undefined ? answer : withVideoDestination(answer, what, params, label)
 }
 
 function fail(tool: string, error: unknown): string {
@@ -91,14 +100,18 @@ export function defineVideoTools(svc: VideoStudioService) {
         if (args.action === 'create') {
           const p = await svc.createProject({ name: args.name ?? '', showId: args.showId ?? null })
           if (sid) await svc.bind(sid, p.id)
-          return `已建工程 ${p.id}「${p.name}」并绑定到${desk?.role === 'coordinator' ? '房间' : '当前会话'}。${toRoom(desk, { projectId: p.id, title: p.name, created: true })}下一步用 video_import 导入素材。`
+          return landed(exec, `已建工程 ${p.id}「${p.name}」并绑定到${desk?.role === 'coordinator' ? '房间' : '当前会话'}。${toRoom(desk, { projectId: p.id, title: p.name, created: true })}下一步用 video_import 导入素材。`,
+            'open', { projectId: p.id }, `剪辑工程「${p.name}」`)
         }
         if (args.action === 'open') {
           if (!args.projectId) return 'open 需要 projectId'
           if (!sid) return '没有会话可以绑定'
           await svc.bind(sid, args.projectId)
           const read = await svc.readForModel(args.projectId, { from: 0, to: 120 })
-          if (desk === undefined) return read
+          if (desk === undefined) {
+            const shown = await svc.mustProject(args.projectId)
+            return withVideoDestination(read, 'open', { projectId: shown.id }, `剪辑工程「${shown.name}」`)
+          }
           const opened = await svc.mustProject(args.projectId)
           return `${toRoom(desk, { projectId: opened.id, title: opened.name, created: false })}\n${read}`
         }
@@ -127,7 +140,8 @@ export function defineVideoTools(svc: VideoStudioService) {
       try {
         const id = await resolveProject(svc, exec, args.projectId)
         const p = await svc.importSources(id, args.paths ?? [], 'agent', args.continuous ?? false)
-        return `已导入：${p.sources.map((s) => `${basename(s.path)}（${s.role}，${formatClock(s.durationSec)}）`).join('；')}。分人与转写已排队。`
+        return landed(exec, `已导入：${p.sources.map((s) => `${basename(s.path)}（${s.role}，${formatClock(s.durationSec)}）`).join('；')}。分人与转写已排队，进度在剪辑面板的「素材」页签。`,
+          'import', { projectId: id, tab: 'sources' }, `「${p.name}」素材`)
       } catch (e) {
         return fail('video_import', e)
       }
@@ -194,7 +208,8 @@ export function defineVideoTools(svc: VideoStudioService) {
           case 'scan': {
             const r = await svc.scan(id, 'agent')
             if (!r.groupId) return '没有新的可清理项。'
-            return `已提议 ${r.groupId}：语气词 ${r.counts.fillers}、长停顿 ${r.counts.pauses}、重复 ${r.counts.repeats}，全部采纳约缩短 ${formatClock(r.savedSec)}。请让用户在面板或会话里确认。`
+            return landed(exec, `已提议 ${r.groupId}：语气词 ${r.counts.fillers}、长停顿 ${r.counts.pauses}、重复 ${r.counts.repeats}，全部采纳约缩短 ${formatClock(r.savedSec)}。提议在剪辑面板「文稿」页签顶部，请让用户在那里或会话里确认。`,
+              `group:${r.groupId}`, { projectId: id, tab: 'transcript', groupId: r.groupId }, '粗剪提议')
           }
           case 'propose': {
             const edits = (args.edits ?? [])
@@ -202,21 +217,32 @@ export function defineVideoTools(svc: VideoStudioService) {
               .map((e) => ({ kind: e.kind as EditKind, start: e.start!, end: e.end!, ...(e.value !== undefined ? { value: e.value } : {}), ...(e.reason ? { reason: e.reason } : {}) }))
             if (!edits.length) return 'propose 需要至少一条 {kind: cut|shorten, start, end}'
             const r = await svc.propose(id, args.title ?? '', edits)
-            return `已提议 ${r.groupId}「${args.title ?? '剪辑提议'}」（${edits.length} 处），等用户确认。`
+            return landed(exec, `已提议 ${r.groupId}「${args.title ?? '剪辑提议'}」（${edits.length} 处），在剪辑面板「文稿」页签顶部等用户确认。`,
+              `group:${r.groupId}`, { projectId: id, tab: 'transcript', groupId: r.groupId }, args.title ?? '剪辑提议')
           }
           case 'fix_text': {
             const lines: string[] = []
+            const proposed: string[] = []
             for (const f of args.fixes ?? []) {
               if (!f.from || f.to === undefined) continue
               const r = await svc.replaceAll(id, f.from, f.to, 'agent')
+              if (r.groupId) proposed.push(r.groupId)
               lines.push(r.groupId ? `${r.groupId}「${f.from}」→「${f.to}」${r.count} 处` : `「${f.from}」没有出现`)
             }
-            return lines.length ? `已提议改字（等用户确认）：${lines.join('；')}` : 'fix_text 需要 fixes: [{from, to}]'
+            if (!lines.length) return 'fix_text 需要 fixes: [{from, to}]'
+            const answer = `已提议改字（等用户确认）：${lines.join('；')}`
+            if (!proposed.length) return answer
+            // One group lands on that group; several on the 文稿 tab, where they stack.
+            return landed(exec, `${answer}。提议在剪辑面板「文稿」页签顶部。`, `group:${proposed.join(',')}`,
+              proposed.length === 1 ? { projectId: id, tab: 'transcript', groupId: proposed[0]! } : { projectId: id, tab: 'transcript' }, '改字提议')
           }
           case 'cut_keyword': {
             if (!args.keyword) return 'cut_keyword 需要 keyword'
             const r = await svc.cutMatches(id, args.keyword, 'agent')
-            return r.groupId ? `已提议 ${r.groupId}：剪掉所有「${args.keyword}」${r.count} 处，等用户确认。` : `「${args.keyword}」没有出现。`
+            return r.groupId
+              ? landed(exec, `已提议 ${r.groupId}：剪掉所有「${args.keyword}」${r.count} 处，在剪辑面板「文稿」页签顶部等用户确认。`,
+                `group:${r.groupId}`, { projectId: id, tab: 'transcript', groupId: r.groupId }, `剪掉「${args.keyword}」`)
+              : `「${args.keyword}」没有出现。`
           }
           case 'apply':
           case 'reject': {
@@ -263,7 +289,8 @@ export function defineVideoTools(svc: VideoStudioService) {
         if (!kinds.length) return 'kinds 至少要一项：audio / video / subtitles / text'
         const job = await svc.startExport(id, kinds)
         const p = await svc.mustProject(id)
-        return `已排队「${job.label}」，输出到 ${await svc.exportDirFor(p)}`
+        return landed(exec, `已排队「${job.label}」，输出到 ${await svc.exportDirFor(p)}；进度在剪辑面板的「导出」页签。`,
+          `export:${job.id}`, { projectId: id, tab: 'export', jobId: job.id }, `导出「${job.label}」`)
       } catch (e) {
         return fail('video_render', e)
       }

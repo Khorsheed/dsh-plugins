@@ -285,7 +285,8 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'request-inspector': ['@khorsheed/dsh-client-ui-panel-kit'],
   // video-studio → ui-panel-kit: the 剪辑 panel's root, header, tabs and chip
   // rows — the same inlined, zero-runtime source-plane edge.
-  'video-studio': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // …and ui-agent-nav (the destination follower, proposal agent-sidebar-navigation).
+  'video-studio': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // game → ui-panel-kit: the game tab's panel root, header, tabs and rows
   // (panel-design convention for every new panel).
   'game': ['@khorsheed/dsh-client-ui-panel-kit'],

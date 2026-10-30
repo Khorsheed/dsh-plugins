@@ -14,7 +14,7 @@ import { zh } from '../src/client/locales.ts'
 import { DeskAttachment } from '../src/client/DeskAttachment.tsx'
 import { DeskOpenRow } from '../src/client/DeskOpenRow.tsx'
 import {
-  deskRowDefinition, LIVE_WINDOW_MS, onPanelProject, requestPanelProject, setDeskRowSeated, takePanelProject, type DeskRowData,
+  deskRowDefinition, LIVE_WINDOW_MS, setDeskRowSeated, type DeskRowData,
 } from '../src/client/desk-row.ts'
 
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -94,21 +94,5 @@ describe('DeskAttachment', () => {
     render(<DeskAttachment sessionId="room-b" attachments={[attachment, event(41, payload('member', { owner: 'x' }))]} live t={t} openProject={openProject} />)
     expect(openProject).toHaveBeenCalledExactlyOnceWith('room-b', 'p_1')
     expect(screen.getAllByText('打开 →')).toHaveLength(1)
-  })
-})
-
-describe('the panel hand-off', () => {
-  it('reaches a mounted pane at once, else waits for the next one while fresh', () => {
-    const listener = vi.fn()
-    const dispose = onPanelProject('room-c', listener)
-    requestPanelProject('room-c', 'p_9')
-    expect(listener).toHaveBeenCalledExactlyOnceWith('p_9')
-    expect(takePanelProject('room-c')).toBeUndefined()
-    dispose()
-    requestPanelProject('room-c', 'p_10', 1_000)
-    expect(takePanelProject('room-c', 1_000 + LIVE_WINDOW_MS + 1)).toBeUndefined()
-    requestPanelProject('room-c', 'p_11')
-    expect(takePanelProject('room-c')).toBe('p_11')
-    expect(takePanelProject('room-c')).toBeUndefined()
   })
 })

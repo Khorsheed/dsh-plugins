@@ -207,7 +207,9 @@
 .sp_s8 { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 55%, var(--dsw-alias-state-error-primary)); color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 55%, var(--dsw-alias-state-error-primary)); }
 
 /* transcript */
-.prop { border: 1px dashed var(--vs-prop); background: var(--vs-prop-soft); border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 6px; }
+.prop { border: 1px dashed var(--vs-prop); background: var(--vs-prop-soft); border-radius: 10px; padding: 9px 11px; display: flex; flex-direction: column; gap: 6px; transition: box-shadow 0.3s; }
+/* The group a destination named, for a moment after it scrolls into view. */
+.prop[data-flash] { box-shadow: 0 0 0 2px var(--vs-prop); }
 .propHead { font-weight: 600; color: var(--dsw-alias-label-primary); }
 .list { position: relative; display: flex; flex-direction: column; gap: 10px; }
 .para { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; padding: 4px 6px; margin: 0 -6px; border-radius: 8px; scroll-margin: 80px; }

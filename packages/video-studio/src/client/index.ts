@@ -21,8 +21,9 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import videoRemote from '@khorsheed/dsh-video-studio/remote'
 import type { VideoPaneInjected } from './contract.ts'
-import { VIDEO_KIND, VIDEO_TAB_ID, videoDefinition } from './definition.tsx'
-import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, requestPanelProject, setDeskRowSeated } from './desk-row.ts'
+import { followerHostOf, openDestination, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { VIDEO_KIND, VIDEO_TAB_ID, videoDefinition, type VideoNavParams } from './definition.tsx'
+import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, setDeskRowSeated } from './desk-row.ts'
 import { DeskAttachment } from './DeskAttachment.tsx'
 import { DeskOpenRow, type DeskOpenRowFace } from './DeskOpenRow.tsx'
 import { mainSessionId, RegistrationToggle, VideoTabVisibility, type VideoPluginInventorySnapshot } from './preset-visibility.ts'
@@ -31,6 +32,7 @@ import { createVideoStudioStore } from './store.ts'
 import { VideoPane } from './VideoPane.tsx'
 
 export { VIDEO_KIND, VIDEO_TAB_ID } from './definition.tsx'
+export type { VideoNavParams } from './definition.tsx'
 
 export const inject = ['slots', 'remote', 'locale', 'sidebarRightTabs', 'sessions']
 
@@ -132,6 +134,27 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: face,
   }, VideoPane)), 'video-studio: sidebar tab body')
 
+  /**
+   * The one way into the panel from outside (proposal
+   * 2026-10-30-agent-sidebar-navigation): open the 剪辑 tab at an address,
+   * which the pane applies once per navigation revision. A session whose mode
+   * hides the tab has no tab type to open; the miss is logged, never thrown.
+   */
+  const get = (name: string): unknown => (ctx.get.bind(ctx) as (key: string) => unknown)(name)
+  const go = (params: VideoNavParams): void => {
+    openDestination(get, { kind: VIDEO_KIND, params: params as unknown as Readonly<Record<string, unknown>> }, line => { ctx.logger.warn(line) })
+  }
+
+  // The follower: a video tool's answer names where it landed (the project,
+  // 素材, a proposal group in 文稿, 导出); watched live, the tab goes there.
+  const followerHost = followerHostOf(get)
+  if (followerHost !== undefined) {
+    ctx.effect(() => startNavFollower(followerHost, {
+      kinds: [VIDEO_KIND],
+      open: destination => { go(destination.params as unknown as VideoNavParams) },
+    }), 'video-studio: destination follower')
+  }
+
   // The room desk (proposal 2026-10-29-room-desk): a room member's
   // video_project create/open writes room's `room/desk-opened` (owner = this
   // package) into the ROOM session (../desk.ts). Its row says what was opened
@@ -145,16 +168,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     register: (options: Record<string, unknown>, component: unknown) => () => void
   }
   const deskFace: DeskOpenRowFace = {
-    openProject: (sessionId, projectId) => {
-      const sidebar = ctx.get('sidebarRight') as { openTab?: (kind: string) => void } | undefined
-      try {
-        sidebar?.openTab?.(VIDEO_KIND)
-      } catch (error) {
-        // A session whose mode hides the 剪辑 tab has no tab type to open.
-        ctx.logger.warn('video-studio: openTab failed (tab type not registered?)', error)
-      }
-      requestPanelProject(sessionId, projectId)
-    },
+    // Showing is not binding: the session's binding is the tools' business.
+    openProject: (_sessionId, projectId) => { go({ projectId }) },
   }
   ctx.effect(() => anySlots.inject('conversation.chat.node', () => {
     const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
