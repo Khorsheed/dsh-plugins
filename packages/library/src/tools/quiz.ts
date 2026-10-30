@@ -15,6 +15,7 @@ import {
   payloadList,
   pickString,
   QUESTIONS_SCHEMA,
+  landed,
   unwrap,
   type ToolKit,
 } from './kit.ts'
@@ -80,7 +81,9 @@ export function libraryQuizTool(kit: ToolKit): ToolDefinition {
         },
       }))
       await autoBind(exec, { projectId, ...(resourceId === undefined ? {} : { resourceId }) })
-      return written as unknown as JsonValue
+      return landed(exec, written, {
+        view: 'quiz', projectId, ...(resourceId === undefined ? {} : { resourceId }), quizId: written.quiz.id,
+      }, `新出的测验（${cleaned.length} 题）`) as unknown as JsonValue
     },
   })
 }

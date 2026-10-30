@@ -274,7 +274,8 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'canvas-novel': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // library → ui-panel-kit: the learning sidebar's panel root, header, tabs,
   // chip row and list rows — the same inlined, zero-runtime source-plane edge.
-  'library': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // …and ui-agent-nav, the destination follower (proposal agent-sidebar-navigation).
+  'library': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // context-lens → ui-panel-kit: the request panel's root, header, tabs,
   // chip row and request rows (the panel lands with the client milestone) —
   // the same inlined, zero-runtime source-plane edge.

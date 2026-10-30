@@ -1547,6 +1547,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.4
+      '@khorsheed/dsh-client-ui-agent-nav':
+        specifier: workspace:*
+        version: link:../client-ui-agent-nav
       '@khorsheed/dsh-client-ui-panel-kit':
         specifier: workspace:*
         version: link:../client-ui-panel-kit
