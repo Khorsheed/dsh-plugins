@@ -56,6 +56,13 @@ export interface MessageToolsInjected {
   backfillDraft: (text: string) => void
   /** The session id the fold choices are remembered under. */
   foldScope: string
+  /**
+   * Whether the host serves the `conversation.user.text` factory (the official
+   * user-text pipeline: every plugin's user-text rule — skill and session
+   * chips, quote cards — renders through it). Probed per render; false keeps
+   * the local token projection.
+   */
+  userTextAvailable: () => boolean
 }
 
 /** Full props of the shadowed 'user'/'steering'/'message-tools-edited'/'message-tools-restored' renderer (all keys share it). */
