@@ -381,7 +381,7 @@ export interface TurnListItem {
   /** The turn's number in one session-wide sequence (main turns and room rounds, by time). */
   ordinal?: number
   /** A room round: a human message to the room made outside any main turn, and who it went to. */
-  room?: { targets: string[] }
+  room?: { targets: string[]; /** The human's message in the chat (the round's scroll anchor). */ messageId?: string }
   startedAt: number
   endedAt?: number
   requestCount: number

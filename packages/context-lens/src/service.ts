@@ -57,6 +57,31 @@ declare module '@deepseek-ai/cordis' {
 /** Rebuilt request bodies held at once (a request and its baseline per read). */
 const HYDRATED_BODIES = 8
 
+/** How far back a human room post's own user/message may sit before its room/dispatch. */
+const HUMAN_MESSAGE_LOOKBACK = 12
+
+/**
+ * The human's user/message a room post appended next to its `room/dispatch`
+ * (RoomService.postMessage): the nearest earlier user-sourced message, the
+ * one with the same text preferred. The chat renders it as the round's row,
+ * so a map click on the round scrolls there (rounds have no host turn).
+ */
+export function humanMessageBefore(at: (seq: number) => SessionLogRow | undefined, dispatchSeq: number, data: unknown): string | undefined {
+  const dispatch = (data ?? {}) as { origin?: unknown; text?: unknown }
+  if (dispatch.origin !== 'human') return undefined
+  let nearest: string | undefined
+  for (let seq = dispatchSeq - 1; seq >= Math.max(0, dispatchSeq - HUMAN_MESSAGE_LOOKBACK); seq -= 1) {
+    const row = at(seq)
+    if (row?.type !== 'user/message') continue
+    const message = (row.data ?? {}) as { id?: unknown; source?: { kind?: unknown }; content?: { type?: unknown; text?: unknown }[] }
+    if (message.source?.kind !== 'user' || typeof message.id !== 'string') continue
+    const text = (message.content ?? []).map(part => part.type === 'text' && typeof part.text === 'string' ? part.text : '').join('')
+    if (text === dispatch.text) return message.id
+    nearest ??= message.id
+  }
+  return nearest
+}
+
 /** The parent room's events a member opened alone keeps (its question cards' reconciliation). */
 const PARENT_ROOM_EVENTS = new Set(['room/member-added', 'room/run-state', 'room/question', 'room/question-resolved'])
 
@@ -205,7 +230,10 @@ export class InspectorService {
     this.store.noteLogActivity(sessionId)
     if (eventType.startsWith('compaction/')) this.store.noteCompaction(sessionId, eventType, event.data as unknown as Record<string, unknown>)
     if (eventType.startsWith('room/')) {
-      this.store.noteRoomEvent(sessionId, eventType, event.data, event.seq, at)
+      const messageId = eventType === 'room/dispatch'
+        ? humanMessageBefore(seq => session.eventAt(seq as typeof event.seq) as unknown as SessionLogRow | undefined, event.seq, event.data)
+        : undefined
+      this.store.noteRoomEvent(sessionId, eventType, messageId === undefined ? event.data : { ...event.data as object, messageId }, event.seq, at)
       return
     }
     if (event.type === 'tool/result' && event.surfaceOp !== 'append') {
@@ -452,8 +480,11 @@ export class InspectorService {
         // child scope does (its contexts are as large); bodies rebuild on read.
         this.store.insertLogTurns(sessionId, reconstructSession(events, host => !external && (host === undefined || keep.has(host))))
         for (const fact of replacementFactsOf(events)) this.store.noteReplacement(sessionId, fact)
+        const bySeq = new Map(events.filter(row => row.seq !== undefined).map(row => [row.seq as number, row]))
         for (const row of events) {
-          if (row.type.startsWith('room/')) this.store.noteRoomEvent(sessionId, row.type, row.data, row.seq, row.time)
+          if (!row.type.startsWith('room/')) continue
+          const messageId = row.type === 'room/dispatch' && row.seq !== undefined ? humanMessageBefore(seq => bySeq.get(seq), row.seq, row.data) : undefined
+          this.store.noteRoomEvent(sessionId, row.type, messageId === undefined ? row.data : { ...row.data as object, messageId }, row.seq, row.time)
         }
         await this.resolveParent(sessionId, events, reader)
       } finally {

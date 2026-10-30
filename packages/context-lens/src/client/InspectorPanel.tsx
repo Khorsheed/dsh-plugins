@@ -11,7 +11,7 @@ import type {
 import { WINDOW_TURNS, fmtSpan, gapShown, latestTurnSeq, resolveTurnSeq, turnGaps, turnNumber, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
-import { hasTurnAnchor, scrollConversationToBottom, scrollConversationToTurn } from './scroll-sync.ts'
+import { hasTurnAnchor, scrollConversationToBottom, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
 import { TokenView } from './TokenView.tsx'
@@ -317,9 +317,11 @@ export function InspectorPanel({
     setTiming(null)
   }
 
-  /** Scroll the conversation to one selected turn (real turns only; pseudo-turns never scroll). */
+  /** Scroll the conversation to one selected turn (real turns and room rounds; other pseudo-turns never scroll). */
   const syncScrollToTurn = (seq: number, list: readonly TurnListItem[] | null = turns): void => {
     const target = list?.find(candidate => candidate.turnSeq === seq)
+    // A room round has no host turn: it lands on the human's own message row.
+    if (target?.room?.messageId !== undefined) { scrollConversationToMessage(target.room.messageId); return }
     // Real turns key on the host's turn number (M5), so a positive seq is the
     // anchor even before the list resolves (the navigation-params path).
     const hostTurn = target?.hostTurn ?? (seq > 0 ? seq : undefined)
