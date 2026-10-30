@@ -1,0 +1,63 @@
+/* Member compaction row: the boundary register (one dim line), its summary
+   opening below on click. */
+
+.row {
+  padding: 0 4px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.line:disabled {
+  cursor: default;
+}
+
+.row[data-outcome='failed'] .text,
+.row[data-outcome='cancelled'] .text {
+  color: var(--dsw-alias-label-error, #d64545);
+}
+
+.text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toggle {
+  flex: none;
+  color: var(--dsw-alias-label-secondary, rgba(127, 127, 127, 1));
+}
+
+.line:not(:disabled):hover .toggle {
+  color: var(--dsw-alias-label-primary, rgba(30, 30, 30, 1));
+}
+
+.summary {
+  margin: 2px 0 6px 22px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.3));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary, rgba(127, 127, 127, 1));
+}
+
+.line:focus:not(:focus-visible) {
+  outline: none;
+}

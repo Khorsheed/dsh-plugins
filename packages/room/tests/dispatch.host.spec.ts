@@ -175,6 +175,47 @@ describe('DispatchEngine (real composition)', () => {
       usage: { inputTokens: 30, outputTokens: 12, cacheReadTokens: 1_000, cacheWriteTokens: 8 } }] } })
   })
 
+  it('/compact to a member runs its compaction round: one compaction row, no reply', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async () => settledRun('child-1', '方案 A'))
+    bench.facade.resume.mockImplementation(async () => {
+      // The member session records the compaction (local-agent's event).
+      const child = bench.ctx.sessions.get(SessionId('child-1')) ?? bench.ctx.sessions.create(SessionId('child-1'), { meta: {} })
+      child.append('local-agent/compaction' as never, {
+        source: 'manual', outcome: 'completed', provider: 'kimi-cli', summary: '用户在写《潜梦者》', beforeTokens: 560_000, afterTokens: 41_000,
+        usage: { inputTokens: 1_103, outputTokens: 154, cacheReadTokens: 19_712 }, startedAt: 1, endedAt: 2, boundarySeq: 0,
+      } as never)
+      return settledRun('child-1', '用户在写《潜梦者》')
+    })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '出方案' })
+    await bench.service.engine.idle()
+    const speeches = (): number => bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().filter(event => event.type === 'room/speech').length
+    const before = speeches()
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada /compact' })
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledTimes(1)
+    const [, , childSessionId, prompt, options] = bench.facade.resume.mock.calls[0] as [string, string, string, ContentBlock[], { operation?: string }]
+    expect(childSessionId).toBe('child-1')
+    expect(textOf(prompt)).toBe('/compact')
+    expect(options.operation).toBe('compact')
+    // Kimi answers /compact with its summary: that is the row's, not a reply.
+    expect(speeches()).toBe(before)
+    const row = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().findLast(event => event.type === 'room/member-compacted')
+    expect(row?.data).toMatchObject({ member: 'ada', outcome: 'completed', summary: '用户在写《潜梦者》', beforeTokens: 560_000, afterTokens: 41_000,
+      usage: { inputTokens: 1_103, outputTokens: 154, cacheReadTokens: 19_712 } })
+  })
+
+  it('/compact to a member that never ran starts nothing', async () => {
+    const bench = await bootRoom()
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada /compact' })
+    await bench.service.engine.idle()
+    expect(bench.facade.start).not.toHaveBeenCalled()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    expect(state).toMatchObject({ ok: true, value: { deliveries: [{ status: 'done' }] } })
+  })
+
   it('the briefing lists the other members by public role only; later prompts carry NO running log', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async () => settledRun('child-1', '方案 A'))

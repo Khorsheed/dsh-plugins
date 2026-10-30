@@ -177,6 +177,19 @@ export interface RoomDispatchData {
   readonly text: string
 }
 
+/** Chat node data of one member compaction (the room's copy of its compaction event). */
+export interface RoomCompactionData {
+  readonly seq: number
+  readonly time: number
+  readonly member: string
+  readonly outcome: 'completed' | 'failed' | 'cancelled'
+  readonly beforeTokens?: number
+  readonly afterTokens?: number
+  readonly usage?: { readonly inputTokens: number; readonly outputTokens: number; readonly cacheReadTokens?: number; readonly cacheWriteTokens?: number }
+  readonly summary?: string
+  readonly error?: string
+}
+
 /** Chat node data of the held-reports line for one member. */
 export interface RoomInboxData {
   /** Seq of the latest hold (the line sits there). */
@@ -213,6 +226,8 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
     'room-inbox': RoomInboxData
     /** room: a message one member sent another (派活 / 告知). */
     'room-dispatch': RoomDispatchData
+    /** room: a member compacted its context. */
+    'room-compaction': RoomCompactionData
   }
 }
 
@@ -510,6 +525,28 @@ export const roomDispatchDefinition: ConversationNodeDefinition<RoomDispatchData
   },
   update: context => context.state,
   buildViewNode: context => viewNode(context, 'room-dispatch'),
+}
+
+/** One row per member compaction (`room/member-compacted`). */
+export const roomCompactionDefinition: ConversationNodeDefinition<RoomCompactionData> = {
+  kind: 'room-compaction',
+  target: 'chat',
+  match: event => event.type === 'room/member-compacted' ? { id: String(event.seq), role: 'start' } : null,
+  start: (_context, match) => {
+    const event = match.event
+    if (event.type !== 'room/member-compacted') throw new Error('room-compaction start requires a room/member-compacted event')
+    const data = event.data
+    return {
+      seq: event.seq, time: event.time, member: data.member, outcome: data.outcome,
+      ...data.beforeTokens === undefined ? {} : { beforeTokens: data.beforeTokens },
+      ...data.afterTokens === undefined ? {} : { afterTokens: data.afterTokens },
+      ...data.usage === undefined ? {} : { usage: data.usage },
+      ...data.summary === undefined ? {} : { summary: data.summary },
+      ...data.error === undefined ? {} : { error: data.error },
+    }
+  },
+  update: context => context.state,
+  buildViewNode: context => viewNode(context, 'room-compaction'),
 }
 
 /**
