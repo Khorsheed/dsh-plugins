@@ -323,6 +323,20 @@ export class RoomService extends TypertRemoteService {
     // path): file the message under a task before the model reads it — the
     // composer's tag, else the decision model while tasks are open — and tell
     // the coordinator when it was filed under an existing task.
+    // A direct room message's turn: the room's additions (briefing, room
+    // changes, notifications, held reports) enter right before the human's
+    // message, as one room-sourced message — none when there is nothing to add.
+    ctx.on('agent/pre-step', async ({ step }, next) => {
+      const decision = await next()
+      if (step !== 1 || decision.kind !== 'enter') return decision
+      const messages = decision.messages.flatMap((message) => {
+        const extras = this.engine.directExtras.get(String(message.id))
+        if (extras === undefined) return [message]
+        this.engine.directExtras.delete(String(message.id))
+        return [createUserMessage({ content: [{ type: 'text', text: extras }], source: roomSource() }), message]
+      })
+      return messages.length === decision.messages.length ? decision : { ...decision, messages }
+    })
     ctx.on('agent/pre-step', async ({ agent, step }, next) => {
       const decision = await next()
       if (step !== 1 || decision.kind !== 'enter') return decision
@@ -331,6 +345,8 @@ export class RoomService extends TypertRemoteService {
       const notes: string[] = []
       for (const message of decision.messages) {
         if (message.source.kind !== 'user') continue
+        // A direct room message was filed when the room accepted it.
+        if (this.engine.directMessages.has(String(message.id))) continue
         const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
         const filed = await this.fileHumanMessage(agent.session, message.id, text, this.consumeTaskHint(agent.session.id))
         if (filed.note !== undefined) notes.push(filed.note)
@@ -344,7 +360,7 @@ export class RoomService extends TypertRemoteService {
     // agent never answers without results that already arrived.
     ctx.on('agent/pre-step', async ({ agent, step }, next) => {
       const decision = await next()
-      if (step !== 1 || decision.kind !== 'enter' || decision.messages.some(message => isRoomSource(message.source))) return decision
+      if (step !== 1 || decision.kind !== 'enter' || decision.messages.some(message => isRoomSource(message.source) || this.engine.directMessages.has(String(message.id)))) return decision
       const target = this.heldTarget(agent.session.id)
       if (target === undefined) return decision
       const held = heldReportsText(target.room.snapshotEvents(), memberId(target.room.snapshotEvents(), target.member))
@@ -361,7 +377,7 @@ export class RoomService extends TypertRemoteService {
       if (!isRoomLog(events) || coordinatorMember(replay(events), events)?.kind !== 'cli') return next()
       if (nativeTurns.get(agent) === turn) return next()
       if (step !== 1) throw new Error('Room native turn has no explicit member dispatch')
-      if (messages.some(message => isRoomSource(message.source))) {
+      if (messages.some(message => isRoomSource(message.source) || this.engine.directMessages.has(String(message.id)))) {
         nativeTurns.set(agent, turn)
         return next()
       }
@@ -1399,11 +1415,20 @@ export class RoomService extends TypertRemoteService {
       content: [...admitted.blocks, ...request.text.trim() === '' ? [] : [{ type: 'text' as const, text: request.text.trim() }]] as Parameters<typeof createUserMessage>[0]['content'],
       source: { kind: 'user' },
     })
-    {
+    // A message for the room's own agent reaches it as itself: the agent's
+    // own turn writes it (once — the room no longer re-sends the words in a
+    // room-sourced copy), and a busy agent queues it like any session's
+    // input. Attachments keep the room's own write: their upload receipts
+    // bind to the message the moment it is in the log.
+    const direct = attached.length === 0 && this.ctx.agents.get(loaded.session.id) !== undefined
+      && targets.some(name => loaded.state.members.find(member => member.name === name)?.kind === 'main-agent')
+    if (!direct) {
       // Uploaded files are bound to this message once it is in the log (an unbound receipt is reclaimed).
       using binding = admitted.bind(request.requestId ?? String(human.id))
       loaded.session.append('user/message', human, { surfaceOp: 'append' })
       binding?.commit()
+    } else {
+      this.engine.directMessages.add(String(human.id))
     }
     floatRunningCards(loaded.session)
     const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
@@ -1417,6 +1442,12 @@ export class RoomService extends TypertRemoteService {
     const answered = await this.answerByMessage(loaded.session, dispatch.seq, targets, withAttachmentPaths(prompt, admitted.records))
     for (const target of targets) {
       if (answered.has(target)) continue
+      if (direct && loaded.state.members.find(member => member.name === target)?.kind === 'main-agent') {
+        // Only the room's additions travel as text (the outside-session note);
+        // the human's words are the message itself.
+        this.engine.dispatch(loaded.session, target, carry(target, prompt === text ? '' : prompt.slice(said.length).trim()), { dispatchSeq: dispatch.seq, direct: human })
+        continue
+      }
       this.engine.dispatch(loaded.session, target, carry(target, withAttachmentPaths(prompt, admitted.records)), { dispatchSeq: dispatch.seq })
     }
     return { ok: true, value: { parsed: { targets, text }, seq: dispatch.seq } }
