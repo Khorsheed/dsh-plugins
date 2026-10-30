@@ -249,6 +249,26 @@ export interface RoomRunUsage {
 
 /** A member run's lifecycle edge. */
 /** A running member's card moves to the bottom of the conversation; its run is untouched. */
+/**
+ * A CLI member compacted its context on the human's `/compact` (the room's
+ * copy of the member session's `local-agent/compaction` event): one
+ * transcript row, the summary when the CLI gave one, and the compaction's
+ * own spend — never a round's.
+ */
+export interface RoomMemberCompactedEvent {
+  readonly member: string
+  readonly memberId: string
+  readonly runId: string
+  readonly outcome: 'completed' | 'failed' | 'cancelled'
+  readonly beforeTokens?: number
+  readonly afterTokens?: number
+  readonly contextWindow?: number
+  readonly usage?: { readonly inputTokens: number; readonly outputTokens: number; readonly cacheReadTokens?: number; readonly cacheWriteTokens?: number }
+  readonly summary?: string
+  readonly error?: string
+  readonly durationMs?: number
+}
+
 export interface RoomRunMovedEvent {
   readonly member: string
   readonly startedAt: number
@@ -762,6 +782,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/run-state': RoomRunStateEvent
     /** A running member's card re-anchors below a reply or human message that landed after it (presentation only). */
     'room/run-moved': RoomRunMovedEvent
+    'room/member-compacted': RoomMemberCompactedEvent
     /** Log-only observed metadata for a single execution. */
     'room/execution-metadata': RoomExecutionMetadataEvent
     /** Notification gate: a member-to-member relay arrived (pending). */

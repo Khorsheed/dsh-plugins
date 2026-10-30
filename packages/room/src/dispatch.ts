@@ -31,7 +31,7 @@ import { coordinatorMember, memberId, pendingInstructions, previousCursor, repla
 import { envelopeLine, messageId, sendOrHold } from './messaging.ts'
 import { gateState, judgeReport, outstandingFor, type GateVerdict } from './report-gate.ts'
 import { decisionRecord } from './decisions.ts'
-import type { RoomHeldDispatch, RoomMember, RoomRelay, RoomState } from './types.ts'
+import type { RoomHeldDispatch, RoomMember, RoomMemberCompactedEvent, RoomRelay, RoomState } from './types.ts'
 
 /**
  * The room producer's durable identity in its two historical forms: the
@@ -131,6 +131,12 @@ export function askOffsets(events: readonly SessionEvent[], runId: string, text:
 export const MOVED_ON_TEXT = '你发了新消息；被重启打断的这一轮按没做完处理'
 /** A message that queued behind a lost round and rode along with the move-on message. */
 export const MERGED_BACKLOG_TEXT = '已并入下一条消息一起送达'
+/** The member command that compacts its context instead of prompting it. */
+export const COMPACT_COMMAND = '/compact'
+/** A compaction's delivery outcome text (the report a sender would read). */
+export const COMPACTED_TEXT = '已压缩上下文'
+/** `/compact` to a member that has never run: nothing to compact. */
+export const NOTHING_TO_COMPACT_TEXT = '还没有可压缩的上下文'
 /** A message that answered the question its recipient was waiting on: delivered as that answer, not as a round of its own. */
 export const ANSWERED_QUESTION_TEXT = '作为对它提问的回答送达'
 /** How a message standing in for an answer reads on the card and to the member. */
@@ -861,6 +867,15 @@ export class DispatchEngine {
         void this.ctx.sessions.flush(room).catch(error => this.ctx.logger.warn(`room: execution metadata flush failed: ${String(error)}`))
       },
     }
+    // The human's `/compact` (alone, to this member) compacts its context
+    // instead of prompting it: a compaction round (local-agent queues it like
+    // any round), one transcript row, no reply.
+    const source = dispatchSeq === undefined ? undefined : room.snapshotEvents().find(event => event.seq === dispatchSeq)
+    const compacting = source?.type === 'room/dispatch' && (source.data.origin ?? 'human') === 'human' && source.data.text.trim() === COMPACT_COMMAND
+    if (compacting && (member.childSessionId === undefined || facade.isPreparedMember?.(member.childSessionId) === true)) {
+      startedAt = await admitted()
+      return { state: 'done', text: NOTHING_TO_COMPACT_TEXT }
+    }
     if (!controlled) startedAt = await admitted()
     const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
     const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
@@ -874,7 +889,7 @@ export class DispatchEngine {
       ? facade.start(room.id, provider, [{ type: 'text' as const, text: prompt }],
           // The member's name labels its child session in the host's subagent list.
           { ...admission, label: member.name, ...member.model === undefined ? {} : { model: member.model }, ...member.effort === undefined ? {} : { effort: member.effort }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
-      : facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: prompt }], { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
+      : facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: compacting ? COMPACT_COMMAND : prompt }], { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd }, ...compacting ? { operation: 'compact' as const } : {} })
     // Existing members can enter core's queue immediately. A fresh/prepared
     // identity must publish its first handle before the next submission resumes it.
     if (controlled && member.childSessionId !== undefined && !prepared) submitted()
@@ -913,6 +928,7 @@ export class DispatchEngine {
     }
     if (controlled) submitted()
     const result = await run.result
+    if (compacting) return this.recordCompaction(room, member, runId, run.id, result, startedAt)
     const output = runOutputText(result.output)
     const interrupted = result.stopReason === 'completed' ? undefined
       : result.stopReason === 'aborted' ? 'cancelled' as const : 'failed' as const
@@ -943,6 +959,37 @@ export class DispatchEngine {
     } else {
       return { state: 'failed', text: output, error: `the member run ended with stopReason "${result.stopReason}"` }
     }
+  }
+
+  /**
+   * The room's row for a member's compaction round: the facts the member
+   * session's `local-agent/compaction` event recorded (the room never
+   * re-derives them), and no speech — Kimi answers `/compact` with its
+   * summary, which is the row's, not a reply.
+   */
+  private async recordCompaction(
+    room: Session, member: RoomMember, runId: string, childSessionId: string, result: { readonly stopReason: string; readonly diagnostic?: string },
+    startedAt: number | undefined,
+  ): Promise<RunOutcome> {
+    const compaction = this.ctx.sessions.get(SessionId(childSessionId))?.snapshotEvents().findLast(event => (event.type as string) === 'local-agent/compaction')
+    const data = (compaction?.data ?? {}) as Partial<Omit<RoomMemberCompactedEvent, 'member' | 'memberId' | 'runId'>> & { readonly outcome?: RoomMemberCompactedEvent['outcome'] }
+    const outcome = data.outcome ?? (result.stopReason === 'completed' ? 'completed' : 'failed')
+    const events = room.snapshotEvents()
+    room.append('room/member-compacted', {
+      member: replay(events).members.find(entry => entry.id === member.id)?.name ?? member.name,
+      memberId: memberId(events, member), runId, outcome,
+      ...data.beforeTokens === undefined ? {} : { beforeTokens: data.beforeTokens },
+      ...data.afterTokens === undefined ? {} : { afterTokens: data.afterTokens },
+      ...data.contextWindow === undefined ? {} : { contextWindow: data.contextWindow },
+      ...data.usage === undefined ? {} : { usage: data.usage },
+      ...data.summary === undefined ? {} : { summary: data.summary },
+      ...outcome === 'completed' ? {} : { error: data.error ?? result.diagnostic ?? `compaction ${outcome}` },
+      ...startedAt === undefined ? {} : { durationMs: Date.now() - startedAt },
+    })
+    await this.ctx.sessions.flush(room)
+    return outcome === 'completed'
+      ? { state: 'done', text: COMPACTED_TEXT }
+      : { state: 'failed', text: '', error: data.error ?? result.diagnostic ?? `compaction ${outcome}` }
   }
 
   /** Settle only this execution, preserving newer runs. */

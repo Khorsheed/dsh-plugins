@@ -185,7 +185,7 @@ export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
-  attachments: attachmentFace, setCoordinator,
+  attachments: attachmentFace, setCoordinator, runCommand,
 }: RoomComposerProps): ReactNode {
   const [coordinatorMenu, setCoordinatorMenu] = useState(false)
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
@@ -468,6 +468,18 @@ export function RoomComposer({
     setBusy(true)
     setError(null)
     try {
+      // `/compact` while the room's own agent coordinates is the host's own
+      // command (a CLI coordinator or an @-picked member compacts through the
+      // room, which runs the member's compaction round instead).
+      if (!external && picked.length === 0 && text === '/compact' && ids.length === 0 && runCommand !== undefined) {
+        const failure = await runCommand(sessionId, text)
+        if (failure !== null) {
+          setError(failure)
+          return
+        }
+        inputActions.setDraft('')
+        return
+      }
       // Two-argument form while nothing was menu-picked: the injected face's
       // third parameter is the pick channel only.
       const wire = ids.length === 0 ? undefined : await attachmentFace!.serialize(ids)

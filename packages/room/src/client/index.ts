@@ -44,11 +44,12 @@ import { RoomTaskTags } from './task-tag.ts'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomDispatchDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
+import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomDispatchDefinition, roomCompactionDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { mainSessionId, RoomStore } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomDispatchView } from './RoomDispatchView.tsx'
+import { RoomCompactionView } from './RoomCompactionView.tsx'
 import { RoomInboxView } from './RoomInboxView.tsx'
 import { RoomApprovalView } from './RoomApprovalView.tsx'
 import { RoomQuestionView } from './RoomQuestionView.tsx'
@@ -502,6 +503,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     lctx.uiConversation.events.register(roomEventDefinition)
     lctx.uiConversation.events.register(roomRelayDefinition)
     lctx.uiConversation.events.register(roomDispatchDefinition)
+    lctx.uiConversation.events.register(roomCompactionDefinition)
     lctx.uiConversation.events.register(roomInboxDefinition)
     lctx.uiConversation.events.register(roomApprovalDefinition)
     lctx.uiConversation.events.register(roomQuestionDefinition)
@@ -637,6 +639,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       stopMember: (name, expectedRunId) => { void remote?.cancel({ sessionId, name, ...expectedRunId === undefined ? {} : { expectedRunId } }).then(() => roomStore.refresh(sessionId)) },
       modelDirectory: modelDirectoryFor(sessionId),
       setCoordinator: setCoordinatorFor(sessionId),
+      ...(() => {
+        const commands = (ctx.remote as unknown as { commands?: { execute?: (id: SessionId, line: string, attachments: readonly unknown[]) => Promise<{ ok: boolean; value?: unknown; error?: { message: string; code: string } }> } }).commands
+        return commands?.execute === undefined ? {} : {
+          runCommand: async (id: SessionId, line: string): Promise<string | null> => {
+            const result = await commands.execute!(id, line, [])
+            if (!result.ok) return `${result.error?.message ?? 'command failed'} (${result.error?.code ?? 'error'})`
+            return result.value === undefined ? `unknown command: ${line}` : null
+          },
+        }
+      })(),
       // A draft chip's preview: the official editor's chip click routes
       // through the session's input-trigger controller to the chip's owning
       // source — probed at click time, so a composition without the service
@@ -793,6 +805,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       inject: (): RoomDispatchInjected => ({ roomStore }),
     },
     RoomDispatchView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    { name: 'conversation.chat.node', key: 'room-compaction', locale: NS },
+    RoomCompactionView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     {

@@ -1015,6 +1015,16 @@ export function parseScopeFlag(input: string): { input: string; scope?: string; 
   return { input: rest.join(' ').trim(), ...scope === undefined ? {} : { scope } }
 }
 
+/**
+ * The member command that compacts instead of prompting: `/compact`, alone
+ * on the line (trailing text would be a prompt that merely starts with it).
+ * @param text - one queued member input.
+ * @returns whether it asks for a compaction.
+ */
+export function isCompactCommand(text: string): boolean {
+  return text.trim() === '/compact'
+}
+
 /** A delegation record without its requested model. */
 function withoutModel(record: LocalAgentDelegationRecord): LocalAgentDelegationRecord {
   const { model: _model, ...rest } = record
@@ -1303,8 +1313,12 @@ export class LocalAgentRegistry {
     this.preparedMembers = new PreparedMembers(join(homesRoot, '.prepared-members'))
     this.memberInbox = new MemberInbox(join(homesRoot, '.member-inbox'), async (childSessionId, text, signal, onAdmitted) => {
       const record = this.requireInboxMember(childSessionId)
+      // `/compact` typed to a member compacts it: the entry keeps its place
+      // in the inbox, then runs as the compaction round instead of a prompt.
+      const compact = isCompactCommand(text)
       return this.resume(record.parentSessionId, record.provider, childSessionId, [{ type: 'text', text }], {
         signal, onAdmitted, ...record.scope === undefined ? {} : { scope: record.scope }, ...record.cwd === undefined ? {} : { cwd: record.cwd },
+        ...compact ? { operation: 'compact' as const } : {},
       })
     }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`))
     this.memberControls = new MemberControls(new FileMemberControlStorage(join(homesRoot, '.member-controls')), binding => {

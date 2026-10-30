@@ -204,6 +204,13 @@ export interface RoomAttachmentsFace {
 }
 
 export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInjected {
+  /**
+   * Run one host command on the room's own agent (`/compact` while dsh
+   * coordinates): the official command channel, as the official composer
+   * would. Resolves null on success, the failure text otherwise. Absent on a
+   * host without the commands Remote.
+   */
+  readonly runCommand?: ((sessionId: SessionId, line: string) => Promise<string | null>) | undefined
   /** Hand the coordinator role to another member (the composer's switch). */
   readonly setCoordinator?: ((memberId: string, expectedRevision: number) => Promise<RoomMutationOutcome>) | undefined
   /** Draft attachments; absent without the official conversation service. */
@@ -509,6 +516,11 @@ export interface RoomDispatchInjected {
 export type RoomDispatchViewProps =
   PropsRuntime<'conversation.chat.node', 'room-dispatch'>
   & InjectFace<RoomDispatchInjected>
+  & PropsLocale<'room'>
+
+/** Full props of the 'room-compaction' chat-node renderer. */
+export type RoomCompactionViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-compaction'>
   & PropsLocale<'room'>
 
 /** Full props of the 'room-inbox' chat-node renderer. */

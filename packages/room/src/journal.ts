@@ -52,6 +52,7 @@ export const ROOM_EVENT_TYPES = [
   'room/speech',
   'room/run-state',
   'room/run-moved',
+  'room/member-compacted',
   'room/execution-metadata',
   'room/relay',
   'room/relay-resolved',
