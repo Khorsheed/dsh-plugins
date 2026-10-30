@@ -13,6 +13,14 @@ import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sideb
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { IconBookOutlineMedium, type IconProps } from './icons-local.tsx'
 import type {} from './locales.ts'
+import type { LibraryNavParams } from '../nav-line.ts'
+
+declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  interface SidebarRightTabParamsMap {
+    /** The library page takes one address (proposal 2026-10-30-agent-sidebar-navigation). */
+    'library': LibraryNavParams
+  }
+}
 
 /** The tab kind: minted, since no official kind means "library". */
 export const LIBRARY_KIND = 'library'

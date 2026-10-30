@@ -11,13 +11,41 @@ import { formatLocator, type LibraryBinding, type LibraryOutcome } from '../type
 import type { LibraryService } from '../service.ts'
 import { ImageRefCache } from '../image-refs.ts'
 import { announceDeskOpen, deskOf } from '../desk.ts'
+import { libraryDestinationLine, NAV_KEY, type LibraryDestination, type LibraryNavParams } from '../nav-line.ts'
 
-/** JSON pass-through output — what the render emits IS what the model reads, so it goes compact (indentation doubled every result). */
+/**
+ * JSON pass-through output — what the render emits IS what the model reads, so it goes compact (indentation doubled every result).
+ * A value carrying a destination (`NAV_KEY`, see {@link landed}) renders without it, the destination line after the JSON.
+ */
 export function jsonOutput() {
   return {
     schema: { type: 'json' } as const,
-    render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value) }],
+    render: (_args: unknown, value: unknown) => {
+      if (value === null || typeof value !== 'object' || Array.isArray(value) || !(NAV_KEY in value)) {
+        return [{ type: 'text' as const, text: JSON.stringify(value) }]
+      }
+      const { [NAV_KEY]: destination, ...rest } = value as Record<string, unknown>
+      return [{ type: 'text' as const, text: `${JSON.stringify(rest)}\n${libraryDestinationLine(destination as LibraryDestination)}` }]
+    },
   }
+}
+
+/**
+ * A tool's answer with where its write landed (proposal
+ * 2026-10-30-agent-sidebar-navigation): the browser's follower opens the
+ * library there when the learner watched the call land. A call at a room's
+ * desk names none — the room's desk row brings the library instead.
+ * @param exec - the call.
+ * @param value - the answer.
+ * @param params - the place in the library tab.
+ * @param label - what the learner reads on the card.
+ * @returns the answer, carrying the destination for the output render.
+ */
+export function landed<T extends object>(exec: Exec | undefined, value: T, params: LibraryNavParams, label: string): T {
+  if (deskOf(exec?.agent) !== undefined) return value
+  const thing = params.view === 'today' ? 'today' : Object.values(params).slice(1).join(':')
+  const destination: LibraryDestination = { id: `library:${params.view}:${thing}:${Date.now()}`, params, label }
+  return { ...value, [NAV_KEY]: destination }
 }
 
 /** Unwrap a service outcome: the domain value, or a thrown Error whose message IS the lesson. */

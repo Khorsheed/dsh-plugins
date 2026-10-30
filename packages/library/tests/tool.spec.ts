@@ -13,6 +13,7 @@ import { LibraryService } from '../src/service.ts'
 import { chaptersLocator, LIBRARY_TOOL_NAMES, libraryToolDefinitions, splitTocText } from '../src/tool-definition.ts'
 import { ImageRefCache } from '../src/image-refs.ts'
 import { Config, renderBindingContext } from '../src/tool.ts'
+import { NAV_KEY } from '../src/nav-line.ts'
 
 let root: string
 let service: LibraryService
@@ -511,6 +512,30 @@ describe('the per-noun tools take flat fields', () => {
     expect(noted.notes.revisions).toBe(1)
     const res = (await call('library_textbook', { op: 'create', title: 'Gymnasium 文档', url: 'https://gymnasium.example', kind: 'tool' })) as { resource: { id: string } }
     expect((await call('library_textbook', { op: 'remove', resourceId: res.resource.id })) as { ok: boolean })
+  })
+
+  it('each write names the exact place it landed (proposal 2026-10-30-agent-sidebar-navigation)', async () => {
+    type Landed = { [NAV_KEY]?: { params: unknown; label: string } }
+    const created = (await call('library_project', { name: '数学', template: 'subject' })) as { project: { id: string } } & Landed
+    const projectId = created.project.id
+    expect(created[NAV_KEY]?.params).toEqual({ view: 'project', projectId })
+    const added = (await call('library_textbook', {
+      op: 'create', project: projectId, kind: 'book', title: '普林斯顿微积分读本', bookKind: 'knowledge',
+      toc: '第1章 函数\n第2章 极限\n第3章 导数', tocSource: { by: 'web', url: 'https://example.org/toc' },
+    })) as { resource: { id: string } } & Landed
+    const resourceId = added.resource.id
+    expect(added[NAV_KEY]).toMatchObject({ params: { view: 'book', projectId, resourceId }, label: '《普林斯顿微积分读本》' })
+    const drafted = (await call('library_roadmap', { resource: resourceId, nodes: [{ id: 'n1', title: '函数', gate: 'quiz', chapters: '1' }] })) as Landed
+    // The draft waits for 采用 on the book's page: that is where it lands.
+    expect(drafted[NAV_KEY]?.params).toEqual({ view: 'book', projectId, resourceId })
+    const adopted = await service.adoptRoadmap({ projectId, resourceId })
+    if (!adopted.ok) throw new Error(adopted.message)
+    const noted = (await call('library_notes', { node: 'n1', text: lessonFor(FIXTURE_POINTS) })) as Landed
+    expect(noted[NAV_KEY]?.params).toEqual({ view: 'lesson', projectId, resourceId, nodeId: 'n1' })
+    const quiz = (await call('library_quiz', { node: 'n1', questions: [{ point: 'p0_1', kind: 'fill', prompt: '1+1=?', answer: '2' }] })) as { quiz: { id: string } } & Landed
+    expect(quiz[NAV_KEY]?.params).toEqual({ view: 'quiz', projectId, resourceId, quizId: quiz.quiz.id })
+    // Moving or removing a book names no place.
+    expect(NAV_KEY in ((await call('library_textbook', { op: 'move', resourceId, seq: 1 })) as object)).toBe(false)
   })
 
   it('the observed failure modes now reject at the schema line or teach the field', async () => {

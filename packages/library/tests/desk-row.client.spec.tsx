@@ -16,7 +16,7 @@ import { DeskOpenRow } from '../src/client/desk/DeskOpenRow.tsx'
 import { DeskAttachment } from '../src/client/desk/DeskAttachment.tsx'
 import { deskRowDefinition, LIVE_WINDOW_MS, setDeskRowSeated, type DeskRowData } from '../src/client/desk/desk-row.ts'
 import { LibraryTabVisibility, type LibraryPluginInventorySnapshot } from '../src/client/preset-visibility.ts'
-import { RevealedProject } from '../src/client/reveal.ts'
+import { stackOf } from '../src/client/store.ts'
 
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
   zh[key].replace(/\{(\w+)\}/g, (match, name: string) => params?.[name] ?? match)) as TranslateNS<'library'>
@@ -99,12 +99,13 @@ describe('DeskAttachment', () => {
   })
 })
 
-describe('RevealedProject lands on a book', () => {
-  it('hands over the book with its project, once', () => {
-    const revealed = new RevealedProject()
-    revealed.reveal('p_neuro', 'r_kandel')
-    expect(revealed.takeTarget()).toEqual({ projectId: 'p_neuro', resourceId: 'r_kandel' })
-    expect(revealed.takeTarget()).toBeUndefined()
+describe('a desk row\'s book, as the tab\'s address', () => {
+  it('opens the book over its project and today', () => {
+    expect(stackOf({ view: 'book', projectId: 'p_neuro', resourceId: 'r_kandel' })).toEqual([
+      { view: 'today' },
+      { view: 'project', projectId: 'p_neuro' },
+      { view: 'resource', projectId: 'p_neuro', resourceId: 'r_kandel' },
+    ])
   })
 })
 

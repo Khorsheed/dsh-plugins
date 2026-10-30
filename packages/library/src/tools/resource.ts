@@ -14,6 +14,7 @@ import {
   payloadList,
   pickString,
   splitTocText,
+  landed,
   unwrap,
   type ToolKit,
 } from './kit.ts'
@@ -79,7 +80,7 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
           from: { projectId: fromProject, resourceId: fromResource },
         }))
         await autoBind(exec, { projectId, resourceId: cloned.resource.id })
-        return cloned as unknown as JsonValue
+        return landed(exec, cloned, { view: 'book', projectId, resourceId: cloned.resource.id }, `《${cloned.resource.title}》`) as unknown as JsonValue
       }
       // A whole contents may arrive as one newline-joined string — the
       // biggest single payload, and the one models mangle most as JSON.
@@ -127,11 +128,11 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
         await autoBind(exec, { projectId, resourceId: written.resource.id })
         // A real book with a handful of rows was almost always joined wrong — say so before a path is drafted against it.
         const rows = written.resource.toc?.length ?? 0
-        return {
+        return landed(exec, {
           ...written,
           contentsRows: rows,
           ...(rows < 3 ? { warning: `the contents has only ${rows} row(s) — one row per chapter is expected (station chapters count these rows). If the chapters got joined, resend toc with one chapter per line and resourceId ${written.resource.id}` } : {}),
-        } as unknown as JsonValue
+        }, { view: 'book', projectId, resourceId: written.resource.id }, `《${written.resource.title}》`) as unknown as JsonValue
       }
       const title = pickString(args.title)
       const url = pickString(args.url)
@@ -148,7 +149,7 @@ export function libraryResourceTool(kit: ToolKit): ToolDefinition {
         ...origin,
       }))
       await autoBind(exec, { projectId })
-      return added as unknown as JsonValue
+      return landed(exec, added, { view: 'project', projectId }, `「${title}」`) as unknown as JsonValue
     },
   })
 }

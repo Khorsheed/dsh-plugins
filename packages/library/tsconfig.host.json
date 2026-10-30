@@ -9,6 +9,7 @@
     "src/index.ts",
     "src/image-refs.ts",
     "src/desk.ts",
+    "src/nav-line.ts",
     "src/remote.ts",
     "src/cards.ts",
     "src/mastery.ts",

@@ -16,6 +16,7 @@ import {
   NODES_SCHEMA,
   payload,
   payloadList,
+  landed,
   pickString,
   unwrap,
   type ToolKit,
@@ -99,15 +100,15 @@ export function libraryRoadmapTool(kit: ToolKit): ToolDefinition {
       await autoBind(exec, { projectId, resourceId })
       const after = unwrap(await service.getProject({ id: projectId }))
       const textbook = after.project.resources.find(row => row.id === resourceId)
-      return {
+      return landed(exec, {
         ok: true,
         placedOn: `${textbook?.seq ?? '-'}. 《${textbook?.title ?? resourceId}》 (${resourceId})`,
         stations: drafted.draft.nodes.length,
         ...(replaced ? { replacedDraft: true } : {}),
         waitingForAdoption: after.project.resources.filter(row => row.hasDraft).map(row => `${row.seq ?? '-'}. 《${row.title}》 ${row.draftTotal ?? 0} stations`),
         ...(adjusted.length === 0 ? {} : { adjusted }),
-        next: 'Describe the path to the learner in two lines and ask them to review and adopt it in the sidebar (采用). Then stop: before they adopt it, write no 讲义, teach nothing, set no quiz.',
-      } as unknown as JsonValue
+        next: 'Describe the path to the learner in two lines and ask them to review and adopt it on the book\'s page in the 图书馆 tab (采用; the card in the conversation goes there). Then stop: before they adopt it, write no 讲义, teach nothing, set no quiz.',
+      }, { view: 'book', projectId, resourceId }, `《${textbook?.title ?? resourceId}》的学习路线（待采用）`) as unknown as JsonValue
     },
   })
 }

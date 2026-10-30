@@ -8,6 +8,7 @@
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { LibraryAssessResult, LibraryQuizFocus, LibraryQuizQuestion } from '../types.ts'
+import type { LibraryNavParams } from '../nav-line.ts'
 
 /** The card list's filters. */
 export type LibraryCardFilter = 'all' | 'photo' | 'chat' | 'quiz' | 'due'
@@ -72,10 +73,12 @@ export type LibraryActions = {
   pop: (draft: LibraryState) => void
   /** Back to today. */
   home: (draft: LibraryState) => void
-  /** Land on a project's page with today under it, so 「‹」 returns home (the reveal on a first write). */
-  openProject: (draft: LibraryState, projectId: string) => void
-  /** Land on a book's page over its project and today (a room's desk row opening the book a member bound). */
-  openBook: (draft: LibraryState, projectId: string, resourceId: string) => void
+  /**
+   * Land on one address (the tab's navigation params — a destination, a
+   * room's desk row): the screen it names, over the screens 「‹」 walks back
+   * through (today, the project, the book).
+   */
+  land: (draft: LibraryState, params: LibraryNavParams) => void
   refresh: (draft: LibraryState) => void
   /** Remember a station's 章节考 settings. */
   setQuizSettings: (draft: LibraryState, key: string, settings: LibraryQuizSettings) => void
@@ -86,6 +89,30 @@ export type LibraryActions = {
 }
 
 const TODAY: LibraryRoute = { view: 'today' }
+
+/**
+ * The route stack one address opens: the screen it names on top of the ones
+ * 「‹」 returns through.
+ * @param params - the address.
+ * @returns the stack, today at its bottom.
+ */
+export function stackOf(params: LibraryNavParams): LibraryRoute[] {
+  if (params.view === 'today') return [TODAY]
+  const project: LibraryRoute = { view: 'project', projectId: params.projectId }
+  if (params.view === 'project') return [TODAY, project]
+  if (params.view === 'cards') return [TODAY, project, { view: 'cards', projectId: params.projectId, filter: params.filter ?? 'all' }]
+  if (params.view === 'quiz') {
+    const quiz: LibraryRoute = { view: 'quiz', projectId: params.projectId, ...(params.resourceId === undefined ? {} : { resourceId: params.resourceId }), quizId: params.quizId }
+    return params.resourceId === undefined
+      ? [TODAY, project, quiz]
+      : [TODAY, project, { view: 'resource', projectId: params.projectId, resourceId: params.resourceId }, quiz]
+  }
+  const book: LibraryRoute = { view: 'resource', projectId: params.projectId, resourceId: params.resourceId }
+  if (params.view === 'book') return [TODAY, project, book]
+  const at = { projectId: params.projectId, resourceId: params.resourceId, nodeId: params.nodeId }
+  if (params.view === 'lesson') return [TODAY, project, book, { view: 'lesson', ...at }]
+  return [TODAY, project, book, { view: 'node', ...at, tab: params.tab ?? 'guide' }]
+}
 
 /**
  * Create the library pane's store handle.
@@ -105,12 +132,8 @@ export function createLibraryStore(): EngineStoreHandle<LibraryState, LibraryAct
         d.stack = [TODAY]
         d.rev += 1
       },
-      openProject: (d, projectId) => {
-        d.stack = [TODAY, { view: 'project', projectId }]
-        d.rev += 1
-      },
-      openBook: (d, projectId, resourceId) => {
-        d.stack = [TODAY, { view: 'project', projectId }, { view: 'resource', projectId, resourceId }]
+      land: (d, params) => {
+        d.stack = stackOf(params)
         d.rev += 1
       },
       refresh: (d) => { d.rev += 1 },

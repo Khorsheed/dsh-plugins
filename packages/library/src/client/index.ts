@@ -27,12 +27,12 @@ import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/c
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import libraryRemote from '@khorsheed/dsh-library/remote'
 import type { LibraryPaneInjected } from './contract.ts'
-import type { LibraryBinding } from '../types.ts'
+import type { LibraryNavParams } from '../nav-line.ts'
 import { LIBRARY_KIND, LIBRARY_TAB_ID, libraryDefinition } from './definition.tsx'
 import { LibraryPane } from './LibraryPane.tsx'
 import { LibraryBindChip, type LibraryBindInjected } from './bind/BindChip.tsx'
 import { createLibraryStore } from './store.ts'
-import { RevealedProject } from './reveal.ts'
+import { followerHostOf, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { en, NS, zh } from './locales.ts'
 import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, setDeskRowSeated } from './desk/desk-row.ts'
 import { DeskOpenRow, type DeskOpenRowFace } from './desk/DeskOpenRow.tsx'
@@ -124,8 +124,31 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
   }
 
-  /** The project the next reveal lands on (one per page; the pane takes it). */
-  const revealed = new RevealedProject()
+  /**
+   * Open the library tab at one address (proposal
+   * 2026-10-30-agent-sidebar-navigation): the tab kind with its navigation
+   * params, which the pane applies once per revision. Every way in from
+   * outside — a destination, a room's desk row — lands here.
+   */
+  const go = (params: LibraryNavParams): void => {
+    try {
+      (ctx.get('sidebarRight') as { openTab?: (kind: string, options?: { params?: unknown }) => void } | undefined)
+        ?.openTab?.(LIBRARY_KIND, { params })
+    } catch (error) {
+      // No on-screen sidebar surface, or the tab is not offered here.
+      ctx.logger.warn('library: openTab failed (tab type not registered?)', error)
+    }
+  }
+
+  // The follower: a library tool's answer names where it wrote; watched
+  // live, the tab goes there, otherwise the conversation's card waits.
+  const followerHost = followerHostOf(name => (ctx.get.bind(ctx) as (key: string) => unknown)(name))
+  if (followerHost !== undefined) {
+    ctx.effect(() => startNavFollower(followerHost, {
+      kinds: [LIBRARY_KIND],
+      open: destination => { go(destination.params as unknown as LibraryNavParams) },
+    }), 'library: destination follower')
+  }
 
   /** The injected business face, identical for whichever session mounts it. */
   const face = (sessionId: SessionId): LibraryPaneInjected => ({
@@ -159,7 +182,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     latestActivity: () => remote.latestActivity(),
     boundTarget: () => remote.boundTarget(sessionId),
     bindTarget: binding => remote.bindTarget(sessionId, { binding }),
-    revealed,
     sendMessage: text => {
       const input = inputFor(sessionId)
       if (input?.submit === undefined) return false
@@ -215,50 +237,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return () => { unsubscribe(); toggle.setReady(false) }
   }, 'library: tab type visibility')
 
-  // Reveal the library beside the conversation that just started using it: a
-  // library tool from the on-screen session wrote (a project created, a book
-  // shelved, a path drafted) → open the 图书馆 tab on the session's bound
-  // project (the write bound it), once per session per page load, so closing
-  // it again sticks. The first read is the baseline (writes
-  // from before this page loaded never open anything). Degrades to nothing
-  // without the sidebar surface or the host half.
-  ctx.effect(() => {
-    const revealedSessions = new Set<string>()
-    let baseline: string | undefined
-    let primed = false
-    const poll = (): void => {
-      if (remote === undefined || document.visibilityState !== 'visible') return
-      void remote.latestActivity().then((result: RemoteResult<{ at?: string; session?: { id: string; at: string } }>) => {
-        if (!result.ok) return
-        const write = result.value.session
-        if (!primed) {
-          primed = true
-          baseline = write?.at
-          return
-        }
-        if (write === undefined || (baseline !== undefined && write.at <= baseline)) return
-        baseline = write.at
-        const main = mainSessionId(ctx.sessions.list.getSnapshot())
-        if (main === undefined || String(main) !== write.id || revealedSessions.has(write.id) || !tabVisibility.show(main)) return
-        revealedSessions.add(write.id)
-        const open = (): void => {
-          try {
-            (ctx.get('sidebarRight') as { openTab?: (kind: string) => void } | undefined)?.openTab?.(LIBRARY_KIND)
-          } catch {
-            // No on-screen sidebar surface: nothing to reveal.
-          }
-        }
-        // Land on the project the write bound; without a binding the tab opens on today.
-        void remote.boundTarget(main).then((bound: RemoteResult<LibraryBinding | null>) => {
-          if (bound.ok && bound.value !== null) revealed.reveal(bound.value.projectId)
-        }, () => {}).finally(open)
-      }, () => {})
-    }
-    poll()
-    const timer = setInterval(poll, 5000)
-    return () => { clearInterval(timer) }
-  }, 'library: reveal on first write')
-
   // Stage two: the tab body, under this package's id in the keyed pane seat.
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
@@ -302,12 +280,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // just has no row.
   const deskFace: DeskOpenRowFace = {
     openBook: (projectId, resourceId) => {
-      revealed.reveal(projectId, resourceId)
-      try {
-        (ctx.get('sidebarRight') as { openTab?: (kind: string) => void } | undefined)?.openTab?.(LIBRARY_KIND)
-      } catch {
-        // No on-screen sidebar surface (or the tab is not offered here): the reveal waits for the next mount.
-      }
+      go(resourceId === undefined ? { view: 'project', projectId } : { view: 'book', projectId, resourceId })
     },
   }
   ctx.effect(() => headerSlots.inject('conversation.chat.node', () => {
