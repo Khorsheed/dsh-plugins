@@ -226,52 +226,69 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // The watcher follows the main-view session; every write it makes rides
   // the same insert seam as 引用到当前会话, so it only runs while the codec
   // is mounted, and a re-entrant notification from its own insert is ignored.
+  // It rides a deferred inject arm on `sessions` — this plugin does not
+  // inject it, so an apply-time probe can run before the service exists —
+  // and retries briefly while a fresh session's input is not wired yet.
   const chipLabel = ctx.locale.bind(NS)
-  let watched: { readonly id: SessionId; readonly stop: () => void } | undefined
-  const watchCurrent = (): void => {
-    const sessions = ctx.get('sessions')
-    const current = sessions === undefined ? undefined : mainSessionId(sessions.list.getSnapshot())
-    if (watched?.id === current) return
-    watched?.stop()
-    watched = undefined
-    if (current === undefined) return
-    const scope = sessions?.scope(current)
-    const input = scope?.get('conversation')?.input.for(scope)
-    if (scope === undefined || input === undefined) return
-    let previous = input.state.getSnapshot().draft
-    let restoring = false
-    const stop = input.state.subscribe(() => {
-      if (restoring) return
-      const snapshot = input.state.getSnapshot() as QuoteInputSnapshot
-      const blocks = codecMounted ? arrivedBlocks(previous, snapshot.draft, snapshot.occurrences) : []
-      previous = snapshot.draft
-      if (blocks.length === 0) return
-      // Out of the store's own notification: the insert publishes again.
-      queueMicrotask(() => {
-        restoring = true
-        try {
-          restoreQuoteChips(scope as unknown as QuoteBailScope, () => input.state.getSnapshot() as QuoteInputSnapshot, blocks,
-            label => chipLabel('chip.label', { label }))
-        } catch (error) {
-          ctx.logger.error(error)
-        } finally {
-          restoring = false
-          previous = input.state.getSnapshot().draft
-        }
-      })
-    })
-    watched = { id: current, stop }
-  }
-  const sessionsForWatch = ctx.get('sessions')
-  if (sessionsForWatch !== undefined) {
-    const stopList = sessionsForWatch.list.subscribe(watchCurrent)
-    watchCurrent()
-    disposers.push(async () => {
-      stopList()
+  ctx.inject(['sessions'], (lctx) => {
+    const sessions = lctx.get('sessions')
+    if (sessions === undefined) return
+    let watched: { readonly id: SessionId; readonly stop: () => void } | undefined
+    let retry: ReturnType<typeof setTimeout> | undefined
+    let attempts = 0
+    const watchCurrent = (): void => {
+      const current = mainSessionId(sessions.list.getSnapshot())
+      if (watched !== undefined && watched.id === current) return
       watched?.stop()
       watched = undefined
-    })
-  }
+      if (retry !== undefined) clearTimeout(retry)
+      retry = undefined
+      if (current === undefined) return
+      const scope = sessions.scope(current)
+      const input = scope?.get('conversation')?.input.for(scope)
+      if (scope === undefined || input === undefined) {
+        if (attempts < 20) {
+          attempts += 1
+          retry = setTimeout(watchCurrent, 250)
+        }
+        return
+      }
+      attempts = 0
+      let previous = input.state.getSnapshot().draft
+      let restoring = false
+      const stop = input.state.subscribe(() => {
+        if (restoring) return
+        const snapshot = input.state.getSnapshot() as QuoteInputSnapshot
+        const blocks = codecMounted ? arrivedBlocks(previous, snapshot.draft, snapshot.occurrences) : []
+        previous = snapshot.draft
+        if (blocks.length === 0) return
+        // Out of the store's own notification: the insert publishes again.
+        queueMicrotask(() => {
+          restoring = true
+          try {
+            restoreQuoteChips(scope as unknown as QuoteBailScope, () => input.state.getSnapshot() as QuoteInputSnapshot, blocks,
+              label => chipLabel('chip.label', { label }))
+          } catch (error) {
+            ctx.logger.error(error)
+          } finally {
+            restoring = false
+            previous = input.state.getSnapshot().draft
+          }
+        })
+      })
+      watched = { id: current, stop }
+    }
+    lctx.effect(() => {
+      const stopList = sessions.list.subscribe(() => { attempts = 0; watchCurrent() })
+      watchCurrent()
+      return () => {
+        stopList()
+        if (retry !== undefined) clearTimeout(retry)
+        watched?.stop()
+        watched = undefined
+      }
+    }, 'quote: draft chip restore')
+  })
 
   const face = (): QuoteMenuInjected => ({
     selection: createSelectionSource(window),
