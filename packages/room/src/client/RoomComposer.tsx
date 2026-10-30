@@ -291,14 +291,16 @@ export function RoomComposer({
 
   // The coordinator switch: any other member may take the role, but not
   // while work is in flight — the host refuses a handover while the
-  // coordinator runs or anything is queued (coordinator-busy), so the
-  // trigger says so up front instead of failing on pick.
+  // coordinator runs or anything is queued (coordinator-busy). The menu
+  // still opens (a dead trigger reads as a bug): it says why and greys the
+  // other members out, instead of failing on pick.
   const switchable = setCoordinator !== undefined && (state?.members.length ?? 0) > 1
   const busyMembers = new Set((state?.runs ?? []).filter(run => run.state === 'running').map(run => run.member))
   const handoffBlocked = running || busyMembers.size > 0
     || (state?.deliveries ?? []).some(row => row.status === 'queued' || row.status === 'running' || row.status === 'uncertain')
   const coordinatorItems: readonly MenuEntry[] = [
     { type: 'label', id: 'coordinator-switch', text: t('coordinator.switchTitle') },
+    ...handoffBlocked ? [{ type: 'label' as const, id: 'coordinator-busy', text: t('coordinator.switchBusy') }] : [],
     ...(state?.members ?? []).flatMap((member): MenuEntry[] => member.id === undefined ? [] : [{
       id: member.id,
       label: (
@@ -308,7 +310,7 @@ export function RoomComposer({
         </span>
       ),
       icon: <span className={css.coordinatorOptionDot} style={{ '--member-color': memberColor(member.name) } as CSSProperties} aria-hidden />,
-      disabled: busyMembers.has(member.name),
+      disabled: handoffBlocked || busyMembers.has(member.name),
     }]),
   ]
 
@@ -611,8 +613,7 @@ export function RoomComposer({
               type="button"
               className={css.coordinator}
               style={{ '--member-color': memberColor(coordinator?.name ?? 'dsh') } as CSSProperties}
-              disabled={!switchable || handoffBlocked}
-              title={switchable && handoffBlocked ? t('coordinator.switchBusy') : undefined}
+              disabled={!switchable}
               aria-haspopup="menu"
               aria-expanded={coordinatorMenu}
               onClick={() => { setCoordinatorMenu(open => !open) }}
