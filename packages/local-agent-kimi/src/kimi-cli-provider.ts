@@ -459,7 +459,7 @@ export class KimiCliProvider implements SubagentProvider {
   /** Resume round: continue the recorded kimi session inside the existing child session. */
   private async startKimiResume(
     request: ResolvedSubagentStartRequest,
-    intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
+    intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string; readonly operation?: 'compact' },
     cwd: string,
     homeDir: string,
     exec: DelegationExecTarget | undefined,
@@ -504,6 +504,7 @@ export class KimiCliProvider implements SubagentProvider {
             ...configuration === undefined ? {} : { configuration: configuration.resolved },
             parentSessionId: request.parent.session.id,
             resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
+            ...intent.operation === undefined ? {} : { operation: intent.operation },
           })
           void liveRun.result.then(
             () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
@@ -515,6 +516,9 @@ export class KimiCliProvider implements SubagentProvider {
           this.ctx.logger.warn(`subagent-kimi: live driver unavailable, using the exec one-shot: ${error.message}`)
         }
       }
+      // Compaction rides the resident ACP session only: a one-shot `kimi -p`
+      // cannot hold the member's queue through kimi's background compaction.
+      if (intent.operation === 'compact') throw new Error('subagent-kimi: compaction needs the live driver (the member runs on the exec path)')
       // Member channel: register the resume round (same child session, fresh
       // per-run token) and declare the bridge MCP before the spawn.
       // See the fresh path: no member channel across the container boundary.

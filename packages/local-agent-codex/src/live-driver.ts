@@ -155,6 +155,8 @@ export interface CodexLiveRoundSpec {
    */
   readonly startModel?: string | undefined
   readonly configuration?: LocalAgentResolvedConfiguration
+  /** `compact`: compact the thread instead of starting a turn (see {@link CodexLiveDriver.compactLocked}). */
+  readonly operation?: 'compact' | undefined
 }
 
 type JsonObject = Record<string, unknown>
@@ -171,6 +173,9 @@ function thrown(value: unknown): Error {
  * the process does not exit.
  */
 export const CODEX_LIVE_AUTH_FAILURE = /401 unauthorized|unauthorized|authentication failed|not logged in|access token/i
+
+/** A compaction round waits for its turn to complete at most this long. */
+const COMPACTION_TIMEOUT_MS = 10 * 60_000
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -478,6 +483,9 @@ class CodexLiveRuntime {
   readonly retiredTurnIds = new Set<string>()
   /** The active round's notification sink; installed per round, cleared at settle. */
   onWireNotification: ((method: string, params: JsonObject) => void) | undefined
+  /** The thread's context occupancy and window, as its last request reported them. */
+  contextTokens: number | undefined
+  contextWindow: number | undefined
   onDead: (() => void) | undefined
   private stderrTail = ''
   private readonly stderrDecoder = new StringDecoder('utf8')
@@ -940,12 +948,94 @@ export class CodexLiveDriver {
     }
     const key = String(spec.childSession.id)
     const previous = this.roundChains.get(key) ?? Promise.resolve()
-    const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
+    const round = previous.catch(() => {}).then(() => spec.operation === 'compact' ? this.compactLocked(request, spec) : this.startRoundLocked(request, spec))
     this.roundChains.set(key, round.then(
       handle => handle.result.catch(() => ({})),
       () => ({}),
     ))
     return round
+  }
+
+  /**
+   * A compaction round: `thread/compact/start` runs as a turn of its own (a
+   * `contextCompaction` item), and the round holds the member's queue until
+   * that turn completes — codex refuses a `turn/start` meanwhile
+   * (`ActiveTurnNotSteerable { turn_kind: Compact }`). Writes no turn: one
+   * `local-agent/compaction` event (codex gives no summary text).
+   */
+  private async compactLocked(request: SubagentStartRequest, spec: CodexLiveRoundSpec): Promise<SubagentRun> {
+    if (request.signal.aborted) throw new Error('subagent-codex: request was aborted before the compaction started')
+    if (this.draining) throw new LiveChannelUnavailableError('the live driver is draining (a settings change retired this generation)')
+    if (this.disposed) throw new Error('subagent-codex: the live driver is disposed')
+    const childSession = spec.childSession
+    const key = String(childSession.id)
+    const rt = await this.ensureRuntime(spec, request.signal)
+    try {
+      await this.ensureThread(rt, spec)
+    } catch (error) {
+      await this.reclaim(key)
+      throw thrown(error)
+    }
+    const startedAt = Date.now()
+    const boundarySeq = childSession.snapshotEvents().at(-1)?.seq ?? -1
+    const beforeTokens = rt.contextTokens
+    let compactTurn: string | undefined
+    let usage: TokenUsage | undefined
+    let settle!: (outcome: { ok: true } | { ok: false; error: string }) => void
+    const finished = new Promise<{ ok: true } | { ok: false; error: string }>((resolve) => { settle = resolve })
+    rt.onWireNotification = (method, params) => {
+      const turnOf = (params['turn'] as JsonObject | undefined)?.['id'] ?? params['turnId']
+      if (method === 'turn/started' && compactTurn === undefined && typeof turnOf === 'string') compactTurn = turnOf
+      if (method === 'thread/tokenUsage/updated' && turnOf === compactTurn) {
+        const reported = params['tokenUsage'] as JsonObject | undefined
+        const last = reported?.['last'] as JsonObject | undefined
+        if (last !== undefined) usage = usageFromAppServer(last)
+        const window = Number(reported?.['modelContextWindow'])
+        if (Number.isFinite(window) && window > 0) rt.contextWindow = window
+      }
+      if (method === 'turn/completed' && turnOf === compactTurn) {
+        const turn = params['turn'] as JsonObject | undefined
+        const error = (turn?.['error'] as JsonObject | null | undefined)?.['message']
+        settle(turn?.['status'] === 'completed' ? { ok: true } : { ok: false, error: typeof error === 'string' ? error : `compaction ${String(turn?.['status'])}` })
+      }
+    }
+    const result: Promise<SubagentResult> = (async () => {
+      let outcome: { ok: true } | { ok: false; error: string }
+      try {
+        await rt.peer.request('thread/compact/start', { threadId: rt.threadId })
+        outcome = await Promise.race([finished, delay(COMPACTION_TIMEOUT_MS).then(() => ({ ok: false as const, error: 'compaction did not finish in time' }))])
+      } catch (error) {
+        outcome = { ok: false, error: thrown(error).message }
+      } finally {
+        rt.onWireNotification = undefined
+        if (compactTurn !== undefined) rt.retiredTurnIds.add(compactTurn)
+      }
+      childSession.append('local-agent/compaction', {
+        source: 'manual', outcome: outcome.ok ? 'completed' : 'failed', provider: 'codex-local',
+        ...rt.boundModel === undefined ? {} : { model: rt.boundModel },
+        ...beforeTokens === undefined ? {} : { beforeTokens },
+        ...rt.contextWindow === undefined ? {} : { contextWindow: rt.contextWindow },
+        ...usage === undefined ? {} : { usage },
+        ...outcome.ok ? {} : { error: outcome.error },
+        startedAt, endedAt: Date.now(), boundarySeq,
+      })
+      await persistChildSession(this.ctx, childSession).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-codex: compaction persistence failed: ${thrown(error).message}`)
+      })
+      this.armIdleTimer(key)
+      return outcome.ok
+        ? { stopReason: 'completed', output: [] }
+        : { stopReason: 'error', output: [], diagnostic: outcome.error }
+    })()
+    return subprocessRunHandle({
+      id: SessionId(randomUUID()),
+      result,
+      signal: request.signal,
+      // Codex runs the compaction to its end once accepted; the round settles then.
+      onAbort: () => {},
+      requestCancel: () => {},
+      teardown: async () => {},
+    })
   }
 
   /** The serialized round body. */
@@ -1338,6 +1428,12 @@ export class CodexLiveDriver {
         return
       }
       if (method === 'thread/tokenUsage/updated') {
+        // The thread's occupancy: what the last request sent, against the window.
+        const reported = params['tokenUsage'] as JsonObject | undefined
+        const sent = Number((reported?.['last'] as JsonObject | undefined)?.['inputTokens'])
+        if (runtime !== undefined && Number.isFinite(sent)) runtime.contextTokens = sent
+        const window = Number(reported?.['modelContextWindow'])
+        if (runtime !== undefined && Number.isFinite(window) && window > 0) runtime.contextWindow = window
         const tokenUsage = params['tokenUsage'] as JsonObject | undefined
         const last = tokenUsage?.['last'] as JsonObject | undefined
         const total = tokenUsage?.['total'] as JsonObject | undefined

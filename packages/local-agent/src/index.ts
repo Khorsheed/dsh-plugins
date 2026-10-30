@@ -42,6 +42,7 @@ const streamCatalogs = await Promise.all([
 ])
 for (const catalog of streamCatalogs) {
   (catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
+  ;(catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/compaction')
 }
 
 // The host's released-log check, the exact relationship rules every stored
@@ -2408,6 +2409,7 @@ export class LocalAgentRegistry {
       // this one IS anchored: the record carries the scope and the provider
       // refuses a round that names another one (or none).
       ...options?.scope === undefined ? {} : { scope: options.scope },
+      ...options?.operation === undefined ? {} : { operation: options.operation },
     }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()
@@ -2431,6 +2433,22 @@ export class LocalAgentRegistry {
     }
     this.trackRun(childSessionId, controller, run, options?.onProgress)
     return run
+  }
+
+  /**
+   * Compact a member's context: a resume round whose operation is
+   * `compact`. It queues behind the member's running round like any round,
+   * and input sent meanwhile waits for it (Kimi silently drops a prompt sent
+   * while it compacts; Codex refuses one). The provider records one
+   * `local-agent/compaction` event and writes no turn.
+   * @param parentSessionId - the delegating parent session.
+   * @param provider - the member's delegation provider.
+   * @param childSessionId - the member's dsh child session.
+   * @param options - the resume options (no prompt, no operation).
+   * @returns the compaction run.
+   */
+  async compact(parentSessionId: string, provider: string, childSessionId: string, options?: Omit<DelegationCallOptions, 'operation'>): Promise<SubagentRun> {
+    return this.resume(parentSessionId, provider, childSessionId, [{ type: 'text', text: '/compact' }], { ...options, operation: 'compact' })
   }
 
   /**
@@ -3432,6 +3450,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       try {
         const catalog = await loader.import(specifier)
         ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
+        ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/compaction')
       } catch { /* Optional source export or loader capability; root registration remains. */ }
     }
   }

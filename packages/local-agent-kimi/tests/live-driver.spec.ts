@@ -550,6 +550,45 @@ describe('kimi live driver rounds', () => {
     liveStreams.dispose()
   }, 15_000)
 
+  it('a compaction round sends /compact, holds until kimi\'s background compaction ends, and records one event', async () => {
+    const m = mount({ config: { snapshotMinIntervalMs: 0 } })
+    const child = Session.create(SessionId('child-compact-kimi'))
+    const dir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    const row = (value: object): string => JSON.stringify(value)
+    const before = [
+      row({ type: 'turn.prompt', input: [{ type: 'text', text: '记住 4271' }] }),
+      row({ type: 'token_counting.turn_recorded', tokens: 19837 }),
+    ]
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'wire.jsonl'), before.join('\n') + '\n')
+    const prompts: string[] = []
+    m.queueChild(new FakeAcpServer({ turn: (params) => {
+      prompts.push(JSON.stringify(params))
+      // kimi answers /compact at once and compacts in the background.
+      const begun = [...before, row({ type: 'full_compaction.begin', source: 'manual' }),
+        row({ type: 'usage.record', usage: { inputOther: 1103, output: 154, inputCacheRead: 19712 }, usageScope: 'session' }),
+        row({ type: 'context.apply_compaction', summary: '用户要求记住数字 4271。' }),
+        row({ type: 'token_counting.rebased', tokens: 22085 })]
+      writeFileSync(join(dir, 'wire.jsonl'), begun.join('\n') + '\n')
+      setTimeout(() => { writeFileSync(join(dir, 'wire.jsonl'), [...begun, row({ type: 'full_compaction.complete' })].join('\n') + '\n') }, 700)
+      return { chunks: ['Context compaction started — it runs in the background.'] }
+    } }))
+    const run = await m.driver.startRound(request() as never, { ...roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }), operation: 'compact' })
+    let settled = false
+    void run.result.then(() => { settled = true })
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect(settled).toBe(false)
+    expect((await run.result).stopReason).toBe('completed')
+    expect(prompts.join('')).toContain('/compact')
+    const events = child.snapshotEvents()
+    expect(events.filter(event => event.type === 'turn/start')).toHaveLength(0)
+    expect(events.filter(event => event.type === 'local-agent/compaction').map(event => event.data)).toEqual([expect.objectContaining({
+      source: 'manual', outcome: 'completed', provider: 'kimi-cli', summary: '用户要求记住数字 4271。',
+      beforeTokens: 19837, afterTokens: 22085, usage: { inputTokens: 1103, outputTokens: 154, cacheReadTokens: 19712 },
+    })])
+    await m.driver.disposeAll()
+  }, 15_000)
+
   it('publishes transient output while keeping only authoritative assistant messages in history', async () => {
     const m = mount({ config: { snapshotMinIntervalMs: 0 } })
     const liveStreams = new LocalAgentStreams()

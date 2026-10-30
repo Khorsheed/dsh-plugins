@@ -75,7 +75,7 @@ export interface KimiSessionTranscript {
 }
 
 /** The wire event log path for a session directory. */
-function wirePath(sessionDir: string): string {
+export function wirePath(sessionDir: string): string {
   return join(sessionDir, 'agents', 'main', 'wire.jsonl')
 }
 
@@ -256,6 +256,11 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       continue
     }
     if (event.type === 'usage.record') {
+      // A compaction call's own spend (`usageScope: 'session'`, written
+      // between full_compaction.begin and .complete, untagged by any step):
+      // never a round's. The compaction event carries it; counted here it
+      // would ride the next round's reply as unclaimed usage.
+      if (event.usageScope === 'session') continue
       // The record's own `model` field is the observed model identifier
       // (verified against kimi 0.39.x wires); the `llm.request` fallback
       // below covers wires whose usage records omit it. Last one seen wins:

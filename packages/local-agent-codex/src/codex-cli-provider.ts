@@ -540,7 +540,7 @@ export class CodexCliProvider implements SubagentProvider {
   /** Resume round: continue the recorded thread inside the existing child session. */
   private async startCodexResume(
     request: ResolvedSubagentStartRequest,
-    intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
+    intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string; readonly operation?: 'compact' },
     cwd: string,
     homeDir: string,
     exec: DelegationExecTarget | undefined,
@@ -594,6 +594,7 @@ export class CodexCliProvider implements SubagentProvider {
             resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
             ...startModel === undefined ? {} : { startModel },
             ...configuration === undefined ? {} : { configuration: configuration.resolved },
+            ...intent.operation === undefined ? {} : { operation: intent.operation },
           })
           void liveRun.result.then(
             () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
@@ -605,6 +606,8 @@ export class CodexCliProvider implements SubagentProvider {
           this.ctx.logger.warn(`subagent-codex: live driver unavailable, using the exec one-shot: ${error.message}`)
         }
       }
+      // Compaction rides the app-server thread only (thread/compact/start).
+      if (intent.operation === 'compact') throw new Error('subagent-codex: compaction needs the live driver (the member runs on the exec path)')
       // Member channel: register the resume round (same child session, fresh
       // per-run token) before the spawn.
       // See the fresh path: no member channel across the container boundary.
