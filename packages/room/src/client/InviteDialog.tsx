@@ -29,9 +29,9 @@ import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
  * empty = inherit the room session's cwd, shown as the placeholder), and
  * edit mode diffs name/cwd/instructions/model.
  */
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
 import type {
-  MembersViewProps, RoomInviteOutcome, RoomInviteValues, RoomMutationOutcome,
+  MembersViewProps, RoomInviteOutcome, RoomInviteValues, RoomModelDirectory, RoomModelSelection, RoomMutationOutcome,
 } from './slots.ts'
 import type { RoomMember, RoomPresetInfo, RoomProviderInfo } from '../types.ts'
 import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
@@ -64,6 +64,10 @@ export interface InviteDialogSubmit {
   readonly modelBaseline: string
   /** The effort value the edit field opened with (the journaled intent), the edit-mode diff baseline. */
   readonly effortBaseline: string
+  /** Edit mode: model/effort came from the member-control fields — save them through it. */
+  readonly memberPicker?: true
+  /** Edit mode, the room's own agent: the session model it switches to (only when changed). */
+  readonly mainSelection?: RoomModelSelection
 }
 
 /**
@@ -123,6 +127,17 @@ export interface InviteDialogProps {
    * intent as the baseline.
    */
   readonly memberModel?: ((childSessionId: string) => Promise<LocalAgentModelInfo | null | undefined>) | undefined
+  /**
+   * Edit mode, a started CLI member: the invite picker's two selects over the
+   * member's own directory (local-agent's member-control form face). Absent
+   * (an older core), the live member-configuration control stays.
+   */
+  readonly renderMemberModelPicker?: LocalAgentUi['renderMemberModelPicker'] | undefined
+  readonly readMemberSelection?: LocalAgentUi['readMemberSelection'] | undefined
+  /** Edit mode, the room's own agent: the session's model directory (its model IS the session's). */
+  readonly mainModelDirectory?: RoomModelDirectory | undefined
+  /** Edit mode: the member is running a round (model and effort wait for its end). */
+  readonly memberRunning?: boolean | undefined
   readonly onSubmit: (values: InviteDialogSubmit) => Promise<RoomMutationOutcome | RoomInviteOutcome>
   readonly onClose: () => void
   readonly t: MembersViewProps['t']
@@ -136,8 +151,13 @@ function validName(name: string): boolean {
 /** The invite/edit modal card. */
 export function InviteDialog({
   mode, member, providers, presets, sessionPreset, localAgentAvailable, inheritedCwd, existingNames,
-  browseDirectory, modelSurface, renderHarnessModelPicker, memberModel, memberConfiguration, onSubmit, onClose, t,
+  browseDirectory, modelSurface, renderHarnessModelPicker, memberModel, memberConfiguration,
+  renderMemberModelPicker, readMemberSelection, mainModelDirectory, memberRunning = false, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
+  const isMain = mode === 'edit' && member?.kind === 'main-agent'
+  /** A started CLI member edited through the member-control form fields (saved on 保存). */
+  const pickerChild = mode === 'edit' && member?.kind === 'cli' && renderMemberModelPicker !== undefined && readMemberSelection !== undefined
+    ? member.childSessionId : undefined
   const [provider, setProvider] = useState('')
   const [name, setName] = useState(member?.name ?? '')
   const [role, setRole] = useState(member?.role ?? '')
@@ -154,7 +174,39 @@ export function InviteDialog({
   const [effort, setEffort] = useState(mode === 'edit' ? member?.effort ?? '' : '')
   // Read-only baseline: no broker read rewrites it (a live member's effort
   // belongs to the member-configuration card that replaces this field).
-  const [effortBaseline] = useState(mode === 'edit' ? member?.effort ?? '' : '')
+  const [effortBaseline, setEffortBaseline] = useState(mode === 'edit' ? member?.effort ?? '' : '')
+  // The member-control draft: the fields render once it is read (an empty
+  // value would make the picker pick its first entry). A round in flight
+  // makes a save wait for its end.
+  const [draftReady, setDraftReady] = useState(false)
+  const [roundBusy, setRoundBusy] = useState(false)
+  useEffect(() => {
+    if (pickerChild === undefined || readMemberSelection === undefined) return
+    let cancelled = false
+    void readMemberSelection(pickerChild).then((draft) => {
+      if (cancelled) return
+      if (draft !== undefined) {
+        setModel(draft.model); setModelBaseline(draft.model)
+        setEffort(draft.effort); setEffortBaseline(draft.effort)
+        setRoundBusy(draft.busy)
+      }
+      setDraftReady(true)
+    })
+    return () => { cancelled = true }
+  }, [pickerChild, readMemberSelection])
+  // The room's own agent: its model is the session's (opened on the current selection).
+  const [mainSelection, setMainSelection] = useState<RoomModelSelection | null | undefined>(undefined)
+  const [mainBaseline, setMainBaseline] = useState<RoomModelSelection | null>(null)
+  const mainSnapshot = useSyncExternalStore(
+    mainModelDirectory?.store.subscribe ?? noSubscribe,
+    () => mainModelDirectory?.store.getSnapshot(),
+  )
+  useEffect(() => { if (isMain) void mainModelDirectory?.load() }, [isMain, mainModelDirectory])
+  useEffect(() => {
+    if (!isMain || mainSelection !== undefined || mainSnapshot === undefined || mainSnapshot.status === 'loading') return
+    setMainSelection(mainSnapshot.current)
+    setMainBaseline(mainSnapshot.current)
+  }, [isMain, mainSelection, mainSnapshot])
   /** The model row's surface: menu vocabulary + the default an unset field displays. */
   const [surface, setSurface] = useState<LocalAgentModelInfo | undefined>(undefined)
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
@@ -380,9 +432,12 @@ export function InviteDialog({
     setBusy(true)
     setError(null)
     try {
+      const mainChanged = isMain && mainSelection != null && !sameSelection(mainSelection, mainBaseline)
       const outcome = await onSubmit({
         provider: chosen, preset: cliPreset, name, role: role.trim(), instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
         model: model.trim(), modelBaseline, effort: effort.trim(), effortBaseline,
+        ...pickerChild !== undefined && draftReady ? { memberPicker: true as const } : {},
+        ...mainChanged && mainSelection != null ? { mainSelection } : {},
       })
       if (!outcome.ok) {
         setError(outcome.message)
@@ -470,17 +525,28 @@ export function InviteDialog({
                 t={t}
               />
               {/* What the invitation fixed: shown, not offered. */}
-              <dl className={css.locked}>
-                <div><dt>{t('invite.provider')}</dt><dd>{member?.kind === 'main-agent' ? 'DSH' : member?.provider ?? '—'}</dd></div>
+              {isMain ? <dl className={css.locked}><span className={css.lockedNote}>{t('invite.mainLocked')}</span></dl> : <dl className={css.locked}>
+                <div><dt>{t('invite.provider')}</dt><dd>{member?.provider ?? '—'}</dd></div>
                 <div><dt>{t('invite.cliPreset')}</dt><dd>{member?.preset === undefined
                   ? t('invite.cliPresetNone')
-                  : presets?.find(entry => entry.id === member.preset)?.name ?? member.preset}</dd></div>
+                  : presets?.find(entry => entry.id === member?.preset)?.name ?? member?.preset}</dd></div>
                 <span className={css.lockedNote}>{t('invite.lockedNote')}</span>
-              </dl>
+              </dl>}
             </div>}
-            {mode === 'edit' && memberConfiguration !== undefined
-              ? <div className={css.field}><span className={css.label}>{t('invite.modelLabel')}</span><div className={css.memberConfiguration}>{memberConfiguration}</div></div>
-              : memberConfiguration ?? (mode === 'invite' && chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, effort: { value: effort, onChange: setEffort }, disabled: busy, fields: { row: css.fieldPair, field: css.field, label: css.label, select: css.select } }) : undefined) ?? modelField}
+            {isMain
+              ? (mainModelDirectory !== undefined && mainSnapshot !== undefined && (
+                <MainModelFields snapshot={mainSnapshot} value={mainSelection ?? null} onChange={setMainSelection} disabled={busy}
+                  classes={{ row: css.fieldPair, field: css.field, label: css.label, select: css.select }} t={t} />
+              ))
+              : pickerChild !== undefined
+                ? (draftReady ? renderMemberModelPicker?.(pickerChild, { value: model, onChange: setModel, effort: { value: effort, onChange: setEffort }, disabled: busy, fields: { row: css.fieldPair, field: css.field, label: css.label, select: css.select } }) : null)
+                : mode === 'edit' && memberConfiguration !== undefined
+                  ? <div className={css.field}><span className={css.label}>{t('invite.modelLabel')}</span><div className={css.memberConfiguration}>{memberConfiguration}</div></div>
+                  : memberConfiguration ?? (mode === 'invite' && chosenHarness !== undefined && (modelSurface === undefined || surface !== undefined) ? renderHarnessModelPicker?.(chosenHarness, { value: model, onChange: setModel, effort: { value: effort, onChange: setEffort }, disabled: busy, fields: { row: css.fieldPair, field: css.field, label: css.label, select: css.select } }) : undefined) ?? modelField}
+            {isMain && mainModelDirectory !== undefined && <span className={css.hint}>{t('invite.mainModelHint')}</span>}
+            {mode === 'edit' && (memberRunning || roundBusy) && (pickerChild !== undefined || isMain) && (
+              <div className={css.pending} role="status">{t('invite.modelBusy', { member: member?.name ?? '' })}</div>
+            )}
             <label className={css.field}>
               <span className={css.label}>{t('invite.name')}</span>
               <span className={css.nameRow}>
@@ -548,7 +614,8 @@ export function InviteDialog({
                     {mode === 'edit' ? t('invite.instructionsHintEdit') : t('invite.instructionsHint')}
                   </span>
                 </label>
-                <label className={css.field}>
+                {/* The room's own agent works in the session's cwd: nothing to pick. */}
+                {!isMain && <label className={css.field}>
                   <span className={css.label}>{t('invite.cwd')}</span>
                   <span className={css.cwdRow}>
                     {/* Read-only display: a picked path only (manual typing went
@@ -581,7 +648,7 @@ export function InviteDialog({
                     )}
                   </span>
                   <span className={css.hint}>{t('invite.cwdHint')}</span>
-                </label>
+                </label>}
               </div>
             </details>
           </div>
@@ -612,6 +679,69 @@ export function InviteDialog({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+const noSubscribe = (): (() => void) => () => {}
+
+/** Same provider, model and effort. */
+function sameSelection(a: RoomModelSelection | null, b: RoomModelSelection | null): boolean {
+  return a?.provider === b?.provider && a?.model === b?.model && (a?.reasoningEffort ?? '') === (b?.reasoningEffort ?? '')
+}
+
+/**
+ * The room's own agent's model fields: the session directory's models (grouped
+ * by provider) and the picked model's effort levels, as two selects in the
+ * invite picker's form classes.
+ */
+function MainModelFields({ snapshot, value, onChange, disabled, classes, t }: {
+  readonly snapshot: NonNullable<ReturnType<RoomModelDirectory['store']['getSnapshot']>>
+  readonly value: RoomModelSelection | null
+  readonly onChange: (next: RoomModelSelection) => void
+  readonly disabled: boolean
+  readonly classes: { readonly row: string | undefined; readonly field: string | undefined; readonly label: string | undefined; readonly select: string | undefined }
+  readonly t: InviteDialogProps['t']
+}): ReactNode {
+  const key = (provider: string, model: string): string => `${provider}\u0000${model}`
+  const model = value === null ? undefined : snapshot.groups.find(group => group.id === value.provider)?.models.find(entry => entry.id === value.model)
+  const efforts = model?.reasoning?.efforts ?? []
+  return (
+    <div className={classes.row}>
+      <label className={classes.field}>
+        <span className={classes.label}>{t('invite.mainModel')}</span>
+        <select
+          className={classes.select}
+          disabled={disabled}
+          value={value === null ? '' : key(value.provider, value.model)}
+          onChange={(event) => {
+            const [provider = '', id = ''] = event.target.value.split('\u0000')
+            const next = snapshot.groups.find(group => group.id === provider)?.models.find(entry => entry.id === id)
+            const fallback = next?.reasoning?.defaultEffort ?? next?.reasoning?.efforts[0]?.id
+            const kept = value?.reasoningEffort !== undefined && next?.reasoning?.efforts.some(effort => effort.id === value.reasoningEffort) === true ? value.reasoningEffort : fallback
+            onChange({ provider, model: id, ...kept === undefined ? {} : { reasoningEffort: kept } })
+          }}
+        >
+          {value !== null && model === undefined && <option value={key(value.provider, value.model)}>{value.model}</option>}
+          {snapshot.groups.map(group => (
+            <optgroup key={group.id} label={group.name}>
+              {group.models.map(entry => <option key={entry.id} value={key(group.id, entry.id)}>{entry.name}</option>)}
+            </optgroup>
+          ))}
+        </select>
+      </label>
+      <label className={classes.field}>
+        <span className={classes.label}>{t('invite.mainEffort')}</span>
+        <select
+          className={classes.select}
+          disabled={disabled || efforts.length === 0 || value === null}
+          value={value?.reasoningEffort ?? ''}
+          onChange={(event) => { if (value !== null) onChange({ ...value, reasoningEffort: event.target.value }) }}
+        >
+          {efforts.length === 0 && <option value="">{t('invite.mainEffortNone')}</option>}
+          {efforts.map(effort => <option key={effort.id} value={effort.id}>{effort.name}</option>)}
+        </select>
+      </label>
     </div>
   )
 }

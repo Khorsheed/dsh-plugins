@@ -5,6 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
+import { coordinatorMember } from '../src/journal.ts'
 import type { LocalAgentFacade } from '../src/adapter.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
@@ -316,14 +317,20 @@ describe('RoomService Remote surface (real composition)', () => {
     const cleared = await service.getState({ sessionId })
     if (cleared.ok) expect(cleared.value.members[1]).not.toHaveProperty('cwd')
 
-    // Rename validation: uniqueness, the name grammar, and the main agent is
-    // the room itself — it cannot be renamed.
+    // Rename validation: uniqueness and the name grammar. The main agent
+    // renames too — its identity is its join seq, so it stays the room's own
+    // agent (and the coordinator) under the new name.
     expect(await service.updateMember({ sessionId, name: 'K酱', rename: 'bill' }))
       .toEqual({ ok: false, error: { code: 'duplicate-name' } })
     expect(await service.updateMember({ sessionId, name: 'K酱', rename: 'bad name' }))
       .toEqual({ ok: false, error: { code: 'invalid-name' } })
     expect(await service.updateMember({ sessionId, name: 'dsh', rename: 'boss' }))
-      .toEqual({ ok: false, error: { code: 'main-member' } })
+      .toEqual({ ok: true, value: { name: 'dsh' } })
+    const mainRenamed = await service.getState({ sessionId })
+    if (!mainRenamed.ok) throw new Error('room unavailable')
+    expect(mainRenamed.value.members[0]).toMatchObject({ name: 'boss', kind: 'main-agent' })
+    expect(mainRenamed.value.members.filter(member => member.kind === 'main-agent')).toHaveLength(1)
+    expect(coordinatorMember(mainRenamed.value)?.name).toBe('boss')
   })
 
   it('updateMember journals the intended model — set, trim, and null/blank clears', async () => {

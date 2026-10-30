@@ -556,3 +556,13 @@
 .memberConfiguration :global(summary):hover {
   border-color: var(--dsw-alias-border-l4, rgba(127, 127, 127, 0.4));
 }
+
+/* A running member's edit: model and effort wait for the round to end. */
+.pending {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  background: var(--dsw-alias-fill-warning-weak, rgba(192, 132, 25, 0.12));
+  color: var(--dsw-alias-label-warning, #a36b0c);
+}

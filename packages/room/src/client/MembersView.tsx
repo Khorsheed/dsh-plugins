@@ -48,7 +48,8 @@ function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirect
 /** The members tab. */
 export function MembersView({
   sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, unlinkSession, updateMember, invite, listProviders, browseDirectory,
-  modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator, t,
+  modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator,
+  renderMemberModelPicker, readMemberSelection, saveMemberSelection, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -126,6 +127,19 @@ export function MembersView({
       const configurationOwned = member.childSessionId !== undefined && renderMemberConfiguration !== undefined
       const modelChanged = model !== values.modelBaseline.trim() && !configurationOwned
       const effortChanged = effort !== values.effortBaseline.trim() && !configurationOwned
+      // A started member's model and effort go through its control (queued
+      // behind a running round); the room's own agent switches the session model.
+      let deferred = false
+      if (values.memberPicker === true && member.childSessionId !== undefined && saveMemberSelection !== undefined
+        && (model !== values.modelBaseline.trim() || effort !== values.effortBaseline.trim())) {
+        const saved = await saveMemberSelection(member.childSessionId, { model, effort })
+        if (!saved.ok) return { ok: false as const, message: saved.error }
+        deferred = saved.deferred
+      }
+      if (values.mainSelection !== undefined && modelDirectory !== undefined) {
+        const result = await modelDirectory.select(values.mainSelection).catch((error: unknown) => ({ ok: false, error }))
+        if (typeof result === 'object' && result !== null && 'ok' in result && result.ok === false) return { ok: false as const, message: t('invite.error.generic') }
+      }
       if (modelChanged && member.childSessionId !== undefined) {
         if (setMemberModel === undefined) return { ok: false as const, message: t('invite.error.generic') }
         // Compatibility entry also uses the core queue. No journaled model
@@ -149,7 +163,9 @@ export function MembersView({
         ...modelChanged && member.childSessionId === undefined ? { model: model === '' ? null : model } : {},
         ...effortChanged && member.childSessionId === undefined ? { effort: effort === '' ? null : effort } : {},
       }
-      return Object.keys(patch).length === 0 ? { ok: true as const } : updateMember(member.name, patch)
+      const outcome = Object.keys(patch).length === 0 ? { ok: true as const } : await updateMember(member.name, patch)
+      if (outcome.ok && deferred) flash(t('invite.savedDeferred', { member: name }))
+      return outcome
     }
     const outcome = await invite(inviteRequest(values))
     if (outcome.ok) {
@@ -202,6 +218,10 @@ export function MembersView({
       renderHarnessModelPicker={renderHarnessModelPicker}
       memberModel={memberModel}
       memberConfiguration={dialog.mode === 'edit' && dialog.member.childSessionId !== undefined ? renderMemberConfiguration?.(dialog.member.childSessionId) : undefined}
+      renderMemberModelPicker={renderMemberModelPicker}
+      readMemberSelection={readMemberSelection}
+      mainModelDirectory={modelDirectory}
+      memberRunning={dialog.mode === 'edit' && (state?.runs.some(run => run.member === dialog.member.name && run.state === 'running') ?? false)}
       onSubmit={submitDialog}
       onClose={() => { setDialog(null) }}
       t={t}

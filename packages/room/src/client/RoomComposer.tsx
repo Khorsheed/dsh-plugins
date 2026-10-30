@@ -70,7 +70,8 @@ import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
 import { RoomQueueStrip, type RoomQueueItem } from './RoomQueueStrip.tsx'
 import { RoomModelPicker } from './RoomModelPicker.tsx'
-import { IconChevronRightOutlineMedium, IconPaperclipOutlineMedium } from './icons.tsx'
+import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconPaperclipOutlineMedium } from './icons.tsx'
+import { Menu, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { RoomAttachments } from './RoomAttachments.tsx'
 import css from './RoomComposer.module.css'
 
@@ -184,8 +185,9 @@ export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
-  attachments: attachmentFace,
+  attachments: attachmentFace, setCoordinator,
 }: RoomComposerProps): ReactNode {
+  const [coordinatorMenu, setCoordinatorMenu] = useState(false)
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const tag = useSyncExternalStore(taskTags?.subscribe ?? NO_TAGS, () => taskTags?.get(sessionId))
   // The draft is the session's official input machine (the module header):
@@ -286,6 +288,29 @@ export function RoomComposer({
       .filter(row => row.placement === 'queued')
       .map(row => ({ id: String(row.id), preview: row.preview }))
     : nextTurn.map(row => ({ id: String(row.id), preview: previewOf(row.content) }))
+
+  // The coordinator switch: any other member may take the role, but not
+  // while work is in flight — the host refuses a handover while the
+  // coordinator runs or anything is queued (coordinator-busy), so the
+  // trigger says so up front instead of failing on pick.
+  const switchable = setCoordinator !== undefined && (state?.members.length ?? 0) > 1
+  const busyMembers = new Set((state?.runs ?? []).filter(run => run.state === 'running').map(run => run.member))
+  const handoffBlocked = running || busyMembers.size > 0
+    || (state?.deliveries ?? []).some(row => row.status === 'queued' || row.status === 'running' || row.status === 'uncertain')
+  const coordinatorItems: readonly MenuEntry[] = [
+    { type: 'label', id: 'coordinator-switch', text: t('coordinator.switchTitle') },
+    ...(state?.members ?? []).flatMap((member): MenuEntry[] => member.id === undefined ? [] : [{
+      id: member.id,
+      label: (
+        <span className={css.coordinatorOption}>
+          <span>{member.name}</span>
+          <span className={css.coordinatorOptionMeta}>{[member.role, member.kind === 'main-agent' ? t('member.kind.main') : member.provider].filter(Boolean).join(' · ')}</span>
+        </span>
+      ),
+      icon: <span className={css.coordinatorOptionDot} style={{ '--member-color': memberColor(member.name) } as CSSProperties} aria-hidden />,
+      disabled: busyMembers.has(member.name),
+    }]),
+  ]
 
   // The coordinator's own room deliveries: a round a restart interrupted
   // blocks the ones after it until the human reconciles or stops its task —
@@ -567,12 +592,38 @@ export function RoomComposer({
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}
       <div className={css.card}>
-        {/* Who a bare message goes to: the coordinator's name in its member colour. */}
-        <div className={css.coordinator} style={{ '--member-color': memberColor(coordinator?.name ?? 'dsh') } as CSSProperties}>
-          <span className={css.coordinatorDot} aria-hidden />
-          <span className={css.coordinatorName}>{coordinator?.name ?? 'dsh'}</span>
-          <span>· {t('coordinator.label')} · {external ? coordinator.provider : 'DSH'}</span>
-        </div>
+        {/* Who a bare message goes to: the coordinator's name in its member
+            colour — and the switch to hand that role over (the host's menu). */}
+        <Menu
+          open={coordinatorMenu}
+          side="top"
+          align="start"
+          items={coordinatorItems}
+          selectedId={coordinator?.id}
+          onSelect={(id) => {
+            setCoordinatorMenu(false)
+            if (id === coordinator?.id || setCoordinator === undefined || state === undefined) return
+            void setCoordinator(id, state.coordinator?.revision ?? 0).then((outcome) => { if (!outcome.ok) setError(outcome.message) })
+          }}
+          onClose={() => { setCoordinatorMenu(false) }}
+          anchor={(
+            <button
+              type="button"
+              className={css.coordinator}
+              style={{ '--member-color': memberColor(coordinator?.name ?? 'dsh') } as CSSProperties}
+              disabled={!switchable || handoffBlocked}
+              title={switchable && handoffBlocked ? t('coordinator.switchBusy') : undefined}
+              aria-haspopup="menu"
+              aria-expanded={coordinatorMenu}
+              onClick={() => { setCoordinatorMenu(open => !open) }}
+            >
+              <span className={css.coordinatorDot} aria-hidden />
+              <span className={css.coordinatorName}>{coordinator?.name ?? 'dsh'}</span>
+              <span>· {t('coordinator.label')} · {external ? coordinator.provider : 'DSH'}</span>
+              {switchable && <IconChevronDownOutlineMedium className={css.coordinatorChevron} />}
+            </button>
+          )}
+        />
         {mention !== null && candidates.length > 0 && (
           <ul className={css.menu} role="listbox" aria-label={t('composer.at.label')}>
             {candidates.map((row, index) => (

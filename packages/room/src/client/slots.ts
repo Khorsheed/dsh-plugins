@@ -204,6 +204,8 @@ export interface RoomAttachmentsFace {
 }
 
 export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInjected {
+  /** Hand the coordinator role to another member (the composer's switch). */
+  readonly setCoordinator?: ((memberId: string, expectedRevision: number) => Promise<RoomMutationOutcome>) | undefined
   /** Draft attachments; absent without the official conversation service. */
   readonly attachments?: RoomAttachmentsFace | undefined
   /** Open the task page (at one task); absent without the right sidebar. */
@@ -300,6 +302,10 @@ export type RoomInviteOutcome =
 /** Injected face of the members tab. */
 export interface RoomMembersInjected extends RoomInviteInjected {
   readonly renderMemberConfiguration?: ((childSessionId: string) => ReactNode) | undefined
+  /** The edit dialog's member-control face (local-agent); absent on an older core. */
+  readonly renderMemberModelPicker?: LocalAgentUi['renderMemberModelPicker'] | undefined
+  readonly readMemberSelection?: LocalAgentUi['readMemberSelection'] | undefined
+  readonly saveMemberSelection?: LocalAgentUi['saveMemberSelection'] | undefined
   /** The client-side room state store (roster + runs). */
   readonly roomStore: RoomStore
   /** Open a session (the member's child-session trajectory jump). */

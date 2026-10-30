@@ -119,9 +119,11 @@ export function MemberCard({
       {!preview && (
         <div className={css.foot}>
           {!coordinator && onPromote !== undefined && <button type="button" className={css.action} disabled={running} onClick={onPromote}>{t('coordinator.promote')}</button>}
-          {member.kind === 'main-agent' && onLocate !== undefined && (
+          {member.kind === 'main-agent' && (
             <span className={css.actions}>
-              <button type="button" className={css.action} onClick={onLocate}>{t('team.locate')}</button>
+              {onLocate !== undefined && <button type="button" className={css.action} onClick={onLocate}>{t('team.locate')}</button>}
+              {/* The room's own agent: name, role, instructions and the session model. */}
+              <button type="button" className={css.action} onClick={onEdit}>{t('members.edit')}</button>
             </span>
           )}
           {member.kind !== 'main-agent' && (

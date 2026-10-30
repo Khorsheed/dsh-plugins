@@ -112,6 +112,7 @@ async function bench(
     openReference?: (source: string, ref: string) => boolean
     listSessions?: RoomComposerProps['listSessions']
     insertSessionReference?: RoomComposerProps['insertSessionReference']
+    setCoordinator?: RoomComposerProps['setCoordinator']
   } = {},
 ): Promise<Bench> {
   const roomStore = await primedStore(options.state)
@@ -151,6 +152,7 @@ async function bench(
     openReference: options.openReference,
     listSessions: options.listSessions,
     insertSessionReference: options.insertSessionReference,
+    setCoordinator: options.setCoordinator,
     useSession,
     // Default: a projection seat that serves nothing (no stats row, no todo strip).
     useProjection: options.useProjection === undefined
@@ -485,6 +487,40 @@ describe('RoomComposer', () => {
     expect(screen.getByText('main')).toBeDefined()
     expect(screen.getByText('· 协调者 · DSH')).toBeDefined()
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).placeholder).toBe('跟main对话；@ 指定其他成员')
+  })
+
+  it('the coordinator line opens the host menu and hands the role to the picked member', async () => {
+    const setCoordinator = vi.fn(async () => ({ ok: true as const }))
+    const roster: RoomState = {
+      ...STATE,
+      members: [
+        { id: 'legacy:1', name: 'main', kind: 'main-agent', invitedBy: 'human' },
+        { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'kimi', role: '小说家', invitedBy: 'human' },
+      ],
+      deliveries: [],
+      jobs: [],
+    }
+    await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'], state: roster, setCoordinator })
+    fireEvent.click(screen.getByRole('button', { name: /main.*协调者 · DSH/ }))
+    expect(screen.getByText('切换协调者 · 之后不带 @ 的消息都交给他')).toBeDefined()
+    expect(screen.getByText('小说家 · kimi')).toBeDefined()
+    fireEvent.click(screen.getByRole('menuitem', { name: /ada/ }))
+    await vi.waitFor(() => { expect(setCoordinator).toHaveBeenCalledWith('m-ada', 0) })
+  })
+
+  it('the coordinator switch waits while a member runs or a message is queued', async () => {
+    const setCoordinator = vi.fn(async () => ({ ok: true as const }))
+    const roster: RoomState = {
+      ...STATE,
+      members: [
+        { id: 'legacy:1', name: 'main', kind: 'main-agent', invitedBy: 'human' },
+        { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' },
+      ],
+    }
+    await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'], state: roster, setCoordinator })
+    const trigger = screen.getByRole('button', { name: /main.*协调者 · DSH/ }) as HTMLButtonElement
+    expect(trigger.disabled).toBe(true)
+    expect(trigger.title).toBe('有成员正在运行或有消息在排队，结束后可切换协调者')
   })
 
   it('a fresh room shows only the invite capsule', async () => {
