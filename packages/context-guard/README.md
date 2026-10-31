@@ -14,6 +14,7 @@
 - **和进度环同一个数**——由官方 `contextPressure` 投影驱动，按钮和进度环永远不会打架。
 - **执行官方 `/compact`**——空闲门控、压缩锁和流程展示都由宿主负责，点击的效果和手打命令一模一样。
 - **一个实时可调项**——提醒阈值在设置里改，保存即生效，不用重启。
+- **外部 CLI 成员也提醒**——装了本机 Agent 委派（Kimi、Codex 等）时，CLI 成员的会话和协作间里同样会出现压缩按钮；每个 CLI 可以单独设比例，点成员的上下文圆环还能给这一位单独设。没装就和原来一样。
 
 
 ## 安装
@@ -39,6 +40,8 @@ dsh plugin --profile web remove @khorsheed/dsh-context-guard
 | 键 | 默认值 | 含义 |
 |---|---|---|
 | `thresholdRatio` | `0.8` | 压缩按钮出现时的上下文占用比例（限制在 (0, 1]）。想更早收到提醒就调低——provider 拒绝墙在 100% 占用之下（见「实现原理」）。 |
+| `harnessThresholds` | `{}` | 外部 CLI 各自的比例，按 CLI 名（`kimi`、`codex`…）；没写的跟随 `thresholdRatio`。 |
+| `memberThresholds` | `{}` | 单个成员的比例（在成员的上下文圆环里设）；优先级：成员 > CLI > 全局。 |
 
 ```yaml
 plugins:
