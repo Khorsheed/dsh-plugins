@@ -496,14 +496,37 @@
   cursor: default;
 }
 
-/* The slash-command row: the command's label, its name, and what it does. */
+/* The slash-command menu: as wide as the composer card (the host's 指令
+   menu), one line per command — icon, label, name, then what it does at the
+   right edge. */
+.commandMenu {
+  right: 8px;
+  max-width: none;
+}
+
+.commandIcon {
+  flex: none;
+  color: var(--dsw-alias-label-secondary, rgba(127, 127, 127, 0.9));
+}
+
+.commandLabel {
+  flex: none;
+  white-space: nowrap;
+}
+
 .commandName {
-  margin-left: 6px;
+  flex: none;
+  white-space: nowrap;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
 
 .commandHint {
-  margin-left: 12px;
-  font-size: 12px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }

@@ -357,7 +357,7 @@
 
 .commandItem {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   width: 100%;
   padding: 8px 10px;
@@ -370,18 +370,28 @@
   cursor: pointer;
 }
 
+.commandIcon {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .commandLabel {
   flex: none;
+  white-space: nowrap;
 }
 
 .commandName {
   flex: none;
+  white-space: nowrap;
   color: var(--dsw-alias-label-tertiary);
 }
 
 .commandHint {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: right;
   color: var(--dsw-alias-label-tertiary);
   font-size: 13px;
