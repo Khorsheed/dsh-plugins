@@ -1,0 +1,70 @@
+/* A CLI member's reminder pieces: the per-member ratio inside local-agent's
+   occupancy panel, and the attention dot on a room's members chip. */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l3);
+}
+
+.label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.label > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.input {
+  width: 64px;
+  padding: 2px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.invalid {
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+.save {
+  flex: none;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 6px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.hint {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.error {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-warn-primary);
+}

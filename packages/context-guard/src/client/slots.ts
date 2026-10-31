@@ -44,6 +44,8 @@ export type CompactGuardButtonProps =
 export interface ContextGuardSettingsCardInjected {
   /** The live section handle; the card stages edits and writes through it on save. */
   scope: GuardScope
+  /** The installed external CLIs (name + display label); empty without the local-agent family. */
+  harnesses?: () => readonly { readonly name: string; readonly label: string }[]
   hooks: {
     /** The shared `context-guard` settings section; the card binds `useConfig` to it. */
     config: GuardScope

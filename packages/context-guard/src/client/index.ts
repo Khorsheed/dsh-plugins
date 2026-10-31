@@ -53,12 +53,17 @@ import { en, NS, zh } from './locales.ts'
 import { bindGuardScope, GuardScopeChannel } from './scope.ts'
 import type { ContextGuardInjected, ContextGuardSettingsCardInjected } from './slots.ts'
 import { CompactGuardButton } from './CompactGuardButton.tsx'
+import { createElement } from 'react'
+import { MemberGuard, type MemberToolFace } from './MemberGuard.tsx'
 import { ContextGuardBundleConfig } from './SettingsCard.tsx'
 
 export type { ContextGuardConfig } from './config.ts'
 export { resolveConfig } from './config.ts'
 export type { ContextGuardKey } from './locales.ts'
 export { guardReading } from './guard.ts'
+export { memberThresholdOf } from './config.ts'
+export type { MemberThreshold } from './config.ts'
+export type { MemberGuardProps, MemberToolFace } from './MemberGuard.tsx'
 export type { GuardInput, GuardLevel, GuardReading } from './guard.ts'
 export type { GuardScope, GuardScopeSnapshot } from './scope.ts'
 export type {
@@ -67,6 +72,12 @@ export type {
 
 /** Dictionary namespace owned by this plugin. */
 export { NS }
+
+/** The two localAgentUi faces this plugin probes (structural: local-agent is never imported). */
+interface LocalAgentUiProbe {
+  registerMemberTool?(entry: { readonly id: string; readonly render: (face: MemberToolFace) => ReturnType<typeof createElement> }): () => void
+  harnessCards?(): readonly { readonly name: string; readonly label: () => string }[]
+}
 
 /**
  * Required services: the slot ledger, the command Remote, and the copy. The
@@ -116,6 +127,20 @@ export function apply(ctx: Context, config?: Partial<ContextGuardConfig>): void 
     }),
   }, CompactGuardButton))
 
+  // External-CLI members (the local-agent family): their reminder renders
+  // through local-agent's member-tool registry, probed — never injected, never
+  // imported — so neither package needs the other.
+  const t = ctx.locale.bind(NS)
+  ctx.inject(['localAgentUi'], (uiCtx) => {
+    const ui = uiCtx.get('localAgentUi') as LocalAgentUiProbe | undefined
+    if (typeof ui?.registerMemberTool !== 'function') return
+    const register = ui.registerMemberTool
+    uiCtx.effect(() => register({
+      id: 'context-guard',
+      render: face => createElement(MemberGuard, { face, scope, fallback, t }),
+    }), 'context-guard: member reminder')
+  })
+
   // One Plugins-page card gated on the SERVED NAMESPACE, never on the install
   // shape: whichever composition carries the `context-guard` row — standalone,
   // the basic bundle, or a mode pack — serves the row's
@@ -128,7 +153,6 @@ export function apply(ctx: Context, config?: Partial<ContextGuardConfig>): void 
   // configForms exists only on the alpha.2+ host line; a 0.1.5 host never
   // fires it, and a configForms predating whileServed (0.1.6-alpha.2) skips
   // the card.
-  const t = ctx.locale.bind(NS)
   ctx.inject(['configForms'], (formsCtx) => {
     const forms = formsCtx.configForms
     if (typeof forms.whileServed !== 'function') return
@@ -142,6 +166,12 @@ export function apply(ctx: Context, config?: Partial<ContextGuardConfig>): void 
       inject: (): ContextGuardSettingsCardInjected => ({
         scope,
         hooks: { config: scope },
+        // The installed CLIs (the local-agent family card's sections), read
+        // at render: absent family = no 外部 CLI group.
+        harnesses: () => {
+          const ui = ctx.get('localAgentUi') as LocalAgentUiProbe | undefined
+          return typeof ui?.harnessCards === 'function' ? ui.harnessCards().map(card => ({ name: card.name, label: card.label() })) : []
+        },
       }),
     }, ContextGuardBundleConfig)))
   })

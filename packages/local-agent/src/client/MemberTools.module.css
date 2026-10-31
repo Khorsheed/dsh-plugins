@@ -1,0 +1,106 @@
+/* A CLI member's occupancy ring + its click-open panel, styled after the host
+   composer's ContextMeter (same tones, geometry and menu surface). */
+
+.root {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 1px 8px;
+  border: none;
+  border-radius: var(--dsw-radius-sm, 6px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: inherit;
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  font-variant-numeric: tabular-nums;
+  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.trigger:hover,
+.trigger[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.track {
+  fill: none;
+  stroke: var(--dsw-alias-border-l3);
+  stroke-width: 2;
+}
+
+.fill {
+  fill: none;
+  stroke: var(--dsw-alias-label-tertiary);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.spinning {
+  animation: member-context-spin 1.2s linear infinite;
+}
+
+@keyframes member-context-spin {
+  to { transform: rotate(360deg); }
+}
+
+.panel {
+  position: fixed;
+  z-index: 1100;
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: var(--dsw-radius-lg, 12px);
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-1));
+  backdrop-filter: var(--dsw-menu-backdrop-filter);
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
+  box-shadow: var(--dsw-elevation-prominent);
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+  text-align: left;
+  white-space: normal;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.headline {
+  flex: 1;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+}
+
+.figures {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  display: flex;
+  height: 6px;
+  margin: 8px 0 4px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--dsw-alias-border-l3);
+}
+
+.segment {
+  min-width: 2px;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.tool {
+  display: contents;
+}

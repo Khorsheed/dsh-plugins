@@ -96,6 +96,21 @@ function previewOf(content: InboxState['next-turn'][number]['content']): string 
   return chars.length > QUEUE_PREVIEW_CHARS ? `${chars.slice(0, QUEUE_PREVIEW_CHARS).join('')}…` : flat
 }
 
+/** The slash commands the room understands: `/compact` (the coordinator, or the @-addressed member). */
+const SLASH_COMMANDS = ['compact'] as const
+
+/**
+ * A command being typed: the draft is a lone `/word` (after any @ mentions)
+ * that prefixes a command name without being it.
+ * @param draft - the composer text.
+ * @returns the matching command names.
+ */
+export function slashCommandsFor(draft: string): readonly string[] {
+  const match = /^(?:@\S+\s+)*\/([a-z]*)$/.exec(draft.trim())
+  if (match === null) return []
+  return SLASH_COMMANDS.filter(name => name.startsWith(match[1]!) && name !== match[1])
+}
+
 /** One @ menu row: a member of this room, or another session. */
 type AtRow =
   | { readonly kind: 'member'; readonly member: { readonly name: string; readonly kind: string; readonly provider?: string } }
@@ -184,7 +199,7 @@ interface AttachmentActions {
 export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
-  modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
+  modelDirectory, renderMemberConfiguration, renderMemberInbox, renderMemberTools, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
   attachments: attachmentFace, setCoordinator, runCommand,
 }: RoomComposerProps): ReactNode {
   const [coordinatorMenu, setCoordinatorMenu] = useState(false)
@@ -513,6 +528,8 @@ export function RoomComposer({
     }
   }
 
+  const commands = mention === null ? slashCommandsFor(draft) : []
+  const completeCommand = (name: string): void => { inputActions.setDraft(draft.replace(/\/[a-z]*\s*$/, `/${name}`)) }
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     // oxlint-disable-next-line typescript/no-deprecated -- IME 229 covers engines without isComposing.
     const ime = composing.current || justComposed.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
@@ -550,6 +567,11 @@ export function RoomComposer({
           return
         }
       }
+    }
+    if (commands.length > 0 && (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey))) {
+      event.preventDefault()
+      completeCommand(commands[0]!)
+      return
     }
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -637,6 +659,26 @@ export function RoomComposer({
             </button>
           )}
         />
+        {commands.length > 0 && (
+          <ul className={css.menu} role="listbox" aria-label={t('composer.command.title')}>
+            <li><div className={css.menuGroup}>{t('composer.command.title')}</div></li>
+            {commands.map(name => (
+              <li key={name}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected="true"
+                  className={css.itemActive}
+                  onMouseDown={(event) => { event.preventDefault(); completeCommand(name) }}
+                >
+                  <span>{t('composer.command.compact')}</span>
+                  <span className={css.commandName}>{name}</span>
+                  <span className={css.commandHint}>{t('composer.command.compact.hint')}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {mention !== null && candidates.length > 0 && (
           <ul className={css.menu} role="listbox" aria-label={t('composer.at.label')}>
             {candidates.map((row, index) => (
@@ -790,6 +832,7 @@ export function RoomComposer({
               SESSION selection only — an @-addressed member dispatch rides
               room's own submit remote and is never touched. Absent service =
               no picker. */}
+          {external && coordinator.childSessionId !== undefined && renderMemberTools?.(coordinator.childSessionId, 'composer', { memberName: coordinator.name })}
           {external && coordinator.childSessionId !== undefined && renderMemberConfiguration?.(coordinator.childSessionId)}
           {!external && modelDirectory !== undefined && (
             <RoomModelPicker directory={modelDirectory} onError={setError} t={t} />
@@ -828,7 +871,16 @@ export function RoomComposer({
           degrade to no row. */}
       {/* An external coordinator keeps the members chip: the room session's
           own turn figures belong to its idle main agent, not the coordinator. */}
-      {useProjection !== undefined && <RoomStatsLine useProjection={useProjection} state={state} membersOnly={external} t={t} />}
+      {useProjection !== undefined && (
+        <RoomStatsLine
+          useProjection={useProjection}
+          state={state}
+          membersOnly={external}
+          renderMemberTools={renderMemberTools}
+          coordinatorSession={external ? coordinator.childSessionId : undefined}
+          t={t}
+        />
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { GuardScopeSnapshot } from './scope.ts'
-import type { ContextGuardConfig } from './config.ts'
+import { resolveConfig, type ContextGuardConfig } from './config.ts'
 import type { ContextGuardBundleConfigProps } from './slots.ts'
 import css from './SettingsCard.module.css'
 
@@ -161,12 +161,102 @@ function SettingsBody({ snapshot, draft, t }: {
  * the one-liner for the `summary` view and the bare form — with its own save
  * control — for `page`.
  */
-export function ContextGuardBundleConfig({ view, useConfig, scope, t }: ContextGuardBundleConfigProps) {
+export function ContextGuardBundleConfig({ view, useConfig, scope, harnesses, t }: ContextGuardBundleConfigProps) {
   const snapshot = useConfig(value => value)
   const value = snapshot.status === 'ready' ? snapshot.value : undefined
   const draft = useThresholdDraft(scope, snapshot, value)
 
   if (view === 'summary') return <span className={css.description}>{t('settings.description')}</span>
   if (snapshot.status === 'unavailable' || value === undefined) return null
-  return <SettingsBody snapshot={snapshot} draft={draft} t={t} />
+  const resolved = resolveConfig(value)
+  const clis = harnesses?.() ?? []
+  return (
+    <>
+      <SettingsBody snapshot={snapshot} draft={draft} t={t} />
+      {clis.length > 0 && <CliRatios clis={clis} config={resolved} scope={scope} writable={snapshot.writable} t={t} />}
+    </>
+  )
+}
+
+/**
+ * The 外部 CLI group (only with the local-agent family installed): one ratio
+ * per CLI, empty = follow the reminder ratio; then the members that carry
+ * their own ratio (set from a member's occupancy ring), each clearable.
+ * Each edit writes its whole table.
+ */
+function CliRatios({ clis, config, scope, writable, t }: {
+  readonly clis: readonly { readonly name: string; readonly label: string }[]
+  readonly config: ContextGuardConfig
+  readonly scope: Scope
+  readonly writable: boolean
+  readonly t: Translate
+}) {
+  const [error, setError] = useState(false)
+  const write = (field: 'harnessThresholds' | 'memberThresholds', next: object): void => {
+    setError(false)
+    void scope.set(field, next).catch(() => { setError(true) })
+  }
+  const setHarness = (name: string, text: string): void => {
+    const trimmed = text.trim()
+    const ratio = trimmed === '' ? undefined : Number(trimmed)
+    if (ratio !== undefined && (!Number.isFinite(ratio) || ratio < 0.01 || ratio > 1)) return
+    if (ratio === config.harnessThresholds[name]) return
+    const next: Record<string, number> = { ...config.harnessThresholds }
+    if (ratio === undefined) delete next[name]
+    else next[name] = ratio
+    write('harnessThresholds', next)
+  }
+  const members = Object.entries(config.memberThresholds)
+  return (
+    <div className={css.body} data-context-guard-clis>
+      <span className={css.fieldHead}><span className={css.fieldName}>{t('settings.cli.title')}</span></span>
+      <span className={css.hint}>{t('settings.cli.hint')}</span>
+      {clis.map(cli => (
+        <label key={cli.name} className={css.cliRow}>
+          <span className={css.cliName}>{cli.label}</span>
+          <input
+            key={`${cli.name}:${config.harnessThresholds[cli.name] ?? ''}`}
+            className={css.cliInput}
+            type="number"
+            step="0.05"
+            min="0.01"
+            max="1"
+            disabled={!writable}
+            defaultValue={config.harnessThresholds[cli.name] ?? ''}
+            placeholder={t('settings.cli.follow', { ratio: String(config.thresholdRatio) })}
+            aria-label={cli.label}
+            onBlur={(event) => { setHarness(cli.name, event.target.value) }}
+            onKeyDown={(event) => { if (event.key === 'Enter') setHarness(cli.name, event.currentTarget.value) }}
+          />
+        </label>
+      ))}
+      {members.length > 0 && (
+        <>
+          <span className={css.fieldHead}><span className={css.fieldName}>{t('settings.members.title')}</span></span>
+          {members.map(([id, member]) => (
+            <span key={id} className={css.cliRow}>
+              <span className={css.cliName}>
+                {member.name ?? id}
+                {member.harness !== undefined && <span className={css.hint}>{` · ${clis.find(cli => cli.name === member.harness)?.label ?? member.harness}`}</span>}
+              </span>
+              <span className={css.cliValue}>{member.ratio}</span>
+              <button
+                type="button"
+                className={css.reset}
+                disabled={!writable}
+                onClick={() => {
+                  const next = { ...config.memberThresholds }
+                  delete next[id]
+                  write('memberThresholds', next)
+                }}
+              >
+                {t('settings.members.clear')}
+              </button>
+            </span>
+          ))}
+        </>
+      )}
+      {error && <span className={css.errorText}>{t('settings.error')}</span>}
+    </div>
+  )
 }

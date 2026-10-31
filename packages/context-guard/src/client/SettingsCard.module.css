@@ -211,3 +211,37 @@
 .save:hover:not(:disabled) {
   filter: brightness(0.95);
 }
+
+/* The 外部 CLI group: one ratio per installed CLI, then members with their own. */
+.cliRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.cliName {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cliInput {
+  width: 96px;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+}
+
+.cliValue {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary);
+}

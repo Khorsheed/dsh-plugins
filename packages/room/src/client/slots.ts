@@ -223,6 +223,8 @@ export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInject
   readonly openPlanSession?: ((sessionId: string) => void) | undefined
   readonly renderMemberInbox?: LocalAgentUi['renderMemberInbox'] | undefined
   readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
+  /** A CLI member's occupancy ring and the tools registered beside it (the compaction reminder); renders nothing without them. */
+  readonly renderMemberTools?: NonNullable<LocalAgentUi['renderMemberTools']> | undefined
   readonly stopMember?: ((name: string, expectedRunId?: string) => void) | undefined
   /**
    * Preview one draft chip through its owning trigger source (the official

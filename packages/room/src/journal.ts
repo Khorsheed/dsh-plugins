@@ -463,6 +463,9 @@ export function previousCursor(
   let cursor: number | undefined
   for (const event of events) {
     if (event.type !== 'room/dispatch' || event.seq >= beforeSeq) continue
+    // A human's `/compact` runs a compaction round, never a prompt: what was
+    // pending for the member (a handoff, room changes) still rides its next one.
+    if ((event.data.origin ?? 'human') === 'human' && event.data.text.trim() === '/compact') continue
     if (event.data.targets.includes(member)) cursor = event.seq
   }
   return cursor

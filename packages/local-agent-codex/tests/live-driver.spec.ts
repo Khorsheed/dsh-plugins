@@ -28,6 +28,8 @@ interface FakeTurn {
   /** [itemId, delta] pairs pushed as item/reasoning/textDelta. */
   reasoningDeltas?: [string, string][]
   usage?: { inputTokens: number; cachedInputTokens: number; outputTokens: number }
+  /** The tokenUsage notification's modelContextWindow. */
+  window?: number
   status?: 'completed' | 'interrupted' | 'failed'
   errorMessage?: string
   /** Never close the turn (cancel-path tests drive it by hand). */
@@ -193,7 +195,7 @@ class FakeAppServer {
       this.notify('thread/tokenUsage/updated', {
         threadId,
         turnId,
-        tokenUsage: { last: { ...turn.usage, reasoningOutputTokens: 0, totalTokens: 0 }, total: {} },
+        tokenUsage: { last: { ...turn.usage, reasoningOutputTokens: 0, totalTokens: 0 }, total: {}, ...turn.window === undefined ? {} : { modelContextWindow: turn.window } },
       })
     }
     this.notify('turn/completed', {
@@ -537,6 +539,26 @@ describe('codex live driver rounds', () => {
       source: 'manual', outcome: 'completed', provider: 'codex-local', contextWindow: 400000,
       usage: { inputTokens: 2000, outputTokens: 60, cacheReadTokens: 4000 },
     })])
+    await m.driver.disposeAll()
+  })
+
+  it('a round records the thread occupancy and a compaction codex ran on its own', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-context'))
+    m.queueChild(new FakeAppServer({ turn: () => ({
+      items: [{ type: 'contextCompaction' }, { type: 'agentMessage', text: '好的', phase: 'final_answer' }],
+      usage: { inputTokens: 42_000, cachedInputTokens: 30_000, outputTokens: 20 },
+      window: 400_000,
+    }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    const events = child.snapshotEvents()
+    expect(events.filter(event => event.type === 'local-agent/compaction').map(event => event.data)).toEqual([expect.objectContaining({
+      source: 'auto', outcome: 'completed', provider: 'codex-local',
+    })])
+    expect(events.filter(event => event.type === 'local-agent/context').map(event => event.data)).toEqual([
+      { provider: 'codex-local', usedTokens: 42_000, contextWindow: 400_000 },
+    ])
     await m.driver.disposeAll()
   })
 
