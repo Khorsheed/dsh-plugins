@@ -5,6 +5,14 @@
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from './locales.ts'
+import type { GameNavParams } from './contract.ts'
+
+declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  interface SidebarRightTabParamsMap {
+    /** The game page takes one place in it (proposal 2026-10-30-agent-sidebar-navigation). */
+    'game': GameNavParams
+  }
+}
 
 /** The tab kind this package owns. */
 export const GAME_KIND = 'game'

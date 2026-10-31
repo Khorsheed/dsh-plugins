@@ -20,12 +20,15 @@ import gameRemote from '@khorsheed/dsh-game/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.tsx'
-import type { GameApi, GameTabInjected, NavTarget } from './contract.ts'
+import type { GameApi, GameNavParams, GameTabInjected } from './contract.ts'
 import { gameTurnDefinition, GameTurnCard } from './TurnCard.tsx'
-import { AutoNav } from './autonav.ts'
+import { followerHostOf, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { encodeGameRef, GAME_REF_SOURCE, gameRefCodec } from './refs.ts'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
+import { DeskAttachment } from './DeskAttachment.tsx'
+import { DeskOpenRow, type DeskOpenRowFace } from './DeskOpenRow.tsx'
+import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, setDeskRowSeated } from './desk-row.ts'
 import { en, NS, zh } from './locales.ts'
 import { GameTabVisibility, RegistrationToggle, type GamePluginInventorySnapshot } from './preset-visibility.ts'
 
@@ -91,6 +94,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   const api: GameApi = {
     state: sid => remote.state(sid),
+    liveVersion: sid => remote.liveVersion(sid),
     projectCards: () => remote.projectCards(),
     turnReport: (sid, turn) => remote.turnReport(sid, { turn }),
     bind: (sid, projectId) => remote.bind(sid, { projectId }),
@@ -163,28 +167,30 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return undefined
     }
   }
-  const navListeners = new Set<(target: NavTarget) => void>()
-  let parkedNav: NavTarget | null = null
-  const autoNav = new AutoNav(target => { face.openAt(target) })
+  /**
+   * Open the game tab at one place (proposal 2026-10-30-agent-sidebar-navigation):
+   * the host's own navigation, so the tab body applies the params once per
+   * revision whether it was mounted already or mounts now.
+   */
+  const go = (params: GameNavParams): void => {
+    try {
+      ctx.sidebarRight.openTab(GAME_KIND, { params })
+    } catch (error) {
+      // A session whose preset hides the game has no tab type to open.
+      ctx.logger.warn('game: openTab failed (tab type not registered?)', error)
+    }
+  }
+  // The follower: a game tool's answer names its destination; watched live,
+  // the tab goes there. No badge: the turn card already lists the change.
+  const followerHost = followerHostOf(name => (ctx.get.bind(ctx) as (key: string) => unknown)(name))
+  if (followerHost !== undefined) {
+    ctx.effect(() => startNavFollower(followerHost, {
+      kinds: [GAME_KIND],
+      open: destination => { go(destination.params as unknown as GameNavParams) },
+    }), 'game: destination follower')
+  }
   const face: GameTabInjected = {
-    openAt: (target) => {
-      parkedNav = target
-      try {
-        ctx.sidebarRight.openTab(GAME_KIND)
-      } catch (error) {
-        ctx.logger.warn('game: openTab failed (tab type not registered?)', error)
-      }
-      for (const listener of navListeners) listener(target)
-    },
-    subscribeNav: (listener) => {
-      navListeners.add(listener)
-      return () => { navListeners.delete(listener) }
-    },
-    takeNav: () => {
-      const target = parkedNav
-      parkedNav = null
-      return target
-    },
+    go,
     api,
     insertDraft: (sessionId, text) => {
       const input = inputFor(sessionId)
@@ -223,29 +229,30 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return () => { listeners.delete(listener) }
     },
     touch: sessionId => { emit(sessionId) },
-    autoNav,
   }
 
-  // A version cut mid-turn (the agent's game_publish) is announced as it lands, not at turn end:
-  // session activity is watched, throttled, against the last live version seen per project.
-  const lastVersion = new Map<string, number>()
-  const lastLook = new Map<string, number>()
-  listeners.add(sessionId => {
+  // The page polls the on-screen session's bound project while visible (session events nudge it
+  // early) to notice a binding made with no event (a room member's game_open) and refresh the tab —
+  // refresh only. Where to go rides the answers' destination lines (the follower above).
+  const lastBound = new Map<string, string | null>()
+  let lastLook = 0
+  const look = (): void => {
     const now = Date.now()
-    if (now - (lastLook.get(sessionId) ?? 0) < 4000) return
-    lastLook.set(sessionId, now)
-    void api.state(sessionId as SessionId).then(r => {
-      const project = r.ok ? r.value.bound : null
-      if (project == null) return
-      const record = project.candidate ?? project.current
-      if (record === null) return
-      const seen = lastVersion.get(project.id)
-      lastVersion.set(project.id, record.version)
-      // The first sighting is the baseline; a version the user published is no news to them.
-      if (seen === undefined || record.version <= seen || record.by === 'user') return
-      autoNav.versionLanded(project.id, record.version, project.candidate !== null ? t('nav.candidate', { version: record.version }) : t('nav.version', { version: record.version }))
+    if (now - lastLook < 3000) return
+    lastLook = now
+    const sid = mainSessionId(ctx.sessions.list.getSnapshot())
+    if (sid === undefined) return
+    void api.liveVersion(sid).then(r => {
+      if (!r.ok) return
+      const bound = r.value?.projectId ?? null
+      const before = lastBound.get(sid)
+      lastBound.set(sid, bound)
+      if (before !== undefined && before !== bound) emit(sid)
     }).catch(() => {})
-  })
+  }
+  listeners.add(() => { look() })
+  const pollTimer = setInterval(() => { if (document.visibilityState === 'visible') look() }, 6000)
+  disposers.push(async () => { clearInterval(pollTimer) })
 
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab',
@@ -282,6 +289,64 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       disposeDefinition()
     }
   }), 'game: turn-tail card')
+
+  // In a room, a member's game_open writes a room/desk-opened event into the
+  // ROOM (../desk.ts): its row tells the room who opened which project. The
+  // coordinator's, seen arriving, opens the game tab on it (the room session
+  // is already bound host-side); a member's only offers 打开 →, which binds
+  // the room to that project — the user's explicit choice — and opens the tab.
+  // Without ui-conversation or the room's seats the room just has no row.
+  const deskFace: DeskOpenRowFace = {
+    openProject: (sessionId, projectId) => {
+      void (async () => {
+        const live = await api.liveVersion(sessionId as SessionId).catch(() => undefined)
+        if (live?.ok !== true || live.value?.projectId !== projectId) {
+          const bound = await remote.bind(sessionId as SessionId, { projectId, desk: true }).catch(() => undefined)
+          if (bound?.ok !== true || !bound.value.ok) ctx.logger.warn('game: could not bind the room to the desk project', projectId)
+        }
+        emit(sessionId)
+        go({ projectId, view: 'play' })
+      })()
+    },
+  }
+  ctx.effect(() => seats.inject('conversation.chat.node', () => {
+    const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
+      events?: { register?: (definition: unknown) => () => void }
+    } | undefined
+    const register = conversation?.events?.register
+    if (register === undefined) return () => undefined
+    const disposeDefinition = register.call(conversation?.events, deskRowDefinition)
+    const disposeEntry = seats.register({
+      name: 'conversation.chat.node',
+      key: DESK_ROW_KIND,
+      locale: NS,
+      inject: () => deskFace,
+    }, DeskOpenRow)
+    return () => {
+      disposeEntry()
+      disposeDefinition()
+    }
+  }), 'game: room desk row')
+  // The same row at the end of the member's card, where the room seats it
+  // (room's `room.member.attachment` on the reply, `room.run.attachment` on
+  // the running card): the row's own node then steps aside for every event
+  // that names a run.
+  for (const seat of ['room.member.attachment', 'room.run.attachment'] as const) {
+    ctx.effect(() => seats.inject(seat, () => {
+      const dispose = seats.register({
+        name: seat,
+        key: DESK_OWNER,
+        locale: NS,
+        inject: () => deskFace,
+      }, DeskAttachment)
+      // The reply's seat decides: the row's own node steps aside once a run's card can hold it.
+      if (seat === 'room.member.attachment') setDeskRowSeated(true)
+      return () => {
+        if (seat === 'room.member.attachment') setDeskRowSeated(false)
+        dispose()
+      }
+    }), `game: room card desk row (${seat})`)
+  }
 
   // The conversation rows for dsh-game messages (check findings, attached changes).
   ctx.inject(['uiConversation'], (lctx) => {

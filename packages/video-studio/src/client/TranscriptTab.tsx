@@ -99,6 +99,20 @@ export function TranscriptTab({ p, v, act, report }: { p: VideoPaneProps; v: Pro
   // legs of a continuous recording: joint-axis times where a new leg starts
   const seams = useMemo(() => (project.referenceParts ?? []).slice(1).map((pt) => pt.startSec), [project.referenceParts])
   const groups = useMemo(() => project.groups.filter((g) => proposed.some((e) => e.group === g.id)), [project.groups, proposed])
+  // A destination named a proposal group: bring it into view once it is here
+  // (the poll may land the group after the tab opens), once per ask.
+  const focus = p.useStore((s) => s.focus)
+  const focusedAsk = useRef(0)
+  const groupNodes = useRef(new Map<string, HTMLDivElement>())
+  const [flashGroup, setFlashGroup] = useState<string | null>(null)
+  useEffect(() => {
+    if (focus === null || focusedAsk.current >= focus.n || !groups.some((g) => g.id === focus.groupId)) return
+    focusedAsk.current = focus.n
+    groupNodes.current.get(focus.groupId)?.scrollIntoView?.({ block: 'nearest' })
+    setFlashGroup(focus.groupId)
+    const timer = setTimeout(() => setFlashGroup(null), 1200)
+    return () => clearTimeout(timer)
+  }, [focus, groups])
   const hits = useMemo(() => (finding ? findOccurrences(project.transcript, edits, query, { includeRemoved: view === 'source' }) : []), [finding, project.transcript, edits, query, view])
 
   // ── player ──
@@ -336,7 +350,13 @@ export function TranscriptTab({ p, v, act, report }: { p: VideoPaneProps; v: Pro
         const items = proposed.filter((e) => e.group === g.id)
         const saved = items.reduce((a, e) => a + (e.kind === 'shorten' ? Math.max(0, e.end - e.start - (e.value ?? 0)) : e.kind === 'cut' ? e.end - e.start : 0), 0)
         return (
-          <div key={g.id} className={css.prop}>
+          <div
+            key={g.id}
+            ref={(node) => { if (node === null) groupNodes.current.delete(g.id); else groupNodes.current.set(g.id, node) }}
+            className={css.prop}
+            data-group={g.id}
+            data-flash={flashGroup === g.id || undefined}
+          >
             <div className={css.propHead}>{g.title}</div>
             <div className={css.actions}>
               <span className={css.muted}>{saved > 0 ? t('proposal.items', { count: String(items.length), saved: formatClock(saved) }) : t('proposal.textItems', { count: String(items.length) })}</span>

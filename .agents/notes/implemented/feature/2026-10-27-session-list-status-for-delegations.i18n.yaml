@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-27-session-list-status-for-delegations.md
+.agents/notes/implemented/feature/2026-10-27-session-list-status-for-delegations.md: 82dad84949cb536da27aaa082cc34a5011dd0df5
+.agents/notes/implemented/feature/2026-10-27-session-list-status-for-delegations.zh.md: 05992f5fcfa19ec0f8ce659e57f3deaddaed4409

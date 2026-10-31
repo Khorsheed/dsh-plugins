@@ -46,6 +46,7 @@ import {
   appendCodexTranscriptLine,
   codexAssistantEvent,
   codexLineText,
+  commandOutcome,
   DEFAULT_DISPOSE_GRACE_MS,
   registerCodexMemberRun,
   textTask,
@@ -135,6 +136,8 @@ export interface CodexLiveRoundSpec {
   readonly childSession: Session
   /** The delegating session (member-channel registration). */
   readonly parentSessionId: string
+  /** The sandbox the member's thread starts under (its session's mode; see CodexCliProvider.sandboxFor). */
+  readonly sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access'
   /**
    * Resume round: continue the thread recorded as `cliSessionId`, appending
    * under this turn number. Also the reattach path after a runtime crash.
@@ -152,6 +155,8 @@ export interface CodexLiveRoundSpec {
    */
   readonly startModel?: string | undefined
   readonly configuration?: LocalAgentResolvedConfiguration
+  /** `compact`: compact the thread instead of starting a turn (see {@link CodexLiveDriver.compactLocked}). */
+  readonly operation?: 'compact' | undefined
 }
 
 type JsonObject = Record<string, unknown>
@@ -168,6 +173,9 @@ function thrown(value: unknown): Error {
  * the process does not exit.
  */
 export const CODEX_LIVE_AUTH_FAILURE = /401 unauthorized|unauthorized|authentication failed|not logged in|access token/i
+
+/** A compaction round waits for its turn to complete at most this long. */
+const COMPACTION_TIMEOUT_MS = 10 * 60_000
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -200,16 +208,15 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
         : undefined
     case 'commandExecution': {
       const command = typeof item['command'] === 'string' ? item.command : undefined
-      const output = typeof item['aggregatedOutput'] === 'string' && item['aggregatedOutput'].trim() !== ''
-        ? item['aggregatedOutput'] as string
-        : undefined
-      if (command === undefined && output === undefined) return undefined
+      const outcome = commandOutcome(item['aggregatedOutput'], item['exitCode'], item['status'])
+      if (command === undefined && outcome.result === undefined) return undefined
       return {
         kind: 'tool',
         id: itemId ?? `codex-live-${randomUUID()}`,
         name: 'Bash',
         ...command === undefined ? {} : { args: command },
-        ...output === undefined ? {} : { result: output },
+        ...outcome.result === undefined ? {} : { result: outcome.result },
+        ...outcome.failed ? { failed: true } : {},
       }
     }
     case 'webSearch':
@@ -262,12 +269,30 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
       return { kind: 'tool', id: itemId ?? `codex-live-${randomUUID()}`, name: `collab/${tool}` }
     }
     case 'mcpToolCall': {
+      // An MCP call (the member bridge's room tools): {server, tool,
+      // arguments, status, result?: {content}, error?: {message}} — the
+      // arguments and the outcome ride the completed item; without them a
+      // member's ask_user_question read as a bare name.
       const server = typeof item['server'] === 'string' ? item.server : undefined
       const tool = typeof item['tool'] === 'string' ? item.tool : undefined
+      const args = item['arguments'] === undefined || item['arguments'] === null
+        ? undefined
+        : typeof item['arguments'] === 'string' ? item['arguments'] : JSON.stringify(item['arguments'])
+      const outcome = item['result'] as { content?: unknown } | null | undefined
+      const content = Array.isArray(outcome?.content) ? outcome.content : []
+      const text = content
+        .filter((block): block is JsonObject => typeof block === 'object' && block !== null)
+        .map(block => typeof block['text'] === 'string' ? block['text'] : undefined)
+        .filter((entry): entry is string => entry !== undefined && entry !== '')
+        .join('\n')
+      const error = item['error'] as { message?: unknown } | null | undefined
+      const failure = typeof error?.message === 'string' && error.message !== '' ? error.message : undefined
       return {
         kind: 'tool',
         id: itemId ?? `codex-live-${randomUUID()}`,
         name: server !== undefined && tool !== undefined ? `${server}/${tool}` : tool ?? 'mcp',
+        ...args === undefined || args === '' || args === '{}' ? {} : { args },
+        ...failure !== undefined ? { result: failure, failed: true } : text === '' ? {} : { result: text },
       }
     }
     case 'plan':
@@ -277,6 +302,23 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
     default:
       return undefined
   }
+}
+
+/**
+ * One breakdown minus another, field by field (non-numeric fields dropped,
+ * floored at zero). The wire's `tokenUsage.total` is the THREAD's running
+ * total, so a round's own spend is its last total minus the thread total
+ * before the round's first call.
+ */
+function breakdownMinus(total: JsonObject, before: JsonObject): JsonObject {
+  const out: JsonObject = {}
+  for (const [key, value] of Object.entries(total)) {
+    const a = Number(value)
+    if (!Number.isFinite(a)) continue
+    const b = Number(before[key])
+    out[key] = Math.max(0, a - (Number.isFinite(b) ? b : 0))
+  }
+  return out
 }
 
 /** Map the app-server's per-turn usage breakdown onto the shared usage contract. */
@@ -441,6 +483,9 @@ class CodexLiveRuntime {
   readonly retiredTurnIds = new Set<string>()
   /** The active round's notification sink; installed per round, cleared at settle. */
   onWireNotification: ((method: string, params: JsonObject) => void) | undefined
+  /** The thread's context occupancy and window, as its last request reported them. */
+  contextTokens: number | undefined
+  contextWindow: number | undefined
   onDead: (() => void) | undefined
   private stderrTail = ''
   private readonly stderrDecoder = new StringDecoder('utf8')
@@ -868,7 +913,7 @@ export class CodexLiveDriver {
     if (rt.threadId === undefined) {
       const permissionParams = {
         approvalPolicy: 'never',
-        sandbox: this.config.sandbox ?? 'workspace-write',
+        sandbox: this.config.sandbox ?? spec.sandbox ?? 'workspace-write',
       }
       if (spec.resume === undefined) {
         const response = await rt.peer.request<{ thread: { id: string } }>('thread/start', {
@@ -903,12 +948,94 @@ export class CodexLiveDriver {
     }
     const key = String(spec.childSession.id)
     const previous = this.roundChains.get(key) ?? Promise.resolve()
-    const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
+    const round = previous.catch(() => {}).then(() => spec.operation === 'compact' ? this.compactLocked(request, spec) : this.startRoundLocked(request, spec))
     this.roundChains.set(key, round.then(
       handle => handle.result.catch(() => ({})),
       () => ({}),
     ))
     return round
+  }
+
+  /**
+   * A compaction round: `thread/compact/start` runs as a turn of its own (a
+   * `contextCompaction` item), and the round holds the member's queue until
+   * that turn completes — codex refuses a `turn/start` meanwhile
+   * (`ActiveTurnNotSteerable { turn_kind: Compact }`). Writes no turn: one
+   * `local-agent/compaction` event (codex gives no summary text).
+   */
+  private async compactLocked(request: SubagentStartRequest, spec: CodexLiveRoundSpec): Promise<SubagentRun> {
+    if (request.signal.aborted) throw new Error('subagent-codex: request was aborted before the compaction started')
+    if (this.draining) throw new LiveChannelUnavailableError('the live driver is draining (a settings change retired this generation)')
+    if (this.disposed) throw new Error('subagent-codex: the live driver is disposed')
+    const childSession = spec.childSession
+    const key = String(childSession.id)
+    const rt = await this.ensureRuntime(spec, request.signal)
+    try {
+      await this.ensureThread(rt, spec)
+    } catch (error) {
+      await this.reclaim(key)
+      throw thrown(error)
+    }
+    const startedAt = Date.now()
+    const boundarySeq = childSession.snapshotEvents().at(-1)?.seq ?? -1
+    const beforeTokens = rt.contextTokens
+    let compactTurn: string | undefined
+    let usage: TokenUsage | undefined
+    let settle!: (outcome: { ok: true } | { ok: false; error: string }) => void
+    const finished = new Promise<{ ok: true } | { ok: false; error: string }>((resolve) => { settle = resolve })
+    rt.onWireNotification = (method, params) => {
+      const turnOf = (params['turn'] as JsonObject | undefined)?.['id'] ?? params['turnId']
+      if (method === 'turn/started' && compactTurn === undefined && typeof turnOf === 'string') compactTurn = turnOf
+      if (method === 'thread/tokenUsage/updated' && turnOf === compactTurn) {
+        const reported = params['tokenUsage'] as JsonObject | undefined
+        const last = reported?.['last'] as JsonObject | undefined
+        if (last !== undefined) usage = usageFromAppServer(last)
+        const window = Number(reported?.['modelContextWindow'])
+        if (Number.isFinite(window) && window > 0) rt.contextWindow = window
+      }
+      if (method === 'turn/completed' && turnOf === compactTurn) {
+        const turn = params['turn'] as JsonObject | undefined
+        const error = (turn?.['error'] as JsonObject | null | undefined)?.['message']
+        settle(turn?.['status'] === 'completed' ? { ok: true } : { ok: false, error: typeof error === 'string' ? error : `compaction ${String(turn?.['status'])}` })
+      }
+    }
+    const result: Promise<SubagentResult> = (async () => {
+      let outcome: { ok: true } | { ok: false; error: string }
+      try {
+        await rt.peer.request('thread/compact/start', { threadId: rt.threadId })
+        outcome = await Promise.race([finished, delay(COMPACTION_TIMEOUT_MS).then(() => ({ ok: false as const, error: 'compaction did not finish in time' }))])
+      } catch (error) {
+        outcome = { ok: false, error: thrown(error).message }
+      } finally {
+        rt.onWireNotification = undefined
+        if (compactTurn !== undefined) rt.retiredTurnIds.add(compactTurn)
+      }
+      childSession.append('local-agent/compaction', {
+        source: 'manual', outcome: outcome.ok ? 'completed' : 'failed', provider: 'codex-local',
+        ...rt.boundModel === undefined ? {} : { model: rt.boundModel },
+        ...beforeTokens === undefined ? {} : { beforeTokens },
+        ...rt.contextWindow === undefined ? {} : { contextWindow: rt.contextWindow },
+        ...usage === undefined ? {} : { usage },
+        ...outcome.ok ? {} : { error: outcome.error },
+        startedAt, endedAt: Date.now(), boundarySeq,
+      })
+      await persistChildSession(this.ctx, childSession).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-codex: compaction persistence failed: ${thrown(error).message}`)
+      })
+      this.armIdleTimer(key)
+      return outcome.ok
+        ? { stopReason: 'completed', output: [] }
+        : { stopReason: 'error', output: [], diagnostic: outcome.error }
+    })()
+    return subprocessRunHandle({
+      id: SessionId(randomUUID()),
+      result,
+      signal: request.signal,
+      // Codex runs the compaction to its end once accepted; the round settles then.
+      onAbort: () => {},
+      requestCancel: () => {},
+      teardown: async () => {},
+    })
   }
 
   /** The serialized round body. */
@@ -949,8 +1076,14 @@ export class CodexLiveDriver {
     const lines: CodexTranscriptLine[] = []
     let mirrored = 0
     let usage: TokenUsage | undefined
-    /** The cumulative turn total the wire's `tokenUsage.total` names, for the settled report. */
+    /**
+     * The round's own total for the settled report: the wire's
+     * `tokenUsage.total` is cumulative over the whole THREAD, so it is
+     * diffed against the thread total before this round's first call
+     * (that first notification's total minus its own `last`).
+     */
     let totalUsage: TokenUsage | undefined
+    let threadTotalBefore: JsonObject | undefined
     /**
      * Per-call usage by transcript line: each `thread/tokenUsage/updated`
      * notification closes one API call (its items have all completed), and
@@ -1044,6 +1177,9 @@ export class CodexLiveDriver {
       stream.durable = lastStep
       stream.opened = true
       openStep = lastStep
+      // From here it streams under its durable step: the preview goes
+      // (a core predating dropPreview keeps it until the item finishes).
+      streamPublisher?.dropPreview?.(stream.step, stream.itemId)
     }
     const closeOpenStep = (): void => {
       if (openStep === undefined) return
@@ -1292,13 +1428,20 @@ export class CodexLiveDriver {
         return
       }
       if (method === 'thread/tokenUsage/updated') {
+        // The thread's occupancy: what the last request sent, against the window.
+        const reported = params['tokenUsage'] as JsonObject | undefined
+        const sent = Number((reported?.['last'] as JsonObject | undefined)?.['inputTokens'])
+        if (runtime !== undefined && Number.isFinite(sent)) runtime.contextTokens = sent
+        const window = Number(reported?.['modelContextWindow'])
+        if (runtime !== undefined && Number.isFinite(window) && window > 0) runtime.contextWindow = window
         const tokenUsage = params['tokenUsage'] as JsonObject | undefined
         const last = tokenUsage?.['last'] as JsonObject | undefined
         const total = tokenUsage?.['total'] as JsonObject | undefined
         // A total with no numbers is "not reported" (never override the
         // per-call read with an empty object).
         if (total !== undefined && (Number.isFinite(Number(total['inputTokens'])) || Number.isFinite(Number(total['outputTokens'])))) {
-          totalUsage = usageFromAppServer(total)
+          threadTotalBefore ??= last === undefined ? {} : breakdownMinus(total, last)
+          totalUsage = usageFromAppServer(breakdownMinus(total, threadTotalBefore))
         }
         if (last !== undefined) {
           usage = usageFromAppServer(last)
@@ -1520,8 +1663,9 @@ export class CodexLiveDriver {
             cwd: spec.cwd,
           })
           // The settled report wants the round TOTAL: prefer the wire's
-          // cumulative tokenUsage.total (the per-call `last` under-reports a
-          // multi-call round); the rollout read is the non-completed turn's
+          // tokenUsage.total diffed to this round (the per-call `last`
+          // under-reports a multi-call round; the raw total over-reports a
+          // resumed thread); the rollout read is the non-completed turn's
           // fallback, as before.
           const settledUsage = totalUsage ?? usage ?? facts.usage
           const round = {

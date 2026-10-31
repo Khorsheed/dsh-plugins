@@ -171,10 +171,26 @@ describe('ChapterBook · 继续写 and the queue', () => {
   })
 })
 
-describe('ChapterPage', () => {
+/** An outside ask for the 章节 face (each one a fresh number: the face answers an ask once per page). */
+let asks = 0
+function ask(item: string, focus?: string): { item: string; focus?: string; n: number } {
+  asks += 1
+  return { item, ...(focus === undefined ? {} : { focus }), n: asks }
+}
+
+describe('the retired chapter page', () => {
+  it('forwards a saved row to the 章节 face, on the plan when it named it', () => {
+    const p = { ...props(fakeRemote({ items: [] })), page: CHAPTER_PAGE, param: '3:plan' }
+    const { container } = render(<ChapterPage {...p} />)
+    expect(container.innerHTML).toBe('')
+    expect(p.navigate.openManuscripts).toHaveBeenCalledWith('3', 'plan')
+  })
+})
+
+describe('the 章节 face asked for a chapter', () => {
   function renderPage(remote: NovelRemote, sessionId: SessionId | null = SESSION) {
-    const p = { ...props(remote, NOVEL_GENRE_ID, sessionId), page: CHAPTER_PAGE, param: '1' }
-    render(<ChapterPage {...p} />)
+    const p = props(remote, NOVEL_GENRE_ID, sessionId)
+    render(<ChapterBook {...p} target={ask('1')} />)
     return p
   }
 
@@ -214,13 +230,13 @@ describe('ChapterPage', () => {
   })
 })
 
-describe('ChapterPage opened from a plan card', () => {
+describe('the 章节 face asked for a chapter\'s plan', () => {
   it('opens the plan block even on a written chapter, where it would fold under the text', async () => {
     const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门与假门', { plan: PLAN, planConfirmedAt: NOW }), phase: 'writing', body: '他推开门。' }] })
-    render(<ChapterPage {...props(remote)} page={CHAPTER_PAGE} param="1:plan" />)
+    render(<ChapterBook {...props(remote)} target={ask('1', 'plan')} />)
     expect(await screen.findByText(PLAN.summary)).toBeTruthy()
     cleanup()
-    render(<ChapterPage {...props(remote)} page={CHAPTER_PAGE} param="1" />)
+    render(<ChapterBook {...props(remote)} target={ask('1', 'body')} />)
     await screen.findByText('他推开门。')
     expect(screen.queryByText(PLAN.summary)).toBeNull()
   })
@@ -234,8 +250,8 @@ describe('ChapterReader', () => {
 
   it('pages forward and back, glimpses the next chapter, and 目录 leads to the book', async () => {
     const remote = fakeRemote({ items: [], rows: rows() })
-    const p = { ...props(remote), page: CHAPTER_PAGE, param: '1' }
-    render(<ChapterPage {...p} />)
+    const p = props(remote)
+    render(<ChapterBook {...p} target={ask('1')} />)
     expect(await screen.findByRole('heading', { name: '门与假门' })).toBeTruthy()
     expect(screen.getByText('1 / 2')).toBeTruthy()
     expect(await screen.findByText('叶子亮了。第二段。')).toBeTruthy()
@@ -244,14 +260,24 @@ describe('ChapterReader', () => {
     expect(await screen.findByText(zh['reader.last'])).toBeTruthy()
     expect((screen.getByRole('button', { name: zh['reader.next'] }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: zh['reader.contents'] }))
-    expect(p.navigate.openManuscripts).toHaveBeenCalled()
+    expect(await screen.findByRole('button', { name: zh['toc.continue'] })).toBeTruthy()
+  })
+
+  it('answers each ask once: a remount with the same ask stays on the contents', async () => {
+    const remote = fakeRemote({ items: [], rows: rows() })
+    const target = ask('2')
+    const { unmount } = render(<ChapterBook {...props(remote)} target={target} />)
+    expect(await screen.findByRole('heading', { name: '蓝叶' })).toBeTruthy()
+    unmount()
+    render(<ChapterBook {...props(remote)} target={target} />)
+    expect(await screen.findByRole('button', { name: zh['toc.continue'] })).toBeTruthy()
   })
 })
 
 describe('PlanBlock', () => {
   function renderChapter(row: Row) {
     const remote = fakeRemote({ items: [], rows: [row] })
-    render(<ChapterPage {...props(remote)} page={CHAPTER_PAGE} param="1" />)
+    render(<ChapterBook {...props(remote)} target={ask('1')} />)
     return remote
   }
 
@@ -417,56 +443,47 @@ describe('novel_write tool row', () => {
     expect(writeRowModel(settled(`画布原本没挂工作区，已挂上会话所在的 /home/user/w。\n${PLANNED}`)).chapter).toMatchObject({ n: 1, title: '门' })
   })
 
-  it('an outline proposal it watched land opens 规划 once; its door says whether it still waits', async () => {
+  it('an outline proposal\'s door opens the 规划 face and says whether it still waits; the row never opens it by itself', async () => {
     const outline = { version: 1, sheet: {}, volumes: [], sketches: [], revision: 1, history: [], proposal: { rationale: '先把主线立住', at: NOW } }
     const remote = { outline: vi.fn(() => ok({ ok: true, outline, chapters: [], cores: [] })) } as unknown as NovelRemote
-    const openPage = vi.fn()
+    const go = vi.fn()
     const answer = settled(`已提交大纲提议（画布 ${CANVAS_ID}x），在「规划」页等用户采用。`)
-    const { rerender } = render(<WriteToolRow block={{}} phase="preparing" remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} planPage="novel:plan" t={t} />)
-    rerender(<WriteToolRow block={answer} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} planPage="novel:plan" t={t} />)
-    await waitFor(() => { expect(openPage).toHaveBeenCalledWith(`${CANVAS_ID}x`, 'novel:plan', '规划') })
-    expect(screen.getByText('先把主线立住')).toBeTruthy()
+    const { rerender } = render(<WriteToolRow block={{}} phase="preparing" remote={() => remote} go={() => go} recentScope="recent" t={t} />)
+    rerender(<WriteToolRow block={answer} remote={() => remote} go={() => go} recentScope="recent" t={t} />)
+    expect(await screen.findByText('先把主线立住')).toBeTruthy()
+    expect(go).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: `${zh['card.outlineAdopt']} →` }))
-    expect(openPage).toHaveBeenCalledTimes(2)
+    expect(go).toHaveBeenCalledWith({ canvasId: `${CANVAS_ID}x`, face: 'lead' })
   })
 
-  it('a planned chapter is a card whose door opens the chapter page', async () => {
+  it('a planned chapter is a card whose door opens that chapter in the 章节 face, on its plan', async () => {
     const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' }] })
-    const openPage = vi.fn()
-    render(<WriteToolRow block={settled(PLANNED)} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
+    const go = vi.fn()
+    render(<WriteToolRow block={settled(PLANNED)} remote={() => remote} go={() => go} recentScope="recent" t={t} />)
     expect(await screen.findByText(PLAN.summary)).toBeTruthy()
     expect(screen.getByText(zh['card.awaiting'])).toBeTruthy()
     expect(screen.getByText('推进 1')).toBeTruthy()
+    expect(go).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: `${zh['card.confirm']} →` }))
-    expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1:plan')
+    expect(go).toHaveBeenCalledWith({ canvasId: CANVAS_ID, face: 'manuscripts', item: '1', focus: 'plan' })
   })
 
-  it('a plan it watched land opens the chapter page once, so the confirm survives the turn folding away', async () => {
-    const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' }] })
-    const openPage = vi.fn()
-    const { rerender } = render(<WriteToolRow block={{}} phase="preparing" remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
-    rerender(<WriteToolRow block={settled(PLANNED)} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
-    await waitFor(() => { expect(openPage).toHaveBeenCalledWith(CANVAS_ID, CHAPTER_PAGE, '第1章 · 门', '1:plan') })
-    rerender(<WriteToolRow block={settled(PLANNED)} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
-    expect(openPage).toHaveBeenCalledTimes(1)
-  })
-
-  it('a plan in history only offers its door', async () => {
-    const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' }] })
-    const openPage = vi.fn()
-    render(<WriteToolRow block={settled(PLANNED)} remote={() => remote} openPage={() => openPage} chapterPage={CHAPTER_PAGE} t={t} />)
-    await screen.findByText(PLAN.summary)
-    expect(openPage).not.toHaveBeenCalled()
+  it('reads an answer that ends in a destination line the same, and never shows the line', () => {
+    const line = `\n⟦dsh-nav⟧{"id":"x","kind":"canvas","params":{"canvasId":"${CANVAS_ID}"},"label":"第 1 章《门》"}`
+    expect(writeRowModel(settled(`${PLANNED}${line}`)).chapter).toMatchObject({ n: 1, title: '门' })
+    render(<WriteToolRow block={settled(`已落卡 [#19]。${line}`)} remote={() => undefined} go={() => undefined} recentScope="recent" t={t} />)
+    expect(screen.getByText('已落卡 [#19]。')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: zh['card.inspect'] })).toBeNull()
   })
 
   it('without the canvas the card keeps its answer counts and offers no door', () => {
-    render(<WriteToolRow block={settled(PLANNED)} remote={() => undefined} openPage={() => undefined} chapterPage={CHAPTER_PAGE} t={t} />)
+    render(<WriteToolRow block={settled(PLANNED)} remote={() => undefined} go={() => undefined} recentScope="recent" t={t} />)
     expect(screen.getByText('情节 2 段')).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
   })
 
   it('any other write is one line, the full answer behind 详情', () => {
-    render(<WriteToolRow block={settled('已落卡 [#19]。\n忽略了不认识的字段：bogus')} remote={() => undefined} openPage={() => undefined} chapterPage={CHAPTER_PAGE} t={t} />)
+    render(<WriteToolRow block={settled('已落卡 [#19]。\n忽略了不认识的字段：bogus')} remote={() => undefined} go={() => undefined} recentScope="recent" t={t} />)
     expect(screen.getByText('已落卡 [#19]。')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh['card.inspect'] }))
     expect(screen.getByText(/忽略了不认识的字段/)).toBeTruthy()
@@ -568,7 +585,7 @@ describe('StoryLogPage', () => {
     expect(screen.getByText('发现半页守则')).toBeTruthy()
     expect(screen.queryByText(zh['log.m.appear'], { selector: 'b' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /读第 3 章/ }))
-    expect(p.navigate.openPage).toHaveBeenCalledWith(CHAPTER_PAGE, expect.any(String), '3')
+    expect(p.navigate.openManuscripts).toHaveBeenCalledWith('3')
   })
 
   it('the 人物 tab shows where each value came from and the pair; 在画布中打开 opens the card', async () => {
@@ -591,11 +608,11 @@ describe('StoryLogPage', () => {
     expect(screen.queryByRole('button', { name: '图例' })).toBeNull()
   })
 
-  it('a chapter number opens that chapter\'s page; 图例 folds open with the hollow rule', async () => {
+  it('a chapter number opens that chapter in the 章节 face; 图例 folds open with the hollow rule', async () => {
     const p = page(storyLogRemote())
     render(<StoryLogPage {...p} />)
     fireEvent.click(await screen.findByRole('button', { name: /^1\D*已对账$/ }))
-    expect(p.navigate.openPage).toHaveBeenCalledWith(CHAPTER_PAGE, chapterHeading(t, 1, '第1章'), '1')
+    expect(p.navigate.openManuscripts).toHaveBeenCalledWith('1')
     expect(screen.queryByText('空心 = 计划里，还没写到')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '图例' }))
     expect(screen.getByText('空心 = 计划里，还没写到')).toBeTruthy()

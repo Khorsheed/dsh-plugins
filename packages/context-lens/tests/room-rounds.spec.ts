@@ -114,3 +114,23 @@ describe('room decisions', () => {
     expect(store.getTurn('s', first!.turnSeq, { scopes: ['child-coco'] })!.roomDecisions).toBeUndefined()
   })
 })
+
+describe('room round scroll anchor', () => {
+  it('a round carries the human message the post appended, matched by text before the nearest', async () => {
+    const { humanMessageBefore } = await import('../src/service.ts')
+    const rows: SessionLogRow[] = [
+      { type: 'user/message', seq: 39, time: 1, data: { id: 'other', source: { kind: 'user' }, content: [{ type: 'text', text: '别的' }] } },
+      { type: 'user/message', seq: 40, time: 1, data: { id: 'own', source: { kind: 'user' }, content: [{ type: 'text', text: '你好' }] } },
+      { type: 'user/message', seq: 41, time: 1, data: { id: 'brief', source: { kind: 'room' }, content: [{ type: 'text', text: '【房间简报】' }] } },
+    ]
+    const bySeq = new Map(rows.map(row => [row.seq as number, row]))
+    expect(humanMessageBefore(seq => bySeq.get(seq), 42, { origin: 'human', text: '你好' })).toBe('own')
+    expect(humanMessageBefore(seq => bySeq.get(seq), 42, { origin: 'human', text: '改过的' })).toBe('own')
+    expect(humanMessageBefore(seq => bySeq.get(seq), 42, { origin: 'coordinator', text: '你好' })).toBeUndefined()
+    const store = new InspectorStore()
+    const all = [...turn1, ...room]
+    store.insertLogTurns('s', reconstructSession(all))
+    for (const row of all) if (row.type.startsWith('room/')) store.noteRoomEvent('s', row.type, row.seq === 20 ? { ...row.data as object, messageId: 'own' } : row.data, row.seq, row.time)
+    expect(store.listTurns('s').turns.map(t => t.room?.messageId)).toEqual([undefined, 'own', undefined])
+  })
+})

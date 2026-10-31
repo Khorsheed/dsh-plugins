@@ -78,7 +78,7 @@ dsh plugin --profile web remove @khorsheed/dsh-message-timeline
 
 **挂载与数据** —— 一个条目注册进官方 `conversation.session.header.utilities` 槽位，把插件锚定进会话作用域；面板通过 body portal 以固定几何渲染，数据从官方滚动区实测。行来自两路合并：宿主 `turnOutline` 投影（`useProjection` 标准座席，整会话每轮一条：轮次号、`turn/start` 序号、首条用户消息的 50 字预览）列出每一轮；已加载窗口（`useChat` 的 `order` / `nodes`）为其覆盖的轮次提供更丰富的预览、steering 行和 message-tools 气泡（宿主 order 未必补上的 `message-tools-edited`/`message-tools-restored` 气泡从节点库追加）。被撤回原消息的气泡会被丢弃（其会话行已被 DOM hider 隐藏，点击到不了），追加的气泡按锚定 seq 排序，保证最新消息恒为最后一行。投影缺席时退回纯窗口行。
 
-**跳转与降级** —— 点击已加载行按官方 `data-chat-anchor-key` 属性找到会话行并写 `scrollTop`；官方 ChatView 把这种程序化滚动当正常读者移动处理（底部跟随与滚动记忆照常工作）。点击大纲行则经会话的 jump loader（`ISession.loadThrough`，0.1.2-alpha.3 起）把历史回翻到该轮的 `turn/start` 序号，行一物化即落位；翻页停滞或该轮不可达（如首条消息已被撤回）时落位到其后最近的可行。探测的属性是官方渲染产物而非契约 API：官方改结构时面板自行隐藏并 console.warn 一次，不抛错、boot 永不失败。面板宽度受左缘沟槽约束、不越过消息流左缘；流探针无应答（官方结构变化）时宽度退化为滚动区受限比例以 best-effort 兜底——此时面板可能压到消息流，直到探针恢复。
+**跳转与降级** —— 点击已加载行按官方 `data-chat-anchor-key` 属性找到会话行并写 `scrollTop`；官方 ChatView 把这种程序化滚动当正常读者移动处理（底部跟随与滚动记忆照常工作）。成功跳转还会把目标行与浏览器钳制后的实际滚动位置记为落点并立即高亮：位置不变且目标行仍挂载时保留该落点，因此会话已在底部、无法继续滚动时也能选中最新消息或可视区内的后续消息；实际滚动、目标行移除、scrollport 重绑或会话切换后恢复普通阅读位置计算。点击大纲行则经会话的 jump loader（`ISession.loadThrough`，0.1.2-alpha.3 起）把历史回翻到该轮的 `turn/start` 序号，行一物化即落位；翻页停滞或该轮不可达（如首条消息已被撤回）时落位到其后最近的可行。探测的属性是官方渲染产物而非契约 API：官方改结构时面板自行隐藏并 console.warn 一次，不抛错、boot 永不失败。面板宽度受左缘沟槽约束、不越过消息流左缘；流探针无应答（官方结构变化）时宽度退化为滚动区受限比例以 best-effort 兜底——此时面板可能压到消息流，直到探针恢复。
 
 **模型体验：无。** 面板只读会话快照并滚动会话，不发送提示词、不追加会话事件、不进会话日志。KV 缓存影响：无。`enabled` 配置可整体关闭插件；从 cordis.yml 移除本插件即移除它添加的所有界面。
 

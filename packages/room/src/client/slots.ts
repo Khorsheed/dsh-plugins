@@ -5,7 +5,7 @@
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import type { ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-conversation's SlotMap merges ('conversation.composer',
 // 'conversation.view', 'conversation.session.header.actions').
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
-import type { RoomProviderList, RoomQuestionAnswer, RoomRemoval, RoomSettings } from '../types.ts'
+import type { RoomProviderList, RoomQuestionAnswer, RoomRemoval, RoomRunAttachment, RoomSettings } from '../types.ts'
 import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import type { RoomChromeVisibility } from './preset-visibility.ts'
 import type { RoomStore } from './room-store.ts'
@@ -204,6 +204,15 @@ export interface RoomAttachmentsFace {
 }
 
 export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInjected {
+  /**
+   * Run one host command on the room's own agent (`/compact` while dsh
+   * coordinates): the official command channel, as the official composer
+   * would. Resolves null on success, the failure text otherwise. Absent on a
+   * host without the commands Remote.
+   */
+  readonly runCommand?: ((sessionId: SessionId, line: string) => Promise<string | null>) | undefined
+  /** Hand the coordinator role to another member (the composer's switch). */
+  readonly setCoordinator?: ((memberId: string, expectedRevision: number) => Promise<RoomMutationOutcome>) | undefined
   /** Draft attachments; absent without the official conversation service. */
   readonly attachments?: RoomAttachmentsFace | undefined
   /** Open the task page (at one task); absent without the right sidebar. */
@@ -280,9 +289,7 @@ export interface RoomInviteValues {
   readonly name: string
   /** Short public role (omitted = none). */
   readonly role?: string
-  /** `native`: a DSH child agent in this host (omitted = a CLI member). */
-  readonly kind?: 'cli' | 'native'
-  /** Native only: the host agent preset (omitted = the host default). */
+  /** The member's mode: a host agent preset id (omitted = none). */
   readonly preset?: string
   readonly instructions?: string
   /** Member-level working directory (omitted = inherits the room session's cwd). */
@@ -302,6 +309,10 @@ export type RoomInviteOutcome =
 /** Injected face of the members tab. */
 export interface RoomMembersInjected extends RoomInviteInjected {
   readonly renderMemberConfiguration?: ((childSessionId: string) => ReactNode) | undefined
+  /** The edit dialog's member-control face (local-agent); absent on an older core. */
+  readonly renderMemberModelPicker?: LocalAgentUi['renderMemberModelPicker'] | undefined
+  readonly readMemberSelection?: LocalAgentUi['readMemberSelection'] | undefined
+  readonly saveMemberSelection?: LocalAgentUi['saveMemberSelection'] | undefined
   /** The client-side room state store (roster + runs). */
   readonly roomStore: RoomStore
   /** Open a session (the member's child-session trajectory jump). */
@@ -373,6 +384,10 @@ export interface RoomSpeechInjected {
    * absent when the composition has no Context Lens.
    */
   readonly openDetail?: ((sessionId: SessionId, messageId: string) => void) | undefined
+  /** Open a file path a member named in its text (sidebar file viewer); absent without the sidebar. */
+  readonly openPath?: ((sessionId: SessionId, path: string) => void) | undefined
+  /** Answer a question asked in this round (an expired one answers late). */
+  readonly answerQuestion: RoomQuestionInjected['answerQuestion']
 }
 
 /** Full props of the 'room-speech' chat-node renderer. */
@@ -380,16 +395,21 @@ export type RoomSpeechViewProps =
   PropsRuntime<'conversation.chat.node', 'room-speech'>
   & InjectFace<RoomSpeechInjected>
   & PropsLocale<'room'>
+  & PropsRenderSlots<'room.member.attachment'>
 
 /** Injected face of the member-run chat node. */
 export interface RoomRunInjected {
   readonly renderMemberOutput?: LocalAgentUi['renderMemberOutput'] | undefined
+  /** Open a file path the member named while it works (sidebar file viewer). */
+  readonly openPath?: ((sessionId: SessionId, path: string) => void) | undefined
   /** The client-side room state store (the roster carries the jump target). */
   readonly roomStore: RoomStore
   /** Open a session (the whole-row jump into the member's child session). */
   readonly openSession: (sessionId: SessionId) => void
   /** Cancel the named member's in-flight run through the Remote. */
   readonly cancelMember: (member: string) => Promise<void>
+  /** Answer the question the round is waiting on, right in its live card. */
+  readonly answerQuestion: RoomQuestionInjected['answerQuestion']
 }
 
 /** Full props of the 'room-run' chat-node renderer. */
@@ -397,6 +417,7 @@ export type RoomRunViewProps =
   PropsRuntime<'conversation.chat.node', 'room-run'>
   & InjectFace<RoomRunInjected>
   & PropsLocale<'room'>
+  & PropsRenderSlots<'room.run.attachment'>
 
 /** Full props of the 'room-event' chat-node renderer. */
 export type RoomEventViewProps =
@@ -485,8 +506,101 @@ export interface RoomInboxInjected {
   readonly releaseReports: (member: string) => Promise<void>
 }
 
+/** Injected face of a member-to-member message row. */
+export interface RoomDispatchInjected {
+  /** The client-side room state store: sender names and delivery state. */
+  readonly roomStore: RoomStore
+}
+
+/** Full props of the 'room-dispatch' chat-node renderer. */
+export type RoomDispatchViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-dispatch'>
+  & InjectFace<RoomDispatchInjected>
+  & PropsLocale<'room'>
+
+/** Full props of the 'room-compaction' chat-node renderer. */
+export type RoomCompactionViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-compaction'>
+  & PropsLocale<'room'>
+
 /** Full props of the 'room-inbox' chat-node renderer. */
 export type RoomInboxViewProps =
   PropsRuntime<'conversation.chat.node', 'room-inbox'>
   & InjectFace<RoomInboxInjected>
   & PropsLocale<'room'>
+
+/**
+ * The modes at work in a room (`ctx.roomModes`): the presets its members run,
+ * for the other plugins' sidebar visibility (proposal 2026-10-29-room-desk) —
+ * a room whose own mode is 开发 still shows the canvas when a member writes.
+ * Consumers probe it with `ctx.get('roomModes')` and keep their own criterion
+ * without it.
+ */
+export interface RoomModesService {
+  /**
+   * The members' presets of one room session, deduplicated.
+   * @returns undefined while the session is not known to be a room on this page.
+   */
+  presetsOf: (sessionId: string) => readonly string[] | undefined
+  /** Called whenever a room's roster may have changed. */
+  subscribe: (listener: () => void) => () => void
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The modes at work in a room, provided by @khorsheed/dsh-room's browser half. */
+    roomModes: RoomModesService
+  }
+}
+
+/**
+ * What one desk attachment's renderer receives: the room, and one event
+ * another plugin wrote into it during a member's run (proposal
+ * 2026-10-29-room-desk). `live` is true in the running card — a renderer that
+ * follows what it shows (the canvas opening in the sidebar) does so there.
+ */
+export interface RoomMemberAttachmentOwnerProps {
+  readonly sessionId: SessionId
+  /** The owner these belong to (the entry key). */
+  readonly owner: string
+  /** Everything this owner's events say the run did, in order: the owner may fold several writes into one line. */
+  readonly attachments: readonly RoomRunAttachment[]
+  readonly live: boolean
+}
+
+/** A run's attachments grouped by owner, owners in first-appearance order. */
+export function attachmentsByOwner(attachments: readonly RoomRunAttachment[]): readonly (readonly [string, readonly RoomRunAttachment[]])[] {
+  const groups = new Map<string, RoomRunAttachment[]>()
+  for (const attachment of attachments) {
+    const group = groups.get(attachment.owner)
+    if (group === undefined) groups.set(attachment.owner, [attachment])
+    else group.push(attachment)
+  }
+  return [...groups]
+}
+
+/**
+ * The seats a member's cards offer other plugins, one per card: a child slot
+ * is declared by exactly one registration, so the reply and the running card
+ * each declare their own.
+ */
+export const ROOM_SPEECH_CARD_SLOTS = {
+  'room.member.attachment': { kind: 'keyed', scope: 'session' },
+} as const
+export const ROOM_RUN_CARD_SLOTS = {
+  'room.run.attachment': { kind: 'keyed', scope: 'session' },
+} as const
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    /**
+     * The end of a member's card — its running card and its reply — keyed by
+     * the owner of what the run put on the room's desk (a `room/desk-opened`
+     * event's `owner`, e.g. `@khorsheed/dsh-canvas`): the owning plugin
+     * renders its own row there. An owner nobody registered renders nothing.
+     */
+    'room.member.attachment': { kind: 'keyed'; scope: 'session'; owner: RoomMemberAttachmentOwnerProps }
+    /** The same seat at the end of a member's RUNNING card (`live: true`): a plugin registers its row in both. */
+    'room.run.attachment': { kind: 'keyed'; scope: 'session'; owner: RoomMemberAttachmentOwnerProps }
+  }
+}

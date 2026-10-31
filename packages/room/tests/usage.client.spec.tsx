@@ -20,7 +20,8 @@ const STATE: RoomState = {
   ],
   relays: [], tasks: [], runs: [],
   executions: [
-    { id: '3:m-cut', memberId: 'm-cut', member: '剪刀手', state: 'done', startedAt: 1, elapsedMs: 30_000, tokens: 12_000, model: 'gpt-6.1' },
+    { id: '3:m-cut', memberId: 'm-cut', member: '剪子', state: 'done', startedAt: 1, elapsedMs: 10_000, tokens: 2_000, usage: { inputTokens: 500, cacheReadTokens: 1_000, outputTokens: 500 } },
+    { id: '4:m-cut', memberId: 'm-cut', member: '剪刀手', state: 'done', startedAt: 1, elapsedMs: 20_000, tokens: 10_000, model: 'gpt-6.1', usage: { inputTokens: 1_000, cacheReadTokens: 8_000, outputTokens: 1_000 } },
     { id: '1:m-gm', memberId: 'm-gm', member: '游戏大师', state: 'done', startedAt: 1, elapsedMs: 60_000, tokens: 100_000 },
     { id: '5:m-gm', memberId: 'm-gm', member: '游戏大师', state: 'done', startedAt: 2, elapsedMs: 42_000, tokens: 44_000, model: 'claude-opus-5-5' },
     { id: '0:m-dsh', memberId: 'm-dsh', member: 'dsh', state: 'done', startedAt: 0, elapsedMs: 9_000, tokens: 9_999 },
@@ -31,7 +32,8 @@ describe('member usage', () => {
   it('sums each member\'s runs in roster order, leaving the main agent to the projected figures', () => {
     expect(memberUsage(STATE)).toEqual([
       { member: '游戏大师', model: 'claude-opus-5-5', rounds: 2, tokens: 144_000, elapsedMs: 102_000 },
-      { member: '剪刀手', model: 'gpt-6.1', rounds: 1, tokens: 12_000, elapsedMs: 30_000 },
+      // A rename keeps one row under the current name; the split sums the rounds that recorded one.
+      { member: '剪刀手', model: 'gpt-6.1', rounds: 2, tokens: 12_000, input: 10_500, cacheRead: 9_000, output: 1_500, elapsedMs: 30_000 },
     ])
     expect(memberUsage(undefined)).toEqual([])
   })
@@ -43,8 +45,13 @@ describe('member usage', () => {
     fireEvent.click(chip)
     const breakdown = screen.getByRole('dialog', { name: '成员用量' })
     expect(breakdown.textContent).toContain('游戏大师')
+    // The total column carries a member whose records hold no split.
     expect(breakdown.textContent).toContain('144K')
     expect(breakdown.textContent).toContain('1m42s')
+    expect(breakdown.textContent).toContain('剪刀手')
+    expect(breakdown.textContent).not.toContain('剪子')
+    expect(breakdown.textContent).toContain('10.5K')
+    expect(breakdown.textContent).toContain('86%')
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
   })

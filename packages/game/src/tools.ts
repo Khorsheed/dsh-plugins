@@ -2,8 +2,8 @@
  * The game mode's model tools, registered by the `./agent` entry:
  * `game_open` (list, switch to, create or adopt a project — the light gate
  * lives here), `game_read` (the bound project's state), `game_propose` (look
- * variants) and `game_publish` (run the checks now and put a passing build
- * into the play area). There is no write tool: the agent writes project files
+ * variants) and `game_publish` (run the checks now, put a passing build into
+ * the play area, and take the user's game tab to it). There is no write tool: the agent writes project files
  * with the ordinary fs tools. The checks also run by themselves at the end of
  * every turn — but a turn can stay open for a long time (asking the user a
  * question does not close it), so `game_publish` is how a build reaches the
@@ -15,10 +15,13 @@
  */
 import { isAbsolute, join } from 'node:path'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
+import { actingSession, announceDeskOpen, deskOf, type GameDesk } from './desk.ts'
+import { withGameDestination } from './nav-line.ts'
 import { artStyleLabel, lookText } from './project.ts'
 import type { GameService } from './store.ts'
-import { ART_STYLES, ART_STYLES_3D, CHAPTERS, type ProjectView } from './types.ts'
+import { ART_STYLES, ART_STYLES_3D, CHAPTERS, type ProjectRow, type ProjectView } from './types.ts'
 
 /** The community tool-origin tag. */
 function tagOrigin<T extends object>(definition: T): T {
@@ -78,6 +81,49 @@ export function renderProject(view: ProjectView): string {
  * @returns the two definitions, tagged.
  */
 export function gameToolDefinitions(store: GameService): ToolDefinition[] {
+  /**
+   * Where a call works (desk.ts): the caller's own session (every write's
+   * fence), its room desk if any, the session whose binding it acts on (the
+   * room's for a coordinator), and the project it reads — the acting
+   * binding, else, for a room member, the room's.
+   */
+  const placeOf = async (agent: Agent | undefined): Promise<{
+    session: Session; desk: GameDesk | undefined; acting: Session; bindingId: string; row: ProjectRow | undefined
+  } | undefined> => {
+    const session = agent?.session
+    if (session === undefined) return undefined
+    const desk = deskOf(agent)
+    const acting = actingSession(session, desk)
+    const row = await store.boundProject(acting.id)
+    if (row === undefined && desk?.role === 'member') {
+      const room = await store.boundProject(desk.session.id)
+      if (room !== undefined) return { session, desk, acting, bindingId: desk.session.id, row: room }
+    }
+    return { session, desk, acting, bindingId: acting.id, row }
+  }
+
+  /** Bind the acting session (the room's as a desk for a coordinator) and tell the room; returns the answer's tail. */
+  const settle = async (
+    place: { desk: GameDesk | undefined; acting: Session },
+    project: { id: string; title: string },
+    created: boolean,
+  ): Promise<{ ok: true; tail: string } | { ok: false; error: string }> => {
+    const coordinator = place.desk?.role === 'coordinator'
+    const bound = await store.bind(place.acting.id, project.id, coordinator ? { desk: true } : {})
+    if (!bound.ok) return { ok: false, error: bound.error }
+    if (place.desk === undefined) return { ok: true, tail: '' }
+    announceDeskOpen(place.desk, { projectId: project.id, title: project.title, created })
+    return { ok: true, tail: coordinator ? '房间侧栏已切到这个项目。' : '只绑定了你自己的会话；房间里会出现这个项目的入口，用户点开就能看到。' }
+  }
+
+  /**
+   * An open/create/switch outside a room names the project's play area as the
+   * answer's destination (in a room the desk row brings it instead).
+   */
+  const opened = (desk: GameDesk | undefined, project: { id: string; title: string }, answer: string): string => desk !== undefined
+    ? answer
+    : withGameDestination(answer, `game:${project.id}:open:${Date.now()}`, { projectId: project.id, view: 'play' }, `游戏《${project.title}》`)
+
   const listText = async (sessionId: string | undefined): Promise<string> => {
     const projects = await store.listProjects()
     const bound = sessionId === undefined ? undefined : await store.boundProject(sessionId)
@@ -96,7 +142,7 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       + 'one (title or id). create: make a new project in the session workspace — requires title, pitch, elementTypes and '
       + 'artStyle the user agreed to (the answer lists what is missing); runtime: 3d makes a three.js project (default 2d). '
       + 'path: adopt an existing folder with a game.json. '
-      + 'The right-sidebar game tab follows. Load the gamedev skill before writing game code.',
+      + 'The right-sidebar game tab shows it. Load the gamedev skill before writing game code.',
     parameters: {
       project: { type: 'string', description: 'Project title or id to switch to.' },
       create: { type: 'string', description: 'Title of a new project.' },
@@ -115,12 +161,14 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       args: { project?: string; create?: string; pitch?: string; elementTypes?: string; artStyle?: string; runtime?: string; pillars?: string; path?: string },
       exec: { agent?: Agent },
     ): Promise<string> => {
-      const session = exec.agent?.session
+      const place = await placeOf(exec.agent)
       const create = args.create?.trim() ?? ''
       const wanted = args.project?.trim() ?? ''
       const path = args.path?.trim() ?? ''
-      if (create === '' && wanted === '' && path === '') return listText(session?.id)
-      if (session === undefined) return '失败：这次调用没有会话。'
+      if (create === '' && wanted === '' && path === '') return listText(place?.bindingId)
+      if (place === undefined) return '失败：这次调用没有会话。'
+      // The workspace and the fence are always the caller's own session.
+      const { session } = place
 
       if (create !== '') {
         const created = await store.create({
@@ -131,8 +179,12 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
             ? `还不能建项目，缺：\n${created.missing.map(m => `- ${m}`).join('\n')}\n先和用户把这些定下来（给选项让用户挑），再调用 create。`
             : `失败：${created.error}`
         }
-        return `完成：已建项目《${created.project.title}》（${created.project.id}），目录 ${created.project.root}，本会话已绑定。`
-          + '\n已写 game.json 与 design/pillars.md。接下来：load gamedev 技能，写 index.html + src/ 与 window.dshGame，并一起写 tests/。'
+        // create bound the caller's own session; a coordinator's room binds too.
+        const settled = place.desk === undefined
+          ? { ok: true as const, tail: '' }
+          : await settle(place, created.project, true)
+        return opened(place.desk, created.project, `完成：已建项目《${created.project.title}》（${created.project.id}），目录 ${created.project.root}，本会话已绑定。${settled.ok ? settled.tail : ''}`
+          + '\n已写 game.json 与 design/pillars.md。接下来：load gamedev 技能，写 index.html + src/ 与 window.dshGame，并一起写 tests/。')
       }
 
       if (path !== '') {
@@ -140,20 +192,21 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
         const root = isAbsolute(path) ? path : join(cwd, path)
         const adopted = await store.adopt(root)
         if (!adopted.ok) return adopted.error === 'not-found' ? `失败：${root} 下没有 game.json。` : `失败：${root} 的 game.json 读不了。`
-        await store.bind(session.id, adopted.project.id)
-        return `完成：已登记并切到《${adopted.project.title}》（${adopted.project.id}）。`
+        const settled = await settle(place, adopted.project, false)
+        if (!settled.ok) return `失败：${settled.error}`
+        return opened(place.desk, adopted.project, `完成：已登记并切到《${adopted.project.title}》（${adopted.project.id}）。${settled.tail}`)
       }
 
       const projects = await store.listProjects()
       const exact = projects.filter(p => p.id === wanted || p.title === wanted)
       const pool = exact.length > 0 ? exact : projects.filter(p => p.title.includes(wanted))
-      if (pool.length === 0) return `失败：没有叫「${wanted}」的项目。\n${await listText(session.id)}`
+      if (pool.length === 0) return `失败：没有叫「${wanted}」的项目。\n${await listText(place.bindingId)}`
       if (pool.length > 1) return `「${wanted}」对应多个项目，请问用户是哪一个：${pool.map(p => `${p.id}《${p.title}》`).join('、')}`
       const target = pool[0]!
-      const bound = await store.bind(session.id, target.id)
-      if (!bound.ok) return `失败：${bound.error}`
+      const settled = await settle(place, target, false)
+      if (!settled.ok) return `失败：${settled.error}`
       const view = await store.view(target.id)
-      return view === undefined ? `完成：已切到《${target.title}》。` : `完成：已切到这个项目。\n${renderProject(view)}`
+      return opened(place.desk, target, view === undefined ? `完成：已切到《${target.title}》。${settled.tail}` : `完成：已切到这个项目。${settled.tail}\n${renderProject(view)}`)
     },
   })
 
@@ -172,10 +225,10 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
     execute: async (args: { chapter?: string; element?: string }, exec: { agent?: Agent }): Promise<string> => {
-      const session = exec.agent?.session
-      if (session === undefined) return '失败：这次调用没有会话。'
-      const row = await store.boundProject(session.id)
-      if (row === undefined) return `本会话还没有游戏项目。用 game_open 选一个或新建。\n${await listText(session.id)}`
+      const place = await placeOf(exec.agent)
+      if (place === undefined) return '失败：这次调用没有会话。'
+      const row = place.row
+      if (row === undefined) return `本会话还没有游戏项目。用 game_open 选一个或新建。\n${await listText(place.bindingId)}`
       const view = await store.view(row.id)
       if (view === undefined) return '失败：项目登记丢了，用 game_open 重新选。'
       const elementId = args.element?.trim() ?? ''
@@ -221,8 +274,8 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
     execute: async (args: { element?: string; request?: string; variants?: unknown }, exec: { agent?: Agent }): Promise<string> => {
-      const session = exec.agent?.session
-      if (session === undefined) return '失败：这次调用没有会话。'
+      const place = await placeOf(exec.agent)
+      if (place === undefined) return '失败：这次调用没有会话。'
       let variants: unknown = args.variants
       if (typeof variants === 'string') {
         try {
@@ -232,7 +285,7 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
         }
       }
       if (!Array.isArray(variants) || variants.length === 0) return '失败：variants 要是 1–3 个方案的数组。'
-      const result = await store.proposeLooks(session.id, (args.element ?? '').trim(), args.request ?? '',
+      const result = await store.proposeLooks(place.bindingId, (args.element ?? '').trim(), args.request ?? '',
         variants.map(v => (v !== null && typeof v === 'object' ? v as { label?: string; note?: string; look: unknown } : { look: null })))
       if (!result.ok) return `失败：${result.error}`
       return `完成：「${result.name}」的 ${result.count} 个外观方案已放到右栏「元素」里等用户挑；挑中的会直接替换进游戏，下一轮你会收到用户的选择。`
@@ -245,19 +298,25 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       'Run the checks on this session\'s game project now (data validation → load and a 2-second smoke run → tests/) and, '
       + 'when they pass, cut a new version into the play area (or a candidate when auto-confirm is off). Call it whenever a '
       + 'playable build is ready and ALWAYS before asking the user to play or try something: asking a question does not end '
-      + 'the turn, so without it the play area still shows the previous version. A failure lists what to fix.',
-    parameters: {},
+      + 'the turn, so without it the play area still shows the previous version. A failure lists what to fix. A passing '
+      + 'publish names where the result is — the one element this version changed, the element grid when it changed '
+      + 'several, else the play area — and the user\'s game tab goes there when they are watching; note is the short '
+      + 'phrase shown with it.',
+    parameters: {
+      note: { type: 'string', description: 'What to look at, a short phrase shown with it (e.g. 看看阿努比斯的头饰). Optional.' },
+    },
     output: {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
-    execute: async (_args: Record<string, never>, exec: { agent?: Agent }): Promise<string> => {
-      const session = exec.agent?.session
-      if (session === undefined) return '失败：这次调用没有会话。'
-      const row = await store.boundProject(session.id)
+    execute: async (args: { note?: string }, exec: { agent?: Agent }): Promise<string> => {
+      const place = await placeOf(exec.agent)
+      if (place === undefined) return '失败：这次调用没有会话。'
+      const { session, row } = place
       if (row === undefined) return '本会话还没有游戏项目。用 game_open 选一个或新建。'
       // No fix-round cap here: an explicit publish never marks a build as given up.
-      const outcome = await store.checkTurn(session, 0, Number.POSITIVE_INFINITY, 'agent')
+      // The project may be the room's; the fence is the caller's own session.
+      const outcome = await store.checkProject(row.id, session, 0, Number.POSITIVE_INFINITY, 'agent')
       const view = await store.view(row.id)
       const liveVersion = view?.current?.version
       const live = liveVersion === undefined ? '试玩区还没有版本' : `试玩区仍是 v${liveVersion}`
@@ -273,8 +332,17 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       }
       if (outcome.kind === 'pass') {
         const tail = outcome.record.skipped === undefined ? '' : `（${outcome.record.skipped}）`
-        if (outcome.deployed !== null) return `完成：v${outcome.deployed.version} 通过检查${outcome.record.passed > 0 ? `（${outcome.record.passed} 个用例）` : ''}，已进试玩区，可以请用户试玩了。${tail}`
-        if (outcome.candidate !== null) return `完成：v${outcome.candidate.version} 通过检查，作为候选等用户在右栏确认（自动上线关着或是换风格的版本）；确认后才进试玩区。${tail}`
+        const cut = outcome.deployed ?? outcome.candidate
+        // In a room the desk carries the project; a desk call names no destination.
+        const landed = cut === null || place.desk !== undefined
+          ? undefined
+          : await store.publishedPlace(place.bindingId, cut.version, outcome.candidate !== null, args.note)
+        const where = landed === undefined ? '' : `用户在右栏游戏页签的${landed.where}能看到（会话里有卡片直达）。`
+        const named = (answer: string): string => landed === undefined || cut === null
+          ? answer
+          : withGameDestination(answer, `game:${landed.projectId}:v${cut.version}`, { projectId: landed.projectId, ...landed.target }, landed.label)
+        if (outcome.deployed !== null) return named(`完成：v${outcome.deployed.version} 通过检查${outcome.record.passed > 0 ? `（${outcome.record.passed} 个用例）` : ''}，已进试玩区，可以请用户试玩了。${where}${tail}`)
+        if (outcome.candidate !== null) return named(`完成：v${outcome.candidate.version} 通过检查，作为候选等用户在右栏确认（自动上线关着或是换风格的版本）；确认后才进试玩区。${where}${tail}`)
         return `检查通过，但这个会话是只读模式，没有生成版本。${tail}`
       }
       // Skipped: no entry yet, or the build is the one already checked.

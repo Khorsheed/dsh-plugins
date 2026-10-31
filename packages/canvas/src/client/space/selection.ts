@@ -54,6 +54,12 @@ export interface CanvasTabRow {
   readonly id: string
   readonly canvasId: string
   readonly at: CanvasPlace
+  /**
+   * Put here by someone else and not looked at yet — a room member opened it
+   * beside the canvas the human reads. Cleared when the row shows; a reload
+   * forgets it (the room's conversation row still says who opened it).
+   */
+  readonly fresh?: true
 }
 
 /** The row a canvas occupies. */
@@ -114,6 +120,9 @@ export interface CanvasFaceAsk {
   readonly canvasId: string
   readonly face: CanvasBoardFace
   readonly scope: string | null
+  /** One thing on that face the genre should show (the novel's chapter number), and how. */
+  readonly item?: string
+  readonly focus?: string
   readonly n: number
 }
 
@@ -146,6 +155,30 @@ export class CanvasSelectionStore {
   openCanvas(canvasId: string): void {
     const existing = this.source.getSnapshot().tabs.find(row => row.canvasId === canvasId)
     this.ensure(canvasId, existing?.at ?? AT_BOARD)
+  }
+
+  /**
+   * Put a canvas on the strip WITHOUT showing it, marked fresh: a room member
+   * opened it beside the canvas the human is reading (proposal
+   * 2026-10-29-room-desk, choice A). A row already on the strip is only
+   * marked — unless it is the one showing, which needs no mark.
+   */
+  addCanvas(canvasId: string): void {
+    const current = this.source.getSnapshot()
+    const id = boardTabId(canvasId)
+    if (current.active === id) return
+    const index = current.tabs.findIndex(candidate => candidate.id === id)
+    if (index >= 0) {
+      const existing = current.tabs[index]!
+      if (existing.fresh === true) return
+      const tabs = [...current.tabs]
+      tabs[index] = { ...existing, fresh: true }
+      this.commit(tabs, current.active)
+      return
+    }
+    const added: CanvasTabRow = { id, canvasId, at: AT_BOARD, fresh: true }
+    // An empty strip has nothing to stand beside: the new row is the one showing.
+    this.commit(withinCap([...current.tabs, added], current.active, id), current.active === '' ? id : current.active)
   }
 
   /** Go back from a card (or the draft) to its canvas's board. */
@@ -185,16 +218,20 @@ export class CanvasSelectionStore {
 
   /**
    * Put a canvas's row on its board and ask the tab to show one face with one
-   * scope pressed (the novel's 已对账 card opens 设定 · 最近更新).
+   * scope pressed (the novel's 已对账 card opens 设定 · 最近更新), and
+   * optionally one item on it (the novel's 章节 face reads chapter `item`).
    */
   /** Asks made so far: a later strip write drops the ask, so its number cannot restart from the snapshot. */
   private asks = 0
 
-  openBoardFace(canvasId: string, face: CanvasBoardFace, scope: string | null): void {
+  openBoardFace(canvasId: string, face: CanvasBoardFace, scope: string | null, item?: string, focus?: string): void {
     this.ensure(canvasId, AT_BOARD)
     const current = this.source.getSnapshot()
     this.asks += 1
-    this.source.set({ ...current, ask: { canvasId, face, scope, n: this.asks } })
+    this.source.set({
+      ...current,
+      ask: { canvasId, face, scope, ...(item === undefined ? {} : { item }), ...(focus === undefined ? {} : { focus }), n: this.asks },
+    })
   }
 
   /** Show a row that is already open. A row that is gone changes nothing. */
@@ -279,8 +316,10 @@ export class CanvasSelectionStore {
 
   /** Write a strip and derive its answers from it. */
   private commit(tabs: readonly CanvasTabRow[], active: string): void {
-    const row = tabs.find(candidate => candidate.id === active)
-    this.set({ tabs, active, canvasId: row?.canvasId ?? null, rev: this.source.getSnapshot().rev })
+    // The showing row has been seen: its fresh mark goes.
+    const seen = tabs.map(candidate => candidate.id === active && candidate.fresh === true ? { id: candidate.id, canvasId: candidate.canvasId, at: candidate.at } : candidate)
+    const row = seen.find(candidate => candidate.id === active)
+    this.set({ tabs: seen, active, canvasId: row?.canvasId ?? null, rev: this.source.getSnapshot().rev })
   }
 
   private set(next: CanvasBoardState): void {

@@ -7,6 +7,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChipRow, PanelHeader, PanelRoot, UnderlineTabs, browserOnHost, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { formatClock } from '../core/timeline.ts'
+import { interactionHandlers } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import type { VideoNavParams } from './definition.tsx'
 import type {
   EffectiveSetting, GlobalConfig, SettingValue, Job, MediaFile, ModelStatus, Overview, Project, ProjectView, SettingKey, Show, Speaker,
 } from '../types.ts'
@@ -112,13 +114,39 @@ function speakerClass(sp: Speaker | undefined): string {
 
 // ───────────────────────── root ─────────────────────────
 
+/**
+ * The navigation revision each session's pane last applied, page-wide: a pane
+ * remounts whenever the sidebar does, and the tab keeps its last navigation —
+ * applying it again would pull the panel back from where the person went.
+ */
+const appliedNavigation = new Map<string, number>()
+
 export function VideoPane(props: VideoPaneProps): ReactNode {
   const projectId = props.useStore((s) => s.projectId)
+  // The tab's navigation (`openTab('video-studio', { params })`: a
+  // destination, a desk row's 打开 →), applied once per revision.
+  const navigation = (props as { tab?: { navigation?: { params?: unknown; revision?: number } } }).tab?.navigation
+  const navRevision = navigation?.revision ?? 0
+  const navParams = navigation?.params as Partial<VideoNavParams> | undefined
+  const asked = navRevision > 0 && navRevision !== appliedNavigation.get(props.sessionId) && typeof navParams?.projectId === 'string'
+  useEffect(() => {
+    if (!asked) return
+    appliedNavigation.set(props.sessionId, navRevision)
+    const params = navParams as VideoNavParams
+    props.actions.open(params.projectId)
+    if (params.groupId !== undefined) {
+      props.actions.tab('transcript')
+      props.actions.focus(params.groupId)
+    } else if (params.tab !== undefined) {
+      props.actions.tab(params.tab)
+    }
+  }, [asked, navRevision, navParams, props.sessionId, props.actions])
+  // First open with nothing asked: the session's bound project.
   const opened = useRef(false)
-  // first open: follow the session's bound project
   useEffect(() => {
     if (opened.current) return
     opened.current = true
+    if (asked) return
     value(props.bound()).then(
       (id) => {
         if (id) props.actions.open(id)
@@ -127,7 +155,11 @@ export function VideoPane(props: VideoPaneProps): ReactNode {
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount
   }, [])
-  return <PanelRoot className={css.root}>{projectId ? <ProjectScreen p={props} projectId={projectId} /> : <ListScreen p={props} />}</PanelRoot>
+  return (
+    <PanelRoot className={css.root} {...interactionHandlers}>
+      {projectId ? <ProjectScreen p={props} projectId={projectId} /> : <ListScreen p={props} />}
+    </PanelRoot>
+  )
 }
 
 // ───────────────────────── list ─────────────────────────

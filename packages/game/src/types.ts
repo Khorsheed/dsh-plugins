@@ -317,6 +317,8 @@ export interface ElementView {
   readonly look3d: Look3D | null
   /** The 设定 text (the element's `lore` field): who it is, its temper, how it meets the player. '' when unwritten. */
   readonly lore: string
+  /** When its file last changed (ms), for listing the newest first. */
+  readonly updatedAt?: number
 }
 
 /** Longest 设定 the panel saves. */
@@ -385,6 +387,15 @@ export interface VersionRecord {
   readonly by?: VersionSource
   /** One line about what changed (the turn's last words, or the plugin's own note). */
   readonly note?: string
+}
+
+/** A session's bound project's newest version, as the page polls it. */
+export interface LiveVersion {
+  readonly projectId: string
+  readonly version: number
+  readonly kind: 'deployed' | 'candidate' | 'none'
+  readonly at: string | null
+  readonly by?: VersionSource
 }
 
 /** Who cut a version. */

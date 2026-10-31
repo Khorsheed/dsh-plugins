@@ -21,7 +21,7 @@ import {
 
 /** Build the `library_cards` tool over the shared kit. */
 export function libraryCardsTool(kit: ToolKit): ToolDefinition {
-  const { service, bindingOf, projectOf, scopeParams } = kit
+  const { service, bindingOf, bindingSummaryOf, projectOf, scopeParams } = kit
   return defineTool({
     name: 'library_cards',
     description:
@@ -53,6 +53,9 @@ export function libraryCardsTool(kit: ToolKit): ToolDefinition {
       if (list === undefined) {
         throw new Error(`library_cards takes cards: [{ point, gloss }] (subject) or [{ term, gloss, sentence? }] (language) — ${arrival('cards', args.cards)}`)
       }
+      // The source session (a card's jump back to the talk, a point note's
+      // session) is the caller's OWN — a room member's, never the room's; the
+      // station it lands on follows the binding it reads (../desk.ts).
       const sessionId = sessionIdOf(exec)
       const resource = pickString(args.resource, (args as Record<string, unknown>).book) ?? bindingOf(exec)?.resourceId
       const projectId = projectOf(args.project, exec, resource)
@@ -75,7 +78,7 @@ export function libraryCardsTool(kit: ToolKit): ToolDefinition {
         : []
       const noted = []
       for (const card of pointed) {
-        const station = pickString(card.node, payload(card.context)?.node) ?? (sessionId === undefined ? undefined : service.bindingSummary(sessionId, 0).station?.id)
+        const station = pickString(card.node, payload(card.context)?.node) ?? bindingSummaryOf(exec)?.station?.id
         if (station === undefined) throw new Error('a point note needs its station: node (the per-turn context names the current station and its points)')
         const term = pickString(card.term)
         const text = [term, pickString(card.gloss, card.userGloss)].filter(Boolean).join(' — ')
@@ -97,7 +100,7 @@ export function libraryCardsTool(kit: ToolKit): ToolDefinition {
       if (project.pointsDriven) {
         const loose = rest.filter(card => (card as { source?: { type?: string } }).source?.type === 'chat')
         if (loose.length > 0) {
-          const points = sessionId === undefined ? [] : (service.bindingSummary(sessionId, 0).station?.mastery.points ?? [])
+          const points = bindingSummaryOf(exec)?.station?.mastery.points ?? []
           throw new Error(`in a subject project a weak point from the conversation lands on the station's knowledge point — add point (+ node) to: ${loose.map(card => (card as { term?: string }).term ?? '?').join(', ')}${points.length === 0 ? '' : `; this station's points: ${points.map(point => `${point.id} (${point.title})`).join(', ')}`}. Record only what the LEARNER got wrong about the material — never your own slip (a wrong answer key: fix the quiz) and never feedback on a question or the tools. If none of that applies, record nothing.`)
         }
       }

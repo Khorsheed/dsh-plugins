@@ -87,6 +87,14 @@ export function nextWrittenKimiStep(childSession: Session, turn: number): number
   return last + 1
 }
 
+/** Wire usage records already counted, per child session (see mirrorKimiSessionDelta). */
+const countedUsage = new WeakMap<Session, Set<number>>()
+const usageSeen = (childSession: Session): Set<number> => {
+  let seen = countedUsage.get(childSession)
+  if (seen === undefined) countedUsage.set(childSession, seen = new Set())
+  return seen
+}
+
 /** The run-progress delta text for one transcript line (any kind). */
 export function kimiLineProgressText(line: KimiTranscriptLine): string {
   if (line.kind !== 'tool') return line.text
@@ -389,6 +397,30 @@ export async function mirrorKimiSessionDelta(
   // step-tagged unit claims its own line span's records; records no tagged
   // unit claims (untagged spans on older wires, or the boundary) sum onto the
   // pass's last folded content unit — the pre-tagging shape.
+  // A record counts once per child session, ever: the boundary is inclusive, so
+  // a pass whose offset cannot advance (a held unit) re-reads the same boundary
+  // record on every poll — one 320k-token record was carried ten times onto a
+  // cancelled round's step (3.2M). Wire line numbers only grow, so the line
+  // identifies the record across passes and rounds.
+  // A live pass leaves a record AT its boundary to the wire step it belongs
+  // to when that step has not folded yet: kimi writes a step's usage.record
+  // after its step.begin and before its content, so a poll landing in between
+  // sees the record with nothing of its step. Counted then, it was marked
+  // seen as the round's unattached rest and the step's own fold found
+  // nothing — a completed round's final reply lost its usage (bb05 turn 15).
+  // Untagged records (older wires write them after the content) keep the
+  // inclusive boundary; the settle pass, which folds everything, takes all.
+  const heldHead = holdAt < 0 ? undefined : (units[holdAt] as KimiTranscriptLine[])[0]
+  const heldStep = heldHead !== undefined && heldHead.kind !== 'user' && (heldHead as ContentLine).wireStep !== undefined
+    ? `${heldHead.turn}:${(heldHead as ContentLine).wireStep}`
+    : undefined
+  const deferred = (record: { line: number; step?: string }): boolean =>
+    options?.settle !== true && record.line === consumedTotal && record.step !== undefined
+    && (!transcript.closedSteps.has(record.step) || record.step === heldStep)
+  const inWindow = (record: { line: number; step?: string }): boolean =>
+    record.line >= fromLines && record.line <= consumedTotal && !deferred(record)
+  const seen = usageSeen(childSession)
+  const usageRecords = transcript.usageRecords.filter(record => !seen.has(record.line))
   const unitUsage: (TokenUsage | undefined)[] = []
   const claimed: { from: number; to: number }[] = []
   let unitStart = fromLines
@@ -399,20 +431,20 @@ export async function mirrorKimiSessionDelta(
     if (head.kind !== 'user' && (head as ContentLine).wireStep !== undefined) {
       claimed.push({ from: start, to: unitStart })
       unitUsage.push(sumUsageRecords(
-        transcript.usageRecords.filter(record => record.line >= start && record.line < unitStart),
+        usageRecords.filter(record => record.line >= start && record.line < unitStart),
       ))
     } else {
       unitUsage.push(undefined)
     }
   }
   const unclaimedUsage = sumUsageRecords(
-    transcript.usageRecords.filter(record =>
-      record.line >= fromLines && record.line <= consumedTotal
+    usageRecords.filter(record =>
+      inWindow(record)
       && !claimed.some(span => record.line >= span.from && record.line < span.to)),
   )
-  const deltaUsage = sumUsageRecords(
-    transcript.usageRecords.filter(record => record.line >= fromLines && record.line <= consumedTotal),
-  )
+  const windowRecords = usageRecords.filter(inWindow)
+  const deltaUsage = sumUsageRecords(windowRecords)
+  for (const record of windowRecords) seen.add(record.line)
   // The steps a fold may NOT take: every step already written (the session's
   // own event ledger), consulted per turn. A round mirrored across several
   // live polls keeps its earlier writes, so later polls never reuse them.

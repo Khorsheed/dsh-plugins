@@ -11,6 +11,8 @@ import {
   arrival,
   jsonOutput,
   payloadList,
+  roomSessionIdOf,
+  landed,
   sessionIdOf,
   unwrap,
   type ToolKit,
@@ -51,20 +53,32 @@ export function libraryPageTool(kit: ToolKit): ToolDefinition {
       if (marks === undefined) {
         throw new Error(`library_page takes: text (the page's printed text), marks: [{ text, sentence?, handNote?, gloss?, uncertain? }] (+ attachment?, label?, node?) — ${arrival('marks', args.marks)}`)
       }
-      const attachment = images.resolve(sessionIdOf(exec), typeof args.attachment === 'string' ? args.attachment : undefined)
+      // A photo belongs to the session it was sent in: the member's own first,
+      // then — in a room — the room's, where the user's input box sends it.
+      const written = typeof args.attachment === 'string' ? args.attachment : undefined
+      const room = roomSessionIdOf(exec)
+      const attachment = images.resolve(sessionIdOf(exec), written)
+        ?? (room === undefined ? undefined : images.resolve(room, written))
       if (attachment === undefined) {
         throw new Error('no photo to record: this conversation has no image the library saw arrive (or the id names none) — ask the learner to send the page photo here, then record it')
       }
       const pageResource = resourceOf(args, exec)
-      return unwrap(await service.recordPage({
-        projectId: projectOf(args.project, exec, pageResource),
+      const pageProject = projectOf(args.project, exec, pageResource)
+      const nodeId = typeof args.node === 'string' && args.node !== '' ? args.node : undefined
+      const recorded = unwrap(await service.recordPage({
+        projectId: pageProject,
         resourceId: pageResource,
-        ...(typeof args.node === 'string' && args.node !== '' ? { nodeId: args.node } : {}),
+        ...(nodeId === undefined ? {} : { nodeId }),
         ...(typeof args.label === 'string' ? { label: args.label } : {}),
         attachment,
         text: args.text,
         marks: marks as LibraryMark[],
-      })) as unknown as JsonValue
+      }))
+      // The page lands on its station's 页 tab, or its book without one.
+      const label = typeof args.label === 'string' && args.label !== '' ? `拍下的页 ${args.label}` : '拍下的页'
+      return landed(exec, recorded, nodeId === undefined
+        ? { view: 'book', projectId: pageProject, resourceId: pageResource }
+        : { view: 'station', projectId: pageProject, resourceId: pageResource, nodeId, tab: 'pages' }, label) as unknown as JsonValue
     },
   })
 }

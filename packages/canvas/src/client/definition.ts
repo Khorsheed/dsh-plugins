@@ -18,6 +18,14 @@ import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sideb
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { IconListPenOutlineMedium } from './icons.tsx'
 import type {} from './locales.ts'
+import type { CanvasNavParams } from './slots.ts'
+
+declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  interface SidebarRightTabParamsMap {
+    /** The canvas page takes one address in its strip (proposal 2026-10-30-agent-sidebar-navigation). */
+    'canvas': CanvasNavParams
+  }
+}
 
 /** The tab kind this package owns. */
 export const CANVAS_KIND = 'canvas'

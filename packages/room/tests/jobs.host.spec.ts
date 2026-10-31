@@ -178,6 +178,24 @@ describe('tasks', () => {
     expect((await bench.state()).jobs!.find(job => job.id === 'lost-bill')!.status).toBe('stopped')
   })
 
+  it('messages that queued behind a lost round ride along with the move-on message; a backlog an older move-on left behind closes on recovery', async () => {
+    const bench = await boot()
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const kimi = (await bench.state()).members.find(member => member.name === 'kimi')!
+    const bill = (await bench.state()).members.find(member => member.name === 'bill')!
+    const lost = room.append('room/dispatch', { id: 'lost', targets: ['kimi'], targetIds: [kimi.id!], text: '旧活', origin: 'human', task: 'lost' })
+    room.append('room/delivery-state', { id: `${lost.seq}:${kimi.id}`, dispatchSeq: lost.seq, memberId: kimi.id!, state: 'uncertain', error: 'Host restarted before a durable settlement; reconcile before retrying' })
+    // Queued behind the lost round (the restart lost the in-memory queue).
+    room.append('room/dispatch', { id: 'q1', targets: ['kimi'], targetIds: [kimi.id!], text: '补充：先跑测试', origin: 'member', from: bill.id!, task: 'lost' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@kimi 继续' })
+    await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledOnce())
+    const prompt = JSON.stringify(bench.facade.start.mock.calls[0])
+    expect(prompt).toContain('继续')
+    expect(prompt).toContain('来自 bill：补充：先跑测试')
+    expect((await bench.state()).deliveries!.filter(row => row.memberId === kimi.id).map(row => [row.text, row.status]))
+      .toEqual([['旧活', 'cancelled'], ['补充：先跑测试', 'done'], ['继续', 'running']])
+  })
+
   it('resolves task references', () => {
     const jobs = [{ id: 'a', number: 1 }, { id: 'b', number: 2 }] as never
     expect([resolveTaskRef(jobs, 'new'), resolveTaskRef(jobs, '2'), resolveTaskRef(jobs, '任务 1'), resolveTaskRef(jobs, '#2'), resolveTaskRef(jobs, '7')])

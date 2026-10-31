@@ -89,6 +89,10 @@ export interface FilePreviewConfig {
    * wider cap (default 4 MiB) while every other text read keeps
    * `maxReadBytes`. */
   readonly htmlMaxReadBytes?: number
+  /** Byte cap for an image the preview serves (default 16 MiB): images ride
+   * the byte channel, not the text read, so screenshots well past
+   * `maxReadBytes` still display. */
+  readonly imageMaxReadBytes?: number
   /** Cap on the number of entries `list` returns. */
   readonly maxFiles?: number
   /** Whether the bash-write collector watches sessions for files bash wrote

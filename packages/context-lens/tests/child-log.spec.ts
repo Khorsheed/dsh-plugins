@@ -158,6 +158,28 @@ describe('child-log lane', () => {
     service.dispose()
   })
 
+  it('keeps member requests bodiless and rebuilds one body when it is read', async () => {
+    const reader = new FixtureReader(structuredClone(fixtureRows), undefined, 'child-fixture')
+    const { service } = await mount(reader)
+    const rootId = delegate(service, 'child-fixture', false)
+    const child = (await service.getTurn(rootId, 1))?.scopes.find(scope => scope.kind === 'subagent')
+    const store = (service as unknown as { store: { totalChars: number; dehydrateRequest(id: string, seq: number): void } }).store
+    // Listed: structure only — the store holds responses and results, none of the copied context.
+    expect(child?.requests).toHaveLength(3)
+    const listed = store.totalChars
+    // Read: the body (and its predecessor's, the prefix baseline) rebuilds from the log.
+    const third = await service.getRequest(rootId, child!.requests[2]!.seq)
+    expect(third?.segments.history.length).toBeGreaterThan(0)
+    expect(store.totalChars).toBeGreaterThan(listed)
+    expect(reader.opens.filter(id => id === 'child-fixture').length).toBeGreaterThan(1)
+    // Dropped again, it reads the same on the next request.
+    store.dehydrateRequest(rootId, child!.requests[2]!.seq)
+    store.dehydrateRequest(rootId, child!.requests[1]!.seq)
+    expect(store.totalChars).toBe(listed)
+    const again = await service.getRequest(rootId, child!.requests[2]!.seq)
+    expect(again?.segments).toEqual(third?.segments)
+  })
+
   it('attaches a late child result to the already retained issuing call', async () => {
     const cut = fixtureRows.findIndex(r => r.type === 'tool/result')
     const rows = structuredClone(fixtureRows.slice(0, cut))

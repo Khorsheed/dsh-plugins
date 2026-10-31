@@ -5,6 +5,13 @@ import { requestNumberText, cachePct, gapShown, inputTotal, turnNumber, type Tur
 import css from './InspectorPanel.module.css'
 
 type TrendRequest = SessionTrend['requests'][number]
+
+/** The bar scale: the 95th percentile of the inputs (at least 1). */
+export function scaleOf(values: readonly number[]): number {
+  const sorted = values.filter(v => v > 0).sort((a, b) => a - b)
+  if (sorted.length === 0) return 1
+  return Math.max(1, sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)]!)
+}
 type TrendTurn = SessionTrend['turns'][number]
 const isCompaction = (scopeId: string) => scopeId.startsWith('compaction:')
 /** Smallest cell a turn may shrink to (one label); below it the map scrolls. */
@@ -73,7 +80,10 @@ export function Trend({
   const requests = data.requests.filter(r => r.scopeId === scopeId || rounds.has(r.turnSeq))
   const compactions = main ? data.requests.filter(r => isCompaction(r.scopeId)) : []
   const turns = data.turns.filter(turn => requests.some(r => r.turnSeq === turn.turnSeq))
-  const max = Math.max(1, ...requests.map(r => (r.usage ? inputTotal(r.usage) : 0)))
+  // The scale is the 95th percentile, not the maximum: one outlier (a
+  // mis-accounted request) no longer flattens every other bar. Bars above it
+  // stop at full height with a cap mark; the title keeps the real value.
+  const max = scaleOf(requests.map(r => (r.usage ? inputTotal(r.usage) : 0)))
   const barWidth = fitWidth(width, requests.length, turns.length)
   /** Compactions of this turn that happened right before `next` (or at the turn's end). */
   const dividersBefore = (turn: number, next: TrendRequest | undefined, previous: TrendRequest | undefined) =>
@@ -138,7 +148,7 @@ export function Trend({
                       title={`#${requestNumberText(r)} · ${total} tok · ${hit ?? '—'}%`}
                       onClick={() => onSelect(turn.turnSeq, r.seq, r.scopeId)}
                     >
-                      <span className={css.trendBar} data-unknown={hit === null} aria-hidden="true" style={{ height: `${Math.max(3, (total / max) * 40)}px` }}>
+                      <span className={css.trendBar} data-unknown={hit === null} data-clipped={total > max} aria-hidden="true" style={{ height: `${Math.max(3, Math.min(1, total / max) * 40)}px` }}>
                         <i style={{ height: `${hit ?? 0}%` }} />
                       </span>
                     </button>,

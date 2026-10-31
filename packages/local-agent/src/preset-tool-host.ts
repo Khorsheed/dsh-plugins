@@ -9,6 +9,21 @@
  * that stand-in, so plugin state (a video project) belongs to the member's
  * session and the mode's panels show there; the session also records the mode
  * (`agent-preset/selected`), so per-session plugin visibility follows it.
+ *
+ * A member in a room also carries its DESK on the stand-in: the
+ * `Symbol.for('dsh.agent.desk')`-keyed `{ session, role, member }`, where
+ * `session` is the room session. A plugin whose sidebar follows what the agent
+ * opens (the canvas a session has open) reads it to land that on the room —
+ * the coordinator acting on the room's sidebar, a member opening beside it —
+ * while everything else (execution identity, approvals, the recorded mode,
+ * plugin state) stays on the member's own session. Refreshed on every list and
+ * call, so a coordinator handoff moves the role with it; absent outside rooms.
+ *
+ * A stand-in is not an agent, so `agent/created` never names it. Entries that
+ * grant tools per agent (the novel tools, which appear only for bound
+ * sessions) hear `local-agent/stand-in-created` / `-disposed` instead —
+ * scoped like `agent/created`, so a preset plane's listener sees only the
+ * stand-ins composed under it.
  * Only PLUGIN tools are offered (`Symbol.for('dsh.tool.origin')` channel
  * `plugin`; the CLI brings its own shell, files and todo).
  *
@@ -19,7 +34,7 @@
 import { randomUUID } from 'node:crypto'
 import { appendFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
-import { createScope } from '@deepseek-ai/dsh-scope'
+import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 /** One plugin tool as the bridge lists it (MCP `tools/list` shape). */
@@ -43,6 +58,17 @@ const SETTLE_MS = 3_000
 const SETTLE_STEP_MS = 150
 
 const ORIGIN = Symbol.for('dsh.tool.origin')
+/** The desk mark's key on a stand-in (see the module comment). */
+export const DESK = Symbol.for('dsh.agent.desk')
+
+/** What the room says about a member's desk (local-agent's MemberDesk). */
+export interface DeskInfo {
+  readonly sessionId: string
+  readonly role: 'coordinator' | 'member'
+  readonly member: string
+  /** The member's run in progress: a desk event naming it renders in that run's card. */
+  readonly runId?: string
+}
 
 interface SessionLike {
   readonly id: string
@@ -51,7 +77,12 @@ interface SessionLike {
   append(type: 'agent-preset/selected', data: { agentPreset: string }): unknown
 }
 /** The model-less stand-in a member's mode tools run as. */
-interface AgentLike { readonly id: string; readonly session: SessionLike; ctx?: Context }
+interface AgentLike {
+  readonly id: string
+  readonly session: SessionLike
+  ctx?: Context
+  [DESK]?: { readonly session: SessionLike; readonly role: 'coordinator' | 'member'; readonly member: string; readonly runId?: string }
+}
 interface ToolsLike {
   schemas(scope?: object): readonly { readonly name: string; readonly description?: string; readonly parameters?: unknown }[]
   get(name: string, scope?: object): object | undefined
@@ -156,7 +187,20 @@ export class PresetToolHost {
       // The member's session runs this mode now: the host's per-session
       // plugin visibility reads it from here.
       if (sessionPreset(session) !== resolved.id) session.append('agent-preset/selected', { agentPreset: resolved.id })
-      return { agent: member, dispose: () => scope.dispose() }
+      const carrier = scopeTarget(member, member)
+      const serial = this.ctx.serial.bind(this.ctx) as unknown as (target: object, name: string, payload: { agent: AgentLike }) => Promise<unknown>
+      try {
+        await serial(carrier, 'local-agent/stand-in-created', { agent: member })
+      } catch (error) {
+        this.ctx.logger.warn(`localAgent: a stand-in listener failed for ${childSessionId}: ${String(error)}`)
+      }
+      return {
+        agent: member,
+        dispose: async () => {
+          try { await serial(carrier, 'local-agent/stand-in-disposed', { agent: member }) } catch { /* the scope goes regardless */ }
+          await scope.dispose()
+        },
+      }
     })()
     this.hosts.set(childSessionId, { preset, agent })
     try {
@@ -172,9 +216,10 @@ export class PresetToolHost {
    * @param childSessionId - the member's child session.
    * @param preset - the member's mode.
    * @param cwd - the member's working directory.
+   * @param desk - the member's desk in its room, when the room names one.
    * @returns the tools, empty when the host lacks the capabilities.
    */
-  async list(childSessionId: string, preset: string, cwd?: string): Promise<BridgedTool[]> {
+  async list(childSessionId: string, preset: string, cwd?: string, desk?: DeskInfo): Promise<BridgedTool[]> {
     const tools = this.probe<ToolsLike>('tools')
     const fresh = this.hosts.get(childSessionId)?.preset !== preset
     const agent = await this.agentFor(childSessionId, preset, cwd)
@@ -182,6 +227,7 @@ export class PresetToolHost {
       this.note({ childSessionId, preset, tools: tools !== undefined, agent: agent !== undefined })
       return []
     }
+    this.markDesk(agent, desk)
     // A preset mounted for the first time registers some rows' tools a
     // moment later (deferred injects): wait until the scope stops growing.
     let schemas = tools.schemas(agent)
@@ -215,12 +261,14 @@ export class PresetToolHost {
    * @param args - the tool arguments.
    * @param signal - cancellation.
    * @param cwd - the member's working directory.
+   * @param desk - the member's desk in its room, when the room names one.
    * @returns the MCP result.
    */
-  async call(childSessionId: string, preset: string, name: string, args: unknown, signal: AbortSignal, cwd?: string): Promise<BridgedToolResult> {
+  async call(childSessionId: string, preset: string, name: string, args: unknown, signal: AbortSignal, cwd?: string, desk?: DeskInfo): Promise<BridgedToolResult> {
     const tools = this.probe<ToolsLike>('tools')
     const agent = await this.agentFor(childSessionId, preset, cwd)
     if (tools === undefined || agent === undefined) return { content: [{ type: 'text', text: 'Mode tools are unavailable on this host' }], isError: true }
+    this.markDesk(agent, desk)
     if (!isPluginTool(tools.get(name, agent))) return { content: [{ type: 'text', text: `Unknown tool ${name} in mode ${preset}` }], isError: true }
     const result = await tools.execute({ callId: `bridge-${randomUUID()}` as never, name, arguments: args, agent, signal })
     return { content: mcpContent(result.content), isError: result.isError }
@@ -241,6 +289,16 @@ export class PresetToolHost {
     const own = (await registry.list({ scope: agent })).filter(skill => !global.has(skill.name))
     const loaded = await Promise.all(own.map(skill => registry.get(skill.name, { scope: agent })))
     return loaded.flatMap(skill => skill === undefined ? [] : [{ name: skill.name, description: skill.description, content: skill.content }])
+  }
+
+  /**
+   * Put the member's desk on its stand-in, or take it off: the room session
+   * must be live here, else the plugins simply see no desk.
+   */
+  private markDesk(agent: AgentLike, desk: DeskInfo | undefined): void {
+    const session = desk === undefined || desk.sessionId === agent.session.id ? undefined : this.probe<SessionsLike>('sessions')?.get(SessionId(desk.sessionId))
+    if (desk === undefined || session === undefined) delete agent[DESK]
+    else agent[DESK] = { session, role: desk.role, member: desk.member, ...desk.runId === undefined ? {} : { runId: desk.runId } }
   }
 
   /** Dispose every preset agent. */

@@ -77,7 +77,8 @@ const loadImage = vi.fn(async () => 'blob:stub')
 function props(over: {
   node?: ChatConversationViewNode
   snapshotNodes?: readonly ChatConversationViewNode[]
-  renderFactorySlot?: (name: string, input: { images: readonly { attachment?: { name?: string } }[] }) => ReactNode
+  renderFactorySlot?: (name: string, input: never) => ReactNode
+  userTextAvailable?: boolean
   renderMessageImages?: (owner: { images: readonly { attachment?: { name?: string } }[]; align: 'start' | 'end' }) => ReactNode
   editMessage?: (seq: number, text: string) => Promise<void>
   withdrawMessage?: (seq: number) => Promise<void>
@@ -104,6 +105,7 @@ function props(over: {
     withdrawMessage: over.withdrawMessage ?? vi.fn(async () => {}),
     backfillDraft: over.backfillDraft ?? vi.fn(),
     foldScope: 'session-1',
+    userTextAvailable: () => over.userTextAvailable ?? false,
     useModelDirectory: (select: (snapshot: ModelDirectoryState) => unknown) => select(directory),
     modelsAvailable: over.modelsAvailable ?? false,
     loadModels: over.loadModels ?? vi.fn(),
@@ -413,5 +415,28 @@ describe('UserMessageView withdraw', () => {
     fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(withdrawMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('UserMessageView text (the official user-text pipeline)', () => {
+  it('renders the bubble text through conversation.user.text with the node\'s facts', () => {
+    const text = '> 引用的一句\n> —— 引用\n 我的问题'
+    const node = userNode([{ type: 'text', text }], { data: { referenceLabels: ['会话甲'], skillNames: ['plan'] } })
+    const renderFactorySlot = vi.fn((name: string) => name === 'conversation.user.text' ? <span data-testid="user-text" /> : null)
+    render(<UserMessageView {...props({ node, renderFactorySlot, userTextAvailable: true })} />)
+    expect(screen.getByTestId('user-text')).toBeTruthy()
+    expect(renderFactorySlot).toHaveBeenCalledWith('conversation.user.text', {
+      text,
+      facts: { sessionLabels: ['会话甲'], skillNames: ['plan'] },
+      interactive: true,
+    })
+  })
+
+  it('keeps the local token projection on a host without the factory', () => {
+    const node = userNode([{ type: 'text', text: '用 /plan 拆一下' }])
+    const renderFactorySlot = vi.fn(() => null)
+    render(<UserMessageView {...props({ node, renderFactorySlot, userTextAvailable: false })} />)
+    expect(screen.getByText('/plan')).toBeTruthy()
+    expect(renderFactorySlot).not.toHaveBeenCalledWith('conversation.user.text', expect.anything())
   })
 })

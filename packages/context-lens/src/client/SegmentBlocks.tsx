@@ -215,10 +215,28 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest
   })}</>
 }
 
+/** The folded text's height (.clamp[data-long] max-height). */
+const CLAMP_HEIGHT = 168
+
 function Clamped({ text, t }: { readonly text: string; readonly t: T }) {
   const [open, setOpen] = useState(false)
-  const long = text.length > 300
-  return <><pre className={css.clamp} data-open={open} data-long={long}>{text}</pre>{long && <button className={css.more} type="button" onClick={() => setOpen(v => !v)}>{open ? t('lens.collapse') : t('lens.expand', { count: fmt(text.length) })}</button>}</>
+  // Folds by rendered height, not length: 230 Chinese characters in the
+  // narrow output column run 12 lines and were never folded (75844e33 #25).
+  // The length rule stays for the first paint and for layout-less renders.
+  const [tall, setTall] = useState(false)
+  const ref = useRef<HTMLPreElement>(null)
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (element === null) return
+    const measure = (): void => { setTall(element.scrollHeight > CLAMP_HEIGHT + 8) }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => { observer.disconnect() }
+  }, [text])
+  const long = tall || text.length > 300
+  return <><pre ref={ref} className={css.clamp} data-open={open} data-long={long}>{text}</pre>{long && <button className={css.more} type="button" onClick={() => setOpen(v => !v)}>{open ? t('lens.collapse') : t('lens.expand', { count: fmt(text.length) })}</button>}</>
 }
 function ArgumentValue({ name, value }: { readonly name: string; readonly value: string }) {
   const [open, setOpen] = useState(false)
@@ -226,8 +244,9 @@ function ArgumentValue({ name, value }: { readonly name: string; readonly value:
 }
 function Arguments({ raw, t }: { readonly raw: string; readonly t: T }) {
   let obj: unknown
-  try { obj = JSON.parse(raw) } catch { return <Clamped text={raw} t={t} /> }
-  if (!obj || typeof obj !== 'object') return <Clamped text={raw} t={t} />
+  // Non-JSON arguments (a shell command line) keep the key/value table's inset.
+  try { obj = JSON.parse(raw) } catch { return <div className={css.argsRaw}><Clamped text={raw} t={t} /></div> }
+  if (!obj || typeof obj !== 'object') return <div className={css.argsRaw}><Clamped text={raw} t={t} /></div>
   return <div className={css.args}>{Object.entries(obj).map(([k,v]) => <ArgumentValue key={k} name={k} value={typeof v === 'string' ? v : JSON.stringify(v)} />)}</div>
 }
 function Reasoning({ text, ms, t }: { readonly text: string; readonly ms: number | undefined; readonly t: T }) {
@@ -237,15 +256,57 @@ function Reasoning({ text, ms, t }: { readonly text: string; readonly ms: number
     <div className={css.thinkText} data-open={open}>{text}</div>
   </div>
 }
+type AskViewProp = NonNullable<CapturedResponse['toolCalls'][number]['ask']>
+
+/** An `ask_user_question` call as the room words it: what was asked, and the human's answer. */
+function AskCard({ ask, t }: { ask: AskViewProp; t: T }) {
+  const answered = ask.outcome === 'answered'
+  // Answered, the options are a row of labels (the chosen one marked); their
+  // descriptions open on demand — a three-option question ran a full screen.
+  const [details, setDetails] = useState(false)
+  const compact = answered && !details
+  const described = ask.questions?.some(question => question.options.some(option => option.description !== undefined)) === true
+  const status = answered ? (ask.late === true ? 'late' : 'answered') : ask.outcome
+  return <div className={css.call} data-status={answered ? 'ok' : ask.outcome === 'pending' ? 'running' : 'failed'}>
+    <div className={css.callHead}><span>{t('lens.calls')}</span><b>{t('ask.title')}</b>
+      <span className={css.callStatus} data-status={answered ? 'ok' : ask.outcome === 'pending' ? 'running' : 'failed'}>{t(`ask.outcome.${status}`)}</span>
+      {ask.waitMs !== undefined && <span className={css.number}>{t('ask.wait', { time: fmtSpan(ask.waitMs) })}</span>}
+    </div>
+    <div className={css.ask}>
+      {ask.questions === undefined ? <div className={css.emptyNote}>{t('ask.noQuestions')}</div> : ask.questions.map(question => {
+        const answer = ask.answers?.find(a => a.id === question.id)
+        const chosen = new Set(answer?.selected ?? [])
+        return <div key={question.id} className={css.askQuestion}>
+          <div className={css.askLine}>{question.header !== undefined && <span className={css.askTag}>{question.header}</span>}<span>{question.question}</span></div>
+          {question.options.length > 0 && <ul className={css.askOptions} data-compact={compact}>{question.options.map(option =>
+            <li key={option.label} data-selected={chosen.has(option.label)}>
+              <span>{chosen.has(option.label) ? '✓ ' : ''}{option.label}</span>
+              {!compact && option.description !== undefined && <small>{option.description}</small>}
+            </li>)}</ul>}
+          {answer !== undefined && (answer.selected.length > 0 || answer.custom !== undefined) && <div className={css.askAnswer}>
+            <b>{t('ask.answer')}</b>
+            {answer.selected.length > 0 && <span>{answer.selected.join('、')}</span>}
+            {answer.custom !== undefined && <span className={css.askCustom}>{t('ask.other')}：{answer.custom}</span>}
+          </div>}
+        </div>
+      })}
+      {answered && described && <button type="button" className={css.more} aria-expanded={details} onClick={() => setDetails(v => !v)}>{details ? t('lens.collapse') : t('ask.details')}</button>}
+      {ask.callOutcome !== undefined && <div className={css.askCallNote}>{t('ask.callOutcome', { outcome: t(`ask.outcome.${ask.callOutcome}`) })}</div>}
+      {ask.outcome === 'failed' && ask.detail !== undefined && <div className={css.errorNote}>{ask.detail}</div>}
+    </div>
+  </div>
+}
+
 /** Result text is attached by call ID, including same-name and parallel calls. */
 function ToolCallCard({ call, t }: { call: CapturedResponse['toolCalls'][number]; t: T }) {
   const [open, setOpen] = useState(false)
+  if (call.ask !== undefined) return <AskCard ask={call.ask} t={t} />
   const execution = call.execution
   const failed = execution?.status === 'failed'
   const result = execution?.result
   const status = execution?.status ?? 'unknown'
   return <div className={css.call} data-status={status}>
-    <div className={css.callHead}><span>{t('lens.calls')}</span><b>{call.name}</b>
+    <div className={css.callHead}><span>{t('lens.calls')}</span><b title={call.name}>{call.name}</b>
       <span className={css.callStatus} data-status={status}>{t(`tool.status.${status}`)}</span>
       <span className={css.number}>{fmt(call.arguments.length)}</span>
     </div>
@@ -260,15 +321,21 @@ function ToolCallCard({ call, t }: { call: CapturedResponse['toolCalls'][number]
   </div>
 }
 
+/** Calls shown before the rest folds (one turn can write a dozen cards). */
+const CALL_FOLD_AT = 3
+
 /** The output body is visible, including reasoning and arguments, without opening a wrapper. */
 export function OutputBlock({ request, t }: { readonly request: CapturedRequest; readonly t: T }) {
   const response = request.response
+  const [callsOpen, setCallsOpen] = useState(false)
+  useEffect(() => { setCallsOpen(false) }, [request.seq])
   return <div className={css.output}>
     {request.status === 'failed' && request.error && <div className={css.errorNote}>{request.error}</div>}
     {response === undefined ? <div className={css.emptyNote}>{t(request.status === 'streaming' ? 'out.streaming' : 'lens.noResponse')}</div> : <>
       {response.reasoning && <Reasoning text={response.reasoning} ms={request.timing.reasoningMs} t={t} />}
       {response.text && <Clamped text={response.text} t={t} />}
-      {response.toolCalls.map((call, i) => <ToolCallCard key={call.callId ?? i} call={call} t={t} />)}
+      {(callsOpen ? response.toolCalls : response.toolCalls.slice(0, CALL_FOLD_AT)).map((call, i) => <ToolCallCard key={call.callId ?? i} call={call} t={t} />)}
+      {response.toolCalls.length > CALL_FOLD_AT && <button className={css.more} type="button" aria-expanded={callsOpen} onClick={() => setCallsOpen(v => !v)}>{callsOpen ? t('lens.collapse') : t('lens.expandCalls', { count: String(response.toolCalls.length - CALL_FOLD_AT) })}</button>}
     </>}
   </div>
 }
@@ -285,13 +352,20 @@ function InputCard({ item, from, repeats, onOpenRequest, t }: { readonly item: S
     {open ? <div className={css.messageFull}><div className={css.fullLabel}>{item.sourceTurn === undefined ? '' : t('lens.sourceTurn', { turn: String(item.sourceTurn) })}</div><ItemFull item={item} /></div> : <div className={css.messageBody} onClick={() => setOpen(true)}>{body}</div>}
   </div>
 }
+/** Inputs shown before the rest folds (a compaction's region can hold hundreds). */
+const INPUT_FOLD_AT = 8
+
 export function Exchange({ request, previousResponseNumber, onOpenRequest, t }: { readonly request: CapturedRequest; readonly previousResponseNumber: number | null; readonly onOpenRequest?: ((link: RequestLink) => void) | undefined; readonly t: T }) {
   const duplicates = duplicateStats([...request.segments.system, ...request.segments.history, ...request.segments.added])
+  const [inputsOpen, setInputsOpen] = useState(false)
+  // A new request starts folded again.
+  useEffect(() => { setInputsOpen(false) }, [request.seq])
   return <section aria-label={t('lens.exchange')}>
     <h3 className={css.exchangeTitle}>{t('lens.exchange')}</h3>
     <div className={css.exchange}>
       <div className={css.column}><div className={css.columnLabel}>{t(request.compaction?.inputPartial ? 'compaction.region' : 'lens.newInput')} · {request.segments.added.length}</div>
-        {request.segments.added.map((item,i) => <InputCard key={i} item={item} onOpenRequest={onOpenRequest} repeats={duplicates.counts.get(item.full) ?? 0} t={t} from={item.category === 'assistant' && previousResponseNumber !== null ? t('row.prevResponse', { seq:String(previousResponseNumber) }) : item.category === 'tool-result' && item.sourceRequestNumber !== undefined ? `${item.source} · ${t('row.callResult', { seq: String(item.sourceRequestNumber) })}` : item.source} />)}
+        {(inputsOpen ? request.segments.added : request.segments.added.slice(0, INPUT_FOLD_AT)).map((item,i) => <InputCard key={i} item={item} onOpenRequest={onOpenRequest} repeats={duplicates.counts.get(item.full) ?? 0} t={t} from={item.category === 'assistant' && previousResponseNumber !== null ? t('row.prevResponse', { seq:String(previousResponseNumber) }) : item.category === 'tool-result' && item.sourceRequestNumber !== undefined ? `${item.source} · ${t('row.callResult', { seq: String(item.sourceRequestNumber) })}` : item.source} />)}
+        {request.segments.added.length > INPUT_FOLD_AT && <button className={css.more} type="button" aria-expanded={inputsOpen} onClick={() => setInputsOpen(v => !v)}>{inputsOpen ? t('lens.collapse') : t('lens.expandInputs', { count: String(request.segments.added.length - INPUT_FOLD_AT) })}</button>}
       </div>
       <div className={css.arrow} aria-hidden="true">→</div>
       <div className={css.column} role="region" aria-label={t('out.title')}><div className={css.columnLabel}><span>{t('out.title')}</span><span>{request.usage ? fmt(request.usage.outputTokens) : '—'} tok</span></div><OutputBlock request={request} t={t} /></div>

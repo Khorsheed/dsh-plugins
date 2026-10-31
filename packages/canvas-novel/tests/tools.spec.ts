@@ -11,6 +11,7 @@ import { NovelService } from '../src/store.ts'
 import { novelBindDefinition, novelToolDefinitions } from '../src/tools.ts'
 import { provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
+import { readDestinations } from '@khorsheed/dsh-client-ui-agent-nav/src/destination.ts'
 import { CARD, DREAM, seedDreamKeeper } from './seed-dream.ts'
 
 const SESSION = { id: 's-tools' } as unknown as Session
@@ -65,6 +66,47 @@ describe('novel_bind', () => {
   })
 })
 
+describe('novel_bind in a room', () => {
+  it('the coordinator binds the room and tells it; a member binds itself and reads the room\'s until then', async () => {
+    const { store, canvas, read } = await bench()
+    const events: { type: string; data: unknown }[] = []
+    const room = { id: 's-room', append: (type: string, data: unknown) => { events.push({ type, data }) } }
+    const as = (role: 'coordinator' | 'member') => ({
+      agent: { session: { id: 's-bill' }, [Symbol.for('dsh.agent.desk')]: { session: room, role, member: 'bill' } },
+    })
+    const bind = novelBindDefinition(store, async () => {})
+    expect(String(await bind.execute({ work: '梦境监护者' } as never, as('coordinator') as never))).toContain('房间侧栏已切到这部作品')
+    expect(canvas.bindings.get('s-room')).toBe(DREAM.workId)
+    expect(canvas.bindings.get('s-bill')).toBeUndefined()
+    expect(events).toEqual([{ type: 'room/desk-opened', data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'coordinator', data: { canvasId: DREAM.workId, title: DREAM.title, created: false } } }])
+    // A member with no binding of its own works on the room's novel.
+    expect(String(await read.execute({ what: 'brief' } as never, as('member') as never))).toContain('梦境监护者')
+    canvas.addBoard({ id: 'canvas_novel0002', title: '外传' })
+    expect(String(await bind.execute({ work: '外传' } as never, as('member') as never))).toContain('已放进房间侧栏的画布标签里')
+    expect(canvas.bindings.get('s-bill')).toBe('canvas_novel0002')
+    expect(canvas.bindings.get('s-room')).toBe(DREAM.workId)
+  })
+})
+
+describe('a room member\'s novel writes are told to the room', () => {
+  it('a chapter the coordinator plans lands on the room\'s novel and is told as a chapter; outside a room nothing is told', async () => {
+    const { canvas, write } = await bench()
+    const events: { type: string; data: { data: { items: { action: string; title: string }[] } } }[] = []
+    const room = { id: 's-room', append: (type: string, data: never) => { events.push({ type, data }) } }
+    canvas.bind('s-room', DREAM.workId)
+    const exec = { agent: { session: { id: 's-bill' }, [Symbol.for('dsh.agent.desk')]: { session: room, role: 'coordinator', member: 'bill', runId: 'r9' } } }
+    const answer = String(await write.execute({ what: 'chapter', title: '雨夜来客', plan: { summary: '来客敲门。' } } as never, exec as never))
+    expect(answer).not.toMatch(/^失败/)
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'room/desk-wrote', data: { owner: '@khorsheed/dsh-canvas', role: 'coordinator', runId: 'r9', data: { canvasId: DREAM.workId } } })
+    expect(events[0]!.data.data.items.some(item => item.action === 'chapter' && item.title.includes('《雨夜来客》'))).toBe(true)
+    // No desk: the same call tells no one.
+    canvas.bind('s-tools', DREAM.workId)
+    await call(write, { what: 'chapter', title: '雨夜之后', plan: { summary: '雨停了。' } })
+    expect(events).toHaveLength(1)
+  })
+})
+
 describe('the novel tools', () => {
   it('answers guidance (never a throw) when the session is bound to no novel canvas or no agent is there', async () => {
     const { read, write, extract, canvas } = await bench()
@@ -90,7 +132,9 @@ describe('the novel tools', () => {
   it('refuses a body before the plan is confirmed, and registers 用户原稿 with byUser', async () => {
     const { write } = await bench({ bound: true })
     expect(await call(write, { what: 'chapter', title: '新的一章', content: '抢跑。' })).toContain('正文只能写进已确认计划的章节')
-    expect(await call(write, { what: 'chapter', title: '新的一章', byUser: true, content: '我自己写的。' })).toContain(`已写入第 7 章《新的一章》正文（画布 ${DREAM.workId} · 6 字）`)
+    const body = await call(write, { what: 'chapter', title: '新的一章', byUser: true, content: '我自己写的。' })
+    expect(body).toContain(`已写入第 7 章《新的一章》正文（画布 ${DREAM.workId} · 6 字）`)
+    expect(readDestinations(String(body))[0]?.params).toEqual({ canvasId: DREAM.workId, face: 'manuscripts', item: '7', focus: 'body' })
   })
 
   it('novel_read / novel_write carry no cards (canvas_read / canvas_write do); review is the pending queue only', async () => {
@@ -107,8 +151,13 @@ describe('the novel tools', () => {
       what: 'chapter', title: '回响',
       plan: { summary: '穿过第一层', beats: [{ text: '推门' }, { text: '回头', mark: '转折' }], foreshadowOps: [{ op: '推进', id: '#12', note: '门后第一层' }], cast: [{ who: 'c1' }] },
     })
-    // The answer names the canvas: the conversation card opens the chapter page from it.
+    // The answer names the canvas: the conversation card opens the chapter from it.
     expect(created).toContain(`已登记第 7 章《回响》（画布 ${DREAM.workId}）plan：情节 2 段 / 伏笔 1 条 / 出场 1 人。`)
+    // …and its destination is that chapter in the 章节 face, on its plan — never a list or a detail page.
+    expect(readDestinations(String(created))).toEqual([expect.objectContaining({
+      kind: 'canvas', label: '第 7 章《回响》',
+      params: { canvasId: DREAM.workId, face: 'manuscripts', item: '7', focus: 'plan' },
+    })])
     const replanned = await call(write, { what: 'chapter', chapter: 7, title: '回响·改', plan: { summary: '退回门缝' } })
     expect(replanned).toContain('第 7 章')
     expect(await call(write, { what: 'chapter', chapter: 7, title: '回响', plan: { goal: '旧形状' } })).toContain('至少要有 summary')
@@ -122,7 +171,9 @@ describe('the novel tools', () => {
       what: 'chapter', chapter: 7, title: '回响',
       plan: { summary: '退回门缝', foreshadowOps: [{ op: '推进', id: '#12', note: '多一道划痕' }, { op: '新埋', question: '哼歌的女人是谁' }] },
     })).toContain('伏笔 2 条')
-    expect(await call(write, { what: 'chapter', title: '尾声' })).toContain(`已建第 8 章《尾声》（画布 ${DREAM.workId} · 规划中 · 第8章.md）。`)
+    const bare = await call(write, { what: 'chapter', title: '尾声' })
+    expect(bare).toContain(`已建第 8 章《尾声》（画布 ${DREAM.workId} · 规划中 · 第8章.md）。`)
+    expect(readDestinations(String(bare))[0]?.params).toEqual({ canvasId: DREAM.workId, face: 'manuscripts', item: '8', focus: 'plan' })
     const missing = await call(write, { what: 'chapter', chapter: 42, title: '不存在' })
     expect(missing).toContain('没有第 42 章')
   })

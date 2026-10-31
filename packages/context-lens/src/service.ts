@@ -32,6 +32,7 @@ import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, TurnOverview, TurnTiming } from './types.ts'
 import { InspectorStore, scopeAuthorized, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
 import { recordAssembly } from './segmenter.ts'
+import { applyRoomEvent, emptyRoom } from './room.ts'
 import { fromRequestMessage, serializeMessage } from './messages.ts'
 import { messageOfRow, meterOf, replacementFact, replacementFactsOf, type PendingMeter, type ReplacementRow } from './changes.ts'
 import {
@@ -52,6 +53,37 @@ declare module '@deepseek-ai/cordis' {
     requestInspector: InspectorService
   }
 }
+
+/** Rebuilt request bodies held at once (a request and its baseline per read). */
+const HYDRATED_BODIES = 8
+
+/** How far back a human room post's own user/message may sit before its room/dispatch. */
+const HUMAN_MESSAGE_LOOKBACK = 12
+
+/**
+ * The human's user/message a room post appended next to its `room/dispatch`
+ * (RoomService.postMessage): the nearest earlier user-sourced message, the
+ * one with the same text preferred. The chat renders it as the round's row,
+ * so a map click on the round scrolls there (rounds have no host turn).
+ */
+export function humanMessageBefore(at: (seq: number) => SessionLogRow | undefined, dispatchSeq: number, data: unknown): string | undefined {
+  const dispatch = (data ?? {}) as { origin?: unknown; text?: unknown }
+  if (dispatch.origin !== 'human') return undefined
+  let nearest: string | undefined
+  for (let seq = dispatchSeq - 1; seq >= Math.max(0, dispatchSeq - HUMAN_MESSAGE_LOOKBACK); seq -= 1) {
+    const row = at(seq)
+    if (row?.type !== 'user/message') continue
+    const message = (row.data ?? {}) as { id?: unknown; source?: { kind?: unknown }; content?: { type?: unknown; text?: unknown }[] }
+    if (message.source?.kind !== 'user' || typeof message.id !== 'string') continue
+    const text = (message.content ?? []).map(part => part.type === 'text' && typeof part.text === 'string' ? part.text : '').join('')
+    if (text === dispatch.text) return message.id
+    nearest ??= message.id
+  }
+  return nearest
+}
+
+/** The parent room's events a member opened alone keeps (its question cards' reconciliation). */
+const PARENT_ROOM_EVENTS = new Set(['room/member-added', 'room/run-state', 'room/question', 'room/question-resolved'])
 
 /** Plugin config: capture retention knobs. */
 export interface InspectorConfig {
@@ -198,7 +230,10 @@ export class InspectorService {
     this.store.noteLogActivity(sessionId)
     if (eventType.startsWith('compaction/')) this.store.noteCompaction(sessionId, eventType, event.data as unknown as Record<string, unknown>)
     if (eventType.startsWith('room/')) {
-      this.store.noteRoomEvent(sessionId, eventType, event.data, event.seq, at)
+      const messageId = eventType === 'room/dispatch'
+        ? humanMessageBefore(seq => session.eventAt(seq as typeof event.seq) as unknown as SessionLogRow | undefined, event.seq, event.data)
+        : undefined
+      this.store.noteRoomEvent(sessionId, eventType, messageId === undefined ? event.data : { ...event.data as object, messageId }, event.seq, at)
       return
     }
     if (event.type === 'tool/result' && event.surfaceOp !== 'append') {
@@ -328,6 +363,11 @@ export class InspectorService {
     if (cursor?.broken !== undefined) return
     if (cursor === undefined) {
       cursor = openCursor()
+      // A member's requests are kept bodiless: each carries its whole context
+      // (a kimi member's 391 requests held 139M chars — the store's whole
+      // budget — and the eviction then emptied the room). The body is rebuilt
+      // when one request is read (see hydrate).
+      cursor.materialize = () => false
       this.cursors.set(childId, cursor)
     }
     try {
@@ -390,9 +430,22 @@ export class InspectorService {
     if (fact !== undefined) this.store.noteReplacement(session.id, fact)
   }
 
+  /** Backfill outcomes already reported, one warning each (`<sessionId>\0<kind>`). */
+  private readonly backfillReported = new Set<string>()
+  /** Report a backfill that yields nothing, once per session and kind — a silent empty panel is undiagnosable. */
+  private reportBackfill(sessionId: string, kind: string, detail: string): void {
+    const key = `${sessionId}\0${kind}`
+    if (this.backfillReported.has(key)) return
+    this.backfillReported.add(key)
+    this.logWarn(`context-lens: session "${sessionId}" history backfill ${detail}`)
+  }
+
   private async backfillMainSession(sessionId: string): Promise<void> {
     const reader = this.reader()
-    if (reader === undefined) return
+    if (reader === undefined) {
+      this.reportBackfill('*', 'no-reader', 'skipped: the host exposes no readable sessionPersistence')
+      return
+    }
     // Retryable until complete: a partial fill re-reads on later queries
     // (eviction may have freed room); the read is one zstd decode.
     const state = this.store.backfillState(sessionId)
@@ -413,25 +466,35 @@ export class InspectorService {
       const handle = await reader.open(sessionId, 'read')
       try {
         const { events } = await handle.read(0)
+        if (events.length === 0) this.reportBackfill(sessionId, 'empty', 'read an empty log')
         // Materialize only the window's requests: every request carries its
         // whole context, so a long log rebuilt at once grows quadratically.
         const hosts = events.filter(row => row.type === 'turn/start')
           .map(row => (row.data as { turn?: unknown } | undefined)?.turn).filter((turn): turn is number => typeof turn === 'number')
         // An external agent's own session: its requests reach only this log.
         const provider = (events.find(row => row.type === 'subagent/descriptor')?.data as Record<string, unknown> | undefined)?.['provider']
-        if (typeof provider === 'string' && !IN_PROCESS_PROVIDERS.has(provider)) this.store.markLogDriven(sessionId)
+        const external = typeof provider === 'string' && !IN_PROCESS_PROVIDERS.has(provider)
+        if (external) this.store.markLogDriven(sessionId)
         const keep = this.store.windowHosts(sessionId, hosts)
-        this.store.insertLogTurns(sessionId, reconstructSession(events, host => host === undefined || keep.has(host)))
+        // An external agent's own session keeps every request bodiless, as its
+        // child scope does (its contexts are as large); bodies rebuild on read.
+        this.store.insertLogTurns(sessionId, reconstructSession(events, host => !external && (host === undefined || keep.has(host))))
         for (const fact of replacementFactsOf(events)) this.store.noteReplacement(sessionId, fact)
+        const bySeq = new Map(events.filter(row => row.seq !== undefined).map(row => [row.seq as number, row]))
         for (const row of events) {
-          if (row.type.startsWith('room/')) this.store.noteRoomEvent(sessionId, row.type, row.data, row.seq, row.time)
+          if (!row.type.startsWith('room/')) continue
+          const messageId = row.type === 'room/dispatch' && row.seq !== undefined ? humanMessageBefore(seq => bySeq.get(seq), row.seq, row.data) : undefined
+          this.store.noteRoomEvent(sessionId, row.type, messageId === undefined ? row.data : { ...row.data as object, messageId }, row.seq, row.time)
         }
         await this.resolveParent(sessionId, events, reader)
       } finally {
         void handle.close().catch(() => undefined)
       }
     } catch (error) {
-      if (error instanceof Error && error.name === 'SessionPersistenceNotFoundError') return
+      if (error instanceof Error && error.name === 'SessionPersistenceNotFoundError') {
+        this.reportBackfill(sessionId, 'not-found', `skipped: the host reports no stored log (${error.message})`)
+        return
+      }
       const reason = error instanceof Error ? error.message : String(error)
       this.store.markBackfillBroken(sessionId, reason)
       this.logWarn(`context-lens: session "${sessionId}" log unreadable, history backfill skipped (${reason})`)
@@ -449,12 +512,16 @@ export class InspectorService {
     const parentId = header?.type === 'session' ? (header as unknown as { parentSession?: unknown }).parentSession : undefined
     if (typeof parentId !== 'string' || parentId.length === 0 || this.store.hasParent(sessionId)) return
     const parent: { sessionId: string; title?: string; hostTurn?: number; label?: string } = { sessionId: parentId }
+    const room = emptyRoom()
     try {
       const handle = await reader.open(parentId, 'read')
       try {
         const { events: rows } = await handle.read(0)
         let turn: number | undefined
         for (const row of rows) {
+          // The room's questions and runs, so this member's ask_user_question
+          // cards reconcile against the room when the member is opened alone.
+          if (PARENT_ROOM_EVENTS.has(row.type)) applyRoomEvent(room, row.type, row.data, row.seq, row.time)
           const data = (row.data ?? {}) as Record<string, unknown>
           if (row.type === 'turn/start' && typeof data['turn'] === 'number') turn = data['turn']
           if (row.type === 'session/title' && typeof data['title'] === 'string') parent.title = data['title']
@@ -469,7 +536,7 @@ export class InspectorService {
     } catch {
       // The id alone still says whose child this is.
     }
-    this.store.noteParent(sessionId, parent)
+    this.store.noteParent(sessionId, parent, room.questions.size > 0 ? room : undefined)
   }
 
   // ---------- queries (the Remote face delegates here) ----------
@@ -482,7 +549,11 @@ export class InspectorService {
   async listTurns(sessionId: string, filter?: ScopeFilter): Promise<ListTurnsResult> {
     await this.backfillMainSession(sessionId)
     await this.refreshChildren(sessionId, filter)
-    return this.store.listTurns(sessionId, filter)
+    const list = this.store.listTurns(sessionId, filter)
+    if (list.turns.length === 0) {
+      this.reportBackfill(sessionId, 'no-turns', `listed no turns (state ${list.backfill.state}${filter === undefined ? '' : ', filtered'})`)
+    }
+    return list
   }
 
   /**
@@ -505,9 +576,48 @@ export class InspectorService {
   }
 
   /** One request's full four-segment breakdown (a {@link ScopedRefusal} when the filter excludes its scope). */
+  /** Requests whose rebuilt body is held, oldest first (`<sessionId>\0<seq>`). */
+  private readonly hydrated: string[] = []
+
+  /**
+   * Rebuild a bodiless request's context (and its scope predecessor's, the
+   * prefix comparison's baseline) from its log: one fold of the log with
+   * only those positions materialized. The last few rebuilt bodies stay;
+   * older ones are dropped again.
+   */
+  private async hydrate(sessionId: string, seq: number): Promise<void> {
+    const plan = this.store.bodilessFor(sessionId, seq)
+    const reader = this.reader()
+    if (plan === undefined || reader === undefined) return
+    try {
+      const handle = await reader.open(plan.logId, 'read')
+      try {
+        const { events } = await handle.read(0)
+        const wanted = new Set(plan.targets.map(target => target.logIndex))
+        const cursor = openCursor()
+        cursor.materialize = (_host, index) => wanted.has(index)
+        const built = foldLogRows(cursor, events).filter(request => request.bodiless !== true && request.logIndex !== undefined && wanted.has(request.logIndex))
+        for (const target of plan.targets) {
+          const body = built.find(request => request.logIndex === target.logIndex)
+          if (body === undefined || !this.store.hydrateRequest(sessionId, target.seq, body)) continue
+          this.hydrated.push(`${sessionId}\0${target.seq}`)
+        }
+      } finally {
+        void handle.close().catch(() => undefined)
+      }
+    } catch (error) {
+      this.logWarn(`context-lens: request body rebuild failed for "${plan.logId}" (${error instanceof Error ? error.message : String(error)})`)
+    }
+    while (this.hydrated.length > HYDRATED_BODIES) {
+      const [oldSession, oldSeq] = this.hydrated.shift()!.split('\0')
+      this.store.dehydrateRequest(oldSession!, Number(oldSeq))
+    }
+  }
+
   async getRequest(sessionId: string, seq: number, filter?: ScopeFilter): Promise<CapturedRequest | ScopedRefusal | undefined> {
     await this.backfillMainSession(sessionId)
     await this.refreshChildren(sessionId, filter)
+    await this.hydrate(sessionId, seq)
     const request = this.store.getRequest(sessionId, seq, filter)
     const tools = request !== undefined && 'prefix' in request ? request.prefix?.toolChanges : undefined
     if (tools === undefined || tools.length === 0) return request

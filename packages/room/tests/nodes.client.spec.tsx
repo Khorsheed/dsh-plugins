@@ -11,20 +11,22 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
-  roomEventDefinition, roomInboxDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition,
-  type RoomEventData, type RoomRelayData, type RoomRunData, type RoomSpeechData,
+  roomDispatchDefinition, roomEventDefinition, roomInboxDefinition, roomRelayDefinition, roomRunDefinition, roomSpeechDefinition,
+  type RoomDispatchData, type RoomEventData, type RoomRelayData, type RoomRunData, type RoomSpeechData,
 } from '../src/client/nodes.ts'
 import { RoomSpeechView } from '../src/client/RoomSpeechView.tsx'
 import { RoomRunView } from '../src/client/RoomRunView.tsx'
 import { RoomEventView } from '../src/client/RoomEventView.tsx'
 import { RoomRelayView } from '../src/client/RoomRelayView.tsx'
+import { RoomDispatchView } from '../src/client/RoomDispatchView.tsx'
+import { speechCause } from '../src/client/speech-cause.ts'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { memberColor } from '../src/client/member-color.ts'
 import { zh } from '../src/client/locales.ts'
 import type {
-  RoomEventViewProps, RoomRelayViewProps, RoomRunViewProps, RoomSpeechViewProps,
+  RoomDispatchViewProps, RoomEventViewProps, RoomRelayViewProps, RoomRunViewProps, RoomSpeechViewProps,
 } from '../src/client/slots.ts'
-import type { RoomState } from '../src/types.ts'
+import type { RoomDelivery, RoomState } from '../src/types.ts'
 
 afterEach(() => {
   cleanup()
@@ -288,6 +290,19 @@ describe('RoomSpeechView', () => {
     expect(screen.queryByText(/用量/)).toBeNull()
   })
 
+  it('ends the reply with what the run did on the room\'s desk, one seat per owner with all its events', async () => {
+    const owner = '@khorsheed/dsh-canvas'
+    const opened = { type: 'room/desk-opened' as const, owner, seq: 5, time: 1005, data: { data: { title: '潜梦者' } } }
+    const wrote = { type: 'room/desk-wrote' as const, owner, seq: 6, time: 1006, data: { data: { title: '潜梦者' } } }
+    const other = { type: 'room/desk-opened' as const, owner: '@khorsheed/dsh-game', seq: 7, time: 1007, data: { data: { title: '雨之谷' } } }
+    const renderSlot = vi.fn((_key: string, props: { owner: string; attachments: readonly unknown[] }) => <span>{`${props.owner}·${props.attachments.length}`}</span>)
+    const roomStore = await primedStore({ ...STATE, executions: [{ id: 'r1', memberId: 'm-ada', member: 'ada', state: 'done', startedAt: 1, attachments: [opened, wrote, other] }] })
+    render(<RoomSpeechView {...{ node: nodeOf('room-speech', { ...speech, runId: 'r1' }), sessionId: 'room-1', roomStore, openSession: vi.fn(), renderSlot, t } as unknown as RoomSpeechViewProps} />)
+    expect(screen.getByText(`${owner}·2`)).toBeDefined()
+    expect(screen.getByText('@khorsheed/dsh-game·1')).toBeDefined()
+    expect(renderSlot).toHaveBeenCalledWith('room.member.attachment', { sessionId: 'room-1', owner, attachments: [opened, wrote], live: false }, { entryKey: owner, fallback: null })
+  })
+
   it('opens Context Lens at the member\'s closing message; without one (or without the lens) there is no detail button', async () => {
     const openDetail = vi.fn()
     await bench({ ...speech, messageId: 'msg-9' }, STATE, openDetail)
@@ -489,6 +504,63 @@ describe('RoomEventView', () => {
     cleanup()
     bench({ seq: 2, time: 1002, sub: 'member-removed', member: 'bill' })
     expect(screen.getByText('bill 离开了 room')).toBeDefined()
+  })
+})
+
+describe('member-to-member messages', () => {
+  const ROSTER: RoomState = {
+    ...STATE,
+    members: [
+      { id: 'legacy:1', name: 'dsh', kind: 'main-agent', invitedBy: 'human' },
+      { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'codex', invitedBy: 'human' },
+      { id: 'm-bill', name: 'bill', kind: 'cli', provider: 'kimi', invitedBy: 'agent' },
+    ],
+  }
+  const delivery = (row: Partial<RoomDelivery> & Pick<RoomDelivery, 'id' | 'dispatchSeq' | 'memberId' | 'origin'>): RoomDelivery =>
+    ({ status: 'done', text: 'x', queuedAt: 1, ...row })
+
+  it('claims a member\'s or external coordinator\'s send, never the human\'s, a report, or the native main agent\'s', () => {
+    const send = (data: object) => ev('room/dispatch', 9, { targets: ['bill'], targetIds: ['m-bill'], text: '补预览', ...data })
+    expect(roomDispatchDefinition.match(send({ origin: 'member', from: 'm-ada', kind: 'task' }))).toEqual({ id: '9', role: 'start' })
+    expect(roomDispatchDefinition.match(send({ origin: 'coordinator', from: 'm-ada' }))).toEqual({ id: '9', role: 'start' })
+    expect(roomDispatchDefinition.match(send({ origin: 'human' }))).toBeNull()
+    expect(roomDispatchDefinition.match(send({ origin: 'report' }))).toBeNull()
+    expect(roomDispatchDefinition.match(send({ origin: 'coordinator', from: 'legacy:1' }))).toBeNull()
+    const started = roomDispatchDefinition.start(contextOf(undefined), matchOf(send({ origin: 'member', from: 'm-ada', kind: 'notify' })), undefined as never)
+    expect(started).toMatchObject({ seq: 9, from: 'm-ada', targets: ['bill'], kind: 'notify', text: '补预览' })
+  })
+
+  it('renders one line naming sender and recipient, marks a queued recipient, and opens the full text', async () => {
+    const roomStore = await primedStore({ ...ROSTER, deliveries: [delivery({ id: '9:m-bill', dispatchSeq: 9, memberId: 'm-bill', origin: 'member', status: 'queued' })] })
+    const data: RoomDispatchData = { seq: 9, time: 1009, from: 'm-ada', targets: ['bill'], kind: 'task', text: '补一个 HTML\n交互预览' }
+    const props = { node: nodeOf('room-dispatch', data), sessionId: 'room-1' as SessionId, roomStore, t } as unknown as RoomDispatchViewProps
+    const { container } = render(<RoomDispatchView {...props} />)
+    expect(screen.getByText('ada 派活给 bill：')).toBeDefined()
+    expect(screen.getByText('排队中')).toBeDefined()
+    expect(screen.getByText('补一个 HTML 交互预览')).toBeDefined()
+    fireEvent.click(screen.getByRole('button'))
+    expect(container.querySelector('[data-room-dispatch="9"]')?.textContent).toContain('补一个 HTML\n交互预览')
+  })
+
+  it('names what started a reply: a member\'s send, a report, a release of held reports; nothing for the human', () => {
+    const state: RoomState = {
+      ...ROSTER,
+      deliveries: [
+        delivery({ id: '9:m-bill', dispatchSeq: 9, memberId: 'm-bill', origin: 'member', from: 'm-ada', kind: 'task', text: '补预览' }),
+        delivery({ id: '10:m-ada', dispatchSeq: 10, memberId: 'm-ada', origin: 'report', reportFor: '9:m-bill' }),
+        delivery({ id: '11:m-bill', dispatchSeq: 11, memberId: 'm-bill', origin: 'coordinator', from: 'legacy:1', text: '画图' }),
+        delivery({ id: '12:m-ada', dispatchSeq: 12, memberId: 'm-ada', origin: 'report', reportFor: '11:m-bill', status: 'held' }),
+        delivery({ id: '13:m-ada', dispatchSeq: 13, memberId: 'm-ada', origin: 'report', releases: [10, 12] }),
+        delivery({ id: '14:m-ada', dispatchSeq: 14, memberId: 'm-ada', origin: 'human' }),
+      ],
+    }
+    expect(speechCause('9:m-bill', state)).toEqual({ kind: 'task', member: 'ada', text: '补预览', target: '[data-room-dispatch="9"]' })
+    expect(speechCause('10:m-ada', state)).toEqual({ kind: 'report', member: 'bill', target: '[data-room-run="9:m-bill"]' })
+    // The native main agent's send has no row to scroll to (its tool call shows).
+    expect(speechCause('11:m-bill', state)).toEqual({ kind: 'task', member: 'dsh', text: '画图' })
+    expect(speechCause('13:m-ada', state)).toEqual({ kind: 'report', member: 'bill', target: '[data-room-run="9:m-bill"]' })
+    expect(speechCause('14:m-ada', state)).toBeUndefined()
+    expect(speechCause(undefined, state)).toBeUndefined()
   })
 })
 

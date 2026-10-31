@@ -20,6 +20,9 @@
     "src/store.ts",
     "src/skill.ts",
     "src/tools.ts",
+    "src/desk.ts",
+    "src/nav-line.ts",
+    "src/text-escapes.ts",
     "src/types.ts"
   ]
 }

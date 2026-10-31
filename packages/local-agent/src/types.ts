@@ -47,10 +47,40 @@ export interface LocalAgentStreamCheckpoint extends Omit<LocalAgentStreamItem, '
   append: boolean
 }
 
+/**
+ * One context compaction of a CLI member, in its own session: the CLI
+ * replaced its history before `boundarySeq` with a summary. Display and
+ * accounting only — never the host's own `compaction/*` events, whose
+ * surface replacement must not run on a mirrored CLI log.
+ */
+export interface LocalAgentCompactionEvent {
+  /** `manual`: /compact or the reminder button; `auto`: the CLI's own. */
+  source: 'manual' | 'auto'
+  outcome: 'completed' | 'failed' | 'cancelled'
+  /** The delegation provider (`kimi-cli`, `codex-local`, …). */
+  provider: string
+  model?: string
+  /** Context occupancy before and after, as the CLI reported it. */
+  beforeTokens?: number
+  afterTokens?: number
+  contextWindow?: number
+  /** The compaction call's own spend (never a round's). */
+  usage?: TokenUsage
+  /** The CLI's summary text, when it gives one (Kimi does, Codex does not). */
+  summary?: string
+  error?: string
+  startedAt: number
+  endedAt: number
+  /** Every message before this seq is replaced by the summary in later requests. */
+  boundarySeq: number
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /** Plugin-owned live presentation anchor and incremental recovery checkpoints. */
     'local-agent/stream': LocalAgentStreamCheckpoint
+    /** A CLI member's context compaction (display + accounting). */
+    'local-agent/compaction': LocalAgentCompactionEvent
   }
 }
 
@@ -695,6 +725,17 @@ export interface MemberRoomCommand {
   arguments: Record<string, unknown>
 }
 
+/**
+ * The room session a member's mode tools treat as the shared workspace, and
+ * the member's role there (see preset-tool-host's desk mark).
+ */
+export interface MemberDesk {
+  readonly sessionId: string
+  readonly role: 'coordinator' | 'member'
+  readonly member: string
+  readonly runId?: string
+}
+
 export interface RoomMemberMessageGate {
   /** Explicit ownership prevents a rejected room operation falling through to direct execution. */
   isRoom?(request: { sessionId: string }): Promise<boolean>
@@ -702,9 +743,10 @@ export interface RoomMemberMessageGate {
   receiveMemberMessage(message: LocalAgentMemberMessage): Promise<RoomMemberMessageReceipt>
   /**
    * The member's mode (a host agent preset id) whose plugin tools its bridge
-   * offers, with the member's working directory; undefined = no mode tools.
+   * offers, with the member's working directory and (newer rooms) its desk;
+   * undefined = no mode tools.
    */
-  memberMode?(member: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string } | undefined>
+  memberMode?(member: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string; readonly desk?: MemberDesk } | undefined>
   /**
    * A member's mode tool needs the human's approval: the room asks in its
    * conversation and answers with the registry's approval outcome.
@@ -819,6 +861,13 @@ export type LocalAgentDelegationIntent =
      * scope, and a round naming another (or none) is refused.
      */
     readonly scope?: string
+    /**
+     * `compact`: this round compacts the CLI's context instead of sending a
+     * prompt (Kimi `/compact`, Codex `thread/compact/start`). It holds the
+     * member's queue like any round — input sent meanwhile waits for it —
+     * writes no turn, and records one `local-agent/compaction` event.
+     */
+    readonly operation?: 'compact'
   }
 
 /**
@@ -936,6 +985,8 @@ export interface DelegationExecTarget {
  * it without changing the existing fields.
  */
 export interface DelegationCallOptions {
+  /** Resume only: compact the member's context instead of prompting it (see the resume intent). */
+  readonly operation?: 'compact'
   /** Host-only durable input edge, executed at the provider admission boundary. */
   readonly onAdmitted?: () => void | Promise<void>
   /** Reserved identity returned by prepareMember; never a caller-selected resume override. */

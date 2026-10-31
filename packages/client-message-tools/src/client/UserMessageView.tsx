@@ -58,8 +58,9 @@ function contentParts(content: readonly unknown[]): {
 const SESSION_MENTION = /@\[((?:\\.|[^\\\]\n])+)\]\(dsh-session:[^)\s]+\)/gu
 
 /**
- * A session mention shows as a chip with its title (the host's own user-text
- * rule does the same); the rest of the text keeps the token projection.
+ * The fallback for hosts without the official user-text factory: a session
+ * mention shows as a chip with its title (the host's own user-text rule does
+ * the same); the rest of the text keeps the token projection.
  */
 function projectUserText(text: string): ReactNode {
   const parts: ReactNode[] = []
@@ -73,6 +74,15 @@ function projectUserText(text: string): ReactNode {
   if (parts.length === 0) return projectTokens(text)
   if (cursor < text.length) parts.push(<Fragment key={`t${cursor}`}>{projectTokens(text.slice(cursor))}</Fragment>)
   return <>{parts}</>
+}
+
+/** The user-text Facts a host user node carries (absent on message-tools' own node kinds). */
+function userTextFacts(data: object): { sessionLabels?: readonly string[]; skillNames?: readonly string[] } {
+  const { referenceLabels, skillNames } = data as { referenceLabels?: readonly string[]; skillNames?: readonly string[] }
+  return {
+    ...referenceLabels === undefined ? {} : { sessionLabels: referenceLabels },
+    ...skillNames === undefined ? {} : { skillNames },
+  }
 }
 
 /** Plaintext `/name` and `@name` word-boundary tokens decorate as chips; the logged text stays the truth. */
@@ -202,7 +212,7 @@ function InlineEditor({ initial, busy, t, onSave, onCancel, models }: {
 
 /** The shadowed user-message view: bubble plus copy/edit/withdraw actions. */
 export const UserMessageView = memo(function UserMessageView({
-  node, renderMessageImages, loadImage, renderFactorySlot, t, editMessage, withdrawMessage, backfillDraft, foldScope,
+  node, renderMessageImages, loadImage, renderFactorySlot, t, editMessage, withdrawMessage, backfillDraft, foldScope, userTextAvailable,
   useModelDirectory, modelsAvailable, loadModels, selectModel,
   ...standard
 }: UserMessageViewProps): ReactNode {
@@ -287,7 +297,13 @@ export const UserMessageView = memo(function UserMessageView({
         {images.length > 0 ? renderImageGallery(renderMessageImages, renderFactorySlot, loadImage, { images, align: 'end' }) : null}
         {showBubble && (
           <div className={clamped ? `${css.bubble} ${css.clamped}` : css.bubble}>
-            {projectUserText(text)}
+            {userTextAvailable()
+              // The official pipeline, with the facts the host's own user
+              // bubble passes (the node's confirmed session labels and the
+              // skills its step loaded): every registered user-text rule —
+              // quote cards included — renders here as it would unshadowed.
+              ? renderFactorySlot('conversation.user.text', { text, facts: userTextFacts(data), interactive: true })
+              : projectUserText(text)}
             {rest.map((block, index) => (
               <JsonBlock key={index} label={t('message.extraBlock')} payload={block} truncatedLabel={truncated} />
             ))}

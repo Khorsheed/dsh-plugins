@@ -28,7 +28,10 @@ import { LocalAgentFamilyCard, type FamilyCardInjected } from './FamilyCard.tsx'
 import { HarnessCardRegistry, type HarnessCardRegistration } from './harness-cards.ts'
 import { MemberConfiguration } from './MemberConfiguration.tsx'
 import { MemberConfigurationStores } from './member-configuration.ts'
+import { draftOf, selectionOf } from './member-selection.ts'
+import { requestId } from './request-id.ts'
 import type { Context } from '@deepseek-ai/cordis'
+import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: pulls the generated Remote API, the ctx.remote merge, and the
 // locale Context merge.
 import type {} from '@khorsheed/dsh-local-agent/remote'
@@ -68,11 +71,38 @@ export type LocalAgentGatewayRemote = TypertRemoteNamespaceMap['localAgentGatewa
 export type HarnessModelPickerInput = Omit<HarnessModelPickerProps, 'face' | 't'>
 import { MemberInboxView, type MemberInboxFace } from './MemberInboxView.tsx'
 
+/** A member's model + effort as an edit form's draft ('' = follow the default). */
+export interface MemberSelectionDraft {
+  readonly model: string
+  readonly effort: string
+  /** A round is in flight: a saved change waits for it to end. */
+  readonly busy: boolean
+}
+
 export interface LocalAgentUi {
-  renderMemberOutput(childSessionId: string, startedAt: number): ReactNode
+  renderMemberOutput(childSessionId: string, startedAt: number, options?: { readonly fileMentions?: MarkdownFileMentions | undefined }): ReactNode
   renderMemberInbox(childSessionId: string): ReactNode
   renderHarnessModelPicker(name: string, props: HarnessModelPickerInput): ReactNode
   renderMemberConfiguration(childSessionId: string): ReactNode
+  /**
+   * An edit form's model fields for one member: the invite picker's model +
+   * effort selects (pass `fields`) over the member's own directory. The form
+   * owns the draft; {@link saveMemberSelection} applies it. Optional on the
+   * TYPE: a room probes it and keeps {@link renderMemberConfiguration}
+   * against a core that predates it.
+   */
+  renderMemberModelPicker?(childSessionId: string, props: HarnessModelPickerInput): ReactNode
+  /**
+   * The member's latest intent as the edit form's draft ('' = follow the
+   * default), and whether a round is in flight (a save then waits for its
+   * end). undefined = unreadable (no control yet, transport failure).
+   */
+  readMemberSelection?(childSessionId: string): Promise<MemberSelectionDraft | undefined>
+  /**
+   * Queue the draft through the member control, as the live control's pick
+   * does: `deferred` = it waits for the running round to end.
+   */
+  saveMemberSelection?(childSessionId: string, draft: { readonly model: string; readonly effort: string }): Promise<{ readonly ok: true; readonly deferred: boolean } | { readonly ok: false; readonly error: string }>
   /**
    * Register one harness's section in the family card; returns the
    * unregister. Optional on the TYPE because a companion may run against a
@@ -138,6 +168,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     cancel: async (id, request, revision) => unwrap(await gateway.cancelMemberConfiguration(id, request, revision)),
     retry: async (id, revision) => { unwrap(await gateway.retryMemberConfiguration(id, revision)) },
   })
+  // One member's own directory in the picker's face shape (the edit form's
+  // model fields read what the live control reads).
+  const memberDirectoryFaces = new Map<string, ModelDirectoryFace>()
+  const memberDirectoryFace = (id: string): ModelDirectoryFace => {
+    let face = memberDirectoryFaces.get(id)
+    if (face === undefined) memberDirectoryFaces.set(id, face = {
+      read: async refresh => unwrap(await gateway.memberDirectory(id, refresh)),
+      follow: signal => feeds.follow(id, 'directory', signal),
+    })
+    return face
+  }
   const directoryFaces = new Map<string, ModelDirectoryFace>()
   const directoryFace = (name: string): ModelDirectoryFace => {
     let face = directoryFaces.get(name)
@@ -176,10 +217,31 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const harnessCards = new HarnessCardRegistry()
   const t = ctx.locale.bind(NS)
   const configurationUi: LocalAgentUi = {
-    renderMemberOutput: (id, startedAt) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, t: ctx.locale.bind(NS) }),
+    renderMemberOutput: (id, startedAt, options) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, ...options?.fileMentions === undefined ? {} : { fileMentions: options.fileMentions }, t: ctx.locale.bind(NS) }),
     renderMemberInbox: id => createElement(MemberInboxView, { key: id, face: inboxFace(id), t: ctx.locale.bind(NS) }),
     renderHarnessModelPicker: (name, props) => createElement(HarnessModelPicker, { ...props, key: name, face: directoryFace(name), t: ctx.locale.bind(NS) }),
     renderMemberConfiguration: id => createElement(MemberConfiguration, { key: id, store: configurations.get(id), diagnostics: outputs.diagnostics, t: ctx.locale.bind(NS) }),
+    renderMemberModelPicker: (id, props) => createElement(HarnessModelPicker, { ...props, key: `member:${id}`, face: memberDirectoryFace(id), t: ctx.locale.bind(NS) }),
+    readMemberSelection: async (id) => {
+      try {
+        const state = await configurations.get(id).face.read(id)
+        return { ...draftOf((state.pending ?? state.operation ?? state.current).selection, state.current.resolved), busy: state.round !== undefined }
+      } catch {
+        return undefined
+      }
+    },
+    saveMemberSelection: async (id, draft) => {
+      try {
+        const store = configurations.get(id)
+        const state = await store.face.read(id)
+        const receipt = await store.face.select(id, requestId(), state.revision, selectionOf(draft))
+        await store.refresh()
+        if (['failed', 'conflict', 'locked', 'unsupported'].includes(receipt.status)) return { ok: false, error: receipt.error ?? ctx.locale.bind(NS)('configuration.failed') }
+        return { ok: true, deferred: receipt.status === 'pending' }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
     registerHarnessCard: entry => harnessCards.register(entry),
     harnessCards: () => harnessCards.cards(),
     subscribeHarnessCards: listener => harnessCards.subscribe(listener),

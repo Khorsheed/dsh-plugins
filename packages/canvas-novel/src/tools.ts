@@ -22,6 +22,8 @@ import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { isPlanText, outlineFromText, planFromText } from './text-forms.ts'
+import { actingSession, announceDeskBind, announceDeskWrite, deskOf, novelWriteItems } from './desk.ts'
+import { RECENT_SCOPE, withChapterDestination, withNovelDestination, withoutDestinations } from './nav-line.ts'
 import { planOvershoots, renderOutlineRead, renderPlanBrief, renderWriteBrief, targetWordsOf } from './brief.ts'
 import { PHASE_NAMES, ROLE_NAMES, foreshadowFacts, relationFacts } from './genre-agent.ts'
 import type { NovelService } from './store.ts'
@@ -81,7 +83,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
   const target = async (exec: { agent?: Agent }): Promise<{ workId: string; session: Session } | { message: string }> => {
     const session = exec.agent?.session
     if (session === undefined) return { message: NO_WORK_MESSAGE }
-    const work = await store.boundWork(String(session.id))
+    // In a room: the coordinator works on the room's novel; a member on its
+    // own, else the room's (desk.ts). The fence stays the caller's session.
+    const desk = deskOf(exec.agent)
+    const work = await store.boundWork(String(actingSession(session, desk).id))
+      ?? (desk?.role === 'member' ? await store.boundWork(String(desk.session.id)) : undefined)
     if (work === undefined) return { message: NO_WORK_MESSAGE }
     await store.ensureRefs(work.id, session)
     return { workId: work.id, session }
@@ -238,7 +244,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
-    execute: async (arrived: WriteArgs, exec: { agent?: Agent }): Promise<string> => {
+    execute: async (arrived: WriteArgs, exec: { agent?: Agent }): Promise<string> => told(exec, () => runWrite(arrived, exec)),
+  })
+
+  const runWrite = async (arrived: WriteArgs, exec: { agent?: Agent }): Promise<string> => {
+    {
       const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       const { workId } = resolved
@@ -303,21 +313,26 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         const body = args.content !== undefined && args.content.trim() !== '' ? args.content : undefined
         if (body !== undefined || args.byUser === true) {
           const count = body === undefined ? chapter.wordCount : body.replace(/\s+/g, '').length
-          return `${attached}已写入第 ${chapter.n} 章《${chapter.title}》正文（画布 ${workId}${count === undefined ? '' : ` · ${count} 字`}）。`
-            + '\n正文在右栏章节页能读。回复里汇报三行（字数 / 动用了哪几条伏笔操作 / 有没有偏离计划），然后接着对账这一章，不用等用户点头。'
+          return withChapterDestination(`${attached}已写入第 ${chapter.n} 章《${chapter.title}》正文（画布 ${workId}${count === undefined ? '' : ` · ${count} 字`}）。`
+            + `\n正文在画布「章节」页签的第 ${chapter.n} 章（会话里有卡片直达）。回复里汇报三行（字数 / 动用了哪几条伏笔操作 / 有没有偏离计划），然后接着对账这一章，不用等用户点头。`,
+          workId, chapter.n, chapter.title, 'body', String(count ?? Date.now()))
         }
-        if (plan === undefined) return `${attached}已建第 ${chapter.n} 章《${chapter.title}》（画布 ${workId} · 规划中 · ${chapter.file}）。`
+        if (plan === undefined) {
+          return withChapterDestination(`${attached}已建第 ${chapter.n} 章《${chapter.title}》（画布 ${workId} · 规划中 · ${chapter.file}）。`,
+            workId, chapter.n, chapter.title, 'plan', String(Date.now()))
+        }
         const [outline, entries, chapters] = await Promise.all([
           store.readOutline(workId), store.readEntries(workId), store.listChapters({ workId }),
         ])
         const words = targetWordsOf(chapter, outline)
         const position = volumePosition(outline.volumes, chapters.map(row => row.chapter), chapter)
         const overshoots = planOvershoots(plan, words, entries?.foreshadows ?? [], position?.index, outline.volumes.length)
-        return `${attached}已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}${position === undefined ? '' : ` · 卷${volumeNumeral(position.index)}`}）plan：`
+        return withChapterDestination(`${attached}已登记第 ${chapter.n} 章《${chapter.title}》（画布 ${workId}${position === undefined ? '' : ` · 卷${volumeNumeral(position.index)}`}）plan：`
           + `${words === undefined ? '' : `目标 ${words} 字 / `}情节 ${plan.beats.length} 段 / 伏笔 ${plan.foreshadowOps.length} 条 / 出场 ${plan.cast.length} 人。`
           + (overshoots.length === 0 ? '' : `\n提醒（只提醒，不拦）：${overshoots.join('；')}。在回复里跟用户说一句，按他的意思改或保留。`)
-          + '\n完整计划已在右栏打开的章节页上。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。'
-          + `用户在对话里同意后，先 novel_write(what=confirm, chapter=${chapter.n}) 再开写；他也可能直接在章节页点了确认。`
+          + `\n完整计划在画布「章节」页签的第 ${chapter.n} 章（会话里有卡片直达）。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。`
+          + `用户在对话里同意后，先 novel_write(what=confirm, chapter=${chapter.n}) 再开写；他也可能直接在章节页点了确认。`,
+        workId, chapter.n, chapter.title, 'plan', String(Date.now()))
       }
       if (args.what === 'confirm') {
         if (args.chapter === undefined) return '失败：what=confirm 要给 chapter（章号）。'
@@ -352,8 +367,9 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           }
           return `失败：${outcome.error ?? 'io'}`
         }
-        return `已提交大纲提议（画布 ${workId}），在「规划」页等用户采用；采用前不生效，再提会合并进这一版。`
-          + '回复里用两三句说改了什么、为什么，不要贴整份大纲。'
+        return withNovelDestination(`已提交大纲提议（画布 ${workId}），在「规划」页等用户采用；采用前不生效，再提会合并进这一版。`
+          + '回复里用两三句说改了什么、为什么，不要贴整份大纲。',
+        `canvas:${workId}:outline:${Date.now()}`, { canvasId: workId, face: 'lead' }, '大纲提议')
       }
       if (args.what === 'review') {
         if (args.id === undefined || args.action === undefined) return '失败：what=review 要给 id（待审项）和 action（accept|discard）。'
@@ -362,8 +378,27 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         return args.action === 'accept' ? `已采纳并落库：${args.id}。` : `已丢弃：${args.id}。`
       }
       return '失败：what 只能是 chapter/outline/review；卡片用 canvas_write。'
-    },
-  })
+    }
+  }
+
+  /**
+   * Run one novel write, then tell the room what it did when the caller is a
+   * room member (desk.ts): the work's cards and chapters read around the call.
+   * Outside a room this is exactly the call.
+   */
+  const told = async (exec: { agent?: Agent }, run: () => Promise<string>): Promise<string> => {
+    const desk = deskOf(exec.agent)
+    const resolved = desk === undefined ? undefined : await target(exec)
+    if (desk === undefined || resolved === undefined || 'message' in resolved) return desk === undefined ? run() : withoutDestinations(await run())
+    const before = await store.deskSnapshot(resolved.workId)
+    const answer = withoutDestinations(await run())
+    const after = before === undefined ? undefined : await store.deskSnapshot(resolved.workId)
+    if (before !== undefined && after !== undefined) {
+      const names = await store.categoryNames(resolved.workId)
+      announceDeskWrite(desk, { id: resolved.workId, title: after.title }, novelWriteItems(before, after, kind => names.get(kind)))
+    }
+    return answer
+  }
 
   const extract = defineTool({
     name: 'novel_extract',
@@ -379,7 +414,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       schema: { type: 'string' },
       render: (_args, value) => [{ type: 'text', text: String(value) }],
     },
-    execute: async (args: { chapter: number; phase: 'prepare' | 'import'; payload?: ExtractPayload }, exec: { agent?: Agent }): Promise<string> => {
+    execute: async (args: { chapter: number; phase: 'prepare' | 'import'; payload?: ExtractPayload }, exec: { agent?: Agent }): Promise<string> => told(exec, async () => {
       const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       if (args.phase === 'prepare') {
@@ -431,8 +466,9 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       if (report.dropped.length > 0) {
         lines.push('丢弃（防编造闸）：', ...report.dropped.map(drop => `- ${drop.kind}「${drop.ref}」：${dropReason(drop)}`))
       }
-      return lines.join('\n')
-    },
+      return withNovelDestination(lines.join('\n'), `canvas:${resolved.workId}:extract:${args.chapter}:${Date.now()}`,
+        { canvasId: resolved.workId, face: 'board', scope: RECENT_SCOPE }, `第 ${args.chapter} 章对账 · 最近更新`)
+    }),
   })
 
   return [tagOrigin(read), tagOrigin(write), tagOrigin(extract)]
@@ -474,19 +510,28 @@ export function novelBindDefinition(store: NovelService, granted: (agent: Agent)
     },
     execute: async (args: { work?: string }, exec: { agent?: Agent }): Promise<string> => {
       const agent = exec.agent
-      const current = agent === undefined ? undefined : await store.boundWork(String(agent.session.id))
+      const desk = deskOf(agent)
+      // The coordinator binds the room (its sidebar shows the novel); anyone else its own session.
+      const binding = agent === undefined ? undefined : actingSession(agent.session, desk)
+      const current = binding === undefined ? undefined
+        : await store.boundWork(String(binding.id)) ?? (desk?.role === 'member' ? await store.boundWork(String(desk.session.id)) : undefined)
       if (args.work === undefined || args.work.trim() === '') {
         const works = await store.listWorks()
         return [listing(works), current === undefined ? '本会话未绑定。' : `本会话已绑定《${current.title}》。`].join('\n')
       }
       if (agent === undefined) return '失败：这次调用没有会话，无法绑定。'
-      const bound = await store.bindWork(args.work, agent.session)
+      const bound = await store.bindWork(args.work, binding ?? agent.session)
       if (!bound.ok) {
         if (bound.error === 'ambiguous') return `「${args.work}」对应多部作品，请问用户是哪一部：${bound.works.map(work => `《${work.title}》`).join('、')}`
         if (bound.error === 'missing') return `没有叫「${args.work}」的长篇小说作品。${listing(bound.works)}`
         return `失败：${bound.error}`
       }
       await granted(agent)
+      if (desk !== undefined) {
+        announceDeskBind(desk, bound.work)
+        const where = desk.role === 'coordinator' ? '房间侧栏已切到这部作品。' : '已放进房间侧栏的画布标签里。'
+        return `已绑定《${bound.work.title}》：用 novel_read / novel_write / novel_extract 写作，先加载 novel skill。${where}`
+      }
       return `已绑定《${bound.work.title}》：novel_read / novel_write / novel_extract 从下一步起可用，先加载 novel skill。用户可在会话头的画布 chip 里改绑或解绑。`
     },
   })

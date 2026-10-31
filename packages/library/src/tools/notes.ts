@@ -6,7 +6,7 @@
  */
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import { jsonOutput, unwrap, type ToolKit } from './kit.ts'
+import { jsonOutput, landed, unwrap, type ToolKit } from './kit.ts'
 
 /** Build the `library_notes` tool over the shared kit. */
 export function libraryNotesTool(kit: ToolKit): ToolDefinition {
@@ -26,18 +26,15 @@ export function libraryNotesTool(kit: ToolKit): ToolDefinition {
     isConcurrencySafe: () => false,
     async execute(args, exec) {
       const resourceId = resourceOf(args, exec)
-      const written = unwrap(await service.putNotes({
-        projectId: projectOf(args.project, exec, resourceId),
-        resourceId,
-        nodeId: String(args.node),
-        text: String(args.text),
-      }))
-      return {
+      const projectId = projectOf(args.project, exec, resourceId)
+      const nodeId = String(args.node)
+      const written = unwrap(await service.putNotes({ projectId, resourceId, nodeId, text: String(args.text) }))
+      return landed(exec, {
         ...written,
         next: written.notes.revisions === 1
-          ? 'Tell the learner in one line that the 讲义 are ready in the sidebar, then wait — they read first and ask.'
+          ? 'Tell the learner in one line that the 讲义 are ready on this station\'s lesson page in the 图书馆 tab (the card in the conversation goes there), then wait — they read first and ask.'
           : 'Tell the learner in one line what changed in the 讲义.',
-      } as unknown as JsonValue
+      }, { view: 'lesson', projectId, resourceId, nodeId }, '这一站的讲义') as unknown as JsonValue
     },
   })
 }

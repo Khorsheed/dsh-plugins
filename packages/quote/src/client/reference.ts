@@ -47,7 +47,7 @@ export interface QuoteBailScope {
 export interface QuoteInputSnapshot {
   readonly draft: string
   readonly draftRev: number
-  readonly occurrences?: readonly { readonly length: number }[]
+  readonly occurrences?: readonly { readonly offset?: number; readonly length: number }[]
 }
 
 /** The session input face the chip path reads. */

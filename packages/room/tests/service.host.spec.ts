@@ -5,6 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
+import { coordinatorMember } from '../src/journal.ts'
 import type { LocalAgentFacade } from '../src/adapter.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
@@ -316,14 +317,20 @@ describe('RoomService Remote surface (real composition)', () => {
     const cleared = await service.getState({ sessionId })
     if (cleared.ok) expect(cleared.value.members[1]).not.toHaveProperty('cwd')
 
-    // Rename validation: uniqueness, the name grammar, and the main agent is
-    // the room itself — it cannot be renamed.
+    // Rename validation: uniqueness and the name grammar. The main agent
+    // renames too — its identity is its join seq, so it stays the room's own
+    // agent (and the coordinator) under the new name.
     expect(await service.updateMember({ sessionId, name: 'K酱', rename: 'bill' }))
       .toEqual({ ok: false, error: { code: 'duplicate-name' } })
     expect(await service.updateMember({ sessionId, name: 'K酱', rename: 'bad name' }))
       .toEqual({ ok: false, error: { code: 'invalid-name' } })
     expect(await service.updateMember({ sessionId, name: 'dsh', rename: 'boss' }))
-      .toEqual({ ok: false, error: { code: 'main-member' } })
+      .toEqual({ ok: true, value: { name: 'dsh' } })
+    const mainRenamed = await service.getState({ sessionId })
+    if (!mainRenamed.ok) throw new Error('room unavailable')
+    expect(mainRenamed.value.members[0]).toMatchObject({ name: 'boss', kind: 'main-agent' })
+    expect(mainRenamed.value.members.filter(member => member.kind === 'main-agent')).toHaveLength(1)
+    expect(coordinatorMember(mainRenamed.value)?.name).toBe('boss')
   })
 
   it('updateMember journals the intended model — set, trim, and null/blank clears', async () => {
@@ -563,10 +570,24 @@ describe('RoomService Remote surface (real composition)', () => {
     session.append('room/member-updated', { name: 'bill', childSessionId: SessionId('child-bill') })
     session.append('room/member-updated', { name: 'ada', childSessionId: SessionId('child-ada') })
     expect(await service.memberMode({ childSessionId: 'child-bill', parentSessionId: sessionId, provider: 'codex' }))
-      .toEqual({ preset: 'dsh-video', ...session.header.cwd === undefined ? {} : { cwd: session.header.cwd } })
+      .toEqual({ preset: 'dsh-video', ...session.header.cwd === undefined ? {} : { cwd: session.header.cwd }, desk: { sessionId, role: 'member', member: 'bill' } })
     expect(await service.memberMode({ childSessionId: 'child-ada', parentSessionId: sessionId, provider: 'kimi' })).toBeUndefined()
     // The run's provider must match the roster: another provider's run does not borrow the mode.
     expect(await service.memberMode({ childSessionId: 'child-bill', parentSessionId: sessionId, provider: 'kimi' })).toBeUndefined()
+  })
+
+  it('memberMode names the member\'s desk role: the coordinator acts on the room, anyone else beside it', async () => {
+    const { ctx, service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'codex', name: 'bill', preset: 'dsh-writing' })
+    const session = ctx.sessions.get(sessionId)!
+    session.append('room/member-updated', { name: 'bill', childSessionId: SessionId('child-bill') })
+    const actor = { childSessionId: 'child-bill', parentSessionId: sessionId, provider: 'codex' }
+    expect((await service.memberMode(actor))?.desk).toEqual({ sessionId, role: 'member', member: 'bill' })
+    const state = await service.getState({ sessionId })
+    if (!state.ok) throw new Error('narrowing')
+    const bill = state.value.members.find(member => member.name === 'bill')!
+    session.append('room/coordinator', { version: 1, memberId: bill.id!, revision: 1, previousMemberId: 'main', handoff: '' })
+    expect((await service.memberMode(actor))?.desk).toEqual({ sessionId, role: 'coordinator', member: 'bill' })
   })
 
   it('an invite asking to inherit takes the room session\'s own mode', async () => {

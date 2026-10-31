@@ -34,19 +34,22 @@ import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import { RoomRequestIds } from './request-ids.ts'
+import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import { en, zh } from './locales.ts'
 import { InviteAgentAction } from './InviteAgentAction.tsx'
 import { MembersView } from './MembersView.tsx'
-import { RoomComposer, selectRoomComposer } from './RoomComposer.tsx'
+import { RoomComposer, roomInteractionKey, selectRoomComposer } from './RoomComposer.tsx'
 import { ROOM_TASKS_KIND, ROOM_TASKS_TAB_ID, RoomTasksTab, type RoomTasksInjected } from './TasksTab.tsx'
 import { RoomTaskTags } from './task-tag.ts'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
+import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomDispatchDefinition, roomCompactionDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { mainSessionId, RoomStore } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
+import { RoomDispatchView } from './RoomDispatchView.tsx'
+import { RoomCompactionView } from './RoomCompactionView.tsx'
 import { RoomInboxView } from './RoomInboxView.tsx'
 import { RoomApprovalView } from './RoomApprovalView.tsx'
 import { RoomQuestionView } from './RoomQuestionView.tsx'
@@ -55,10 +58,11 @@ import { RoomHelpRequestView, RoomHelpView } from './RoomHelpView.tsx'
 import { sessionTitle, type RoomMenuMember, type SessionCandidate } from './at-menu.ts'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
-  RoomRelayInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
-  RoomAttachmentsFace, RoomDraftAttachment,
+  RoomRelayInjected, RoomDispatchInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
+  RoomAttachmentsFace, RoomDraftAttachment, RoomModesService,
 } from './slots.ts'
-import type { RoomAttachmentInput } from '../types.ts'
+import { ROOM_RUN_CARD_SLOTS, ROOM_SPEECH_CARD_SLOTS } from './slots.ts'
+import type { RoomAttachmentInput, RoomQuestionAnswer } from '../types.ts'
 import type { RoomFailure } from '../types.ts'
 
 /** The room Remote namespace, as mounted by this plugin. */
@@ -116,12 +120,43 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const roomStore = new RoomStore(ctx, remote)
   ctx.effect(() => roomStore.start(), 'room: store')
 
+  // The modes at work in each room, for the other plugins' sidebar entries:
+  // the room's sidebar shows what any member's mode reaches (slots.ts).
+  const roomModes: RoomModesService = {
+    presetsOf: (sessionId) => {
+      const state = roomStore.getCached(sessionId as SessionId)
+      if (state === undefined) return undefined
+      return [...new Set(state.members.flatMap(member => member.preset === undefined ? [] : [member.preset]))]
+    },
+    subscribe: roomStore.subscribe,
+  }
+  ctx.provide('roomModes', roomModes)
+
   // The M3' self-hide criterion for room's session chrome (the invite chip
   // and the members tab): the official preset-composition data, with the
   // RoomStore's cached verdict as the actual-room escape.
   const roomChrome = new RoomPresetVisibility(ctx, sessionId => roomStore.isRoomCached(sessionId) === true)
 
   const requestIds = new RoomRequestIds()
+  /** Answer a member's question card (the row of its own, or inline in its round). */
+  const answerFor = (sessionId: SessionId) => async (questionId: string, answers: readonly RoomQuestionAnswer[]): Promise<string | undefined> => {
+    if (remote === undefined) return t('composer.error.generic')
+    const carried = await remote.answerQuestion({ sessionId, id: questionId, answers })
+    void roomStore.refresh(sessionId)
+    if (!carried.ok) return t('composer.error.generic')
+    return carried.value.ok ? undefined : t('question.expired')
+  }
+  /**
+   * Open a path a member named in the sidebar's file viewer — the same file
+   * address the main conversation's file links open (a relative path resolves
+   * against the room session's workspace).
+   */
+  const openPath = ctx.get('sidebarRight') === undefined ? undefined : (sessionId: SessionId, path: string): void => {
+    const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+    try {
+      (ctx.get('sidebarRight') as { openResource(url: string): void }).openResource(fileAddressFor(sessionId, cwd, path))
+    } catch { /* no viewer claims file addresses: the link stays inert */ }
+  }
   // The official conversation service's draft attachments (pick, upload,
   // serialize): the room composer re-uses them so its attachments behave
   // exactly like the official composer's. A host without them: no attachments.
@@ -334,20 +369,26 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     unlinkSession: (target: string) => { void remote?.unlinkSession({ sessionId, target }).then(() => roomStore.refresh(sessionId)) },
     dismissNudge: (target: string) => { void remote?.dismissHelpNudge({ sessionId, target }).then(() => roomStore.refresh(sessionId)) },
   })
+  /** Hand the coordinator role over (the members tab's 设为协调者 and the composer's switch). */
+  const setCoordinatorFor = (sessionId: SessionId) => async (memberId: string, expectedRevision: number): Promise<RoomMutationOutcome> => {
+    if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+    const carried = await remote.setCoordinator({ sessionId, memberId, expectedRevision })
+    if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+    if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+    await roomStore.refresh(sessionId)
+    return { ok: true }
+  }
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
     unlinkSession: linkFace(sessionId).unlinkSession,
     // 团队 is the collaboration page's second view (one sidebar page, two switches).
     ...teamSidebar === undefined ? {} : { openTeam: (member?: string) => { teamSidebar.openTab(ROOM_TASKS_KIND, { params: { view: 'team', ...member === undefined ? {} : { member } } }) } },
-    setCoordinator: async (memberId, expectedRevision) => {
-      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.setCoordinator({ sessionId, memberId, expectedRevision })
-      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
-      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
-      await roomStore.refresh(sessionId)
-      return { ok: true }
-    },
+    setCoordinator: setCoordinatorFor(sessionId),
     renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
+    // Probed per call site: an older core lacks them and the dialog keeps the live control.
+    renderMemberModelPicker: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberModelPicker,
+    readMemberSelection: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.readMemberSelection,
+    saveMemberSelection: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.saveMemberSelection,
     ...inviteFace(sessionId),
     // The localAgentGateway member model surface (the family client half's
     // namespace, probed lazily like the invite dialog's harnessModel read):
@@ -424,11 +465,45 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // 0.1.2 folded the event-Definition registry into `uiConversation.events`
   // (commit be531688f3); the deferred arm never fires in a composition
   // without the service, losing only the room chat rows, never the boot.
+  // The session list's 等你处理: a room's waiting question/approval cards are
+  // published as the host's pending interactions (lowest precedence, so an
+  // official approval in the same session still wins). The host tracks the
+  // cards of every live room; a light poll keeps the list current.
+  ctx.inject(['uiSession'], (sctx) => {
+    if (remote === undefined) return
+    const uiSession = (sctx as unknown as { uiSession: { registerPendingInteraction?: <T extends { readonly key: string; readonly kind: string; readonly sessionId: SessionId }>(precedence: (interaction: T) => number) => (interaction: T, delegate: () => Promise<void>) => () => void } }).uiSession
+    if (uiSession.registerPendingInteraction === undefined) return
+    const publish = uiSession.registerPendingInteraction(() => -1)
+    const shown = new Map<string, () => void>()
+    const sync = async (): Promise<void> => {
+      const carried = await remote.pendingCards({}).catch(() => undefined)
+      if (carried === undefined || !carried.ok) return
+      const keys = new Set(carried.value.map(card => roomInteractionKey(card.kind, card.id)))
+      for (const [key, remove] of shown) {
+        if (keys.has(key)) continue
+        remove()
+        shown.delete(key)
+      }
+      for (const card of carried.value) {
+        const key = roomInteractionKey(card.kind, card.id)
+        if (!shown.has(key)) shown.set(key, publish({ key, kind: card.kind, sessionId: card.sessionId as SessionId }, async () => {}))
+      }
+    }
+    void sync()
+    const timer = setInterval(() => { void sync() }, 4_000)
+    sctx.effect(() => () => {
+      clearInterval(timer)
+      for (const remove of shown.values()) remove()
+      shown.clear()
+    }, 'room: pending cards')
+  })
   ctx.inject(['uiConversation'], (lctx) => {
     lctx.uiConversation.events.register(roomSpeechDefinition)
     lctx.uiConversation.events.register(roomRunDefinition)
     lctx.uiConversation.events.register(roomEventDefinition)
     lctx.uiConversation.events.register(roomRelayDefinition)
+    lctx.uiConversation.events.register(roomDispatchDefinition)
+    lctx.uiConversation.events.register(roomCompactionDefinition)
     lctx.uiConversation.events.register(roomInboxDefinition)
     lctx.uiConversation.events.register(roomApprovalDefinition)
     lctx.uiConversation.events.register(roomQuestionDefinition)
@@ -563,6 +638,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
       stopMember: (name, expectedRunId) => { void remote?.cancel({ sessionId, name, ...expectedRunId === undefined ? {} : { expectedRunId } }).then(() => roomStore.refresh(sessionId)) },
       modelDirectory: modelDirectoryFor(sessionId),
+      setCoordinator: setCoordinatorFor(sessionId),
+      // The host command channel, probed at send time through ctx.get: it is
+      // not in `inject`, and the ctx.remote.commands proxy throws on an
+      // undeclared service — which crashed the whole composer entry.
+      runCommand: async (id: SessionId, line: string): Promise<string | null> => {
+        type Commands = { execute?: (id: SessionId, line: string, attachments: readonly unknown[]) => Promise<{ ok: boolean; value?: unknown; error?: { message: string; code: string } }> }
+        const commands = ctx.get('remote.commands') as Commands | undefined
+        if (commands?.execute === undefined) return t('composer.error.generic')
+        const result = await commands.execute(id, line, [])
+        if (!result.ok) return `${result.error?.message ?? 'command failed'} (${result.error?.code ?? 'error'})`
+        return result.value === undefined ? `unknown command: ${line}` : null
+      },
       // A draft chip's preview: the official editor's chip click routes
       // through the session's input-trigger controller to the chip's owning
       // source — probed at click time, so a composition without the service
@@ -662,9 +749,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       name: 'conversation.chat.node',
       key: 'room-speech',
       locale: NS,
-      inject: (): RoomSpeechInjected => ({
+      children: ROOM_SPEECH_CARD_SLOTS,
+      inject: (sessionId: SessionId): RoomSpeechInjected => ({
         roomStore,
         openSession,
+        answerQuestion: answerFor(sessionId),
+        ...openPath === undefined ? {} : { openPath },
         // Context Lens is another plugin: reach it through the sidebar by its
         // tab kind, only when its namespace is mounted; a refused open is a no-op.
         ...ctx.get('remote.requestInspector') === undefined || ctx.get('sidebarRight') === undefined ? {} : {
@@ -683,11 +773,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       name: 'conversation.chat.node',
       key: 'room-run',
       locale: NS,
+      children: ROOM_RUN_CARD_SLOTS,
       inject: (sessionId: SessionId): RoomRunInjected => ({
         renderMemberOutput: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberOutput,
         roomStore,
         openSession,
         cancelMember: member => cancelMember(sessionId, member),
+        answerQuestion: answerFor(sessionId),
+        ...openPath === undefined ? {} : { openPath },
       }),
     },
     RoomRunView,
@@ -704,6 +797,19 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       inject: (sessionId: SessionId): RoomRelayInjected => relayFace(sessionId),
     },
     RoomRelayView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-dispatch',
+      locale: NS,
+      inject: (): RoomDispatchInjected => ({ roomStore }),
+    },
+    RoomDispatchView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    { name: 'conversation.chat.node', key: 'room-compaction', locale: NS },
+    RoomCompactionView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     {
@@ -742,15 +848,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       name: 'conversation.chat.node',
       key: 'room-question',
       locale: NS,
-      inject: (sessionId: SessionId): RoomQuestionInjected => ({
-        answerQuestion: async (questionId, answers) => {
-          if (remote === undefined) return t('composer.error.generic')
-          const carried = await remote.answerQuestion({ sessionId, id: questionId, answers })
-          void roomStore.refresh(sessionId)
-          if (!carried.ok) return t('composer.error.generic')
-          return carried.value.ok ? undefined : t('question.expired')
-        },
-      }),
+      inject: (sessionId: SessionId): RoomQuestionInjected => ({ answerQuestion: answerFor(sessionId) }),
     },
     RoomQuestionView,
   ))

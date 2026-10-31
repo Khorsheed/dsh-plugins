@@ -9,7 +9,7 @@ import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/clie
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { RoomComposer, selectRoomComposer } from '../src/client/RoomComposer.tsx'
+import { RoomComposer, roomInteractionKey, selectRoomComposer } from '../src/client/RoomComposer.tsx'
 import type { DraftChip } from '../src/client/draft-chips.ts'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { RoomTaskTags } from '../src/client/task-tag.ts'
@@ -112,6 +112,7 @@ async function bench(
     openReference?: (source: string, ref: string) => boolean
     listSessions?: RoomComposerProps['listSessions']
     insertSessionReference?: RoomComposerProps['insertSessionReference']
+    setCoordinator?: RoomComposerProps['setCoordinator']
   } = {},
 ): Promise<Bench> {
   const roomStore = await primedStore(options.state)
@@ -151,6 +152,7 @@ async function bench(
     openReference: options.openReference,
     listSessions: options.listSessions,
     insertSessionReference: options.insertSessionReference,
+    setCoordinator: options.setCoordinator,
     useSession,
     // Default: a projection seat that serves nothing (no stats row, no todo strip).
     useProjection: options.useProjection === undefined
@@ -327,7 +329,7 @@ describe('RoomComposer', () => {
     expect(prune).toHaveBeenCalledWith([])
   })
 
-  it('a drop on the card is taken once: the hidden official bar\'s document listener never sees it', async () => {
+  it('a drop on the card is left to the official composer: it reaches the document listener, the card adds nothing itself', async () => {
     const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
     const inputStore = createSnapshotStore<InputSlice>({ draft: '' })
     const { area, rerenderWith } = await bench(submit, { inputStore, extraInputActions: { addAttachments: () => true, removeAttachment: () => {}, pruneAttachments: () => {} } })
@@ -338,8 +340,20 @@ describe('RoomComposer', () => {
     const file = new File(['x'], 'shot.png', { type: 'image/png' })
     fireEvent.drop(area, { dataTransfer: { files: [file], types: ['Files'] } })
     document.removeEventListener('drop', official)
-    expect(create).toHaveBeenCalledTimes(1)
-    expect(official).not.toHaveBeenCalled()
+    // The official overlay sees the drop (and closes); the files land once, through it.
+    expect(official).toHaveBeenCalledOnce()
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('members a restart interrupted get one 全部继续 that sends 继续 to all of them', async () => {
+    const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
+    const lost = 'Execution outcome is unknown after restart; reconcile before retrying'
+    await bench(submit, { state: { ...STATE, runs: [
+      { member: 'ada', state: 'failed', startedAt: 1, error: lost },
+      { member: 'bill', state: 'failed', startedAt: 2, error: lost },
+    ] } })
+    fireEvent.click(screen.getByRole('button', { name: 'composer.continueAll' }))
+    await waitFor(() => { expect(submit).toHaveBeenCalledWith(SESSION, 'composer.continueText', ['ada', 'bill']) })
   })
 
   it('routes bare input through the room service', async () => {
@@ -475,6 +489,46 @@ describe('RoomComposer', () => {
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).placeholder).toBe('跟main对话；@ 指定其他成员')
   })
 
+  it('the coordinator line opens the host menu and hands the role to the picked member', async () => {
+    const setCoordinator = vi.fn(async () => ({ ok: true as const }))
+    const roster: RoomState = {
+      ...STATE,
+      members: [
+        { id: 'legacy:1', name: 'main', kind: 'main-agent', invitedBy: 'human' },
+        { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'kimi', role: '小说家', invitedBy: 'human' },
+      ],
+      deliveries: [],
+      jobs: [],
+    }
+    await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'], state: roster, setCoordinator })
+    fireEvent.click(screen.getByRole('button', { name: /main.*协调者 · DSH/ }))
+    expect(screen.getByText('切换协调者 · 之后不带 @ 的消息都交给他')).toBeDefined()
+    expect(screen.getByText('小说家 · kimi')).toBeDefined()
+    fireEvent.click(screen.getByRole('menuitem', { name: /ada/ }))
+    await vi.waitFor(() => { expect(setCoordinator).toHaveBeenCalledWith('m-ada', 0) })
+  })
+
+  it('the coordinator switch waits while a member runs or a message is queued', async () => {
+    const setCoordinator = vi.fn(async () => ({ ok: true as const }))
+    const roster: RoomState = {
+      ...STATE,
+      members: [
+        { id: 'legacy:1', name: 'main', kind: 'main-agent', invitedBy: 'human' },
+        { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' },
+      ],
+    }
+    await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'], state: roster, setCoordinator })
+    // The menu still opens: it says why, and the other members are greyed out.
+    const trigger = screen.getByRole('button', { name: /main.*协调者 · DSH/ }) as HTMLButtonElement
+    expect(trigger.disabled).toBe(false)
+    fireEvent.click(trigger)
+    expect(screen.getByText('有成员正在运行或有消息在排队，结束后可切换协调者')).toBeDefined()
+    const ada = screen.getByRole('menuitem', { name: /ada/ })
+    expect(ada.getAttribute('aria-disabled') === 'true' || (ada as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(ada)
+    expect(setCoordinator).not.toHaveBeenCalled()
+  })
+
   it('a fresh room shows only the invite capsule', async () => {
     await bench(vi.fn(), { state: { ...STATE, deliveries: [], jobs: [] }, openTasks: vi.fn() })
     expect(screen.getByRole('button', { name: 'members.invite' })).toBeDefined()
@@ -568,6 +622,11 @@ describe('selectRoomComposer', () => {
   it('declines while an interaction is pending — the ApprovalPanel elects at priority 1', () => {
     const pending = owner({ pendingInteraction: { kind: 'question' } as never })
     expect(selectRoomComposer(pending, () => true)).toBeNull()
+  })
+
+  it('keeps the composer while the pending interaction is the room\'s own card (published for the session list only)', () => {
+    const own = owner({ pendingInteraction: { key: roomInteractionKey('question', 'q1'), kind: 'question', sessionId: SESSION } as never })
+    expect(selectRoomComposer(own, () => true)).toEqual({ room: true })
   })
 })
 

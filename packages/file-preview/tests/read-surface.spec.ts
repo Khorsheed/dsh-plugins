@@ -270,12 +270,16 @@ describe('createFilePreviewReadSurface — images', () => {
       expect(new TextDecoder().decode(ok.bytes)).toBe('fake-png-bytes')
       expect(ok.size).toBe(bytesOf('fake-png-bytes').length)
     }
-    // The byte cap matches read's: big.png stats over the cap and never reads.
+    // Images have their own cap: past the text cap they still serve; past
+    // the image cap they stat over and never read.
     const bigFs = makeContainedFs({ ...FIXTURE_FILES, '/work/big.png': 'x'.repeat(1024) })
-    const bigSurface = createFilePreviewReadSurface({ events: () => events, cwd: '/work', fs: bigFs.fs, maxReadBytes: 64 })
+    const roomy = createFilePreviewReadSurface({ events: () => events, cwd: '/work', fs: bigFs.fs, maxReadBytes: 64 })
+    expect((await roomy.readImageBytes('big.png')).ok).toBe(true)
+    const tight = makeContainedFs({ ...FIXTURE_FILES, '/work/big.png': 'x'.repeat(1024) })
+    const bigSurface = createFilePreviewReadSurface({ events: () => events, cwd: '/work', fs: tight.fs, maxReadBytes: 64, imageMaxReadBytes: 512 })
     const tooLarge = await bigSurface.readImageBytes('big.png')
     expect(tooLarge).toEqual({ path: 'big.png', ok: false, reason: 'too-large', size: 1024 })
-    expect(bigFs.readBytes).not.toHaveBeenCalled()
+    expect(tight.readBytes).not.toHaveBeenCalled()
     // Containment is the same resolve's: an escape rejects into `error`.
     const escape = await surface.readImageBytes('../escape.png')
     expect(escape.ok).toBe(false)

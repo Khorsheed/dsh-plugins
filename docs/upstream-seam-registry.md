@@ -145,7 +145,8 @@
 - **现状绕行**：只用官方已转发的事件——`api-session/status(sessionId, running)`（Agent 起停，即轮次边界，模型工具刚跑完）与 `api-session/activity(sessionId, updatedAt)`（用户消息推进会话活动）。worktrees 的会话头徽标在这两件事上重读 summary，另加"窗口重新获得焦点/可见"与"tab 侧任何刷新推版本号"两条本地通道；**不做周期轮询**。见 `.agents/notes/implemented/bug-fix/2026-09-23-worktrees-badge-invalidation.md`。
 - **建议的官方改动**：让转发集合可被插件贡献（例如 `TypertRemoteEventSelection` 之外再加一个运行时装配入口/插件 manifest 字段），或提供一个通用的"插件自定义通知"通道。最小版本：把 `API_REMOTE_FORWARDED_EVENTS` 的消费点改成"官方默认集 + 插件声明集"。
 - **退役条件**：插件可声明并 emit 自己的事件并被客户端 `$on` 收到后，worktrees 的 worktree 变化改走真推送；`fs.watch` 实时 dirty 也才有可能（当前"盯着看 + 外部进程改文件"无法纯事件覆盖）。
-- **状态**：绕行中（@khorsheed/dsh-worktrees）。
+- **消费方（2026-10-27 加入；2026-10-31 校正用途）**：`@khorsheed/dsh-game`——协作间成员的 `game_open` 可以在主会话没有上述官方事件时改变绑定项目，所以页面可见时每 6 秒读一次 `liveVersion`，只在绑定变化后刷新当前 tab（见 `packages/game/src/client/index.ts`）。自动导航已由答案目的地行和 `startNavFollower` 负责，不依赖该轮询。宿主开放插件事件转发后，绑定变化改走 `$on`，工具不变。
+- **状态**：绕行中（@khorsheed/dsh-worktrees；@khorsheed/dsh-game）。
 
 ### S18. 插件无法往会话里投「只通知、不触发执行」的系统事件（实验生命周期回流到发起它的会话）
 

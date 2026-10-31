@@ -55,7 +55,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { DispatchEngine, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
+import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
 import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
@@ -75,8 +75,8 @@ import type {
   RoomListProvidersRequest,
   RoomMember, RoomMemberMessage, RoomMemberMessageReceipt,
   RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomSetTaskHintRequest, RoomStopJobRequest, RoomStopJobResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
-  RoomPostMessageRequest, RoomPostMessageResult, RoomAttachmentInput, RoomDispatchAttachment,
-  RoomPresetInfo, RoomProviderInfo, RoomProviderList,
+  RoomPostMessageRequest, RoomPostMessageResult, RoomAttachmentInput, RoomDispatchAttachment, RoomPendingCard, RoomPendingCardsRequest,
+  RoomMemberDesk, RoomPresetInfo, RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
   RoomRemoveMemberRequest, RoomRemoveMemberResult, RoomRestoreMemberRequest, RoomRestoreMemberResult,
   RoomSetGoalRequest, RoomSetGoalResult,
@@ -323,6 +323,20 @@ export class RoomService extends TypertRemoteService {
     // path): file the message under a task before the model reads it — the
     // composer's tag, else the decision model while tasks are open — and tell
     // the coordinator when it was filed under an existing task.
+    // A direct room message's turn: the room's additions (briefing, room
+    // changes, notifications, held reports) enter right before the human's
+    // message, as one room-sourced message — none when there is nothing to add.
+    ctx.on('agent/pre-step', async ({ step }, next) => {
+      const decision = await next()
+      if (step !== 1 || decision.kind !== 'enter') return decision
+      const messages = decision.messages.flatMap((message) => {
+        const extras = this.engine.directExtras.get(String(message.id))
+        if (extras === undefined) return [message]
+        this.engine.directExtras.delete(String(message.id))
+        return [createUserMessage({ content: [{ type: 'text', text: extras }], source: roomSource() }), message]
+      })
+      return messages.length === decision.messages.length ? decision : { ...decision, messages }
+    })
     ctx.on('agent/pre-step', async ({ agent, step }, next) => {
       const decision = await next()
       if (step !== 1 || decision.kind !== 'enter') return decision
@@ -331,6 +345,8 @@ export class RoomService extends TypertRemoteService {
       const notes: string[] = []
       for (const message of decision.messages) {
         if (message.source.kind !== 'user') continue
+        // A direct room message was filed when the room accepted it.
+        if (this.engine.directMessages.has(String(message.id))) continue
         const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
         const filed = await this.fileHumanMessage(agent.session, message.id, text, this.consumeTaskHint(agent.session.id))
         if (filed.note !== undefined) notes.push(filed.note)
@@ -338,13 +354,13 @@ export class RoomService extends TypertRemoteService {
       if (notes.length === 0) return decision
       return { ...decision, messages: [...decision.messages, createUserMessage({ content: [{ type: 'text', text: notes.join('\n') }], source: roomSource() })] }
     })
-    // A turn the room did not start (the human talking to the room's agent or
-    // to a native member directly) still carries the reports the gate holds
+    // A turn the room did not start (the human talking to the room's agent
+    // directly) still carries the reports the gate holds
     // for that agent: one extra message on the turn's first step, so the
     // agent never answers without results that already arrived.
     ctx.on('agent/pre-step', async ({ agent, step }, next) => {
       const decision = await next()
-      if (step !== 1 || decision.kind !== 'enter' || decision.messages.some(message => isRoomSource(message.source))) return decision
+      if (step !== 1 || decision.kind !== 'enter' || decision.messages.some(message => isRoomSource(message.source) || this.engine.directMessages.has(String(message.id)))) return decision
       const target = this.heldTarget(agent.session.id)
       if (target === undefined) return decision
       const held = heldReportsText(target.room.snapshotEvents(), memberId(target.room.snapshotEvents(), target.member))
@@ -361,7 +377,7 @@ export class RoomService extends TypertRemoteService {
       if (!isRoomLog(events) || coordinatorMember(replay(events), events)?.kind !== 'cli') return next()
       if (nativeTurns.get(agent) === turn) return next()
       if (step !== 1) throw new Error('Room native turn has no explicit member dispatch')
-      if (messages.some(message => isRoomSource(message.source))) {
+      if (messages.some(message => isRoomSource(message.source) || this.engine.directMessages.has(String(message.id)))) {
         nativeTurns.set(agent, turn)
         return next()
       }
@@ -382,6 +398,14 @@ export class RoomService extends TypertRemoteService {
         if (!result.ok) throw new Error(`Room input routing failed: ${result.error.code}`)
       }
       return { kind: 'enter', messages: [] }
+    })
+    // The session list's status (the host shows a session running only while
+    // its own agent runs): a room is running while any member runs, and its
+    // waiting question/approval cards are tracked for the browser.
+    ctx.on('session/event', (session, event) => { this.observeActivity(session, event) })
+    ctx.on('agent/status', ({ agent, status }) => {
+      // The room's own agent settling must not hide members still at work.
+      if (status !== 'running' && (this.activeRuns.get(String(agent.id))?.size ?? 0) > 0) this.emitStatus(String(agent.id), true)
     })
     // Cross-session help (help.ts): a help message reaching a helper's turn
     // equips that agent with the helper tools and marks the thread running;
@@ -491,6 +515,102 @@ export class RoomService extends TypertRemoteService {
    * @param request - session identity.
    * @returns true when the session carries the marker (false for unknown sessions too).
    */
+  /** Run ids of the members working in each room (the session list's 运行中). */
+  private readonly activeRuns = new Map<string, Set<string>>()
+  /** Question/approval cards waiting for the human, per room. */
+  private readonly waitingCards = new Map<string, Map<string, { readonly kind: 'question' | 'approval'; readonly member: string }>>()
+
+  /**
+   * Follow a room's run and card edges as they are journaled: a room turns
+   * running when its first member starts and settles when its last one ends
+   * (the host's `api-session/status`, so the list shows 运行中 and then
+   * 已完成), and its waiting cards are kept for {@link pendingCards}.
+   * @param session - the session the event landed in.
+   * @param event - the journaled event.
+   */
+  private observeActivity(session: Session, event: SessionEvent): void {
+    const id = String(session.id)
+    switch (event.type) {
+      case 'room/run-state': {
+        const runs = this.activeRuns.get(id) ?? new Set<string>()
+        const before = runs.size
+        const key = event.data.runId ?? `${event.data.member}:${event.data.startedAt}`
+        if (event.data.state === 'running') runs.add(key)
+        else runs.delete(key)
+        if (runs.size === 0) this.activeRuns.delete(id)
+        else this.activeRuns.set(id, runs)
+        // A member whose round ended is no longer waiting on its cards: its
+        // bridge call is gone (a CLI's own MCP timeout can end it early, and
+        // the round then goes on without the answer). Expire them, so an
+        // answer given now reaches the member as a new message.
+        if (event.data.state !== 'running') this.expireCardsOf(id, event.data.member)
+        if (before === 0 && runs.size > 0) this.emitStatus(id, true)
+        // The room's own agent still running keeps the row running.
+        else if (before > 0 && runs.size === 0 && this.ctx.agents.get(session.id)?.status !== 'running') this.emitStatus(id, false)
+        return
+      }
+      case 'turn/end': {
+        // The room's own agent closed a turn while members still run: a
+        // member card started inside that turn (the coordinator invited or
+        // sent mid-turn) would fold away with the turn's process, its live
+        // output and question blocks out of reach. Re-anchor below it.
+        if ((this.activeRuns.get(id)?.size ?? 0) === 0) return
+        queueMicrotask(() => {
+          floatRunningCards(session)
+          void this.ctx.sessions.flush(session)
+        })
+        return
+      }
+      case 'room/question':
+      case 'room/approval': {
+        const cards = this.waitingCards.get(id) ?? new Map<string, { readonly kind: 'question' | 'approval'; readonly member: string }>()
+        cards.set(event.data.id, { kind: event.type === 'room/question' ? 'question' : 'approval', member: event.data.member })
+        this.waitingCards.set(id, cards)
+        return
+      }
+      case 'room/question-resolved':
+      case 'room/approval-resolved': {
+        const cards = this.waitingCards.get(id)
+        cards?.delete(event.data.id)
+        if (cards?.size === 0) this.waitingCards.delete(id)
+        return
+      }
+      default:
+    }
+  }
+
+  /**
+   * End the waits behind one member's open cards (its round settled): the
+   * question/approval calls resolve as unanswered, which journals them
+   * expired — still answerable, by a new message (answerExpiredQuestion).
+   * @param roomId - the room session.
+   * @param member - the member whose round ended.
+   */
+  private expireCardsOf(roomId: string, member: string): void {
+    for (const [cardId, card] of this.waitingCards.get(roomId) ?? []) {
+      if (card.member !== member) continue
+      if (card.kind === 'question') this.questionWaiters.get(cardId)?.(undefined)
+      else this.approvalWaiters.get(cardId)?.('cancelled')
+    }
+  }
+
+  /** Broadcast a room's running flip on the host's session-status channel. */
+  private emitStatus(sessionId: string, running: boolean): void {
+    (this.ctx.emit as unknown as (name: string, ...args: unknown[]) => void)('api-session/status', SessionId(sessionId), running)
+  }
+
+  /**
+   * The question/approval cards waiting for the human across live rooms —
+   * the browser publishes them as the session list's 等你处理 status.
+   * @param request - optionally one room only.
+   * @returns the waiting cards.
+   */
+  @Remote('pendingCards')
+  async pendingCards(request: RoomPendingCardsRequest): Promise<readonly RoomPendingCard[]> {
+    const rooms = request.sessionId === undefined ? [...this.waitingCards.keys()] : [String(request.sessionId)]
+    return rooms.flatMap(sessionId => [...this.waitingCards.get(sessionId) ?? []].map(([id, card]) => ({ sessionId, id, kind: card.kind })))
+  }
+
   @Remote('isRoom')
   async isRoom(request: RoomIsRoomRequest): Promise<boolean> {
     const session = this.ctx.sessions.get(request.sessionId)
@@ -575,7 +695,7 @@ export class RoomService extends TypertRemoteService {
     } catch { return undefined }
   }
 
-  /** The host's agent presets for a native member, or undefined without a registry. */
+  /** The host's agent presets a member's mode may name, or undefined without a registry. */
   private async listPresets(): Promise<readonly RoomPresetInfo[] | undefined> {
     const presets = probeAgentPresets(this.ctx)
     if (presets?.list === undefined) return undefined
@@ -731,13 +851,13 @@ export class RoomService extends TypertRemoteService {
     if (targets.some(target => !current.members.some(member => member.name === target))) return { ok: false, code: 'unknown-targets' }
     const body = parsed.targets.length > 0 ? parsed.text : text
     const filed = await this.fileHumanMessage(session, edit.data.id, text, task)
-    this.moveOnFromLostRounds(session, targets)
+    const carry = this.moveOnFromLostRounds(session, targets)
     const dispatch = session.append('room/dispatch', {
       id: requestId, targets, text: body, origin: 'human', task: filed.task,
       targetIds: targets.map(name => memberId(session.snapshotEvents(), current.members.find(member => member.name === name)!)),
     })
     await this.ctx.sessions.flush(session)
-    for (const target of targets) this.engine.dispatch(session, target, body, { dispatchSeq: dispatch.seq })
+    for (const target of targets) this.engine.dispatch(session, target, carry(target, body), { dispatchSeq: dispatch.seq })
     return { ok: true }
   }
 
@@ -747,15 +867,32 @@ export class RoomService extends TypertRemoteService {
    * message runs instead of queueing behind a reconciliation. Formal-goal
    * attempts keep their explicit reconciliation.
    */
-  private moveOnFromLostRounds(session: Session, targets: readonly string[], why = '你发了新消息；被重启打断的这一轮按没做完处理'): void {
+  private moveOnFromLostRounds(session: Session, targets: readonly string[], why = MOVED_ON_TEXT): (member: string, text: string) => string {
     const events = session.snapshotEvents()
     const state = replay(events)
-    const ids = new Set(state.members.filter(member => targets.includes(member.name)).map(member => memberId(events, member)))
+    const members = state.members.filter(member => targets.includes(member.name))
+    const ids = new Set(members.map(member => memberId(events, member)))
+    const backlog = new Map<string, string[]>()
     for (const row of state.deliveries ?? []) {
       if (row.status !== 'uncertain' || row.plan?.taskId !== undefined || !ids.has(row.memberId)) continue
       session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: why })
       const run = state.runs.find(entry => entry.runId === row.id)
       if (run !== undefined) session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled', ...this.terminalRunStateFields(session, state, run.member) })
+      // The messages that queued behind the lost round never ran (the round
+      // blocked them, the restart lost the queue): they ride along with this
+      // message, one round, instead of replaying stale rounds one by one.
+      const name = members.find(member => memberId(events, member) === row.memberId)?.name
+      if (name === undefined) continue
+      for (const queued of state.deliveries ?? []) {
+        if (queued.status !== 'queued' || queued.memberId !== row.memberId || queued.dispatchSeq <= row.dispatchSeq || queued.plan?.taskId !== undefined) continue
+        session.append('room/delivery-state', { id: queued.id, dispatchSeq: queued.dispatchSeq, memberId: queued.memberId, state: 'done', text: MERGED_BACKLOG_TEXT })
+        const from = queued.from === undefined ? undefined : state.members.find(member => memberId(events, member) === queued.from)?.name
+        backlog.set(name, [...backlog.get(name) ?? [], `- ${from === undefined ? '' : `来自 ${from}：`}${queued.text}`])
+      }
+    }
+    return (member, text) => {
+      const lines = backlog.get(member)
+      return lines === undefined ? text : [text, '', '（你被重启打断期间，房间里还有这些消息排着没送到，一并给你：', ...lines, '）'].join('\n')
     }
   }
 
@@ -784,28 +921,7 @@ export class RoomService extends TypertRemoteService {
       const member = replay(own.snapshotEvents()).members.find(entry => entry.kind === 'main-agent')
       return member === undefined ? undefined : { room: own, member }
     }
-    const routed = this.nativeRoute(sessionId)
-    const room = routed === undefined ? undefined : this.ctx.sessions.get(routed.roomId)
-    const member = room === undefined ? undefined : replay(room.snapshotEvents()).members.find(entry => entry.childSessionId === routed!.actor)
-    return room === undefined || member === undefined ? undefined : { room, member }
-  }
-
-  /**
-   * A native member's own session calling a room tool: the tools see the
-   * child session, so route to its room with the child as the authenticated
-   * actor instead of promoting the child into a room of its own.
-   * @param sessionId - the calling agent's session.
-   * @returns the room and actor, or undefined when the caller is no native member.
-   */
-  nativeRoute(sessionId: string): { readonly roomId: SessionId; readonly actor: string } | undefined {
-    const parent = this.ctx.sessions.get(SessionId(sessionId))?.header.parentSession
-    const room = parent === undefined ? undefined : this.ctx.sessions.get(parent)
-    if (room === undefined || parent === undefined) return undefined
-    const events = room.snapshotEvents()
-    if (!isRoomLog(events)) return undefined
-    return replay(events).members.some(member => member.kind === 'native' && member.childSessionId === sessionId)
-      ? { roomId: parent, actor: sessionId }
-      : undefined
+    return undefined
   }
 
   /**
@@ -847,8 +963,6 @@ export class RoomService extends TypertRemoteService {
    * @returns the invitation receipt, or a rejection.
    */
   async inviteMember(request: RoomInviteRequest, invitedBy: 'human' | 'agent', actorChildSessionId?: string): Promise<RoomInviteResult> {
-    const routed = invitedBy === 'agent' && actorChildSessionId === undefined ? this.nativeRoute(request.sessionId) : undefined
-    if (routed !== undefined) return this.inviteMember({ ...request, sessionId: routed.roomId }, invitedBy, routed.actor)
     // Invite PROMOTES: inviting an agent into a plain session makes it a room.
     const loaded = await this.ensureRoom(request.sessionId)
     if (!loaded.ok) return { ok: false, error: loaded.error }
@@ -874,14 +988,13 @@ export class RoomService extends TypertRemoteService {
     if (request.effort !== undefined && request.effort.trim() === '') {
       return { ok: false, error: { code: 'empty-text' } }
     }
-    const native = request.kind === 'native'
     // The coordinator's default: the member works in the room's own mode.
     const inherited = request.preset === undefined && request.inheritPreset === true ? roomSessionPreset(loaded.session) : undefined
     if (inherited !== undefined) request = { ...request, preset: inherited }
     if (request.preset !== undefined) {
-      // A native member composes a host preset; a CLI member reaches that
-      // preset's plugin tools through its bridge. Reject an id the host does
-      // not declare instead of failing at the member's first round.
+      // A member reaches that preset's plugin tools through its bridge.
+      // Reject an id the host does not declare instead of failing at the
+      // member's first round.
       const presets = probeAgentPresets(this.ctx)
       if (presets !== undefined) {
         try { await presets.resolve(request.preset) } catch {
@@ -890,10 +1003,10 @@ export class RoomService extends TypertRemoteService {
         }
       }
     }
-    if (!native && probeLocalAgent(this.ctx) === undefined) {
+    if (probeLocalAgent(this.ctx) === undefined) {
       return { ok: false, error: { code: 'local-agent-unavailable' } }
     }
-    const roster = native ? undefined : probeLocalAgentRoster(this.ctx)
+    const roster = probeLocalAgentRoster(this.ctx)
     if (roster !== undefined) {
       // The same delegationProvider set listProviders serves: invite accepts
       // exactly what dispatch can resolve, and the rejection carries the
@@ -921,8 +1034,8 @@ export class RoomService extends TypertRemoteService {
     loaded.session.append('room/member-added', {
       id: randomUUID(),
       name: request.name,
-      kind: native ? 'native' : 'cli',
-      provider: native ? 'dsh' : request.provider,
+      kind: 'cli',
+      provider: request.provider,
       ...request.preset !== undefined ? { preset: request.preset } : {},
       invitedBy,
       ...request.instructions === undefined ? {} : { instructions: request.instructions },
@@ -1002,7 +1115,8 @@ export class RoomService extends TypertRemoteService {
       return { ok: false, error: { code: 'nothing-to-update' } }
     }
     if (request.rename !== undefined && request.rename !== request.name) {
-      if (member.kind === 'main-agent') return { ok: false, error: { code: 'main-member' } }
+      // The room's own agent renames too: its identity is its join seq
+      // (legacy:<seq>), never its name, so only the display and @-address move.
       if (!validName(request.rename)) return { ok: false, error: { code: 'invalid-name' } }
       if (loaded.state.members.some(entry => entry.name === request.rename)) {
         return { ok: false, error: { code: 'duplicate-name' } }
@@ -1094,9 +1208,6 @@ export class RoomService extends TypertRemoteService {
       let candidate = loaded.state.members.find(member => memberId(events, member) === request.memberId)
       const previous = coordinatorMember(loaded.state, events)
       if (candidate === undefined || previous === undefined) return { ok: false, error: { code: 'member-not-found' } }
-      // A native member answers inside this host already; making it the
-      // external coordinator would need the CLI coordination contract it does not speak.
-      if (candidate.kind === 'native') return { ok: false, error: { code: 'coordinator-not-ready', message: 'A native DSH member cannot coordinate yet; promote the room\'s own dsh or a CLI member' } }
       if ((loaded.state.coordinator?.revision ?? 0) !== request.expectedRevision) return { ok: false, error: { code: 'coordinator-conflict' } }
       const agent = this.ctx.agents.get(request.sessionId)
       if (agent?.status === 'running' || (agent?.inbox?.nextTurn.length ?? 0) > 0 || (agent?.inbox?.nextStep.length ?? 0) > 0 || this.engine.hasPending(loaded.session, previous.name) || this.engine.hasPending(loaded.session, candidate.name)) {
@@ -1304,23 +1415,40 @@ export class RoomService extends TypertRemoteService {
       content: [...admitted.blocks, ...request.text.trim() === '' ? [] : [{ type: 'text' as const, text: request.text.trim() }]] as Parameters<typeof createUserMessage>[0]['content'],
       source: { kind: 'user' },
     })
-    {
+    // A message for the room's own agent reaches it as itself: the agent's
+    // own turn writes it (once — the room no longer re-sends the words in a
+    // room-sourced copy), and a busy agent queues it like any session's
+    // input. Attachments keep the room's own write: their upload receipts
+    // bind to the message the moment it is in the log.
+    const direct = attached.length === 0 && this.ctx.agents.get(loaded.session.id) !== undefined
+      && targets.some(name => loaded.state.members.find(member => member.name === name)?.kind === 'main-agent')
+    if (!direct) {
       // Uploaded files are bound to this message once it is in the log (an unbound receipt is reclaimed).
       using binding = admitted.bind(request.requestId ?? String(human.id))
       loaded.session.append('user/message', human, { surfaceOp: 'append' })
       binding?.commit()
+    } else {
+      this.engine.directMessages.add(String(human.id))
     }
     floatRunningCards(loaded.session)
     const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
-    this.moveOnFromLostRounds(loaded.session, targets)
+    const carry = this.moveOnFromLostRounds(loaded.session, targets)
     const dispatch = loaded.session.append('room/dispatch', {
       id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human', task: filed.task,
       ...admitted.records.length === 0 ? {} : { attachments: admitted.records },
       targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
     })
     await this.ctx.sessions.flush(loaded.session)
+    const answered = await this.answerByMessage(loaded.session, dispatch.seq, targets, withAttachmentPaths(prompt, admitted.records))
     for (const target of targets) {
-      this.engine.dispatch(loaded.session, target, withAttachmentPaths(prompt, admitted.records), { dispatchSeq: dispatch.seq })
+      if (answered.has(target)) continue
+      if (direct && loaded.state.members.find(member => member.name === target)?.kind === 'main-agent') {
+        // Only the room's additions travel as text (the outside-session note);
+        // the human's words are the message itself.
+        this.engine.dispatch(loaded.session, target, carry(target, prompt === text ? '' : prompt.slice(said.length).trim()), { dispatchSeq: dispatch.seq, direct: human })
+        continue
+      }
+      this.engine.dispatch(loaded.session, target, carry(target, withAttachmentPaths(prompt, admitted.records)), { dispatchSeq: dispatch.seq })
     }
     return { ok: true, value: { parsed: { targets, text }, seq: dispatch.seq } }
   }
@@ -1396,8 +1524,6 @@ export class RoomService extends TypertRemoteService {
    * @returns the delivery receipt (with its `m<seq>` id) or the hold, or a rejection.
    */
   async messageMember(request: RoomMessageRequest, actorChildSessionId?: string): Promise<RoomMessageResult> {
-    const routed = actorChildSessionId === undefined ? this.nativeRoute(request.sessionId) : undefined
-    if (routed !== undefined) return this.messageMember({ ...request, sessionId: routed.roomId }, routed.actor)
     // Messaging PROMOTES too (the room_message tool's gate): the main agent
     // answering "把 kimi 拉进来问一下…" promotes its own session, then the
     // roster check runs against the promoted state.
@@ -1513,9 +1639,8 @@ export class RoomService extends TypertRemoteService {
   async askHelp(request: { readonly sessionId: string; readonly session?: string; readonly member?: string; readonly help?: string; readonly text: string }, caller: Agent | undefined, actorChildSessionId?: string): Promise<string> {
     const text = request.text.trim()
     if (text === '') return 'The help text must be non-blank.'
-    // The asker: a CLI member (authenticated by the bridge), a native member
-    // (its own session routes to the room), else the room's own agent.
-    const routed = actorChildSessionId === undefined ? this.nativeRoute(request.sessionId) : { roomId: SessionId(request.sessionId), actor: actorChildSessionId }
+    // The asker: a CLI member (authenticated by the bridge), else the room's own agent.
+    const routed = actorChildSessionId === undefined ? undefined : { roomId: SessionId(request.sessionId), actor: actorChildSessionId }
     const roomId = routed?.roomId ?? SessionId(request.sessionId)
     const loaded = this.ctx.sessions.get(roomId) !== undefined && isRoomLog(this.ctx.sessions.get(roomId)!.snapshotEvents())
       ? await this.ensureLive(roomId)
@@ -1607,7 +1732,7 @@ export class RoomService extends TypertRemoteService {
     // A round a restart left uncertain blocks the member's later work until a
     // human reconciles it — silently, for a request from outside. Move on
     // from it, as a human message to that member does.
-    this.moveOnFromLostRounds(other.session, [member.name], '另一个协作间来求助；被重启打断的这一轮按没做完处理')
+    const carry = this.moveOnFromLostRounds(other.session, [member.name], '另一个协作间来求助；被重启打断的这一轮按没做完处理')
     const sent = sendOrHold(other.session, {
       to: member, text, fromName: `${help.fromName}（${origin.roomTitle}）`,
       intent: { origin: 'help', hop: 1, kind: 'task', help: origin, ...op === 'request' ? { task: SELF_TASK } : {} },
@@ -1616,7 +1741,7 @@ export class RoomService extends TypertRemoteService {
     await this.ctx.sessions.flush(other.session)
     room.append('room/help-state', { help: help.id, state: sent.delivered ? 'running' : 'queued' })
     await this.ctx.sessions.flush(room)
-    if (sent.delivered) this.engine.dispatch(other.session, member.name, text, { dispatchSeq: sent.seq })
+    if (sent.delivered) this.engine.dispatch(other.session, member.name, carry(member.name, text), { dispatchSeq: sent.seq })
     const who = `${member.name} in the room "${help.target.title}"`
     return `${sent.delivered ? `Sent to ${who}.` : `Sent to ${who}; that room is paused, so the request waits until it resumes.`}`
       + ` Help id: ${help.id}. The reply reaches you on its own — end your turn now; do not poll.`
@@ -1762,13 +1887,8 @@ export class RoomService extends TypertRemoteService {
       : `Your question went to ${help.fromName} in "${source.roomTitle}"; the answer arrives as a new message. End your turn now.`
   }
 
-  /** Bounded shared room context for native and external model tools; reading never wakes an agent. */
+  /** Bounded shared room context for the room's agent and external model tools; reading never wakes an agent. */
   async readRoomContext(sessionId: string): Promise<string> {
-    const routed = this.nativeRoute(sessionId)
-    if (routed !== undefined) {
-      const self = replay(this.ctx.sessions.get(routed.roomId)!.snapshotEvents()).members.find(member => member.childSessionId === routed.actor)?.name
-      return JSON.stringify({ self, ...JSON.parse(await this.readRoomContext(routed.roomId)) })
-    }
     const state = await this.getState({ sessionId: SessionId(sessionId) })
     if (!state.ok && state.error.code === 'not-a-room') {
       // A plain session: everything an invite needs, instead of an error that
@@ -1802,10 +1922,8 @@ export class RoomService extends TypertRemoteService {
     } catch (error) { return { ok: false, message: String(error) } }
   }
 
-  /** The actor is derived from the calling native agent or authenticated bridge. */
+  /** The actor is the room's own agent, or the member the bridge authenticated. */
   async commandPlan(sessionId: string, command: string, actorChildSessionId?: string): Promise<string> {
-    const routed = actorChildSessionId === undefined ? this.nativeRoute(sessionId) : undefined
-    if (routed !== undefined) return this.commandPlan(routed.roomId, command, routed.actor)
     const loaded = await this.ensureLive(SessionId(sessionId))
     if (!loaded.ok) throw new Error(loaded.error.code)
     if (this.handoffs.has(sessionId)) throw new Error('Coordinator handoff is in progress')
@@ -1822,11 +1940,14 @@ export class RoomService extends TypertRemoteService {
   /**
    * The mode of an external member — the host preset whose plugin tools its
    * bridge offers (local-agent's preset tool host runs them) — with its
-   * working directory. Host method for the member channel, never a Remote.
+   * working directory and its desk: the room session the plugin tools treat
+   * as the shared workspace (what a coordinator opens shows there; a member's
+   * opens land beside it), with the member's role right now. Host method for
+   * the member channel, never a Remote.
    * @param actor - the authenticated member run.
    * @returns the mode, or undefined when the member has none or is not here.
    */
-  async memberMode(actor: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string } | undefined> {
+  async memberMode(actor: LocalAgentMemberRun): Promise<{ readonly preset: string; readonly cwd?: string; readonly desk: RoomMemberDesk } | undefined> {
     const loaded = await this.ensureLive(SessionId(actor.parentSessionId))
     if (!loaded.ok) return undefined
     const cli = loaded.state.members.filter(entry => entry.kind === 'cli' && entry.provider === actor.provider)
@@ -1839,7 +1960,11 @@ export class RoomService extends TypertRemoteService {
       ?? (fresh.length === 1 ? fresh[0] : undefined)
     if (member?.preset === undefined) return undefined
     const cwd = member.cwd ?? loaded.session.header.cwd
-    return { preset: member.preset, ...cwd === undefined ? {} : { cwd } }
+    const events = loaded.session.snapshotEvents()
+    const role = coordinatorMember(loaded.state, events)?.name === member.name ? 'coordinator' : 'member'
+    const running = loaded.state.runs.find(run => run.member === member.name && run.state === 'running')?.runId
+    const desk: RoomMemberDesk = { sessionId: actor.parentSessionId, role, member: member.name, ...running === undefined ? {} : { runId: running } }
+    return { preset: member.preset, ...cwd === undefined ? {} : { cwd }, desk }
   }
 
   /** Pending member tool approvals this process can still answer: approval id → its waiting call. */
@@ -1929,7 +2054,20 @@ export class RoomService extends TypertRemoteService {
       this.questionWaiters.set(id, resolve)
       setTimeout(() => { resolve(undefined) }, timeoutMs).unref?.()
     })
-    session.append('room/question', { id, member: member.name, memberId: memberId(session.snapshotEvents(), member), questions, ...consent ? { consent: true as const } : {} })
+    // Place the question inside the asker's round: its run, and the tail of
+    // what the round had said so far (the reply splits there when it lands).
+    const run = replay(session.snapshotEvents()).runs.find(entry => entry.member === member.name && entry.state === 'running')
+    const child = member.childSessionId === undefined ? undefined : this.ctx.sessions.get(member.childSessionId)
+    const before = child === undefined ? '' : roundTextSoFar(child.snapshotEvents()).slice(-BEFORE_TAIL)
+    // The question renders inside the asker's card: bring the card to the
+    // bottom, where the human is (it may sit far up, or in a folded turn).
+    if (run !== undefined) session.append('room/run-moved', { member: run.member, startedAt: run.startedAt })
+    session.append('room/question', {
+      id, member: member.name, memberId: memberId(session.snapshotEvents(), member), questions,
+      ...consent ? { consent: true as const } : {},
+      ...run?.runId === undefined ? {} : { runId: run.runId },
+      ...before.trim() === '' ? {} : { before },
+    })
     await this.ctx.sessions.flush(session)
     const answers = await answered
     this.questionWaiters.delete(id)
@@ -1965,6 +2103,39 @@ export class RoomService extends TypertRemoteService {
   }
 
   /**
+   * The human messaged a member whose round waits on its question: the
+   * message is the answer. Queued behind that round it would wait for the
+   * question's timeout — the human moved on without picking, so the member
+   * hears it now, through its waiting call, marked as a direct reply. The
+   * delivery settles as that answer (no round of its own). Consent gates
+   * are not questions the human chose to skip: they keep waiting.
+   * @param session - the live room session.
+   * @param seq - the message's dispatch seq.
+   * @param targets - the message's recipients.
+   * @param text - what the member would have been sent.
+   * @returns the recipients the message answered.
+   */
+  private async answerByMessage(session: Session, seq: number, targets: readonly string[], text: string): Promise<Set<string>> {
+    const answered = new Set<string>()
+    const state = replay(session.snapshotEvents())
+    for (const target of targets) {
+      const question = state.questions?.find(entry => entry.member === target && this.questionWaiters.has(entry.id)
+        && state.askLog?.find(ask => ask.id === entry.id)?.consent !== true)
+      const member = state.members.find(entry => entry.name === target)
+      if (question === undefined || member === undefined) continue
+      const waiter = this.questionWaiters.get(question.id)!
+      const answers = question.questions.map((item, index) => ({ id: item.id, selected: [], ...index === 0 ? { custom: `${ANSWER_BY_MESSAGE_PREFIX}${text}` } : {} }))
+      const targetId = memberId(session.snapshotEvents(), member)
+      session.append('room/question-resolved', { id: question.id, outcome: 'answered', answers })
+      session.append('room/delivery-state', { id: `${seq}:${targetId}`, dispatchSeq: seq, memberId: targetId, state: 'done', text: ANSWERED_QUESTION_TEXT })
+      await this.ctx.sessions.flush(session)
+      waiter(answers)
+      answered.add(target)
+    }
+    return answered
+  }
+
+  /**
    * Answer a card whose waiting call is gone (it timed out, or a restart
    * ended the member's process): the card records the answers, and they
    * reach the member as a new message that wakes it with its own context —
@@ -1991,12 +2162,12 @@ export class RoomService extends TypertRemoteService {
     })
     session.append('room/question-resolved', { id: request.id, outcome: 'answered', answers, late: true })
     const text = lateAnswerText(asked.data.questions, answers)
-    this.moveOnFromLostRounds(session, [member.name])
+    const carry = this.moveOnFromLostRounds(session, [member.name])
     const dispatch = session.append('room/dispatch', {
       id: randomUUID(), targets: [member.name], targetIds: [memberId(events, member)], text, origin: 'human',
     })
     await this.ctx.sessions.flush(session)
-    this.engine.dispatch(session, member.name, text, { dispatchSeq: dispatch.seq })
+    this.engine.dispatch(session, member.name, carry(member.name, text), { dispatchSeq: dispatch.seq })
     return { ok: true }
   }
 
@@ -2339,11 +2510,10 @@ export class RoomService extends TypertRemoteService {
       return { ok: true, value: { cancelled: false } }
     }
     const facade = probeLocalAgent(this.ctx)
-    const native = expected === undefined ? undefined
-      : member.kind === 'main-agent' ? this.ctx.agents.get(loaded.session.id)
-        : member.kind === 'native' && member.childSessionId !== undefined ? this.ctx.agents.get(member.childSessionId) : undefined
-    if (native !== undefined) native.cancel({ kind: 'user' })
-    const hit = native !== undefined || (facade !== undefined && member.childSessionId !== undefined
+    // The room's own agent stops in this process; a CLI member through the family facade.
+    const own = expected !== undefined && member.kind === 'main-agent' ? this.ctx.agents.get(loaded.session.id) : undefined
+    if (own !== undefined) own.cancel({ kind: 'user' })
+    const hit = own !== undefined || (facade !== undefined && member.childSessionId !== undefined
       ? facade.cancel(member.childSessionId)
       : false)
     if (hit) {

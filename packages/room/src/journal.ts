@@ -15,7 +15,7 @@ import { replayJobs } from './jobs.ts'
 import { replayHelps, replayLinks } from './helps.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  RoomApproval, RoomQuestion, RoomExecution, RoomMember, RoomMemberRun, RoomRelay, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
+  RoomApproval, RoomAsk, RoomQuestion, RoomExecution, RoomJsonValue, RoomMember, RoomMemberRun, RoomRelay, RoomRunAttachment, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
 } from './types.ts'
 
 /**
@@ -52,6 +52,7 @@ export const ROOM_EVENT_TYPES = [
   'room/speech',
   'room/run-state',
   'room/run-moved',
+  'room/member-compacted',
   'room/execution-metadata',
   'room/relay',
   'room/relay-resolved',
@@ -75,6 +76,15 @@ export const ROOM_EVENT_TYPES = [
   'room/help-link',
   'room/help-unlink',
   'room/help-nudge-dismissed',
+  // What a member's mode tool put on the room's desk (proposal
+  // 2026-10-29-room-desk): written by the owning plugin INTO the room, so the
+  // room's vocabulary is what vouches for it.
+  'room/desk-opened',
+  // …and what it wrote there (a card added, commented, archived).
+  'room/desk-wrote',
+  // The desk event's first spelling, written by canvas 0.6.0 builds for a few
+  // hours on 2026-10-29: rooms that carry it must still open.
+  'canvas/desk-opened',
 ] as const
 
 /** Collaboration settings of a room that never changed them. */
@@ -127,6 +137,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const relays: RoomRelay[] = []
   const approvals = new Map<string, RoomApproval>()
   const questions = new Map<string, RoomQuestion>()
+  const asks = new Map<string, RoomAsk>()
   const relayById = new Map<string, RoomRelay>()
   const tasks: RoomTask[] = []
   const taskById = new Map<string, RoomTask>()
@@ -150,6 +161,10 @@ export function replay(events: readonly SessionEvent[]): RoomState {
       }
       case 'room/member-added': {
         if (byName.has(event.data.name)) break
+        // A native DSH sub-member (retired 2026-10-29): its rows stay in the
+        // transcript, but it is no longer on the roster — nothing dispatches
+        // to it; a dsh command-line member is its successor.
+        if (event.data.kind === 'native') break
         const added: RoomMember = {
           id: event.data.id ?? `legacy:${event.seq}`,
           name: event.data.name,
@@ -271,10 +286,24 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         break
       case 'room/question':
         questions.set(event.data.id, { id: event.data.id, member: event.data.member, questions: event.data.questions, time: event.time })
+        asks.set(event.data.id, {
+          id: event.data.id, member: event.data.member, questions: event.data.questions, state: 'pending', time: event.time,
+          ...event.data.runId === undefined ? {} : { runId: event.data.runId },
+          ...event.data.consent === true ? { consent: true as const } : {},
+        })
         break
-      case 'room/question-resolved':
+      case 'room/question-resolved': {
         questions.delete(event.data.id)
+        const ask = asks.get(event.data.id)
+        if (ask !== undefined) {
+          asks.set(ask.id, {
+            ...ask, state: event.data.outcome,
+            ...event.data.answers === undefined ? {} : { answers: event.data.answers },
+            ...event.data.late === true ? { late: true as const } : {},
+          })
+        }
         break
+      }
       case 'room/approval-resolved':
         approvals.delete(event.data.id)
         break
@@ -378,6 +407,16 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         })
         break
       }
+      case 'room/desk-opened':
+      case 'room/desk-wrote': {
+        // What a member's run did on the desk belongs at the end of that
+        // run's card and reply rather than on a row of its own.
+        const execution = event.data.runId === undefined ? undefined : executions.get(event.data.runId)
+        if (execution === undefined) break
+        const attachment: RoomRunAttachment = { type: event.type, owner: event.data.owner, seq: event.seq, time: event.time, data: event.data as unknown as RoomJsonValue }
+        executions.set(execution.id, { ...execution, attachments: [...execution.attachments ?? [], attachment] })
+        break
+      }
       default:
         break
     }
@@ -391,7 +430,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   return {
     ...helps.length === 0 ? {} : { helps },
     ...links.linked.length === 0 ? {} : { linked: links.linked },
-    ...links.nudgesDismissed.length === 0 ? {} : { helpNudgesDismissed: links.nudgesDismissed }, members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, ...questions.size === 0 ? {} : { questions: [...questions.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, ...latestSpeechSeq === undefined ? {} : { latestSpeechSeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
+    ...links.nudgesDismissed.length === 0 ? {} : { helpNudgesDismissed: links.nudgesDismissed }, members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, ...questions.size === 0 ? {} : { questions: [...questions.values()] }, ...asks.size === 0 ? {} : { askLog: [...asks.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, ...latestSpeechSeq === undefined ? {} : { latestSpeechSeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
 }
 
 /**

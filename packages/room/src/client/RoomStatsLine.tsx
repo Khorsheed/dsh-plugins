@@ -13,7 +13,8 @@
  * agent's turns and billing. Members consume in their own child sessions, so
  * when the room has member runs the row adds a members chip (how many
  * members worked, their billed tokens) whose breakdown lists each member's
- * model, rounds, tokens and run time from the room's execution records.
+ * model, rounds, total / input / cache-hit share / output and run time from the
+ * room's execution records.
  */
 import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -88,35 +89,55 @@ export function cacheHitPercent(usage: TokenUsageProjection): number | null {
 
 /** One member's share of the room's work. */
 export interface MemberUsage {
+  /** The member's current name (a rename keeps one row). */
   readonly member: string
   readonly model?: string
   readonly rounds: number
   readonly tokens: number
+  /**
+   * The billed split, summed over the rounds that recorded one: all input
+   * (cache reads and writes included), the cache-read part of it, and
+   * output. Absent when no round recorded a split (older records).
+   */
+  readonly input?: number
+  readonly cacheRead?: number
+  readonly output?: number
   readonly elapsedMs: number
 }
 
 /**
  * Per-member usage from the room's execution records: every run but the
  * main agent's (its turns are the projected figures already), in roster
- * order. Members without a run do not appear.
+ * order. Runs group by member id, so a renamed member stays one row under
+ * its current name. Members without a run do not appear.
  * @param state - the replayed room state.
  * @returns one row per member that ran.
  */
 export function memberUsage(state: RoomState | undefined): readonly MemberUsage[] {
   if (state === undefined) return []
+  const byId = new Map(state.members.flatMap(member => member.id === undefined ? [] : [[member.id, member] as const]))
   const main = new Set(state.members.filter(member => member.kind === 'main-agent').map(member => member.name))
-  const rows = new Map<string, { member: string; model?: string; rounds: number; tokens: number; elapsedMs: number }>()
+  const rows = new Map<string, { member: string; model?: string; rounds: number; tokens: number; input?: number; cacheRead?: number; output?: number; elapsedMs: number }>()
   for (const run of state.executions ?? []) {
-    if (main.has(run.member)) continue
-    const row = rows.get(run.member) ?? { member: run.member, rounds: 0, tokens: 0, elapsedMs: 0 }
+    const current = run.memberId === undefined ? undefined : byId.get(run.memberId)
+    if (current?.kind === 'main-agent' || (current === undefined && main.has(run.member))) continue
+    const key = run.memberId ?? run.member
+    const row = rows.get(key) ?? { member: current?.name ?? run.member, rounds: 0, tokens: 0, elapsedMs: 0 }
     row.rounds += 1
     row.tokens += run.tokens ?? 0
     row.elapsedMs += run.elapsedMs ?? 0
+    if (run.usage !== undefined) {
+      const cacheRead = run.usage.cacheReadTokens ?? 0
+      row.input = (row.input ?? 0) + run.usage.inputTokens + cacheRead + (run.usage.cacheWriteTokens ?? 0)
+      row.cacheRead = (row.cacheRead ?? 0) + cacheRead
+      row.output = (row.output ?? 0) + run.usage.outputTokens
+    }
     if (run.model !== undefined) row.model = run.model
-    rows.set(run.member, row)
+    rows.set(key, row)
   }
   const order = state.members.map(member => member.name)
-  return [...rows.values()].sort((a, b) => order.indexOf(a.member) - order.indexOf(b.member))
+  return [...rows.values()]
+    .sort((a, b) => order.indexOf(a.member) - order.indexOf(b.member))
 }
 
 /** Props: the projection read seat, the room state, and the room locale seat. */
@@ -124,10 +145,12 @@ export interface RoomStatsLineProps {
   readonly useProjection: UseProjection
   /** The room's replayed state: the members chip reads its execution records. */
   readonly state?: RoomState | undefined
+  /** Members chip only: an external coordinator's room, where the room session's own figures are not the coordinator's. */
+  readonly membersOnly?: boolean | undefined
   readonly t: RoomComposerProps['t']
 }
 
-export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state, t }: RoomStatsLineProps): ReactNode {
+export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state, membersOnly = false, t }: RoomStatsLineProps): ReactNode {
   const members = memberUsage(state)
   const [open, setOpen] = useState(false)
   const membersRef = useRef<HTMLDivElement | null>(null)
@@ -173,6 +196,7 @@ export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state,
       output: formatTokens(usage.outputTokens),
     }))
   }
+  if (membersOnly) groups.length = 0
   const line = groups.join(' | ')
   // The row elides with ellipsis when overlong; a delayed hover tooltip
   // carries the full line, enabled only while content is actually clipped
@@ -214,7 +238,7 @@ export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state,
       {open && (
         <div className={css.breakdown} role="dialog" aria-label={t('stats.membersTitle')}>
           <table>
-            <thead><tr><th>{t('stats.col.member')}</th><th>{t('stats.col.model')}</th><th className={css.num}>{t('stats.col.rounds')}</th><th className={css.num}>{t('stats.col.tokens')}</th><th className={css.num}>{t('stats.col.time')}</th></tr></thead>
+            <thead><tr><th>{t('stats.col.member')}</th><th>{t('stats.col.model')}</th><th className={css.num}>{t('stats.col.rounds')}</th><th className={css.num}>{t('stats.col.total')}</th><th className={css.num}>{t('stats.col.input')}</th><th className={css.num}>{t('stats.col.cacheHit')}</th><th className={css.num}>{t('stats.col.output')}</th><th className={css.num}>{t('stats.col.time')}</th></tr></thead>
             <tbody>
               {members.map(row => (
                 <tr key={row.member}>
@@ -222,6 +246,9 @@ export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state,
                   <td>{row.model ?? '—'}</td>
                   <td className={css.num}>{row.rounds}</td>
                   <td className={css.num}>{row.tokens > 0 ? formatTokens(row.tokens) : '—'}</td>
+                  <td className={css.num}>{row.input !== undefined && row.input > 0 ? formatTokens(row.input) : '—'}</td>
+                  <td className={css.num}>{row.input !== undefined && row.input > 0 ? `${Math.round((row.cacheRead ?? 0) / row.input * 100)}%` : '—'}</td>
+                  <td className={css.num}>{row.output !== undefined && row.output > 0 ? formatTokens(row.output) : '—'}</td>
                   <td className={css.num}>{row.elapsedMs > 0 ? formatDuration(row.elapsedMs) : '—'}</td>
                 </tr>
               ))}

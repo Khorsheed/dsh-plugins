@@ -213,3 +213,15 @@ describe('duplicateStats', () => {
     expect(stats.counts.has('short')).toBe(false)
   })
 })
+
+describe('trend scale', async () => {
+  const { scaleOf } = await import('../src/client/Trend.tsx')
+  it('one outlier does not set the scale (3.2M among ~300k bars)', () => {
+    const values = [...Array.from({ length: 40 }, (_, i) => 280_000 + i * 1000), 3_201_120]
+    expect(scaleOf(values)).toBeLessThan(400_000)
+  })
+  it('empty or zero inputs scale to 1', () => {
+    expect(scaleOf([])).toBe(1)
+    expect(scaleOf([0, 0])).toBe(1)
+  })
+})

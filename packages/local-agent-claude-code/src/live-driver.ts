@@ -835,6 +835,9 @@ export class ClaudeLiveDriver {
       stream.durable = lastStep
       stream.opened = true
       openStep = lastStep
+      // From here it streams under its durable step: the preview goes
+      // (a core predating dropPreview keeps it until the item finishes).
+      streamPublisher?.dropPreview?.(stream.step, stream.itemId)
     }
     const closeOpenStep = (): void => {
       if (openStep === undefined) return

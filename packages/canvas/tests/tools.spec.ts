@@ -16,6 +16,17 @@ import { CanvasService } from '../src/service.ts'
 import { CanvasBoardService } from '../src/store.ts'
 import { canvasMainSessionToolDefinitions, cardArgsOf, cardIdLineOf } from '../src/tools.ts'
 import type { CanvasBoard } from '../src/types.ts'
+import { readDestinations, stripDestinations, type Destination } from '@khorsheed/dsh-client-ui-agent-nav/src/destination.ts'
+
+/**
+ * The answer without its destination line (proposal 2026-10-30-agent-sidebar-navigation),
+ * the line kept aside for the specs that read it.
+ */
+function landed(answer: unknown, into: Destination[]): unknown {
+  if (typeof answer !== 'string') return answer
+  into.push(...readDestinations(answer))
+  return stripDestinations(answer)
+}
 
 type Entry = { kind: 'dir' } | { kind: 'file'; content: string; version: number }
 
@@ -127,6 +138,7 @@ async function harness(): Promise<Bench> {
   expect(await board.focusCanvas({ canvasId }, FALLBACK)).toEqual({ ok: true })
   const tools = canvasMainSessionToolDefinitions(board)
   const agent = { session: FALLBACK } as unknown as Agent
+  const destinations: Destination[] = []
   const execute = async (name: ToolName, args: Record<string, unknown>): Promise<unknown> => {
     const tool = tools.find(def => def.name === name)
     if (tool === undefined) throw new Error(`no tool ${name}`)
@@ -134,15 +146,31 @@ async function harness(): Promise<Bench> {
     try { answer = await tool.execute(args, { agent } as never) }
     catch (error) { if (error instanceof CanvasToolError) return error.message; throw error }
     // canvas_read answers { text, images }; these specs only read its text.
-    return typeof answer === 'object' && answer !== null && 'text' in answer ? (answer as { text: string }).text : answer
+    return landed(typeof answer === 'object' && answer !== null && 'text' in answer ? (answer as { text: string }).text : answer, destinations)
   }
   const readCurrent = async (): Promise<CanvasBoard> => {
     const outcome = await board.readBoard({ canvasId })
     if (!outcome.ok) throw new Error('expected a readable board')
     return outcome.board
   }
-  return { canvasId, execute, readCurrent, board }
+  return { canvasId, execute, readCurrent, board, destinations }
 }
+
+describe('where a canvas write landed (the destination line)', () => {
+  it('names the one card or manuscript a write touched, and nothing for an archive', async () => {
+    const { canvasId, execute, readCurrent, destinations } = await harness()
+    await execute('canvas_write', { op: 'card', kind: 'fragment', text: '雨夜的钟声' })
+    const cardId = (await readCurrent()).cards[0]!.id
+    expect(destinations.at(-1)).toMatchObject({ kind: 'canvas', params: { canvasId, card: cardId }, label: '雨夜的钟声' })
+    await execute('canvas_write', { op: 'manuscript', title: '第一稿', text: '# 第一稿\n正文' })
+    const manuscriptId = (await readCurrent()).manuscripts[0]!.id
+    expect(destinations.at(-1)).toMatchObject({ kind: 'canvas', params: { canvasId, manuscript: manuscriptId } })
+    const before = destinations.length
+    await execute('canvas_write', { op: 'archive', cardId })
+    expect(destinations).toHaveLength(before)
+    expect(new Set(destinations.map(row => row.id)).size).toBe(destinations.length)
+  })
+})
 
 describe('the canvas tools on the open canvas', () => {
   it('declared failures reject for the host isError path, without scanning successful content', async () => {
@@ -340,8 +368,8 @@ describe('the main-session canvas tools (M3 second entrance)', () => {
     if (!read.ok) throw new Error('expected a readable board')
     expect(read.board.cards).toHaveLength(1)
     expect(read.board.cards[0]).toMatchObject({ kind: 'reference', status: 'proposed', createdBy: 'agent' })
-    expect(answer).toBe(`完成：${read.board.cards[0]!.id}`)
-    expect(await tools[1]!.execute({ op: 'comment', cardId: read.board.cards[0]!.id, text: '这里隐含一个假设。有数据吗？' }, { agent } as never)).toBe('完成')
+    expect(landed(answer, [])).toBe(`完成：${read.board.cards[0]!.id}`)
+    expect(landed(await tools[1]!.execute({ op: 'comment', cardId: read.board.cards[0]!.id, text: '这里隐含一个假设。有数据吗？' }, { agent } as never), [])).toBe('完成')
     const after = await board.readBoard({ canvasId: created.board.id })
     if (!after.ok) throw new Error('expected a readable board')
     expect(after.board.cards[0]?.comments[0]).toMatchObject({ author: 'agent', text: '这里隐含一个假设。有数据吗？' })
@@ -369,7 +397,7 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
     const tools = canvasMainSessionToolDefinitions(board)
     const agent = { session: FALLBACK } as unknown as Agent
     const run = (name: string) => async (args: Record<string, unknown>): Promise<string> =>
-      String(await tools.find(def => def.name === name)!.execute(args, { agent } as never))
+      String(landed(String(await tools.find(def => def.name === name)!.execute(args, { agent } as never)), []))
     return { board, open: run('canvas_open'), write: run('canvas_write') }
   }
 
@@ -433,6 +461,87 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
     expect(await open({ canvas: '杂记' })).toBe(`完成：已切到画布《杂记》（${plain.board.id}）。已解除与《雾港》的绑定。`)
     expect(await board.boundCanvasId(String(FALLBACK.id))).toBeUndefined()
     expect(await board.targetCanvasId(FALLBACK)).toBe(plain.board.id)
+  })
+})
+
+describe('a room member\'s canvas tools work on the room\'s desk', () => {
+  const ROOM_WS = '/room'
+  /** A room session that records appended events, and a member session with its own workspace. */
+  function bench(role: 'coordinator' | 'member') {
+    const fs = new FakeFs()
+    const ctx = { fs, get: () => undefined, emit: () => {} } as unknown as Context
+    ;(ctx as { canvasStore?: CanvasService }).canvasStore = new CanvasService(ctx)
+    const board = new CanvasBoardService(ctx, { stateRoot: STATE })
+    const tools = canvasMainSessionToolDefinitions(board)
+    const events: { type: string; data: unknown }[] = []
+    const room = { id: 's-room', header: { cwd: ROOM_WS }, append: (type: string, data: unknown) => { events.push({ type, data }) } } as unknown as Session
+    const own = { id: 's-bill', header: { cwd: WS } } as unknown as Session
+    const agent = { session: own, [Symbol.for('dsh.agent.desk')]: { session: room, role, member: 'bill' } } as unknown as Agent
+    const run = (name: string) => async (args: Record<string, unknown>): Promise<string> =>
+      String(await tools.find(def => def.name === name)!.execute(args, { agent } as never))
+    return { board, room, own, events, open: run('canvas_open'), write: run('canvas_write') }
+  }
+
+  it('the coordinator\'s switch moves the room\'s canvas and tells the room', async () => {
+    const { board, room, own, events, open } = bench('coordinator')
+    const answer = await open({ create: '雨夜' })
+    const id = (await board.listCanvases()).items[0]!.id
+    expect(answer).toContain('房间侧栏已切到这块。')
+    // The member's own workspace comes along, not the room's.
+    expect(answer).toContain(`挂上了工作区 ${WS}`)
+    expect(board.focusedCanvasId(room)).toBe(id)
+    expect(board.focusedCanvasId(own)).toBeUndefined()
+    expect(events).toEqual([{ type: 'room/desk-opened', data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'coordinator', data: { canvasId: id, title: '雨夜', created: true } } }])
+  })
+
+  it('the coordinator writes on whatever the human has open in the room', async () => {
+    const { board, room, write } = bench('coordinator')
+    const shown = await board.createCanvas({ title: '晴天' }, room)
+    if (!shown.ok) throw new Error('expected a created canvas')
+    await board.focusCanvas({ canvasId: shown.board.id }, room)
+    expect(await write({ op: 'card', kind: 'fragment', text: '阳光' })).toMatch(/^完成：c_/)
+    const read = await board.readBoard({ canvasId: shown.board.id })
+    expect(read.ok && read.board.cards).toHaveLength(1)
+  })
+
+  it('a write tells the room what it did: the card it added, named and categorised, with the member\'s run', async () => {
+    const { board, room, events, write } = bench('coordinator')
+    const shown = await board.createCanvas({ title: '晴天' }, room)
+    if (!shown.ok) throw new Error('expected a created canvas')
+    await board.focusCanvas({ canvasId: shown.board.id }, room)
+    const answer = await write({ op: 'card', kind: 'fragment', text: '阳光\\n照在窗台' })
+    const cardId = answer.replace(/^完成：/, '')
+    expect(events).toEqual([{ type: 'room/desk-wrote', data: {
+      version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'coordinator',
+      data: { canvasId: shown.board.id, title: '晴天', items: [{ action: 'added', title: '阳光', cardId, kind: expect.any(String) }] },
+    } }])
+    // The escaped line break arrived as a real one.
+    const read = await board.readBoard({ canvasId: shown.board.id })
+    expect(read.ok && read.board.cards[0]!.text).toBe('阳光\n照在窗台')
+    // A comment is told as a comment; a failed write tells nothing.
+    await write({ op: 'comment', cardId, text: '好' })
+    expect(events.at(-1)).toMatchObject({ type: 'room/desk-wrote', data: { data: { items: [{ action: 'commented', cardId }] } } })
+    await expect(write({ op: 'comment', cardId: 'c_none', text: '好' })).rejects.toThrow()
+    expect(events).toHaveLength(2)
+  })
+
+  it('a member\'s switch stays its own; it reads the room\'s canvas until it picks one', async () => {
+    const { board, room, own, events, open, write } = bench('member')
+    const shown = await board.createCanvas({ title: '晴天' }, room)
+    if (!shown.ok) throw new Error('expected a created canvas')
+    await board.focusCanvas({ canvasId: shown.board.id }, room)
+    expect(await write({ op: 'card', kind: 'fragment', text: '阳光' })).toMatch(/^完成：c_/)
+    const answer = await open({ create: '雨夜' })
+    const rain = (await board.listCanvases()).items.find(item => item.title === '雨夜')!
+    expect(answer).toContain('已放进房间侧栏的画布标签里')
+    expect(board.focusedCanvasId(own)).toBe(rain.id)
+    expect(board.focusedCanvasId(room)).toBe(shown.board.id)
+    // The write before it was told as a write; the open as an open.
+    expect(events.map(event => event.type)).toEqual(['room/desk-wrote', 'room/desk-opened'])
+    expect(events[1]).toEqual({ type: 'room/desk-opened', data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'member', data: { canvasId: rain.id, title: '雨夜', created: true } } })
+    expect(await write({ op: 'card', kind: 'fragment', text: '雨声' })).toMatch(/^完成：c_/)
+    const read = await board.readBoard({ canvasId: rain.id })
+    expect(read.ok && read.board.cards).toHaveLength(1)
   })
 })
 

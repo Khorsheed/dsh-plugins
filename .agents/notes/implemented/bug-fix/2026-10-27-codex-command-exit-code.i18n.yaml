@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-10-27-codex-command-exit-code.md
+.agents/notes/implemented/bug-fix/2026-10-27-codex-command-exit-code.md: d9598e43f59a29a60577c77308d53b000079ad02
+.agents/notes/implemented/bug-fix/2026-10-27-codex-command-exit-code.zh.md: 3c1e6d1748ad12bf44c964254e5285b0b909cad1

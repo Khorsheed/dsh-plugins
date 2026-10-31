@@ -22,7 +22,10 @@ interface Draft {
 }
 
 /** The question card. */
-export function RoomQuestionView({ node, answerQuestion, t }: RoomQuestionViewProps): ReactNode {
+export function RoomQuestionView({ node, answerQuestion, inline, t }: RoomQuestionViewProps & {
+  /** Inside the asker's round (its run card or reply) instead of a chat row of its own; `mid` = the split point was not found. */
+  readonly inline?: { readonly mid?: boolean } | undefined
+}): ReactNode {
   const data = node.data
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
   const [busy, setBusy] = useState(false)
@@ -59,14 +62,9 @@ export function RoomQuestionView({ node, answerQuestion, t }: RoomQuestionViewPr
     return [...answer?.selected ?? [], ...answer?.custom === undefined ? [] : [answer.custom]].join('；')
   }
 
-  return (
-    <div className={css.row} data-state={lateOpen ? 'late' : data.state} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
-      <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
-      <div className={css.card}>
-        <div className={css.head}>
-          <span className={css.title}>{t('question.title', { member: data.member })}</span>
-          {!pending && <span className={css.status}>{t(data.state === 'answered' ? (data.late === true ? 'question.answeredLate' : 'question.answered') : lateOpen ? 'question.lateOpen' : 'question.cancelled')}</span>}
-        </div>
+  const status = !pending && <span className={css.status}>{t(data.state === 'answered' ? (data.late === true ? 'question.answeredLate' : 'question.answered') : lateOpen ? 'question.lateOpen' : 'question.cancelled')}</span>
+  const body = (
+    <>
         {data.questions.map((question) => {
           const multi = question.multiSelect === true
           const draft = draftOf(question.id)
@@ -117,6 +115,30 @@ export function RoomQuestionView({ node, answerQuestion, t }: RoomQuestionViewPr
             <button type="button" className={css.submit} disabled={!complete || busy} onClick={() => { void submit() }}>{t('question.submit')}</button>
           </div>
         )}
+    </>
+  )
+  // Inside the round: no avatar of its own (the round's card has it); the
+  // head says who is waiting, or that it was asked here.
+  if (inline !== undefined) {
+    return (
+      <div className={css.inline} data-state={lateOpen ? 'late' : data.state} data-ask-id={data.questionId}>
+        <div className={css.inlineHead}>
+          <span>{pending ? t('question.waiting', { member: data.member }) : t('question.asked')}{inline.mid === true ? ` · ${t('question.midRound')}` : ''}</span>
+          {status}
+        </div>
+        {body}
+      </div>
+    )
+  }
+  return (
+    <div className={css.row} data-state={lateOpen ? 'late' : data.state} data-ask-id={data.questionId} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
+      <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
+      <div className={css.card}>
+        <div className={css.head}>
+          <span className={css.title}>{t('question.title', { member: data.member })}</span>
+          {status}
+        </div>
+        {body}
       </div>
     </div>
   )

@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-CLI 成员可以带一个模式（宿主 agent preset id），邀请时选择（「模式」，默认不带，和原生成员的 preset 一样邀请后锁定）。原生成员和 CLI 成员都从同一个下拉框选模式，名字与宿主自己的模式选择器一致（`presetDisplayText` 加宿主的 `settings.agentPreset` 词典：标准模式、PTC 模式……）。房间把它记在成员上，并在鸭子类型的房间接口上回答 `memberMode(run)`——该成员的 preset 和工作目录。
+CLI 成员可以带一个模式（宿主 agent preset id），邀请时选择（「模式」，默认不带，和原生成员的 preset 一样邀请后锁定）。成员从同一个下拉框选模式（原本共用它的原生成员已于 2026-10-29 移除：[原生子成员退出](../simplification/2026-10-29-room-native-members-retired.zh.md)），名字与宿主自己的模式选择器一致（`presetDisplayText` 加宿主的 `settings.agentPreset` 词典：标准模式、PTC 模式……）。房间把它记在成员上，并在鸭子类型的房间接口上回答 `memberMode(run)`——该成员的 preset 和工作目录。
 
 local-agent 的 `PresetToolHost` 给每个带模式的成员一个不跑模型的代理：直接建在成员**自己的**子会话上——`{ id, session }`，正是插件工具会读的 agent 字段——用 `createScope` 建作用域，并在这个作用域上挂载 preset。宿主工具注册表按这个身份区分作用域：`tools.schemas(代理)` 列出 preset 组合进来的工具，`tools.execute({ agent: 代理, … })` 走正常执行流程（策略、审批、超时）。因此插件状态（剪辑项目）属于成员自己的会话，模式的面板也显示在那里；会话还会记下模式（`agent-preset/selected`，和宿主切换 preset 时一样），按会话的插件显隐据此生效，其他插件的会话页签会隐藏。preset 首次挂载后的第一次列工具，会反复采样作用域直到它不再增长（有的行稍晚才注册工具）。只提供插件工具——带 `Symbol.for('dsh.tool.origin')` 且 channel 为 `plugin` 的定义，去掉房间和 local-agent 自己的；shell、文件、todo 这些 CLI 自己有。
 

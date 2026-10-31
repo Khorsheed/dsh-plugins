@@ -291,3 +291,62 @@
 .foldToggle:focus:not(:focus-visible) {
   outline: none;
 }
+
+/* What started the round (a member's 派活/告知, or reports): one quiet line
+   atop the card; a click scrolls to the source row. */
+.cause {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  cursor: pointer;
+}
+
+.cause:disabled {
+  cursor: default;
+}
+
+.causeHead,
+.causeChevron {
+  flex: none;
+}
+
+.causeText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cause:not(:disabled):hover {
+  color: var(--dsw-alias-label-secondary, rgba(127, 127, 127, 1));
+}
+
+.cause:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Flashed when a later reply's cause line points here. */
+.speech[data-flash] .card {
+  outline: 2px solid var(--member-color, rgba(127, 127, 127, 0.4));
+  outline-offset: 2px;
+}
+
+/* What the round put on the room's desk (another plugin's row, a canvas it
+   opened): stacked at the end of the card, under the reply. */
+.attachments {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}

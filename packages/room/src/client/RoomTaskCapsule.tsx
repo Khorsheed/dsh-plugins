@@ -17,11 +17,15 @@ import css from './RoomTaskCapsule.module.css'
 
 type Props = Pick<RoomComposerProps,
   'openTasks' | 'reconcileDelivery' | 'openPlanSession' | 'invite' | 'listProviders' | 'roomCwd' | 'browseDirectory' | 'modelSurface' | 'renderHarnessModelPicker' | 't'>
-  & { readonly state: RoomState }
+  & {
+    readonly state: RoomState
+    /** A member waiting on a question inside its round: its capsule jumps back to the question. */
+    readonly waiting?: { readonly member: string; readonly jump: () => void } | undefined
+  }
 
 /** The capsule row. */
 export function RoomTaskCapsule({
-  state, openTasks, reconcileDelivery, openPlanSession, invite, listProviders, roomCwd, browseDirectory, modelSurface, renderHarnessModelPicker, t,
+  state, openTasks, reconcileDelivery, openPlanSession, invite, listProviders, roomCwd, browseDirectory, modelSurface, renderHarnessModelPicker, waiting, t,
 }: Props): ReactNode {
   const [inviteOpen, setInviteOpen] = useState(false)
   const [providers, setProviders] = useState<RoomProviderList | undefined>(undefined)
@@ -68,6 +72,9 @@ export function RoomTaskCapsule({
       </button>
       {attention > 0 && <button type="button" className={css.capsule} data-attention="" onClick={() => { openTasks(firstAttention?.id) }}>
         {t('job.capsule.attention', { count: attention })}
+      </button>}
+      {waiting !== undefined && <button type="button" className={css.capsule} data-attention="" data-waiting="" onClick={waiting.jump}>
+        <span className={css.dot} aria-hidden />{t('question.capsule', { member: waiting.member })}
       </button>}
     </div>
   </div>

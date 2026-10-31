@@ -80,6 +80,35 @@ async function settled(): Promise<void> {
 }
 
 describe('CanvasTabVisibility.show', () => {
+  it('a room in another mode shows the canvas while a member runs the writing mode, and follows its roster', async () => {
+    const { ctx, visibility } = bench({
+      rows: {
+        room: { projectionValues: { agentPreset: 'standard' } },
+        plain: { projectionValues: { agentPreset: 'standard' } },
+      },
+      composition: PRESET_MOUNTED,
+    })
+    await settled()
+    expect(visibility.show('room' as SessionId)).toBe(false)
+    let roster: readonly string[] = ['dsh-writing']
+    const listeners = new Set<() => void>()
+    ctx.provide('roomModes' as never, {
+      presetsOf: (id: string) => id === 'room' ? roster : undefined,
+      subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    } as never)
+    await settled()
+    const notified = vi.fn()
+    visibility.subscribe(notified)
+    expect(visibility.show('room' as SessionId)).toBe(true)
+    // Only rooms: an ordinary session keeps its own mode's verdict.
+    expect(visibility.show('plain' as SessionId)).toBe(false)
+    // The writer leaves: the roster change re-decides.
+    roster = ['dsh-unknown']
+    for (const listener of listeners) listener()
+    expect(notified).toHaveBeenCalled()
+    expect(visibility.show('room' as SessionId)).toBe(false)
+  })
+
   it('preset-mounted: shows in a writing session, hides in a standard one', async () => {
     const { visibility } = bench({
       rows: {

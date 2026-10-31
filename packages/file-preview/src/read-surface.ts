@@ -40,6 +40,10 @@ const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
 ])
 
 /** MIME type per image extension for a byte read's Content-Type answer. */
+
+/** Default byte cap for an image the preview serves (screenshots and renders run well past the text cap). */
+export const IMAGE_MAX_READ_BYTES = 16 * 1024 * 1024
+
 export const IMAGE_MIME: Readonly<Record<string, string>> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -135,6 +139,8 @@ export interface FilePreviewReadCore {
   readonly maxReadBytes: number
   /** The wider byte cap HTML documents read through (the render channel). */
   readonly htmlMaxReadBytes: number
+  /** Byte cap for images (served by address, not read here); default {@link IMAGE_MAX_READ_BYTES}. */
+  readonly imageMaxReadBytes?: number | undefined
   /**
    * Image-address issuer: given a recorded display path, the browser-loadable
    * address for its bytes, or undefined to degrade that one read to `binary`.
@@ -297,10 +303,10 @@ export async function readFilePreview(core: FilePreviewReadCore, path: string, s
     return { path, kind: 'missing' }
   }
   // HTML gets its own, wider render-channel cap; every other text read keeps
-  // `maxReadBytes`. Images keep the base cap (their bytes ride the byte
-  // channel, not the render channel).
+  // `maxReadBytes`. Images get the byte channel's own cap: their bytes are
+  // fetched by address, never decoded here.
   const html = isHtmlPath(path)
-  const cap = html ? core.htmlMaxReadBytes : core.maxReadBytes
+  const cap = html ? core.htmlMaxReadBytes : isImagePath(path) ? core.imageMaxReadBytes ?? IMAGE_MAX_READ_BYTES : core.maxReadBytes
   if (info.size !== undefined && info.size > cap) {
     return { path, kind: 'too-large', size: info.size }
   }
@@ -350,6 +356,8 @@ export interface FilePreviewImageBytesCore {
   readonly cwd: string | undefined
   /** Byte cap for the read; larger images answer `too-large` without reading. */
   readonly maxReadBytes: number
+  /** The image cap, when it differs from `maxReadBytes` (default {@link IMAGE_MAX_READ_BYTES}). */
+  readonly imageMaxReadBytes?: number | undefined
 }
 
 /** Outcome of an authorized image byte read (the read surface's byte channel). */
@@ -419,11 +427,12 @@ export async function readFilePreviewImageBytes(
   if (info === undefined || info.type !== 'file') {
     return { path, ok: false, reason: 'missing' }
   }
-  if (info.size !== undefined && info.size > core.maxReadBytes) {
+  const cap = core.imageMaxReadBytes ?? IMAGE_MAX_READ_BYTES
+  if (info.size !== undefined && info.size > cap) {
     return { path, ok: false, reason: 'too-large', size: info.size }
   }
   try {
-    const bytes = await core.fs.readBytes(target, signal, core.maxReadBytes)
+    const bytes = await core.fs.readBytes(target, signal, cap)
     const dot = path.lastIndexOf('.')
     /* v8 ignore next -- every IMAGE_EXTENSIONS entry has a MIME mapping; the fallback guards a future extension */
     const mime = IMAGE_MIME[path.slice(dot).toLowerCase()] ?? 'application/octet-stream'
@@ -476,6 +485,8 @@ export interface FilePreviewReadSource {
   readonly maxReadBytes?: number
   /** The wider byte cap HTML documents read through (default 4 MiB, as the service). */
   readonly htmlMaxReadBytes?: number
+  /** The image byte cap (default 16 MiB, as the service). */
+  readonly imageMaxReadBytes?: number
   /** Cap on the entries `list` returns (default 500, as the service). */
   readonly maxFiles?: number
   /** Whether bash-written files (heredocs, redirects, `tee`, `sed -i`) are
@@ -530,6 +541,7 @@ export function createFilePreviewReadSurface(source: FilePreviewReadSource): Fil
   const resolved = {
     maxReadBytes: source.maxReadBytes ?? 512 * 1024,
     htmlMaxReadBytes: source.htmlMaxReadBytes ?? 4 * 1024 * 1024,
+    imageMaxReadBytes: source.imageMaxReadBytes ?? IMAGE_MAX_READ_BYTES,
     maxFiles: source.maxFiles ?? 500,
   }
   const cwd = source.cwd
@@ -574,13 +586,14 @@ export function createFilePreviewReadSurface(source: FilePreviewReadSource): Fil
         cwd,
         maxReadBytes: resolved.maxReadBytes,
         htmlMaxReadBytes: resolved.htmlMaxReadBytes,
+        imageMaxReadBytes: resolved.imageMaxReadBytes,
         imageUrl: source.imageUrl,
       },
       path,
       signal,
     ),
     readImageBytes: (path, signal) => readFilePreviewImageBytes(
-      { fs: source.fs, cwd, maxReadBytes: resolved.maxReadBytes },
+      { fs: source.fs, cwd, maxReadBytes: resolved.maxReadBytes, imageMaxReadBytes: resolved.imageMaxReadBytes },
       path,
       signal,
     ),

@@ -6,8 +6,8 @@
  * chapter and a pager that stays in reach. A reconciled chapter is done:
  * there is no 审过 (2026-10-09) — the person corrects a card that is wrong.
  *
- * It serves two hosts: the 成稿 face's book (behind the table of contents)
- * and the `novel:chapter` page a chat card or the strip opens.
+ * It lives in the 章节 face's book (behind the table of contents); every
+ * outside way to a chapter lands there too.
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
@@ -31,15 +31,20 @@ const LAMP_STEP: Readonly<Record<EffectiveChapterPhase, number>> = {
   planning: 0, writing: 1, fileMissing: 1, stale: 2, extracted: 3, reviewed: 3,
 }
 
-/** The `novel:chapter` page entry (param: the chapter number to start at). */
+/**
+ * The retired `novel:chapter` page (param: the chapter number, `:plan` to open
+ * on the plan). A chapter lives in the 章节 face now; a strip row saved on this
+ * page (a reload of an older session) forwards there.
+ */
 export function ChapterPage(props: NovelSurfaceProps<NovelPageOwnerProps>): ReactNode {
   const asked = parseInt(props.param ?? '', 10)
-  const focusPlan = (props.param ?? '').endsWith(PLAN_FOCUS)
-  const [n, setN] = useState(asked)
-  // The row re-opened on another chapter (a later card's door): follow it.
-  useEffect(() => { if (Number.isFinite(asked)) setN(asked) }, [asked, props.param])
-  if (props.board.genre?.id !== NOVEL_GENRE_ID) return null
-  return <ChapterReader {...props} n={n} host="page" focusPlan={focusPlan && n === asked} onGo={setN} onToc={props.navigate.openManuscripts} />
+  const focus = (props.param ?? '').endsWith(PLAN_FOCUS) ? 'plan' : undefined
+  const forward = props.navigate.openManuscripts
+  useEffect(() => {
+    if (props.board.genre?.id !== NOVEL_GENRE_ID) return
+    forward(Number.isFinite(asked) ? String(asked) : undefined, focus)
+  }, [forward, asked, focus, props.board.genre?.id])
+  return null
 }
 
 /**

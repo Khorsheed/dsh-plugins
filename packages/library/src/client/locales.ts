@@ -11,6 +11,12 @@ export const NS = 'library'
 
 export const zh = {
   'tab.label': '图书馆',
+  'deskrow.bound': '{member} 打开了{target}',
+  'deskrow.boundOwn': '打开了{target}',
+  'deskrow.book': '《{book}》',
+  'deskrow.project': '项目「{project}」',
+  'deskrow.memberOnly': '只绑定了自己的会话',
+  'deskrow.open': '打开 →',
   'guide.description': '按项目精读：每本教材一条学习路线，拍照记重点，知识卡片与章节考',
 
   'state.loading': '加载中…',
@@ -569,6 +575,12 @@ export type LibraryKey = keyof typeof zh
 
 export const en: Record<LibraryKey, string> = {
   'tab.label': 'Library',
+  'deskrow.bound': '{member} opened {target}',
+  'deskrow.boundOwn': 'Opened {target}',
+  'deskrow.book': '“{book}”',
+  'deskrow.project': 'project “{project}”',
+  'deskrow.memberOnly': 'bound only its own session',
+  'deskrow.open': 'Open →',
   'guide.description': 'Close reading by project: one learning path per textbook, photographed highlights, knowledge cards and chapter quizzes',
 
   'state.loading': 'Loading…',

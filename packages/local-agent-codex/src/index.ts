@@ -57,7 +57,11 @@ export const inject = ['localAgent', 'subagents', 'subprocess', 'settings']
 
 /** Plugin config: the sandbox mode fresh delegations default to, plus the live driver. */
 export interface Config {
-  /** Codex sandbox policy for `codex exec` / app-server threads; defaults to workspace-write. */
+  /**
+   * An explicit Codex sandbox policy for `codex exec` / app-server threads.
+   * Unset (the default), each member runs under its own session's sandbox
+   * mode — the access the session shows.
+   */
   sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access'
   /**
    * Deployment-level endpoint credential: the relay's base URL (an
@@ -259,7 +263,8 @@ export function apply(ctx: Context, config: Config): void {
     }, CATALOG_WARMUP_DELAY_MS)
     warmup.unref()
     const liveSwitch = new LiveDriverSwitch(ctx, face, {
-      sandbox,
+      // Only an explicit policy overrides the member's session mode.
+      sandbox: config.sandbox,
       // The member's scope decides whose list answers: a named scope's
       // rounds read that scope's models.json, exactly like its endpoint
       // credential.
@@ -292,7 +297,7 @@ export function apply(ctx: Context, config: Config): void {
       catalogDefault: (scopedHome, cwd) => modelCatalog.readDefault(scopedHome, cwd),
     })
     const disposeProvider = ctx.subagents.registerProvider(
-      new CodexCliProvider(ctx, sandbox, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId), resolveEndpoint),
+      new CodexCliProvider(ctx, config.sandbox, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId), resolveEndpoint),
     )
     const disposeHarness = ctx.localAgent.register({
       prepareMember: async ({ binding, childSession, configuration, signal }) => {

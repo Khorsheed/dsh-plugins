@@ -10,13 +10,42 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { formatLocator, type LibraryBinding, type LibraryOutcome } from '../types.ts'
 import type { LibraryService } from '../service.ts'
 import { ImageRefCache } from '../image-refs.ts'
+import { announceDeskOpen, deskOf } from '../desk.ts'
+import { libraryDestinationLine, NAV_KEY, type LibraryDestination, type LibraryNavParams } from '../nav-line.ts'
 
-/** JSON pass-through output — what the render emits IS what the model reads, so it goes compact (indentation doubled every result). */
+/**
+ * JSON pass-through output — what the render emits IS what the model reads, so it goes compact (indentation doubled every result).
+ * A value carrying a destination (`NAV_KEY`, see {@link landed}) renders without it, the destination line after the JSON.
+ */
 export function jsonOutput() {
   return {
     schema: { type: 'json' } as const,
-    render: (_args: unknown, value: unknown) => [{ type: 'text' as const, text: JSON.stringify(value) }],
+    render: (_args: unknown, value: unknown) => {
+      if (value === null || typeof value !== 'object' || Array.isArray(value) || !(NAV_KEY in value)) {
+        return [{ type: 'text' as const, text: JSON.stringify(value) }]
+      }
+      const { [NAV_KEY]: destination, ...rest } = value as Record<string, unknown>
+      return [{ type: 'text' as const, text: `${JSON.stringify(rest)}\n${libraryDestinationLine(destination as LibraryDestination)}` }]
+    },
   }
+}
+
+/**
+ * A tool's answer with where its write landed (proposal
+ * 2026-10-30-agent-sidebar-navigation): the browser's follower opens the
+ * library there when the learner watched the call land. A call at a room's
+ * desk names none — the room's desk row brings the library instead.
+ * @param exec - the call.
+ * @param value - the answer.
+ * @param params - the place in the library tab.
+ * @param label - what the learner reads on the card.
+ * @returns the answer, carrying the destination for the output render.
+ */
+export function landed<T extends object>(exec: Exec | undefined, value: T, params: LibraryNavParams, label: string): T {
+  if (deskOf(exec?.agent) !== undefined) return value
+  const thing = params.view === 'today' ? 'today' : Object.values(params).slice(1).join(':')
+  const destination: LibraryDestination = { id: `library:${params.view}:${thing}:${Date.now()}`, params, label }
+  return { ...value, [NAV_KEY]: destination }
 }
 
 /** Unwrap a service outcome: the domain value, or a thrown Error whose message IS the lesson. */
@@ -29,10 +58,48 @@ export const READ_WHATS = ['projects', 'resources', 'toc', 'roadmap', 'pages', '
 
 export type Exec = { agent?: Agent }
 
-/** The calling session's id, when the call came from a session. */
+/**
+ * The calling session's OWN id, when the call came from a session: the
+ * identity and source of what the call does (a card's source session, the
+ * fence). In a room this is the member's own session, never the room's —
+ * the binding reads go through {@link bindingSessionIdOf} instead.
+ */
 export function sessionIdOf(exec: Exec | undefined): string | undefined {
   const id = exec?.agent?.session?.id
   return id === undefined ? undefined : String(id)
+}
+
+/** The room session's id, when the caller is a room member at its desk (`../desk.ts`). */
+export function roomSessionIdOf(exec: Exec | undefined): string | undefined {
+  const desk = deskOf(exec?.agent)
+  return desk === undefined ? undefined : String(desk.session.id)
+}
+
+/**
+ * The session a bind lands on: the room's for the coordinator (the room's
+ * sidebar follows), the caller's own otherwise — a member never rebinds the
+ * room.
+ */
+export function actingSessionIdOf(exec: Exec | undefined): string | undefined {
+  const desk = deskOf(exec?.agent)
+  return desk?.role === 'coordinator' ? String(desk.session.id) : sessionIdOf(exec)
+}
+
+/**
+ * The session whose binding the call READS: the coordinator the room's; a
+ * member its own, else the room's when only the room is bound; outside a room
+ * the caller's own.
+ * @param getBinding - the service's binding read.
+ * @param exec - the call.
+ */
+export function bindingSessionIdOf(getBinding: (sessionId: string) => LibraryBinding | undefined, exec: Exec | undefined): string | undefined {
+  const desk = deskOf(exec?.agent)
+  if (desk === undefined) return sessionIdOf(exec)
+  const room = String(desk.session.id)
+  if (desk.role === 'coordinator') return room
+  const own = sessionIdOf(exec)
+  if (own !== undefined && getBinding(own) !== undefined) return own
+  return getBinding(room) !== undefined ? room : own
 }
 
 /**
@@ -229,10 +296,37 @@ export const QUESTIONS_SCHEMA = {
 
 /** The per-call helpers every tool closes over, built once per tool set. */
 export function createToolKit(service: LibraryService, images: ImageRefCache) {
-  /** The session's binding, when it has one. */
+  /** The session whose binding this call reads (desk-aware: {@link bindingSessionIdOf}). */
+  const bindingSessionOf = (exec: Exec | undefined): string | undefined =>
+    bindingSessionIdOf(sessionId => service.getBinding(sessionId), exec)
+
+  /** The binding this call works under, when there is one. */
   const bindingOf = (exec: Exec | undefined): LibraryBinding | undefined => {
-    const sessionId = sessionIdOf(exec)
+    const sessionId = bindingSessionOf(exec)
     return sessionId === undefined ? undefined : service.getBinding(sessionId)
+  }
+
+  /** The bound working set this call reads (the binding's session's summary). */
+  const bindingSummaryOf = (exec: Exec | undefined, cardLimit: number = 0): ReturnType<LibraryService['bindingSummary']> | undefined => {
+    const sessionId = bindingSessionOf(exec)
+    return sessionId === undefined ? undefined : service.bindingSummary(sessionId, cardLimit)
+  }
+
+  /**
+   * In a room, tell the room what the acting session is now bound to
+   * (`room/desk-opened`, `../desk.ts`); nothing outside a room or unbound.
+   */
+  const announceBinding = (exec: Exec | undefined): void => {
+    const desk = deskOf(exec?.agent)
+    const acting = actingSessionIdOf(exec)
+    if (desk === undefined || acting === undefined) return
+    const summary = service.bindingSummary(acting, 0)
+    if (summary.binding === undefined || summary.project === undefined) return
+    announceDeskOpen(desk, {
+      projectId: summary.project.id,
+      projectName: summary.project.name,
+      ...summary.resource === undefined ? {} : { resourceId: summary.resource.id, resourceTitle: summary.resource.title },
+    })
   }
 
   /** The project: the argument, else the binding, else the resource's owner, else a lesson. */
@@ -247,20 +341,27 @@ export function createToolKit(service: LibraryService, images: ImageRefCache) {
     throw new Error('no project: this session is not bound to one and no resource resolves one — library_read · projects lists them; ask the learner which one (ask_user_question), then library_binding { project, resource? }')
   }
 
-  /** A successful write knows its work context: an unbound session binds to it, and a project-bound session picks up the resource it just registered — create the project, register the book, draft the path, and the chain has strung itself. Never steals another project's session, never yanks a resource off one. */
+  /**
+   * A successful write knows its work context: an unbound session binds to it, and a project-bound session picks up the resource it just registered — create the project, register the book, draft the path, and the chain has strung itself. Never steals another project's session, never yanks a resource off one.
+   * In a room the bind lands on the acting session (the coordinator's on the
+   * room, a member's on its own — judged on that session's OWN binding, not
+   * the room's it may be reading through), and a bind that moved is told to
+   * the room.
+   */
   const autoBind = async (exec: Exec | undefined, binding: LibraryBinding): Promise<void> => {
-    const sessionId = sessionIdOf(exec)
+    const sessionId = actingSessionIdOf(exec)
     if (sessionId === undefined) return
     service.noteSessionWrite(sessionId)
-    const current = bindingOf(exec)
+    const current = service.getBinding(sessionId)
     if (current !== undefined && (current.projectId !== binding.projectId || current.resourceId !== undefined)) return
     if (current !== undefined && binding.resourceId === undefined) return
-    await service.setBinding(sessionId, binding)
+    const bound = await service.setBinding(sessionId, binding)
+    if (bound.ok) announceBinding(exec)
   }
 
   /** The textbooks of the bound project, as one teaching line for a refusal. */
   const textbookList = (exec: Exec | undefined): string => {
-    const summary = sessionIdOf(exec) === undefined ? undefined : service.bindingSummary(sessionIdOf(exec)!, 0)
+    const summary = bindingSummaryOf(exec)
     const textbooks = summary?.textbooks ?? []
     return textbooks.length === 0 ? '' : ` — this project's textbooks: ${textbooks.map(textbook => `${textbook.seq ?? '-'}. ${textbook.id} 《${textbook.title}》`).join('; ')}`
   }
@@ -283,7 +384,7 @@ export function createToolKit(service: LibraryService, images: ImageRefCache) {
     resource: { type: 'string', description: 'Defaults to the binding.' },
   } as const
 
-  return { service, images, bindingOf, projectOf, autoBind, textbookList, resourceOf, scopeParams, textbookParams }
+  return { service, images, bindingOf, bindingSummaryOf, announceBinding, projectOf, autoBind, textbookList, resourceOf, scopeParams, textbookParams }
 }
 
 /** The kit a tool factory receives. */

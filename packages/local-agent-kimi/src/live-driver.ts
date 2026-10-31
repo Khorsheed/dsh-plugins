@@ -41,6 +41,9 @@ import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent
 import { configureKimiSession } from './session-configuration.ts'
 import { kimiNativeConfiguration, type KimiNativeConfiguration } from './model-catalog.ts'
 import { StringDecoder } from 'node:string_decoder'
+import { appendFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -61,6 +64,7 @@ import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIV
 import { endpointAuthEnv, hasEndpointCredential, type KimiEndpointAuth } from './endpoint-auth.ts'
 import { ensureKimiEndpointProvider, KIMI_MANAGED_BASE_URL } from './provision.ts'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import { MEMBER_TOOL_TIMEOUT_MS } from './member-bridge-config.ts'
 import {
   DEFAULT_DISPOSE_GRACE_MS,
   mirrorKimiDelta,
@@ -68,7 +72,8 @@ import {
 } from './kimi-cli-provider.ts'
 import { assistantEvent, KIMI_INTERRUPTED_TOOL_RESULT, nextKimiSessionStep, nextWrittenKimiStep } from './session-mirror.ts'
 import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './session-mirror.ts'
-import { addTokenUsage } from './session-view.ts'
+import { addTokenUsage, findKimiSessionDir, wirePath } from './session-view.ts'
+import { readKimiCompaction } from './kimi-compaction.ts'
 import { writeKimiDefaultModel } from './provision.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
@@ -124,9 +129,11 @@ export interface KimiLiveDriverTimeouts {
   readonly convergeMs: number
   readonly channelRetryMs: number
   readonly mirrorThrottleMs: number
+  /** How long a completed round's settle waits for its streams' wire steps (0 turns the wait off). */
+  readonly settleFoldWaitMs?: number
 }
 
-const DEFAULT_TIMEOUTS: KimiLiveDriverTimeouts = {
+export const DEFAULT_TIMEOUTS: KimiLiveDriverTimeouts = {
   initializeMs: DEFAULT_LIVE_INITIALIZE_TIMEOUT_MS,
   requestMs: DEFAULT_LIVE_REQUEST_TIMEOUT_MS,
   convergeMs: DEFAULT_LIVE_DISPOSE_CONVERGE_MS,
@@ -138,6 +145,16 @@ const DEFAULT_TIMEOUTS: KimiLiveDriverTimeouts = {
 const SETTLE_MIRROR_POLL_MS = 300
 const SETTLE_MIRROR_STABLE_READS = 3
 const SETTLE_MIRROR_QUIESCE_MS = 3_000
+/**
+ * A completed round waits this long for the wire to land the steps its live
+ * streams still hold: kimi can flush a final step well after the prompt
+ * resolves, and a stream finalized from its live text carries no usage (the
+ * step's usage.record, read later, belongs to a closed turn and is dropped).
+ */
+const SETTLE_MIRROR_FOLD_WAIT_MS = 10_000
+/** A compaction round polls the wire for its end this often, for at most this long. */
+const COMPACTION_POLL_MS = 500
+const COMPACTION_TIMEOUT_MS = 10 * 60_000
 
 /** How much of the live event stream crosses into the child session. */
 export type KimiLiveMirrorGranularity = 'event' | 'token'
@@ -160,6 +177,8 @@ export interface KimiLiveRoundSpec {
   readonly resume?: { readonly cliSessionId: string; readonly turn: number } | undefined
   /** Fresh round: called with the server-assigned session id (delegation record). */
   readonly onCliSessionId?: ((cliSessionId: string) => void) | undefined
+  /** `compact`: compact the session's context instead of prompting (see {@link KimiAcpLiveDriver.compactLocked}). */
+  readonly operation?: 'compact' | undefined
 }
 
 type JsonObject = Record<string, unknown>
@@ -685,7 +704,10 @@ export class KimiAcpLiveDriver {
       cwd: spec.cwd,
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
       graceMs: DEFAULT_DISPOSE_GRACE_MS,
-      env: delegationEnv({ KIMI_CODE_HOME: spec.homeDir, ...endpointAuthEnv(endpoint) }),
+      // The ACP session declares the member bridge inline, and ACP's MCP
+      // server shape carries no timeout: lift kimi's 60s MCP default for the
+      // whole process, or a question card dies before the human answers.
+      env: delegationEnv({ KIMI_CODE_HOME: spec.homeDir, KIMI_MCP_TOOL_TIMEOUT_MS: String(MEMBER_TOOL_TIMEOUT_MS), ...endpointAuthEnv(endpoint) }),
     }
     let child: SubprocessHandle
     try {
@@ -900,12 +922,88 @@ export class KimiAcpLiveDriver {
     }
     const key = String(spec.childSession.id)
     const previous = this.roundChains.get(key) ?? Promise.resolve()
-    const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
+    const round = previous.catch(() => {}).then(() => spec.operation === 'compact' ? this.compactLocked(request, spec) : this.startRoundLocked(request, spec))
     this.roundChains.set(key, round.then(
       handle => handle.result.catch(() => ({})),
       () => ({}),
     ))
     return round
+  }
+
+  /**
+   * A compaction round: `/compact` on the member's session, then hold the
+   * round until the wire records the compaction's end — kimi answers the
+   * prompt at once and compacts in the background, silently dropping any
+   * prompt sent before it finishes, so the member's queue (this round) must
+   * outlast it. Writes no turn: one `local-agent/compaction` event.
+   */
+  private async compactLocked(request: SubagentStartRequest, spec: KimiLiveRoundSpec): Promise<SubagentRun> {
+    if (request.signal.aborted) throw new Error('subagent-kimi: request was aborted before the compaction started')
+    if (this.draining) throw new LiveChannelUnavailableError('the live driver is draining (a settings change retired this generation)')
+    if (this.disposed) throw new Error('subagent-kimi: the live driver is disposed')
+    const childSession = spec.childSession
+    const key = String(childSession.id)
+    const rt = await this.ensureRuntime(spec, request.signal)
+    try {
+      await this.configureSession(rt, spec)
+    } catch (error) {
+      await this.reclaim(key)
+      throw thrown(error)
+    }
+    const sessionId = bareKimiSessionId(rt.sessionId as string)
+    const dir = await findKimiSessionDir(spec.homeDir, sessionId)
+    if (dir === undefined) throw new Error(`subagent-kimi: compaction cannot find session ${sessionId}'s wire`)
+    const readWire = (): Promise<string> => readFile(wirePath(dir), 'utf8').catch(() => '')
+    const fromLine = (await readWire()).split('\n').length - 1
+    const startedAt = Date.now()
+    const boundarySeq = childSession.snapshotEvents().at(-1)?.seq ?? -1
+    const prompt = rt.turnChain.catch(() => {}).then(() => rt.peer.request<{ stopReason?: string }>('session/prompt', {
+      sessionId: rt.sessionId as string,
+      prompt: [{ type: 'text', text: '/compact' }],
+    }, 0))
+    rt.turnChain = prompt
+    const result: Promise<SubagentResult> = (async () => {
+      let reading = readKimiCompaction('', 0)
+      try {
+        await prompt
+        const deadline = Date.now() + COMPACTION_TIMEOUT_MS
+        for (;;) {
+          reading = readKimiCompaction(await readWire(), fromLine)
+          if (reading.done || Date.now() >= deadline) break
+          await delay(COMPACTION_POLL_MS)
+        }
+      } catch (error) {
+        reading = { done: true, outcome: 'failed', error: thrown(error).message }
+      }
+      const outcome = reading.done ? reading.outcome ?? 'completed' : 'failed'
+      childSession.append('local-agent/compaction', {
+        source: 'manual', outcome, provider: 'kimi-cli',
+        ...reading.model === undefined ? {} : { model: reading.model },
+        ...reading.beforeTokens === undefined ? {} : { beforeTokens: reading.beforeTokens },
+        ...reading.afterTokens === undefined ? {} : { afterTokens: reading.afterTokens },
+        ...reading.usage === undefined ? {} : { usage: reading.usage },
+        ...reading.summary === undefined ? {} : { summary: reading.summary },
+        ...outcome === 'completed' ? {} : { error: reading.error ?? (reading.done ? `compaction ${outcome}` : 'compaction did not finish in time') },
+        startedAt, endedAt: Date.now(), boundarySeq,
+      })
+      await persistChildSession(this.ctx, childSession).catch((error: unknown) => {
+        this.ctx.logger.warn(`subagent-kimi: compaction persistence failed: ${thrown(error).message}`)
+      })
+      this.armIdleTimer(key)
+      return outcome === 'completed'
+        ? { stopReason: 'completed', output: [{ type: 'text', text: reading.summary ?? '' }] }
+        : { stopReason: 'error', output: [], diagnostic: reading.error ?? `compaction ${outcome}` }
+    })()
+    return subprocessRunHandle({
+      id: SessionId(randomUUID()),
+      result,
+      signal: request.signal,
+      // A compaction cannot be withdrawn once kimi runs it: the round
+      // settles when the wire says it ended.
+      onAbort: () => {},
+      requestCancel: () => {},
+      teardown: async () => {},
+    })
   }
 
   /** The serialized round body. */
@@ -930,6 +1028,17 @@ export class KimiAcpLiveDriver {
 
     const runAbort = new AbortController()
     let roundSettled = false
+    /**
+     * Usage-attribution diagnostics (room 75844e33, 2026-10-29: a round's final
+     * reply lost its usage although the wire held the record): one JSONL line
+     * per message written from live text and per usage no fold carried, in the
+     * kimi home (`usage-diag.jsonl`). Best-effort; never fails the round.
+     */
+    const usageDiag = (entry: Record<string, unknown>): void => {
+      try {
+        appendFileSync(join(spec.homeDir, 'usage-diag.jsonl'), `${JSON.stringify({ time: new Date().toISOString(), child: String(childSession.id), ...entry })}\n`)
+      } catch { /* diagnostics never fail a round */ }
+    }
     let runtime: KimiLiveRuntime | undefined
     /** True while this round's session/prompt is in flight (cancel targets it). */
     let promptInFlight = false
@@ -1131,7 +1240,10 @@ export class KimiAcpLiveDriver {
      * cancelled turn reads 已停止 legitimately); `withUsage` attaches the
      * round's uncarried usage.
      */
-    const finalizeStep = (step: number, entries: readonly [string, StreamEntry][], interrupted: boolean, withUsage: boolean): void => {
+    const finalizeStep = (step: number, entries: readonly [string, StreamEntry][], interrupted: boolean, withUsage: boolean, via: 'gap' | 'settle'): void => {
+      // A message written from live text carries no usage of its own step:
+      // record when it happens, so the next lost usage names its path.
+      usageDiag({ at: 'finalize-from-live', via, turn, step, kinds: entries.map(([, stream]) => stream.kind), interrupted, withUsage, roundUsage: roundUsage ?? null, roundSettled })
       liveFlush.cancel(step)
       pendingStreamArrival.delete(step)
       const reasoning = entries.filter(([, stream]) => stream.kind === 'think').map(([, stream]) => stream.text).join('')
@@ -1240,7 +1352,7 @@ export class KimiAcpLiveDriver {
         group.push(entry)
         byStep.set(entry[1].step, group)
       }
-      for (const [at, entries] of byStep) finalizeStep(at, entries, false, false)
+      for (const [at, entries] of byStep) finalizeStep(at, entries, false, false, 'gap')
     }
 
     /**
@@ -1359,6 +1471,7 @@ export class KimiAcpLiveDriver {
      */
     const noteMirrorUsage = (delta: KimiMirrorDelta): void => {
       if (delta.usageUnattached !== undefined) {
+        usageDiag({ at: 'unattached', turn, usage: delta.usageUnattached, mirroredLines: delta.total, roundSettled })
         roundUsage = addTokenUsage(roundUsage, delta.usageUnattached)
       }
       if (delta.model !== undefined) roundModel = delta.model
@@ -1366,6 +1479,11 @@ export class KimiAcpLiveDriver {
 
     /** Throttled push-triggered mirror pass; the file fold stays the only transcript source. */
     const triggerMirror = (): void => {
+      // Settlement owns the wire from here: a live pass started now would run
+      // beside the settle polls, read the same offset and fold the same step
+      // twice (75844e33 turn 14, an interrupted turn whose late updates kept
+      // arriving while it settled).
+      if (roundSettled) return
       const now = Date.now()
       if (now - lastMirrorAt < this.timeouts.mirrorThrottleMs) return
       lastMirrorAt = now
@@ -1542,22 +1660,49 @@ export class KimiAcpLiveDriver {
      * final mirror folds until consecutive reads see no growth — bounded, so
      * a stuck flush cannot pin the round beyond the quiescence window.
      */
-    const settleMirror = async (): Promise<void> => {
+    /**
+     * Run one mirror pass on the round's single mirror queue: a pass reads
+     * the stored offset, folds, then writes it back, so two passes in flight
+     * at once fold the same lines twice.
+     */
+    const serialMirror = <T,>(pass: () => Promise<T>): Promise<T> => {
+      const next = mirrorQueue.then(pass)
+      mirrorQueue = next.catch(() => {})
+      return next
+    }
+
+    const settleMirror = async (completed: boolean): Promise<void> => {
       await mirrorQueue.catch(() => {})
       const sessionId = runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId)
       let lastTotal = -1
       let stableReads = 0
-      const deadline = Date.now() + SETTLE_MIRROR_QUIESCE_MS
+      const started = Date.now()
+      // A completed round's live streams all have wire steps coming: a quiet
+      // file is not done while one is still unfolded (only its fold carries
+      // the step's usage). A stopped round's partial may never get one.
+      const foldWait = this.timeouts.settleFoldWaitMs ?? SETTLE_MIRROR_FOLD_WAIT_MS
+      const unfolded = (): boolean => completed && foldWait > 0 && [...streams.values()].some(stream => stream.sealed !== true)
       for (;;) {
-        const delta = await mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(true))
+        // Polls read the wire as live passes do: a step still flushing holds
+        // (it never splits), and a usage record at the boundary waits for its
+        // step — a settle pass takes it as the round's rest the moment it
+        // lands, before the step's content, and the reply folds without
+        // usage (75844e33 turn 15).
+        const delta = await serialMirror(() => mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions()))
         noteMirrorUsage(delta)
         localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
         stableReads = delta.total === lastTotal ? stableReads + 1 : 0
         lastTotal = delta.total
-        if (stableReads >= SETTLE_MIRROR_STABLE_READS) break
-        if (Date.now() >= deadline) break
+        const waited = Date.now() - started
+        if (stableReads >= SETTLE_MIRROR_STABLE_READS && !unfolded()) break
+        if (waited >= (unfolded() ? foldWait : SETTLE_MIRROR_QUIESCE_MS)) break
         await delay(SETTLE_MIRROR_POLL_MS)
       }
+      // The settle pass takes what the polls left: a step that never closed
+      // folds as it stands, a tool result that never came is synthesized, and
+      // a boundary usage record whose step never landed counts as the rest.
+      const last = await serialMirror(() => mirrorKimiDelta(this.ctx, childSession, spec.homeDir, sessionId, mirrorOptions(true)))
+      noteMirrorUsage(last)
     }
 
     const result: Promise<SubagentResult> = settleRunResult({
@@ -1590,7 +1735,7 @@ export class KimiAcpLiveDriver {
         //   - a tool reservation kimi never logged to the wire finalizes as
         //     an interrupted placeholder step.
         try {
-          await settleMirror()
+          await settleMirror(settled.stopReason === 'completed')
         } catch (error) {
           this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
         }
@@ -1611,7 +1756,7 @@ export class KimiAcpLiveDriver {
         ].sort((a, b) => a.step - b.step)
         const lastStream = pending.map((entry, index) => 'entries' in entry ? index : -1).filter(index => index >= 0).at(-1)
         pending.forEach((entry, index) => {
-          if ('entries' in entry) finalizeStep(entry.step, entry.entries, settled.stopReason !== 'completed', index === lastStream)
+          if ('entries' in entry) finalizeStep(entry.step, entry.entries, settled.stopReason !== 'completed', index === lastStream, 'settle')
           else if (!toolLogged(entry.toolId)) finalizeOrphanTool(entry.toolId, entry.tool)
         })
         streams.clear()
@@ -1650,15 +1795,19 @@ export class KimiAcpLiveDriver {
       // a round that never opened owns no span to observe. Degrades
       // silently on a core predating recordRoundSettled.
       if (turnOpened) {
-        // The round's spend for the room's usage chip: every folded step of
-        // this turn carries its own usage (the uncarried rest rides the last
-        // one), so the turn's sum is the round total.
+        // The round's spend for the room's usage chip: the usage every folded
+        // step of this turn carries, plus the uncarried rest. The rest rides
+        // the last message only when settle finalized that message itself;
+        // when the file fold already wrote it, the final call's usage record
+        // lands in a later pass with no message left to carry it (and there
+        // is no backfill event) — without it a one-call round reported none.
         let usage: Parameters<typeof addTokenUsage>[0]
         for (const event of childSession.snapshotEvents()) {
           if (event.type !== 'assistant/message') continue
           const data = event.data as { turn?: number; usage?: Parameters<typeof addTokenUsage>[1] }
           if (data.turn === turn && data.usage !== undefined) usage = addTokenUsage(usage, data.usage)
         }
+        if (roundUsage !== undefined) usage = addTokenUsage(usage, roundUsage)
         const round = {
           ...roundModel === undefined ? {} : { observedModel: roundModel },
           ...usage === undefined ? {} : { usage },

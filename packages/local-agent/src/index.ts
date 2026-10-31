@@ -42,6 +42,7 @@ const streamCatalogs = await Promise.all([
 ])
 for (const catalog of streamCatalogs) {
   (catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
+  ;(catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/compaction')
 }
 
 // The host's released-log check, the exact relationship rules every stored
@@ -1014,6 +1015,16 @@ export function parseScopeFlag(input: string): { input: string; scope?: string; 
   return { input: rest.join(' ').trim(), ...scope === undefined ? {} : { scope } }
 }
 
+/**
+ * The member command that compacts instead of prompting: `/compact`, alone
+ * on the line (trailing text would be a prompt that merely starts with it).
+ * @param text - one queued member input.
+ * @returns whether it asks for a compaction.
+ */
+export function isCompactCommand(text: string): boolean {
+  return text.trim() === '/compact'
+}
+
 /** A delegation record without its requested model. */
 function withoutModel(record: LocalAgentDelegationRecord): LocalAgentDelegationRecord {
   const { model: _model, ...rest } = record
@@ -1254,6 +1265,8 @@ export class LocalAgentRegistry {
     onProgress: ((event: LocalAgentRunProgress) => void) | undefined
     startedAt: number
     heartbeat?: ReturnType<typeof setInterval>
+    /** Its settle report already arrived (a provider may report before the result resolves): nothing is owed. */
+    settled?: boolean
   }>()
   /**
    * Progress routes held open past their run's result-settle, by child session
@@ -1300,8 +1313,12 @@ export class LocalAgentRegistry {
     this.preparedMembers = new PreparedMembers(join(homesRoot, '.prepared-members'))
     this.memberInbox = new MemberInbox(join(homesRoot, '.member-inbox'), async (childSessionId, text, signal, onAdmitted) => {
       const record = this.requireInboxMember(childSessionId)
+      // `/compact` typed to a member compacts it: the entry keeps its place
+      // in the inbox, then runs as the compaction round instead of a prompt.
+      const compact = isCompactCommand(text)
       return this.resume(record.parentSessionId, record.provider, childSessionId, [{ type: 'text', text }], {
         signal, onAdmitted, ...record.scope === undefined ? {} : { scope: record.scope }, ...record.cwd === undefined ? {} : { cwd: record.cwd },
+        ...compact ? { operation: 'compact' as const } : {},
       })
     }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`))
     this.memberControls = new MemberControls(new FileMemberControlStorage(join(homesRoot, '.member-controls')), binding => {
@@ -2406,6 +2423,7 @@ export class LocalAgentRegistry {
       // this one IS anchored: the record carries the scope and the provider
       // refuses a round that names another one (or none).
       ...options?.scope === undefined ? {} : { scope: options.scope },
+      ...options?.operation === undefined ? {} : { operation: options.operation },
     }
     this.stageDelegationIntent(parentSessionId, provider, intent)
     const controller = new AbortController()
@@ -2429,6 +2447,22 @@ export class LocalAgentRegistry {
     }
     this.trackRun(childSessionId, controller, run, options?.onProgress)
     return run
+  }
+
+  /**
+   * Compact a member's context: a resume round whose operation is
+   * `compact`. It queues behind the member's running round like any round,
+   * and input sent meanwhile waits for it (Kimi silently drops a prompt sent
+   * while it compacts; Codex refuses one). The provider records one
+   * `local-agent/compaction` event and writes no turn.
+   * @param parentSessionId - the delegating parent session.
+   * @param provider - the member's delegation provider.
+   * @param childSessionId - the member's dsh child session.
+   * @param options - the resume options (no prompt, no operation).
+   * @returns the compaction run.
+   */
+  async compact(parentSessionId: string, provider: string, childSessionId: string, options?: Omit<DelegationCallOptions, 'operation'>): Promise<SubagentRun> {
+    return this.resume(parentSessionId, provider, childSessionId, [{ type: 'text', text: '/compact' }], { ...options, operation: 'compact' })
   }
 
   /**
@@ -2486,12 +2520,32 @@ export class LocalAgentRegistry {
       onProgress: undefined,
       startedAt: Date.now(),
     })
+    this.announceRunning(childSessionId, true)
     const clear = (): void => {
       const entry = this.runs.get(childSessionId)
       if (entry?.run !== run) return
       this.runs.delete(childSessionId)
+      this.announceRunning(childSessionId, false)
     }
     void run.result.then(clear, clear)
+  }
+
+  /**
+   * Tell the browser a delegated child session started or stopped working,
+   * on the host's own session-status channel: the host raises it only for
+   * its own agents, and a CLI child has none — without this the session list
+   * never shows a delegation running (nor its parent's 「N 个子 agent 运行中」,
+   * which counts children by this status). Degrades silently on a host
+   * without the channel's listeners.
+   * @param childSessionId - the dsh child session id.
+   * @param running - whether a round is now in flight.
+   */
+  private announceRunning(childSessionId: string, running: boolean): void {
+    try {
+      (this.ctx.emit as unknown as (name: string, ...args: unknown[]) => void)('api-session/status', SessionId(childSessionId), running)
+    } catch {
+      // A host without the status channel: the list simply stays as it was.
+    }
   }
 
   /**
@@ -2812,20 +2866,26 @@ export class LocalAgentRegistry {
       this.reportRunProgress(childSessionId, { kind: 'heartbeat', elapsedMs: Date.now() - startedAt })
     }, RUN_PROGRESS_HEARTBEAT_MS)
     heartbeat.unref()
-    // A resume round reuses the child session id, so a previous round's parked
-    // route (whose settle report never arrived) must not outlive it.
-    this.dropSettledRun(childSessionId)
+    // A resume round reuses the child session id. A previous round's parked
+    // route stays open (bounded by its grace timer): a room member's queued
+    // round starts the moment the last one's result resolves, BEFORE that
+    // round's settle report lands, and the report belongs to the round it
+    // observed — see reportRunProgress.
     this.runs.set(childSessionId, { controller, run, onProgress, startedAt, heartbeat })
+    this.announceRunning(childSessionId, true)
     const clear = (): void => {
       const entry = this.runs.get(childSessionId)
       if (entry?.run !== run) return
       clearInterval(entry.heartbeat)
       this.runs.delete(childSessionId)
+      this.announceRunning(childSessionId, false)
       // The provider computes this round's settle observation AFTER the result
       // resolves (the CLI's stream is only complete once the process is
       // reaped), so the route stays open for it — bounded, and closed by the
       // report itself. See RUN_PROGRESS_SETTLE_GRACE_MS.
-      if (onProgress === undefined) return
+      // A round whose settle report already arrived owes nothing: parking it
+      // would hand the NEXT round's report to this finished call.
+      if (onProgress === undefined || entry.settled === true) return
       const timer = setTimeout(() => { this.dropSettledRun(childSessionId) }, RUN_PROGRESS_SETTLE_GRACE_MS)
       timer.unref()
       this.settledRuns.set(childSessionId, { onProgress, timer })
@@ -2854,8 +2914,18 @@ export class LocalAgentRegistry {
    */
   reportRunProgress(childSessionId: string, progress: LocalAgentRunProgress): void {
     this.ctx.emit('localAgent/run-progress', childSessionId, progress)
+    // A settle report closes the OLDEST open round: a parked one (its result
+    // resolved, its observation still owed) settles before the round that
+    // started after it.
+    const owed = progress.kind === 'settled' ? this.settledRuns.get(childSessionId) : undefined
+    if (owed !== undefined) {
+      owed.onProgress(progress)
+      this.dropSettledRun(childSessionId)
+      return
+    }
     const tracked = this.runs.get(childSessionId)
     if (tracked !== undefined) {
+      if (progress.kind === 'settled') tracked.settled = true
       tracked.onProgress?.(progress)
       return
     }
@@ -3394,6 +3464,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       try {
         const catalog = await loader.import(specifier)
         ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
+        ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/compaction')
       } catch { /* Optional source export or loader capability; root registration remains. */ }
     }
   }

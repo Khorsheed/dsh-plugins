@@ -17,6 +17,8 @@
  */
 
 /** Category buckets behind the stacked bar / legend filter / detail rows. */
+import type { AskView } from './ask.ts'
+
 export type SegmentCategory =
   /** 系统提示词（systemPrompt 组装，来源 = assemble section 名）。 */
   | 'system'
@@ -190,6 +192,8 @@ export interface CapturedResponse {
     arguments: string
     /** Execution happens after the model response; never part of input composition. */
     execution?: { status: 'running' | 'ok' | 'failed'; result?: string }
+    /** An `ask_user_question` call read as questions and answers (see ask.ts). */
+    ask?: AskView
   }[]
 }
 
@@ -377,7 +381,7 @@ export interface TurnListItem {
   /** The turn's number in one session-wide sequence (main turns and room rounds, by time). */
   ordinal?: number
   /** A room round: a human message to the room made outside any main turn, and who it went to. */
-  room?: { targets: string[] }
+  room?: { targets: string[]; /** The human's message in the chat (the round's scroll anchor). */ messageId?: string }
   startedAt: number
   endedAt?: number
   requestCount: number

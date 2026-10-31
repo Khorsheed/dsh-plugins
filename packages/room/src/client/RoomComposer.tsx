@@ -55,7 +55,7 @@
  */
 import { coordinatorMember } from '../journal.ts'
 import {
-  useEffect, useRef, useState, useSyncExternalStore, type ChangeEvent, type ClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode,
+  useEffect, useRef, useState, useSyncExternalStore, type ChangeEvent, type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -70,7 +70,8 @@ import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
 import { RoomQueueStrip, type RoomQueueItem } from './RoomQueueStrip.tsx'
 import { RoomModelPicker } from './RoomModelPicker.tsx'
-import { IconChevronRightOutlineMedium, IconPaperclipOutlineMedium } from './icons.tsx'
+import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconPaperclipOutlineMedium } from './icons.tsx'
+import { Menu, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { RoomAttachments } from './RoomAttachments.tsx'
 import css from './RoomComposer.module.css'
 
@@ -135,11 +136,26 @@ function detectMention(draft: string, caret: number): ActiveMention | null {
  *   must stay a pure function of the owner props plus stable state reads).
  * @returns the room match, or null to pass the election down the chain.
  */
+/** Key prefix of the room's own pending interactions (its question/approval cards). */
+const ROOM_INTERACTION_PREFIX = 'room:'
+
+/**
+ * The pending-interaction key a room card publishes under.
+ * @param kind - question or approval.
+ * @param id - the card id.
+ * @returns the key (prefixed, so the composer selector can tell it apart).
+ */
+export function roomInteractionKey(kind: string, id: string): string {
+  return `${ROOM_INTERACTION_PREFIX}${kind}:${id}`
+}
+
 export function selectRoomComposer(
   owner: ComposerChainProps,
   isRoomCached: (sessionId: SessionId) => boolean,
 ): RoomComposerMatch | null {
-  if (owner.pendingInteraction !== undefined) return null
+  // The room's own waiting cards ride the pending channel only for the
+  // session list (roomInteractionKey): they never hand the composer away.
+  if (owner.pendingInteraction !== undefined && (owner.pendingInteraction as { key?: string }).key?.startsWith(ROOM_INTERACTION_PREFIX) !== true) return null
   const sessionId = owner.sessionId ?? owner.session?.sessionId
   return sessionId !== undefined && isRoomCached(sessionId) ? { room: true } : null
 }
@@ -152,6 +168,8 @@ interface ChipEditActions {
 
 const NO_CHIPS: readonly DraftChip[] = []
 const NO_IDS: readonly string[] = []
+/** The failed-run reason recovery journals for a round a host restart cut off (dispatch.ts). */
+const RESTART_INTERRUPTED = 'Execution outcome is unknown after restart'
 const NO_UPLOADS: Readonly<Record<string, { readonly status: string }>> = {}
 const NO_UPLOAD_STORE = { subscribe: (): (() => void) => () => {}, getSnapshot: () => NO_UPLOADS }
 
@@ -167,8 +185,9 @@ export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
-  attachments: attachmentFace,
+  attachments: attachmentFace, setCoordinator, runCommand,
 }: RoomComposerProps): ReactNode {
+  const [coordinatorMenu, setCoordinatorMenu] = useState(false)
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const tag = useSyncExternalStore(taskTags?.subscribe ?? NO_TAGS, () => taskTags?.get(sessionId))
   // The draft is the session's official input machine (the module header):
@@ -194,7 +213,6 @@ export function RoomComposer({
   const drafts = attachable && attachmentIds.length > 0 ? attachmentFace.resolve(attachmentIds) : []
   const uploads = useSyncExternalStore(attachmentFace?.uploads.subscribe ?? NO_UPLOAD_STORE.subscribe, attachmentFace?.uploads.getSnapshot ?? NO_UPLOAD_STORE.getSnapshot)
   const uploadsPending = drafts.some(draft => draft.kind === 'file' && uploads[draft.id]?.status !== 'ready')
-  const [dragging, setDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [mention, setMention] = useState<(ActiveMention & { index: number }) | null>(null)
@@ -270,6 +288,31 @@ export function RoomComposer({
       .filter(row => row.placement === 'queued')
       .map(row => ({ id: String(row.id), preview: row.preview }))
     : nextTurn.map(row => ({ id: String(row.id), preview: previewOf(row.content) }))
+
+  // The coordinator switch: any other member may take the role, but not
+  // while work is in flight — the host refuses a handover while the
+  // coordinator runs or anything is queued (coordinator-busy). The menu
+  // still opens (a dead trigger reads as a bug): it says why and greys the
+  // other members out, instead of failing on pick.
+  const switchable = setCoordinator !== undefined && (state?.members.length ?? 0) > 1
+  const busyMembers = new Set((state?.runs ?? []).filter(run => run.state === 'running').map(run => run.member))
+  const handoffBlocked = running || busyMembers.size > 0
+    || (state?.deliveries ?? []).some(row => row.status === 'queued' || row.status === 'running' || row.status === 'uncertain')
+  const coordinatorItems: readonly MenuEntry[] = [
+    { type: 'label', id: 'coordinator-switch', text: t('coordinator.switchTitle') },
+    ...handoffBlocked ? [{ type: 'label' as const, id: 'coordinator-busy', text: t('coordinator.switchBusy') }] : [],
+    ...(state?.members ?? []).flatMap((member): MenuEntry[] => member.id === undefined ? [] : [{
+      id: member.id,
+      label: (
+        <span className={css.coordinatorOption}>
+          <span>{member.name}</span>
+          <span className={css.coordinatorOptionMeta}>{[member.role, member.kind === 'main-agent' ? t('member.kind.main') : member.provider].filter(Boolean).join(' · ')}</span>
+        </span>
+      ),
+      icon: <span className={css.coordinatorOptionDot} style={{ '--member-color': memberColor(member.name) } as CSSProperties} aria-hidden />,
+      disabled: handoffBlocked || busyMembers.has(member.name),
+    }]),
+  ]
 
   // The coordinator's own room deliveries: a round a restart interrupted
   // blocks the ones after it until the human reconciles or stops its task —
@@ -393,21 +436,29 @@ export function RoomComposer({
     event.preventDefault()
     addFiles(files)
   }
-  const carriesFiles = (event: DragEvent): boolean => attachable && [...event.dataTransfer.types].includes('Files')
-  // The hidden official bar keeps its document-level drop listener (bubble
-  // phase): a drop this card takes stops there, or the same files land twice.
-  const onDragOver = (event: DragEvent<HTMLDivElement>): void => {
-    if (!carriesFiles(event)) return
-    event.preventDefault()
-    event.stopPropagation()
-    if (!dragging) setDragging(true)
-  }
-  const onDrop = (event: DragEvent<HTMLDivElement>): void => {
-    setDragging(false)
-    if (!carriesFiles(event)) return
-    event.preventDefault()
-    event.stopPropagation()
-    addFiles([...event.dataTransfer.files])
+  // Drag-and-drop is the official composer's: the hidden official bar keeps
+  // its document-level drop listener and overlay, and adds dropped files to
+  // this same input machine (the drafts render in the rail above). Taking a
+  // drop here added it twice; stopping it left that overlay stuck over the
+  // page (it saw the drag enter but never the drop).
+
+  // The oldest question a member's round is waiting on (shown inline in its card).
+  const waitingAsk = state?.askLog?.find(ask => ask.state === 'pending' && ask.runId !== undefined)
+  // Members whose latest round a host restart cut off (outcome unknown).
+  const interrupted = (state?.runs ?? [])
+    .filter(run => run.state === 'failed' && run.error?.startsWith(RESTART_INTERRUPTED) === true)
+    .map(run => run.member)
+    .filter(name => state?.members.some(member => member.name === name) === true)
+  const continueAll = async (): Promise<void> => {
+    if (busy || interrupted.length === 0) return
+    setBusy(true)
+    setError(null)
+    try {
+      const outcome = await submit(sessionId, t('composer.continueText'), interrupted)
+      if (!outcome.ok) setError(outcome.message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   const send = async (): Promise<void> => {
@@ -417,6 +468,18 @@ export function RoomComposer({
     setBusy(true)
     setError(null)
     try {
+      // `/compact` while the room's own agent coordinates is the host's own
+      // command (a CLI coordinator or an @-picked member compacts through the
+      // room, which runs the member's compaction round instead).
+      if (!external && picked.length === 0 && text === '/compact' && ids.length === 0 && runCommand !== undefined) {
+        const failure = await runCommand(sessionId, text)
+        if (failure !== null) {
+          setError(failure)
+          return
+        }
+        inputActions.setDraft('')
+        return
+      }
       // Two-argument form while nothing was menu-picked: the injected face's
       // third parameter is the pick channel only.
       const wire = ids.length === 0 ? undefined : await attachmentFace!.serialize(ids)
@@ -514,23 +577,66 @@ export function RoomComposer({
           browseDirectory={browseDirectory}
           modelSurface={modelSurface}
           renderHarnessModelPicker={renderHarnessModelPicker}
+          // A member waiting on a question inside its round: the block may be
+          // scrolled far up a long reply — its capsule brings it back.
+          waiting={waitingAsk === undefined ? undefined : {
+            member: waitingAsk.member,
+            jump: () => {
+              const target = document.querySelector(`[data-ask-id="${CSS.escape(waitingAsk.id)}"]`)
+              target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+              target?.querySelector<HTMLElement>('input, button')?.focus({ preventScroll: true })
+            },
+          }}
           t={t}
         />}
         <RoomQueueStrip
           items={[...external ? [] : queued, ...coordinatorQueue]}
           t={t}
         />
+        {/* A host restart interrupts every working member at once and each
+            row reads 运行失败 far up the conversation: one 全部继续 resumes
+            them all (the same 继续 a human would type to each). */}
+        {interrupted.length > 0 && (
+          <div className={css.resumeStrip} role="status">
+            <span className={css.resumeText}>{t('composer.interrupted', { count: interrupted.length, names: interrupted.join('、') })}</span>
+            <button type="button" className={css.resumeAction} disabled={busy} onClick={() => { void continueAll() }}>{t('composer.continueAll')}</button>
+          </div>
+        )}
       </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}
-      <div className={css.card} data-dragging={dragging ? '' : undefined} onDragOver={onDragOver} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false) }} onDrop={onDrop}>
-        {dragging && <div className={css.dropHint} aria-hidden>{t('attach.drop')}</div>}
-        {/* Who a bare message goes to: the coordinator's name in its member colour. */}
-        <div className={css.coordinator} style={{ '--member-color': memberColor(coordinator?.name ?? 'dsh') } as CSSProperties}>
-          <span className={css.coordinatorDot} aria-hidden />
-          <span className={css.coordinatorName}>{coordinator?.name ?? 'dsh'}</span>
-          <span>· {t('coordinator.label')} · {external ? coordinator.provider : 'DSH'}</span>
-        </div>
+      <div className={css.card}>
+        {/* Who a bare message goes to: the coordinator's name in its member
+            colour — and the switch to hand that role over (the host's menu). */}
+        <Menu
+          open={coordinatorMenu}
+          side="top"
+          align="start"
+          items={coordinatorItems}
+          selectedId={coordinator?.id}
+          onSelect={(id) => {
+            setCoordinatorMenu(false)
+            if (id === coordinator?.id || setCoordinator === undefined || state === undefined) return
+            void setCoordinator(id, state.coordinator?.revision ?? 0).then((outcome) => { if (!outcome.ok) setError(outcome.message) })
+          }}
+          onClose={() => { setCoordinatorMenu(false) }}
+          anchor={(
+            <button
+              type="button"
+              className={css.coordinator}
+              style={{ '--member-color': memberColor(coordinator?.name ?? 'dsh') } as CSSProperties}
+              disabled={!switchable}
+              aria-haspopup="menu"
+              aria-expanded={coordinatorMenu}
+              onClick={() => { setCoordinatorMenu(open => !open) }}
+            >
+              <span className={css.coordinatorDot} aria-hidden />
+              <span className={css.coordinatorName}>{coordinator?.name ?? 'dsh'}</span>
+              <span>· {t('coordinator.label')} · {external ? coordinator.provider : 'DSH'}</span>
+              {switchable && <IconChevronDownOutlineMedium className={css.coordinatorChevron} />}
+            </button>
+          )}
+        />
         {mention !== null && candidates.length > 0 && (
           <ul className={css.menu} role="listbox" aria-label={t('composer.at.label')}>
             {candidates.map((row, index) => (
@@ -720,7 +826,9 @@ export function RoomComposer({
           fallback; re-rendered here from the same projections. The framework
           omits the seat entirely on a host without the projection subsystem —
           degrade to no row. */}
-      {!external && useProjection !== undefined && <RoomStatsLine useProjection={useProjection} state={state} t={t} />}
+      {/* An external coordinator keeps the members chip: the room session's
+          own turn figures belong to its idle main agent, not the coordinator. */}
+      {useProjection !== undefined && <RoomStatsLine useProjection={useProjection} state={state} membersOnly={external} t={t} />}
     </div>
   )
 }

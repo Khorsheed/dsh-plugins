@@ -7,6 +7,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { BrowserCheckResult, BrowserChecker } from '../src/checks.ts'
 import { GameService } from '../src/store.ts'
 import { gameToolDefinitions } from '../src/tools.ts'
+import { readDestinations, stripDestinations } from '@khorsheed/dsh-client-ui-agent-nav/src/destination.ts'
 
 /** A checker that answers whatever the spec queued, recording what it saw. */
 class FakeChecker implements BrowserChecker {
@@ -307,5 +308,66 @@ describe('model looks', () => {
     expect(file).toEqual({ ok: true, file: { type: 'model/gltf-binary', b64: Buffer.from('glb').toString('base64') } })
     expect(await store.workingFile(result.project.id, '../outside.glb')).toMatchObject({ ok: false })
     expect(await store.workingFile(result.project.id, '.game/checks.json')).toMatchObject({ ok: false })
+  })
+})
+
+describe('live version polling', () => {
+  it('reports none, then the version the agent published, with who and when', async () => {
+    expect(await store.liveVersion('nobody')).toBeNull()
+    const project = await created()
+    expect(await store.liveVersion('s1')).toEqual({ projectId: project.id, version: 0, kind: 'none', at: null })
+    await put(join(project.root, 'index.html'), '<p>v1</p>')
+    await store.checkTurn(session(), 0, Number.POSITIVE_INFINITY, 'agent')
+    expect(await store.liveVersion('s1')).toMatchObject({ projectId: project.id, version: 1, kind: 'deployed', by: 'agent' })
+  })
+})
+
+describe('publishing takes the user to the result', () => {
+  const publish = async (args: object = {}): Promise<string> => {
+    const tool = gameToolDefinitions(store).find(d => d.name === 'game_publish')!
+    return (tool.execute as unknown as (a: object, e: object) => Promise<string>)(args, { agent: { session: session('s1') } })
+  }
+
+  it('names where the version landed: what it changed, play when code or nothing comparable changed; never claims the tab opened', async () => {
+    const project = await created()
+    await put(join(project.root, 'index.html'), '<p>v1</p>')
+    await put(join(project.root, 'elements/a.json'), JSON.stringify([{ id: 'fox', name: '九尾狐', type: '角色' }, { id: 'bi', name: '毕方', type: '角色' }]))
+    // A first version has nothing to compare with: play.
+    const first = await publish()
+    expect(stripDestinations(first)).toContain('用户在右栏游戏页签的「试玩」能看到')
+    expect(first).not.toContain('右栏会打开')
+    expect(readDestinations(first)).toEqual([{ id: `game:${project.id}:v1`, kind: 'game', params: { projectId: project.id, view: 'play' }, label: 'v1 已上线' }])
+
+    // Only one element changed: its page, named in the label.
+    await put(join(project.root, 'elements/a.json'), JSON.stringify([{ id: 'fox', name: '九尾狐', type: '角色', hp: 3 }, { id: 'bi', name: '毕方', type: '角色' }]))
+    const second = await publish()
+    expect(second).toContain('「元素」里的「九尾狐」')
+    expect(readDestinations(second)[0]).toMatchObject({ params: { projectId: project.id, view: 'elements', elementId: 'fox' }, label: 'v2：改了九尾狐' })
+
+    // Code changed too: play. A note becomes the card's words; the place is still the version's.
+    await put(join(project.root, 'elements/a.json'), JSON.stringify([{ id: 'fox', name: '九尾狐', type: '角色', hp: 4 }, { id: 'bi', name: '毕方', type: '角色', hp: 1 }]))
+    await put(join(project.root, 'index.html'), '<p>v3</p>')
+    const third = await publish({ note: '看看毕方的翅膀' })
+    expect(readDestinations(third)[0]).toMatchObject({ params: { view: 'play' }, label: '看看毕方的翅膀' })
+    // The place is no longer the agent's to pick: show is gone from the tool.
+    const tool = gameToolDefinitions(store).find(d => d.name === 'game_publish')!
+    expect(Object.keys((tool as unknown as { parameters: { properties: Record<string, unknown> } }).parameters.properties)).toEqual(['note'])
+  })
+
+  it('game_open names the project it switched to as the play area', async () => {
+    const project = await created()
+    const open = gameToolDefinitions(store).find(d => d.name === 'game_open')!
+    const answer = await (open.execute as unknown as (a: object, e: object) => Promise<string>)({ project: project.id }, { agent: { session: session('s1') } })
+    expect(readDestinations(answer)).toEqual([expect.objectContaining({ kind: 'game', params: { projectId: project.id, view: 'play' } })])
+  })
+
+  it('lists elements newest first by their file\'s last change', async () => {
+    const project = await created()
+    await put(join(project.root, 'elements/old.json'), JSON.stringify({ id: 'old', name: '旧', type: '角色' }))
+    await new Promise(r => setTimeout(r, 20))
+    await put(join(project.root, 'elements/new.json'), JSON.stringify({ id: 'new', name: '新', type: '角色' }))
+    const view = await store.view(project.id)
+    const at = (id: string): number => view?.elements.find(e => e.id === id)?.updatedAt ?? 0
+    expect(at('new')).toBeGreaterThan(at('old'))
   })
 })

@@ -22,10 +22,14 @@ import { IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconCopyOutlineMe
 import { IconRequestDetailOutline16 } from './icons-local.tsx'
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { memberColor } from './member-color.ts'
+import { pathMentions } from './path-mentions.ts'
+import { RoomQuestionView } from './RoomQuestionView.tsx'
+import { askCardData, type RoomSpeechData } from './nodes.ts'
 import { formatClock, formatDurationMs } from './format.ts'
+import { revealRoomRow, speechCause } from './speech-cause.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
-import type { RoomSpeechViewProps } from './slots.ts'
-import type { RoomExecution } from '../types.ts'
+import { attachmentsByOwner, type RoomQuestionViewProps, type RoomSpeechViewProps } from './slots.ts'
+import type { RoomAsk, RoomExecution } from '../types.ts'
 import css from './RoomSpeechView.module.css'
 
 /**
@@ -71,7 +75,39 @@ function markdownLabels(t: RoomSpeechViewProps['t']): MarkdownLabels {
 }
 
 /** The member speech row. */
-export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDetail, t }: RoomSpeechViewProps): ReactNode {
+/** One piece of a reply: a stretch of its text, or a question the round asked there. */
+type ReplyPart =
+  | { readonly kind: 'text'; readonly from: number; readonly text: string }
+  | { readonly kind: 'ask'; readonly ask: RoomAsk; readonly mid: boolean }
+
+/**
+ * Split a reply around the questions its round asked, in the order it said
+ * and asked them (offsets recorded when the reply landed; -1 = the split
+ * point was not found, so the question opens the reply marked mid-round).
+ * A question the log does not know (an older cache) is left out.
+ * @param data - the speech node data.
+ * @param askLog - the room's question log.
+ * @returns the parts, text and questions interleaved.
+ */
+export function replyParts(data: RoomSpeechData, askLog: readonly RoomAsk[] | undefined): ReplyPart[] {
+  const logged = new Map((askLog ?? []).map(ask => [ask.id, ask]))
+  const asks = (data.asks ?? []).filter(entry => logged.has(entry.id)).sort((a, b) => a.at - b.at)
+  if (asks.length === 0) return [{ kind: 'text', from: 0, text: data.text }]
+  const parts: ReplyPart[] = []
+  let cursor = 0
+  for (const entry of asks) {
+    const at = Math.max(cursor, Math.min(entry.at, data.text.length))
+    const piece = data.text.slice(cursor, at)
+    if (piece.trim() !== '') parts.push({ kind: 'text', from: cursor, text: piece })
+    parts.push({ kind: 'ask', ask: logged.get(entry.id)!, mid: entry.at < 0 })
+    cursor = at
+  }
+  const rest = data.text.slice(cursor)
+  if (rest.trim() !== '') parts.push({ kind: 'text', from: cursor, text: rest })
+  return parts
+}
+
+export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDetail, openPath, answerQuestion, renderSlot, t }: RoomSpeechViewProps): ReactNode {
   const data = node.data
   const [copied, setCopied] = useState(false)
   // The human's own choice for this speech (remembered), else the default.
@@ -86,6 +122,8 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
     ? undefined
     : member.kind === 'main-agent' ? t('member.kind.main') : member.provider
   const child = data.childSessionId
+  // What started this round (a member's 派活/告知, or reports): its line tops the card.
+  const cause = speechCause(data.runId, state)
   // The run's billed tokens, as the host's 用量 chip shows them (recorded
   // when the run settles; absent for runs the producer reported none for).
   const execution = data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === data.runId)
@@ -108,6 +146,9 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
     foldChoices.write(sessionId, data.seq, next)
   }
   const labels = useMemo(() => markdownLabels(t), [t])
+  // Paths the member wrote in inline code open in the sidebar's file viewer.
+  const memberCwd = member?.cwd
+  const mentions = useMemo(() => openPath === undefined ? undefined : pathMentions((path) => { openPath(sessionId, path) }, memberCwd), [openPath, sessionId, memberCwd])
 
   const copy = (): void => {
     void writeClipboard(data.text).then((ok) => {
@@ -119,10 +160,22 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
 
   const color = memberColor(data.member)
   return (
-    <div className={css.speech} data-time-hover-root="" data-actions-reveal={newestSpeech ? 'always' : 'hover'} style={{ '--member-color': color } as CSSProperties}>
+    <div className={css.speech} data-time-hover-root="" data-room-run={data.runId} data-actions-reveal={newestSpeech ? 'always' : 'hover'} style={{ '--member-color': color } as CSSProperties}>
       <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
       <div className={css.stack}>
       <div className={css.card}>
+      {cause !== undefined && (
+        <button
+          type="button"
+          className={css.cause}
+          disabled={cause.target === undefined}
+          onClick={() => { if (cause.target !== undefined) revealRoomRow(cause.target) }}
+        >
+          <span className={css.causeHead}>{t(`speech.cause.${cause.kind}`, { member: cause.member })}</span>
+          {cause.text !== undefined && <span className={css.causeText}>{t('dispatch.colon')}{cause.text.replace(/\s+/g, ' ')}</span>}
+          {cause.target !== undefined && <span className={css.causeChevron} aria-hidden>›</span>}
+        </button>
+      )}
       <div className={css.identity}>
         <span className={css.name}>{data.member}</span>
         {member?.role !== undefined && <span className={css.role}>{member.role}</span>}
@@ -130,7 +183,9 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
         {data.interrupted !== undefined && <span className={css.interrupted}>{t(data.interrupted === 'cancelled' ? 'speech.stopped' : 'speech.failed')}</span>}
       </div>
       <div className={clamped ? `${css.body} ${css.clamped}` : css.body}>
-        <MarkdownText text={data.text} labels={labels} />
+        {replyParts(data, state?.askLog).map(part => part.kind === 'text'
+          ? <MarkdownText key={`t${part.from}`} text={part.text} labels={labels} fileMentions={mentions} />
+          : <RoomQuestionView key={part.ask.id} {...{ node: { data: askCardData(part.ask) }, answerQuestion, t } as unknown as RoomQuestionViewProps} inline={{ mid: part.mid }} />)}
         {clamped && <div className={css.fade} aria-hidden onClick={() => { toggle(true) }} />}
         {/* message-tools' fold control, shared look: a small chevron seated in
             the body's bottom-right corner (over the fade while folded). */}
@@ -150,6 +205,17 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
           </div>
         )}
       </div>
+      {/* What the round put on the room's desk (a canvas it opened): the
+          owning plugin's row, at the end of the reply. */}
+      {execution?.attachments !== undefined && execution.attachments.length > 0 && (
+        <div className={css.attachments}>
+          {attachmentsByOwner(execution.attachments).map(([owner, attachments]) => (
+            <div key={owner}>
+              {renderSlot('room.member.attachment', { sessionId, owner, attachments, live: false }, { entryKey: owner, fallback: null })}
+            </div>
+          ))}
+        </div>
+      )}
       {data.reportedTo !== undefined && (
         <span className={css.reported}>{t('speech.reportedTo', { member: data.reportedTo })}</span>
       )}

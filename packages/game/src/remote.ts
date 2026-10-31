@@ -10,7 +10,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { panelSession } from './panel-session.ts'
 import type { GameService } from './store.ts'
-import type { BundleFile, CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
+import type { BundleFile, LiveVersion, CommitResult, DeleteProjectResult, WorkingChanges, GameResult, PlayBundle, ProjectCard, SessionGameState, TurnReport, VersionDiff } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -44,6 +44,12 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
     return this.store.sessionState(sessionId)
   }
 
+  /** The bound project's newest version (cheap; the page polls it). */
+  @Remote('liveVersion')
+  liveVersion(sessionId: SessionId): Promise<LiveVersion | null> {
+    return this.store.liveVersion(sessionId)
+  }
+
   /** What one of the session's turns changed (null when nothing, or not recorded). */
   @Remote('turnReport')
   turnReport(sessionId: SessionId, request: { turn: number }): Promise<TurnReport | null> {
@@ -62,10 +68,14 @@ export class GameRemoteService extends TypertRemoteService<GameRemoteConfig> {
     return this.store.deleteProject(request.projectId, request.mode === 'forget' ? 'forget' : 'trash', await panelSession(this.ctx, sessionId))
   }
 
-  /** Bind the session to a project, or unbind with `projectId: null`. */
+  /**
+   * Bind the session to a project, or unbind with `projectId: null`. `desk`
+   * marks the session as a room's desk (the room row's 打开): the room's own
+   * turns then stay out of the game's end-of-turn checks.
+   */
   @Remote('bind')
-  bind(sessionId: SessionId, request: { projectId: string | null }): Promise<GameResult> {
-    return this.store.bind(sessionId, request.projectId)
+  bind(sessionId: SessionId, request: { projectId: string | null; desk?: boolean }): Promise<GameResult> {
+    return this.store.bind(sessionId, request.projectId, request.desk === true ? { desk: true } : {})
   }
 
   /** One working build file, for a panel preview ahead of any version. */

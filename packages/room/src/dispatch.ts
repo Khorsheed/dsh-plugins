@@ -25,15 +25,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import { SessionId, type Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the `agents` registry merge onto Context.
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ContextFormed, type MessageSource } from '@deepseek-ai/dsh-llm'
 import { probeLocalAgent, runOutputText } from './adapter.ts'
-import { composeRoomAgent } from './agent-setup.ts'
 import { coordinatorMember, memberId, pendingInstructions, previousCursor, replay, roomChangesSince } from './journal.ts'
 import { envelopeLine, messageId, sendOrHold } from './messaging.ts'
 import { gateState, judgeReport, outstandingFor, type GateVerdict } from './report-gate.ts'
 import { decisionRecord } from './decisions.ts'
-import type { RoomHeldDispatch, RoomMember, RoomRelay, RoomState } from './types.ts'
+import type { RoomHeldDispatch, RoomMember, RoomMemberCompactedEvent, RoomRelay, RoomState } from './types.ts'
 
 /**
  * The room producer's durable identity in its two historical forms: the
@@ -75,6 +73,91 @@ export function roomSource(): MessageSource {
  * @param room - the room session.
  * @param except - the member whose own reply just landed (its card ends there).
  */
+/** How much of a round's text a question keeps to find its place in the reply later. */
+export const BEFORE_TAIL = 160
+
+/**
+ * The text a member's current round has said so far in its own session: the
+ * assistant text blocks since the latest turn start, in order.
+ * @param events - the member's child session log.
+ * @returns the round's text so far.
+ */
+export function roundTextSoFar(events: readonly SessionEvent[]): string {
+  let start = -1
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    if (events[index]!.type === 'turn/start') { start = index; break }
+  }
+  const parts: string[] = []
+  for (const event of events.slice(start + 1)) {
+    if (event.type !== 'assistant/message') continue
+    const content = (event.data as { message?: { content?: readonly { type: string; text?: string }[] } }).message?.content ?? []
+    for (const block of content) if (block.type === 'text' && typeof block.text === 'string') parts.push(block.text)
+  }
+  return parts.join('')
+}
+
+/**
+ * Where each question a round asked sits in its final reply: just after the
+ * text the round had said when it asked (its recorded tail, shortened until
+ * found). Asked before saying anything → 0; tail not found → -1 (shown
+ * first, marked as asked mid-round). Offsets never go backwards.
+ * @param events - the room log.
+ * @param runId - the round.
+ * @param text - the round's reply.
+ * @returns the question ids with their offsets.
+ */
+export function askOffsets(events: readonly SessionEvent[], runId: string, text: string): { id: string; at: number }[] {
+  const out: { id: string; at: number }[] = []
+  let floor = 0
+  for (const event of events) {
+    if (event.type !== 'room/question' || event.data.runId !== runId) continue
+    const tail = (event.data.before ?? '').trimEnd()
+    // Nothing said before asking: the question opens the reply.
+    let at = tail === '' ? 0 : -1
+    for (const size of [80, 40, 20]) {
+      if (tail === '') break
+      const probe = tail.slice(-size)
+      if (probe.length < Math.min(size, 8)) break
+      const found = text.indexOf(probe, floor)
+      if (found >= 0) { at = found + probe.length; break }
+    }
+    if (at > 0) floor = at
+    out.push({ id: event.data.id, at })
+  }
+  return out
+}
+
+/** Why a human message's move-on closes a restart-lost round (index.ts moveOnFromLostRounds). */
+export const MOVED_ON_TEXT = '你发了新消息；被重启打断的这一轮按没做完处理'
+/** A message that queued behind a lost round and rode along with the move-on message. */
+export const MERGED_BACKLOG_TEXT = '已并入下一条消息一起送达'
+/** The member command that compacts its context instead of prompting it. */
+export const COMPACT_COMMAND = '/compact'
+/** A compaction's delivery outcome text (the report a sender would read). */
+export const COMPACTED_TEXT = '已压缩上下文'
+/** `/compact` to a member that has never run: nothing to compact. */
+export const NOTHING_TO_COMPACT_TEXT = '还没有可压缩的上下文'
+/** A message that answered the question its recipient was waiting on: delivered as that answer, not as a round of its own. */
+export const ANSWERED_QUESTION_TEXT = '作为对它提问的回答送达'
+/** How a message standing in for an answer reads on the card and to the member. */
+export const ANSWER_BY_MESSAGE_PREFIX = '没有选选项，直接回复了：'
+/** A message that queued behind a lost round an earlier move-on skipped: closed, not replayed. */
+export const SUPERSEDED_BACKLOG_TEXT = '被重启打断前排队，已被后续消息取代'
+
+/**
+ * Whether a queued delivery sat behind a restart-lost round of the same
+ * member that a human message has since moved on from (its dispatch lies
+ * between the lost round and the move-on edge).
+ * @param events - the room journal.
+ * @param targetId - the member id.
+ * @param dispatchSeq - the queued delivery's dispatch seq.
+ * @returns whether the move-on superseded it.
+ */
+export function supersededByMoveOn(events: readonly SessionEvent[], targetId: string, dispatchSeq: number): boolean {
+  return events.some(event => event.type === 'room/delivery-state' && event.data.memberId === targetId && event.data.state === 'cancelled'
+    && (event.data as { text?: string }).text === MOVED_ON_TEXT && event.data.dispatchSeq < dispatchSeq && dispatchSeq < event.seq)
+}
+
 export function floatRunningCards(room: Session, except?: string): void {
   const running = replay(room.snapshotEvents()).runs
     .filter(run => run.state === 'running' && run.member !== except)
@@ -142,6 +225,12 @@ export interface DispatchOptions {
   readonly targetId?: string
   /** Relays this dispatch DELIVERS (confirmRelay's own payloads). */
   readonly relayIds?: readonly string[]
+  /**
+   * The human's own message, delivered to the room's own agent as itself
+   * (its turn's user message, not a room-sourced copy): the room's additions
+   * ride that turn's first step (see {@link DispatchEngine.directExtras}).
+   */
+  readonly direct?: ReturnType<typeof createUserMessage>
 }
 
 /**
@@ -160,7 +249,7 @@ function briefingSection(state: RoomState, member: RoomMember, instructions: str
       const facts = [
         ...coordinator?.name === entry.name ? ['协调者'] : [],
         ...entry.role === undefined ? [] : [entry.role],
-        entry.kind === 'main-agent' ? '原生 DSH' : entry.kind === 'native' ? `原生 DSH${entry.preset === undefined ? '' : ` · ${entry.preset}`}` : entry.provider ?? '',
+        entry.kind === 'main-agent' ? '原生 DSH' : entry.provider ?? '',
       ].filter(Boolean)
       return `- ${entry.name}（${facts.join(' · ')}）`
     })
@@ -294,6 +383,14 @@ export interface DispatchHooks {
  * in-flight runs).
  */
 export class DispatchEngine {
+  /**
+   * The room's additions to a direct human turn, by the human message's id:
+   * taken (once) by the pre-step that enters that turn, so the human's words
+   * are never re-sent and an empty addition adds no message at all.
+   */
+  readonly directExtras: Map<string, string> = new Map()
+  /** Human messages delivered directly: their turn's own pre-steps must not file or re-carry them. */
+  readonly directMessages: Set<string> = new Set()
   /** memberKey → the queue tail promise. */
   private readonly queues = new Map<string, Promise<void>>()
   private readonly scheduled = new Set<string>()
@@ -430,6 +527,15 @@ export class DispatchEngine {
           }
           continue
         }
+        // Queued behind a restart-lost round the human has since moved on
+        // from: that move-on carries its backlog along; a row it left behind
+        // (a move-on predating the hand-over) closes as superseded instead of
+        // replaying a stale round on this access.
+        if (supersededByMoveOn(events, targetId, dispatch.seq)) {
+          room.append('room/delivery-state', { id, dispatchSeq: dispatch.seq, memberId: targetId, state: 'cancelled', text: SUPERSEDED_BACKLOG_TEXT })
+          await this.ctx.sessions.flush(room)
+          continue
+        }
         const target = state.members.find(member => memberId(events, member) === targetId)
         if (target !== undefined && !state.deliveries?.some(row => row.memberId === targetId && (row.status === 'running' || row.status === 'uncertain'))) this.dispatch(room, target.name, dispatch.data.text, { dispatchSeq: dispatch.seq, targetId })
       }
@@ -479,10 +585,8 @@ export class DispatchEngine {
     let outcome: RunOutcome
     try {
       outcome = member.kind === 'main-agent'
-        ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [], options.dispatchSeq)
-        : member.kind === 'native'
-          ? await this.runNativeMember(room, member, cursor, text, admitted, options.relayIds ?? [], options.dispatchSeq, runId)
-          : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId, options.dispatchSeq)
+        ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [], options.dispatchSeq, options.direct)
+        : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId, options.dispatchSeq)
     } catch (error: unknown) {
       this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
       outcome = { state: 'failed', error: faultMessage(error) }
@@ -681,15 +785,20 @@ export class DispatchEngine {
   private async runMainAgent(
     room: Session, member: RoomMember, cursor: number | undefined,
     text: string, _startedAt: number, relayIds: readonly string[], dispatchSeq: number | undefined,
+    direct?: ReturnType<typeof createUserMessage>,
   ): Promise<RunOutcome> {
     const agent = this.ctx.agents.get(room.id)
     if (agent === undefined) {
       // Fail loud: the room's own agent is not live, the message goes nowhere.
       return { state: 'failed', error: 'the room session has no live agent' }
     }
+    // A human message reaches the agent as itself: the room's additions
+    // (briefing, room changes, notifications, held reports — never the
+    // human's words again) wait for that turn's first step.
     const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
+    if (direct !== undefined && prompt.trim() !== '') this.directExtras.set(String(direct.id), prompt.trim())
     const before = room.snapshotEvents().at(-1)?.seq ?? -1
-    const message = createUserMessage({ content: [{ type: 'text', text: prompt }], source: roomSource() })
+    const message = direct ?? createUserMessage({ content: [{ type: 'text', text: prompt }], source: roomSource() })
     // A report reaching an agent mid-turn joins that turn at its next step:
     // as its own turn it would make the agent answer a second time, after
     // the turn that was already waiting for it.
@@ -708,76 +817,11 @@ export class DispatchEngine {
     // speech mirrors CLI members only). Its last assistant text is the
     // outcome a waiting sender's report quotes.
     await agent.whenIdle()
-    const output = lastAssistantText(room.snapshotEvents(), before)
-    return { state: 'done', ...output === '' ? {} : { text: output } }
-  }
-
-  /**
-   * The native member's agent: live, resumed from its session after a
-   * restart, or created on its first round — a child session + agent in this
-   * host process (owned by the room's agent when live), composing the
-   * member's preset at creation. The handle is journaled before any prompt.
-   */
-  private async nativeAgent(room: Session, member: RoomMember): Promise<Agent> {
-    if (member.childSessionId !== undefined) {
-      const live = this.ctx.agents.get(member.childSessionId)
-      if (live !== undefined) return live
-      const composition = await composeRoomAgent(this.ctx, member.preset)
-      const handle = await this.ctx.agents.resume({
-        resumeSessionId: member.childSessionId,
-        ...composition.setup === undefined ? {} : { setup: composition.setup },
-      })
-      return handle.agent
+    if (direct !== undefined) {
+      this.directMessages.delete(String(direct.id))
+      this.directExtras.delete(String(direct.id))
     }
-    const composition = await composeRoomAgent(this.ctx, member.preset)
-    const parent = this.ctx.agents.get(room.id)
-    const sessionId = SessionId(randomUUID())
-    const cwd = member.cwd ?? room.header.cwd
-    const handle = await this.ctx.agents.create({
-      sessionId,
-      ...parent === undefined ? {} : { parentAgent: parent },
-      meta: {
-        parentSession: room.id, origin: 'subagent', delegationDepth: (room.header.delegationDepth ?? 0) + 1,
-        ...cwd === undefined ? {} : { cwd },
-        ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
-      },
-      ...composition.setup === undefined ? {} : { setup: composition.setup },
-    })
-    room.append('room/member-updated', { name: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name, childSessionId: sessionId })
-    await this.ctx.sessions.flush(room)
-    return handle.agent
-  }
-
-  /**
-   * Native member turn: a room-sourced followup on the member's own agent,
-   * mirrored into the room as speech like a CLI member's reply.
-   */
-  private async runNativeMember(
-    room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, admitted: () => Promise<number>, relayIds: readonly string[], dispatchSeq: number | undefined, runId?: string,
-  ): Promise<RunOutcome> {
-    const agent = await this.nativeAgent(room, member)
-    const startedAt = await admitted()
-    const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
-    const before = agent.session.snapshotEvents().at(-1)?.seq ?? -1
-    agent.followup(createUserMessage({ content: [{ type: 'text', text: prompt }], source: roomSource() }))
-    await this.markHeldReleased(room, member, heldCarried)
-    await this.markSent(room, [
-      ...carried,
-      ...replay(room.snapshotEvents()).relays.filter(relay => relayIds.includes(relay.id)),
-    ])
-    await agent.whenIdle()
-    const output = lastAssistantText(agent.session.snapshotEvents(), before)
-    const reportedTo = dispatchSeq === undefined ? undefined : reportRecipient(room.snapshotEvents(), dispatchSeq)?.name
-    room.append('room/speech', {
-      member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
-      text: output, childSessionId: agent.session.id, durationMs: Date.now() - startedAt,
-      ...runId === undefined ? {} : { runId },
-      ...lastAssistantMessageId(agent.session, before) === undefined ? {} : { messageId: lastAssistantMessageId(agent.session, before)! },
-      ...reportedTo === undefined ? {} : { reportedTo },
-    })
-    floatRunningCards(room, replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name)
-    await this.ctx.sessions.flush(room)
+    const output = lastAssistantText(room.snapshotEvents(), before)
     return { state: 'done', ...output === '' ? {} : { text: output } }
   }
 
@@ -823,6 +867,15 @@ export class DispatchEngine {
         void this.ctx.sessions.flush(room).catch(error => this.ctx.logger.warn(`room: execution metadata flush failed: ${String(error)}`))
       },
     }
+    // The human's `/compact` (alone, to this member) compacts its context
+    // instead of prompting it: a compaction round (local-agent queues it like
+    // any round), one transcript row, no reply.
+    const source = dispatchSeq === undefined ? undefined : room.snapshotEvents().find(event => event.seq === dispatchSeq)
+    const compacting = source?.type === 'room/dispatch' && (source.data.origin ?? 'human') === 'human' && source.data.text.trim() === COMPACT_COMMAND
+    if (compacting && (member.childSessionId === undefined || facade.isPreparedMember?.(member.childSessionId) === true)) {
+      startedAt = await admitted()
+      return { state: 'done', text: NOTHING_TO_COMPACT_TEXT }
+    }
     if (!controlled) startedAt = await admitted()
     const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
     const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
@@ -836,7 +889,7 @@ export class DispatchEngine {
       ? facade.start(room.id, provider, [{ type: 'text' as const, text: prompt }],
           // The member's name labels its child session in the host's subagent list.
           { ...admission, label: member.name, ...member.model === undefined ? {} : { model: member.model }, ...member.effort === undefined ? {} : { effort: member.effort }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
-      : facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: prompt }], { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
+      : facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: compacting ? COMPACT_COMMAND : prompt }], { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd }, ...compacting ? { operation: 'compact' as const } : {} })
     // Existing members can enter core's queue immediately. A fresh/prepared
     // identity must publish its first handle before the next submission resumes it.
     if (controlled && member.childSessionId !== undefined && !prepared) submitted()
@@ -875,15 +928,18 @@ export class DispatchEngine {
     }
     if (controlled) submitted()
     const result = await run.result
+    if (compacting) return this.recordCompaction(room, member, runId, run.id, result, startedAt)
     const output = runOutputText(result.output)
     const interrupted = result.stopReason === 'completed' ? undefined
       : result.stopReason === 'aborted' ? 'cancelled' as const : 'failed' as const
     const reportedTo = dispatchSeq === undefined ? undefined : reportRecipient(room.snapshotEvents(), dispatchSeq)?.name
     // The member's own closing message: per-message tools address it in its session.
     const closingMessageId = lastAssistantMessageId(this.ctx.sessions.get(run.id))
+    const asks = askOffsets(room.snapshotEvents(), runId, output)
     const speech = output !== '' || interrupted === undefined ? room.append('room/speech', {
       member: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name,
       text: output,
+      ...asks.length === 0 ? {} : { asks },
       childSessionId: run.id,
       runId,
       ...closingMessageId === undefined ? {} : { messageId: closingMessageId },
@@ -903,6 +959,37 @@ export class DispatchEngine {
     } else {
       return { state: 'failed', text: output, error: `the member run ended with stopReason "${result.stopReason}"` }
     }
+  }
+
+  /**
+   * The room's row for a member's compaction round: the facts the member
+   * session's `local-agent/compaction` event recorded (the room never
+   * re-derives them), and no speech — Kimi answers `/compact` with its
+   * summary, which is the row's, not a reply.
+   */
+  private async recordCompaction(
+    room: Session, member: RoomMember, runId: string, childSessionId: string, result: { readonly stopReason: string; readonly diagnostic?: string },
+    startedAt: number | undefined,
+  ): Promise<RunOutcome> {
+    const compaction = this.ctx.sessions.get(SessionId(childSessionId))?.snapshotEvents().findLast(event => (event.type as string) === 'local-agent/compaction')
+    const data = (compaction?.data ?? {}) as Partial<Omit<RoomMemberCompactedEvent, 'member' | 'memberId' | 'runId'>> & { readonly outcome?: RoomMemberCompactedEvent['outcome'] }
+    const outcome = data.outcome ?? (result.stopReason === 'completed' ? 'completed' : 'failed')
+    const events = room.snapshotEvents()
+    room.append('room/member-compacted', {
+      member: replay(events).members.find(entry => entry.id === member.id)?.name ?? member.name,
+      memberId: memberId(events, member), runId, outcome,
+      ...data.beforeTokens === undefined ? {} : { beforeTokens: data.beforeTokens },
+      ...data.afterTokens === undefined ? {} : { afterTokens: data.afterTokens },
+      ...data.contextWindow === undefined ? {} : { contextWindow: data.contextWindow },
+      ...data.usage === undefined ? {} : { usage: data.usage },
+      ...data.summary === undefined ? {} : { summary: data.summary },
+      ...outcome === 'completed' ? {} : { error: data.error ?? result.diagnostic ?? `compaction ${outcome}` },
+      ...startedAt === undefined ? {} : { durationMs: Date.now() - startedAt },
+    })
+    await this.ctx.sessions.flush(room)
+    return outcome === 'completed'
+      ? { state: 'done', text: COMPACTED_TEXT }
+      : { state: 'failed', text: '', error: data.error ?? result.diagnostic ?? `compaction ${outcome}` }
   }
 
   /** Settle only this execution, preserving newer runs. */

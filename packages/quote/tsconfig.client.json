@@ -18,6 +18,7 @@
     "src/client/index.ts",
     "src/client/locales.ts",
     "src/client/reference.ts",
+    "src/client/restore.ts",
     "src/client/registry.ts",
     "src/client/selection.ts",
     "src/client/SelectionMenu.tsx",

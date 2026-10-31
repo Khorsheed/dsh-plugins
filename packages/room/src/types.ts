@@ -36,13 +36,18 @@ export interface RoomMemberAddedEvent {
   /** Stable identity; older journals derive it from their original join event. */
   readonly id?: string
   readonly name: string
+  /**
+   * `native` (a DSH sub-member inside this host process) was retired on
+   * 2026-10-29: older journals may still carry it, and replay leaves such a
+   * member off the roster. A dsh command-line member is its successor.
+   */
   readonly kind: 'main-agent' | 'cli' | 'native'
-  /** CLI provider id on `kind: 'cli'` members; `dsh` on native ones. */
+  /** CLI provider id on `kind: 'cli'` members. */
   readonly provider?: string
   /**
-   * The host agent preset a native DSH member composes (`kind: 'native'`):
-   * a child session + agent in this host process, mounted with that preset
-   * at creation and locked from then on. Absent = the host's default preset.
+   * The member's mode: the host agent preset whose plugin tools and skills a
+   * CLI member reaches through its bridge (local-agent's preset tool host).
+   * Absent = no mode (its own CLI tools only).
    */
   readonly preset?: string
   /** Role instructions, prepended to the member's first dispatch. */
@@ -212,6 +217,8 @@ export interface RoomSpeechEvent {
   readonly reportedTo?: string
   readonly member: string
   readonly text: string
+  /** Questions the round asked, at their offsets in `text` (-1 = no split point found: shown first, marked mid-round). */
+  readonly asks?: readonly { readonly id: string; readonly at: number }[]
   readonly childSessionId?: SessionId
   /** Native admission→settle milliseconds, excluding queue time. */
   readonly durationMs?: number
@@ -242,6 +249,26 @@ export interface RoomRunUsage {
 
 /** A member run's lifecycle edge. */
 /** A running member's card moves to the bottom of the conversation; its run is untouched. */
+/**
+ * A CLI member compacted its context on the human's `/compact` (the room's
+ * copy of the member session's `local-agent/compaction` event): one
+ * transcript row, the summary when the CLI gave one, and the compaction's
+ * own spend — never a round's.
+ */
+export interface RoomMemberCompactedEvent {
+  readonly member: string
+  readonly memberId: string
+  readonly runId: string
+  readonly outcome: 'completed' | 'failed' | 'cancelled'
+  readonly beforeTokens?: number
+  readonly afterTokens?: number
+  readonly contextWindow?: number
+  readonly usage?: { readonly inputTokens: number; readonly outputTokens: number; readonly cacheReadTokens?: number; readonly cacheWriteTokens?: number }
+  readonly summary?: string
+  readonly error?: string
+  readonly durationMs?: number
+}
+
 export interface RoomRunMovedEvent {
   readonly member: string
   readonly startedAt: number
@@ -508,6 +535,10 @@ export interface RoomQuestionEvent {
   readonly member: string
   readonly memberId: string
   readonly questions: readonly RoomQuestionItem[]
+  /** The asker's round (its run id): the question renders inside that round's card and reply. */
+  readonly runId?: string
+  /** The tail of what the round had said when it asked — where the reply splits around the question. */
+  readonly before?: string
   /** A consent gate (room_help's 允许/不允许): its answer only matters while the call waits, so it is never answered late. */
   readonly consent?: true
 }
@@ -520,6 +551,19 @@ export interface RoomQuestionResolvedEvent {
   readonly answers?: readonly RoomQuestionAnswer[]
   /** Answered after the card expired: the answers went to the member as a new message instead of its (gone) waiting call. */
   readonly late?: true
+}
+
+/** Every question card the room has seen, with its outcome — inline question blocks read it. */
+export interface RoomAsk {
+  readonly id: string
+  readonly member: string
+  readonly questions: readonly RoomQuestionItem[]
+  readonly state: 'pending' | 'answered' | 'cancelled'
+  readonly answers?: readonly RoomQuestionAnswer[]
+  readonly late?: true
+  readonly consent?: true
+  readonly runId?: string
+  readonly time: number
 }
 
 /** A member's questions still waiting for the human. */
@@ -715,6 +759,10 @@ declare module '@deepseek-ai/dsh-session/types' {
   // and room/member-added (id/name) as its room-turn correlation interface —
   // rename or reshape them with a heads-up.
   interface SessionEventMap {
+    /** Log-only: what a member's mode tool put on the room's desk (see {@link RoomDeskOpenedEvent}). */
+    'room/desk-opened': RoomDeskOpenedEvent
+    /** Log-only: what a member's mode tool wrote on the room's desk — same shape, the owner's own fields under `data`. */
+    'room/desk-wrote': RoomDeskOpenedEvent
     /**
      * Room identity marker: the session carrying this log-only event is a
      * room. Log-only (no surface intent), so it never reaches the model.
@@ -734,6 +782,7 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/run-state': RoomRunStateEvent
     /** A running member's card re-anchors below a reply or human message that landed after it (presentation only). */
     'room/run-moved': RoomRunMovedEvent
+    'room/member-compacted': RoomMemberCompactedEvent
     /** Log-only observed metadata for a single execution. */
     'room/execution-metadata': RoomExecutionMetadataEvent
     /** Notification gate: a member-to-member relay arrived (pending). */
@@ -787,12 +836,12 @@ declare module '@deepseek-ai/dsh-session/types' {
 export interface RoomMember {
   readonly id?: string
   readonly name: string
-  readonly kind: 'main-agent' | 'cli' | 'native'
+  readonly kind: 'main-agent' | 'cli'
   readonly provider?: string
   readonly instructions?: string
   /** Short public role shown to the other members (see {@link RoomMemberAddedEvent.role}). */
   readonly role?: string
-  /** Native members: the host agent preset (see {@link RoomMemberAddedEvent.preset}). */
+  /** The member's mode (see {@link RoomMemberAddedEvent.preset}). */
   readonly preset?: string
   readonly invitedBy: 'human' | 'agent'
   /** Member-level working directory (roster record; not yet passed to the facade). */
@@ -857,6 +906,45 @@ export interface RoomExecution extends RoomMemberRun {
   readonly effort?: string
   readonly tokens?: number
   readonly usage?: RoomRunUsage
+  /**
+   * What the run opened on the room's desk: another plugin's
+   * `<plugin>/desk-opened` events naming this run (proposal
+   * 2026-10-29-room-desk), in order. The run's card and its reply render each
+   * through the `room.member.attachment` seat keyed by the event type.
+   */
+  readonly attachments?: readonly RoomRunAttachment[]
+}
+
+/** One desk event a member's run produced, as the run's card renders it. */
+export interface RoomRunAttachment {
+  /** Opened (switched to, created) or wrote (added, commented, archived…). */
+  readonly type: 'room/desk-opened' | 'room/desk-wrote'
+  /** The plugin that wrote it: the key its row registers under. */
+  readonly owner: string
+  readonly seq: number
+  readonly time: number
+  /** The whole `room/desk-opened` payload (the owner's own fields under `data`). */
+  readonly data: RoomJsonValue
+}
+
+/**
+ * Something a member's mode tool put on the room's desk — a canvas it opened —
+ * written by the owning plugin into the ROOM session (proposal
+ * 2026-10-29-room-desk). Room's vocabulary vouches for it; the owner renders
+ * it (a conversation row, and its row at the end of the run's card through
+ * `room.member.attachment` keyed by `owner`).
+ */
+export interface RoomDeskOpenedEvent {
+  readonly version: 1
+  /** The writing plugin's package name. */
+  readonly owner: string
+  readonly member: string
+  /** The coordinator's open moves the room's view; a member's goes beside it. */
+  readonly role: 'coordinator' | 'member'
+  /** The member's run it happened in, when it had one. */
+  readonly runId?: string
+  /** The owner's own fields. */
+  readonly data: RoomJsonValue
 }
 
 /**
@@ -866,6 +954,8 @@ export interface RoomExecution extends RoomMemberRun {
  * design note).
  */
 export interface RoomState {
+  /** All question cards with their outcomes (inline blocks in run cards and replies). */
+  readonly askLog?: readonly RoomAsk[]
   readonly executions?: readonly RoomExecution[]
   readonly plan?: Omit<RoomPlan, 'requests'>
   readonly deliveries?: readonly RoomDelivery[]
@@ -993,6 +1083,18 @@ export interface RoomMemberMessage {
 export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy' | `sent ${string}` | `pending-confirm ${string}`
 
 /** isRoom probe: does this session carry the room marker? */
+/** pendingCards request: no arguments (every live room the host knows). */
+export interface RoomPendingCardsRequest {
+  readonly sessionId?: SessionId
+}
+
+/** One question/approval card waiting for the human in a room (the session list's 「等你处理」). */
+export interface RoomPendingCard {
+  readonly sessionId: string
+  readonly id: string
+  readonly kind: 'question' | 'approval'
+}
+
 export interface RoomIsRoomRequest {
   /** Session to probe. */
   readonly sessionId: SessionId
@@ -1014,14 +1116,8 @@ export interface RoomInviteRequest {
   /** Room session. */
   readonly sessionId: SessionId
   /**
-   * `cli` (default): an external CLI through the local-agent family.
-   * `native`: a DSH child agent in this host process, composing `preset`.
-   */
-  readonly kind?: 'cli' | 'native'
-  /**
-   * The member's mode: the host agent preset id. A native member composes it
-   * (omitted = the host default); a CLI member reaches its plugin tools
-   * through the bridge (omitted = no mode).
+   * The member's mode: the host agent preset id whose plugin tools and
+   * skills the CLI member reaches through its bridge (omitted = no mode).
    */
   readonly preset?: string
   /** With no `preset`: take the room session's own mode (the coordinator's invite default). */
@@ -1364,13 +1460,27 @@ export interface RoomProviderList {
   readonly localAgentAvailable: boolean
   readonly providers: readonly RoomProviderInfo[]
   /**
-   * The host's agent presets a native DSH member may compose; absent when
-   * the composition mounts no preset registry (native members then run the
-   * plain composition).
+   * The host's agent presets a member's mode may name; absent when the
+   * composition mounts no preset registry (members then have no mode).
    */
   readonly presets?: readonly RoomPresetInfo[]
   /** The requested session's own mode (preset id), when known: the dialog's default mode. */
   readonly sessionPreset?: string
+}
+
+/**
+ * A member's desk: the room session its mode's plugin tools treat as the
+ * shared workspace, and the member's role there at this call. The coordinator
+ * acts ON the desk (what it opens shows in the room's sidebar); a member opens
+ * beside it (a new tab the human can pick, never the front one).
+ */
+export interface RoomMemberDesk {
+  readonly sessionId: string
+  readonly role: 'coordinator' | 'member'
+  /** The member's display name, for the room's「某某 打开了…」row. */
+  readonly member: string
+  /** The member's run in progress, when it has one: a desk event naming it renders inside that run's card and reply. */
+  readonly runId?: string
 }
 
 /** One host agent preset, as the invite dialog lists it. */
@@ -1439,6 +1549,10 @@ export interface RoomDelivery {
   readonly task?: string
   /** The sender's own delivery this was sent from (the task tree's parent). */
   readonly parent?: string
+  /** A report: the delivery it reports on (`<seq>:<memberId>`, the reporter's run id). */
+  readonly reportFor?: string
+  /** A release round: the held report dispatch seqs it hands over. */
+  readonly releases?: readonly number[]
   /** Epoch ms: dispatched, admitted (first running edge), settled. */
   readonly queuedAt: number
   readonly startedAt?: number
@@ -1458,7 +1572,8 @@ export interface RoomJob {
   /** 1-based ordinal in the room, for 「任务 N」 and the coordinator's `task` argument. */
   readonly number: number
   readonly title: string
-  readonly messages: readonly { readonly id: string; readonly time: number; readonly text: string; readonly by?: RoomTaskLinkEvent['by']; readonly probability?: number }[]
+  /** `from`: the member id a member/coordinator dispatch came from; absent = the human. */
+  readonly messages: readonly { readonly id: string; readonly time: number; readonly text: string; readonly from?: string; readonly by?: RoomTaskLinkEvent['by']; readonly probability?: number }[]
   readonly status: 'running' | 'attention' | 'done' | 'stopped'
   readonly startedAt: number
   /** Last settlement, when nothing is open any more. */

@@ -10,6 +10,11 @@
  * reader's 目录 comes back here. A work without chapters tells the canvas
  * (`onEmpty`), which then opens on 设定.
  *
+ * The face is also where every chapter destination lands (proposal
+ * 2026-10-30-agent-sidebar-navigation): the canvas hands an outside ask down
+ * as `target` (a chapter number, on its plan or its text), and the reader
+ * opens there — one place for a chapter, never a separate detail page.
+ *
  * @module @khorsheed/dsh-canvas-novel/client
  */
 import { useEffect, useState, type ReactNode } from 'react'
@@ -17,7 +22,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { ChipRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { NOVEL_GENRE_ID, type ChapterRow, type EffectiveChapterPhase } from '../types.ts'
 import { bareTitle, ChapterReader } from './ChapterReader.tsx'
-import type { NovelSurfaceProps } from './contract.ts'
+import type { ChapterTarget, NovelSurfaceProps } from './contract.ts'
 import { awaitsReconcile } from './NovelFaces.tsx'
 import { currentChapter, PendingList } from './PendingList.tsx'
 import { useNovelRead } from './use-novel.ts'
@@ -27,14 +32,48 @@ const GROUP = 10
 
 type Filter = 'all' | 'todo' | 'open'
 
+/**
+ * The asks each canvas's face already answered, page-wide: the face remounts
+ * on every face switch, and the canvas keeps its last ask until the next strip
+ * write — answering it again would pull the reader back to that chapter.
+ */
+const answered = new Map<string, number>()
+
 /** The 章节 entry. */
-export function ChapterBook(props: NovelSurfaceProps & { readonly onEmpty?: (() => void) | undefined }): ReactNode {
-  const [reading, setReading] = useState<number | null>(null)
+export function ChapterBook(props: NovelSurfaceProps & {
+  readonly onEmpty?: (() => void) | undefined
+  /** An outside ask: show this chapter (a destination, a card's door). */
+  readonly target?: ChapterTarget | undefined
+}): ReactNode {
+  const { canvasId, target } = props
+  const asked = target === undefined || (answered.get(canvasId) ?? 0) >= target.n ? undefined : target
+  const [reading, setReading] = useState<{ n: number; focusPlan: boolean } | null>(() => readingOf(asked))
+  useEffect(() => {
+    if (asked === undefined) return
+    answered.set(canvasId, asked.n)
+    const next = readingOf(asked)
+    if (next !== null) setReading(next)
+  }, [asked, canvasId])
   if (props.board.genre?.id !== NOVEL_GENRE_ID) return null
   if (reading !== null) {
-    return <ChapterReader {...props} n={reading} host="book" onGo={setReading} onToc={() => { setReading(null) }} />
+    return (
+      <ChapterReader
+        {...props}
+        n={reading.n}
+        host="book"
+        focusPlan={reading.focusPlan}
+        onGo={n => { setReading({ n, focusPlan: false }) }}
+        onToc={() => { setReading(null) }}
+      />
+    )
   }
-  return <Contents {...props} onRead={setReading} />
+  return <Contents {...props} onRead={n => { setReading({ n, focusPlan: false }) }} />
+}
+
+/** The reader position an ask names, or null for an unreadable one. */
+function readingOf(target: ChapterTarget | undefined): { n: number; focusPlan: boolean } | null {
+  const n = target === undefined ? NaN : parseInt(target.item, 10)
+  return Number.isFinite(n) ? { n, focusPlan: target!.focus === 'plan' } : null
 }
 
 /**

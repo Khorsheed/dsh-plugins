@@ -66,6 +66,8 @@ export function replayDeliveries(events: readonly SessionEvent[]): RoomDelivery[
           ...data.plan === undefined ? {} : { plan: data.plan },
           ...task === undefined ? {} : { task },
           ...data.parent === undefined ? {} : { parent: data.parent },
+          ...data.reportFor === undefined ? {} : { reportFor: data.reportFor },
+          ...data.releases === undefined ? {} : { releases: data.releases },
           ...data.held === true ? { heldAt: event.time } : {},
         })
       }

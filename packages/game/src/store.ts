@@ -37,10 +37,11 @@ import {
 } from './project.ts'
 import {
   CHAPTERS, LORE_MAX, MANIFEST_FILE, PANEL_CHANGES_MARK, STATE_DIR,
-  type AnyLook, type BundleFile, type ChapterView, type CommitResult, type VersionSource, type WorkingChanges, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
+  type AnyLook, type BundleFile, type ChapterView, type CommitResult, type VersionSource, type WorkingChanges, type LiveVersion, type DeleteProjectResult, type CheckFailure, type CheckRecord, type GameManifest, type GameResult,
   type LogEntry, type LookProposal, type PendingChange, type PlayBundle, type ProjectCard, type ProjectRow, type ProjectView, type TurnReport,
   type SessionGameState, type VersionDiff, type VersionRecord, type VersionRow,
 } from './types.ts'
+import type { GamePlace } from './nav-line.ts'
 
 /** Plugin config; every key optional. */
 export interface GameConfig {
@@ -68,6 +69,21 @@ export function resolveGameStateRoot(configured: string | undefined): string {
 interface Registry {
   projects: ProjectRow[]
   bindings: Record<string, string>
+  /**
+   * Sessions bound as a room's desk (a room coordinator's `game_open`): the
+   * room's sidebar shows the project, but the room's own turns are not the
+   * game's — the end-of-turn checks and turn reports leave them alone.
+   */
+  desk?: Record<string, true>
+}
+
+/** Set or clear a session's desk mark, dropping the map when it empties. */
+function markDesk(registry: Registry, sessionId: string, on: boolean): void {
+  if (on) registry.desk = { ...registry.desk, [sessionId]: true }
+  else if (registry.desk !== undefined) {
+    delete registry.desk[sessionId]
+    if (Object.keys(registry.desk).length === 0) delete registry.desk
+  }
 }
 
 /** The user layer (`.game/user.json`): slider overrides, changes waiting for the next send, a pending restyle. */
@@ -203,6 +219,7 @@ export class GameService {
     return {
       projects: Array.isArray(raw?.projects) ? raw.projects.filter(p => typeof p?.id === 'string' && typeof p.root === 'string') : [],
       bindings: raw?.bindings !== null && typeof raw?.bindings === 'object' ? { ...raw.bindings } : {},
+      ...raw?.desk !== null && typeof raw?.desk === 'object' && Object.keys(raw.desk).length > 0 ? { desk: { ...raw.desk } } : {},
     }
   }
 
@@ -242,10 +259,10 @@ export class GameService {
     return out
   }
 
-  /** Snapshot the bound project when a turn starts (undefined when unbound). */
+  /** Snapshot the bound project when a turn starts (undefined when unbound, or bound as a room's desk). */
   async turnBaseline(sessionId: string): Promise<TurnBaseline | undefined> {
     const row = await this.boundProject(sessionId)
-    if (row === undefined) return undefined
+    if (row === undefined || await this.isDesk(sessionId)) return undefined
     const files = new Map((await walk(row.root, () => true)).map(f => [f.path, createHash('sha1').update(f.data).digest('hex')]))
     const manifest = await this.manifestOf(row.root)
     return {
@@ -346,17 +363,29 @@ export class GameService {
     return id === undefined ? undefined : registry.projects.find(p => p.id === id)
   }
 
-  /** Bind a session to a project (or unbind with null). */
-  async bind(sessionId: string, projectId: string | null): Promise<GameResult> {
+  /**
+   * Bind a session to a project (or unbind with null). `desk: true` marks
+   * the session as a room's desk (a room coordinator's `game_open`, the room
+   * row's 打开); `false` clears the mark; left out, a switch keeps whatever
+   * mark the session had (the room's own panel switcher). Unbinding clears it.
+   */
+  async bind(sessionId: string, projectId: string | null, options: { desk?: boolean } = {}): Promise<GameResult> {
     return this.updateRegistry(registry => {
       if (projectId === null) {
         delete registry.bindings[sessionId]
+        markDesk(registry, sessionId, false)
         return { ok: true } as const
       }
       if (!registry.projects.some(p => p.id === projectId)) return { ok: false, error: 'not-found' } as const
       registry.bindings[sessionId] = projectId
+      if (options.desk !== undefined) markDesk(registry, sessionId, options.desk)
       return { ok: true } as const
     })
+  }
+
+  /** Whether the session's binding is a room's desk (see {@link Registry.desk}). */
+  async isDesk(sessionId: string): Promise<boolean> {
+    return (await this.readRegistry()).desk?.[sessionId] === true
   }
 
   private async touch(projectId: string): Promise<void> {
@@ -416,7 +445,11 @@ export class GameService {
     }
     await this.updateRegistry(registry => {
       registry.projects = registry.projects.filter(p => p.id !== projectId)
-      for (const [sid, bound] of Object.entries(registry.bindings)) if (bound === projectId) delete registry.bindings[sid]
+      for (const [sid, bound] of Object.entries(registry.bindings)) {
+        if (bound !== projectId) continue
+        delete registry.bindings[sid]
+        markDesk(registry, sid, false)
+      }
     })
     this.notify(projectId)
     return { ok: true, ...(trashedTo === undefined ? {} : { trashedTo }) }
@@ -517,7 +550,11 @@ export class GameService {
       manifest,
       ...(manifestText === undefined ? { manifestError: `${MANIFEST_FILE} 不见了` } : parsed?.ok === false ? { manifestError: parsed.error } : {}),
       chapters,
-      elements,
+      // Each element carries its file's last change, so the panel can list the newest first.
+      elements: await Promise.all(elements.map(async e => {
+        const info = await stat(join(row.root, e.file)).catch(() => undefined)
+        return info === undefined ? e : { ...e, updatedAt: info.mtimeMs }
+      })),
       elementErrors: failures,
       current: (await readJson<VersionRecord>(join(state, 'current.json'))) ?? null,
       candidate: (await readJson<VersionRecord>(join(state, 'candidate.json'))) ?? null,
@@ -551,6 +588,67 @@ export class GameService {
   }
 
   /** The tab's state for one session. */
+  /**
+   * The bound project's newest version (the waiting candidate, else the live
+   * one), read from two small files: the page polls it to announce a version
+   * the moment it lands, whoever's turn cut it. Version 0 means none yet.
+   */
+  async liveVersion(sessionId: string): Promise<LiveVersion | null> {
+    const row = await this.boundProject(sessionId)
+    if (row === undefined) return null
+    const state = join(row.root, STATE_DIR)
+    const candidate = await readJson<VersionRecord>(join(state, 'candidate.json'))
+    const record = candidate ?? (await readJson<VersionRecord>(join(state, 'current.json')))
+    if (record === undefined) return { projectId: row.id, version: 0, kind: 'none', at: null }
+    return { projectId: row.id, version: record.version, kind: candidate !== undefined ? 'candidate' : 'deployed', at: record.at, ...(record.by === undefined ? {} : { by: record.by }) }
+  }
+
+  /**
+   * Where a passing `game_publish` landed, for the answer's destination line
+   * (proposal 2026-10-30-agent-sidebar-navigation): the version decides — the
+   * one element it changed, the grid when several, else the play area (a
+   * candidate always lands on play, where it waits for the user's OK). The
+   * agent no longer picks the place.
+   * @returns the place, the card's words and the answer's 「在哪」, or undefined without a bound project.
+   */
+  async publishedPlace(sessionId: string, version: number, candidate: boolean, note?: string): Promise<{
+    readonly projectId: string
+    readonly target: GamePlace
+    readonly label: string
+    readonly where: string
+  } | undefined> {
+    const row = await this.boundProject(sessionId)
+    if (row === undefined) return undefined
+    const { target, names } = candidate ? { target: { view: 'play' } as GamePlace, names: [] as string[] } : await this.changedBy(row.root, version)
+    const words = (note ?? '').trim()
+    const label = words !== '' ? words
+      : candidate ? `v${version} 等你确认上线`
+      : names.length > 0 ? `v${version}：改了${names.slice(0, 3).join('、')}${names.length > 3 ? ` 等 ${names.length} 个` : ''}`
+      : `v${version} 已上线`
+    const element = target.elementId === undefined ? undefined : names.length === 1 ? names[0] : target.elementId
+    const where = target.view === 'play' ? '「试玩」' : target.view === 'versions' ? '「版本」' : element === undefined ? '「元素」列表' : `「元素」里的「${element}」`
+    return { projectId: row.id, target, label: label.slice(0, 120), where }
+  }
+
+  /** Where a version's change is: the one element it changed, the grid for several, else play (code, assets, a first version). */
+  private async changedBy(root: string, version: number): Promise<{ target: GamePlace; names: string[] }> {
+    const earlier = (await this.readVersions(root)).map(v => v.version).filter(v => v < version)
+    const play = { target: { view: 'play' } as GamePlace, names: [] as string[] }
+    if (earlier.length === 0) return play
+    const prev = Math.max(...earlier)
+    const dir = (v: number): string => join(root, STATE_DIR, 'versions', String(v))
+    if (!await stat(dir(prev)).then(() => true, () => false)) return play
+    const [before, after] = await Promise.all([this.elementIndex(dir(prev)), this.elementIndex(dir(version))])
+    const changed = [...after].filter(([id, e]) => before.get(id)?.json !== e.json)
+    const others = async (v: number): Promise<Map<string, string>> => new Map((await walk(dir(v), p => !p.startsWith('elements/'))).map(f => [f.path, f.data.toString('base64')]))
+    const [a, b] = await Promise.all([others(prev), others(version)])
+    const otherChanged = a.size !== b.size || [...b].some(([p, d]) => a.get(p) !== d)
+    const names = changed.map(([, e]) => e.name)
+    if (otherChanged || changed.length === 0) return { target: { view: 'play' }, names }
+    if (changed.length === 1) return { target: { view: 'elements', elementId: changed[0]![0] }, names }
+    return { target: { view: 'elements' }, names }
+  }
+
   async sessionState(sessionId: string): Promise<SessionGameState> {
     const bound = await this.boundProject(sessionId)
     return {
@@ -628,6 +726,19 @@ export class GameService {
    */
   async checkTurn(session: Session, attempt: number, cap: number, by: VersionSource = 'turn'): Promise<TurnCheckOutcome> {
     const row = await this.boundProject(session.id)
+    // A room's desk binding: the room's turns are not the game's (the members publish with game_publish).
+    if (row === undefined || await this.isDesk(session.id)) return { kind: 'skip' }
+    return this.checkRow(row, session, attempt, cap, by)
+  }
+
+  /**
+   * The same checks on a named project (`game_publish`): the project may be
+   * a room's while the fence is the calling member's own session.
+   * @param projectId - registry id.
+   * @param session - the session whose fence and read-only flag apply.
+   */
+  async checkProject(projectId: string, session: Session, attempt: number, cap: number, by: VersionSource): Promise<TurnCheckOutcome> {
+    const row = await this.row(projectId)
     if (row === undefined) return { kind: 'skip' }
     return this.checkRow(row, session, attempt, cap, by)
   }

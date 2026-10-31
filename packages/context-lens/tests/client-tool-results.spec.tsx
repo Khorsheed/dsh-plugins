@@ -39,6 +39,7 @@ describe('tool execution detail', () => {
       { name: 'empty', arguments: '{}', execution: { status: 'ok', result: '' } },
     ] } }
     render(<OutputBlock request={r} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: '展开其余 1 个调用' }))
     expect(screen.getByText('结果未记录')).toBeTruthy()
     expect(screen.getByText('执行中')).toBeTruthy()
     expect(screen.getByText('已记录执行状态，未保留结果正文。')).toBeTruthy()
@@ -71,5 +72,91 @@ describe('tool execution detail', () => {
     expect(thinkingRow.textContent).not.toContain('请求失败')
     expect(thinkingRow.textContent).toContain('—')
     expect(screen.getByRole('button', { name: '#2 · —' }).textContent).toContain('请求失败')
+  })
+})
+
+describe('ask_user_question card', () => {
+  it('shows the question, the options with the chosen one marked, the answer, the other text and the wait', () => {
+    const r: CapturedRequest = { ...request, response: { toolCalls: [{
+      callId: 'q', name: 'mcp__dsh-member__ask_user_question', arguments: '',
+      execution: { status: 'ok', result: '{"answers":[]}' },
+      ask: {
+        outcome: 'answered', late: true, waitMs: 12900, source: 'room',
+        questions: [{ id: 'style', header: '美术方向', question: '整体风格往哪走？', options: [{ label: '水墨绘本（推荐）', description: '线条清楚' }, { label: '写实' }] }],
+        answers: [{ id: 'style', selected: ['水墨绘本（推荐）'], custom: '再粗一点' }],
+      },
+    }] } }
+    const { container } = render(<OutputBlock request={r} t={t} />)
+    expect(screen.getByText('问你')).toBeTruthy()
+    expect(screen.getByText('已补答')).toBeTruthy()
+    expect(screen.getByText('等了 12.9s')).toBeTruthy()
+    expect(screen.getByText('美术方向')).toBeTruthy()
+    expect(screen.getByText('整体风格往哪走？')).toBeTruthy()
+    expect(container.querySelector('li[data-selected="true"]')?.textContent).toContain('水墨绘本（推荐）')
+    expect(screen.getByText('你的回答')).toBeTruthy()
+    expect(screen.getByText('其他：再粗一点')).toBeTruthy()
+    // The raw JSON result is not shown in its place.
+    expect(screen.queryByText('{"answers":[]}')).toBeNull()
+  })
+
+  it('an expired question reads as still answerable; a question with no recorded text says so', () => {
+    const r: CapturedRequest = { ...request, response: { toolCalls: [
+      { callId: 'e', name: 'ask_user_question', arguments: '', ask: { outcome: 'expired' } },
+    ] } }
+    render(<OutputBlock request={r} t={t} />)
+    expect(screen.getByText('已过期，仍可回答')).toBeTruthy()
+    expect(screen.getByText('这次调用没有记录问题内容')).toBeTruthy()
+  })
+})
+
+describe('exchange input folding', () => {
+  it('shows the first 8 inputs and folds the rest behind one button (a compaction region holds hundreds)', () => {
+    const added = Array.from({ length: 20 }, (_, index) => ({ index, category: 'user' as const, source: 'user', full: `输入 ${index}`, preview: `输入 ${index}`, chars: 4, freshness: 'new' as const }))
+    const r: CapturedRequest = { ...request, response: { toolCalls: [] }, segments: { ...request.segments, added } }
+    render(<Exchange request={r} previousResponseNumber={null} t={t} />)
+    expect(screen.getByText('输入 7')).toBeTruthy()
+    expect(screen.queryByText('输入 8')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '展开其余 12 条' }))
+    expect(screen.getByText('输入 19')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '收起' }))
+    expect(screen.queryByText('输入 19')).toBeNull()
+  })
+})
+
+describe('output text folding', () => {
+  it('folds a short text that renders taller than the fold (narrow column, CJK lines)', () => {
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight')
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get() { return 400 } })
+    try {
+      const r: CapturedRequest = { ...request, response: { text: '可以。'.repeat(70), toolCalls: [] } }
+      const { container } = render(<OutputBlock request={r} t={t} />)
+      expect(container.querySelector('pre[data-long="true"]')).toBeTruthy()
+      expect(screen.getByRole('button', { name: /展开全部/ })).toBeTruthy()
+    } finally {
+      if (height) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', height)
+      else delete (HTMLElement.prototype as { scrollHeight?: number }).scrollHeight
+    }
+  })
+})
+
+describe('compact calls', () => {
+  it('an answered question lists its options as labels; descriptions open on demand', () => {
+    const r: CapturedRequest = { ...request, response: { toolCalls: [{
+      callId: 'q', name: 'ask_user_question', arguments: '',
+      ask: { outcome: 'answered', questions: [{ id: 'a', question: '选哪个？', options: [{ label: '甲', description: '甲的说明' }, { label: '乙' }] }], answers: [{ id: 'a', selected: ['甲'] }] },
+    }] } }
+    render(<OutputBlock request={r} t={t} />)
+    expect(screen.queryByText('甲的说明')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '查看选项说明' }))
+    expect(screen.getByText('甲的说明')).toBeTruthy()
+  })
+
+  it('shows the first 3 calls and folds the rest', () => {
+    const r: CapturedRequest = { ...request, response: { toolCalls: Array.from({ length: 5 }, (_, index) => ({ callId: `c${index}`, name: `tool_${index}`, arguments: '{}' })) } }
+    render(<OutputBlock request={r} t={t} />)
+    expect(screen.getByText('tool_2')).toBeTruthy()
+    expect(screen.queryByText('tool_3')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '展开其余 2 个调用' }))
+    expect(screen.getByText('tool_4')).toBeTruthy()
   })
 })

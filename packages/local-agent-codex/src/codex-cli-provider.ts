@@ -71,6 +71,30 @@ type ToolCallBlockId = Extract<ContentBlock, { type: 'tool-call' }>['id']
  * closes, so an interrupted call folds with this error result. Same text as
  * the kimi provider's placeholder, for family consistency.
  */
+/**
+ * A finished command's result text and failure. Codex reports a command that
+ * printed nothing with an empty aggregated output — a crash (exit 139) or a
+ * silent failure read as "no result" and the mirror wrote the interrupted
+ * placeholder. A finished command (an exit code, or a completed/failed status)
+ * always carries a result: its output, or "（无输出）", with a non-zero exit
+ * code appended and the result marked failed. A command still running yields
+ * none, so the fold keeps waiting for it.
+ * @param output - the item's aggregated output.
+ * @param exitCode - the item's exit code, when finished.
+ * @param status - the item's status.
+ * @returns the result text (undefined while running) and whether it failed.
+ */
+export function commandOutcome(output: unknown, exitCode: unknown, status: unknown): { result?: string; failed: boolean } {
+  const text = typeof output === 'string' && output.trim() !== '' ? output : undefined
+  const code = typeof exitCode === 'number' && Number.isFinite(exitCode) ? exitCode : undefined
+  const finished = code !== undefined || status === 'completed' || status === 'failed'
+  const failed = (code !== undefined && code !== 0) || status === 'failed'
+  if (!finished) return text === undefined ? { failed: false } : { result: text, failed: false }
+  const exit = code !== undefined && code !== 0 ? `（退出码 ${code}）` : status === 'failed' ? '（执行失败）' : ''
+  const result = text === undefined ? (exit === '' ? '（无输出）' : `${exit.slice(0, -1)}，无输出）`) : exit === '' ? text : `${text}\n${exit}`
+  return { result, failed }
+}
+
 export const CODEX_INTERRUPTED_TOOL_RESULT = '（工具调用被中断，未能记录返回结果）'
 
 /** Quote one TOML basic string for the `-c` config override. */
@@ -87,6 +111,26 @@ export const DEFAULT_DISPOSE_GRACE_MS = 3_000
  * provider-controlled error output only.
  */
 export const CODEX_AUTH_FAILURE = /401 unauthorized|unauthorized|authentication failed|not logged in|access token/i
+
+/**
+ * A session's standing sandbox mode — the host's `sandbox/mode` vocabulary is
+ * codex's own (`read-only` | `workspace-write` | `danger-full-access`). Reads
+ * the delegating session first (the mode the user sees and changes), then
+ * the child's inherited record.
+ * @param ctx - context carrying the live session store.
+ * @param childSession - the member's child session, when one exists.
+ * @param parentSessionId - the delegating session.
+ * @returns the mode, or undefined when neither session records one.
+ */
+export function sessionSandboxMode(ctx: Context, childSession: Session | undefined, parentSessionId: string | undefined): CodexSandbox | undefined {
+  const sessions = ctx.get('sessions')
+  const parent = parentSessionId === undefined ? undefined : sessions?.get(SessionId(parentSessionId))
+  for (const session of [parent, childSession]) {
+    const mode = session?.snapshotEvents().filter(event => (event.type as string) === 'sandbox/mode').at(-1)?.data as { mode?: unknown } | undefined
+    if (mode?.mode === 'read-only' || mode?.mode === 'workspace-write' || mode?.mode === 'danger-full-access') return mode.mode
+  }
+  return undefined
+}
 
 /** Codex sandbox policy values accepted by `codex exec --sandbox`. */
 export type CodexSandbox = 'read-only' | 'workspace-write' | 'danger-full-access'
@@ -228,12 +272,26 @@ export class CodexCliProvider implements SubagentProvider {
    */
   constructor(
     private readonly ctx: Context,
-    private readonly sandbox: CodexSandbox = 'workspace-write',
+    /** An explicit policy from the plugin config; undefined follows the member's session. */
+    private readonly sandbox: CodexSandbox | undefined = undefined,
     private readonly live?: CodexLiveDriver | ((childSessionId: string) => CodexLiveDriver | undefined),
     private readonly model?: (scope?: string) => string | undefined,
     private readonly overrides?: (childSessionId: string) => string | undefined,
     private readonly endpoint?: (scopeHome: string) => Promise<CodexEndpointAuth>,
   ) {}
+
+  /**
+   * The sandbox this round runs under: the plugin config's explicit policy
+   * when set, else the member's session's own standing mode — the delegating
+   * session's latest `sandbox/mode`, then the child's inherited one — so a
+   * member runs with exactly the access its session shows (a full-access
+   * session's Codex member was confined to workspace-write and Blender
+   * crashed under the seatbelt). `workspace-write` when neither says.
+   */
+  sandboxFor(childSession: Session | undefined, parentSessionId: string | undefined): CodexSandbox {
+    if (this.sandbox !== undefined) return this.sandbox
+    return sessionSandboxMode(this.ctx, childSession, parentSessionId) ?? 'workspace-write'
+  }
 
   /** The scope's endpoint credential for this round; absent resolver = never. */
   private resolveEndpoint(homeDir: string): Promise<CodexEndpointAuth | undefined> {
@@ -393,6 +451,7 @@ export class CodexCliProvider implements SubagentProvider {
           homeDir,
           childSession,
           parentSessionId: request.parent.session.id,
+          sandbox: this.sandboxFor(childSession, request.parent.session.id),
           ...startModel === undefined ? {} : { startModel },
           ...configuration === undefined ? {} : { configuration: configuration.resolved },
           // The thread id arrives with thread/start (server-assigned), far
@@ -432,7 +491,7 @@ export class CodexCliProvider implements SubagentProvider {
         ...exec === undefined ? {} : { exec },
         endpointLabel: baseUrl,
         endpointArgv: endpointConfigOverrides(endpoint),
-        sandbox: this.sandbox,
+        sandbox: this.sandboxFor(childSession, request.parent.session.id),
         ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(runId) ?? requestedModel, () => this.model?.(scope))),
         disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
         spawn: spec => this.ctx.subprocess.spawn(spec),
@@ -481,7 +540,7 @@ export class CodexCliProvider implements SubagentProvider {
   /** Resume round: continue the recorded thread inside the existing child session. */
   private async startCodexResume(
     request: ResolvedSubagentStartRequest,
-    intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string },
+    intent: { readonly kind: 'resume'; readonly childSessionId: string; readonly cliSessionId: string; readonly operation?: 'compact' },
     cwd: string,
     homeDir: string,
     exec: DelegationExecTarget | undefined,
@@ -531,9 +590,11 @@ export class CodexCliProvider implements SubagentProvider {
             homeDir,
             childSession,
             parentSessionId: request.parent.session.id,
+            sandbox: this.sandboxFor(childSession, request.parent.session.id),
             resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
             ...startModel === undefined ? {} : { startModel },
             ...configuration === undefined ? {} : { configuration: configuration.resolved },
+            ...intent.operation === undefined ? {} : { operation: intent.operation },
           })
           void liveRun.result.then(
             () => { this.ctx.localAgent.releaseResumeLock(intent.childSessionId) },
@@ -545,6 +606,8 @@ export class CodexCliProvider implements SubagentProvider {
           this.ctx.logger.warn(`subagent-codex: live driver unavailable, using the exec one-shot: ${error.message}`)
         }
       }
+      // Compaction rides the app-server thread only (thread/compact/start).
+      if (intent.operation === 'compact') throw new Error('subagent-codex: compaction needs the live driver (the member runs on the exec path)')
       // Member channel: register the resume round (same child session, fresh
       // per-run token) before the spawn.
       // See the fresh path: no member channel across the container boundary.
@@ -557,7 +620,7 @@ export class CodexCliProvider implements SubagentProvider {
           ...exec === undefined ? {} : { exec },
           endpointLabel: baseUrl,
           endpointArgv: endpointConfigOverrides(endpoint),
-          sandbox: this.sandbox,
+          sandbox: this.sandboxFor(childSession, request.parent.session.id),
           ...(configuration?.resolved ?? resolveRoundModel(this.overrides?.(intent.childSessionId) ?? requestedModel, () => this.model?.(scope))),
           disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
           spawn: spec => this.ctx.subprocess.spawn(spec),
@@ -735,7 +798,7 @@ export type CodexTranscriptLine =
    * stable within a run either way, so the child session's
    * `tool/call`/`tool/result` events pair by it.
    */
-  | { kind: 'tool'; id: string; name: string; args?: string; result?: string }
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; failed?: boolean }
 
 /** Mutable fold state shared by the batch parse and the incremental parser. */
 interface CodexStreamFoldState {
@@ -801,7 +864,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
   let event: {
     type?: string
     model?: unknown
-    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; raw?: string; output?: unknown; name?: string; id?: string; changes?: { kind?: string; path?: string; diff?: string }[]; arguments?: string; input?: string }
+    item?: { type?: string; text?: string; command?: string; aggregated_output?: string; exit_code?: unknown; status?: unknown; raw?: string; output?: unknown; name?: string; id?: string; changes?: { kind?: string; path?: string; diff?: string }[]; arguments?: string; input?: string }
     usage?: unknown
     thread_id?: unknown
   }
@@ -833,16 +896,15 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
     // command with neither text nor output is still a call the CLI made.
     countToolCall(state, 'command_execution')
     const command = typeof item.command === 'string' ? item.command : undefined
-    const output = typeof item.aggregated_output === 'string' && item.aggregated_output.trim() !== ''
-      ? item.aggregated_output
-      : undefined
-    if (command !== undefined || output !== undefined) {
+    const outcome = commandOutcome(item.aggregated_output, item.exit_code, item.status)
+    if (command !== undefined || outcome.result !== undefined) {
       state.lines.push({
         kind: 'tool',
         id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
         name: 'Bash',
         ...command === undefined ? {} : { args: command },
-        ...output === undefined ? {} : { result: output },
+        ...outcome.result === undefined ? {} : { result: outcome.result },
+        ...outcome.failed ? { failed: true } : {},
       })
     }
   } else if (item.type === 'web_search_call') {
@@ -1356,7 +1418,7 @@ export function appendCodexTranscriptLine(
       message: createToolResultMessage({
         callId: line.id as ToolResultCallId,
         content: [{ type: 'text', text: line.result ?? CODEX_INTERRUPTED_TOOL_RESULT }],
-        isError: line.result === undefined,
+        isError: line.result === undefined || line.failed === true,
       }),
     }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
     childSession.append('step/end', { turn, step })

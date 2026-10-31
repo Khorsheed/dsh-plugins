@@ -21,7 +21,9 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
+import { interactionHandlers } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import type { LibraryEvent } from '../types.ts'
+import type { LibraryNavParams } from '../nav-line.ts'
 import type { LibraryPaneProps } from './contract.ts'
 import { BookView } from './views/book.tsx'
 import { NodeView } from './views/station.tsx'
@@ -34,19 +36,23 @@ import css from './LibraryPane.module.css'
 /** The tab body. */
 export function LibraryPane(props: LibraryPaneProps): ReactNode {
   const route = props.useStore(s => s.stack[s.stack.length - 1]!)
-  const { revealed, actions } = props
-  // A reveal (the session's first library write) lands on its project: taken on
-  // mount when the reveal opened this tab, at once when the tab was already open.
+  const { actions } = props
+  // The tab's navigation (`sidebarRight.openTab('library', { params })` — a
+  // destination the learner watched land, a card's door, a room's desk row):
+  // applied once per navigation revision, on mount when it opened this tab,
+  // at once when the tab was already open, and again for a repeat of the
+  // same place.
+  const navigation = (props as { tab?: { navigation?: { params?: unknown; revision?: number } } }).tab?.navigation
+  const navRevision = navigation?.revision ?? 0
+  const navParams = navigation?.params as LibraryNavParams | undefined
+  const appliedNav = useRef(0)
   useEffect(() => {
-    const land = (): void => {
-      const projectId = revealed.take()
-      if (projectId !== undefined) actions.openProject(projectId)
-    }
-    land()
-    return revealed.subscribe(land)
-  }, [revealed, actions])
+    if (navRevision === 0 || appliedNav.current === navRevision) return
+    appliedNav.current = navRevision
+    if (typeof navParams?.view === 'string') actions.land(navParams)
+  }, [navRevision, navParams, actions])
   return (
-    <PanelRoot className={css.root}>
+    <PanelRoot className={css.root} {...interactionHandlers}>
       {(() => {
         switch (route.view) {
           case 'today': return <TodayView p={props} />

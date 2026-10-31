@@ -8,6 +8,26 @@ import type {} from './locales.ts'
 
 export const VIDEO_KIND = 'video-studio'
 
+/**
+ * One place in the 剪辑 panel, as an address (proposal
+ * 2026-10-30-agent-sidebar-navigation): the tab's navigation params, and the
+ * `params` of every destination a video tool names.
+ */
+export interface VideoNavParams {
+  readonly projectId: string
+  readonly tab?: 'sources' | 'transcript' | 'export' | 'settings'
+  /** A proposal group: 文稿, scrolled to that group. */
+  readonly groupId?: string
+  /** An export or import job (its tab shows the job list). */
+  readonly jobId?: string
+}
+
+declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  interface SidebarRightTabParamsMap {
+    'video-studio': VideoNavParams
+  }
+}
+
 export const VIDEO_TAB_ID = '@khorsheed/dsh-video-studio'
 
 interface GlyphProps {

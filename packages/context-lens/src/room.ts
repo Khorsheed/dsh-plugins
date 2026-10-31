@@ -17,6 +17,7 @@
  * @module @khorsheed/dsh-context-lens/room
  */
 import type { LensJsonValue, RoomDecisionRow } from './types.ts'
+import { readAnswers, readQuestions, type RoomQuestionRecord } from './ask.ts'
 
 /** One member run of a dispatch. */
 export interface RoomRun {
@@ -38,6 +39,8 @@ export interface RoomDispatch {
   at: number
   text: string
   targets: string[]
+  /** The human's user/message the post appended alongside (the chat's anchor for the round). */
+  messageId?: string
 }
 
 /** What one session's room events say, accumulated (log backfill and live alike). */
@@ -48,12 +51,14 @@ export interface RoomState {
   handoffs: { seq: number; at: number; memberId: string }[]
   /** The decision-model calls the room recorded (`room/decision` with a call). */
   decisions: RoomDecisionRow[]
+  /** The questions members asked the human (`room/question`), with how each resolved. */
+  questions: Map<string, RoomQuestionRecord>
   /** Event seqs already applied (backfill and live may both deliver one). */
   seen: Set<number>
 }
 
 export function emptyRoom(): RoomState {
-  return { members: new Map(), dispatches: [], runs: new Map(), handoffs: [], decisions: [], seen: new Set() }
+  return { members: new Map(), dispatches: [], runs: new Map(), handoffs: [], decisions: [], questions: new Map(), seen: new Set() }
 }
 
 const str = (value: unknown): string | undefined => typeof value === 'string' && value.length > 0 ? value : undefined
@@ -80,7 +85,8 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
     case 'room/dispatch': {
       if (d['origin'] !== 'human' || seq === undefined || at === undefined) return true
       const targets = Array.isArray(d['targets']) ? d['targets'].filter((t): t is string => typeof t === 'string') : []
-      room.dispatches.push({ seq, at, text: str(d['text']) ?? '', targets })
+      const messageId = str(d['messageId'])
+      room.dispatches.push({ seq, at, text: str(d['text']) ?? '', targets, ...messageId === undefined ? {} : { messageId } })
       return true
     }
     case 'room/run-state': {
@@ -121,6 +127,31 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
         ...call['response'] === undefined ? {} : { response: call['response'] as LensJsonValue },
         ...typeof failure?.reason === 'string' ? { failure: { reason: failure.reason, ...typeof failure.detail === 'string' ? { detail: failure.detail } : {} } } : {},
       })
+      return true
+    }
+    case 'room/question': {
+      const id = str(d['id']), questions = readQuestions(d['questions'])
+      if (id === undefined || questions === undefined || at === undefined) return true
+      const member = str(d['member']), memberId = str(d['memberId']), runId = str(d['runId'])
+      room.questions.set(id, {
+        id, questions, askedAt: at,
+        ...member === undefined ? {} : { member },
+        ...memberId === undefined ? {} : { memberId },
+        ...runId === undefined ? {} : { runId },
+      })
+      return true
+    }
+    case 'room/question-resolved': {
+      // A question can resolve twice: cancelled (expired), then answered late.
+      const record = room.questions.get(str(d['id']) ?? '')
+      if (record === undefined) return true
+      const outcome = d['outcome'] === 'answered' ? 'answered' : d['outcome'] === 'cancelled' ? 'cancelled' : undefined
+      if (outcome === undefined || (record.outcome === 'answered' && outcome === 'cancelled')) return true
+      record.outcome = outcome
+      if (at !== undefined) record.resolvedAt = at
+      const answers = readAnswers(d['answers'])
+      if (answers !== undefined) record.answers = answers
+      if (d['late'] === true) record.late = true
       return true
     }
     case 'room/coordinator': {

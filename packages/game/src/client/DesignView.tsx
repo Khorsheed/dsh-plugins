@@ -7,7 +7,7 @@
  * number; 试玩记录 is the log the plugin keeps.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { artStyleLabel } from '../project.ts'
+import { artStyleLabel, artStyleName } from '../project.ts'
 import type { ChapterView, ElementView, ProjectView } from '../types.ts'
 import { failureOf, type ViewProps } from './contract.ts'
 import { Markdown } from './markdown.tsx'
@@ -124,8 +124,8 @@ function OnePager(props: DesignViewProps): ReactNode {
       <span className={css.eyebrow}>{t('design.onePager')}</span>
       <span className={css.metaLine}>game.json</span>
       <span className={css.spacer} />
-      <button type="button" className={css.styleChip} onClick={onStyle} title={t('style.change')}>
-        {t('design.style', { style: manifest === null ? '—' : artStyleLabel(manifest.artStyle) })}
+      <button type="button" className={css.styleChip} onClick={onStyle} title={manifest === null ? t('style.change') : `${artStyleLabel(manifest.artStyle)}\n${t('style.change')}`}>
+        {t('design.style', { style: manifest === null ? '—' : artStyleName(manifest.artStyle) })}
       </button>
       {!editing && manifest !== null && <button type="button" className={css.ghost} onClick={begin}>{t('design.editOnePager')}</button>}
     </div>
@@ -151,6 +151,7 @@ function OnePager(props: DesignViewProps): ReactNode {
         </div>
       : <>
           <p className={css.pitch}>{manifest?.pitch || t('design.noPitch')}</p>
+          {manifest !== null && artStyleName(manifest.artStyle) !== artStyleLabel(manifest.artStyle) && <p className={css.metaLine}>{t('design.styleFull', { style: artStyleLabel(manifest.artStyle) })}</p>}
           <div className={css.typeRow}>{(manifest?.elementTypes ?? []).map(type => <span key={type} className={css.typeTag}>{type}</span>)}</div>
           <div className={css.pillars}>
             <span className={css.eyebrow}>{t('design.pillars')}</span>

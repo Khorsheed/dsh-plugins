@@ -34,15 +34,15 @@ describe('openRowModel', () => {
 })
 
 describe('OpenCanvasRow', () => {
-  it('opens the canvas once when it watched the call settle', () => {
+  it('never opens the canvas by itself, even watching the call settle (the destination follower does)', () => {
     const openCanvas = vi.fn()
+    const line = '\n⟦dsh-nav⟧{"id":"x","kind":"canvas","params":{"canvasId":"canvas_t1abcdefgh"},"label":"画布《雨夜》"}'
     const { rerender } = render(<OpenCanvasRow t={t} block={{}} phase="preparing" openCanvas={openCanvas} />)
+    rerender(<OpenCanvasRow t={t} block={settled(`${CREATED}${line}`)} openCanvas={openCanvas} />)
     expect(openCanvas).not.toHaveBeenCalled()
-    rerender(<OpenCanvasRow t={t} block={settled(CREATED)} openCanvas={openCanvas} />)
-    rerender(<OpenCanvasRow t={t} block={settled(CREATED)} openCanvas={openCanvas} />)
-    expect(openCanvas).toHaveBeenCalledTimes(1)
-    expect(openCanvas).toHaveBeenCalledWith('canvas_t1abcdefgh')
     expect(screen.getByText('新建了《雨夜》')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button'))
+    expect(openCanvas).toHaveBeenCalledWith('canvas_t1abcdefgh')
   })
 
   it('leaves a history row alone, but its door still opens the canvas', () => {

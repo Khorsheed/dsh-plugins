@@ -49,6 +49,8 @@ export interface StripTab {
   readonly id: string
   /** The row's text: the canvas's title. */
   readonly label: string
+  /** A room member put it here and the human has not looked yet: a dot before the title. */
+  readonly fresh?: boolean
 }
 
 /** What the strip's rows answer to. */
@@ -102,9 +104,10 @@ export function TabStrip({ t, rows, active, onSelect, onClose, tail }: TabStripP
               role="tab"
               className={css.label}
               aria-selected={row.id === active}
-              title={row.label}
+              title={row.fresh === true ? t('strip.fresh', { title: row.label }) : row.label}
               onClick={() => { onSelect(row.id) }}
             >
+              {row.fresh === true && <span className={css.fresh} aria-hidden="true" />}
               <span className={css.labelText}>{row.label}</span>
             </button>
             <button

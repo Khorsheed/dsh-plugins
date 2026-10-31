@@ -339,6 +339,9 @@ importers:
       '@deepseek-ai/dsh-util-workspace-path':
         specifier: 0.2.1-rc.4
         version: 0.2.1-rc.4(@deepseek-ai/cordis@4.0.4)
+      '@khorsheed/dsh-client-ui-agent-nav':
+        specifier: workspace:*
+        version: link:../client-ui-agent-nav
       '@khorsheed/dsh-client-ui-panel-kit':
         specifier: workspace:*
         version: link:../client-ui-panel-kit
@@ -412,6 +415,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: 0.2.1-rc.4
         version: 0.2.1-rc.4(@deepseek-ai/cordis@4.0.4)
+      '@khorsheed/dsh-client-ui-agent-nav':
+        specifier: workspace:*
+        version: link:../client-ui-agent-nav
       '@khorsheed/dsh-client-ui-panel-kit':
         specifier: workspace:*
         version: link:../client-ui-panel-kit
@@ -665,6 +671,18 @@ importers:
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
+
+  packages/client-ui-agent-nav:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.20.4
+      typescript:
+        specifier: ^5.9.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@22.20.4)(jsdom@29.1.1)(lightningcss@1.33.0)(tsx@4.23.15)(yaml@2.9.1)
 
   packages/client-ui-content-preview:
     devDependencies:
@@ -1336,6 +1354,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: 0.2.1-rc.4
         version: 0.2.1-rc.4(@deepseek-ai/cordis@4.0.4)
+      '@khorsheed/dsh-client-ui-agent-nav':
+        specifier: workspace:*
+        version: link:../client-ui-agent-nav
       '@khorsheed/dsh-client-ui-panel-kit':
         specifier: workspace:*
         version: link:../client-ui-panel-kit
@@ -1547,6 +1568,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: ^3.18.1
         version: 3.18.4
+      '@khorsheed/dsh-client-ui-agent-nav':
+        specifier: workspace:*
+        version: link:../client-ui-agent-nav
       '@khorsheed/dsh-client-ui-panel-kit':
         specifier: workspace:*
         version: link:../client-ui-panel-kit
@@ -2530,6 +2554,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: 0.2.1-rc.4
         version: 0.2.1-rc.4(@deepseek-ai/cordis@4.0.4)
+      '@deepseek-ai/dsh-util-workspace-path':
+        specifier: 0.2.1-rc.4
+        version: 0.2.1-rc.4(@deepseek-ai/cordis@4.0.4)
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*
         version: link:../local-agent
@@ -2834,6 +2861,9 @@ importers:
       '@deepseek-ai/dsh-typert-protocol':
         specifier: 0.2.1-rc.4
         version: 0.2.1-rc.4(@deepseek-ai/cordis@4.0.4)
+      '@khorsheed/dsh-client-ui-agent-nav':
+        specifier: workspace:*
+        version: link:../client-ui-agent-nav
       '@khorsheed/dsh-client-ui-panel-kit':
         specifier: workspace:*
         version: link:../client-ui-panel-kit

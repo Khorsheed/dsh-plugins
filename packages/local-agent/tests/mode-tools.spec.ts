@@ -17,7 +17,7 @@ const ORIGIN = Symbol.for('dsh.tool.origin')
 const tagged = (name: string, owner: string, channel = 'plugin') => ({ name, [ORIGIN]: { channel, owner } })
 
 /** Fake host services: the member's live session, one preset whose scope sees a plugin tool, a room tool, a family tool, a built-in and an untagged one. */
-function host() {
+function host(others: Record<string, unknown> = {}) {
   const ctx = new Context()
   const appended: { type: string; data: unknown }[] = []
   const session = {
@@ -36,7 +36,7 @@ function host() {
   ])
   const inScope = (scope?: object) => (scope as { session?: unknown } | undefined)?.session === session
   const execute = vi.fn(async (_exec: { name: string; agent: { id: string; session: unknown } }) => ({ isError: false, content: [{ type: 'text', text: 'project: 第3期' }] }))
-  ctx.provide('sessions' as never, { get: (id: string) => id === 'child-codex' ? session : undefined } as never)
+  ctx.provide('sessions' as never, { get: (id: string) => id === 'child-codex' ? session : others[id] } as never)
   ctx.provide('agentPresets' as never, { resolve: async (id?: string) => ({ id: id ?? 'default' }), mount } as never)
   ctx.provide('tools' as never, {
     schemas: (scope?: object) => inScope(scope) ? [...definitions.keys()].map(name => ({ name, description: `${name} tool`, parameters: { type: 'object', properties: {} } })) : [],
@@ -76,6 +76,43 @@ describe('PresetToolHost', () => {
     expect(h.execute).toHaveBeenCalledOnce()
   })
 
+  it('announces each stand-in it composes and disposes, so per-agent grants can reach it', async () => {
+    const h = host()
+    const created = vi.fn()
+    const disposed = vi.fn()
+    const on = h.ctx.on.bind(h.ctx) as unknown as (name: string, listener: (payload: { agent: unknown }) => void) => void
+    on('local-agent/stand-in-created', ({ agent }) => { created(agent) })
+    on('local-agent/stand-in-disposed', ({ agent }) => { disposed(agent) })
+    const tools = new PresetToolHost(h.ctx)
+    await tools.call('child-codex', 'dsh-writing', 'video_read', {}, new AbortController().signal)
+    const standIn = h.execute.mock.calls[0]![0].agent
+    expect(created).toHaveBeenCalledExactlyOnceWith(standIn)
+    await tools.call('child-codex', 'dsh-writing', 'video_read', {}, new AbortController().signal)
+    expect(created).toHaveBeenCalledOnce()
+    await tools.dispose()
+    expect(disposed).toHaveBeenCalledExactlyOnceWith(standIn)
+  })
+
+  it('marks the room as the stand-in\'s desk with the member\'s current role; no desk, no mark', async () => {
+    const room = { id: 'room-1', header: {}, snapshotEvents: () => [], append: () => {} }
+    const h = host({ 'room-1': room })
+    const tools = new PresetToolHost(h.ctx)
+    const signal = new AbortController().signal
+    const DESK = Symbol.for('dsh.agent.desk')
+    await tools.call('child-codex', 'dsh-writing', 'video_read', {}, signal, undefined, { sessionId: 'room-1', role: 'member', member: 'bill' })
+    const standIn = h.execute.mock.calls[0]![0].agent as unknown as Record<symbol, unknown>
+    // Only the desk moves: the call still runs as the member's own session.
+    expect(h.execute.mock.calls[0]![0].agent.session).toBe(h.session)
+    expect(standIn[DESK]).toEqual({ session: room, role: 'member', member: 'bill' })
+    await tools.call('child-codex', 'dsh-writing', 'video_read', {}, signal, undefined, { sessionId: 'room-1', role: 'coordinator', member: 'bill' })
+    expect(standIn[DESK]).toMatchObject({ role: 'coordinator' })
+    await tools.call('child-codex', 'dsh-writing', 'video_read', {}, signal)
+    expect(standIn[DESK]).toBeUndefined()
+    // A room that is not live here gives no desk rather than a dangling one.
+    await tools.call('child-codex', 'dsh-writing', 'video_read', {}, signal, undefined, { sessionId: 'room-gone', role: 'member', member: 'bill' })
+    expect(standIn[DESK]).toBeUndefined()
+  })
+
   it('waits for a freshly mounted preset to finish registering before listing', async () => {
     const h = host()
     h.definitions.delete('video_read')
@@ -111,6 +148,8 @@ describe('mode skills', () => {
     installModeSkills(dir, 'dsh-video', found)
     expect(statSync(file).mtimeMs).toBe(written)
     expect(harnessSkillsDir('kimi', home)).toBe(join(home, 'skills'))
+    // A dsh command-line member: the sub-dsh reads $DSH_HOME/skills (its user-dsh root).
+    expect(harnessSkillsDir('dsh', home)).toBe(join(home, 'skills'))
     expect(harnessSkillsDir('other', home)).toBeUndefined()
   })
 })

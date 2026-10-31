@@ -60,6 +60,26 @@ describe('member questions', () => {
       .toEqual({ ok: false, error: { code: 'question-not-pending' } })
   })
 
+  it('a message to a member waiting on its question answers it, instead of queueing behind the wait', async () => {
+    const bench = await boot()
+    const asked = bench.service.receiveMemberCommand(bench.run, { name: 'ask_user_question', arguments: { questions: QUESTIONS } })
+    await vi.waitFor(async () => expect((await bench.state()).questions).toHaveLength(1))
+    const posted = await bench.service.postMessage({ sessionId: bench.sessionId, text: '@gm 先去问问策划那边的设定再定' })
+    expect(posted.ok).toBe(true)
+    const outcome = await asked
+    expect(JSON.parse((outcome as { receipt: string }).receipt)).toEqual({ answers: [
+      { id: 'fun', selected: [], custom: '没有选选项，直接回复了：先去问问策划那边的设定再定' }, { id: 'len', selected: [] },
+    ] })
+    // The message settled as that answer: no round of its own for gm.
+    const state = await bench.state()
+    expect(state.questions).toBeUndefined()
+    const seq = (posted as { value: { seq: number } }).value.seq
+    expect(state.deliveries?.find(row => row.dispatchSeq === seq)).toMatchObject({ status: 'done' })
+    const localAgent = bench.ctx.get('localAgent') as { start: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn> }
+    expect(localAgent.start).not.toHaveBeenCalled()
+    expect(localAgent.resume).not.toHaveBeenCalled()
+  })
+
   it('a card no waiting call stands behind (a restart) expires on the next access', async () => {
     const bench = await boot()
     bench.ctx.sessions.get(bench.sessionId)!.append('room/question', { id: 'orphan', member: 'gm', memberId: 'm', questions: [{ id: 'q1', question: '?' }] })
@@ -84,6 +104,39 @@ describe('member questions', () => {
     // Answered once is answered; a consent gate never answers late.
     expect(await bench.service.answerQuestion({ sessionId: bench.sessionId, id: 'late', answers: [] })).toEqual({ ok: false, error: { code: 'question-not-pending' } })
     expect(await bench.service.answerQuestion({ sessionId: bench.sessionId, id: 'gate', answers: [{ id: 'help', selected: ['允许'] }] })).toEqual({ ok: false, error: { code: 'question-not-pending' } })
+  })
+
+  it('a question asked mid-round records that round and the text said so far', async () => {
+    const bench = await boot()
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    room.append('room/run-state', { member: 'gm', state: 'running', startedAt: 7, runId: 'run-7' })
+    const child = bench.ctx.sessions.create(SessionId('child-gm'), { meta: {} })
+    child.append('turn/start', { turn: 1 } as never)
+    child.append('assistant/message', { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'text', text: '第一批你想先刻画哪一组？' }] } } as never, { surfaceOp: 'append' } as never)
+    void bench.service.receiveMemberCommand(bench.run, { name: 'ask_user_question', arguments: { questions: QUESTIONS } })
+    await vi.waitFor(() => expect(room.snapshotEvents().some(event => event.type === 'room/question')).toBe(true))
+    const asked = room.snapshotEvents().find(event => event.type === 'room/question')!.data as { runId?: string; before?: string }
+    expect(asked).toMatchObject({ runId: 'run-7', before: '第一批你想先刻画哪一组？' })
+    // The asker's card comes to the bottom first, so the question is in view.
+    const moved = room.snapshotEvents().findIndex(event => event.type === 'room/run-moved')
+    expect(room.snapshotEvents()[moved]?.data).toEqual({ member: 'gm', startedAt: 7 })
+    expect(moved).toBeLessThan(room.snapshotEvents().findIndex(event => event.type === 'room/question'))
+  })
+
+  it('a running member card re-anchors below the room agent\'s turn when that turn ends', async () => {
+    // The coordinator invited or sent mid-turn: the card started inside its
+    // turn and would fold away with the turn's process.
+    const bench = await boot()
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    room.append('room/run-state', { member: 'gm', state: 'running', startedAt: 9, runId: 'run-9' })
+    room.append('turn/end', { turn: 1, reason: { kind: 'completed' } } as never)
+    await vi.waitFor(() => expect(room.snapshotEvents().at(-1)?.type).toBe('room/run-moved'))
+    expect(room.snapshotEvents().at(-1)?.data).toEqual({ member: 'gm', startedAt: 9 })
+    // Nothing runs: a turn end moves nothing.
+    room.append('room/run-state', { member: 'gm', state: 'done', startedAt: 9, runId: 'run-9' })
+    room.append('turn/end', { turn: 2, reason: { kind: 'completed' } } as never)
+    await Promise.resolve()
+    expect(room.snapshotEvents().at(-1)?.type).toBe('turn/end')
   })
 
   it('validates questions, accepting their JSON text too', () => {

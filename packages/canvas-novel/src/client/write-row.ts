@@ -14,6 +14,7 @@
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
+import { stripDestinations } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 
 /**
  * The owner props of the host's keyed `tool.call.toolview` slot this row
@@ -76,9 +77,9 @@ const UPDATED = /改了已有卡 ×(\d+)/
 export function writeRowModel(block: NovelToolBlock | null | undefined, phase?: string): WriteRowModel {
   const settled = block?.kind === 'tool-result' || (phase === 'result' && block !== null && block !== undefined)
   if (!settled) return { state: 'running', chapter: null, text: '' }
-  const text = (block?.content ?? [])
+  const text = stripDestinations((block?.content ?? [])
     .map(part => (part.type === 'text' ? part.text ?? '' : ''))
-    .join('')
+    .join(''))
     .trim()
   if (block?.isError === true || text.startsWith('失败：')) return { state: 'failed', chapter: null, text }
   const extracted = EXTRACTED.exec(text)

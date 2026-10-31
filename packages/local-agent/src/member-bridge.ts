@@ -65,7 +65,8 @@ const ROOM_TOOLS = [
     }, required: ['provider', 'name'], additionalProperties: false } },
   { name: 'ask_user_question', description: 'Ask the human questions they answer by picking options (or typing), instead of writing the questions into your reply. '
       + 'Use it whenever you need the human to decide or fill in something before you go on: give each question 2-4 short options with a one-line description each. '
-      + 'The call waits for the answer and returns {answers:[{id, selected:[labels], custom?}]}; if nobody answers it fails — then go on with your best judgement and say what you assumed.',
+      + 'The call waits for the answer and returns {answers:[{id, selected:[labels], custom?}]}; if nobody answers it fails — then go on with your best judgement and say what you assumed. '
+      + 'The room shows the questions and the answer at this point of your reply, so do not write the questions into your text before calling, and do not restate the answer after it — just go on.',
     inputSchema: { type: 'object', properties: {
       questions: { type: 'array', description: 'At most 4 questions.', items: { type: 'object', properties: {
         id: { type: 'string', description: 'Short unique id, echoed in the answer.' },

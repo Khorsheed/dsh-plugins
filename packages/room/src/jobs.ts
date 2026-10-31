@@ -27,13 +27,18 @@ export function replayJobs(events: readonly SessionEvent[], deliveries: readonly
   const messages = new Map<string, { id: string; time: number; text: string }>()
   const links = new Map<string, { task: string; by: RoomTaskLinkEvent['by']; probability?: number }>()
   const stopped = new Set<string>()
-  const dispatchById = new Map<string, { time: number; text: string }>()
+  const dispatchById = new Map<string, { time: number; text: string; from?: string }>()
   for (const event of events) {
     if (isHumanMessage(event)) messages.set(event.data.id, { id: event.data.id, time: event.time, text: textOf(event.data.content) })
     else if (event.type === 'room/task-link') {
       links.set(event.data.message, { task: event.data.task, by: event.data.by, ...event.data.probability === undefined ? {} : { probability: event.data.probability } })
     } else if (event.type === 'room/job-stopped') stopped.add(event.data.task)
-    else if (event.type === 'room/dispatch' && event.data.id !== undefined) dispatchById.set(event.data.id, { time: event.time, text: event.data.text })
+    else if (event.type === 'room/dispatch' && event.data.id !== undefined) {
+      // A task rooted in a member's dispatch (the coordinator delegating) is
+      // that member's words, not the human's.
+      const from = event.data.origin !== 'human' && event.data.from !== undefined ? event.data.from : undefined
+      dispatchById.set(event.data.id, { time: event.time, text: event.data.text, ...from === undefined ? {} : { from } })
+    }
   }
   const byTask = new Map<string, RoomDelivery[]>()
   for (const row of deliveries) {
@@ -44,7 +49,7 @@ export function replayJobs(events: readonly SessionEvent[], deliveries: readonly
   }
   const roots = [...byTask.keys()]
     .map(id => ({ id, root: messages.get(id) ?? dispatchById.get(id) }))
-    .filter((entry): entry is { id: string; root: { time: number; text: string } } => entry.root !== undefined)
+    .filter((entry): entry is { id: string; root: { time: number; text: string; from?: string } } => entry.root !== undefined)
     .sort((a, b) => a.root.time - b.root.time)
   const jobs = roots.map(({ id, root }, index): RoomJob => {
     const rows = byTask.get(id) ?? []
@@ -64,7 +69,7 @@ export function replayJobs(events: readonly SessionEvent[], deliveries: readonly
       id, number: index + 1,
       // Leading @-mentions address members; the request is what follows.
       title: (root.text.replace(/^(?:@\S+\s+)+/, '').split('\n', 1)[0] ?? '').slice(0, 120),
-      messages: [{ id, time: root.time, text: root.text }, ...follow].sort((a, b) => a.time - b.time),
+      messages: [{ id, time: root.time, text: root.text, ...root.from === undefined ? {} : { from: root.from } }, ...follow].sort((a, b) => a.time - b.time),
       status, startedAt: root.time,
       ...open ? {} : { endedAt: ended },
       deliveries: rows.map(row => row.id),

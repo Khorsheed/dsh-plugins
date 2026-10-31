@@ -7,7 +7,7 @@
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { type LibraryTemplate } from '../types.ts'
-import { jsonOutput, pickString, unwrap, type ToolKit } from './kit.ts'
+import { jsonOutput, landed, pickString, unwrap, type ToolKit } from './kit.ts'
 
 /** Build the `library_project` tool over the shared kit. */
 export function libraryProjectTool(kit: ToolKit): ToolDefinition {
@@ -40,7 +40,7 @@ export function libraryProjectTool(kit: ToolKit): ToolDefinition {
         const edited = await service.updateProject({ id: editId, patch: patch as { name?: string; goal?: string; template?: LibraryTemplate } })
         if (edited.ok) {
           await autoBind(exec, { projectId: edited.project.id })
-          return edited as unknown as JsonValue
+          return landed(exec, edited, { view: 'project', projectId: edited.project.id }, `项目「${edited.project.name}」`) as unknown as JsonValue
         }
         if (typeof args.name !== 'string' || args.name.trim() === '') throw new Error(edited.message)
         const created = unwrap(await service.createProject({
@@ -49,7 +49,8 @@ export function libraryProjectTool(kit: ToolKit): ToolDefinition {
           ...(typeof args.goal === 'string' ? { goal: args.goal } : {}),
         }))
         await autoBind(exec, { projectId: created.project.id })
-        return { ...created, note: `no project ${JSON.stringify(editId)} existed — created a new one instead (ids are minted (p_…), never chosen by the caller; omit projectId to create)` } as unknown as JsonValue
+        return landed(exec, { ...created, note: `no project ${JSON.stringify(editId)} existed — created a new one instead (ids are minted (p_…), never chosen by the caller; omit projectId to create)` },
+          { view: 'project', projectId: created.project.id }, `项目「${created.project.name}」`) as unknown as JsonValue
       }
       if (typeof args.name !== 'string' || args.name.trim() === '') {
         throw new Error('creating a project takes name (+ template: "language" | "subject" | "custom", goal?) — e.g. { name: "数学", template: "subject" }')
@@ -60,7 +61,7 @@ export function libraryProjectTool(kit: ToolKit): ToolDefinition {
         ...(typeof args.goal === 'string' ? { goal: args.goal } : {}),
       }))
       await autoBind(exec, { projectId: created.project.id })
-      return created as unknown as JsonValue
+      return landed(exec, created, { view: 'project', projectId: created.project.id }, `项目「${created.project.name}」`) as unknown as JsonValue
     },
   })
 }

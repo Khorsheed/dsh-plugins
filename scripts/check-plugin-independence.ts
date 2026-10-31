@@ -187,6 +187,10 @@ export const NO_OWN_PATCH: ReadonlyArray<string> = [
   // plus the shared compact controls), inlined into each consuming plugin's
   // own client bundle (proposal panel-responsive-spec, 2026-10-06).
   'client-ui-panel-kit',
+  // ui-agent-nav is the same shape: the source-plane destination reader and
+  // follow rule, inlined into each mode plugin's own client bundle (proposal
+  // agent-sidebar-navigation, 2026-10-30).
+  'client-ui-agent-nav',
 ]
 
 /**
@@ -238,7 +242,9 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   // renderer package need not be installed for canvas to work).
   // canvas also takes ui-panel-kit (panel-responsive-spec P3: the panel root,
   // the face tabs and the chip row) — the same inlined, zero-runtime edge.
-  'canvas': ['@khorsheed/dsh-inline-html-render', '@khorsheed/dsh-client-ui-panel-kit'],
+  // canvas and canvas-novel also take ui-agent-nav (the destination follower,
+  // proposal agent-sidebar-navigation) — the same inlined, zero-runtime edge.
+  'canvas': ['@khorsheed/dsh-inline-html-render', '@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // local-files / worktrees → ui-content-preview: the two file surfaces render
   // through ONE shared content pane (proposal preview-kernel). Same shape as
   // the canvas edge above — a compile-time SOURCE-plane import
@@ -265,10 +271,11 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'reader': ['@khorsheed/dsh-client-ui-panel-kit'],
   // canvas-novel → ui-panel-kit: the chapter book's compact header and the
   // story view's tabs (panel-responsive-spec P3) — the same inlined edge.
-  'canvas-novel': ['@khorsheed/dsh-client-ui-panel-kit'],
+  'canvas-novel': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // library → ui-panel-kit: the learning sidebar's panel root, header, tabs,
   // chip row and list rows — the same inlined, zero-runtime source-plane edge.
-  'library': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // …and ui-agent-nav, the destination follower (proposal agent-sidebar-navigation).
+  'library': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // context-lens → ui-panel-kit: the request panel's root, header, tabs,
   // chip row and request rows (the panel lands with the client milestone) —
   // the same inlined, zero-runtime source-plane edge.
@@ -279,10 +286,12 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'request-inspector': ['@khorsheed/dsh-client-ui-panel-kit'],
   // video-studio → ui-panel-kit: the 剪辑 panel's root, header, tabs and chip
   // rows — the same inlined, zero-runtime source-plane edge.
-  'video-studio': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // …and ui-agent-nav (the destination follower, proposal agent-sidebar-navigation).
+  'video-studio': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // game → ui-panel-kit: the game tab's panel root, header, tabs and rows
-  // (panel-design convention for every new panel).
-  'game': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // (panel-design convention for every new panel); and ui-agent-nav, the
+  // destination follower (proposal agent-sidebar-navigation) — same edge.
+  'game': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // room consumes the local-agent delegation facade as an OPTIONAL capability:
   // type-only imports, an optional peer dep, a runtime probe, and tested
   // degradation when the family is absent (the room works with the main agent

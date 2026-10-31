@@ -14,6 +14,7 @@
   "files": [
     "src/css-modules.d.ts",
     "src/types.ts",
+    "src/nav-line.ts",
     "src/mastery.ts",
     "src/profiles.ts",
     "src/client/contract.ts",
@@ -24,7 +25,6 @@
     "src/client/index.ts",
     "src/client/locales.ts",
     "src/client/preset-visibility.ts",
-    "src/client/reveal.ts",
     "src/client/quiz-drafts.ts",
     "src/client/store.ts",
     "src/client/judge.ts",
@@ -42,6 +42,9 @@
     "src/client/views/cards.tsx",
     "src/client/views/quiz.tsx",
     "src/client/bind/BindChip.tsx",
+    "src/client/desk/desk-row.ts",
+    "src/client/desk/DeskOpenRow.tsx",
+    "src/client/desk/DeskAttachment.tsx",
     "src/client/LibraryPane.tsx"
   ]
 }

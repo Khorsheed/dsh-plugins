@@ -1162,7 +1162,7 @@ const SERVER_TOOL_CARD_NAMES: Readonly<Record<string, string>> = {
 }
 
 /** Render a tool_use input payload as a compact command/query line. */
-function inputDetail(input: unknown): string | undefined {
+export function inputDetail(input: unknown): string | undefined {
   if (input === undefined) return undefined
   if (typeof input === 'string') return input.trim() === '' ? undefined : input.trim()
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return undefined
@@ -1175,7 +1175,11 @@ function inputDetail(input: unknown): string | undefined {
   // the input entirely (the pre-fallback behavior hid e.g. a Task prompt).
   const json = JSON.stringify(record)
   if (json === '{}') return undefined
-  return json.length <= 160 ? json : `${json.slice(0, 160)}…`
+  // Structured input (an MCP tool's nested questions, options, lists) stays
+  // whole and parseable: a 160-character cut left ask_user_question unreadable.
+  const structured = Object.values(record).some(value => typeof value === 'object' && value !== null)
+  const cap = structured ? 16_000 : 160
+  return json.length <= cap ? json : `${json.slice(0, cap)}…`
 }
 
 /**

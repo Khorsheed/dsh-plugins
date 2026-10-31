@@ -83,7 +83,7 @@ function Plan(props: NovelSurfaceProps & { readonly api: NovelRemote; readonly d
               chapters={chapters.filter(row => volumeOf(row, outline.volumes) === volume.id)}
               ahead={volume.id === currentVolume ? ahead : []}
               cores={data.cores}
-              openChapter={(n, title) => { props.navigate.openPage('novel:chapter', title, String(n)) }}
+              openChapter={n => { props.navigate.openManuscripts(String(n)) }}
             />
           ))}
       </section>

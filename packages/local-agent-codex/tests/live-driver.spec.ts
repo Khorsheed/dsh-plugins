@@ -340,6 +340,12 @@ describe('codex app-server item fold (transport → shared line shape)', () => {
     expect(codexAppServerItemToLine({ type: 'webSearch' })).toMatchObject({ kind: 'tool', name: 'WebSearch' })
     expect(codexAppServerItemToLine({ type: 'mcpToolCall', server: 'dsh-member', tool: 'member_message' }))
       .toMatchObject({ kind: 'tool', name: 'dsh-member/member_message' })
+    // A member-bridge call keeps its arguments and its outcome (ask_user_question's questions and answers).
+    const asked = { questions: [{ id: 'god', question: '先深化哪一组？', options: [{ label: '阿努比斯' }] }] }
+    expect(codexAppServerItemToLine({ type: 'mcpToolCall', id: 'm1', server: 'dsh-member', tool: 'ask_user_question', arguments: asked, status: 'completed', result: { content: [{ type: 'text', text: '{"answers":[{"id":"god","selected":["阿努比斯"]}]}' }] } }))
+      .toEqual({ kind: 'tool', id: 'm1', name: 'dsh-member/ask_user_question', args: JSON.stringify(asked), result: '{"answers":[{"id":"god","selected":["阿努比斯"]}]}' })
+    expect(codexAppServerItemToLine({ type: 'mcpToolCall', id: 'm2', server: 'dsh-member', tool: 'ask_user_question', arguments: asked, status: 'failed', error: { message: 'The human did not answer' } }))
+      .toMatchObject({ result: 'The human did not answer', failed: true })
     // File edits and non-shell calls are mirrored, not dropped.
     expect(codexAppServerItemToLine({ type: 'fileChange', id: 'fc1', changes: [{ path: '/work/a.ts', kind: 'update', diff: '@@ -1 +1 @@' }], status: 'completed' }))
       .toEqual({ kind: 'tool', id: 'fc1', name: 'ApplyPatch', args: 'update: /work/a.ts', result: '@@ -1 +1 @@' })
@@ -468,6 +474,69 @@ describe('codex live driver rounds', () => {
     // The settled report carries the round total (30 - 16 uncached input).
     expect(m.settles[0]?.round).toMatchObject({ usage: { inputTokens: 14, outputTokens: 7, cacheReadTokens: 16 } })
     expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
+  it('settles a resumed thread\'s round with its own spend, not the thread\'s running total', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-resumed'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    // The thread already spent 1000 input / 100 output in earlier rounds:
+    // the wire's total carries it, the round's two calls add 30 / 7.
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't1', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a', status: 'completed' } })
+    fake.notify('thread/tokenUsage/updated', {
+      threadId: 'thread-1', turnId: 'turn-1',
+      tokenUsage: {
+        last: { inputTokens: 10, cachedInputTokens: 6, outputTokens: 3, reasoningOutputTokens: 0, totalTokens: 13 },
+        total: { inputTokens: 1010, cachedInputTokens: 806, outputTokens: 103, reasoningOutputTokens: 0, totalTokens: 1113 },
+      },
+    })
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'm2', type: 'agentMessage', text: '结论', phase: 'final_answer' } })
+    fake.notify('thread/tokenUsage/updated', {
+      threadId: 'thread-1', turnId: 'turn-1',
+      tokenUsage: {
+        last: { inputTokens: 20, cachedInputTokens: 10, outputTokens: 4, reasoningOutputTokens: 0, totalTokens: 24 },
+        total: { inputTokens: 1030, cachedInputTokens: 816, outputTokens: 107, reasoningOutputTokens: 0, totalTokens: 1137 },
+      },
+    })
+    fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    expect(m.settles[0]?.round).toMatchObject({ usage: { inputTokens: 14, outputTokens: 7, cacheReadTokens: 16 } })
+    await m.driver.disposeAll()
+  })
+
+  it('a compaction round compacts the thread, holds the member until its turn completes, and records one event', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-compact'))
+    const fake = new FakeAppServer({ turn: () => ({}) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request({ prompt: '/compact' }) as never, { ...roundSpec(m, child, { resume: { cliSessionId: 'thread-9', turn: 2 } }), operation: 'compact' })
+    await vi.waitFor(() => { expect(fake.requests.some(entry => entry.method === 'thread/compact/start')).toBe(true) })
+    expect(fake.requests.some(entry => entry.method === 'turn/start')).toBe(false)
+    // Codex runs the compaction as a turn of its own.
+    fake.notify('turn/started', { threadId: 'thread-9', turn: { id: 'turn-c', status: 'inProgress' } })
+    fake.notify('item/started', { threadId: 'thread-9', turnId: 'turn-c', item: { id: 'cc-1', type: 'contextCompaction' } })
+    fake.notify('thread/tokenUsage/updated', {
+      threadId: 'thread-9', turnId: 'turn-c',
+      tokenUsage: { last: { inputTokens: 6000, cachedInputTokens: 4000, outputTokens: 60, reasoningOutputTokens: 0, totalTokens: 6060 }, total: {}, modelContextWindow: 400000 },
+    })
+    let settled = false
+    void run.result.then(() => { settled = true })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    // Still compacting: the member's queue stays held (codex refuses a turn meanwhile).
+    expect(settled).toBe(false)
+    fake.notify('item/completed', { threadId: 'thread-9', turnId: 'turn-c', item: { id: 'cc-1', type: 'contextCompaction' } })
+    fake.notify('turn/completed', { threadId: 'thread-9', turn: { id: 'turn-c', status: 'completed', items: [] } })
+    expect((await run.result).stopReason).toBe('completed')
+    const events = child.snapshotEvents()
+    expect(events.filter(event => event.type === 'turn/start')).toHaveLength(0)
+    expect(events.filter(event => event.type === 'local-agent/compaction').map(event => event.data)).toEqual([expect.objectContaining({
+      source: 'manual', outcome: 'completed', provider: 'codex-local', contextWindow: 400000,
+      usage: { inputTokens: 2000, outputTokens: 60, cacheReadTokens: 4000 },
+    })])
     await m.driver.disposeAll()
   })
 

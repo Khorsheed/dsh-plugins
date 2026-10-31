@@ -51,9 +51,11 @@ export interface KimiSessionTranscript {
    * Every `usage.record` the wire reported, tagged with the transcript-line
    * position it occurred at. Each record is ONE LLM request's accounting
    * (kimi does not accumulate within a turn), so a mirror sums the records
-   * whose position falls inside the delta it appends.
+   * whose position falls inside the delta it appends. `step` names the wire
+   * step (`${turn}:${wireStep}`) open when the record was written — kimi
+   * writes a step's record after its `step.begin`, before its content.
    */
-  usageRecords: readonly { readonly line: number; readonly usage: TokenUsage }[]
+  usageRecords: readonly { readonly line: number; readonly usage: TokenUsage; readonly step?: string }[]
   /**
    * Wire steps (`${turn}:${wireStep}`, turn 1-based) whose `step.end` the wire
    * recorded — a closed step's content is complete, so a mirror may fold it
@@ -73,7 +75,7 @@ export interface KimiSessionTranscript {
 }
 
 /** The wire event log path for a session directory. */
-function wirePath(sessionDir: string): string {
+export function wirePath(sessionDir: string): string {
   return join(sessionDir, 'agents', 'main', 'wire.jsonl')
 }
 
@@ -161,6 +163,9 @@ function editArgsOf(name: string, record: Record<string, unknown>): string | und
   return undefined
 }
 
+/** Cap on a structured tool call's mirrored JSON arguments. */
+const STRUCTURED_ARGS_MAX = 16_000
+
 /** Render a tool call's arguments into a compact summary. */
 function argsOf(name: string, args: unknown): string | undefined {
   if (args === undefined) return undefined
@@ -171,6 +176,13 @@ function argsOf(name: string, args: unknown): string | undefined {
   // scalar preference below would otherwise reduce them to.
   const edit = editArgsOf(name, record)
   if (edit !== undefined) return edit
+  // Structured arguments (an MCP tool's nested questions, options, lists)
+  // keep their full JSON: the one-line summary below keeps only scalars and
+  // dropped them, so the member's ask_user_question read as called with nothing.
+  if (Object.values(record).some(value => typeof value === 'object' && value !== null)) {
+    const json = JSON.stringify(record)
+    return json.length <= STRUCTURED_ARGS_MAX ? json : `${json.slice(0, STRUCTURED_ARGS_MAX)}…`
+  }
   // WebSearch/FetchURL expose a query/url; prefer the most meaningful scalar.
   for (const key of ['query', 'url', 'path', 'command']) {
     const value = record[key]
@@ -196,8 +208,10 @@ function argsOf(name: string, args: unknown): string | undefined {
 export async function readKimiTranscript(sessionDir: string): Promise<KimiSessionTranscript> {
   const sessionId = sessionDir.split('session_').pop() ?? sessionDir
   const lines: KimiTranscriptLine[] = []
-  const usageRecords: { line: number; usage: TokenUsage }[] = []
+  const usageRecords: { line: number; usage: TokenUsage; step?: string }[] = []
   const closedSteps = new Set<string>()
+  /** The wire step begun and not yet ended (`${turn}:${wireStep}`). */
+  let openStep: string | undefined
   let model: string | undefined
   let modelTurn: number | undefined
   let lineModel: string | undefined
@@ -242,6 +256,11 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       continue
     }
     if (event.type === 'usage.record') {
+      // A compaction call's own spend (`usageScope: 'session'`, written
+      // between full_compaction.begin and .complete, untagged by any step):
+      // never a round's. The compaction event carries it; counted here it
+      // would ride the next round's reply as unclaimed usage.
+      if (event.usageScope === 'session') continue
       // The record's own `model` field is the observed model identifier
       // (verified against kimi 0.39.x wires); the `llm.request` fallback
       // below covers wires whose usage records omit it. Last one seen wins:
@@ -255,7 +274,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
         if (lineConfig !== undefined) lineConfig = { ...lineConfig, model: event.model }
       }
       const usage = usageFromWire(event.usage)
-      if (usage !== undefined) usageRecords.push({ line: lines.length, usage })
+      if (usage !== undefined) usageRecords.push({ line: lines.length, usage, ...openStep === undefined ? {} : { step: openStep } })
       continue
     }
     if (event.type === 'llm.request') {
@@ -327,7 +346,11 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       const wireStep = typeof loop.step === 'number' ? loop.step : undefined
       const part = loop.part as { type?: string; text?: string; think?: string } | undefined
       const lineTurn = turn === 0 ? 1 : turn
-      if (loop.type === 'step.end' && wireStep !== undefined) closedSteps.add(`${lineTurn}:${wireStep}`)
+      if (loop.type === 'step.begin' && wireStep !== undefined) openStep = `${lineTurn}:${wireStep}`
+      if (loop.type === 'step.end' && wireStep !== undefined) {
+        closedSteps.add(`${lineTurn}:${wireStep}`)
+        if (openStep === `${lineTurn}:${wireStep}`) openStep = undefined
+      }
       if (part?.type === 'text' && part.text !== undefined && part.text.trim() !== '') {
         push({ kind: 'assistant', text: part.text, turn: lineTurn, ...wireStep === undefined ? {} : { wireStep } })
       } else if (part?.type === 'think' && part.think !== undefined && part.think.trim() !== '') {

@@ -20,6 +20,10 @@
  * one), and a kind with no registrant renders the host's designed
  * `tab.unavailable` fallback ("a real state, not a defect").
  *
+ * In a room the tab also shows while any member's mode grants the row (path 3,
+ * the room desk: the room's sidebar offers the union of the room's mode and
+ * its members'); a member mode the composition cannot read grants nothing.
+ *
  * Inline copy of packages/canvas/src/client/preset-visibility.ts (the docs
  * rule: keep per-package copies, no shared helper).
  * @module @khorsheed/dsh-video-studio/client/preset-visibility
@@ -51,6 +55,17 @@ export interface VideoPluginInventorySnapshot {
       readonly enabled?: boolean
     }[]
   }[]
+}
+
+/** The room plugin's `ctx.roomModes`, structurally (no dependency on the room package). */
+interface RoomModesLike {
+  presetsOf: (sessionId: string) => readonly string[] | undefined
+  subscribe: (listener: () => void) => () => void
+}
+
+/** Whether one preset group mounts the tool row. */
+function grantsRow(group: { readonly rows: readonly { readonly moduleName: string; readonly enabled?: boolean }[] }): boolean {
+  return group.rows.some(row => row.moduleName === VIDEO_TOOL_ROW_MODULE && row.enabled !== false)
 }
 
 /** The current session's agent preset, the dual read per host line. */
@@ -94,6 +109,12 @@ export class VideoTabVisibility {
       () => ctx.sessions.list.subscribe(() => { this.notify() }),
       'video-studio: tab visibility session follower',
     )
+    // A room's roster moves the union (path 3 below). The deferred arm never
+    // fires without the room plugin, and the criterion is then exactly paths 1–2.
+    ;(ctx.inject as (deps: string[], callback: (scoped: Context) => void) => void)(['roomModes'], (scoped) => {
+      const modes = (scoped as unknown as { roomModes: RoomModesLike }).roomModes
+      scoped.effect(() => modes.subscribe(() => { this.notify() }), 'video-studio: tab visibility room follower')
+    })
   }
 
   show(sessionId: SessionId | undefined): boolean {
@@ -107,7 +128,16 @@ export class VideoTabVisibility {
     const group = this.composition.agentPresets?.find(candidate => candidate.id === preset)
     if (group === undefined || group.broken !== undefined) return true
     // Path 2: the preset-mounted row grants this session.
-    return group.rows.some(row => row.moduleName === VIDEO_TOOL_ROW_MODULE && row.enabled !== false)
+    if (grantsRow(group)) return true
+    // Path 3: a room shows what any member's mode reaches — the room's own
+    // mode may be 开发 while a member edits (proposal 2026-10-29-room-desk).
+    // Only readable member modes count: an unknown one leaves the verdict to
+    // the room's own mode.
+    const members = (this.ctx.get as (name: string) => RoomModesLike | undefined).call(this.ctx, 'roomModes')?.presetsOf(sessionId) ?? []
+    return members.some(id => {
+      const member = this.composition?.agentPresets?.find(candidate => candidate.id === id)
+      return member !== undefined && member.broken === undefined && grantsRow(member)
+    })
   }
 
   /** Subscribe to criterion-input changes (session switches, the inventory answer). */

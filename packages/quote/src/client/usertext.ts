@@ -74,7 +74,11 @@ export function parseAttribution(line: string): { readonly label?: string; reado
  * start by a non-consuming lookbehind so a block beginning exactly at `from`
  * still matches. The closing line is re-parsed by {@link parseAttribution}.
  */
-const BLOCK = new RegExp(`(?<=^|\\n)(?:> ?[^\\n]*\\n)*> (?:${FORMS.map(form => form.pattern).join('|')})(?=\\n|$)`, 'g')
+const BLOCK_SOURCE = `(?<=^|\\n)(?:> ?[^\\n]*\\n)*> (?:${FORMS.map(form => form.pattern).join('|')})(?=\\n|$)`
+const BLOCK = new RegExp(BLOCK_SOURCE, 'g')
+
+/** A fresh global matcher over whole quote blocks (callers own its lastIndex). */
+export const quoteBlockMatcher = (): RegExp => new RegExp(BLOCK_SOURCE, 'g')
 
 /** Strip one wire line's `> ` prefix (`> ` and bare `>` both). */
 export const unquoteLine = (line: string): string => line.replace(/^> ?/, '')

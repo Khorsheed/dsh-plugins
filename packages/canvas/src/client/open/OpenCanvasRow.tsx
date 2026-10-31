@@ -3,15 +3,14 @@
  * conversation: which canvas the agent created or switched to, and one door
  * — 打开 → — to it in the right sidebar.
  *
- * A call that settles while the row is on screen (the row saw it running)
- * opens the canvas by itself, so the sidebar follows the agent's switch and
- * the person sees what the next cards land on. A row mounted already settled
- * is history — a reload, a scroll back — and only offers the door: replaying
- * an old switch would yank the sidebar away from whatever is open now.
+ * The row only offers the door. Following the switch by itself is the
+ * destination follower's job (the answer's destination line, proposal
+ * 2026-10-30-agent-sidebar-navigation): it reads the session's live events, so
+ * it follows even when the row is folded away, and never on a replay.
  *
  * @module @khorsheed/dsh-canvas/client
  */
-import { useEffect, useRef, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '../locales.ts'
 import type { ProposeToolBlock } from '../type/propose-row.ts'
@@ -37,14 +36,6 @@ export interface OpenCanvasRowProps extends OpenCanvasRowFace {
  */
 export function OpenCanvasRow({ block, phase, t, openCanvas }: OpenCanvasRowProps): ReactNode {
   const row = openRowModel(block, phase)
-  const sawRunning = useRef(false)
-  const followed = useRef(false)
-  if (row.state === 'running') sawRunning.current = true
-  useEffect(() => {
-    if (!sawRunning.current || followed.current || row.canvasId === null) return
-    followed.current = true
-    openCanvas(row.canvasId)
-  }, [row.canvasId, openCanvas])
   return (
     <div className={css.row} data-tool="canvas_open" data-state={row.state}>
       <span className={css.kind}>{t('openrow.kind')}</span>
