@@ -8,8 +8,9 @@
  * @module @khorsheed/dsh-local-agent/client — member tools view
  */
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { NS } from './locales.ts'
 import { formatTokens } from './member-dock.ts'
@@ -38,10 +39,22 @@ export function MemberTools({ childSessionId, placement, memberName, store, regi
   useSyncExternalStore(registry.subscribe, registry.snapshotVersion)
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLSpanElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  // The panel is portalled and fixed above the ring: a ring inside a scrolling
+  // or transformed popup (the room's members table) would clip it otherwise.
+  const [position, setPosition] = useState<CSSProperties | null>(null)
+  useLayoutEffect(() => {
+    if (!open) { setPosition(null); return }
+    const rect = rootRef.current?.getBoundingClientRect()
+    if (rect === undefined) return
+    const width = Math.min(264, window.innerWidth - 24)
+    setPosition({ left: Math.max(12, Math.min(rect.right - width, window.innerWidth - width - 12)), bottom: window.innerHeight - rect.top + 8, width })
+  }, [open])
   useEffect(() => {
     if (!open) return
     const onPointerDown = (event: MouseEvent): void => {
       if (rootRef.current?.contains(event.target as Node) === true) return
+      if (panelRef.current?.contains(event.target as Node) === true) return
       setOpen(false)
     }
     const onKeyDown = (event: KeyboardEvent): void => { if (event.key === 'Escape') setOpen(false) }
@@ -107,8 +120,8 @@ export function MemberTools({ childSessionId, placement, memberName, store, regi
         </svg>
         <span>{reading}</span>
       </button>
-      {open && (
-        <div className={css.panel} role="dialog" aria-label={label}>
+      {open && createPortal(
+        <div ref={panelRef} className={css.panel} role="dialog" aria-label={label} style={position ?? { visibility: 'hidden', left: 0, bottom: 0 }}>
           <div className={css.header}>
             <span className={css.headline}>{label}</span>
             {context.usedTokens !== undefined && context.contextWindow !== undefined && (
@@ -121,7 +134,8 @@ export function MemberTools({ childSessionId, placement, memberName, store, regi
             <div className={css.bar}><div className={css.segment} style={{ width: `${percent}%` }} /></div>
           )}
           {tools('panel')}
-        </div>
+        </div>,
+        document.body,
       )}
     </span>
   )

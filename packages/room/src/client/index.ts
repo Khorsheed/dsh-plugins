@@ -636,6 +636,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       ...(() => { const face = attachmentsFor(); return face === undefined ? {} : { attachments: face } })(),
       renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
+      // Read at render: a local-agent core loading after this entry still lands.
+      renderMemberTools: (id, placement, options) => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberTools?.(id, placement, options) ?? null,
       stopMember: (name, expectedRunId) => { void remote?.cancel({ sessionId, name, ...expectedRunId === undefined ? {} : { expectedRunId } }).then(() => roomStore.refresh(sessionId)) },
       modelDirectory: modelDirectoryFor(sessionId),
       setCoordinator: setCoordinatorFor(sessionId),
