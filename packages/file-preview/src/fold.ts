@@ -56,7 +56,7 @@ export function pathFromToolCall(name: string, argumentsJson: string): FilePrevi
   }
 }
 
-/** Read the write/edit diff list out of a tool result's tool-private meta. */
+/** Read the write/edit diff list out of a tool result or dispatch's presentation meta. */
 export function diffsFromResultMeta(meta: unknown): readonly FilePreviewResultDiff[] | undefined {
   if (meta === null || typeof meta !== 'object') return undefined
   const diffs = (meta as Record<string, unknown>).diffs
@@ -73,16 +73,53 @@ export function diffsFromResultMeta(meta: unknown): readonly FilePreviewResultDi
   return result
 }
 
+/** Restore the argument's display path for diffs belonging to the dispatch's canonical target path. */
+function diffsFromPtcDispatch(
+  meta: unknown, target: FilePreviewCallTarget | undefined,
+): readonly FilePreviewResultDiff[] | undefined {
+  const diffs = diffsFromResultMeta(meta)
+  if (diffs === undefined || target === undefined || meta === null || typeof meta !== 'object') return diffs
+  const canonical = (meta as Record<string, unknown>).path
+  if (typeof canonical !== 'string') return diffs
+  return diffs.map(diff => diff.path === canonical ? { ...diff, path: target.path } : diff)
+}
+
+/** Whether presentation metadata explicitly reports no diff hunks (create or a no-change update). */
+function hasEmptyResultDiffs(meta: unknown): boolean {
+  if (meta === null || typeof meta !== 'object') return false
+  const diffs = (meta as Record<string, unknown>).diffs
+  return Array.isArray(diffs) && diffs.length === 0
+}
+
+/** Extract the full written content from already-parsed write arguments. */
+function contentFromWriteArguments(args: unknown): string | undefined {
+  if (args !== null && typeof args === 'object') {
+    const content = (args as Record<string, unknown>).content
+    if (typeof content === 'string') return content
+  }
+  return undefined
+}
+
+/** Whether a dispatch explicitly reports the official create shape. */
+function isPtcCreate(meta: unknown): boolean {
+  return meta !== null && typeof meta === 'object'
+    && (meta as Record<string, unknown>).operation === 'create' && hasEmptyResultDiffs(meta)
+}
+
+/** Read the full content only when a dispatch explicitly reports the official create shape. */
+function createdContentFromPtcDispatch(meta: unknown, args: unknown): string | undefined {
+  if (!isPtcCreate(meta)) return undefined
+  return contentFromWriteArguments(args)
+}
+
 /**
  * Fold a session's events into the files it read, wrote, or edited, in
  * first-seen order and deduplicated by display path; a later occurrence
  * refreshes the entry's op and location without moving it, and each write/edit
- * tool result appends its change's diff to the entry's `diffs` in event order.
- * Nested PTC file dispatches (`tool/ptc-dispatch` events — the host's Code
- * Mode name through 0.1.2, renamed with the 0.1.5 format; the v2→v3 log
- * migration renames persisted rows, so only the ptc name is matched) count
- * too — they carry no turn/step of their own, so the entry borrows the
- * enclosing root call's location.
+ * result or settled PTC dispatch carrying presentation diffs appends them to
+ * the entry's `diffs` in event order. Nested dispatches borrow turn/step from
+ * their enclosing root call; older dispatches without metadata keep only the
+ * path entry rather than acquiring an invented history.
  * @param events - the session's events in ascending seq order.
  * @param maxFiles - cap on returned entries; excess files are dropped in
  *   first-seen order after the cap is reached.
@@ -100,6 +137,20 @@ export function foldFilePreview(events: readonly SessionEvent[], maxFiles: numbe
     if (existing === undefined && entries.size >= maxFiles) return
     entries.set(target.path, existing === undefined ? next : { ...existing, ...next, diffs: existing.diffs })
   }
+  /** Append one settled call's presentation diffs with the call's own or borrowed location. */
+  const appendDiffs = (
+    diffs: readonly FilePreviewResultDiff[], seq: number, turn: number, step: number,
+  ): void => {
+    for (const diff of diffs) {
+      // The render-intent vocabulary: a diff registers its path even when no
+      // write/edit call recorded it (for example follow-along locations).
+      if (!entries.has(diff.path)) record({ op: 'edit', path: diff.path }, seq, turn, step)
+      const entry = entries.get(diff.path)
+      if (entry === undefined) continue
+      const change: FilePreviewDiff = { seq, turn, step, oldText: diff.oldText, newText: diff.newText }
+      entries.set(diff.path, { ...entry, diffs: [...entry.diffs, change] })
+    }
+  }
   for (const event of events) {
     asOfSeq = event.seq
     if (event.type === 'tool/call') {
@@ -111,35 +162,16 @@ export function foldFilePreview(events: readonly SessionEvent[], maxFiles: numbe
     }
     if (event.type === 'tool/ptc-dispatch') {
       // The dispatch event IS the settled outcome: a failed sub-call changed
-      // nothing, so only successful file touches record.
+      // nothing, so only successful file touches and diffs record.
       if (event.data.isError) continue
-      const target = targetFromArguments(event.data.name, event.data.arguments)
-      if (target === undefined) continue
       const site = callSites.get(String(event.data.rootCallId)) ?? { turn: 0, step: 0 }
-      record(target, event.seq, site.turn, site.step)
+      const target = targetFromArguments(event.data.name, event.data.arguments)
+      if (target !== undefined) record(target, event.seq, site.turn, site.step)
+      appendDiffs(diffsFromPtcDispatch(event.data.meta, target) ?? [], event.seq, site.turn, site.step)
       continue
     }
     if (event.type === 'tool/result') {
-      const diffs = diffsFromResultMeta(event.data.meta)
-      if (diffs === undefined) continue
-      for (const diff of diffs) {
-        // The render-intent vocabulary: a result diff registers its path even
-        // when no write/edit call recorded it (non-write/edit mutation tools
-        // like the official deliverables' follow-along locations).
-        if (!entries.has(diff.path)) {
-          record({ op: 'edit', path: diff.path }, event.seq, event.data.turn, event.data.step)
-        }
-        const entry = entries.get(diff.path)
-        if (entry === undefined) continue
-        const change: FilePreviewDiff = {
-          seq: event.seq,
-          turn: event.data.turn,
-          step: event.data.step,
-          oldText: diff.oldText,
-          newText: diff.newText,
-        }
-        entries.set(diff.path, { ...entry, diffs: [...entry.diffs, change] })
-      }
+      appendDiffs(diffsFromResultMeta(event.data.meta) ?? [], event.seq, event.data.turn, event.data.step)
     }
   }
   return {
@@ -191,15 +223,11 @@ interface WriteCallFacts {
 /** Extract the full written content from a `write` tool call's arguments JSON. */
 function contentFromWriteCall(argumentsJson: string): string | undefined {
   try {
-    const args = JSON.parse(argumentsJson) as unknown
-    if (args !== null && typeof args === 'object') {
-      const content = (args as Record<string, unknown>).content
-      if (typeof content === 'string') return content
-    }
+    return contentFromWriteArguments(JSON.parse(argumentsJson) as unknown)
   } catch {
     // Model arguments are expected JSON; a malformed payload has no content.
+    return undefined
   }
-  return undefined
 }
 
 /** Read the result message's call identity and failure flag. V4's first-class
@@ -224,19 +252,17 @@ function resultCallFacts(
  * Reads leave no card entry (the card is the mutation vocabulary — write/edit
  * only), so a pure-read call never registers; write/edit calls register with
  * their own turn; nested PTC dispatches borrow the enclosing root call's
- * turn (dispatch events carry none); a `tool/result` whose presentation meta
- * carries diffs registers its paths (the render-intent vocabulary) with the
- * result's turn, and per-turn line deltas are summed from the diffs. A `write` whose result carries no diffs is a
- * create (the write tool records no diffs when the file had no prior content):
- * its full written content — read from the call arguments, which the log keeps
- * — is the added-line count, once per file per turn.
+ * turn. Native results and settled dispatches with presentation diffs register
+ * those paths and sum per-turn line deltas. A native first-touch write or an
+ * explicit PTC create with no diff hunks counts its full written content as
+ * added and zero removed; an empty non-create diff contributes nothing.
  *
  * Count discipline: a write/edit tool/call only registers the path's location
  * and never touches counts (its counted result follows); the first count
  * contribution for a turn+path is adopted verbatim, later ones accumulate per
- * field with unknown-wins — an uncounted mutation (a PTC dispatch, or a
- * diff whose side reports no prior content) poisons that field to undefined
- * rather than reporting a misleading partial.
+ * field with unknown-wins — a dispatch without usable metadata, or a diff
+ * whose side reports no prior content, poisons that field to undefined rather
+ * than reporting a misleading partial.
  * @param events - the session's events in ascending seq order.
  * @returns turn → path → facts, in event order per turn.
  */
@@ -271,8 +297,8 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
   /** Apply one mutation's line-count contribution. The first contribution for
    *  a turn+path is adopted verbatim (a count-less placeholder from a
    *  preceding tool/call must not poison it); later contributions accumulate
-   *  per field with unknown-wins. `unknown` marks an uncountable mutation (a
-   *  PTC dispatch): it poisons both fields. */
+   *  per field with unknown-wins. `unknown` marks a dispatch without usable
+   *  metadata: it poisons both fields rather than guessing a partial total. */
   const recordContribution = (
     path: string, turn: number, seq: number, step: number,
     added: number | undefined, removed: number | undefined,
@@ -326,18 +352,43 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
       continue
     }
     if (event.type === 'tool/ptc-dispatch') {
-      // The dispatch event IS the settled outcome: a failed sub-call changed
-      // nothing, so only successful file touches record. PTC writes are
-      // uncountable (no result diffs reach the session), so they register the
-      // path and poison the line-count totals (unknown wins).
+      // A settled dispatch carries the same presentation metadata as a native
+      // result. Failed calls contribute nothing; old or malformed metadata
+      // keeps the previous unknown-wins fallback.
       if (event.data.isError) continue
-      const target = targetFromArguments(event.data.name, event.data.arguments)
-      if (target === undefined) continue
-      // Reads leave no card entry here too — only mutations register.
-      if (target.op === 'read') continue
       const site = callSites.get(String(event.data.rootCallId)) ?? { turn: 0, step: 0 }
-      sessionSeen.add(target.path)
-      recordContribution(target.path, site.turn, event.seq, site.step, undefined, undefined, true)
+      const target = targetFromArguments(event.data.name, event.data.arguments)
+      const diffs = diffsFromPtcDispatch(event.data.meta, target)
+      if (target !== undefined && target.op !== 'read') {
+        sessionSeen.add(target.path)
+        if (diffs !== undefined) {
+          recordLocation(target.path, site.turn, event.seq, site.step)
+        } else if (hasEmptyResultDiffs(event.data.meta)) {
+          const content = target.op === 'write'
+            ? createdContentFromPtcDispatch(event.data.meta, event.data.arguments)
+            : undefined
+          if (content !== undefined) {
+            recordContribution(target.path, site.turn, event.seq, site.step, lineCount(content), 0, false)
+          } else if (isPtcCreate(event.data.meta)) {
+            recordContribution(target.path, site.turn, event.seq, site.step, undefined, undefined, true)
+          } else {
+            recordLocation(target.path, site.turn, event.seq, site.step)
+          }
+        } else {
+          recordContribution(target.path, site.turn, event.seq, site.step, undefined, undefined, true)
+        }
+      }
+      if (diffs !== undefined) {
+        for (const diff of diffs) {
+          sessionSeen.add(diff.path)
+          recordContribution(
+            diff.path, site.turn, event.seq, site.step,
+            lineCount(diff.newText),
+            diff.oldText === null ? undefined : lineCount(diff.oldText),
+            false,
+          )
+        }
+      }
       continue
     }
     if (event.type === 'tool/result') {

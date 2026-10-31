@@ -229,7 +229,7 @@ describe('foldFilePreview', () => {
 
 /** Build one settled nested PTC dispatch event (arguments already parsed). */
 function ptcDispatch(
-  seq: number, name: string, args: unknown, rootSeq: number, isError = false,
+  seq: number, name: string, args: unknown, rootSeq: number, isError = false, meta?: JsonValue,
 ): SessionEvent<'tool/ptc-dispatch'> {
   return {
     seq,
@@ -243,6 +243,7 @@ function ptcDispatch(
       arguments: args,
       isError,
       content: [],
+      ...meta === undefined ? {} : { meta },
     },
   }
 }
@@ -285,6 +286,35 @@ describe('foldFilePreview ptc dispatches', () => {
     const result = foldFilePreview(events, 500)
     expect(result.entries).toHaveLength(1)
     expect(result.entries[0]).toMatchObject({ path: 'a.md', op: 'edit', seq: 2, turn: 2, step: 1 })
+  })
+
+  it('attaches dispatch diffs and render-intent paths with the root call location', () => {
+    const events = [
+      toolCall(0, 'run_code', { code: '…' }, 4, 2),
+      ptcDispatch(1, 'edit', { file_path: 'a.md' }, 0, false, {
+        path: '/private/workspace/a.md',
+        diffs: [
+          { path: '/private/workspace/a.md', oldText: 'x', newText: 'y' },
+          { path: '/render/ghost.md', oldText: null, newText: 'new' },
+        ],
+      }),
+    ]
+    const result = foldFilePreview(events, 500)
+    expect(result.entries.map(entry => entry.path)).toEqual(['a.md', '/render/ghost.md'])
+    expect(result.entries[0]?.diffs).toEqual([{ seq: 1, turn: 4, step: 2, oldText: 'x', newText: 'y' }])
+    expect(result.entries[0]?.lastDiff).toEqual({ oldText: 'x', newText: 'y' })
+    expect(result.entries[1]).toMatchObject({ path: '/render/ghost.md', op: 'edit', turn: 4, step: 2 })
+  })
+
+  it('ignores presentation diffs from a failed dispatch', () => {
+    const events = [
+      toolCall(0, 'run_code', { code: '…' }),
+      ptcDispatch(1, 'edit', { file_path: 'a.md' }, 0, true, {
+        diffs: [{ path: 'a.md', oldText: 'x', newText: 'y' }],
+      }),
+    ]
+    expect(foldFilePreview(events, 500).entries).toEqual([])
+    expect(foldFilePreviewByTurn(events).size).toBe(0)
   })
 })
 
@@ -414,6 +444,66 @@ describe('foldFilePreviewByTurn', () => {
     ]
     const byTurn = foldFilePreviewByTurn(events)
     expect(byTurn.get(3)?.get('a.md')?.step).toBe(1)
+  })
+
+  it('counts settled dispatch diffs and every render-intent path at the root turn', () => {
+    const events = [
+      toolCall(0, 'run_code', { code: '…' }, 3, 2),
+      ptcDispatch(1, 'edit', { file_path: 'a.md' }, 0, false, {
+        path: '/private/workspace/a.md',
+        diffs: [
+          { path: '/private/workspace/a.md', oldText: 'x', newText: 'y\nz\n' },
+          { path: '/render/ghost.md', oldText: null, newText: 'n\nm\n' },
+        ],
+      }),
+    ]
+    const byTurn = foldFilePreviewByTurn(events)
+    expect(byTurn.get(3)?.get('a.md')).toMatchObject({ added: 2, removed: 1, step: 2 })
+    expect(byTurn.get(3)?.get('/render/ghost.md')).toMatchObject({ added: 2, step: 2 })
+    expect(byTurn.get(3)?.get('/render/ghost.md')?.removed).toBeUndefined()
+  })
+
+  it('counts an explicit PTC create from its argument content, not as a diff hunk', () => {
+    const events = [
+      toolCall(0, 'run_code', { code: '…' }, 3, 1),
+      ptcDispatch(1, 'write', { file_path: 'new.md', content: 'a\nb\nc\n' }, 0, false, {
+        operation: 'create', diffs: [],
+      }),
+    ]
+    expect(foldFilePreviewByTurn(events).get(3)?.get('new.md')).toMatchObject({ added: 3, removed: 0 })
+    expect(foldFilePreview(events, 500).entries[0]?.diffs).toEqual([])
+  })
+
+  it('keeps a create without readable content unknown instead of inventing a zero count', () => {
+    const events = [
+      toolCall(0, 'run_code', { code: '…' }, 3, 1),
+      ptcDispatch(1, 'write', { file_path: 'new.md' }, 0, false, { operation: 'create', diffs: [] }),
+    ]
+    const fact = foldFilePreviewByTurn(events).get(3)?.get('new.md')
+    expect(fact?.added).toBeUndefined()
+    expect(fact?.removed).toBeUndefined()
+  })
+
+  it('keeps prior counts through an empty non-create dispatch update', () => {
+    const events = [
+      toolCall(0, 'edit', { file_path: 'a.md', old_string: 'x', new_string: 'y\nz\n' }, 2, 1),
+      toolResult(1, { diffs: [{ path: 'a.md', oldText: 'x', newText: 'y\nz\n' }] }, 2, 2),
+      ptcDispatch(2, 'write', { file_path: 'a.md', content: 'y\nz\n' }, 0, false, {
+        operation: 'update', diffs: [],
+      }),
+    ]
+    expect(foldFilePreviewByTurn(events).get(2)?.get('a.md')).toMatchObject({ added: 2, removed: 1 })
+  })
+
+  it('keeps unknown wins for malformed dispatch metadata', () => {
+    const events = [
+      toolCall(0, 'edit', { file_path: 'a.md', old_string: 'x', new_string: 'y\nz\n' }, 2, 1),
+      toolResult(1, { diffs: [{ path: 'a.md', oldText: 'x', newText: 'y\nz\n' }] }, 2, 2),
+      ptcDispatch(2, 'edit', { file_path: 'a.md' }, 0, false, { diffs: [null] }),
+    ]
+    const fact = foldFilePreviewByTurn(events).get(2)?.get('a.md')
+    expect(fact?.added).toBeUndefined()
+    expect(fact?.removed).toBeUndefined()
   })
 
   it('the list fold now registers diff-only paths (the card vocabulary)', () => {
