@@ -43,6 +43,7 @@ const streamCatalogs = await Promise.all([
 for (const catalog of streamCatalogs) {
   (catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
   ;(catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/compaction')
+  ;(catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/context')
 }
 
 // The host's released-log check, the exact relationship rules every stored
@@ -92,6 +93,9 @@ import type {
   LocalAgentSessionRecord,
   LocalAgentStatus,
   LocalAgentToolCalls,
+  LocalAgentCompactionEvent,
+  LocalAgentContextEvent,
+  LocalAgentMemberContext,
 } from './types.ts'
 import LocalAgentGateway from './gateway.ts'
 import { guardChildLog, type QuarantineEntry } from './child-log-guard.ts'
@@ -129,6 +133,9 @@ export type {
   LocalAgentRunProgress,
   LocalAgentSessionRecord,
   LocalAgentStatus,
+  LocalAgentCompactionEvent,
+  LocalAgentContextEvent,
+  LocalAgentMemberContext,
 } from './types.ts'
 
 export type {
@@ -1013,6 +1020,30 @@ export function parseScopeFlag(input: string): { input: string; scope?: string; 
     return { input, error: `${JSON.stringify(scope)} is not a usable scope name — a scope is a name matching [a-z0-9-], never a path` }
   }
   return { input: rest.join(' ').trim(), ...scope === undefined ? {} : { scope } }
+}
+
+/**
+ * A member log's context occupancy: the latest `local-agent/context`, unless
+ * a completed compaction came after it (its after-count is then current).
+ * @param events - the member's session events.
+ * @returns the reading, or undefined when the CLI never reported one.
+ */
+export function memberContextOf(events: readonly SessionEvent[]): Omit<LocalAgentMemberContext, 'state'> | undefined {
+  let reading: Omit<LocalAgentMemberContext, 'state'> | undefined
+  for (const event of events) {
+    if (event.type === 'local-agent/context') {
+      const data = event.data as LocalAgentContextEvent
+      reading = { provider: data.provider, usedTokens: data.usedTokens, ...data.contextWindow === undefined ? reading?.contextWindow === undefined ? {} : { contextWindow: reading.contextWindow } : { contextWindow: data.contextWindow } }
+    } else if (event.type === 'local-agent/compaction') {
+      const data = event.data as LocalAgentCompactionEvent
+      if (data.outcome !== 'completed') continue
+      // A compaction without an after-count (codex states none) leaves the
+      // occupancy unknown until the next round reports it.
+      const contextWindow = data.contextWindow ?? reading?.contextWindow
+      reading = { provider: data.provider, ...data.afterTokens === undefined ? {} : { usedTokens: data.afterTokens }, ...contextWindow === undefined ? {} : { contextWindow } }
+    }
+  }
+  return reading
 }
 
 /**
@@ -2446,7 +2477,65 @@ export class LocalAgentRegistry {
       throw error
     }
     this.trackRun(childSessionId, controller, run, options?.onProgress)
+    if (options?.operation === 'compact') {
+      this.compactingRuns.set(childSessionId, run)
+      const clear = (): void => { if (this.compactingRuns.get(childSessionId) === run) this.compactingRuns.delete(childSessionId) }
+      void run.result.then(clear, clear)
+    }
     return run
+  }
+
+  /** The member's in-flight compaction round, by child session id. */
+  private readonly compactingRuns = new Map<string, SubagentRun>()
+  /** A cold member session's occupancy, read once from the stored log (it cannot move until a round revives the session). */
+  private readonly coldContexts = new Map<string, Promise<Omit<LocalAgentMemberContext, 'state'> | undefined>>()
+
+  /**
+   * A member's context occupancy: the latest `local-agent/context`, or a
+   * later completed compaction's after-count, from the child log. undefined
+   * when the session is not a family member.
+   * @param childSessionId - the member's dsh child session.
+   * @returns occupancy and run state.
+   */
+  async memberContext(childSessionId: string): Promise<LocalAgentMemberContext | undefined> {
+    const record = this.delegations.get(childSessionId)
+    if (record === undefined) return undefined
+    const state = this.compactingRuns.has(childSessionId) ? 'compacting' : this.runs.has(childSessionId) ? 'running' : 'idle'
+    const live = this.ctx.get('sessions')?.get(SessionId(childSessionId))
+    let reading: Omit<LocalAgentMemberContext, 'state'> | undefined
+    if (live !== undefined) {
+      this.coldContexts.delete(childSessionId)
+      reading = memberContextOf(live.snapshotEvents())
+    } else {
+      let cold = this.coldContexts.get(childSessionId)
+      if (cold === undefined) {
+        cold = this.readStoredContext(childSessionId)
+        this.coldContexts.set(childSessionId, cold)
+      }
+      reading = await cold
+    }
+    const harness = this.harnessForProvider(record.provider)
+    return {
+      provider: reading?.provider ?? record.provider, ...reading, state,
+      ...harness === undefined ? {} : { harness: harness.name, harnessDisplayName: harness.displayName },
+    }
+  }
+
+  /** {@link memberContext}'s cold read; undefined when the log is unreadable. */
+  private async readStoredContext(childSessionId: string): Promise<Omit<LocalAgentMemberContext, 'state'> | undefined> {
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined) return undefined
+    try {
+      const reader = await persistence.open(SessionId(childSessionId), 'read')
+      try {
+        return memberContextOf((await reader.read(0)).events)
+      } finally {
+        await reader.close()
+      }
+    } catch {
+      this.coldContexts.delete(childSessionId)
+      return undefined
+    }
   }
 
   /**
@@ -3465,6 +3554,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const catalog = await loader.import(specifier)
         ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
         ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/compaction')
+        ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/context')
       } catch { /* Optional source export or loader capability; root registration remains. */ }
     }
   }

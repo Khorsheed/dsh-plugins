@@ -28,7 +28,7 @@ import type {
   LocalAgentMemberFeedRequest,
   LocalAgentMemberFeedEvent,
 } from './types.ts'
-import type { CardSettings, CardSettingValue, LocalAgentRosterRow, LocalAgentStatus, LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState } from './types.ts'
+import type { CardSettings, CardSettingValue, LocalAgentMemberContext, LocalAgentRosterRow, LocalAgentStatus, LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState } from './types.ts'
 import { extendModelDirectory } from './model-directory.ts'
 import { mergeMemberFeeds } from './member-feed.ts'
 
@@ -172,6 +172,17 @@ export default class LocalAgentGateway extends TypertRemoteService {
   @Remote('activeDelegations')
   activeDelegations(): readonly string[] {
     return this.ctx.localAgent.activeDelegations()
+  }
+
+  /**
+   * A member's context occupancy (the ring and the compaction reminder read
+   * it) and whether it is running or compacting.
+   * @param childSessionId - the member's dsh child session.
+   * @returns the occupancy, or null when the session is not a family member.
+   */
+  @Remote('memberContext')
+  async memberContext(childSessionId: string): Promise<LocalAgentMemberContext | null> {
+    return (await this.ctx.localAgent.memberContext(childSessionId)) ?? null
   }
 
   /**
