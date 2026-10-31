@@ -25,6 +25,8 @@ import { expectValidReleasedLog } from './expect-valid-log.ts'
 /** One scripted turn: streamed chunks, the terminal stop reason, or a hang. */
 interface FakeTurn {
   chunks?: string[]
+  /** Raw session updates sent after the chunks (`usage_update`, say). */
+  updates?: Record<string, unknown>[]
   stopReason?: string
   /** Never resolve the prompt (cancel-path tests drive it by hand). */
   hang?: boolean
@@ -184,6 +186,7 @@ class FakeAcpServer {
           for (const chunk of turn.chunks ?? []) {
             this.update(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: chunk } })
           }
+          for (const update of turn.updates ?? []) this.update(sessionId, update)
           respond({ stopReason: turn.stopReason ?? 'end_turn' })
         })
         return
@@ -586,6 +589,38 @@ describe('kimi live driver rounds', () => {
       source: 'manual', outcome: 'completed', provider: 'kimi-cli', summary: '用户要求记住数字 4271。',
       beforeTokens: 19837, afterTokens: 22085, usage: { inputTokens: 1103, outputTokens: 154, cacheReadTokens: 19712 },
     })])
+    await m.driver.disposeAll()
+  }, 15_000)
+
+  it('a round records the occupancy kimi reports and a compaction kimi ran on its own', async () => {
+    const m = mount({ config: { snapshotMinIntervalMs: 0 } })
+    const child = Session.create(SessionId('child-context-kimi'))
+    const dir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    const row = (value: object): string => JSON.stringify(value)
+    m.queueChild(new FakeAcpServer({ turn: () => {
+      writeKimiWire(m.homeDir, 'acp-session-1', '继续写', '好的')
+      writeFileSync(join(dir, 'wire.jsonl'), [
+        row({ type: 'turn.prompt', input: [{ type: 'text', text: '继续写' }] }),
+        row({ type: 'token_counting.turn_recorded', tokens: 250_000 }),
+        row({ type: 'full_compaction.begin', source: 'auto' }),
+        row({ type: 'context.apply_compaction', summary: '前情提要' }),
+        row({ type: 'token_counting.rebased', tokens: 30_000 }),
+        row({ type: 'full_compaction.complete' }),
+        row({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: 0, part: { type: 'text', text: '好的' } } }),
+        row({ type: 'usage.record', usage: { inputOther: 10, output: 4 } }),
+      ].join('\n') + '\n')
+      return { chunks: ['好的'], updates: [{ sessionUpdate: 'usage_update', used: 31_000, size: 262_144 }] }
+    } }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    const events = child.snapshotEvents()
+    expect(events.filter(event => event.type === 'local-agent/compaction').map(event => event.data)).toEqual([expect.objectContaining({
+      source: 'auto', outcome: 'completed', provider: 'kimi-cli', summary: '前情提要', afterTokens: 30_000, contextWindow: 262_144,
+    })])
+    expect(events.filter(event => event.type === 'local-agent/context').map(event => event.data)).toEqual([
+      { provider: 'kimi-cli', usedTokens: 31_000, contextWindow: 262_144 },
+    ])
+    expectStepBoundaries(child)
     await m.driver.disposeAll()
   }, 15_000)
 

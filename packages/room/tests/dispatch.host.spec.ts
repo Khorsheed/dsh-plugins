@@ -736,6 +736,25 @@ describe('coordinator routing and durable deliveries', () => {
     return state.value.members.find(member => member.name === name)!
   }
 
+  it('a bare /compact compacts an external coordinator, and its handoff waits for the next real message', async () => {
+    const bench = await bootRoom()
+    const member = await preparedMember(bench)
+    await bench.service.setCoordinator({ sessionId: bench.sessionId, memberId: member.id!, expectedRevision: 0 })
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', '摘要'))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '/compact', requestId: 'input-c' })
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledTimes(1)
+    expect(textOf(bench.facade.resume.mock.calls[0]![3])).toBe('/compact')
+    expect(bench.facade.resume.mock.calls[0]![4]).toMatchObject({ operation: 'compact' })
+    const events = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
+    expect(events.some(event => event.type === 'room/speech' && (event.data as { member: string }).member === 'ada')).toBe(false)
+    expect(events.some(event => event.type === 'room/member-compacted')).toBe(true)
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'answer'))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: 'hello', requestId: 'input-d' })
+    await bench.service.engine.idle()
+    expect(textOf(bench.facade.resume.mock.calls[1]![3])).toContain('【协调者交接】')
+  })
+
   it('promotes a ready identity without a prompt, routes bare input directly, and keeps native DSH addressable', async () => {
     const bench = await bootRoom()
     const member = await preparedMember(bench)

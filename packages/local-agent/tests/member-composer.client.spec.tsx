@@ -165,6 +165,21 @@ describe('MemberComposer', () => {
     expect(memberOf).toHaveBeenCalledTimes(2)
   })
 
+  it('/ opens the command menu; Enter completes /compact, and the ring and tools render in their seats', async () => {
+    const renderMemberTools = vi.fn((_id: string, placement: string) => <span data-testid={`tools-${placement}`} />)
+    render(<MemberComposer {...props({ renderMemberTools }, false, { uncachedInputTokens: 10, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0 })} />)
+    const box = await screen.findByRole('textbox')
+    expect(screen.getByTestId('tools-composer')).toBeTruthy()
+    // The ring ends the stats line.
+    expect(screen.getByTestId('tools-meter').closest('[data-member-stats]')).toBeTruthy()
+    fireEvent.change(box, { target: { value: '/co' } })
+    expect(screen.getByRole('listbox', { name: zh['member.command.title'] })).toBeTruthy()
+    expect(screen.getByText(zh['member.command.compact'])).toBeTruthy()
+    fireEvent.keyDown(box, { key: 'Enter' })
+    expect((box as HTMLTextAreaElement).value).toBe('/compact')
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
   it('renders the writable composer for a recorded member', async () => {
     render(<MemberComposer {...props()} />)
 

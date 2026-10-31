@@ -31,6 +31,17 @@ export interface ContextGuardConfig {
    * threshold).
    */
   thresholdRatio: number
+  /** External-CLI ratios by harness name (`kimi`, `codex`, …); absent = follow {@link thresholdRatio}. */
+  harnessThresholds: Readonly<Record<string, number>>
+  /** Per-member ratios by member session id; the name and harness label the card's list. */
+  memberThresholds: Readonly<Record<string, MemberThreshold>>
+}
+
+/** One member's own reminder ratio. */
+export interface MemberThreshold {
+  readonly ratio: number
+  readonly name?: string
+  readonly harness?: string
 }
 
 /** Bounds of the deployment-tunable number (clamped in resolveConfig). */
@@ -69,5 +80,50 @@ export function resolveConfig(config: Partial<ContextGuardConfig> | undefined): 
       THRESHOLD_RATIO_MIN,
       THRESHOLD_RATIO_MAX,
     ),
+    harnessThresholds: ratios(unwrapVolatile(config?.harnessThresholds)),
+    memberThresholds: members(unwrapVolatile(config?.memberThresholds)),
   }
+}
+
+/** A ratio, clamped; undefined when it is not a number. */
+function ratioOf(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? clamp(value, THRESHOLD_RATIO_MIN, THRESHOLD_RATIO_MAX) : undefined
+}
+
+function ratios(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {}
+  if (value === null || typeof value !== 'object') return out
+  for (const [key, entry] of Object.entries(value)) {
+    const ratio = ratioOf(entry)
+    if (ratio !== undefined) out[key] = ratio
+  }
+  return out
+}
+
+function members(value: unknown): Record<string, MemberThreshold> {
+  const out: Record<string, MemberThreshold> = {}
+  if (value === null || typeof value !== 'object') return out
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === null || typeof entry !== 'object') continue
+    const { ratio, name, harness } = entry as Record<string, unknown>
+    const clamped = ratioOf(ratio)
+    if (clamped === undefined) continue
+    out[key] = { ratio: clamped, ...typeof name === 'string' ? { name } : {}, ...typeof harness === 'string' ? { harness } : {} }
+  }
+  return out
+}
+
+/**
+ * A CLI member's effective reminder ratio: its own, else its CLI's, else the
+ * global one.
+ * @param config - the resolved section.
+ * @param member - the member session id and its harness.
+ * @returns the ratio and which layer it came from.
+ */
+export function memberThresholdOf(config: ContextGuardConfig, member: { readonly childSessionId: string; readonly harness?: string | undefined }): { ratio: number; from: 'member' | 'harness' | 'global' } {
+  const own = config.memberThresholds[member.childSessionId]
+  if (own !== undefined) return { ratio: own.ratio, from: 'member' }
+  const harness = member.harness === undefined ? undefined : config.harnessThresholds[member.harness]
+  if (harness !== undefined) return { ratio: harness, from: 'harness' }
+  return { ratio: config.thresholdRatio, from: 'global' }
 }

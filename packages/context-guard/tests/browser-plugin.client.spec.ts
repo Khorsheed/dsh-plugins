@@ -213,6 +213,20 @@ describe('context-guard browser half', () => {
     expect(ctx.slots.entries('conversation.input.right').map(e => e.options.id)).not.toContain('context-guard')
   })
 
+  it('registers the member reminder into local-agent\'s registry when that family is present, and lists its CLIs on the card', async () => {
+    const { ctx, fiber } = await bench()
+    // Without the family: no registration, an empty CLI list (the card shows no 外部 CLI group).
+    expect(cardInjectedFor(ctx).harnesses?.()).toEqual([])
+    const unregister = vi.fn()
+    const registerMemberTool = vi.fn(() => unregister)
+    ctx.provide('localAgentUi', { registerMemberTool, harnessCards: () => [{ name: 'kimi', label: () => 'Kimi' }] } as never)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(registerMemberTool).toHaveBeenCalledWith(expect.objectContaining({ id: 'context-guard' }))
+    expect(cardInjectedFor(ctx).harnesses?.()).toEqual([{ name: 'kimi', label: 'Kimi' }])
+    await fiber.dispose()
+    expect(unregister).toHaveBeenCalled()
+  })
+
   it('registers the settings card on plugins.item while the namespace is served, removed with the fiber', async () => {
     const { ctx, fiber } = await bench()
     expect(ctx.slots.entries('plugins.item').map(e => e.options.id)).toContain(CONTEXT_GUARD_NS)
@@ -333,7 +347,7 @@ describe('context-guard node half', () => {
     // The composition entry becomes the section's base layer: the resolved
     // section carries the composed threshold over the schema default.
     await settings.update(ns, { thresholdRatio: 0.6 })
-    expect(settings.get(ns)).toEqual({ thresholdRatio: 0.6 })
+    expect(settings.get(ns)).toEqual({ thresholdRatio: 0.6, harnessThresholds: {}, memberThresholds: {} })
     // Out-of-schema values are rejected.
     await expect(settings.update(ns, { thresholdRatio: 2 })).rejects.toThrow()
     await fiber.dispose()

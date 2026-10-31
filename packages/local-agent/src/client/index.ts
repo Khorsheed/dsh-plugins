@@ -58,6 +58,10 @@ export type { AuthStatusDotProps } from './AuthStatusDot.tsx'
 export { publishAuthStatus, useHarnessAuthStatus, resetAuthStatuses, readAuthStatus } from './auth-status.ts'
 export type { HarnessAuthStatusKind } from './auth-status.ts'
 export { HarnessCardRegistry } from './harness-cards.ts'
+export { MemberToolRegistry, MemberContextStore, contextRatio } from './member-tools.ts'
+export type { MemberToolFace, MemberToolPlacement, MemberToolRegistration } from './member-tools.ts'
+import { MemberToolRegistry, MemberContextStore, type MemberToolPlacement, type MemberToolRegistration } from './member-tools.ts'
+import { MemberTools } from './MemberTools.tsx'
 export type { HarnessCardRegistration, HarnessCardRenderProps } from './harness-cards.ts'
 export { LocalAgentFamilyCard } from './FamilyCard.tsx'
 export type { FamilyCardInjected, LocalAgentFamilyCardProps } from './FamilyCard.tsx'
@@ -115,6 +119,18 @@ export interface LocalAgentUi {
   harnessCards?(): readonly HarnessCardRegistration[]
   /** The registry's useSyncExternalStore subscribe. */
   subscribeHarnessCards?(listener: () => void): () => void
+  /**
+   * Register a tool drawn beside a CLI member's context occupancy (the
+   * compaction reminder's button and per-member ratio); returns the
+   * unregister. Optional on the TYPE: a registrant probes it.
+   */
+  registerMemberTool?(entry: MemberToolRegistration): () => void
+  /**
+   * A member's occupancy ring (`meter`) or one placement's registered tools,
+   * for surfaces outside the member composer (a room's composer and members
+   * popup). Renders nothing for a session that is not a family member.
+   */
+  renderMemberTools?(childSessionId: string, placement: MemberToolPlacement | 'meter', options?: { readonly memberName?: string | undefined }): ReactNode
 }
 declare module '@deepseek-ai/cordis' {
   interface Context { localAgentUi: LocalAgentUi }
@@ -216,6 +232,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // sources, so only the cordis service is the shared instance.
   const harnessCards = new HarnessCardRegistry()
   const t = ctx.locale.bind(NS)
+  const memberTools = new MemberToolRegistry()
+  const memberContexts = new MemberContextStore(id => gateway.memberContext(id).then(result => (result.ok ? result.value : undefined), () => undefined))
+  const compactMember = async (id: string): Promise<void> => {
+    const result = await gateway.promptMember(id, '/compact', requestId())
+    if (!result.ok) throw new Error(result.error.message)
+    if (!result.value.ok) throw new Error(result.value.error)
+  }
+  const renderMemberTools = (id: string, placement: MemberToolPlacement | 'meter', options?: { readonly memberName?: string | undefined }): ReactNode =>
+    createElement(MemberTools, {
+      key: `${id}:${placement}`, childSessionId: id, placement, memberName: options?.memberName,
+      store: memberContexts, registry: memberTools, compact: compactMember, t,
+    })
   const configurationUi: LocalAgentUi = {
     renderMemberOutput: (id, startedAt, options) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, ...options?.fileMentions === undefined ? {} : { fileMentions: options.fileMentions }, t: ctx.locale.bind(NS) }),
     renderMemberInbox: id => createElement(MemberInboxView, { key: id, face: inboxFace(id), t: ctx.locale.bind(NS) }),
@@ -245,6 +273,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     registerHarnessCard: entry => harnessCards.register(entry),
     harnessCards: () => harnessCards.cards(),
     subscribeHarnessCards: listener => harnessCards.subscribe(listener),
+    registerMemberTool: entry => memberTools.register(entry),
+    renderMemberTools,
   }
   ctx.provide('localAgentUi', configurationUi)
   ctx.inject(['uiConversation'], lctx => { lctx.uiConversation.events.register(memberLiveDefinition) })
@@ -270,6 +300,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       inject: (): MemberComposerInjected => ({
         renderMemberConfiguration: configurationUi.renderMemberConfiguration,
         renderMemberInbox: configurationUi.renderMemberInbox,
+        renderMemberTools,
         memberOf: childSessionId => gateway.memberOf(childSessionId).then(result => (result.ok ? result.value : undefined)),
         promptMember: (childSessionId, text, requestId) => gateway.promptMember(childSessionId, text, requestId).then(result => (result.ok ? result.value : undefined)),
         stopMember: childSessionId => gateway.stopMember(childSessionId).then(result => (result.ok ? result.value : undefined)),

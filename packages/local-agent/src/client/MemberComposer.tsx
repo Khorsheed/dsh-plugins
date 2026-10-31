@@ -70,6 +70,8 @@ export function selectCliMember(owner: ComposerChainProps): MemberComposerMatch 
  */
 export interface MemberComposerInjected {
   renderMemberInbox?: ((childSessionId: string) => ReactNode) | undefined
+  /** The member's occupancy ring (`meter`) and the tools registered beside it (`composer`). */
+  renderMemberTools?: ((childSessionId: string, placement: 'meter' | 'composer') => ReactNode) | undefined
   renderMemberConfiguration?: ((childSessionId: string) => ReactNode) | undefined
   /** The delegation view for a child session; null = not a family member. */
   memberOf: (childSessionId: string) => Promise<LocalAgentDelegationView | null | undefined>
@@ -103,6 +105,20 @@ export type MemberComposerProps =
 
 /** Membership probe state: undefined = still checking, null = not a member. */
 type Membership = LocalAgentDelegationView | null | undefined
+
+/** The slash commands a member understands (the inbox runs `/compact` as a compaction round). */
+const SLASH_COMMANDS = [{ name: 'compact', label: 'member.command.compact', hint: 'member.command.compact.hint' }] as const
+
+/**
+ * The commands a draft is typing: a lone `/word` prefix of a command name.
+ * @param draft - the composer text.
+ * @returns the matching commands (empty when the draft is not a command prefix or already a whole one).
+ */
+export function slashMatches(draft: string): readonly (typeof SLASH_COMMANDS)[number][] {
+  const match = /^\/([a-z]*)$/.exec(draft.trim())
+  if (match === null) return []
+  return SLASH_COMMANDS.filter(command => command.name.startsWith(match[1]!) && command.name !== match[1])
+}
 
 /** RPC-failure retry budget for the membership probe (see the probe effect). */
 const MEMBER_PROBE_RETRIES = 2
@@ -155,7 +171,7 @@ export function resetMembershipCache(): void {
  * @returns the composer, the neutral checking state while probing, or the
  *   read-only panel when not a member.
  */
-export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, activeDelegations, memberModel, setMemberModel, renderMemberConfiguration, renderMemberInbox, t }: MemberComposerProps) {
+export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, activeDelegations, memberModel, setMemberModel, renderMemberConfiguration, renderMemberInbox, renderMemberTools, t }: MemberComposerProps) {
   const [membership, setMembership] = useState<Membership>(() => membershipCache.get(matched.childSessionId))
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -352,7 +368,15 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   const onChange = (event: ChangeEvent<HTMLTextAreaElement>): void => {
     setDraft(event.target.value)
   }
+  const commands = slashMatches(draft)
+  const meter = renderMemberTools?.(matched.childSessionId, 'meter')
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    // A command prefix completes on Enter or Tab (the host composer's menu).
+    if (commands.length > 0 && (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) && !event.nativeEvent.isComposing) {
+      event.preventDefault()
+      setDraft(`/${commands[0]!.name}`)
+      return
+    }
     // Shift+Enter is the native newline; an IME-composition Enter picks a
     // candidate and must not send.
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
@@ -364,6 +388,28 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
     <div className={css.root}>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       {renderMemberInbox?.(matched.childSessionId)}
+      {commands.length > 0 && (
+        <div className={css.commandMenu} role="listbox" aria-label={t('member.command.title')}>
+          <div className={css.commandTitle}>{t('member.command.title')}</div>
+          {commands.map(command => (
+            <button
+              key={command.name}
+              type="button"
+              role="option"
+              aria-selected="true"
+              className={css.commandItem}
+              onMouseDown={(event) => { event.preventDefault(); setDraft(`/${command.name}`) }}
+            >
+              <svg className={css.commandIcon} viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28 10" strokeLinecap="round" />
+              </svg>
+              <span className={css.commandLabel}>{t(command.label)}</span>
+              <span className={css.commandName}>{command.name}</span>
+              <span className={css.commandHint}>{t(command.hint)}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className={css.card}>
         <div className={css.header}>
           <span>{t('member.title', { harness: membership.harnessDisplayName ?? membership.provider })}</span>
@@ -382,6 +428,7 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
           {/* The model seat sits in the right cluster, immediately before the
               Send/Stop circle — the official composer's order (model seat →
               send, ui-model-selection's ModelSelect). */}
+          {renderMemberTools?.(matched.childSessionId, 'composer')}
           {renderMemberConfiguration !== undefined ? renderMemberConfiguration(matched.childSessionId) : modelInfo !== null && (
             <div className={css.modelPicker} ref={modelPickerRef}>
               <button
@@ -461,20 +508,25 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
           )}
         </div>
       </div>
-      {dockLines.length > 0 && (
+      {(dockLines.length > 0 || meter !== undefined) && (
         <div className={css.dock} data-member-dock>
           {dockLines.map(line => (
             <div
               key={line.id}
-              className={css.dockRow}
+              className={line.id === 'stats' ? css.dockRowMeter : css.dockRow}
               // The stats row keeps the pre-dock test hook; every row also
               // carries its contributor id as the generic hook.
               data-member-stats={line.id === 'stats' ? '' : undefined}
               data-member-dock-row={line.id}
             >
               {line.text}
+              {/* The occupancy ring ends the stats line, as on the host composer. */}
+              {line.id === 'stats' && meter}
             </div>
           ))}
+          {!dockLines.some(line => line.id === 'stats') && meter !== undefined && (
+            <div className={css.dockRowMeter} data-member-dock-row="context">{meter}</div>
+          )}
         </div>
       )}
     </div>

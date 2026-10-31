@@ -14,6 +14,7 @@ The longer a conversation runs, the fuller the context gets — and at the far e
 - **Same number as the context ring** — driven by the official `contextPressure` projection, so button and ring never disagree.
 - **Runs the official `/compact`** — idle-gating, the compaction lock, and presentation stay host-owned; a click behaves exactly like the typed command.
 - **One live tunable** — the reminder threshold, editable in settings with no restart.
+- **External CLI members too** — with local-agent delegation installed (Kimi, Codex, …), CLI member sessions and rooms get the same compact button; each CLI can carry its own ratio, and a member's context ring sets one for that member alone. Without it, nothing changes.
 
 ## Install
 
@@ -38,6 +39,8 @@ One tunable, editable in the GUI and live with no restart — on 0.1.5 under Set
 | Key | Default | Meaning |
 |---|---|---|
 | `thresholdRatio` | `0.8` | Context occupancy fraction at which the button appears (clamped to (0, 1]). Lower it to be reminded earlier — the provider rejection wall sits below 100% occupancy (see *How it works*). |
+| `harnessThresholds` | `{}` | Per-CLI ratios by CLI name (`kimi`, `codex`, …); a missing one follows `thresholdRatio`. |
+| `memberThresholds` | `{}` | One member's own ratio (set from the member's context ring); precedence: member > CLI > global. |
 
 ```yaml
 plugins:

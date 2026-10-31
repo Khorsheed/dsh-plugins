@@ -75,8 +75,36 @@ export interface LocalAgentCompactionEvent {
   boundarySeq: number
 }
 
+/**
+ * A CLI member's context occupancy as the CLI last reported it (Kimi's ACP
+ * `usage_update`, Codex's `thread/tokenUsage/updated`), written after a round
+ * when it moved. The occupancy ring and the compaction reminder read it.
+ */
+export interface LocalAgentContextEvent {
+  /** The delegation provider (`kimi-cli`, `codex-local`, …). */
+  provider: string
+  /** Tokens in the CLI's context. */
+  usedTokens: number
+  /** The model's context window, when the CLI states it. */
+  contextWindow?: number
+}
+
+/** A member's context occupancy, as the `memberContext` Remote answers it. */
+export interface LocalAgentMemberContext {
+  provider: string
+  /** The owning harness (`kimi`, `codex`, …) and its display name, when one claims the provider. */
+  harness?: string
+  harnessDisplayName?: string
+  usedTokens?: number
+  contextWindow?: number
+  /** `compacting` while a compaction round runs; `running` for any other round. */
+  state: 'idle' | 'running' | 'compacting'
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
+    /** A CLI member's context occupancy after a round. */
+    'local-agent/context': LocalAgentContextEvent
     /** Plugin-owned live presentation anchor and incremental recovery checkpoints. */
     'local-agent/stream': LocalAgentStreamCheckpoint
     /** A CLI member's context compaction (display + accounting). */

@@ -61,4 +61,24 @@ describe('member usage', () => {
     const { container } = render(<RoomStatsLine useProjection={useProjection} state={{ ...STATE, executions: [] }} t={t} />)
     expect(container.textContent).toBe('')
   })
+
+  it('with CLI member sessions: a 上下文 column (ring + row tools), the chip\'s attention dots, and the coordinator\'s ring', () => {
+    const useProjection = (() => undefined) as unknown as RoomStatsLineProps['useProjection']
+    const state: RoomState = { ...STATE, members: STATE.members.map(member => member.kind === 'cli' ? { ...member, childSessionId: `child-${member.id}` as never } : member) }
+    const calls: string[] = []
+    const renderMemberTools = (id: string, placement: string, options?: { readonly memberName?: string | undefined }) => {
+      calls.push(`${id}:${placement}:${options?.memberName ?? ''}`)
+      return <span data-testid={`${placement}-${id}`} />
+    }
+    render(<RoomStatsLine useProjection={useProjection} state={state} t={t} renderMemberTools={renderMemberTools} coordinatorSession="child-m-gm" />)
+    // The coordinator's ring ends the line; each CLI member feeds the chip's dot.
+    expect(screen.getByTestId('meter-child-m-gm')).toBeTruthy()
+    expect(calls).toContain('child-m-gm:dot:游戏大师')
+    expect(calls).toContain('child-m-cut:dot:剪刀手')
+    fireEvent.click(screen.getByRole('button', { name: /成员 2 位/ }))
+    const breakdown = screen.getByRole('dialog', { name: '成员用量' })
+    expect(breakdown.textContent).toContain('上下文')
+    expect(breakdown.querySelector('[data-testid="row-child-m-cut"]')).not.toBeNull()
+    expect(breakdown.querySelector('[data-testid="meter-child-m-cut"]')).not.toBeNull()
+  })
 })

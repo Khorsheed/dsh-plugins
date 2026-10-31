@@ -117,3 +117,31 @@
 .breakdown .num {
   text-align: right;
 }
+
+/* The chip's attention mark: one dot however many members are past their
+   reminder ratio (the reminder plugin draws each; the first one shows). */
+.dots {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.dots:empty {
+  display: none;
+}
+
+.dots > :not(:first-child) {
+  display: none;
+}
+
+/* The 上下文 column: the member's occupancy ring, then its compact button. */
+.context {
+  white-space: nowrap;
+}
+
+.contextCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

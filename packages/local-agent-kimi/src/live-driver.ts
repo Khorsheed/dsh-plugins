@@ -931,6 +931,43 @@ export class KimiAcpLiveDriver {
   }
 
   /**
+   * After a round: a compaction kimi ran on its own during it (one
+   * `local-agent/compaction`, source `auto`), and the occupancy its last
+   * `usage_update` reported (one `local-agent/context`, when it moved).
+   */
+  private async recordRoundContext(
+    childSession: Session,
+    context: { used: number; size?: number } | undefined,
+    wireFrom: { homeDir: string; sessionId: string; line: number } | undefined,
+    startedAt: number,
+  ): Promise<void> {
+    const dir = wireFrom === undefined ? undefined : await findKimiSessionDir(wireFrom.homeDir, wireFrom.sessionId).catch(() => undefined)
+    if (wireFrom !== undefined && dir !== undefined) {
+      const reading = readKimiCompaction(await readFile(wirePath(dir), 'utf8').catch(() => ''), wireFrom.line)
+      if (reading.done && reading.source === 'auto') {
+        childSession.append('local-agent/compaction', {
+          source: 'auto', outcome: reading.outcome ?? 'completed', provider: 'kimi-cli',
+          ...reading.model === undefined ? {} : { model: reading.model },
+          ...reading.beforeTokens === undefined ? {} : { beforeTokens: reading.beforeTokens },
+          ...reading.afterTokens === undefined ? {} : { afterTokens: reading.afterTokens },
+          ...context?.size === undefined ? {} : { contextWindow: context.size },
+          ...reading.usage === undefined ? {} : { usage: reading.usage },
+          ...reading.summary === undefined ? {} : { summary: reading.summary },
+          ...reading.error === undefined ? {} : { error: reading.error },
+          startedAt, endedAt: Date.now(), boundarySeq: childSession.snapshotEvents().at(-1)?.seq ?? -1,
+        })
+      }
+    }
+    if (context === undefined) return
+    const last = childSession.snapshotEvents().findLast(event => event.type === 'local-agent/context')?.data as SessionEventMap['local-agent/context'] | undefined
+    if (last?.usedTokens === context.used && last.contextWindow === context.size) return
+    childSession.append('local-agent/context', {
+      provider: 'kimi-cli', usedTokens: context.used,
+      ...context.size === undefined ? {} : { contextWindow: context.size },
+    })
+  }
+
+  /**
    * A compaction round: `/compact` on the member's session, then hold the
    * round until the wire records the compaction's end — kimi answers the
    * prompt at once and compacts in the background, silently dropping any
@@ -1104,6 +1141,11 @@ export class KimiAcpLiveDriver {
      * settle-mirror read-back.
      */
     let roundModel: string | undefined
+    /** The context occupancy kimi's ACP `usage_update` reported this round (the last one wins). */
+    let roundContext: { used: number; size?: number } | undefined
+    /** The wire's line count when the prompt went out: a compaction kimi starts on its own lands after it. */
+    let wireFrom: { homeDir: string; sessionId: string; line: number } | undefined
+    const turnStartedAt = Date.now()
     let lastMirrorAt = 0
     let mirrorQueue: Promise<unknown> = Promise.resolve()
     let persistQueue: Promise<unknown> = Promise.resolve()
@@ -1572,6 +1614,13 @@ export class KimiAcpLiveDriver {
           // segments; late file folds consume same-kind segments in order.
           generation++
         }
+      } else if (kind === 'usage_update') {
+        const used = update['used']
+        const size = update['size']
+        if (typeof used === 'number' && Number.isFinite(used)) {
+          roundContext = { used, ...typeof size === 'number' && size > 0 ? { size } : {} }
+        }
+        return
       } else if (kind === 'plan') {
         // ACP plan updates are full-plan snapshots; the wire.jsonl fold never
         // carries them (kimi records text/think parts only), so the driver
@@ -1605,6 +1654,12 @@ export class KimiAcpLiveDriver {
       // ACP session/load replays historical chunks and tools. Bind this round's
       // sink only after loading/configuration, so replay never becomes new output.
       rt.onSessionUpdate = onSessionUpdate
+      // A first round's wire does not exist yet: the settle finds it then, from line 0.
+      wireFrom = { homeDir: spec.homeDir, sessionId: bareKimiSessionId(rt.sessionId as string), line: 0 }
+      try {
+        const dir = await findKimiSessionDir(spec.homeDir, wireFrom.sessionId)
+        if (dir !== undefined) wireFrom.line = Math.max(0, (await readFile(wirePath(dir), 'utf8').catch(() => '')).split('\n').length - 1)
+      } catch { /* read from line 0 at settle */ }
       // The turn boundary opens before the prompt goes out (exec parity: the
       // exec path opens at spawn). session/prompt has no separate accept ack —
       // the request IS the turn. The prompt's user/message lands here too
@@ -1773,6 +1828,7 @@ export class KimiAcpLiveDriver {
             reason: { kind: 'error', error: { message: 'the live round did not complete', code: 'UNKNOWN' } },
           })
         }
+        await this.recordRoundContext(childSession, roundContext, wireFrom, turnStartedAt)
       }
       streamPublisher?.dispose()
       // Settlement clears the round's update sink.

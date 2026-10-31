@@ -22,7 +22,7 @@ import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/clie
 // Type-only: merges the sessionStats key into SessionProjectionMap for useProjection.
 import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
-import type { RoomComposerProps } from './slots.ts'
+import type { RoomComposerInjected, RoomComposerProps } from './slots.ts'
 import type { RoomState } from '../types.ts'
 import css from './RoomStatsLine.module.css'
 
@@ -147,11 +147,18 @@ export interface RoomStatsLineProps {
   readonly state?: RoomState | undefined
   /** Members chip only: an external coordinator's room, where the room session's own figures are not the coordinator's. */
   readonly membersOnly?: boolean | undefined
+  /** CLI members' occupancy rings and reminder tools (local-agent); absent = no 上下文 column, no ring. */
+  readonly renderMemberTools?: RoomComposerInjected['renderMemberTools']
+  /** An external coordinator's session: its ring ends the line, like the host composer's. */
+  readonly coordinatorSession?: string | undefined
   readonly t: RoomComposerProps['t']
 }
 
-export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state, membersOnly = false, t }: RoomStatsLineProps): ReactNode {
+export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state, membersOnly = false, renderMemberTools, coordinatorSession, t }: RoomStatsLineProps): ReactNode {
   const members = memberUsage(state)
+  // CLI members with a session: the 上下文 column and the chip's attention dot read them.
+  const sessions = new Map((state?.members ?? []).flatMap(member => member.childSessionId === undefined || member.kind === 'main-agent' ? [] : [[member.name, member.childSessionId as string] as const]))
+  const meter = coordinatorSession === undefined ? null : renderMemberTools?.(coordinatorSession, 'meter') ?? null
   const [open, setOpen] = useState(false)
   const membersRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
@@ -213,7 +220,7 @@ export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state,
     observer.observe(el)
     return () => { observer.disconnect() }
   }, [line])
-  if (groups.length === 0 && members.length === 0) return null
+  if (groups.length === 0 && members.length === 0) return meter
   const own = groups.length === 0 ? null : (
     <Tooltip label={line} side="top" delayMs={500} disabled={!truncated}>
       <div ref={rootRef} className={css.root}>
@@ -226,19 +233,34 @@ export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state,
       </div>
     </Tooltip>
   )
-  if (members.length === 0) return own
+  if (members.length === 0) {
+    if (meter === null) return own
+    return <div className={css.withMembers}>{own}{meter}</div>
+  }
   const total = members.reduce((sum, row) => sum + row.tokens, 0)
+  const contexts = renderMemberTools !== undefined && members.some(row => sessions.has(row.member))
   return (
     <div className={css.withMembers} ref={membersRef}>
       {own}
       {own !== null && <span className={css.sep} aria-hidden>|</span>}
       <button type="button" className={css.membersChip} aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
-        {total > 0 ? t('stats.members', { count: members.length, tokens: formatTokens(total) }) : t('stats.membersNoTokens', { count: members.length })} ▾
+        {total > 0 ? t('stats.members', { count: members.length, tokens: formatTokens(total) }) : t('stats.membersNoTokens', { count: members.length })}
+        {/* A member past its reminder ratio marks the chip (one dot however many). */}
+        {contexts && (
+          <span className={css.dots}>
+            {members.flatMap(row => {
+              const session = sessions.get(row.member)
+              return session === undefined ? [] : [<Fragment key={row.member}>{renderMemberTools?.(session, 'dot', { memberName: row.member })}</Fragment>]
+            })}
+          </span>
+        )}
+        {' ▾'}
       </button>
+      {meter}
       {open && (
         <div className={css.breakdown} role="dialog" aria-label={t('stats.membersTitle')}>
           <table>
-            <thead><tr><th>{t('stats.col.member')}</th><th>{t('stats.col.model')}</th><th className={css.num}>{t('stats.col.rounds')}</th><th className={css.num}>{t('stats.col.total')}</th><th className={css.num}>{t('stats.col.input')}</th><th className={css.num}>{t('stats.col.cacheHit')}</th><th className={css.num}>{t('stats.col.output')}</th><th className={css.num}>{t('stats.col.time')}</th></tr></thead>
+            <thead><tr><th>{t('stats.col.member')}</th><th>{t('stats.col.model')}</th><th className={css.num}>{t('stats.col.rounds')}</th><th className={css.num}>{t('stats.col.total')}</th><th className={css.num}>{t('stats.col.input')}</th><th className={css.num}>{t('stats.col.cacheHit')}</th><th className={css.num}>{t('stats.col.output')}</th><th className={css.num}>{t('stats.col.time')}</th>{contexts && <th>{t('stats.col.context')}</th>}</tr></thead>
             <tbody>
               {members.map(row => (
                 <tr key={row.member}>
@@ -250,6 +272,16 @@ export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state,
                   <td className={css.num}>{row.input !== undefined && row.input > 0 ? `${Math.round((row.cacheRead ?? 0) / row.input * 100)}%` : '—'}</td>
                   <td className={css.num}>{row.output !== undefined && row.output > 0 ? formatTokens(row.output) : '—'}</td>
                   <td className={css.num}>{row.elapsedMs > 0 ? formatDuration(row.elapsedMs) : '—'}</td>
+                  {contexts && (
+                    <td className={css.context}>
+                      {sessions.has(row.member) && (
+                        <span className={css.contextCell}>
+                          {renderMemberTools?.(sessions.get(row.member)!, 'meter', { memberName: row.member })}
+                          {renderMemberTools?.(sessions.get(row.member)!, 'row', { memberName: row.member })}
+                        </span>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

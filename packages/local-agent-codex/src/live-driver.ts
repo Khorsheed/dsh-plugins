@@ -27,7 +27,7 @@ import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock, ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
@@ -1071,6 +1071,8 @@ export class CodexLiveDriver {
     let lastText = ''
     /** Final-answer selection per the harness wire: final_answer phase beats unphased. */
     let lastFinalAnswer: string | undefined
+    /** Compactions codex ran on its own inside this turn (a `contextCompaction` item), with the occupancy before each. */
+    const autoCompactions: { at: number; beforeTokens?: number }[] = []
     let lastUnphasedAnswer: string | undefined
     /** The round's folded transcript (the exec fold's line shape). */
     const lines: CodexTranscriptLine[] = []
@@ -1392,6 +1394,10 @@ export class CodexLiveDriver {
     const dispatchTurnNotification = (method: string, params: JsonObject): void => {
       if (method === 'item/completed') {
         const item = params['item'] as JsonObject
+        if (item['type'] === 'contextCompaction') {
+          const beforeTokens = runtime?.contextTokens
+          autoCompactions.push({ at: Date.now(), ...beforeTokens === undefined ? {} : { beforeTokens } })
+        }
         const line = codexAppServerItemToLine(item)
         if (item['type'] === 'agentMessage' && typeof item['text'] === 'string') {
           const phase = item['phase']
@@ -1626,6 +1632,7 @@ export class CodexLiveDriver {
             reason: { kind: 'error', error: { message: 'the live round did not complete', code: 'UNKNOWN' } },
           })
         }
+        if (runtime !== undefined) recordRoundContext(childSession, runtime, autoCompactions)
       }
       // Settlement retires the turn: its late notifications are tagged out,
       // and the round's sink is cleared so a stray notification drops dead.
@@ -1708,4 +1715,33 @@ export class CodexLiveDriver {
       },
     })
   }
+}
+
+/**
+ * After a round: each compaction codex ran on its own (one
+ * `local-agent/compaction`, source `auto`; codex states no summary and no
+ * after-count), and the thread's occupancy (one `local-agent/context`, when
+ * it moved).
+ */
+function recordRoundContext(
+  childSession: Session,
+  rt: { contextTokens: number | undefined; contextWindow: number | undefined; boundModel?: string | undefined },
+  autoCompactions: readonly { at: number; beforeTokens?: number }[],
+): void {
+  for (const compaction of autoCompactions) {
+    childSession.append('local-agent/compaction', {
+      source: 'auto', outcome: 'completed', provider: 'codex-local',
+      ...rt.boundModel === undefined ? {} : { model: rt.boundModel },
+      ...compaction.beforeTokens === undefined ? {} : { beforeTokens: compaction.beforeTokens },
+      ...rt.contextWindow === undefined ? {} : { contextWindow: rt.contextWindow },
+      startedAt: compaction.at, endedAt: compaction.at, boundarySeq: childSession.snapshotEvents().at(-1)?.seq ?? -1,
+    })
+  }
+  if (rt.contextTokens === undefined) return
+  const last = childSession.snapshotEvents().findLast(event => event.type === 'local-agent/context')?.data as SessionEventMap['local-agent/context'] | undefined
+  if (autoCompactions.length === 0 && last?.usedTokens === rt.contextTokens && last.contextWindow === rt.contextWindow) return
+  childSession.append('local-agent/context', {
+    provider: 'codex-local', usedTokens: rt.contextTokens,
+    ...rt.contextWindow === undefined ? {} : { contextWindow: rt.contextWindow },
+  })
 }

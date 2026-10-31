@@ -27,8 +27,26 @@ const thresholdField = z.number().min(0.01).max(1).default(0.8)
  * `Schema.prototype.volatile`); the dev line resolves 3.18.4, older floors
  * keep the runtime fallback.
  */
+const harnessField = z.dict(z.number().min(0.01).max(1)).default({})
+const memberField = z.dict(z.object({
+  ratio: z.number().min(0.01).max(1).required(),
+  name: z.string(),
+  harness: z.string(),
+})).default({})
+
+/** Mark a field volatile where the running schemastery can (see above). */
+function volatile<S extends z>(field: S): S {
+  return typeof field.volatile === 'function' ? field.volatile() as S : field
+}
+
+/*
+ * The external-CLI ratios (local-agent members; read only when that family is
+ * installed): `harnessThresholds` by harness name (`kimi`, `codex`, …), and
+ * `memberThresholds` by member session id, each carrying the name and harness
+ * it was set for so the card can list it. Precedence: member > CLI > global.
+ */
 export const ContextGuardSettingsSchema: z = z.object({
-  thresholdRatio: typeof thresholdField.volatile === 'function'
-    ? thresholdField.volatile()
-    : thresholdField,
+  thresholdRatio: volatile(thresholdField),
+  harnessThresholds: volatile(harnessField),
+  memberThresholds: volatile(memberField),
 })

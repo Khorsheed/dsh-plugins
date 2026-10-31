@@ -103,6 +103,7 @@ async function bench(
     inputStore?: InputStore
     renderMemberConfiguration?: RoomComposerProps['renderMemberConfiguration']
     renderMemberInbox?: RoomComposerProps['renderMemberInbox']
+    renderMemberTools?: ((id: string, placement: string) => ReactNode) | undefined
     stopMember?: (name: string) => void
     modelDirectory?: RoomModelDirectory
     openTasks?: (task?: string) => void
@@ -147,6 +148,7 @@ async function bench(
     browseDirectory: vi.fn(async () => null),
     renderMemberConfiguration: options.renderMemberConfiguration,
     renderMemberInbox: options.renderMemberInbox,
+    renderMemberTools: options.renderMemberTools,
     stopMember: options.stopMember,
     modelDirectory: options.modelDirectory,
     openReference: options.openReference,
@@ -885,6 +887,25 @@ describe('RoomComposer main-agent model picker', () => {
 
 
 describe('external coordinator composer', () => {
+  it('/ offers 压缩 compact; Enter completes it, an @mention prefix included; the coordinator\'s reminder renders in the row', async () => {
+    const renderMemberTools = vi.fn((id: string, placement: string) => <span data-testid={`${placement}-${id}`} />)
+    const state: RoomState = { ...STATE,
+      members: STATE.members.map(member => ({ ...member, id: member.name, ...member.name === 'ada' ? { childSessionId: 'child-ada' as SessionId } : {} })),
+      coordinator: { version: 1, memberId: 'ada', previousMemberId: 'main', revision: 1, handoff: 'goal' },
+    }
+    const { area, inputActions } = await bench(vi.fn(async () => ({ ok: true as const })), { state, renderMemberTools })
+    expect(screen.getByTestId('composer-child-ada')).toBeDefined()
+    type(area, '/co')
+    expect(screen.getByRole('listbox', { name: 'composer.command.title' })).toBeDefined()
+    fireEvent.keyDown(area, { key: 'Enter' })
+    expect(inputActions.setDraft).toHaveBeenLastCalledWith('/compact')
+    type(area, '@ada /')
+    fireEvent.keyDown(area, { key: 'Tab' })
+    expect(inputActions.setDraft).toHaveBeenLastCalledWith('@ada /compact')
+    type(area, '/compact')
+    expect(screen.queryByRole('listbox', { name: 'composer.command.title' })).toBeNull()
+  })
+
   it('binds configuration and Stop to the coordinator and hides the former native todo/queue', async () => {
     const stopMember = vi.fn()
     const renderMemberConfiguration = vi.fn((id: string) => <div>Configuration for {id}</div>)
