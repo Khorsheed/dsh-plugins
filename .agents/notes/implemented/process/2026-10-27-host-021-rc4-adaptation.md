@@ -6,13 +6,13 @@ English | [中文](2026-10-27-host-021-rc4-adaptation.zh.md)
 
 ## Problem
 
-The npm rc4 release initially had no public source tag, so the first adaptation used rc4 binaries with an rc3 type/test seed. The host later published `dsh-v0.2.1-rc.4` at `504a01a9578abc2c6f1fb896b1dc322c9fe24f66`, while local `main` had advanced by 80 non-merge commits since the adaptation branch was created. Final acceptance had to use the exact rc4 source, include the new plugin work, and avoid silently turning into rc5 acceptance.
+The npm rc4 release initially had no public source tag, so the first adaptation used rc4 binaries with an rc3 type/test seed. The host later published `dsh-v0.2.1-rc.4` at `504a01a9578abc2c6f1fb896b1dc322c9fe24f66`, while local `main` had advanced by more than 80 non-merge commits since the adaptation branch was created. Final acceptance had to use the exact rc4 source, include the new plugin work, and avoid silently turning into rc5 acceptance.
 
 ## Decision
 
 Pin the development graph and both fixed workflow harnesses to rc4. The read-only source checkout is the exact rc4 tag; `pnpm-workspace.yaml` carries the rc4 pins, and the regenerated lockfile also retains current main's agent-nav workspace edges and file-preview's PTC test dependencies. `.github/workflows/ci.yml` and `publish.yml` name the same tag. The dynamic forward lane still follows npm `next`, which is now rc5 and is not evidence for this wave.
 
-Merge `main` at `39f598455` into the adaptation branch. File-preview keeps both main's independent 16 MiB image cap and the new PTC dispatch-diff consumer. S17 retains game's polling consumer but now describes its actual purpose: refresh a tab after a room binding changes without an official event; destination-line navigation owns automatic navigation.
+Merge `main` through `0b633179f9100d4e3f1a44f93c63b7d763c3a45c` into the adaptation branch. File-preview keeps both main's independent 16 MiB image cap and the new PTC dispatch-diff consumer. S17 retains game's polling consumer but now describes its actual purpose: refresh a tab after a room binding changes without an official event; destination-line navigation owns automatic navigation.
 
 The four-category verdict remains: **adopt** the MCP empty-resource and account-stderr fixes in local-agent-dsh-headless; **unblocked** file-preview now consumes the already-published PTC dispatch metadata; **switch** no new rc4 API; **retire** no whole package. Reader keeps its own HTTP provider because rc4 still cannot select a provider per request. File-preview mentions and mobile's legacy View CSS stay because their minimum supported hosts still need them. Minimum-host floors and `verifiedHost` labels do not move before production acceptance.
 

@@ -6,13 +6,13 @@ Status: implemented
 
 ## Problem
 
-npm 最初发布 rc4 时还没有公开源码 tag，因此前置适配使用 rc4 二进制包配 rc3 类型/测试种子。后来宿主在 `504a01a9578abc2c6f1fb896b1dc322c9fe24f66` 发布了 `dsh-v0.2.1-rc.4`，而本地 `main` 自适配分支建立以来已增加 80 个非合并提交。最终验收必须使用精确 rc4 源码、纳入这些新插件改动，同时避免悄悄变成 rc5 验收。
+npm 最初发布 rc4 时还没有公开源码 tag，因此前置适配使用 rc4 二进制包配 rc3 类型/测试种子。后来宿主在 `504a01a9578abc2c6f1fb896b1dc322c9fe24f66` 发布了 `dsh-v0.2.1-rc.4`，而本地 `main` 自适配分支建立以来已增加超过 80 个非合并提交。最终验收必须使用精确 rc4 源码、纳入这些新插件改动，同时避免悄悄变成 rc5 验收。
 
 ## Decision
 
 开发依赖图和两个固定 workflow 的宿主都钉在 rc4。只读源码检出使用精确 rc4 tag；`pnpm-workspace.yaml` 携带 rc4 pin，重新生成的锁文件同时保留当前 main 的 agent-nav workspace 边和 file-preview 的 PTC 测试依赖。`.github/workflows/ci.yml` 与 `publish.yml` 使用同一个 tag。动态前瞻 lane 继续跟随 npm `next`；它现在是 rc5，不作为本波证据。
 
-将 `39f598455` 的 `main` 合并进适配分支。file-preview 同时保留 main 的独立 16 MiB 图片上限和新增 PTC 派发 diff 消费。S17 保留 game 轮询消费方，但用途更正为实际行为：协作间绑定在没有官方事件时变化后刷新 tab；自动导航由目的地行机制负责。
+将截至 `0b633179f9100d4e3f1a44f93c63b7d763c3a45c` 的 `main` 合并进适配分支。file-preview 同时保留 main 的独立 16 MiB 图片上限和新增 PTC 派发 diff 消费。S17 保留 game 轮询消费方，但用途更正为实际行为：协作间绑定在没有官方事件时变化后刷新 tab；自动导航由目的地行机制负责。
 
 四类结论不变：**结合**——local-agent-dsh-headless 直接受益于 MCP 空资源和 account stderr 修复；**开做**——file-preview 开始消费官方早已发布的 PTC 派发元数据；**换接口**——rc4 没有新接口可迁；**退役**——没有整包退役。reader 保留自持 HTTP provider，因为 rc4 仍不能让单次请求选择 provider。file-preview mentions 和 mobile 的旧 View CSS 保留，因为其最低宿主线仍需要它们。生产验收前不前移最低宿主和 `verifiedHost` 标注。
 
