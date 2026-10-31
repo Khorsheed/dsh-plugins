@@ -21,7 +21,7 @@ import { followerHostOf, startNavFollower, interactionHandlers } from '@khorshee
 
 ## Compatibility
 
-Needs DSH 0.2.0-rc.1 or later; verified on 0.2.1-rc.3. On a host without the right sidebar's `mounted` or the session event window, the follower does not start and plugins keep only their conversation cards.
+Needs DSH 0.2.0-rc.1 or later; verified on 0.2.1-rc.5. On a host without the right sidebar's `mounted` or the session event window, the follower does not start and plugins keep only their conversation cards.
 
 ## For developers
 

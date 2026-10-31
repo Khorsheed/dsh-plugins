@@ -37,7 +37,7 @@ Then add a TypeSafe API key: in dev, game dev or editing mode, open Settings →
 
 ## Compatibility
 
-Needs DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.1.
+Needs DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.5.
 
 ## For developers
 

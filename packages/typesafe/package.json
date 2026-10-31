@@ -73,7 +73,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.2.1-rc.1",
+      "verifiedHost": "0.2.1-rc.5",
       "notes": "Provides a host-plane service and no model-facing surface, so it composes at the profile root. Key resolution reads the host credential store per call (ctx.credentials.resolve) and every outbound call is bounded: owned timeout + AbortSignal, 429/529 exponential backoff, circuit breaker, optional cache. A composition without the credentials service leaves the row pending rather than failing boot. The session-granted tool row folded back from the standalone `@khorsheed/dsh-typesafe-tool` companion into this package at the host-021 wave (2026-10-18, the T88 evaluation-family precedent) as the `./tool` composition entry — the preset row id `typesafe-tool` is unchanged, so a preset's composition state is unaffected once its row name points at `@khorsheed/dsh-typesafe/tool`; the old package name is retired."
     }
   }

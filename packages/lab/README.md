@@ -39,7 +39,7 @@
 
 ## Compatibility
 
-需要 DSH 0.2.0-rc.2 或更新版本，已在 0.2.1-rc.1 上验证；没有任务账本时的降级行为，见[参考文档](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/lab/docs/reference.md)。
+需要 DSH 0.2.0-rc.2 或更新版本，已在 0.2.1-rc.5 上验证；没有任务账本时的降级行为，见[参考文档](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/lab/docs/reference.md)。
 
 ## 给开发者
 

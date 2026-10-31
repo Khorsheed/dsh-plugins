@@ -21,7 +21,7 @@ import { followerHostOf, startNavFollower, interactionHandlers } from '@khorshee
 
 ## Compatibility
 
-需要 DSH 0.2.0-rc.1 或更新版本，已在 0.2.1-rc.3 上验证。宿主缺少右栏 `mounted` 或会话事件窗口时，跟随器不启动，插件只保留会话里的卡片。
+需要 DSH 0.2.0-rc.1 或更新版本，已在 0.2.1-rc.5 上验证。宿主缺少右栏 `mounted` 或会话事件窗口时，跟随器不启动，插件只保留会话里的卡片。
 
 ## 给开发者
 

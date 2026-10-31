@@ -32,7 +32,7 @@ Capture comes with the Learning Suite, together with the reader — it works for
 
 ## Compatibility
 
-Requires DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.1.
+Requires DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.5.
 
 ## For developers
 

@@ -24,11 +24,15 @@ rc4 适配完成但尚未进入生产或发布 npm 时，宿主发布了 rc5。�
 
 ## Consequences
 
-本次只改变宿主固定版本、再生的锁文件、CI 引用和本记录，保留完整 rc4 源码适配历史。生产部署和 npm 发布仍需各自通过门禁；兼容性结论本身不前移 `verifiedHost`。
+基线改动包括宿主固定版本、再生的锁文件、CI 引用和本记录，并保留完整的 rc4 源码适配历史。生产验收完成后，所有声明 `dsh.compat.verifiedHost` 的包（包括 private 包）都已将该字段前移至 `0.2.1-rc.5`；最低宿主要求、engines 范围和包版本保持不变。
+
+npm 包尚未发布。发布前，3080 生产部署需要连续三天无事故运行。
 
 ## Testing
 
 针对精确 rc5 检出清除 TypeScript 缓存并强制类型生成后，`pnpm gate --all` 的 17 步全部通过：所有包的构建和测试、401 个脚本测试、文档与卫生门禁，以及 42 个经过验证的包 tarball。官方 rc5 的九项构建门禁全部通过；装配后的 Web reasoning 浏览器测试覆盖普通流和带 signature 前缀的流，两者均通过，包括展开正文和不显示 signature 元数据。
+
+生产验收已通过 `deploy:3080` 按依赖序向 3080 完整部署 42 个包。composition preflight 与 canary 均通过；launch receipt 已就绪，其中 `hostPackageVersion` 为 `0.2.1-rc.5`。线上 31 个社区 client bundle URL 全部返回 HTTP 200。ankh-guard 技能还通过了真实 `SkillRegistry` 的 list 与 get 往返。
 
 ## Related
 

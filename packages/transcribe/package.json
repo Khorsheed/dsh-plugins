@@ -71,7 +71,7 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.2.1-rc.1",
+      "verifiedHost": "0.2.1-rc.5",
       "notes": "Host service only (`transcribe`), no browser half and no model-facing surface, so it composes at the profile root. Recognition runs in a forked child process through sherpa-onnx-node (prebuilt per-platform addon); a failed addon load fails that job only. ffmpeg is found on PATH or at a configured path; a missing binary fails jobs that need decoding, never the boot. Speech models download on first use into $DSH_HOME/state/transcribe/models (models a previous video-studio install downloaded are moved there once). Consumers (video-studio, dsh-reader) probe `ctx.get('transcribe')` at call time and degrade when it is absent."
     },
     "runtimeDependencies": [

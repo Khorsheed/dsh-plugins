@@ -37,7 +37,7 @@ Handing work to Codex happens in a mode that grants delegation, such as "开发�
 
 ## Compatibility
 
-Needs DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.1.
+Needs DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.5.
 
 ## For developers
 

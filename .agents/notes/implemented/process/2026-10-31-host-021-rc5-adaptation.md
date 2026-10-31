@@ -24,11 +24,15 @@ Apart from release metadata, rc4 to rc5 changes reasoning display. `ReasoningBod
 
 ## Consequences
 
-Only the host pins, regenerated lockfile, CI references, and this record change. The rc4 source-adaptation history remains intact. Production deployment and npm publication still require their own gates; the compatibility verdict does not advance `verifiedHost` by itself.
+The baseline changes cover the host pins, regenerated lockfile, CI references, and this record; the rc4 source-adaptation history remains intact. After production acceptance, `dsh.compat.verifiedHost` advances to `0.2.1-rc.5` in every package that declares it, including private packages. Minimum-host requirements, engine ranges, and package versions remain unchanged.
+
+The npm packages are not yet published. Publication waits for three consecutive incident-free days on the 3080 production deployment.
 
 ## Testing
 
 `pnpm gate --all` passed all 17 steps against the exact rc5 checkout after clearing TypeScript caches and forcing type generation: all package builds and tests, 401 script tests, document and hygiene gates, and 42 verified package tarballs. The official rc5 build passed all nine build gates. Its assembled-Web reasoning browser test passed for both plain and signature-prefixed streams, including expanded content and the absence of signature metadata.
+
+Production acceptance deployed all 42 packages to 3080 in dependency order through `deploy:3080`. Composition preflight and the canary both passed; the launch receipt is ready and records `hostPackageVersion` as `0.2.1-rc.5`. All 31 community client bundle URLs returned HTTP 200. The ankh-guard skill also passed a real `SkillRegistry` list-and-get round trip.
 
 ## Related
 

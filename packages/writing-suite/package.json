@@ -77,7 +77,7 @@
     ],
     "compat": {
       "minHost": "0.2.0-rc.2",
-      "verifiedHost": "0.2.1-rc.1",
+      "verifiedHost": "0.2.1-rc.5",
       "notes": "Pure composition: the bundle mounts the members' canonical rows plus the dsh-writing preset row and registers nothing of its own, so the floor is the members' highest (0.2.0-rc.2 — canvas-novel; canvas itself floors at 0.1.5-rc.1). Individual member behaviors are documented in each member's own dsh.compat."
     }
   }

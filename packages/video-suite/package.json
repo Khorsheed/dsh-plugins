@@ -90,7 +90,7 @@
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",
-      "verifiedHost": "0.2.1-rc.1",
+      "verifiedHost": "0.2.1-rc.5",
       "notes": "Pure composition: the bundle mounts the members' canonical rows plus the dsh-video preset row and registers nothing of its own. The floor is the higher of the members' highest (0.1.5-rc.1 — video-studio, transcribe, the local-agent family, room) and the preset row's floor: an `@deepseek-ai/dsh-agent-preset` declaration exists only on host 0.1.7-rc.1 and later. Member behavior details live in each member's own dsh.compat."
     }
   }

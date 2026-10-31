@@ -39,7 +39,7 @@ Lab comes with the Evaluation Suite. It has no screen of its own; what it record
 
 ## Compatibility
 
-Needs DSH 0.2.0-rc.2 or later; verified on 0.2.1-rc.1. How it degrades without the mission ledger is in the [reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/lab/docs/reference.en.md).
+Needs DSH 0.2.0-rc.2 or later; verified on 0.2.1-rc.5. How it degrades without the mission ledger is in the [reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/lab/docs/reference.en.md).
 
 ## For developers
 

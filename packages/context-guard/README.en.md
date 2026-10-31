@@ -54,7 +54,7 @@ plugins:
 
 - npm release line (`@deepseek-ai/dsh@0.1.2-rc.1`): ⚠️ button full, settings card absent — baseline moved to the 0.1.2-rc.1 API surface (single-arm 0.1.2 API consumption; the 0.1.1-rc.2 runtime arm is retired), full build+test green; the settings card now rides only the Plugins page's `plugins.item` seat on 0.1.7-alpha.1+ (mounted through `configForms.whileServed` while the Host serves the `context-guard` namespace — one card for a standalone install, the toolbox family bundle, or a mode pack), so this line renders the composer button only; minHost moves up to 0.1.2-rc.1 — older hosts stay on the previous release line.
 - 0.1.6-alpha.2 pre-release line (`@deepseek-ai/dsh@0.1.6-alpha.2`): ⚠️ button full, settings card absent — the `plugins.item` slot exists, but the `whileServed` gate landed in 0.1.7-alpha.1, so no card mounts here; 0.1.5's legacy `settings.plugin.item` seat is retired with the host's deletion, minHost unchanged.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree, no other surface change.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.5) — host-021 wave: full build+test green against the 0.2.1-rc.5 tree, no other surface change.
 
 **Version line mapping**: 0.2.0 and up support host `0.1.2-rc.1` and later; hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 

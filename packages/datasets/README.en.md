@@ -42,7 +42,7 @@ The in-session dataset tools only appear in eval mode; not seeing them in other 
 
 ## Compatibility
 
-Needs DSH 0.2.0-rc.2 or later; verified on 0.2.1-rc.1. How it degrades when a host capability is missing is in the [reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/datasets/docs/reference.en.md#compatibility-details).
+Needs DSH 0.2.0-rc.2 or later; verified on 0.2.1-rc.5. How it degrades when a host capability is missing is in the [reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/datasets/docs/reference.en.md#compatibility-details).
 
 ## For developers
 

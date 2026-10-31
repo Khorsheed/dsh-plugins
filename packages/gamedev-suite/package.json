@@ -87,7 +87,7 @@
     ],
     "compat": {
       "minHost": "0.2.0-rc.1",
-      "verifiedHost": "0.2.1-rc.1",
+      "verifiedHost": "0.2.1-rc.5",
       "notes": "Pure composition: the bundle mounts the members' canonical rows plus the dsh-gamedev preset row and registers nothing of its own, so the floor is the members' highest (0.2.0-rc.1 — game; the local-agent family and room floor at 0.1.5-rc.1). Member behavior details live in each member's own dsh.compat."
     }
   }

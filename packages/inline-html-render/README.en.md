@@ -35,7 +35,7 @@ Inline Cards come with the Basic Essentials suite. Once installed, tell the agen
 
 ## Compatibility
 
-Needs DSH 0.1.2-rc.1 or later; verified on 0.2.1-rc.1.
+Needs DSH 0.1.2-rc.1 or later; verified on 0.2.1-rc.5.
 
 ## For developers
 

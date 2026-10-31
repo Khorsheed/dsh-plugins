@@ -39,7 +39,7 @@ So that the canvas tools never affect other modes, the canvas only appears in se
 
 ## Compatibility
 
-Needs DSH 0.1.5-rc.1 or later; verified on 0.1.5-rc.1.
+Needs DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.5.
 
 ## For developers
 

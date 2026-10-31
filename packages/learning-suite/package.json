@@ -74,7 +74,7 @@
     ],
     "compat": {
       "minHost": "0.1.7-rc.1",
-      "verifiedHost": "0.2.1-rc.1",
+      "verifiedHost": "0.2.1-rc.5",
       "notes": "Pure composition: the bundle mounts the member's canonical row plus the dsh-learning preset row and registers nothing of its own, so the floor is the member's own (0.1.7-rc.1 — library; the preset row's floor is the same line). Individual member behaviors are documented in the member's own dsh.compat."
     }
   }

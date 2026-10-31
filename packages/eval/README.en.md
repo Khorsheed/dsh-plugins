@@ -45,7 +45,7 @@ The in-session eval tools only appear in eval mode; not seeing them in other mod
 
 ## Compatibility
 
-Needs DSH 0.2.0-rc.2 or later; verified on 0.2.1-rc.1. How it degrades when a host capability is missing is in the [reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/eval/docs/reference.en.md#compatibility-degraded-and-absent-items).
+Needs DSH 0.2.0-rc.2 or later; verified on 0.2.1-rc.5. How it degrades when a host capability is missing is in the [reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/eval/docs/reference.en.md#compatibility-degraded-and-absent-items).
 
 ## For developers
 

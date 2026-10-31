@@ -24,7 +24,7 @@ import { ContentPane, buildSrcDoc, attachBridge, structuredPreview, useRenderedS
 
 ## Compatibility
 
-需要 DSH 0.1.5-rc.1 或更新版本，已在 0.2.1-rc.1 上验证。
+需要 DSH 0.1.5-rc.1 或更新版本，已在 0.2.1-rc.5 上验证。
 
 ## 给开发者
 

@@ -42,7 +42,7 @@
 
 ## Compatibility
 
-需要 DSH 0.2.0-rc.2 或更新版本，已在 0.2.1-rc.1 上验证；缺少某些宿主能力时怎样降级，见[参考文档](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/datasets/docs/reference.md#兼容性细节)。
+需要 DSH 0.2.0-rc.2 或更新版本，已在 0.2.1-rc.5 上验证；缺少某些宿主能力时怎样降级，见[参考文档](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/datasets/docs/reference.md#兼容性细节)。
 
 ## 给开发者
 

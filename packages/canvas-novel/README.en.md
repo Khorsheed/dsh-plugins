@@ -45,7 +45,7 @@ It only appears in "写作模式" (writing mode) sessions; not seeing it in othe
 
 ## Compatibility
 
-Needs DSH 0.2.0-rc.2 or later; verified on 0.2.1-rc.1.
+Needs DSH 0.2.0-rc.2 or later; verified on 0.2.1-rc.5.
 
 ## For developers
 

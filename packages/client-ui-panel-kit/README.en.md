@@ -23,7 +23,7 @@ Every visible string and accessible name comes from the caller; colors use only 
 
 ## Compatibility
 
-Needs DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.1.
+Needs DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.5.
 
 ## For developers
 
