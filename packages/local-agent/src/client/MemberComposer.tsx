@@ -400,6 +400,9 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
               className={css.commandItem}
               onMouseDown={(event) => { event.preventDefault(); setDraft(`/${command.name}`) }}
             >
+              <svg className={css.commandIcon} viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28 10" strokeLinecap="round" />
+              </svg>
               <span className={css.commandLabel}>{t(command.label)}</span>
               <span className={css.commandName}>{command.name}</span>
               <span className={css.commandHint}>{t(command.hint)}</span>

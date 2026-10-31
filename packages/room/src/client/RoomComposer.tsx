@@ -529,6 +529,8 @@ export function RoomComposer({
   }
 
   const commands = mention === null ? slashCommandsFor(draft) : []
+  /** Who the command addresses: the @-mentioned member, else the coordinator. */
+  const commandTarget = commands.length === 0 ? undefined : /^@(\S+)\s/.exec(draft.trim())?.[1]
   const completeCommand = (name: string): void => { inputActions.setDraft(draft.replace(/\/[a-z]*\s*$/, `/${name}`)) }
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     // oxlint-disable-next-line typescript/no-deprecated -- IME 229 covers engines without isComposing.
@@ -660,7 +662,7 @@ export function RoomComposer({
           )}
         />
         {commands.length > 0 && (
-          <ul className={css.menu} role="listbox" aria-label={t('composer.command.title')}>
+          <ul className={`${css.menu} ${css.commandMenu}`} role="listbox" aria-label={t('composer.command.title')}>
             <li><div className={css.menuGroup}>{t('composer.command.title')}</div></li>
             {commands.map(name => (
               <li key={name}>
@@ -671,9 +673,14 @@ export function RoomComposer({
                   className={css.itemActive}
                   onMouseDown={(event) => { event.preventDefault(); completeCommand(name) }}
                 >
-                  <span>{t('composer.command.compact')}</span>
+                  <svg className={css.commandIcon} viewBox="0 0 16 16" width="16" height="16" aria-hidden>
+                    <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="28 10" strokeLinecap="round" />
+                  </svg>
+                  <span className={css.commandLabel}>{t('composer.command.compact')}</span>
                   <span className={css.commandName}>{name}</span>
-                  <span className={css.commandHint}>{t('composer.command.compact.hint')}</span>
+                  <span className={css.commandHint}>
+                    {commandTarget === undefined ? t('composer.command.compact.hint') : t('composer.command.compact.member', { name: commandTarget })}
+                  </span>
                 </button>
               </li>
             ))}
