@@ -34,8 +34,9 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { ReaderTabVisibility, RegistrationToggle, type ReaderPluginInventorySnapshot } from './preset-visibility.ts'
 import { READER_KIND, READER_TAB_ID, readerDefinition } from './definition.tsx'
-import { ReaderWriteRow, type ReaderWriteRowFace } from './WriteToolRow.tsx'
-import { openDestination } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import {
+  followerHostOf, openDestination, registerDestinationCards, startNavFollower, type ConversationLike, type SlotsLike,
+} from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import type { ReaderNavParams } from '../nav-line.ts'
 import { ReaderPane } from './ReaderPane.tsx'
 import { createReaderStore } from './store.ts'
@@ -360,29 +361,40 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   // The reader's one way in from outside (proposal 2026-10-30-agent-sidebar-
   // navigation): the tab kind with its typed params, which the pane applies
-  // once per navigation revision. Nothing follows by itself — the reader only
-  // offers doors (user decision 2026-10-30), so no destination follower starts.
+  // once per navigation revision.
+  const get = (name: string): unknown => (ctx.get.bind(ctx) as (key: string) => unknown)(name)
   const go = (params: ReaderNavParams): void => {
-    openDestination(name => (ctx.get.bind(ctx) as (key: string) => unknown)(name), { kind: READER_KIND, params: { ...params } })
+    openDestination(get, { kind: READER_KIND, params: { ...params } })
   }
-  // The reader_note / reader_translate rows: what was written, and 查看 → to
-  // it. The slot is declared by @deepseek-ai/dsh-client-ui-tool, which this
-  // package does not depend on — a structural registration (the canvas
-  // precedent); without that package the inject never fires and the call
-  // keeps the host's generic row.
-  const toolSlots = ctx.slots as unknown as {
-    inject: (key: string, callback: () => () => void) => () => void
-    register: (options: Record<string, unknown>, component: unknown) => () => void
+  // The follower, cards only: the reader never moves the sidebar by itself
+  // (user decision 2026-10-30), but every live reader write still raises the
+  // write signal, so an open note face or 润色 layer re-reads at once.
+  const followerHost = followerHostOf(get)
+  if (followerHost !== undefined) {
+    ctx.effect(() => startNavFollower(followerHost, {
+      kinds: [READER_KIND],
+      cardsOnly: true,
+      open: destination => { go(destination.params as unknown as ReaderNavParams) },
+    }), 'reader: destination follower (cards only)')
   }
-  const rowFace: ReaderWriteRowFace = { go }
-  for (const tool of ['reader_note', 'reader_translate'] as const) {
-    ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({
-      name: 'tool.call.toolview',
-      key: tool,
+  // The conversation cards: the one shell under reader_note / reader_translate
+  // and in the Turn tail, its door the answer's destination (the compact line).
+  // The seats are declared by packages this one does not depend on, so the
+  // registration is structural; without them the calls keep the host's rows.
+  registerDestinationCards(
+    (body, label) => { ctx.effect(body, label) },
+    ctx.slots as unknown as SlotsLike,
+    () => get('uiConversation') as ConversationLike | undefined,
+    {
+      owner: '@khorsheed/dsh-reader',
+      tools: ['reader_note', 'reader_translate'],
       locale: NS,
-      inject: () => rowFace,
-    }, ReaderWriteRow)), `reader: ${tool} tool row`)
-  }
+      face: () => ({
+        copy: () => ({ kind: t('toolrow.kind'), running: t('toolrow.running'), failed: t('toolrow.failed'), open: t('toolrow.view') }),
+        go: () => destination => { go(destination.params as unknown as ReaderNavParams) },
+      }),
+    },
+  )
 
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()
