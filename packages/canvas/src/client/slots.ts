@@ -59,7 +59,7 @@ export interface CanvasNavParams {
   readonly manuscript?: string
   /** A category's type page. */
   readonly type?: string
-  readonly face?: 'board' | 'link' | 'manuscripts' | 'view' | 'lead'
+  readonly face?: 'board' | 'link' | 'manuscripts' | 'view' | 'lead' | 'extra'
   readonly scope?: string | null
   /** One thing on that face the genre shows (the novel's 章节 face: a chapter number). */
   readonly item?: string
@@ -87,7 +87,7 @@ export interface CanvasNavService {
    * Open the canvas tab on `canvasId`'s board, on one face, with one of the
    * genre's scopes pressed (null: 全部). Absent on older canvas builds.
    */
-  openFace?: (canvasId: string, face: 'board' | 'link' | 'manuscripts' | 'view' | 'lead', scope: string | null) => void
+  openFace?: (canvasId: string, face: 'board' | 'link' | 'manuscripts' | 'view' | 'lead' | 'extra', scope: string | null) => void
   /** Open the canvas tab at one address — the one entry every other method is a shorthand of. Absent on older canvas builds. */
   go?: (params: CanvasNavParams) => void
 }

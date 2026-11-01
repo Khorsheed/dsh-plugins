@@ -133,6 +133,14 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
       const name = id === undefined ? undefined : known.get(id)
       if (id !== undefined && name !== undefined) names[id] = name
     }
+    // 本章推进 names events: their titles.
+    if ((plan?.advances ?? []).length > 0) {
+      const { events } = await this.core.allEvents(request.canvasId)
+      for (const id of plan!.advances!) {
+        const hit = events.find(event => event.id === id)
+        if (hit !== undefined) names[id] = hit.title
+      }
+    }
     // The edit box writes cards the way a person does: a foreshadow by its
     // ref (its label opens with it), a character by name.
     const handleOf = (id: string): string => entries?.foreshadows.find(view => view.cardId === id)?.ref ?? known.get(id) ?? id

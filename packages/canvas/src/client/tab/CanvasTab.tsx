@@ -56,7 +56,7 @@ import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { DetailCrumbs } from '../detail/DetailCrumbs.tsx'
 import detailCss from '../detail/CanvasDetailView.module.css'
 import {
-  boardGraphOf, boardManuscriptsOf, boardScopesOf, boardStripsOf, boardTabBadgeOf, boardTabLabelOf, boardLeadOf, boardViewOf, cardDeleteNoteOf,
+  boardGraphOf, boardManuscriptsOf, boardScopesOf, boardStripsOf, boardTabBadgeOf, boardTabLabelOf, boardExtraOf, boardLeadOf, boardViewOf, cardDeleteNoteOf,
   genrePageOf, GenreSeatsContext, manuscriptsOwned, type GenreSeats,
 } from '../genre-seats.tsx'
 import type { CanvasCardScope, CanvasNavParams } from '../slots.ts'
@@ -105,7 +105,7 @@ function dirtyOf(draft: DraftContent | undefined): boolean {
  * faces (`CanvasGenreDefinition.faces`), the genre's own view; there 连线 is
  * the 卡板 face's second layout rather than a face of its own.
  */
-type BoardFace = 'board' | 'link' | 'manuscripts' | 'view' | 'lead'
+type BoardFace = 'board' | 'link' | 'manuscripts' | 'view' | 'lead' | 'extra'
 
 /** One canvas's board view, as it was when the user last left it. */
 interface BoardViewMemory {
@@ -213,9 +213,9 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   // before that its lead face (规划) or else 卡板 — until the user picks; a
   // plain canvas has no genre face.
   const view: BoardFace = openFaces === undefined
-    ? (storedFace === 'view' || storedFace === 'lead' ? 'board' : storedFace)
+    ? (storedFace === 'view' || storedFace === 'lead' || storedFace === 'extra' ? 'board' : storedFace)
     : view_.faceChosen
-      ? (storedFace === 'lead' && openFaces.lead === undefined ? 'board' : storedFace)
+      ? ((storedFace === 'lead' && openFaces.lead === undefined) || (storedFace === 'extra' && openFaces.extra === undefined) ? 'board' : storedFace)
       : view_.empty ? (openFaces.lead === undefined ? 'board' : 'lead') : 'manuscripts'
   /** Change the open canvas's view memory, keeping what the patch leaves alone. */
   const patchView = useCallback((patch: (was: BoardViewMemory) => Partial<BoardViewMemory>) => {
@@ -950,6 +950,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
         face('manuscripts', 'manuscripts', t('view.manuscripts')),
         face('board', 'board', t('view.board')),
         face('view', openFaces.view, genreLabel),
+        ...(openFaces.extra === undefined ? [] : [face('extra', openFaces.extra, genreLabel)]),
       ]
     }
     const written = !manuscriptsOwned(seats, board) && board.manuscripts.length > 0
@@ -1278,6 +1279,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
               boardViewOf(seats, openBoard.board, <div className={css.notice}>{t('genre.pageMissing')}</div>)
             ) : view === 'lead' ? (
               boardLeadOf(seats, openBoard.board, <div className={css.notice}>{t('genre.pageMissing')}</div>)
+            ) : view === 'extra' ? (
+              boardExtraOf(seats, openBoard.board, <div className={css.notice}>{t('genre.pageMissing')}</div>)
             ) : view === 'manuscripts' ? (
               boardManuscriptsOf(seats, openBoard.board, (
                 <ManuscriptList

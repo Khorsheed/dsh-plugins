@@ -18,11 +18,18 @@
  * @module @khorsheed/dsh-canvas-novel
  */
 export { capacityOf, targetWordsOf, WORDS_PER_BEAT } from './types.ts'
+import { TIER_LABELS, type StoryEvent } from './timeline.ts'
 import {
   capacityOf, coreSuspenseNudge, isOverdue, targetWordsOf, WORDS_PER_BEAT, nextMilestoneOf, RELATION_POINT_SCALE, relationStanding, revealText, revealVolume, volumeNumeral, volumePosition,
   type ChapterPlan, type ChapterRecord, type CharacterView, type ExperienceEntry, type ForeshadowOp, type ForeshadowView, type OutlineDoc,
   type RelationView, type RuleView,
 } from './types.ts'
+
+/** A character's memory as the brief carries it: what they intend now, and what they came to believe. */
+export interface CharacterMind {
+  readonly intent?: string
+  readonly beliefs: readonly { readonly text: string; readonly source?: string; readonly from?: string; readonly chapter: number }[]
+}
 
 /** Everything one brief renders (assembled by the store's `gatherBrief`; kept cards only). */
 export interface BriefData {
@@ -50,7 +57,20 @@ export interface BriefData {
   /** The newest chapter number — the sleeping baseline. */
   readonly currentChapter: number
   /** The in-scene characters with their last ≤3 experience entries. */
-  readonly inScene: readonly { readonly character: CharacterView; readonly recent: readonly ExperienceEntry[] }[]
+  readonly inScene: readonly { readonly character: CharacterView; readonly recent: readonly ExperienceEntry[]; readonly mind?: CharacterMind }[]
+  /**
+   * The timeline (2026-11-01; absent on data gathered without it): the
+   * latest happened events, every stored future event (the 对账 moves them by
+   * id), the planner's recalled candidates, and the events this chapter's
+   * plan advances in full, each with what causes it and the ideas bound to it.
+   */
+  readonly timeline?: {
+    readonly recent: readonly StoryEvent[]
+    readonly future: readonly StoryEvent[]
+    readonly candidates: readonly { readonly event: StoryEvent; readonly tier: string; readonly reason: string }[]
+    readonly advancing: readonly { readonly event: StoryEvent; readonly causes: readonly StoryEvent[]; readonly ideas: readonly string[] }[]
+    readonly names: Readonly<Record<string, string>>
+  }
   /** Every kept character (the plan roster and the extract roster). */
   readonly roster: readonly CharacterView[]
   /** Every kept relation card (the plan's 关系 block and the extract's 关系榜). */
@@ -317,8 +337,8 @@ function identityOf(character: CharacterView): string {
 }
 
 /** The in-scene character block (~100字/人, CP0 §2.A 在场角色). */
-function characterBlock(entry: { readonly character: CharacterView; readonly recent: readonly ExperienceEntry[] }, expPerChar: number): string[] {
-  const { character, recent } = entry
+function characterBlock(entry: { readonly character: CharacterView; readonly recent: readonly ExperienceEntry[]; readonly mind?: CharacterMind }, expPerChar: number): string[] {
+  const { character, recent, mind } = entry
   const lines = [`### ${character.name}${identityOf(character)}`]
   const current = character.currentState ?? {}
   lines.push(`此刻：${current.where ?? '未定'} / ${current.state ?? '未定'} / 牵挂：${current.concern ?? '无'}`)
@@ -329,6 +349,10 @@ function characterBlock(entry: { readonly character: CharacterView; readonly rec
   }
   const join = (items: readonly string[]): string => items.length === 0 ? '—' : items.join('、')
   lines.push(`知道 ${join(character.knows)}；不知道 ${join(character.unaware)}；秘密 ${join(character.secrets)}`)
+  if (mind?.intent !== undefined) lines.push(`现在打算：${mind.intent}`)
+  if (mind !== undefined && mind.beliefs.length > 0) {
+    lines.push(`相信（他自己的认识，可能是错的）：${mind.beliefs.map(row => `${row.text}（${row.source ?? '亲历'}${row.from === undefined ? '' : `·${row.from}说的`}，第${row.chapter}章）`).join('；')}`)
+  }
   lines.push('（非 POV 角色只写可观察的外在言行。）')
   return lines
 }
@@ -424,6 +448,7 @@ function renderWriteWithin(data: BriefData, limits: RenderLimits, budget: number
     '',
     '## 本章计划',
     ...planLines(data.target, data.allForeshadows, data.roster),
+    ...advancingBlock(data),
     '',
     '## 伏笔台账（活跃）',
     ...(foreshadows.length === 0 ? ['（台账为空。）'] : foreshadows.map(foreshadowLineWrite)),
@@ -447,6 +472,41 @@ function renderWriteWithin(data: BriefData, limits: RenderLimits, budget: number
   const text = lines.join('\n')
   if (!lastResort && estimateTokens(text) > budget) return undefined
   return text
+}
+
+/** One event as a brief line: id, story time, title, who and where. */
+function eventLine(event: StoryEvent, names: Readonly<Record<string, string>>): string {
+  const who = [...(event.who ?? []), ...(event.places ?? [])].map(id => names[id] ?? id)
+  return `[${event.id}] ${event.when === undefined ? '' : `${event.when} · `}${event.title}${who.length === 0 ? '' : `（${who.join('、')}）`}`
+}
+
+/** The events this chapter advances, in full: what causes each, and the person's own words bound to it. */
+function advancingBlock(data: BriefData): string[] {
+  const rows = data.timeline?.advancing ?? []
+  if (rows.length === 0) return []
+  const names = data.timeline!.names
+  return ['', '## 本章推进的事件', ...rows.flatMap(row => [
+    `- ${eventLine(row.event, names)}${row.event.source === undefined ? '' : `　来源：${row.event.source}`}`,
+    ...row.causes.map(cause => `  起因：${eventLine(cause, names)}`),
+    ...row.ideas.map(idea => `  作者写的片段（尽量保留原文，可以改衔接）：「${idea}」`),
+  ])]
+}
+
+/** The plan brief's recall: the candidates, one line each, and how to pick. */
+function candidatesBlock(data: BriefData): string[] {
+  const timeline = data.timeline
+  if (timeline === undefined) return []
+  const recent = timeline.recent.slice(-4)
+  return [
+    '',
+    '## 最近发生的事（故事时间）',
+    ...(recent.length === 0 ? ['（时间轴上还没有已发生的事件。）'] : recent.map(event => `- ${eventLine(event, timeline.names)}`)),
+    '',
+    '## 将发生 · 本章候选（按优先级召回；选 1 条主线、1–2 条副线写进计划的 advances；要看详情用 novel_read(what=events, ids=…)）',
+    ...(timeline.candidates.length === 0
+      ? ['（没有候选：时间轴上还没有将发生的事。和用户聊聊接下来要发生什么，用 novel_write(what=event) 记下来。）']
+      : timeline.candidates.map(row => `- ${TIER_LABELS[row.tier as keyof typeof TIER_LABELS] ?? row.tier} ${eventLine(row.event, timeline.names)} —— ${row.reason}`)),
+  ]
 }
 
 /** The write brief's settings: this chapter's in full, the rest by name. */
@@ -504,6 +564,7 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
     ...(words === undefined ? [] : ['## 篇幅', budgetLine(words), '']),
     ...outlineBlock(data),
     ...settingBlocksPlan(data),
+    ...candidatesBlock(data),
     '',
     '## 伏笔台账（全部活跃+沉睡；已揭带答案）',
     ...(foreshadows.length === 0 && data.resolvedForeshadows.length === 0
@@ -549,6 +610,11 @@ export const EXTRACT_OUTPUT_SCHEMA = `{
   "relation_milestones": [{ "relation_id": "r2", "evidence_in_text": "≤50字原文" }],
   "relation_changes": [{ "relation_id": "r2", "change": "裂痕|决裂|修复|转类型", "to_type": "仅转类型给：爱情|亲情|友情|师徒|对手|同盟|其他", "evidence_in_text": "≤50字原文" }],
   "new_relations": [{ "a": "c1 或名字", "b": "c2 或名字", "type": "爱情|亲情|友情|师徒|对手|同盟|其他", "now": "一句现状", "evidence_in_text": "≤50字原文" }],
+  "events": [{ "title": "这章发生的一件事，一句话", "when": "故事内时间（可空，如 第2天傍晚）", "after": "紧接在哪个已有事件之后（事件编号，可空）", "people": ["c1"], "places": ["w3"], "evidence_in_text": "≤50字原文" }],
+  "event_progress": [{ "event_id": "e3", "kind": "advanced|happened|failed", "evidence_in_text": "≤50字原文" }],
+  "preconditions_met": [{ "event_id": "e3", "index": 前置条件的序号（从 1 起）, "evidence_in_text": "≤50字原文" }],
+  "beliefs": [{ "character_id": "c1", "belief": "他这章开始相信的一件事（照他的认识写，不判断对错）", "source": "亲历|听说|推测", "from": "听说时：谁说的", "evidence_in_text": "≤50字原文" }],
+  "intents": [{ "character_id": "c1", "intent": "他现在打算做什么", "evidence_in_text": "≤50字原文" }],
   "recap": "本章 2-3 句摘要"
 }`
 
@@ -587,6 +653,9 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     '   标「可升」的一对，括号里那件事在正文里确实发生了，才写进 relation_milestones；',
     '   关系出现裂痕、决裂、修复，或变成另一种关系（转类型，给 to_type），写进 relation_changes；',
     '   两个角色之间出现了值得追踪、榜上还没有的关系，写进 new_relations。',
+    '7. 事件：本章发生的几件关键事（一章 2-4 件）写进 events；将发生事件榜上的事这章有进展的写进 event_progress；',
+    '8. 人物记忆：某人这章开始相信的事写进 beliefs（照他自己的认识写，不判断对错；source 写亲历/听说/推测），',
+    '   某人的打算变了写进 intents；没变的不写。',
     '',
     '【本章正文】',
     body.trim() === '' ? '（正文为空——没有什么可对账的。）' : body,
@@ -604,6 +673,14 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     '',
     '【关系榜】',
     ...(data.relations.length === 0 ? ['（还没有关系卡。）'] : data.relations.map(relationLinePlan)),
+    ...(data.timeline === undefined ? [] : [
+      '',
+      '【将发生事件】（这章推进了的写进 event_progress：advanced 推进、happened 发生了、failed 落空——人物打算没做成；前置条件满足了写进 preconditions_met）',
+      ...(data.timeline.future.length === 0 ? ['（还没有。）'] : data.timeline.future.map(event => `- ${eventLine(event, data.timeline!.names)}${(event.pre ?? []).length === 0 ? '' : `　前置：${event.pre!.map((row, index) => `${index + 1}. ${row.text}${row.met === undefined ? '' : '（已满足）'}`).join(' ')}`}`)),
+      '',
+      '【最近发生的事】（本章的事件写进 events，用 after 接在它们后面；倒叙、回忆讲到的往事也写进 events，when 写它真正发生的时间）',
+      ...(data.timeline.recent.length === 0 ? ['（还没有。）'] : data.timeline.recent.slice(-6).map(event => `- ${eventLine(event, data.timeline!.names)}`)),
+    ]),
     '',
     '【输出 schema】',
     EXTRACT_OUTPUT_SCHEMA,

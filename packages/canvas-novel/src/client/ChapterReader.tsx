@@ -21,7 +21,7 @@ import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
 
 /** The plan fields an edit receipt may name (text-forms.ts's PLAN_FIELDS, host-side). */
-const PLAN_FIELD_KEYS = ['summary', 'words', 'beats', 'conflict', 'highlight', 'foreshadowOps', 'cast', 'pov', 'infoGaps', 'uses', 'hook'] as const
+const PLAN_FIELD_KEYS = ['summary', 'words', 'beats', 'conflict', 'highlight', 'foreshadowOps', 'cast', 'pov', 'infoGaps', 'advances', 'uses', 'hook'] as const
 type PlanField = typeof PLAN_FIELD_KEYS[number]
 
 const LAMP = ['lamp.plan', 'lamp.write', 'lamp.extract'] as const

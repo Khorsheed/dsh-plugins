@@ -122,7 +122,7 @@ const PLAN_SCALARS: Readonly<Record<string, string>> = {
   视角: 'pov', pov: 'pov', 目标字数: 'words', 字数: 'words',
 }
 const PLAN_LISTS: Readonly<Record<string, string>> = {
-  走向: 'beats', 情节: 'beats', 伏笔: 'foreshadowOps', 出场: 'cast', 信息差: 'infoGaps', 用到的设定: 'uses', 设定: 'uses',
+  走向: 'beats', 情节: 'beats', 伏笔: 'foreshadowOps', 出场: 'cast', 信息差: 'infoGaps', 用到的设定: 'uses', 设定: 'uses', 本章推进: 'advances', 推进: 'advances',
 }
 
 /** One 走向 item: 「午后｜他推开门（转折）」. */
@@ -197,6 +197,7 @@ export function planFromText(text: string): Record<string, unknown> {
     if (pov !== undefined && plan['pov'] === undefined) plan['pov'] = pov.who
   }
   if (lists['infoGaps'] !== undefined) plan['infoGaps'] = lists['infoGaps'].map(gapOf).filter(gap => gap !== undefined)
+  if (lists['advances'] !== undefined) plan['advances'] = lists['advances'].flatMap(item => item.split(/\s*[、,，]\s*/)).map(item => item.replace(/[（(].*$/, '').trim()).filter(item => item !== '')
   if (lists['uses'] !== undefined) plan['uses'] = lists['uses'].flatMap(item => item.split(/\s*[、,，]\s*/)).filter(item => item !== '')
   return plan
 }
@@ -244,13 +245,14 @@ export function planToText(plan: ChapterPlan, handleOf: (id: string) => string):
     lines.push('信息差：')
     for (const gap of plan.infoGaps) lines.push(`- ${handleOf(gap.who)} 得知：${oneLine(gap.fact)}`)
   }
+  if (plan.advances !== undefined && plan.advances.length > 0) lines.push(`本章推进：${plan.advances.join('、')}`)
   if (plan.uses !== undefined && plan.uses.length > 0) lines.push(`用到的设定：${plan.uses.map(handleOf).join('、')}`)
   if (plan.hook !== undefined) lines.push(`章末钩子：${oneLine(plan.hook)}`)
   return lines.join('\n')
 }
 
 /** The plan fields, in the order the page shows them (the keys an edit summary names). */
-export const PLAN_FIELDS = ['summary', 'words', 'beats', 'conflict', 'highlight', 'foreshadowOps', 'cast', 'pov', 'infoGaps', 'uses', 'hook'] as const
+export const PLAN_FIELDS = ['summary', 'words', 'beats', 'conflict', 'highlight', 'foreshadowOps', 'cast', 'pov', 'infoGaps', 'advances', 'uses', 'hook'] as const
 export type PlanField = typeof PLAN_FIELDS[number]
 
 /** Which fields an edit changed. */

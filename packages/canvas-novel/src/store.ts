@@ -40,7 +40,12 @@ import { FsError, FsVersion, type FsTarget } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { planWords, renderExtractBrief, workingRulesOf, type BriefData } from './brief.ts'
+import { planWords, renderExtractBrief, workingRulesOf, type BriefData, type CharacterMind } from './brief.ts'
+import { BELIEF_SOURCES, emptyIdeas, normalizeIdeas, normalizeMindEntry, type Idea, type IdeasDoc, type MindEntry } from './ideas.ts'
+import {
+  emptyTimeline, FUTURE_SOURCES, isFuture, normalizeEvent, normalizeTimeline, orderAfter, recall, tierReason,
+  type Candidate, type EventPrecondition, type RecallPins, type StoryEvent, type TimelineDoc,
+} from './timeline.ts'
 import { normalizeOrganizePlan, organizeTargetOf, renderOrganizePlan, type OrganizeCreate, type OrganizeMove, type OrganizePlan } from './organize.ts'
 import {
   canvasBoardOf, fieldDefsOf, LEGACY_WORLD_SEED, NOVEL_GENRE, NOVEL_ROLES, SETTING_SORT_KEYS, SETTING_SORTS, settingSortOf, sortOfWorldKind, WORLD_KINDS,
@@ -59,7 +64,7 @@ import {
   type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type RefGroup, type RelationEntry, type RelationEvent,
   type RelationType, type RelationView, type RuleView, type StoryAppearance, type StoryCard, type StoryCharacter, type StoryForeshadow,
   type StoryLogResult, type StoryRelation, type WorkMeta, type WriteChapterRequest,
-  emptyOutline, normalizeOutline, normalizeSheet, normalizeSketches, normalizeVolumes, parseReveal, parseVolumeToken,
+  emptyOutline, normalizeOutline, normalizeSheet, normalizeSketches, normalizeVolumes, parseReveal, parseVolumeToken, revealText,
   type OutlineDoc, type OutlineProposal, type OutlineSheet, type OutlineVolume,
 } from './types.ts'
 import { changedPlanFields, type PlanField } from './text-forms.ts'
@@ -81,6 +86,9 @@ export const WORK_FILES = {
   pending: 'pending.json',
   outline: 'outline.json',
   organize: 'organize.json',
+  timeline: 'timeline.json',
+  ideas: 'ideas.json',
+  minds: 'minds.jsonl',
 } as const
 
 /**
@@ -1499,6 +1507,321 @@ export class NovelService {
   }
 
   /**
+   * The 对账's memory half (2026-11-01): this chapter's events onto the
+   * timeline (in story time, after the event the subagent names), the
+   * future events it advanced / realized / failed, the preconditions it met,
+   * and what characters came to believe and intend. Every row carries a
+   * quote the text must hold. A re-对账 replaces this chapter's rows; a
+   * realized event's bound ideas are marked 已写入.
+   */
+  private async importMemory(
+    workId: string, n: number, payload: ExtractPayload, body: string, entries: WorkEntries,
+    newCharacterIds: ReadonlyMap<string, string>, dropped: ImportDrop[], session: Session | undefined,
+  ): Promise<NonNullable<ImportReport['memory']>> {
+    const quote = (raw: unknown): string | undefined => {
+      const evidence = cleanText(raw, EVIDENCE_MAX)
+      return evidenceInBody(body, evidence) ? evidence : undefined
+    }
+    const character = (token: unknown): string | undefined => {
+      const named = newCharacterIds.get(cleanText(token, 80) ?? '')
+      if (named !== undefined) return named
+      const handle = this.resolveCard(entries, token, 'character')
+      return handle?.role === 'character' ? handle.cardId : undefined
+    }
+    const cardsOf = (raw: unknown, role: EntryRole): string[] => (Array.isArray(raw) ? raw : refTokensOf(raw))
+      .map(token => role === 'character' ? character(token) : this.resolveCard(entries, token, role)?.cardId)
+      .filter((cardId): cardId is string => cardId !== undefined)
+    const result = { events: 0, advanced: [] as string[], happened: [] as string[], failed: [] as string[], preconditions: 0, beliefs: 0, intents: 0 }
+    const realized: string[] = []
+    await this.mutateJson(await this.fileTarget(workId, WORK_FILES.timeline), session, raw => normalizeTimeline(raw), () => emptyTimeline(), (doc, now) => {
+      // A re-对账 supersedes this chapter's own rows and touches.
+      let events: StoryEvent[] = doc.events
+        .filter(event => !(event.status === 'happened' && event.source === undefined && event.chapters?.length === 1 && event.chapters[0] === n && event.evidence !== undefined))
+        .map(event => {
+          const touched = event.touched?.filter(c => c !== n)
+          const pre = event.pre?.map(row => row.met === n ? { text: row.text } : row)
+          return normalizeEvent({ ...event, touched, pre })!
+        })
+      let next = doc.next
+      for (const raw of payload.events ?? []) {
+        const title = cleanText(raw.title, 200)
+        const evidence = quote(raw.evidence_in_text)
+        if (title === undefined) continue
+        if (evidence === undefined) { dropped.push({ kind: 'event', reason: evidenceMiss(raw.evidence_in_text), ref: title.slice(0, 30) }); continue }
+        const after = cleanText(raw.after, 40)
+        const sameChapter = events.filter(event => event.chapters?.includes(n) && event.status === 'happened')
+        const anchorId = after !== undefined && events.some(event => event.id === after) ? after : sameChapter.at(-1)?.id
+          ?? [...events].filter(event => event.status === 'happened' && (event.chapters?.[0] ?? 0) < n).sort((a, b) => a.order - b.order).at(-1)?.id
+        const event = normalizeEvent({
+          id: `e${next}`, title, status: 'happened', order: orderAfter(events, anchorId), chapters: [n], evidence,
+          when: cleanText(raw.when, 60), who: cardsOf(raw.people, 'character'), places: cardsOf(raw.places, 'world'), since: n, createdAt: now,
+        })
+        if (event === undefined) continue
+        events = [...events, event]
+        next += 1
+        result.events += 1
+      }
+      for (const raw of payload.event_progress ?? []) {
+        const eventId = cleanText(raw.event_id, 40)
+        const evidence = quote(raw.evidence_in_text)
+        const target = events.find(event => event.id === eventId)
+        if (target === undefined || evidence === undefined) { dropped.push({ kind: 'event', reason: evidence === undefined ? evidenceMiss(raw.evidence_in_text) : 'id-not-in-ledger', ref: String(eventId ?? '?') }); continue }
+        const kind = raw.kind === 'happened' ? 'happened' : raw.kind === 'failed' ? 'failed' : 'advanced'
+        const touched = [...new Set([...(target.touched ?? []), n])]
+        const changed = kind === 'advanced'
+          ? { ...target, touched }
+          : { ...target, touched, status: kind, chapters: [...new Set([...(target.chapters ?? []), n])], evidence }
+        events = events.map(event => event.id === target.id ? normalizeEvent(changed)! : event)
+        result[kind === 'advanced' ? 'advanced' : kind].push(target.title)
+        if (kind === 'happened') realized.push(target.id)
+      }
+      for (const raw of payload.preconditions_met ?? []) {
+        const eventId = cleanText(raw.event_id, 40)
+        const index = typeof raw.index === 'number' ? raw.index : Number(raw.index)
+        const target = events.find(event => event.id === eventId)
+        const row = target?.pre?.[index - 1]
+        if (target === undefined || row === undefined || quote(raw.evidence_in_text) === undefined) continue
+        events = events.map(event => event.id === target.id ? normalizeEvent({ ...event, pre: event.pre!.map((item, i) => i === index - 1 ? { ...item, met: n } : item) })! : event)
+        result.preconditions += 1
+      }
+      return { ...doc, events, next }
+    })
+    // Foreshadow reveals advance through the mention journal already; a realized reveal needs nothing here.
+    const minds: Record<string, unknown>[] = []
+    const now = new Date().toISOString()
+    for (const raw of payload.beliefs ?? []) {
+      const characterId = character(raw.character_id)
+      const text = cleanText(raw.belief, 300)
+      const evidence = quote(raw.evidence_in_text)
+      if (characterId === undefined || text === undefined || evidence === undefined) continue
+      const source = BELIEF_SOURCES.find(candidate => candidate === raw.source) ?? '亲历'
+      const from = cleanText(raw.from, 80)
+      minds.push({ characterId, chapter: n, kind: 'belief', text, source, ...(from === undefined ? {} : { from }), evidence, createdAt: now })
+      result.beliefs += 1
+    }
+    for (const raw of payload.intents ?? []) {
+      const characterId = character(raw.character_id)
+      const text = cleanText(raw.intent, 300)
+      const evidence = quote(raw.evidence_in_text)
+      if (characterId === undefined || text === undefined || evidence === undefined) continue
+      minds.push({ characterId, chapter: n, kind: 'intent', text, evidence, createdAt: now })
+      result.intents += 1
+    }
+    await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.minds), session, minds, record => record['chapter'] === n)
+    if (realized.length > 0) {
+      await this.mutateJson(await this.fileTarget(workId, WORK_FILES.ideas), session, raw => normalizeIdeas(raw), undefined, doc => ({
+        ...doc, ideas: doc.ideas.map(idea => idea.eventId !== undefined && realized.includes(idea.eventId) && idea.writtenIn === undefined ? { ...idea, writtenIn: n } : idea),
+      }))
+    }
+    return result
+  }
+
+  /* ------------------------------------------------------------ timeline */
+
+  /** The timeline file as stored (no derived reveals). */
+  async readTimeline(workId: string): Promise<TimelineDoc> {
+    this.assertAlive('readTimeline')
+    const id = normalizeWorkId(workId)
+    if (id === undefined) return emptyTimeline()
+    const read = await this.readJson(await this.fileTarget(id, WORK_FILES.timeline), raw => normalizeTimeline(raw))
+    return typeof read === 'object' ? read.data : emptyTimeline()
+  }
+
+  /**
+   * Every event, the foreshadows' reveals included: a foreshadow card is a
+   * reveal event (`fs:<cardId>`) whose window is the start of its reveal
+   * volume, whose touches are its mention chapters, whose value is its star.
+   * A resolved one has happened, at the chapter that resolved it.
+   */
+  async allEvents(workId: string): Promise<{ readonly events: readonly StoryEvent[]; readonly current: number; readonly doc: TimelineDoc }> {
+    const doc = await this.readTimeline(workId)
+    const entries = await this.readEntries(workId)
+    if (entries === undefined) return { events: doc.events, current: 0, doc }
+    const outline = await this.readOutline(workId)
+    const mentions = await this.listMentions({ workId })
+    const starts: number[] = []
+    let next = 1
+    for (const volume of outline.volumes) { starts.push(next); next += volume.chapters ?? 0 }
+    const reveals = entries.foreshadows.filter(view => view.cardStatus !== 'archived' && view.state !== '已放弃').map((view, index): StoryEvent => {
+      const volumeIndex = view.reveal === undefined || view.reveal.kind === 'chapter' ? undefined
+        : view.reveal.kind === 'final' ? outline.volumes.length : view.reveal.index
+      const windowChapter = volumeIndex === undefined ? undefined : starts[volumeIndex - 1]
+      const resolved = mentions.filter(m => m.foreshadowId === view.cardId && m.kind === 'resolved').map(m => m.chapter)
+      return {
+        id: `fs:${view.cardId}`, title: `揭晓：${view.question}`, order: 1_000_000 + index,
+        status: view.state === '已揭晓' ? 'happened' : 'preset', source: '揭晓', foreshadowId: view.cardId,
+        value: view.starred ? 1 : 0.7, valueWhy: view.starred ? '你加了星的伏笔' : '伏笔',
+        ...(view.reveal === undefined ? {} : { window: revealText(view.reveal) }),
+        ...(windowChapter === undefined || windowChapter < 1 ? {} : { windowChapter }),
+        ...(view.mentionChapters === undefined ? {} : { touched: view.mentionChapters }),
+        ...(view.plantedAt === undefined ? {} : { since: view.plantedAt }),
+        ...(resolved.length === 0 ? {} : { chapters: [resolved[resolved.length - 1]!] }),
+        createdAt: '',
+      }
+    })
+    return { events: [...doc.events, ...reveals], current: entries.currentChapter, doc }
+  }
+
+  /**
+   * The agent's (or the person's) event write: a new event, or changes to one.
+   * Characters and settings resolve by ref or name; `after` places it right
+   * after another event in story time. A happened event without chapters is
+   * backstory. `delete` removes a stored event.
+   * @returns the event's id, or the failure code (`unknown` names handles no card answers).
+   */
+  async writeEvent(
+    request: {
+      readonly workId: string; readonly id?: string; readonly title?: string; readonly when?: string; readonly status?: string
+      readonly source?: string; readonly who?: unknown; readonly places?: unknown; readonly value?: unknown; readonly valueWhy?: string
+      readonly window?: string; readonly windowChapter?: unknown; readonly pre?: unknown; readonly causes?: unknown; readonly after?: string
+      readonly chapters?: unknown; readonly delete?: boolean
+    },
+    session: Session | undefined,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly id?: string; readonly unknown?: readonly string[] }> {
+    this.assertAlive('writeEvent')
+    const workId = normalizeWorkId(request.workId)
+    const entries = workId === undefined ? undefined : await this.readEntries(workId)
+    if (workId === undefined || entries === undefined) return { ok: false, error: 'missing' }
+    const unknown: string[] = []
+    const cards = (raw: unknown, role: EntryRole): string[] | undefined => {
+      if (raw === undefined) return undefined
+      const tokens = Array.isArray(raw) ? raw : refTokensOf(raw)
+      const out: string[] = []
+      for (const token of tokens) {
+        const handle = this.resolveCard(entries, token, role)
+        if (handle === undefined) unknown.push(String(token))
+        else if (!out.includes(handle.cardId)) out.push(handle.cardId)
+      }
+      return out
+    }
+    const who = cards(request.who, 'character')
+    const places = cards(request.places, 'world')
+    if (unknown.length > 0) return { ok: false, error: 'invalid-name', unknown }
+    const status = (['happened', 'planned', 'preset', 'hidden', 'failed'] as const).find(candidate => candidate === request.status)
+    const source = FUTURE_SOURCES.find(candidate => candidate === request.source)
+    const value = typeof request.value === 'number' ? request.value : typeof request.value === 'string' && request.value.trim() !== '' ? Number(request.value) : undefined
+    const windowChapter = typeof request.windowChapter === 'number' ? request.windowChapter : typeof request.windowChapter === 'string' ? Number(request.windowChapter) : undefined
+    const pre = Array.isArray(request.pre)
+      ? request.pre.map(row => typeof row === 'string' ? { text: row } : row).filter((row): row is EventPrecondition => typeof row === 'object' && row !== null && typeof (row as EventPrecondition).text === 'string')
+      : undefined
+    const causes = Array.isArray(request.causes) ? request.causes.map(String) : undefined
+    const chapters = Array.isArray(request.chapters) ? request.chapters.map(Number).filter(n => Number.isInteger(n) && n > 0) : undefined
+    let written: string | undefined
+    const outcome = await this.mutateJson(await this.fileTarget(workId, WORK_FILES.timeline), session, raw => normalizeTimeline(raw), () => emptyTimeline(), (doc, now) => {
+      if (request.delete === true) {
+        if (request.id === undefined || !doc.events.some(event => event.id === request.id)) return 'missing'
+        written = request.id
+        return { ...doc, events: doc.events.filter(event => event.id !== request.id) }
+      }
+      const was = request.id === undefined ? undefined : doc.events.find(event => event.id === request.id)
+      if (request.id !== undefined && was === undefined) return 'missing'
+      const title = cleanText(request.title, 200) ?? was?.title
+      if (title === undefined) return 'invalid-name'
+      const id = was?.id ?? `e${doc.next}`
+      const merged = normalizeEvent({
+        ...was,
+        id, title,
+        status: status ?? was?.status ?? 'preset',
+        order: request.after !== undefined ? orderAfter(doc.events.filter(event => event.id !== id), request.after) : was?.order ?? orderAfter(doc.events, undefined),
+        ...(cleanText(request.when, 60) === undefined ? {} : { when: cleanText(request.when, 60) }),
+        ...(source === undefined ? {} : { source }),
+        ...(who === undefined ? {} : { who }),
+        ...(places === undefined ? {} : { places }),
+        ...(value === undefined || !Number.isFinite(value) ? {} : { value }),
+        ...(cleanText(request.valueWhy, 200) === undefined ? {} : { valueWhy: cleanText(request.valueWhy, 200) }),
+        ...(cleanText(request.window, 60) === undefined ? {} : { window: cleanText(request.window, 60) }),
+        ...(windowChapter === undefined || !Number.isFinite(windowChapter) ? {} : { windowChapter }),
+        ...(pre === undefined ? {} : { pre }),
+        ...(causes === undefined ? {} : { causes }),
+        ...(chapters === undefined ? {} : { chapters }),
+        since: was?.since ?? entries.currentChapter,
+        createdAt: was?.createdAt ?? now,
+      })
+      if (merged === undefined) return 'invalid-name'
+      written = id
+      return { ...doc, events: was === undefined ? [...doc.events, merged] : doc.events.map(event => event.id === id ? merged : event), next: was === undefined ? doc.next + 1 : doc.next }
+    })
+    if (!outcome.ok || written === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
+    return { ok: true, id: written }
+  }
+
+  /** The person's pins on the next chapter's recall (优先推进 / 本章屏蔽). */
+  async setRecallPins(request: { readonly workId: string; readonly chapter: number; readonly prefer: readonly string[]; readonly block: readonly string[] }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    this.assertAlive('setRecallPins')
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'missing' }
+    const pins: RecallPins = { chapter: request.chapter, prefer: [...new Set(request.prefer)].slice(0, 20), block: [...new Set(request.block)].slice(0, 40) }
+    const outcome = await this.mutateJson(await this.fileTarget(workId, WORK_FILES.timeline), session, raw => normalizeTimeline(raw), () => emptyTimeline(), doc => ({ ...doc, pins }))
+    return outcome.ok ? { ok: true } : { ok: false, error: outcome.error }
+  }
+
+  /**
+   * Recall for the next chapter: the candidates, with the person's pins
+   * applied when they were set for this chapter.
+   * @param request - work id and the chapter being planned (default: the next one).
+   */
+  async recallFor(request: { readonly workId: string; readonly chapter?: number }): Promise<{ readonly chapter: number; readonly candidates: readonly Candidate[]; readonly events: readonly StoryEvent[]; readonly current: number }> {
+    const { events, current, doc } = await this.allEvents(request.workId)
+    const chapter = request.chapter ?? current + 1
+    const pins = doc.pins?.chapter === chapter ? doc.pins : undefined
+    const hero = (await this.readOutline(request.workId)).sheet.protagonist
+    const candidates = recall(events, chapter - 1, {
+      ...(pins === undefined ? {} : { prefer: pins.prefer, block: pins.block }),
+      ...(hero === undefined ? {} : { pov: hero }),
+    })
+    return { chapter, candidates, events, current }
+  }
+
+  /* --------------------------------------------------------------- ideas */
+
+  async readIdeas(workId: string): Promise<IdeasDoc> {
+    const id = normalizeWorkId(workId)
+    if (id === undefined) return emptyIdeas()
+    const read = await this.readJson(await this.fileTarget(id, WORK_FILES.ideas), raw => normalizeIdeas(raw))
+    return typeof read === 'object' ? read.data : emptyIdeas()
+  }
+
+  /**
+   * One change to the ideas: add (text), delete (id), or bind / unbind (id, eventId or null).
+   * @returns the idea's id, or the failure code.
+   */
+  async changeIdea(
+    request: { readonly workId: string; readonly add?: string; readonly id?: string; readonly delete?: boolean; readonly eventId?: string | null },
+    session: Session | undefined,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly id?: string }> {
+    this.assertAlive('changeIdea')
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'missing' }
+    let id: string | undefined
+    const outcome = await this.mutateJson(await this.fileTarget(workId, WORK_FILES.ideas), session, raw => normalizeIdeas(raw), () => emptyIdeas(), (doc, now) => {
+      const text = cleanText(request.add, 4000)
+      if (text !== undefined) {
+        id = `i${doc.next}`
+        return { ...doc, ideas: [...doc.ideas, { id, text, createdAt: now }], next: doc.next + 1 }
+      }
+      const was = doc.ideas.find(idea => idea.id === request.id)
+      if (was === undefined) return 'missing'
+      id = was.id
+      if (request.delete === true) return { ...doc, ideas: doc.ideas.filter(idea => idea.id !== was.id) }
+      if (request.eventId === undefined) return 'invalid-name'
+      const { eventId: _old, ...rest } = was
+      const next: Idea = request.eventId === null ? rest : { ...rest, eventId: request.eventId }
+      return { ...doc, ideas: doc.ideas.map(idea => idea.id === was.id ? next : idea) }
+    })
+    return outcome.ok && id !== undefined ? { ok: true, id } : { ok: false, error: outcome.ok ? 'io' : outcome.error }
+  }
+
+  /* ----------------------------------------------------- character minds */
+
+  /** The memory journal: what characters came to believe and intend, oldest first. */
+  async listMinds(request: { readonly workId: string; readonly characterId?: string }): Promise<MindEntry[]> {
+    const id = normalizeWorkId(request.workId)
+    if (id === undefined) return []
+    const lines = await this.readJsonl(await this.fileTarget(id, WORK_FILES.minds), raw => normalizeMindEntry(raw))
+    return lines.filter(line => request.characterId === undefined || line.characterId === request.characterId)
+  }
+
+  /**
    * 整理设定, step one: the plan the agent proposes, stored and answered as
    * the 整理结果. Every old 世界 card (category role `world`) is moved by
    * default to the shelf its 类型 names (地点 → 地点, 势力 → 势力, 道具 → 物种与道具,
@@ -2215,11 +2538,40 @@ export class NovelService {
           previousTail ?? '',
         ].join('\n'))
         : undefined
+    // The memory half (2026-11-01): the in-scene characters' minds and the timeline.
+    const minds = await this.listMinds({ workId: meta.id })
+    const mindOf = (characterId: string): CharacterMind | undefined => {
+      const own = minds.filter(row => row.characterId === characterId && row.chapter < target.n + (target.phase === 'planning' ? 0 : 1))
+      const intent = own.filter(row => row.kind === 'intent').at(-1)?.text
+      const beliefs = own.filter(row => row.kind === 'belief').slice(-5).map(row => ({ text: row.text, chapter: row.chapter, ...(row.source === undefined ? {} : { source: row.source }), ...(row.from === undefined ? {} : { from: entries.characters.find(view => view.cardId === row.from)?.name ?? row.from }) }))
+      return intent === undefined && beliefs.length === 0 ? undefined : { ...(intent === undefined ? {} : { intent }), beliefs }
+    }
+    const { events, doc } = await this.allEvents(meta.id)
+    const ideas = await this.readIdeas(meta.id)
+    const names: Record<string, string> = {}
+    for (const view of entries.characters) names[view.cardId] = view.name
+    for (const view of entries.rules) if (view.name !== undefined) names[view.cardId] = view.name
+    // A resolved reveal sits in the ledger with its answer; the story-time list is the stored events.
+    const happened = events.filter(event => event.status === 'happened' && event.foreshadowId === undefined).sort((a, b) => a.order - b.order)
+    const pins = doc.pins?.chapter === target.n ? doc.pins : undefined
+    const outline = await this.readOutline(meta.id)
+    const candidates = recall(events, target.n - 1, {
+      ...(pins === undefined ? {} : { prefer: pins.prefer, block: pins.block }),
+      ...(outline.sheet.protagonist === undefined ? {} : { pov: outline.sheet.protagonist }),
+    }).map(row => ({ event: row.event, tier: row.parts.tier, reason: tierReason(row.event, row.parts) }))
+    const advancing = (target.plan?.advances ?? []).map(id => events.find(event => event.id === id)).filter((event): event is StoryEvent => event !== undefined)
+      .map(event => ({
+        event,
+        causes: (event.causes ?? []).map(id => events.find(candidate => candidate.id === id)).filter((cause): cause is StoryEvent => cause !== undefined),
+        ideas: ideas.ideas.filter(idea => idea.eventId === event.id && idea.writtenIn === undefined).map(idea => idea.text),
+      }))
+    const timeline = { recent: happened.slice(-6), future: doc.events.filter(isFuture), candidates, advancing, names }
     return {
       ok: true,
       data: {
         workTitle: meta.title,
         target,
+        timeline,
         canonRules: worldRules,
         ...(workingRules === undefined ? {} : { workingRules }),
         principles: rules.filter(view => view.role === 'principle'),
@@ -2231,6 +2583,7 @@ export class NovelService {
         inScene: inScene.map(character => ({
           character,
           recent: experiences.filter(entry => entry.characterId === character.cardId).slice(-3),
+          ...(mindOf(character.cardId) === undefined ? {} : { mind: mindOf(character.cardId)! }),
         })),
         roster,
         relations,
@@ -2335,6 +2688,8 @@ export class NovelService {
       ['new-character', payload.new_characters], ['experience', payload.experiences], ['relation', payload.relation_points],
       ['relation', payload.relation_milestones], ['relation', payload.relation_changes], ['new-relation', payload.new_relations],
       ['beat', payload.beats_delivered], ['info-gap', payload.info_gaps_closed],
+      ['event', payload.events], ['event', payload.event_progress], ['event', payload.preconditions_met],
+      ['belief', payload.beliefs], ['belief', payload.intents],
     ]
     const misses: ImportDrop[] = []
     let quotes = 0
@@ -2835,6 +3190,7 @@ export class NovelService {
       },
     )
     if (!chapterWritten.ok) return { ok: false, error: chapterWritten.error, ...empty, dropped }
+    const memory = await this.importMemory(id, chapter.n, payload, body, entries, newCharacterIds, dropped, session)
 
     // What used to wait in 待审 is applied now, through the doors an accept
     // took; an earlier 对账's undecided items for this chapter are superseded.
@@ -2862,7 +3218,7 @@ export class NovelService {
       if (failed === undefined) applied.push({ kind: item.kind, line: item.reason })
       else dropped.push({ kind: item.kind, reason: 'apply-failed', ref: item.reason.slice(0, 40) })
     }
-    return { ok: true, settled: true, linked: settings.length - newCards.filter(card => card.role === 'world').length, ...report, dropped, applied, planMisses, newCards: landed }
+    return { ok: true, settled: true, linked: settings.length - newCards.filter(card => card.role === 'world').length, ...report, dropped, applied, planMisses, newCards: landed, memory }
   }
 
   /* -------------------------------------------------------------- pending */

@@ -20,6 +20,8 @@
     "src/desk.ts",
     "src/nav-line.ts",
     "src/organize.ts",
+    "src/timeline.ts",
+    "src/ideas.ts",
     "src/text-forms.ts",
     "src/types.ts"
   ]

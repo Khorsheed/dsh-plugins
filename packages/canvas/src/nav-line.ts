@@ -20,7 +20,7 @@ export interface CanvasDestinationParams {
   readonly card?: string
   readonly manuscript?: string
   readonly type?: string
-  readonly face?: 'board' | 'link' | 'manuscripts' | 'view' | 'lead'
+  readonly face?: 'board' | 'link' | 'manuscripts' | 'view' | 'lead' | 'extra'
   readonly scope?: string | null
   readonly item?: string
   readonly focus?: string

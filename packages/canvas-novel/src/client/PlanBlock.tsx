@@ -166,6 +166,9 @@ export function PlanBlock({ chapter, phase, names, words, canConfirm, busy, onCo
                 </dd>
               </>
             )}
+            {plan.advances !== undefined && plan.advances.length > 0 && (
+              <><dt>{t('plan.advances')}</dt><dd>{plan.advances.map(named).join('、')}</dd></>
+            )}
             {plan.uses !== undefined && plan.uses.length > 0 && (
               <><dt>{t('plan.uses')}</dt><dd>{plan.uses.map(named).join('、')}</dd></>
             )}
