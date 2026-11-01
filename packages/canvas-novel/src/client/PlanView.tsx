@@ -16,7 +16,7 @@
 import { useState, type ReactNode } from 'react'
 import {
   NOVEL_GENRE_ID, volumeNumeral,
-  type ChapterRow, type NovelOutlineResult, type OutlineCore, type OutlineHero, type OutlineSheet, type OutlineVolume,
+  type ChapterRow, type NovelOutlineResult, type WorldNode, type OutlineCore, type OutlineHero, type OutlineSheet, type OutlineVolume,
 } from '../types.ts'
 import type { NovelRemote, NovelSurfaceProps } from './contract.ts'
 import { errorKey, useNovelRead } from './use-novel.ts'
@@ -67,6 +67,8 @@ function Plan(props: NovelSurfaceProps & { readonly api: NovelRemote; readonly d
         {outline.proposal !== undefined && <Proposal {...props} />}
       </section>
 
+      <WorldMap {...props} />
+
       <section className={css.block}>
         <div className={css.blockHead}>
           <h3>{t('outline.road')}</h3>
@@ -102,6 +104,76 @@ function Plan(props: NovelSurfaceProps & { readonly api: NovelRemote; readonly d
           )}
       </section>
     </div>
+  )
+}
+
+/** The shelves' labels, in the order the map shows them. */
+const SHELF_KEYS = ['system', 'place', 'faction', 'item'] as const
+
+/**
+ * 世界观 on the 总览: the four shelves side by side, each a tree (a place
+ * inside the place it belongs to), names that open their cards, 待定 on the
+ * settings still being worked out; the writing principles folded below. A
+ * book from before the shelves gets one line offering 整理设定 — sent as the
+ * person's message, so the agent does it in the open.
+ */
+function WorldMap(props: NovelSurfaceProps & { readonly api: NovelRemote }): ReactNode {
+  const { api, canvasId, rev, t, navigate, sessionId } = props
+  const read = useNovelRead(api, r => r.worldMap({ canvasId }), `world:${canvasId}`, rev)
+  if (read.state !== 'ready' || !read.value.ok) return null
+  const map = read.value
+  const total = (map.shelves ?? []).reduce((sum, shelf) => sum + shelf.count, 0)
+  const principles = map.principles ?? []
+  return (
+    <section className={css.block}>
+      <div className={css.blockHead}>
+        <h3>{t('world.heading')}</h3>
+        <p className={css.hint}>{t('world.hint')}</p>
+      </div>
+      {(map.unorganized ?? 0) > 0 && (
+        <div className={css.worldNotice}>
+          <span>{t('world.unorganized', { count: map.unorganized ?? 0 })}</span>
+          {sessionId !== undefined && props.sendToConversation !== undefined && (
+            <button type="button" className={css.worldAct} onClick={() => { props.sendToConversation?.(sessionId, t('world.organizeAsk')) }}>
+              {t('world.organize')}
+            </button>
+          )}
+        </div>
+      )}
+      {total === 0
+        ? <p className={css.empty}>{t('world.empty')}</p>
+        : (
+          <div className={css.shelves}>
+            {SHELF_KEYS.map(sort => {
+              const shelf = map.shelves?.find(row => row.sort === sort)
+              return (
+                <div key={sort} className={css.shelf}>
+                  <h4>{t(`world.shelf.${sort}`)}<span className={css.muted}> {shelf?.count ?? 0}</span></h4>
+                  {shelf === undefined || shelf.nodes.length === 0
+                    ? <p className={css.muted}>{t('world.shelfEmpty')}</p>
+                    : <ul className={css.tree}>{shelf.nodes.map(node => <WorldItem key={node.cardId} node={node} t={t} openCard={navigate.openCard} />)}</ul>}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      {principles.length > 0 && (
+        <details className={css.principles}>
+          <summary>{t('world.principles', { count: principles.length })}</summary>
+          <ol>{principles.map(row => <li key={row.cardId}><button type="button" className={css.treeName} onClick={() => { navigate.openCard(row.cardId, row.text.slice(0, 16)) }}>{row.text}</button></li>)}</ol>
+        </details>
+      )}
+    </section>
+  )
+}
+
+function WorldItem({ node, t, openCard }: { readonly node: WorldNode; readonly t: T; readonly openCard: (cardId: string, heading: string) => void }): ReactNode {
+  return (
+    <li>
+      <button type="button" className={css.treeName} onClick={() => { openCard(node.cardId, node.name) }}>{node.name}</button>
+      {node.unsettled && <span className={css.unsettled}>{t('world.unsettled')}</span>}
+      {node.children.length > 0 && <ul className={css.tree}>{node.children.map(child => <WorldItem key={child.cardId} node={child} t={t} openCard={openCard} />)}</ul>}
+    </li>
   )
 }
 

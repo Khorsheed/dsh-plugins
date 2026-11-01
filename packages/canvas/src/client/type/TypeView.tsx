@@ -163,7 +163,7 @@ export function TypeView(props: CanvasTypeViewProps): ReactNode {
   const readonly = sessionId === undefined || board.archivedAt !== null
   const canTalk = sessionId !== undefined && !readonly && talkAvailable(sessionId)
   const label = labels.get(kind) ?? kind
-  const labelOf = (id: string): string => labels.get(id) ?? id
+  const labelOf = (id: string): string => labels.get(id) ?? labels.get(board.categories.find(row => row.role === id)?.id ?? '') ?? id
   const definition = category.definition
   const proposal = category.proposal
   const cards = board.cards.filter(card => card.kind === kind && card.status !== 'archived')

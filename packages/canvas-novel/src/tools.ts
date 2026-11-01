@@ -199,10 +199,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
     description:
       'Write the bound novel canvas. chapter creates (auto n=max+1) or re-plans; content writes the manuscript '
       + 'first and refuses the registration when the fence refuses the write. outline proposes outline changes '
-      + '(the user adopts them on the 规划 page). review decides a pending item '
+      + '(the user adopts them on the 规划 page). organize moves setting cards onto the 世界观 shelves '
+      + '(phase=preview proposes and answers the 整理结果; phase=apply only after the user agreed). review decides a pending item '
       + '(action=accept|discard). Cards: canvas_write. Load the novel skill first.',
     parameters: {
-      what: { type: 'string', enum: ['chapter', 'confirm', 'outline', 'review'], required: true, description: 'What to write. confirm: record the user\'s confirmation of a chapter plan (chapter=N) — only when their latest message says so.' },
+      what: { type: 'string', enum: ['chapter', 'confirm', 'outline', 'organize', 'review'], required: true, description: 'What to write. confirm: record the user\'s confirmation of a chapter plan (chapter=N) — only when their latest message says so.' },
       id: { type: 'string', description: 'review: the pending item id.' },
       title: { type: 'string', description: 'chapter: the title.' },
       content: {
@@ -242,6 +243,16 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         description: 'outline: one-line sketches of the next one or two chapters [{n, line}].',
       },
       rationale: { type: 'string', description: 'outline: why, in a sentence.' },
+      phase: { type: 'string', enum: ['preview', 'apply'], description: 'organize: preview (default) stores the plan and answers the 整理结果; apply carries out the stored plan — only after the user agreed in a later message.' },
+      moves: {
+        type: 'array', items: { type: 'object', additionalProperties: true },
+        description: 'organize: [{card (ref or name), to (体系|地点|势力|物种与道具|写作原则), parent? (the card or new entry it sits under), name? (a 原则 card\'s name as a setting)}]. '
+          + 'Old 世界 cards not listed go by their 类型 (地点→地点, 势力→势力, 道具→物种与道具, the rest→体系).',
+      },
+      create: {
+        type: 'array', items: { type: 'object', additionalProperties: true },
+        description: 'organize: the shelf entries the cards only imply [{to (体系|地点|势力|物种与道具), name, rule, parent?}] — a 体系 a group of rules shares, a 势力 named inside a rule, a place two places sit in.',
+      },
     },
     output: {
       schema: { type: 'string' },
@@ -336,6 +347,28 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           + `\n完整计划在画布「章节」页签的第 ${chapter.n} 章（会话里有卡片直达）。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。`
           + `用户在对话里同意后，先 novel_write(what=confirm, chapter=${chapter.n}) 再开写；他也可能直接在章节页点了确认。`,
         workId, chapter.n, chapter.title, 'plan', String(Date.now()))
+      }
+      if (args.what === 'organize') {
+        if (args.phase === 'apply') {
+          const outcome = await store.organizeApply({ workId }, resolved.session)
+          if (!outcome.ok) {
+            if (outcome.error === 'no-proposal') return '失败：没有待执行的整理方案。先 novel_write(what=organize) 出一份整理结果给用户看。'
+            if (outcome.error === 'plan-unseen') return '失败：整理方案是在用户最后一条消息之后才出的，用户还没看过。回复里请用户看一眼整理结果，等他下一条消息明确同意再 apply。'
+            return `失败：${outcome.error ?? 'io'}`
+          }
+          return `已整理：${outcome.moved ?? 0} 张卡换到新位置，新建 ${outcome.created ?? 0} 张。`
+            + (outcome.failed === undefined ? '' : `没成功的：${outcome.failed.join('、')}（canvas_read 看现状，必要时单张用 canvas_write 改）。`)
+            + '设定页现在按 体系 / 地点 / 势力 / 物种与道具 分开；回复里用一两句告诉用户可以去设定页看。'
+        }
+        const outcome = await store.organizePreview({
+          workId, ...(args.moves === undefined ? {} : { moves: args.moves }), ...(args.create === undefined ? {} : { create: args.create }),
+        }, resolved.session)
+        if (!outcome.ok) {
+          if (outcome.unknown !== undefined) return `失败：这些对不上画布上的卡或新建条目：${outcome.unknown.join('、')}。canvas_read 看编号后重来。`
+          return `失败：${outcome.error ?? 'io'}`
+        }
+        return `${outcome.text ?? ''}\n\n这只是方案，卡片还没动。把整理结果用几句话讲给用户（哪些归成一个体系、拆出了哪些势力、哪些原则其实是设定），`
+          + '请他看看；他同意后（下一条消息里）再 novel_write(what=organize, phase=apply)。他要改就带着改过的 moves / create 重新 preview。'
       }
       if (args.what === 'confirm') {
         if (args.chapter === undefined) return '失败：what=confirm 要给 chapter（章号）。'
@@ -557,6 +590,9 @@ interface WriteArgs {
   volumes?: unknown[]
   sketches?: unknown[]
   rationale?: string
+  phase?: string
+  moves?: unknown[]
+  create?: unknown[]
 }
 
 /**

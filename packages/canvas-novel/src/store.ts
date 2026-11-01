@@ -41,8 +41,10 @@ import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { planWords, renderExtractBrief, workingRulesOf, type BriefData } from './brief.ts'
+import { normalizeOrganizePlan, organizeTargetOf, renderOrganizePlan, type OrganizeCreate, type OrganizeMove, type OrganizePlan } from './organize.ts'
 import {
-  canvasBoardOf, NOVEL_GENRE, NOVEL_ROLES, WORLD_KINDS,
+  canvasBoardOf, fieldDefsOf, LEGACY_WORLD_SEED, NOVEL_GENRE, NOVEL_ROLES, SETTING_SORT_KEYS, SETTING_SORTS, settingSortOf, sortOfWorldKind, WORLD_KINDS,
+  type SettingSort,
   type CanvasBoardSlice, type NovelBoardMutation, type NovelBoardView, type NovelCardSource, type NovelCardView,
   type NovelFieldValue,
 } from './genre.ts'
@@ -78,6 +80,7 @@ export const WORK_FILES = {
   chapters: 'chapters.json',
   pending: 'pending.json',
   outline: 'outline.json',
+  organize: 'organize.json',
 } as const
 
 /**
@@ -229,7 +232,7 @@ function mainTextOf(card: NovelCardView, role: EntryRole): string {
  * @param fields - the cleaned fields.
  */
 export function hasRequiredFields(role: EntryRole, fields: Readonly<Record<string, NovelFieldValue>>): boolean {
-  const defs = NOVEL_GENRE.categories.find(category => category.role === role)?.definition?.fields ?? []
+  const defs = fieldDefsOf(role)
   return defs.every(def => def.required !== true || fields[def.key] !== undefined)
 }
 
@@ -291,7 +294,7 @@ const HAND_SET_FORESHADOW_STATES: ReadonlySet<string> = new Set(['未埋', '已�
  * @returns the accepted fields and the keys that were ignored.
  */
 export function cleanFields(role: EntryRole, raw: unknown): { readonly fields: Record<string, NovelFieldValue>; readonly ignored: string[] } {
-  const defs = NOVEL_GENRE.categories.find(category => category.role === role)?.definition?.fields ?? []
+  const defs = fieldDefsOf(role)
   const fields: Record<string, NovelFieldValue> = {}
   const ignored: string[] = []
   if (typeof raw !== 'object' || raw === null) return { fields, ignored }
@@ -911,6 +914,10 @@ export class NovelService {
         ?? entries.characters.find(view => bareName(view.name) !== undefined && bareName(view.name) === bareName(text))
       if (character !== undefined) return { cardId: character.cardId, role: 'character' }
     }
+    if (roleHint === undefined || roleHint === 'world') {
+      const setting = entries.rules.find(view => view.role === 'world' && view.status !== 'archived' && (view.name === text || bareName(view.name) === bareName(text)))
+      if (setting !== undefined) return { cardId: setting.cardId, role: 'world' }
+    }
     return undefined
   }
 
@@ -928,7 +935,11 @@ export class NovelService {
    * @returns the card's id and ref, or the failure code.
    */
   async writeCard(
-    request: { readonly workId: string; readonly role: EntryRole; readonly id?: string; readonly fields: unknown; readonly comment?: string },
+    request: {
+      readonly workId: string; readonly role: EntryRole; readonly id?: string; readonly fields: unknown; readonly comment?: string
+      /** A new setting's shelf (体系 / 地点 / 势力 / 物种与道具); absent: 体系, or the old 世界 category's 类型 on a board from before. */
+      readonly sort?: SettingSort
+    },
     session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly cardId?: string; readonly ref?: string; readonly ignored?: readonly string[]; readonly problem?: string }> {
     this.assertAlive('writeCard')
@@ -937,6 +948,20 @@ export class NovelService {
     if (canvas === undefined || entries === undefined) return { ok: false, error: 'missing' }
     const { fields, ignored } = cleanFields(request.role, request.fields)
     if (request.role === 'relation') return this.writeRelation(entries, request, fields, ignored, session)
+    // Links (属于 / 据点 / 所属势力 / 常在地点) go in as card ids: a ref or a
+    // name the work knows; a handle nobody answers is dropped and reported.
+    for (const key of LINK_FIELDS) {
+      const tokens = fields[key]
+      if (!Array.isArray(tokens)) continue
+      const hint: EntryRole = key === 'faction' || key === 'home' || key === 'parent' || key === 'base' ? 'world' : request.role
+      const ids = [...new Set(tokens.map(token => this.resolveCard(entries, token, hint)).filter(handle => handle?.role === 'world').map(handle => handle!.cardId))]
+      if (ids.length === 0) {
+        delete fields[key]
+        ignored.push(key)
+      } else {
+        fields[key] = ids
+      }
+    }
     if (request.role === 'foreshadow') {
       // Whether a question is in the text is the 对账's call, never the
       // model's: it may only set one up (未埋) or drop it (已放弃).
@@ -960,9 +985,11 @@ export class NovelService {
       cardId = handle.cardId
       mutation = await canvas.patchCard({ canvasId: entries.board.id, cardId, fields: { ...card.fields, ...fields } }, session)
     } else {
-      const category = categoryOf(entries.board, request.role)
+      const category = categoryOf(entries.board, request.role, request.sort ?? (request.role === 'world' ? settingSortOf(typeof fields['kind'] === 'string' ? fields['kind'] : undefined) : undefined))
+      // The shelf is the category; 类型 is only a field on the old 世界 type.
+      if (request.role === 'world' && entries.board.categories.find(row => row.id === category)?.role !== 'world') delete fields['kind']
       if (category === undefined || !hasRequiredFields(request.role, fields)) {
-        const required = NOVEL_GENRE.categories.find(row => row.role === request.role)?.definition?.fields.filter(field => field.required === true).map(field => `「${field.label}」`) ?? []
+        const required = fieldDefsOf(request.role).filter(field => field.required === true).map(field => `「${field.label}」`)
         return { ok: false, error: 'invalid-name', ignored, problem: `新建要有${required.join('、') || '主字段'}。` }
       }
       const existing = namesake(entries, request.role, typeof fields['name'] === 'string' ? fields['name'] : undefined)
@@ -1162,7 +1189,7 @@ export class NovelService {
     const read = await this.canvas?.readBoard({ canvasId: workId })
     if (read === undefined || !read.ok) return new Map()
     return new Map(read.board.categories.map((category) => {
-      const seed = NOVEL_GENRE.categories.find(row => row.role === category.role)
+      const seed = NOVEL_GENRE.categories.find(row => row.role === category.role) ?? (category.role === 'world' ? LEGACY_WORLD_SEED : undefined)
       const fields = seed?.definition?.fields ?? []
       const title = fields.find(field => field.type === 'line' && field.required === true) ?? fields.find(field => field.type === 'line')
       const label = (category as { label?: string }).label?.trim() || seed?.label || ''
@@ -1469,6 +1496,190 @@ export class NovelService {
     )
     if (!outcome.ok || outline === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
     return { ok: true, outline }
+  }
+
+  /**
+   * 整理设定, step one: the plan the agent proposes, stored and answered as
+   * the 整理结果. Every old 世界 card (category role `world`) is moved by
+   * default to the shelf its 类型 names (地点 → 地点, 势力 → 势力, 道具 → 物种与道具,
+   * the rest → 体系); the agent's `moves` override that and may move any
+   * setting or 原则 card, with a parent (a card handle, or a `create`'s name
+   * or key); `create` adds the shelf entries the text only implied. Nothing
+   * moves until {@link organizeApply}.
+   * @param request - work id, the agent's moves and new entries.
+   * @param session - the session the plan is put to the person in (the apply guard).
+   * @returns the stored plan and its rendering, or the failure code (`unknown` names handles that resolve to no card).
+   */
+  async organizePreview(
+    request: { readonly workId: string; readonly moves?: unknown; readonly create?: unknown },
+    session: Session | undefined,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly text?: string; readonly unknown?: readonly string[] }> {
+    this.assertAlive('organizePreview')
+    const workId = normalizeWorkId(request.workId)
+    const entries = workId === undefined ? undefined : await this.readEntries(workId)
+    if (workId === undefined || entries === undefined) return { ok: false, error: 'missing' }
+    const categoryRole = new Map(entries.board.categories.map(category => [category.id, category.role]))
+    const cardOf = (cardId: string): NovelCardView | undefined => entries.board.cards.find(card => card.id === cardId)
+    const unknown: string[] = []
+    const text = (value: unknown, max: number): string | undefined => cleanText(typeof value === 'number' ? String(value) : value, max)
+    const creates: OrganizeCreate[] = (Array.isArray(request.create) ? request.create : []).flatMap((row, index): OrganizeCreate[] => {
+      if (typeof row !== 'object' || row === null) return []
+      const item = row as Record<string, unknown>
+      const to = organizeTargetOf(item['to'] ?? item['kind'])
+      const name = text(item['name'], 80)
+      const rule = text(item['rule'] ?? item['text'], 2000)
+      if (to === undefined || to === 'principle' || name === undefined || rule === undefined) {
+        unknown.push(`create[${index}]`)
+        return []
+      }
+      return [{ key: `n${index + 1}`, to, name, rule, ...(text(item['parent'], 80) === undefined ? {} : { parent: text(item['parent'], 80)! }) }]
+    })
+    // A parent is a card on the board, or one of the new entries (by key or name).
+    const parentOf = (token: string | undefined): string | undefined => {
+      if (token === undefined) return undefined
+      const created = creates.find(row => row.key === token || row.name === token)
+      if (created !== undefined) return created.key
+      const handle = this.resolveCard(entries, token, 'world')
+      if (handle?.role === 'world') return handle.cardId
+      unknown.push(token)
+      return undefined
+    }
+    const moves = new Map<string, OrganizeMove>()
+    for (const card of entries.board.cards) {
+      if (card.status === 'archived' || categoryRole.get(card.kind) !== 'world') continue
+      const kind = typeof card.fields?.['kind'] === 'string' ? card.fields['kind'] : undefined
+      moves.set(card.id, { cardId: card.id, to: sortOfWorldKind(kind) })
+    }
+    for (const row of Array.isArray(request.moves) ? request.moves : []) {
+      if (typeof row !== 'object' || row === null) continue
+      const item = row as Record<string, unknown>
+      const handle = this.resolveCard(entries, item['card'] ?? item['cardId'] ?? item['id'])
+      const to = organizeTargetOf(item['to'])
+      if (handle === undefined || (handle.role !== 'world' && handle.role !== 'principle') || to === undefined) {
+        unknown.push(String(item['card'] ?? item['cardId'] ?? item['id'] ?? '?'))
+        continue
+      }
+      const parent = parentOf(text(item['parent'], 80))
+      const name = text(item['name'], 80)
+      moves.set(handle.cardId, { cardId: handle.cardId, to, ...(name === undefined ? {} : { name }), ...(parent === undefined ? {} : { parent }) })
+    }
+    const resolvedCreates = creates.map(row => {
+      const parent = row.parent === undefined ? undefined : parentOf(row.parent)
+      const { parent: _raw, ...rest } = row
+      return { ...rest, ...(parent === undefined ? {} : { parent }) }
+    })
+    if (unknown.length > 0) return { ok: false, error: 'invalid-name', unknown }
+    // A 原则 card that stays a 原则 is no move at all.
+    const list = [...moves.values()].filter(move => !(move.to === 'principle' && categoryRole.get(cardOf(move.cardId)?.kind ?? '') === 'principle'))
+    const askSeq = latestUserSeq(session)
+    const plan: OrganizePlan = {
+      moves: list, creates: resolvedCreates, at: new Date().toISOString(),
+      ...(session === undefined || askSeq === undefined ? {} : { ask: { session: String(session.id), userSeq: askSeq } }),
+    }
+    const outcome = await this.mutateJson(await this.fileTarget(workId, WORK_FILES.organize), session, raw => normalizeOrganizePlan(raw), () => plan, () => plan)
+    if (!outcome.ok) return { ok: false, error: outcome.error }
+    const nameOf = (cardId: string): string => {
+      const view = entries.rules.find(candidate => candidate.cardId === cardId)
+      return view === undefined ? cardId : `[${view.ref}] ${view.name ?? view.text.slice(0, 16)}`
+    }
+    const fromOf = (cardId: string): string => {
+      const card = cardOf(cardId)
+      const role = categoryRole.get(card?.kind ?? '')
+      if (role === 'principle') return '原则'
+      if (role === 'world') return `世界${typeof card?.fields?.['kind'] === 'string' ? ` · ${card.fields['kind']}` : ''}`
+      const sort = SETTING_SORT_KEYS.find(key => key === role)
+      return sort === undefined ? '—' : SETTING_SORTS[sort]
+    }
+    return { ok: true, text: renderOrganizePlan(plan, nameOf, fromOf) }
+  }
+
+  /**
+   * 整理设定, step two: apply the stored plan — only when the person has said
+   * something since it was put to them (an agent cannot propose and apply in
+   * one breath; a session that carries no history skips the guard). New
+   * entries land first, then every move refiles its card on the target
+   * shelf with its fields carried over (a 原则 becomes 名称 + 设定, a setting
+   * becoming a 原则 keeps its text), then the parents are set. An old 世界
+   * category left empty is switched off.
+   * @param request - work id.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns how many cards moved and were created, or the failure code (`no-proposal`, `plan-unseen`).
+   */
+  async organizeApply(
+    request: { readonly workId: string },
+    session: Session | undefined,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly moved?: number; readonly created?: number; readonly failed?: readonly string[] }> {
+    this.assertAlive('organizeApply')
+    const canvas = this.canvas
+    const workId = normalizeWorkId(request.workId)
+    if (canvas === undefined || workId === undefined) return { ok: false, error: 'missing' }
+    const read = await this.readJson(await this.fileTarget(workId, WORK_FILES.organize), raw => normalizeOrganizePlan(raw))
+    const plan = typeof read === 'object' ? read.data : undefined
+    if (plan === undefined || plan.appliedAt !== undefined) return { ok: false, error: 'no-proposal' }
+    const userSeq = latestUserSeq(session)
+    if (plan.ask !== undefined && plan.ask.session === String(session?.id) && userSeq !== undefined && userSeq <= plan.ask.userSeq) {
+      return { ok: false, error: 'plan-unseen' }
+    }
+    let first = await canvas.readBoard({ canvasId: workId })
+    if (!first.ok) return { ok: false, error: canvasErrorOf(first.error) }
+    // Any write catches the board up to the genre (the shelves seed then).
+    const anchor = first.board.cards[0]
+    if (anchor !== undefined && SETTING_SORT_KEYS.some(sort => !first.ok || !first.board.categories.some(category => category.role === sort))) {
+      const touched = await canvas.patchCard({ canvasId: workId, cardId: anchor.id, status: anchor.status }, session)
+      if (touched.ok) first = touched
+    }
+    if (!first.ok) return { ok: false, error: 'io' }
+    let board = first.board
+    const categoryFor = (to: string): string | undefined => board.categories.find(category => category.role === to)?.id
+    const failed: string[] = []
+    const createdIds = new Map<string, string>()
+    for (const row of plan.creates) {
+      const category = categoryFor(row.to)
+      const mutation = category === undefined ? undefined : await canvas.proposeCard({ canvasId: workId, kind: category, text: '', fields: { name: row.name, rule: row.rule }, live: true, comment: '整理设定时新建' }, session)
+      if (mutation === undefined || !mutation.ok) { failed.push(row.name); continue }
+      board = mutation.board
+      createdIds.set(row.key, board.cards[board.cards.length - 1]!.id)
+    }
+    const idOf = (parent: string | undefined): string | undefined => parent === undefined ? undefined : createdIds.get(parent) ?? (board.cards.some(card => card.id === parent) ? parent : undefined)
+    let moved = 0
+    for (const move of plan.moves) {
+      const card = board.cards.find(candidate => candidate.id === move.cardId)
+      const category = categoryFor(move.to)
+      if (card === undefined || category === undefined) { failed.push(move.cardId); continue }
+      const was = { ...card.fields }
+      const fromPrinciple = typeof was['principle'] === 'string' && was['rule'] === undefined
+      const body = String(was['rule'] ?? was['principle'] ?? card.text ?? '')
+      const parent = idOf(move.parent)
+      const fields: Record<string, NovelFieldValue> = move.to === 'principle'
+        ? { principle: typeof was['name'] === 'string' && !body.startsWith(was['name']) ? `${was['name']}：${body}` : body }
+        : {
+            name: move.name ?? (typeof was['name'] === 'string' && !fromPrinciple ? was['name'] : settingNameOf(body)),
+            rule: body,
+            ...(parent === undefined ? {} : { parent: [parent] }),
+            ...(Array.isArray(was['base']) ? { base: was['base'] } : {}),
+          }
+      const mutation = await canvas.patchCard({ canvasId: workId, cardId: card.id, kind: category, fields }, session)
+      if (!mutation.ok) { failed.push(move.cardId); continue }
+      board = mutation.board
+      moved += 1
+    }
+    for (const row of plan.creates) {
+      const id = createdIds.get(row.key)
+      const parent = idOf(row.parent)
+      const card = board.cards.find(candidate => candidate.id === id)
+      if (card === undefined || parent === undefined) continue
+      const mutation = await canvas.patchCard({ canvasId: workId, cardId: card.id, fields: { ...card.fields, parent: [parent] } }, session)
+      if (mutation.ok) board = mutation.board
+    }
+    // The old 世界 category, once nothing live is left in it, steps aside.
+    const legacy = board.categories.find(category => category.role === 'world')
+    if (legacy !== undefined && canvas.setCategories !== undefined && !board.cards.some(card => card.kind === legacy.id && card.status !== 'archived')) {
+      const rows = (board.categories as unknown as readonly Record<string, unknown>[]).map(row => row['id'] === legacy.id ? { ...row, enabled: false } : row)
+      await canvas.setCategories({ canvasId: workId, categories: rows }, session as Session)
+    }
+    await this.mutateJson(await this.fileTarget(workId, WORK_FILES.organize), session, raw => normalizeOrganizePlan(raw), undefined, (doc, now) => ({ ...doc, appliedAt: now }))
+    await this.ensureRefs(workId, session)
+    return { ok: true, moved, created: createdIds.size, ...(failed.length === 0 ? {} : { failed }) }
   }
 
   /**
@@ -2172,7 +2383,8 @@ export class NovelService {
     // The world cards this chapter was found to use (linked existing ones, then the new ones it lands).
     const settings: string[] = []
     // The card writes this import will make (gate 3), collected first and landed below.
-    const cardWrites: { role: EntryRole; fields: Record<string, NovelFieldValue>; note: CardNote; comment: string; ref: string }[] = []
+    const cardWrites: { role: EntryRole; sort?: SettingSort; fields: Record<string, NovelFieldValue>; note: CardNote; comment: string; ref: string }[] = []
+    const board0HasShelves = entries.board.categories.some(category => (SETTING_SORT_KEYS as string[]).includes(category.role ?? ''))
     // A name a live card or an earlier row of this payload already holds is a duplicate, never a second card.
     const seenNames = new Set<string>()
     const duplicateOf = (role: EntryRole, name: string): string | undefined => {
@@ -2194,6 +2406,7 @@ export class NovelService {
       }
       const role: EntryRole = cleanText(raw.kind, 10) === '原则' ? 'principle' : 'world'
       const fields: Record<string, NovelFieldValue> = { [MAIN_FIELD[role]]: content }
+      let sort: SettingSort | undefined
       if (role === 'world') {
         const name = bareName(cleanText(raw.name, 80)) ?? settingNameOf(content)
         // A setting the board already has is this chapter USING it: linked to
@@ -2220,10 +2433,12 @@ export class NovelService {
         }
         fields['name'] = name
         const kind = cleanText(raw.world_kind, 10)
-        if (kind !== undefined && WORLD_KINDS.includes(kind)) fields['kind'] = kind
+        sort = settingSortOf(kind)
+        // Only the old 世界 category has a 类型 field; a board on shelves files the card by shelf.
+        if (kind !== undefined && WORLD_KINDS.includes(kind) && !board0HasShelves) fields['kind'] = kind
       }
       cardWrites.push({
-        role, fields, note: { evidenceInText: evidence! },
+        role, ...(sort === undefined ? {} : { sort }), fields, note: { evidenceInText: evidence! },
         comment: `第${chapter.n}章：「${evidence}」`, ref: String(fields['name'] ?? content.slice(0, 30)),
       })
     }
@@ -2350,7 +2565,7 @@ export class NovelService {
     const newCards: { cardId: string; role: EntryRole; text: string }[] = []
     let board = entries.board
     for (const write of cardWrites) {
-      const category = categoryOf(board, write.role)
+      const category = categoryOf(board, write.role, write.sort)
       const mutation = category === undefined
         ? undefined
         : await canvas.proposeCard({ canvasId: id, kind: category, text: '', fields: write.fields, source, comment: write.comment, live: true }, session)
@@ -2879,7 +3094,13 @@ export function pairFromName(characters: readonly Pick<CharacterView, 'cardId' |
 }
 
 /** The category id holding a role's cards on this board, or undefined. */
-function categoryOf(board: NovelBoardView, role: EntryRole): string | undefined {
+function categoryOf(board: NovelBoardView, role: EntryRole, sort?: SettingSort): string | undefined {
+  if (role === 'world') {
+    // A setting goes on its shelf; a board from before novel@5 that has not
+    // caught up yet has only the old 世界 category.
+    return board.categories.find(category => category.role === (sort ?? 'system'))?.id
+      ?? board.categories.find(category => category.role === 'world')?.id
+  }
   return board.categories.find(category => category.role === role)?.id
 }
 
@@ -2888,6 +3109,7 @@ function rolesOn(board: NovelBoardView): Map<string, EntryRole> {
   const roleOfCategory = new Map<string, EntryRole>()
   for (const category of board.categories) {
     const role = ENTRY_ROLES.find(candidate => candidate === category.role)
+      ?? ((SETTING_SORT_KEYS as string[]).includes(category.role ?? '') ? 'world' : undefined)
     if (role !== undefined) roleOfCategory.set(category.id, role)
   }
   const out = new Map<string, EntryRole>()
@@ -2896,6 +3118,30 @@ function rolesOn(board: NovelBoardView): Map<string, EntryRole> {
     if (role !== undefined) out.set(card.id, role)
   }
   return out
+}
+
+/** The shelf each setting card sits on: its category's role, or (the old 世界 category) its 类型. */
+function sortsOn(board: NovelBoardView): Map<string, SettingSort> {
+  const sortOfCategory = new Map<string, SettingSort>()
+  for (const category of board.categories) {
+    const sort = SETTING_SORT_KEYS.find(key => key === category.role)
+    if (sort !== undefined) sortOfCategory.set(category.id, sort)
+  }
+  const out = new Map<string, SettingSort>()
+  for (const card of board.cards) {
+    const sort = sortOfCategory.get(card.kind)
+    if (sort !== undefined) out.set(card.id, sort)
+  }
+  return out
+}
+
+/** The link fields a card may carry: where a setting sits, a faction's base, a character's faction and haunt. */
+const LINK_FIELDS = ['parent', 'base', 'faction', 'home'] as const
+
+/** A card's link field as card ids. */
+function linksOf(card: NovelCardView, key: string): readonly string[] {
+  const value = card.fields?.[key]
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
 }
 
 /** Live foreshadows, longest-slept first (an unknown sleep sorts as just touched). */
@@ -2939,6 +3185,7 @@ export function entriesOf(
   relationJournal: readonly RelationEntry[] = [],
 ): WorkEntries {
   const roleOf = rolesOn(board)
+  const sortOf = sortsOn(board)
   const currentChapter = chapters.reduce((max, chapter) => Math.max(max, chapter.n), 0)
   const slept = sleepCounter(chapters)
   const lastActive = new Map<string, number>()
@@ -2968,9 +3215,19 @@ export function entriesOf(
     } else if (role === 'world' || role === 'principle') {
       const body = mainTextOf(card, role)
       const name = role === 'world' ? fieldText(card, 'name', 80) : undefined
-      const kind = role === 'world' ? fieldText(card, 'kind', 10) : undefined
+      const legacyKind = role === 'world' ? fieldText(card, 'kind', 10) : undefined
+      const sort = role === 'world' ? sortOf.get(card.id) ?? sortOfWorldKind(legacyKind) : undefined
+      // A card on its shelf says the shelf; an old 世界 card says its own 类型.
+      const kind = sortOf.has(card.id) ? SETTING_SORTS[sort!] : legacyKind
       const text = name === undefined ? body : `${name}${kind === undefined ? '' : `（${kind}）`}：${body}`
-      rules.push({ cardId: card.id, ref, role, ...(name === undefined ? {} : { name }), text, status: card.status })
+      const parents = linksOf(card, 'parent')
+      const base = linksOf(card, 'base')
+      rules.push({
+        cardId: card.id, ref, role, ...(name === undefined ? {} : { name }), text, status: card.status,
+        ...(sort === undefined ? {} : { sort }),
+        ...(parents.length === 0 ? {} : { parents }),
+        ...(base.length === 0 ? {} : { base }),
+      })
     } else if (role === 'foreshadow') {
       const plantedAt = cleanNumber(card.fields?.['plantedAt'])
       const active = lastActive.get(card.id)

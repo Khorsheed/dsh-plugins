@@ -18,6 +18,8 @@ interface GenreField {
   readonly label: string
   readonly type: 'line' | 'text' | 'select' | 'tags' | 'ref' | 'number'
   readonly hint: string
+  /** A ref field's target: a category's role (the canvas matches it against each category's id or role). */
+  readonly refKind?: string
   readonly options?: readonly string[]
   readonly required?: boolean
   readonly face?: boolean
@@ -149,6 +151,8 @@ export interface CanvasBoardSlice {
   patchCard(request: {
     readonly canvasId: string
     readonly cardId: string
+    /** Refile the card under another category (整理设定). */
+    readonly kind?: string
     readonly status?: NovelCardStatus
     readonly fields?: Readonly<Record<string, NovelFieldValue>>
   }, session: FenceSession | undefined): Promise<NovelBoardMutation>
@@ -157,6 +161,8 @@ export interface CanvasBoardSlice {
    * and the engine then reports `no-workspace` as it always did).
    */
   setWorkspace?(request: { readonly canvasId: string; readonly workspace: string; readonly attached: boolean }, session: FenceSession): Promise<NovelBoardMutation>
+  /** Rewrite the category catalog (整理设定 switches the emptied old 世界 category off); optional — absent on canvases without it. */
+  setCategories?(request: { readonly canvasId: string; readonly categories: readonly Record<string, unknown>[] }, session: FenceSession): Promise<NovelBoardMutation>
   addComment(request: {
     readonly canvasId: string
     readonly cardId: string
@@ -181,6 +187,60 @@ export const NOVEL_AGENT_ROW = '@khorsheed/dsh-canvas-novel/agent'
 export const WORLD_KINDS: readonly string[] = ['地点', '势力', '道具', '规则', '历史', '其他']
 
 /**
+ * The four 世界观 categories (novel@5, 2026-11-01). The engine reads them all
+ * as settings (EntryRole `world`); the sort says which shelf a card sits on.
+ * A board from before keeps its old 世界 category until it is reorganized.
+ */
+export const SETTING_SORTS = { system: '体系', place: '地点', faction: '势力', item: '物种与道具' } as const
+export type SettingSort = keyof typeof SETTING_SORTS
+export const SETTING_SORT_KEYS = Object.keys(SETTING_SORTS) as SettingSort[]
+
+/** The shelf an old 世界 card's 类型 belongs on (规则/历史/其他 are rules until the timeline takes history). */
+export function sortOfWorldKind(kind: string | undefined): SettingSort {
+  if (kind === '地点') return 'place'
+  if (kind === '势力') return 'faction'
+  if (kind === '道具' || kind === '物种') return 'item'
+  return 'system'
+}
+
+/** The sort a word names: a shelf's key or label (体系、地点、势力、物种与道具、道具), or undefined. */
+export function settingSortOf(word: string | undefined): SettingSort | undefined {
+  const text = word?.trim()
+  if (text === undefined || text === '') return undefined
+  if ((SETTING_SORT_KEYS as string[]).includes(text)) return text as SettingSort
+  const hit = SETTING_SORT_KEYS.find(key => SETTING_SORTS[key] === text)
+  if (hit !== undefined) return hit
+  if (text === '道具' || text === '物种' || text === '生物') return 'item'
+  if (text === '规则' || text === '世界' || text === '历史' || text === '组织') return text === '组织' ? 'faction' : 'system'
+  return undefined
+}
+
+/** A 世界观 category's fields: a name, the setting itself, where it sits (its parent shelf entry). */
+function settingFields(text: { readonly rule: string; readonly ruleHint: string; readonly parent: string; readonly parentHint: string }, sort: SettingSort): GenreField[] {
+  return [
+    { key: 'name', label: '名称', type: 'line', hint: '叫什么', required: true, face: true },
+    { key: 'rule', label: text.rule, type: 'text', hint: text.ruleHint, required: true, face: true },
+    { key: 'parent', label: text.parent, type: 'ref', refKind: sort, hint: text.parentHint },
+  ]
+}
+
+/** The old 世界 card type (boards from before novel@5): what the engine still reads and writes on them. */
+export const LEGACY_WORLD_SEED: NovelCategorySeed = {
+  role: 'world',
+  label: '世界',
+  definition: {
+    version: 2,
+    layout: 'entry',
+    fields: [
+      { key: 'name', label: '名称', type: 'line', hint: '这条设定叫什么：一个地点、一件道具、一条规则的名字', required: true, face: true },
+      { key: 'kind', label: '类型', type: 'select', options: WORLD_KINDS, hint: '它是哪一类设定', face: true },
+      { key: 'rule', label: '设定', type: 'text', hint: '具体的设定，能复述、能照着写', required: true, face: true },
+    ],
+    example: { name: '镇上的钟', kind: '规则', rule: '雨季里镇上的钟会慢半小时，没人知道为什么' },
+  },
+}
+
+/**
  * The cold-start version. The cards are the single source of truth for what
  * gets injected into writing. A foreshadow card stores only first-hand facts —
  * question, status, planted chapter, answer; dormancy is computed from the
@@ -192,8 +252,8 @@ export const WORLD_KINDS: readonly string[] = ['地点', '势力', '道具', '�
 export const NOVEL_GENRE: NovelGenreDefinition = {
   id: NOVEL_GENRE_ID,
   label: '长篇小说',
-  version: 'novel@4',
-  description: '人物、世界、原则与伏笔做成卡片；章节正文是工作区里的 md 文件，写完一章对一次账。',
+  version: 'novel@5',
+  description: '人物、世界观（体系、地点、势力、物种与道具）、伏笔、关系与写作原则做成卡片；章节正文是工作区里的 md 文件，写完一章对一次账。',
   agentRow: NOVEL_AGENT_ROW,
   ownsManuscripts: true,
   faces: { view: NOVEL_STORY_FACE, lead: NOVEL_PLAN_FACE },
@@ -217,27 +277,58 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
           { key: 'knows', label: '知道的事', type: 'text', hint: '他已经知道、写他时可以用的事，一行一件' },
           { key: 'unaware', label: '不知道的事', type: 'text', hint: '读者知道而他还不知道的事，一行一件' },
           { key: 'secrets', label: '秘密', type: 'text', hint: '他瞒着别人的事，一行一件' },
+          { key: 'faction', label: '所属势力', type: 'ref', refKind: 'faction', hint: '他属于哪个组织、门派、阵营' },
+          { key: 'home', label: '常在地点', type: 'ref', refKind: 'place', hint: '他平时待在哪里' },
         ],
         example: { name: '老周', identity: '镇上唯一的钟表匠，四十岁', want: '把父亲留下的怀表修好', wound: '十二岁那年父亲没回家' },
       },
     },
     {
-      role: NOVEL_ROLES.world,
-      label: '世界',
+      role: 'system',
+      label: SETTING_SORTS.system,
       definition: {
-        version: 2,
+        version: 1,
+        layout: 'entry',
+        fields: settingFields({ rule: '设定', ruleHint: '这条规则或这套体系怎么运作，能复述、能照着写', parent: '上级体系', parentHint: '它是哪套体系里的一条（可空）' }, 'system'),
+        example: { name: '命名', rule: '为失稳者起名，能让它获得暂时稳定的形体' },
+      },
+    },
+    {
+      role: 'place',
+      label: SETTING_SORTS.place,
+      definition: {
+        version: 1,
+        layout: 'entry',
+        fields: settingFields({ rule: '描述', ruleHint: '这里是什么样、有什么规矩', parent: '属于', parentHint: '它在哪个更大的地方里（可空）' }, 'place'),
+        example: { name: '无水井', rule: '镇民在井边祈愿，井底偶尔亮起一点光' },
+      },
+    },
+    {
+      role: 'faction',
+      label: SETTING_SORTS.faction,
+      definition: {
+        version: 1,
         layout: 'entry',
         fields: [
-          { key: 'name', label: '名称', type: 'line', hint: '这条设定叫什么：一个地点、一件道具、一条规则的名字', required: true, face: true },
-          { key: 'kind', label: '类型', type: 'select', options: WORLD_KINDS, hint: '它是哪一类设定', face: true },
-          { key: 'rule', label: '设定', type: 'text', hint: '具体的设定，能复述、能照着写', required: true, face: true },
+          ...settingFields({ rule: '描述', ruleHint: '这是个什么组织、想要什么、怎么行事', parent: '上级势力', parentHint: '它隶属于哪个更大的势力（可空）' }, 'faction'),
+          { key: 'base', label: '据点', type: 'ref', refKind: 'place', hint: '它的据点在哪里' },
         ],
-        example: { name: '镇上的钟', kind: '规则', rule: '雨季里镇上的钟会慢半小时，没人知道为什么' },
+        example: { name: '睡眠公司', rule: 'DreamWaver 的运营方，以稳定和安全为名标记异常' },
+      },
+    },
+    {
+      role: 'item',
+      label: SETTING_SORTS.item,
+      definition: {
+        version: 1,
+        layout: 'entry',
+        fields: settingFields({ rule: '描述', ruleHint: '它是什么、有什么用、有什么规矩', parent: '所在', parentHint: '它在哪里出现或属于谁（可空）' }, 'item'),
+        example: { name: '黑玉令', rule: '公司配发的工作终端，在山海以朱砂小字显示悬赏' },
       },
     },
     {
       role: NOVEL_ROLES.principle,
-      label: '原则',
+      label: '写作原则',
       definition: {
         version: 1,
         layout: 'entry',
@@ -281,6 +372,21 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
       },
     },
   ],
+}
+
+/**
+ * The fields a card of an engine role takes. A setting (role \`world\`) takes
+ * the union of every 世界观 shelf and the old 世界 type: name, 设定, 类型 (old
+ * boards), parent and 据点 — which shelf it sits on is its category, not a field.
+ * @param role - the engine role (or a category role).
+ */
+export function fieldDefsOf(role: string): readonly GenreField[] {
+  if (role === 'world') {
+    const faction = NOVEL_GENRE.categories.find(row => row.role === 'faction')?.definition?.fields ?? []
+    const legacy = LEGACY_WORLD_SEED.definition!.fields
+    return [...legacy, ...faction.filter(field => !legacy.some(known => known.key === field.key)).map(field => ({ ...field, label: field.key === 'parent' ? '属于' : field.label }))]
+  }
+  return NOVEL_GENRE.categories.find(row => row.role === role)?.definition?.fields ?? []
 }
 
 /**

@@ -784,6 +784,12 @@ export interface RuleView {
   /** What the brief prints: `名称（类型）：设定` for a named world card, the body alone otherwise. */
   readonly text: string
   readonly status: NovelCardStatus
+  /** A setting's shelf: 体系 / 地点 / 势力 / 物种与道具 (an old 世界 card's from its 类型). */
+  readonly sort?: 'system' | 'place' | 'faction' | 'item'
+  /** The settings it sits under (属于 / 上级), as card ids. */
+  readonly parents?: readonly string[]
+  /** A faction's base (据点), as card ids. */
+  readonly base?: readonly string[]
 }
 
 /** A foreshadow card plus what its mentions derive. */
@@ -1692,6 +1698,37 @@ export interface NovelCardResult {
   readonly appearances?: readonly StoryAppearance[]
   /** Relations: the card as the engine reads it (stage, level, bar). */
   readonly relation?: RelationView
+  /**
+   * Settings and characters: what the card is tied to, both ways — 属于 / 据点 /
+   * 所属势力 / 常在地点 it names, 下属 / 以此为据点 / 相关人物 naming it, and the
+   * chapters whose 对账 used it (出现在). Empty groups are left out.
+   */
+  readonly links?: readonly CardLinkGroup[]
+}
+
+/** One setting on the 总览 world map, with what sits under it on the same shelf. */
+export interface WorldNode {
+  readonly cardId: string
+  readonly name: string
+  /** Its text says it is still being worked out (工作稿 / 待定 / 未决 / 暂定 / 待调整). */
+  readonly unsettled: boolean
+  readonly children: readonly WorldNode[]
+}
+
+/** The 总览 world map: the four shelves as trees, the writing principles, the old 世界 cards still to organize. */
+export interface NovelWorldMapResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly shelves?: readonly { readonly sort: 'system' | 'place' | 'faction' | 'item'; readonly count: number; readonly nodes: readonly WorldNode[] }[]
+  readonly principles?: readonly { readonly cardId: string; readonly text: string }[]
+  /** Live cards still in the old 世界 category (a board from before novel@5). */
+  readonly unorganized?: number
+}
+
+/** One group of a card's links: what they are to it, and the cards (or chapters) in it. */
+export interface CardLinkGroup {
+  readonly kind: 'parent' | 'base' | 'faction' | 'home' | 'children' | 'based' | 'people' | 'chapters'
+  readonly items: readonly { readonly cardId?: string; readonly chapter?: number; readonly name: string }[]
 }
 
 /** The person's ★ on a foreshadow. */

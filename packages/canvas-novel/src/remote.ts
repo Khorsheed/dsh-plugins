@@ -25,9 +25,9 @@ import type { NovelService, WorkEntries } from './store.ts'
 import { planToText } from './text-forms.ts'
 import {
   coreSuspenseNudge, revealText, revealVolume, targetWordsOf,
-  type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
+  type CardLinkGroup, type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
   type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelPlanEditRequest, type NovelRecentResult, type NovelPlanEditResult, type NovelStarRequest, type NovelStateRequest,
-  type NovelWorkRequest, type OutlineCore, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
+  type NovelWorkRequest, type NovelWorldMapResult, type OutlineCore, type WorldNode, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -244,9 +244,11 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     // 出场 is the story log's read (plan cast, experience journal, source chapter); reuse it rather than fork it.
     const appearances = character === undefined ? undefined
       : (await this.core.storyLog({ workId: request.canvasId })).characters.find(row => row.cardId === request.cardId)?.appearances
+    const links = role === 'world' || role === 'character' ? await this.linksOf(entries, request.canvasId, request.cardId, role) : []
     return {
       ok: true,
       role,
+      ...(links.length === 0 ? {} : { links }),
       ...(foreshadow === undefined ? {} : {
         starred: foreshadow.starred,
         starredCount: entries.foreshadows.filter(view => view.starred).length,
@@ -256,6 +258,64 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
       ...(appearances === undefined || appearances.length === 0 ? {} : { appearances }),
       ...(relation === undefined ? {} : { relation }),
     }
+  }
+
+  /** A setting's or a character's links, both ways, plus the chapters that used a setting. */
+  private async linksOf(entries: WorkEntries, workId: string, cardId: string, role: 'world' | 'character'): Promise<CardLinkGroup[]> {
+    const live = entries.board.cards.filter(card => card.status !== 'archived')
+    const nameOf = (id: string): string => entries.rules.find(view => view.cardId === id)?.name
+      ?? entries.characters.find(view => view.cardId === id)?.name ?? id
+    const ids = (card: (typeof live)[number] | undefined, key: string): string[] => {
+      const value = card?.fields?.[key]
+      return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && live.some(row => row.id === id)) : []
+    }
+    const self = live.find(card => card.id === cardId)
+    const group = (kind: CardLinkGroup['kind'], list: readonly string[]): CardLinkGroup[] =>
+      list.length === 0 ? [] : [{ kind, items: list.map(id => ({ cardId: id, name: nameOf(id) })) }]
+    if (role === 'character') return [...group('faction', ids(self, 'faction')), ...group('home', ids(self, 'home'))]
+    const naming = (key: string): string[] => live.filter(card => ids(card, key).includes(cardId)).map(card => card.id)
+    const characters = new Set(entries.characters.map(view => view.cardId))
+    const people = [...naming('faction'), ...naming('home')].filter((id, index, all) => characters.has(id) && all.indexOf(id) === index)
+    const chapters = (await this.core.listChapters({ workId })).filter(row => row.chapter.settings?.includes(cardId) === true).map(row => row.chapter.n)
+    return [
+      ...group('parent', ids(self, 'parent')),
+      ...group('base', ids(self, 'base')),
+      ...group('children', naming('parent')),
+      ...group('based', naming('base')),
+      ...group('people', people),
+      ...(chapters.length === 0 ? [] : [{ kind: 'chapters' as const, items: chapters.map(n => ({ chapter: n, name: `第${n}章` })) }]),
+    ]
+  }
+
+  /**
+   * The 总览 world map: each shelf as a tree (a setting under its 属于 when
+   * that parent is on the same shelf), the writing principles, and how many
+   * old 世界 cards still wait for 整理设定.
+   */
+  @Remote('worldMap')
+  async worldMap(request: NovelWorkRequest): Promise<NovelWorldMapResult> {
+    const entries = await this.core.readEntries(request.canvasId)
+    if (entries === undefined) return { ok: false, error: 'missing' }
+    const live = entries.rules.filter(view => view.status !== 'archived')
+    const legacyCategories = new Set(entries.board.categories.filter(category => category.role === 'world').map(category => category.id))
+    const unorganized = entries.board.cards.filter(card => card.status !== 'archived' && legacyCategories.has(card.kind)).length
+    const unsettledText = /工作稿|待定|未决|暂定|待调整/
+    const shelves = (['system', 'place', 'faction', 'item'] as const).map(sort => {
+      const onShelf = live.filter(view => view.role === 'world' && view.sort === sort)
+      const ids = new Set(onShelf.map(view => view.cardId))
+      const nodeOf = (view: (typeof onShelf)[number], seen: ReadonlySet<string>): WorldNode => ({
+        cardId: view.cardId,
+        name: view.name ?? view.text.slice(0, 16),
+        unsettled: unsettledText.test(view.text),
+        children: onShelf
+          .filter(child => !seen.has(child.cardId) && (child.parents ?? []).includes(view.cardId))
+          .map(child => nodeOf(child, new Set([...seen, child.cardId]))),
+      })
+      const roots = onShelf.filter(view => !(view.parents ?? []).some(id => ids.has(id) && id !== view.cardId))
+      return { sort, count: onShelf.length, nodes: roots.map(view => nodeOf(view, new Set([view.cardId]))) }
+    })
+    const principles = live.filter(view => view.role === 'principle').map(view => ({ cardId: view.cardId, text: view.text }))
+    return { ok: true, shelves, principles, unorganized }
   }
 
   /** The person's ★ on a foreshadow. */

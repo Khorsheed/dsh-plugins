@@ -34,6 +34,8 @@ export interface RefCandidate {
   readonly id: string
   readonly name: string
   readonly kind: CardCategoryId
+  /** The card's category role, when a genre seeded it: a ref field's refKind may name the role. */
+  readonly role?: string
 }
 
 /** A field's kind in words: `单选` / `引用 → 人物`. */
@@ -323,7 +325,7 @@ export function FieldForm({ t, definition, values, candidates, selfId, focus, on
     if (field.type === 'ref') {
       const chosen = Array.isArray(entry) ? entry : []
       const open = candidates.filter(card =>
-        card.id !== selfId && !chosen.includes(card.id) && (field.refKind === undefined || card.kind === field.refKind))
+        card.id !== selfId && !chosen.includes(card.id) && (field.refKind === undefined || card.kind === field.refKind || card.role === field.refKind))
       return (
         <span className={css.refInput}>
           {chosen.map(id => (
