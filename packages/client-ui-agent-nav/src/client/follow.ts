@@ -23,7 +23,7 @@
  *
  * @module @khorsheed/dsh-client-ui-agent-nav/client
  */
-import { readDestinations, type ContentLike, type Destination } from '../destination.ts'
+import { readDestinations, type ContentLike, type Destination, type DestinationCardData } from '../destination.ts'
 
 /** What the follower does with one destination. */
 export type FollowDecision = 'follow' | 'badge' | 'skip'
@@ -85,6 +85,13 @@ interface NavRegistry {
   lastInteraction: number | undefined
   /** Kind → who refreshes when a place of that kind was just written. */
   readonly writes: Map<string, Set<(destination: Destination) => void>>
+  /** Destinations that arrived live on this page, by id: only their cards show a status. */
+  readonly live: Map<string, Destination>
+  /** Card data a plugin handed after the write (`updateCards`), by destination id. */
+  readonly patches: Map<string, DestinationCardData>
+  /** Cards re-render when `live` or `patches` move. */
+  readonly cardListeners: Set<() => void>
+  cardVersion: number
 }
 
 const REGISTRY_KEY = Symbol.for('dsh.agent-nav.registry')
@@ -93,8 +100,11 @@ const REGISTRY_KEY = Symbol.for('dsh.agent-nav.registry')
 export function navRegistry(): NavRegistry {
   const holder = globalThis as unknown as Record<symbol, NavRegistry | undefined>
   let registry = holder[REGISTRY_KEY]
-  if (registry === undefined || registry.version !== 1 || registry.writes === undefined) {
-    registry = { version: 1, seen: new Set(), turnFollowed: new Map(), lastInteraction: undefined, writes: new Map() }
+  if (registry === undefined || registry.version !== 1 || registry.writes === undefined || registry.live === undefined) {
+    registry = {
+      version: 1, seen: new Set(), turnFollowed: new Map(), lastInteraction: undefined, writes: new Map(),
+      live: new Map(), patches: new Map(), cardListeners: new Set(), cardVersion: 0,
+    }
     holder[REGISTRY_KEY] = registry
   }
   return registry
@@ -146,6 +156,63 @@ export function notifyWritten(destination: Pick<Destination, 'kind' | 'params'> 
   for (const listener of [...navRegistry().writes.get(destination.kind) ?? []]) {
     try { listener(full) } catch { /* a listener's failure is its own */ }
   }
+}
+
+/** Tell every card that its live set or its data moved. */
+function cardsMoved(registry: NavRegistry): void {
+  registry.cardVersion += 1
+  for (const listener of [...registry.cardListeners]) {
+    try { listener() } catch { /* a card's failure is its own */ }
+  }
+}
+
+/**
+ * Hand new card data for the live cards of one place (the plugin's side of a
+ * state change the person made in the panel: a plan confirmed, a proposal
+ * group decided). Only cards that arrived live on this page take it — a
+ * replayed card shows no status at all. A plugin that no longer has the flow
+ * simply never calls this.
+ * @param kind - the tab kind.
+ * @param match - params the place must carry (a subset: `{ canvasId, item: '3', focus: 'plan' }`).
+ * @param data - the new status / door / awaiting.
+ * @returns how many cards took it.
+ */
+export function updateCards(kind: string, match: Readonly<Record<string, unknown>>, data: DestinationCardData): number {
+  const registry = navRegistry()
+  let count = 0
+  for (const [id, destination] of registry.live) {
+    if (destination.kind !== kind) continue
+    if (!Object.entries(match).every(([key, value]) => destination.params[key] === value)) continue
+    registry.patches.set(id, { ...registry.patches.get(id), ...data })
+    count += 1
+  }
+  if (count > 0) cardsMoved(registry)
+  return count
+}
+
+/**
+ * A card's current data: whether its write arrived live on this page, and the
+ * plugin's card data (the write's own, then any `updateCards`).
+ * @param destination - the card's destination.
+ */
+export function cardStateOf(destination: Destination): { readonly live: boolean; readonly card: DestinationCardData } {
+  const registry = navRegistry()
+  return {
+    live: registry.live.has(destination.id),
+    card: { ...destination.card, ...registry.patches.get(destination.id) },
+  }
+}
+
+/** Subscribe to card moves (for `useSyncExternalStore`). */
+export function subscribeCards(listener: () => void): () => void {
+  const registry = navRegistry()
+  registry.cardListeners.add(listener)
+  return () => { registry.cardListeners.delete(listener) }
+}
+
+/** The card store's version (for `useSyncExternalStore`). */
+export function cardsVersion(): number {
+  return navRegistry().cardVersion
 }
 
 /** Spread onto a panel root: any pointer or key inside it counts as working there. */
@@ -241,8 +308,15 @@ export function startNavFollower(host: NavFollowerHost, options: NavFollowerOpti
   /** Judge one destination and act on it. */
   const judge = (sessionId: string, destination: Destination, live: boolean, turn: number | undefined, role?: 'coordinator' | 'member'): void => {
     if (!owned.has(destination.kind)) return
-    if (live) notifyWritten(destination)
     const registry = navRegistry()
+    if (live) {
+      registry.live.set(destination.id, destination)
+      // A newer write of the same place with card data (the plan confirmed by
+      // tool) is news for that place's earlier live cards too.
+      if (destination.card !== undefined) updateCards(destination.kind, destination.params, destination.card)
+      cardsMoved(registry)
+      notifyWritten(destination)
+    }
     const idle = registry.lastInteraction === undefined ? undefined : now() - registry.lastInteraction
     const { decision, reason } = decideFollow({
       live,

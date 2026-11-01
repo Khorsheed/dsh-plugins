@@ -1,12 +1,13 @@
-/* The destination card: one shell for every mode's conversation card (proposal
-   2026-10-30-agent-sidebar-navigation). A compact bordered line when the mode
-   shows nothing more; a card with the door at its foot when it adds a body. */
+/* The one conversation card (proposal 2026-10-30-agent-sidebar-navigation):
+   a fixed line — mode, label, a status while live, the door — and the same
+   shell with one line per change for a Turn summary. Plugins draw nothing. */
 
 .row,
-.card {
+.multi {
   max-width: 560px;
   min-width: 0;
   border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
   color: var(--dsw-alias-label-primary);
   font-size: 13px;
   line-height: 20px;
@@ -17,24 +18,26 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 8px;
 }
 
-.card {
+.multi {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
-  border-radius: 10px;
+  gap: 4px;
+  padding: 8px 12px;
 }
 
-.card[data-tone="awaiting"] { border-color: var(--dsw-alias-brand-primary); }
-
-.head {
+.head,
+.line {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.line {
+  padding-top: 4px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
 }
 
 .kind {
@@ -44,6 +47,7 @@
 }
 
 .label,
+.text,
 .note,
 .warn {
   flex: 1 1 auto;
@@ -59,7 +63,6 @@
 
 .status {
   flex: none;
-  margin-left: auto;
   padding: 0 8px;
   border-radius: 999px;
   background: var(--dsw-alias-state-warn-tertiary);
@@ -72,15 +75,8 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.title {
-  font-size: 15px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
 .door {
   flex: none;
-  align-self: flex-start;
   padding: 2px 8px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
@@ -98,8 +94,4 @@
 
 .door:hover { background: var(--dsw-alias-fill-l2); }
 
-.tail {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+.row[data-awaiting] { border-color: var(--dsw-alias-brand-primary); }

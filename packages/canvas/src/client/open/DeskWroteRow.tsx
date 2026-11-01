@@ -16,7 +16,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '../locales.ts'
 import { deskWritePlace, writeSummaryParts, type DeskWriteGroup } from './desk-write.ts'
 import type { CanvasNavParams } from '../slots.ts'
-import css from './DeskRow.module.css'
+import { DestinationCard, type Destination } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 
 /** What the line reaches outside itself. */
 export interface DeskWroteRowFace {
@@ -47,17 +47,12 @@ export function DeskWroteRow({ group, t, own, go }: DeskWroteRowProps): ReactNod
   if (parts.length === 0) return null
   const where = own ? t('deskwrite.canvas', { title: group.title }) : t('deskwrite.memberCanvas', { member: last.member, title: group.title })
   const said = `${where} ${parts.join(' · ')}`
+  const destination: Destination = { id: `desk:${group.canvasId}:${last.seq}`, kind: 'canvas', params: { ...deskWritePlace(group.canvasId, group.items) }, label: said }
   return (
-    <div className={css.row} data-desk-write={group.canvasId}>
-      <span className={css.kind}>{t('openrow.kind')}</span>
-      <span className={css.name} title={said}>{said}</span>
-      <button
-        type="button"
-        className={css.open}
-        onClick={() => { go(deskWritePlace(group.canvasId, group.items)) }}
-      >
-        {t('deskwrite.view')}
-      </button>
-    </div>
+    <DestinationCard
+      copy={{ kind: t('openrow.kind'), running: said, failed: said, open: t('deskwrite.view') }}
+      model={{ state: 'done', text: said, destination }}
+      go={next => { go(next.params as unknown as CanvasNavParams) }}
+    />
   )
 }

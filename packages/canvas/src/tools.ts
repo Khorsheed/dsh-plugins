@@ -797,7 +797,8 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
         const answer = `完成：${outcome.kind}（${name}）的类型提议已放到类型页（画布 ${resolved.canvasId}），${fields} 个字段，等用户采用。`
         return deskOf(exec.agent) !== undefined ? answer : withCanvasDestination(answer,
           `canvas:${resolved.canvasId}:type:${outcome.kind}:${Date.now()}`,
-          { canvasId: resolved.canvasId, type: outcome.kind, heading: name }, `「${name || outcome.kind}」类型提议`)
+          { canvasId: resolved.canvasId, type: outcome.kind, heading: name }, `「${name || outcome.kind}」类型提议`,
+          { status: '等你采用', awaiting: true, door: '去类型页采用 →' })
       }
       if (outcome.error === 'invalid-name') {
         return args.kind === undefined && (args.label ?? '').trim() === ''

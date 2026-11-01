@@ -11,7 +11,7 @@ import type { ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '../locales.ts'
 import type { DeskRowData } from './desk-row.ts'
-import css from './DeskRow.module.css'
+import { DestinationCard, type Destination } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 
 /** What the row reaches outside its own node. */
 export interface DeskOpenRowFace {
@@ -38,17 +38,17 @@ export interface DeskOpenRowProps extends DeskOpenRowFace {
  */
 export function DeskOpenRow({ node, t, openCanvas, own = false }: DeskOpenRowProps): ReactNode {
   const row = node.data
-  const said = own
+  const did = own
     ? t(row.created ? 'openrow.created' : 'openrow.switched', { title: row.title })
     : t(row.created ? 'deskrow.created' : 'deskrow.switched', { member: row.member, title: row.title })
+  // A member's open went beside the canvas being read: the line says so.
+  const said = row.role === 'member' ? `${did} · ${t('deskrow.beside')}` : did
+  const destination: Destination = { id: `desk:${row.canvasId}:${row.seq}`, kind: 'canvas', params: { canvasId: row.canvasId }, label: said }
   return (
-    <div className={css.row} data-desk-role={row.role}>
-      <span className={css.kind}>{t('openrow.kind')}</span>
-      <span className={css.name} title={said}>{said}</span>
-      {row.role === 'member' && <span className={css.note}>{t('deskrow.beside')}</span>}
-      <button type="button" className={css.open} onClick={() => { openCanvas(row.canvasId) }}>
-        {t('openrow.open')}
-      </button>
-    </div>
+    <DestinationCard
+      copy={{ kind: t('openrow.kind'), running: said, failed: said, open: t('openrow.open') }}
+      model={{ state: 'done', text: said, destination }}
+      go={() => { openCanvas(row.canvasId) }}
+    />
   )
 }

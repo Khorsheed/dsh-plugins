@@ -130,8 +130,8 @@ describe('DeskOpenRow', () => {
     const openCanvas = vi.fn()
     const addCanvas = vi.fn()
     render(<DeskOpenRow t={t} node={{ data: row(2, 'member') }} sessionId="room-a" openCanvas={openCanvas} addCanvas={addCanvas} />)
-    expect(screen.getByText('bill 新建了画布《雨夜》')).toBeTruthy()
-    expect(screen.getByText('已放进侧栏的画布标签')).toBeTruthy()
+    // The same shell as every card: the line says it went beside.
+    expect(screen.getByText('bill 新建了画布《雨夜》 · 已放进侧栏的画布标签')).toBeTruthy()
     expect(openCanvas).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('打开 →'))
     expect(openCanvas).toHaveBeenCalledExactlyOnceWith('canvas_r')

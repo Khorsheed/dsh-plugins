@@ -42,6 +42,7 @@ import type {} from '../locales.ts'
 import { FieldTable, TypedFace } from './fields.tsx'
 import detailCss from '../detail/CanvasDetailView.module.css'
 import css from './TypeView.module.css'
+import { updateCards } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 
 /** How many cards of the kind the page lists (the board has the rest). */
 const MAX_SAMPLES = 12
@@ -190,6 +191,8 @@ export function TypeView(props: CanvasTypeViewProps): ReactNode {
     if (sessionId === undefined) return
     void run(() => decideType(sessionId, { canvasId, kind, decision })).then(value => {
       if (!landed(value, decision === 'adopt' ? 'type.adopted' : 'type.rejected')) return
+      // The conversation's proposal card hears what came of it (the shell shows it while live).
+      updateCards('canvas', { canvasId, type: kind }, { status: t(decision === 'adopt' ? 'type.cardAdopted' : 'type.cardRejected'), awaiting: false, door: t('card.open') })
       // Rejecting an Agent-started category with no cards deletes it: nothing
       // is left to design here, so the row goes back to the board.
       if (value !== null && value.ok && !value.board.categories.some(row => row.id === kind)) crumbs.onBack()

@@ -15,7 +15,7 @@ describe('novel destination line', () => {
       id: 'canvas:c1:chapter:3:plan:7',
       kind: 'canvas',
       params: { canvasId: 'c1', face: 'manuscripts', item: '3', focus: 'plan' },
-      label: '第 3 章《雨夜》',
+      label: '第 3 章《雨夜》计划',
     }])
     expect(withoutDestinations(answer)).toBe('已建第 3 章《雨夜》（画布 c1 · 规划中 · 第3章.md）。')
   })
