@@ -257,7 +257,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         type: 'object', additionalProperties: true,
         description: 'event: {id? (to change one), title, when (story time as a label), status (happened|preset|planned|hidden|failed; default preset = to come), '
           + 'source (预设|打算|后果|承诺 — a future event\'s origin), who (character refs or names), places (setting refs or names), value (0–1, how much the story needs it), valueWhy, '
-          + 'window (卷一末 / 第8章前), windowChapter (that window as a chapter number), pre (["the preconditions"]), causes (event ids it follows from), after (event id it comes right after in story time), delete (true)}. '
+          + 'window (卷一末 / 第8章前), windowChapter (that window as a chapter number), pre (["the preconditions"]), causes (event ids it follows from), after (event id it comes right after in story time), '
+          + 'chapters ([N] — for a happened event: the chapters whose text tells it, flashbacks included), evidence (≤50 chars copied verbatim from that chapter), '
+          + 'backstory (true: it happened before the story\'s opening scene, whichever chapter tells it), delete (true)}. '
+          + 'Keep the chapter and the quote out of valueWhy and when: chapters and evidence carry them. '
           + 'idea: the event id to bind the idea to (null unbinds).',
       },
       phase: { type: 'string', enum: ['preview', 'apply'], description: 'organize: preview (default) stores the plan and answers the 整理结果; apply carries out the stored plan — only after the user agreed in a later message.' },
@@ -384,6 +387,8 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           ...(raw['causes'] === undefined ? {} : { causes: raw['causes'] }),
           ...(typeof raw['after'] === 'string' ? { after: raw['after'] } : {}),
           ...(raw['chapters'] === undefined ? {} : { chapters: raw['chapters'] }),
+          ...(typeof raw['evidence'] === 'string' ? { evidence: raw['evidence'] } : {}),
+          ...(raw['backstory'] === undefined ? {} : { backstory: raw['backstory'] }),
           ...(raw['delete'] === true ? { delete: true } : {}),
         }, resolved.session)
         if (!outcome.ok) {
@@ -391,7 +396,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           if (outcome.error === 'missing') return '失败：没有这个事件（novel_read(what=events) 看编号）。'
           return `失败：${outcome.error === 'invalid-name' ? '新事件至少要有 title' : outcome.error ?? 'io'}。`
         }
-        return raw['delete'] === true ? `已删除事件 ${outcome.id}。` : `已记下事件 [${outcome.id}]，在时间轴上。`
+        if (raw['delete'] === true) return `已删除事件 ${outcome.id}。`
+        const happened = raw['status'] === 'happened' || raw['status'] === 'failed'
+        const noChapter = happened && raw['chapters'] === undefined && raw['id'] === undefined
+        return `已记下事件 [${outcome.id}]，在时间轴上。${noChapter ? '没给 chapters：时间轴不知道它写在哪一章，会放进「时间待定」（故事开始前的往事给 backstory=true）。正文写到了就补 chapters 和 evidence。' : ''}`
       }
       if (args.what === 'idea') {
         if (args.id === undefined) return '失败：what=idea 要给 id（灵感编号，novel_read(what=ideas) 看）。'

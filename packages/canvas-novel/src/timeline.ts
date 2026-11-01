@@ -80,6 +80,8 @@ export interface StoryEvent {
   readonly evidence?: string
   /** For a reveal: the foreshadow card. */
   readonly foreshadowId?: string
+  /** It happened before the story's opening scene (backstory), whichever chapter tells it. */
+  readonly backstory?: true
   readonly createdAt: string
 }
 
@@ -159,6 +161,7 @@ export function normalizeEvent(raw: unknown): StoryEvent | undefined {
     ...opt('since', since),
     ...opt('evidence', text(r['evidence'], 200)),
     ...opt('foreshadowId', text(r['foreshadowId'], 80)),
+    ...(r['backstory'] === true ? { backstory: true as const } : {}),
     createdAt: text(r['createdAt'], 40) ?? '',
   }
 }

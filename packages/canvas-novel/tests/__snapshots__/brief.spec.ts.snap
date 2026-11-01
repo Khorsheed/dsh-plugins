@@ -89,7 +89,7 @@ exports[`the three brief variants on the《梦境监护者》seed (CP1) > render
   "relation_milestones": [{ "relation_id": "r2", "evidence_in_text": "≤50字原文" }],
   "relation_changes": [{ "relation_id": "r2", "change": "裂痕|决裂|修复|转类型", "to_type": "仅转类型给：爱情|亲情|友情|师徒|对手|同盟|其他", "evidence_in_text": "≤50字原文" }],
   "new_relations": [{ "a": "c1 或名字", "b": "c2 或名字", "type": "爱情|亲情|友情|师徒|对手|同盟|其他", "now": "一句现状", "evidence_in_text": "≤50字原文" }],
-  "events": [{ "title": "这章发生的一件事，一句话", "when": "故事内时间（可空，如 第2天傍晚）", "after": "紧接在哪个已有事件之后（事件编号，可空）", "people": ["c1"], "places": ["w3"], "evidence_in_text": "≤50字原文" }],
+  "events": [{ "title": "这章发生的一件事，一句话", "when": "故事内时间（可空，如 第2天傍晚）", "after": "紧接在哪个已有事件之后（事件编号，可空）", "people": ["c1"], "places": ["w3"], "backstory": "true 表示这是故事开篇之前发生、本章才回忆或讲出来的往事（可空）", "evidence_in_text": "≤50字原文" }],
   "event_progress": [{ "event_id": "e3", "kind": "advanced|happened|failed", "evidence_in_text": "≤50字原文" }],
   "preconditions_met": [{ "event_id": "e3", "index": 前置条件的序号（从 1 起）, "evidence_in_text": "≤50字原文" }],
   "beliefs": [{ "character_id": "c1", "belief": "他这章开始相信的一件事（照他的认识写，不判断对错）", "source": "亲历|听说|推测", "from": "听说时：谁说的", "evidence_in_text": "≤50字原文" }],

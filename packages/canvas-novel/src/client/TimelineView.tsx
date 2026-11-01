@@ -70,11 +70,24 @@ function StoryTime(props: NovelSurfaceProps): ReactNode {
   }
   const max = Math.max(0.0001, ...future.map(event => event.tension))
   const row = (event: TimelineEventView): ReactNode => (
-    <EventRow key={event.id} event={event} data={data} lane={laneIx(event)} max={max} picked={picked === event.id} onPick={() => { setPicked(picked === event.id ? null : event.id) }} t={t} />
+    <EventRow key={event.id} event={event} data={data} lane={laneIx(event)} late={late.has(event.id)} max={max} picked={picked === event.id} onPick={() => { setPicked(picked === event.id ? null : event.id) }} t={t} />
   )
-  const before = past.filter(event => (event.chapters ?? []).length === 0 && event.when !== undefined)
-  const body = past.filter(event => (event.chapters ?? []).length > 0)
-  const undated = past.filter(event => (event.chapters ?? []).length === 0 && event.when === undefined)
+  // 故事开始前 is what the event says it is (backstory), not a missing
+  // chapter; an event no chapter tells and no story time places waits in
+  // 时间待定. 正文 is in story order, so a flashback shows where it happened,
+  // marked with the later chapter that tells it.
+  const told = (event: TimelineEventView): boolean => (event.chapters ?? []).length > 0
+  const before = past.filter(event => event.backstory === true)
+  const body = past.filter(event => event.backstory !== true && (told(event) || event.when !== undefined))
+  const undated = past.filter(event => event.backstory !== true && !told(event) && event.when === undefined)
+  const late = new Set<string>()
+  let seen = Infinity
+  for (const event of [...body].reverse()) {
+    const first = event.chapters?.[0]
+    if (first !== undefined && first > seen) late.add(event.id)
+    if (first !== undefined) seen = Math.min(seen, first)
+  }
+  for (const event of before) if (told(event)) late.add(event.id)
   const backfill = data.backfill ?? []
   return (
     <>
@@ -145,10 +158,11 @@ function chapterList(ns: readonly number[]): string {
   return out.join('、')
 }
 
-function EventRow({ event, data, lane, max, picked, onPick, t }: {
+function EventRow({ event, data, lane, late, max, picked, onPick, t }: {
   readonly event: TimelineEventView
   readonly data: NovelTimelineResult
   readonly lane: number | undefined
+  readonly late: boolean
   readonly max: number
   readonly picked: boolean
   readonly onPick: () => void
@@ -161,7 +175,8 @@ function EventRow({ event, data, lane, max, picked, onPick, t }: {
     <button type="button" className={css.event} data-status={event.status} data-tier={future?.tier} data-lane={lane} data-recap={event.recap === true || undefined} aria-current={picked || undefined} onClick={onPick}>
       <span className={css.title}>{event.title}</span>
       <span className={css.meta}>
-        {event.chapters !== undefined && event.chapters.length > 0 && future === undefined && <span className={css.chapDot}>{event.chapters.join('·')}</span>}
+        {event.chapters !== undefined && event.chapters.length > 0 && future === undefined && !late && <span className={css.chapDot}>{event.chapters.join('·')}</span>}
+        {late && <span className={css.toldLate}>{t('tl.toldIn', { n: event.chapters!.join('、') })}</span>}
         {event.recap === true && <span className={css.src}>{t('tl.recap')}</span>}
         {event.source !== undefined && <span className={css.src}>{event.source}</span>}
         {event.status === 'hidden' && <span className={css.src}>{t('tl.hidden')}</span>}
@@ -216,6 +231,7 @@ function EventDetail({ event, data, all, openCard, t }: {
           <p className={css.muted}>{t('tl.tension', { value: future.tension.toFixed(2) })}</p>
         </div>
       )}
+      {event.evidence !== undefined && <blockquote className={css.quote}>{event.evidence}</blockquote>}
       {(event.causes ?? []).length > 0 && (
         <div className={css.causes}>
           <span className={css.muted}>{t('tl.causes')}</span>
