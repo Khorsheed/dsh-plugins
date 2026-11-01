@@ -274,6 +274,19 @@ function notificationsSection(relays: readonly RoomRelay[]): string {
 }
 
 /**
+ * Whether a dispatch is the human's `/compact` (alone): it compacts the
+ * member's context instead of prompting it.
+ * @param events - the room log.
+ * @param dispatchSeq - the dispatch's seq.
+ * @returns true for a human `/compact` dispatch.
+ */
+export function isCompactDispatch(events: readonly SessionEvent[], dispatchSeq: number | undefined): boolean {
+  if (dispatchSeq === undefined) return false
+  const source = events.find(event => event.seq === dispatchSeq)
+  return source?.type === 'room/dispatch' && (source.data.origin ?? 'human') === 'human' && source.data.text.trim() === COMPACT_COMMAND
+}
+
+/**
  * Assemble the uniform member prompt: the briefing on the member's first
  * dispatch, otherwise only what changed since its previous one (handoff,
  * instructions edit, room changes); then the member's confirmed-undelivered
@@ -564,6 +577,10 @@ export class DispatchEngine {
     // an undo must not resurrect it).
     if (deliveryId !== undefined && state.deliveries?.some(delivery => delivery.id === deliveryId && delivery.status !== 'queued')) return
     const runId = deliveryId ?? randomUUID()
+    // A human's `/compact` to a CLI member runs as a compaction round: its
+    // run-state edges say so (the card reads 「正在压缩」, and no child turn is
+    // recorded — compaction writes none, so the last one would be another run's).
+    const compactRun = member.kind !== 'main-agent' && isCompactDispatch(room.snapshotEvents(), options.dispatchSeq)
     const cursor = previousCursor(room.snapshotEvents(), memberName, options.dispatchSeq ?? Number.MAX_SAFE_INTEGER)
     let startedAt: number | undefined
     const admitted = async (): Promise<number> => {
@@ -577,6 +594,7 @@ export class DispatchEngine {
       const childSessionId = runChildSessionId(room.id, current ?? member)
       room.append('room/run-state', { member: memberName, state: 'running', startedAt, runId,
         ...childSessionId === undefined ? {} : { childSessionId },
+        ...compactRun ? { operation: 'compact' as const } : {},
       })
       await this.hooks.admitted?.(room, options.dispatchSeq)
       await this.ctx.sessions.flush(room)
@@ -870,8 +888,7 @@ export class DispatchEngine {
     // The human's `/compact` (alone, to this member) compacts its context
     // instead of prompting it: a compaction round (local-agent queues it like
     // any round), one transcript row, no reply.
-    const source = dispatchSeq === undefined ? undefined : room.snapshotEvents().find(event => event.seq === dispatchSeq)
-    const compacting = source?.type === 'room/dispatch' && (source.data.origin ?? 'human') === 'human' && source.data.text.trim() === COMPACT_COMMAND
+    const compacting = isCompactDispatch(room.snapshotEvents(), dispatchSeq)
     if (compacting && (member.childSessionId === undefined || facade.isPreparedMember?.(member.childSessionId) === true)) {
       startedAt = await admitted()
       return { state: 'done', text: NOTHING_TO_COMPACT_TEXT }
@@ -1004,11 +1021,13 @@ export class DispatchEngine {
       return { ...outcome, state: terminal.data.state, ...terminal.data.error === undefined ? {} : { error: terminal.data.error } }
     }
     const childSessionId = runChildSessionId(room.id, currentMember ?? member)
-    const childTurn = runChildTurn(childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
+    const compactRun = events.some(event => event.type === 'room/run-state' && event.data.runId === runId && event.data.operation === 'compact')
+    const childTurn = compactRun ? undefined : runChildTurn(childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
     room.append('room/run-state', {
       member: memberName, runId, state: outcome.state, startedAt, elapsedMs: Date.now() - startedAt,
       ...childSessionId === undefined ? {} : { childSessionId },
       ...childTurn === undefined ? {} : { childTurn },
+      ...compactRun ? { operation: 'compact' as const } : {},
       ...outcome.error === undefined ? {} : { error: outcome.error },
     })
     await this.ctx.sessions.flush(room)

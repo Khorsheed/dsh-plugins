@@ -275,6 +275,8 @@ export interface RoomRunMovedEvent {
 }
 
 export interface RoomRunStateEvent {
+  /** `compact`: the human's `/compact` ran as a compaction round (no child turn, no reply). */
+  readonly operation?: 'compact'
   readonly childSessionId?: SessionId
   /** The child session's round this run reached (the last turn/start it wrote); terminal edges only, live sessions only. */
   readonly childTurn?: number

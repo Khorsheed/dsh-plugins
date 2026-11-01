@@ -200,6 +200,11 @@ describe('DispatchEngine (real composition)', () => {
     expect(options.operation).toBe('compact')
     // Kimi answers /compact with its summary: that is the row's, not a reply.
     expect(speeches()).toBe(before)
+    // Both run edges say it is a compaction, and the terminal one names no child turn (it wrote none).
+    const edges = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
+      .filter(event => event.type === 'room/run-state' && (event.data as { operation?: string }).operation === 'compact')
+    expect(edges.map(event => (event.data as { state: string }).state)).toEqual(['running', 'done'])
+    expect((edges[1]!.data as { childTurn?: number }).childTurn).toBeUndefined()
     const row = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().findLast(event => event.type === 'room/member-compacted')
     expect(row?.data).toMatchObject({ member: 'ada', outcome: 'completed', summary: '用户在写《潜梦者》', beforeTokens: 560_000, afterTokens: 41_000,
       usage: { inputTokens: 1_103, outputTokens: 154, cacheReadTokens: 19_712 } })

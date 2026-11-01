@@ -68,7 +68,7 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
     >
       <StateDot state={failed ? 'error' : waiting.length > 0 ? 'warning' : 'ongoing'} />
       <span className={css.title}>
-        {failed ? t('run.failed', { member: data.member }) : waiting.length > 0 ? t('run.waiting', { member: data.member }) : t('run.working', { member: data.member })}
+        {failed ? t('run.failed', { member: data.member }) : waiting.length > 0 ? t('run.waiting', { member: data.member }) : data.operation === 'compact' ? t('run.compacting', { member: data.member }) : t('run.working', { member: data.member })}
       </span>
       <span className={css.elapsed} aria-hidden>· {elapsed === undefined ? t('run.durationUnknown') : formatDurationMs(elapsed)}</span>
       {failed && data.error !== undefined && (
