@@ -53,6 +53,8 @@ export interface RoomRunData {
   readonly member: string
   readonly startedAt: number
   readonly state: 'running' | 'done' | 'cancelled' | 'failed'
+  /** `compact`: a compaction round (the card reads 「正在压缩」). */
+  readonly operation?: 'compact'
   /** Settled run milliseconds (terminal edges only). */
   readonly elapsedMs?: number
   /** Why the run failed (failed terminal edges only). */
@@ -312,6 +314,7 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
       member: event.data.member,
       startedAt: event.data.startedAt,
       state: event.data.state,
+      ...event.data.operation === undefined ? {} : { operation: event.data.operation },
     }
   },
   update: (context, match) => {
