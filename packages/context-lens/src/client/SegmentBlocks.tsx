@@ -58,9 +58,10 @@ interface MessageReading {
   back: (from: SegmentItem) => void
 }
 /** The list stays dense; navigation is shared across system/history/added layers. */
-function MessageRows({ items, groups, callers, highlight, reading, onOpenRequest, onLocateCall, t }: {
+function MessageRows({ items, groups, callers, highlight, reading, onOpenRequest, onLocateCall, locateInMember, t }: {
   readonly items: SegmentItem[]; readonly groups: Map<string, SegmentItem[]>; readonly callers: Map<string, SegmentItem>; readonly highlight: boolean; readonly reading: MessageReading; readonly onOpenRequest?: ((link: RequestLink) => void) | undefined
-  readonly onLocateCall?: ((callId: string, sourceTurn: number | undefined) => void) | undefined; readonly t: T
+  readonly onLocateCall?: ((callId: string, sourceTurn: number | undefined) => void) | undefined
+  readonly locateInMember?: boolean | undefined; readonly t: T
 }) {
   return <>{items.map((item, i) => {
     const open = reading.expanded.has(item)
@@ -87,7 +88,7 @@ function MessageRows({ items, groups, callers, highlight, reading, onOpenRequest
         <div className={`${css.fullLabel} ${css.messageMeta}`}>
           <span>{item.source}{item.sourceTurn === undefined ? '' : ` · ${t('lens.sourceTurn', { turn: String(item.sourceTurn) })}`}{item.durationMs === undefined ? '' : ` · ${fmtSpan(item.durationMs)}`}</span>
           {onLocateCall !== undefined && (item.toolCallId ?? item.toolCallIds?.[0]) !== undefined && <span className={css.duplicateLinks}>
-            <button type="button" onClick={() => onLocateCall((item.toolCallId ?? item.toolCallIds![0])!, item.sourceTurn)}>{t('lens.locateCall')} ↗</button>
+            <button type="button" onClick={() => onLocateCall((item.toolCallId ?? item.toolCallIds![0])!, item.sourceTurn)}>{t(locateInMember === true ? 'lens.locateMemberCall' : 'lens.locateCall')} ↗</button>
           </span>}
           {caller !== undefined && <span className={css.duplicateLinks}>
             <button type="button" onClick={() => reading.jump(item, caller)}>{t('lens.issuedBy', { index: itemNumber(caller) })} ↗</button>
@@ -112,12 +113,14 @@ export interface SegmentBlocksProps {
   readonly onClearFilter?: () => void
   /** Show a tool call in the conversation on the left; absent when this scope's calls are not there. */
   readonly onLocateCall?: ((callId: string, sourceTurn: number | undefined) => void) | undefined
+  /** `onLocateCall` leaves for a room member's own session (the button says so). */
+  readonly locateInMember?: boolean | undefined
   readonly previousResponseNumber: number | null
   readonly t: T
 }
 
 /** Filtering changes rows only: group counts, bars and sizes keep their full-request meaning. */
-export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest, onLocateCall, t }: SegmentBlocksProps) {
+export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest, onLocateCall, locateInMember, t }: SegmentBlocksProps) {
   const { system, tools, history, added } = request.segments
   const [openLayers, setOpenLayers] = useState(new Set(['added']))
   const duplicates = duplicateStats([...system, ...history, ...added])
@@ -221,7 +224,7 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest
       </summary>
       {open && <div className={css.rows}>
         {layer.id === 'tools' ? ((filterCat === null || filterCat === 'tool-definition') && tools.length > 0 ? <ToolCatalog tools={tools} t={t} /> : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : 'seg.toolsEmpty')}</div>)
-          : rows.length ? <MessageRows items={rows} groups={groups} callers={callers} highlight={filterCat === '__dup'} reading={reading} onOpenRequest={onOpenRequest} onLocateCall={onLocateCall} t={t} />
+          : rows.length ? <MessageRows items={rows} groups={groups} callers={callers} highlight={filterCat === '__dup'} reading={reading} onOpenRequest={onOpenRequest} onLocateCall={onLocateCall} locateInMember={locateInMember} t={t} />
           : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : layer.id === 'system' ? 'seg.systemEmpty' : 'seg.empty')}</div>}
       </div>}
     </details>
