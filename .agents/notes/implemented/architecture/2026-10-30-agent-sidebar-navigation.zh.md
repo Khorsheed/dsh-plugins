@@ -76,6 +76,10 @@ canvas-novel 里这个症状有四个原因：
   - **library**：`'library'` 参数经一个 `go()` 到达所有路由（项目、书、站的页签、讲义、测验、卡片、今日），面板每个 revision 应用一次。工具指向项目、书（教材，或等待「采用」的路线）、讲义、测验、站的「页」标签。`library_cards` 有意不写去向：它常在读讲义中途记薄弱点，已有的「已记下 · 撤销」提示就是入口。5 秒 `latestActivity` 揭示和 `RevealedProject` 已删。站点页里用户发起后等待讲义、测验的逻辑保留：刚点过按钮，跟随器只会亮点（busy），由等待逻辑落到同一处。
   - **game**：`'game'` 参数 `{ projectId?, view, elementId?, chapterId?, version? }` 经 `go()` 进入，回合卡的门和桌面行都调用它。`game_publish` 去掉 `show`，去向由版本改动（`changedBy`）推出；`game_open` 落到试玩。揭示控制器、`liveVersion.show` 和宿主侧的 show 请求已删。试玩运行中每 5 秒调用 `markInteraction()`，跟随器把面板视为忙。
   - **video-studio**：`VideoNavParams` `{ projectId, tab?, groupId?, jobId? }` 经 `go()` 进入。工具指向项目（新建 / 打开，房间外也会跟随了）、素材（导入）、文稿里的提议组（滚动并闪烁）、导出（渲染）。`requestPanelProject` 已删。
+- **房间桌面行与 reader（P3）。**
+  - 跟随器接受 `events` 映射：各包把自己实时追加的会话事件（`room/desk-opened`、`room/desk-wrote`）连同这次操作的角色变成去向（canvas、game、video-studio、library 的 `deskDestinationsOf`），由同一条 `decideFollow` 判定。协调者的实时打开跟随；成员的只亮点（画布：标签条小点）；协调者在画布上的写入不动。四份 `shouldFollow` 及其 20 秒窗口已删，消息条只放门。
+  - 画布「写了…」的门经 `deskWritePlace` 落位：写的那一章、那一张卡或那一篇成稿，或在「设定」按下临时筛选「本轮改动」（`CanvasNavParams.cards`）显示这一轮动过的所有卡。小说的桌面条目带章号；旧事件从标题里读。
+  - reader：`'reader'` 参数 `{ entryId, tab? }`；`reader_note` 指向「笔记」页签，`reader_translate` 指向正文；两者的工具行带「查看 →」；不启动跟随器（决定 4）。
 - **一章只有一个位置。** 「章节」页签的 `ChapterBook` 接收 `target`，把阅读器打开在第 N 章；要求看计划时聚焦到计划。
   - 每个请求在一次页面加载里只应用一次：页签每次切换都会重新挂载，而画布会保留最后一个请求，所以用一张以画布为键的模块级表来记。
   - 面板内的章节链接（故事日志、规划视图）改为 `navigate.openManuscripts(item)`。
@@ -110,6 +114,4 @@ canvas-novel 里这个症状有四个原因：
   - 去向行格式由 `packages/canvas/tests/nav-line.spec.ts`、`packages/canvas-novel/tests/nav-line.spec.ts` 钉住；
   - 落点由 `packages/canvas/tests/tools.spec.ts`（「where a canvas write landed」）和 `packages/canvas-novel/tests/tools.spec.ts` 钉住。
 - 「忙」信号是全页的：试玩运行中也会挡住画布、图书馆的自动跳。游戏和剪辑不显示小点；剪辑也没有会话卡片，没跟随的去向只剩回答文字。
-- **尚未迁移**（docs/agent-nav.md 里的 P3）：
-  - 房间桌面行：四份 `shouldFollow`，小说桌面条目不带章号；
-  - reader：只给卡片。
+- 范围内的包都已迁移（docs/agent-nav.md 里的 P1–P3）。房间桌面行只在事件实时追加时跟随，所以房间会话不在屏幕上时到达、之后才打开的消息条算历史，这是有意的。
