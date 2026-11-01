@@ -25,3 +25,13 @@ The chapter quiz paged one question at a time (「章节考 1/6」 + 下一题),
 ## Testing
 
 `tool.spec.ts` / `store.spec.ts` unchanged for behavior (the paper mode is client-side; TeX rendering is presentational). Full suite + `check:panels` green.
+
+## Follow-up (2026-11-01): what holds 交卷 back, and editing an open answer
+
+The user typed an answer without pressing 提交, saw 「还差 1 题」 at the bottom, and could not tell which question it meant. They also asked whether a submitted answer can still be changed.
+
+- **The unsubmitted list**: under the disabled 交卷 button, 「还没提交：」 lists each unsubmitted question by number (第 N 题). A question with text in its box but not submitted reads 「第 N 题（写了，没点提交）」. Clicking one scrolls its card to the middle and focuses its answer box. The list disappears once everything is submitted, and after the sitting is handed to the coach.
+- **改答案**: an open (`free`) question that is submitted but not yet judged shows 改答案. It drops the answer and puts the text back into the draft, so the box is editable again and 交卷 counts it as unsubmitted. Choice and fill answers are judged on the spot with the key shown, so they stay locked; editing them would let the learner copy the key. After 交卷 hands the sitting to the coach, 改答案 goes away, because the answers are already in the conversation input.
+- Rejected: making the disabled 交卷 button jump to the first unsubmitted question. The button does not say where it would go, and the list shows every question at once.
+
+Tested in `tests/quiz-pending.client.spec.tsx` (jsdom): the list and the drafted label, the jump with focus, the list clearing, 改答案 only on the open question with its text restored, and 改答案 gone after the handover.
