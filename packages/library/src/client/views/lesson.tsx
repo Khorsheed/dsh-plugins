@@ -8,7 +8,7 @@
  *
  * @module @khorsheed/dsh-library/client/views/lesson
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import { PanelHeader } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type { LibraryPointMastery } from '../../mastery.ts'
@@ -17,8 +17,6 @@ import type { LibraryResource, RoadmapNode } from '../../types.ts'
 import { outcome, StateLine, useLoad, value, when, type ViewProps } from '../ui.tsx'
 import css from '../LibraryPane.module.css'
 
-/** How long 正在备课 waits for the 讲义 before offering to ask again. */
-const PREPARE_PATIENCE_MS = 10 * 60_000
 
 /** One `##` section of the 讲义; the text before the first heading is the opening. */
 interface LessonSection {
@@ -150,31 +148,17 @@ export function LessonView({ p, projectId, resourceId, nodeId }: ViewProps & { p
 
 /**
  * The station guide's lesson card: no 讲义 yet → 开始学这一站 (a draft in the
- * conversation input; the coach writes the 讲义 when it is sent); asked and
- * waiting → 正在备课 (the 讲义 page opens by itself when they land); written →
+ * conversation input; the coach writes the 讲义 when it is sent, and the 讲义
+ * page opens by itself when they land — the destination follower); written →
  * the points with their mastery and 打开讲义.
  */
 export function LessonCard({ p, projectId, resourceId, node, resource }: {
   p: ViewProps['p']; projectId: string; resourceId: string; node: RoadmapNode; resource: LibraryResource | undefined
 }): ReactNode {
-  const { t, actions, useStore } = p
-  const key = `${projectId}:${resourceId}:${node.id}`
-  const since = useStore(s => s.preparing[key])
+  const { t, actions } = p
   const points = useStationPoints(p, projectId, node)
   const [failed, setFailed] = useState(false)
-  const [now, setNow] = useState(Date.now())
   const notes = node.notes
-  // Waiting: re-read now and then; the page opens itself once the 讲义 land.
-  useEffect(() => {
-    if (since === undefined) return
-    if (notes !== undefined && Date.parse(notes.updatedAt) >= since) {
-      actions.setPreparing(key, undefined)
-      actions.push({ view: 'lesson', projectId, resourceId, nodeId: node.id })
-      return
-    }
-    const timer = setInterval(() => { setNow(Date.now()); actions.refresh() }, 4000)
-    return () => { clearInterval(timer) }
-  }, [since, notes?.updatedAt])
   const start = (): void => {
     void p.bindTarget({ projectId, resourceId })
     const text = t(resource?.origin === 'authored' ? 'prime.lessonStart' : 'prime.lessonStartBook', {
@@ -182,29 +166,23 @@ export function LessonCard({ p, projectId, resourceId, node, resource }: {
       node: node.title,
       points: (node.points ?? []).map(point => point.title).join('、'),
     })
-    if (!p.primeConversation(text)) { setFailed(true); return }
-    setFailed(false)
-    actions.setPreparing(key, Date.now())
+    setFailed(!p.primeConversation(text))
   }
   const ask = (): void => {
     void p.bindTarget({ projectId, resourceId })
     if (!p.primeConversation(t('prime.lessonAsk', { node: node.title }))) setFailed(true)
   }
-  const waiting = since !== undefined && notes === undefined
-  const stale = waiting && now - since > PREPARE_PATIENCE_MS
   return (
     <section className={css.stepBox} data-lesson="true">
       {notes === undefined ? (
         <>
           <span className={css.stepText}>
-            <strong>{waiting ? (stale ? t('lesson.prepareStale') : t('lesson.preparing')) : t('lesson.notReady')}</strong>
-            <span className={css.muted}>{waiting ? t('lesson.preparingHint') : t('lesson.notReadyHint')}</span>
+            <strong>{t('lesson.notReady')}</strong>
+            <span className={css.muted}>{t('lesson.notReadyHint')}</span>
           </span>
           <div className={css.askActions}>
-            {waiting && !stale
-              ? <button type="button" className={css.textButton} onClick={() => { actions.setPreparing(key, undefined) }}>{t('lesson.cancelWait')}</button>
-              : <button type="button" className={css.ghost} onClick={ask}>{t('lesson.ask')}</button>}
-            <button type="button" className={css.primary} disabled={waiting && !stale} onClick={start}>{t('lesson.start')}</button>
+            <button type="button" className={css.ghost} onClick={ask}>{t('lesson.ask')}</button>
+            <button type="button" className={css.primary} onClick={start}>{t('lesson.start')}</button>
           </div>
         </>
       ) : (

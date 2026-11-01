@@ -32,7 +32,8 @@ import { LIBRARY_KIND, LIBRARY_TAB_ID, libraryDefinition } from './definition.ts
 import { LibraryPane } from './LibraryPane.tsx'
 import { LibraryBindChip, type LibraryBindInjected } from './bind/BindChip.tsx'
 import { createLibraryStore } from './store.ts'
-import { followerHostOf, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { followerHostOf, registerDestinationCards, releaseInteraction, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { RECORD_KIND } from '../nav-line.ts'
 import { en, NS, zh } from './locales.ts'
 import { DESK_OWNER, DESK_ROW_KIND, deskDestinationsOf, deskRowDefinition, setDeskRowSeated } from './desk/desk-row.ts'
 import { DeskOpenRow, type DeskOpenRowFace } from './desk/DeskOpenRow.tsx'
@@ -149,6 +150,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       open: destination => { go(destination.params as unknown as LibraryNavParams) },
       events: event => deskDestinationsOf(LIBRARY_KIND, event),
     }), 'library: destination follower')
+    // A noted weak point (library_cards) names the cards list but never moves
+    // the sidebar — the learner is mid-reading; its write signal is what the
+    // pane's 「已记下 · 撤销」 toast listens to.
+    ctx.effect(() => startNavFollower(followerHost, {
+      kinds: [RECORD_KIND],
+      cardsOnly: true,
+      open: () => {},
+    }), 'library: record follower')
   }
 
   /** The injected business face, identical for whichever session mounts it. */
@@ -180,7 +189,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     recentRecords: () => remote.recentRecords({ limit: 3 }),
     recentChanges: () => remote.recentChanges({ limit: 5 }),
     createRetake: (projectId, resourceId, nodeId, keys) => remote.createRetake({ projectId, ...(resourceId === undefined ? {} : { resourceId }), ...(nodeId === undefined ? {} : { nodeId }), ...(keys === undefined ? {} : { keys }) }),
-    latestActivity: () => remote.latestActivity(),
     boundTarget: () => remote.boundTarget(sessionId),
     bindTarget: binding => remote.bindTarget(sessionId, { binding }),
     sendMessage: text => {
@@ -202,6 +210,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           return false
         }
         input.submit('queue')
+        // Handed to the coach: the page it records may follow at once.
+        releaseInteraction()
         return true
       } catch {
         return false
@@ -212,6 +222,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       if (input === undefined) return false
       const current = input.state.getSnapshot().draft
       input.setDraft(current.trim() === '' ? text : `${current}\n\n${text}`)
+      // A panel button handed the work to the coach: what it writes (讲义, a
+      // quiz) is not held back as 「the learner is working in the panel」.
+      releaseInteraction()
       return true
     },
   })
@@ -264,6 +277,23 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     bindTarget: binding => remote.bindTarget(sessionId, { binding }),
     listProjects: () => remote.listProjects(),
   })
+  // The conversation cards (proposal 2026-10-30-agent-sidebar-navigation):
+  // the one shell under each write tool and in the Turn tail; the door opens
+  // the answer's destination. Library cards are the compact line.
+  registerDestinationCards(
+    (body, label) => { ctx.effect(body, label) },
+    headerSlots,
+    () => (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as { events?: { register?: (definition: unknown) => () => void } } | undefined,
+    {
+      owner: '@khorsheed/dsh-library',
+      tools: ['library_project', 'library_textbook', 'library_roadmap', 'library_notes', 'library_quiz', 'library_page', 'library_cards'],
+      locale: NS,
+      face: () => ({
+        copy: () => ({ kind: t('card.kind'), running: t('card.running'), failed: t('card.failed'), open: t('card.open') }),
+        go: () => destination => { go(destination.params as unknown as LibraryNavParams) },
+      }),
+    },
+  )
   ctx.effect(() => headerSlots.inject('conversation.session.header.actions', () => headerSlots.register({
     name: 'conversation.session.header.actions',
     id: 'library-bind',

@@ -6,7 +6,7 @@
  *
  * @module @khorsheed/dsh-library/client/views/station-quiz
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ListRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import {
   acceptanceLines, coverKind, type LibraryAcceptanceLine, type LibraryAssessment, type LibraryAttempt, type LibraryQuizFocus, type LibraryQuizQuestion, type LibraryVerdict, type RoadmapNode,
@@ -62,8 +62,10 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
   const [expanded, setExpanded] = useState<string | undefined>()
   const [retaking, setRetaking] = useState(false)
   const [error, setError] = useState<string | undefined>()
-  // The settings (范围 / 重点 / 题型 / 题量) and the pending ask live in the pane
-  // store per station, so leaving the tab and coming back keeps both.
+  // The settings (范围 / 重点 / 题型 / 题量) live in the pane store per
+  // station, so leaving the tab and coming back keeps them. An asked quiz
+  // opens by itself when it lands (the destination follower), and the
+  // write signal re-reads the tab.
   const stationKey = `${projectId}:${resourceId ?? ''}:${node.id}`
   const station = useStore(s => s.quiz[stationKey])
   const settings = station?.settings ?? DEFAULT_SETTINGS
@@ -72,36 +74,14 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
   const kinds = settings.kinds
   const countText = settings.countText
   const update = (patch: Partial<LibraryQuizSettings>): void => { actions.setQuizSettings(stationKey, { ...settings, ...patch }) }
-  // After asking, re-read until the coach has stored the new quiz; past the
-  // patience window the card says so instead of silently giving up.
-  const watching = station?.ask
-  const [now, setNow] = useState(Date.now())
-  const stale = watching !== undefined && now - watching.since > ASK_PATIENCE_MS
-  const [tick, setTick] = useState(0)
-  useEffect(() => {
-    if (watching === undefined || stale) return
-    const timer = setInterval(() => {
-      setNow(Date.now())
-      setTick(current => current + 1)
-    }, 4000)
-    return () => { clearInterval(timer) }
-  }, [watching, stale])
   // Every assessment of the project (papers, retakes): mastery reads them all.
-  const assessments = useLoad(() => value(p.listAssessments(projectId)), [projectId, rev, tick])
+  const assessments = useLoad(() => value(p.listAssessments(projectId)), [projectId, rev])
   const attempts = useLoad(() => value(p.listAttempts(projectId)), [projectId, rev])
   const mine = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 5 })), [projectId, node.id, rev])
   const all = assessments.data?.assessments ?? []
   const allAttempts = attempts.data?.attempts ?? []
   const shown = all.filter(quiz => quiz.type === 'quiz'
     && (quiz.scope.nodeId === node.id || (quiz.scope.nodeId === undefined && (resourceId !== undefined ? quiz.scope.resourceId === resourceId : quiz.scope.resourceId === undefined))))
-  const quizCount = shown.length
-  // The quiz the learner is waiting for opens itself when it lands.
-  useEffect(() => {
-    if (watching === undefined || assessments.data === undefined || quizCount <= watching.count) return
-    actions.setQuizAsk(stationKey, undefined)
-    const landed = shown.at(-1)
-    if (landed !== undefined) actions.push({ view: 'quiz', projectId, ...(landed.scope.resourceId === undefined ? {} : { resourceId: landed.scope.resourceId }), quizId: landed.id })
-  }, [quizCount, watching])
   const stats = node.quizStats
   const mineCount = mine.data?.total ?? 0
   const papers = shown.filter(quiz => quiz.scope.nodeId === node.id)
@@ -132,9 +112,6 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
     // No picked points: the weak ones are the focus (the coach also reads them every turn).
     const points = focusPoints ?? (pickedTitles.length > 0 ? pickedTitles : weakTitles)
     onPrime(direction, { weak: weakTitles, points, kinds, count })
-    const summary = [t(`focus.${direction}`), kinds.length === 0 ? t('node.kindsMixed') : kinds.map(kind => t(`kind.${kind}`)).join('、'), t('node.askCount', { count: String(count) }), ...(points.length > 0 ? [t('node.askFocusPicked', { points: points.join('、') })] : [])].join(' · ')
-    actions.setQuizAsk(stationKey, { since: Date.now(), count: quizCount, summary })
-    setNow(Date.now())
   }
   const retake = async (keys?: readonly string[]): Promise<void> => {
     if (resourceId === undefined || retaking) return
@@ -150,7 +127,6 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
       setRetaking(false)
     }
   }
-  const asking = watching !== undefined && !stale
   const askParts: [string, string][] = [
     [t('node.setting.range'), t(`focus.${direction}`)],
     [t('node.kindsTitle'), kinds.length === 0 || kinds.length === QUIZ_KINDS.length ? t('node.kindsMixed') : kinds.map(kind => t(`kind.${kind}`)).join('、')],
@@ -170,16 +146,6 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
       </div>
       <StateLine loaded={assessments} t={t} />
       {error !== undefined && <div className={css.error}>{error}</div>}
-      {watching !== undefined && (
-        <section className={css.asking} role="status" data-stale={stale}>
-          <span className={css.askingText}>
-            <strong>{stale ? t('node.askStale') : t('node.asking')}</strong>
-            <span className={css.muted}>{watching.summary} · {t('node.askSince', { minutes: String(Math.max(1, Math.round((now - watching.since) / 60_000))) })}</span>
-          </span>
-          {stale ? <button type="button" className={css.secondary} onClick={() => { ask() }}>{t('node.askAgain')}</button> : null}
-          <button type="button" className={css.textButton} onClick={() => { actions.setQuizAsk(stationKey, undefined) }}>{t('node.askDismiss')}</button>
-        </section>
-      )}
       {mastery.points.length > 0 && (
         <section className={css.section}>
           <h3 className={`${css.sectionTitle} ${css.pointsHead}`}>
@@ -239,7 +205,7 @@ export function QuizTab({ p, projectId, resourceId, node, passRatio, onPrime, on
         </span>
         <span className={css.askActions}>
           <button type="button" className={css.ghost} aria-expanded={showSettings} onClick={() => { setShowSettings(!showSettings) }}>{showSettings ? t('node.askDone') : t('node.askAdjust')}</button>
-          <button type="button" className={primary === 'ask' ? css.primary : css.secondary} disabled={asking} onClick={() => { ask() }}>{asking ? t('node.quizWaiting') : t('node.askGo')}</button>
+          <button type="button" className={primary === 'ask' ? css.primary : css.secondary} onClick={() => { ask() }}>{t('node.askGo')}</button>
         </span>
         {showSettings && (
           <div className={css.stepSettings}>
@@ -476,6 +442,5 @@ const DEFAULT_QUIZ_COUNT = 10
 const DEFAULT_SETTINGS: LibraryQuizSettings = { focus: 'mixed', kinds: [], countText: String(DEFAULT_QUIZ_COUNT), picked: [] }
 
 /** How long the tab waits for an asked quiz before saying it has not landed (a 20-question paper takes minutes). */
-const ASK_PATIENCE_MS = 8 * 60_000
 /** The 题量 field's cap — past this a chapter quiz stops being one sitting. */
 const MAX_QUIZ_COUNT = 20

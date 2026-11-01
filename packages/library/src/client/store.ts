@@ -38,17 +38,9 @@ export interface LibraryQuizSettings {
   readonly picked: readonly string[]
 }
 
-/** An ask sent to the coach that has not landed yet: when, the paper count it must beat, and what was asked. */
-export interface LibraryQuizAsk {
-  readonly since: number
-  readonly count: number
-  readonly summary: string
-}
-
 /** One station's quiz state, kept across tab switches (keyed `project:resource:node`). */
 export interface LibraryStationQuiz {
   readonly settings?: LibraryQuizSettings
-  readonly ask?: LibraryQuizAsk
 }
 
 /** The pane's state. */
@@ -57,10 +49,8 @@ export interface LibraryState {
   stack: LibraryRoute[]
   /** Bumped to make the open view re-read the host. */
   rev: number
-  /** Per-station quiz settings and the pending ask — they outlive the tab that shows them. */
+  /** Per-station quiz settings — they outlive the tab that shows them. */
   quiz: Record<string, LibraryStationQuiz>
-  /** Stations whose 讲义 the learner asked for (开始学这一站), keyed `project:resource:node` → when. */
-  preparing: Record<string, number>
 }
 
 /** Annotation twin of the actions literal below. */
@@ -82,10 +72,6 @@ export type LibraryActions = {
   refresh: (draft: LibraryState) => void
   /** Remember a station's 章节考 settings. */
   setQuizSettings: (draft: LibraryState, key: string, settings: LibraryQuizSettings) => void
-  /** Start (or clear, with undefined) a station's pending ask. */
-  setQuizAsk: (draft: LibraryState, key: string, ask: LibraryQuizAsk | undefined) => void
-  /** Start (or clear) waiting for a station's 讲义. */
-  setPreparing: (draft: LibraryState, key: string, since: number | undefined) => void
 }
 
 const TODAY: LibraryRoute = { view: 'today' }
@@ -120,7 +106,7 @@ export function stackOf(params: LibraryNavParams): LibraryRoute[] {
  */
 export function createLibraryStore(): EngineStoreHandle<LibraryState, LibraryActions> {
   return defineStore({
-    init: (): LibraryState => ({ stack: [TODAY], rev: 0, quiz: {}, preparing: {} }),
+    init: (): LibraryState => ({ stack: [TODAY], rev: 0, quiz: {} }),
     actions: {
       push: (d, route) => { d.stack.push(route) },
       replace: (d, route) => { d.stack[d.stack.length - 1] = route },
@@ -138,14 +124,6 @@ export function createLibraryStore(): EngineStoreHandle<LibraryState, LibraryAct
       },
       refresh: (d) => { d.rev += 1 },
       setQuizSettings: (d, key, settings) => { d.quiz[key] = { ...d.quiz[key], settings } },
-      setQuizAsk: (d, key, ask) => {
-        const { ask: _previous, ...rest } = d.quiz[key] ?? {}
-        d.quiz[key] = ask === undefined ? rest : { ...rest, ask }
-      },
-      setPreparing: (d, key, since) => {
-        if (since === undefined) delete d.preparing[key]
-        else d.preparing[key] = since
-      },
     },
   })
 }

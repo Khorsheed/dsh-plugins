@@ -165,20 +165,12 @@ function PagesTab({ p, projectId, resourceId, resourceTitle, node, onBind }: {
   const { t, useStore, actions } = p
   const rev = useStore(s => s.rev)
   const [notice, setNotice] = useState<string | undefined>()
-  // After a photo goes out, re-read every few seconds until the coach has
-  // recorded a new page (or two minutes pass) — the page lands here by itself.
-  const [watching, setWatching] = useState<{ since: number; pages: number } | undefined>()
-  const [tick, setTick] = useState(0)
-  useEffect(() => {
-    if (watching === undefined) return
-    const timer = setInterval(() => {
-      if (Date.now() - watching.since > 120_000) setWatching(undefined)
-      else setTick(value => value + 1)
-    }, 4000)
-    return () => { clearInterval(timer) }
-  }, [watching])
-  const pages = useLoad(() => value(p.listPages(projectId, resourceId, node.id)), [projectId, resourceId, node.id, rev, tick])
-  const cards = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 50 })), [projectId, node.id, rev, tick])
+  // After a photo goes out, the coach's library_page write re-reads this tab
+  // (the pane's write signal) and the page lands here by itself; the count
+  // moving past the one at sending is the 「已记录」 notice.
+  const [watching, setWatching] = useState<{ pages: number } | undefined>()
+  const pages = useLoad(() => value(p.listPages(projectId, resourceId, node.id)), [projectId, resourceId, node.id, rev])
+  const cards = useLoad(() => value(p.listCards({ projectId, nodeId: node.id, limit: 50 })), [projectId, node.id, rev])
   const count = pages.data?.pages.length ?? 0
   useEffect(() => {
     if (watching !== undefined && count > watching.pages) {
@@ -195,7 +187,7 @@ function PagesTab({ p, projectId, resourceId, resourceTitle, node, onBind }: {
     if (file === undefined) return
     onBind()
     const sent = p.sendPhoto(file, t('prime.photo', { book: resourceTitle, node: node.title }))
-    if (sent) setWatching({ since: Date.now(), pages: count })
+    if (sent) setWatching({ pages: count })
     send(sent, t('node.photoSent'))
   }
 
