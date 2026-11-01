@@ -49,6 +49,9 @@ export const NOVEL_PLAN_FACE = 'plan'
 /** The 灵感 face's key (the genre's last face, 2026-11-01). */
 export const NOVEL_IDEAS_FACE = 'ideas'
 
+/** The 设定 face's key: the genre's own face in the canvas's 卡板 seat (2026-11-01). */
+export const NOVEL_CODEX_FACE = 'codex'
+
 /** A canvas id from untrusted input (the canvas's own id rule), or undefined. */
 export function normalizeWorkId(id: unknown): string | undefined {
   return typeof id === 'string' && /^canvas_[a-z0-9]{8,40}$/.test(id) ? id : undefined
@@ -1693,6 +1696,70 @@ export interface NovelChapterResult {
   readonly planText?: string
   /** The body's fingerprint as read: the edit box sends it back, so a file that moved meanwhile is not overwritten. */
   readonly bodyHash?: string
+}
+
+/** The 设定 face's read (2026-11-01): the book as a world — settings on their shelves, people, pairs, foreshadows. */
+export interface NovelCodexResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly current?: number
+  readonly settings?: readonly CodexSetting[]
+  readonly characters?: readonly CodexCharacter[]
+  readonly relations?: readonly CodexRelation[]
+  readonly foreshadows?: readonly CodexForeshadow[]
+  readonly principles?: readonly { readonly cardId: string; readonly text: string }[]
+  /** Live cards still in the old 世界 category. */
+  readonly unorganized?: number
+}
+
+export interface CodexSetting {
+  readonly cardId: string
+  readonly ref: string
+  readonly name: string
+  readonly sort: 'system' | 'place' | 'faction' | 'item'
+  readonly text: string
+  readonly unsettled: boolean
+  readonly parents: readonly string[]
+  readonly base: readonly string[]
+  /** Chapters whose 对账 used it. */
+  readonly chapters: readonly number[]
+}
+
+export interface CodexCharacter {
+  readonly cardId: string
+  readonly name: string
+  readonly identity?: string
+  readonly factions: readonly string[]
+  readonly homes: readonly string[]
+  readonly where?: string
+  readonly state?: string
+  readonly intent?: string
+  readonly beliefs: readonly { readonly text: string; readonly source?: string; readonly chapter: number }[]
+  readonly secrets: readonly string[]
+  readonly chapters: readonly number[]
+}
+
+export interface CodexRelation {
+  readonly cardId: string
+  readonly pair: readonly string[]
+  readonly type: string
+  readonly stage: string
+  readonly now?: string
+  /** The chapter the pair's journal starts at. */
+  readonly since?: number
+  readonly steps: readonly { readonly chapter: number; readonly label: string; readonly evidence?: string }[]
+}
+
+export interface CodexForeshadow {
+  readonly cardId: string
+  readonly ref: string
+  readonly question: string
+  readonly state: string
+  readonly starred: boolean
+  readonly reveal?: string
+  readonly revealKind?: 'chapter' | 'volume' | 'final'
+  readonly answer?: string
+  readonly steps: readonly { readonly chapter: number; readonly kind: string; readonly note?: string; readonly evidence?: string; readonly planned?: boolean }[]
 }
 
 /** The timeline face's read (2026-11-01). */

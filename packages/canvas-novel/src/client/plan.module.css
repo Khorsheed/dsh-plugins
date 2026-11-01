@@ -303,3 +303,8 @@ button.chapter:hover { background: var(--dsw-alias-interactive-bg-hover); }
 @container dsh-panel (max-width: 560px) {
   .shelves { grid-template-columns: 1fr; }
 }
+
+/* A proposed volume's goal, one stretch of chapters per row. */
+.segs { display: grid; gap: 4px; margin-top: 4px; }
+.segRow { display: grid; grid-template-columns: 6em minmax(0, 1fr); gap: 10px; font: var(--dsh-panel-text-body, 13px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
+.segRange { color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }

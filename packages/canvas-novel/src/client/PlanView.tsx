@@ -107,6 +107,67 @@ function Plan(props: NovelSurfaceProps & { readonly api: NovelRemote; readonly d
   )
 }
 
+/**
+ * The one-page outline alone (the 设定 face's 总览, 2026-11-01): the adopted
+ * sheet with the protagonist off their card, and the proposal waiting on the
+ * person, with 采用 / 不采用.
+ */
+export function OutlineSheet(props: NovelSurfaceProps): ReactNode {
+  const { canvasId, rev, remote, t } = props
+  const api = remote()
+  const read = useNovelRead(api, r => r.outline({ canvasId }), `outline:${canvasId}`, rev)
+  if (api === undefined || read.state !== 'ready' || !read.value.ok) return null
+  const data = read.value
+  const { outline } = data
+  return (
+    <section className={css.sheet}>
+      <header className={css.sheetHead}>
+        <h3>{t('outline.sheet')}</h3>
+        <span className={outline.revision > 0 ? css.tagOk : css.tagPlain}>
+          {outline.revision > 0 ? t('outline.adopted', { revision: outline.revision }) : t('outline.none')}
+        </span>
+        <span className={css.grow} />
+        {outline.history.length > 0 && <History t={t} history={outline.history} />}
+      </header>
+      {outline.revision === 0 && outline.proposal === undefined
+        ? <p className={css.empty}>{t('outline.empty')}</p>
+        : outline.revision > 0 && <SheetFields t={t} sheet={outline.sheet} hero={data.hero} openCard={props.navigate.openCard} />}
+      {outline.proposal !== undefined && <Proposal {...props} api={api} data={data} />}
+    </section>
+  )
+}
+
+/**
+ * A volume's goal as the outline writes it, cut at its 段 (「第一段（约1—5章）：…」)
+ * so each stretch reads as one row with its chapter range; a goal without
+ * them is one paragraph, as written.
+ */
+export function goalSegments(goal: string): { readonly range?: string; readonly text: string }[] {
+  const marker = /(?:^|[。；;\s])(?:第[一二三四五六七八九十\d]+段)?[（(]约?\s*(\d+)\s*[—–\-~～至到]+\s*(\d+)\s*章[）)][：:]/g
+  const hits = [...goal.matchAll(marker)]
+  if (hits.length < 2) return [{ text: goal.trim() }]
+  const rows: { range?: string; text: string }[] = []
+  const lead = goal.slice(0, hits[0]!.index).trim()
+  if (lead !== '') rows.push({ text: lead.replace(/[。；;]$/, '') })
+  hits.forEach((hit, index) => {
+    const start = hit.index! + hit[0].length
+    const end = index + 1 < hits.length ? hits[index + 1]!.index! + 1 : goal.length
+    rows.push({ range: `${hit[1]}–${hit[2]} 章`, text: goal.slice(start, end).trim().replace(/[。；;]$/, '') })
+  })
+  return rows
+}
+
+function GoalSegments({ goal }: { readonly goal: string }): ReactNode {
+  const rows = goalSegments(goal)
+  return (
+    <div className={css.segs}>
+      {rows.map((row, index) => (
+        <div key={index} className={css.segRow}>{row.range !== undefined && <span className={css.segRange}>{row.range}</span>}<span>{row.text}</span></div>
+      ))}
+    </div>
+  )
+}
+
 /** The shelves' labels, in the order the map shows them. */
 const SHELF_KEYS = ['system', 'place', 'faction', 'item'] as const
 
@@ -357,8 +418,8 @@ function Proposal(props: NovelSurfaceProps & { readonly api: NovelRemote; readon
               <li key={`${volume.id}-${index}`}>
                 <b>{t('outline.volume', { vol: volumeNumeral(index + 1), title: volume.title })}</b>
                 {volume.chapters !== undefined && <span className={css.muted}> · {t('outline.volumeEst', { n: volume.chapters })}</span>}
-                {volume.goal !== undefined && <span> · {volume.goal}</span>}
-                {volume.landing !== undefined && <span className={css.muted}> · {t('outline.landing')}：{volume.landing}</span>}
+                {volume.goal !== undefined && <GoalSegments goal={volume.goal} />}
+                {volume.landing !== undefined && <div className={css.segRow}><span className={css.segRange}>{t('outline.landing')}</span><span>{volume.landing}</span></div>}
               </li>
             ))}
           </ol>

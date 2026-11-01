@@ -833,6 +833,9 @@
 .queueHead .groupChev { width: auto; color: inherit; }
 .queueHead .groupChev[data-open='true'] { transform: rotate(90deg); }
 
+/* The book scrolls as a column: its parts keep their height instead of being squeezed (the chip row was cut in half). */
+.book > * { flex-shrink: 0; }
+
 /* The kit's chip row pads itself for a bare panel; the book already has a gutter. */
 .book .filters { padding: 0; }
 
@@ -1794,8 +1797,18 @@
 /* 章节: volume heads, the next chapter's candidates, a self-written chapter. */
 .volBar { height: 4px; margin: 0 10px 6px; border-radius: 2px; background: var(--dsw-alias-border-l1); overflow: hidden; }
 .volBar i { display: block; height: 100%; background: var(--dsw-alias-brand-primary); }
+.volSeg { display: grid; grid-template-columns: 6em minmax(0, 1fr); gap: 10px; }
+.volSeg span:first-child:not(:last-child) { color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; }
+.volGoal { display: grid; gap: 4px; }
 .volGoal, .volLanding { margin: 0 10px 6px; font: var(--dsh-panel-text-meta, 12px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
 .volLanding::before { content: "卷末 · "; color: var(--dsw-alias-label-tertiary); }
+.candBox { display: grid; gap: 4px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 6px 12px; }
+.candHead {
+  display: flex; gap: 8px; align-items: baseline; border: 0; background: none; padding: 4px 0; cursor: pointer; text-align: left;
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-primary);
+}
+.candHead .groupChev { width: auto; }
+.candHead .groupChev[data-open='true'] { transform: rotate(90deg); }
 .cands { display: grid; gap: 6px; padding: 6px 0 10px; }
 .cand { display: grid; grid-template-columns: 3.5em minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 10px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; }
 .cand[data-blocked] { opacity: 0.5; }

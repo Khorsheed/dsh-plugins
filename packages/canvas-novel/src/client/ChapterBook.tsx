@@ -20,7 +20,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { ChipRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { NOVEL_GENRE_ID, type ChapterRow, type EffectiveChapterPhase } from '../types.ts'
+import { NOVEL_GENRE_ID, volumeNumeral, type ChapterRow, type EffectiveChapterPhase } from '../types.ts'
+import { goalSegments } from './PlanView.tsx'
 import { bareTitle, ChapterReader } from './ChapterReader.tsx'
 import type { ChapterTarget, NovelSurfaceProps } from './contract.ts'
 import { awaitsReconcile } from './NovelFaces.tsx'
@@ -132,7 +133,9 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
   const stale = rows.filter(item => awaitsReconcile(item.phase))
   const items = queue.state === 'ready' ? queue.value.items : []
   // Volumes head the list when the outline has them (2026-11-01: 规划's roadmap lives here); else groups of ten.
-  const volumes = outlineRead.state === 'ready' && outlineRead.value.ok ? outlineRead.value.outline.volumes : []
+  const outlineDoc = outlineRead.state === 'ready' && outlineRead.value.ok ? outlineRead.value.outline : undefined
+  // A book whose outline is still a proposal groups by the proposed volumes (2026-11-01: 《潜梦者》 showed 「第 1–5 章」).
+  const volumes = outlineDoc === undefined ? [] : outlineDoc.volumes.length > 0 ? outlineDoc.volumes : outlineDoc.proposal?.volumes ?? []
   const groups: { rows: ChapterRow[]; volume?: { index: number; title: string; planned?: number; goal?: string; landing?: string } }[] = []
   if (volumes.length > 0) {
     volumes.forEach((volume, index) => {
@@ -233,7 +236,7 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
               <span className={css.groupTitle}>
                 {volume === undefined
                   ? (groups.some(other => other.volume !== undefined) ? t('toc.noVolume') : t('toc.group', { from: first, to: last }))
-                  : t('toc.volume', { index: volume.index, title: volume.title })}
+                  : t('toc.volume', { index: volumeNumeral(volume.index), title: volume.title.replace(/^第[一二三四五六七八九十\d]+卷\s*[·・:：]?\s*/, '') })}
               </span>
               <span className={css.groupSum}>
                 {volume !== undefined && volume.planned !== undefined
@@ -246,7 +249,13 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
             {volume !== undefined && volume.planned !== undefined && (
               <div className={css.volBar}><i style={{ width: `${Math.min(100, Math.round(group.length / Math.max(1, volume.planned) * 100))}%` }} /></div>
             )}
-            {isOpen && volume?.goal !== undefined && <p className={css.volGoal}>{volume.goal}</p>}
+            {isOpen && volume?.goal !== undefined && (
+              <div className={css.volGoal}>
+                {goalSegments(volume.goal).map((row, rowIndex) => (
+                  <div key={rowIndex} className={css.volSeg}>{row.range !== undefined && <span>{row.range}</span>}<span>{row.text}</span></div>
+                ))}
+              </div>
+            )}
             {isOpen && <div className={css.rows}>{group.map(row)}</div>}
             {isOpen && volume?.landing !== undefined && <p className={css.volLanding}>{volume.landing}</p>}
           </div>
@@ -281,10 +290,11 @@ function NextCandidates(props: NovelSurfaceProps): ReactNode {
     }).then(() => { navigate.refresh() })
   }
   return (
-    <div className={css.queue}>
-      <button type="button" className={css.queueHead} aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
+    <section className={css.candBox}>
+      <button type="button" className={css.candHead} aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
         <span className={css.groupChev} data-open={open || undefined}>›</span>
-        {t('cand.heading', { n: chapter })}
+        <b>{t('cand.heading', { n: chapter })}</b>
+        <span className={css.muted}>{t('cand.count', { count: shown.length })}</span>
       </button>
       {open && (
         <div className={css.cands}>
@@ -302,11 +312,11 @@ function NextCandidates(props: NovelSurfaceProps): ReactNode {
             </div>
           ))}
           {sessionId !== undefined && props.sendToConversation !== undefined && (
-            <button type="button" className={css.resumeGo} onClick={() => { props.sendToConversation?.(sessionId, t('cand.planAsk', { n: chapter })) }}>{t('cand.plan', { n: chapter })}</button>
+            <div><button type="button" className={css.planEditBtn} onClick={() => { props.sendToConversation?.(sessionId, t('cand.planAsk', { n: chapter })) }}>{t('cand.plan', { n: chapter })}</button></div>
           )}
         </div>
       )}
-    </div>
+    </section>
   )
 }
 

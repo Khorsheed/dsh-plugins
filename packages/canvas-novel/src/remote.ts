@@ -29,7 +29,7 @@ import {
   coreSuspenseNudge, revealText, revealVolume, targetWordsOf,
   type CardLinkGroup, type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
   type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelPlanEditRequest, type NovelRecentResult, type NovelPlanEditResult, type NovelStarRequest, type NovelStateRequest,
-  type NovelWorkRequest, type NovelWorldMapResult, type NovelTimelineResult, type TimelineEventView, type TimelineFutureView,
+  type NovelWorkRequest, type NovelWorldMapResult, type NovelCodexResult, type CodexSetting, type NovelTimelineResult, type TimelineEventView, type TimelineFutureView,
   type NovelPinsRequest, type NovelIdeasResult, type NovelIdeaRequest, type NovelBodyEditRequest, type NovelBodyEditResult, type NovelOwnChapterRequest, type OutlineCore, type WorldNode, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
 } from './types.ts'
 
@@ -337,6 +337,73 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     return { ok: true, shelves, principles, unorganized }
   }
 
+  /** The 设定 face: every setting on its shelf with its links, the people with their memory, the pairs, the foreshadows with their steps. */
+  @Remote('codex')
+  async codex(request: NovelWorkRequest): Promise<NovelCodexResult> {
+    const entries = await this.core.readEntries(request.canvasId)
+    if (entries === undefined) return { ok: false, error: 'missing' }
+    const workId = request.canvasId
+    const live = (status: string): boolean => status !== 'archived'
+    const chapters = (await this.core.listChapters({ workId })).map(row => row.chapter)
+    const unsettled = /工作稿|待定|未决|暂定|待调整/
+    const settings: CodexSetting[] = entries.rules.filter(view => view.role === 'world' && live(view.status)).map(view => {
+      const card = entries.board.cards.find(row => row.id === view.cardId)
+      const body = typeof card?.fields?.['rule'] === 'string' ? card.fields['rule'] : view.text
+      return {
+        cardId: view.cardId, ref: view.ref, name: view.name ?? view.text.slice(0, 16), sort: view.sort ?? 'system',
+        // A card body the model wrote with escaped line breaks (`\\n`) reads with real ones.
+        text: body.replace(/\\n/g, '\n'), unsettled: unsettled.test(view.text), parents: view.parents ?? [], base: view.base ?? [],
+        chapters: chapters.filter(row => row.settings?.includes(view.cardId) === true).map(row => row.n),
+      }
+    })
+    const minds = await this.core.listMinds({ workId })
+    const story = await this.core.storyLog({ workId })
+    const linksOf = (cardId: string, key: string): string[] => {
+      const value = entries.board.cards.find(row => row.id === cardId)?.fields?.[key]
+      return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
+    }
+    const characters = entries.characters.filter(view => live(view.cardStatus)).map(view => {
+      const own = minds.filter(row => row.characterId === view.cardId)
+      const intent = own.filter(row => row.kind === 'intent').at(-1)?.text
+      const appear = story.characters.find(row => row.cardId === view.cardId)?.appearances ?? []
+      return {
+        cardId: view.cardId, name: view.name, ...(view.identity === undefined ? {} : { identity: view.identity }),
+        factions: linksOf(view.cardId, 'faction'), homes: linksOf(view.cardId, 'home'),
+        ...(view.currentState?.where === undefined ? {} : { where: view.currentState.where }),
+        ...(view.currentState?.state === undefined ? {} : { state: view.currentState.state }),
+        ...(intent === undefined ? {} : { intent }),
+        beliefs: own.filter(row => row.kind === 'belief').slice(-4).map(row => ({ text: row.text, chapter: row.chapter, ...(row.source === undefined ? {} : { source: row.source }) })),
+        secrets: view.secrets,
+        chapters: appear.filter(row => !row.planned).map(row => row.chapter),
+      }
+    })
+    const journal = await this.core.listRelationJournal({ workId })
+    const relations = entries.relations.filter(view => live(view.cardStatus)).map(view => {
+      const own = journal.filter(row => row.relationId === view.cardId)
+      const since = own.length === 0 ? undefined : Math.min(...own.map(row => row.chapter))
+      return {
+        cardId: view.cardId, pair: view.pair, type: view.type, stage: view.stage, ...(view.now === undefined ? {} : { now: view.now }),
+        ...(since === undefined ? {} : { since }),
+        steps: own.map(row => ({ chapter: row.chapter, label: row.kind === 'points' ? `${row.delta > 0 ? '+' : ''}${row.delta}` : row.stage, ...(row.evidence === undefined ? {} : { evidence: row.evidence }) })),
+      }
+    })
+    const mentions = await this.core.listMentions({ workId })
+    const foreshadows = entries.foreshadows.filter(view => live(view.cardStatus)).map(view => ({
+      cardId: view.cardId, ref: view.ref, question: view.question, state: view.state, starred: view.starred,
+      ...(view.reveal === undefined ? {} : { reveal: revealText(view.reveal), revealKind: view.reveal.kind }),
+      ...(view.answer === undefined ? {} : { answer: view.answer }),
+      steps: mentions.filter(row => row.foreshadowId === view.cardId).sort((a, b) => a.chapter - b.chapter).map(row => ({
+        chapter: row.chapter, kind: row.kind, ...(row.note === undefined ? {} : { note: row.note }), ...(row.evidence === undefined ? {} : { evidence: row.evidence }), ...(row.planned === true ? { planned: true } : {}),
+      })),
+    }))
+    const legacy = new Set(entries.board.categories.filter(category => category.role === 'world').map(category => category.id))
+    return {
+      ok: true, current: entries.currentChapter, settings, characters, relations, foreshadows,
+      principles: entries.rules.filter(view => view.role === 'principle' && live(view.status)).map(view => ({ cardId: view.cardId, text: view.text })),
+      unorganized: entries.board.cards.filter(card => live(card.status) && legacy.has(card.kind)).length,
+    }
+  }
+
   /**
    * The 时间轴 face: what has happened in story time, everything to come with
    * its tension and tier, the next chapter's recall and the person's pins.
@@ -365,7 +432,18 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
       ideas: ideas.ideas.filter(idea => idea.eventId === event.id && idea.writtenIn === undefined).length,
     })
     const chapter = current + 1
-    const past = events.filter(event => (event.status === 'happened' || event.status === 'failed') && event.foreshadowId === undefined).sort((a, b) => a.order - b.order).map(viewOf)
+    const stored = events.filter(event => (event.status === 'happened' || event.status === 'failed') && event.foreshadowId === undefined).sort((a, b) => a.order - b.order)
+    // A reconciled chapter with no events of its own (reconciled before the
+    // timeline existed) stands in as one event: its recap.
+    const covered = new Set(stored.flatMap(event => event.chapters ?? []))
+    const recapped = (await this.core.listChapters({ workId: request.canvasId }))
+      .filter(row => row.chapter.recap !== undefined && !covered.has(row.chapter.n) && (row.phase === 'extracted' || row.phase === 'reviewed' || row.phase === 'stale'))
+      .map((row): TimelineEventView => ({ id: `ch:${row.chapter.n}`, title: row.chapter.recap!, status: 'happened', chapters: [row.chapter.n], ideas: 0 }))
+    const past = [...stored.map(viewOf), ...recapped].sort((a, b) => {
+      const ca = a.chapters?.[0] ?? 0, cb = b.chapters?.[0] ?? 0
+      if (ca === 0 || cb === 0) return ca === cb ? 0 : ca === 0 ? -1 : 1
+      return ca - cb
+    })
     const future = events.filter(isFuture).map((event): TimelineFutureView => {
       const parts = tensionOf(event, current)
       return { ...viewOf(event), tier: parts.tier, reason: tierReason(event, parts), tension: parts.tension, V: parts.V, E: parts.E, ...(parts.D === undefined ? {} : { D: parts.D }), Z: parts.Z, S: parts.S }

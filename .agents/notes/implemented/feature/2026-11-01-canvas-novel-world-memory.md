@@ -50,8 +50,8 @@ A character stores only what they believe. 「误以为」 and 「不知道」 a
 
 ### Surfaces
 
-- Tabs read 总览 · 章节 · 设定 · 时间轴 · 灵感. The canvas gained a third genre face, `faces.extra`.
-- **总览** (the lead face) holds the one-page outline, the world map (four shelves as trees, 待定 marked) and 写作原则. A book with old 世界 cards gets a button that sends the 整理设定 request as the person's message.
+- Tabs read 章节 · 设定 · 时间轴 · 灵感. The canvas gained a third genre face, `faces.extra`, and `faces.board`: a genre's own face in the 卡板 seat, which replaces the card wall (with its scopes and 网格 / 连线 tools) on that genre's canvases only.
+- **设定** (`novel:codex`, from the `codex` Remote) follows the agreed prototype. Its parts are 总览 (the one-page outline and its proposal, the four shelves at a glance, the 待定 tray, 写作原则, the 整理设定 button), 世界观 (a tree beside the picked entry's text, links both ways and chapters), 人物 (by faction, with 此刻 / 打算 / 相信的事), 关系 (a graph scrubbed by chapter) and 伏笔 (the reader-knows ladder topped by the truth). Editing a card opens the canvas's card page.
 - **章节** groups the contents by volume, with a progress bar, goal and landing. It also holds 下一章候选 with 优先推进 / 本章屏蔽, and 新建一章，自己写 (用户原稿, opening in the editor).
 - **The reader edits the chapter file.** `editChapterBody` writes through the fenced path with a stale check, and the draft is kept on the device. A change under 5% of a reconciled chapter stays 已对账 and is noted as `editedAfterExtract`. The editor can keep a selection as an idea and ask the agent to continue. 按计划开写 confirms the plan, then sends 「第 N 章计划确认，按计划开写。」 through the input's `submit`; a half-typed draft is never sent.
 - **时间轴** shows 已发生 by story time and 将发生 by priority, with the formula and each event's parts. 按章节 shows the old 故事 table.
@@ -64,7 +64,6 @@ Every model-backed step runs in a visible conversation turn, so `context-lens` s
 
 ### Not done, by choice
 
-- The one-page outline stays on 总览 rather than moving into 设定, because the 设定 face is the canvas's own board.
 - Pace k is fixed at 0.4, not a per-book setting.
 - Card fields 知道的事 / 不知道的事 stay on the card. New memory goes to 相信的事.
 
@@ -83,4 +82,5 @@ Every model-backed step runs in a visible conversation turn, so `context-lens` s
 - **More extraction.** The 对账 extracts more. Quotes stay mandatory, but a shallow extraction quietly weakens planning.
 - **Migration.** Automatic migration can misfile; the 整理结果 review is the safety net.
 - **Expansion can miss a setting.** Following links can miss one a chapter needs but no link reaches; the name index keeps it reachable.
-- **Tabs moved.** 规划 became 总览, and 故事 became 时间轴.
+- **Tabs moved.** 规划 folded into 设定 · 总览 and 章节, 故事 became 时间轴, and the card wall left novel canvases.
+- **Verification.** The surfaces were checked against the prototype on screenshots of the real book's data rendered through the real components (a local harness), not only by tests.

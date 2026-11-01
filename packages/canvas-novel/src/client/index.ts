@@ -44,8 +44,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
 import type {} from '@khorsheed/dsh-canvas-novel/remote'
 import novelRemote from '@khorsheed/dsh-canvas-novel/remote'
-import { NOVEL_GENRE_ID, NOVEL_IDEAS_FACE, NOVEL_PLAN_FACE, NOVEL_STORY_FACE } from '../types.ts'
+import { NOVEL_CODEX_FACE, NOVEL_GENRE_ID, NOVEL_IDEAS_FACE, NOVEL_PLAN_FACE, NOVEL_STORY_FACE } from '../types.ts'
 import { IdeasView } from './IdeasView.tsx'
+import { CodexView } from './CodexView.tsx'
 import { TimelineView } from './TimelineView.tsx'
 import { CardSection } from './CardSection.tsx'
 import { ChapterBook } from './ChapterBook.tsx'
@@ -227,6 +228,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => face,
   }, IdeasView)), 'canvas-novel: ideas face')
+  ctx.effect(() => seats.inject('canvas.board.view', () => seats.register({
+    name: 'canvas.board.view',
+    key: genreKey(NOVEL_CODEX_FACE),
+    locale: NS,
+    inject: () => face,
+  }, CodexView)), 'canvas-novel: settings face')
   ctx.effect(() => seats.inject('canvas.board.view', () => seats.register({
     name: 'canvas.board.view',
     key: genreKey(NOVEL_PLAN_FACE),
