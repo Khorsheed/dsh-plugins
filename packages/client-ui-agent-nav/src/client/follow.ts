@@ -30,7 +30,7 @@ export type FollowDecision = 'follow' | 'badge' | 'skip'
 
 /** Why. */
 export type FollowReason =
-  | 'watched' | 'seen' | 'replay' | 'offscreen' | 'member' | 'narrow' | 'busy' | 'turn-once'
+  | 'watched' | 'seen' | 'replay' | 'cards-only' | 'offscreen' | 'member' | 'narrow' | 'busy' | 'turn-once'
 
 /** A panel touched this recently is being worked in: the Sidebar does not move under the person. */
 export const BUSY_MS = 20_000
@@ -54,6 +54,8 @@ export interface FollowInput {
   readonly seen: boolean
   /** Another destination already moved the Sidebar in this Turn. */
   readonly turnFollowed: boolean
+  /** The owner never moves the Sidebar by itself (the reader: cards only). */
+  readonly cardsOnly?: boolean
 }
 
 /**
@@ -64,6 +66,7 @@ export interface FollowInput {
 export function decideFollow(input: FollowInput): { decision: FollowDecision; reason: FollowReason } {
   if (input.seen) return { decision: 'skip', reason: 'seen' }
   if (!input.live) return { decision: 'skip', reason: 'replay' }
+  if (input.cardsOnly === true) return { decision: 'badge', reason: 'cards-only' }
   if (!input.onScreen) return { decision: 'badge', reason: 'offscreen' }
   if (input.role === 'member') return { decision: 'badge', reason: 'member' }
   if (input.narrow) return { decision: 'badge', reason: 'narrow' }
@@ -80,6 +83,8 @@ interface NavRegistry {
   /** Session id → the last Turn that moved the Sidebar. */
   readonly turnFollowed: Map<string, number>
   lastInteraction: number | undefined
+  /** Kind → who refreshes when a place of that kind was just written. */
+  readonly writes: Map<string, Set<(destination: Destination) => void>>
 }
 
 const REGISTRY_KEY = Symbol.for('dsh.agent-nav.registry')
@@ -88,8 +93,8 @@ const REGISTRY_KEY = Symbol.for('dsh.agent-nav.registry')
 export function navRegistry(): NavRegistry {
   const holder = globalThis as unknown as Record<symbol, NavRegistry | undefined>
   let registry = holder[REGISTRY_KEY]
-  if (registry === undefined || registry.version !== 1) {
-    registry = { version: 1, seen: new Set(), turnFollowed: new Map(), lastInteraction: undefined }
+  if (registry === undefined || registry.version !== 1 || registry.writes === undefined) {
+    registry = { version: 1, seen: new Set(), turnFollowed: new Map(), lastInteraction: undefined, writes: new Map() }
     holder[REGISTRY_KEY] = registry
   }
   return registry
@@ -102,6 +107,45 @@ export function navRegistry(): NavRegistry {
  */
 export function markInteraction(now: number = Date.now()): void {
   navRegistry().lastInteraction = now
+}
+
+/**
+ * The person handed the work to the model (a panel button that primes or
+ * sends the conversation): they are waiting for the answer, not working in
+ * the panel, so the follow it brings is not held back as busy.
+ */
+export function releaseInteraction(): void {
+  navRegistry().lastInteraction = undefined
+}
+
+/**
+ * Listen for places of one kind being written (a live destination, followed or
+ * not, or a panel's own `notifyWritten`): the panel showing that kind re-reads
+ * now instead of polling for it.
+ * @param kind - the tab kind.
+ * @param listener - called with the destination.
+ * @returns the unsubscribe.
+ */
+export function subscribeWrites(kind: string, listener: (destination: Destination) => void): () => void {
+  const writes = navRegistry().writes
+  let set = writes.get(kind)
+  if (set === undefined) { set = new Set(); writes.set(kind, set) }
+  set.add(listener)
+  return () => { set.delete(listener) }
+}
+
+/**
+ * Tell every listener of the destination's kind that its place was written.
+ * The follower calls it for every live destination it reads; a panel calls it
+ * for its own writes another of its views shows (a confirm on the page that a
+ * conversation card reflects).
+ * @param destination - what was written.
+ */
+export function notifyWritten(destination: Pick<Destination, 'kind' | 'params'> & Partial<Destination>): void {
+  const full: Destination = { id: destination.id ?? '', label: destination.label ?? '', kind: destination.kind, params: destination.params }
+  for (const listener of [...navRegistry().writes.get(destination.kind) ?? []]) {
+    try { listener(full) } catch { /* a listener's failure is its own */ }
+  }
 }
 
 /** Spread onto a panel root: any pointer or key inside it counts as working there. */
@@ -160,6 +204,8 @@ export interface NavFollowerOptions {
   readonly open: (destination: Destination) => void
   /** Mark it without moving (a strip dot, a tab badge). Optional. */
   readonly badge?: (destination: Destination) => void
+  /** Never move the Sidebar by itself; destinations only badge and notify (the reader: cards only). */
+  readonly cardsOnly?: boolean
   /** The log sink (default: `console.info`). */
   readonly log?: (line: string) => void
   /** The window width (tests). */
@@ -195,6 +241,7 @@ export function startNavFollower(host: NavFollowerHost, options: NavFollowerOpti
   /** Judge one destination and act on it. */
   const judge = (sessionId: string, destination: Destination, live: boolean, turn: number | undefined, role?: 'coordinator' | 'member'): void => {
     if (!owned.has(destination.kind)) return
+    if (live) notifyWritten(destination)
     const registry = navRegistry()
     const idle = registry.lastInteraction === undefined ? undefined : now() - registry.lastInteraction
     const { decision, reason } = decideFollow({
@@ -205,6 +252,7 @@ export function startNavFollower(host: NavFollowerHost, options: NavFollowerOpti
       narrow: width() < NARROW_PX,
       seen: registry.seen.has(destination.id),
       turnFollowed: turn !== undefined && registry.turnFollowed.get(sessionId) === turn,
+      cardsOnly: options.cardsOnly === true,
     })
     log(`[nav] dest=${destination.id} kind=${destination.kind} decision=${decision} reason=${reason} session=${sessionId}${role === undefined ? '' : ` role=${role}`}`)
     if (decision === 'skip') return

@@ -38,6 +38,10 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/react": "~18.3.1",
+    "jsdom": "^30.0.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "typescript": "^5.9.0",
     "vitest": "^3.0.0"
   },
@@ -50,5 +54,8 @@
       "verifiedHost": "0.2.1-rc.5",
       "notes": "A source-plane library, not a plugin: it registers no slot, service, locale or row, and owns no client bundle of its own. Consumers declare it as a workspace dependency and import `@khorsheed/dsh-client-ui-agent-nav/src/client/*` directly, so tsdown inlines it into each plugin's own `lib/client.js` — zero runtime coupling. The follower reads two host faces, probed: the right Sidebar's `mounted` (the session on screen) and the session binding's `eventSource` (whose `append` deltas are the live events). Without either, an owner keeps its cards and nothing moves by itself. Spec: proposal agent-sidebar-navigation (2026-10-30), docs/agent-nav.md."
     }
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
   }
 }

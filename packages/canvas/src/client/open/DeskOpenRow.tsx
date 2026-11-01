@@ -11,7 +11,7 @@ import type { ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '../locales.ts'
 import type { DeskRowData } from './desk-row.ts'
-import css from '../type/ProposeTypeRow.module.css'
+import css from './DeskRow.module.css'
 
 /** What the row reaches outside its own node. */
 export interface DeskOpenRowFace {

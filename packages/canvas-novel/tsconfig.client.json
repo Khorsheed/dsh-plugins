@@ -21,15 +21,13 @@
     "src/client/use-novel.ts",
     "src/client/PendingList.tsx",
     "src/client/NovelFaces.tsx",
+    "src/client/NovelCards.tsx",
     "src/client/StoryLogPage.tsx",
     "src/client/PlanBlock.tsx",
     "src/client/PlanView.tsx",
     "src/client/ChapterReader.tsx",
     "src/client/ChapterBook.tsx",
     "src/client/CardSection.tsx",
-    "src/client/write-row.ts",
-    "src/client/novel-turn.ts",
-    "src/client/WriteToolRow.tsx",
     "src/client/index.ts"
   ]
 }

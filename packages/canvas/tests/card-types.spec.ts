@@ -17,7 +17,7 @@ import { CanvasBoardService } from '../src/store.ts'
 import { canvasMainSessionToolDefinitions } from '../src/tools.ts'
 import { DRAW_BOX, type CanvasBoard, type CanvasImageRef } from '../src/types.ts'
 import { FakeFs } from './fake-fs.ts'
-import { proposeRowModel } from '../src/client/type/propose-row.ts'
+import { readDestinations } from '@khorsheed/dsh-client-ui-agent-nav/src/destination.ts'
 
 const STATE = '/state'
 const SESSION = { id: 's1', header: { cwd: '/ws' } } as unknown as Session
@@ -259,12 +259,10 @@ describe('the type tools', () => {
     const { board, canvasId, execute, read } = await bench()
     const answer = await execute('canvas_propose_type', { label: '人物', definition: PERSON, rationale: '档案式' }) as string
     expect(answer).toMatch(/^完成：cat_[a-z0-9]+（人物）的类型提议已放到类型页（画布 canvas_[a-z0-9]+），5 个字段/)
-    // The conversation's tool row reads this very sentence back: it must name
-    // the kind and the canvas, or the row has no door to open.
-    const row = proposeRowModel({ kind: 'tool-result', content: [{ type: 'text', text: answer }] })
-    expect(row).toMatchObject({ state: 'ready', label: '人物' })
-    expect(row.kind).toMatch(/^cat_/)
-    expect(row.canvasId).toMatch(/^canvas_/)
+    // The conversation's card opens the type page from the answer's destination.
+    const [landing] = readDestinations(answer)
+    expect(landing?.label).toBe('「人物」类型提议')
+    expect(landing?.params).toMatchObject({ canvasId: expect.stringMatching(/^canvas_/), type: expect.stringMatching(/^cat_/), heading: '人物' })
     const kind = (await read()).categories.find(category => category.label === '人物')!.id
     await board.decideType({ canvasId, kind, decision: 'adopt' }, SESSION)
 

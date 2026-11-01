@@ -96,15 +96,6 @@ export type NovelSurfaceProps<O extends NovelOwnerProps = NovelOwnerProps> = O &
 
 /** The story-log page's key under the canvas's `genreKey`. */
 export const STORY_LOG_PAGE = 'novel:story-log'
-/** The 规划 page's key: the lead face opened as a page (a conversation card's door). */
-export const PLAN_PAGE = 'novel:plan'
-/**
- * The retired chapter page's key (param: the chapter number). A chapter now
- * opens inside the 章节 face (proposal 2026-10-30-agent-sidebar-navigation);
- * the page stays registered only to forward a strip row saved on it.
- */
-export const CHAPTER_PAGE = 'novel:chapter'
-
 /** The 章节 face's ask: one chapter to show, on its plan or its text (the canvas's `target`). */
 export interface ChapterTarget {
   readonly item: string

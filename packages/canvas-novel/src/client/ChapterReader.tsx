@@ -13,8 +13,8 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { NOVEL_GENRE_ID, type EffectiveChapterPhase, type NovelChapterResult } from '../types.ts'
-import type { NovelPageOwnerProps, NovelSurfaceProps } from './contract.ts'
+import type { EffectiveChapterPhase, NovelChapterResult } from '../types.ts'
+import type { NovelSurfaceProps } from './contract.ts'
 import { PendingList } from './PendingList.tsx'
 import { PlanBlock } from './PlanBlock.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
@@ -32,28 +32,12 @@ const LAMP_STEP: Readonly<Record<EffectiveChapterPhase, number>> = {
 }
 
 /**
- * The retired `novel:chapter` page (param: the chapter number, `:plan` to open
- * on the plan). A chapter lives in the 章节 face now; a strip row saved on this
- * page (a reload of an older session) forwards there.
- */
-export function ChapterPage(props: NovelSurfaceProps<NovelPageOwnerProps>): ReactNode {
-  const asked = parseInt(props.param ?? '', 10)
-  const focus = (props.param ?? '').endsWith(PLAN_FOCUS) ? 'plan' : undefined
-  const forward = props.navigate.openManuscripts
-  useEffect(() => {
-    if (props.board.genre?.id !== NOVEL_GENRE_ID) return
-    forward(Number.isFinite(asked) ? String(asked) : undefined, focus)
-  }, [forward, asked, focus, props.board.genre?.id])
-  return null
-}
-
-/**
- * The chapter page's param suffix that opens it on the plan (a plan card's
- * door): the plan block opens and scrolls into view whatever the phase —
+ * The plan block's key suffix when the reader was asked to open on the plan (a
+ * plan card's door): the block opens and scrolls into view whatever the phase —
  * folded under a written chapter's text, it read as a page that did not open
  * the plan (2026-10-10).
  */
-export const PLAN_FOCUS = ':plan'
+const PLAN_FOCUS = ':plan'
 
 /** A chapter title without the number it often carries (`第1章 门与假门` → `门与假门`). */
 export function bareTitle(n: number, title: string): string {
@@ -63,14 +47,12 @@ export function bareTitle(n: number, title: string): string {
 /** One chapter, with its way to the neighbours and back to the contents. */
 export function ChapterReader(props: NovelSurfaceProps & {
   readonly n: number
-  /** `book`: inside the 成稿 face (the reader scrolls itself); `page`: inside a canvas page. */
-  readonly host: 'book' | 'page'
   readonly onGo: (n: number) => void
   readonly onToc: () => void
   /** Open on the plan (the page was opened from a plan card). */
   readonly focusPlan?: boolean
 }): ReactNode {
-  const { canvasId, board, rev, n, host, onGo, onToc, navigate, sessionId, remote, t } = props
+  const { canvasId, board, rev, n, onGo, onToc, navigate, sessionId, remote, t } = props
   const api = remote()
   const read = useNovelRead(api, r => r.chapter({ canvasId, n }), `chapter:${canvasId}:${n}`, rev)
   const next = useNovelRead(api, r => r.chapter({ canvasId, n: n + 1 }), `chapter:${canvasId}:${n + 1}`, rev)
@@ -183,7 +165,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
   }
 
   return (
-    <div className={css.reader} data-host={host} ref={scroller} {...(host === 'book' ? { 'data-canvas-scroll': 'novel-reader' } : {})}>
+    <div className={css.reader} ref={scroller} data-canvas-scroll="novel-reader">
       <div className={css.readerTop}>
         <button type="button" className={css.readerLink} onClick={onToc}>{t('reader.toc')}</button>
         <span className={css.readerWork}>{board.title ?? ''}</span>

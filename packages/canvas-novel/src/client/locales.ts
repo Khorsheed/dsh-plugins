@@ -371,7 +371,6 @@ export const zh = {
   'card.target': '目标 {words} 字',
   'card.beats': '情节 {count} 段',
   'card.op': '{op} {count}',
-  'card.ops': '伏笔 {count} 项',
   'card.cast': '出场 {count} 人',
   'card.confirm': '查看并确认计划',
   'card.view': '查看计划',
@@ -380,7 +379,7 @@ export const zh = {
   'card.label': '长篇小说',
   'card.running': '写入中…',
   'card.failed': '没写成',
-  'card.inspect': '详情',
+  'card.open': '查看 →',
 
   'error.missing': '找不到这部作品或这一章',
   'error.io': '读写失败，稍后再试',
@@ -774,7 +773,6 @@ export const en: Record<keyof typeof zh, string> = {
   'card.target': 'target {words}',
   'card.beats': '{count} beats',
   'card.op': '{op} {count}',
-  'card.ops': '{count} foreshadow ops',
   'card.cast': '{count} in cast',
   'card.confirm': 'Review and confirm the plan',
   'card.view': 'View the plan',
@@ -783,7 +781,7 @@ export const en: Record<keyof typeof zh, string> = {
   'card.label': 'Novel',
   'card.running': 'Writing…',
   'card.failed': 'Failed',
-  'card.inspect': 'Details',
+  'card.open': 'View →',
 
   'error.missing': 'This work or chapter was not found',
   'error.io': 'Read/write failed; try again',

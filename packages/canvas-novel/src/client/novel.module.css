@@ -966,14 +966,11 @@
 .reader {
   display: flex;
   flex-direction: column;
-  font-size: var(--dsh-panel-text-body, 13px);
-  color: var(--dsw-alias-label-primary);
-}
-
-.reader[data-host="book"] {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  font-size: var(--dsh-panel-text-body, 13px);
+  color: var(--dsw-alias-label-primary);
 }
 
 .readerTop {
@@ -989,10 +986,6 @@
   backdrop-filter: blur(6px);
   font-size: var(--dsh-panel-text-meta, 12px);
   color: var(--dsw-alias-label-tertiary);
-}
-
-.reader[data-host="page"] .readerTop {
-  padding-inline: 0;
 }
 
 .readerLink {
@@ -1592,11 +1585,6 @@
   padding: 10px 16px;
   border-top: 1px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-base);
-}
-
-.reader[data-host="page"] .pager {
-  bottom: -64px;
-  padding-inline: 0;
 }
 
 .pager button {

@@ -60,7 +60,6 @@ export function ChapterBook(props: NovelSurfaceProps & {
       <ChapterReader
         {...props}
         n={reading.n}
-        host="book"
         focusPlan={reading.focusPlan}
         onGo={n => { setReading({ n, focusPlan: false }) }}
         onToc={() => { setReading(null) }}

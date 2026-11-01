@@ -16,7 +16,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '../locales.ts'
 import { deskWritePlace, writeSummaryParts, type DeskWriteGroup } from './desk-write.ts'
 import type { CanvasNavParams } from '../slots.ts'
-import css from '../type/ProposeTypeRow.module.css'
+import css from './DeskRow.module.css'
 
 /** What the line reaches outside itself. */
 export interface DeskWroteRowFace {
