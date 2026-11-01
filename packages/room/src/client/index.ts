@@ -44,7 +44,7 @@ import { RoomTaskTags } from './task-tag.ts'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomDispatchDefinition, roomCompactionDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
+import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpReplyDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomDispatchDefinition, roomCompactionDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { mainSessionId, RoomStore } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
@@ -54,7 +54,7 @@ import { RoomInboxView } from './RoomInboxView.tsx'
 import { RoomApprovalView } from './RoomApprovalView.tsx'
 import { RoomQuestionView } from './RoomQuestionView.tsx'
 import { RoomDecisionView } from './RoomDecisionView.tsx'
-import { RoomHelpRequestView, RoomHelpView } from './RoomHelpView.tsx'
+import { RoomHelpReplyView, RoomHelpRequestView, RoomHelpView } from './RoomHelpView.tsx'
 import { sessionTitle, type RoomMenuMember, type SessionCandidate } from './at-menu.ts'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
@@ -509,6 +509,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     lctx.uiConversation.events.register(roomQuestionDefinition)
     lctx.uiConversation.events.register(roomDecisionDefinition)
     lctx.uiConversation.events.register(roomHelpDefinition)
+    lctx.uiConversation.events.register(roomHelpReplyDefinition)
     lctx.uiConversation.events.register(roomHelpRequestDefinition)
     lctx.uiConversation.events.register(roomHelpInDefinition)
   })
@@ -887,6 +888,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'room-help', locale: NS, inject: (sessionId: SessionId): RoomHelpInjected => ({ openSession, roomStore, linkSession: linkFace(sessionId).linkSession, dismissNudge: linkFace(sessionId).dismissNudge }) },
     RoomHelpView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    { name: 'conversation.chat.node', key: 'room-help-reply', locale: NS, inject: (): RoomHelpInjected => ({ openSession, roomStore }) },
+    RoomHelpReplyView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'room-help-request', locale: NS, inject: (): RoomHelpInjected => ({ openSession }) },

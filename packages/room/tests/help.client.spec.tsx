@@ -3,10 +3,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { roomHelpDefinition, roomHelpInDefinition, roomHelpRequestDefinition, type RoomHelpData, type RoomHelpRequestData } from '../src/client/nodes.ts'
-import { RoomHelpRequestView, RoomHelpView } from '../src/client/RoomHelpView.tsx'
+import { roomHelpDefinition, roomHelpInDefinition, roomHelpReplyDefinition, roomHelpRequestDefinition, type RoomHelpData, type RoomHelpReplyData, type RoomHelpRequestData } from '../src/client/nodes.ts'
+import { RoomHelpReplyView, RoomHelpRequestView, RoomHelpView } from '../src/client/RoomHelpView.tsx'
 import { zh } from '../src/client/locales.ts'
-import type { RoomHelpRequestViewProps, RoomHelpViewProps } from '../src/client/slots.ts'
+import type { RoomHelpReplyViewProps, RoomHelpRequestViewProps, RoomHelpViewProps } from '../src/client/slots.ts'
 
 afterEach(() => { cleanup() })
 
@@ -37,6 +37,44 @@ describe('room-help', () => {
     expect(screen.getByText('分支 fix/x')).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: '打开对方会话 →' }))
     expect(openSession).toHaveBeenCalledWith('s-a')
+  })
+})
+
+describe('room-help reply row', () => {
+  it('marks where the answer is handed back to the member, with the answer one click away', () => {
+    const handBack = ev(20, 'room/dispatch', { id: 'd', origin: 'report', reportFor: 'help:h1', targets: ['人物建模大师'], text: '[Help reply …]' })
+    expect(roomHelpReplyDefinition.match(handBack)).toEqual({ id: '20', role: 'start' })
+    // Ordinary reports and the member-to-member rows are not its.
+    expect(roomHelpReplyDefinition.match(ev(21, 'room/dispatch', { id: 'e', origin: 'report', reportFor: 'run:x', targets: ['a'], text: 'x' }))).toBeNull()
+    expect(roomHelpReplyDefinition.match(ev(22, 'room/help-message', { help: 'h1', kind: 'reply', text: 'x' }))).toBeNull()
+    const data = roomHelpReplyDefinition.start({} as never, { event: handBack, role: 'start' } as never, undefined as never) as RoomHelpReplyData
+    expect(data).toMatchObject({ help: 'h1', member: '人物建模大师' })
+    const help = {
+      id: 'h1', from: 'm', fromName: '人物建模大师', target: { sessionId: 's-a', title: '与尼尔盖曼共创《潜梦者》', room: true, member: '尼尔盖曼' }, text: 'q',
+      state: 'replied', since: 0, time: 0,
+      messages: [{ help: 'h1', kind: 'question', text: '先问一句', time: 1005 }, { help: 'h1', kind: 'reply', text: '设定如下', handoff: '见附件', time: 1019 }],
+    }
+    const cached = { helps: [help] }
+    const roomStore = { subscribe: () => () => {}, getCached: () => cached }
+    const openSession = vi.fn()
+    render(<RoomHelpReplyView {...{ node: { data }, sessionId: 'room', roomStore, openSession, t } as unknown as RoomHelpReplyViewProps} />)
+    expect(screen.getByText('尼尔盖曼 回信了，交给 人物建模大师 继续')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '看回信' }))
+    expect(screen.getByText('设定如下')).toBeDefined()
+    expect(screen.queryByText('先问一句')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '打开对方会话 →' }))
+    expect(openSession).toHaveBeenCalledWith('s-a')
+  })
+
+  it('a follow-up question reads as one, and a plain session goes by its title', () => {
+    const help = { id: 'h2', from: 'm', fromName: 'dsh', target: { sessionId: 's-b', title: '开发剪辑插件' }, text: 'q', state: 'asking', since: 0, time: 0,
+      messages: [{ help: 'h2', kind: 'question', text: '要哪个分支？', time: 1009 }] }
+    const cached = { helps: [help] }
+    const roomStore = { subscribe: () => () => {}, getCached: () => cached }
+    render(<RoomHelpReplyView {...{ node: { data: { seq: 10, time: 1010, help: 'h2', member: 'dsh' } }, sessionId: 'room', roomStore, openSession: vi.fn(), t } as unknown as RoomHelpReplyViewProps} />)
+    expect(screen.getByText('「开发剪辑插件」 追问 dsh')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: '看追问' }))
+    expect(screen.getByText('要哪个分支？')).toBeDefined()
   })
 })
 

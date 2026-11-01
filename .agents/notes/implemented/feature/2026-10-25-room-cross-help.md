@@ -24,12 +24,15 @@ A room often hits a problem that another session already has the context for. Th
   - 加入房间成员 (on the team node, or a one-time hint under the third answered ask of one plain session, which can be dismissed for good) keeps the session on the member list: `room/help-link` / `room/help-unlink` / `room/help-nudge-dismissed`. It does not copy the session and does not change the roster; it is only an @ shortcut. The member page lists such sessions under 外部会话, and the @ menu puts them in the members group. Asking still goes through `room_help`, and usage stays in the helper's own session.
 - **The @ menu.** The room composer's @ menu has two groups: this room's members, then other sessions from the host's own session-reference candidates. With nothing typed it lists the five most recent; typing matches both groups fuzzily, where the characters only have to appear in order, ranked exact > prefix > contiguous > in-order, then by recency. A room starts folded. Its arrow (or →) shows its members, and a typed query matches room members by name. The members' own sessions are left out. A picked session goes into the draft as the host's own session chip, through the scoped `slash/input-insert-reference` event; a host without that seam gets the mention as text. The sent text carries the `dsh-session:` mention, which is both the consent signal and what `room_help` resolves.
 - **Journal.** `room/help` (asker, target, text), `room/help-message` (`question` / `reply` / `message`, handoff, fallback) and `room/help-state` (`queued` / `running` / `asking` / `replied` / `failed`). The room timeline shows each thread as one `room-help` row whose state and messages update in place, with 看求助内容 and 打开对方会话.
+- **Hand-back row.** Each answer reaches the asking member as a report `room/dispatch` (`reportFor: help:<id>`). The timeline marks that point with a `room-help-reply` row: 「↙ 尼尔盖曼 回信了，交给 人物建模大师 继续」, or 「… 追问 …」 for a question. It has 看回信 / 看追问 and 打开对方会话. The thread row sits up at the request and is usually far above, so without this row the member's next reply seems to come from nowhere. The row reads the message from the room's help state at render (the thread's latest answer by the hand-back's time) and never parses the dispatch prompt.
 
 ## Alternatives considered
 
 **Granting the helper tools through a preset or the profile root.** Rejected. Every session would carry tools that only matter while a thread is open, and a plain session's preset is not ours to edit.
 
 **A visible entry in the helper's queue dock.** Not available: the host dock lists only human-sourced items. The owner chose to show queue state on the room's row for now and judge it in use.
+
+**Moving the thread row down to the hand-back point when the answer arrives.** Rejected. The request would leave the place it was sent from, and a thread with several questions and replies would keep jumping. One row per hand-back keeps both points.
 
 **Steering into a busy helper's turn.** Rejected. The helper belongs to someone else's work, so the request waits for the current turn to end.
 

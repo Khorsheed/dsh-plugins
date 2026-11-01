@@ -5,11 +5,14 @@
  *   session, where it stands — that opens to the request and every message
  *   on the thread (the helper's questions, its reply with the handoff, the
  *   asker's follow-ups), plus a jump into the helper's session.
+ * - `room-help-reply` (the asking room): where the helper's answer is handed
+ *   back to the member — 「↙ 「对方」回信给 成员」 with the answer one click
+ *   away — so the member's next reply reads as picking the work back up.
  * - `room-help-request` (the helper's session): the request the room queued
  *   there, as a card naming the asking room and member, with a jump back.
  */
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
-import type { RoomHelpRequestViewProps, RoomHelpViewProps } from './slots.ts'
+import type { RoomHelpReplyViewProps, RoomHelpRequestViewProps, RoomHelpViewProps } from './slots.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { NUDGE_AFTER } from '../helps.ts'
 import css from './RoomHelpView.module.css'
@@ -82,6 +85,43 @@ export function RoomHelpView({ node, sessionId, roomStore, openSession, linkSess
               {message.handoff !== undefined && <p className={css.handoff}><b>{t('help.handoff')}</b>{message.handoff}</p>}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The answer-arrived row in the asking room, at the hand-back point. */
+export function RoomHelpReplyView({ node, sessionId, roomStore, openSession, t }: RoomHelpReplyViewProps): ReactNode {
+  const data = node.data
+  const [open, setOpen] = useState(false)
+  const state = useSyncExternalStore(roomStore?.subscribe ?? NO_STORE, () => roomStore?.getCached(sessionId))
+  const help = state?.helps?.find(entry => entry.id === data.help)
+  // The message this hand-back carried: the thread's latest answer by then
+  // (a question, a reply, or the fallback when the helper's turn ended mute).
+  const message = help?.messages.filter(entry => entry.kind !== 'message' && entry.time <= data.time).at(-1)
+  // A room helper reads by its member's name; a plain session by its title.
+  const target = help === undefined ? t('help.reply.someone')
+    : help.target.member ?? t('help.reply.session', { title: help.target.title })
+  const kind = message?.kind === 'question' ? 'question' : message?.fallback === true ? 'fallback' : 'reply'
+  return (
+    <div className={css.thread} data-state={kind === 'question' ? 'asking' : 'replied'}>
+      <div className={css.line}>
+        <span aria-hidden className={css.icon}>↙</span>
+        <span className={css.text} title={help?.target.title}>{t(`help.reply.${kind}` as never, { target, member: data.member })}</span>
+        {message !== undefined && (
+          <button type="button" className={css.action} aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
+            {t(open ? 'help.collapse' : kind === 'question' ? 'help.reply.expandQuestion' : 'help.reply.expand')}
+          </button>
+        )}
+        {help !== undefined && <button type="button" className={css.action} onClick={() => { openSession(help.target.sessionId as SessionId) }}>{t('help.open')}</button>}
+      </div>
+      {open && message !== undefined && (
+        <div className={css.body}>
+          <div className={css.entry} data-kind={message.kind}>
+            <p className={css.copy}>{message.text}</p>
+            {message.handoff !== undefined && <p className={css.handoff}><b>{t('help.handoff')}</b>{message.handoff}</p>}
+          </div>
         </div>
       )}
     </div>

@@ -102,6 +102,19 @@ export interface RoomHelpData {
   readonly help: RoomHelp
 }
 
+/**
+ * Chat node data of a help thread's answer reaching the asker (the report
+ * dispatch that hands it over): where the member picks the work back up.
+ */
+export interface RoomHelpReplyData {
+  readonly seq: number
+  readonly time: number
+  /** The help thread id. */
+  readonly help: string
+  /** The member it was handed to. */
+  readonly member: string
+}
+
 /** Chat node data of a help request (or a follow-up on it), in the helper's own session. */
 export interface RoomHelpRequestData {
   readonly seq: number
@@ -222,6 +235,8 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
     'room-question': RoomQuestionData
     /** room: a help thread this room opened with another session. */
     'room-help': RoomHelpData
+    /** room: a help thread's answer handed back to the asking member. */
+    'room-help-reply': RoomHelpReplyData
     /** room: a help request another session's room sent this session. */
     'room-help-request': RoomHelpRequestData
     /** room: reports the gate holds in a member's inbox. */
@@ -654,6 +669,29 @@ export const roomHelpRequestDefinition: ConversationNodeDefinition<RoomHelpReque
   },
   update: context => context.state,
   buildViewNode: context => viewNode(context, 'room-help-request'),
+}
+
+/**
+ * The helper's answer reaching the asker: one row per report dispatch that
+ * carries a help message back (`reportFor: help:<id>`), at the point the
+ * member resumes — so the thread's 「已回信」 up at the request is not the
+ * only sign, and the member's next reply does not seem to come from nowhere.
+ * The message itself is read from the room's help state at render.
+ */
+export const roomHelpReplyDefinition: ConversationNodeDefinition<RoomHelpReplyData> = {
+  kind: 'room-help-reply',
+  target: 'chat',
+  match: (event) => {
+    if (event.type !== 'room/dispatch' || event.data.origin !== 'report' || event.data.reportFor?.startsWith('help:') !== true) return null
+    return { id: String(event.seq), role: 'start' as const }
+  },
+  start: (_context, match) => {
+    const event = match.event
+    if (event.type !== 'room/dispatch' || event.data.reportFor === undefined) throw new Error('room-help-reply start requires a help report dispatch')
+    return { seq: event.seq, time: event.time, help: event.data.reportFor.slice('help:'.length), member: event.data.targets[0] ?? '' }
+  },
+  update: context => context.state,
+  buildViewNode: context => viewNode(context, 'room-help-reply'),
 }
 
 /**
