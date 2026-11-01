@@ -4,7 +4,7 @@
  * registry): when it shows, by which ratio, and what the per-member field writes.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { en } from '../src/client/locales.ts'
 import { MemberGuard, type MemberGuardProps, type MemberToolFace } from '../src/client/MemberGuard.tsx'
 import { resolveConfig } from '../src/client/config.ts'
@@ -35,6 +35,20 @@ describe('MemberGuard', () => {
     render(<MemberGuard face={face({ ratio: 0.55, compact })} scope={scope} fallback={fallback} t={t} />)
     fireEvent.click(screen.getByRole('button'))
     expect(compact).toHaveBeenCalledTimes(1)
+  })
+
+  it('an accepted request keeps 压缩 disabled until the member\'s state moves (a queued compaction is never sent twice)', async () => {
+    const scope = scopeOf({ thresholdRatio: 0.5 })
+    const compact = vi.fn(async () => {})
+    const view = render(<MemberGuard face={face({ ratio: 0.9, state: 'running', compact })} scope={scope} fallback={fallback} t={t} />)
+    fireEvent.click(screen.getByRole('button'))
+    await act(async () => { await Promise.resolve() })
+    expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button'))
+    expect(compact).toHaveBeenCalledTimes(1)
+    // The queued compaction was dropped (running → idle): the button re-arms.
+    view.rerender(<MemberGuard face={face({ ratio: 0.9, state: 'idle', compact })} scope={scope} fallback={fallback} t={t} />)
+    expect((screen.getByRole('button') as HTMLButtonElement).disabled).toBe(false)
   })
 
   it('a member\'s own ratio wins; the dot marks it; compacting shows its state instead of the button', () => {

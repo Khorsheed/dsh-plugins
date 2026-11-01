@@ -62,12 +62,13 @@ import { claudeDirectory } from './model-catalog.ts'
  */
 
 import { ClaudeControlRequests } from './control-requests.ts'
+import { ClaudeContextTracker } from './context-reading.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
@@ -707,6 +708,8 @@ export class ClaudeLiveDriver {
     let turnOpened = false
     /** This turn's fold (the exec live mirror's exact parser). */
     const parser = new ClaudeStreamParser()
+    /** The round's context occupancy (last top-level request + the result's window). */
+    const contextTracker = new ClaudeContextTracker()
     let mirrored = 0
     /**
      * The model and CLI build this turn's system/init named — the live
@@ -1074,6 +1077,7 @@ export class ClaudeLiveDriver {
         // Settle semantics: a tool call whose result never arrived folds with
         // the interrupted placeholder — the turn is over, so it never will.
         awaitingResult = false
+        contextTracker.observe(event)
         parser.push(JSON.stringify(event) + '\n')
         mirrorUpTo(parser.lines.length, true, true)
         resolveResult(event)
@@ -1114,6 +1118,7 @@ export class ClaudeLiveDriver {
         return
       }
       if (type !== 'assistant' && type !== 'user') return
+      contextTracker.observe(event)
       // Feed the exec path's exact parser: one line per event, as the exec
       // stdout carried them.
       parser.push(JSON.stringify(event) + '\n')
@@ -1279,6 +1284,7 @@ export class ClaudeLiveDriver {
             reason: { kind: 'error', error: { message: 'the live round did not complete', code: 'UNKNOWN' } },
           })
         }
+        recordRoundContext(childSession, contextTracker.reading())
       }
       // Settlement clears the round's event sink — by identity, and only once
       // the turn's result landed: an in-flight turn's late result must still
@@ -1350,4 +1356,19 @@ export class ClaudeLiveDriver {
       },
     })
   }
+}
+
+/**
+ * After a round: the member's occupancy (one `local-agent/context`, when it
+ * moved), so the room's and the composer's ring read Claude Code like the
+ * other CLIs.
+ */
+function recordRoundContext(childSession: Session, reading: { usedTokens: number; contextWindow?: number } | undefined): void {
+  if (reading === undefined) return
+  const last = childSession.snapshotEvents().findLast(event => event.type === 'local-agent/context')?.data as SessionEventMap['local-agent/context'] | undefined
+  if (last?.usedTokens === reading.usedTokens && last.contextWindow === reading.contextWindow) return
+  childSession.append('local-agent/context', {
+    provider: 'claude-local', usedTokens: reading.usedTokens,
+    ...reading.contextWindow === undefined ? {} : { contextWindow: reading.contextWindow },
+  })
 }

@@ -637,7 +637,17 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
       // Read at render: a local-agent core loading after this entry still lands.
-      renderMemberTools: (id, placement, options) => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberTools?.(id, placement, options) ?? null,
+      // A named member compacts through the room's own `/compact` dispatch —
+      // the reminder button then runs exactly what the typed command runs
+      // (「正在压缩」 card, compaction row, Context Lens request), never a
+      // side-channel prompt the room's journal does not see.
+      renderMemberTools: (id, placement, options) => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberTools?.(id, placement, options?.memberName === undefined ? options : {
+        ...options,
+        compact: async () => {
+          const outcome = await submit(sessionId, '/compact', [options.memberName!])
+          if (!outcome.ok) throw new Error(outcome.message)
+        },
+      }) ?? null,
       stopMember: (name, expectedRunId) => { void remote?.cancel({ sessionId, name, ...expectedRunId === undefined ? {} : { expectedRunId } }).then(() => roomStore.refresh(sessionId)) },
       modelDirectory: modelDirectoryFor(sessionId),
       setCoordinator: setCoordinatorFor(sessionId),

@@ -65,16 +65,33 @@ export function MemberGuard({ face, scope, fallback, t }: MemberGuardProps) {
   return <CompactButton face={face} t={t} />
 }
 
+/** How long an accepted request may sit queued on an idle member before the button re-arms. */
+const QUEUED_REARM_MS = 30_000
+
 function CompactButton({ face, t }: Pick<MemberGuardProps, 'face' | 't'>) {
   const [busy, setBusy] = useState(false)
+  // Accepted but not started: a room queues the compaction behind a running
+  // round, and the member reads 「压缩中」 only once it starts. Stay disabled
+  // until the member's state moves (the compaction starting unmounts this
+  // button; a cancelled queue moves running → idle), so a second click never
+  // queues a second compaction.
+  const [queued, setQueued] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const alive = useRef(true)
   useEffect(() => () => { alive.current = false }, [])
+  useEffect(() => { setQueued(false) }, [face.state])
+  useEffect(() => {
+    if (!queued || face.state !== 'idle') return
+    const timer = setTimeout(() => { setQueued(false) }, QUEUED_REARM_MS)
+    return () => { clearTimeout(timer) }
+  }, [queued, face.state])
   const run = (): void => {
     setBusy(true)
     setError(null)
     face.compact().then(() => {
-      if (alive.current) setBusy(false)
+      if (!alive.current) return
+      setBusy(false)
+      setQueued(true)
     }, (reason: unknown) => {
       if (!alive.current) return
       setBusy(false)
@@ -87,7 +104,7 @@ function CompactButton({ face, t }: Pick<MemberGuardProps, 'face' | 't'>) {
         type="button"
         className={`${css.button} ${css.warning}`}
         aria-label={t('button.aria', { percent: String(Math.round((face.ratio ?? 0) * 100)) })}
-        disabled={busy}
+        disabled={busy || queued}
         onClick={run}
       >
         <span className={css.icon} aria-hidden>

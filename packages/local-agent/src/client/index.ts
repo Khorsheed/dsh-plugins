@@ -129,8 +129,17 @@ export interface LocalAgentUi {
    * A member's occupancy ring (`meter`) or one placement's registered tools,
    * for surfaces outside the member composer (a room's composer and members
    * popup). Renders nothing for a session that is not a family member.
+   * `compact` replaces the direct `/compact` prompt: a surface that runs
+   * compaction through its own pipeline (a room's dispatch, so the round gets
+   * its card, its compaction row and its Context Lens request) passes it.
    */
-  renderMemberTools?(childSessionId: string, placement: MemberToolPlacement | 'meter', options?: { readonly memberName?: string | undefined }): ReactNode
+  renderMemberTools?(childSessionId: string, placement: MemberToolPlacement | 'meter', options?: MemberToolsOptions): ReactNode
+}
+/** What a surface hands `renderMemberTools` about the member it shows. */
+export interface MemberToolsOptions {
+  readonly memberName?: string | undefined
+  /** Compact through the surface's own pipeline; absent = prompt the member `/compact` directly. */
+  readonly compact?: (() => Promise<void>) | undefined
 }
 declare module '@deepseek-ai/cordis' {
   interface Context { localAgentUi: LocalAgentUi }
@@ -239,10 +248,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     if (!result.ok) throw new Error(result.error.message)
     if (!result.value.ok) throw new Error(result.value.error)
   }
-  const renderMemberTools = (id: string, placement: MemberToolPlacement | 'meter', options?: { readonly memberName?: string | undefined }): ReactNode =>
+  const renderMemberTools = (id: string, placement: MemberToolPlacement | 'meter', options?: MemberToolsOptions): ReactNode =>
     createElement(MemberTools, {
       key: `${id}:${placement}`, childSessionId: id, placement, memberName: options?.memberName,
-      store: memberContexts, registry: memberTools, compact: compactMember, t,
+      store: memberContexts, registry: memberTools, compact: options?.compact === undefined ? compactMember : options.compact, t,
     })
   const configurationUi: LocalAgentUi = {
     renderMemberOutput: (id, startedAt, options) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, ...options?.fileMentions === undefined ? {} : { fileMentions: options.fileMentions }, t: ctx.locale.bind(NS) }),

@@ -12,15 +12,18 @@
   align-items: center;
   gap: 6px;
   flex: none;
-  padding: 1px 8px;
+  padding: var(--dsh-member-context-padding, 1px 8px);
   border: none;
   border-radius: var(--dsw-radius-sm, 6px);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   font-family: inherit;
-  font-size: var(--dsh-content-font-size-secondary, 13px);
+  /* A surface that lays the ring into its own text line (the room's stats
+     line) sets these to that line's metrics; the composer keeps the host
+     meter's. */
+  font-size: var(--dsh-member-context-font-size, var(--dsh-content-font-size-secondary, 13px));
   font-variant-numeric: tabular-nums;
-  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  line-height: var(--dsh-member-context-line-height, calc(20px + var(--dsh-content-font-delta-secondary, 0px)));
   white-space: nowrap;
   cursor: pointer;
 }
@@ -29,6 +32,11 @@
 .trigger[aria-expanded='true'] {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
+}
+
+.trigger svg {
+  width: var(--dsh-member-context-ring, 14px);
+  height: var(--dsh-member-context-ring, 14px);
 }
 
 .track {
