@@ -1,5 +1,11 @@
 /* 设定: one layout that adapts to the panel's width (docs/panel-design.md); colors from the host's aliases. */
-.page { display: grid; gap: 18px; padding: 16px 20px 28px; container-type: inline-size; container-name: dsh-panel; align-content: start; }
+.page {
+  /* The face sits in the canvas's fixed-height seat: it scrolls itself (2026-11-01: it could not be scrolled at all). */
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: grid; gap: 18px; padding: 16px 20px 48px; container-type: inline-size; container-name: dsh-panel; align-content: start;
+}
+/* The one-page outline on 总览 reads at the codex's size, a step below the old 规划 page. */
+.sheetWrap { --dsh-panel-text-body: 13px; --dsh-panel-text-title: 15px; --dsh-panel-text-meta: 12px; }
 .stack { display: grid; gap: 16px; align-content: start; }
 .section { display: grid; gap: 10px; }
 .h3 { margin: 0; font: 600 var(--dsh-panel-text-title, 15px)/1.4 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
