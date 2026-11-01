@@ -8,11 +8,11 @@ import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.t
 import type {
   AgentScopeOverview, BackfillInfo, CapturedRequest, ListTurnsResult, TurnListItem, TurnOverview, TurnTiming,
 } from '../types.ts'
-import { WINDOW_TURNS, fmtSpan, gapShown, isHollowTurn, latestTurnSeq, resolveTurnSeq, turnGaps, turnNumber, type CompositionFilter, type TurnGap } from './aggregate.ts'
+import { WINDOW_TURNS, fmtSpan, gapShown, isHollowTurn, latestTurnSeq, requestOfLocate, resolveTurnSeq, turnGaps, turnNumber, turnOfLocate, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
-import { rememberSelection, takeSelection } from './member-jump.ts'
-import { hasCallAnchor, hasMessageAnchor, hasTurnAnchor, scrollConversationToBottom, scrollConversationToCall, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
+import { foreignLocate, forgetSelection, rememberSelection, takeSelection } from './member-jump.ts'
+import { hasMessageAnchor, hasTurnAnchor, locateCallPaging, scrollConversationToBottom, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
 import { TokenView } from './TokenView.tsx'
@@ -55,7 +55,8 @@ export function InspectorPanel({
   const { tab } = useTabInfo()
   // The place this panel kept when it sent the reader to a member's session
   // (the panel unmounts with its session's Sidebar): restored once on remount.
-  const [restored] = useState(() => takeSelection(ownSessionId, tab.navigation.revision))
+  const [restored] = useState(() => takeSelection(ownSessionId, tab.navigation.revision,
+    foreignLocate(tab.navigation.params as RequestInspectorTabParams | undefined, ownSessionId)))
   // A navigation may point the panel at another session (a room member's
   // child session); the next navigation without one returns to the own session.
   const [viewed, setViewed] = useState<string | null>(restored?.viewed ?? null)
@@ -113,15 +114,26 @@ export function InspectorPanel({
   const revision = tab.navigation.revision
   const navParams = tab.navigation.params as RequestInspectorTabParams | undefined
   const navTurnSeq = navParams?.turnSeq
+  // The kept place stays until the reader leaves it (a second mount on the way back gets it too).
+  useEffect(() => {
+    if (restored === undefined) return
+    if (turnSeq === restored.turnSeq && scopeId === restored.scopeId && selectedSeq === restored.selectedSeq
+      && viewed === restored.viewed && mainTab === restored.mainTab) return
+    forgetSelection(ownSessionId)
+  }, [restored, turnSeq, scopeId, selectedSeq, viewed, mainTab, ownSessionId])
   // A restored place already reflects every navigation up to its revision; re-applying them would undo it.
   const lastNavRevision = useRef(restored === undefined ? 0 : revision)
   /** The call a navigation asked to show; consumed once the turn list arrives. */
   const pendingLocate = useRef<RequestInspectorTabParams['locateCall']>(undefined)
+  /** The request a handed-over call came with: selected once its turn's overview is in. */
+  const pendingRequest = useRef<NonNullable<RequestInspectorTabParams['locateCall']>['request']>(undefined)
   /** A located call waiting for the panel's turn list to be in state (the jump reads it). */
   const [locateRequest, setLocateRequest] = useState<RequestInspectorTabParams['locateCall']>(undefined)
   useEffect(() => {
     if (revision === 0 || revision === lastNavRevision.current) return
     lastNavRevision.current = revision
+    // A call handed to another session's lens: not this panel's navigation.
+    if (foreignLocate(navParams, ownSessionId)) return
     const target = navParams?.sessionId
     setViewed(target === undefined || target === ownSessionId ? null : target)
     pendingMessage.current = navParams?.messageId
@@ -177,8 +189,8 @@ export function InspectorPanel({
       pendingDecision.current = undefined
       const locate = pendingLocate.current
       pendingLocate.current = undefined
-      const located = locate?.hostTurn === undefined ? undefined
-        : result.value.turns.find(turn => turn.hostTurn === locate.hostTurn)?.turnSeq
+      const located = turnOfLocate(result.value.turns, locate)
+      pendingRequest.current = locate?.request
       if (locate !== undefined) setLocateRequest(locate)
       const asked = decided ?? located ?? (pendingMessage.current === undefined ? undefined : resolveTurnSeq(result.value.turns, pendingMessage.current))
       pendingMessage.current = undefined
@@ -234,6 +246,13 @@ export function InspectorPanel({
     ?? scopes[0]
   const effectiveScope = scope
   const scopeRequests = effectiveScope?.requests ?? []
+  useEffect(() => {
+    const wanted = pendingRequest.current
+    if (wanted === undefined || scopeRequests.length === 0) return
+    pendingRequest.current = undefined
+    const match = requestOfLocate(scopeRequests, wanted)
+    if (match !== undefined) setSelectedSeq(match.seq)
+  }, [scopeRequests])
   const selectedItem = scopeRequests.find(candidate => candidate.seq === selectedSeq) ?? scopeRequests[0]
   const selectedRequestSeq = selectedItem?.seq ?? null
   const selectedIndex = selectedRequestSeq === null
@@ -380,22 +399,13 @@ export function InspectorPanel({
   const locateCall = (callId: string, hostTurn: number | undefined): void => {
     const jump = ++jumpToken.current
     const fallbackTurn = hostTurn ?? turn?.hostTurn
-    if (scrollConversationToCall(callId)) return
     const listed = fallbackTurn === undefined ? undefined : turns?.find(candidate => candidate.hostTurn === fallbackTurn)
-    if (!loadThrough || listed?.startSeq === undefined) {
-      if (fallbackTurn !== undefined) scrollConversationToTurn(fallbackTurn)
-      return
-    }
-    void loadThrough(sessionId, listed.startSeq).catch(() => undefined).then(() => {
-      let frames = 0
-      const land = (): void => {
-        if (jump !== jumpToken.current) return
-        if (hasCallAnchor(callId)) { scrollConversationToCall(callId); return }
-        if (frames >= 60) { scrollConversationToTurn(fallbackTurn!); return }
-        frames += 1
-        requestAnimationFrame(land)
-      }
-      land()
+    void locateCallPaging({
+      callId,
+      startSeq: listed?.startSeq,
+      fallbackTurn,
+      loadThrough: loadThrough === undefined ? undefined : seq => loadThrough(sessionId, seq),
+      alive: () => jump === jumpToken.current,
     })
   }
   // A call lives in this conversation when the scope is the main agent or a
@@ -424,7 +434,13 @@ export function InspectorPanel({
   const locateInMember = memberSession === undefined || openInMemberSession === undefined ? undefined
     : (callId: string, sourceTurn: number | undefined): void => {
       rememberSelection(ownSessionId, { revision, viewed, turnSeq, scopeId, selectedSeq, mainTab })
-      openInMemberSession(memberSession, sourceTurn === undefined ? { callId } : { callId, hostTurn: sourceTurn })
+      const request = selectedItem === undefined ? undefined
+        : { startedAt: selectedItem.startedAt, ...selectedItem.requestNumber === undefined ? {} : { requestNumber: selectedItem.requestNumber } }
+      openInMemberSession(memberSession, {
+        callId,
+        ...sourceTurn === undefined ? {} : { hostTurn: sourceTurn },
+        ...request === undefined ? {} : { request },
+      })
     }
 
   const onSelectTurn = (next: number): void => {

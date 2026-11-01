@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  hasCallAnchor, preferredScrollBehavior, scrollConversationToBottom, scrollConversationToCall, scrollConversationToTurn,
+  hasCallAnchor, locateCallPaging, preferredScrollBehavior, scrollConversationToBottom, scrollConversationToCall, scrollConversationToTurn,
 } from '../src/client/scroll-sync.ts'
 
 /** Build a fake conversation: a scrollport with turn rows (and one hidden row). */
@@ -281,6 +281,90 @@ describe('scrollConversationToCall', () => {
     conversation([1])
     expect(hasCallAnchor('missing')).toBe(false)
     expect(scrollConversationToCall('missing')).toBe(false)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+})
+
+describe('locateCallPaging', () => {
+  /** Frames run on a microtask-friendly clock: each tick runs every queued frame once. */
+  function ticking() {
+    let queue: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { queue.push(callback); return queue.length })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    return {
+      async tick(times = 1): Promise<void> {
+        for (let i = 0; i < times; i += 1) {
+          const now = queue
+          queue = []
+          for (const frame of now) frame(0)
+          await Promise.resolve()
+          await Promise.resolve()
+        }
+      },
+    }
+  }
+  const addCall = (row: HTMLElement, id: string): HTMLElement => {
+    const call = document.createElement('div')
+    call.setAttribute('data-chat-call-id', id)
+    row.appendChild(call)
+    return call
+  }
+
+  it('waits for a just-opened conversation\'s first rows, then pages, and re-pages when the first page request was a no-op', async () => {
+    // A member session opened from a room's lens: no rows yet; its first
+    // loadThrough resolves while the session's own first page is loading
+    // and pages nothing (throwaway instance, loadThrough(1148) on 443e7c65).
+    const clock = ticking()
+    const port = document.createElement('div')
+    port.setAttribute('data-conversation-scroll', '')
+    document.body.appendChild(port)
+    const pages: number[] = []
+    const loadThrough = vi.fn(async (seq: number) => {
+      pages.push(seq)
+      if (pages.length === 2) {
+        const older = document.createElement('div')
+        older.setAttribute('data-chat-turn', '71')
+        port.prepend(older)
+        addCall(older, 'call_71')
+      }
+    })
+    const landed = locateCallPaging({ callId: 'call_71', startSeq: 1148, fallbackTurn: 71, loadThrough, alive: () => true })
+    await clock.tick(3)
+    expect(loadThrough).not.toHaveBeenCalled()
+    const first = document.createElement('div')
+    first.setAttribute('data-chat-turn', '74')
+    port.appendChild(first)
+    await clock.tick(200)
+    expect(await landed).toBe(true)
+    expect(pages).toEqual([1148, 1148])
+    expect(scrollIntoView.mock.instances.at(-1)).toBe(document.querySelector('[data-chat-call-id="call_71"]'))
+  })
+
+  it('a call already rendered lands at once, without paging', async () => {
+    ticking()
+    const { rows } = conversation([71])
+    const call = addCall(rows.get(71)!, 'call_now')
+    const loadThrough = vi.fn(async () => {})
+    expect(await locateCallPaging({ callId: 'call_now', startSeq: 1, fallbackTurn: 71, loadThrough, alive: () => true })).toBe(true)
+    expect(loadThrough).not.toHaveBeenCalled()
+    expect(scrollIntoView.mock.instances[0]).toBe(call)
+  })
+
+  it('after the page budget it settles for the turn; a superseded jump does nothing', async () => {
+    const clock = ticking()
+    const { rows } = conversation([70, 71])
+    const loadThrough = vi.fn(async () => {})
+    const settled = locateCallPaging({ callId: 'never', startSeq: 9, fallbackTurn: 71, loadThrough, alive: () => true })
+    await clock.tick(400)
+    expect(await settled).toBe(false)
+    expect(loadThrough).toHaveBeenCalledTimes(3)
+    expect(scrollIntoView.mock.instances.at(-1)).toBe(rows.get(71))
+    scrollIntoView.mockClear()
+    let alive = true
+    const gone = locateCallPaging({ callId: 'never', startSeq: 9, fallbackTurn: 71, loadThrough, alive: () => alive })
+    alive = false
+    await clock.tick(400)
+    expect(await gone).toBe(false)
     expect(scrollIntoView).not.toHaveBeenCalled()
   })
 })

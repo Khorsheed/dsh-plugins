@@ -289,3 +289,34 @@ export function duplicateStats(items: readonly SegmentItem[]) {
 export function requestNumberText(request: { requestNumber?: number | undefined } | null | undefined): string {
   return request?.requestNumber === undefined ? '—' : String(request.requestNumber)
 }
+
+/** What a handed-over call carries for picking the member lens's turn and request. */
+export interface LocateSelection {
+  readonly hostTurn?: number
+  readonly request?: { readonly startedAt: number; readonly requestNumber?: number }
+}
+
+/**
+ * The turn a handed-over call opens on: the one holding the request the
+ * reader was on (the last turn started at or before it), else the call's own
+ * host turn. The request decides, because the call's own turn shows a
+ * different (earlier) context than the one the reader was reading.
+ */
+export function turnOfLocate(turns: readonly TurnListItem[], locate: LocateSelection | undefined): number | undefined {
+  if (locate === undefined) return undefined
+  const at = locate.request?.startedAt
+  if (at !== undefined) {
+    const holder = turns.filter(turn => turn.startedAt <= at && (turn.endedAt === undefined || turn.endedAt >= at)).at(-1)
+      ?? turns.filter(turn => turn.startedAt <= at).at(-1)
+    if (holder !== undefined) return holder.turnSeq
+  }
+  return locate.hostTurn === undefined ? undefined : turns.find(turn => turn.hostTurn === locate.hostTurn)?.turnSeq
+}
+
+/** The handed request among a scope's rows: same request number, else same start time. */
+export function requestOfLocate<T extends { readonly seq: number; readonly requestNumber?: number; readonly startedAt: number }>(
+  requests: readonly T[], wanted: { readonly startedAt: number; readonly requestNumber?: number },
+): T | undefined {
+  return (wanted.requestNumber === undefined ? undefined : requests.find(r => r.requestNumber === wanted.requestNumber))
+    ?? requests.find(r => r.startedAt === wanted.startedAt)
+}
