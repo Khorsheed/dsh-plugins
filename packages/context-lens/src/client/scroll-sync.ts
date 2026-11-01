@@ -65,6 +65,71 @@ function landingOf(element: Element): Element | null {
   return null
 }
 
+/** How long a jump keeps checking that it landed (the host's own scroll writes can cut a smooth scroll short). */
+export const LANDING_WATCH_MS = 1_500
+/** How far from the viewport top a landed row may sit. */
+const LANDING_TOLERANCE_PX = 24
+/** Corrections one jump may make. */
+const LANDING_CORRECTIONS = 3
+
+/** The watch of the latest jump; a new jump or the reader's own scroll ends it. */
+let watching: (() => void) | undefined
+
+/**
+ * Jump to a row and make the jump stick. The chat view writes its own scroll
+ * position frame by frame while it folds rows or pages older history in
+ * (ui-chat use-chat-viewport), which can cut a smooth scrollIntoView short —
+ * the jump then lands somewhere in between, sometimes. So the jump watches
+ * for a moment: once the scroll is still, a row that is not at the top (and
+ * could be) is brought there instantly. The row is re-found each check (a
+ * re-render replaces the element); the reader's wheel, touch or keys end it.
+ * @param find - resolves the landing row now.
+ * @param scroller - the conversation scrollport, when mounted.
+ * @param behavior - the first motion.
+ */
+function landOn(find: () => Element | null, scroller: Element | null, behavior: 'smooth' | 'auto'): boolean {
+  const first = find()
+  if (first === null) return false
+  watching?.()
+  first.scrollIntoView({ behavior, block: 'start' })
+  if (scroller === null || typeof requestAnimationFrame !== 'function') return true
+  const started = Date.now()
+  let lastTop = Number.NaN
+  let still = 0
+  let corrections = 0
+  let frame = 0
+  let stopped = false
+  const intents = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
+  const stop = (): void => {
+    stopped = true
+    cancelAnimationFrame(frame)
+    for (const type of intents) scroller.removeEventListener(type, stop, true)
+    if (watching === stop) watching = undefined
+  }
+  for (const type of intents) scroller.addEventListener(type, stop, true)
+  watching = stop
+  const check = (): void => {
+    if (stopped) return
+    if (Date.now() - started > LANDING_WATCH_MS) { stop(); return }
+    const top = scroller.scrollTop
+    still = top === lastTop ? still + 1 : 0
+    lastTop = top
+    if (still >= 4) {
+      const row = find()
+      if (row === null) { stop(); return }
+      const offset = row.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+      const atFloor = scroller.scrollTop >= scroller.scrollHeight - scroller.clientHeight - 1
+      if (Math.abs(offset) <= LANDING_TOLERANCE_PX || (offset > 0 && atFloor) || corrections >= LANDING_CORRECTIONS) { stop(); return }
+      corrections += 1
+      still = 0
+      row.scrollIntoView({ behavior: 'auto', block: 'start' })
+    }
+    frame = requestAnimationFrame(check)
+  }
+  frame = requestAnimationFrame(check)
+  return true
+}
+
 /** The first rendering box of one host turn, in DOM order. */
 function turnLanding(scope: ParentNode, hostTurn: number): Element | null {
   for (const row of scope.querySelectorAll(`[data-chat-turn="${hostTurn}"]:not([hidden]):not([hidden] *)`)) {
@@ -99,21 +164,19 @@ export function scrollConversationToTurn(
   behavior: 'smooth' | 'auto' = preferredScrollBehavior(),
 ): boolean {
   try {
-    const scope: ParentNode = scrollport(root) ?? root
-    const exact = turnLanding(scope, hostTurn)
-    if (exact !== null) {
-      exact.scrollIntoView({ behavior, block: 'start' })
-      return true
-    }
-    for (const row of scope.querySelectorAll(TURN_ROW_ELIGIBLE)) {
-      const value = Number((row as HTMLElement).dataset.chatTurn)
-      const landing = Number.isSafeInteger(value) && value >= hostTurn ? landingOf(row) : null
-      if (landing !== null) {
-        landing.scrollIntoView({ behavior, block: 'start' })
-        return true
+    const port = scrollport(root)
+    const scope: ParentNode = port ?? root
+    const find = (): Element | null => {
+      const exact = turnLanding(scope, hostTurn)
+      if (exact !== null) return exact
+      for (const row of scope.querySelectorAll(TURN_ROW_ELIGIBLE)) {
+        const value = Number((row as HTMLElement).dataset.chatTurn)
+        const landing = Number.isSafeInteger(value) && value >= hostTurn ? landingOf(row) : null
+        if (landing !== null) return landing
       }
+      return null
     }
-    return false
+    return landOn(find, port, behavior)
   } catch {
     return false
   }
@@ -136,16 +199,17 @@ export function scrollConversationToMessage(
   behavior: 'smooth' | 'auto' = preferredScrollBehavior(),
 ): boolean {
   try {
-    const scope: ParentNode = scrollport(root) ?? root
+    const port = scrollport(root)
+    const scope: ParentNode = port ?? root
     const id = messageId.replace(/["\\]/g, '')
-    for (const row of scope.querySelectorAll(`[data-chat-node-key$="${id}"]:not([hidden]):not([hidden] *)`)) {
-      const landing = landingOf(row)
-      if (landing !== null) {
-        landing.scrollIntoView({ behavior, block: 'start' })
-        return true
+    const find = (): Element | null => {
+      for (const row of scope.querySelectorAll(`[data-chat-node-key$="${id}"]:not([hidden]):not([hidden] *)`)) {
+        const landing = landingOf(row)
+        if (landing !== null) return landing
       }
+      return null
     }
-    return false
+    return landOn(find, port, behavior)
   } catch {
     return false
   }
