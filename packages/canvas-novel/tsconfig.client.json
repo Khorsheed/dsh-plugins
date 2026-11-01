@@ -29,6 +29,7 @@
     "src/client/TimelineView.tsx",
     "src/client/IdeasView.tsx",
     "src/client/CodexView.tsx",
+    "src/client/OnePage.tsx",
     "src/client/ChapterReader.tsx",
     "src/client/ChapterBook.tsx",
     "src/client/CardSection.tsx",

@@ -25,6 +25,7 @@ import { PlanBlock } from '../src/client/PlanBlock.tsx'
 import { StoryLogPage } from '../src/client/StoryLogPage.tsx'
 import { TimelineView } from '../src/client/TimelineView.tsx'
 import { IdeasView } from '../src/client/IdeasView.tsx'
+import { CodexView, settingParts } from '../src/client/CodexView.tsx'
 import { emptyOutline, NOVEL_GENRE_ID, type ChapterPlan, type ChapterRecord, type EffectiveChapterPhase, type NovelTimelineResult, type PendingView, type StoryLogResult } from '../src/types.ts'
 
 afterEach(() => {
@@ -756,5 +757,33 @@ describe('the timeline, ideas, candidates and editing (2026-11-01)', () => {
     fireEvent.change(screen.getByRole('textbox', { name: zh['ideas.new'] }), { target: { value: '一句对白' } })
     fireEvent.click(screen.getByRole('button', { name: zh['ideas.save'] }))
     await waitFor(() => { expect(remote.changeIdea).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, add: '一句对白' }) })
+  })
+})
+
+describe('设定 (2026-11-02 改版稿)', () => {
+  it('reads a setting\'s 「键：值」 lines as rows, 未决 as its own list and 状态 apart', () => {
+    const parts = settingParts('状态：暂定，待压力测试。\n在线：会传播。\n离线：不传播。\n未决：起源、主体性。\n一段没有键的说明。')
+    expect(parts.status).toBe('暂定，待压力测试。')
+    expect(parts.rows).toEqual([{ key: '在线', text: '会传播。' }, { key: '离线', text: '不传播。' }, { text: '一段没有键的说明。' }])
+    expect(parts.open).toEqual(['起源', '主体性'])
+  })
+
+  it('总览 lists people with their intent, and 「待定」 opens 世界观 on the settings still open', async () => {
+    const remote = fakeRemote({ items: [] })
+    remote.codex = vi.fn(() => ok({
+      ok: true, current: 2,
+      settings: [
+        { cardId: 'w1', ref: 'w1', name: '梦境规则（工作稿）', sort: 'system', text: '在线：会传播。', unsettled: true, parents: [], base: [], chapters: [] },
+        { cardId: 'w2', ref: 'w2', name: '监护所', sort: 'place', text: '旧楼。', unsettled: false, parents: [], base: [], chapters: [1] },
+      ],
+      characters: [{ cardId: 'c1', name: '赵启明', factions: [], homes: [], intent: '找到门缝', beliefs: [], secrets: [], chapters: [1] }],
+      relations: [], foreshadows: [], principles: [],
+    })) as never
+    render(<CodexView {...props(remote)} />)
+    expect(await screen.findByText('找到门缝')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /1 条还在待定/ }))
+    expect(await screen.findByRole('button', { name: '待定 1' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: '梦境规则' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '监护所' })).toBeNull()
   })
 })
