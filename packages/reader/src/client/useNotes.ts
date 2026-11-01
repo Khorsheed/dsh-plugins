@@ -17,6 +17,8 @@ import type { ReaderEntry } from './parse-rss.ts'
 import type { BuiltArticle, TranslationView } from './translate.ts'
 import { translationHash } from './translate.ts'
 import { mergedDraft } from './quote.ts'
+import { subscribeWrites } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { READER_KIND } from './definition.tsx'
 import {
   discussionCardText, lastCanvas, noteCardText, rememberCanvas, sourceOf,
   type SyncCanvas, type SyncKind, type SyncWords,
@@ -36,11 +38,11 @@ const FLASH_MS = 1400
 const HINT_MS = 2600
 
 /**
- * How often the notes face re-reads the host while it shows: the model writes
- * conclusions from the conversation, and they should appear without a reload
- * (the canvas board's 4-second precedent).
+ * The slow fallback re-read of an open notes face. A note the conversation
+ * writes re-reads at once (the destination follower's write signal); this only
+ * catches what the session on screen does not show (another tab or device).
  */
-const NOTES_POLL_MS = 5000
+const NOTES_FALLBACK_MS = 30_000
 
 /** What is being synced to a canvas: some notes, or one discussion note. */
 export type SyncTarget =
@@ -197,14 +199,19 @@ export function useNotes(input: UseNotesInput): NotesFace {
     setMissing(current => sameSet(current, lost) ? current : lost)
   }, [notes, articleHtml, paintKey, translateView, tab, articleRef, builtRef])
 
-  // While the notes face shows, follow what the conversation writes into it.
+  // While the notes face shows, follow what the conversation writes into it:
+  // a reader write for this article re-reads at once; a slow re-read while the
+  // page is in view catches the rest.
   useEffect(() => {
     if (tab !== 'notes' || entryId === undefined) return
     void reload(entryId)
+    const stop = subscribeWrites(READER_KIND, destination => {
+      if (destination.params['entryId'] === entryId) void reload(entryId)
+    })
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') void reload(entryId)
-    }, NOTES_POLL_MS)
-    return () => { clearInterval(timer) }
+    }, NOTES_FALLBACK_MS)
+    return () => { stop(); clearInterval(timer) }
   }, [tab, entryId, reload])
 
   // Nothing stays painted once the pane is gone.

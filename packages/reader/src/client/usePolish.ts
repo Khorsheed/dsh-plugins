@@ -20,9 +20,16 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObjec
 import type { ReaderPolishView } from '../types.ts'
 import type { ReaderPaneProps } from './contract.ts'
 import { blockElements } from './notes.ts'
+import { subscribeWrites } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { READER_KIND } from './definition.tsx'
 
-/** How often an article being polished is re-read (ms). */
-const POLL_MS = 5000
+/**
+ * The slow fallback re-read of an article being polished (ms). Each batch the
+ * agent writes (`reader_translate`) re-reads at once through the destination
+ * follower's write signal; this only catches what the session on screen does
+ * not show.
+ */
+const FALLBACK_MS = 30_000
 /** After the reader sends the request, poll this long for the first batch (ms). */
 const AWAIT_FIRST_MS = 20 * 60_000
 /** A layer untouched this long, and not complete, has stalled (ms). */
@@ -85,14 +92,18 @@ export function usePolish(input: UsePolishInput): PolishFace {
     if (entryId !== undefined && articleHtml !== null && articleHtml !== '') read(entryId)
   }, [entryId, articleHtml, read])
 
-  // Poll while the agent is (or may soon be) writing.
+  // Follow the agent's batches for this article while it is (or may soon be)
+  // writing: at once on the write signal, slowly as a fallback.
   const now = Date.now()
   const fresh = view !== undefined && !view.complete && now - Date.parse(view.updatedAt) < STALLED_MS
   const awaiting = awaitingSince !== null && now - awaitingSince < AWAIT_FIRST_MS && (view === undefined || !view.complete)
   useEffect(() => {
     if (entryId === undefined || (!fresh && !awaiting)) return undefined
-    const timer = setInterval(() => { read(entryId) }, POLL_MS)
-    return () => { clearInterval(timer) }
+    const stop = subscribeWrites(READER_KIND, destination => {
+      if (destination.params['entryId'] === entryId) read(entryId)
+    })
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') read(entryId) }, FALLBACK_MS)
+    return () => { stop(); clearInterval(timer) }
   }, [entryId, fresh, awaiting, read])
 
   const sources = useMemo(() => (articleHtml === null ? [] : originals(articleHtml)), [articleHtml])
