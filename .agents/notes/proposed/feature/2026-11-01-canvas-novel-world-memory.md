@@ -95,7 +95,8 @@ The run happens once, in the conversation, and ends with a 整理结果 the pers
    - Link fields are `ref` fields whose `refKind` names a category role: `parent` on every shelf, `base` on 势力, `faction` / `home` on 人物. The canvas now matches a ref field's `refKind` against a category's id or its role (`refResolverOf`, the field picker). Writes resolve links by ref or name, and an unresolved link is dropped and reported.
    - `canvas_read` lines and card details show the shelf, 属于 and the backlinks (下属 / 以此为据点 / 相关人物). The card page gains a 关联 block from the `card` Remote's `links`, with chips that open the card or the chapter.
    - 整理设定 is `novel_write(what=organize)`. `phase=preview` stores `organize.json` with the default moves (old 世界 cards by 类型) plus the agent's moves and new entries, and answers the 整理结果. `phase=apply` needs a later user message (the plan-confirm guard). It first triggers the canvas genre catch-up, then creates entries, refiles cards with their fields carried over, sets parents, and switches off an emptied old 世界 category.
-   - Still to do in batch 2: the 设定 · 总览 page and the place tree. The board still lists categories as the canvas draws them.
+   - The lead face 规划 now reads 总览. Under the one-page outline it draws the world map from the `worldMap` Remote: four shelves as trees, a setting nested under the 属于 on its own shelf, 待定 on unsettled ones, names that open their cards, and the 写作原则 folded. A book with old 世界 cards gets one line whose button sends the 整理设定 request as the person's message.
+   - Still to do: moving the volumes into 章节 and the one-page outline into 设定 (the 总览 face carries both for now). The 设定 face itself still lists categories as the canvas draws them.
 3. Timeline, future events, tension, the recall tool, and the five-part character memory.
 4. In-place chapter editing and the 灵感 tab.
 

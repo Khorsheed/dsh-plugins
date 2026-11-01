@@ -127,3 +127,21 @@ describe('the card page reads a setting\'s links both ways', () => {
     expect(Object.fromEntries((zhao.links ?? []).map(group => [group.kind, group.items.map(item => item.name)]))).toEqual({ faction: ['睡眠公司'], home: ['山脚小镇'] })
   })
 })
+
+describe('the 总览 world map', () => {
+  it('nests a place under the place it belongs to, flags 待定, and counts old 世界 cards left to organize', async () => {
+    const { ctx, agent } = bench(true)
+    const session = sessionAt({ value: 1 })
+    await agent.writeCard({ canvasId: DREAM.workId, kind: '地点', fields: { name: '山海梦域', rule: '神话梦域' } }, session)
+    await agent.writeCard({ canvasId: DREAM.workId, kind: '地点', fields: { name: '山脚小镇', rule: '状态：暂定', parent: '山海梦域' } }, session)
+    const { NovelRemoteService } = await import('../src/remote.ts')
+    const map = await new NovelRemoteService(ctx).worldMap({ canvasId: DREAM.workId })
+    const place = map.shelves?.find(shelf => shelf.sort === 'place')
+    expect(place?.count).toBe(2)
+    expect(place?.nodes.map(node => node.name)).toEqual(['山海梦域'])
+    expect(place?.nodes[0]?.children[0]).toMatchObject({ name: '山脚小镇', unsettled: true })
+    // The seed's old 世界 cards are still in the 世界 category.
+    expect(map.unorganized).toBeGreaterThan(0)
+    expect(map.principles?.length).toBeGreaterThan(0)
+  })
+})

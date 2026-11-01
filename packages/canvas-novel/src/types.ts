@@ -1706,6 +1706,25 @@ export interface NovelCardResult {
   readonly links?: readonly CardLinkGroup[]
 }
 
+/** One setting on the 总览 world map, with what sits under it on the same shelf. */
+export interface WorldNode {
+  readonly cardId: string
+  readonly name: string
+  /** Its text says it is still being worked out (工作稿 / 待定 / 未决 / 暂定 / 待调整). */
+  readonly unsettled: boolean
+  readonly children: readonly WorldNode[]
+}
+
+/** The 总览 world map: the four shelves as trees, the writing principles, the old 世界 cards still to organize. */
+export interface NovelWorldMapResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly shelves?: readonly { readonly sort: 'system' | 'place' | 'faction' | 'item'; readonly count: number; readonly nodes: readonly WorldNode[] }[]
+  readonly principles?: readonly { readonly cardId: string; readonly text: string }[]
+  /** Live cards still in the old 世界 category (a board from before novel@5). */
+  readonly unorganized?: number
+}
+
 /** One group of a card's links: what they are to it, and the cards (or chapters) in it. */
 export interface CardLinkGroup {
   readonly kind: 'parent' | 'base' | 'faction' | 'home' | 'children' | 'based' | 'people' | 'chapters'

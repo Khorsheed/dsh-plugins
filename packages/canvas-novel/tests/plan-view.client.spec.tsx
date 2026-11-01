@@ -13,7 +13,7 @@ import { zh } from '../src/client/locales.ts'
 import { FaceLabel } from '../src/client/NovelFaces.tsx'
 import { PlanBlock } from '../src/client/PlanBlock.tsx'
 import { PlanView } from '../src/client/PlanView.tsx'
-import { emptyOutline, NOVEL_GENRE_ID, type ChapterRecord, type NovelOutlineResult, type OutlineDoc } from '../src/types.ts'
+import { emptyOutline, NOVEL_GENRE_ID, type ChapterRecord, type NovelOutlineResult, type NovelWorldMapResult, type OutlineDoc } from '../src/types.ts'
 
 afterEach(cleanup)
 
@@ -68,9 +68,10 @@ function outlineResult(outline: OutlineDoc, extra: Partial<NovelOutlineResult> =
   }
 }
 
-function surface(result: NovelOutlineResult) {
+function surface(result: NovelOutlineResult, world: NovelWorldMapResult = { ok: true, shelves: [], principles: [], unorganized: 0 }) {
   const remote = {
     outline: vi.fn(() => ok(result)),
+    worldMap: vi.fn(() => ok(world)),
     decideOutline: vi.fn(() => ok({ ok: true })),
   } as unknown as NovelRemote & { outline: ReturnType<typeof vi.fn>; decideOutline: ReturnType<typeof vi.fn> }
   const navigate = { openCard: vi.fn(), openPage: vi.fn(), openManuscripts: vi.fn(), refresh: vi.fn() }
@@ -87,10 +88,36 @@ function surface(result: NovelOutlineResult) {
 }
 
 describe('PlanView', () => {
-  it('labels the lead face 规划', () => {
+  it('labels the lead face 总览', () => {
     const { props } = surface(outlineResult(ADOPTED))
     render(<>{FaceLabel({ ...props, face: 'plan', label: 'x' })}</>)
-    expect(screen.getByText('规划')).toBeTruthy()
+    expect(screen.getByText('总览')).toBeTruthy()
+  })
+
+  it('draws the world map: shelves as trees, 待定 marked, names open cards, and offers 整理设定 as a message', async () => {
+    const world: NovelWorldMapResult = {
+      ok: true,
+      shelves: [
+        { sort: 'system', count: 2, nodes: [{ cardId: 'c_naming', name: '命名', unsettled: false, children: [{ cardId: 'c_upkeep', name: '命名维护', unsettled: true, children: [] }] }] },
+        { sort: 'place', count: 1, nodes: [{ cardId: 'c_shan', name: '山海梦域', unsettled: false, children: [] }] },
+        { sort: 'faction', count: 0, nodes: [] },
+        { sort: 'item', count: 0, nodes: [] },
+      ],
+      principles: [{ cardId: 'c_p', text: '首次出现的专名要依附动作' }],
+      unorganized: 3,
+    }
+    const { props, navigate } = surface(outlineResult(ADOPTED), world)
+    const send = vi.fn(() => 'sent' as const)
+    render(<PlanView {...props} sendToConversation={send} />)
+    await screen.findByText(zh['world.heading'])
+    expect(screen.getByText('命名维护')).toBeTruthy()
+    expect(screen.getByText(zh['world.unsettled'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '山海梦域' }))
+    expect(navigate.openCard).toHaveBeenCalledWith('c_shan', '山海梦域')
+    expect(screen.getByText('还有 3 张旧「世界」卡没整理到新分类里。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['world.organize'] }))
+    expect(send).toHaveBeenCalledWith(SESSION, zh['world.organizeAsk'])
+    expect(screen.getByText('写作原则 · 1 条')).toBeTruthy()
   })
 
   it('invites the first outline when there is none', async () => {
