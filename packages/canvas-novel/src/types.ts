@@ -46,6 +46,9 @@ export const NOVEL_STORY_FACE = 'story'
 /** The genre's lead face (规划: the one-page outline and the volume roadmap), as `faces.lead` names it. */
 export const NOVEL_PLAN_FACE = 'plan'
 
+/** The 灵感 face's key (the genre's last face, 2026-11-01). */
+export const NOVEL_IDEAS_FACE = 'ideas'
+
 /** A canvas id from untrusted input (the canvas's own id rule), or undefined. */
 export function normalizeWorkId(id: unknown): string | undefined {
   return typeof id === 'string' && /^canvas_[a-z0-9]{8,40}$/.test(id) ? id : undefined
@@ -548,6 +551,8 @@ export interface ChapterRecord {
   readonly wordCount?: number
   /** The fingerprint ({@link bodyFingerprint}) of the body the last 对账 read; a different body now reads 待对账. */
   readonly bodyHash?: string
+  /** Characters the person changed since the last 对账 while it stayed 已对账 (an edit under 5%). */
+  readonly editedAfterExtract?: number
   /** When the last 对账 of this chapter landed (the 最近更新 scope reads the newest). */
   readonly extractedAt?: string
   /** The cards the last 对账 of this chapter created (a foreshadow keeps no change history to read them from). */
@@ -743,6 +748,7 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
     : undefined
   const delivery = normalizeDelivery(record['delivery'])
   const bodyHash = cleanText(record['bodyHash'], 40)
+  const editedAfterExtract = typeof record['editedAfterExtract'] === 'number' && record['editedAfterExtract'] > 0 ? Math.round(record['editedAfterExtract']) : undefined
   const settings = cleanStringList(record['settings'], 200)
   const newCards = cleanStringList(record['newCards'], 200)
   const volume = cleanText(record['volume'], 40)
@@ -762,6 +768,7 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
     ...(recap === undefined ? {} : { recap }),
     ...(wordCount === undefined ? {} : { wordCount }),
     ...(bodyHash === undefined ? {} : { bodyHash }),
+    ...(editedAfterExtract === undefined ? {} : { editedAfterExtract }),
     ...(settings.length === 0 ? {} : { settings }),
     ...(newCards.length === 0 ? {} : { newCards }),
     sessionIds: cleanStringList(record['sessionIds'], 40),
@@ -1350,6 +1357,8 @@ export interface WriteChapterRequest {
    * already in the workspace must never overwrite it.
    */
   readonly replace?: boolean
+  /** The person wrote this on the chapter page: their own text needs no plan confirmation. */
+  readonly byPerson?: boolean
 }
 
 /** The subagent's world-rule row (strict JSON, tolerant reads): 世界 by default, 原则 for a writing principle. */
@@ -1682,6 +1691,101 @@ export interface NovelChapterResult {
   readonly targetWords?: number
   /** The plan as editable lines (cards by ref and name), what the page's edit box starts from. */
   readonly planText?: string
+  /** The body's fingerprint as read: the edit box sends it back, so a file that moved meanwhile is not overwritten. */
+  readonly bodyHash?: string
+}
+
+/** The timeline face's read (2026-11-01). */
+export interface NovelTimelineResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  /** The chapter the candidates are for (the next one). */
+  readonly chapter?: number
+  /** Happened and failed events, in story time (backstory first). */
+  readonly past?: readonly TimelineEventView[]
+  /** Every event to come, with its tension. */
+  readonly future?: readonly TimelineFutureView[]
+  /** Display names of the cards the events name. */
+  readonly names?: Readonly<Record<string, string>>
+  /** The person's pins for that chapter. */
+  readonly pins?: { readonly prefer: readonly string[]; readonly block: readonly string[] }
+  /** The candidates recall hands the planner for that chapter (ids, in order). */
+  readonly candidates?: readonly string[]
+}
+
+/** One event as the timeline face reads it. */
+export interface TimelineEventView {
+  readonly id: string
+  readonly title: string
+  readonly when?: string
+  readonly status: 'happened' | 'planned' | 'preset' | 'hidden' | 'failed'
+  readonly source?: string
+  readonly who?: readonly string[]
+  readonly places?: readonly string[]
+  readonly chapters?: readonly number[]
+  readonly window?: string
+  readonly causes?: readonly string[]
+  readonly pre?: readonly { readonly text: string; readonly met?: number }[]
+  readonly valueWhy?: string
+  readonly foreshadowId?: string
+  /** Ideas bound to it, not yet written in. */
+  readonly ideas: number
+}
+
+/** One event to come, with its tension. */
+export interface TimelineFutureView extends TimelineEventView {
+  readonly tier: 'sat' | 'hold' | 'near' | 'backlog' | 'ready'
+  readonly reason: string
+  readonly tension: number
+  readonly V: number
+  readonly E: number
+  readonly D?: number
+  readonly Z: number
+  readonly S: number
+}
+
+/** The person's pins on the next chapter's recall. */
+export interface NovelPinsRequest extends NovelWorkRequest {
+  readonly chapter: number
+  readonly prefer: readonly string[]
+  readonly block: readonly string[]
+}
+
+/** The 灵感 face's read. */
+export interface NovelIdeasResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly ideas?: readonly { readonly id: string; readonly text: string; readonly createdAt: string; readonly eventId?: string; readonly writtenIn?: number }[]
+  /** Every event an idea may be bound to, by id: title, tier (future ones), the people and places it names. */
+  readonly events?: readonly { readonly id: string; readonly title: string; readonly tier?: string; readonly mentions: readonly string[] }[]
+}
+
+/** One change to the ideas. */
+export interface NovelIdeaRequest extends NovelWorkRequest {
+  readonly add?: string
+  readonly id?: string
+  readonly delete?: boolean
+  readonly eventId?: string | null
+}
+
+/** The person's edit of a chapter's text. */
+export interface NovelBodyEditRequest extends NovelChapterRequest {
+  readonly text: string
+  readonly baseHash?: string
+}
+
+/** What the person's edit did. */
+export interface NovelBodyEditResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly changed?: number
+  /** It stayed 已对账 (under 5%). */
+  readonly kept?: boolean
+}
+
+/** A new chapter the person writes themselves. */
+export interface NovelOwnChapterRequest extends NovelWorkRequest {
+  readonly title: string
 }
 
 /** The person's own edit of a chapter plan: the lines of the page's edit box. */
@@ -1730,6 +1834,8 @@ export interface NovelCardResult {
    * chapters whose 对账 used it (出现在). Empty groups are left out.
    */
   readonly links?: readonly CardLinkGroup[]
+  /** Characters: what they intend now, and what they came to believe (newest last). */
+  readonly mind?: { readonly intent?: string; readonly beliefs: readonly { readonly text: string; readonly source?: string; readonly from?: string; readonly chapter: number }[] }
 }
 
 /** One setting on the 总览 world map, with what sits under it on the same shelf. */

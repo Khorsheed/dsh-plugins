@@ -44,7 +44,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the generated Remote API and ctx.remote merge.
 import type {} from '@khorsheed/dsh-canvas-novel/remote'
 import novelRemote from '@khorsheed/dsh-canvas-novel/remote'
-import { NOVEL_GENRE_ID, NOVEL_PLAN_FACE, NOVEL_STORY_FACE } from '../types.ts'
+import { NOVEL_GENRE_ID, NOVEL_IDEAS_FACE, NOVEL_PLAN_FACE, NOVEL_STORY_FACE } from '../types.ts'
+import { IdeasView } from './IdeasView.tsx'
+import { TimelineView } from './TimelineView.tsx'
 import { CardSection } from './CardSection.tsx'
 import { ChapterBook } from './ChapterBook.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -52,7 +54,7 @@ import { STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
 import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel } from './NovelFaces.tsx'
 import { PlanView } from './PlanView.tsx'
-import { StoryLogPage, StoryView } from './StoryLogPage.tsx'
+import { StoryLogPage } from './StoryLogPage.tsx'
 import {
   notifyWritten, registerDestinationCards, updateCards, type Destination,
 } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
@@ -199,7 +201,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     register: (options: Record<string, unknown>, component: unknown) => () => void
   }
   const genreKey = (name: string): string => `${NOVEL_GENRE_ID}:${name}`
-  for (const name of [NOVEL_PLAN_FACE, 'manuscripts', 'board', NOVEL_STORY_FACE]) {
+  for (const name of [NOVEL_PLAN_FACE, 'manuscripts', 'board', NOVEL_STORY_FACE, NOVEL_IDEAS_FACE]) {
     ctx.effect(() => seats.inject('canvas.board.tab', () => seats.register({
       name: 'canvas.board.tab',
       key: genreKey(name),
@@ -218,7 +220,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     key: genreKey(NOVEL_STORY_FACE),
     locale: NS,
     inject: () => face,
-  }, StoryView)), 'canvas-novel: story face')
+  }, TimelineView)), 'canvas-novel: timeline face')
+  ctx.effect(() => seats.inject('canvas.board.view', () => seats.register({
+    name: 'canvas.board.view',
+    key: genreKey(NOVEL_IDEAS_FACE),
+    locale: NS,
+    inject: () => face,
+  }, IdeasView)), 'canvas-novel: ideas face')
   ctx.effect(() => seats.inject('canvas.board.view', () => seats.register({
     name: 'canvas.board.view',
     key: genreKey(NOVEL_PLAN_FACE),

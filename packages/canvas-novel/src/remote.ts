@@ -23,11 +23,14 @@ import {
 } from './gestures.ts'
 import type { NovelService, WorkEntries } from './store.ts'
 import { planToText } from './text-forms.ts'
+import { bodyFingerprint } from './types.ts'
+import { isFuture, recall, tensionOf, tierReason, type StoryEvent } from './timeline.ts'
 import {
   coreSuspenseNudge, revealText, revealVolume, targetWordsOf,
   type CardLinkGroup, type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
   type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelPlanEditRequest, type NovelRecentResult, type NovelPlanEditResult, type NovelStarRequest, type NovelStateRequest,
-  type NovelWorkRequest, type NovelWorldMapResult, type OutlineCore, type WorldNode, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
+  type NovelWorkRequest, type NovelWorldMapResult, type NovelTimelineResult, type TimelineEventView, type TimelineFutureView,
+  type NovelPinsRequest, type NovelIdeasResult, type NovelIdeaRequest, type NovelBodyEditRequest, type NovelBodyEditResult, type NovelOwnChapterRequest, type OutlineCore, type WorldNode, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -150,6 +153,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
       ...(plan === undefined ? {} : { planText: planToText(plan, handleOf) }),
       ...(read.phase === undefined ? {} : { phase: read.phase }),
       body: read.body ?? '',
+      ...(bodyFingerprint(read.body ?? '') === undefined ? {} : { bodyHash: bodyFingerprint(read.body ?? '')! }),
       pending: items.filter(item => item.chapter === request.n).length,
       names,
       ...(meta === undefined ? {} : { file: `${meta.title}/${read.chapter.file}` }),
@@ -253,10 +257,17 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     const appearances = character === undefined ? undefined
       : (await this.core.storyLog({ workId: request.canvasId })).characters.find(row => row.cardId === request.cardId)?.appearances
     const links = role === 'world' || role === 'character' ? await this.linksOf(entries, request.canvasId, request.cardId, role) : []
+    const minds = character === undefined ? [] : await this.core.listMinds({ workId: request.canvasId, characterId: request.cardId })
+    const intent = minds.filter(row => row.kind === 'intent').at(-1)?.text
+    const beliefs = minds.filter(row => row.kind === 'belief').slice(-8).map(row => ({
+      text: row.text, chapter: row.chapter, ...(row.source === undefined ? {} : { source: row.source }),
+      ...(row.from === undefined ? {} : { from: entries.characters.find(view => view.cardId === row.from)?.name ?? row.from }),
+    }))
     return {
       ok: true,
       role,
       ...(links.length === 0 ? {} : { links }),
+      ...(intent === undefined && beliefs.length === 0 ? {} : { mind: { ...(intent === undefined ? {} : { intent }), beliefs } }),
       ...(foreshadow === undefined ? {} : {
         starred: foreshadow.starred,
         starredCount: entries.foreshadows.filter(view => view.starred).length,
@@ -324,6 +335,96 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     })
     const principles = live.filter(view => view.role === 'principle').map(view => ({ cardId: view.cardId, text: view.text }))
     return { ok: true, shelves, principles, unorganized }
+  }
+
+  /**
+   * The 时间轴 face: what has happened in story time, everything to come with
+   * its tension and tier, the next chapter's recall and the person's pins.
+   */
+  @Remote('timeline')
+  async timeline(request: NovelWorkRequest): Promise<NovelTimelineResult> {
+    const entries = await this.core.readEntries(request.canvasId)
+    if (entries === undefined) return { ok: false, error: 'missing' }
+    const { events, current, doc } = await this.core.allEvents(request.canvasId)
+    const ideas = await this.core.readIdeas(request.canvasId)
+    const names: Record<string, string> = {}
+    for (const view of entries.characters) names[view.cardId] = view.name
+    for (const view of entries.rules) names[view.cardId] = view.name ?? view.ref
+    const viewOf = (event: StoryEvent): TimelineEventView => ({
+      id: event.id, title: event.title, status: event.status,
+      ...(event.when === undefined ? {} : { when: event.when }),
+      ...(event.source === undefined ? {} : { source: event.source }),
+      ...(event.who === undefined ? {} : { who: event.who }),
+      ...(event.places === undefined ? {} : { places: event.places }),
+      ...(event.chapters === undefined ? {} : { chapters: event.chapters }),
+      ...(event.window === undefined ? {} : { window: event.window }),
+      ...(event.causes === undefined ? {} : { causes: event.causes }),
+      ...(event.pre === undefined ? {} : { pre: event.pre }),
+      ...(event.valueWhy === undefined ? {} : { valueWhy: event.valueWhy }),
+      ...(event.foreshadowId === undefined ? {} : { foreshadowId: event.foreshadowId }),
+      ideas: ideas.ideas.filter(idea => idea.eventId === event.id && idea.writtenIn === undefined).length,
+    })
+    const chapter = current + 1
+    const past = events.filter(event => (event.status === 'happened' || event.status === 'failed') && event.foreshadowId === undefined).sort((a, b) => a.order - b.order).map(viewOf)
+    const future = events.filter(isFuture).map((event): TimelineFutureView => {
+      const parts = tensionOf(event, current)
+      return { ...viewOf(event), tier: parts.tier, reason: tierReason(event, parts), tension: parts.tension, V: parts.V, E: parts.E, ...(parts.D === undefined ? {} : { D: parts.D }), Z: parts.Z, S: parts.S }
+    })
+    const pins = doc.pins?.chapter === chapter ? doc.pins : undefined
+    const hero = (await this.core.readOutline(request.canvasId)).sheet.protagonist
+    const candidates = recall(events, current, { ...(pins === undefined ? {} : { prefer: pins.prefer, block: pins.block }), ...(hero === undefined ? {} : { pov: hero }) }).map(row => row.event.id)
+    return { ok: true, chapter, past, future, names, candidates, ...(pins === undefined ? {} : { pins: { prefer: pins.prefer, block: pins.block } }) }
+  }
+
+  /** The person's 优先推进 / 本章屏蔽 on the next chapter's candidates. */
+  @Remote('setRecallPins')
+  async setRecallPins(sessionId: SessionId, request: NovelPinsRequest): Promise<NovelGestureResult> {
+    return this.core.setRecallPins({ workId: request.canvasId, chapter: request.chapter, prefer: request.prefer, block: request.block }, await panelSession(this.ctx, sessionId))
+  }
+
+  /** The 灵感 face: every idea, and the events one may be bound to. */
+  @Remote('ideas')
+  async ideas(request: NovelWorkRequest): Promise<NovelIdeasResult> {
+    const entries = await this.core.readEntries(request.canvasId)
+    if (entries === undefined) return { ok: false, error: 'missing' }
+    const doc = await this.core.readIdeas(request.canvasId)
+    const { events, current } = await this.core.allEvents(request.canvasId)
+    const nameOf = (id: string): string => entries.characters.find(view => view.cardId === id)?.name ?? entries.rules.find(view => view.cardId === id)?.name ?? id
+    return {
+      ok: true,
+      ideas: doc.ideas,
+      events: events.filter(event => isFuture(event) || doc.ideas.some(idea => idea.eventId === event.id)).map(event => ({
+        id: event.id, title: event.title,
+        ...(isFuture(event) ? { tier: tensionOf(event, current).tier } : {}),
+        mentions: [...(event.who ?? []), ...(event.places ?? [])].map(nameOf),
+      })),
+    }
+  }
+
+  /** One change to the ideas: add, delete, bind or unbind. */
+  @Remote('changeIdea')
+  async changeIdea(sessionId: SessionId, request: NovelIdeaRequest): Promise<NovelGestureResult> {
+    const outcome = await this.core.changeIdea({
+      workId: request.canvasId,
+      ...(request.add === undefined ? {} : { add: request.add }),
+      ...(request.id === undefined ? {} : { id: request.id }),
+      ...(request.delete === true ? { delete: true } : {}),
+      ...(request.eventId === undefined ? {} : { eventId: request.eventId }),
+    }, await panelSession(this.ctx, sessionId))
+    return outcome.ok ? { ok: true } : { ok: false, ...(outcome.error === undefined ? {} : { error: outcome.error }) }
+  }
+
+  /** The person's own edit of a chapter's text. */
+  @Remote('editChapterBody')
+  async editChapterBody(sessionId: SessionId, request: NovelBodyEditRequest): Promise<NovelBodyEditResult> {
+    return this.core.editChapterBody({ workId: request.canvasId, n: request.n, text: request.text, ...(request.baseHash === undefined ? {} : { baseHash: request.baseHash }) }, await panelSession(this.ctx, sessionId))
+  }
+
+  /** A new chapter the person writes themselves (用户原稿: no plan, no confirmation). */
+  @Remote('newOwnChapter')
+  async newOwnChapter(sessionId: SessionId, request: NovelOwnChapterRequest): Promise<NovelGestureResult & { readonly n?: number }> {
+    const outcome = await this.core.writeChapter({ workId: request.canvasId, title: request.title, byUser: true, content: '' }, await panelSession(this.ctx, sessionId))
+    return outcome.ok ? { ok: true, ...(outcome.chapter === undefined ? {} : { n: outcome.chapter.n }) } : { ok: false, ...(outcome.error === undefined ? {} : { error: outcome.error }) }
   }
 
   /** The person's ★ on a foreshadow. */

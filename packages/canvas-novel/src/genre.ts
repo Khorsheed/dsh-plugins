@@ -10,7 +10,7 @@
  *
  * @module @khorsheed/dsh-canvas-novel
  */
-import { NOVEL_GENRE_ID, NOVEL_PLAN_FACE, NOVEL_STORY_FACE, RELATION_TYPES } from './types.ts'
+import { NOVEL_GENRE_ID, NOVEL_IDEAS_FACE, NOVEL_PLAN_FACE, NOVEL_STORY_FACE, RELATION_TYPES } from './types.ts'
 
 /** One field of a seeded category's card type (the canvas `FieldDef` shape). */
 interface GenreField {
@@ -53,7 +53,7 @@ export interface NovelGenreDefinition {
    * face (keyed `novel:plan`), the book, the cards, and the story log as the
    * genre's own face (keyed `novel:story`).
    */
-  readonly faces: { readonly view: string; readonly lead: string }
+  readonly faces: { readonly view: string; readonly lead: string; readonly extra?: string }
   /** canvas_read / canvas_write hand the role categories and the chapters to the engine. */
   readonly agent?: NovelGenreAgent
 }
@@ -256,7 +256,7 @@ export const NOVEL_GENRE: NovelGenreDefinition = {
   description: '人物、世界观（体系、地点、势力、物种与道具）、伏笔、关系与写作原则做成卡片；章节正文是工作区里的 md 文件，写完一章对一次账。',
   agentRow: NOVEL_AGENT_ROW,
   ownsManuscripts: true,
-  faces: { view: NOVEL_STORY_FACE, lead: NOVEL_PLAN_FACE },
+  faces: { view: NOVEL_STORY_FACE, lead: NOVEL_PLAN_FACE, extra: NOVEL_IDEAS_FACE },
   categories: [
     {
       role: NOVEL_ROLES.character,

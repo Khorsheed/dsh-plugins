@@ -12,7 +12,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
-  LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelWorldMapResult, NovelPendingResult, NovelPlanEditRequest, NovelRecentResult, NovelPlanEditResult, NovelStarRequest, NovelStateRequest,
+  LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelWorldMapResult, NovelTimelineResult, NovelPinsRequest, NovelIdeasResult, NovelIdeaRequest, NovelBodyEditRequest, NovelBodyEditResult, NovelOwnChapterRequest, NovelPendingResult, NovelPlanEditRequest, NovelRecentResult, NovelPlanEditResult, NovelStarRequest, NovelStateRequest,
   NovelWorkRequest, StoryLogResult,
 } from '../types.ts'
 import type {} from './locales.ts'
@@ -75,6 +75,12 @@ export interface NovelRemote {
   setCurrentState: (sessionId: SessionId, request: NovelStateRequest) => Promise<RemoteResult<NovelGestureResult>>
   outline: (request: NovelWorkRequest) => Promise<RemoteResult<NovelOutlineResult>>
   worldMap: (request: NovelWorkRequest) => Promise<RemoteResult<NovelWorldMapResult>>
+  timeline: (request: NovelWorkRequest) => Promise<RemoteResult<NovelTimelineResult>>
+  setRecallPins: (sessionId: SessionId, request: NovelPinsRequest) => Promise<RemoteResult<NovelGestureResult>>
+  ideas: (request: NovelWorkRequest) => Promise<RemoteResult<NovelIdeasResult>>
+  changeIdea: (sessionId: SessionId, request: NovelIdeaRequest) => Promise<RemoteResult<NovelGestureResult>>
+  editChapterBody: (sessionId: SessionId, request: NovelBodyEditRequest) => Promise<RemoteResult<NovelBodyEditResult>>
+  newOwnChapter: (sessionId: SessionId, request: NovelOwnChapterRequest) => Promise<RemoteResult<NovelGestureResult & { readonly n?: number }>>
   decideOutline: (sessionId: SessionId, request: NovelOutlineDecideRequest) => Promise<RemoteResult<NovelGestureResult>>
 }
 

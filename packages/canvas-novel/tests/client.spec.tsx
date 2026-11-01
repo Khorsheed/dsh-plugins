@@ -23,7 +23,9 @@ import { CardScopes, ChaptersBadge, DeleteNote, FaceLabel, storyUsage } from '..
 import { chapterHeading } from '../src/client/PendingList.tsx'
 import { PlanBlock } from '../src/client/PlanBlock.tsx'
 import { StoryLogPage } from '../src/client/StoryLogPage.tsx'
-import { NOVEL_GENRE_ID, type ChapterPlan, type ChapterRecord, type EffectiveChapterPhase, type PendingView, type StoryLogResult } from '../src/types.ts'
+import { TimelineView } from '../src/client/TimelineView.tsx'
+import { IdeasView } from '../src/client/IdeasView.tsx'
+import { emptyOutline, NOVEL_GENRE_ID, type ChapterPlan, type ChapterRecord, type EffectiveChapterPhase, type NovelTimelineResult, type PendingView, type StoryLogResult } from '../src/types.ts'
 
 afterEach(cleanup)
 
@@ -73,8 +75,24 @@ function fakeRemote(fixture: { items: PendingView[]; phase?: EffectiveChapterPha
     reviewChapter: vi.fn(() => ok({ ok: true })),
     confirmPlan: vi.fn(() => ok({ ok: true })),
     recentUpdates: vi.fn(() => ok({ ok: true, cards: {} })),
-  } satisfies NovelRemote
+    outline: vi.fn(() => ok({ ok: true, outline: emptyOutline(), chapters: [], cores: [] })),
+    worldMap: vi.fn(() => ok({ ok: true, shelves: [], principles: [], unorganized: 0 })),
+    timeline: vi.fn(() => ok(TIMELINE)),
+    setRecallPins: vi.fn(() => ok({ ok: true })),
+    ideas: vi.fn(() => ok({ ok: true, ideas: [], events: [] })),
+    changeIdea: vi.fn(() => ok({ ok: true })),
+    editChapterBody: vi.fn(() => ok({ ok: true, changed: 3, kept: true })),
+    newOwnChapter: vi.fn(() => ok({ ok: true, n: 9 })),
+  } as unknown as NovelRemote & Record<string, ReturnType<typeof vi.fn>>
   return remote
+}
+
+const TIMELINE: NovelTimelineResult = {
+  ok: true, chapter: 6, past: [], names: { c1: '赵启明' }, candidates: ['e1'],
+  future: [
+    { id: 'e1', title: '赵启明推开门', status: 'preset', source: '打算', who: ['c1'], ideas: 0, tier: 'near', reason: '离时间窗口还有约 1 章', tension: 0.8, V: 0.8, E: 1, D: 1, Z: 0, S: 0 },
+    { id: 'e2', title: '前任监护者现身', status: 'preset', source: '预设', ideas: 0, tier: 'hold', reason: '还缺：找到档案', tension: 0, V: 0.9, E: 0, Z: 0, S: 0 },
+  ],
 }
 
 const PLAN: ChapterPlan = {
@@ -629,5 +647,62 @@ describe('the three faces', () => {
     idea.unmount()
     const { container } = render(<DeleteNote {...p} card={{ id: 'x' }} category={{ id: 'cat_p', role: 'principle' }} />)
     expect(container.innerHTML).toBe('')
+  })
+})
+
+const FIVE: Row[] = [1, 2, 3, 4, 5].map(n => ({ chapter: chapter(n, `第${n}章`), phase: 'extracted' as const, body: '他推开门。' }))
+
+describe('the timeline, ideas, candidates and editing (2026-11-01)', () => {
+  it('draws the timeline by priority with the formula, and the chapter view switches to the table', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    render(<TimelineView {...props(remote)} />)
+    expect(await screen.findByText('赵启明推开门')).toBeTruthy()
+    expect(screen.getByText('离时间窗口还有约 1 章')).toBeTruthy()
+    expect(screen.getByText(zh['tl.ruleHead'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /赵启明推开门/ }))
+    expect(await screen.findByText(zh['tl.V'])).toBeTruthy()
+    remote.storyLog = vi.fn(() => ok({ ok: true, chapters: [], foreshadows: [], characters: [], relations: [], world: [] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['tl.byChapter'] }))
+    await waitFor(() => { expect(remote.storyLog).toHaveBeenCalled() })
+  })
+
+  it("lists the next chapter's candidates in 章节 and saves 优先推进 / 本章屏蔽 as pins", async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    render(<ChapterBook {...props(remote)} />)
+    fireEvent.click(await screen.findByRole('button', { name: /下一章候选/ }))
+    fireEvent.click(screen.getAllByRole('button', { name: zh['cand.block'] })[0]!)
+    await waitFor(() => { expect(remote.setRecallPins).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, chapter: 6, prefer: [], block: ['e1'] }) })
+  })
+
+  it('edits a chapter in place and says it stayed reconciled; a new own chapter opens in the editor', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    render(<ChapterBook {...props(remote)} target={ask('1')} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['edit.open'] }))
+    const box = screen.getByRole('textbox', { name: zh['edit.open'] })
+    fireEvent.change(box, { target: { value: '新的正文。' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['edit.save'] }))
+    await waitFor(() => { expect(remote.editChapterBody).toHaveBeenCalledWith(SESSION, expect.objectContaining({ canvasId: CANVAS_ID, n: 1, text: '新的正文。' })) })
+    expect(await screen.findByText('已保存：改了 3 字，不到 5%，保持已对账。')).toBeTruthy()
+  })
+
+  it('records an idea without asking the agent, sends chosen ideas to the conversation, and binds one by the names it mentions', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    remote.ideas.mockImplementation(() => ok({
+      ok: true,
+      ideas: [{ id: 'i1', text: '赵启明把手按在门上', createdAt: NOW }],
+      events: [{ id: 'e1', title: '赵启明推开门', tier: 'near', mentions: ['赵启明'] }, { id: 'e2', title: '别的事', tier: 'ready', mentions: [] }],
+    }))
+    const send = vi.fn(() => 'sent' as const)
+    render(<IdeasView {...props(remote)} sendToConversation={send} />)
+    expect(await screen.findByText('赵启明把手按在门上')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['ideas.toTimeline'] }))
+    expect(send).toHaveBeenCalledWith(SESSION, expect.stringContaining('[i1]'))
+    fireEvent.click(screen.getByRole('button', { name: zh['ideas.bindByHand'] }))
+    fireEvent.click(screen.getByRole('button', { name: '赵启明推开门' }))
+    await waitFor(() => { expect(remote.changeIdea).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, id: 'i1', eventId: 'e1' }) })
+    fireEvent.click(screen.getByRole('button', { name: zh['ideas.new'] }))
+    fireEvent.change(screen.getByRole('textbox', { name: zh['ideas.new'] }), { target: { value: '一句对白' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['ideas.save'] }))
+    await waitFor(() => { expect(remote.changeIdea).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, add: '一句对白' }) })
   })
 })
