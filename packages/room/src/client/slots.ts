@@ -490,6 +490,12 @@ export type RoomHelpViewProps =
   & InjectFace<RoomHelpInjected>
   & PropsLocale<'room'>
 
+/** Full props of the 'room-help-reply' chat-node renderer. */
+export type RoomHelpReplyViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-help-reply'>
+  & InjectFace<RoomHelpInjected>
+  & PropsLocale<'room'>
+
 /** Full props of the 'room-help-request' chat-node renderer. */
 export type RoomHelpRequestViewProps =
   PropsRuntime<'conversation.chat.node', 'room-help-request'>
