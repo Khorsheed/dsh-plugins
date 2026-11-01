@@ -50,7 +50,7 @@ describe('cache comparison explanation', () => {
     expect(container.querySelector('ins')).toBeNull()
     expect(screen.getByText(/变更范围从第 21 个字符开始/)).toBeTruthy()
   })
-  it('lists the changes with the break card open and jumps to the owning module', () => {
+  it('lists the changes collapsed, opens on click, and jumps to the owning module', () => {
     const text = prefixTextChange('Use the tools.', 'Use the tools. Quote with 「」.')
     const row = (index: number, category: 'system' | 'user' | 'plugin-injection', source: string, preview: string) => ({ index, category, source, preview, chars: preview.length })
     const request = { ...r, prefix: { previousSeq: 0, previousRequestNumber: 15, gapMs: 0, toolsChanged: true, changed: { index: 0, before: '', after: '', afterCategory: 'system' as const, text },
@@ -65,12 +65,18 @@ describe('cache comparison explanation', () => {
     const { container } = render(<CacheFacts request={request} onShowCategory={show} t={t} />)
     expect(screen.getByText('断点 · 消息 000 · 系统提示词')).toBeTruthy()
     expect(screen.getByText('第 15 字')).toBeTruthy()
+    // Every card starts collapsed, the break card too (a compaction can replace hundreds of rows).
+    const heads = [...container.querySelectorAll('button[aria-expanded]')]
+    expect(heads.length).toBeGreaterThan(0)
+    expect(heads.every(head => head.getAttribute('aria-expanded') === 'false')).toBe(true)
+    expect(container.querySelector('ins')).toBeNull()
+    fireEvent.click(heads[0]!)
+    expect(heads[0]!.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText('新开头与 #15 的消息 038 全文相同')).toBeTruthy()
     expect(container.querySelector('ins')?.textContent).toBe(' Quote with 「」.')
     expect(screen.getByText('message-tools · edit')).toBeTruthy()
     expect(screen.getByText('@khorsheed/dsh-library')).toBeTruthy()
     expect(screen.getByText(/末尾新增 2 条：message-tools、runtime-context/)).toBeTruthy()
-    // Only the break card opens by default.
     expect(screen.queryByText('换掉')).toBeNull()
     fireEvent.click(screen.getByText('在构成中查看系统提示'))
     expect(show).toHaveBeenCalledWith('system')
