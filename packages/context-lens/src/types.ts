@@ -80,6 +80,8 @@ export interface SegmentItem {
   source: string
   /** Tool calls this assistant row issued (the chip on assistant rows). */
   toolCalls?: string[]
+  /** Provider call ids of those calls, so a tool-result row can find the call that produced it. */
+  toolCallIds?: string[]
   /** Exact tool-result provenance when the issuing request is retained. */
   toolCallId?: string
   sourceRequestNumber?: number

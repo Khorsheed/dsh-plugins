@@ -62,6 +62,27 @@ describe('composition reading', () => {
     expect(clear).not.toHaveBeenCalled()
     expect(document.activeElement).toBe(summary('preview-7'))
   })
+  it('a tool result opens the call that produced it, even under the duplicates-only filter', () => {
+    const body = 'Replaced 1 occurrence in /home/user/novel/chapter-1.md — the same text for every edit'
+    const call = (index: number, id: string) => ({ ...message(index, 'assistant'), preview: `call-${index}`, toolCalls: ['edit'], toolCallIds: [id] })
+    const result = (index: number, id: string) => ({ ...message(index, 'tool-result'), preview: `result-${index}`, full: body, chars: body.length, toolCallId: id })
+    const captured = { ...request, segments: { ...request.segments, history: [call(3, 'c1'), result(4, 'c1'), call(5, 'c2'), result(6, 'c2')], added: [] } }
+    const clear = vi.fn()
+    function Filtered() {
+      const [filter, setFilter] = useState<'__dup' | null>('__dup')
+      return <SegmentBlocks request={captured} filterCat={filter} onClearFilter={() => { clear(); setFilter(null) }} previousResponseNumber={null} t={t} />
+    }
+    render(<Filtered />)
+    expect(screen.queryByText('call-5')).toBeNull()
+    fireEvent.click(summary('result-6'))
+    expect(screen.getAllByText('×2')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: '看调用它的 005 · 助手消息 ↗' }))
+    expect(clear).toHaveBeenCalledTimes(1)
+    expect(document.activeElement).toBe(summary('call-5'))
+    expect(summary('call-5').closest('details')?.open).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '返回 006 ↩' }))
+    expect(document.activeElement).toBe(summary('result-6'))
+  })
   it('never links short repeated text or matching previews with different full content', () => {
     const short = { ...message(1), full: 'short' }
     const shortCopy = { ...message(2), full: 'short' }

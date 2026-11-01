@@ -23,6 +23,7 @@ import {
   previewLine,
   previewMessage,
   serializeMessage,
+  toolCallIdsOf,
   toolCallNames,
   type CapturedMessage,
 } from './messages.ts'
@@ -165,6 +166,7 @@ export function splitRequest(input: {
     }
     const full = serializeMessage(message)
     const toolCalls = message.role === 'assistant' ? toolCallNames(message) : []
+    const toolCallIds = message.role === 'assistant' ? toolCallIdsOf(message) : []
     const durationMs = message.role === 'assistant' && message.id !== undefined
       ? context.durationFor?.(message.id)
       : undefined
@@ -180,6 +182,7 @@ export function splitRequest(input: {
         message.toolCallId === undefined ? undefined : context.resolveToolName?.(message.toolCallId),
       ),
       ...toolCalls.length > 0 ? { toolCalls } : {},
+      ...toolCallIds.length > 0 ? { toolCallIds } : {},
       preview: previewMessage(message),
       full,
       chars: full.length,
