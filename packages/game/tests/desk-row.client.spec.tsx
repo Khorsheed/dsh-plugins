@@ -13,7 +13,8 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { zh } from '../src/client/locales.ts'
 import { DeskAttachment } from '../src/client/DeskAttachment.tsx'
 import { DeskOpenRow } from '../src/client/DeskOpenRow.tsx'
-import { deskDestinationsOf, deskRowDefinition, setDeskRowSeated, type DeskRowData } from '../src/client/desk-row.ts'
+import { deskDestinationsOf, deskRowDefinition, deskWroteDefinition, setDeskRowSeated, type DeskRowData } from '../src/client/desk-row.ts'
+import { DeskWroteRow } from '../src/client/DeskWroteRow.tsx'
 
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
   zh[key].replace(/\{(\w+)\}/g, (match, name: string) => params?.[name] ?? match)) as unknown as PropsLocale<'game'>['t']
@@ -64,12 +65,13 @@ describe('DeskOpenRow', () => {
     }])
     expect(deskDestinationsOf('game', event(2, payload({ role: 'member' })))[0]?.role).toBe('member')
     expect(deskDestinationsOf('game', event(3, payload({ owner: '@khorsheed/dsh-canvas' })))).toEqual([])
-    // A write on the room's project only refreshes: read as a member's act whoever wrote it.
+    // A write on the room's project is judged by whose act it was: the coordinator's publish follows.
     const wrote = { type: 'room/desk-wrote', seq: 4, time: Date.now(), data: payload({ data: { projectId: 'g_1', what: 'publish', place: { view: 'elements', elementId: 'e1' }, label: 'v2：改了九尾狐' } }) }
     expect(deskDestinationsOf('game', wrote)).toEqual([{
       destination: { id: 'desk:@khorsheed/dsh-game:4', kind: 'game', params: { view: 'elements', elementId: 'e1', projectId: 'g_1' }, label: 'v2：改了九尾狐' },
-      role: 'member',
+      role: 'coordinator',
     }])
+    expect(deskDestinationsOf('game', { ...wrote, data: { ...wrote.data, role: 'member' } })[0]?.role).toBe('member')
     expect(deskDestinationsOf('game', { ...wrote, data: { ...wrote.data, owner: '@khorsheed/dsh-canvas' } })).toEqual([])
   })
 
@@ -101,5 +103,24 @@ describe('DeskAttachment', () => {
     cleanup()
     render(<DeskAttachment sessionId="room-b" attachments={[attachment]} live t={t} openProject={openProject} />)
     expect(openProject).not.toHaveBeenCalled()
+  })
+})
+
+describe('DeskWroteRow', () => {
+  it('a published version is the shell card in the room, its door the place it landed', () => {
+    const openProject = vi.fn()
+    const write = { seq: 9, time: Date.now(), projectId: 'g_1', what: 'publish' as const, place: { view: 'play' }, label: '发鸠异常调查', member: '人物建模大师', role: 'coordinator' as const }
+    render(<DeskWroteRow t={t} node={{ data: write }} sessionId="room-a" openProject={openProject} />)
+    expect(screen.getByText('人物建模大师 发布了新版本：发鸠异常调查')).toBeTruthy()
+    expect(openProject).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText(zh['card.open']))
+    expect(openProject).toHaveBeenCalledExactlyOnceWith('room-a', 'g_1', { view: 'play' })
+  })
+
+  it('the room claims the write as its own node', () => {
+    const event = { type: 'room/desk-wrote', seq: 12, time: 5, data: payload({ data: { projectId: 'g_1', what: 'propose', place: { view: 'elements', elementId: 'e1' }, label: '九尾狐三个方案' } }) }
+    expect(deskWroteDefinition.match(event)).toEqual({ id: 'game-desk-wrote-12', role: 'start' })
+    expect(deskWroteDefinition.start(undefined, { event })).toMatchObject({ what: 'propose', label: '九尾狐三个方案', role: 'coordinator' })
+    expect(deskWroteDefinition.match({ ...event, type: 'room/desk-opened' })).toBeNull()
   })
 })

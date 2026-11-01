@@ -10,8 +10,9 @@
  */
 import type { ReactNode } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import { DeskWroteRow } from './DeskWroteRow.tsx'
 import { DeskOpenRow, type DeskOpenRowFace } from './DeskOpenRow.tsx'
-import { deskRowOf } from './desk-row.ts'
+import { deskRowOf, deskWroteOf } from './desk-row.ts'
 
 /** One attachment as the room hands it over. */
 interface AttachmentLike {
@@ -34,16 +35,11 @@ export interface DeskAttachmentProps extends DeskOpenRowFace {
  * @param props - the turn's events of this owner, whether the card is live, the face, the copy.
  */
 export function DeskAttachment({ sessionId, attachments, live, t, openProject }: DeskAttachmentProps): ReactNode {
-  // `room/desk-wrote` has no game row yet: only the opens render.
-  const opened = attachments.flatMap(attachment => {
-    const row = deskRowOf(attachment)
-    return row === null ? [] : [row]
+  const rows = attachments.flatMap(attachment => {
+    const opened = deskRowOf(attachment)
+    if (opened !== null) return [<DeskOpenRow key={opened.seq} node={{ data: opened }} sessionId={sessionId} t={t} follow={live} own openProject={openProject} />]
+    const wrote = deskWroteOf(attachment)
+    return wrote === null ? [] : [<DeskWroteRow key={wrote.seq} node={{ data: wrote }} sessionId={sessionId} t={t} own openProject={openProject} />]
   })
-  return (
-    <>
-      {opened.map(row => (
-        <DeskOpenRow key={row.seq} node={{ data: row }} sessionId={sessionId} t={t} follow={live} own openProject={openProject} />
-      ))}
-    </>
-  )
+  return <>{rows}</>
 }

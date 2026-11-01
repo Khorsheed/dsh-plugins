@@ -30,7 +30,8 @@ import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
 import { DeskAttachment } from './DeskAttachment.tsx'
 import { DeskOpenRow, type DeskOpenRowFace } from './DeskOpenRow.tsx'
-import { DESK_OWNER, DESK_ROW_KIND, deskDestinationsOf, deskRowDefinition, setDeskRowSeated } from './desk-row.ts'
+import { DESK_OWNER, DESK_ROW_KIND, DESK_WROTE_KIND, deskDestinationsOf, deskRowDefinition, deskWroteDefinition, setDeskRowSeated } from './desk-row.ts'
+import { DeskWroteRow } from './DeskWroteRow.tsx'
 import { en, NS, zh } from './locales.ts'
 import { GameTabVisibility, RegistrationToggle, type GamePluginInventorySnapshot } from './preset-visibility.ts'
 
@@ -323,7 +324,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // the room to that project — the user's explicit choice — and opens the tab.
   // Without ui-conversation or the room's seats the room just has no row.
   const deskFace: DeskOpenRowFace = {
-    openProject: (sessionId, projectId) => {
+    openProject: (sessionId, projectId, place) => {
       void (async () => {
         const live = await api.liveVersion(sessionId as SessionId).catch(() => undefined)
         if (live?.ok !== true || live.value?.projectId !== projectId) {
@@ -331,7 +332,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
           if (bound?.ok !== true || !bound.value.ok) ctx.logger.warn('game: could not bind the room to the desk project', projectId)
         }
         emit(sessionId)
-        go({ projectId, view: 'play' })
+        go({ view: 'play', ...place, projectId } as GameNavParams)
       })()
     },
   }
@@ -342,14 +343,23 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     const register = conversation?.events?.register
     if (register === undefined) return () => undefined
     const disposeDefinition = register.call(conversation?.events, deskRowDefinition)
+    const disposeWroteDefinition = register.call(conversation?.events, deskWroteDefinition)
     const disposeEntry = seats.register({
       name: 'conversation.chat.node',
       key: DESK_ROW_KIND,
       locale: NS,
       inject: () => deskFace,
     }, DeskOpenRow)
+    const disposeWroteEntry = seats.register({
+      name: 'conversation.chat.node',
+      key: DESK_WROTE_KIND,
+      locale: NS,
+      inject: () => deskFace,
+    }, DeskWroteRow)
     return () => {
+      disposeWroteEntry()
       disposeEntry()
+      disposeWroteDefinition()
       disposeDefinition()
     }
   }), 'game: room desk row')

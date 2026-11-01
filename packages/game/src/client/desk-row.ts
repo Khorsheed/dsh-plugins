@@ -110,14 +110,74 @@ export const deskRowDefinition = {
   },
 }
 
+/** The chat node kind (and the `conversation.chat.node` key) of a write line. */
+export const DESK_WROTE_KIND = 'game-desk-wrote'
+
+/** A room member's write on the room's project (`../desk.ts`): a version published, variants offered. */
+export interface DeskWroteData {
+  readonly seq: number
+  readonly time: number
+  readonly projectId: string
+  readonly what: 'publish' | 'propose'
+  /** Where it can be seen (the game tab's params, the project aside). */
+  readonly place: Readonly<Record<string, unknown>>
+  readonly label: string
+  readonly member: string
+  readonly role: 'coordinator' | 'member'
+  readonly runId?: string
+}
+
+/** The write's data as the line reads it, or null when it is not this package's `room/desk-wrote`. */
+export function deskWroteOf(event: EventLike): DeskWroteData | null {
+  if (event.type !== 'room/desk-wrote') return null
+  const outer = event.data as { owner?: unknown; member?: unknown; role?: unknown; runId?: unknown; data?: { projectId?: unknown; what?: unknown; place?: unknown; label?: unknown } } | undefined
+  const data = outer?.data
+  if (outer?.owner !== DESK_OWNER || typeof data?.projectId !== 'string') return null
+  return {
+    seq: event.seq,
+    time: event.time,
+    projectId: data.projectId,
+    what: data.what === 'propose' ? 'propose' : 'publish',
+    place: typeof data.place === 'object' && data.place !== null ? data.place as Record<string, unknown> : { view: 'play' },
+    label: typeof data.label === 'string' ? data.label : '',
+    member: typeof outer.member === 'string' ? outer.member : '',
+    role: outer.role === 'coordinator' ? 'coordinator' : 'member',
+    ...typeof outer.runId === 'string' ? { runId: outer.runId } : {},
+  }
+}
+
+/** One chat node per game `room/desk-wrote` event — hidden, like the open row, when a run's card holds it. */
+export const deskWroteDefinition = {
+  kind: DESK_WROTE_KIND,
+  target: 'chat',
+  match: (event: EventLike) => deskWroteOf(event) !== null ? { id: `game-desk-wrote-${event.seq}`, role: 'start' as const } : null,
+  start: (_context: unknown, match: { readonly event: EventLike }): DeskWroteData => {
+    const write = deskWroteOf(match.event)
+    if (write === null) throw new Error('game-desk-wrote start requires a game desk write')
+    return write
+  },
+  update: (context: { readonly state: DeskWroteData }) => context.state,
+  buildViewNode: (context: { readonly key: string; readonly id: string; readonly state?: DeskWroteData; readonly start?: { readonly location?: unknown } }) => context.state === undefined ? null : {
+    key: context.key,
+    kind: DESK_WROTE_KIND,
+    id: context.id,
+    target: 'chat',
+    anchorSeq: context.state.seq,
+    location: context.start?.location ?? { kind: 'unresolved' },
+    visibility: seated && context.state.runId !== undefined ? 'hidden' : 'visible',
+    data: context.state,
+  },
+}
+
 /**
  * The follower's reading of this owner's desk events (proposal
  * 2026-10-30-agent-sidebar-navigation): a live `room/desk-opened` names its
  * place and whose act it was — the coordinator's follows, a member's only
  * marks. A live `room/desk-wrote` (a version published, variants offered on
- * the room's project) only refreshes: it is read as a member's act whoever
- * wrote it, so it never moves the sidebar, and the follower's write signal
- * re-reads the room's game tab. The rows themselves only offer the door.
+ * the room's project) is judged the same way: the coordinator's publish shows
+ * the room where it landed, a member's only marks; either way the follower's
+ * write signal re-reads the room's game tab. The rows themselves only offer
+ * the door.
  * @param kind - the tab kind the place belongs to.
  * @param event - one appended session event.
  */
@@ -129,13 +189,10 @@ export function deskDestinationsOf(kind: string, event: { readonly type: string;
   if (row !== null) {
     return [{ destination: { id: `desk:${DESK_OWNER}:${row.seq}`, kind, params: { projectId: row.projectId, view: 'play' }, label: row.title }, role: row.role }]
   }
-  if (event.type !== 'room/desk-wrote') return []
-  const outer = event.data as { owner?: unknown; data?: { projectId?: unknown; place?: unknown; label?: unknown } } | undefined
-  const data = outer?.data
-  if (outer?.owner !== DESK_OWNER || typeof data?.projectId !== 'string') return []
-  const place = typeof data.place === 'object' && data.place !== null ? data.place as Record<string, unknown> : { view: 'play' }
+  const write = deskWroteOf({ ...event, seq: event.seq ?? 0, time: event.time ?? 0 } as Parameters<typeof deskWroteOf>[0])
+  if (write === null) return []
   return [{
-    destination: { id: `desk:${DESK_OWNER}:${event.seq ?? 0}`, kind, params: { ...place, projectId: data.projectId }, label: typeof data.label === 'string' ? data.label : '' },
-    role: 'member',
+    destination: { id: `desk:${DESK_OWNER}:${write.seq}`, kind, params: { ...write.place, projectId: write.projectId }, label: write.label },
+    role: write.role,
   }]
 }
