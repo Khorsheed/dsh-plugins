@@ -356,6 +356,25 @@ describe('claude live driver rounds', () => {
     liveStreams.dispose()
   })
 
+  it('records the member’s occupancy after a round: the last top-level request’s prompt against the result’s window', async () => {
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
+    const child = Session.create(SessionId('child-claude-context'))
+    const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    fake.emit({ type: 'assistant', message: { id: 'm-1', model: 'claude-opus-5-5', role: 'assistant', usage: { input_tokens: 3, cache_read_input_tokens: 1000, cache_creation_input_tokens: 200, output_tokens: 5 }, content: [{ type: 'text', text: 'one' }] } })
+    // A subagent's request: its own context, never the member's.
+    fake.emit({ type: 'assistant', parent_tool_use_id: 'tu-task', message: { id: 'm-sub', model: 'claude-haiku-5-5', role: 'assistant', usage: { input_tokens: 9_000, output_tokens: 1 }, content: [{ type: 'text', text: 'sub' }] } })
+    fake.emit({ type: 'assistant', message: { id: 'm-2', model: 'claude-opus-5-5', role: 'assistant', usage: { input_tokens: 4, cache_read_input_tokens: 1200, cache_creation_input_tokens: 30, output_tokens: 6 }, content: [{ type: 'text', text: 'two' }] } })
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 7, output_tokens: 11 },
+      modelUsage: { 'claude-opus-5-5': { contextWindow: 1_000_000 }, 'claude-haiku-5-5': { contextWindow: 200_000 } } })
+    expect((await run.result).stopReason).toBe('completed')
+    const contexts = child.snapshotEvents().filter(event => event.type === 'local-agent/context')
+    expect(contexts.map(event => event.data)).toEqual([{ provider: 'claude-local', usedTokens: 1234, contextWindow: 1_000_000 }])
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
   it('publishes transient output while keeping only authoritative assistant messages in history', async () => {
     const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
     const liveStreams = new LocalAgentStreams()
