@@ -72,8 +72,8 @@ describe('DeskOpenRow', () => {
   it('a member\'s bind never takes the front; the door opens it', () => {
     const openBook = vi.fn()
     render(<DeskOpenRow t={t} node={{ data: { ...row(2, 'member'), resourceId: undefined, resourceTitle: undefined } as DeskRowData }} sessionId="room-a" openBook={openBook} />)
-    expect(screen.getByText('bill 打开了项目「神经科学」')).toBeTruthy()
-    expect(screen.getByText('只绑定了自己的会话')).toBeTruthy()
+    // The shell card: one line that says it bound only the member's own session.
+    expect(screen.getByText('bill 打开了项目「神经科学」 · 只绑定了自己的会话')).toBeTruthy()
     expect(openBook).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('打开 →'))
     expect(openBook).toHaveBeenCalledExactlyOnceWith('p_neuro', undefined)

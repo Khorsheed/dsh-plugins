@@ -32,7 +32,7 @@ import { LIBRARY_KIND, LIBRARY_TAB_ID, libraryDefinition } from './definition.ts
 import { LibraryPane } from './LibraryPane.tsx'
 import { LibraryBindChip, type LibraryBindInjected } from './bind/BindChip.tsx'
 import { createLibraryStore } from './store.ts'
-import { followerHostOf, registerDestinationCards, releaseInteraction, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { followerHostOf, registerDestinationCards, releaseInteraction, startNavFollower, updateCards } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { RECORD_KIND } from '../nav-line.ts'
 import { en, NS, zh } from './locales.ts'
 import { DESK_OWNER, DESK_ROW_KIND, deskDestinationsOf, deskRowDefinition, setDeskRowSeated } from './desk/desk-row.ts'
@@ -160,6 +160,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }), 'library: record follower')
   }
 
+  /** A Remote answer that landed (the outer call and, where present, the domain outcome). */
+  const settled = (result: unknown): boolean => {
+    const outer = result as { ok?: boolean; value?: { ok?: boolean } } | undefined
+    return outer?.ok === true && outer.value?.ok !== false
+  }
+
   /** The injected business face, identical for whichever session mounts it. */
   const face = (sessionId: SessionId): LibraryPaneInjected => ({
     listProjects: () => remote.listProjects(),
@@ -171,7 +177,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     moveResource: (projectId, resourceId, seq) => remote.moveResource({ projectId, resourceId, seq }),
     setBookKind: (projectId, resourceId, bookKind) => remote.setBookKind({ projectId, resourceId, bookKind }),
     getRoadmap: (projectId, resourceId) => remote.getRoadmap({ projectId, resourceId }),
-    adoptRoadmap: (projectId, resourceId) => remote.adoptRoadmap({ projectId, resourceId }),
+    // The roadmap card in the conversation hears it was adopted (shown while live).
+    adoptRoadmap: async (projectId, resourceId) => {
+      const result = await remote.adoptRoadmap({ projectId, resourceId })
+      if (settled(result)) updateCards(LIBRARY_KIND, { view: 'book', projectId, resourceId, draft: true }, { status: t('card.adopted'), awaiting: false, door: t('card.open') })
+      return result
+    },
     discardDraft: (projectId, resourceId) => remote.discardDraft({ projectId, resourceId }),
     markNodeRead: (projectId, resourceId, nodeId) => remote.markNodeRead(resourceId === undefined ? { projectId, nodeId } : { projectId, resourceId, nodeId }),
     listPages: (projectId, resourceId, nodeId) => remote.listPages(nodeId === undefined ? { projectId, resourceId } : { projectId, resourceId, nodeId }),
@@ -185,7 +196,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     reviewCard: (projectId, cardId, rating) => remote.reviewCard({ projectId, cardId, rating }),
     listAssessments: (projectId, resourceId, nodeId, type) => remote.listAssessments({ projectId, ...(resourceId === undefined ? {} : { resourceId }), ...(nodeId === undefined ? {} : { nodeId }), ...(type === undefined ? {} : { type }) }),
     getAssessment: (projectId, assessmentId) => remote.getAssessment({ projectId, assessmentId }),
-    putAttempt: (projectId, assessmentId, verdicts) => remote.putAttempt({ projectId, assessmentId, verdicts }),
+    // …and the quiz card, that it was handed in.
+    putAttempt: async (projectId, assessmentId, verdicts) => {
+      const result = await remote.putAttempt({ projectId, assessmentId, verdicts })
+      if (settled(result)) updateCards(LIBRARY_KIND, { view: 'quiz', projectId, quizId: assessmentId }, { status: t('card.submitted'), awaiting: false, door: t('card.open') })
+      return result
+    },
     recentRecords: () => remote.recentRecords({ limit: 3 }),
     recentChanges: () => remote.recentChanges({ limit: 5 }),
     createRetake: (projectId, resourceId, nodeId, keys) => remote.createRetake({ projectId, ...(resourceId === undefined ? {} : { resourceId }), ...(nodeId === undefined ? {} : { nodeId }), ...(keys === undefined ? {} : { keys }) }),

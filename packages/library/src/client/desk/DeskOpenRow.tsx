@@ -1,6 +1,7 @@
 /**
  * The room's row for a project / book a member bound there (`desk-row.ts`):
- * who bound what, and one door — 打开 → — to it in this room's library tab.
+ * who bound what, and one door — 打开 → — to it in this room's library tab,
+ * drawn by the one conversation card shell (the library only hands the words).
  * Whether the library follows by itself is the destination follower's call
  * (`deskDestinationsOf`): a coordinator's live bind follows; a member's bound
  * only its own session, so it never takes the front.
@@ -11,7 +12,7 @@ import type { ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '../locales.ts'
 import type { DeskRowData } from './desk-row.ts'
-import css from './DeskRow.module.css'
+import { DestinationCard, type Destination } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 
 /** What the row reaches outside its own node. */
 export interface DeskOpenRowFace {
@@ -39,15 +40,18 @@ export function DeskOpenRow({ node, t, openBook, own = false }: DeskOpenRowProps
   const target = row.resourceTitle === undefined
     ? t('deskrow.project', { project: row.projectName })
     : t('deskrow.book', { book: row.resourceTitle })
-  const said = own ? t('deskrow.boundOwn', { target }) : t('deskrow.bound', { member: row.member, target })
+  const bound = own ? t('deskrow.boundOwn', { target }) : t('deskrow.bound', { member: row.member, target })
+  // A member bound only its own session: the line says so.
+  const said = row.role === 'member' ? `${bound} · ${t('deskrow.memberOnly')}` : bound
+  const destination: Destination = {
+    id: `desk:${row.projectId}:${row.seq}`, kind: 'library',
+    params: { projectId: row.projectId, ...(row.resourceId === undefined ? {} : { resourceId: row.resourceId }) }, label: said,
+  }
   return (
-    <div className={css.row} data-desk-role={row.role}>
-      <span className={css.kind}>{t('tab.label')}</span>
-      <span className={css.name} title={said}>{said}</span>
-      {row.role === 'member' && <span className={css.note}>{t('deskrow.memberOnly')}</span>}
-      <button type="button" className={css.open} onClick={() => { openBook(row.projectId, row.resourceId) }}>
-        {t('deskrow.open')}
-      </button>
-    </div>
+    <DestinationCard
+      copy={{ kind: t('tab.label'), running: said, failed: said, open: t('deskrow.open') }}
+      model={{ state: 'done', text: said, destination }}
+      go={() => { openBook(row.projectId, row.resourceId) }}
+    />
   )
 }

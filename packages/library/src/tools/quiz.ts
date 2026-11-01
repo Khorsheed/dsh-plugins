@@ -83,7 +83,7 @@ export function libraryQuizTool(kit: ToolKit): ToolDefinition {
       await autoBind(exec, { projectId, ...(resourceId === undefined ? {} : { resourceId }) })
       return landed(exec, written, {
         view: 'quiz', projectId, ...(resourceId === undefined ? {} : { resourceId }), quizId: written.quiz.id,
-      }, `新出的测验（${cleaned.length} 题）`) as unknown as JsonValue
+      }, `新出的测验（${cleaned.length} 题）`, undefined, { status: '等你作答', awaiting: true, door: '去作答 →' }) as unknown as JsonValue
     },
   })
 }
