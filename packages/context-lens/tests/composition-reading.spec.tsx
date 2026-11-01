@@ -68,9 +68,11 @@ describe('composition reading', () => {
     const result = (index: number, id: string) => ({ ...message(index, 'tool-result'), preview: `result-${index}`, full: body, chars: body.length, toolCallId: id })
     const captured = { ...request, segments: { ...request.segments, history: [call(3, 'c1'), result(4, 'c1'), call(5, 'c2'), result(6, 'c2')], added: [] } }
     const clear = vi.fn()
+    const restore = vi.fn()
     function Filtered() {
       const [filter, setFilter] = useState<'__dup' | null>('__dup')
-      return <SegmentBlocks request={captured} filterCat={filter} onClearFilter={() => { clear(); setFilter(null) }} previousResponseNumber={null} t={t} />
+      return <SegmentBlocks request={captured} filterCat={filter} onClearFilter={() => { clear(); setFilter(null) }}
+        onRestoreFilter={next => { restore(next); setFilter(next as '__dup' | null) }} previousResponseNumber={null} t={t} />
     }
     render(<Filtered />)
     expect(screen.queryByText('call-5')).toBeNull()
@@ -82,6 +84,10 @@ describe('composition reading', () => {
     expect(summary('call-5').closest('details')?.open).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: '返回 006 ↩' }))
     expect(document.activeElement).toBe(summary('result-6'))
+    // The way back puts the duplicates-only filter back: the call row is hidden again.
+    expect(restore).toHaveBeenCalledWith('__dup')
+    expect(screen.queryByText('call-5')).toBeNull()
+    expect(summary('result-6').closest('details')?.open).toBe(true)
   })
   it('offers 在会话中查看 for a call row only when the scope\'s calls are in the conversation', () => {
     const result = { ...message(4, 'tool-result'), preview: 'result-4', toolCallId: 'c9', sourceTurn: 12 }

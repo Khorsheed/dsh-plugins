@@ -83,7 +83,11 @@ export function TokenView({ scope, selectedSeq, request, filterCat, previousResp
                   <span className={css.badge}>×N</span>{t('lens.duplicates')}<span>{fmtK(duplicates.extraChars)}</span>
                 </button>}
               </div>
-              <SegmentBlocks key={`${request.scopeId}-${request.seq}`} request={request} filterCat={filterCat} onClearFilter={() => { if (filterCat !== null) onToggleFilter(filterCat) }} previousResponseNumber={previousResponseNumber} onOpenRequest={onOpenRequest} onLocateCall={onLocateCall} locateInMember={locateInMember} t={t} />
+              <SegmentBlocks key={`${request.scopeId}-${request.seq}`} request={request} filterCat={filterCat} onClearFilter={() => { if (filterCat !== null) onToggleFilter(filterCat) }} onRestoreFilter={filter => {
+                if (filter === filterCat) return
+                if (filter !== null) onToggleFilter(filter)
+                else if (filterCat !== null) onToggleFilter(filterCat)
+              }} previousResponseNumber={previousResponseNumber} onOpenRequest={onOpenRequest} onLocateCall={onLocateCall} locateInMember={locateInMember} t={t} />
             </div>
           </section>
         </>}

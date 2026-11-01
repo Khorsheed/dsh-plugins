@@ -111,6 +111,8 @@ export interface SegmentBlocksProps {
   readonly filterCat: CompositionFilter
   readonly onOpenRequest?: ((link: RequestLink) => void) | undefined
   readonly onClearFilter?: () => void
+  /** Put a filter back (a jump that cleared it returns): the filter the reader had before the jump. */
+  readonly onRestoreFilter?: ((filter: CompositionFilter) => void) | undefined
   /** Show a tool call in the conversation on the left; absent when this scope's calls are not there. */
   readonly onLocateCall?: ((callId: string, sourceTurn: number | undefined) => void) | undefined
   /** `onLocateCall` leaves for a room member's own session (the button says so). */
@@ -120,7 +122,7 @@ export interface SegmentBlocksProps {
 }
 
 /** Filtering changes rows only: group counts, bars and sizes keep their full-request meaning. */
-export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest, onLocateCall, locateInMember, t }: SegmentBlocksProps) {
+export function SegmentBlocks({ request, filterCat, onClearFilter, onRestoreFilter, onOpenRequest, onLocateCall, locateInMember, t }: SegmentBlocksProps) {
   const { system, tools, history, added } = request.segments
   const [openLayers, setOpenLayers] = useState(new Set(['added']))
   const duplicates = duplicateStats([...system, ...history, ...added])
@@ -137,7 +139,8 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest
   const [expanded, setExpanded] = useState(new Set<SegmentItem>())
   const [target, setTarget] = useState<SegmentItem | null>(null)
   const [flash, setFlash] = useState<SegmentItem | null>(null)
-  const [trail, setTrail] = useState<SegmentItem[]>([])
+  /** The jump trail: each row jumped from, with the filter in force then (a jump to a hidden row clears it; the way back puts it back). */
+  const [trail, setTrail] = useState<{ readonly item: SegmentItem; readonly filter: CompositionFilter }[]>([])
   const [destination, setDestination] = useState<SegmentItem>()
   const refs = useRef(new Map<SegmentItem, HTMLDetailsElement>())
   useLayoutEffect(() => {
@@ -176,7 +179,7 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest
     setTarget(to)
   }
   const reading: MessageReading = {
-    expanded, flash, returnTo: trail.at(-1), destination,
+    expanded, flash, returnTo: trail.at(-1)?.item, destination,
     register: (item, element) => { if (element) refs.current.set(item, element); else refs.current.delete(item) },
     toggle: item => {
       if (expanded.has(item)) setTarget(item)
@@ -184,11 +187,12 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest
       setTrail([]); setDestination(undefined)
     },
     next: (from, to) => { setTrail([]); setDestination(undefined); navigate(from, to) },
-    jump: (from, to) => { setTrail(previous => [...previous, from]); setDestination(to); navigate(from, to) },
+    jump: (from, to) => { setTrail(previous => [...previous, { item: from, filter: filterCat }]); setDestination(to); navigate(from, to) },
     back: from => {
-      const to = trail.at(-1)
-      if (!to) return
-      setTrail(previous => previous.slice(0, -1)); setDestination(to); navigate(from, to)
+      const last = trail.at(-1)
+      if (!last) return
+      setTrail(previous => previous.slice(0, -1)); setDestination(last.item); navigate(from, last.item)
+      if (last.filter !== filterCat) onRestoreFilter?.(last.filter)
     },
   }
   const layers = [
