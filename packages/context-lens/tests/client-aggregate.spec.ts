@@ -8,7 +8,7 @@ import { duplicateStats } from '../src/client/aggregate.ts'
 import { describe, expect, it } from 'vitest'
 import type { CapturedRequest, TimingLane, TurnListItem } from '../src/types.ts'
 import {
-  aggregateCategories, cachePct, fmtDur, fmtK, fmtSpan, inputMiss, inputTotal, isHollowTurn, latestTurnSeq, resolveTurnSeq, summarizeLanes, summaryText,
+  aggregateCategories, cachePct, fmtDur, fmtK, fmtSpan, inputMiss, inputTotal, isHollowTurn, latestTurnSeq, requestOfLocate, resolveTurnSeq, summarizeLanes, summaryText, turnOfLocate,
 } from '../src/client/aggregate.ts'
 
 const turn = (over: Partial<TurnListItem>): TurnListItem => ({
@@ -234,5 +234,32 @@ describe('trend scale', async () => {
   it('empty or zero inputs scale to 1', () => {
     expect(scaleOf([])).toBe(1)
     expect(scaleOf([0, 0])).toBe(1)
+  })
+})
+
+describe('turnOfLocate / requestOfLocate (a call handed to a member\'s lens)', () => {
+  const turns = [
+    turn({ turnSeq: 71, hostTurn: 71, startedAt: 7_100, endedAt: 7_190 }),
+    turn({ turnSeq: 74, hostTurn: 74, startedAt: 7_400, endedAt: 7_490 }),
+    turn({ turnSeq: 75, hostTurn: 75, startedAt: 7_500, endedAt: 7_590 }),
+  ]
+  it('the turn holding the reader\'s request wins over the call\'s own turn (both lenses then show the same context)', () => {
+    // Room round 79 → 尼尔盖曼 #201 (child turn 75); the call was made in turn 71.
+    expect(turnOfLocate(turns, { hostTurn: 71, request: { startedAt: 7_510, requestNumber: 201 } })).toBe(75)
+  })
+  it('without a request, the call\'s own turn; nothing known, nothing picked', () => {
+    expect(turnOfLocate(turns, { hostTurn: 71 })).toBe(71)
+    expect(turnOfLocate(turns, {})).toBeUndefined()
+    expect(turnOfLocate(turns, undefined)).toBeUndefined()
+  })
+  it('a request between turns goes to the last turn started before it', () => {
+    expect(turnOfLocate(turns, { request: { startedAt: 7_450 } })).toBe(74)
+    expect(turnOfLocate(turns, { request: { startedAt: 7_495 } })).toBe(74)
+  })
+  it('the request: same request number first, else same start time', () => {
+    const rows = [{ seq: 1, requestNumber: 201, startedAt: 10 }, { seq: 2, requestNumber: 202, startedAt: 20 }, { seq: 3, startedAt: 30 }]
+    expect(requestOfLocate(rows, { startedAt: 99, requestNumber: 202 })?.seq).toBe(2)
+    expect(requestOfLocate(rows, { startedAt: 30 })?.seq).toBe(3)
+    expect(requestOfLocate(rows, { startedAt: 99, requestNumber: 999 })).toBeUndefined()
   })
 })

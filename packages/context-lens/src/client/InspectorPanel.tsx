@@ -8,7 +8,7 @@ import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.t
 import type {
   AgentScopeOverview, BackfillInfo, CapturedRequest, ListTurnsResult, TurnListItem, TurnOverview, TurnTiming,
 } from '../types.ts'
-import { WINDOW_TURNS, fmtSpan, gapShown, isHollowTurn, latestTurnSeq, resolveTurnSeq, turnGaps, turnNumber, type CompositionFilter, type TurnGap } from './aggregate.ts'
+import { WINDOW_TURNS, fmtSpan, gapShown, isHollowTurn, latestTurnSeq, requestOfLocate, resolveTurnSeq, turnGaps, turnNumber, turnOfLocate, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
 import { rememberSelection, takeSelection } from './member-jump.ts'
@@ -117,6 +117,8 @@ export function InspectorPanel({
   const lastNavRevision = useRef(restored === undefined ? 0 : revision)
   /** The call a navigation asked to show; consumed once the turn list arrives. */
   const pendingLocate = useRef<RequestInspectorTabParams['locateCall']>(undefined)
+  /** The request a handed-over call came with: selected once its turn's overview is in. */
+  const pendingRequest = useRef<NonNullable<RequestInspectorTabParams['locateCall']>['request']>(undefined)
   /** A located call waiting for the panel's turn list to be in state (the jump reads it). */
   const [locateRequest, setLocateRequest] = useState<RequestInspectorTabParams['locateCall']>(undefined)
   useEffect(() => {
@@ -177,8 +179,8 @@ export function InspectorPanel({
       pendingDecision.current = undefined
       const locate = pendingLocate.current
       pendingLocate.current = undefined
-      const located = locate?.hostTurn === undefined ? undefined
-        : result.value.turns.find(turn => turn.hostTurn === locate.hostTurn)?.turnSeq
+      const located = turnOfLocate(result.value.turns, locate)
+      pendingRequest.current = locate?.request
       if (locate !== undefined) setLocateRequest(locate)
       const asked = decided ?? located ?? (pendingMessage.current === undefined ? undefined : resolveTurnSeq(result.value.turns, pendingMessage.current))
       pendingMessage.current = undefined
@@ -234,6 +236,13 @@ export function InspectorPanel({
     ?? scopes[0]
   const effectiveScope = scope
   const scopeRequests = effectiveScope?.requests ?? []
+  useEffect(() => {
+    const wanted = pendingRequest.current
+    if (wanted === undefined || scopeRequests.length === 0) return
+    pendingRequest.current = undefined
+    const match = requestOfLocate(scopeRequests, wanted)
+    if (match !== undefined) setSelectedSeq(match.seq)
+  }, [scopeRequests])
   const selectedItem = scopeRequests.find(candidate => candidate.seq === selectedSeq) ?? scopeRequests[0]
   const selectedRequestSeq = selectedItem?.seq ?? null
   const selectedIndex = selectedRequestSeq === null
@@ -415,7 +424,13 @@ export function InspectorPanel({
   const locateInMember = memberSession === undefined || openInMemberSession === undefined ? undefined
     : (callId: string, sourceTurn: number | undefined): void => {
       rememberSelection(ownSessionId, { revision, viewed, turnSeq, scopeId, selectedSeq, mainTab })
-      openInMemberSession(memberSession, sourceTurn === undefined ? { callId } : { callId, hostTurn: sourceTurn })
+      const request = selectedItem === undefined ? undefined
+        : { startedAt: selectedItem.startedAt, ...selectedItem.requestNumber === undefined ? {} : { requestNumber: selectedItem.requestNumber } }
+      openInMemberSession(memberSession, {
+        callId,
+        ...sourceTurn === undefined ? {} : { hostTurn: sourceTurn },
+        ...request === undefined ? {} : { request },
+      })
     }
 
   const onSelectTurn = (next: number): void => {

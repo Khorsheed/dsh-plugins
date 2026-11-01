@@ -40,7 +40,13 @@ export interface RequestInspectorTabParams {
    * over after switching to the member's session): select the call's turn,
    * then page, unfold and land on the call.
    */
-  readonly locateCall?: { readonly callId: string; readonly hostTurn?: number }
+  readonly locateCall?: {
+    readonly callId: string
+    /** The call's own host turn: where history is paged back to. */
+    readonly hostTurn?: number
+    /** The request the reader was on (start time, request number): selected, so both lenses show the same context. */
+    readonly request?: { readonly startedAt: number; readonly requestNumber?: number }
+  }
 }
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {

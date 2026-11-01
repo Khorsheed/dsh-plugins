@@ -19,7 +19,10 @@
 /** Where the member session's lens should land: one call, in its host turn when known. */
 export interface LocateCallTarget {
   readonly callId: string
+  /** The call's own host turn (paging target). */
   readonly hostTurn?: number
+  /** The request the reader was on, so the member's lens opens on the same context. */
+  readonly request?: { readonly startedAt: number; readonly requestNumber?: number }
 }
 
 /** The pieces the jump needs, all probed by the caller. */

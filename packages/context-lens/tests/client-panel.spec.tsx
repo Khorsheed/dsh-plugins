@@ -176,7 +176,7 @@ interface BenchOptions {
   /** Coordinator handoffs on the session trend. */
   readonly handoffs?: readonly { at: number; name: string }[] | undefined
   /** The plugin-level hand-over to a member's session (absent: the host cannot open sessions). */
-  readonly openInMemberSession?: ((memberSession: string, target: { callId: string; hostTurn?: number }) => void) | undefined
+  readonly openInMemberSession?: ((memberSession: string, target: { callId: string; hostTurn?: number; request?: { startedAt: number; requestNumber?: number } }) => void) | undefined
   /** The sidebar's own session (default s1). */
   readonly sessionId?: string | undefined
 }
@@ -401,7 +401,11 @@ describe('InspectorPanel · a room member\'s calls', () => {
     await toMemberRun()
     expect(screen.queryByRole('button', { name: '在会话中查看 ↗' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '在成员会话中查看 ↗' }))
-    expect(open).toHaveBeenCalledWith('443e7c65', { callId: 'tool_x', hostTurn: 53 })
+    // The call (paged to via its own turn) and the request the reader was on (#201), so the
+    // member's lens opens on the same context, not on the call's earlier turn.
+    expect(open).toHaveBeenCalledWith('443e7c65', expect.objectContaining({
+      callId: 'tool_x', hostTurn: 53, request: expect.objectContaining({ requestNumber: 201 }),
+    }))
     // The room's panel unmounts with its Sidebar; on remount it is back on the member run.
     cleanup()
     memberBench(open)
