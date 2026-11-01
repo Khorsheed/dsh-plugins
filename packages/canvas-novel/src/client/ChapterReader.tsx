@@ -13,6 +13,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
+import { Button, IconChevronLeftOutlineMedium, SegmentedControl } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { EffectiveChapterPhase, NovelChapterResult } from '../types.ts'
 import type { NovelSurfaceProps } from './contract.ts'
 import { PendingList } from './PendingList.tsx'
@@ -51,8 +52,9 @@ export function ChapterReader(props: NovelSurfaceProps & {
   readonly onToc: () => void
   /** Open on the plan (the page was opened from a plan card). */
   readonly focusPlan?: boolean
-  /** Open in the edit box (a chapter the person just started writing). */
+  /** Show the edit box rather than the reading preview. */
   readonly editing?: boolean
+  readonly onEditingChange: (editing: boolean) => void
 }): ReactNode {
   const { canvasId, board, rev, n, onGo, onToc, navigate, sessionId, remote, t } = props
   const api = remote()
@@ -72,6 +74,9 @@ export function ChapterReader(props: NovelSurfaceProps & {
   if (api === undefined) return null
   const total = chapters.state === 'ready' ? chapters.value.chapters.length : 0
   const items = pending.state === 'ready' ? pending.value.items.filter(item => item.chapter === n) : []
+  const canEdit = sessionId !== undefined && read.state === 'ready' && read.value.ok && read.value.chapter !== undefined
+  const mode: 'preview' | 'edit' = canEdit && props.editing === true ? 'edit' : 'preview'
+  const modeId = `chapter-body-${canvasId}-${n}`
 
   const gesture = async (call: 'confirmPlan'): Promise<void> => {
     if (sessionId === undefined) return
@@ -159,9 +164,11 @@ export function ChapterReader(props: NovelSurfaceProps & {
           )}
           <BodyEditor
             key={`body:${n}`}
+            id={modeId}
             view={view}
-            startOpen={props.editing === true}
-            writable={sessionId !== undefined}
+            open={mode === 'edit'}
+            tabbed={canEdit}
+            onOpenChange={props.onEditingChange}
             onSave={async text => {
               if (sessionId === undefined) return { error: t('chapter.gate.readOnly') }
               const result = await api.editChapterBody(sessionId, { canvasId, n, text, ...(view.bodyHash === undefined ? {} : { baseHash: view.bodyHash }) })
@@ -178,7 +185,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
             onContinue={() => { if (sessionId !== undefined) props.sendToConversation?.(sessionId, t('edit.continueAsk', { n })) }}
             t={t}
           >
-            <Prose view={view} phase={phase} t={t} />
+            {text => <Prose view={{ ...view, body: text }} phase={phase} t={t} />}
           </BodyEditor>
           <div className={css.end}>
             <span className={css.orn}>{t('reader.end')}</span>
@@ -194,8 +201,20 @@ export function ChapterReader(props: NovelSurfaceProps & {
   return (
     <div className={css.reader} ref={scroller} data-canvas-scroll="novel-reader">
       <div className={css.readerTop}>
-        <button type="button" className={css.readerLink} onClick={onToc}>{t('reader.toc')}</button>
+        <Button size="sm" variant="ghost" icon={<IconChevronLeftOutlineMedium size={16} />} aria-label={t('reader.back')} onClick={onToc}>
+          {t('reader.toc')}
+        </Button>
         <span className={css.readerWork}>{board.title ?? ''}</span>
+        {canEdit && (
+          <SegmentedControl
+            id={modeId}
+            className={css.readerMode}
+            label={t('edit.modeLabel')}
+            value={mode}
+            options={[{ value: 'preview', label: t('edit.preview') }, { value: 'edit', label: t('edit.mode') }]}
+            onChange={next => { props.onEditingChange(next === 'edit') }}
+          />
+        )}
         {total > 0 && <span className={css.readerWhere}>{n} / {total}</span>}
       </div>
       {body}
@@ -214,46 +233,45 @@ function draftKey(view: NovelChapterResult): string {
 }
 
 /**
- * The chapter's text with an 编辑 door: the text becomes one edit box (the
- * draft kept on this device as you type), saved back to the chapter file.
- * The answer says whether the change was small enough to stay 已对账. A
- * selection can be kept as an idea; 让 Agent 接着写 asks in the conversation.
+ * Preview or edit the chapter text. Previewing keeps an unsaved draft; cancel
+ * discards it. Saving reports whether the chapter stayed 已对账. A selection
+ * can be kept as an idea; 让 Agent 接着写 asks in the conversation.
  */
-function BodyEditor({ view, startOpen, writable, onSave, onIdea, onContinue, t, children }: {
+function BodyEditor({ id, view, open, tabbed, onOpenChange, onSave, onIdea, onContinue, t, children }: {
+  readonly id: string
   readonly view: NovelChapterResult
-  readonly startOpen: boolean
-  readonly writable: boolean
+  readonly open: boolean
+  readonly tabbed: boolean
+  readonly onOpenChange: (open: boolean) => void
   readonly onSave: (text: string) => Promise<{ readonly error?: string; readonly changed?: number; readonly kept?: boolean }>
   readonly onIdea: (text: string) => Promise<boolean>
   readonly onContinue: () => void
   readonly t: TranslateNS<'novel'>
-  readonly children: ReactNode
+  readonly children: (text: string) => ReactNode
 }): ReactNode {
   const stored = (): string | null => { try { return window.localStorage.getItem(draftKey(view)) } catch { return null } }
-  const [draft, setDraft] = useState<string | null>(() => startOpen ? stored() ?? view.body ?? '' : null)
+  const [draft, setDraft] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const box = useRef<HTMLTextAreaElement>(null)
-  const keep = (text: string | null): void => {
-    try { if (text === null) window.localStorage.removeItem(draftKey(view)); else window.localStorage.setItem(draftKey(view), text) } catch { /* a private window keeps nothing; the edit still works */ }
+  const text = draft ?? stored() ?? view.body ?? ''
+  useEffect(() => { if (open) setNote(null) }, [open])
+  const keep = (value: string | null): void => {
+    try { if (value === null) window.localStorage.removeItem(draftKey(view)); else window.localStorage.setItem(draftKey(view), value) } catch { /* a private window keeps nothing; the edit still works */ }
   }
-  if (draft === null) {
-    const open = (): void => { setNote(null); setDraft(stored() ?? view.body ?? '') }
-    // Two doors, at the head of the text and at its end: a long chapter never hides the way in.
+  if (!open) {
     return (
-      <>
-        {writable && <div className={css.editDoorTop}><button type="button" className={css.editDoor} onClick={open}>{t('edit.open')}</button></div>}
+      <div role={tabbed ? 'tabpanel' : undefined} id={tabbed ? `${id}-preview-panel` : undefined} aria-labelledby={tabbed ? `${id}-preview` : undefined}>
         {note !== null && <p className={css.editNote}>{note}</p>}
-        {children}
-        {writable && <div className={css.editBar}><button type="button" className={css.editDoor} onClick={open}>{t('edit.open')}</button></div>}
-      </>
+        {children(text)}
+      </div>
     )
   }
-  const count = draft.replace(/\s+/g, '').length
+  const count = text.replace(/\s+/g, '').length
   return (
-    <section className={css.editor}>
+    <section className={css.editor} role="tabpanel" id={`${id}-edit-panel`} aria-labelledby={`${id}-edit`}>
       <div className={css.editTop}>
-        <button type="button" className={css.planEditBtn} disabled={busy} onClick={() => { keep(null); setDraft(null) }}>{t('edit.cancel')}</button>
+        <button type="button" className={css.planEditBtn} disabled={busy} onClick={() => { keep(null); setDraft(null); onOpenChange(false) }}>{t('edit.cancel')}</button>
         <span className={css.muted}>{t('edit.count', { count })}</span>
         <button
           type="button"
@@ -261,11 +279,12 @@ function BodyEditor({ view, startOpen, writable, onSave, onIdea, onContinue, t, 
           disabled={busy}
           onClick={() => {
             setBusy(true)
-            void onSave(draft).then(outcome => {
+            void onSave(text).then(outcome => {
               setBusy(false)
               if (outcome.error !== undefined) { setNote(outcome.error); return }
               keep(null)
               setDraft(null)
+              onOpenChange(false)
               setNote(outcome.changed === 0 ? t('edit.same') : outcome.kept === true ? t('edit.kept', { count: outcome.changed ?? 0 }) : t('edit.stale2', { count: outcome.changed ?? 0 }))
             })
           }}
@@ -277,7 +296,7 @@ function BodyEditor({ view, startOpen, writable, onSave, onIdea, onContinue, t, 
         ref={box}
         className={css.editBox}
         aria-label={t('edit.open')}
-        value={draft}
+        value={text}
         onChange={event => { setDraft(event.target.value); keep(event.target.value) }}
       />
       <div className={css.editBar}>
@@ -287,7 +306,7 @@ function BodyEditor({ view, startOpen, writable, onSave, onIdea, onContinue, t, 
           disabled={busy}
           onClick={() => {
             const node = box.current
-            const picked = node === null ? '' : draft.slice(node.selectionStart, node.selectionEnd).trim()
+            const picked = node === null ? '' : text.slice(node.selectionStart, node.selectionEnd).trim()
             if (picked === '') { setNote(t('edit.selectFirst')); return }
             void onIdea(picked).then(ok => { setNote(ok ? t('edit.ideaSaved') : t('edit.ideaFailed')) })
           }}

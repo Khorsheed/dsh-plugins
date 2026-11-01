@@ -63,6 +63,7 @@ export function ChapterBook(props: NovelSurfaceProps & {
         n={reading.n}
         focusPlan={reading.focusPlan}
         editing={reading.editing === true}
+        onEditingChange={editing => { setReading(current => current === null || current.n !== reading.n ? current : { n: current.n, focusPlan: current.focusPlan, ...(editing ? { editing: true } : {}) }) }}
         onGo={n => { setReading({ n, focusPlan: false }) }}
         onToc={() => { setReading(null) }}
       />

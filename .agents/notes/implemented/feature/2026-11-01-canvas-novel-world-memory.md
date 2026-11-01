@@ -53,7 +53,7 @@ A character stores only what they believe. 「误以为」 and 「不知道」 a
 - Tabs read 章节 · 设定 · 时间轴 · 灵感. The canvas gained a third genre face, `faces.extra`, and `faces.board`: a genre's own face in the 卡板 seat, which replaces the card wall (with its scopes and 网格 / 连线 tools) on that genre's canvases only.
 - **设定** (`novel:codex`, from the `codex` Remote) follows the agreed prototype. Its parts are 总览 (the one-page outline and its proposal, the four shelves at a glance, the 待定 tray, 写作原则, the 整理设定 button), 世界观 (a tree beside the picked entry's text, links both ways and chapters), 人物 (by faction, with 此刻 / 打算 / 相信的事), 关系 (a graph scrubbed by chapter) and 伏笔 (the reader-knows ladder topped by the truth). Editing a card opens the canvas's card page.
 - **章节** groups the contents by volume, with a progress bar, goal and landing. It also holds 下一章候选 with 优先推进 / 本章屏蔽, and 新建一章，自己写 (用户原稿, opening in the editor).
-- **The reader edits the chapter file.** `editChapterBody` writes through the fenced path with a stale check, and the draft is kept on the device. A change under 5% of a reconciled chapter stays 已对账 and is noted as `editedAfterExtract`. The editor can keep a selection as an idea and ask the agent to continue. 按计划开写 confirms the plan, then sends 「第 N 章计划确认，按计划开写。」 through the input's `submit`; a half-typed draft is never sent.
+- **The reader edits the chapter file.** The top bar uses the host's back button and Preview / Edit segments rather than edit doors in the prose. Preview renders the current draft; switching modes keeps it, Cancel discards it, and saving returns to Preview. `editChapterBody` writes through the fenced path with a stale check, and the draft is kept on the device. A change under 5% of a reconciled chapter stays 已对账 and is noted as `editedAfterExtract`. The editor can keep a selection as an idea and ask the agent to continue. 按计划开写 confirms the plan, then sends 「第 N 章计划确认，按计划开写。」 through the input's `submit`; a half-typed draft is never sent.
 - **时间轴** shows 已发生 by story time and 将发生 by priority, with the formula and each event's parts. 按章节 shows the old 故事 table.
 - **灵感** stores ideas (`ideas.json`) without asking anything. 排进时间轴 sends a message. 手动绑定 offers events by the names an idea mentions. States are 待写入 / 已写入第 N 章, and ideas can be deleted.
 - Character cards show 当前打算 and 相信的事 with their source.
@@ -75,6 +75,7 @@ Every model-backed step runs in a visible conversation turn, so `context-lens` s
 - **Calendars.** Rejected. Order is primary and time is a label.
 - **The model deciding where a saved idea belongs.** Rejected: it would be a silent call.
 - **The agent picking from every future event.** Rejected. Recall is a tool, so hundreds of events never reach the model.
+- **Edit doors before and after the prose.** Rejected: they duplicate one mode switch, interrupt the reading column, and drift from the host's navigation. One host-styled segmented control lives beside the back button; previewing is no longer cancelling, so the draft survives it.
 
 ## Consequences
 

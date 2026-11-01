@@ -27,7 +27,10 @@ import { TimelineView } from '../src/client/TimelineView.tsx'
 import { IdeasView } from '../src/client/IdeasView.tsx'
 import { emptyOutline, NOVEL_GENRE_ID, type ChapterPlan, type ChapterRecord, type EffectiveChapterPhase, type NovelTimelineResult, type PendingView, type StoryLogResult } from '../src/types.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  window.localStorage.clear()
+})
 
 const CANVAS_ID = 'canvas_novel'
 const SESSION = 's-1' as SessionId
@@ -393,7 +396,7 @@ describe('ChapterBook', () => {
     expect(screen.queryByRole('button', { name: /入职/ })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /蓝叶/ }))
     expect(await screen.findByRole('heading', { name: '蓝叶' })).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: zh['reader.toc'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['reader.back'] }))
     expect(await screen.findByRole('button', { name: zh['toc.continue'] })).toBeTruthy()
   })
 
@@ -674,15 +677,59 @@ describe('the timeline, ideas, candidates and editing (2026-11-01)', () => {
     await waitFor(() => { expect(remote.setRecallPins).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, chapter: 6, prefer: [], block: ['e1'] }) })
   })
 
-  it('edits a chapter in place and says it stayed reconciled; a new own chapter opens in the editor', async () => {
+  it('switches modes in the top bar, previews the draft, and only discards it on cancel', async () => {
     const remote = fakeRemote({ items: [], rows: FIVE })
     render(<ChapterBook {...props(remote)} target={ask('1')} />)
-    fireEvent.click((await screen.findAllByRole('button', { name: zh['edit.open'] }))[0]!)
+    const preview = await screen.findByRole('tab', { name: zh['edit.preview'] })
+    const edit = screen.getByRole('tab', { name: zh['edit.mode'] })
+    expect(preview.getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('button', { name: zh['edit.open'] })).toBeNull()
+    expect(document.body.textContent).not.toContain('✎')
+    fireEvent.click(edit)
+    const box = screen.getByRole('textbox', { name: zh['edit.open'] }) as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: '新的正文。' } })
+    fireEvent.click(preview)
+    expect(await screen.findByText('新的正文。')).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: zh['edit.open'] })).toBeNull()
+    fireEvent.click(edit)
+    expect((screen.getByRole('textbox', { name: zh['edit.open'] }) as HTMLTextAreaElement).value).toBe('新的正文。')
+    fireEvent.click(screen.getByRole('button', { name: zh['edit.cancel'] }))
+    expect(screen.queryByText('新的正文。')).toBeNull()
+    fireEvent.click(edit)
+    expect((screen.getByRole('textbox', { name: zh['edit.open'] }) as HTMLTextAreaElement).value).toBe('他推开门。')
+  })
+
+  it('saves from the editor, returns to preview, and says the chapter stayed reconciled', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    render(<ChapterBook {...props(remote)} target={ask('1')} />)
+    fireEvent.click(await screen.findByRole('tab', { name: zh['edit.mode'] }))
     const box = screen.getByRole('textbox', { name: zh['edit.open'] })
     fireEvent.change(box, { target: { value: '新的正文。' } })
     fireEvent.click(screen.getByRole('button', { name: zh['edit.save'] }))
     await waitFor(() => { expect(remote.editChapterBody).toHaveBeenCalledWith(SESSION, expect.objectContaining({ canvasId: CANVAS_ID, n: 1, text: '新的正文。' })) })
-    expect(await screen.findByText('已保存：改了 3 字，不到 5%，保持已对账。')).toBeTruthy()
+    expect(await screen.findByText(zh['edit.kept'].replace('{count}', '3'))).toBeTruthy()
+    expect(screen.getByRole('tab', { name: zh['edit.preview'] }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('textbox', { name: zh['edit.open'] })).toBeNull()
+  })
+
+  it('does not offer an edit mode on a read-only canvas', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    render(<ChapterBook {...props(remote, NOVEL_GENRE_ID, null)} target={ask('1')} />)
+    expect(await screen.findByRole('heading', { name: '第1章' })).toBeTruthy()
+    expect(screen.queryByRole('tab', { name: zh['edit.mode'] })).toBeNull()
+    expect(screen.queryByRole('tabpanel')).toBeNull()
+    expect(screen.queryByRole('textbox', { name: zh['edit.open'] })).toBeNull()
+  })
+
+  it('opens a new own chapter directly in edit mode', async () => {
+    const own: Row = { chapter: chapter(9, '我自己的章节', { byUser: true }), phase: 'writing', body: '' }
+    const remote = fakeRemote({ items: [], rows: [...FIVE, own] })
+    render(<ChapterBook {...props(remote)} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['toc.newOwn'] }))
+    fireEvent.change(screen.getByRole('textbox', { name: zh['toc.newOwnTitle'] }), { target: { value: '我自己的章节' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['toc.newOwnGo'] }))
+    expect(await screen.findByRole('textbox', { name: zh['edit.open'] })).toBeTruthy()
+    expect(screen.getByRole('tab', { name: zh['edit.mode'] }).getAttribute('aria-selected')).toBe('true')
   })
 
   it('records an idea without asking the agent, sends chosen ideas to the conversation, and binds one by the names it mentions', async () => {
