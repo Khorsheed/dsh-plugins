@@ -1251,6 +1251,53 @@ export class NovelService {
   }
 
   /**
+   * The person's own edit of a chapter's text on the chapter page (2026-11-01):
+   * written through the same fenced path as the agent's, refused as `stale`
+   * when the file moved since the page read it. A chapter the 对账 had read
+   * stays 已对账 when the change is under 5% of it — the change is noted on
+   * the row instead; a bigger change reads 待对账 as any other.
+   * @param request - work id, chapter number, the full new text, and the fingerprint the page read.
+   * @param session - the session that owns the gesture; supplies the fence.
+   * @returns how many characters changed and whether the chapter stayed reconciled.
+   */
+  async editChapterBody(
+    request: { readonly workId: string; readonly n: number; readonly text: string; readonly baseHash?: string },
+    session: Session | undefined,
+  ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly changed?: number; readonly kept?: boolean }> {
+    this.assertAlive('editChapterBody')
+    const read = await this.readChapter({ workId: request.workId, n: request.n })
+    if (!read.ok || read.chapter === undefined) return { ok: false, error: read.error ?? 'missing' }
+    const before = read.body ?? ''
+    if (request.baseHash !== undefined && (bodyFingerprint(before) ?? '') !== request.baseHash) return { ok: false, error: 'stale' }
+    const text = request.text.replace(/\r\n?/g, '\n')
+    let start = 0
+    while (start < before.length && start < text.length && before[start] === text[start]) start += 1
+    let end = 0
+    while (end < before.length - start && end < text.length - start && before[before.length - 1 - end] === text[text.length - 1 - end]) end += 1
+    const changed = Math.max(before.length - start - end, text.length - start - end)
+    if (changed === 0) return { ok: true, changed: 0, kept: true }
+    const written = await this.writeChapter({ workId: request.workId, n: request.n, title: read.chapter.title, content: text, replace: true, byPerson: true }, session)
+    if (!written.ok) return { ok: false, error: written.error ?? 'io' }
+    const wasReconciled = read.phase === 'extracted' || read.phase === 'reviewed'
+    const total = Math.max(1, before.replace(/\s+/g, '').length)
+    const kept = wasReconciled && changed / total < 0.05
+    if (kept) {
+      const workId = normalizeWorkId(request.workId)!
+      await this.mutateJson(await this.fileTarget(workId, WORK_FILES.chapters), session, raw => normalizeChapterTable(raw), undefined, (table, now) => {
+        const row = table.chapters.find(candidate => candidate.n === request.n)
+        if (row === undefined) return 'missing'
+        const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
+        mutable.bodyHash = bodyFingerprint(text)!
+        mutable.wordCount = text.replace(/\s+/g, '').length
+        mutable.editedAfterExtract = (row.editedAfterExtract ?? 0) + changed
+        mutable.updatedAt = now
+        return table
+      })
+    }
+    return { ok: true, changed, kept }
+  }
+
+  /**
    * Create one chapter (n allocates max+1, the file name derives from n —
    * free-form names are never stored) or update its title/plan. seq defaults
    * to n; an explicit seq inserts the chapter between its neighbors. A plan's
@@ -1326,7 +1373,7 @@ export class NovelService {
       }
     }
     if (content !== undefined && workspace === undefined) return { ok: false, error: 'no-workspace' }
-    if (content !== undefined && !byUser) {
+    if (content !== undefined && !byUser && request.byPerson !== true) {
       const row = request.n === undefined ? undefined : (await this.readChapters(workId)).find(candidate => candidate.n === request.n)
       if (request.n !== undefined && row === undefined) return { ok: false, error: 'missing' }
       const replanned = plan !== undefined && row?.plan !== undefined && JSON.stringify(plan) !== JSON.stringify(row.plan)
@@ -3180,6 +3227,7 @@ export class NovelService {
         if (recap !== undefined) mutable.recap = recap
         mutable.wordCount = body.replace(/\s+/g, '').length
         mutable.bodyHash = bodyFingerprint(body)!
+        delete mutable.editedAfterExtract
         mutable.extractedAt = now
         if (landed.length > 0) mutable.newCards = landed.map(card => card.cardId)
         else delete mutable.newCards

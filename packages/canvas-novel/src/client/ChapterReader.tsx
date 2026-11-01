@@ -51,6 +51,8 @@ export function ChapterReader(props: NovelSurfaceProps & {
   readonly onToc: () => void
   /** Open on the plan (the page was opened from a plan card). */
   readonly focusPlan?: boolean
+  /** Open in the edit box (a chapter the person just started writing). */
+  readonly editing?: boolean
 }): ReactNode {
   const { canvasId, board, rev, n, onGo, onToc, navigate, sessionId, remote, t } = props
   const api = remote()
@@ -155,7 +157,29 @@ export function ChapterReader(props: NovelSurfaceProps & {
               <PendingList canvasId={canvasId} items={items} navigate={navigate} sessionId={sessionId} remote={api} t={t} />
             </section>
           )}
-          <Prose view={view} phase={phase} t={t} />
+          <BodyEditor
+            key={`body:${n}`}
+            view={view}
+            startOpen={props.editing === true}
+            writable={sessionId !== undefined}
+            onSave={async text => {
+              if (sessionId === undefined) return { error: t('chapter.gate.readOnly') }
+              const result = await api.editChapterBody(sessionId, { canvasId, n, text, ...(view.bodyHash === undefined ? {} : { baseHash: view.bodyHash }) })
+              navigate.refresh()
+              if (!result.ok) return { error: t('error.generic', { message: result.error.message }) }
+              if (!result.value.ok) return { error: result.value.error === 'stale' ? t('edit.stale') : t(errorKey(result.value.error)) }
+              return { changed: result.value.changed ?? 0, kept: result.value.kept === true }
+            }}
+            onIdea={async text => {
+              if (sessionId === undefined) return false
+              const result = await api.changeIdea(sessionId, { canvasId, add: text })
+              return result.ok && result.value.ok
+            }}
+            onContinue={() => { if (sessionId !== undefined) props.sendToConversation?.(sessionId, t('edit.continueAsk', { n })) }}
+            t={t}
+          >
+            <Prose view={view} phase={phase} t={t} />
+          </BodyEditor>
           <div className={css.end}>
             <span className={css.orn}>{t('reader.end')}</span>
             {failure !== null && <span className={css.warn}>{failure}</span>}
@@ -181,6 +205,100 @@ export function ChapterReader(props: NovelSurfaceProps & {
         <button type="button" disabled={total === 0 || n >= total} onClick={() => { onGo(n + 1) }}>{t('reader.next')}</button>
       </nav>
     </div>
+  )
+}
+
+/** A local draft survives a dropped connection or a closed page until it is saved. */
+function draftKey(view: NovelChapterResult): string {
+  return `novel-draft:${view.file ?? ''}:${view.chapter?.n ?? 0}`
+}
+
+/**
+ * The chapter's text with an 编辑 door: the text becomes one edit box (the
+ * draft kept on this device as you type), saved back to the chapter file.
+ * The answer says whether the change was small enough to stay 已对账. A
+ * selection can be kept as an idea; 让 Agent 接着写 asks in the conversation.
+ */
+function BodyEditor({ view, startOpen, writable, onSave, onIdea, onContinue, t, children }: {
+  readonly view: NovelChapterResult
+  readonly startOpen: boolean
+  readonly writable: boolean
+  readonly onSave: (text: string) => Promise<{ readonly error?: string; readonly changed?: number; readonly kept?: boolean }>
+  readonly onIdea: (text: string) => Promise<boolean>
+  readonly onContinue: () => void
+  readonly t: TranslateNS<'novel'>
+  readonly children: ReactNode
+}): ReactNode {
+  const stored = (): string | null => { try { return window.localStorage.getItem(draftKey(view)) } catch { return null } }
+  const [draft, setDraft] = useState<string | null>(() => startOpen ? stored() ?? view.body ?? '' : null)
+  const [note, setNote] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const box = useRef<HTMLTextAreaElement>(null)
+  const keep = (text: string | null): void => {
+    try { if (text === null) window.localStorage.removeItem(draftKey(view)); else window.localStorage.setItem(draftKey(view), text) } catch { /* a private window keeps nothing; the edit still works */ }
+  }
+  if (draft === null) {
+    return (
+      <>
+        {children}
+        {note !== null && <p className={css.editNote}>{note}</p>}
+        {writable && (
+          <div className={css.editBar}>
+            <button type="button" className={css.planEditBtn} onClick={() => { setNote(null); setDraft(stored() ?? view.body ?? '') }}>{t('edit.open')}</button>
+          </div>
+        )}
+      </>
+    )
+  }
+  const count = draft.replace(/\s+/g, '').length
+  return (
+    <section className={css.editor}>
+      <div className={css.editTop}>
+        <button type="button" className={css.planEditBtn} disabled={busy} onClick={() => { keep(null); setDraft(null) }}>{t('edit.cancel')}</button>
+        <span className={css.muted}>{t('edit.count', { count })}</span>
+        <button
+          type="button"
+          className={css.confirm}
+          disabled={busy}
+          onClick={() => {
+            setBusy(true)
+            void onSave(draft).then(outcome => {
+              setBusy(false)
+              if (outcome.error !== undefined) { setNote(outcome.error); return }
+              keep(null)
+              setDraft(null)
+              setNote(outcome.changed === 0 ? t('edit.same') : outcome.kept === true ? t('edit.kept', { count: outcome.changed ?? 0 }) : t('edit.stale2', { count: outcome.changed ?? 0 }))
+            })
+          }}
+        >
+          {t('edit.save')}
+        </button>
+      </div>
+      <textarea
+        ref={box}
+        className={css.editBox}
+        aria-label={t('edit.open')}
+        value={draft}
+        onChange={event => { setDraft(event.target.value); keep(event.target.value) }}
+      />
+      <div className={css.editBar}>
+        <button
+          type="button"
+          className={css.planEditBtn}
+          disabled={busy}
+          onClick={() => {
+            const node = box.current
+            const picked = node === null ? '' : draft.slice(node.selectionStart, node.selectionEnd).trim()
+            if (picked === '') { setNote(t('edit.selectFirst')); return }
+            void onIdea(picked).then(ok => { setNote(ok ? t('edit.ideaSaved') : t('edit.ideaFailed')) })
+          }}
+        >
+          {t('edit.toIdea')}
+        </button>
+        <button type="button" className={css.planEditBtn} disabled={busy} onClick={onContinue}>{t('edit.continue')}</button>
+        <span className={css.muted}>{note ?? t('edit.hint')}</span>
+      </div>
+    </section>
   )
 }
 

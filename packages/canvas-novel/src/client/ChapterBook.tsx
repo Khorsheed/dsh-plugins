@@ -47,7 +47,7 @@ export function ChapterBook(props: NovelSurfaceProps & {
 }): ReactNode {
   const { canvasId, target } = props
   const asked = target === undefined || (answered.get(canvasId) ?? 0) >= target.n ? undefined : target
-  const [reading, setReading] = useState<{ n: number; focusPlan: boolean } | null>(() => readingOf(asked))
+  const [reading, setReading] = useState<{ n: number; focusPlan: boolean; editing?: boolean } | null>(() => readingOf(asked))
   useEffect(() => {
     if (asked === undefined) return
     answered.set(canvasId, asked.n)
@@ -61,12 +61,13 @@ export function ChapterBook(props: NovelSurfaceProps & {
         {...props}
         n={reading.n}
         focusPlan={reading.focusPlan}
+        editing={reading.editing === true}
         onGo={n => { setReading({ n, focusPlan: false }) }}
         onToc={() => { setReading(null) }}
       />
     )
   }
-  return <Contents {...props} onRead={n => { setReading({ n, focusPlan: false }) }} />
+  return <Contents {...props} onRead={(n, editing) => { setReading({ n, focusPlan: false, ...(editing === true ? { editing: true } : {}) }) }} />
 }
 
 /** The reader position an ask names, or null for an unreadable one. */
@@ -88,13 +89,23 @@ function settled(phase: EffectiveChapterPhase): boolean {
   return phase === 'extracted' || phase === 'reviewed'
 }
 
-function Contents({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmpty }: NovelSurfaceProps & {
-  readonly onRead: (n: number) => void
+function Contents(props: NovelSurfaceProps & {
+  readonly onRead: (n: number, editing?: boolean) => void
+  readonly onEmpty?: (() => void) | undefined
+}): ReactNode {
+  const { canvasId, rev, navigate, sessionId, remote, t, onRead, onEmpty } = props
+  return <ContentsBody {...props} canvasId={canvasId} rev={rev} navigate={navigate} sessionId={sessionId} remote={remote} t={t} onRead={onRead} onEmpty={onEmpty} />
+}
+
+function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmpty, ...rest }: NovelSurfaceProps & {
+  readonly onRead: (n: number, editing?: boolean) => void
   readonly onEmpty?: (() => void) | undefined
 }): ReactNode {
   const api = remote()
   const read = useNovelRead(api, r => r.chapters({ canvasId }), `chapters:${canvasId}`, rev)
   const queue = useNovelRead(api, r => r.pending({ canvasId }), `pending:${canvasId}`, rev)
+  const outlineRead = useNovelRead(api, r => r.outline({ canvasId }), `outline:${canvasId}`, rev)
+  const surface = { ...rest, canvasId, rev, navigate, sessionId, remote, t } as NovelSurfaceProps
   const [filter, setFilter] = useState<Filter>('all')
   const [queueOpen, setQueueOpen] = useState(false)
   const empty = read.state === 'ready' && read.value.chapters.length === 0
@@ -109,6 +120,7 @@ function Contents({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmp
     return (
       <div className={css.book} data-canvas-scroll="novel-book">
         <div className={css.bookEmpty}>{t('toc.empty')}</div>
+        <NewOwnChapter {...surface} onCreated={n => { onRead(n, true) }} />
       </div>
     )
   }
@@ -119,8 +131,19 @@ function Contents({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmp
   const current = currentChapter(rows, pending)!
   const stale = rows.filter(item => awaitsReconcile(item.phase))
   const items = queue.state === 'ready' ? queue.value.items : []
-  const groups: ChapterRow[][] = []
-  for (let index = 0; index < rows.length; index += GROUP) groups.push(rows.slice(index, index + GROUP))
+  // Volumes head the list when the outline has them (2026-11-01: 规划's roadmap lives here); else groups of ten.
+  const volumes = outlineRead.state === 'ready' && outlineRead.value.ok ? outlineRead.value.outline.volumes : []
+  const groups: { rows: ChapterRow[]; volume?: { index: number; title: string; planned?: number; goal?: string; landing?: string } }[] = []
+  if (volumes.length > 0) {
+    volumes.forEach((volume, index) => {
+      const inVolume = rows.filter(item => (item.chapter.volume ?? volumes[0]!.id) === volume.id)
+      groups.push({ rows: inVolume, volume: { index: index + 1, title: volume.title, ...(volume.chapters === undefined ? {} : { planned: volume.chapters }), ...(volume.goal === undefined ? {} : { goal: volume.goal }), ...(volume.landing === undefined ? {} : { landing: volume.landing }) } })
+    })
+    const loose = rows.filter(item => item.chapter.volume !== undefined && !volumes.some(volume => volume.id === item.chapter.volume))
+    if (loose.length > 0) groups.push({ rows: loose })
+  } else {
+    for (let index = 0; index < rows.length; index += GROUP) groups.push({ rows: rows.slice(index, index + GROUP) })
+  }
   const row = (item: ChapterRow): ReactNode => (
     <ChapterLine key={item.chapter.n} row={item} pending={pending[item.chapter.n] ?? 0} onRead={onRead} t={t} />
   )
@@ -165,6 +188,8 @@ function Contents({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmp
         </div>
         <button type="button" className={css.resumeGo} onClick={() => { onRead(current.chapter.n) }}>{t('toc.continue')}</button>
       </div>
+      <NextCandidates {...surface} />
+      <NewOwnChapter {...surface} onCreated={n => { onRead(n, true) }} />
       {items.length > 0 && (
         <div className={css.queue}>
           <button type="button" className={css.queueHead} aria-expanded={queueOpen} onClick={() => { setQueueOpen(value => !value) }}>
@@ -188,15 +213,16 @@ function Contents({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmp
           {(filter === 'todo' ? todo : open).map(row)}
           {(filter === 'todo' ? todo : open).length === 0 && <div className={css.muted}>{t('toc.filterEmpty')}</div>}
         </div>
-      ) : groups.map((group, index) => {
-        const first = group[0]!.chapter.n
-        const last = group.at(-1)!.chapter.n
+      ) : groups.map(({ rows: group, volume }, index) => {
+        if (group.length === 0 && volume === undefined) return null
+        const first = group[0]?.chapter.n ?? 0
+        const last = group.at(-1)?.chapter.n ?? 0
         const done = group.filter(item => settled(item.phase)).length
         const groupWords = formatWords(group.reduce((sum, item) => sum + (item.chapter.wordCount ?? 0), 0), t)
         const busy = group.some(item => !settled(item.phase))
-        const isOpen = toggled[index] ?? (busy || index === groups.length - 1)
+        const isOpen = toggled[index] ?? (busy || index === groups.length - 1 || (volume !== undefined && group.length > 0 && groups.slice(index + 1).every(next => next.rows.length === 0)))
         return (
-          <div key={first} className={css.group} data-open={isOpen || undefined}>
+          <div key={volume === undefined ? `g${first}` : `v${volume.index}`} className={css.group} data-open={isOpen || undefined}>
             <button
               type="button"
               className={css.groupHead}
@@ -204,17 +230,117 @@ function Contents({ canvasId, rev, navigate, sessionId, remote, t, onRead, onEmp
               onClick={() => { setToggled(all => ({ ...all, [index]: !isOpen })) }}
             >
               <span className={css.groupChev}>›</span>
-              <span className={css.groupTitle}>{t('toc.group', { from: first, to: last })}</span>
+              <span className={css.groupTitle}>
+                {volume === undefined
+                  ? (groups.some(other => other.volume !== undefined) ? t('toc.noVolume') : t('toc.group', { from: first, to: last }))
+                  : t('toc.volume', { index: volume.index, title: volume.title })}
+              </span>
               <span className={css.groupSum}>
-                {done === group.length
-                  ? t('toc.groupDone', { words: groupWords })
-                  : t('toc.groupSum', { done, count: group.length, words: groupWords })}
+                {volume !== undefined && volume.planned !== undefined
+                  ? t('toc.volumeSum', { planned: volume.planned, done: group.length })
+                  : done === group.length
+                    ? t('toc.groupDone', { words: groupWords })
+                    : t('toc.groupSum', { done, count: group.length, words: groupWords })}
               </span>
             </button>
+            {volume !== undefined && volume.planned !== undefined && (
+              <div className={css.volBar}><i style={{ width: `${Math.min(100, Math.round(group.length / Math.max(1, volume.planned) * 100))}%` }} /></div>
+            )}
+            {isOpen && volume?.goal !== undefined && <p className={css.volGoal}>{volume.goal}</p>}
             {isOpen && <div className={css.rows}>{group.map(row)}</div>}
+            {isOpen && volume?.landing !== undefined && <p className={css.volLanding}>{volume.landing}</p>}
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/** 下一章候选: what recall hands the planner for the next chapter, with the person's 优先推进 / 本章屏蔽. */
+function NextCandidates(props: NovelSurfaceProps): ReactNode {
+  const { canvasId, rev, remote, sessionId, navigate, t } = props
+  const api = remote()
+  const read = useNovelRead(api, r => r.timeline({ canvasId }), `timeline:${canvasId}`, rev)
+  const [open, setOpen] = useState(false)
+  if (api === undefined || read.state !== 'ready' || !read.value.ok) return null
+  const data = read.value
+  const chapter = data.chapter ?? 1
+  const future = data.future ?? []
+  if (future.length === 0) return null
+  const prefer = data.pins?.prefer ?? []
+  const block = data.pins?.block ?? []
+  const shown = [...future].sort((a, b) => Number(prefer.includes(b.id)) - Number(prefer.includes(a.id))
+    || ['near', 'backlog', 'ready', 'sat', 'hold'].indexOf(a.tier) - ['near', 'backlog', 'ready', 'sat', 'hold'].indexOf(b.tier) || b.tension - a.tension)
+  const pin = (id: string, kind: 'prefer' | 'block'): void => {
+    if (sessionId === undefined) return
+    const toggle = (list: readonly string[]): string[] => list.includes(id) ? list.filter(item => item !== id) : [...list, id]
+    void api.setRecallPins(sessionId, {
+      canvasId, chapter,
+      prefer: kind === 'prefer' ? toggle(prefer) : prefer.filter(item => item !== id),
+      block: kind === 'block' ? toggle(block) : block.filter(item => item !== id),
+    }).then(() => { navigate.refresh() })
+  }
+  return (
+    <div className={css.queue}>
+      <button type="button" className={css.queueHead} aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
+        <span className={css.groupChev} data-open={open || undefined}>›</span>
+        {t('cand.heading', { n: chapter })}
+      </button>
+      {open && (
+        <div className={css.cands}>
+          <p className={css.muted}>{t('cand.hint')}</p>
+          {shown.map(event => (
+            <div key={event.id} className={css.cand} data-tier={event.tier} data-blocked={block.includes(event.id) || undefined}>
+              <span className={css.candTier}>{t(`tl.tier.${event.tier}`)}</span>
+              <span className={css.candText}><b>{event.title}</b><small>{event.reason}</small></span>
+              {sessionId !== undefined && (
+                <span className={css.candPins}>
+                  <button type="button" aria-pressed={prefer.includes(event.id)} onClick={() => { pin(event.id, 'prefer') }}>{t('cand.prefer')}</button>
+                  <button type="button" aria-pressed={block.includes(event.id)} onClick={() => { pin(event.id, 'block') }}>{t('cand.block')}</button>
+                </span>
+              )}
+            </div>
+          ))}
+          {sessionId !== undefined && props.sendToConversation !== undefined && (
+            <button type="button" className={css.resumeGo} onClick={() => { props.sendToConversation?.(sessionId, t('cand.planAsk', { n: chapter })) }}>{t('cand.plan', { n: chapter })}</button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 新建一章，自己写: a title, then the chapter opens in its edit box. */
+function NewOwnChapter(props: NovelSurfaceProps & { readonly onCreated: (n: number) => void }): ReactNode {
+  const { canvasId, remote, sessionId, navigate, t } = props
+  const api = remote()
+  const [title, setTitle] = useState<string | null>(null)
+  const [failure, setFailure] = useState<string | null>(null)
+  if (api === undefined || sessionId === undefined) return null
+  if (title === null) {
+    return <div className={css.ownRow}><button type="button" className={css.planEditBtn} onClick={() => { setTitle('') }}>{t('toc.newOwn')}</button><span className={css.muted}>{t('toc.newOwnHint')}</span></div>
+  }
+  return (
+    <div className={css.ownRow}>
+      <input className={css.ownInput} aria-label={t('toc.newOwnTitle')} placeholder={t('toc.newOwnTitle')} value={title} onChange={event => { setTitle(event.target.value) }} />
+      <button
+        type="button"
+        className={css.confirm}
+        disabled={title.trim() === ''}
+        onClick={() => {
+          void api.newOwnChapter(sessionId, { canvasId, title: title.trim() }).then(result => {
+            if (!result.ok) { setFailure(t('error.generic', { message: result.error.message })); return }
+            if (!result.value.ok || result.value.n === undefined) { setFailure(t('error.generic', { message: result.value.error ?? '' })); return }
+            navigate.refresh()
+            setTitle(null)
+            props.onCreated(result.value.n)
+          })
+        }}
+      >
+        {t('toc.newOwnGo')}
+      </button>
+      <button type="button" className={css.planEditBtn} onClick={() => { setTitle(null) }}>{t('edit.cancel')}</button>
+      {failure !== null && <span className={css.warn}>{failure}</span>}
     </div>
   )
 }

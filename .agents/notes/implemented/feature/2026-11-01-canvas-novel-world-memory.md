@@ -1,128 +1,86 @@
 # Agent Note: The long novel as a world memory — settings, a story-time timeline, and planning as retrieval
 
-Status: proposed
+Status: implemented
 
 ## Problem
 
 The person used the long-novel canvas on a real book (《潜梦者》, 5 chapters, 41 cards) and found (2026-11-01):
 
-- **设定 is a pile of cards that do not connect.** 29 of 41 cards are 世界 cards, 20 of them 「规则」. A creature (鹿蜀) is filed as a rule, several 原则 cards are really world rules, and factions (睡眠公司, 断环) exist only inside rule text. No card points at another, so the person cannot see the world they designed.
-- **规划 is rarely used and reads badly.** The outline proposal is one long paragraph per volume; the page holds the first tab although the person opens it once per book.
-- **确认计划 seems to do nothing.** It stamps `planConfirmedAt`, but the agent only writes when the person also says so in the conversation.
-- **The chapter plan has no focus, and 「信息差 c2」 is unreadable.** `infoGaps[].who` was stored as the model typed it (a ref such as `c2`) and the page did not resolve refs.
-- **The write brief does not fit.** `renderWriteBrief` puts every 世界 card into 「硬约束」: about 4,900 characters of world cards plus 1,200 of 原则 against a budget of about 2,000. When it overflows, foreshadows and recaps are cut, never settings. Undecided 工作稿 settings are presented as 「违反即返工」.
-- **There is no way to write yourself** except registering a finished file as 用户原稿 through the agent.
+- **设定 is a pile of cards that do not connect.** 29 of 41 cards are 世界 cards, 20 of them 「规则」. A creature is filed as a rule, several 原则 cards are world rules, and factions exist only inside rule text. No card points at another.
+- **规划 is rarely used and reads badly.** Each volume's outline is one long paragraph on the first tab.
+- **确认计划 seems to do nothing.** It stamps `planConfirmedAt`, but the agent writes only when the person also says so.
+- **「信息差 c2」 is unreadable.** `infoGaps[].who` was stored as typed (a ref) and the page did not resolve refs.
+- **The write brief does not fit.** Every 世界 card went into 「硬约束」: about 4,900 characters against a budget of about 2,000, so foreshadows and recaps were cut and drafts read as hard rules.
+- **The person cannot write.** The only way was registering a finished file as 用户原稿 through the agent.
 
-## Proposal
+## Decision
 
-Organize the novel as memory, borrowing the standard split:
+The novel is organized as memory:
 
-| Memory | In the book | Changes |
-|---|---|---|
-| Semantic | 世界观: 体系 / 地点 / 势力 / 物种与道具 | Slowly, confirmed by the person |
-| Episodic | Timeline · 已发生: events in story time, with cause and consequence | Every reconciled chapter |
-| Prospective | Timeline · 将发生: preset events, character intentions, consequences, reveals, promises | Opened, advanced, released per chapter |
-| Autobiographical | Each character's 处境, 当前打算, 相信的事 (with source: 亲历 / 听说 / 推测), 怎么看别人, 瞒着别人的 | Every reconciled chapter |
-| Procedural | 写作原则 | Rarely |
+| Memory | In the book |
+|---|---|
+| Semantic | 世界观: 体系 / 地点 / 势力 / 物种与道具 |
+| Episodic | 时间轴 · 已发生 |
+| Prospective | 时间轴 · 将发生: 预设 / 打算 / 后果 / 承诺 / 揭晓 |
+| Autobiographical | A character's 处境, 当前打算, 相信的事 (亲历 / 听说 / 推测), 怎么看别人, 瞒着别人的 |
+| Procedural | 写作原则 |
 
-A character stores only what they believe. 「误以为」 and 「不知道」 are never stored: planning computes them by comparing beliefs against the truths in the working set. The card's 知道的事 / 不知道的事 fields merge into 相信的事.
+A character stores only what they believe. 「误以为」 and 「不知道」 are never stored.
 
-### Tension and tiers
+### Settings (genre `novel@5`)
 
-Each future event carries tension, after Lewin's tension systems, the Zeigarnik and Ovsiankina effects, the goal-gradient hypothesis, expectancy × value, and Steel's temporal motivation theory:
+- **Shelves.** The categories 体系 / 地点 / 势力 / 物种与道具 (roles `system` / `place` / `faction` / `item`) replace 世界. The engine reads all four as settings: EntryRole `world` plus `RuleView.sort`. 原则 is labelled 写作原则.
+- **Links.** Every shelf has `parent`, 势力 has `base`, and 人物 has `faction` / `home`. Each is a `ref` field whose `refKind` names a category role. The canvas matches `refKind` against a category's id or its role. Writes resolve links by ref or name; an unresolved link is dropped and reported.
+- **Backlinks.** `canvas_read` lines and details show the shelf, 属于 and the backlinks. The card page's 关联 block comes from the `card` Remote's `links`.
+- **整理设定.** `novel_write(what=organize)` with `phase=preview` stores `organize.json` and answers the 整理结果. `phase=apply` needs a later user message. It triggers the canvas genre catch-up, creates entries, refiles cards with their fields, sets parents, and switches off an emptied 世界 category.
+- **The brief's settings.** The plan has 用到的设定 (`uses`). `gatherBrief({ for })` carries in full the `uses`, the settings the last two chapters' 对账 recorded, and those whose name the plan (or, for planning, the latest recaps) mentions. Everything else goes by name. Unsettled settings carry 「未定：别在正文里写死」.
 
-`tension = V × E × (1 + 0.25·Z) ÷ (1 + k·D) × satiation`
+### Timeline (`timeline.ts`, `timeline.json`)
 
-- **V**, value: set by the agent when it creates the event, editable, +0.1 when an idea is bound to it.
-- **E**, readiness: the share of the event's preconditions that reconciliation has ticked (each tick records its chapter).
-- **D**, distance to the event's window in chapters (no window counts as 4).
-- **Z**, chapters since the event was last touched.
-- **S**, times advanced in the last 4 chapters; satiation multiplies by 0.35 at 3 or more.
-- **k**, pace: one value per book, fixed for now.
-
-Tiers are checked in order: 饱和 (S ≥ 3) → 搁置 (a precondition unmet) → 临近 (D < 3) → 积压 (Z ≥ 3) → 就绪. The D, Z and S explanation lines are templated from the journals at read time and never stored.
+- **Events.** Each event has a story-time label (`when`), an `order` position, a status (happened / preset / planned / hidden / failed), a source, people, places, value V, a window, preconditions, causes, and touches. A foreshadow card is a derived reveal event `fs:<cardId>`.
+- **Tension.** `V × E × (1 + 0.25Z) ÷ (1 + k·D) × satiation`, with k = 0.4. Tiers are checked in the order 饱和 (S ≥ 3) → 搁置 (a precondition unmet) → 临近 (D < 3) → 积压 (Z ≥ 3) → 就绪.
+- **Recall.** `recall` takes preferred events first and never blocked ones, then every 临近 event, then the rest by tension, up to 8. Apart from the POV, one character fills at most two places. Pins (优先推进 / 本章屏蔽) apply only to the chapter they were set for.
+- **Writes.** `novel_write(what=event)` writes events, with people and places resolved by name and `after` placing an event in story time.
+- **对账.** It adds `events`, `event_progress` (advanced / happened / failed), `preconditions_met`, `beliefs` and `intents`, every row quote-gated. Beliefs and intents go to `minds.jsonl`. A realized event marks its bound ideas 已写入.
 
 ### Planning is retrieval
 
-1. The previous chapter's ending, always.
-2. **Recall is a tool** (a `novel_read` mode). The engine ranks every future event and returns up to 8 one-line candidates: events marked 优先推进 first; events marked 本章屏蔽 removed before the agent sees them; every 临近 event; then by tension. Apart from the POV character, one character may appear in at most 2 candidates. 饱和 and 搁置 events stay out and are listed by name only.
-3. The agent picks 1 main line and 1–2 side lines; the plan records them as 「本章推进」. 本章屏蔽 clears once the plan is registered.
-4. A second read expands only the picked events: involved characters' memory and the belief comparison, the cause chain, settings reached along card links, in-scene relations, and bound ideas verbatim.
-5. Reconciliation checks 「本章推进」: advanced, released, or planned and missed.
-
-The write brief becomes three layers: always (premise, theme, tone, principles, ~400), this chapter (the expansion, ~1,500), and an index of every other setting by name (~300) that the agent can look up with `canvas_read`.
+- The plan brief lists the recalled candidates, one line each. `novel_read(what=events, ids)` expands chosen ones: causes, the people's minds, settings and bound ideas.
+- The plan records 本章推进 (`advances`). The write brief expands those events with the person's ideas verbatim, and in-scene characters carry 现在打算 and 相信.
 
 ### Surfaces
 
-- **Tabs** become 章节 · 设定 · 时间轴 · 灵感. 规划 folds into 章节: volumes head the chapter list as segments with a progress bar. The one-page outline moves to 设定 · 总览. 故事 retires: per-card chapter links move into each card's 「出现在」, and the chapter × card table becomes the timeline's 按章节 view.
-- **设定**: 总览 (premise, world layers, 写作原则), 世界观 with nested places and card links plus computed backlinks, 人物, 关系 (a graph scrubbed by chapter). Foreshadows become reveal events whose detail is a ladder of 「读者此刻知道」 rungs ending in the truth.
-- **时间轴**: 已发生 by story time, with time as a free label and order as position; finished volumes fold into one summary line each. 将发生 is grouped 按优先级 with the formula shown. An event the text realizes moves to 已发生 with its chapter; an intention that fails moves there marked 落空.
-- **章节**: 下一章候选 with 优先推进 / 本章屏蔽; 按计划开写; in-place editing of the chapter file (the phone included); 「新建一章，自己写」 as 用户原稿. Changing less than 5% of a reconciled chapter keeps it 已对账 with a 「对账后改过 N 字」 note.
-- **灵感**: 记录灵感 only stores. 「排进时间轴」 sends one message to the conversation, the agent proposes in that turn, and it writes after the person agrees. 手动绑定 offers candidates by the names the idea mentions, with no model call. States are 待写入 and 已写入第 N 章; ideas can be deleted.
-- **Setting changes**: the chapters whose reconciliation used the setting are marked 待检查; in the next conversation turn the agent delegates a subagent to check them and marks 与设定不符 with a quote.
+- Tabs read 总览 · 章节 · 设定 · 时间轴 · 灵感. The canvas gained a third genre face, `faces.extra`.
+- **总览** (the lead face) holds the one-page outline, the world map (four shelves as trees, 待定 marked) and 写作原则. A book with old 世界 cards gets a button that sends the 整理设定 request as the person's message.
+- **章节** groups the contents by volume, with a progress bar, goal and landing. It also holds 下一章候选 with 优先推进 / 本章屏蔽, and 新建一章，自己写 (用户原稿, opening in the editor).
+- **The reader edits the chapter file.** `editChapterBody` writes through the fenced path with a stale check, and the draft is kept on the device. A change under 5% of a reconciled chapter stays 已对账 and is noted as `editedAfterExtract`. The editor can keep a selection as an idea and ask the agent to continue. 按计划开写 confirms the plan, then sends 「第 N 章计划确认，按计划开写。」 through the input's `submit`; a half-typed draft is never sent.
+- **时间轴** shows 已发生 by story time and 将发生 by priority, with the formula and each event's parts. 按章节 shows the old 故事 table.
+- **灵感** stores ideas (`ideas.json`) without asking anything. 排进时间轴 sends a message. 手动绑定 offers events by the names an idea mentions. States are 待写入 / 已写入第 N 章, and ideas can be deleted.
+- Character cards show 当前打算 and 相信的事 with their source.
 
 ### No silent model calls
 
-The plugin never calls a model in the background. Every model-backed step happens in a visible conversation turn, as a tool call or a delegated subagent, so `context-lens` shows it. Tension, tiers, recall ranking, explanation lines and idea candidates are computation.
+Every model-backed step runs in a visible conversation turn, so `context-lens` shows it. Tension, tiers, recall, explanation lines and idea candidates are computation.
 
-### Migration
+### Not done, by choice
 
-Existing cards convert automatically:
-
-- 世界 · 规则 cards on one theme become sub-entries of one 体系.
-- 地点 cards gain a parent.
-- 道具 cards and mis-filed creatures go to 物种与道具.
-- 历史 cards become timeline events.
-- Factions named in rule text are proposed as 势力 cards.
-- 写法 原则 cards go to 写作原则; 原则 cards that are really settings go to 体系; the book's thesis and ending go to the outline.
-
-The run happens once, in the conversation, and ends with a 整理结果 the person reviews. The skill and the extract schema change so new cards follow the categories.
-
-### Batches
-
-1. **按计划开写** and the 信息差 handle fix. **Implemented in this change**:
-   - The confirm button reads 按计划开写. It confirms, then sends 「第 N 章计划确认，按计划开写。」 as the person's message through the conversation input's `submit`. A draft the person is typing is never sent: the line is appended to it instead.
-   - `resolvePlan` resolves `infoGaps[].who` to a card.
-   - The chapter Remote also maps a character's ref (c2) to its name, so plans stored before the fix read correctly.
-2. 世界观 categories, card links, migration, and the three-layer brief. **The brief's settings layer is implemented ahead of the rest**:
-   - The plan gains 用到的设定 (`uses`), resolved to cards on registration and editable in the plan's text form.
-   - `gatherBrief({ for })` carries in full the plan's `uses`, the settings the last two chapters' 对账 recorded (`ChapterRecord.settings`), and every setting whose name the plan mentions (the plan brief also scans the latest two recaps and the previous tail). Other settings go by name only.
-   - Settings whose text says 工作稿 / 待定 / 未决 / 暂定 / 待调整 carry 「未定：别在正文里写死」.
-   - A caller without `for` gets the old all-in-full brief.
-
-   **The shelves, links and migration are implemented too** (genre `novel@5`):
-   - New categories 体系 / 地点 / 势力 / 物种与道具 (roles `system` / `place` / `faction` / `item`) replace 世界 in the genre. The engine reads all four as settings (EntryRole `world`, with `RuleView.sort`), so the brief, 对账 and refs are unchanged. 原则 is labelled 写作原则.
-   - Link fields are `ref` fields whose `refKind` names a category role: `parent` on every shelf, `base` on 势力, `faction` / `home` on 人物. The canvas now matches a ref field's `refKind` against a category's id or its role (`refResolverOf`, the field picker). Writes resolve links by ref or name, and an unresolved link is dropped and reported.
-   - `canvas_read` lines and card details show the shelf, 属于 and the backlinks (下属 / 以此为据点 / 相关人物). The card page gains a 关联 block from the `card` Remote's `links`, with chips that open the card or the chapter.
-   - 整理设定 is `novel_write(what=organize)`. `phase=preview` stores `organize.json` with the default moves (old 世界 cards by 类型) plus the agent's moves and new entries, and answers the 整理结果. `phase=apply` needs a later user message (the plan-confirm guard). It first triggers the canvas genre catch-up, then creates entries, refiles cards with their fields carried over, sets parents, and switches off an emptied old 世界 category.
-   - The lead face 规划 now reads 总览. Under the one-page outline it draws the world map from the `worldMap` Remote: four shelves as trees, a setting nested under the 属于 on its own shelf, 待定 on unsettled ones, names that open their cards, and the 写作原则 folded. A book with old 世界 cards gets one line whose button sends the 整理设定 request as the person's message.
-   - Still to do: moving the volumes into 章节 and the one-page outline into 设定 (the 总览 face carries both for now). The 设定 face itself still lists categories as the canvas draws them.
-3. Timeline, future events, tension, the recall tool, and the five-part character memory.
-4. In-place chapter editing and the 灵感 tab.
-
-The agreed prototypes are local, under `proposals/` (gitignored): `proposals/prototypes/canvas-novel-world-memory.html` (v3, the reference) and `canvas-novel-world-codex.html` (v2: 设定 layout, card links, the second-book example).
+- The one-page outline stays on 总览 rather than moving into 设定, because the 设定 face is the canvas's own board.
+- Pace k is fixed at 0.4, not a per-book setting.
+- Card fields 知道的事 / 不知道的事 stay on the card. New memory goes to 相信的事.
 
 ## Alternatives considered
 
-- **One numeric priority score shown to the person.** Rejected: unexplainable. The person sees tiers named after the dominant component, with the formula one click away.
-- **Storing 误以为 / 不知道 on the character.** Rejected: they are the author's view. A character only believes things.
-- **A separate 「未了之事」 pool beside the timeline.** Rejected in favour of future events: the person mostly discusses what happens next, and intentions, consequences, reveals and promises are all events.
-- **Calendars and story-time arithmetic.** Rejected: order is primary and time is a label, so precision can vary freely, as can differing time flow between worlds.
-- **Letting the model decide where an idea belongs right after it is saved.** Rejected: that would be a silent background call.
-- **Letting the agent pick from every future event.** Rejected: recall is a tool so hundreds of events never reach the model.
+- **One numeric priority score.** Rejected as unexplainable. The person sees tiers named after the dominant component.
+- **Storing 误以为 / 不知道 on the character.** Rejected: that is the author's view.
+- **A separate 「未了之事」 pool.** Rejected. Intentions, consequences, reveals and promises are all future events.
+- **Calendars.** Rejected. Order is primary and time is a label.
+- **The model deciding where a saved idea belongs.** Rejected: it would be a silent call.
+- **The agent picking from every future event.** Rejected. Recall is a tool, so hundreds of events never reach the model.
 
-## Acceptance criteria
+## Consequences
 
-- On 《潜梦者》 the write brief for chapter 6 fits its budget, carries only the settings reached from the picked events, and lists the rest by name.
-- The 设定 tab shows four 世界观 groups with nested places and backlinks; no 世界 · 规则 card is left unconverted without the person's say.
-- The timeline orders events by story time; a realized future event moves to 已发生 with its chapter.
-- Recall returns at most 8 candidates, never a 本章屏蔽 event, always every 临近 event.
-- 按计划开写 sends exactly one message and never sends a half-typed draft.
-- No model call happens outside a conversation turn.
-
-## Risks
-
-- Reconciliation must extract more (events, belief changes, precondition ticks). Evidence quotes stay mandatory, but a shallow extraction degrades planning quietly.
-- Automatic migration can misfile; the 整理结果 review is the safety net.
-- Expansion along card links can miss a setting a chapter needs but no link reaches; the name index keeps it reachable.
-- Retiring 规划 and 故事 moves surfaces the person already knows.
+- **What it bought.** The write brief carries what the chapter needs, not every setting. Planning starts from what the story owes: intentions, consequences, promises, reveals. The person can steer by event and write alongside the agent.
+- **More extraction.** The 对账 extracts more. Quotes stay mandatory, but a shallow extraction quietly weakens planning.
+- **Migration.** Automatic migration can misfile; the 整理结果 review is the safety net.
+- **Expansion can miss a setting.** Following links can miss one a chapter needs but no link reaches; the name index keeps it reachable.
+- **Tabs moved.** 规划 became 总览, and 故事 became 时间轴.

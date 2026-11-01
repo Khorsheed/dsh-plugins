@@ -1776,3 +1776,49 @@
 @container dsh-panel (max-width: 560px) {
   .linkRow { grid-template-columns: 1fr; gap: 2px; }
 }
+
+/* The chapter text's edit box (2026-11-01): one box, the save bar pinned above it (the phone keyboard never hides it). */
+.editor { display: grid; gap: 8px; }
+.editTop {
+  position: sticky; top: 0; z-index: 1; display: flex; gap: 8px; align-items: center; justify-content: space-between;
+  padding: 6px 0; background: var(--dsw-alias-bg-base);
+}
+.editBox {
+  width: 100%; box-sizing: border-box; min-height: 60vh; padding: 12px 14px; border-radius: 8px; resize: vertical;
+  border: 1px solid var(--dsw-alias-brand-primary); background: none; color: var(--dsw-alias-label-primary);
+  font: var(--dsh-panel-text-body, 15px)/1.9 var(--dsw-font-family);
+}
+.editBar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.editNote { margin: 0; font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
+
+/* 章节: volume heads, the next chapter's candidates, a self-written chapter. */
+.volBar { height: 4px; margin: 0 10px 6px; border-radius: 2px; background: var(--dsw-alias-border-l1); overflow: hidden; }
+.volBar i { display: block; height: 100%; background: var(--dsw-alias-brand-primary); }
+.volGoal, .volLanding { margin: 0 10px 6px; font: var(--dsh-panel-text-meta, 12px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
+.volLanding::before { content: "卷末 · "; color: var(--dsw-alias-label-tertiary); }
+.cands { display: grid; gap: 6px; padding: 6px 0 10px; }
+.cand { display: grid; grid-template-columns: 3.5em minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 10px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; }
+.cand[data-blocked] { opacity: 0.5; }
+.cand[data-blocked] b { text-decoration: line-through; }
+.candTier { font: 600 var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
+.cand[data-tier="near"] .candTier { color: var(--dsw-alias-state-error-primary); }
+.cand[data-tier="backlog"] .candTier { color: var(--dsw-alias-state-warn-primary); }
+.cand[data-tier="ready"] .candTier { color: var(--dsw-alias-state-business-primary); }
+.candText { display: grid; min-width: 0; font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
+.candText small { font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-tertiary); }
+.candPins { display: inline-flex; border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; overflow: hidden; }
+.candPins button { border: 0; background: none; padding: 2px 8px; cursor: pointer; font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
+.candPins button[aria-pressed="true"] { background: var(--dsw-alias-label-primary); color: var(--dsw-alias-bg-base); }
+.ownRow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 4px 0 8px; }
+.ownInput { flex: 1; min-width: 10em; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l1); background: none; color: var(--dsw-alias-label-primary); font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family); }
+@container dsh-panel (max-width: 560px) {
+  .cand { grid-template-columns: 3.5em minmax(0, 1fr); }
+  .candPins { grid-column: 2; justify-self: start; }
+}
+
+/* A character's memory: what they intend, what they believe and where it came from. */
+.mindLine { font: var(--dsh-panel-text-body, 13px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
+.beliefs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font: var(--dsh-panel-text-body, 13px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
+.beliefs li { display: grid; grid-template-columns: 3em minmax(0, 1fr); gap: 8px; }
+.beliefHow { font: var(--dsh-panel-text-meta, 12px)/1.6 var(--dsw-font-family); text-align: center; border-radius: 4px; height: fit-content; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); }
+.beliefHow[data-how="推测"] { color: var(--dsw-alias-state-warn-primary); }

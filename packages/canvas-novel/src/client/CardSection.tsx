@@ -173,6 +173,31 @@ function StoryBlock({ view, busy, readOnly, onOpenLog, onSave, t }: {
         <button type="button" className={css.storyLink} onClick={onOpenLog}>{t('card.inLog')}</button>
       </div>
       <StateRow state={view.currentState ?? {}} busy={busy} readOnly={readOnly} onSave={onSave} t={t} />
+      {view.mind !== undefined && (
+        <>
+          <hr className={css.storyRule} />
+          <div className={css.storyPart}>
+            <div className={css.storyPartHead}>{t('card.intent')}</div>
+            <div className={css.mindLine}>{view.mind.intent ?? t('card.intentNone')}</div>
+          </div>
+          <hr className={css.storyRule} />
+          <div className={css.storyPart}>
+            <div className={css.storyPartHead}>{t('card.beliefs')}</div>
+            {view.mind.beliefs.length === 0
+              ? <div className={css.muted}>{t('card.beliefsNone')}</div>
+              : (
+                <ul className={css.beliefs}>
+                  {view.mind.beliefs.map((row, index) => (
+                    <li key={index}>
+                      <span className={css.beliefHow} data-how={row.source ?? '亲历'}>{row.source ?? '亲历'}</span>
+                      <span>{row.text}{row.from === undefined ? '' : t('card.heardFrom', { who: row.from })}<span className={css.muted}> {t('card.inChapter', { n: row.chapter })}</span></span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+          </div>
+        </>
+      )}
       <hr className={css.storyRule} />
       <div className={css.storyPart}>
         <div className={css.storyPartHead}>{t('log.m.appear')}</div>
