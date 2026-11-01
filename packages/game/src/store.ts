@@ -622,7 +622,7 @@ export class GameService {
     const { target, names } = candidate ? { target: { view: 'play' } as GamePlace, names: [] as string[] } : await this.changedBy(row.root, version)
     const words = (note ?? '').trim()
     const label = words !== '' ? words
-      : candidate ? `v${version} 等你确认上线`
+      : candidate ? `v${version} 候选版本`
       : names.length > 0 ? `v${version}：改了${names.slice(0, 3).join('、')}${names.length > 3 ? ` 等 ${names.length} 个` : ''}`
       : `v${version} 已上线`
     const element = target.elementId === undefined ? undefined : names.length === 1 ? names[0] : target.elementId

@@ -12,7 +12,7 @@ import { LookCanvas } from './looks.tsx'
 import { clearSaves, PlayFrame, type HighlightList, type PickAnswer, type PlayReport } from './PlayFrame.tsx'
 import { pickChip } from './refs.ts'
 import type { PickRef } from '../vfs.ts'
-import { markInteraction } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { markInteraction, updateCards } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import css from './GameTab.module.css'
 
 /** While a game runs, how often it counts as a touch (well inside the follower's 20 s busy window). */
@@ -185,7 +185,14 @@ export function PlayView(props: PlayViewProps): ReactNode {
           </button>
           <button type="button" className={css.ghost} onClick={() => { setRejecting(r => !r) }}>{t('play.reject')}</button>
           <button type="button" className={css.primary} onClick={() => {
-            void api.confirm(sessionId, project.id).then(r => { if (!failureOf(r)) toast(t('toast.confirmed', { version: project.candidate!.version })); setWhich('current'); refresh() })
+            void api.confirm(sessionId, project.id).then(r => {
+              if (!failureOf(r)) {
+                toast(t('toast.confirmed', { version: project.candidate!.version }))
+                // The conversation's candidate card hears what came of it.
+                updateCards('game', { projectId: project.id, view: 'play' }, { status: t('card.confirmed'), awaiting: false, door: t('card.open') })
+              }
+              setWhich('current'); refresh()
+            })
           }}>{t('play.confirm')}</button>
         </div>
         {rejecting && <div className={css.rejectRow}>
@@ -195,6 +202,7 @@ export function PlayView(props: PlayViewProps): ReactNode {
             void api.reject(sessionId, project.id, reason).then(() => {
               setRejecting(false); setReason(''); setWhich('current')
               if (rejected !== undefined) toast(t('nudge.rejected', { version: rejected }))
+              updateCards('game', { projectId: project.id, view: 'play' }, { status: t('card.rejected'), awaiting: false, door: t('card.open') })
               refresh()
             })
           }}>{t('play.rejectGo')}</button>
