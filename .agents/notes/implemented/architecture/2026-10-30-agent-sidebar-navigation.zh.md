@@ -80,6 +80,7 @@ canvas-novel 里这个症状有四个原因：
   - 跟随器接受 `events` 映射：各包把自己实时追加的会话事件（`room/desk-opened`、`room/desk-wrote`）连同这次操作的角色变成去向（canvas、game、video-studio、library 的 `deskDestinationsOf`），由同一条 `decideFollow` 判定。协调者的实时打开跟随；成员的只亮点（画布：标签条小点）；协调者在画布上的写入不动。四份 `shouldFollow` 及其 20 秒窗口已删，消息条只放门。
   - 画布「写了…」的门经 `deskWritePlace` 落位：写的那一章、那一张卡或那一篇成稿，或在「设定」按下临时筛选「本轮改动」（`CanvasNavParams.cards`）显示这一轮动过的所有卡。小说的桌面条目带章号；旧事件从标题里读。
   - reader：`'reader'` 参数 `{ entryId, tab? }`；`reader_note` 指向「笔记」页签，`reader_translate` 指向正文；两者的工具行带「查看 →」；不启动跟随器（决定 4）。
+- **只剩统一机制（11-01）。** 一个会话卡片壳 `registerDestinationCards`（每个写入工具下一行、回合尾一份汇总，门永远开到回答的去向，模式只填 `Body`；模式自己的回合汇总已列出每处改动时用 `turnTail: false`——游戏的回合卡，它本身也是壳里的正文）。写入通知：跟随器对每个实时去向通知该 kind 的监听者（`subscribeWrites`；面板自己的操作用 `notifyWritten`），面板立刻重读，不再轮询；保留只在页面可见时的 30 秒兜底；只有后台任务进度仍在轮询，且只在任务进行中。随之删除：画布的 `OpenCanvasRow` / `ProposeTypeRow` 及其文字解析；小说的 `WriteToolRow`、回合尾折叠、回答解析、10 秒计划轮询、已退役的章节页与规划页；阅读器自己的卡片；图书馆站点页的等待（面板交给模型时改调 `releaseInteraction()`）与宿主侧 `latestActivity` / `noteSessionWrite`；游戏回合卡自己的外框及 6 秒 / 8 秒轮询（协作间成员的发布 / 提议改发 `room/desk-wrote`）；剪辑固定的 3 / 8 / 15 秒轮询。
 - **一章只有一个位置。** 「章节」页签的 `ChapterBook` 接收 `target`，把阅读器打开在第 N 章；要求看计划时聚焦到计划。
   - 每个请求在一次页面加载里只应用一次：页签每次切换都会重新挂载，而画布会保留最后一个请求，所以用一张以画布为键的模块级表来记。
   - 面板内的章节链接（故事日志、规划视图）改为 `navigate.openManuscripts(item)`。
@@ -113,5 +114,5 @@ canvas-novel 里这个症状有四个原因：
   - 规则的机制由 `packages/client-ui-agent-nav/tests` 钉住；
   - 去向行格式由 `packages/canvas/tests/nav-line.spec.ts`、`packages/canvas-novel/tests/nav-line.spec.ts` 钉住；
   - 落点由 `packages/canvas/tests/tools.spec.ts`（「where a canvas write landed」）和 `packages/canvas-novel/tests/tools.spec.ts` 钉住。
-- 「忙」信号是全页的：试玩运行中也会挡住画布、图书馆的自动跳。游戏和剪辑不显示小点；剪辑也没有会话卡片，没跟随的去向只剩回答文字。
+- 「忙」信号是全页的：试玩运行中也会挡住画布、图书馆的自动跳。游戏和剪辑不显示小点；没跟随的去向靠它们的会话卡片回去。
 - 范围内的包都已迁移（docs/agent-nav.md 里的 P1–P3）。房间桌面行只在事件实时追加时跟随，所以房间会话不在屏幕上时到达、之后才打开的消息条算历史，这是有意的。

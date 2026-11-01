@@ -23,7 +23,7 @@ import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.
 import type { GameApi, GameNavParams, GameTabInjected } from './contract.ts'
 import { gameTurnDefinition, GameTurnCard } from './TurnCard.tsx'
 import {
-  DestinationToolRow, followerHostOf, startNavFollower, subscribeWrites, type CardFace,
+  followerHostOf, registerDestinationCards, startNavFollower, subscribeWrites, type CardFace,
 } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { encodeGameRef, GAME_REF_SOURCE, gameRefCodec } from './refs.ts'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
@@ -289,14 +289,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     copy: () => ({ kind: t('desk.kind'), running: t('card.running'), failed: t('card.failed'), open: t('card.open') }),
     go: () => destination => { go(destination.params as unknown as GameNavParams) },
   }
-  for (const tool of ['game_open', 'game_publish'] as const) {
-    ctx.effect(() => seats.inject('tool.call.toolview', () => seats.register({
-      name: 'tool.call.toolview',
-      key: tool,
-      locale: NS,
-      inject: () => cardFace,
-    }, DestinationToolRow)), `game: ${tool} card`)
-  }
+  registerDestinationCards(
+    (body, label) => { ctx.effect(body, label) },
+    seats,
+    () => undefined,
+    { owner: '@khorsheed/dsh-game', tools: ['game_open', 'game_publish'], locale: NS, face: () => cardFace, turnTail: false },
+  )
 
   // The turn card: what each agent turn changed in the game, beneath the
   // turn's closing prose (outside the fold), with jumps into the tab.

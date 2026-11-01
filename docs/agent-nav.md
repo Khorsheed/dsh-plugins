@@ -10,7 +10,8 @@
 |---|---|---|
 | 地址 | 每个面板的每个用户可见位置有一个类型化地址（面板的 `navigation.params` 类型，`SidebarRightTabParamsMap` 里声明）；外部只经由它进入 | 模块级全局（`parkedNav`、`requestPanelProject`）、全页单槽（`RevealedProject`）、从外面直写面板内部 store |
 | 信号 | 写入类工具在回答末尾加**一行**去向：`⟦dsh-nav⟧{"id","kind","params","label"}` | 浏览器轮询「最近活动」决定跳转；用正则解析中文回答找位置 |
-| 呈现 | 跟随器 `startNavFollower` + 唯一规则 `decideFollow`；会话里的卡片只放「查看 →」门 | 工具行自己 `sawRunning` 自动打开；每个包一份 `shouldFollow` |
+| 呈现 | 跟随器 `startNavFollower` + 唯一规则 `decideFollow`；会话里只有一种卡片壳 `registerDestinationCards`（工具行下 + 回合尾），门开到去向行，模式只填正文 | 工具行自己 `sawRunning` 自动打开；每个包一份 `shouldFollow`；每个包自己的卡片外框 / 回合尾折叠 / 从回答文字解析位置 |
+| 刷新 | 跟随器对每个实时去向发写入通知（`subscribeWrites(kind)`；面板自己的确认等操作用 `notifyWritten`），面板收到就重读；外加只在页面可见时的 30 秒兜底 | 为了发现模型写入而每几秒轮询 |
 
 ### 去向行
 
@@ -48,6 +49,21 @@
 
 badge 由各包决定样子（画布：标签条小点）。卡片永远在，点了就去。
 
+### 卡片壳
+
+`registerDestinationCards(effect, slots, conversation, { owner, tools, locale, face, turnTail? })`：
+
+- 给每个写入工具挂一行卡片（`tool.call.toolview`），并在回合尾挂一份汇总（回合结束后宿主会把工具行折进「已调用工具」，汇总在回复正文下方再列一遍；同一位置写两次只留最新一次）。
+- `face.copy()`：模式名、进行中、失败、门的文字；`face.go()`：开到去向；`face.Body`（可选）：模式自己的正文，用 `DestinationCard` 的 `body`（标题、状态、内容、是否等你处理、门的文字）填进同一个壳。不给 `Body` 就是一行紧凑卡：「模式 · 去向标签 · 查看 →」。
+- `turnTail: false`：模式自己的回合汇总已经列出这一轮每处改动（游戏的回合卡，本身也是这个壳里的正文），不再挂通用汇总，免得同一处改动在一条回复下出现两次。
+
+### 刷新
+
+- 跟随器读到实时去向（无论跟不跟随）都会对该 kind 发写入通知；cardsOnly 的跟随器（reader）也照发。
+- 面板用 `subscribeWrites(kind, 重读)` 代替「为发现模型写入的轮询」；面板里自己的操作若会改变会话卡片显示的状态（确认计划、采用大纲），调用 `notifyWritten`。
+- 兜底：只在页面可见时 30 秒一次，接住屏幕上那个会话看不到的写入（另一个标签页 / 设备、宿主重启、成员在自己会话里的写入）。
+- 后台任务进度（导入、转写、导出、抓取）不经过会话，照常轮询，但只在任务进行中才轮询。
+
 ### 日志与定位
 
 每次判断一行：
@@ -63,16 +79,18 @@ badge 由各包决定样子（画布：标签条小点）。卡片永远在，�
 1. 面板：在 `SidebarRightTabParamsMap` 声明 kind 的地址类型；面板体读 `tab.navigation.params` + `revision`，每个 revision 应用一次。提供一个 `go(params)`（打开 tab + 落位），所有外部入口（卡片、桌面行、跟随器）都走它。
 2. 工具：写入类工具回答末尾加去向行（内联 `nav-line.ts` + 钉格式的测试）。
 3. 客户端：`startNavFollower(followerHostOf(ctx.get), { kinds, open: go, badge })`；面板根节点 `{...interactionHandlers}`。
-4. 卡片：会话里的卡片只放门，门调用同一个 `go`。删掉卡片里的自动打开逻辑。
-5. `package.json` devDependencies 加 `"@khorsheed/dsh-client-ui-agent-nav": "workspace:*"`，`scripts/check-plugin-independence.ts` 的 `ALLOWED_EDGES` 加这条边。
+4. 卡片：`registerDestinationCards`，模式需要时给 `Body`；不要自己写卡片外框、回合尾折叠或从回答文字找位置。
+5. 刷新：`subscribeWrites(kind)` + 30 秒可见兜底；不为发现模型写入而轮询。
+6. `package.json` devDependencies 加 `"@khorsheed/dsh-client-ui-agent-nav": "workspace:*"`，`scripts/check-plugin-independence.ts` 的 `ALLOWED_EDGES` 加这条边。
 
 ## 进度
 
 | 包 | 状态 |
 |---|---|
-| canvas、canvas-novel | 已接入（P1）。章节一律落在「章节」页签里的第 N 章，独立章节页只做旧行转发 |
-| library | 已接入（P2）。项目、书、路线（落到要「采用」的那本书）、讲义、测验、拍页各落确切位置；记卡片不跳（右栏「已记下」提示是入口）；5 秒揭示轮询和 `RevealedProject` 已删；站点页里用户点「开始 / 出题」后的等待保留（刚点过按钮按规则只会亮点，由它把人带进去，落点相同） |
+| 统一收尾（11-01） | 各包只剩统一机制：画布三个写入工具、小说（计划 / 正文 / 大纲 / 对账正文）、图书馆七个工具、游戏（工具行；回合卡作为壳里的正文，`turnTail: false`）、剪辑四个工具、阅读器两个工具都用同一个卡片壳；删掉了各包自己的卡片 / 回合尾折叠 / 回答文字解析、图书馆站点页的「等着跳」与宿主侧旧揭示代码、小说已退役的章节页和规划页；为发现模型写入的轮询（画布 4 秒、小说计划卡 10 秒、阅读器笔记 5 秒、游戏 6 / 8 秒、剪辑 3 / 8 / 15 秒、图书馆提示）都换成写入通知 + 30 秒兜底；游戏成员在协作间的发布 / 提议发 `room/desk-wrote`。剩下的轮询只跟后台任务进度 |
+| canvas、canvas-novel | 已接入（P1）。章节一律落在「章节」页签里的第 N 章 |
+| library | 已接入（P2）。项目、书、路线（落到要「采用」的那本书）、讲义、测验、拍页各落确切位置；记卡片不跳（右栏「已记下」提示是入口）；5 秒揭示轮询和 `RevealedProject` 已删；站点页的等待已删：点「开始 / 出题」把事情交给模型时调 `releaseInteraction()`，讲义 / 测验写好由跟随器直接打开；记卡片的去向是只给卡片的 `library-record`，它的写入通知触发「已记下」提示 |
 | game | 已接入（P2）。`game_publish` 去掉 `show`，去向按版本改动推出（单个元素 / 元素列表 / 试玩；候选一律试玩）；`game_open` 落试玩；试玩运行中每 5 秒 `markInteraction`，视为面板忙（全页生效，也会挡住其他面板的自动跳）；不设小点（回合卡已列出改动）；旧的 820px 例外取消，统一按窄屏规则 |
-| video-studio | 已接入（P2）。工程 / 素材 / 文稿里的提议组（滚动并闪烁）/ 导出 可寻址；去掉 `requestPanelProject`；单会话打开也跟随。没有标签小点、也没有会话卡片，跳不了时只靠回答文字 |
+| video-studio | 已接入（P2）。工程 / 素材 / 文稿里的提议组（滚动并闪烁）/ 导出 可寻址；去掉 `requestPanelProject`；单会话打开也跟随。没有标签小点；会话里四个工具都有卡片 |
 | room 桌面行 | 已接入（P3，11-01）。跟随由跟随器的 `events` 读各包自己的 `room/desk-*` 实时事件（`deskDestinationsOf`），同一条 `decideFollow` 带角色判定：协调者的打开跟随，成员的只亮点（画布：标签条小点）；画布协调者的「写了…」不动（写在房间已经显示的画布上）。四份 `shouldFollow` / 20 秒窗口已删，消息条只放门。画布「写了…」的门按 `deskWritePlace` 落位：写了章节到那一章正文，只动一张卡 / 一篇成稿到那一项，动了多张卡到「设定」并按下临时筛选「本轮改动」（`CanvasNavParams.cards`）；小说桌面条目带章号（旧事件从标题读） |
-| reader | 已接入（P3），只给卡片：`reader_note`（结论 / 讨论）落到文章的「笔记」页签，`reader_translate` 落到文章正文；`'reader'` 地址 `{ entryId, tab? }`，面板每个 revision 应用一次；会话里这两个工具的行带「查看 →」；不启动跟随器 |
+| reader | 已接入（P3），只给卡片：`reader_note`（结论 / 讨论）落到文章的「笔记」页签，`reader_translate` 落到文章正文；`'reader'` 地址 `{ entryId, tab? }`，面板每个 revision 应用一次；会话里两个工具都有卡片；跟随器以 cardsOnly 运行（从不自动跳，只发写入通知） |

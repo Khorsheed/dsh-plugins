@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { destinationLine } from '../src/destination.ts'
-import { DestinationToolRow, DestinationTurnTail, destinationTurnDefinition, toolCardModel, turnCardItems, type CardCopy } from '../src/client/card.tsx'
+import { DestinationToolRow, DestinationTurnTail, destinationTurnDefinition, registerDestinationCards, toolCardModel, turnCardItems, type CardCopy } from '../src/client/card.tsx'
 
 afterEach(() => { cleanup() })
 
@@ -61,5 +61,22 @@ describe('the Turn tail', () => {
     render(<DestinationTurnTail {...owner} turnKey="lib/cards" copy={() => copy} go={() => go} />)
     fireEvent.click(screen.getByText('查看 →'))
     expect(go).toHaveBeenCalledWith(dest)
+  })
+})
+
+describe('registerDestinationCards', () => {
+  it('seats a row per tool and the Turn tail, or the rows only when the mode has its own Turn summary', () => {
+    const seen: string[] = []
+    const slots = {
+      inject: (key: string, callback: () => () => void) => { seen.push(key); callback(); return () => {} },
+      register: () => () => {},
+    }
+    const conversation = () => ({ events: { register: () => () => {} } })
+    const face = () => ({ copy: () => copy, go: () => undefined })
+    registerDestinationCards(body => { body() }, slots, conversation, { owner: 'o', tools: ['a', 'b'], face })
+    expect(seen).toEqual(['tool.call.toolview', 'tool.call.toolview', 'conversation.chat.turnTail'])
+    seen.length = 0
+    registerDestinationCards(body => { body() }, slots, conversation, { owner: 'o', tools: ['a'], face, turnTail: false })
+    expect(seen).toEqual(['tool.call.toolview'])
   })
 })
