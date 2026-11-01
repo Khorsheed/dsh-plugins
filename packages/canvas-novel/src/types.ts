@@ -1626,6 +1626,8 @@ export interface StoryCard {
   readonly name: string
   readonly plot: Readonly<Record<string, string>>
   readonly history: readonly HistoryEntry[]
+  /** A setting's shelf (体系 / 地点 / 势力 / 物种与道具). */
+  readonly sort?: 'system' | 'place' | 'faction' | 'item'
 }
 
 /** A character row: the card plus the chapters they are in. */
@@ -1778,6 +1780,10 @@ export interface NovelTimelineResult {
   readonly pins?: { readonly prefer: readonly string[]; readonly block: readonly string[] }
   /** The candidates recall hands the planner for that chapter (ids, in order). */
   readonly candidates?: readonly string[]
+  /** 世界层 the events fall in (top-level place card ids), first seen first. */
+  readonly lanes?: readonly string[]
+  /** Reconciled chapters with no events of their own (reconciled before the timeline): only a recap stands in. */
+  readonly backfill?: readonly number[]
 }
 
 /** One event as the timeline face reads it. */
@@ -1797,6 +1803,10 @@ export interface TimelineEventView {
   readonly foreshadowId?: string
   /** Ideas bound to it, not yet written in. */
   readonly ideas: number
+  /** 世界层: the top-level place it happens in. */
+  readonly lane?: string
+  /** A chapter's recap standing in for its missing events. */
+  readonly recap?: boolean
 }
 
 /** One event to come, with its tension. */

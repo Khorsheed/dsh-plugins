@@ -195,7 +195,7 @@ function worldRow(card: StoryCard, t: T): WorldRow {
     const first = changes.every(entry => entry.kind === 'create')
     return { chapter, glyph: first ? 'first' : 'changed', word: t(first ? 'log.m.first' : 'log.m.changed'), planned: false, notes: [], changes }
   })
-  const kind = card.plot['kind'] ?? ''
+  const kind = card.sort !== undefined ? t(`world.shelf.${card.sort}`) : card.plot['kind'] ?? ''
   return { id: card.cardId, ref: card.ref, text: card.name, meta: kind, bad: false, steps, ...span(steps), card, kind }
 }
 
