@@ -11,6 +11,7 @@ import type {
 import { WINDOW_TURNS, fmtSpan, gapShown, isHollowTurn, latestTurnSeq, resolveTurnSeq, turnGaps, turnNumber, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
+import { rememberSelection, takeSelection } from './member-jump.ts'
 import { hasCallAnchor, hasMessageAnchor, hasTurnAnchor, scrollConversationToBottom, scrollConversationToCall, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
@@ -49,12 +50,15 @@ const listMetaOf = ({ range, unloaded, total }: ListTurnsResult): Pick<ListTurns
 
 export function InspectorPanel({
   sessionId: ownSessionId, useTabInfo, t,
-  listTurns, loadTurns, loadThrough, getTurn, getRequest, getTurnTiming, getSessionTrend,
+  listTurns, loadTurns, loadThrough, getTurn, getRequest, getTurnTiming, getSessionTrend, openInMemberSession,
 }: InspectorTabProps): ReactNode {
   const { tab } = useTabInfo()
+  // The place this panel kept when it sent the reader to a member's session
+  // (the panel unmounts with its session's Sidebar): restored once on remount.
+  const [restored] = useState(() => takeSelection(ownSessionId, tab.navigation.revision))
   // A navigation may point the panel at another session (a room member's
   // child session); the next navigation without one returns to the own session.
-  const [viewed, setViewed] = useState<string | null>(null)
+  const [viewed, setViewed] = useState<string | null>(restored?.viewed ?? null)
   const sessionId = (viewed ?? ownSessionId) as typeof ownSessionId
   /** The message whose turn the next turn list should select (from a navigation). */
   const pendingMessage = useRef<string | undefined>(undefined)
@@ -78,15 +82,15 @@ export function InspectorPanel({
   const [parent, setParent] = useState<ListTurnsResult['parent'] | null>(null)
   const [listMeta, setListMeta] = useState<Pick<ListTurnsResult, 'range' | 'unloaded' | 'total'>>({})
   const range = listMeta.range
-  const [turnSeq, setTurnSeq] = useState<number | null>(null)
+  const [turnSeq, setTurnSeq] = useState<number | null>(restored?.turnSeq ?? null)
   const [overview, setOverview] = useState<TurnOverview | null>(null)
   const [timing, setTiming] = useState<TurnTiming | null>(null)
   const [request, setRequest] = useState<CapturedRequest | null>(null)
-  const [mainTab, setMainTab] = useState<MainTab>('token')
+  const [mainTab, setMainTab] = useState<MainTab>(restored?.mainTab ?? 'token')
   const [filterCat, setFilterCat] = useState<CompositionFilter>(null)
   const [requestTrail, setRequestTrail] = useState<{ turnSeq: number; scopeId: string; seq: number }[]>([])
-  const [scopeId, setScopeId] = useState<string>('main')
-  const [selectedSeq, setSelectedSeq] = useState<number | null>(null)
+  const [scopeId, setScopeId] = useState<string>(restored?.scopeId ?? 'main')
+  const [selectedSeq, setSelectedSeq] = useState<number | null>(restored?.selectedSeq ?? null)
   const [error, setError] = useState<string | null>(null)
   const [turnMissing, setTurnMissing] = useState(false)
   /** Bump to re-run the pull (the error state's retry). */
@@ -109,7 +113,12 @@ export function InspectorPanel({
   const revision = tab.navigation.revision
   const navParams = tab.navigation.params as RequestInspectorTabParams | undefined
   const navTurnSeq = navParams?.turnSeq
-  const lastNavRevision = useRef(0)
+  // A restored place already reflects every navigation up to its revision; re-applying them would undo it.
+  const lastNavRevision = useRef(restored === undefined ? 0 : revision)
+  /** The call a navigation asked to show; consumed once the turn list arrives. */
+  const pendingLocate = useRef<RequestInspectorTabParams['locateCall']>(undefined)
+  /** A located call waiting for the panel's turn list to be in state (the jump reads it). */
+  const [locateRequest, setLocateRequest] = useState<RequestInspectorTabParams['locateCall']>(undefined)
   useEffect(() => {
     if (revision === 0 || revision === lastNavRevision.current) return
     lastNavRevision.current = revision
@@ -117,6 +126,14 @@ export function InspectorPanel({
     setViewed(target === undefined || target === ownSessionId ? null : target)
     pendingMessage.current = navParams?.messageId
     pendingDecision.current = navParams?.roomDecision
+    pendingLocate.current = navParams?.locateCall
+    if (navParams?.locateCall !== undefined) {
+      setTurnSeq(null)
+      setScopeId('main')
+      setSelectedSeq(null)
+      setFilterCat(null)
+      setMainTab('token')
+    }
     if (navParams?.roomDecision !== undefined) {
       setTurnSeq(null)
       setScopeId(ROOM_TAB)
@@ -158,7 +175,12 @@ export function InspectorPanel({
       const decided = pendingDecision.current === undefined ? undefined
         : result.value.turns.find(turn => turn.roomDecisionIds?.includes(pendingDecision.current!) === true)?.turnSeq
       pendingDecision.current = undefined
-      const asked = decided ?? (pendingMessage.current === undefined ? undefined : resolveTurnSeq(result.value.turns, pendingMessage.current))
+      const locate = pendingLocate.current
+      pendingLocate.current = undefined
+      const located = locate?.hostTurn === undefined ? undefined
+        : result.value.turns.find(turn => turn.hostTurn === locate.hostTurn)?.turnSeq
+      if (locate !== undefined) setLocateRequest(locate)
+      const asked = decided ?? located ?? (pendingMessage.current === undefined ? undefined : resolveTurnSeq(result.value.turns, pendingMessage.current))
       pendingMessage.current = undefined
       setTurnSeq(previous => asked !== undefined
         ? asked
@@ -381,6 +403,29 @@ export function InspectorPanel({
   // member's calls live in the member's own session.
   const callsInConversation = viewed === null && effectiveScope !== undefined
     && (effectiveScope.kind === 'main' || effectiveScope.delegatedBy !== undefined)
+  // A navigation's call (handed over from a room's lens): shown once the turn list is in state.
+  useEffect(() => {
+    if (locateRequest === undefined || turns === null) return
+    setLocateRequest(undefined)
+    locateCall(locateRequest.callId, locateRequest.hostTurn)
+    // locateCall is a render-scoped closure over `turns`; the effect re-runs on what it needs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locateRequest, turns])
+  /**
+   * A room member's own session, when this scope is one: a member run of a
+   * room round, keyed by its child session id (a run whose child is unknown
+   * keys as `room:<seq>:<member>` and has no session to open). Its calls are
+   * shown there, not in this conversation.
+   */
+  const memberSession = viewed === null && turn?.room !== undefined && effectiveScope !== undefined
+    && effectiveScope.kind === 'subagent' && !effectiveScope.scopeId.includes(':')
+    ? effectiveScope.scopeId : undefined
+  /** Keep this panel's place, then send the reader to the member's session, on the call. */
+  const locateInMember = memberSession === undefined || openInMemberSession === undefined ? undefined
+    : (callId: string, sourceTurn: number | undefined): void => {
+      rememberSelection(ownSessionId, { revision, viewed, turnSeq, scopeId, selectedSeq, mainTab })
+      openInMemberSession(memberSession, sourceTurn === undefined ? { callId } : { callId, hostTurn: sourceTurn })
+    }
 
   const onSelectTurn = (next: number): void => {
     if (next === turnSeq) return
@@ -523,7 +568,8 @@ export function InspectorPanel({
           previousResponseNumber={previousResponseNumber}
           onSelect={seq => { setSelectedSeq(seq); setFilterCat(null) }}
           onToggleFilter={category => { setFilterCat(previous => previous === category ? null : category) }}
-          onLocateCall={callsInConversation ? (callId, sourceTurn) => locateCall(callId, effectiveScope?.kind === 'main' ? sourceTurn : undefined) : undefined}
+          onLocateCall={callsInConversation ? (callId, sourceTurn) => locateCall(callId, effectiveScope?.kind === 'main' ? sourceTurn : undefined) : locateInMember}
+          locateInMember={!callsInConversation && locateInMember !== undefined}
           t={t}
         />
       </div>

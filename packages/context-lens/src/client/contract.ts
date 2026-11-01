@@ -24,6 +24,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
+import type { LocateCallTarget } from './member-jump.ts'
 import type {
   SessionTrend, CapturedRequest, ListTurnsResult, ScopedRefusal, TurnOverview, TurnTiming,
 } from '../types.ts'
@@ -54,6 +55,12 @@ export interface InspectorTabInjected {
   getRequest: (sessionId: SessionId, seq: number) => Promise<RemoteResult<CapturedRequest | ScopedRefusal | undefined>>
   /** One turn's whole-turn timing aggregation — the 耗时分布 tab. */
   getTurnTiming: (sessionId: SessionId, turnSeq: number) => Promise<RemoteResult<TurnTiming | undefined>>
+  /**
+   * Switch the conversation to a room member's own session and open the lens
+   * there on one call (member-jump.ts). Absent on a host without
+   * `uiWorkspace.openSession`; never throws.
+   */
+  openInMemberSession?: (memberSession: string, target: LocateCallTarget) => void
 }
 
 /** Full props of the right-Sidebar tab body entry. */

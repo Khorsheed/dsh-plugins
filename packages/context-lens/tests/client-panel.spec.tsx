@@ -175,6 +175,10 @@ interface BenchOptions {
   readonly onLoadThrough?: (() => void) | undefined
   /** Coordinator handoffs on the session trend. */
   readonly handoffs?: readonly { at: number; name: string }[] | undefined
+  /** The plugin-level hand-over to a member's session (absent: the host cannot open sessions). */
+  readonly openInMemberSession?: ((memberSession: string, target: { callId: string; hostTurn?: number }) => void) | undefined
+  /** The sidebar's own session (default s1). */
+  readonly sessionId?: string | undefined
 }
 
 function bench(opts: BenchOptions = {}) {
@@ -210,7 +214,8 @@ function bench(opts: BenchOptions = {}) {
   // The signal is per tab occurrence — one controller per bench, never per render.
   const signal = new AbortController().signal
   const props = {
-    sessionId: 's1',
+    sessionId: opts.sessionId ?? 's1',
+    ...opts.openInMemberSession === undefined ? {} : { openInMemberSession: opts.openInMemberSession },
     useTabInfo: () => ({
       sidebar: { expanded: true, fullscreen: false },
       panel: { id: 'p1' },
@@ -367,6 +372,65 @@ describe('InspectorPanel · scope chips', () => {
     await waitFor(() => expect(screen.getByText(zh['seg.systemEmpty'])).toBeTruthy())
     openDetails(zh['lens.layerTools'])
     await waitFor(() => expect(screen.getByText(zh['seg.toolsEmpty'])).toBeTruthy())
+  })
+})
+
+describe('InspectorPanel · a room member\'s calls', () => {
+  // Turn 2 as a room round; its child-1 run is the member 443e7c65's.
+  const ROOM_TURNS: TurnListItem[] = [TURNS[0]!, { ...TURNS[1]!, room: { targets: ['尼尔盖曼'] } }]
+  const MEMBER_OVERVIEW: TurnOverview = { ...OVERVIEW2, turn: ROOM_TURNS[1]!, scopes: OVERVIEW2.scopes.map(s => s.scopeId === 'child-1' ? { ...s, scopeId: '443e7c65' } : s) }
+  const MEMBER_REQ: CapturedRequest = {
+    ...REQ201, scopeId: '443e7c65',
+    segments: { ...REQ201.segments, added: [{ index: 3, category: 'tool-result', source: 'edit', preview: 'Replaced 1 occurrence', full: 'Replaced 1 occurrence in 第1章.md', chars: 26, toolCallId: 'tool_x', sourceTurn: 53, freshness: 'new' }] },
+  }
+  const memberBench = (open?: BenchOptions['openInMemberSession'], sessionId = 'room-a') => bench({
+    sessionId, turns: ROOM_TURNS, openInMemberSession: open,
+    overview: n => n === 2 ? MEMBER_OVERVIEW : n === 1 ? OVERVIEW1 : undefined,
+    requests: { 201: MEMBER_REQ },
+  })
+  const toMemberRun = async () => {
+    await waitFor(() => expect(screen.getByRole('tab', { name: /提取 JSON/ })).toBeTruthy())
+    fireEvent.click(screen.getByRole('tab', { name: /提取 JSON/ }))
+    await waitFor(() => expect(screen.getByText('Replaced 1 occurrence')).toBeTruthy())
+    openDetails('Replaced 1 occurrence')
+  }
+
+  it('offers 在成员会话中查看 on a member run; it keeps the panel\'s place, then hands the call over', async () => {
+    const open = vi.fn()
+    memberBench(open)
+    await toMemberRun()
+    expect(screen.queryByRole('button', { name: '在会话中查看 ↗' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '在成员会话中查看 ↗' }))
+    expect(open).toHaveBeenCalledWith('443e7c65', { callId: 'tool_x', hostTurn: 53 })
+    // The room's panel unmounts with its Sidebar; on remount it is back on the member run.
+    cleanup()
+    memberBench(open)
+    await waitFor(() => expect(screen.getByText('Replaced 1 occurrence')).toBeTruthy())
+    expect(screen.getByRole('tab', { name: /提取 JSON/ }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('no hand-over without a way to open sessions: no button', async () => {
+    memberBench(undefined, 'room-b')
+    await toMemberRun()
+    expect(screen.queryByRole('button', { name: /在成员会话中查看|在会话中查看/ })).toBeNull()
+  })
+
+  it('a locateCall navigation selects the call\'s turn and lands on the call row', async () => {
+    const port = document.createElement('div')
+    port.setAttribute('data-conversation-scroll', '')
+    const row = document.createElement('div')
+    row.setAttribute('data-chat-call-id', 'tool_y')
+    port.appendChild(row)
+    document.body.appendChild(port)
+    const scrolled = vi.fn()
+    Object.defineProperty(Element.prototype, 'scrollIntoView', { value: scrolled, configurable: true })
+    try {
+      bench({ params: { locateCall: { callId: 'tool_y', hostTurn: 1 } }, revision: 1 })
+      await waitFor(() => expect(screen.getByRole('button', { name: zh['turn.switch'] }).textContent).toContain('1 / 2'))
+      await waitFor(() => expect(scrolled.mock.instances).toContain(row))
+    } finally {
+      port.remove()
+    }
   })
 })
 

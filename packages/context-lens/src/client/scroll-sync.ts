@@ -244,12 +244,25 @@ export function hasCallAnchor(callId: string, root: ParentNode = document): bool
 /** Frames a folded call may take to unfold before the jump gives up on it. */
 const REVEAL_FRAMES = 60
 
+/** The outermost `hidden="until-found"` ancestor still folding a row (the next layer to open), or null. */
+function outermostFold(row: Element, scope: ParentNode): Element | null {
+  let outer: Element | null = null
+  for (let element = row.parentElement; element !== null && element !== scope; element = element.parentElement) {
+    if (element.getAttribute('hidden') === 'until-found') outer = element
+  }
+  return outer
+}
+
 /**
  * Scroll the conversation to one tool call's row. A folded step group keeps
- * its rows in the DOM under `hidden="until-found"` and opens on the
- * standard `beforematch` event (ui-chat searchable-hidden) — the same path
- * the browser's find-in-page takes — so every such ancestor gets that event
- * first, and the jump lands once the row renders. Not mounted is a no-op.
+ * its rows in the DOM under `hidden="until-found"` and opens on the standard
+ * `beforematch` event (ui-chat searchable-hidden; the host's own reveal,
+ * session-inspector chat-node/reveal.ts, takes the same path). Opening is a
+ * React re-render, so it goes one layer at a time, outermost first: the
+ * scrollport gets one `beforematch`, then each frame re-finds the row (a
+ * re-render replaces elements) and opens its outermost fold still closed,
+ * until the row renders or the frame budget runs out; then the jump lands.
+ * Not mounted is a no-op.
  * @param callId - the provider-issued call id.
  * @param root - the DOM scope (document in production).
  * @param behavior - scroll motion.
@@ -265,20 +278,36 @@ export function scrollConversationToCall(
     const scope: ParentNode = port ?? root
     const row = callRow(scope, callId)
     if (row === null) return false
-    for (let folded = row.closest('[hidden="until-found"]'); folded !== null; folded = folded.parentElement?.closest('[hidden="until-found"]') ?? null) {
-      folded.dispatchEvent(new Event('beforematch', { bubbles: true }))
-    }
     const find = (): Element | null => {
       const current = callRow(scope, callId)
       return current === null || current.closest('[hidden]') !== null ? null : landingOf(current)
     }
-    let frames = 0
-    const land = (): void => {
-      if (find() !== null || frames >= REVEAL_FRAMES || typeof requestAnimationFrame !== 'function') { landOn(find, port, behavior); return }
-      frames += 1
-      requestAnimationFrame(land)
+    if (outermostFold(row, scope) !== null) port?.dispatchEvent(new Event('beforematch'))
+    const opened = new Set<Element>()
+    /** Open the row's outermost closed fold once; false when there is none left to open. */
+    const open = (current: Element): boolean => {
+      const fold = outermostFold(current, scope)
+      if (fold === null || opened.has(fold)) return false
+      opened.add(fold)
+      fold.dispatchEvent(new Event('beforematch'))
+      return true
     }
-    land()
+    if (typeof requestAnimationFrame !== 'function') {
+      // No frame clock: open every layer now, then land once.
+      for (let current = callRow(scope, callId); current !== null && open(current); current = callRow(scope, callId)) { /* next layer */ }
+      landOn(find, port, behavior)
+      return true
+    }
+    let frames = 0
+    const step = (): void => {
+      const current = callRow(scope, callId)
+      if (current === null) return
+      if (find() !== null || frames >= REVEAL_FRAMES) { landOn(find, port, behavior); return }
+      open(current)
+      frames += 1
+      requestAnimationFrame(step)
+    }
+    step()
     return true
   } catch {
     return false

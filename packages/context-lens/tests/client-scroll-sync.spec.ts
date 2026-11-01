@@ -196,7 +196,72 @@ describe('scrollConversationToMessage', () => {
 })
 
 describe('scrollConversationToCall', () => {
-  it('unfolds the folded step group holding the call (beforematch), then lands on the call row', () => {
+  /** A manual frame clock: `run` fires queued frames one by one. */
+  function frameClock() {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    return { run: (count: number): void => { for (let i = 0; i < count; i += 1) frames.shift()?.(0) } }
+  }
+
+  it('opens nested folds one layer at a time, outermost first, re-finding the row after each re-render', () => {
+    const clock = frameClock()
+    const { port, rows } = conversation([5])
+    const order: string[] = []
+    const portOpened = vi.fn()
+    port.addEventListener('beforematch', portOpened)
+    const outer = document.createElement('div')
+    outer.setAttribute('hidden', 'until-found')
+    const inner = document.createElement('div')
+    inner.setAttribute('hidden', 'until-found')
+    const call = document.createElement('div')
+    call.setAttribute('data-chat-call-id', 'call_9')
+    inner.appendChild(call)
+    outer.appendChild(inner)
+    rows.get(5)!.appendChild(outer)
+    // Each fold opens only on a later tick (a React re-render); the inner
+    // fold's re-render replaces the row element entirely.
+    let pending: (() => void) | undefined
+    outer.addEventListener('beforematch', () => { order.push('outer'); pending = () => outer.removeAttribute('hidden') })
+    inner.addEventListener('beforematch', () => {
+      order.push('inner')
+      pending = () => {
+        inner.removeAttribute('hidden')
+        const replaced = document.createElement('div')
+        replaced.setAttribute('data-chat-call-id', 'call_9')
+        inner.replaceChild(replaced, call)
+      }
+    })
+    expect(scrollConversationToCall('call_9', document, 'auto')).toBe(true)
+    expect(portOpened).toHaveBeenCalledTimes(1)
+    expect(order).toEqual(['outer'])
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    pending?.(); pending = undefined
+    clock.run(1)
+    expect(order).toEqual(['outer', 'inner'])
+    pending?.(); pending = undefined
+    clock.run(1)
+    const landed = port.querySelector('[data-chat-call-id="call_9"]')
+    expect(landed).not.toBe(call)
+    expect(scrollIntoView.mock.instances[0]).toBe(landed)
+  })
+
+  it('gives up after the frame budget when a fold never opens (no landing on a hidden row)', () => {
+    const clock = frameClock()
+    const { rows } = conversation([5])
+    const stuck = document.createElement('div')
+    stuck.setAttribute('hidden', 'until-found')
+    const call = document.createElement('div')
+    call.setAttribute('data-chat-call-id', 'call_stuck')
+    stuck.appendChild(call)
+    rows.get(5)!.appendChild(stuck)
+    expect(scrollConversationToCall('call_stuck', document, 'auto')).toBe(true)
+    clock.run(80)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('without a frame clock, opens every layer at once and lands', () => {
+    vi.stubGlobal('requestAnimationFrame', undefined)
     const { rows } = conversation([5])
     const group = document.createElement('div')
     group.setAttribute('hidden', 'until-found')

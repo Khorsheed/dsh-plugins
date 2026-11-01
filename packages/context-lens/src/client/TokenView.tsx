@@ -30,6 +30,8 @@ export interface TokenViewProps {
   readonly onOpenRequest?: ((link: RequestLink) => void) | undefined
   /** Show a tool call in the conversation on the left; absent when this scope's calls are not there. */
   readonly onLocateCall?: ((callId: string, sourceTurn: number | undefined) => void) | undefined
+  /** `onLocateCall` leaves for a room member's own session (the button says so). */
+  readonly locateInMember?: boolean
   readonly onReturn?: (() => void) | undefined
   readonly selectedSeq: number | null
   readonly request: CapturedRequest | null
@@ -40,7 +42,7 @@ export interface TokenViewProps {
   readonly t: T
 }
 
-export function TokenView({ scope, selectedSeq, request, filterCat, previousResponseNumber, onSelect, onOpenRequest, onLocateCall, onReturn, onToggleFilter, t }: TokenViewProps): ReactNode {
+export function TokenView({ scope, selectedSeq, request, filterCat, previousResponseNumber, onSelect, onOpenRequest, onLocateCall, locateInMember, onReturn, onToggleFilter, t }: TokenViewProps): ReactNode {
   const [raw, setRaw] = useState(false)
   const selectedItem = scope.requests.find(r => r.seq === selectedSeq) ?? scope.requests[0]
   const cats = request === null ? [] : aggregateCategories(request).filter(c => c.chars > 0)
@@ -81,7 +83,7 @@ export function TokenView({ scope, selectedSeq, request, filterCat, previousResp
                   <span className={css.badge}>×N</span>{t('lens.duplicates')}<span>{fmtK(duplicates.extraChars)}</span>
                 </button>}
               </div>
-              <SegmentBlocks key={`${request.scopeId}-${request.seq}`} request={request} filterCat={filterCat} onClearFilter={() => { if (filterCat !== null) onToggleFilter(filterCat) }} previousResponseNumber={previousResponseNumber} onOpenRequest={onOpenRequest} onLocateCall={onLocateCall} t={t} />
+              <SegmentBlocks key={`${request.scopeId}-${request.seq}`} request={request} filterCat={filterCat} onClearFilter={() => { if (filterCat !== null) onToggleFilter(filterCat) }} previousResponseNumber={previousResponseNumber} onOpenRequest={onOpenRequest} onLocateCall={onLocateCall} locateInMember={locateInMember} t={t} />
             </div>
           </section>
         </>}

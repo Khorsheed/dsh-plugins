@@ -47,6 +47,7 @@ import {
   InspectorTabVisibility, RegistrationToggle, type InspectorPluginInventorySnapshot,
 } from './preset-visibility.ts'
 import { TurnInspectAction } from './TurnAction.tsx'
+import { openInMemberSession, type LocateCallTarget } from './member-jump.ts'
 
 export { InspectorPanel } from './InspectorPanel.tsx'
 export { TokenView } from './TokenView.tsx'
@@ -119,11 +120,35 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // counts), so the trailing filter arg is always passed explicitly.
   const remote = (): InspectorRemote => ctx.get('remote.requestInspector') as InspectorRemote
   const wire = (): InspectorTabInjected => inspectorWire(remote())
+  // uiWorkspace.openSession — the entry the room's 轨迹→ uses — probed, never
+  // injected (absence must not fail the boot); a throwing open stays put.
+  const workspaceOpen = (): ((sessionId: string) => void) | undefined => {
+    const workspace = ctx.get('uiWorkspace') as { openSession?: (target: SessionId) => void } | undefined
+    const open = workspace?.openSession
+    return typeof open === 'function' ? (sessionId => open.call(workspace, sessionId as SessionId)) : undefined
+  }
   const tabFace = (): InspectorTabInjected => ({
     ...wire(),
     loadThrough: async (sessionId, seq) => {
       const binding = ctx.sessions.binding(sessionId)
       if (binding !== undefined) await binding.session.loadThrough(seq as Parameters<typeof binding.session.loadThrough>[0])
+    },
+    ...workspaceOpen() === undefined ? {} : {
+      openInMemberSession: (memberSession: string, target: LocateCallTarget) => {
+        openInMemberSession({
+          openSession: workspaceOpen(),
+          currentSession: () => mainSessionId(ctx.sessions.list.getSnapshot()),
+          openTab: params => {
+            try {
+              ctx.sidebarRight.openTab(REQUEST_INSPECTOR_KIND, { params })
+              return true
+            } catch {
+              // The kind is not registered for the new session yet (its criterion re-evaluates): retry.
+              return false
+            }
+          },
+        }, memberSession, target)
+      },
     },
   })
 
