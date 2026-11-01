@@ -28,7 +28,7 @@ import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
 import { DeskAttachment } from './DeskAttachment.tsx'
 import { DeskOpenRow, type DeskOpenRowFace } from './DeskOpenRow.tsx'
-import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, setDeskRowSeated } from './desk-row.ts'
+import { DESK_OWNER, DESK_ROW_KIND, deskDestinationsOf, deskRowDefinition, setDeskRowSeated } from './desk-row.ts'
 import { en, NS, zh } from './locales.ts'
 import { GameTabVisibility, RegistrationToggle, type GamePluginInventorySnapshot } from './preset-visibility.ts'
 
@@ -187,6 +187,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ctx.effect(() => startNavFollower(followerHost, {
       kinds: [GAME_KIND],
       open: destination => { go(destination.params as unknown as GameNavParams) },
+      events: event => deskDestinationsOf(GAME_KIND, event),
     }), 'game: destination follower')
   }
   const face: GameTabInjected = {

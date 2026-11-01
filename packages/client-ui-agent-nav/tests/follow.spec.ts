@@ -53,6 +53,7 @@ function fakeHost(sessionId = 's1') {
       publish(id, kind, [{ type: 'tool/result', data: { turn, message: { source: { callId }, isError, content: [{ type: 'text', text }] } } }])
     },
     replay: (events: unknown[], id = sessionId) => { publish(id, 'replace', events) },
+    append: (event: unknown, id = sessionId) => { publish(id, 'append', [event]) },
     switchTo: (id: string | undefined) => { screen = id; for (const l of [...screenListeners]) l() },
   }
 }
@@ -130,6 +131,24 @@ describe('startNavFollower', () => {
     fake.call('b', 2); fake.result('b', dest('d2'), 2)
     expect(open).not.toHaveBeenCalled()
     expect(badge.mock.calls.map(c => c[0].id)).toEqual(['d1', 'd2'])
+  })
+
+  it('judges an owner\'s own live events with their role: the coordinator\'s follows, a member\'s badges, a replay never', () => {
+    const fake = fakeHost()
+    const open = vi.fn()
+    const badge = vi.fn()
+    const events = (event: { type: string; seq?: number; data?: unknown }) => event.type !== 'room/desk-opened' ? [] : [{
+      destination: { id: `desk:${event.seq}`, kind: 'canvas', params: { canvasId: 'c1' }, label: '画布' },
+      role: (event.data as { role: 'coordinator' | 'member' }).role,
+    }]
+    startNavFollower(fake.host, { kinds: ['canvas'], open, badge, events, log: () => {}, width: () => 1400 })
+    const desk = (seq: number, role: string) => ({ type: 'room/desk-opened', seq, data: { role } })
+    fake.replay([desk(1, 'coordinator')])
+    expect(open).not.toHaveBeenCalled()
+    fake.append(desk(2, 'member'))
+    expect(badge.mock.calls.map(c => c[0].id)).toEqual(['desk:2'])
+    fake.append(desk(3, 'coordinator'))
+    expect(open.mock.calls.map(c => c[0].id)).toEqual(['desk:3'])
   })
 
   it('follows the session on screen only, re-attaching when it changes', () => {

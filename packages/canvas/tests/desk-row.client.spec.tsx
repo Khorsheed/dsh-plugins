@@ -12,7 +12,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { CanvasDetailProps } from '../src/client/contract.ts'
 import { zh } from '../src/client/locales.ts'
 import { DeskOpenRow } from '../src/client/open/DeskOpenRow.tsx'
-import { deskRowDefinition, LIVE_WINDOW_MS, setDeskRowSeated, type DeskRowData } from '../src/client/open/desk-row.ts'
+import { deskDestinationsOf, deskRowDefinition, setDeskRowSeated, type DeskRowData } from '../src/client/open/desk-row.ts'
 import { DeskAttachment } from '../src/client/open/DeskAttachment.tsx'
 
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -53,7 +53,7 @@ describe('deskRowDefinition', () => {
     }
   })
 
-  it('in the member\'s card the row names only the canvas, and only the live card follows', () => {
+  it('in the member\'s card the row names only the canvas, and never opens by itself', () => {
     const openCanvas = vi.fn()
     const addCanvas = vi.fn()
     const go = vi.fn()
@@ -63,7 +63,7 @@ describe('deskRowDefinition', () => {
     expect(openCanvas).not.toHaveBeenCalled()
     cleanup()
     render(<DeskAttachment sessionId="room-b" attachments={[attachment]} live t={t} openCanvas={openCanvas} go={go} addCanvas={addCanvas} />)
-    expect(openCanvas).toHaveBeenCalledExactlyOnceWith('canvas_r')
+    expect(openCanvas).not.toHaveBeenCalled()
   })
 
   it('folds a turn\'s writes into one line per canvas: a new card counts once, the door lands where the writes are', () => {
@@ -78,8 +78,12 @@ describe('deskRowDefinition', () => {
       wrote(51, [{ action: 'changed', cardId: 'c1', title: '数据标注员（姓名待定）', kind: '人物' }]),
     ]} live t={t} openCanvas={openCanvas} go={go} addCanvas={addCanvas} />)
     expect(screen.getByText('《潜梦者》 新增人物卡「数据标注员（姓名待定）」')).toBeTruthy()
-    // A member's write seen arriving goes on the strip, once.
-    expect(addCanvas).toHaveBeenCalledExactlyOnceWith('canvas_q')
+    // The row itself never moves the strip: the follower reads the write (a member's marks the canvas).
+    expect(addCanvas).not.toHaveBeenCalled()
+    expect(deskDestinationsOf('canvas', wrote(50, [added]))).toEqual([{
+      destination: { id: 'desk:@khorsheed/dsh-canvas:50', kind: 'canvas', params: { canvasId: 'canvas_q', card: 'c1', heading: '数据标注员（姓名待定）' }, label: '潜梦者' },
+      role: 'member',
+    }])
     fireEvent.click(screen.getByText('查看 →'))
     expect(go).toHaveBeenLastCalledWith({ canvasId: 'canvas_q', card: 'c1', heading: '数据标注员（姓名待定）' })
     cleanup()
@@ -107,17 +111,19 @@ describe('deskRowDefinition', () => {
 })
 
 describe('DeskOpenRow', () => {
-  it('the coordinator\'s open shows in the sidebar, once', () => {
+  it('never opens by itself; the follower reads the event with its role (a coordinator\'s write needs nothing)', () => {
     const openCanvas = vi.fn()
     const addCanvas = vi.fn()
-    const node = { data: row(1, 'coordinator') }
-    const { unmount } = render(<DeskOpenRow t={t} node={node} sessionId="room-a" openCanvas={openCanvas} addCanvas={addCanvas} />)
+    render(<DeskOpenRow t={t} node={{ data: row(1, 'coordinator') }} sessionId="room-a" openCanvas={openCanvas} addCanvas={addCanvas} />)
     expect(screen.getByText('bill 切到了画布《雨夜》')).toBeTruthy()
-    expect(openCanvas).toHaveBeenCalledExactlyOnceWith('canvas_r')
-    unmount()
-    render(<DeskOpenRow t={t} node={node} sessionId="room-a" openCanvas={openCanvas} addCanvas={addCanvas} />)
-    expect(openCanvas).toHaveBeenCalledOnce()
-    expect(addCanvas).not.toHaveBeenCalled()
+    expect(openCanvas).not.toHaveBeenCalled()
+    const opened = (role: string) => event(1, { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role, data: { canvasId: 'canvas_r', title: '雨夜', created: false } })
+    expect(deskDestinationsOf('canvas', opened('coordinator'))).toEqual([{
+      destination: { id: 'desk:@khorsheed/dsh-canvas:1', kind: 'canvas', params: { canvasId: 'canvas_r' }, label: '雨夜' }, role: 'coordinator',
+    }])
+    expect(deskDestinationsOf('canvas', opened('member'))[0]?.role).toBe('member')
+    const wrote = { type: 'room/desk-wrote', seq: 2, time: Date.now(), data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'coordinator', data: { canvasId: 'canvas_r', title: '雨夜', items: [{ action: 'added', cardId: 'c1', title: 'x' }] } } }
+    expect(deskDestinationsOf('canvas', wrote)).toEqual([])
   })
 
   it('a member\'s open goes beside, and says so', () => {
@@ -126,7 +132,6 @@ describe('DeskOpenRow', () => {
     render(<DeskOpenRow t={t} node={{ data: row(2, 'member') }} sessionId="room-a" openCanvas={openCanvas} addCanvas={addCanvas} />)
     expect(screen.getByText('bill 新建了画布《雨夜》')).toBeTruthy()
     expect(screen.getByText('已放进侧栏的画布标签')).toBeTruthy()
-    expect(addCanvas).toHaveBeenCalledExactlyOnceWith('canvas_r')
     expect(openCanvas).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText('打开 →'))
     expect(openCanvas).toHaveBeenCalledExactlyOnceWith('canvas_r')
@@ -135,7 +140,7 @@ describe('DeskOpenRow', () => {
   it('a history row only offers the door', () => {
     const openCanvas = vi.fn()
     const addCanvas = vi.fn()
-    render(<DeskOpenRow t={t} node={{ data: row(3, 'coordinator', Date.now() - LIVE_WINDOW_MS - 1) }} sessionId="room-a" openCanvas={openCanvas} addCanvas={addCanvas} />)
+    render(<DeskOpenRow t={t} node={{ data: row(3, 'coordinator', 0) }} sessionId="room-a" openCanvas={openCanvas} addCanvas={addCanvas} />)
     expect(openCanvas).not.toHaveBeenCalled()
     expect(addCanvas).not.toHaveBeenCalled()
   })

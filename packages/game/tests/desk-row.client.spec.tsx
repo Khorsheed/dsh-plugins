@@ -13,7 +13,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { zh } from '../src/client/locales.ts'
 import { DeskAttachment } from '../src/client/DeskAttachment.tsx'
 import { DeskOpenRow } from '../src/client/DeskOpenRow.tsx'
-import { deskRowDefinition, LIVE_WINDOW_MS, setDeskRowSeated, type DeskRowData } from '../src/client/desk-row.ts'
+import { deskDestinationsOf, deskRowDefinition, setDeskRowSeated, type DeskRowData } from '../src/client/desk-row.ts'
 
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
   zh[key].replace(/\{(\w+)\}/g, (match, name: string) => params?.[name] ?? match)) as unknown as PropsLocale<'game'>['t']
@@ -54,15 +54,16 @@ describe('deskRowDefinition', () => {
 })
 
 describe('DeskOpenRow', () => {
-  it('the coordinator\'s open shows the project in the room\'s sidebar, once', () => {
+  it('never opens by itself, even the coordinator\'s live open: the follower reads the event', () => {
     const openProject = vi.fn()
-    const node = { data: row(1, 'coordinator') }
-    const { unmount } = render(<DeskOpenRow t={t} node={node} sessionId="room-a" openProject={openProject} />)
+    render(<DeskOpenRow t={t} node={{ data: row(1, 'coordinator') }} sessionId="room-a" openProject={openProject} />)
     expect(screen.getByText('codex 切到了游戏项目《灯塔》')).toBeTruthy()
-    expect(openProject).toHaveBeenCalledExactlyOnceWith('room-a', 'g_1')
-    unmount()
-    render(<DeskOpenRow t={t} node={node} sessionId="room-a" openProject={openProject} />)
-    expect(openProject).toHaveBeenCalledOnce()
+    expect(openProject).not.toHaveBeenCalled()
+    expect(deskDestinationsOf('game', event(1, payload()))).toEqual([{
+      destination: { id: 'desk:@khorsheed/dsh-game:1', kind: 'game', params: { projectId: 'g_1', view: 'play' }, label: '灯塔' }, role: 'coordinator',
+    }])
+    expect(deskDestinationsOf('game', event(2, payload({ role: 'member' })))[0]?.role).toBe('member')
+    expect(deskDestinationsOf('game', event(3, payload({ owner: '@khorsheed/dsh-canvas' })))).toEqual([])
   })
 
   it('a member\'s open never takes the foreground; its door opens it', () => {
@@ -75,13 +76,13 @@ describe('DeskOpenRow', () => {
 
   it('a history row only offers the door', () => {
     const openProject = vi.fn()
-    render(<DeskOpenRow t={t} node={{ data: row(3, 'coordinator', Date.now() - LIVE_WINDOW_MS - 1) }} sessionId="room-a" openProject={openProject} />)
+    render(<DeskOpenRow t={t} node={{ data: row(3, 'coordinator', 0) }} sessionId="room-a" openProject={openProject} />)
     expect(openProject).not.toHaveBeenCalled()
   })
 })
 
 describe('DeskAttachment', () => {
-  it('in the member\'s card names only the project, and only the live card follows', () => {
+  it('in the member\'s card names only the project, and never opens by itself', () => {
     const openProject = vi.fn()
     const attachment = { type: 'room/desk-opened', seq: 40, time: Date.now(), data: payload() }
     const other = { type: 'room/desk-wrote', seq: 41, time: Date.now(), data: payload() }
@@ -92,6 +93,6 @@ describe('DeskAttachment', () => {
     expect(openProject).not.toHaveBeenCalled()
     cleanup()
     render(<DeskAttachment sessionId="room-b" attachments={[attachment]} live t={t} openProject={openProject} />)
-    expect(openProject).toHaveBeenCalledExactlyOnceWith('room-b', 'g_1')
+    expect(openProject).not.toHaveBeenCalled()
   })
 })

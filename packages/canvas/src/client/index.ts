@@ -58,7 +58,7 @@ import { ProposeTypeRow, type ProposeTypeRowFace } from './type/ProposeTypeRow.t
 import { OpenCanvasRow, type OpenCanvasRowFace } from './open/OpenCanvasRow.tsx'
 import { DeskOpenRow, type DeskOpenRowFace } from './open/DeskOpenRow.tsx'
 import type { DeskWroteRowFace } from './open/DeskWroteRow.tsx'
-import { DESK_OWNER, DESK_ROW_KIND, DESK_WROTE_KIND, deskRowDefinition, deskWroteDefinition, setDeskRowSeated } from './open/desk-row.ts'
+import { DESK_OWNER, DESK_ROW_KIND, DESK_WROTE_KIND, deskDestinationsOf, deskRowDefinition, deskWroteDefinition, setDeskRowSeated } from './open/desk-row.ts'
 import { DeskWroteNode } from './open/DeskWroteNode.tsx'
 import { DeskAttachment } from './open/DeskAttachment.tsx'
 import { CanvasTab } from './tab/CanvasTab.tsx'
@@ -180,6 +180,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ctx.effect(() => startNavFollower(followerHost, {
       kinds: [CANVAS_KIND],
       open: destination => { go(destination.params as unknown as CanvasNavParams) },
+      events: event => deskDestinationsOf(CANVAS_KIND, event),
       badge: destination => {
         const canvasId = (destination.params as { canvasId?: unknown }).canvasId
         if (typeof canvasId === 'string') selection.addCanvas(canvasId)

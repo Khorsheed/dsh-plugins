@@ -16,7 +16,7 @@
  * @module @khorsheed/dsh-canvas/client
  */
 
-import { DESK_OWNER, deskWriteOf, type DeskWrite } from './desk-write.ts'
+import { DESK_OWNER, deskWriteOf, deskWritePlace, type DeskWrite } from './desk-write.ts'
 
 export { DESK_OWNER }
 
@@ -143,22 +143,26 @@ export const deskWroteDefinition = {
   },
 }
 
-/** How old a row may be when it mounts and still count as seen arriving. */
-export const LIVE_WINDOW_MS = 20_000
-
-/** Rows this page already followed: a remount (a scroll, a view switch) never follows twice. */
-const followed = new Set<string>()
-
 /**
- * Whether a row mounting now should follow, recording that it did.
- * @param scope - the room session (or any key that tells rooms apart).
- * @param row - the row.
- * @param now - the clock.
- * @returns true exactly once per row, and only while it is fresh.
+ * The follower's reading of this owner's desk events (proposal
+ * 2026-10-30-agent-sidebar-navigation). A live `room/desk-opened` names the
+ * canvas, and whose act it was: the coordinator's follows, a member's goes on
+ * the strip (the badge). A live `room/desk-wrote` from a member marks the
+ * canvas the same way; a coordinator's needs nothing — it writes on the canvas
+ * the room already shows. The rows themselves only offer the door.
+ * @param kind - the canvas tab kind.
+ * @param event - one appended session event.
  */
-export function shouldFollow(scope: string, row: { readonly seq: number; readonly time: number }, now: number = Date.now()): boolean {
-  const key = `${scope}:${row.seq}`
-  if (followed.has(key) || now - row.time > LIVE_WINDOW_MS || row.time - now > LIVE_WINDOW_MS) return false
-  followed.add(key)
-  return true
+export function deskDestinationsOf(kind: string, event: { readonly type: string; readonly seq?: number; readonly time?: number; readonly data?: unknown }): Array<{
+  destination: { id: string; kind: string; params: Record<string, unknown>; label: string }
+  role: 'coordinator' | 'member'
+}> {
+  const full = { ...event, seq: event.seq ?? 0, time: event.time ?? 0 }
+  const opened = deskRowOf(full as Parameters<typeof deskRowOf>[0])
+  if (opened !== null) {
+    return [{ destination: { id: `desk:${DESK_OWNER}:${opened.seq}`, kind, params: { canvasId: opened.canvasId }, label: opened.title }, role: opened.role }]
+  }
+  const wrote = deskWriteOf(full)
+  if (wrote === null || wrote.role !== 'member') return []
+  return [{ destination: { id: `desk:${DESK_OWNER}:${wrote.seq}`, kind, params: deskWritePlace(wrote.canvasId, wrote.items), label: wrote.title }, role: 'member' }]
 }

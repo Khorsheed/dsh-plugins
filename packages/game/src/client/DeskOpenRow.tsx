@@ -1,14 +1,15 @@
 /**
  * The room's row for a game project a member opened there (`desk-row.ts`):
- * who opened what, and one door — 打开 → — to it in this room's sidebar. A
- * coordinator's row seen arriving follows by itself (the game tab opens on
- * that project); a member's never takes the foreground.
+ * who opened what, and one door — 打开 → — to it in this room's sidebar.
+ * Whether the sidebar follows by itself is the destination follower's call
+ * (`deskDestinationsOf`): a coordinator's live open follows, a member's never
+ * takes the foreground.
  * @module @khorsheed/dsh-game/client
  */
-import { useEffect, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from './locales.ts'
-import { shouldFollow, type DeskRowData } from './desk-row.ts'
+import type { DeskRowData } from './desk-row.ts'
 import css from './DeskRow.module.css'
 
 /** What the row reaches outside its own node. */
@@ -22,7 +23,7 @@ export interface DeskOpenRowProps extends DeskOpenRowFace {
   readonly node: { readonly data: DeskRowData }
   readonly sessionId?: string
   readonly t: PropsLocale<'game'>['t']
-  /** False in a settled reply: only the running card (or the row's own node) follows. */
+  /** Kept for the seats that pass it; following is the destination follower's (`deskDestinationsOf`), not the row's. */
   readonly follow?: boolean
   /** Inside the member's own card: the card already says who, so the row names only the project. */
   readonly own?: boolean
@@ -32,12 +33,8 @@ export interface DeskOpenRowProps extends DeskOpenRowFace {
  * Render one game desk event.
  * @param props - the node, the face, the copy.
  */
-export function DeskOpenRow({ node, sessionId, t, openProject, follow = true, own = false }: DeskOpenRowProps): ReactNode {
+export function DeskOpenRow({ node, sessionId, t, openProject, own = false }: DeskOpenRowProps): ReactNode {
   const row = node.data
-  useEffect(() => {
-    if (!follow || sessionId === undefined || row.role !== 'coordinator') return
-    if (shouldFollow(sessionId, row)) openProject(sessionId, row.projectId)
-  }, [row, sessionId, follow, openProject])
   const said = own
     ? t(row.created ? 'desk.ownCreated' : 'desk.ownSwitched', { title: row.title })
     : t(row.created ? 'desk.created' : 'desk.switched', { member: row.member, title: row.title })

@@ -2,10 +2,9 @@
 /**
  * The room's row for a project a member opened there (proposal
  * 2026-10-29-room-desk): the Definition claims only this package's
- * `room/desk-opened`; a coordinator's row seen arriving brings the room's
- * 剪辑 panel to the project once, a member's only offers the door, a settled
- * reply card never follows; the panel hand-off reaches a mounted pane at once
- * and a mounting one through the pending request.
+ * `room/desk-opened`; the rows only offer the door, and the destination
+ * follower reads the event instead (`deskDestinationsOf`: the coordinator's
+ * act follows, a member's only marks).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -14,7 +13,7 @@ import { zh } from '../src/client/locales.ts'
 import { DeskAttachment } from '../src/client/DeskAttachment.tsx'
 import { DeskOpenRow } from '../src/client/DeskOpenRow.tsx'
 import {
-  deskRowDefinition, LIVE_WINDOW_MS, setDeskRowSeated, type DeskRowData,
+  deskDestinationsOf, deskRowDefinition, setDeskRowSeated, type DeskRowData,
 } from '../src/client/desk-row.ts'
 
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -56,15 +55,16 @@ describe('deskRowDefinition', () => {
 })
 
 describe('DeskOpenRow', () => {
-  it('the coordinator\'s open seen arriving opens the panel, once', () => {
+  it('never opens by itself, even the coordinator\'s live open: the follower reads the event', () => {
     const openProject = vi.fn()
-    const node = { data: row(1, 'coordinator') }
-    const { unmount } = render(<DeskOpenRow t={t} node={node} sessionId="room-a" openProject={openProject} />)
+    render(<DeskOpenRow t={t} node={{ data: row(1, 'coordinator') }} sessionId="room-a" openProject={openProject} />)
     expect(screen.getByText('bill 打开了剪辑工程「#23 老周」')).toBeTruthy()
-    expect(openProject).toHaveBeenCalledExactlyOnceWith('room-a', 'p_1')
-    unmount()
-    render(<DeskOpenRow t={t} node={node} sessionId="room-a" openProject={openProject} />)
-    expect(openProject).toHaveBeenCalledOnce()
+    expect(openProject).not.toHaveBeenCalled()
+    expect(deskDestinationsOf('video-studio', event(1, payload('coordinator')))).toEqual([{
+      destination: { id: `desk:${OWNER}:1`, kind: 'video-studio', params: { projectId: 'p_1' }, label: '#23 老周' }, role: 'coordinator',
+    }])
+    expect(deskDestinationsOf('video-studio', event(2, payload('member')))[0]?.role).toBe('member')
+    expect(deskDestinationsOf('video-studio', event(3, payload('member', { owner: '@khorsheed/dsh-canvas' })))).toEqual([])
   })
 
   it('a member\'s open never takes the front: only the door', () => {
@@ -77,13 +77,13 @@ describe('DeskOpenRow', () => {
 
   it('a history row only offers the door', () => {
     const openProject = vi.fn()
-    render(<DeskOpenRow t={t} node={{ data: row(3, 'coordinator', Date.now() - LIVE_WINDOW_MS - 1) }} sessionId="room-a" openProject={openProject} />)
+    render(<DeskOpenRow t={t} node={{ data: row(3, 'coordinator', 0) }} sessionId="room-a" openProject={openProject} />)
     expect(openProject).not.toHaveBeenCalled()
   })
 })
 
 describe('DeskAttachment', () => {
-  it('in the member\'s card names only the project, and only the live card follows', () => {
+  it('in the member\'s card names only the project, and never opens by itself', () => {
     const openProject = vi.fn()
     const attachment = event(40, payload('coordinator'))
     render(<DeskAttachment sessionId="room-b" attachments={[attachment]} live={false} t={t} openProject={openProject} />)
@@ -92,7 +92,7 @@ describe('DeskAttachment', () => {
     expect(openProject).not.toHaveBeenCalled()
     cleanup()
     render(<DeskAttachment sessionId="room-b" attachments={[attachment, event(41, payload('member', { owner: 'x' }))]} live t={t} openProject={openProject} />)
-    expect(openProject).toHaveBeenCalledExactlyOnceWith('room-b', 'p_1')
+    expect(openProject).not.toHaveBeenCalled()
     expect(screen.getAllByText('打开 →')).toHaveLength(1)
   })
 })

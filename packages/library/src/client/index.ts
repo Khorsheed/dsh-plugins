@@ -34,7 +34,7 @@ import { LibraryBindChip, type LibraryBindInjected } from './bind/BindChip.tsx'
 import { createLibraryStore } from './store.ts'
 import { followerHostOf, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { en, NS, zh } from './locales.ts'
-import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, setDeskRowSeated } from './desk/desk-row.ts'
+import { DESK_OWNER, DESK_ROW_KIND, deskDestinationsOf, deskRowDefinition, setDeskRowSeated } from './desk/desk-row.ts'
 import { DeskOpenRow, type DeskOpenRowFace } from './desk/DeskOpenRow.tsx'
 import { DeskAttachment } from './desk/DeskAttachment.tsx'
 import {
@@ -147,6 +147,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ctx.effect(() => startNavFollower(followerHost, {
       kinds: [LIBRARY_KIND],
       open: destination => { go(destination.params as unknown as LibraryNavParams) },
+      events: event => deskDestinationsOf(LIBRARY_KIND, event),
     }), 'library: destination follower')
   }
 
