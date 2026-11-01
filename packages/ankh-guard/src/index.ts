@@ -45,6 +45,7 @@ import { registerBrowserHandoff } from './browser-handoff.ts'
 import { requestRestart, type RestartRequest, type RestartRequestResult } from './restart-request.ts'
 import {
   acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, continueInterruptedText, interruptedSnapshotFile,
+  isExternalCoordinatorRoom,
   isParkedOnUserInput,
   writeInstanceLaunch, writeSkillRegistration,
   pendingRestartRecord, readInterruptedSnapshot, restartContextText, writeInterruptedSnapshot,
@@ -470,6 +471,31 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       return probe
     }
 
+    // Synchronous read of the live session's events (the same face the room
+    // plugin gates on); a host without it, or any failure, delivers as before.
+    const externalCoordinatorRoom = (agent: unknown): boolean => {
+      try {
+        const session = (agent as { session?: { snapshotEvents?: () => readonly { type: string; seq?: number; data: Record<string, unknown> }[] } }).session
+        const events = session?.snapshotEvents?.()
+        return events !== undefined && isExternalCoordinatorRoom(events)
+      } catch {
+        return false
+      }
+    }
+
+    // The resume pass's cold-log twin of externalCoordinatorRoom: such a
+    // room is not recreated at all (its room plugin continues the runs).
+    const checkExternalRoom = async (id: string): Promise<boolean> => {
+      try {
+        const persistence = probeColdReader(ctx)
+        if (persistence === undefined) return false
+        const { events } = await readColdLog(persistence, id)
+        return isExternalCoordinatorRoom(events)
+      } catch {
+        return false
+      }
+    }
+
     const claim = (agent: FollowupAgent, record: RestartRecord): void => {
       const canaryPending = existsSync(stateFile(stateDir, 'restartRequested'))
       const text = restartContextText(record, canaryPending)
@@ -494,6 +520,13 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       // the durable receipt reaches a terminal phase.
       if (cutoverBlocksWake(stateDir)) return
       const id = agent.id as string
+      // A room led by an external member takes no host turn it did not
+      // dispatch, and continues its interrupted runs itself: no report, no
+      // continue. An owed report stays pending for the next ordinary session.
+      if (externalCoordinatorRoom(agent)) {
+        pendingContinue.delete(id)
+        return
+      }
       const exitAt = pendingContinue.get(id)
       let record = followupReport ? pendingRestartRecord(stateDir) : null
       // A bare PLANNED outcome with no initiating session (the restart was
@@ -659,7 +692,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
           // Parked on user input: the card in the log is the continuation —
           // do not recreate the agent at all (its creation would fire the
           // delivery path; deliver() also filters, belt and suspenders).
-          if (await checkParked(id)) {
+          if (await checkParked(id) || await checkExternalRoom(id)) {
             pendingContinue.delete(id)
             continue
           }
