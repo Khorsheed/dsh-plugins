@@ -16,6 +16,7 @@ export const NS = 'reader'
 /** The inspiration space's dictionary key set (the source of truth for both locales). */
 export type ReaderKey =
   | 'tab.label' | 'tab.subtitle' | 'guide.description'
+  | 'toolrow.kind' | 'toolrow.running' | 'toolrow.failed' | 'toolrow.view'
   | 'filter.today' | 'filter.all' | 'filter.unreadOnly' | 'filter.unreadOn'
   | 'filter.readState' | 'filter.bySource' | 'filter.byTag' | 'action.filter'
   | 'filter.searchSource' | 'filter.noSourceMatch' | 'filter.byKind' | 'filter.deleteTag'
@@ -100,6 +101,10 @@ export const en = {
   'tab.label': 'Inspiration',
   'tab.subtitle': 'Subscriptions and saved links',
   'guide.description': 'RSS/Atom subscriptions plus any article link you save',
+  'toolrow.kind': 'Inspiration',
+  'toolrow.running': 'Writing…',
+  'toolrow.failed': 'Did not go through',
+  'toolrow.view': 'View →',
 
   'filter.today': 'Today',
   'filter.all': 'All',
@@ -429,6 +434,10 @@ export const zh = {
   'tab.label': '灵感空间',
   'tab.subtitle': '订阅源与保存的链接',
   'guide.description': 'RSS/Atom 订阅，加上你保存的任意文章链接',
+  'toolrow.kind': '灵感空间',
+  'toolrow.running': '写入中…',
+  'toolrow.failed': '没有写成',
+  'toolrow.view': '查看 →',
 
   'filter.today': '今日',
   'filter.all': '全部',

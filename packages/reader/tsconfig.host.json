@@ -25,6 +25,7 @@
     "src/store.ts",
     "src/tool.ts",
     "src/tools.ts",
+    "src/nav-line.ts",
     "src/types.ts",
     "src/xiaoyuzhou.ts",
     "src/ytdlp.ts"

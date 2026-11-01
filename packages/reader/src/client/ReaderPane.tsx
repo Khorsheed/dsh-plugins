@@ -45,6 +45,7 @@ import { readMediaMeta } from '../media.ts'
 import { formatClock } from '../captions.ts'
 import { MEDIA_QUERIES } from './selectors.ts'
 import { useNotes, type DetailTab } from './useNotes.ts'
+import type { ReaderNavParams } from '../nav-line.ts'
 import {
   kindQuery,
   linkEntryId,
@@ -640,6 +641,13 @@ function linkMetaOf(row: ReaderRow): { title: string; excerpt?: string } | undef
   if (row.sourceKind !== 'link' || row.entry.title === row.sourceLabel) return undefined
   return { title: row.entry.title, ...(row.entry.summary === undefined ? {} : { excerpt: row.entry.summary }) }
 }
+
+/**
+ * The last navigation revision each session's pane applied, page-wide: the
+ * pane remounts whenever the sidebar comes back, and the tab keeps its last
+ * navigation — applying it again would pull the reader back to that article.
+ */
+const appliedNavigations = new Map<string, number>()
 
 /**
  * The reader tab body, inside the shared panel root: the `dsh-panel` size
@@ -2641,6 +2649,48 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
     if (row === undefined) return
     void open(row)
   }, [allEntries, openEntryId, presentation, read, loading, open, entryById, actions])
+
+  /* ---------------------------------------- a place asked for from outside */
+
+  // The tab's navigation (`sidebarRight.openTab('reader', { params })` — a
+  // conversation card's 查看 →): open that article, then its notes or its
+  // text. Applied once per revision, page-wide per session, so a remounted
+  // pane does not pull the reader back to an old card's article.
+  const navigation = (props as { tab?: { navigation?: { params?: unknown; revision?: number } } }).tab?.navigation
+  const navRevision = navigation?.revision ?? 0
+  const navParams = navigation?.params as Partial<ReaderNavParams> | undefined
+  const navKey = String(props.sessionId ?? '')
+  /** The sub-tab a navigation asked for, waiting for its article to be the open one. */
+  const pendingTabRef = useRef<{ entryId: string; tab: DetailTab } | null>(null)
+  const setDetailTab = notesFace.setTab
+  useEffect(() => {
+    if (navRevision === 0 || (appliedNavigations.get(navKey) ?? 0) >= navRevision) return
+    const entryId = navParams?.entryId
+    if (typeof entryId !== 'string') { appliedNavigations.set(navKey, navRevision); return }
+    const entry = entryById(entryId)
+    if (entry === undefined) {
+      // Not there yet, or gone: wait for the wall and the recent list, then give up.
+      if (!loading && recentLoadedRef.current) appliedNavigations.set(navKey, navRevision)
+      return
+    }
+    const row = rowFor(entry, presentation, read)
+    appliedNavigations.set(navKey, navRevision)
+    if (row === undefined) return
+    if (openEntryId === entryId) {
+      actions.setView('detail')
+      if (navParams?.tab !== undefined) setDetailTab(navParams.tab)
+      return
+    }
+    if (navParams?.tab !== undefined) pendingTabRef.current = { entryId, tab: navParams.tab }
+    void open(row)
+  }, [navRevision, navParams, navKey, entryById, presentation, read, loading, open, openEntryId, actions, setDetailTab])
+  // After useNotes put a newly opened article back on its text: the asked tab.
+  useEffect(() => {
+    const pending = pendingTabRef.current
+    if (pending === null || openEntry?.id !== pending.entryId) return
+    pendingTabRef.current = null
+    setDetailTab(pending.tab)
+  }, [openEntry?.id, setDetailTab])
 
   /**
    * Put the reader back where they were inside the article.

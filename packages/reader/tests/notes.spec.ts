@@ -19,6 +19,7 @@ import {
   normalizeNotesDoc,
 } from '../src/notes.ts'
 import { parsePolish, sourceKey } from '../src/polish.ts'
+import { readDestinations } from '@khorsheed/dsh-client-ui-agent-nav/src/destination.ts'
 import { READ_PAGE_CHARS, headerOf, pointsOf, readerToolDefinitions, renderArticle, resolveEntry } from '../src/tools.ts'
 
 const article = { entryId: 'https://example.com/a', title: 'Positional encoding', url: 'https://example.com/a', source: 'Example' }
@@ -300,6 +301,8 @@ describe('reader_translate and the 润色 layer', () => {
     expect(first).toContain('reader_read from=3')
     const second = await run({ entry: article.entryId, text: '¶3：三。' })
     expect(second).toContain('全部段落都已润色')
+    // The answer names its place for the conversation card: the article, on its text.
+    expect(readDestinations(JSON.parse(second) as string)[0]).toMatchObject({ kind: 'reader', params: { entryId: article.entryId, tab: 'article' } })
     expect(store.polishView(article.entryId)).toMatchObject({ total: 3, done: 3, complete: true, paragraphs: { 1: '一。', 3: '三。' } })
   })
 
