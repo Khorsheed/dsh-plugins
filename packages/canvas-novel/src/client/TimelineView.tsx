@@ -49,7 +49,7 @@ function NowTag({ canvasId, rev, remote, t }: NovelSurfaceProps): ReactNode {
 }
 
 function StoryTime(props: NovelSurfaceProps): ReactNode {
-  const { canvasId, rev, remote, t } = props
+  const { canvasId, rev, remote, t, sessionId } = props
   const api = remote()
   const read = useNovelRead(api, r => r.timeline({ canvasId }), `timeline:${canvasId}`, rev)
   const [picked, setPicked] = useState<string | null>(null)
@@ -62,23 +62,48 @@ function StoryTime(props: NovelSurfaceProps): ReactNode {
   const future = data.future ?? []
   const all: readonly TimelineEventView[] = [...past, ...future]
   const chosen = all.find(event => event.id === picked)
+  const lanes = data.lanes ?? []
+  const laneIx = (event: TimelineEventView): number | undefined => {
+    if (lanes.length < 2 || event.lane === undefined) return undefined
+    const ix = lanes.indexOf(event.lane)
+    return ix < 0 ? undefined : ix
+  }
+  const max = Math.max(0.0001, ...future.map(event => event.tension))
+  const row = (event: TimelineEventView): ReactNode => (
+    <EventRow key={event.id} event={event} data={data} lane={laneIx(event)} max={max} picked={picked === event.id} onPick={() => { setPicked(picked === event.id ? null : event.id) }} t={t} />
+  )
+  const before = past.filter(event => (event.chapters ?? []).length === 0 && event.when !== undefined)
+  const body = past.filter(event => (event.chapters ?? []).length > 0)
+  const undated = past.filter(event => (event.chapters ?? []).length === 0 && event.when === undefined)
+  const backfill = data.backfill ?? []
   return (
     <>
       <div className={css.columns}>
         <section className={css.column}>
-          <h3 className={css.colHead}>{t('tl.past')}<span className={css.muted}> {past.length}</span></h3>
-          {past.length === 0
-            ? <p className={css.empty}>{t('tl.pastEmpty')}</p>
-            : (['before', 'body'] as const).map(era => {
-              const rows = past.filter(event => (event.chapters === undefined || event.chapters.length === 0) === (era === 'before'))
-              if (rows.length === 0) return null
-              return (
-                <div key={era} className={css.tier}>
-                  <div className={css.tierHead}><b className={css.era}>{t(`tl.era.${era}`)}</b></div>
-                  {rows.map(event => <EventRow key={event.id} event={event} data={data} picked={picked === event.id} onPick={() => { setPicked(event.id) }} t={t} />)}
-                </div>
-              )
-            })}
+          <h3 className={css.colHead}>{t('tl.past')}{past.some(event => event.recap !== true) && <span className={css.muted}> {past.filter(event => event.recap !== true).length}</span>}</h3>
+          {lanes.length >= 2 && (
+            <div className={css.legend}>
+              <span className={css.muted}>{t('tl.lanes')}</span>
+              {lanes.slice(0, 4).map((id, ix) => <span key={id} className={css.laneKey} data-lane={ix}>{data.names?.[id] ?? id}</span>)}
+            </div>
+          )}
+          {backfill.length > 0 && (
+            <div className={css.backfill}>
+              <span>{t('tl.backfill', { list: chapterList(backfill) })}</span>
+              {sessionId !== undefined && props.sendToConversation !== undefined && (
+                <button type="button" className={`${css.button} ${css.primary}`} onClick={() => { props.sendToConversation?.(sessionId, t('tl.backfillAsk', { list: chapterList(backfill) })) }}>{t('tl.backfillBtn')}</button>
+              )}
+            </div>
+          )}
+          {past.length === 0 && <p className={css.empty}>{t('tl.pastEmpty')}</p>}
+          {before.length > 0 && <div className={css.tier}><div className={css.tierHead}><b className={css.era}>{t('tl.era.before')}</b></div>{before.map(row)}</div>}
+          {body.length > 0 && <div className={css.tier}><div className={css.tierHead}><b className={css.era}>{t('tl.era.body')}</b></div>{body.map(row)}</div>}
+          {undated.length > 0 && (
+            <div className={css.tray}>
+              <div className={css.tierHead}><b className={css.era}>{t('tl.undated')}</b><span className={css.muted}>{t('tl.undatedHint')}</span></div>
+              {undated.map(row)}
+            </div>
+          )}
         </section>
         <div className={css.now} aria-hidden="true" />
         <section className={css.column}>
@@ -90,8 +115,8 @@ function StoryTime(props: NovelSurfaceProps): ReactNode {
               if (rows.length === 0) return null
               return (
                 <div key={tier} className={css.tier} data-tier={tier}>
-                  <div className={css.tierHead}><b>{t(`tl.tier.${tier}`)}</b><span className={css.muted}>{t(`tl.tierHint.${tier}`)}</span></div>
-                  {rows.map(event => <EventRow key={event.id} event={event} data={data} picked={picked === event.id} onPick={() => { setPicked(event.id) }} t={t} />)}
+                  <div className={css.tierHead}><b>{t(`tl.tier.${tier}`)} {rows.length}</b><span className={css.muted}>{t(`tl.tierHint.${tier}`)}</span></div>
+                  {rows.map(row)}
                 </div>
               )
             })}
@@ -108,31 +133,51 @@ function StoryTime(props: NovelSurfaceProps): ReactNode {
   )
 }
 
-function namesOf(event: TimelineEventView, data: NovelTimelineResult): string[] {
-  return [...(event.who ?? []), ...(event.places ?? [])].map(id => data.names?.[id] ?? id)
+/** 1、2、3、5 → 1–3、5 */
+function chapterList(ns: readonly number[]): string {
+  const out: string[] = []
+  for (let i = 0; i < ns.length; i++) {
+    let j = i
+    while (j + 1 < ns.length && ns[j + 1] === ns[j]! + 1) j++
+    out.push(j > i + 1 ? `${ns[i]}–${ns[j]}` : j === i + 1 ? `${ns[i]}、${ns[j]}` : `${ns[i]}`)
+    i = j
+  }
+  return out.join('、')
 }
 
-function EventRow({ event, data, picked, onPick, t }: {
+function EventRow({ event, data, lane, max, picked, onPick, t }: {
   readonly event: TimelineEventView
   readonly data: NovelTimelineResult
+  readonly lane: number | undefined
+  readonly max: number
   readonly picked: boolean
   readonly onPick: () => void
   readonly t: T
 }): ReactNode {
   const future = 'tier' in event ? event as TimelineFutureView : undefined
-  const names = namesOf(event, data)
+  const who = (event.who ?? []).map(id => data.names?.[id] ?? id)
+  const places = (event.places ?? []).map(id => data.names?.[id] ?? id)
   return (
-    <button type="button" className={css.event} data-status={event.status} data-tier={future?.tier} aria-current={picked || undefined} onClick={onPick}>
+    <button type="button" className={css.event} data-status={event.status} data-tier={future?.tier} data-lane={lane} data-recap={event.recap === true || undefined} aria-current={picked || undefined} onClick={onPick}>
       <span className={css.title}>{event.title}</span>
       <span className={css.meta}>
+        {event.chapters !== undefined && event.chapters.length > 0 && future === undefined && <span className={css.chapDot}>{event.chapters.join('·')}</span>}
+        {event.recap === true && <span className={css.src}>{t('tl.recap')}</span>}
         {event.source !== undefined && <span className={css.src}>{event.source}</span>}
-        {event.when !== undefined && <span>{event.when}</span>}
-        {event.chapters !== undefined && <span className={css.chap}>{t('tl.chapters', { list: event.chapters.join('、') })}</span>}
+        {event.status === 'hidden' && <span className={css.src}>{t('tl.hidden')}</span>}
+        {event.when !== undefined && <span className={css.when}>{event.when}</span>}
+        {places.length > 0 && <span className={css.where}>{places.join("、")}</span>}
+        {who.length > 0 && <span>{who.join('、')}</span>}
+        {future !== undefined && event.window !== undefined && <span>· {event.window}</span>}
         {event.status === 'failed' && <span className={css.failed}>{t('tl.failed')}</span>}
-        {names.length > 0 && <span>{names.join('、')}</span>}
         {event.ideas > 0 && <span className={css.ideaMark}>{t('tl.ideas', { count: event.ideas })}</span>}
       </span>
-      {future !== undefined && <span className={css.reason}>{future.reason}</span>}
+      {future !== undefined && (
+        <span className={css.tension}>
+          <span className={css.bar}><i style={{ width: `${Math.max(4, Math.round(future.tension / max * 100))}%` }} /></span>
+          <span className={css.reason}>{future.reason}</span>
+        </span>
+      )}
     </button>
   )
 }

@@ -2516,7 +2516,7 @@ export class NovelService {
     const settled = new Set(rows.filter(row => !unsettled.includes(row)).flatMap(row => row.chapter.settings ?? []))
     const world = entries.rules.filter(view => view.role === 'world' && view.status === 'kept' && (settled.has(view.cardId) || originOf(view.cardId) !== undefined)).map((view): StoryCard => {
       const plot = plotOf('world', cards.get(view.cardId)?.fields)
-      return { cardId: view.cardId, ref: view.ref, name: view.name ?? leadClause(plot['rule']) ?? view.ref, plot, history: historyOf(view.cardId, 'world', plot) }
+      return { cardId: view.cardId, ref: view.ref, name: view.name ?? leadClause(plot['rule']) ?? view.ref, plot, history: historyOf(view.cardId, 'world', plot), ...(view.sort === undefined ? {} : { sort: view.sort }) }
     })
 
     return {

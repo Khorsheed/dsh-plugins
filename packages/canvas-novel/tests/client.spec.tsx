@@ -545,9 +545,9 @@ describe('StoryLogPage', () => {
 
   it('an empty tab explains how its cards arrive, without the bar', async () => {
     render(<StoryLogPage {...page(storyLogRemote())} />)
-    fireEvent.click(await screen.findByRole('tab', { name: /世界/ }))
-    expect(screen.getByText('还没有世界卡')).toBeTruthy()
-    expect(screen.getByText('地点、势力、规则这些设定写成卡片后出现在这里。')).toBeTruthy()
+    fireEvent.click(await screen.findByRole('tab', { name: /设定/ }))
+    expect(screen.getByText('还没有在正文里出现过的设定')).toBeTruthy()
+    expect(screen.getByText('体系、地点、势力、物种与道具在对账时被正文用到后出现在这里。')).toBeTruthy()
     expect(screen.queryByRole('button', { name: '图例' })).toBeNull()
   })
 

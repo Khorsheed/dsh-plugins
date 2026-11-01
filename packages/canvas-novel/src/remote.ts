@@ -417,8 +417,29 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     const names: Record<string, string> = {}
     for (const view of entries.characters) names[view.cardId] = view.name
     for (const view of entries.rules) names[view.cardId] = view.name ?? view.ref
+    // 世界层: the top of a place's 属于 chain. An event's lane is the layer of
+    // the place it happens at (a faction's 据点 stands in for the faction).
+    const rules = new Map(entries.rules.map(view => [view.cardId, view]))
+    const rootOf = (id: string): string | undefined => {
+      let at = rules.get(id)
+      if (at?.sort === 'faction' && at.base?.[0] !== undefined) at = rules.get(at.base[0])
+      if (at?.sort !== 'place') return undefined
+      const seen = new Set<string>()
+      while (at.parents?.[0] !== undefined && !seen.has(at.cardId)) {
+        seen.add(at.cardId)
+        const up = rules.get(at.parents[0])
+        if (up?.sort !== 'place') break
+        at = up
+      }
+      return at.cardId
+    }
+    const laneOf = (places: readonly string[] | undefined): string | undefined => {
+      for (const id of [...places ?? []].reverse()) { const root = rootOf(id); if (root !== undefined) return root }
+      return undefined
+    }
     const viewOf = (event: StoryEvent): TimelineEventView => ({
       id: event.id, title: event.title, status: event.status,
+      ...(laneOf(event.places) === undefined ? {} : { lane: laneOf(event.places)! }),
       ...(event.when === undefined ? {} : { when: event.when }),
       ...(event.source === undefined ? {} : { source: event.source }),
       ...(event.who === undefined ? {} : { who: event.who }),
@@ -438,12 +459,32 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     const covered = new Set(stored.flatMap(event => event.chapters ?? []))
     const recapped = (await this.core.listChapters({ workId: request.canvasId }))
       .filter(row => row.chapter.recap !== undefined && !covered.has(row.chapter.n) && (row.phase === 'extracted' || row.phase === 'reviewed' || row.phase === 'stale'))
-      .map((row): TimelineEventView => ({ id: `ch:${row.chapter.n}`, title: row.chapter.recap!, status: 'happened', chapters: [row.chapter.n], ideas: 0 }))
-    const past = [...stored.map(viewOf), ...recapped].sort((a, b) => {
-      const ca = a.chapters?.[0] ?? 0, cb = b.chapters?.[0] ?? 0
-      if (ca === 0 || cb === 0) return ca === cb ? 0 : ca === 0 ? -1 : 1
-      return ca - cb
-    })
+      .map((row): TimelineEventView => {
+        // Who and where by the names the recap uses (rules, not a model): a
+        // place matches by its name or its name less 世界 / 梦域 (山海梦域 ↔ 山海).
+        const text = `${row.chapter.title} ${row.chapter.recap!}`
+        const at = (name: string | undefined): number => {
+          if (name === undefined || name.length < 2) return -1
+          const short = name.replace(/(世界|梦域)$/u, '')
+          return Math.max(text.lastIndexOf(name), short.length >= 2 ? text.lastIndexOf(short) : -1)
+        }
+        const who = entries.characters.filter(view => at(view.name) >= 0 || (row.chapter.plan?.cast ?? []).some(member => member.who === view.cardId || member.who === view.name)).map(view => view.cardId)
+        const places = entries.rules.filter(view => view.sort === 'place' && at(view.name) >= 0).sort((a, b) => at(a.name) - at(b.name)).map(view => view.cardId)
+        const lane = laneOf(places)
+        return {
+          id: `ch:${row.chapter.n}`, title: row.chapter.recap!, status: 'happened', chapters: [row.chapter.n], ideas: 0, recap: true,
+          ...(who.length === 0 ? {} : { who }), ...(places.length === 0 ? {} : { places }), ...(lane === undefined ? {} : { lane }),
+        }
+      })
+    // Story time: stored events keep their order; a recap goes after the
+    // events of the chapters before it.
+    const storedViews = stored.map(viewOf)
+    const past: TimelineEventView[] = [...storedViews]
+    for (const recap of recapped) {
+      const n = recap.chapters![0]!
+      const after = past.findIndex(event => (event.chapters?.[0] ?? 0) > n)
+      past.splice(after < 0 ? past.length : after, 0, recap)
+    }
     const future = events.filter(isFuture).map((event): TimelineFutureView => {
       const parts = tensionOf(event, current)
       return { ...viewOf(event), tier: parts.tier, reason: tierReason(event, parts), tension: parts.tension, V: parts.V, E: parts.E, ...(parts.D === undefined ? {} : { D: parts.D }), Z: parts.Z, S: parts.S }
@@ -451,7 +492,10 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     const pins = doc.pins?.chapter === chapter ? doc.pins : undefined
     const hero = (await this.core.readOutline(request.canvasId)).sheet.protagonist
     const candidates = recall(events, current, { ...(pins === undefined ? {} : { prefer: pins.prefer, block: pins.block }), ...(hero === undefined ? {} : { pov: hero }) }).map(row => row.event.id)
-    return { ok: true, chapter, past, future, names, candidates, ...(pins === undefined ? {} : { pins: { prefer: pins.prefer, block: pins.block } }) }
+    const lanes = [...new Set([...past, ...future].map(event => event.lane).filter((id): id is string => id !== undefined))]
+    for (const id of lanes) names[id] ??= rules.get(id)?.name ?? id
+    const backfill = recapped.map(event => event.chapters![0]!)
+    return { ok: true, chapter, past, future, names, candidates, lanes, ...(backfill.length === 0 ? {} : { backfill }), ...(pins === undefined ? {} : { pins: { prefer: pins.prefer, block: pins.block } }) }
   }
 
   /** The person's 优先推进 / 本章屏蔽 on the next chapter's candidates. */

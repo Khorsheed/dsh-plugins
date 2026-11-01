@@ -145,3 +145,26 @@ describe('the 总览 world map', () => {
     expect(map.principles?.length).toBeGreaterThan(0)
   })
 })
+
+describe('the timeline\'s 世界层', () => {
+  it('puts an event in the lane of its place\'s top-level place (a faction by its 据点), and names the lanes', async () => {
+    const { ctx, store, agent } = bench(true)
+    const session = sessionAt({ value: 1 })
+    await agent.writeCard({ canvasId: DREAM.workId, kind: '地点', fields: { name: '山海梦域', rule: '神话梦域' } }, session)
+    await agent.writeCard({ canvasId: DREAM.workId, kind: '地点', fields: { name: '山脚小镇', rule: '面包很香', parent: '山海梦域' } }, session)
+    await agent.writeCard({ canvasId: DREAM.workId, kind: '地点', fields: { name: '现实世界', rule: '2096' } }, session)
+    await agent.writeCard({ canvasId: DREAM.workId, kind: '势力', fields: { name: '睡眠公司', rule: '运营方', base: '现实世界' } }, session)
+    await store.writeEvent({ workId: DREAM.workId, title: '小镇集市', status: 'happened', when: '第 1 天', places: ['山脚小镇'] }, session)
+    await store.writeEvent({ workId: DREAM.workId, title: '公司开会', status: 'preset', source: '预设', places: ['睡眠公司'] }, session)
+    await store.writeEvent({ workId: DREAM.workId, title: '谁也说不清', status: 'happened' }, session)
+    const { NovelRemoteService } = await import('../src/remote.ts')
+    const read = await new NovelRemoteService(ctx).timeline({ canvasId: DREAM.workId })
+    const entries = (await store.readEntries(DREAM.workId))!
+    const id = (name: string): string => entries.rules.find(view => view.name === name)!.cardId
+    expect(read.past?.find(event => event.title === '小镇集市')?.lane).toBe(id('山海梦域'))
+    expect(read.future?.find(event => event.title === '公司开会')?.lane).toBe(id('现实世界'))
+    expect(read.past?.find(event => event.title === '谁也说不清')?.lane).toBeUndefined()
+    expect(read.lanes).toEqual([id('山海梦域'), id('现实世界')])
+    expect(read.names?.[id('山海梦域')]).toBe('山海梦域')
+  })
+})
