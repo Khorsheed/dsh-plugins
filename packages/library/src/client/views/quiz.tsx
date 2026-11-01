@@ -71,6 +71,17 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
   const total = quiz?.questions.length ?? 0
   const done = quiz === undefined ? 0 : quiz.questions.filter(item => answers[item.id] !== undefined).length
   const allAnswered = quiz !== undefined && done === total
+  // The questions still holding 交卷 back, by paper number — listed under the button so none hides on a long scroll.
+  const pending = quiz === undefined ? [] : quiz.questions.flatMap((item, at) => answers[item.id] === undefined
+    ? [{ id: item.id, number: at + 1, drafted: (drafts[item.id] ?? '').trim() !== '' }]
+    : [])
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const jumpTo = (id: string): void => {
+    const card = [...(bodyRef.current?.querySelectorAll<HTMLElement>('[data-question]') ?? [])].find(el => el.dataset.question === id)
+    if (card === undefined) return
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    card.querySelector<HTMLTextAreaElement>('textarea:not(:disabled)')?.focus({ preventScroll: true })
+  }
 
   const record = (id: string, entry: Answered): void => {
     setAnswers(previous => {
@@ -86,6 +97,18 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
       saveQuizDraft(quizId, { answers, drafts: next, at: new Date().toISOString() })
       return next
     })
+  }
+
+  // 改答案: an open answer the coach has not seen yet goes back to a draft. Judged
+  // answers stay put — their key is already on screen.
+  const reopen = (id: string): void => {
+    const given = answers[id]?.given ?? ''
+    const rest = { ...answers }
+    delete rest[id]
+    const nextDrafts = { ...drafts, [id]: given }
+    setAnswers(rest)
+    setDrafts(nextDrafts)
+    saveQuizDraft(quizId, { answers: rest, drafts: nextDrafts, at: new Date().toISOString() })
   }
 
   // 讲讲这题: a draft in the conversation input naming the question — before
@@ -157,7 +180,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
         backLabel={t('action.back')}
         moreLabel={t('action.more')}
       />
-      <div className={css.body}>
+      <div className={css.body} ref={bodyRef}>
         <StateLine loaded={loaded} t={t} />
         {quiz !== undefined && (
           <div className={css.progress} aria-hidden="true"><i style={{ width: `${total === 0 ? 0 : Math.round((done / total) * 100)}%` }} /></div>
@@ -173,6 +196,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
             draft={drafts[question.id] ?? ''}
             onDraft={text => { recordDraft(question.id, text) }}
             onAnswer={entry => { record(question.id, entry) }}
+            onReopen={handedOver ? undefined : () => { reopen(question.id) }}
             onExplain={() => explain(question, at + 1)}
           />
         ))}
@@ -184,13 +208,23 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
             </button>
           </div>
         )}
+        {quiz !== undefined && !handedOver && pending.length > 0 && (
+          <div className={css.pending}>
+            <span className={css.muted}>{t('quiz.pending')}</span>
+            {pending.map(item => (
+              <button key={item.id} type="button" className={css.textButton} onClick={() => { jumpTo(item.id) }}>
+                {t(item.drafted ? 'quiz.pendingDrafted' : 'quiz.pendingItem', { number: String(item.number) })}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </>
   )
 }
 
 /** One question on the paper: its number, two tags, the answer control, the feedback. The evidence quote shows only after answering — quoted up front, it often IS the answer. */
-function QuestionCard({ p, profile, question, number, answered, draft, onDraft, onAnswer, onExplain }: {
+function QuestionCard({ p, profile, question, number, answered, draft, onDraft, onAnswer, onReopen, onExplain }: {
   p: ViewProps['p']
   profile: LibraryProfile
   question: LibraryQuizQuestion
@@ -199,6 +233,8 @@ function QuestionCard({ p, profile, question, number, answered, draft, onDraft, 
   draft: string
   onDraft: (value: string) => void
   onAnswer: (entry: Answered) => void
+  /** Take a submitted answer back to editing; undefined once the sitting is handed to the coach. */
+  onReopen: (() => void) | undefined
   /** Put a 讲讲这题 draft into the conversation input; false without a conversation. */
   onExplain: () => boolean
 }): ReactNode {
@@ -220,7 +256,7 @@ function QuestionCard({ p, profile, question, number, answered, draft, onDraft, 
     el.style.height = `${Math.min(el.scrollHeight, 240)}px`
   }, [draft, answered])
   return (
-    <section className={css.question}>
+    <section className={css.question} data-question={question.id}>
       <div className={css.chips}>
         <span className={css.optionKey} aria-hidden="true">{number}</span>
         <span className={css.chip} data-tone={question.target.kind === 'asked' || question.target.kind === 'missed' ? 'weak' : undefined}>{t(`target.${question.target.kind}`)}</span>
@@ -303,6 +339,9 @@ function QuestionCard({ p, profile, question, number, answered, draft, onDraft, 
             disabled={draft.trim() === ''}
             onClick={() => { onAnswer(question.kind === 'fill' ? judgeFillAnswer(profile, draft, question.answer) : { given: draft }) }}
           >{t('quiz.submit')}</button>
+        )}
+        {question.kind === 'free' && answered !== undefined && answered.void !== true && answered.pass === undefined && onReopen !== undefined && (
+          <button type="button" className={css.secondary} onClick={onReopen}>{t('quiz.editAnswer')}</button>
         )}
         <span className={css.spacer} />
         <button
