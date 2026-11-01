@@ -34,10 +34,18 @@ export function TimelineView(props: NovelSurfaceProps): ReactNode {
           <button type="button" aria-pressed={mode === 'chapters'} onClick={() => { setMode('chapters') }}>{t('tl.byChapter')}</button>
         </div>
         <span className={css.muted}>{mode === 'story' ? t('tl.storyHint') : t('tl.chapterHint')}</span>
+        {mode === 'story' && <NowTag {...props} />}
       </div>
       {mode === 'story' ? <StoryTime {...props} /> : <StoryView {...props} />}
     </div>
   )
+}
+
+/** Where the book stands: the line between the two columns. */
+function NowTag({ canvasId, rev, remote, t }: NovelSurfaceProps): ReactNode {
+  const read = useNovelRead(remote(), r => r.timeline({ canvasId }), `timeline:${canvasId}`, rev)
+  if (read.state !== 'ready' || !read.value.ok) return null
+  return <span className={css.nowTag}>{t('tl.now', { n: (read.value.chapter ?? 1) - 1 })}</span>
 }
 
 function StoryTime(props: NovelSurfaceProps): ReactNode {
@@ -61,9 +69,18 @@ function StoryTime(props: NovelSurfaceProps): ReactNode {
           <h3 className={css.colHead}>{t('tl.past')}<span className={css.muted}> {past.length}</span></h3>
           {past.length === 0
             ? <p className={css.empty}>{t('tl.pastEmpty')}</p>
-            : past.map(event => <EventRow key={event.id} event={event} data={data} picked={picked === event.id} onPick={() => { setPicked(event.id) }} t={t} />)}
+            : (['before', 'body'] as const).map(era => {
+              const rows = past.filter(event => (event.chapters === undefined || event.chapters.length === 0) === (era === 'before'))
+              if (rows.length === 0) return null
+              return (
+                <div key={era} className={css.tier}>
+                  <div className={css.tierHead}><b className={css.era}>{t(`tl.era.${era}`)}</b></div>
+                  {rows.map(event => <EventRow key={event.id} event={event} data={data} picked={picked === event.id} onPick={() => { setPicked(event.id) }} t={t} />)}
+                </div>
+              )
+            })}
         </section>
-        <div className={css.now}><span>{t('tl.now', { n: (data.chapter ?? 1) - 1 })}</span></div>
+        <div className={css.now} aria-hidden="true" />
         <section className={css.column}>
           <h3 className={css.colHead}>{t('tl.future')}<span className={css.muted}> {future.length}</span></h3>
           {future.length === 0

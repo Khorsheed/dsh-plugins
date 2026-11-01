@@ -151,6 +151,13 @@ export function boardExtraOf(seats: GenreSeats | null, board: CanvasBoard, missi
   return seats!.renderSlot('canvas.board.view', ownerOf(seats!, board), { entryKey: genreKey(board.genre!.id, faces.extra), fallback: missing })
 }
 
+/** The genre's face in the 卡板 seat (`faces.board`); `missing` stands in when no entry serves it. */
+export function boardGenreBoardOf(seats: GenreSeats | null, board: CanvasBoard, missing: ReactNode): ReactNode {
+  const faces = genreFacesOf(seats, board)
+  if (faces?.board === undefined) return missing
+  return seats!.renderSlot('canvas.board.view', ownerOf(seats!, board), { entryKey: genreKey(board.genre!.id, faces.board), fallback: missing })
+}
+
 /** The genre's card-scope reader for the 卡板 face (nothing without a genre). */
 export function boardScopesOf(
   seats: GenreSeats | null, board: CanvasBoard, onScopes: (scopes: readonly CanvasCardScope[]) => void,

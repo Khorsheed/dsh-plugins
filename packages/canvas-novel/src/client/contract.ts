@@ -12,7 +12,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
-  LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelWorldMapResult, NovelTimelineResult, NovelPinsRequest, NovelIdeasResult, NovelIdeaRequest, NovelBodyEditRequest, NovelBodyEditResult, NovelOwnChapterRequest, NovelPendingResult, NovelPlanEditRequest, NovelRecentResult, NovelPlanEditResult, NovelStarRequest, NovelStateRequest,
+  LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelWorldMapResult, NovelTimelineResult, NovelCodexResult, NovelPinsRequest, NovelIdeasResult, NovelIdeaRequest, NovelBodyEditRequest, NovelBodyEditResult, NovelOwnChapterRequest, NovelPendingResult, NovelPlanEditRequest, NovelRecentResult, NovelPlanEditResult, NovelStarRequest, NovelStateRequest,
   NovelWorkRequest, StoryLogResult,
 } from '../types.ts'
 import type {} from './locales.ts'
@@ -76,6 +76,7 @@ export interface NovelRemote {
   outline: (request: NovelWorkRequest) => Promise<RemoteResult<NovelOutlineResult>>
   worldMap: (request: NovelWorkRequest) => Promise<RemoteResult<NovelWorldMapResult>>
   timeline: (request: NovelWorkRequest) => Promise<RemoteResult<NovelTimelineResult>>
+  codex: (request: NovelWorkRequest) => Promise<RemoteResult<NovelCodexResult>>
   setRecallPins: (sessionId: SessionId, request: NovelPinsRequest) => Promise<RemoteResult<NovelGestureResult>>
   ideas: (request: NovelWorkRequest) => Promise<RemoteResult<NovelIdeasResult>>
   changeIdea: (sessionId: SessionId, request: NovelIdeaRequest) => Promise<RemoteResult<NovelGestureResult>>

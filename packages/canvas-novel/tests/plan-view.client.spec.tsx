@@ -176,3 +176,12 @@ describe('PlanBlock word budget', () => {
     expect(screen.getByText('情节 7 段，按 3,000 字建议至多 4 段')).toBeTruthy()
   })
 })
+
+describe('a proposed volume\'s goal', () => {
+  it('reads one row per stretch of chapters', async () => {
+    const { goalSegments } = await import('../src/client/PlanView.tsx')
+    const rows = goalSegments('四段推进。第一段（约1—5章）：进入山海。第二段（约6—10章）：找到命名人。')
+    expect(rows).toEqual([{ text: '四段推进' }, { range: '1–5 章', text: '进入山海' }, { range: '6–10 章', text: '找到命名人' }])
+    expect(goalSegments('一句话目标')).toEqual([{ text: '一句话目标' }])
+  })
+})

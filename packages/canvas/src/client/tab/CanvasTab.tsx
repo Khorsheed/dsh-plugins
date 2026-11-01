@@ -56,7 +56,7 @@ import { CanvasDetailView } from '../detail/CanvasDetailView.tsx'
 import { DetailCrumbs } from '../detail/DetailCrumbs.tsx'
 import detailCss from '../detail/CanvasDetailView.module.css'
 import {
-  boardGraphOf, boardManuscriptsOf, boardScopesOf, boardStripsOf, boardTabBadgeOf, boardTabLabelOf, boardExtraOf, boardLeadOf, boardViewOf, cardDeleteNoteOf,
+  boardGraphOf, boardManuscriptsOf, boardScopesOf, boardStripsOf, boardTabBadgeOf, boardTabLabelOf, boardExtraOf, boardGenreBoardOf, boardLeadOf, boardViewOf, cardDeleteNoteOf,
   genrePageOf, GenreSeatsContext, manuscriptsOwned, type GenreSeats,
 } from '../genre-seats.tsx'
 import type { CanvasCardScope, CanvasNavParams } from '../slots.ts'
@@ -1242,13 +1242,13 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
           )}
 
           {openBoard !== null && loadError === null && boardStripsOf(seats, openBoard.board)}
-          {openBoard !== null && loadError === null && boardScopesOf(seats, openBoard.board, reportScopes)}
+          {openBoard !== null && loadError === null && openFaces?.board === undefined && boardScopesOf(seats, openBoard.board, reportScopes)}
 
           {/* A genre face's own tools, a level below the faces: which cards
               (the genre's scopes) and how they lie (网格 / 连线), as small
               segmented controls rather than more tabs or more chips. The
               graph ignores the scope, so 连线 shows the layout alone. */}
-          {openBoard !== null && loadError === null && openFaces !== undefined && (view === 'board' || view === 'link') && (
+          {openBoard !== null && loadError === null && openFaces !== undefined && openFaces.board === undefined && (view === 'board' || view === 'link') && (
             <div className={css.faceTools}>
               {view === 'board' && openScopes.length > 0 && (
                 <span className={css.segmented} role="group" aria-label={t('view.scope')}>
@@ -1281,6 +1281,8 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
               boardLeadOf(seats, openBoard.board, <div className={css.notice}>{t('genre.pageMissing')}</div>)
             ) : view === 'extra' ? (
               boardExtraOf(seats, openBoard.board, <div className={css.notice}>{t('genre.pageMissing')}</div>)
+            ) : view === 'board' && openFaces?.board !== undefined ? (
+              boardGenreBoardOf(seats, openBoard.board, <div className={css.notice}>{t('genre.pageMissing')}</div>)
             ) : view === 'manuscripts' ? (
               boardManuscriptsOf(seats, openBoard.board, (
                 <ManuscriptList

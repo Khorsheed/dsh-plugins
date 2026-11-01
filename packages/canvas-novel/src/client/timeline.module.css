@@ -15,6 +15,8 @@
 .column { display: grid; gap: 6px; align-content: start; min-width: 0; }
 .colHead { margin: 0 0 4px; font: 600 var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); letter-spacing: 0.04em; }
 .now { background: var(--dsw-alias-brand-primary); border-radius: 2px; position: relative; }
+.nowTag { margin-left: auto; padding: 1px 8px; border-radius: 4px; background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-bg-base); font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); }
+.era { color: var(--dsw-alias-label-secondary); letter-spacing: 0.06em; }
 .now span {
   position: absolute; top: 28px; left: 50%; transform: translateX(-50%); white-space: nowrap; padding: 1px 6px; border-radius: 4px;
   background: var(--dsw-alias-brand-primary); color: var(--dsw-alias-bg-base); font: var(--dsh-panel-text-meta, 12px)/1.4 var(--dsw-font-family);

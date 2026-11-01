@@ -541,6 +541,12 @@ export interface CanvasGenreFaces {
   readonly lead?: string
   /** A third face read LAST, after the view (the novel's 灵感), keyed the same way. */
   readonly extra?: string
+  /**
+   * The genre's own face in the 卡板 seat (the novel's 设定): it replaces the
+   * card wall on this genre's canvases — its scopes and 网格 / 连线 tools go
+   * with it — keyed the same way. Plain canvases keep their 卡板.
+   */
+  readonly board?: string
 }
 
 /** One registered genre as the browser lists it. */
