@@ -1,14 +1,16 @@
 /**
  * The 剪辑 tab body: the project list, and an open project's four tabs —
  * 素材 (sources, speakers, jobs), 文稿 (transcript rough cut), 导出, 设置
- * (project / show / global layers). Data is re-read from the host on a short
- * poll: the model edits the same project from the conversation.
+ * (project / show / global layers). Data is re-read when the conversation
+ * writes a video place (the destination follower's write signal), every few
+ * seconds only while a job or a model download runs, and otherwise on a slow
+ * fallback while the page is in view (another tab, a host restart).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChipRow, PanelHeader, PanelRoot, UnderlineTabs, browserOnHost, type PanelAction } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { formatClock } from '../core/timeline.ts'
-import { interactionHandlers } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
-import type { VideoNavParams } from './definition.tsx'
+import { interactionHandlers, subscribeWrites } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { VIDEO_KIND, type VideoNavParams } from './definition.tsx'
 import type {
   EffectiveSetting, GlobalConfig, SettingValue, Job, MediaFile, ModelStatus, Overview, Project, ProjectView, SettingKey, Show, Speaker,
 } from '../types.ts'
@@ -32,20 +34,39 @@ function useNotice(): [string | null, (e: unknown) => void, () => void] {
   return [notice, report, () => setNotice(null)]
 }
 
-/** Poll a loader; re-runs when `deps` change. */
-function usePolled<V>(load: () => Promise<V>, deps: readonly unknown[], intervalMs: number): { data: V | undefined; error: string | undefined; reload: () => void } {
+/** While something runs in the background (a job, a model download): its progress is only seen by reading. */
+const BUSY_MS = 3000
+/** Otherwise: a slow re-read while in view catches what the conversation does not announce. */
+const FALLBACK_MS = 30_000
+
+/**
+ * Read a loader, again when `deps` change and whenever the conversation writes
+ * a video place; then every few seconds while `busy` says a background job
+ * runs, else on the slow visible-only fallback. `fallback: false` reads only
+ * on writes (the session binding).
+ */
+function useLive<V>(
+  load: () => Promise<V>,
+  deps: readonly unknown[],
+  options: { readonly busy?: (data: V) => boolean; readonly fallback?: boolean } = {},
+): { data: V | undefined; error: string | undefined; reload: () => void } {
   const [data, setData] = useState<V>()
   const [error, setError] = useState<string>()
   const [tick, setTick] = useState(0)
   const loadRef = useRef(load)
   loadRef.current = load
+  const optionsRef = useRef(options)
+  optionsRef.current = options
+  useEffect(() => subscribeWrites(VIDEO_KIND, () => { setTick((n) => n + 1) }), [])
   useEffect(() => {
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
     const run = () => {
+      let next: V | undefined
       loadRef.current().then(
         (d) => {
           if (cancelled) return
+          next = d
           setData(d)
           setError(undefined)
         },
@@ -53,7 +74,14 @@ function usePolled<V>(load: () => Promise<V>, deps: readonly unknown[], interval
           if (!cancelled) setError(e instanceof Error ? e.message : String(e))
         },
       ).finally(() => {
-        if (!cancelled && intervalMs > 0) timer = setTimeout(run, intervalMs)
+        if (cancelled) return
+        const { busy, fallback = true } = optionsRef.current
+        const running = next !== undefined && busy?.(next) === true
+        if (!running && !fallback) return
+        timer = setTimeout(() => {
+          if (running || document.visibilityState === 'visible') run()
+          else timer = setTimeout(run, FALLBACK_MS)
+        }, running ? BUSY_MS : FALLBACK_MS)
       })
     }
     run()
@@ -62,9 +90,14 @@ function usePolled<V>(load: () => Promise<V>, deps: readonly unknown[], interval
       if (timer) clearTimeout(timer)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are the caller's
-  }, [...deps, tick, intervalMs])
+  }, [...deps, tick])
   return { data, error, reload: () => setTick((n) => n + 1) }
 }
+
+/** A model download in progress (the overview's only background work). */
+const downloading = (o: Overview): boolean => o.models.some((m) => m.state === 'downloading')
+/** A project still being imported or transcribed. */
+const processing = (o: Overview): boolean => downloading(o) || o.projects.some((x) => x.status === 'processing')
 
 /** One shared <audio> for every ▶ in the pane. */
 function usePlayer(): { playing: string | null; play: (key: string, load: () => Promise<string>) => void } {
@@ -166,8 +199,8 @@ export function VideoPane(props: VideoPaneProps): ReactNode {
 
 function ListScreen({ p }: { p: VideoPaneProps }): ReactNode {
   const { t } = p
-  const ov = usePolled(() => value(p.overview()), [], 8000)
-  const bound = usePolled(() => value(p.bound()), [], 0)
+  const ov = useLive(() => value(p.overview()), [], { busy: processing })
+  const bound = useLive(() => value(p.bound()), [], { fallback: false })
   const [creating, setCreating] = useState(false)
   const [notice, report, clear] = useNotice()
   const actions: PanelAction[] = [
@@ -291,8 +324,8 @@ function ProjectScreen({ p, projectId }: { p: VideoPaneProps; projectId: string 
   const { t } = p
   const tab = p.useStore((s) => s.tab)
   const rev = p.useStore((s) => s.rev)
-  const view = usePolled(() => value(p.project(projectId)), [projectId, rev], 3000)
-  const ov = usePolled(() => value(p.overview()), [rev], 15000)
+  const view = useLive(() => value(p.project(projectId)), [projectId, rev], { busy: (x) => x.jobs.some((j) => j.state === 'running' || j.state === 'queued') })
+  const ov = useLive(() => value(p.overview()), [rev], { busy: downloading })
   const [notice, report, clear] = useNotice()
   const player = usePlayer()
   const v = view.data

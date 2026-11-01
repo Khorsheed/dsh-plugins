@@ -21,7 +21,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import videoRemote from '@khorsheed/dsh-video-studio/remote'
 import type { VideoPaneInjected } from './contract.ts'
-import { followerHostOf, openDestination, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { followerHostOf, openDestination, registerDestinationCards, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { VIDEO_KIND, VIDEO_TAB_ID, videoDefinition, type VideoNavParams } from './definition.tsx'
 import { DESK_OWNER, DESK_ROW_KIND, deskDestinationsOf, deskRowDefinition, setDeskRowSeated } from './desk-row.ts'
 import { DeskAttachment } from './DeskAttachment.tsx'
@@ -168,6 +168,24 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: (key: string, callback: () => () => void) => () => void
     register: (options: Record<string, unknown>, component: unknown) => () => void
   }
+  // The conversation cards (proposal 2026-10-30-agent-sidebar-navigation):
+  // the one shell under each write tool and in the Turn tail; its door is the
+  // answer's destination (the project, 素材, the proposal group in 文稿, 导出).
+  registerDestinationCards(
+    (body, label) => { ctx.effect(body, label) },
+    anySlots,
+    () => get('uiConversation') as { events?: { register?: (definition: unknown) => () => void } } | undefined,
+    {
+      owner: DESK_OWNER,
+      tools: ['video_project', 'video_import', 'video_propose_edit', 'video_render'],
+      locale: NS,
+      face: () => ({
+        copy: () => ({ kind: t('tab.label'), running: t('card.running'), failed: t('card.failed'), open: t('card.open') }),
+        go: () => destination => { go(destination.params as unknown as VideoNavParams) },
+      }),
+    },
+  )
+
   const deskFace: DeskOpenRowFace = {
     // Showing is not binding: the session's binding is the tools' business.
     openProject: (_sessionId, projectId) => { go({ projectId }) },

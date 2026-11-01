@@ -8,6 +8,9 @@ export const NS = 'videoStudio'
 
 export const zh = {
   'tab.label': '剪辑',
+  'card.running': '处理中…',
+  'card.failed': '没做成',
+  'card.open': '查看 →',
   'guide.description': '播客与对谈剪辑：一条录音自动分人，删字就是删音频',
 
   'deskrow.kind': '剪辑',
@@ -222,6 +225,9 @@ export type VideoStudioKey = keyof typeof zh
 
 export const en: Record<VideoStudioKey, string> = {
   'tab.label': 'Studio',
+  'card.running': 'Working…',
+  'card.failed': 'Did not go through',
+  'card.open': 'View →',
   'guide.description': 'Podcast and conversation editing: speakers found in one recording, cut by deleting words',
 
   'deskrow.kind': 'Studio',
