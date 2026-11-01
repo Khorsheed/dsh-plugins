@@ -29,7 +29,8 @@ export interface AlignedNode {
 
 /** The baseline: the book as last aligned. */
 export interface AlignDoc {
-  readonly version: 1
+  /** 2: card fingerprints leave the category out (2026-11-02); an older baseline is retaken. */
+  readonly version: 1 | 2
   readonly at: string
   readonly nodes: Readonly<Record<string, AlignedNode>>
   /** Written chapters' text as last aligned. */
@@ -217,7 +218,7 @@ export function baselineOf(graph: BookGraph, now: ReadonlyMap<string, NodeNow>, 
     const n = chapterOfNode(id)
     if (n !== undefined && current.body !== undefined) bodies[String(n)] = current.body
   }
-  return { version: 1, at, nodes, bodies }
+  return { version: 2, at, nodes, bodies }
 }
 
 /** The baseline with some nodes brought up to now (or dropped when gone). */
@@ -246,12 +247,15 @@ function chaptersOf(graph: BookGraph, id: string, written: ReadonlySet<number>):
   return [...out].sort((a, b) => a - b)
 }
 
+/** The baseline version this code writes; an older one is retaken whole. */
+export const ALIGN_VERSION = 2
+
 /** Read an align doc off disk (undefined when absent or unreadable). */
 export function normalizeAlign(raw: unknown): AlignDoc | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
   const r = raw as Record<string, unknown>
-  if (r['version'] !== 1 || typeof r['nodes'] !== 'object' || r['nodes'] === null) return undefined
-  return { version: 1, at: typeof r['at'] === 'string' ? r['at'] : '', nodes: r['nodes'] as AlignDoc['nodes'], bodies: (typeof r['bodies'] === 'object' && r['bodies'] !== null ? r['bodies'] : {}) as AlignDoc['bodies'] }
+  if ((r['version'] !== 1 && r['version'] !== 2) || typeof r['nodes'] !== 'object' || r['nodes'] === null) return undefined
+  return { version: r['version'] as 1 | 2, at: typeof r['at'] === 'string' ? r['at'] : '', nodes: r['nodes'] as AlignDoc['nodes'], bodies: (typeof r['bodies'] === 'object' && r['bodies'] !== null ? r['bodies'] : {}) as AlignDoc['bodies'] }
 }
 
 export { chapterNode }

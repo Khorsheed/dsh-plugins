@@ -24,7 +24,7 @@ function bench() {
   canvas.addShelves(DREAM.workId)
   const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
   ctx.provide('canvasNovel', store as never)
-  return { ctx, store, canvas, agent: novelGenreAgent(store) }
+  return { ctx, store, canvas, fs, agent: novelGenreAgent(store) }
 }
 
 describe('the pieces', () => {
@@ -82,5 +82,12 @@ describe('待对齐 on a book', () => {
     expect(read.items?.map(item => [item.node, item.change, item.chapters])).toEqual([[CARD.trueName, 'removed', [1]]])
     expect(read.auto?.map(row => row.node)).toContain(room)
     expect(read.cost?.chapters.length ?? 0).toBeGreaterThanOrEqual(0)
+  })
+
+  it('retakes a baseline written by the older fingerprint (version 1) instead of listing every card', async () => {
+    const { store, fs } = bench()
+    fs.seed(`${DREAM.stateRoot}/${DREAM.workId}/align.json`, JSON.stringify({ version: 1, at: '2026-11-01T00:00:00Z', nodes: { [CARD.zhao]: { fp: 'old', kind: 'character', name: '赵启明', chapters: [1] } }, bodies: {} }))
+    expect((await store.alignRead({ workId: DREAM.workId }, session)).items).toEqual([])
+    expect((await store.alignRead({ workId: DREAM.workId }, session)).items).toEqual([])
   })
 })
