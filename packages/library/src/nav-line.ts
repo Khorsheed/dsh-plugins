@@ -15,6 +15,13 @@
 /** The marker that opens a destination line. */
 export const NAV_MARK = '⟦dsh-nav⟧'
 
+/**
+ * The kind a noted weak point (library_cards) lands under: the cards list,
+ * which the follower never opens by itself (the learner is mid-reading) — its
+ * write signal feeds the pane's 「已记下 · 撤销」 toast.
+ */
+export const RECORD_KIND = 'library-record'
+
 /** The value key a tool hands its destination over under (never part of the JSON the model reads). */
 export const NAV_KEY = '$nav'
 
@@ -40,6 +47,8 @@ export type LibraryNavParams =
 
 /** What a tool hands over under {@link NAV_KEY}. */
 export interface LibraryDestination {
+  /** `library` (default), or {@link RECORD_KIND} for a noted weak point. */
+  readonly kind?: 'library' | typeof RECORD_KIND
   readonly id: string
   readonly params: LibraryNavParams
   readonly label: string
@@ -51,5 +60,5 @@ export interface LibraryDestination {
  * @returns the line, without a trailing newline.
  */
 export function libraryDestinationLine(destination: LibraryDestination): string {
-  return `${NAV_MARK}${JSON.stringify({ id: destination.id, kind: 'library', params: destination.params, label: destination.label })}`
+  return `${NAV_MARK}${JSON.stringify({ id: destination.id, kind: destination.kind ?? 'library', params: destination.params, label: destination.label })}`
 }

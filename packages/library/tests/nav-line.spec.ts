@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { NAV_MARK as REFERENCE_MARK, readDestinations } from '@khorsheed/dsh-client-ui-agent-nav/src/destination.ts'
-import { NAV_KEY, NAV_MARK } from '../src/nav-line.ts'
+import { NAV_KEY, NAV_MARK, RECORD_KIND } from '../src/nav-line.ts'
 import { jsonOutput, landed } from '../src/tools/kit.ts'
 import { stackOf } from '../src/client/store.ts'
 
@@ -48,5 +48,12 @@ describe('stackOf: each address opens its screen over the ones 「‹」 walks b
     expect(stackOf({ view: 'quiz', projectId: 'p', resourceId: 'r', quizId: 'q' }).map(route => route.view)).toEqual(['today', 'project', 'resource', 'quiz'])
     expect(stackOf({ view: 'quiz', projectId: 'p', quizId: 'q' }).at(-1)).toEqual({ view: 'quiz', projectId: 'p', quizId: 'q' })
     expect(stackOf({ view: 'cards', projectId: 'p' }).at(-1)).toEqual({ view: 'cards', projectId: 'p', filter: 'all' })
+  })
+})
+
+describe('a noted weak point', () => {
+  it('names the cards list under the record kind, which the follower never opens by itself', () => {
+    const rendered = jsonOutput().render(undefined, landed(undefined, { ok: true }, { view: 'cards', projectId: 'p' }, '记下：动作电位', RECORD_KIND))
+    expect(readDestinations(rendered)).toEqual([expect.objectContaining({ kind: 'library-record', params: { view: 'cards', projectId: 'p' }, label: '记下：动作电位' })])
   })
 })

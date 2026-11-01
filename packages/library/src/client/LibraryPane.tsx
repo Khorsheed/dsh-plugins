@@ -21,9 +21,10 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
-import { interactionHandlers } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { interactionHandlers, subscribeWrites } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import type { LibraryEvent } from '../types.ts'
-import type { LibraryNavParams } from '../nav-line.ts'
+import { RECORD_KIND, type LibraryNavParams } from '../nav-line.ts'
+import { LIBRARY_KIND } from './definition.tsx'
 import type { LibraryPaneProps } from './contract.ts'
 import { BookView } from './views/book.tsx'
 import { NodeView } from './views/station.tsx'
@@ -72,8 +73,13 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
   )
 }
 
-/** How often the toast looks for new notes from this session. */
-const TOAST_POLL_MS = 5000
+/**
+ * The slow fallback re-read while the pane is in view. A library write in the
+ * conversation re-reads at once (the follower's write signal); this only
+ * catches what the session on screen does not show (another tab or device, a
+ * room member's own session, a host restart).
+ */
+const FALLBACK_MS = 30_000
 /** How long a toast stays up. */
 const TOAST_MS = 10_000
 
@@ -82,30 +88,20 @@ const TOAST_MS = 10_000
  * the sidebar with an undo — the chat line says it too, this is where the
  * undo lives. Only notes made after the pane opened are toasted.
  *
- * The same timer is the pane's change poll: the host's writes (a landed quiz,
- * a recorded page) move `latestActivity`, and a move refreshes the open view —
- * the per-tab watch windows alone lapsed after two minutes and left the tab
- * stale until a remount.
+ * The same component is the pane's freshness: a library write in the
+ * conversation (the follower's write signal) re-reads the open view at once,
+ * a noted weak point (the record kind) also looks for the note to toast, and
+ * a slow re-read while the pane is in view catches the rest.
  */
 function RecordToast({ p }: { p: LibraryPaneProps }): ReactNode {
   const { t, actions } = p
   const since = useRef(new Date().toISOString())
   const seen = useRef(new Set<string>())
-  const activityAt = useRef<string | undefined>()
   const [record, setRecord] = useState<(LibraryEvent & { projectId: string }) | undefined>()
   const [undone, setUndone] = useState(false)
 
   useEffect(() => {
-    const poll = (): void => {
-      if (document.visibilityState !== 'visible') return
-      void p.latestActivity().then(result => {
-        if (!result.ok) return
-        const at = result.value.at
-        if (at === undefined) return
-        // The first read only sets the baseline — the views just loaded fresh.
-        if (activityAt.current !== undefined && at > activityAt.current) actions.refresh()
-        activityAt.current = at
-      }, () => {})
+    const lookForNotes = (): void => {
       void p.recentRecords().then(result => {
         if (!result.ok) return
         const fresh = result.value.records.find(entry =>
@@ -117,8 +113,22 @@ function RecordToast({ p }: { p: LibraryPaneProps }): ReactNode {
         actions.refresh()
       }, () => {})
     }
-    const timer = setInterval(poll, TOAST_POLL_MS)
-    return () => { clearInterval(timer) }
+    const stopWrites = subscribeWrites(LIBRARY_KIND, () => { actions.refresh() })
+    const stopNotes = subscribeWrites(RECORD_KIND, () => { actions.refresh(); lookForNotes() })
+    // The fallback re-reads only when the newest change moved, so the open
+    // view does not flash a reload every half minute.
+    let newest: string | undefined
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      void p.recentChanges().then(result => {
+        if (!result.ok) return
+        const at = result.value.changes[0]?.at
+        if (newest !== undefined && at !== undefined && at > newest) actions.refresh()
+        if (at !== undefined) newest = at
+      }, () => {})
+      lookForNotes()
+    }, FALLBACK_MS)
+    return () => { stopWrites(); stopNotes(); clearInterval(timer) }
   }, [p.sessionId])
 
   useEffect(() => {

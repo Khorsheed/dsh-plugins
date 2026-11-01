@@ -941,31 +941,6 @@ describe('the assess cascade', () => {
   })
 })
 
-describe('activity', () => {
-  it('reports the newest event across projects, or nothing', async () => {
-    expect(await service.latestActivity()).toEqual({})
-    const { projectId } = await seed()
-    const first = await service.latestActivity()
-    expect(first.at).toBeDefined()
-    await service.writeCards({ projectId, cards: [{ kind: 'concept', term: '阈值', gloss: 'g', source: { type: 'chat' } }] })
-    const next = await service.latestActivity()
-    expect(next.at !== undefined && first.at !== undefined && next.at >= first.at).toBe(true)
-  })
-})
-
-describe('activity: writes without events', () => {
-  it('creating a project moves the activity stamp; a session write is named', async () => {
-    expect(await service.latestActivity()).toEqual({})
-    const created = await service.createProject({ name: '神经科学' })
-    expect(created.ok).toBe(true)
-    const after = await service.latestActivity()
-    expect(after.at).toBeDefined()
-    expect(after.session).toBeUndefined()
-    service.noteSessionWrite('s9')
-    expect((await service.latestActivity()).session?.id).toBe('s9')
-  })
-})
-
 describe('bindings', () => {
   it('binds a session to a project and book, and refuses a missing book', async () => {
     const { projectId, bookId } = await seed()

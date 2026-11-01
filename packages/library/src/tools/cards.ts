@@ -11,6 +11,7 @@ import { profileOf } from '../profiles.ts'
 import {
   arrival,
   jsonOutput,
+  landed,
   payload,
   payloadList,
   pickString,
@@ -18,6 +19,7 @@ import {
   unwrap,
   type ToolKit,
 } from './kit.ts'
+import { RECORD_KIND } from '../nav-line.ts'
 
 /** Build the `library_cards` tool over the shared kit. */
 export function libraryCardsTool(kit: ToolKit): ToolDefinition {
@@ -109,7 +111,11 @@ export function libraryCardsTool(kit: ToolKit): ToolDefinition {
         ...(resource === undefined ? {} : { resourceId: resource }),
         cards: rest,
       }))
-      return { ...(recorded ?? { ok: true }), ...(noted.length === 0 ? {} : { pointNotes: noted }) } as unknown as JsonValue
+      const answer = { ...(recorded ?? { ok: true }), ...(noted.length === 0 ? {} : { pointNotes: noted }) }
+      // Where the notes landed — the cards list, under the record kind the
+      // follower never opens by itself (the learner is mid-reading).
+      const named = [...noted.map(note => note.point), ...rest.map(card => pickString((card as { term?: unknown }).term) ?? '').filter(Boolean)]
+      return landed(exec, answer, { view: 'cards', projectId }, `记下：${named.join('、') || '薄弱点'}`, RECORD_KIND) as unknown as JsonValue
     },
   })
 }

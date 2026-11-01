@@ -18,6 +18,8 @@ import type { LibraryBinding, LibraryOutcome, LibraryProjectSummary } from '../.
 import type {} from '../locales.ts'
 import { IconChevronDownOutlineMedium } from '../icons.tsx'
 import css from './BindChip.module.css'
+import { subscribeWrites } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { LIBRARY_KIND } from '../definition.tsx'
 
 /** One session's chip face (the header slot injects it per session). */
 export interface LibraryBindInjected {
@@ -32,8 +34,8 @@ export interface LibraryBindChipProps extends LibraryBindInjected {
   readonly t: TranslateNS<'library'>
 }
 
-/** How often the chip re-reads a binding the coach may have moved. */
-const BIND_POLL_MS = 4000
+/** The slow fallback re-read of the binding (a library write in the conversation re-reads at once). */
+const BIND_FALLBACK_MS = 30_000
 
 /** A binding's menu id. */
 function idOf(binding: LibraryBinding): string {
@@ -58,12 +60,18 @@ function BindMenu({ t, boundTarget, bindTarget, listProjects }: LibraryBindChipP
   }, [boundTarget, listProjects])
 
   useEffect(() => { void reload().catch(() => {}) }, [reload])
+  // The coach binds too (its writes bind an unbound session): a library write
+  // in the conversation re-reads the binding at once (the follower's write
+  // signal), a slow re-read while the page is in view catches the rest.
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (document.visibilityState !== 'visible') return
+    const read = (): void => {
       void boundTarget().then(current => { if (current.ok) setBound(current.value) }).catch(() => {})
-    }, BIND_POLL_MS)
-    return () => { clearInterval(timer) }
+    }
+    const stop = subscribeWrites(LIBRARY_KIND, read)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') read()
+    }, BIND_FALLBACK_MS)
+    return () => { stop(); clearInterval(timer) }
   }, [boundTarget])
   // A binding to something the chip has not listed yet (the coach just made it): list again.
   const unseen = bound !== null && !projects.some(project => project.id === bound.projectId

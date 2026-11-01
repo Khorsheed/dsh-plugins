@@ -39,12 +39,13 @@ export function jsonOutput() {
  * @param value - the answer.
  * @param params - the place in the library tab.
  * @param label - what the learner reads on the card.
+ * @param kind - {@link RECORD_KIND} for a noted weak point (never followed).
  * @returns the answer, carrying the destination for the output render.
  */
-export function landed<T extends object>(exec: Exec | undefined, value: T, params: LibraryNavParams, label: string): T {
+export function landed<T extends object>(exec: Exec | undefined, value: T, params: LibraryNavParams, label: string, kind?: LibraryDestination['kind']): T {
   if (deskOf(exec?.agent) !== undefined) return value
   const thing = params.view === 'today' ? 'today' : Object.values(params).slice(1).join(':')
-  const destination: LibraryDestination = { id: `library:${params.view}:${thing}:${Date.now()}`, params, label }
+  const destination: LibraryDestination = { ...(kind === undefined ? {} : { kind }), id: `library:${params.view}:${thing}:${Date.now()}`, params, label }
   return { ...value, [NAV_KEY]: destination }
 }
 
@@ -351,7 +352,6 @@ export function createToolKit(service: LibraryService, images: ImageRefCache) {
   const autoBind = async (exec: Exec | undefined, binding: LibraryBinding): Promise<void> => {
     const sessionId = actingSessionIdOf(exec)
     if (sessionId === undefined) return
-    service.noteSessionWrite(sessionId)
     const current = service.getBinding(sessionId)
     if (current !== undefined && (current.projectId !== binding.projectId || current.resourceId !== undefined)) return
     if (current !== undefined && binding.resourceId === undefined) return
