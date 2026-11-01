@@ -3,7 +3,7 @@
  * fact behind it (replacement, compaction, prune, or a bare id-level
  * remove/add), shows its producer verbatim, and expands into the exact
  * difference; the card where the prefix first differs carries the break mark
- * and opens by default. Jumps go to the module that owns the detail (the
+ * (collapsed like every card — a compaction can replace hundreds of rows). Jumps go to the module that owns the detail (the
  * composition filter, the compaction request, the pre-prune request).
  */
 import { useState, type ReactNode } from 'react'
@@ -89,7 +89,7 @@ function Card({ chip, kind, title, where, source, size, isBreak, children, t }: 
   readonly chip: string; readonly kind: string; readonly title: string; readonly where: string; readonly source?: string | undefined
   readonly size: ReactNode; readonly isBreak: boolean; readonly children: ReactNode; readonly t: T
 }): ReactNode {
-  const [open, setOpen] = useState(isBreak)
+  const [open, setOpen] = useState(false)
   return <div className={isBreak ? css.cardBreak : css.card}>
     <button type="button" className={css.head} aria-expanded={open} onClick={() => setOpen(v => !v)}>
       <span className={css.kind} data-kind={kind}>{chip}</span>
