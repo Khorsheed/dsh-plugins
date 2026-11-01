@@ -82,6 +82,8 @@ function fakeRemote(fixture: { items: PendingView[]; phase?: EffectiveChapterPha
     outline: vi.fn(() => ok({ ok: true, outline: emptyOutline(), chapters: [], cores: [] })),
     worldMap: vi.fn(() => ok({ ok: true, shelves: [], principles: [], unorganized: 0 })),
     timeline: vi.fn(() => ok(TIMELINE)),
+    align: vi.fn(() => ok({ ok: true, items: [], auto: [] })),
+    alignAck: vi.fn(() => ok({ ok: true })),
     setRecallPins: vi.fn(() => ok({ ok: true })),
     ideas: vi.fn(() => ok({ ok: true, ideas: [], events: [] })),
     changeIdea: vi.fn(() => ok({ ok: true })),
@@ -795,5 +797,50 @@ describe('设定 (2026-11-02 改版稿)', () => {
     expect(await screen.findByRole('button', { name: '待定 1' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: '梦境规则' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '监护所' })).toBeNull()
+  })
+
+  it('删除… says what happens first, then deletes through the Remote', async () => {
+    const remote = fakeRemote({ items: [] }) as ReturnType<typeof fakeRemote> & Record<string, ReturnType<typeof vi.fn>>
+    remote.codex = vi.fn(() => ok({
+      ok: true, current: 2,
+      settings: [{ cardId: 'w2', ref: 'w2', name: '监护所', sort: 'place', text: '旧楼。', unsettled: false, parents: [], base: [], chapters: [1] }],
+      characters: [], relations: [], foreshadows: [], principles: [],
+    })) as never
+    remote.deletePreview = vi.fn(() => ok({ ok: true, kind: 'setting', name: '监护所', chapters: [1], fixes: [{ kind: 'unlink', name: '赵启明', nodeKind: 'character', edge: 'home' }] }))
+    remote.deleteNode = vi.fn(() => ok({ ok: true }))
+    const p = props(remote)
+    render(<CodexView {...p} />)
+    fireEvent.click(await screen.findByRole('button', { name: /世界观/ }))
+    fireEvent.click(await screen.findByRole('button', { name: zh['del.button'] }))
+    expect(await screen.findByText('「赵启明」的常在地点清空')).toBeTruthy()
+    expect(screen.getByText(/第 1 章正文写到过它/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['del.confirm'] }))
+    await waitFor(() => { expect(remote.deleteNode).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, node: 'w2' }) })
+    await waitFor(() => { expect(p.navigate.refresh).toHaveBeenCalled() })
+  })
+
+  it('接下来 leads with 待对齐 when changes touch written chapters, and the page lists each with what it reads', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    remote.align.mockImplementation(() => ok({
+      ok: true,
+      items: [{ node: 'w1', kind: 'setting', name: '真名规则（工作稿）', change: 'changed', chapters: [1], near: [{ label: '写到它的章节', names: ['入职'] }], passages: [{ chapter: 1, text: '他没有说出真名。' }] }],
+      auto: [{ node: 'w9', name: '空房间', change: 'removed', kind: 'setting' }],
+      cost: { chapters: [{ n: 1, passages: 1 }], chars: 60 },
+    }))
+    const p = props(remote)
+    render(<ChapterBook {...p} />)
+    expect(await screen.findByText('待对齐 1 处')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['next.alignGo'] }))
+    expect(p.navigate.openPage).toHaveBeenCalledWith('novel:align', zh['align.title'])
+    cleanup()
+    const send = vi.fn(() => 'sent' as const)
+    const { AlignPage } = await import('../src/client/AlignPage.tsx')
+    render(<AlignPage {...props(remote)} sendToConversation={send} />)
+    expect(await screen.findByText('你改了设定「真名规则」')).toBeTruthy()
+    expect(screen.getByText('他没有说出真名。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '让 Agent 对齐 1 处' }))
+    expect(send).toHaveBeenCalledWith(SESSION, expect.stringContaining('novel_read(what=changes)'))
+    fireEvent.click(screen.getByRole('button', { name: zh['align.ignore'] }))
+    await waitFor(() => { expect(remote.alignAck).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, ids: ['w1'] }) })
   })
 })

@@ -24,7 +24,7 @@ import { ChipRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { NOVEL_GENRE_ID, volumeNumeral, type ChapterRow, type EffectiveChapterPhase } from '../types.ts'
 import { goalSegments } from './PlanView.tsx'
 import { bareTitle, ChapterReader } from './ChapterReader.tsx'
-import type { ChapterTarget, NovelSurfaceProps } from './contract.ts'
+import { ALIGN_PAGE, type ChapterTarget, type NovelSurfaceProps } from './contract.ts'
 import { awaitsReconcile } from './NovelFaces.tsx'
 import { currentChapter, PendingList } from './PendingList.tsx'
 import { useNovelRead } from './use-novel.ts'
@@ -111,6 +111,7 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
   const read = useNovelRead(api, r => r.chapters({ canvasId }), `chapters:${canvasId}`, rev)
   const queue = useNovelRead(api, r => r.pending({ canvasId }), `pending:${canvasId}`, rev)
   const outlineRead = useNovelRead(api, r => r.outline({ canvasId }), `outline:${canvasId}`, rev)
+  const alignRead = useNovelRead(api, r => r.align({ canvasId }), `align:${canvasId}`, rev)
   const surface = { ...rest, canvasId, rev, navigate, sessionId, remote, t } as NovelSurfaceProps
   const [filter, setFilter] = useState<Filter>('all')
   const [queueOpen, setQueueOpen] = useState(false)
@@ -158,6 +159,13 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
 
   // 接下来: what to do, in order; only the first is the primary button (2026-11-02 改版稿).
   const steps: { key: string; title: string; sub: string; acts: ReactNode; body?: ReactNode }[] = []
+  const toAlign = alignRead.state === 'ready' && alignRead.value.ok ? (alignRead.value.items ?? []).length : 0
+  if (toAlign > 0) {
+    steps.push({
+      key: 'align', title: t('next.align', { count: toAlign }), sub: t('next.alignSub'),
+      acts: <button type="button" data-act="go" onClick={() => { navigate.openPage(ALIGN_PAGE, t('align.title')) }}>{t('next.alignGo')}</button>,
+    })
+  }
   if (stale.length > 0) {
     const first = stale[0]!.chapter
     steps.push({

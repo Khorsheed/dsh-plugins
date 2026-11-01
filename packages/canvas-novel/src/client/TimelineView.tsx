@@ -17,6 +17,8 @@
 import { useState, type ReactNode } from 'react'
 import { NOVEL_GENRE_ID, type NovelTimelineResult, type TimelineEventView, type TimelineFutureView } from '../types.ts'
 import type { NovelSurfaceProps } from './contract.ts'
+import { AlignBadge } from './AlignPage.tsx'
+import { DeleteNode } from './DeleteNode.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './timeline.module.css'
 
@@ -40,6 +42,7 @@ export function TimelineView(props: NovelSurfaceProps): ReactNode {
           {mode === 'story' ? t('tl.storyHint') : t('tl.chapterHint')}
           {mode === 'story' && <button type="button" className={css.info} aria-expanded={info} aria-label={t('tl.ruleHead')} title={t('tl.ruleHead')} onClick={() => { setInfo(value => !value) }}>i</button>}
         </span>
+        <AlignBadge {...props} />
         <NowTag {...props} />
         {info && mode === 'story' && (
           <div className={css.pop} role="dialog" aria-label={t('tl.ruleHead')}>
@@ -126,7 +129,7 @@ function ByChapter(props: NovelSurfaceProps): ReactNode {
           </section>
         )}
       </div>
-      {chosen !== undefined && <EventDetail event={chosen} data={data} all={all} openCard={props.navigate.openCard} t={t} />}
+      {chosen !== undefined && <EventDetail event={chosen} data={data} all={all} openCard={props.navigate.openCard} del={chosen.id.startsWith('fs:') || chosen.recap === true ? null : <DeleteNode {...props} node={chosen.id} onDeleted={() => { setPicked(null) }} />} t={t} />}
     </>
   )
 }
@@ -211,7 +214,7 @@ function StoryTime(props: NovelSurfaceProps): ReactNode {
             })}
         </section>
       </div>
-      {chosen !== undefined && <EventDetail event={chosen} data={data} all={all} openCard={props.navigate.openCard} t={t} />}
+      {chosen !== undefined && <EventDetail event={chosen} data={data} all={all} openCard={props.navigate.openCard} del={chosen.id.startsWith('fs:') || chosen.recap === true ? null : <DeleteNode {...props} node={chosen.id} onDeleted={() => { setPicked(null) }} />} t={t} />}
     </>
   )
 }
@@ -270,11 +273,12 @@ function EventRow({ event, data, lane, late, max, picked, onPick, t, mode = 'sto
   )
 }
 
-function EventDetail({ event, data, all, openCard, t }: {
+function EventDetail({ event, data, all, openCard, del, t }: {
   readonly event: TimelineEventView
   readonly data: NovelTimelineResult
   readonly all: readonly TimelineEventView[]
   readonly openCard: (cardId: string, heading: string) => void
+  readonly del: ReactNode
   readonly t: T
 }): ReactNode {
   const future = 'tier' in event ? event as TimelineFutureView : undefined
@@ -293,6 +297,7 @@ function EventDetail({ event, data, all, openCard, t }: {
         {event.source !== undefined && <span className={css.src}>{event.source}</span>}
         {future !== undefined && <span className={css.tierTag} data-tier={future.tier}>{t(`tl.tier.${future.tier}`)}</span>}
         {event.window !== undefined && <span className={css.muted}>{t('tl.window', { window: event.window })}</span>}
+        <span className={css.grow} />{del}
       </header>
       {future !== undefined && (
         <div className={css.comps}>

@@ -604,7 +604,6 @@ export const EXTRACT_OUTPUT_SCHEMA = `{
   "foreshadow_mentions": [{ "foreshadow_id": "#12", "kind": "planted|advanced|hinted|resolved", "answer": "仅 resolved 给", "note": "…", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "new_foreshadows": [{ "question": "…", "evidence_in_text": "≤50字原文" }],
   "new_characters": [{ "name": "…", "identity": "一句身份", "evidence_in_text": "≤50字原文" }],
-  "experiences": [{ "character_id": "c1", "entry": "本章做了什么、状态怎么变，1-2句", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "current_states": [{ "character_id": "c1", "where": "…", "state": "…", "concern": "…", "confidence": "high|medium|low" }],
   "relation_points": [{ "relation_id": "r2", "delta": -2到2的整数, "evidence_in_text": "≤50字原文" }],
   "relation_milestones": [{ "relation_id": "r2", "evidence_in_text": "≤50字原文" }],

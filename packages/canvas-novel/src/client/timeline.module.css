@@ -54,6 +54,7 @@
 .detail { display: grid; gap: 10px; border-top: 1px solid var(--dsw-alias-border-l1); padding-top: 12px; }
 .detailHead { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .detailHead h3 { margin: 0; font: 600 var(--dsh-panel-text-title, 15px)/1.4 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
+.grow { flex: 1; }
 .tierTag { font: 600 var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); }
 .tierTag[data-tier="near"] { color: var(--dsw-alias-state-error-primary); }
 .tierTag[data-tier="backlog"] { color: var(--dsw-alias-state-warn-primary); }

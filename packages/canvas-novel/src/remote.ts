@@ -25,12 +25,13 @@ import type { NovelService, WorkEntries } from './store.ts'
 import { planToText } from './text-forms.ts'
 import { bodyFingerprint } from './types.ts'
 import { isFuture, recall, tensionOf, tierReason, type StoryEvent } from './timeline.ts'
+import { deleteImpact } from './graph.ts'
 import {
   coreSuspenseNudge, revealText, revealVolume, targetWordsOf,
   type CardLinkGroup, type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
   type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelPlanEditRequest, type NovelRecentResult, type NovelPlanEditResult, type NovelStarRequest, type NovelStateRequest,
   type NovelWorkRequest, type NovelWorldMapResult, type NovelCodexResult, type CodexSetting, type NovelTimelineResult, type TimelineEventView, type TimelineFutureView,
-  type NovelPinsRequest, type NovelIdeasResult, type NovelIdeaRequest, type NovelBodyEditRequest, type NovelBodyEditResult, type NovelOwnChapterRequest, type OutlineCore, type WorldNode, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
+  type NovelPinsRequest, type NovelIdeasResult, type NovelIdeaRequest, type NovelDeleteRequest, type NovelDeletePreviewResult, type DeleteFixView, type NovelAlignResult, type NovelAlignAckRequest, type NovelBodyEditRequest, type NovelBodyEditResult, type NovelOwnChapterRequest, type OutlineCore, type WorldNode, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -523,6 +524,58 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
         mentions: [...(event.who ?? []), ...(event.places ?? [])].map(nameOf),
       })),
     }
+  }
+
+  /** 待对齐: what changed since the book was last aligned, what each change touches, and what the agent would read. */
+  @Remote('align')
+  async align(request: NovelWorkRequest): Promise<NovelAlignResult> {
+    const read = await this.core.alignRead({ workId: request.canvasId }, undefined)
+    if (!read.ok) return { ok: false, ...(read.error === undefined ? {} : { error: read.error }) }
+    const items = read.items ?? []
+    const per = new Map<number, number>()
+    for (const item of items) for (const passage of item.passages) per.set(passage.chapter, (per.get(passage.chapter) ?? 0) + 1)
+    const chars = items.reduce((sum, item) => sum + item.passages.reduce((inner, passage) => inner + passage.text.length, 0) + item.name.length + 40, 0)
+    return {
+      ok: true, items, auto: read.auto ?? [], ...(read.at === undefined ? {} : { at: read.at }),
+      cost: { chapters: [...per].sort((a, b) => a[0] - b[0]).map(([n, passages]) => ({ n, passages })), chars },
+    }
+  }
+
+  /** Tick 待对齐 items off by hand (忽略), or all of them. */
+  @Remote('alignAck')
+  async alignAck(sessionId: SessionId, request: NovelAlignAckRequest): Promise<NovelGestureResult> {
+    const outcome = await this.core.alignAck({ workId: request.canvasId, ids: request.ids }, await panelSession(this.ctx, sessionId))
+    return outcome.ok ? { ok: true } : { ok: false, ...(outcome.error === undefined ? {} : { error: outcome.error }) }
+  }
+
+  /** What deleting one thing does: the fixes made at once and the written chapters that still carry it. */
+  @Remote('deletePreview')
+  async deletePreview(request: NovelDeleteRequest): Promise<NovelDeletePreviewResult> {
+    const built = await this.core.bookGraph(request.canvasId)
+    if (built === undefined) return { ok: false, error: 'missing' }
+    const impact = deleteImpact(built.graph, request.node, built.written)
+    if (impact === undefined) return { ok: false, error: 'missing' }
+    const nameOf = (id: string): string => built.graph.nodes.get(id)?.name ?? id
+    return {
+      ok: true, kind: impact.node.kind, name: impact.node.name, chapters: impact.chapters,
+      fixes: impact.auto.map((fix): DeleteFixView => ({
+        kind: fix.kind, name: nameOf(fix.id), nodeKind: built.graph.nodes.get(fix.id)?.kind ?? 'event',
+        ...(fix.kind === 'unlink' ? { edge: fix.edge } : {}),
+        ...(fix.kind === 'move-up' ? { to: fix.to.map(nameOf) } : {}),
+      })),
+    }
+  }
+
+  /** Delete one thing, with the fixes the rules make at once. */
+  @Remote('deleteNode')
+  async deleteNode(sessionId: SessionId, request: NovelDeleteRequest): Promise<NovelGestureResult> {
+    const session = await panelSession(this.ctx, sessionId)
+    const outcome = await this.core.deleteNode({ workId: request.canvasId, node: request.node }, session)
+    if (!outcome.ok) return { ok: false, ...(outcome.error === undefined ? {} : { error: outcome.error }) }
+    // The fixes are the rules' and already done; the deleted node itself waits in 待对齐 when written chapters carry it.
+    const fixed = (outcome.impact?.auto ?? []).map(fix => fix.id)
+    if (fixed.length > 0) await this.core.alignAck({ workId: request.canvasId, ids: fixed }, session)
+    return { ok: true }
   }
 
   /** One change to the ideas: add, delete, bind or unbind. */

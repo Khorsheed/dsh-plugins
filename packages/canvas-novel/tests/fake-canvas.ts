@@ -159,6 +159,14 @@ export class FakeCanvas implements CanvasBoardSlice {
     }))
   }
 
+  async deleteCard(request: { readonly canvasId: string; readonly cardId: string }): Promise<NovelBoardMutation> {
+    const board = this.boards.get(request.canvasId)
+    if (board === undefined || !board.cards.some(card => card.id === request.cardId)) return { ok: false, error: 'missing' }
+    const next = { ...board, cards: board.cards.filter(card => card.id !== request.cardId) }
+    this.boards.set(request.canvasId, next)
+    return { ok: true, board: next }
+  }
+
   async addComment(request: { readonly canvasId: string; readonly cardId: string; readonly text: string; readonly author?: 'user' | 'agent' }): Promise<NovelBoardMutation> {
     return this.update(request.canvasId, request.cardId, card => ({
       ...card,

@@ -182,6 +182,8 @@ export function novelGenreAgent(store: NovelService): NovelGenreAgent {
         ...(request.comment === undefined ? {} : { comment: request.comment }),
       }, session as Session)
       if (!outcome.ok) return cardErrorMessage(outcome.error, role, outcome.ref, outcome.problem)
+      // The agent's own write is in the visible turn: it does not wait in 待对齐.
+      if (outcome.cardId !== undefined) await store.alignAck({ workId: request.canvasId, ids: [outcome.cardId] }, session as Session)
       // A foreshadow's status and 埋于 are the 对账's to set (store.writeCard
       // drops them), which is not the same as a key nobody knows.
       const ledgerOwned = role === 'foreshadow' ? ['status', 'plantedAt'] : []

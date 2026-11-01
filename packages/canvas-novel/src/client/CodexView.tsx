@@ -20,12 +20,16 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { NOVEL_GENRE_ID, type CodexCharacter, type CodexForeshadow, type CodexSetting, type NovelCodexResult } from '../types.ts'
 import type { NovelSurfaceProps } from './contract.ts'
+import { AlignBadge } from './AlignPage.tsx'
+import { DeleteNode } from './DeleteNode.tsx'
 import { OnePage } from './OnePage.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './codex.module.css'
 
 type T = NovelSurfaceProps['t']
 type Part = 'overview' | 'world' | 'people' | 'relations' | 'foreshadow'
+/** Renders 删除… for one node. */
+type Del = (node: string) => ReactNode
 const SHELVES = ['system', 'place', 'faction', 'item'] as const
 
 /** A setting's name without the bracketed asides its title often carries (「命名（工作稿）」 → 命名). */
@@ -52,6 +56,7 @@ function Codex(props: NovelSurfaceProps): ReactNode {
   if (!read.value.ok) return <div className={css.page}><div className={css.warn}>{t(errorKey(read.value.error))}</div></div>
   const data = read.value
   const go = (next: Part, cardId?: string, unsettled = false): void => { setPart(next); setPicked(cardId ?? null); setOnlyOpen(unsettled) }
+  const del: Del = node => <DeleteNode {...props} node={node} onDeleted={() => { setPicked(null) }} />
   const parts: readonly [Part, string, number | undefined][] = [
     ['overview', t('codex.overview'), undefined],
     ['world', t('codex.world'), data.settings?.length ?? 0],
@@ -67,12 +72,13 @@ function Codex(props: NovelSurfaceProps): ReactNode {
             {label}{count === undefined ? null : <span className={css.count}>{count}</span>}
           </button>
         ))}
+        <span className={css.grow} /><AlignBadge {...props} />
       </nav>
       {part === 'overview' && <Overview {...props} data={data} go={go} />}
-      {part === 'world' && <World data={data} picked={picked} onPick={setPicked} onlyOpen={onlyOpen} setOnlyOpen={setOnlyOpen} openCard={props.navigate.openCard} openChapter={n => { props.navigate.openManuscripts(String(n)) }} t={t} />}
-      {part === 'people' && <People data={data} openCard={props.navigate.openCard} t={t} />}
-      {part === 'relations' && <Relations data={data} openCard={props.navigate.openCard} t={t} />}
-      {part === 'foreshadow' && <Foreshadows data={data} picked={picked} onPick={setPicked} openCard={props.navigate.openCard} openChapter={n => { props.navigate.openManuscripts(String(n)) }} send={props.sessionId !== undefined && props.sendToConversation !== undefined ? text => { props.sendToConversation?.(props.sessionId!, text) } : undefined} t={t} />}
+      {part === 'world' && <World data={data} picked={picked} onPick={setPicked} onlyOpen={onlyOpen} setOnlyOpen={setOnlyOpen} del={del} openCard={props.navigate.openCard} openChapter={n => { props.navigate.openManuscripts(String(n)) }} t={t} />}
+      {part === 'people' && <People data={data} del={del} openCard={props.navigate.openCard} t={t} />}
+      {part === 'relations' && <Relations data={data} del={del} openCard={props.navigate.openCard} t={t} />}
+      {part === 'foreshadow' && <Foreshadows data={data} picked={picked} onPick={setPicked} del={del} openCard={props.navigate.openCard} openChapter={n => { props.navigate.openManuscripts(String(n)) }} send={props.sessionId !== undefined && props.sendToConversation !== undefined ? text => { props.sendToConversation?.(props.sessionId!, text) } : undefined} t={t} />}
     </div>
   )
 }
@@ -188,12 +194,13 @@ function splitLead(text: string): [string | undefined, string] {
 
 /* ---------------------------------------------------------------- 世界观 */
 
-function World({ data, picked, onPick, onlyOpen, setOnlyOpen, openCard, openChapter, t }: {
+function World({ data, picked, onPick, onlyOpen, setOnlyOpen, del, openCard, openChapter, t }: {
   readonly data: NovelCodexResult
   readonly picked: string | null
   readonly onPick: (cardId: string) => void
   readonly onlyOpen: boolean
   readonly setOnlyOpen: (value: boolean) => void
+  readonly del: Del
   readonly openCard: (cardId: string, heading: string) => void
   readonly openChapter: (n: number) => void
   readonly t: T
@@ -236,7 +243,7 @@ function World({ data, picked, onPick, onlyOpen, setOnlyOpen, openCard, openChap
           return <div key={sort} className={css.sideGroup}><h4>{t(`world.shelf.${sort}`)} · {rows.length}</h4>{roots.flatMap(row => walk(row, 0, new Set([row.cardId])))}</div>
         })}
       </nav>
-      {current !== undefined && <SettingDetail setting={current} data={data} byId={byId} onPick={onPick} openCard={openCard} openChapter={openChapter} t={t} />}
+      {current !== undefined && <SettingDetail setting={current} data={data} byId={byId} onPick={onPick} del={del} openCard={openCard} openChapter={openChapter} t={t} />}
     </div>
   )
 }
@@ -257,11 +264,12 @@ export function settingParts(text: string): { readonly rows: { readonly key?: st
   return { rows, open, ...(status === undefined ? {} : { status }) }
 }
 
-function SettingDetail({ setting, data, byId, onPick, openCard, openChapter, t }: {
+function SettingDetail({ setting, data, byId, onPick, del, openCard, openChapter, t }: {
   readonly setting: CodexSetting
   readonly data: NovelCodexResult
   readonly byId: ReadonlyMap<string, CodexSetting>
   readonly onPick: (cardId: string) => void
+  readonly del: Del
   readonly openCard: (cardId: string, heading: string) => void
   readonly openChapter: (n: number) => void
   readonly t: T
@@ -287,7 +295,7 @@ function SettingDetail({ setting, data, byId, onPick, openCard, openChapter, t }
     <article className={css.detail}>
       <header className={css.dHead}>
         <div className={css.crumbs}>{[t(`world.shelf.${setting.sort}`), ...chain.map(row => shortName(row.name))].join(' › ')}</div>
-        <button type="button" className={css.ghost} onClick={() => { openCard(setting.cardId, shortName(setting.name)) }}>{t('codex.edit')}</button>
+        <span className={css.headActs}><button type="button" className={css.ghost} onClick={() => { openCard(setting.cardId, shortName(setting.name)) }}>{t('codex.edit')}</button>{del(setting.cardId)}</span>
         <h2>{shortName(setting.name)}</h2>
         <div className={css.dMeta}>
           {setting.unsettled && <span className={css.pillWarn}>{t('world.unsettled')}</span>}
@@ -320,7 +328,7 @@ function SettingDetail({ setting, data, byId, onPick, openCard, openChapter, t }
 
 /* ------------------------------------------------------------------ 人物 */
 
-function People({ data, openCard, t }: { readonly data: NovelCodexResult; readonly openCard: (cardId: string, heading: string) => void; readonly t: T }): ReactNode {
+function People({ data, del, openCard, t }: { readonly data: NovelCodexResult; readonly del: Del; readonly openCard: (cardId: string, heading: string) => void; readonly t: T }): ReactNode {
   const people = data.characters ?? []
   const settings = new Map((data.settings ?? []).map(row => [row.cardId, row]))
   if (people.length === 0) return <p className={css.empty}>{t('codex.noPeople')}</p>
@@ -341,6 +349,7 @@ function People({ data, openCard, t }: { readonly data: NovelCodexResult; readon
                 <header className={css.personHead}>
                   <button type="button" className={css.personName} onClick={() => { openCard(person.cardId, person.name) }}>{person.name}</button>
                   {person.identity !== undefined && <span className={css.muted}>{person.identity}</span>}
+                  <span className={css.grow} />{del(person.cardId)}
                 </header>
                 <dl className={css.personRows}>
                   <dt>{t('codex.now')}</dt>
@@ -369,7 +378,7 @@ function People({ data, openCard, t }: { readonly data: NovelCodexResult; readon
 
 /* ------------------------------------------------------------------ 关系 */
 
-function Relations({ data, openCard, t }: { readonly data: NovelCodexResult; readonly openCard: (cardId: string, heading: string) => void; readonly t: T }): ReactNode {
+function Relations({ data, del, openCard, t }: { readonly data: NovelCodexResult; readonly del: Del; readonly openCard: (cardId: string, heading: string) => void; readonly t: T }): ReactNode {
   const relations = data.relations ?? []
   const current = Math.max(1, data.current ?? 1)
   const [at, setAt] = useState(current)
@@ -417,7 +426,7 @@ function Relations({ data, openCard, t }: { readonly data: NovelCodexResult; rea
       <div className={css.relList}>
         {relations.map(row => (
           <div key={row.cardId} className={css.relItem} data-later={(row.since ?? 0) > at || undefined}>
-            <b>{row.pair.map(id => names.get(id) ?? id).join(' × ')}</b>
+            <span className={css.relHead}><b>{row.pair.map(id => names.get(id) ?? id).join(' × ')}</b>{del(row.cardId)}</span>
             <span className={css.muted}>{row.type} · {row.stage}{row.since === undefined ? '' : ` · ${t('codex.since', { n: row.since })}`}</span>
             {row.now !== undefined && <span>{row.now}</span>}
             {row.steps.filter(step => step.chapter <= at).slice(-2).map((step, index) => (
@@ -432,13 +441,14 @@ function Relations({ data, openCard, t }: { readonly data: NovelCodexResult; rea
 
 /* ------------------------------------------------------------------ 伏笔 */
 
-function Foreshadows({ data, picked, onPick, openCard, openChapter, send, t }: {
+function Foreshadows({ data, picked, onPick, del, openCard, openChapter, send, t }: {
   readonly data: NovelCodexResult
   readonly picked: string | null
   readonly onPick: (cardId: string) => void
   readonly openCard: (cardId: string, heading: string) => void
   readonly openChapter: (n: number) => void
   readonly send: ((text: string) => void) | undefined
+  readonly del: Del
   readonly t: T
 }): ReactNode {
   const list = data.foreshadows ?? []
@@ -486,7 +496,7 @@ function Foreshadows({ data, picked, onPick, openCard, openChapter, send, t }: {
       <article className={css.detail}>
         <header className={css.dHead}>
           <div className={css.crumbs}>{t('codex.foreshadow')}</div>
-          <button type="button" className={css.ghost} onClick={() => { openCard(current.cardId, current.question) }}>{t('codex.edit')}</button>
+          <span className={css.headActs}><button type="button" className={css.ghost} onClick={() => { openCard(current.cardId, current.question) }}>{t('codex.edit')}</button>{del(current.cardId)}</span>
           <h2>{current.starred ? '★ ' : ''}{current.question}</h2>
           <div className={css.dMeta}>
             {planted !== undefined && <span>{t('onepage.planted', { n: planted })}</span>}

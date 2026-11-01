@@ -21,6 +21,8 @@
     "src/nav-line.ts",
     "src/organize.ts",
     "src/timeline.ts",
+    "src/graph.ts",
+    "src/align.ts",
     "src/ideas.ts",
     "src/text-forms.ts",
     "src/types.ts"

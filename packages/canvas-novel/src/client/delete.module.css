@@ -1,0 +1,18 @@
+/* 删除…: a quiet door; the confirm opens under it, in the panel's colors. */
+.wrap { position: relative; display: inline-flex; }
+.door { border: 0; background: none; border-radius: 6px; padding: 2px 10px; cursor: pointer; white-space: nowrap; font: var(--dsh-panel-text-meta, 13px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
+.door:hover, .door[aria-expanded="true"] { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-state-error-primary); }
+.confirm {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 6; width: min(420px, 86vw); box-sizing: border-box;
+  display: grid; gap: 8px; padding: 12px 14px; border-radius: 10px; text-align: left;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent); background: var(--dsw-alias-bg-base);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22); font: var(--dsh-panel-text-body, 13px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-primary);
+}
+.confirm b { font-weight: 600; }
+.confirm ul { margin: 0; padding-left: 1.2em; display: grid; gap: 2px; color: var(--dsw-alias-label-secondary); }
+.none { margin: 0; color: var(--dsw-alias-label-secondary); }
+.fail { margin: 0; color: var(--dsw-alias-state-error-primary); }
+.acts { display: flex; gap: 6px; }
+.danger, .cancel { border-radius: 6px; padding: 2px 12px; cursor: pointer; font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family); }
+.danger { border: 1px solid var(--dsw-alias-state-error-primary); background: var(--dsw-alias-state-error-primary); color: var(--dsw-alias-bg-base); }
+.cancel { border: 1px solid var(--dsw-alias-border-l1); background: none; color: var(--dsw-alias-label-primary); }

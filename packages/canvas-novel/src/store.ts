@@ -68,6 +68,8 @@ import {
   type OutlineDoc, type OutlineProposal, type OutlineSheet, type OutlineVolume,
 } from './types.ts'
 import { changedPlanFields, type PlanField } from './text-forms.ts'
+import { buildGraph, deleteImpact, type BookGraph, type DeleteImpact, type GraphInput } from './graph.ts'
+import { ackNodes, alignChanges, baselineOf, fingerprint, normalizeAlign, type AlignAuto, type AlignDoc, type AlignItem, type NodeNow } from './align.ts'
 
 /** The package's npm name, stamped on store errors. */
 const PACKAGE_NAME = '@khorsheed/dsh-canvas-novel'
@@ -89,6 +91,7 @@ export const WORK_FILES = {
   timeline: 'timeline.json',
   ideas: 'ideas.json',
   minds: 'minds.jsonl',
+  align: 'align.json',
 } as const
 
 /**
@@ -1861,6 +1864,207 @@ export class NovelService {
     return outcome.ok && id !== undefined ? { ok: true, id } : { ok: false, error: outcome.ok ? 'io' : outcome.error }
   }
 
+  /* --------------------------------------------------------- the graph */
+
+  /**
+   * The book as a graph (graph.ts), computed from the data: chapters,
+   * settings, characters, relations, foreshadows, events and ideas, and the
+   * references between them. `written` holds the chapters that have text.
+   */
+  async bookGraph(workId: string): Promise<{ readonly graph: BookGraph; readonly written: ReadonlySet<number>; readonly entries: WorkEntries } | undefined> {
+    const entries = await this.readEntries(workId)
+    if (entries === undefined) return undefined
+    const id = entries.board.id
+    const [rows, { events }, ideas, mentions] = await Promise.all([
+      this.listChapters({ workId: id }), this.allEvents(id), this.readIdeas(id), this.listMentions({ workId: id }),
+    ])
+    const cards = new Map(entries.board.cards.map(card => [card.id, card]))
+    const refs = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : typeof value === 'string' && value !== '' ? [value] : []
+    const resolve = (token: string | undefined, role: EntryRole): string | undefined => token === undefined ? undefined : this.resolveCard(entries, token, role)?.cardId
+    const nameOf = (cardId: string): string => entries.characters.find(view => view.cardId === cardId)?.name ?? cardId
+    const input: GraphInput = {
+      chapters: rows.map(row => ({
+        n: row.chapter.n,
+        title: row.chapter.title,
+        written: row.phase !== 'planning',
+        ...(row.chapter.settings === undefined ? {} : { settings: row.chapter.settings }),
+        uses: (row.chapter.plan?.uses ?? []).map(token => resolve(token, 'world')).filter((item): item is string => item !== undefined),
+        advances: row.chapter.plan?.advances ?? [],
+        cast: [...(row.chapter.plan?.cast ?? []).map(member => member.who), ...(row.chapter.plan?.pov === undefined ? [] : [row.chapter.plan.pov])]
+          .map(token => resolve(token, 'character')).filter((item): item is string => item !== undefined),
+      })),
+      settings: entries.rules.filter(view => view.role === 'world' && view.status !== 'archived').map(view => ({
+        id: view.cardId, name: view.name ?? view.ref, ...(view.parents === undefined ? {} : { parents: view.parents }), ...(view.base === undefined ? {} : { base: view.base }),
+      })),
+      characters: entries.characters.filter(view => view.cardStatus !== 'archived').map(view => ({
+        id: view.cardId, name: view.name, factions: refs(cards.get(view.cardId)?.fields?.['faction']), homes: refs(cards.get(view.cardId)?.fields?.['home']),
+      })),
+      relations: entries.relations.filter(view => view.cardStatus !== 'archived').map(view => ({ id: view.cardId, name: view.pair.map(nameOf).join(' × '), pair: view.pair })),
+      foreshadows: entries.foreshadows.filter(view => view.cardStatus !== 'archived').map(view => ({
+        id: view.cardId, name: view.question, chapters: [...new Set(mentions.filter(entry => entry.foreshadowId === view.cardId).map(entry => entry.chapter))],
+      })),
+      events: events.map(event => ({
+        id: event.id, title: event.title,
+        ...(event.chapters === undefined ? {} : { chapters: event.chapters }),
+        ...(event.places === undefined ? {} : { places: event.places }),
+        ...(event.who === undefined ? {} : { who: event.who }),
+        ...(event.causes === undefined ? {} : { causes: event.causes }),
+        ...(event.foreshadowId === undefined ? {} : { foreshadowId: event.foreshadowId }),
+      })),
+      ideas: ideas.ideas.map(idea => ({ id: idea.id, text: idea.text, ...(idea.eventId === undefined ? {} : { eventId: idea.eventId }) })),
+    }
+    const written = new Set(rows.filter(row => row.phase !== 'planning').map(row => row.chapter.n))
+    return { graph: buildGraph(input), written, entries }
+  }
+
+  /** What deleting one node does, before it is done. */
+  async deletePreview(request: { readonly workId: string; readonly node: string }): Promise<DeleteImpact | undefined> {
+    this.assertAlive('deletePreview')
+    const built = await this.bookGraph(request.workId)
+    return built === undefined ? undefined : deleteImpact(built.graph, request.node, built.written)
+  }
+
+  /**
+   * Delete one node and make the fixes the rules allow at once: a child
+   * setting moves up, a relation of a deleted person goes too, references
+   * from events and people are cleared, ideas come off a deleted event.
+   * Written chapters are never changed here; they are what 待对齐 asks about.
+   * A chapter cannot be deleted this way.
+   */
+  async deleteNode(request: { readonly workId: string; readonly node: string }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly impact?: DeleteImpact }> {
+    this.assertAlive('deleteNode')
+    const built = await this.bookGraph(request.workId)
+    if (built === undefined) return { ok: false, error: 'missing' }
+    const { graph, written, entries } = built
+    const impact = deleteImpact(graph, request.node, written)
+    if (impact === undefined || impact.node.kind === 'chapter') return { ok: false, error: 'missing' }
+    const workId = entries.board.id
+    const canvas = this.canvas
+    const isCard = impact.node.kind !== 'event' && impact.node.kind !== 'idea'
+    if (isCard && canvas?.deleteCard === undefined) return { ok: false, error: 'unsupported' }
+    const cardOf = (id: string): NovelCardView | undefined => entries.board.cards.find(card => card.id === id)
+    const without = (value: unknown, id: string): string[] => (Array.isArray(value) ? value : []).filter((item): item is string => typeof item === 'string' && item !== id)
+    // Cards first: move children up, clear a person's faction / home, a faction's base.
+    for (const fix of impact.auto) {
+      const card = cardOf(fix.id)
+      if (card === undefined) continue
+      if (fix.kind === 'move-up') {
+        await canvas!.patchCard({ canvasId: workId, cardId: card.id, fields: { ...card.fields, parent: [...fix.to] } }, session)
+      } else if (fix.kind === 'unlink' && (fix.edge === 'faction' || fix.edge === 'home' || fix.edge === 'base')) {
+        await canvas!.patchCard({ canvasId: workId, cardId: card.id, fields: { ...card.fields, [fix.edge]: without(card.fields?.[fix.edge], request.node) } }, session)
+      } else if (fix.kind === 'drop' && graph.nodes.get(fix.id)?.kind === 'relation') {
+        await canvas!.deleteCard!({ canvasId: workId, cardId: card.id }, session)
+      }
+    }
+    // Events: clear the deleted node from places / who / causes; drop the event itself when it is the node.
+    const reveal = impact.node.kind === 'foreshadow' ? `fs:${request.node}` : undefined
+    const timeline = await this.mutateJson(await this.fileTarget(workId, WORK_FILES.timeline), session, raw => normalizeTimeline(raw), () => emptyTimeline(), doc => ({
+      ...doc,
+      events: doc.events.filter(event => event.id !== request.node).map(event => normalizeEvent({
+        ...event,
+        ...(event.places === undefined ? {} : { places: event.places.filter(id => id !== request.node) }),
+        ...(event.who === undefined ? {} : { who: event.who.filter(id => id !== request.node) }),
+        ...(event.causes === undefined ? {} : { causes: event.causes.filter(id => id !== request.node && id !== reveal) }),
+      })!),
+    }))
+    if (!timeline.ok) return { ok: false, error: timeline.error }
+    // Ideas: unbind from a deleted event (or a deleted foreshadow's reveal); delete the idea itself when it is the node.
+    const ideas = await this.mutateJson(await this.fileTarget(workId, WORK_FILES.ideas), session, raw => normalizeIdeas(raw), () => emptyIdeas(), doc => ({
+      ...doc,
+      ideas: doc.ideas.filter(idea => idea.id !== request.node).map(idea => {
+        if (idea.eventId !== request.node && idea.eventId !== reveal) return idea
+        const { eventId: _gone, ...rest } = idea
+        return rest
+      }),
+    }))
+    if (!ideas.ok) return { ok: false, error: ideas.error }
+    if (isCard) {
+      const gone = await canvas!.deleteCard!({ canvasId: workId, cardId: request.node }, session)
+      if (!gone.ok) return { ok: false, error: gone.error === 'missing' ? 'missing' : 'io' }
+    }
+    return { ok: true, impact }
+  }
+
+  /* ------------------------------------------------------------ 待对齐 */
+
+  /** Every node's fingerprint now (a written chapter with its text). */
+  private async nodesNow(workId: string, built: { readonly graph: BookGraph; readonly written: ReadonlySet<number>; readonly entries: WorkEntries }, only?: ReadonlySet<string>): Promise<{ readonly now: Map<string, NodeNow>; readonly bodies: Map<number, string> }> {
+    const now = new Map<string, NodeNow>()
+    const bodies = new Map<number, string>()
+    const cards = new Map(built.entries.board.cards.map(card => [card.id, card]))
+    const { events } = await this.allEvents(workId)
+    const ideas = await this.readIdeas(workId)
+    const meta = await this.readWorkMeta(workId)
+    const chapters = await this.readChapters(workId)
+    for (const [id, node] of built.graph.nodes) {
+      if (only !== undefined && !only.has(id)) continue
+      if (node.kind === 'chapter') {
+        const n = Number(id.slice(3))
+        const chapter = chapters.find(row => row.n === n)
+        if (chapter === undefined || meta === undefined || !built.written.has(n)) { now.set(id, { fp: fingerprint(chapter?.plan ?? null) }); continue }
+        const body = await this.readChapterBody(meta, chapter)
+        bodies.set(n, body)
+        now.set(id, { fp: bodyFingerprint(body) ?? '', body })
+      } else if (node.kind === 'event') {
+        const event = events.find(row => row.id === id)
+        if (event === undefined || event.foreshadowId !== undefined) continue
+        const { order: _o, createdAt: _c, touched: _t, since: _s, pre: _p, ...stable } = event
+        now.set(id, { fp: fingerprint(stable) })
+      } else if (node.kind === 'idea') {
+        const idea = ideas.ideas.find(row => row.id === id)
+        if (idea !== undefined) now.set(id, { fp: fingerprint({ text: idea.text, eventId: idea.eventId ?? null }) })
+      } else {
+        const card = cards.get(id)
+        if (card !== undefined) now.set(id, { fp: fingerprint({ kind: card.kind, status: card.status, fields: card.fields ?? {} }) })
+      }
+    }
+    return { now, bodies }
+  }
+
+  /**
+   * What changed since the book was last aligned (align.ts). The first read
+   * of a book takes the book as it is as the baseline: nothing is pending.
+   */
+  async alignRead(request: { readonly workId: string }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly items?: readonly AlignItem[]; readonly auto?: readonly AlignAuto[]; readonly at?: string }> {
+    this.assertAlive('alignRead')
+    const built = await this.bookGraph(request.workId)
+    if (built === undefined) return { ok: false, error: 'missing' }
+    const workId = built.entries.board.id
+    const target = await this.fileTarget(workId, WORK_FILES.align)
+    const read = await this.readJson(target, raw => normalizeAlign(raw))
+    const { now, bodies } = await this.nodesNow(workId, built)
+    if (typeof read !== 'object') {
+      const at = new Date().toISOString()
+      const doc = baselineOf(built.graph, now, built.written, at)
+      const wrote = await this.mutateJson(target, session, raw => normalizeAlign(raw), () => doc, () => doc)
+      return wrote.ok ? { ok: true, items: [], auto: [], at } : { ok: false, error: wrote.error }
+    }
+    const { items, auto } = alignChanges(read.data, built.graph, now, built.written, bodies)
+    return { ok: true, items, auto, at: read.data.at }
+  }
+
+  /** Bring nodes up to now in the baseline ('all': the whole book); an item done is an item gone. */
+  async alignAck(request: { readonly workId: string; readonly ids: readonly string[] | 'all' }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    this.assertAlive('alignAck')
+    const built = await this.bookGraph(request.workId)
+    if (built === undefined) return { ok: false, error: 'missing' }
+    const workId = built.entries.board.id
+    const target = await this.fileTarget(workId, WORK_FILES.align)
+    const whole = request.ids === 'all' || typeof await this.readJson(target, raw => normalizeAlign(raw)) !== 'object'
+    const { now } = await this.nodesNow(workId, built, whole ? undefined : new Set(request.ids))
+    const at = new Date().toISOString()
+    const outcome = await this.mutateJson(target, session, raw => normalizeAlign(raw),
+      () => baselineOf(built.graph, now, built.written, at),
+      (doc: AlignDoc) => request.ids === 'all' ? baselineOf(built.graph, now, built.written, at) : ackNodes(doc, request.ids, built.graph, now, built.written, at))
+    return outcome.ok ? { ok: true } : { ok: false, error: outcome.error }
+  }
+
+  /** The nodes whose fingerprint moved since the baseline (for acking what a tool just did). */
+  async alignMoved(workId: string): Promise<string[]> {
+    const read = await this.alignRead({ workId }, undefined)
+    return [...(read.items ?? []).map(item => item.node), ...(read.auto ?? []).map(item => item.node)]
+  }
+
   /* ----------------------------------------------------- character minds */
 
   /** The memory journal: what characters came to believe and intend, oldest first. */
@@ -2616,6 +2820,13 @@ export class NovelService {
         ideas: ideas.ideas.filter(idea => idea.eventId === event.id && idea.writtenIn === undefined).map(idea => idea.text),
       }))
     const timeline = { recent: happened.slice(-6), future: doc.events.filter(isFuture), candidates, advancing, names }
+    const recentOf = (cardId: string): ExperienceEntry[] => {
+      const lived = happened.filter(event => event.who?.includes(cardId) === true && (event.chapters ?? []).length > 0)
+        .map((event): ExperienceEntry => ({ characterId: cardId, chapter: event.chapters![0]!, entry: event.title, createdAt: event.createdAt }))
+      const told = new Set(lived.map(row => row.chapter))
+      const old = experiences.filter(entry => entry.characterId === cardId && !told.has(entry.chapter))
+      return [...old, ...lived].sort((a, b) => a.chapter - b.chapter).slice(-3)
+    }
     return {
       ok: true,
       data: {
@@ -2632,7 +2843,9 @@ export class NovelService {
         currentChapter: entries.currentChapter,
         inScene: inScene.map(character => ({
           character,
-          recent: experiences.filter(entry => entry.characterId === character.cardId).slice(-3),
+          // What they lived through comes from the timeline (2026-11-02: 对账 no longer writes a separate
+          // 人物经历); chapters reconciled before that keep their old entries until events cover them.
+          recent: recentOf(character.cardId),
           ...(mindOf(character.cardId) === undefined ? {} : { mind: mindOf(character.cardId)! }),
         })),
         roster,
