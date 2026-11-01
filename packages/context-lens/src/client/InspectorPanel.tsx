@@ -12,7 +12,7 @@ import { WINDOW_TURNS, fmtSpan, gapShown, isHollowTurn, latestTurnSeq, resolveTu
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
 import { rememberSelection, takeSelection } from './member-jump.ts'
-import { hasCallAnchor, hasMessageAnchor, hasTurnAnchor, scrollConversationToBottom, scrollConversationToCall, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
+import { hasMessageAnchor, hasTurnAnchor, locateCallPaging, scrollConversationToBottom, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
 import { TokenView } from './TokenView.tsx'
@@ -380,22 +380,13 @@ export function InspectorPanel({
   const locateCall = (callId: string, hostTurn: number | undefined): void => {
     const jump = ++jumpToken.current
     const fallbackTurn = hostTurn ?? turn?.hostTurn
-    if (scrollConversationToCall(callId)) return
     const listed = fallbackTurn === undefined ? undefined : turns?.find(candidate => candidate.hostTurn === fallbackTurn)
-    if (!loadThrough || listed?.startSeq === undefined) {
-      if (fallbackTurn !== undefined) scrollConversationToTurn(fallbackTurn)
-      return
-    }
-    void loadThrough(sessionId, listed.startSeq).catch(() => undefined).then(() => {
-      let frames = 0
-      const land = (): void => {
-        if (jump !== jumpToken.current) return
-        if (hasCallAnchor(callId)) { scrollConversationToCall(callId); return }
-        if (frames >= 60) { scrollConversationToTurn(fallbackTurn!); return }
-        frames += 1
-        requestAnimationFrame(land)
-      }
-      land()
+    void locateCallPaging({
+      callId,
+      startSeq: listed?.startSeq,
+      fallbackTurn,
+      loadThrough: loadThrough === undefined ? undefined : seq => loadThrough(sessionId, seq),
+      alive: () => jump === jumpToken.current,
     })
   }
   // A call lives in this conversation when the scope is the main agent or a

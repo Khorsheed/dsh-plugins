@@ -314,6 +314,78 @@ export function scrollConversationToCall(
   }
 }
 
+/** Whether the conversation has rendered any turn row yet (its first history page is in). */
+export function hasConversationRows(root: ParentNode = document): boolean {
+  try {
+    return (scrollport(root) ?? root).querySelector(TURN_ROW_ELIGIBLE) !== null
+  } catch {
+    return false
+  }
+}
+
+/** Resolve once `ready()` holds, or false after `frames` animation frames (no frame clock: one check). */
+export function untilFrame(ready: () => boolean, frames: number, alive: () => boolean = () => true): Promise<boolean> {
+  return new Promise(resolve => {
+    let left = frames
+    const check = (): void => {
+      if (!alive()) { resolve(false); return }
+      if (ready()) { resolve(true); return }
+      if (left <= 0 || typeof requestAnimationFrame !== 'function') { resolve(false); return }
+      left -= 1
+      requestAnimationFrame(check)
+    }
+    check()
+  })
+}
+
+/** Frames to wait for a freshly opened conversation's first rows (~5 s at 60 fps). */
+const FIRST_ROWS_FRAMES = 300
+/** Frames to wait for a paged call row after each page request. */
+const PAGED_ROW_FRAMES = 90
+/** Page requests one jump may make (a page call can race the conversation's own first load). */
+const PAGE_ATTEMPTS = 3
+
+/**
+ * Show one tool call, paging the conversation's history back when its row is
+ * not rendered yet. A conversation just switched to (a member's session
+ * opened from a room's lens) is still loading its own first page: a page
+ * request issued then resolves without paging anything (seen on a throwaway
+ * instance: loadThrough(1148) returned at once and turns 74-82 stayed the only
+ * rendered ones). So the jump waits for the first rows, then pages, and
+ * re-pages a few times before it settles for the turn.
+ * @returns whether it landed on the call (false: fell back to the turn, or superseded).
+ */
+export async function locateCallPaging(options: {
+  readonly callId: string
+  /** The call's turn: its first event seq (the page target). */
+  readonly startSeq?: number | undefined
+  /** The call's host turn (the fallback landing). */
+  readonly fallbackTurn?: number | undefined
+  readonly loadThrough?: ((seq: number) => Promise<void>) | undefined
+  /** False once a newer jump took over. */
+  readonly alive: () => boolean
+  readonly root?: ParentNode
+}): Promise<boolean> {
+  const { callId, startSeq, fallbackTurn, loadThrough, alive } = options
+  const root = options.root ?? document
+  if (scrollConversationToCall(callId, root)) return true
+  const fallback = (): false => {
+    if (alive() && fallbackTurn !== undefined) scrollConversationToTurn(fallbackTurn, root)
+    return false
+  }
+  if (!await untilFrame(() => hasConversationRows(root), FIRST_ROWS_FRAMES, alive)) return fallback()
+  if (scrollConversationToCall(callId, root)) return true
+  if (loadThrough === undefined || startSeq === undefined) return fallback()
+  for (let attempt = 0; attempt < PAGE_ATTEMPTS; attempt += 1) {
+    await loadThrough(startSeq).catch(() => undefined)
+    if (await untilFrame(() => hasCallAnchor(callId, root), PAGED_ROW_FRAMES, alive)) {
+      return alive() && scrollConversationToCall(callId, root)
+    }
+    if (!alive()) return false
+  }
+  return fallback()
+}
+
 /**
  * Scroll the conversation to its floor (the 最新 button): the scrollport's
  * own `scrollTo` when present, else the largest mounted turn row as the
