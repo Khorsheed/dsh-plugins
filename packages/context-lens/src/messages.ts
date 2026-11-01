@@ -133,6 +133,14 @@ export function toolCallNames(message: CapturedMessage): string[] {
     .filter(name => name.length > 0)
 }
 
+/** Provider call ids of the message's tool calls (blocks without an id are skipped). */
+export function toolCallIdsOf(message: CapturedMessage): string[] {
+  return message.content
+    .filter(block => block.type === 'tool-call')
+    .map(block => block.id ?? '')
+    .filter(id => id.length > 0)
+}
+
 /** Single-line summary of one message for the collapsed row. */
 export function previewMessage(message: CapturedMessage): string {
   if (message.role === 'assistant') {

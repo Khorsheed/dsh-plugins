@@ -58,14 +58,16 @@ interface MessageReading {
   back: (from: SegmentItem) => void
 }
 /** The list stays dense; navigation is shared across system/history/added layers. */
-function MessageRows({ items, groups, highlight, reading, onOpenRequest, t }: {
-  readonly items: SegmentItem[]; readonly groups: Map<string, SegmentItem[]>; readonly highlight: boolean; readonly reading: MessageReading; readonly onOpenRequest?: ((link: RequestLink) => void) | undefined; readonly t: T
+function MessageRows({ items, groups, callers, highlight, reading, onOpenRequest, t }: {
+  readonly items: SegmentItem[]; readonly groups: Map<string, SegmentItem[]>; readonly callers: Map<string, SegmentItem>; readonly highlight: boolean; readonly reading: MessageReading; readonly onOpenRequest?: ((link: RequestLink) => void) | undefined; readonly t: T
 }) {
   return <>{items.map((item, i) => {
     const open = reading.expanded.has(item)
     const group = groups.get(item.full) ?? []
     const peers = group.filter(other => other !== item)
     const next = items[i + 1]
+    // A tool result's own call: identical results (×N) differ by what was called, so the call is the scene.
+    const caller = item.toolCallId === undefined ? undefined : callers.get(item.toolCallId)
     return <details key={item.index} ref={el => reading.register(item, el)} className={css.item} open={open} data-highlight={highlight} data-jump={reading.flash === item}>
       <summary className={css.row} title={item.preview} onClick={e => { e.preventDefault(); reading.toggle(item) }}>
         <span className={css.idx}>{itemNumber(item)}</span>
@@ -83,6 +85,9 @@ function MessageRows({ items, groups, highlight, reading, onOpenRequest, t }: {
         {item.isError && <div className={css.errorNote}>{t('lens.errors')}</div>}
         <div className={`${css.fullLabel} ${css.messageMeta}`}>
           <span>{item.source}{item.sourceTurn === undefined ? '' : ` · ${t('lens.sourceTurn', { turn: String(item.sourceTurn) })}`}{item.durationMs === undefined ? '' : ` · ${fmtSpan(item.durationMs)}`}</span>
+          {caller !== undefined && <span className={css.duplicateLinks}>
+            <button type="button" onClick={() => reading.jump(item, caller)}>{t('lens.issuedBy', { index: itemNumber(caller) })} ↗</button>
+          </span>}
           {peers.length > 0 && <span className={css.duplicateLinks}>
             <span>{t('lens.sameWith')}</span>
             {peers.map(other => <button key={other.index} type="button" onClick={() => reading.jump(item, other)}>{itemNumber(other)} · {t(categoryLabelKey(other.category))} ↗</button>)}
@@ -118,6 +123,8 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest
       groups.set(item.full, group)
     }
   }
+  const callers = new Map<string, SegmentItem>()
+  for (const item of [...system, ...history, ...added]) for (const id of item.toolCallIds ?? []) callers.set(id, item)
   const [expanded, setExpanded] = useState(new Set<SegmentItem>())
   const [target, setTarget] = useState<SegmentItem | null>(null)
   const [flash, setFlash] = useState<SegmentItem | null>(null)
@@ -208,7 +215,7 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, onOpenRequest
       </summary>
       {open && <div className={css.rows}>
         {layer.id === 'tools' ? ((filterCat === null || filterCat === 'tool-definition') && tools.length > 0 ? <ToolCatalog tools={tools} t={t} /> : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : 'seg.toolsEmpty')}</div>)
-          : rows.length ? <MessageRows items={rows} groups={groups} highlight={filterCat === '__dup'} reading={reading} onOpenRequest={onOpenRequest} t={t} />
+          : rows.length ? <MessageRows items={rows} groups={groups} callers={callers} highlight={filterCat === '__dup'} reading={reading} onOpenRequest={onOpenRequest} t={t} />
           : <div className={css.emptyNote}>{t(filterCat ? 'lens.noMatch' : layer.id === 'system' ? 'seg.systemEmpty' : 'seg.empty')}</div>}
       </div>}
     </details>
