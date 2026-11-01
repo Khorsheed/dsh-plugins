@@ -115,6 +115,7 @@ export const interactionHandlers = {
 /** A session event, as the client event window carries it (structural). */
 interface EventLike {
   readonly type: string
+  readonly seq?: number
   readonly time?: number
   readonly data?: unknown
 }
@@ -138,10 +139,23 @@ export interface NavFollowerHost {
   readonly events: (sessionId: string) => Observable<WindowLike> | undefined
 }
 
+/** A destination an owner read off one of its own session events, and whose act it was. */
+export interface EventDestination {
+  readonly destination: Destination
+  /** In a room: the coordinator's act follows, a member's only badges. */
+  readonly role?: 'coordinator' | 'member' | undefined
+}
+
 /** What one owner does with its destinations. */
 export interface NavFollowerOptions {
   /** The tab kinds this owner opens. */
   readonly kinds: readonly string[]
+  /**
+   * Destinations the owner reads off its own session events (a room's
+   * `room/desk-*` rows). Only appended (live) events are offered, so a replay
+   * never moves anything; the same rule then decides, with the act's role.
+   */
+  readonly events?: (event: { readonly type: string; readonly seq?: number; readonly data?: unknown }) => readonly EventDestination[]
   /** Go there (open the tab at the params). */
   readonly open: (destination: Destination) => void
   /** Mark it without moving (a strip dot, a tab badge). Optional. */
@@ -178,9 +192,42 @@ export function startNavFollower(host: NavFollowerHost, options: NavFollowerOpti
   /** Calls whose `tool/call` was appended live, by session. */
   const liveCalls = new Set<string>()
 
+  /** Judge one destination and act on it. */
+  const judge = (sessionId: string, destination: Destination, live: boolean, turn: number | undefined, role?: 'coordinator' | 'member'): void => {
+    if (!owned.has(destination.kind)) return
+    const registry = navRegistry()
+    const idle = registry.lastInteraction === undefined ? undefined : now() - registry.lastInteraction
+    const { decision, reason } = decideFollow({
+      live,
+      onScreen: true,
+      ...(role === undefined ? {} : { role }),
+      idleMs: idle,
+      narrow: width() < NARROW_PX,
+      seen: registry.seen.has(destination.id),
+      turnFollowed: turn !== undefined && registry.turnFollowed.get(sessionId) === turn,
+    })
+    log(`[nav] dest=${destination.id} kind=${destination.kind} decision=${decision} reason=${reason} session=${sessionId}${role === undefined ? '' : ` role=${role}`}`)
+    if (decision === 'skip') return
+    registry.seen.add(destination.id)
+    try {
+      if (decision === 'follow') {
+        if (turn !== undefined) registry.turnFollowed.set(sessionId, turn)
+        options.open(destination)
+      } else {
+        options.badge?.(destination)
+      }
+    } catch (error) {
+      log(`[nav] dest=${destination.id} kind=${destination.kind} failed=${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   const handle = (sessionId: string, event: EventLike): void => {
     const data = record(event.data)
     if (data === null) return
+    if (event.type !== 'tool/call' && event.type !== 'tool/result') {
+      for (const row of options.events?.(event) ?? []) judge(sessionId, row.destination, true, undefined, row.role)
+      return
+    }
     if (event.type === 'tool/call') {
       if (typeof data['callId'] === 'string') liveCalls.add(data['callId'])
       return
@@ -191,32 +238,8 @@ export function startNavFollower(host: NavFollowerHost, options: NavFollowerOpti
     const content = Array.isArray(message['content']) ? message['content'] as ContentLike[] : []
     const callId = record(message['source'])?.['callId']
     const turn = typeof data['turn'] === 'number' ? data['turn'] : undefined
-    const registry = navRegistry()
-    for (const destination of readDestinations(content)) {
-      if (!owned.has(destination.kind)) continue
-      const idle = registry.lastInteraction === undefined ? undefined : now() - registry.lastInteraction
-      const { decision, reason } = decideFollow({
-        live: typeof callId === 'string' && liveCalls.has(callId),
-        onScreen: true,
-        idleMs: idle,
-        narrow: width() < NARROW_PX,
-        seen: registry.seen.has(destination.id),
-        turnFollowed: turn !== undefined && registry.turnFollowed.get(sessionId) === turn,
-      })
-      log(`[nav] dest=${destination.id} kind=${destination.kind} decision=${decision} reason=${reason} session=${sessionId}`)
-      if (decision === 'skip') continue
-      registry.seen.add(destination.id)
-      try {
-        if (decision === 'follow') {
-          if (turn !== undefined) registry.turnFollowed.set(sessionId, turn)
-          options.open(destination)
-        } else {
-          options.badge?.(destination)
-        }
-      } catch (error) {
-        log(`[nav] dest=${destination.id} kind=${destination.kind} failed=${error instanceof Error ? error.message : String(error)}`)
-      }
-    }
+    const live = typeof callId === 'string' && liveCalls.has(callId)
+    for (const destination of readDestinations(content)) judge(sessionId, destination, live, turn)
   }
 
   const tryAttach = (sessionId: string): boolean => {

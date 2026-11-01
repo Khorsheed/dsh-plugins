@@ -1,15 +1,16 @@
 /**
  * The room's row for a project / book a member bound there (`desk-row.ts`):
  * who bound what, and one door — 打开 → — to it in this room's library tab.
- * A coordinator's row seen arriving opens the library on it by itself; a
- * member's bound only its own session, so it never takes the front.
+ * Whether the library follows by itself is the destination follower's call
+ * (`deskDestinationsOf`): a coordinator's live bind follows; a member's bound
+ * only its own session, so it never takes the front.
  *
  * @module @khorsheed/dsh-library/client/desk
  */
-import { useEffect, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '../locales.ts'
-import { shouldFollow, type DeskRowData } from './desk-row.ts'
+import type { DeskRowData } from './desk-row.ts'
 import css from './DeskRow.module.css'
 
 /** What the row reaches outside its own node. */
@@ -23,7 +24,7 @@ export interface DeskOpenRowProps extends DeskOpenRowFace {
   readonly node: { readonly data: DeskRowData }
   readonly sessionId?: string
   readonly t: TranslateNS<'library'>
-  /** False in a settled reply: only the running card (or the row's own node) follows. */
+  /** Kept for the seats that pass it; following is the destination follower's (`deskDestinationsOf`), not the row's. */
   readonly follow?: boolean
   /** Inside the member's own card: the card already says who, so the row names only the book. */
   readonly own?: boolean
@@ -33,13 +34,8 @@ export interface DeskOpenRowProps extends DeskOpenRowFace {
  * Render one library desk event.
  * @param props - the node, the face, the copy.
  */
-export function DeskOpenRow({ node, sessionId, t, openBook, follow = true, own = false }: DeskOpenRowProps): ReactNode {
+export function DeskOpenRow({ node, t, openBook, own = false }: DeskOpenRowProps): ReactNode {
   const row = node.data
-  useEffect(() => {
-    // Only the coordinator's bind moves the room's sidebar.
-    if (!follow || row.role !== 'coordinator' || !shouldFollow(sessionId ?? '', row)) return
-    openBook(row.projectId, row.resourceId)
-  }, [row, sessionId, follow, openBook])
   const target = row.resourceTitle === undefined
     ? t('deskrow.project', { project: row.projectName })
     : t('deskrow.book', { book: row.resourceTitle })

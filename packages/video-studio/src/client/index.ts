@@ -23,7 +23,7 @@ import videoRemote from '@khorsheed/dsh-video-studio/remote'
 import type { VideoPaneInjected } from './contract.ts'
 import { followerHostOf, openDestination, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { VIDEO_KIND, VIDEO_TAB_ID, videoDefinition, type VideoNavParams } from './definition.tsx'
-import { DESK_OWNER, DESK_ROW_KIND, deskRowDefinition, setDeskRowSeated } from './desk-row.ts'
+import { DESK_OWNER, DESK_ROW_KIND, deskDestinationsOf, deskRowDefinition, setDeskRowSeated } from './desk-row.ts'
 import { DeskAttachment } from './DeskAttachment.tsx'
 import { DeskOpenRow, type DeskOpenRowFace } from './DeskOpenRow.tsx'
 import { mainSessionId, RegistrationToggle, VideoTabVisibility, type VideoPluginInventorySnapshot } from './preset-visibility.ts'
@@ -152,6 +152,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ctx.effect(() => startNavFollower(followerHost, {
       kinds: [VIDEO_KIND],
       open: destination => { go(destination.params as unknown as VideoNavParams) },
+      events: event => deskDestinationsOf(VIDEO_KIND, event),
     }), 'video-studio: destination follower')
   }
 

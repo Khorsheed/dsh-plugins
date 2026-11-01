@@ -110,22 +110,19 @@ export const deskRowDefinition = {
   },
 }
 
-/** How old a row may be when it mounts and still count as seen arriving. */
-export const LIVE_WINDOW_MS = 20_000
-
-/** Rows this page already followed: a remount (a scroll, a view switch) never follows twice. */
-const followed = new Set<string>()
-
 /**
- * Whether a row mounting now should follow, recording that it did.
- * @param scope - the room session (or any key that tells rooms apart).
- * @param row - the row.
- * @param now - the clock.
- * @returns true exactly once per row, and only while it is fresh.
+ * The follower's reading of this owner's desk events (proposal
+ * 2026-10-30-agent-sidebar-navigation): a live `room/desk-opened` names its
+ * place and whose act it was — the coordinator's follows, a member's only
+ * marks. The rows themselves only offer the door.
+ * @param kind - the tab kind the place belongs to.
+ * @param event - one appended session event.
  */
-export function shouldFollow(scope: string, row: { readonly seq: number; readonly time: number }, now: number = Date.now()): boolean {
-  const key = `${scope}:${row.seq}`
-  if (followed.has(key) || now - row.time > LIVE_WINDOW_MS || row.time - now > LIVE_WINDOW_MS) return false
-  followed.add(key)
-  return true
+export function deskDestinationsOf(kind: string, event: { readonly type: string; readonly seq?: number; readonly time?: number; readonly data?: unknown }): Array<{
+  destination: { id: string; kind: string; params: Record<string, unknown>; label: string }
+  role: 'coordinator' | 'member'
+}> {
+  const row = deskRowOf({ ...event, seq: event.seq ?? 0, time: event.time ?? 0 } as Parameters<typeof deskRowOf>[0])
+  if (row === null) return []
+  return [{ destination: { id: `desk:${DESK_OWNER}:${row.seq}`, kind, params: { projectId: row.projectId, view: 'play' }, label: row.title }, role: row.role }]
 }

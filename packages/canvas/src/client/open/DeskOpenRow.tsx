@@ -1,15 +1,16 @@
 /**
  * The room's row for a canvas a member opened there (`desk-row.ts`): who did
- * what, and one door — 打开 → — to it in this room's sidebar. A row seen
- * arriving follows by itself: the coordinator's shows in the sidebar, a
- * member's goes on the canvas strip beside the one being read, marked fresh.
+ * what, and one door — 打开 → — to it in this room's sidebar. Following is
+ * the destination follower's call (`deskDestinationsOf`): a coordinator's
+ * live open shows in the sidebar, a member's goes on the canvas strip beside
+ * the one being read, marked fresh.
  *
  * @module @khorsheed/dsh-canvas/client
  */
-import { useEffect, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '../locales.ts'
-import { shouldFollow, type DeskRowData } from './desk-row.ts'
+import type { DeskRowData } from './desk-row.ts'
 import css from '../type/ProposeTypeRow.module.css'
 
 /** What the row reaches outside its own node. */
@@ -25,7 +26,7 @@ export interface DeskOpenRowProps extends DeskOpenRowFace {
   readonly node: { readonly data: DeskRowData }
   readonly sessionId?: string
   readonly t: TranslateNS<'canvas'>
-  /** False in a settled reply: only the running card (or the row's own node) follows. */
+  /** Kept for the seats that pass it; following is the destination follower's (`deskDestinationsOf`), not the row's. */
   readonly follow?: boolean
   /** Inside the member's own card: the card already says who, so the row names only the canvas. */
   readonly own?: boolean
@@ -35,13 +36,8 @@ export interface DeskOpenRowProps extends DeskOpenRowFace {
  * Render one canvas desk event.
  * @param props - the node, the face, the copy.
  */
-export function DeskOpenRow({ node, sessionId, t, openCanvas, addCanvas, follow = true, own = false }: DeskOpenRowProps): ReactNode {
+export function DeskOpenRow({ node, t, openCanvas, own = false }: DeskOpenRowProps): ReactNode {
   const row = node.data
-  useEffect(() => {
-    if (!follow || !shouldFollow(sessionId ?? '', row)) return
-    if (row.role === 'coordinator') openCanvas(row.canvasId)
-    else addCanvas(row.canvasId)
-  }, [row, sessionId, follow, openCanvas, addCanvas])
   const said = own
     ? t(row.created ? 'openrow.created' : 'openrow.switched', { title: row.title })
     : t(row.created ? 'deskrow.created' : 'deskrow.switched', { member: row.member, title: row.title })

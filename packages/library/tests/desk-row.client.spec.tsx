@@ -14,7 +14,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { zh } from '../src/client/locales.ts'
 import { DeskOpenRow } from '../src/client/desk/DeskOpenRow.tsx'
 import { DeskAttachment } from '../src/client/desk/DeskAttachment.tsx'
-import { deskRowDefinition, LIVE_WINDOW_MS, setDeskRowSeated, type DeskRowData } from '../src/client/desk/desk-row.ts'
+import { deskDestinationsOf, deskRowDefinition, setDeskRowSeated, type DeskRowData } from '../src/client/desk/desk-row.ts'
 import { LibraryTabVisibility, type LibraryPluginInventorySnapshot } from '../src/client/preset-visibility.ts'
 import { stackOf } from '../src/client/store.ts'
 
@@ -57,15 +57,16 @@ describe('deskRowDefinition', () => {
 })
 
 describe('DeskOpenRow', () => {
-  it('the coordinator\'s bind opens the library on the book, once', () => {
+  it('never opens by itself, even the coordinator\'s live bind: the follower reads the event', () => {
     const openBook = vi.fn()
-    const node = { data: row(1, 'coordinator') }
-    const { unmount } = render(<DeskOpenRow t={t} node={node} sessionId="room-a" openBook={openBook} />)
+    render(<DeskOpenRow t={t} node={{ data: row(1, 'coordinator') }} sessionId="room-a" openBook={openBook} />)
     expect(screen.getByText('bill 打开了《神经科学原理》')).toBeTruthy()
-    expect(openBook).toHaveBeenCalledExactlyOnceWith('p_neuro', 'r_kandel')
-    unmount()
-    render(<DeskOpenRow t={t} node={node} sessionId="room-a" openBook={openBook} />)
-    expect(openBook).toHaveBeenCalledOnce()
+    expect(openBook).not.toHaveBeenCalled()
+    expect(deskDestinationsOf('library', event(1, payload('coordinator')))).toEqual([{
+      destination: { id: `desk:${OWNER}:1`, kind: 'library', params: { projectId: 'p_neuro', resourceId: 'r_kandel' }, label: '神经科学原理' }, role: 'coordinator',
+    }])
+    expect(deskDestinationsOf('library', event(2, payload('member')))[0]?.role).toBe('member')
+    expect(deskDestinationsOf('library', event(3, { ...payload('member'), owner: '@khorsheed/dsh-canvas' }))).toEqual([])
   })
 
   it('a member\'s bind never takes the front; the door opens it', () => {
@@ -80,13 +81,13 @@ describe('DeskOpenRow', () => {
 
   it('a history row only offers the door', () => {
     const openBook = vi.fn()
-    render(<DeskOpenRow t={t} node={{ data: row(3, 'coordinator', Date.now() - LIVE_WINDOW_MS - 1) }} sessionId="room-a" openBook={openBook} />)
+    render(<DeskOpenRow t={t} node={{ data: row(3, 'coordinator', 0) }} sessionId="room-a" openBook={openBook} />)
     expect(openBook).not.toHaveBeenCalled()
   })
 })
 
 describe('DeskAttachment', () => {
-  it('names only the book inside the card, and only the live card follows', () => {
+  it('names only the book inside the card, and never opens by itself', () => {
     const openBook = vi.fn()
     const attachment = { type: 'room/desk-opened', seq: 40, time: Date.now(), data: payload('coordinator', 'r1') }
     const foreign = { type: 'room/desk-opened', seq: 41, time: Date.now(), data: { ...payload('coordinator', 'r1'), owner: '@khorsheed/dsh-canvas' } }
@@ -95,7 +96,7 @@ describe('DeskAttachment', () => {
     expect(openBook).not.toHaveBeenCalled()
     cleanup()
     render(<DeskAttachment sessionId="room-b" attachments={[attachment]} live t={t} openBook={openBook} />)
-    expect(openBook).toHaveBeenCalledExactlyOnceWith('p_neuro', 'r_kandel')
+    expect(openBook).not.toHaveBeenCalled()
   })
 })
 
