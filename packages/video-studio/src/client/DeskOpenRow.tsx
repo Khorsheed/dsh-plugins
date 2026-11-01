@@ -1,6 +1,7 @@
 /**
  * The room's row for a project a member opened there (`desk-row.ts`): what
- * was opened, and one door — 打开 → — to it in this room's 剪辑 panel.
+ * was opened, and one door — 打开 → — to it in this room's 剪辑 panel, drawn
+ * by the one conversation card shell (`DestinationCard`).
  * Whether the panel follows by itself is the destination follower's call
  * (`deskDestinationsOf`): a coordinator's live open follows, a member's never
  * takes the front.
@@ -11,7 +12,8 @@ import type { ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from './locales.ts'
 import type { DeskRowData } from './desk-row.ts'
-import css from './DeskRow.module.css'
+import { DestinationCard, type Destination } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { VIDEO_KIND } from './definition.tsx'
 
 /** What the row reaches outside its own node. */
 export interface DeskOpenRowFace {
@@ -39,13 +41,12 @@ export function DeskOpenRow({ node, sessionId = '', t, openProject, own = false 
   const said = own
     ? t(row.created ? 'deskrow.created' : 'deskrow.switched', { title: row.title })
     : t(row.created ? 'deskrow.memberCreated' : 'deskrow.memberSwitched', { member: row.member, title: row.title })
+  const destination: Destination = { id: `desk:${row.projectId}:${row.seq}`, kind: VIDEO_KIND, params: { projectId: row.projectId }, label: said }
   return (
-    <div className={css.row} data-desk-role={row.role}>
-      <span className={css.kind}>{t('deskrow.kind')}</span>
-      <span className={css.name} title={said}>{said}</span>
-      <button type="button" className={css.open} onClick={() => { openProject(sessionId, row.projectId) }}>
-        {t('deskrow.open')}
-      </button>
-    </div>
+    <DestinationCard
+      copy={{ kind: t('deskrow.kind'), running: said, failed: said, open: t('deskrow.open') }}
+      model={{ state: 'done', text: said, destination }}
+      go={() => { openProject(sessionId, row.projectId) }}
+    />
   )
 }

@@ -11,6 +11,7 @@ export const zh = {
   'card.running': '处理中…',
   'card.failed': '没做成',
   'card.open': '查看 →',
+  'card.settled': '已处理',
   'guide.description': '播客与对谈剪辑：一条录音自动分人，删字就是删音频',
 
   'deskrow.kind': '剪辑',
@@ -228,6 +229,7 @@ export const en: Record<VideoStudioKey, string> = {
   'card.running': 'Working…',
   'card.failed': 'Did not go through',
   'card.open': 'View →',
+  'card.settled': 'Settled',
   'guide.description': 'Podcast and conversation editing: speakers found in one recording, cut by deleting words',
 
   'deskrow.kind': 'Studio',

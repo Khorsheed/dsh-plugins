@@ -11,7 +11,7 @@ import { formatClock } from './core/timeline.ts'
 import type { EditKind } from './core/types.ts'
 import { actingSessionId, announceDeskOpen, deskOf, roomIdOf, type VideoDesk } from './desk.ts'
 import type { ExportKind, VideoStudioService } from './service.ts'
-import { withVideoDestination, type VideoDestinationParams } from './nav-line.ts'
+import { PROPOSAL_CARD, SETTLED_CARD, withVideoDestination, type VideoCardData, type VideoDestinationParams } from './nav-line.ts'
 
 interface ExecLike {
   agent?: { id: string }
@@ -26,8 +26,8 @@ const text = {
  * The answer with where it landed in the 剪辑 panel — outside a room only (in a
  * room the desk row brings the project).
  */
-function landed(exec: ExecLike, answer: string, what: string, params: VideoDestinationParams, label: string): string {
-  return deskOf(exec.agent) !== undefined ? answer : withVideoDestination(answer, what, params, label)
+function landed(exec: ExecLike, answer: string, what: string, params: VideoDestinationParams, label: string, card?: VideoCardData): string {
+  return deskOf(exec.agent) !== undefined ? answer : withVideoDestination(answer, what, params, label, card)
 }
 
 function fail(tool: string, error: unknown): string {
@@ -209,7 +209,7 @@ export function defineVideoTools(svc: VideoStudioService) {
             const r = await svc.scan(id, 'agent')
             if (!r.groupId) return '没有新的可清理项。'
             return landed(exec, `已提议 ${r.groupId}：语气词 ${r.counts.fillers}、长停顿 ${r.counts.pauses}、重复 ${r.counts.repeats}，全部采纳约缩短 ${formatClock(r.savedSec)}。提议在剪辑面板「文稿」页签顶部，请让用户在那里或会话里确认。`,
-              `group:${r.groupId}`, { projectId: id, tab: 'transcript', groupId: r.groupId }, '粗剪提议')
+              `group:${r.groupId}`, { projectId: id, tab: 'transcript', groupId: r.groupId }, '粗剪提议', PROPOSAL_CARD)
           }
           case 'propose': {
             const edits = (args.edits ?? [])
@@ -218,7 +218,7 @@ export function defineVideoTools(svc: VideoStudioService) {
             if (!edits.length) return 'propose 需要至少一条 {kind: cut|shorten, start, end}'
             const r = await svc.propose(id, args.title ?? '', edits)
             return landed(exec, `已提议 ${r.groupId}「${args.title ?? '剪辑提议'}」（${edits.length} 处），在剪辑面板「文稿」页签顶部等用户确认。`,
-              `group:${r.groupId}`, { projectId: id, tab: 'transcript', groupId: r.groupId }, args.title ?? '剪辑提议')
+              `group:${r.groupId}`, { projectId: id, tab: 'transcript', groupId: r.groupId }, args.title ?? '剪辑提议', PROPOSAL_CARD)
           }
           case 'fix_text': {
             const lines: string[] = []
@@ -234,14 +234,14 @@ export function defineVideoTools(svc: VideoStudioService) {
             if (!proposed.length) return answer
             // One group lands on that group; several on the 文稿 tab, where they stack.
             return landed(exec, `${answer}。提议在剪辑面板「文稿」页签顶部。`, `group:${proposed.join(',')}`,
-              proposed.length === 1 ? { projectId: id, tab: 'transcript', groupId: proposed[0]! } : { projectId: id, tab: 'transcript' }, '改字提议')
+              proposed.length === 1 ? { projectId: id, tab: 'transcript', groupId: proposed[0]! } : { projectId: id, tab: 'transcript' }, '改字提议', PROPOSAL_CARD)
           }
           case 'cut_keyword': {
             if (!args.keyword) return 'cut_keyword 需要 keyword'
             const r = await svc.cutMatches(id, args.keyword, 'agent')
             return r.groupId
               ? landed(exec, `已提议 ${r.groupId}：剪掉所有「${args.keyword}」${r.count} 处，在剪辑面板「文稿」页签顶部等用户确认。`,
-                `group:${r.groupId}`, { projectId: id, tab: 'transcript', groupId: r.groupId }, `剪掉「${args.keyword}」`)
+                `group:${r.groupId}`, { projectId: id, tab: 'transcript', groupId: r.groupId }, `剪掉「${args.keyword}」`, PROPOSAL_CARD)
               : `「${args.keyword}」没有出现。`
           }
           case 'apply':
@@ -249,7 +249,10 @@ export function defineVideoTools(svc: VideoStudioService) {
             if (!args.groupId) return `${args.action} 需要 groupId`
             await svc.decide(id, { groupId: args.groupId }, args.action === 'apply' ? 'applied' : 'rejected', 'agent')
             const v = await svc.view(id)
-            return `${args.action === 'apply' ? '已采纳' : '已拒绝'} ${args.groupId}。成片现在 ${formatClock(v.outputSec)}。`
+            // The same place as the proposal's card, settled: that card takes the news while live.
+            return landed(exec, `${args.action === 'apply' ? '已采纳' : '已拒绝'} ${args.groupId}。成片现在 ${formatClock(v.outputSec)}。`,
+              `settled:${args.groupId}`, { projectId: id, tab: 'transcript', groupId: args.groupId },
+              `${args.action === 'apply' ? '已采纳' : '已拒绝'} ${args.groupId}`, SETTLED_CARD)
           }
           case 'rename_speaker':
             if (!args.speakerId || !args.name) return 'rename_speaker 需要 speakerId 和 name'
