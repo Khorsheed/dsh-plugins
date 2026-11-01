@@ -1,12 +1,16 @@
 /**
  * The turn card: beneath each finished agent turn (the `conversation.chat.turnTail`
- * seat, outside the fold — the canvas-novel precedent), what the turn changed
- * in the game: the version that went live or waits as a candidate, the
- * check, elements, design chapters, parameters, code and tests — each with a
- * jump to the place in the game tab where the change can be seen.
+ * seat, outside the fold), what the turn changed in the game: the version
+ * that went live or waits as a candidate, the check, elements, design
+ * chapters, parameters, code and tests — each with a jump to the place in the
+ * game tab where the change can be seen. It is the game's body inside the one
+ * conversation card (`@khorsheed/dsh-client-ui-agent-nav`'s `DestinationCard`,
+ * proposal 2026-10-30-agent-sidebar-navigation): the frame, head and door
+ * (打开游戏面板 → the play area) are the shell's; every row's jump is the same `go`.
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
+import { DestinationCard } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import type { Look3D, TurnReport } from '../types.ts'
 import { normalizeLook3d } from '../look3d.ts'
 import { Preview3D } from './Preview3D.tsx'
@@ -120,14 +124,8 @@ export function GameTurnCard(props: GameTurnCardProps): ReactNode {
   const looks = report.elements.filter(e => e.what === 'look' || e.what === 'new')
   const fieldOnly = report.elements.filter(e => e.what === 'fields')
   const removed = report.elements.filter(e => e.what === 'removed')
-  return <section className={css.card} aria-label={t('turn.title', { title: report.title })}>
-    <header className={css.head}>
-      <span className={css.badge} aria-hidden="true">◆</span>
-      <strong>{t('turn.title', { title: report.title })}</strong>
-      <span className={css.spacer} />
-      <button type="button" className={css.open} onClick={() => { openAt({ view: 'play' }) }}>{t('turn.openPanel')}</button>
-    </header>
-    <ul className={css.list}>
+  const title = t('turn.title', { title: report.title })
+  const list = <ul className={css.list}>
       {report.version !== null && <Row t={t} onGo={openAt} icon="▶" tone={report.version.kind === 'deployed' ? 'ok' : 'warn'} go={{ view: 'play' }}>
         {report.version.kind === 'deployed' ? t('turn.deployed', { version: report.version.version }) : t('turn.candidate', { version: report.version.version })}
         {report.check !== null && report.check.ok && <span className={css.meta}>{t('turn.checkOk', { passed: report.check.passed })}{report.check.fixes > 0 ? ` · ${t('turn.fixed', { count: report.check.fixes })}` : ''}</span>}
@@ -152,6 +150,11 @@ export function GameTurnCard(props: GameTurnCardProps): ReactNode {
       </Row>}
       {report.tests.length > 0 && <Row t={t} onGo={openAt} icon="✓" go={{ view: 'versions' }}>{t('turn.tests', { count: report.tests.length })}</Row>}
     </ul>
-  </section>
+  return <DestinationCard
+    copy={{ kind: t('desk.kind'), running: t('card.running'), failed: t('card.failed'), open: t('card.open') }}
+    model={{ state: 'done', text: '', destination: { id: `game-turn:${turn ?? ''}`, kind: 'game', params: { projectId: report.projectId, view: 'play' }, label: title } }}
+    body={{ title, children: list, open: `${t('turn.openPanel')} →` }}
+    go={destination => { openAt(destination.params as unknown as GameNavParams) }}
+  />
 }
 

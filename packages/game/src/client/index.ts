@@ -22,7 +22,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.tsx'
 import type { GameApi, GameNavParams, GameTabInjected } from './contract.ts'
 import { gameTurnDefinition, GameTurnCard } from './TurnCard.tsx'
-import { followerHostOf, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import {
+  DestinationToolRow, followerHostOf, startNavFollower, subscribeWrites, type CardFace,
+} from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { encodeGameRef, GAME_REF_SOURCE, gameRefCodec } from './refs.ts'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
 import { GameTab } from './GameTab.tsx'
@@ -46,6 +48,9 @@ function mainSessionId(list: SessionListState): SessionId | undefined {
   const view = list as SessionListCurrent
   return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id ?? view.current
 }
+
+/** The slow fallback look while the page is visible (writes in the conversation re-read at once). */
+const FALLBACK_MS = 30_000
 
 /** `remote.game` is mounted here and read back through ctx.get (never injected — that would deadlock the loader). */
 export const inject = ['slots', 'remote', 'locale', 'sessions', 'sidebarRight', 'sidebarRightTabs']
@@ -232,9 +237,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     touch: sessionId => { emit(sessionId) },
   }
 
-  // The page polls the on-screen session's bound project while visible (session events nudge it
-  // early) to notice a binding made with no event (a room member's game_open) and refresh the tab —
-  // refresh only. Where to go rides the answers' destination lines (the follower above).
+  // The tab re-reads when the on-screen session's binding moves. A game write
+  // in the conversation, or a room member's open or write on the room's
+  // project (its desk event), arrives as the follower's write signal; the
+  // turn-boundary pushes nudge it too; a slow look while the page is visible
+  // catches the rest (another tab or device, a host restart). Refresh only:
+  // where to go rides the destinations (the follower above).
   const lastBound = new Map<string, string | null>()
   let lastLook = 0
   const look = (): void => {
@@ -252,7 +260,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }).catch(() => {})
   }
   listeners.add(() => { look() })
-  const pollTimer = setInterval(() => { if (document.visibilityState === 'visible') look() }, 6000)
+  ctx.effect(() => subscribeWrites(GAME_KIND, () => {
+    const sid = mainSessionId(ctx.sessions.list.getSnapshot())
+    if (sid !== undefined) emit(sid)
+  }), 'game: write signal')
+  const pollTimer = setInterval(() => { if (document.visibilityState === 'visible') look() }, FALLBACK_MS)
   disposers.push(async () => { clearInterval(pollTimer) })
 
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
@@ -262,15 +274,32 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: (): GameTabInjected => face,
   }, GameTab)), 'game: tab body')
 
-  // The turn card: what each agent turn changed in the game, beneath the
-  // turn's closing prose (outside the fold), with jumps into the tab. The
-  // canvas-novel turn-tail precedent.
-  // The seat's owner props are typed by ui-chat; this card reads them
-  // structurally (the canvas-novel precedent), so it registers structurally.
+  // The seats are typed by packages this one does not depend on (ui-tool,
+  // ui-chat, room): registrations go through a structural view of the registry.
   const seats = ctx.slots as unknown as {
     inject: (key: string, callback: () => () => void) => () => void
     register: (options: Record<string, unknown>, component: unknown) => () => void
   }
+  // The conversation cards (proposal 2026-10-30-agent-sidebar-navigation):
+  // game_open / game_publish show the one shell's compact line under the call,
+  // its door the answer's destination. The Turn tail is the turn card below
+  // (the same shell, the game's report as its body), which already names
+  // every change of the turn — so the shell's own tail is not seated twice.
+  const cardFace: CardFace = {
+    copy: () => ({ kind: t('desk.kind'), running: t('card.running'), failed: t('card.failed'), open: t('card.open') }),
+    go: () => destination => { go(destination.params as unknown as GameNavParams) },
+  }
+  for (const tool of ['game_open', 'game_publish'] as const) {
+    ctx.effect(() => seats.inject('tool.call.toolview', () => seats.register({
+      name: 'tool.call.toolview',
+      key: tool,
+      locale: NS,
+      inject: () => cardFace,
+    }, DestinationToolRow)), `game: ${tool} card`)
+  }
+
+  // The turn card: what each agent turn changed in the game, beneath the
+  // turn's closing prose (outside the fold), with jumps into the tab.
   ctx.effect(() => seats.inject('conversation.chat.turnTail', () => {
     const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
       events?: { register?: (definition: unknown) => () => void }
