@@ -73,6 +73,8 @@ describe('member usage', () => {
     render(<RoomStatsLine useProjection={useProjection} state={state} t={t} renderMemberTools={renderMemberTools} coordinatorSession="child-m-gm" />)
     // The coordinator's ring ends the line; each CLI member feeds the chip's dot.
     expect(screen.getByTestId('meter-child-m-gm')).toBeTruthy()
+    // Named, so its reminder compacts through the room's own dispatch.
+    expect(calls).toContain('child-m-gm:meter:游戏大师')
     expect(calls).toContain('child-m-gm:dot:游戏大师')
     expect(calls).toContain('child-m-cut:dot:剪刀手')
     fireEvent.click(screen.getByRole('button', { name: /成员 2 位/ }))

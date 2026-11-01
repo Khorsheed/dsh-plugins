@@ -31,9 +31,12 @@
    stays whole at its end, and its breakdown opens above the row. */
 .withMembers {
   position: relative;
+  /* The breakdown's narrow layout reads the composer column's width, not the
+     viewport's: a split pane is far narrower than the window. */
+  container: room-stats / inline-size;
   display: flex;
   justify-content: center;
-  align-items: baseline;
+  align-items: center;
   max-width: var(--dsh-chat-content-width, 780px);
   width: 100%;
   margin: 0 auto;
@@ -42,6 +45,12 @@
   font-size: 12px;
   line-height: 20px;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  /* The occupancy ring (local-agent) joins this line at its own metrics, not
+     the composer meter's 13px. */
+  --dsh-member-context-font-size: 12px;
+  --dsh-member-context-line-height: 20px;
+  --dsh-member-context-ring: 12px;
+  --dsh-member-context-padding: 0 6px;
 }
 
 .withMembers .root {
@@ -54,6 +63,9 @@
 
 .membersChip {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   padding: 0 4px;
   border: none;
   border-radius: 6px;
@@ -73,11 +85,16 @@
 .breakdown {
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
+  /* Centered inside the composer column and never wider than it: a split
+     pane is narrower than the viewport, so a viewport clamp let the table
+     spill past the conversation's edge. Overlong tables scroll inside. */
+  left: 8px;
+  right: 8px;
   z-index: 10;
-  min-width: min(540px, calc(100vw - 32px));
-  max-width: calc(100vw - 32px);
+  width: max-content;
+  max-width: calc(100% - 16px);
+  margin: 0 auto;
+  box-sizing: border-box;
   overflow-x: auto;
   padding: 6px 0;
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1)));
@@ -116,6 +133,36 @@
 
 .breakdown .num {
   text-align: right;
+}
+
+.breakdown td.name,
+.breakdown td.model {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+/* A narrow column (a split pane, a phone) keeps who / model / rounds / total /
+   context; the per-bucket figures drop out rather than overflow. */
+@container room-stats (max-width: 560px) {
+  .breakdown .optional {
+    display: none;
+  }
+
+  .breakdown th,
+  .breakdown td {
+    padding: 3px 8px;
+  }
+
+  .breakdown td.name,
+  .breakdown td.model {
+    max-width: 112px;
+  }
 }
 
 /* The chip's attention mark: one dot however many members are past their

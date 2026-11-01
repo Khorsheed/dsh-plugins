@@ -24,6 +24,7 @@ import type {} from '@deepseek-ai/dsh-session-stats/client'
 import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { RoomComposerInjected, RoomComposerProps } from './slots.ts'
 import type { RoomState } from '../types.ts'
+import { IconChevronDownOutlineMedium } from './icons.tsx'
 import css from './RoomStatsLine.module.css'
 
 /**
@@ -158,7 +159,8 @@ export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state,
   const members = memberUsage(state)
   // CLI members with a session: the 上下文 column and the chip's attention dot read them.
   const sessions = new Map((state?.members ?? []).flatMap(member => member.childSessionId === undefined || member.kind === 'main-agent' ? [] : [[member.name, member.childSessionId as string] as const]))
-  const meter = coordinatorSession === undefined ? null : renderMemberTools?.(coordinatorSession, 'meter') ?? null
+  const coordinatorName = coordinatorSession === undefined ? undefined : state?.members.find(member => member.childSessionId === coordinatorSession)?.name
+  const meter = coordinatorSession === undefined ? null : renderMemberTools?.(coordinatorSession, 'meter', { memberName: coordinatorName }) ?? null
   const [open, setOpen] = useState(false)
   const membersRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
@@ -254,24 +256,24 @@ export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state,
             })}
           </span>
         )}
-        {' ▾'}
+        <IconChevronDownOutlineMedium size={12} className={css.chevron} />
       </button>
       {meter}
       {open && (
         <div className={css.breakdown} role="dialog" aria-label={t('stats.membersTitle')}>
           <table>
-            <thead><tr><th>{t('stats.col.member')}</th><th>{t('stats.col.model')}</th><th className={css.num}>{t('stats.col.rounds')}</th><th className={css.num}>{t('stats.col.total')}</th><th className={css.num}>{t('stats.col.input')}</th><th className={css.num}>{t('stats.col.cacheHit')}</th><th className={css.num}>{t('stats.col.output')}</th><th className={css.num}>{t('stats.col.time')}</th>{contexts && <th>{t('stats.col.context')}</th>}</tr></thead>
+            <thead><tr><th>{t('stats.col.member')}</th><th>{t('stats.col.model')}</th><th className={css.num}>{t('stats.col.rounds')}</th><th className={css.num}>{t('stats.col.total')}</th><th className={`${css.num} ${css.optional}`}>{t('stats.col.input')}</th><th className={`${css.num} ${css.optional}`}>{t('stats.col.cacheHit')}</th><th className={`${css.num} ${css.optional}`}>{t('stats.col.output')}</th><th className={`${css.num} ${css.optional}`}>{t('stats.col.time')}</th>{contexts && <th>{t('stats.col.context')}</th>}</tr></thead>
             <tbody>
               {members.map(row => (
                 <tr key={row.member}>
-                  <td className={css.name}>{row.member}</td>
-                  <td>{row.model ?? '—'}</td>
+                  <td className={css.name} title={row.member}>{row.member}</td>
+                  <td className={css.model} title={row.model}>{row.model ?? '—'}</td>
                   <td className={css.num}>{row.rounds}</td>
                   <td className={css.num}>{row.tokens > 0 ? formatTokens(row.tokens) : '—'}</td>
-                  <td className={css.num}>{row.input !== undefined && row.input > 0 ? formatTokens(row.input) : '—'}</td>
-                  <td className={css.num}>{row.input !== undefined && row.input > 0 ? `${Math.round((row.cacheRead ?? 0) / row.input * 100)}%` : '—'}</td>
-                  <td className={css.num}>{row.output !== undefined && row.output > 0 ? formatTokens(row.output) : '—'}</td>
-                  <td className={css.num}>{row.elapsedMs > 0 ? formatDuration(row.elapsedMs) : '—'}</td>
+                  <td className={`${css.num} ${css.optional}`}>{row.input !== undefined && row.input > 0 ? formatTokens(row.input) : '—'}</td>
+                  <td className={`${css.num} ${css.optional}`}>{row.input !== undefined && row.input > 0 ? `${Math.round((row.cacheRead ?? 0) / row.input * 100)}%` : '—'}</td>
+                  <td className={`${css.num} ${css.optional}`}>{row.output !== undefined && row.output > 0 ? formatTokens(row.output) : '—'}</td>
+                  <td className={`${css.num} ${css.optional}`}>{row.elapsedMs > 0 ? formatDuration(row.elapsedMs) : '—'}</td>
                   {contexts && (
                     <td className={css.context}>
                       {sessions.has(row.member) && (
