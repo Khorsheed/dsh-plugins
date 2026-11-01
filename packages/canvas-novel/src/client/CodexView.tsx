@@ -93,7 +93,7 @@ function Overview(props: NovelSurfaceProps & { readonly data: NovelCodexResult; 
           )}
         </div>
       )}
-      <OutlineSheet {...props} />
+      <div className={css.sheetWrap}><OutlineSheet {...props} /></div>
       <section className={css.section}>
         <h3 className={css.h3}>{t('codex.world')}</h3>
         <div className={css.shelfGrid}>

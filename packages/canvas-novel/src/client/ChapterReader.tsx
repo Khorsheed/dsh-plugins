@@ -238,15 +238,14 @@ function BodyEditor({ view, startOpen, writable, onSave, onIdea, onContinue, t, 
     try { if (text === null) window.localStorage.removeItem(draftKey(view)); else window.localStorage.setItem(draftKey(view), text) } catch { /* a private window keeps nothing; the edit still works */ }
   }
   if (draft === null) {
+    const open = (): void => { setNote(null); setDraft(stored() ?? view.body ?? '') }
+    // Two doors, at the head of the text and at its end: a long chapter never hides the way in.
     return (
       <>
-        {children}
+        {writable && <div className={css.editDoorTop}><button type="button" className={css.editDoor} onClick={open}>{t('edit.open')}</button></div>}
         {note !== null && <p className={css.editNote}>{note}</p>}
-        {writable && (
-          <div className={css.editBar}>
-            <button type="button" className={css.planEditBtn} onClick={() => { setNote(null); setDraft(stored() ?? view.body ?? '') }}>{t('edit.open')}</button>
-          </div>
-        )}
+        {children}
+        {writable && <div className={css.editBar}><button type="button" className={css.editDoor} onClick={open}>{t('edit.open')}</button></div>}
       </>
     )
   }

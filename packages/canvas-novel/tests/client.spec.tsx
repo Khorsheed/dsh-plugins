@@ -677,7 +677,7 @@ describe('the timeline, ideas, candidates and editing (2026-11-01)', () => {
   it('edits a chapter in place and says it stayed reconciled; a new own chapter opens in the editor', async () => {
     const remote = fakeRemote({ items: [], rows: FIVE })
     render(<ChapterBook {...props(remote)} target={ask('1')} />)
-    fireEvent.click(await screen.findByRole('button', { name: zh['edit.open'] }))
+    fireEvent.click((await screen.findAllByRole('button', { name: zh['edit.open'] }))[0]!)
     const box = screen.getByRole('textbox', { name: zh['edit.open'] })
     fireEvent.change(box, { target: { value: '新的正文。' } })
     fireEvent.click(screen.getByRole('button', { name: zh['edit.save'] }))

@@ -1,5 +1,5 @@
 /* 时间轴 and 灵感: one layout that adapts to the panel's width (docs/panel-design.md). */
-.page { display: grid; gap: 14px; padding: 16px 18px 24px; container-type: inline-size; container-name: dsh-panel; }
+.page { flex: 1; min-height: 0; overflow-y: auto; display: grid; gap: 14px; padding: 16px 18px 48px; container-type: inline-size; container-name: dsh-panel; align-content: start; }
 .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .seg { display: inline-flex; border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; overflow: hidden; }
 .seg button {
