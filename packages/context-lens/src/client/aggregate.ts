@@ -43,12 +43,22 @@ export function resolveTurnSeq(turns: readonly TurnListItem[], messageId: string
     const match = turns.find(turn => turn.closingMessageId === messageId)
     if (match !== undefined) return match.turnSeq
   }
-  return turns[turns.length - 1]?.turnSeq
+  return latestTurnSeq(turns)
 }
 
-/** The latest turn's seq (the panel's default), undefined on an empty list. */
+/**
+ * A turn with nothing to look at: no request, no human message, no room
+ * round, no reply — e.g. a plugin's followup the host refused before the
+ * first model call (a restart notice woken into a room behind an external
+ * coordinator). It stays listed, but never becomes the panel's default.
+ */
+export function isHollowTurn(turn: TurnListItem): boolean {
+  return turn.requestCount === 0 && turn.query === '' && turn.room === undefined && turn.closingMessageId === undefined
+}
+
+/** The latest turn's seq (the panel's default), skipping hollow turns; undefined on an empty list. */
 export function latestTurnSeq(turns: readonly TurnListItem[]): number | undefined {
-  return turns[turns.length - 1]?.turnSeq
+  return (turns.findLast(turn => !isHollowTurn(turn)) ?? turns[turns.length - 1])?.turnSeq
 }
 
 /** Turns per backfill window (the store's default `maxTurnsPerSession`). */

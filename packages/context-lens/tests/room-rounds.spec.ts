@@ -101,6 +101,37 @@ describe('room rounds', () => {
     expect(scopes[1]!.compaction).toEqual({ member: { name: 'coco', source: 'manual', beforeTokens: 288_536, afterTokens: 44_671 } })
   })
 
+  it('a run that never recorded its end stops at the member\'s next run, never claiming later requests', () => {
+    // The first run is stuck at `running` (its done/cancelled lost to a restart): no end, no child turn.
+    const stuck = room.filter(row => row.seq !== 23)
+    const rows = [...turn1, ...stuck,
+      { type: 'room/dispatch', seq: 40, time: 90_000, data: { origin: 'human', text: '再来', targets: ['coco'], targetIds: ['m-coco'] } },
+      { type: 'room/run-state', seq: 41, time: 90_050, data: { runId: '40:m-coco', member: 'coco', state: 'done', startedAt: 90_050, elapsedMs: 4000, childSessionId: 'child-coco' } },
+    ] satisfies SessionLogRow[]
+    const store = new InspectorStore()
+    store.insertLogTurns('s', reconstructSession(rows))
+    for (const row of rows) if (row.type.startsWith('room/')) store.noteRoomEvent('s', row.type, row.data, row.seq, row.time)
+    store.appendLogRequest('s', 'child-coco', childRequest(6000, 1))
+    store.appendLogRequest('s', 'child-coco', childRequest(51_000, 2))
+    store.appendLogRequest('s', 'child-coco', childRequest(91_000, 3))
+    const [, first, second, third] = store.listTurns('s').turns
+    expect(store.getTurn('s', first!.turnSeq)!.scopes[0]?.requests.map(r => r.startedAt)).toEqual([6000])
+    expect(store.getTurn('s', second!.turnSeq)!.scopes[0]?.requests.map(r => r.startedAt)).toEqual([51_000])
+    expect(store.getTurn('s', third!.turnSeq)!.scopes[0]?.requests.map(r => r.startedAt)).toEqual([91_000])
+    const seqs = store.getSessionTrend('s').requests.filter(r => r.scopeId === 'child-coco').map(r => r.seq)
+    expect(new Set(seqs).size).toBe(seqs.length)
+  })
+
+  it('a round anchored on the human message carries where the chat pages back to', () => {
+    const store = new InspectorStore()
+    store.insertLogTurns('s', reconstructSession([...turn1, ...room]))
+    store.noteRoomEvent('s', 'room/dispatch', { origin: 'human', text: 'x', targets: ['coco'], messageId: 'u9' }, 90, 90_000)
+    store.noteRoomEvent('s', 'room/dispatch', { origin: 'human', text: 'y', targets: ['coco'] }, 95, 95_000)
+    const [x, y] = store.listTurns('s').turns.filter(t => t.room !== undefined)
+    expect([x?.room?.messageId, x?.startSeq]).toEqual(['u9', 78])
+    expect(y?.startSeq).toBeUndefined()
+  })
+
   it('skips a dispatch made inside a main turn', () => {
     const store = new InspectorStore()
     store.insertLogTurns('s', reconstructSession(turn1))

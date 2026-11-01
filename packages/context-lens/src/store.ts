@@ -54,7 +54,7 @@ import type { LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
 import { diffRequests, type FactLookup, type ReplacementFact } from './changes.ts'
 import { answersMatch, askView, isAskTool, type RoomQuestionRecord } from './ask.ts'
-import { applyRoomEvent, emptyRoom, roomTurnSeq, runsOf, type RoomRun, type RoomState } from './room.ts'
+import { HUMAN_MESSAGE_LOOKBACK, applyRoomEvent, emptyRoom, roomTurnSeq, runsOf, type RoomRun, type RoomState } from './room.ts'
 
 /** Replacement facts kept per session; older facts only matter for requests long evicted. */
 const REPLACEMENT_CAP = 2048
@@ -1470,10 +1470,16 @@ export class InspectorStore {
         if (child !== undefined && !scopeAuthorized(child.scopeId, filter)) continue
         // The child's own scope id: its requests open by that id from any view.
         const scopeId = child?.scopeId ?? `room:${dispatch.seq}:${run.memberId}`
-        const from = (run.startedAt ?? dispatch.at) - 2000, to = (run.endedAt ?? this.now()) + 2000
+        const from = (run.startedAt ?? dispatch.at) - 2000
+        // A run that never recorded its end (interrupted by a restart, its
+        // final run-state lost) must not claim every later request: its
+        // window stops where the member's next run began.
+        const to = run.endedAt !== undefined ? run.endedAt + 2000 : this.openRunEnd(room, run, dispatch.at)
+        const claimedLater = run.childTurn !== undefined ? undefined : this.laterChildTurns(room, run, dispatch.at)
         const matched = (child?.requests ?? []).filter(request => run.childTurn !== undefined && request.hostTurn !== undefined
           ? request.hostTurn === run.childTurn
-          : request.startedAt >= from && request.startedAt <= to)
+          : request.startedAt >= from && request.startedAt <= to
+            && !(request.hostTurn !== undefined && claimedLater?.has(request.hostTurn) === true))
         const requests = matched.filter(request => request.purpose !== 'compaction')
         const compactions = matched.filter(request => request.purpose === 'compaction')
         scopes.set(scopeId, {
@@ -1513,12 +1519,37 @@ export class InspectorStore {
         purpose: 'room',
         query: dispatch.text,
         room: { targets: dispatch.targets, ...dispatch.messageId === undefined ? {} : { messageId: dispatch.messageId } },
+        // Where the chat pages history back to before landing on the human's
+        // message: it sits at most the lookback before the dispatch.
+        ...dispatch.messageId === undefined ? {} : { startSeq: Math.max(0, dispatch.seq - HUMAN_MESSAGE_LOOKBACK) },
         startedAt: dispatch.at,
         ...ends.length === 0 ? {} : { endedAt: Math.max(...ends) },
         liveContent: false,
         scopes,
       }
     })
+  }
+
+  /** The same member's runs that started after this one (its later dispatches). */
+  private laterRuns(room: RoomState, run: RoomRun, dispatchAt: number): RoomRun[] {
+    const start = run.startedAt ?? dispatchAt
+    return [...room.runs.values()].filter(other => other !== run && other.memberId === run.memberId
+      && (other.startedAt ?? room.dispatches.find(d => d.seq === other.dispatchSeq)?.at ?? Number.NEGATIVE_INFINITY) > start)
+  }
+
+  /** Where an unended run's window stops: the member's next run start, else the next dispatch, else now. */
+  private openRunEnd(room: RoomState, run: RoomRun, dispatchAt: number): number {
+    const next = this.laterRuns(room, run, dispatchAt)
+      .map(other => other.startedAt ?? room.dispatches.find(d => d.seq === other.dispatchSeq)?.at)
+      .filter((at): at is number => at !== undefined)
+    if (next.length > 0) return Math.min(...next)
+    const nextDispatch = room.dispatches.find(d => d.seq > run.dispatchSeq && d.at > dispatchAt)
+    return nextDispatch?.at ?? this.now() + 2000
+  }
+
+  /** Child turns the member's later runs recorded: their requests are theirs, never an earlier open window's. */
+  private laterChildTurns(room: RoomState, run: RoomRun, dispatchAt: number): Set<number> {
+    return new Set(this.laterRuns(room, run, dispatchAt).map(other => other.childTurn).filter((n): n is number => n !== undefined))
   }
 
   /** The child session a run went to: named by the run, else the child catalogued closest to the run's start. */

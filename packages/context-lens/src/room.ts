@@ -170,6 +170,9 @@ export function runsOf(room: RoomState, dispatchSeq: number): RoomRun[] {
     .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
 }
 
+/** How far back a human room post's own user/message may sit before its room/dispatch. */
+export const HUMAN_MESSAGE_LOOKBACK = 12
+
 /** A synthetic, stable panel address for a room round (far below any purpose bucket). */
 export const ROOM_TURN_BASE = -1_000_000
 export const roomTurnSeq = (dispatchSeq: number): number => ROOM_TURN_BASE - dispatchSeq

@@ -8,10 +8,10 @@ import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.t
 import type {
   AgentScopeOverview, BackfillInfo, CapturedRequest, ListTurnsResult, TurnListItem, TurnOverview, TurnTiming,
 } from '../types.ts'
-import { WINDOW_TURNS, fmtSpan, gapShown, latestTurnSeq, resolveTurnSeq, turnGaps, turnNumber, type CompositionFilter, type TurnGap } from './aggregate.ts'
+import { WINDOW_TURNS, fmtSpan, gapShown, isHollowTurn, latestTurnSeq, resolveTurnSeq, turnGaps, turnNumber, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
-import { hasTurnAnchor, scrollConversationToBottom, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
+import { hasMessageAnchor, hasTurnAnchor, scrollConversationToBottom, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
 import { TokenView } from './TokenView.tsx'
@@ -321,24 +321,27 @@ export function InspectorPanel({
   const syncScrollToTurn = (seq: number, list: readonly TurnListItem[] | null = turns): void => {
     const target = list?.find(candidate => candidate.turnSeq === seq)
     // A room round has no host turn: it lands on the human's own message row.
-    if (target?.room?.messageId !== undefined) { scrollConversationToMessage(target.room.messageId); return }
+    const messageId = target?.room?.messageId
     // Real turns key on the host's turn number (M5), so a positive seq is the
     // anchor even before the list resolves (the navigation-params path).
-    const hostTurn = target?.hostTurn ?? (seq > 0 ? seq : undefined)
-    if (hostTurn === undefined) return
+    const hostTurn = messageId !== undefined ? undefined : target?.hostTurn ?? (seq > 0 ? seq : undefined)
+    if (messageId === undefined && hostTurn === undefined) return
+    const anchored = (): boolean => messageId !== undefined ? hasMessageAnchor(messageId) : hasTurnAnchor(hostTurn!)
+    const scroll = (): void => { if (messageId !== undefined) scrollConversationToMessage(messageId); else scrollConversationToTurn(hostTurn!) }
     const jump = ++jumpToken.current
-    if (hasTurnAnchor(hostTurn) || !loadThrough || target?.startSeq === undefined) {
-      scrollConversationToTurn(hostTurn)
+    if (anchored() || !loadThrough || target?.startSeq === undefined) {
+      scroll()
       return
     }
-    // The chat has not rendered that turn yet: page its history back to the
-    // turn's start (the session's own loader), then land once the row mounts.
-    // A newer jump supersedes this one; no progress falls back to the nearest row.
+    // The chat has not rendered that turn (or the round's message) yet: page
+    // its history back to the start (the session's own loader), then land
+    // once the row mounts. A newer jump supersedes this one; no progress
+    // falls back to the nearest row (a room round's missing row stays put).
     void loadThrough(sessionId, target.startSeq).catch(() => undefined).then(() => {
       let frames = 0
       const land = (): void => {
         if (jump !== jumpToken.current) return
-        if (hasTurnAnchor(hostTurn) || frames >= 60) { scrollConversationToTurn(hostTurn); return }
+        if (anchored() || frames >= 60) { scroll(); return }
         frames += 1
         requestAnimationFrame(land)
       }
@@ -353,7 +356,8 @@ export function InspectorPanel({
   }
 
   /** The latest REAL turn or room round — the 最新 button's target (pseudo-turns have no conversation anchor). */
-  const latestRealTurn = (turns ?? []).filter(candidate => candidate.hostTurn !== undefined || candidate.room !== undefined).at(-1)
+  const realTurns = (turns ?? []).filter(candidate => candidate.hostTurn !== undefined || candidate.room !== undefined)
+  const latestRealTurn = realTurns.findLast(candidate => !isHollowTurn(candidate)) ?? realTurns.at(-1)
   const latestMainTurn = (turns ?? []).filter(candidate => candidate.hostTurn !== undefined).at(-1)
   const gaps = turnGaps(listMeta, turns ?? [])
   const latestUnloaded = range !== undefined && latestMainTurn?.hostTurn !== undefined && range.last > latestMainTurn.hostTurn

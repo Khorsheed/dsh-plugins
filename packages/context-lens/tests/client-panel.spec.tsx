@@ -553,6 +553,22 @@ describe('InspectorPanel · scroll-sync + 最新', () => {
     await waitFor(() => expect(scrollIntoView.mock.instances.at(-1)).toBe(port?.querySelector('[data-chat-turn="1"]')))
   })
 
+  it('pages the chat history back before landing on a room round whose message it has not rendered', async () => {
+    mountConversation([2])
+    const round = { ...TURNS[0]!, hostTurn: undefined, ordinal: 1, room: { targets: ['coco'], messageId: 'u-r1' }, startSeq: 5 }
+    const turns = [round, TURNS[1]!]
+    const { mocks } = bench({ turns, onLoadThrough: () => {
+      const row = document.createElement('div')
+      row.setAttribute('data-chat-node-key', 'node:u-r1')
+      port?.prepend(row)
+    } })
+    await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: zh['turn.switch'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /turn 1|第 1 轮/ }))
+    await waitFor(() => expect(mocks.loadThrough).toHaveBeenCalledWith('s1', 5))
+    await waitFor(() => expect(scrollIntoView.mock.instances.at(-1)).toBe(port?.querySelector('[data-chat-node-key="node:u-r1"]')))
+  })
+
   it('opening from the action row scroll-syncs to the navigated turn', async () => {
     mountConversation([1, 2])
     bench({ params: { turnSeq: 1 }, revision: 1 })

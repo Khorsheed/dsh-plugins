@@ -32,7 +32,7 @@ import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, TurnOverview, TurnTiming } from './types.ts'
 import { InspectorStore, scopeAuthorized, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
 import { recordAssembly } from './segmenter.ts'
-import { applyRoomEvent, emptyRoom } from './room.ts'
+import { HUMAN_MESSAGE_LOOKBACK, applyRoomEvent, emptyRoom } from './room.ts'
 import { fromRequestMessage, serializeMessage } from './messages.ts'
 import { messageOfRow, meterOf, replacementFact, replacementFactsOf, type PendingMeter, type ReplacementRow } from './changes.ts'
 import {
@@ -57,8 +57,6 @@ declare module '@deepseek-ai/cordis' {
 /** Rebuilt request bodies held at once (a request and its baseline per read). */
 const HYDRATED_BODIES = 8
 
-/** How far back a human room post's own user/message may sit before its room/dispatch. */
-const HUMAN_MESSAGE_LOOKBACK = 12
 
 /**
  * The human's user/message a room post appended next to its `room/dispatch`
