@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-01-canvas-novel-world-memory.md
-.agents/notes/implemented/feature/2026-11-01-canvas-novel-world-memory.md: 0cb93f27608a1e71882ab3d5f2a50924f25c9e59
-.agents/notes/implemented/feature/2026-11-01-canvas-novel-world-memory.zh.md: d459674f3b721253a24e2f7308390c5f92744ad9
+.agents/notes/implemented/feature/2026-11-01-canvas-novel-world-memory.md: a11b956ef034c91380b2ffce5b8106431c1506b7
+.agents/notes/implemented/feature/2026-11-01-canvas-novel-world-memory.zh.md: c2dd076aba0888bb9fcc60b6ca19b41fd9b4bc21
