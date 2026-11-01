@@ -1,14 +1,15 @@
 /**
- * The 章节 face of a 长篇小说 canvas: the work as a book. The contents page
- * shows the whole work at a glance (a spine of one tick per chapter, colored by
- * phase, red where something waits for review), the chapter to pick up at with
- * 继续写 (and, while chapters wait for 对账, a line saying the model clears
- * them first), the pending queue folded under its count, a filter for the
- * chapters that need the person, and the chapters in groups of ten (a group
- * opens by itself while it has work in it, and the last one always), each
- * marked 已对账 / 待对账 / 计划. A row opens the chapter reader in place; the
- * reader's 目录 comes back here. A work without chapters tells the canvas
- * (`onEmpty`), which then opens on 设定.
+ * The 章节 face of a 长篇小说 canvas: the work as a book (2026-11-02 改版稿).
+ * 接下来 on top says what to do, in order — a chapter waiting for 对账, items
+ * waiting for the person, the chapter in hand, the next chapter's candidates —
+ * with only the first as the primary button. Below, each volume: a cell per
+ * planned chapter in its phase's color (a gap where the goal's segment ends),
+ * the goal's current segment (the whole goal folds behind it), and the
+ * chapters with a one-line recap; a state shows only when it needs something.
+ * 新建第 N 章，自己写 is the last row. The 全部 / 待处理 / 未对账 chips appear
+ * on a long book only. A row opens the chapter reader in place; the reader's
+ * 目录 comes back here. A work without chapters tells the canvas (`onEmpty`),
+ * which then opens on 设定.
  *
  * The face is also where every chapter destination lands (proposal
  * 2026-10-30-agent-sidebar-navigation): the canvas hands an outside ask down
@@ -28,8 +29,11 @@ import { awaitsReconcile } from './NovelFaces.tsx'
 import { currentChapter, PendingList } from './PendingList.tsx'
 import { useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
+import book from './book.module.css'
 
 const GROUP = 10
+/** The 全部 / 待处理 / 未对账 chips only earn their row on a long book. */
+const FILTER_FROM = 12
 
 type Filter = 'all' | 'todo' | 'open'
 
@@ -122,14 +126,10 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
     return (
       <div className={css.book} data-canvas-scroll="novel-book">
         <div className={css.bookEmpty}>{t('toc.empty')}</div>
-        <NewOwnChapter {...surface} onCreated={n => { onRead(n, true) }} />
+        <NewOwnChapter {...surface} n={1} onCreated={n => { onRead(n, true) }} />
       </div>
     )
   }
-  const words = rows.reduce((sum, row) => sum + (row.chapter.wordCount ?? 0), 0)
-  const reviewed = rows.filter(row => settled(row.phase)).length
-  const todo = rows.filter(row => needsPerson(row, pending))
-  const open = rows.filter(row => !settled(row.phase))
   const current = currentChapter(rows, pending)!
   const stale = rows.filter(item => awaitsReconcile(item.phase))
   const items = queue.state === 'ready' ? queue.value.items : []
@@ -151,132 +151,147 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
   const row = (item: ChapterRow): ReactNode => (
     <ChapterLine key={item.chapter.n} row={item} pending={pending[item.chapter.n] ?? 0} onRead={onRead} t={t} />
   )
+  const nextN = Math.max(...rows.map(item => item.chapter.n)) + 1
+  const send = (text: string): void => { if (sessionId !== undefined) rest.sendToConversation?.(sessionId, text) }
+  const canSend = sessionId !== undefined && rest.sendToConversation !== undefined
+  const lastGroup = groups.reduce((at, group, index) => group.rows.length > 0 ? index : at, groups.length - 1)
+
+  // 接下来: what to do, in order; only the first is the primary button (2026-11-02 改版稿).
+  const steps: { key: string; title: string; sub: string; acts: ReactNode; body?: ReactNode }[] = []
+  if (stale.length > 0) {
+    const first = stale[0]!.chapter
+    steps.push({
+      key: 'stale',
+      title: stale.length === 1
+        ? t('next.stale', { n: first.n, title: bareTitle(first.n, first.title) })
+        : t('next.staleMany', { list: stale.map(item => item.chapter.n).join('、') }),
+      sub: t('next.staleSub'),
+      acts: canSend ? <button type="button" data-act="go" onClick={() => { send(t('next.reconcileAsk', { list: stale.map(item => item.chapter.n).join('、') })) }}>{t('next.reconcile')}</button> : null,
+    })
+  }
+  if (items.length > 0) {
+    steps.push({
+      key: 'queue', title: t('next.queue', { count: items.length }), sub: t('next.queueSub'),
+      acts: <button type="button" onClick={() => { setQueueOpen(value => !value) }} aria-expanded={queueOpen}>{queueOpen ? t('next.fold') : t('next.look')}</button>,
+      ...(queueOpen ? { body: <PendingList canvasId={canvasId} items={items} navigate={navigate} sessionId={sessionId} remote={api} t={t} /> } : {}),
+    })
+  }
+  if (!settled(current.phase) && !awaitsReconcile(current.phase)) {
+    const c = current.chapter
+    const planned = c.plan !== undefined
+    steps.push({
+      key: 'current',
+      title: t(current.phase === 'planning' ? (planned ? 'next.planReady' : 'next.planning') : 'next.writing', { n: c.n, title: bareTitle(c.n, c.title) }),
+      sub: t(current.phase === 'planning' ? (planned ? 'next.planReadySub' : 'next.planningSub') : 'next.writingSub'),
+      acts: <button type="button" onClick={() => { onRead(c.n) }}>{t(current.phase === 'planning' ? 'next.seePlan' : 'toc.continue')}</button>,
+    })
+  }
+  steps.push({
+    key: 'cand',
+    title: t('next.cand', { n: nextN }),
+    sub: '',
+    acts: null,
+    body: <NextCandidates {...surface} chapter={nextN} onPlan={canSend ? () => { send(t('cand.planAsk', { n: nextN })) } : undefined} />,
+  })
 
   return (
     <div className={css.book} data-canvas-scroll="novel-book">
-      <div className={css.bookHead}>
-        <div className={css.bookStat}>{t('toc.stat', { count: rows.length, words: formatWords(words, t), reviewed })}</div>
-        <div className={css.spine} style={{ gridTemplateColumns: `repeat(${Math.max(rows.length, 20)}, 1fr)` }}>
-          {rows.map(item => (
-            <button
-              key={item.chapter.n}
-              type="button"
-              className={css.tick}
-              data-phase={item.phase === 'reviewed' ? 'extracted' : item.phase}
-              data-todo={(pending[item.chapter.n] ?? 0) > 0 || undefined}
-              title={`${t('strip.chapter', { n: item.chapter.n })} ${bareTitle(item.chapter.n, item.chapter.title)} · ${phaseLabel(item, pending, t)}`}
-              aria-label={t('strip.chapter', { n: item.chapter.n })}
-              onClick={() => { onRead(item.chapter.n) }}
-            />
-          ))}
-        </div>
-        <div className={css.legend}>
-          {(['extracted', 'stale', 'writing', 'planning'] as const).map(kind => (
-            <span key={kind} data-kind={kind}>{t(`toc.legend.${kind}`)}</span>
-          ))}
-        </div>
-      </div>
-      <div className={css.resume}>
-        <div className={css.resumeText}>
-          <span className={css.resumeTitle}>
-            {t('strip.chapter', { n: current.chapter.n })} · {bareTitle(current.chapter.n, current.chapter.title)}
-          </span>
-          <small>
-            {[
-              current.chapter.byUser === true ? t('toc.byUser') : undefined,
-              current.chapter.wordCount === undefined ? undefined : t('chapter.words', { count: current.chapter.wordCount }),
-              t(`toc.state.${tocState(current.phase)}`),
-            ].filter(Boolean).join(' · ')}
-          </small>
-          {stale.length > 0 && <span className={css.resumeNote}>{t('toc.staleNote', { count: stale.length })}</span>}
-        </div>
-        <button type="button" className={css.resumeGo} onClick={() => { onRead(current.chapter.n) }}>{t('toc.continue')}</button>
-      </div>
-      <NextCandidates {...surface} />
-      <NewOwnChapter {...surface} onCreated={n => { onRead(n, true) }} />
-      {items.length > 0 && (
-        <div className={css.queue}>
-          <button type="button" className={css.queueHead} aria-expanded={queueOpen} onClick={() => { setQueueOpen(value => !value) }}>
-            <span className={css.groupChev} data-open={queueOpen || undefined}>›</span>
-            {t('strip.pending', { count: items.length })}
-          </button>
-          {queueOpen && api !== undefined && (
-            <PendingList canvasId={canvasId} items={items} navigate={navigate} sessionId={sessionId} remote={api} t={t} />
-          )}
-        </div>
+      <section className={book.next}>
+        <div className={book.nextHead}>{t('next.heading')}</div>
+        {steps.map((step, index) => (
+          <div key={step.key} className={book.step} data-first={index === 0 || undefined}>
+            <span className={book.stepN}>{index + 1}</span>
+            <span className={book.stepWhat}>
+              <b>{step.title}</b>
+              {step.sub !== '' && <span>{step.sub}</span>}
+            </span>
+            {step.acts !== null && <span className={book.stepActs}>{step.acts}</span>}
+            {step.body !== undefined && <div className={book.stepBody}>{step.body}</div>}
+          </div>
+        ))}
+      </section>
+      {rows.length > FILTER_FROM && (
+        <ChipRow<Filter>
+          className={css.filters}
+          label={t('toc.filter.label')}
+          value={filter}
+          onSelect={setFilter}
+          chips={([['all', rows.length], ['todo', rows.filter(item => needsPerson(item, pending)).length], ['open', rows.filter(item => !settled(item.phase)).length]] as const).map(([id, count]) => ({ id, label: t(`toc.filter.${id}Label`), count }))}
+        />
       )}
-      <ChipRow<Filter>
-        className={css.filters}
-        label={t('toc.filter.label')}
-        value={filter}
-        onSelect={setFilter}
-        chips={([['all', rows.length], ['todo', todo.length], ['open', open.length]] as const).map(([id, count]) => ({ id, label: t(`toc.filter.${id}Label`), count }))}
-      />
       {filter !== 'all' ? (
-        <div className={css.rows}>
-          {(filter === 'todo' ? todo : open).map(row)}
-          {(filter === 'todo' ? todo : open).length === 0 && <div className={css.muted}>{t('toc.filterEmpty')}</div>}
+        <div className={book.chs}>
+          {(filter === 'todo' ? rows.filter(item => needsPerson(item, pending)) : rows.filter(item => !settled(item.phase))).map(row)}
         </div>
       ) : groups.map(({ rows: group, volume }, index) => {
         if (group.length === 0 && volume === undefined) return null
         const first = group[0]?.chapter.n ?? 0
         const last = group.at(-1)?.chapter.n ?? 0
-        const done = group.filter(item => settled(item.phase)).length
-        const groupWords = formatWords(group.reduce((sum, item) => sum + (item.chapter.wordCount ?? 0), 0), t)
-        const busy = group.some(item => !settled(item.phase))
-        const isOpen = toggled[index] ?? (busy || index === groups.length - 1 || (volume !== undefined && group.length > 0 && groups.slice(index + 1).every(next => next.rows.length === 0)))
+        const isOpen = toggled[index] ?? (index === lastGroup || group.some(item => !settled(item.phase)))
+        const segs = volume?.goal === undefined ? [] : goalSegments(volume.goal)
+        const ends = new Set(segs.flatMap(seg => { const m = /–(\d+)/.exec(seg.range ?? ''); return m === null ? [] : [Number(m[1])] }))
+        const latest = Math.max(0, ...group.filter(item => item.phase !== 'planning').map(item => item.chapter.n))
+        const here = segs.find(seg => { const m = /(\d+)–(\d+)/.exec(seg.range ?? ''); return m !== null && latest >= Number(m[1]) && latest <= Number(m[2]) }) ?? segs[0]
+        const cellsCount = Math.max(volume?.planned ?? 0, group.length)
+        const start = first === 0 ? 1 : first
         return (
-          <div key={volume === undefined ? `g${first}` : `v${volume.index}`} className={css.group} data-open={isOpen || undefined}>
-            <button
-              type="button"
-              className={css.groupHead}
-              aria-expanded={isOpen}
-              onClick={() => { setToggled(all => ({ ...all, [index]: !isOpen })) }}
-            >
-              <span className={css.groupChev}>›</span>
-              <span className={css.groupTitle}>
+          <section key={volume === undefined ? `g${first}` : `v${volume.index}`} className={book.vol}>
+            <button type="button" className={book.volHead} aria-expanded={isOpen} onClick={() => { setToggled(all => ({ ...all, [index]: !isOpen })) }}>
+              <h3>
                 {volume === undefined
                   ? (groups.some(other => other.volume !== undefined) ? t('toc.noVolume') : t('toc.group', { from: first, to: last }))
                   : t('toc.volume', { index: volumeNumeral(volume.index), title: volume.title.replace(/^第[一二三四五六七八九十\d]+卷\s*[·・:：]?\s*/, '') })}
-              </span>
-              <span className={css.groupSum}>
-                {volume !== undefined && volume.planned !== undefined
-                  ? t('toc.volumeSum', { planned: volume.planned, done: group.length })
-                  : done === group.length
-                    ? t('toc.groupDone', { words: groupWords })
-                    : t('toc.groupSum', { done, count: group.length, words: groupWords })}
-              </span>
+              </h3>
+              <span>{volume?.planned !== undefined ? t('toc.volumeSum', { planned: volume.planned, done: group.length }) : t('toc.groupCount', { count: group.length })}</span>
             </button>
-            {volume !== undefined && volume.planned !== undefined && (
-              <div className={css.volBar}><i style={{ width: `${Math.min(100, Math.round(group.length / Math.max(1, volume.planned) * 100))}%` }} /></div>
-            )}
-            {isOpen && volume?.goal !== undefined && (
-              <div className={css.volGoal}>
-                {goalSegments(volume.goal).map((row, rowIndex) => (
-                  <div key={rowIndex} className={css.volSeg}>{row.range !== undefined && <span>{row.range}</span>}<span>{row.text}</span></div>
-                ))}
+            {volume !== undefined && cellsCount > 0 && (
+              <div className={book.cells} style={{ gridTemplateColumns: `repeat(${cellsCount}, minmax(0, 1fr))` }} aria-hidden="true">
+                {Array.from({ length: cellsCount }, (_, i) => {
+                  const n = start + i
+                  const at = group.find(item => item.chapter.n === n)
+                  return <i key={n} data-s={at === undefined ? undefined : tocState(at.phase)} data-end={ends.has(n) || undefined} title={at === undefined ? undefined : `${t('strip.chapter', { n })} · ${phaseLabel(at, pending, t)}`} />
+                })}
               </div>
             )}
-            {isOpen && <div className={css.rows}>{group.map(row)}</div>}
-            {isOpen && volume?.landing !== undefined && <p className={css.volLanding}>{volume.landing}</p>}
-          </div>
+            {isOpen && here !== undefined && (
+              <details className={book.goal}>
+                <summary>
+                  <span className={book.goalNow}>{here.range === undefined ? t('next.goalHead') : t('next.goalNow', { range: here.range })}</span>
+                  <span className={book.goalText}>{here.text}</span>
+                  {segs.length > 1 && <span className={book.goalMore}>{t('next.goalAll')}</span>}
+                </summary>
+                {segs.map((seg, segIndex) => (
+                  <div key={segIndex} className={book.goalRow} data-now={seg === here || undefined}><b>{seg.range ?? ''}</b><span>{seg.text}</span></div>
+                ))}
+                {volume?.landing !== undefined && <div className={book.goalRow}><b>{t('next.landing')}</b><span>{volume.landing}</span></div>}
+              </details>
+            )}
+            {isOpen && (
+              <div className={book.chs}>
+                {group.map(row)}
+                {index === lastGroup && <NewOwnChapter {...surface} n={nextN} onCreated={n => { onRead(n, true) }} />}
+              </div>
+            )}
+          </section>
         )
       })}
     </div>
   )
 }
 
-/** 下一章候选: what recall hands the planner for the next chapter, with the person's 优先推进 / 本章屏蔽. */
-function NextCandidates(props: NovelSurfaceProps): ReactNode {
+/**
+ * 下一章候选, as the last step of 接下来: one line with the count and the
+ * strongest candidate; 看候选 opens the list with 优先推进 / 本章屏蔽.
+ */
+function NextCandidates(props: NovelSurfaceProps & { readonly chapter: number; readonly onPlan: (() => void) | undefined }): ReactNode {
   const { canvasId, rev, remote, sessionId, navigate, t } = props
   const api = remote()
   const read = useNovelRead(api, r => r.timeline({ canvasId }), `timeline:${canvasId}`, rev)
   const [open, setOpen] = useState(false)
   if (api === undefined || read.state !== 'ready' || !read.value.ok) return null
   const data = read.value
-  const chapter = data.chapter ?? 1
+  const chapter = data.chapter ?? props.chapter
   const future = data.future ?? []
-  if (future.length === 0) return null
   const prefer = data.pins?.prefer ?? []
   const block = data.pins?.block ?? []
   const shown = [...future].sort((a, b) => Number(prefer.includes(b.id)) - Number(prefer.includes(a.id))
@@ -291,12 +306,14 @@ function NextCandidates(props: NovelSurfaceProps): ReactNode {
     }).then(() => { navigate.refresh() })
   }
   return (
-    <section className={css.candBox}>
-      <button type="button" className={css.candHead} aria-expanded={open} onClick={() => { setOpen(value => !value) }}>
-        <span className={css.groupChev} data-open={open || undefined}>›</span>
-        <b>{t('cand.heading', { n: chapter })}</b>
-        <span className={css.muted}>{t('cand.count', { count: shown.length })}</span>
-      </button>
+    <div className={book.cand}>
+      <div className={book.candLine}>
+        <span className={book.candSum}>{shown.length === 0 ? t('cand.empty') : t('next.candSum', { count: shown.length, top: shown[0]!.title })}</span>
+        <span className={book.stepActs}>
+          {shown.length > 0 && <button type="button" aria-expanded={open} onClick={() => { setOpen(value => !value) }}>{open ? t('next.fold') : t('next.seeCand')}</button>}
+          {props.onPlan !== undefined && <button type="button" onClick={props.onPlan}>{t('cand.plan', { n: chapter })}</button>}
+        </span>
+      </div>
       {open && (
         <div className={css.cands}>
           <p className={css.muted}>{t('cand.hint')}</p>
@@ -312,31 +329,33 @@ function NextCandidates(props: NovelSurfaceProps): ReactNode {
               )}
             </div>
           ))}
-          {sessionId !== undefined && props.sendToConversation !== undefined && (
-            <div><button type="button" className={css.planEditBtn} onClick={() => { props.sendToConversation?.(sessionId, t('cand.planAsk', { n: chapter })) }}>{t('cand.plan', { n: chapter })}</button></div>
-          )}
         </div>
       )}
-    </section>
+    </div>
   )
 }
 
-/** 新建一章，自己写: a title, then the chapter opens in its edit box. */
-function NewOwnChapter(props: NovelSurfaceProps & { readonly onCreated: (n: number) => void }): ReactNode {
+/** 新建第 N 章，自己写: the contents' last row; a title, then the chapter opens in its edit box. */
+function NewOwnChapter(props: NovelSurfaceProps & { readonly n: number; readonly onCreated: (n: number) => void }): ReactNode {
   const { canvasId, remote, sessionId, navigate, t } = props
   const api = remote()
   const [title, setTitle] = useState<string | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   if (api === undefined || sessionId === undefined) return null
   if (title === null) {
-    return <div className={css.ownRow}><button type="button" className={css.planEditBtn} onClick={() => { setTitle('') }}>{t('toc.newOwn')}</button><span className={css.muted}>{t('toc.newOwnHint')}</span></div>
+    return (
+      <button type="button" className={book.chAdd} onClick={() => { setTitle('') }}>
+        <span className={book.chNo}>＋</span>
+        <span className={book.chAddText}>{t('toc.newOwnN', { n: props.n })}<small>{t('toc.newOwnShort')}</small></span>
+      </button>
+    )
   }
   return (
-    <div className={css.ownRow}>
+    <div className={book.ownRow}>
       <input className={css.ownInput} aria-label={t('toc.newOwnTitle')} placeholder={t('toc.newOwnTitle')} value={title} onChange={event => { setTitle(event.target.value) }} />
       <button
         type="button"
-        className={css.confirm}
+        data-act="go"
         disabled={title.trim() === ''}
         onClick={() => {
           void api.newOwnChapter(sessionId, { canvasId, title: title.trim() }).then(result => {
@@ -350,12 +369,13 @@ function NewOwnChapter(props: NovelSurfaceProps & { readonly onCreated: (n: numb
       >
         {t('toc.newOwnGo')}
       </button>
-      <button type="button" className={css.planEditBtn} onClick={() => { setTitle(null) }}>{t('edit.cancel')}</button>
+      <button type="button" onClick={() => { setTitle(null) }}>{t('edit.cancel')}</button>
       {failure !== null && <span className={css.warn}>{failure}</span>}
     </div>
   )
 }
 
+/** One chapter: number, title, its one-line recap (or the plan's summary); a state only when it needs something. */
 function ChapterLine({ row, pending, onRead, t }: {
   readonly row: ChapterRow
   readonly pending: number
@@ -363,17 +383,20 @@ function ChapterLine({ row, pending, onRead, t }: {
   readonly t: TranslateNS<'novel'>
 }): ReactNode {
   const { chapter, phase } = row
+  const state = tocState(phase)
+  const line = chapter.recap ?? (chapter.plan === undefined ? undefined : t('next.planLine', { text: chapter.plan.summary }))
   return (
-    <button type="button" className={css.row} onClick={() => { onRead(chapter.n) }}>
-      <span className={css.rowNo}>{t('strip.chapter', { n: chapter.n })}</span>
-      <span className={css.rowTitle}>
+    <button type="button" className={book.ch} onClick={() => { onRead(chapter.n) }}>
+      <span className={book.chNo}>{t('strip.chapter', { n: chapter.n })}</span>
+      <span className={book.chTitle}>
         {bareTitle(chapter.n, chapter.title)}
         {chapter.byUser === true && <span className={css.byUserTag} title={t('chapter.byUserTitle')}>{t('chapter.byUser')}</span>}
       </span>
-      <span className={css.phaseTag} data-state={tocState(phase)} data-todo={pending > 0 || undefined} title={t(`phase.${phase}`)}>
-        {pending > 0 ? t('strip.pending', { count: pending }) : t(`toc.state.${tocState(phase)}`)}
+      <span className={book.chSide}>
+        {(pending > 0 || state !== 'done') && <span className={book.pill} data-state={pending > 0 ? 'wait' : state}>{pending > 0 ? t('strip.pending', { count: pending }) : t(`toc.state.${state}`)}</span>}
+        {chapter.wordCount !== undefined && <span>{t('chapter.words', { count: chapter.wordCount })}</span>}
       </span>
-      <span className={css.rowWords}>{chapter.wordCount === undefined ? '—' : t('chapter.words', { count: chapter.wordCount })}</span>
+      {line !== undefined && <span className={book.chLine}>{line}</span>}
     </button>
   )
 }
@@ -388,11 +411,4 @@ function tocState(phase: EffectiveChapterPhase): 'done' | 'wait' | 'plan' | 'mis
 function phaseLabel(row: ChapterRow, pending: Readonly<Record<number, number>>, t: TranslateNS<'novel'>): string {
   const count = pending[row.chapter.n] ?? 0
   return count > 0 ? t('strip.pending', { count }) : t(`phase.${row.phase === 'reviewed' ? 'extracted' : row.phase}`)
-}
-
-/** `86400` → `8.6 万` (zh) / `86k` (en): the dictionary picks its unit. */
-function formatWords(words: number, t: TranslateNS<'novel'>): string {
-  return words >= 10000
-    ? t('toc.wordsLarge', { wan: (words / 10000).toFixed(1), k: Math.round(words / 1000) })
-    : String(words)
 }
