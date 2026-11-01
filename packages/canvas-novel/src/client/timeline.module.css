@@ -131,3 +131,5 @@
   .comp { grid-template-columns: 4em minmax(0, 1fr); }
   .compText { grid-column: 1 / -1; }
 }
+.toldLate { padding: 0 6px; border-radius: 9px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 12%, transparent); color: var(--dsw-alias-brand-primary); font: var(--dsh-panel-text-meta, 12px)/1.6 var(--dsw-font-family); }
+.quote { margin: 0; padding-left: 10px; border-left: 2px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); font: var(--dsh-panel-text-body, 13px)/1.7 var(--dsw-font-family); }

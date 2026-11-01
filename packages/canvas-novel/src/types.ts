@@ -1462,7 +1462,7 @@ export interface ExtractNewRelationInput {
 /** The subagent's strict JSON, as `novel_extract` import receives it (tolerant reads throughout). */
 export interface ExtractPayload {
   /** This chapter's events (2026-11-01): what happened, in story time. */
-  readonly events?: readonly { readonly title?: unknown; readonly when?: unknown; readonly after?: unknown; readonly people?: unknown; readonly places?: unknown; readonly evidence_in_text?: unknown }[]
+  readonly events?: readonly { readonly title?: unknown; readonly when?: unknown; readonly after?: unknown; readonly people?: unknown; readonly places?: unknown; readonly backstory?: unknown; readonly evidence_in_text?: unknown }[]
   /** Future events this chapter moved: advanced, happened (now in 已发生), failed (落空). */
   readonly event_progress?: readonly { readonly event_id?: unknown; readonly kind?: unknown; readonly evidence_in_text?: unknown }[]
   /** Preconditions this chapter met (1-based within the event). */
@@ -1807,6 +1807,10 @@ export interface TimelineEventView {
   readonly lane?: string
   /** A chapter's recap standing in for its missing events. */
   readonly recap?: boolean
+  /** Happened before the story's opening scene. */
+  readonly backstory?: boolean
+  /** The text that tells it. */
+  readonly evidence?: string
 }
 
 /** One event to come, with its tension. */

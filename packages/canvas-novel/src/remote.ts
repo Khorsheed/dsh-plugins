@@ -450,6 +450,8 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
       ...(event.pre === undefined ? {} : { pre: event.pre }),
       ...(event.valueWhy === undefined ? {} : { valueWhy: event.valueWhy }),
       ...(event.foreshadowId === undefined ? {} : { foreshadowId: event.foreshadowId }),
+      ...(event.backstory === true ? { backstory: true } : {}),
+      ...(event.evidence === undefined ? {} : { evidence: event.evidence }),
       ideas: ideas.ideas.filter(idea => idea.eventId === event.id && idea.writtenIn === undefined).length,
     })
     const chapter = current + 1

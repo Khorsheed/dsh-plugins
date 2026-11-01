@@ -168,3 +168,18 @@ describe('the timeline\'s 世界层', () => {
     expect(read.names?.[id('山海梦域')]).toBe('山海梦域')
   })
 })
+
+describe('a happened event says where it is told', () => {
+  it('keeps chapters, evidence and backstory, and the remote hands them to the face', async () => {
+    const { ctx, store } = bench(true)
+    const session = sessionAt({ value: 1 })
+    await store.writeEvent({ workId: DREAM.workId, title: '往事', status: 'happened', when: '十年前', chapters: [4], evidence: '那年街道被冲了', backstory: true }, session)
+    await store.writeEvent({ workId: DREAM.workId, title: '开场', status: 'happened', chapters: [1] }, session)
+    const { NovelRemoteService } = await import('../src/remote.ts')
+    const read = await new NovelRemoteService(ctx).timeline({ canvasId: DREAM.workId })
+    expect(read.past?.find(event => event.title === '往事')).toMatchObject({ backstory: true, chapters: [4], evidence: '那年街道被冲了' })
+    expect(read.past?.find(event => event.title === '开场')?.backstory).toBeUndefined()
+    await store.writeEvent({ workId: DREAM.workId, id: 'e1', backstory: false }, session)
+    expect((await store.readTimeline(DREAM.workId)).events.find(event => event.id === 'e1')?.backstory).toBeUndefined()
+  })
+})

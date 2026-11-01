@@ -1600,7 +1600,7 @@ export class NovelService {
         const anchorId = after !== undefined && events.some(event => event.id === after) ? after : sameChapter.at(-1)?.id
           ?? [...events].filter(event => event.status === 'happened' && (event.chapters?.[0] ?? 0) < n).sort((a, b) => a.order - b.order).at(-1)?.id
         const event = normalizeEvent({
-          id: `e${next}`, title, status: 'happened', order: orderAfter(events, anchorId), chapters: [n], evidence,
+          id: `e${next}`, title, status: 'happened', order: orderAfter(events, anchorId), chapters: [n], evidence, backstory: raw.backstory === true,
           when: cleanText(raw.when, 60), who: cardsOf(raw.people, 'character'), places: cardsOf(raw.places, 'world'), since: n, createdAt: now,
         })
         if (event === undefined) continue
@@ -1721,7 +1721,7 @@ export class NovelService {
       readonly workId: string; readonly id?: string; readonly title?: string; readonly when?: string; readonly status?: string
       readonly source?: string; readonly who?: unknown; readonly places?: unknown; readonly value?: unknown; readonly valueWhy?: string
       readonly window?: string; readonly windowChapter?: unknown; readonly pre?: unknown; readonly causes?: unknown; readonly after?: string
-      readonly chapters?: unknown; readonly delete?: boolean
+      readonly chapters?: unknown; readonly evidence?: string; readonly backstory?: unknown; readonly delete?: boolean
     },
     session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly id?: string; readonly unknown?: readonly string[] }> {
@@ -1765,8 +1765,10 @@ export class NovelService {
       const title = cleanText(request.title, 200) ?? was?.title
       if (title === undefined) return 'invalid-name'
       const id = was?.id ?? `e${doc.next}`
+      const backstory = request.backstory === true || request.backstory === 'true' ? true : request.backstory === false || request.backstory === 'false' ? undefined : was?.backstory
       const merged = normalizeEvent({
         ...was,
+        backstory,
         id, title,
         status: status ?? was?.status ?? 'preset',
         order: request.after !== undefined ? orderAfter(doc.events.filter(event => event.id !== id), request.after) : was?.order ?? orderAfter(doc.events, undefined),
@@ -1781,6 +1783,7 @@ export class NovelService {
         ...(pre === undefined ? {} : { pre }),
         ...(causes === undefined ? {} : { causes }),
         ...(chapters === undefined ? {} : { chapters }),
+        ...(cleanText(request.evidence, 120) === undefined ? {} : { evidence: cleanText(request.evidence, 120) }),
         since: was?.since ?? entries.currentChapter,
         createdAt: was?.createdAt ?? now,
       })

@@ -136,7 +136,8 @@ novel_bind(work=标题)，下一步工具即出现；拿不准是哪部就问用
 - 用户聊到「接下来要发生什么」时，用 novel_write(what=event, event={title, source, who, places, value, valueWhy, window, windowChapter, pre, causes, after}) 记下：
   value 是这件事对故事的分量（0–1，主线高、支线低），valueWhy 一句理由；pre 写还缺的前置条件（对账时会逐条打勾）；
   window 是该在哪发生（卷一末、第 8 章前），能折成章号就填 windowChapter；causes 写它是哪些已发生事件引出的。
-  故事开始前的往事用 status=happened、when 写时间，after 放在它之后发生的事件前后。
+  已经发生的事用 status=happened：chapters 写正文在第几章写到它（回忆、讲述也算），evidence 抄那一章 50 字以内的原文；
+  故事开篇之前的往事再加 backstory=true，when 写时间，after 放在它之后发生的事件前后。章号和原文只放 chapters / evidence，别写进 valueWhy 或 when。
 - 事件里提到的人物、地点还没有卡的，先问用户要不要建卡（反推设定）。
 - 优先级（张力）由引擎算：临近（离窗口近）> 积压（太久没写到）> 就绪 > 饱和（最近写多了）> 搁置（前置没满足）。不要自己排。
 
