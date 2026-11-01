@@ -55,6 +55,12 @@ export interface CompactionInfo {
   /** Log recovery knows the selected region, but not the complete model input. */
   inputPartial?: boolean
   before?: RequestLink
+  /** An external CLI member's compaction: run between turns (`/compact`), not inside one. */
+  betweenTurns?: boolean
+  /** An external CLI member's compaction: who started it, and the context occupancy before and after. */
+  source?: 'manual' | 'auto'
+  beforeTokens?: number
+  afterTokens?: number
 }
 
 /** One message row inside a request's four-segment breakdown. */
@@ -550,7 +556,11 @@ export interface AgentScopeOverview {
   /** The main request whose tool call started this child, when one did. */
   delegatedBy?: RequestLink
   /** Compaction views: how many messages it replaced, and the main request it followed. */
-  compaction?: { replacedCount?: number; after?: RequestLink; betweenTurns?: true }
+  compaction?: {
+    replacedCount?: number; after?: RequestLink; betweenTurns?: true
+    /** An external CLI member's compaction (`/compact`, after this round), or the CLI's own (`auto`, inside it). */
+    member?: { name?: string; source: 'manual' | 'auto'; beforeTokens?: number; afterTokens?: number }
+  }
   status: 'running' | 'ok' | 'failed'
   error?: string
   config: RequestConfig

@@ -35,6 +35,14 @@ function labelOf(scope: AgentScopeOverview, t: T): string {
   return scope.label ?? scope.scopeId
 }
 
+/** 289K / 44.7K: the stats line's compact count. */
+function compactTokens(n: number): string {
+  const scaled = (v: number): string => v >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10)
+  if (n < 1_000) return String(n)
+  if (n < 1_000_000) return `${scaled(n / 1_000)}K`
+  return `${scaled(n / 1_000_000)}M`
+}
+
 function Mark({ scope }: { readonly scope: AgentScopeOverview }): ReactNode {
   // Success is the norm; only a failure earns a mark.
   if (scope.status === 'failed') return <span className={css.bad} aria-hidden="true">✗</span>
@@ -84,7 +92,12 @@ function Relation({ scope, onOpenRequest, t }: { readonly scope: AgentScopeOverv
   if (scope.kind === 'compaction') {
     const c = scope.compaction
     if (c?.replacedCount !== undefined) parts.push(<span key="n">{t('rel.compacted', { count: String(c.replacedCount) })}</span>)
-    if (c?.betweenTurns) parts.push(<span key="w">{t('rel.betweenTurns')}</span>)
+    // An external CLI member's: who started it, and the occupancy it left.
+    if (c?.member !== undefined) {
+      const m = c.member
+      parts.push(<span key="m">{t(m.source === 'auto' ? 'rel.memberAuto' : 'rel.memberManual', { name: m.name ?? '' })}</span>)
+      if (m.beforeTokens !== undefined && m.afterTokens !== undefined) parts.push(<span key="t">{t('rel.memberTokens', { before: compactTokens(m.beforeTokens), after: compactTokens(m.afterTokens) })}</span>)
+    } else if (c?.betweenTurns) parts.push(<span key="w">{t('rel.betweenTurns')}</span>)
     else if (c?.after) parts.push(<span key="w">{t('rel.after', { seq: requestNumberText(c.after) })}</span>, <span key="b">{back(c.after)}</span>)
   } else if (scope.delegatedBy) {
     parts.push(<span key="by">{t('rel.delegatedBy', { seq: requestNumberText(scope.delegatedBy) })}</span>, <span key="b">{back(scope.delegatedBy)}</span>)
