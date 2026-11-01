@@ -148,6 +148,8 @@ export interface CanvasBoardSlice {
     /** Kept at once and marked new (✦) on the board, instead of a proposal awaiting ✓. */
     readonly live?: boolean
   }, session: FenceSession | undefined): Promise<NovelBoardMutation>
+  /** Delete a card for good (absent on an older canvas: the novel then cannot delete cards). */
+  deleteCard?(request: { readonly canvasId: string; readonly cardId: string }, session: FenceSession | undefined): Promise<NovelBoardMutation>
   patchCard(request: {
     readonly canvasId: string
     readonly cardId: string

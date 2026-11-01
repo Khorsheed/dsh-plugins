@@ -213,8 +213,8 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       + '(phase=preview proposes and answers the 整理结果; phase=apply only after the user agreed). review decides a pending item '
       + '(action=accept|discard). Cards: canvas_write. Load the novel skill first.',
     parameters: {
-      what: { type: 'string', enum: ['chapter', 'confirm', 'outline', 'organize', 'event', 'idea', 'review'], required: true, description: 'What to write. confirm: record the user\'s confirmation of a chapter plan (chapter=N) — only when their latest message says so.' },
-      id: { type: 'string', description: 'review: the pending item id.' },
+      what: { type: 'string', enum: ['chapter', 'confirm', 'outline', 'organize', 'event', 'idea', 'review', 'delete'], required: true, description: 'What to write. confirm: record the user\'s confirmation of a chapter plan (chapter=N) — only when their latest message says so. delete: remove a setting, person, relation, foreshadow (card id), event (e3) or idea (i2) by id, with the same fixes the person\'s 删除 makes (children move up, references cleared, a person\'s relations go too); the answer lists the written chapters that still carry it.' },
+      id: { type: 'string', description: 'review: the pending item id. delete: the card / event / idea id.' },
       title: { type: 'string', description: 'chapter: the title.' },
       content: {
         type: 'string',
@@ -400,6 +400,16 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         const happened = raw['status'] === 'happened' || raw['status'] === 'failed'
         const noChapter = happened && raw['chapters'] === undefined && raw['id'] === undefined
         return `已记下事件 [${outcome.id}]，在时间轴上。${noChapter ? '没给 chapters：时间轴不知道它写在哪一章，会放进「时间待定」（故事开始前的往事给 backstory=true）。正文写到了就补 chapters 和 evidence。' : ''}`
+      }
+      if (args.what === 'delete') {
+        if (args.id === undefined) return '失败：what=delete 要给 id（卡片编号、事件 e3 或灵感 i2）。'
+        const outcome = await store.deleteNode({ workId, node: args.id }, resolved.session)
+        if (!outcome.ok) return outcome.error === 'unsupported' ? '失败：当前画布版本不支持删卡片。' : `失败：${outcome.error === 'missing' ? `没有 ${args.id}（章节不能这样删）` : outcome.error ?? 'io'}。`
+        const impact = outcome.impact!
+        const lines = [`已删除「${impact.node.name}」。`]
+        if (impact.auto.length > 0) lines.push(`顺带处理了 ${impact.auto.length} 处引用（下属上移、连线清空、相关关系卡一起删）。`)
+        if (impact.chapters.length > 0) lines.push(`第 ${impact.chapters.join('、')} 章正文写到过它：正文没动，需要的话按新设定改那几段。`)
+        return lines.join('\n')
       }
       if (args.what === 'idea') {
         if (args.id === undefined) return '失败：what=idea 要给 id（灵感编号，novel_read(what=ideas) 看）。'

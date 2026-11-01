@@ -796,4 +796,24 @@ describe('设定 (2026-11-02 改版稿)', () => {
     expect(screen.getByRole('heading', { name: '梦境规则' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '监护所' })).toBeNull()
   })
+
+  it('删除… says what happens first, then deletes through the Remote', async () => {
+    const remote = fakeRemote({ items: [] }) as ReturnType<typeof fakeRemote> & Record<string, ReturnType<typeof vi.fn>>
+    remote.codex = vi.fn(() => ok({
+      ok: true, current: 2,
+      settings: [{ cardId: 'w2', ref: 'w2', name: '监护所', sort: 'place', text: '旧楼。', unsettled: false, parents: [], base: [], chapters: [1] }],
+      characters: [], relations: [], foreshadows: [], principles: [],
+    })) as never
+    remote.deletePreview = vi.fn(() => ok({ ok: true, kind: 'setting', name: '监护所', chapters: [1], fixes: [{ kind: 'unlink', name: '赵启明', nodeKind: 'character', edge: 'home' }] }))
+    remote.deleteNode = vi.fn(() => ok({ ok: true }))
+    const p = props(remote)
+    render(<CodexView {...p} />)
+    fireEvent.click(await screen.findByRole('button', { name: /世界观/ }))
+    fireEvent.click(await screen.findByRole('button', { name: zh['del.button'] }))
+    expect(await screen.findByText('「赵启明」的常在地点清空')).toBeTruthy()
+    expect(screen.getByText(/第 1 章正文写到过它/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['del.confirm'] }))
+    await waitFor(() => { expect(remote.deleteNode).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, node: 'w2' }) })
+    await waitFor(() => { expect(p.navigate.refresh).toHaveBeenCalled() })
+  })
 })

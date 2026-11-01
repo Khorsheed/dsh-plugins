@@ -68,6 +68,7 @@ import {
   type OutlineDoc, type OutlineProposal, type OutlineSheet, type OutlineVolume,
 } from './types.ts'
 import { changedPlanFields, type PlanField } from './text-forms.ts'
+import { buildGraph, deleteImpact, type BookGraph, type DeleteImpact, type GraphInput } from './graph.ts'
 
 /** The package's npm name, stamped on store errors. */
 const PACKAGE_NAME = '@khorsheed/dsh-canvas-novel'
@@ -1861,6 +1862,127 @@ export class NovelService {
     return outcome.ok && id !== undefined ? { ok: true, id } : { ok: false, error: outcome.ok ? 'io' : outcome.error }
   }
 
+  /* --------------------------------------------------------- the graph */
+
+  /**
+   * The book as a graph (graph.ts), computed from the data: chapters,
+   * settings, characters, relations, foreshadows, events and ideas, and the
+   * references between them. `written` holds the chapters that have text.
+   */
+  async bookGraph(workId: string): Promise<{ readonly graph: BookGraph; readonly written: ReadonlySet<number>; readonly entries: WorkEntries } | undefined> {
+    const entries = await this.readEntries(workId)
+    if (entries === undefined) return undefined
+    const id = entries.board.id
+    const [rows, { events }, ideas, mentions] = await Promise.all([
+      this.listChapters({ workId: id }), this.allEvents(id), this.readIdeas(id), this.listMentions({ workId: id }),
+    ])
+    const cards = new Map(entries.board.cards.map(card => [card.id, card]))
+    const refs = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : typeof value === 'string' && value !== '' ? [value] : []
+    const resolve = (token: string | undefined, role: EntryRole): string | undefined => token === undefined ? undefined : this.resolveCard(entries, token, role)?.cardId
+    const nameOf = (cardId: string): string => entries.characters.find(view => view.cardId === cardId)?.name ?? cardId
+    const input: GraphInput = {
+      chapters: rows.map(row => ({
+        n: row.chapter.n,
+        title: row.chapter.title,
+        written: row.phase !== 'planning',
+        ...(row.chapter.settings === undefined ? {} : { settings: row.chapter.settings }),
+        uses: (row.chapter.plan?.uses ?? []).map(token => resolve(token, 'world')).filter((item): item is string => item !== undefined),
+        advances: row.chapter.plan?.advances ?? [],
+        cast: [...(row.chapter.plan?.cast ?? []).map(member => member.who), ...(row.chapter.plan?.pov === undefined ? [] : [row.chapter.plan.pov])]
+          .map(token => resolve(token, 'character')).filter((item): item is string => item !== undefined),
+      })),
+      settings: entries.rules.filter(view => view.role === 'world' && view.status !== 'archived').map(view => ({
+        id: view.cardId, name: view.name ?? view.ref, ...(view.parents === undefined ? {} : { parents: view.parents }), ...(view.base === undefined ? {} : { base: view.base }),
+      })),
+      characters: entries.characters.filter(view => view.cardStatus !== 'archived').map(view => ({
+        id: view.cardId, name: view.name, factions: refs(cards.get(view.cardId)?.fields?.['faction']), homes: refs(cards.get(view.cardId)?.fields?.['home']),
+      })),
+      relations: entries.relations.filter(view => view.cardStatus !== 'archived').map(view => ({ id: view.cardId, name: view.pair.map(nameOf).join(' × '), pair: view.pair })),
+      foreshadows: entries.foreshadows.filter(view => view.cardStatus !== 'archived').map(view => ({
+        id: view.cardId, name: view.question, chapters: [...new Set(mentions.filter(entry => entry.foreshadowId === view.cardId).map(entry => entry.chapter))],
+      })),
+      events: events.map(event => ({
+        id: event.id, title: event.title,
+        ...(event.chapters === undefined ? {} : { chapters: event.chapters }),
+        ...(event.places === undefined ? {} : { places: event.places }),
+        ...(event.who === undefined ? {} : { who: event.who }),
+        ...(event.causes === undefined ? {} : { causes: event.causes }),
+        ...(event.foreshadowId === undefined ? {} : { foreshadowId: event.foreshadowId }),
+      })),
+      ideas: ideas.ideas.map(idea => ({ id: idea.id, text: idea.text, ...(idea.eventId === undefined ? {} : { eventId: idea.eventId }) })),
+    }
+    const written = new Set(rows.filter(row => row.phase !== 'planning').map(row => row.chapter.n))
+    return { graph: buildGraph(input), written, entries }
+  }
+
+  /** What deleting one node does, before it is done. */
+  async deletePreview(request: { readonly workId: string; readonly node: string }): Promise<DeleteImpact | undefined> {
+    this.assertAlive('deletePreview')
+    const built = await this.bookGraph(request.workId)
+    return built === undefined ? undefined : deleteImpact(built.graph, request.node, built.written)
+  }
+
+  /**
+   * Delete one node and make the fixes the rules allow at once: a child
+   * setting moves up, a relation of a deleted person goes too, references
+   * from events and people are cleared, ideas come off a deleted event.
+   * Written chapters are never changed here; they are what 待对齐 asks about.
+   * A chapter cannot be deleted this way.
+   */
+  async deleteNode(request: { readonly workId: string; readonly node: string }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly impact?: DeleteImpact }> {
+    this.assertAlive('deleteNode')
+    const built = await this.bookGraph(request.workId)
+    if (built === undefined) return { ok: false, error: 'missing' }
+    const { graph, written, entries } = built
+    const impact = deleteImpact(graph, request.node, written)
+    if (impact === undefined || impact.node.kind === 'chapter') return { ok: false, error: 'missing' }
+    const workId = entries.board.id
+    const canvas = this.canvas
+    const isCard = impact.node.kind !== 'event' && impact.node.kind !== 'idea'
+    if (isCard && canvas?.deleteCard === undefined) return { ok: false, error: 'unsupported' }
+    const cardOf = (id: string): NovelCardView | undefined => entries.board.cards.find(card => card.id === id)
+    const without = (value: unknown, id: string): string[] => (Array.isArray(value) ? value : []).filter((item): item is string => typeof item === 'string' && item !== id)
+    // Cards first: move children up, clear a person's faction / home, a faction's base.
+    for (const fix of impact.auto) {
+      const card = cardOf(fix.id)
+      if (card === undefined) continue
+      if (fix.kind === 'move-up') {
+        await canvas!.patchCard({ canvasId: workId, cardId: card.id, fields: { ...card.fields, parent: [...fix.to] } }, session)
+      } else if (fix.kind === 'unlink' && (fix.edge === 'faction' || fix.edge === 'home' || fix.edge === 'base')) {
+        await canvas!.patchCard({ canvasId: workId, cardId: card.id, fields: { ...card.fields, [fix.edge]: without(card.fields?.[fix.edge], request.node) } }, session)
+      } else if (fix.kind === 'drop' && graph.nodes.get(fix.id)?.kind === 'relation') {
+        await canvas!.deleteCard!({ canvasId: workId, cardId: card.id }, session)
+      }
+    }
+    // Events: clear the deleted node from places / who / causes; drop the event itself when it is the node.
+    const reveal = impact.node.kind === 'foreshadow' ? `fs:${request.node}` : undefined
+    const timeline = await this.mutateJson(await this.fileTarget(workId, WORK_FILES.timeline), session, raw => normalizeTimeline(raw), () => emptyTimeline(), doc => ({
+      ...doc,
+      events: doc.events.filter(event => event.id !== request.node).map(event => normalizeEvent({
+        ...event,
+        ...(event.places === undefined ? {} : { places: event.places.filter(id => id !== request.node) }),
+        ...(event.who === undefined ? {} : { who: event.who.filter(id => id !== request.node) }),
+        ...(event.causes === undefined ? {} : { causes: event.causes.filter(id => id !== request.node && id !== reveal) }),
+      })!),
+    }))
+    if (!timeline.ok) return { ok: false, error: timeline.error }
+    // Ideas: unbind from a deleted event (or a deleted foreshadow's reveal); delete the idea itself when it is the node.
+    const ideas = await this.mutateJson(await this.fileTarget(workId, WORK_FILES.ideas), session, raw => normalizeIdeas(raw), () => emptyIdeas(), doc => ({
+      ...doc,
+      ideas: doc.ideas.filter(idea => idea.id !== request.node).map(idea => {
+        if (idea.eventId !== request.node && idea.eventId !== reveal) return idea
+        const { eventId: _gone, ...rest } = idea
+        return rest
+      }),
+    }))
+    if (!ideas.ok) return { ok: false, error: ideas.error }
+    if (isCard) {
+      const gone = await canvas!.deleteCard!({ canvasId: workId, cardId: request.node }, session)
+      if (!gone.ok) return { ok: false, error: gone.error === 'missing' ? 'missing' : 'io' }
+    }
+    return { ok: true, impact }
+  }
+
   /* ----------------------------------------------------- character minds */
 
   /** The memory journal: what characters came to believe and intend, oldest first. */
@@ -2616,6 +2738,13 @@ export class NovelService {
         ideas: ideas.ideas.filter(idea => idea.eventId === event.id && idea.writtenIn === undefined).map(idea => idea.text),
       }))
     const timeline = { recent: happened.slice(-6), future: doc.events.filter(isFuture), candidates, advancing, names }
+    const recentOf = (cardId: string): ExperienceEntry[] => {
+      const lived = happened.filter(event => event.who?.includes(cardId) === true && (event.chapters ?? []).length > 0)
+        .map((event): ExperienceEntry => ({ characterId: cardId, chapter: event.chapters![0]!, entry: event.title, createdAt: event.createdAt }))
+      const told = new Set(lived.map(row => row.chapter))
+      const old = experiences.filter(entry => entry.characterId === cardId && !told.has(entry.chapter))
+      return [...old, ...lived].sort((a, b) => a.chapter - b.chapter).slice(-3)
+    }
     return {
       ok: true,
       data: {
@@ -2632,7 +2761,9 @@ export class NovelService {
         currentChapter: entries.currentChapter,
         inScene: inScene.map(character => ({
           character,
-          recent: experiences.filter(entry => entry.characterId === character.cardId).slice(-3),
+          // What they lived through comes from the timeline (2026-11-02: 对账 no longer writes a separate
+          // 人物经历); chapters reconciled before that keep their old entries until events cover them.
+          recent: recentOf(character.cardId),
           ...(mindOf(character.cardId) === undefined ? {} : { mind: mindOf(character.cardId)! }),
         })),
         roster,

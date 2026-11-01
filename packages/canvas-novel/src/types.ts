@@ -1324,7 +1324,7 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 /* --------------------------------------------------------------- outcomes */
 
 /** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
-export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists' | 'plan-on-draft' | 'unknown-protagonist' | 'unknown-volume' | 'no-proposal' | 'plan-unseen'
+export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists' | 'plan-on-draft' | 'unknown-protagonist' | 'unknown-volume' | 'no-proposal' | 'plan-unseen' | 'unsupported'
 
 /* ---------------------------------------------- wire-boundary contracts */
 
@@ -1830,6 +1830,35 @@ export interface NovelPinsRequest extends NovelWorkRequest {
   readonly chapter: number
   readonly prefer: readonly string[]
   readonly block: readonly string[]
+}
+
+/** One thing to delete: a card id, an event id (e3) or an idea id (i2). */
+export interface NovelDeleteRequest extends NovelWorkRequest {
+  readonly node: string
+}
+
+/** What deleting one thing does, before it is done (2026-11-02). */
+export interface NovelDeletePreviewResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly kind?: 'chapter' | 'setting' | 'character' | 'relation' | 'foreshadow' | 'event' | 'idea'
+  readonly name?: string
+  /** The fixes made at once, each with the names it touches. */
+  readonly fixes?: readonly DeleteFixView[]
+  /** Written chapters whose text still carries it. */
+  readonly chapters?: readonly number[]
+}
+
+/** One fix a delete makes at once, as the confirm reads it. */
+export interface DeleteFixView {
+  readonly kind: 'move-up' | 'unlink' | 'drop' | 'unbind'
+  /** The node the fix touches. */
+  readonly name: string
+  readonly nodeKind: string
+  /** For unlink: which reference goes (at / with / cause / faction / home / base / uses / cast / advances). */
+  readonly edge?: string
+  /** For move-up: the names it moves under (empty: to the top). */
+  readonly to?: readonly string[]
 }
 
 /** The 灵感 face's read. */
