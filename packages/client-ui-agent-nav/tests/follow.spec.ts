@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { destinationLine } from '../src/destination.ts'
-import { BUSY_MS, decideFollow, markInteraction, navRegistry, startNavFollower, type NavFollowerHost } from '../src/client/follow.ts'
+import { BUSY_MS, decideFollow, markInteraction, navRegistry, notifyWritten, releaseInteraction, startNavFollower, subscribeWrites, type NavFollowerHost } from '../src/client/follow.ts'
 
 const base = { live: true, onScreen: true, idleMs: undefined, narrow: false, seen: false, turnFollowed: false }
 
@@ -160,5 +160,36 @@ describe('startNavFollower', () => {
     expect(open).not.toHaveBeenCalled()
     fake.call('b', 1, 's2'); fake.result('b', dest('d2'), 1, 's2')
     expect(open.mock.calls[0]![0].id).toBe('d2')
+  })
+})
+
+describe('writes, cards-only, and the hand-off', () => {
+  beforeEach(() => {
+    const registry = navRegistry()
+    registry.seen.clear()
+    registry.turnFollowed.clear()
+    registry.lastInteraction = undefined
+  })
+
+  it('tells the kind\'s listeners of every live write, followed or not; a cards-only owner never follows', () => {
+    const fake = fakeHost()
+    const open = vi.fn()
+    const written = vi.fn()
+    const stop = subscribeWrites('canvas', written)
+    startNavFollower(fake.host, { kinds: ['canvas'], open, cardsOnly: true, log: () => {}, width: () => 1400 })
+    fake.call('a'); fake.result('a', dest('w1'))
+    expect(open).not.toHaveBeenCalled()
+    expect(written.mock.calls.map(c => c[0].id)).toEqual(['w1'])
+    fake.replay([{ type: 'tool/result', data: { message: { content: [{ type: 'text', text: dest('w2') }] } } }])
+    expect(written).toHaveBeenCalledTimes(1)
+    notifyWritten({ kind: 'canvas', params: { canvasId: 'c1' } })
+    expect(written).toHaveBeenCalledTimes(2)
+    stop()
+  })
+
+  it('a hand-off to the model clears the busy mark', () => {
+    markInteraction()
+    releaseInteraction()
+    expect(navRegistry().lastInteraction).toBeUndefined()
   })
 })

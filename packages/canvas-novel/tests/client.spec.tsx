@@ -17,15 +17,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { CardSection } from '../src/client/CardSection.tsx'
 import { ChapterBook } from '../src/client/ChapterBook.tsx'
-import { ChapterPage } from '../src/client/ChapterReader.tsx'
-import { CHAPTER_PAGE, STORY_LOG_PAGE, type NovelRemote, type NovelSurfaceProps } from '../src/client/contract.ts'
+import { STORY_LOG_PAGE, type NovelRemote, type NovelSurfaceProps } from '../src/client/contract.ts'
 import { zh } from '../src/client/locales.ts'
 import { CardScopes, ChaptersBadge, DeleteNote, FaceLabel, storyUsage } from '../src/client/NovelFaces.tsx'
 import { chapterHeading } from '../src/client/PendingList.tsx'
 import { PlanBlock } from '../src/client/PlanBlock.tsx'
 import { StoryLogPage } from '../src/client/StoryLogPage.tsx'
-import { WriteToolRow } from '../src/client/WriteToolRow.tsx'
-import { writeRowModel } from '../src/client/write-row.ts'
+import { NovelCardBody } from '../src/client/NovelCards.tsx'
+import { notifyWritten, toolCardModel, type Destination } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { NOVEL_GENRE_ID, type ChapterPlan, type ChapterRecord, type EffectiveChapterPhase, type PendingView, type StoryLogResult } from '../src/types.ts'
 
 afterEach(cleanup)
@@ -177,15 +176,6 @@ function ask(item: string, focus?: string): { item: string; focus?: string; n: n
   asks += 1
   return { item, ...(focus === undefined ? {} : { focus }), n: asks }
 }
-
-describe('the retired chapter page', () => {
-  it('forwards a saved row to the 章节 face, on the plan when it named it', () => {
-    const p = { ...props(fakeRemote({ items: [] })), page: CHAPTER_PAGE, param: '3:plan' }
-    const { container } = render(<ChapterPage {...p} />)
-    expect(container.innerHTML).toBe('')
-    expect(p.navigate.openManuscripts).toHaveBeenCalledWith('3', 'plan')
-  })
-})
 
 describe('the 章节 face asked for a chapter', () => {
   function renderPage(remote: NovelRemote, sessionId: SessionId | null = SESSION) {
@@ -425,68 +415,54 @@ describe('PlanBlock on a written chapter re-planned', () => {
   })
 })
 
-describe('novel_write tool row', () => {
-  const settled = (text: string, isError = false) => ({ kind: 'tool-result', content: [{ type: 'text', text }], isError })
-  const PLANNED = `已登记第 1 章《门》（画布 ${CANVAS_ID}）plan：走向 2 拍 / 伏笔 1 条 / 出场 1 人。完整计划已在会话卡片和章节页上。`
+describe('the novel\'s cards in the shared shell', () => {
+  const dest = (params: Record<string, unknown>, label = '第 1 章《门》'): Destination => ({ id: 'd', kind: 'canvas', params: { canvasId: CANVAS_ID, ...params }, label })
+  const model = (destination: Destination) => toolCardModel({ kind: 'tool-result', content: [{ type: 'text', text: `已登记\n⟦dsh-nav⟧${JSON.stringify(destination)}` }] })
+  const card = (destination: Destination, remote: NovelRemote | undefined, go: ((d: Destination) => void) | undefined) =>
+    <NovelCardBody model={model(destination)} destination={destination} remote={() => remote} go={() => go} t={t} />
 
-  it('reads the chapter and the canvas from the answer', () => {
-    expect(writeRowModel(settled(PLANNED)).chapter).toEqual({ canvasId: CANVAS_ID, n: 1, title: '门', counts: { beats: 2, ops: 1, cast: 1 } })
-    expect(writeRowModel(settled(`已建第 2 章《尾声》（画布 ${CANVAS_ID} · 规划中 · 第2章.md）。`)).chapter)
-      .toEqual({ canvasId: CANVAS_ID, n: 2, title: '尾声', counts: null })
-    expect(writeRowModel({}).state).toBe('running')
-    expect(writeRowModel(settled('失败：没有第 9 章。')).state).toBe('failed')
-    expect(writeRowModel(settled('已归档：#3。')).state).toBe('line')
-  })
-
-  it('reads an outline proposal, and a chapter answer with a note before it', () => {
-    expect(writeRowModel(settled(`已提交大纲提议（画布 ${CANVAS_ID}x），在「规划」页等用户采用。`))).toMatchObject({ state: 'outline', canvasId: `${CANVAS_ID}x` })
-    expect(writeRowModel(settled(`画布原本没挂工作区，已挂上会话所在的 /home/user/w。\n${PLANNED}`)).chapter).toMatchObject({ n: 1, title: '门' })
-  })
-
-  it('an outline proposal\'s door opens the 规划 face and says whether it still waits; the row never opens it by itself', async () => {
-    const outline = { version: 1, sheet: {}, volumes: [], sketches: [], revision: 1, history: [], proposal: { rationale: '先把主线立住', at: NOW } }
-    const remote = { outline: vi.fn(() => ok({ ok: true, outline, chapters: [], cores: [] })) } as unknown as NovelRemote
-    const go = vi.fn()
-    const answer = settled(`已提交大纲提议（画布 ${CANVAS_ID}x），在「规划」页等用户采用。`)
-    const { rerender } = render(<WriteToolRow block={{}} phase="preparing" remote={() => remote} go={() => go} recentScope="recent" t={t} />)
-    rerender(<WriteToolRow block={answer} remote={() => remote} go={() => go} recentScope="recent" t={t} />)
-    expect(await screen.findByText('先把主线立住')).toBeTruthy()
-    expect(go).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: `${zh['card.outlineAdopt']} →` }))
-    expect(go).toHaveBeenCalledWith({ canvasId: `${CANVAS_ID}x`, face: 'lead' })
-  })
-
-  it('a planned chapter is a card whose door opens that chapter in the 章节 face, on its plan', async () => {
+  it('a chapter on its plan: 梗概 and shape, 等你确认, and the door opens that chapter on its plan', async () => {
     const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' }] })
     const go = vi.fn()
-    render(<WriteToolRow block={settled(PLANNED)} remote={() => remote} go={() => go} recentScope="recent" t={t} />)
+    const destination = dest({ face: 'manuscripts', item: '1', focus: 'plan' })
+    render(card(destination, remote, go))
     expect(await screen.findByText(PLAN.summary)).toBeTruthy()
     expect(screen.getByText(zh['card.awaiting'])).toBeTruthy()
     expect(screen.getByText('推进 1')).toBeTruthy()
     expect(go).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: `${zh['card.confirm']} →` }))
-    expect(go).toHaveBeenCalledWith({ canvasId: CANVAS_ID, face: 'manuscripts', item: '1', focus: 'plan' })
+    expect(go).toHaveBeenCalledWith(destination)
   })
 
-  it('reads an answer that ends in a destination line the same, and never shows the line', () => {
-    const line = `\n⟦dsh-nav⟧{"id":"x","kind":"canvas","params":{"canvasId":"${CANVAS_ID}"},"label":"第 1 章《门》"}`
-    expect(writeRowModel(settled(`${PLANNED}${line}`)).chapter).toMatchObject({ n: 1, title: '门' })
-    render(<WriteToolRow block={settled(`已落卡 [#19]。${line}`)} remote={() => undefined} go={() => undefined} recentScope="recent" t={t} />)
-    expect(screen.getByText('已落卡 [#19]。')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: zh['card.inspect'] })).toBeNull()
+  it('re-reads when the canvas is written (a confirm on the page), never on a timer', async () => {
+    const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' }] })
+    render(card(dest({ face: 'manuscripts', item: '1', focus: 'plan' }), remote, vi.fn()))
+    await screen.findByText(PLAN.summary)
+    const reads = (remote.chapter as ReturnType<typeof vi.fn>).mock.calls.length
+    notifyWritten({ kind: 'canvas', params: { canvasId: CANVAS_ID } })
+    await waitFor(() => { expect((remote.chapter as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(reads) })
   })
 
-  it('without the canvas the card keeps its answer counts and offers no door', () => {
-    render(<WriteToolRow block={settled(PLANNED)} remote={() => undefined} go={() => undefined} recentScope="recent" t={t} />)
-    expect(screen.getByText('情节 2 段')).toBeTruthy()
+  it('an outline proposal: 等你采用, and the door opens the 规划 face', async () => {
+    const outline = { version: 1, sheet: {}, volumes: [], sketches: [], revision: 1, history: [], proposal: { rationale: '先把主线立住', at: NOW } }
+    const remote = { outline: vi.fn(() => ok({ ok: true, outline, chapters: [], cores: [] })) } as unknown as NovelRemote
+    const go = vi.fn()
+    const destination = dest({ face: 'lead' }, '大纲提议')
+    render(card(destination, remote, go))
+    expect(await screen.findByText('先把主线立住')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: `${zh['card.outlineAdopt']} →` }))
+    expect(go).toHaveBeenCalledWith(destination)
+  })
+
+  it('without the canvas there is no door; another place is the compact line', () => {
+    render(card(dest({ face: 'manuscripts', item: '1', focus: 'plan' }), undefined, undefined))
+    expect(screen.getByText('第 1 章《门》')).toBeTruthy()
     expect(screen.queryByRole('button')).toBeNull()
-  })
-
-  it('any other write is one line, the full answer behind 详情', () => {
-    render(<WriteToolRow block={settled('已落卡 [#19]。\n忽略了不认识的字段：bogus')} remote={() => undefined} go={() => undefined} recentScope="recent" t={t} />)
-    expect(screen.getByText('已落卡 [#19]。')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: zh['card.inspect'] }))
-    expect(screen.getByText(/忽略了不认识的字段/)).toBeTruthy()
+    cleanup()
+    const go = vi.fn()
+    render(card(dest({ card: 'c1' }, '林川'), undefined, go))
+    fireEvent.click(screen.getByText(zh['card.open']))
+    expect(go).toHaveBeenCalled()
   })
 })
 

@@ -448,8 +448,8 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         ].join('\n')
       }
       const lines = [
-        // The first line names the chapter and the canvas: the conversation's
-        // 已对账 card reads them off the answer (client/write-row.ts).
+        // The first line names the chapter and the canvas (the model reads it;
+        // the conversation card goes by the destination line).
         `第 ${args.chapter} 章已对账（画布 ${resolved.workId}）。`,
         `计划命中 ✓×${report.verified} / 计划落空 ×${report.missed}${report.beats.missed === 0 ? '' : ` / 情节没写到 ×${report.beats.missed}`} / 新卡 ×${report.newCards.length}${report.linked === 0 ? '' : ` / 用到已有设定 ×${report.linked}`} / 改了已有卡 ×${report.applied.length}${report.dropped.length === 0 ? '' : ` / 丢弃 ×${report.dropped.length}`}`,
         '全部已写进画布，不用用户审核；用户在「设定 · 最近更新」里能看到这章新建和改过的卡，觉得不对会直接改卡或回复你。',

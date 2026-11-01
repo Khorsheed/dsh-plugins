@@ -18,15 +18,14 @@
  * - `canvas.card.deleteNote`: the chapters a card is in, on its delete question;
  * - `canvas.page` `novel:story-log`: the story log — foreshadows, relations,
  *   characters and world settings as rows over the chapter columns;
- * - `canvas.page` `novel:chapter`: the same reader, opened at one chapter
- *   (from a chat card, or the story log's columns);
  * - `canvas.card.section`: on a foreshadow's page the user's ★, on a
  *   character's page 此刻 (editable).
  *
- * Outside the canvas, the `novel_write` tool row in the conversation: a
- * planned chapter shows as a card whose door opens that chapter page (through
- * the canvas's `canvasNav` service, read lazily; without it the card has no
- * door).
+ * Outside the canvas, the conversation cards of `novel_write` /
+ * `novel_extract`: the shared shell (`@khorsheed/dsh-client-ui-agent-nav`)
+ * with the novel's bodies (NovelCards.tsx); the door opens the answer's
+ * destination through the canvas's `canvasNav.go`, read lazily — without it
+ * the card has no door.
  *
  * It mounts the `novel` Remote through the official `ctx.remote.$mount`. The
  * seats are declared by the canvas tab's registration (its children table),
@@ -47,27 +46,29 @@ import novelRemote from '@khorsheed/dsh-canvas-novel/remote'
 import { NOVEL_GENRE_ID, NOVEL_PLAN_FACE, NOVEL_STORY_FACE } from '../types.ts'
 import { CardSection } from './CardSection.tsx'
 import { ChapterBook } from './ChapterBook.tsx'
-import { ChapterPage } from './ChapterReader.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { CHAPTER_PAGE, PLAN_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
+import { STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
-import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, RECENT_SCOPE } from './NovelFaces.tsx'
+import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel } from './NovelFaces.tsx'
 import { PlanView } from './PlanView.tsx'
 import { StoryLogPage, StoryView } from './StoryLogPage.tsx'
-import { novelTurnDefinition } from './novel-turn.ts'
-import { NovelTurnTail, WriteToolRow, type WriteToolFace } from './WriteToolRow.tsx'
+import { NovelCardBody, novelCardCopy } from './NovelCards.tsx'
+import { createElement, type ReactNode } from 'react'
+import {
+  notifyWritten, registerDestinationCards, type Destination, type ToolCardModel,
+} from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 
 export { CardSection } from './CardSection.tsx'
 export { ChapterBook } from './ChapterBook.tsx'
-export { ChapterPage, ChapterReader } from './ChapterReader.tsx'
+export { ChapterReader } from './ChapterReader.tsx'
 export { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, storyUsage } from './NovelFaces.tsx'
 export { PendingList } from './PendingList.tsx'
 export { PlanView } from './PlanView.tsx'
 export { StoryLogPage, StoryView } from './StoryLogPage.tsx'
-export { WriteToolRow } from './WriteToolRow.tsx'
-export { CHAPTER_PAGE, PLAN_PAGE, STORY_LOG_PAGE } from './contract.ts'
+export { NovelCardBody } from './NovelCards.tsx'
+export { STORY_LOG_PAGE } from './contract.ts'
 export type { NovelCardOwnerProps, NovelFace, NovelNavigate, NovelOwnerProps, NovelPageOwnerProps, NovelRemote } from './contract.ts'
-export type { WriteToolFace } from './WriteToolRow.tsx'
+export type { NovelCardFace } from './NovelCards.tsx'
 
 /**
  * Required services: slots, the remote channel, the locale. `remote.novel` is
@@ -116,7 +117,29 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return false
     }
   }
-  const face: NovelFace = { remote: () => ctx.get('remote.novel') as NovelRemote | undefined, draftToConversation }
+  /**
+   * The Remote, with the gestures that change what a conversation card shows
+   * (a plan confirmed or edited, an outline adopted) announcing their write:
+   * the cards re-read on the write signal instead of polling.
+   */
+  const announced = new WeakMap<object, NovelRemote>()
+  const remoteOf = (): NovelRemote | undefined => {
+    const api = ctx.get('remote.novel') as NovelRemote | undefined
+    if (api === undefined) return undefined
+    let wrapped = announced.get(api)
+    if (wrapped === undefined) {
+      const written = (canvasId: string): void => { notifyWritten({ kind: 'canvas', params: { canvasId } }) }
+      wrapped = {
+        ...api,
+        confirmPlan: async (sessionId, request) => { const result = await api.confirmPlan(sessionId, request); written(request.canvasId); return result },
+        editPlan: async (sessionId, request) => { const result = await api.editPlan(sessionId, request); written(request.canvasId); return result },
+        decideOutline: async (sessionId, request) => { const result = await api.decideOutline(sessionId, request); written(request.canvasId); return result },
+      }
+      announced.set(api, wrapped)
+    }
+    return wrapped
+  }
+  const face: NovelFace = { remote: remoteOf, draftToConversation }
   // The seats are declared by @khorsheed/dsh-canvas, outside this type graph.
   const seats = ctx.slots as unknown as {
     inject: (key: string, callback: () => () => void) => () => void
@@ -172,7 +195,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => face,
   }, CardSection)), 'canvas-novel: card section')
-  for (const [key, page] of [[STORY_LOG_PAGE, StoryLogPage], [CHAPTER_PAGE, ChapterPage], [PLAN_PAGE, PlanView]] as const) {
+  for (const [key, page] of [[STORY_LOG_PAGE, StoryLogPage]] as const) {
     ctx.effect(() => seats.inject('canvas.page', () => seats.register({
       name: 'canvas.page',
       key,
@@ -181,45 +204,29 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }, page)), `canvas-novel: page ${key}`)
   }
 
-  // The tool slot is declared by @deepseek-ai/dsh-client-ui-tool, outside this
-  // type graph too; without it the inject never fires and the call keeps the
-  // host's generic row.
-  const writeFace: WriteToolFace = {
-    ...face,
-    go: () => (ctx.get('canvasNav') as { go?: ReturnType<WriteToolFace['go']> } | undefined)?.go,
-    recentScope: RECENT_SCOPE,
-  }
-  ctx.effect(() => seats.inject('tool.call.toolview', () => seats.register({
-    name: 'tool.call.toolview',
-    key: 'novel_write',
-    locale: NS,
-    inject: () => writeFace,
-  }, WriteToolRow)), 'canvas-novel: novel_write tool row')
-
-  // The same cards in the Turn tail, beneath the closing prose: a finished
+  // The conversation cards (proposal 2026-10-30-agent-sidebar-navigation):
+  // the one shell under novel_write / novel_extract and in the Turn tail (the
   // Turn folds its tool rows, card and all, exactly when the reply says
-  // 「点一下确认计划」 (the datasets T96 route). ui-chat declares the slot and
-  // composes ui-conversation, so `uiConversation` is read only once it can
-  // exist; without either nothing registers and the tool row stays the door.
-  ctx.effect(() => seats.inject('conversation.chat.turnTail', () => {
-    const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
-      events?: { register?: (definition: unknown) => () => void }
-    } | undefined
-    const register = conversation?.events?.register
-    if (register === undefined) return () => undefined
-    const disposeDefinition = register.call(conversation?.events, novelTurnDefinition)
-    const disposeEntry = seats.register({
-      name: 'conversation.chat.turnTail',
-      id: '@khorsheed/dsh-canvas-novel/asks',
-      order: 40,
+  // 「点一下确认计划」). The novel fills the card's body by its destination
+  // (NovelCards.tsx); the door is the shell's.
+  const t = ctx.locale.bind(NS)
+  const go = (): ((destination: Destination) => void) | undefined => {
+    const nav = ctx.get('canvasNav') as { go?: (params: Record<string, unknown>) => void } | undefined
+    return nav?.go === undefined ? undefined : destination => { nav.go!(destination.params) }
+  }
+  const Body = (props: { readonly model: ToolCardModel; readonly destination: Destination }): ReactNode =>
+    createElement(NovelCardBody, { ...props, ...face, go, t })
+  registerDestinationCards(
+    (body, label) => { ctx.effect(body, label) },
+    seats,
+    () => (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as { events?: { register?: (definition: unknown) => () => void } } | undefined,
+    {
+      owner: '@khorsheed/dsh-canvas-novel',
+      tools: ['novel_write', 'novel_extract'],
       locale: NS,
-      inject: () => writeFace,
-    }, NovelTurnTail)
-    return () => {
-      disposeEntry()
-      disposeDefinition()
-    }
-  }), 'canvas-novel: turn-tail cards')
+      face: () => ({ copy: () => novelCardCopy(t), go, Body }),
+    },
+  )
 
   return async () => {
     await Promise.all(disposers.map(dispose => dispose()))

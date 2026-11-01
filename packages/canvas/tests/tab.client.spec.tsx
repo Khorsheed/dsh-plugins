@@ -19,6 +19,7 @@ import { CanvasSelectionStore } from '../src/client/space/selection.ts'
 import { CanvasTab } from '../src/client/tab/CanvasTab.tsx'
 import { zh } from '../src/client/locales.ts'
 import { defaultCategories } from '../src/types.ts'
+import { notifyWritten } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import type {
   BoardAttachImageOutcome, BoardFocusResult,
   BoardListResult, BoardMutationResult, BoardReadOutcome,
@@ -672,7 +673,7 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
 })
 
 describe('CanvasTab — freshness from the main session', () => {
-  it('re-reads the open board every few seconds while the page is in view', async () => {
+  it('re-reads the open board when the conversation writes a canvas, and slowly while the page is in view', async () => {
     // Fake timers from the start (the interval is armed on mount), still
     // advancing on their own so the async reads settle.
     vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -681,11 +682,19 @@ describe('CanvasTab — freshness from the main session', () => {
       render(<CanvasTab {...props} />)
       await screen.findByText('卡片 c_1')
       mocks.refreshBoards.mockClear()
+      // A write in the conversation (the follower's signal): at once, no timer.
+      notifyWritten({ kind: 'canvas', params: { canvasId: CANVAS_ID } })
+      expect(mocks.refreshBoards).toHaveBeenCalledTimes(1)
+      // Another kind's write is not this tab's.
+      notifyWritten({ kind: 'library', params: {} })
+      expect(mocks.refreshBoards).toHaveBeenCalledTimes(1)
       vi.advanceTimersByTime(4000)
       expect(mocks.refreshBoards).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(30_000)
+      expect(mocks.refreshBoards).toHaveBeenCalledTimes(2)
       const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
-      vi.advanceTimersByTime(4000)
-      expect(mocks.refreshBoards).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(30_000)
+      expect(mocks.refreshBoards).toHaveBeenCalledTimes(2)
       visibility.mockRestore()
     } finally {
       vi.useRealTimers()

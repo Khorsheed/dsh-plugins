@@ -12,6 +12,7 @@ import { CanvasBindChip, type CanvasBindInjected } from '../src/client/bind/Bind
 import { GenreBindingGate, type GenreGrantSource } from '../src/client/bind/gate.ts'
 import { zh } from '../src/client/locales.ts'
 import type { CanvasGenreSummary, CanvasSummary } from '../src/types.ts'
+import { notifyWritten } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 
 const NOW = '2026-10-05T08:00:00.000Z'
 const S1 = 's1' as SessionId
@@ -134,7 +135,7 @@ describe('CanvasBindChip', () => {
     await screen.findByText(zh['bind.unbound'])
   })
 
-  it('picks up a binding the model made, on its next re-read', async () => {
+  it('picks up a binding the model made when the conversation writes a canvas, else on the slow re-read', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     try {
       let bound: string | null = null
@@ -142,8 +143,11 @@ describe('CanvasBindChip', () => {
       render(<CanvasBindChip t={t} {...mocks} />)
       await screen.findByText(zh['bind.unbound'])
       bound = 'canvas_rain'
-      await vi.advanceTimersByTimeAsync(4000)
+      notifyWritten({ kind: 'canvas', params: { canvasId: 'canvas_rain' } })
       await screen.findByText('作品 · 雨夜')
+      bound = null
+      await vi.advanceTimersByTimeAsync(30_000)
+      await screen.findByText(zh['bind.unbound'])
     } finally {
       vi.useRealTimers()
     }

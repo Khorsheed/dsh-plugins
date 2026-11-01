@@ -60,7 +60,8 @@ import {
   genrePageOf, GenreSeatsContext, manuscriptsOwned, type GenreSeats,
 } from '../genre-seats.tsx'
 import type { CanvasCardScope, CanvasNavParams } from '../slots.ts'
-import { interactionHandlers } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { interactionHandlers, subscribeWrites } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { CANVAS_KIND } from '../definition.ts'
 import { ManuscriptList, ManuscriptView } from '../manuscript/ManuscriptView.tsx'
 import { TypeView } from '../type/TypeView.tsx'
 import { CategoriesView } from '../type/CategoriesView.tsx'
@@ -76,8 +77,12 @@ import css from './CanvasTab.module.css'
 const useNoWorkspaces = ((selector: (snapshot: { items: readonly [] }) => unknown) =>
   selector({ items: [] })) as unknown as CanvasTabProps['useWorkspaces']
 
-/** How often an in-view tab re-reads the open board (the main session's writes are unannounced). */
-const BOARD_POLL_MS = 4000
+/**
+ * The slow fallback re-read of an in-view tab. A write the conversation makes
+ * re-reads at once (`subscribeWrites`); this only catches what the session on
+ * screen does not show (another tab or device, a host restart).
+ */
+const BOARD_FALLBACK_MS = 30_000
 
 /** One open draft's content, held by the row that owns it. */
 interface DraftContent {
@@ -452,16 +457,17 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
 
   useEffect(() => { void reloadList() }, [reloadList])
 
-  // The main session's agent writes into the same boards through its canvas
-  // tools, and nothing announces those writes to this surface — so while the
-  // page is in view, re-read the open board every few seconds (the read effect
-  // below keeps the board it has when the version has not moved).
+  // A canvas write in the conversation re-reads the open board at once (the
+  // destination follower's write signal); a slow re-read while the page is in
+  // view catches the rest (the read effect below keeps the board it has when
+  // the version has not moved).
   useEffect(() => {
     if (openId === null) return
+    const stop = subscribeWrites(CANVAS_KIND, () => { refreshBoards() })
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') refreshBoards()
-    }, BOARD_POLL_MS)
-    return () => { clearInterval(timer) }
+    }, BOARD_FALLBACK_MS)
+    return () => { stop(); clearInterval(timer) }
   }, [openId, refreshBoards])
 
   // Put a board on the strip when there is nothing to show yet (a fresh session,

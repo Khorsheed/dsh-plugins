@@ -54,8 +54,6 @@ import {
 import { CanvasSelectionStore } from './space/selection.ts'
 import { createCanvasInbox, type CanvasInboxService } from './inbox.ts'
 import { categoryLabelOf } from './category-label.ts'
-import { ProposeTypeRow, type ProposeTypeRowFace } from './type/ProposeTypeRow.tsx'
-import { OpenCanvasRow, type OpenCanvasRowFace } from './open/OpenCanvasRow.tsx'
 import { DeskOpenRow, type DeskOpenRowFace } from './open/DeskOpenRow.tsx'
 import type { DeskWroteRowFace } from './open/DeskWroteRow.tsx'
 import { DESK_OWNER, DESK_ROW_KIND, DESK_WROTE_KIND, deskDestinationsOf, deskRowDefinition, deskWroteDefinition, setDeskRowSeated } from './open/desk-row.ts'
@@ -64,7 +62,7 @@ import { DeskAttachment } from './open/DeskAttachment.tsx'
 import { CanvasTab } from './tab/CanvasTab.tsx'
 import { CanvasTabTitle } from './tab/CanvasTabTitle.tsx'
 import { CANVAS_CHILD_SLOTS, type CanvasNavParams, type CanvasNavService } from './slots.ts'
-import { followerHostOf, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { followerHostOf, registerDestinationCards, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { CanvasBindChip, type CanvasBindInjected } from './bind/BindChip.tsx'
 import { GenreBindingGate } from './bind/gate.ts'
 
@@ -411,9 +409,6 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     inject: (key: string, callback: () => () => void) => () => void
     register: (options: Record<string, unknown>, component: unknown) => () => void
   }
-  const proposeFace: ProposeTypeRowFace = {
-    openType: (canvasId, kind, heading) => { go({ canvasId, type: kind, heading }) },
-  }
   // A genre's conversation card (the novel plan card, say) opens one of its
   // pages the same way: the tab first, then the row on the page. The cordis
   // fiber owns the provide's lifetime (the quote `ctx.quoteActions` precedent).
@@ -487,25 +482,23 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       },
     }), 'canvas: quote action')
   }
-  ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({
-    name: 'tool.call.toolview',
-    key: 'canvas_propose_type',
-    locale: NS,
-    inject: () => proposeFace,
-  }, ProposeTypeRow)), 'canvas: propose-type tool row')
-
-  // The canvas_open row: a switch the agent just made opens that canvas in the
-  // tab (the row decides when — only a call it saw running), and every row
-  // keeps an 打开 → door to it.
-  const openFace: OpenCanvasRowFace = {
-    openCanvas: (canvasId) => { go({ canvasId }) },
-  }
-  ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({
-    name: 'tool.call.toolview',
-    key: 'canvas_open',
-    locale: NS,
-    inject: () => openFace,
-  }, OpenCanvasRow)), 'canvas: open-canvas tool row')
+  // The conversation cards (proposal 2026-10-30-agent-sidebar-navigation):
+  // the one shell under each write tool and in the Turn tail, its door the
+  // answer's destination. Canvas cards are the compact line.
+  registerDestinationCards(
+    (body, label) => { ctx.effect(body, label) },
+    toolSlots,
+    () => (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as { events?: { register?: (definition: unknown) => () => void } } | undefined,
+    {
+      owner: '@khorsheed/dsh-canvas',
+      tools: ['canvas_open', 'canvas_write', 'canvas_propose_type'],
+      locale: NS,
+      face: () => ({
+        copy: () => ({ kind: t('openrow.kind'), running: t('card.running'), failed: t('card.failed'), open: t('card.open') }),
+        go: () => destination => { go(destination.params as unknown as CanvasNavParams) },
+      }),
+    },
+  )
 
   // In a room, a member's canvas_open writes a room/desk-opened event into
   // the ROOM (desk.ts): its row tells the room who opened what, and follows —
@@ -515,7 +508,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // exist (the canvas-novel turn-tail precedent); without them the room just
   // has no row, and the member's own session keeps its canvas_open row.
   const deskFace: DeskOpenRowFace & DeskWroteRowFace = {
-    openCanvas: openFace.openCanvas,
+    openCanvas: canvasId => { go({ canvasId }) },
     addCanvas: canvasId => { selection.addCanvas(canvasId) },
     go,
   }

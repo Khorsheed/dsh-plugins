@@ -18,6 +18,8 @@ import type { BoardBindResult, BoardListResult, CanvasSummary } from '../../type
 import type {} from '../locales.ts'
 import { IconChevronDownOutlineMedium } from '../icons.tsx'
 import css from './BindChip.module.css'
+import { subscribeWrites } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { CANVAS_KIND } from '../definition.ts'
 
 /** One session's binding face (the header slot injects it per session). */
 export interface CanvasBindInjected {
@@ -41,7 +43,7 @@ function bindable(items: readonly CanvasSummary[]): CanvasSummary[] {
 }
 
 /** How often the chip re-reads a binding the model may have moved (the board poll's pace). */
-const BIND_POLL_MS = 4000
+const BIND_FALLBACK_MS = 30_000
 
 export function CanvasBindChip(props: CanvasBindChipProps): ReactNode {
   const shown = useSyncExternalStore(props.subscribe, props.offered)
@@ -64,16 +66,20 @@ function BindMenu({ t, boundCanvas, bindCanvas, listCanvases, openCanvas }: Canv
   // a canvas may have gained a genre, or been deleted, since.
   useEffect(() => { void reload().catch(() => {}) }, [reload])
 
-  // The model binds too (a genre's bind tool), and nothing announces that to
-  // this surface — so while the page is in view, re-read the binding every
-  // few seconds, and the list once when it names a canvas the chip has not
-  // seen (a canvas created since).
+  // The model binds too (canvas_open, a genre's bind tool): a canvas write in
+  // the conversation re-reads the binding at once (the destination follower's
+  // write signal), a slow re-read while the page is in view catches the rest,
+  // and the list is re-read once when the binding names a canvas the chip has
+  // not seen (a canvas created since).
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (document.visibilityState !== 'visible') return
+    const read = (): void => {
       void boundCanvas().then((current) => { if (current.ok) setBound(current.value) }).catch(() => {})
-    }, BIND_POLL_MS)
-    return () => { clearInterval(timer) }
+    }
+    const stop = subscribeWrites(CANVAS_KIND, read)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') read()
+    }, BIND_FALLBACK_MS)
+    return () => { stop(); clearInterval(timer) }
   }, [boundCanvas])
   const unseen = bound !== null && !rows.some(row => row.id === bound)
   useEffect(() => {
