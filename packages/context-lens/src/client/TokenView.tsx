@@ -5,7 +5,7 @@ import { requestNumberText, aggregateCategories, cachePct, duplicateStats, fmt, 
 import type { InspectorTabProps } from './contract.ts'
 import { CacheFacts, RequestFacts } from './RequestFacts.tsx'
 import { RawView } from './RawView.tsx'
-import { Exchange, SegmentBlocks, categoryLabelKey } from './SegmentBlocks.tsx'
+import { Exchange, SegmentBlocks, categoryLabelKey, type SegmentBlocksProps } from './SegmentBlocks.tsx'
 import css from './TokenView.module.css'
 type T = InspectorTabProps['t']
 
@@ -39,10 +39,14 @@ export interface TokenViewProps {
   readonly previousResponseNumber: number | null
   readonly onSelect: (seq: number) => void
   readonly onToggleFilter: (category: Exclude<CompositionFilter, null>) => void
+  /** A row to open and bring into view once (passed through to the composition). */
+  readonly focus?: SegmentBlocksProps['focus']
+  readonly onFocusApplied?: SegmentBlocksProps['onFocusApplied']
+  readonly onFocusChange?: SegmentBlocksProps['onFocusChange']
   readonly t: T
 }
 
-export function TokenView({ scope, selectedSeq, request, filterCat, previousResponseNumber, onSelect, onOpenRequest, onLocateCall, locateInMember, onReturn, onToggleFilter, t }: TokenViewProps): ReactNode {
+export function TokenView({ scope, selectedSeq, request, filterCat, previousResponseNumber, onSelect, onOpenRequest, onLocateCall, locateInMember, onReturn, onToggleFilter, focus, onFocusApplied, onFocusChange, t }: TokenViewProps): ReactNode {
   const [raw, setRaw] = useState(false)
   const selectedItem = scope.requests.find(r => r.seq === selectedSeq) ?? scope.requests[0]
   const cats = request === null ? [] : aggregateCategories(request).filter(c => c.chars > 0)
@@ -52,7 +56,7 @@ export function TokenView({ scope, selectedSeq, request, filterCat, previousResp
     <nav className={css.reqList} aria-label={t('view.token')}>
       {scope.requests.map(r => <RequestCard key={r.seq} request={r} selected={selectedItem?.seq === r.seq} onSelect={onSelect} t={t} />)}
     </nav>
-    <div className={css.reqDetail}>
+    <div className={css.reqDetail} data-lens-detail="">
       {request === null || selectedItem === undefined ? <div className={css.stateNote} role="status">{t('state.loading')}</div> : <>
         {onReturn && <button type="button" className={css.jsonToggle} onClick={onReturn}>← {t('compaction.return')}</button>}
         <RequestFacts request={request} t={t} raw={raw} onToggleRaw={() => setRaw(v => !v)} />
@@ -87,7 +91,7 @@ export function TokenView({ scope, selectedSeq, request, filterCat, previousResp
                 if (filter === filterCat) return
                 if (filter !== null) onToggleFilter(filter)
                 else if (filterCat !== null) onToggleFilter(filterCat)
-              }} previousResponseNumber={previousResponseNumber} onOpenRequest={onOpenRequest} onLocateCall={onLocateCall} locateInMember={locateInMember} t={t} />
+              }} previousResponseNumber={previousResponseNumber} onOpenRequest={onOpenRequest} onLocateCall={onLocateCall} locateInMember={locateInMember} focus={focus} onFocusApplied={onFocusApplied} onFocusChange={onFocusChange} t={t} />
             </div>
           </section>
         </>}

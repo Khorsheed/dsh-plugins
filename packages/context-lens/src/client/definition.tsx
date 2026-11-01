@@ -48,6 +48,8 @@ export interface RequestInspectorTabParams {
     readonly request?: { readonly startedAt: number; readonly requestNumber?: number }
     /** The session this call is for; another session's lens ignores the navigation. */
     readonly session?: string
+    /** The reader's filter and open row on that request: applied to the same request here. */
+    readonly view?: import('./member-jump.ts').ReadingView
   }
 }
 

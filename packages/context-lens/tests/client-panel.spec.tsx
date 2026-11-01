@@ -424,6 +424,20 @@ describe('InspectorPanel · a room member\'s calls', () => {
     expect(screen.getByRole('tab', { name: /提取 JSON/ }).getAttribute('aria-selected')).toBe('false')
   })
 
+  it('the hand-over carries the reading (filter, open row); the way back reopens that row', async () => {
+    const open = vi.fn()
+    memberBench(open, 'room-view')
+    await toMemberRun()
+    fireEvent.click(screen.getByRole('button', { name: '在成员会话中查看 ↗' }))
+    expect(open).toHaveBeenCalledWith('443e7c65', expect.objectContaining({
+      view: { filterCat: null, focus: { layer: 'added', position: 0 } },
+    }))
+    cleanup()
+    memberBench(open, 'room-view')
+    // Back on the member run with the same row open (its full text shows).
+    await waitFor(() => expect(screen.getByText('Replaced 1 occurrence in 第1章.md')).toBeTruthy())
+  })
+
   it('no hand-over without a way to open sessions: no button', async () => {
     memberBench(undefined, 'room-b')
     await toMemberRun()
@@ -446,6 +460,15 @@ describe('InspectorPanel · a room member\'s calls', () => {
     } finally {
       port.remove()
     }
+  })
+})
+
+describe('InspectorPanel · a handed-over reading', () => {
+  it('a locateCall navigation reads the same request the same way: its filter on, its row open', async () => {
+    bench({ params: { locateCall: { callId: 'tool_none', hostTurn: 2, request: { startedAt: 3_100, requestNumber: 101 }, view: { filterCat: 'user', focus: { layer: 'history', position: 0 } } } }, revision: 1 })
+    await waitFor(() => expect(screen.getByText('历史用户输入全文')).toBeTruthy())
+    // The filter is on: the tool result row is filtered out.
+    expect(screen.queryByText('文件内容')).toBeNull()
   })
 })
 

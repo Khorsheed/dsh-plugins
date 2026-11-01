@@ -118,11 +118,23 @@ export interface SegmentBlocksProps {
   /** `onLocateCall` leaves for a room member's own session (the button says so). */
   readonly locateInMember?: boolean | undefined
   readonly previousResponseNumber: number | null
+  /** A row to open and bring into view once (a restored or handed-over reading place); `token` makes it one-shot. */
+  readonly focus?: (RowPlace & { readonly token: number }) | undefined
+  /** The focus was applied (or cannot be: the row is not in this request). */
+  readonly onFocusApplied?: ((token: number) => void) | undefined
+  /** The row the reader has open now (the most recently opened one still open), for keeping the place. */
+  readonly onFocusChange?: ((place: RowPlace | null) => void) | undefined
   readonly t: T
 }
 
+/** A message row's place in one request: its layer and its position in that layer. */
+export interface RowPlace {
+  readonly layer: 'system' | 'history' | 'added'
+  readonly position: number
+}
+
 /** Filtering changes rows only: group counts, bars and sizes keep their full-request meaning. */
-export function SegmentBlocks({ request, filterCat, onClearFilter, onRestoreFilter, onOpenRequest, onLocateCall, locateInMember, t }: SegmentBlocksProps) {
+export function SegmentBlocks({ request, filterCat, onClearFilter, onRestoreFilter, onOpenRequest, onLocateCall, locateInMember, focus, onFocusApplied, onFocusChange, t }: SegmentBlocksProps) {
   const { system, tools, history, added } = request.segments
   const [openLayers, setOpenLayers] = useState(new Set(['added']))
   const duplicates = duplicateStats([...system, ...history, ...added])
@@ -168,6 +180,39 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, onRestoreFilt
       return next
     })
   }, [filterCat, request])
+  /** The row opened last (the reading place reported up while it stays open). */
+  const lastOpened = useRef<SegmentItem | null>(null)
+  const placeOf = (item: SegmentItem): RowPlace | null => {
+    for (const layer of ['system', 'history', 'added'] as const) {
+      const position = request.segments[layer].indexOf(item)
+      if (position >= 0) return { layer, position }
+    }
+    return null
+  }
+  useEffect(() => {
+    if (onFocusChange === undefined) return
+    const open = lastOpened.current !== null && expanded.has(lastOpened.current) ? lastOpened.current : [...expanded].at(-1) ?? null
+    onFocusChange(open === null ? null : placeOf(open))
+    // placeOf reads the request this instance is keyed on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, onFocusChange])
+  // A kept or handed-over place: open its row once and bring it into view.
+  const appliedFocus = useRef<number | null>(null)
+  useEffect(() => {
+    if (focus === undefined || appliedFocus.current === focus.token) return
+    appliedFocus.current = focus.token
+    const item = request.segments[focus.layer][focus.position]
+    if (item !== undefined) {
+      if (!matches(item)) onClearFilter?.()
+      setOpenLayers(previous => new Set(previous).add(focus.layer))
+      setExpanded(previous => new Set(previous).add(item))
+      lastOpened.current = item
+      setTarget(item)
+    }
+    onFocusApplied?.(focus.token)
+    // matches/onClearFilter are render closures; the focus token gates the one-shot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus, request])
   const navigate = (from: SegmentItem, to: SegmentItem) => {
     if (!matches(to)) onClearFilter?.()
     setOpenLayers(previous => {
@@ -176,6 +221,7 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, onRestoreFilt
       return next
     })
     setExpanded(previous => { const next = new Set(previous); next.delete(from); next.add(to); return next })
+    lastOpened.current = to
     setTarget(to)
   }
   const reading: MessageReading = {
@@ -183,6 +229,7 @@ export function SegmentBlocks({ request, filterCat, onClearFilter, onRestoreFilt
     register: (item, element) => { if (element) refs.current.set(item, element); else refs.current.delete(item) },
     toggle: item => {
       if (expanded.has(item)) setTarget(item)
+      else lastOpened.current = item
       setExpanded(previous => { const next = new Set(previous); next.has(item) ? next.delete(item) : next.add(item); return next })
       setTrail([]); setDestination(undefined)
     },
