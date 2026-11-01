@@ -22,10 +22,11 @@
  *   character's page 此刻 (editable).
  *
  * Outside the canvas, the conversation cards of `novel_write` /
- * `novel_extract`: the shared shell (`@khorsheed/dsh-client-ui-agent-nav`)
- * with the novel's bodies (NovelCards.tsx); the door opens the answer's
- * destination through the canvas's `canvasNav.go`, read lazily — without it
- * the card has no door.
+ * `novel_extract`: the shared fixed shell (`@khorsheed/dsh-client-ui-agent-nav`).
+ * The novel draws nothing there: its tools hand the label, status and door's
+ * words with the write, and the panel's confirm / adopt hand what came of it
+ * (`updateCards`). The door opens the answer's destination through the
+ * canvas's `canvasNav.go`, read lazily — without it the card has no door.
  *
  * It mounts the `novel` Remote through the official `ctx.remote.$mount`. The
  * seats are declared by the canvas tab's registration (its children table),
@@ -52,10 +53,8 @@ import { en, NS, zh } from './locales.ts'
 import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel } from './NovelFaces.tsx'
 import { PlanView } from './PlanView.tsx'
 import { StoryLogPage, StoryView } from './StoryLogPage.tsx'
-import { NovelCardBody, novelCardCopy } from './NovelCards.tsx'
-import { createElement, type ReactNode } from 'react'
 import {
-  notifyWritten, registerDestinationCards, type Destination, type ToolCardModel,
+  notifyWritten, registerDestinationCards, updateCards, type Destination,
 } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 
 export { CardSection } from './CardSection.tsx'
@@ -65,10 +64,8 @@ export { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, storyUsage } from './
 export { PendingList } from './PendingList.tsx'
 export { PlanView } from './PlanView.tsx'
 export { StoryLogPage, StoryView } from './StoryLogPage.tsx'
-export { NovelCardBody } from './NovelCards.tsx'
 export { STORY_LOG_PAGE } from './contract.ts'
 export type { NovelCardOwnerProps, NovelFace, NovelNavigate, NovelOwnerProps, NovelPageOwnerProps, NovelRemote } from './contract.ts'
-export type { NovelCardFace } from './NovelCards.tsx'
 
 /**
  * Required services: slots, the remote channel, the locale. `remote.novel` is
@@ -151,10 +148,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return false
     }
   }
+  const t = ctx.locale.bind(NS)
   /**
-   * The Remote, with the gestures that change what a conversation card shows
-   * (a plan confirmed or edited, an outline adopted) announcing their write:
-   * the cards re-read on the write signal instead of polling.
+   * The Remote, with the gestures that change what a conversation card says
+   * (a plan confirmed, an outline adopted) handing the card its news
+   * (`updateCards`), and every such gesture announcing its write so the
+   * panels re-read.
    */
   const announced = new WeakMap<object, NovelRemote>()
   const remoteOf = (): NovelRemote | undefined => {
@@ -163,11 +162,31 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     let wrapped = announced.get(api)
     if (wrapped === undefined) {
       const written = (canvasId: string): void => { notifyWritten({ kind: 'canvas', params: { canvasId } }) }
+      const ok = (result: unknown): boolean => {
+        const outer = result as { ok?: boolean; value?: { ok?: boolean } } | undefined
+        return outer?.ok === true && outer.value?.ok !== false
+      }
       wrapped = {
         ...api,
-        confirmPlan: async (sessionId, request) => { const result = await api.confirmPlan(sessionId, request); written(request.canvasId); return result },
+        confirmPlan: async (sessionId, request) => {
+          const result = await api.confirmPlan(sessionId, request)
+          if (ok(result)) {
+            updateCards('canvas', { canvasId: request.canvasId, face: 'manuscripts', item: String(request.n), focus: 'plan' },
+              { status: t('card.confirmed'), awaiting: false, door: `${t('card.view')} →` })
+          }
+          written(request.canvasId)
+          return result
+        },
         editPlan: async (sessionId, request) => { const result = await api.editPlan(sessionId, request); written(request.canvasId); return result },
-        decideOutline: async (sessionId, request) => { const result = await api.decideOutline(sessionId, request); written(request.canvasId); return result },
+        decideOutline: async (sessionId, request) => {
+          const result = await api.decideOutline(sessionId, request)
+          if (ok(result)) {
+            updateCards('canvas', { canvasId: request.canvasId, face: 'lead' },
+              { status: t('card.outlineSettled'), awaiting: false, door: `${t('card.outlineView')} →` })
+          }
+          written(request.canvasId)
+          return result
+        },
       }
       announced.set(api, wrapped)
     }
@@ -239,17 +258,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
 
   // The conversation cards (proposal 2026-10-30-agent-sidebar-navigation):
-  // the one shell under novel_write / novel_extract and in the Turn tail (the
-  // Turn folds its tool rows, card and all, exactly when the reply says
-  // 「点一下确认计划」). The novel fills the card's body by its destination
-  // (NovelCards.tsx); the door is the shell's.
-  const t = ctx.locale.bind(NS)
+  // the one fixed shell under novel_write / novel_extract and in the Turn tail
+  // (the Turn folds its tool rows, card and all, exactly when the reply says
+  // 「点一下确认计划」). The novel only hands data; the door is the shell's.
   const go = (): ((destination: Destination) => void) | undefined => {
     const nav = ctx.get('canvasNav') as { go?: (params: Record<string, unknown>) => void } | undefined
     return nav?.go === undefined ? undefined : destination => { nav.go!(destination.params) }
   }
-  const Body = (props: { readonly model: ToolCardModel; readonly destination: Destination }): ReactNode =>
-    createElement(NovelCardBody, { ...props, ...face, go, t })
   registerDestinationCards(
     (body, label) => { ctx.effect(body, label) },
     seats,
@@ -258,7 +273,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       owner: '@khorsheed/dsh-canvas-novel',
       tools: ['novel_write', 'novel_extract'],
       locale: NS,
-      face: () => ({ copy: () => novelCardCopy(t), go, Body }),
+      face: () => ({ copy: () => ({ kind: t('card.label'), running: t('card.running'), failed: t('card.failed'), open: t('card.open'), turnTitle: t('card.turnTitle') }), go }),
     },
   )
 

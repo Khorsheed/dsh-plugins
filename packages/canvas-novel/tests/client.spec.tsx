@@ -23,8 +23,6 @@ import { CardScopes, ChaptersBadge, DeleteNote, FaceLabel, storyUsage } from '..
 import { chapterHeading } from '../src/client/PendingList.tsx'
 import { PlanBlock } from '../src/client/PlanBlock.tsx'
 import { StoryLogPage } from '../src/client/StoryLogPage.tsx'
-import { NovelCardBody } from '../src/client/NovelCards.tsx'
-import { notifyWritten, toolCardModel, type Destination } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { NOVEL_GENRE_ID, type ChapterPlan, type ChapterRecord, type EffectiveChapterPhase, type PendingView, type StoryLogResult } from '../src/types.ts'
 
 afterEach(cleanup)
@@ -414,57 +412,6 @@ describe('PlanBlock on a written chapter re-planned', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['plan.saveConfirm'] }))
     expect(await screen.findByText('对不上')).toBeTruthy()
     expect(screen.getByRole('textbox')).toBeTruthy()
-  })
-})
-
-describe('the novel\'s cards in the shared shell', () => {
-  const dest = (params: Record<string, unknown>, label = '第 1 章《门》'): Destination => ({ id: 'd', kind: 'canvas', params: { canvasId: CANVAS_ID, ...params }, label })
-  const model = (destination: Destination) => toolCardModel({ kind: 'tool-result', content: [{ type: 'text', text: `已登记\n⟦dsh-nav⟧${JSON.stringify(destination)}` }] })
-  const card = (destination: Destination, remote: NovelRemote | undefined, go: ((d: Destination) => void) | undefined) =>
-    <NovelCardBody model={model(destination)} destination={destination} remote={() => remote} go={() => go} t={t} />
-
-  it('a chapter on its plan: 梗概 and shape, 等你确认, and the door opens that chapter on its plan', async () => {
-    const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' }] })
-    const go = vi.fn()
-    const destination = dest({ face: 'manuscripts', item: '1', focus: 'plan' })
-    render(card(destination, remote, go))
-    expect(await screen.findByText(PLAN.summary)).toBeTruthy()
-    expect(screen.getByText(zh['card.awaiting'])).toBeTruthy()
-    expect(screen.getByText('推进 1')).toBeTruthy()
-    expect(go).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: `${zh['card.confirm']} →` }))
-    expect(go).toHaveBeenCalledWith(destination)
-  })
-
-  it('re-reads when the canvas is written (a confirm on the page), never on a timer', async () => {
-    const remote = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' }] })
-    render(card(dest({ face: 'manuscripts', item: '1', focus: 'plan' }), remote, vi.fn()))
-    await screen.findByText(PLAN.summary)
-    const reads = (remote.chapter as ReturnType<typeof vi.fn>).mock.calls.length
-    notifyWritten({ kind: 'canvas', params: { canvasId: CANVAS_ID } })
-    await waitFor(() => { expect((remote.chapter as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(reads) })
-  })
-
-  it('an outline proposal: 等你采用, and the door opens the 规划 face', async () => {
-    const outline = { version: 1, sheet: {}, volumes: [], sketches: [], revision: 1, history: [], proposal: { rationale: '先把主线立住', at: NOW } }
-    const remote = { outline: vi.fn(() => ok({ ok: true, outline, chapters: [], cores: [] })) } as unknown as NovelRemote
-    const go = vi.fn()
-    const destination = dest({ face: 'lead' }, '大纲提议')
-    render(card(destination, remote, go))
-    expect(await screen.findByText('先把主线立住')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: `${zh['card.outlineAdopt']} →` }))
-    expect(go).toHaveBeenCalledWith(destination)
-  })
-
-  it('without the canvas there is no door; another place is the compact line', () => {
-    render(card(dest({ face: 'manuscripts', item: '1', focus: 'plan' }), undefined, undefined))
-    expect(screen.getByText('第 1 章《门》')).toBeTruthy()
-    expect(screen.queryByRole('button')).toBeNull()
-    cleanup()
-    const go = vi.fn()
-    render(card(dest({ card: 'c1' }, '林川'), undefined, go))
-    fireEvent.click(screen.getByText(zh['card.open']))
-    expect(go).toHaveBeenCalled()
   })
 })
 

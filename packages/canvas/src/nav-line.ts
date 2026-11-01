@@ -27,13 +27,21 @@ export interface CanvasDestinationParams {
   readonly heading?: string
 }
 
+/** What the card says besides the label (the shell draws it; see the agent-nav `DestinationCardData`). */
+export interface CanvasCardData {
+  readonly status?: string
+  readonly awaiting?: boolean
+  readonly door?: string
+}
+
 /**
  * The answer with its destination line.
  * @param answer - the tool's answer.
  * @param id - stable per landing (`canvas:<canvas>:<thing>:<version>`).
  * @param params - the canvas address.
  * @param label - what the person reads on the card.
+ * @param card - the card's status and door, when the write asks the person for something.
  */
-export function withCanvasDestination(answer: string, id: string, params: CanvasDestinationParams, label: string): string {
-  return `${answer}\n${NAV_MARK}${JSON.stringify({ id, kind: 'canvas', params, label })}`
+export function withCanvasDestination(answer: string, id: string, params: CanvasDestinationParams, label: string, card?: CanvasCardData): string {
+  return `${answer}\n${NAV_MARK}${JSON.stringify({ id, kind: 'canvas', params, label, ...(card === undefined ? {} : { card }) })}`
 }

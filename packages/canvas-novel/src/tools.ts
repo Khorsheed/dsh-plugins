@@ -346,7 +346,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           + (overshoots.length === 0 ? '' : `\n提醒（只提醒，不拦）：${overshoots.join('；')}。在回复里跟用户说一句，按他的意思改或保留。`)
           + `\n完整计划在画布「章节」页签的第 ${chapter.n} 章（会话里有卡片直达）。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。`
           + `用户在对话里同意后，先 novel_write(what=confirm, chapter=${chapter.n}) 再开写；他也可能直接在章节页点了确认。`,
-        workId, chapter.n, chapter.title, 'plan', String(Date.now()))
+        workId, chapter.n, chapter.title, 'plan', String(Date.now()), { status: '等你确认', awaiting: true, door: '查看并确认计划 →' })
       }
       if (args.what === 'organize') {
         if (args.phase === 'apply') {
@@ -382,7 +382,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           if (outcome.error === 'invalid-name') return `失败：第 ${args.chapter} 章还没有计划，先 novel_write(what=chapter, plan=…) 登记。`
           return `失败：${outcome.error ?? 'io'}`
         }
-        return `已确认第 ${args.chapter} 章的计划（按用户在对话里的同意），可以写正文了：先 novel_read(brief, for=write, chapter=${args.chapter})。`
+        return withNovelDestination(`已确认第 ${args.chapter} 章的计划（按用户在对话里的同意），可以写正文了：先 novel_read(brief, for=write, chapter=${args.chapter})。`,
+          `canvas:${workId}:chapter:${args.chapter}:confirm:${Date.now()}`,
+          { canvasId: workId, face: 'manuscripts', item: String(args.chapter), focus: 'plan' }, `第 ${args.chapter} 章计划`,
+          { status: '已确认', awaiting: false, door: '查看计划 →' })
       }
       if (args.what === 'outline') {
         const outcome = await store.proposeOutline({
@@ -405,7 +408,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         }
         return withNovelDestination(`已提交大纲提议（画布 ${workId}），在「规划」页等用户采用；采用前不生效，再提会合并进这一版。`
           + '回复里用两三句说改了什么、为什么，不要贴整份大纲。',
-        `canvas:${workId}:outline:${Date.now()}`, { canvasId: workId, face: 'lead' }, '大纲提议')
+        `canvas:${workId}:outline:${Date.now()}`, { canvasId: workId, face: 'lead' }, '大纲提议', { status: '等你采用', awaiting: true, door: '去总览采用 →' })
       }
       if (args.what === 'review') {
         if (args.id === undefined || args.action === undefined) return '失败：what=review 要给 id（待审项）和 action（accept|discard）。'

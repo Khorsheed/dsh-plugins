@@ -34,8 +34,15 @@ interface CanvasPlace {
  * @param params - the canvas address.
  * @param label - what the person reads on the card.
  */
-export function withNovelDestination(answer: string, id: string, params: CanvasPlace, label: string): string {
-  return `${answer}\n${NAV_MARK}${JSON.stringify({ id, kind: 'canvas', params, label })}`
+export function withNovelDestination(answer: string, id: string, params: CanvasPlace, label: string, card?: NovelCardData): string {
+  return `${answer}\n${NAV_MARK}${JSON.stringify({ id, kind: 'canvas', params, label, ...(card === undefined ? {} : { card }) })}`
+}
+
+/** What the card says besides the label (the shell draws it; the agent-nav `DestinationCardData`). */
+export interface NovelCardData {
+  readonly status?: string
+  readonly awaiting?: boolean
+  readonly door?: string
 }
 
 /**
@@ -46,10 +53,11 @@ export function withNovelDestination(answer: string, id: string, params: CanvasP
  * @param title - its title.
  * @param focus - what to open it on.
  * @param version - what makes this landing distinct (an updatedAt, a length).
+ * @param card - the card's status and door, when the write asks the person for something.
  */
-export function withChapterDestination(answer: string, canvasId: string, n: number, title: string, focus: 'plan' | 'body', version: string): string {
+export function withChapterDestination(answer: string, canvasId: string, n: number, title: string, focus: 'plan' | 'body', version: string, card?: NovelCardData): string {
   return withNovelDestination(answer, `canvas:${canvasId}:chapter:${n}:${focus}:${version}`,
-    { canvasId, face: 'manuscripts', item: String(n), focus }, `第 ${n} 章《${title}》`)
+    { canvasId, face: 'manuscripts', item: String(n), focus }, `第 ${n} 章《${title}》${focus === 'plan' ? '计划' : '正文'}`, card)
 }
 
 /**

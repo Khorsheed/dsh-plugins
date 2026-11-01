@@ -7,7 +7,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { destinationLine } from '../src/destination.ts'
-import { DestinationToolRow, DestinationTurnTail, destinationTurnDefinition, registerDestinationCards, toolCardModel, turnCardItems, type CardCopy } from '../src/client/card.tsx'
+import { DestinationToolRow, DestinationTurnTail, destinationTurnDefinition, registerDestinationCards, SummaryCard, toolCardModel, turnCardItems, type CardCopy } from '../src/client/card.tsx'
+import { act } from '@testing-library/react'
+import { navRegistry, updateCards } from '../src/client/follow.ts'
 
 afterEach(() => { cleanup() })
 
@@ -26,15 +28,12 @@ describe('toolCardModel', () => {
 })
 
 describe('DestinationToolRow', () => {
-  it('is one line whose door opens the destination; a body replaces it', () => {
+  it('is one line whose door opens the destination', () => {
     const go = vi.fn()
     render(<DestinationToolRow block={answer('讲义已写好')} copy={() => copy} go={() => go} />)
     expect(screen.getByText('第 2 站讲义')).toBeTruthy()
     fireEvent.click(screen.getByText('查看 →'))
     expect(go).toHaveBeenCalledWith(dest)
-    cleanup()
-    render(<DestinationToolRow block={answer('x')} copy={() => copy} go={() => go} Body={({ destination }) => <b>{`正文 ${destination.label}`}</b>} />)
-    expect(screen.getByText('正文 第 2 站讲义')).toBeTruthy()
     cleanup()
     render(<DestinationToolRow block={{}} phase="preparing" copy={() => copy} go={() => go} />)
     expect(screen.getByText('进行中…')).toBeTruthy()
@@ -78,5 +77,36 @@ describe('registerDestinationCards', () => {
     seen.length = 0
     registerDestinationCards(body => { body() }, slots, conversation, { owner: 'o', tools: ['a'], face, turnTail: false })
     expect(seen).toEqual(['tool.call.toolview'])
+  })
+})
+
+describe('the card data a plugin hands', () => {
+  const plan = { id: 'p3', kind: 'canvas', params: { canvasId: 'c1', face: 'manuscripts', item: '3', focus: 'plan' }, label: '第 3 章《雨夜》计划',
+    card: { status: '等你确认', awaiting: true, door: '查看并确认计划 →' } }
+  const block = { kind: 'tool-result', content: [{ type: 'text', text: `已登记\n${destinationLine(plan)}` }] }
+
+  it('a replayed card shows only its label and the plain door; a live one shows the status, and updateCards moves it', () => {
+    const registry = navRegistry()
+    registry.live.clear(); registry.patches.clear()
+    render(<DestinationToolRow block={block} copy={() => copy} go={() => vi.fn()} />)
+    expect(screen.queryByText('等你确认')).toBeNull()
+    expect(screen.getByText('查看 →')).toBeTruthy()
+    // What the follower does when the write arrives live (then any no-op update re-renders).
+    act(() => { registry.live.set(plan.id, plan as never); updateCards('canvas', {}, {}) })
+    expect(screen.getByText('等你确认')).toBeTruthy()
+    expect(screen.getByText('查看并确认计划 →')).toBeTruthy()
+    act(() => { expect(updateCards('canvas', { canvasId: 'c1', item: '3', focus: 'plan' }, { status: '已确认', awaiting: false, door: '查看计划 →' })).toBe(1) })
+    expect(screen.getByText('已确认')).toBeTruthy()
+    expect(screen.getByText('查看计划 →')).toBeTruthy()
+    expect(updateCards('canvas', { item: '4' }, { status: 'x' })).toBe(0)
+  })
+
+  it('a summary card is one line per change, each with its door', () => {
+    const go = vi.fn()
+    render(<SummaryCard copy={copy} go={go} summary={{ title: '本轮改动 · 《灯塔》', rows: [{ label: '元素「九尾狐」外观', destination: dest }, { label: '测试通过' }] }} />)
+    expect(screen.getByText('本轮改动 · 《灯塔》')).toBeTruthy()
+    expect(screen.getAllByText('查看 →')).toHaveLength(1)
+    fireEvent.click(screen.getByText('查看 →'))
+    expect(go).toHaveBeenCalledWith(dest)
   })
 })

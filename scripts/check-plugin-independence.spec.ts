@@ -5,6 +5,8 @@ import { dirname, join } from 'node:path'
 import {
   checkInjectName,
   findBareSkillProviders,
+  findCardTools,
+  findToolNames,
   findCrossImports,
   findInjects,
   isAllowedEdge,
@@ -1552,6 +1554,33 @@ describe('cross-bundle row parity', () => {
       expect(scanTree(root).findings.filter((f) => f.kind === 'bundle row parity')).toEqual([])
     } finally {
       cleanup()
+    }
+  })
+})
+
+describe('conversation cards (docs/agent-nav.md)', () => {
+  it('reads the tools a package defines and the tools it seats cards for', () => {
+    expect(findToolNames(`const a = defineTool({\n  name: 'game_open',\n})\n// defineTool({ name: 'commented_out' })\nconst b = defineTool({ name: 'game_publish' })`))
+      .toEqual(['game_open', 'game_publish'])
+    expect(findCardTools(`registerDestinationCards(fx, slots, conv, {\n  owner: 'x',\n  tools: ['game_open', 'game_publish'],\n  face,\n})`))
+      .toEqual(['game_open', 'game_publish'])
+  })
+
+  it('flags a card for a tool the package does not define, and destination lines without cards', () => {
+    const root = mkdtempSync(join(tmpdir(), 'cards-'))
+    try {
+      const pkgDir = join(root, 'packages', 'demo')
+      mkdirSync(join(pkgDir, 'src', 'client'), { recursive: true })
+      writeFileSync(join(pkgDir, 'package.json'), JSON.stringify({ name: '@khorsheed/dsh-demo', dsh: { composition: { component: 'source-plane-library' } } }))
+      writeFileSync(join(pkgDir, 'src', 'tools.ts'), "export const t = defineTool({ name: 'demo_write' })\n")
+      writeFileSync(join(pkgDir, 'src', 'nav-line.ts'), "export const NAV_MARK = '⟦dsh-nav⟧'\n")
+      const scan = () => scanPackage({ dir: 'demo', path: pkgDir, json: JSON.parse('{"name":"@khorsheed/dsh-demo","dsh":{"composition":{"component":"source-plane-library"}}}') } as never, [])
+        .filter(finding => finding.kind === 'conversation cards')
+      expect(scan().map(f => f.detail)).toEqual(['writes destination lines but seats no conversation cards (registerDestinationCards)'])
+      writeFileSync(join(pkgDir, 'src', 'client', 'index.ts'), "registerDestinationCards(fx, slots, conv, { owner: 'd', tools: ['demo_write', 'demo_gone'], face })\n")
+      expect(scan().map(f => f.detail)).toEqual(['seats a card for "demo_gone", which this package defines no tool for'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

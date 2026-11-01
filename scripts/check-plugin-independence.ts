@@ -48,7 +48,7 @@
  */
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export interface Finding {
@@ -970,7 +970,46 @@ export function scanPackage(pkg: Pkg, allNames: ReadonlyArray<string>): Finding[
     }
   }
 
+  // N. Conversation cards (docs/agent-nav.md): a package seats cards only for
+  // tools it defines, and a package whose tools write destination lines seats
+  // cards for them — a renamed or removed tool cannot leave a dead card row,
+  // and a new write tool cannot ship without its card.
+  const sourceFiles = listSources(path)
+  const sources = sourceFiles.map(file => ({ file, text: readFileSync(file, 'utf8') }))
+  const defined = new Set(sources.flatMap(({ text }) => findToolNames(text)))
+  const seated = sources.flatMap(({ file, text }) => findCardTools(text).map(tool => ({ file, tool })))
+  for (const { file, tool } of seated) {
+    if (!defined.has(tool)) add(relative(path, file), 'conversation cards', `seats a card for "${tool}", which this package defines no tool for`)
+  }
+  const writesDestinations = sources.some(({ file, text }) => file.endsWith(join('src', 'nav-line.ts')) && text.includes('⟦dsh-nav⟧'))
+  if (writesDestinations && seated.length === 0) {
+    add('src/nav-line.ts', 'conversation cards', 'writes destination lines but seats no conversation cards (registerDestinationCards)')
+  }
+
   return findings
+}
+
+/**
+ * The tool names a source defines (`name: 'x_y'` inside a `defineTool({`).
+ * @param source - one source file.
+ */
+export function findToolNames(source: string): string[] {
+  const out: string[] = []
+  for (const match of stripCodeComments(source).matchAll(/defineTool\(\{\s*name:\s*'([a-z][a-z0-9_]*)'/g)) out.push(match[1]!)
+  return out
+}
+
+/**
+ * The tool names a source seats conversation cards for (`registerDestinationCards(…, { …, tools: ['a', 'b'] … })`).
+ * @param source - one source file.
+ */
+export function findCardTools(source: string): string[] {
+  const text = stripCodeComments(source)
+  const out: string[] = []
+  for (const call of text.matchAll(/registerDestinationCards\([\s\S]*?tools:\s*\[([^\]]*)\]/g)) {
+    for (const name of call[1]!.matchAll(/'([a-z][a-z0-9_]*)'/g)) out.push(name[1]!)
+  }
+  return out
 }
 
 /**

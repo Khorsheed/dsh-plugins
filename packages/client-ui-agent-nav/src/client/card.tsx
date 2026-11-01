@@ -1,10 +1,12 @@
 /**
  * The one conversation card (proposal 2026-10-30-agent-sidebar-navigation, U1):
- * every mode's write shows the same shell — where it sits (under its tool call,
- * and again in the Turn tail once the turn folds its tool calls away), its
- * frame, and its door, which always opens the answer's destination. A mode
- * only says what the card shows inside (`body`): the novel's plan and its
- * 等你确认, the game's changes. A tool with no body shows one compact line.
+ * every mode's write shows the same fixed shell — where it sits (under its tool
+ * call, and again in the Turn tail once the turn folds its tool calls away), its
+ * look, and its door, which always opens the answer's destination. A plugin
+ * only hands data: the label, and optionally a status and the door's words
+ * with the write (the destination line's `card`), later `updateCards` when the
+ * person changes that state in the panel. It draws nothing; the richness is in
+ * the panel the door opens. A plugin that stops calling simply has no card.
  *
  * Registration is structural, like every seat these plugins fill:
  * `tool.call.toolview` (keyed by tool name) and `conversation.chat.turnTail`
@@ -12,8 +14,9 @@
  *
  * @module @khorsheed/dsh-client-ui-agent-nav/client
  */
-import type { ReactNode } from 'react'
-import { readDestinations, stripDestinations, type ContentLike, type Destination } from '../destination.ts'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { readDestinations, stripDestinations, type ContentLike, type Destination, type DestinationCardData } from '../destination.ts'
+import { cardStateOf, cardsVersion, subscribeCards, subscribeWrites } from './follow.ts'
 import css from './card.module.css'
 
 /* ------------------------------------------------------------- the model */
@@ -58,91 +61,97 @@ export interface CardCopy {
   readonly failed: string
   /** The door (查看 →). */
   readonly open: string
-}
-
-/** What a mode adds inside its card. */
-export interface CardBody {
-  /** The card's title line (default: the destination's label). */
-  readonly title?: ReactNode
-  /** A status pill at the head's end (等你确认 / 已确认). */
-  readonly status?: { readonly text: string; readonly settled?: boolean } | undefined
-  /** Whatever the mode shows between the head and the door. */
-  readonly children?: ReactNode
-  /** The card asks the person for something: the frame and the door stand out. */
-  readonly awaiting?: boolean
-  /** The door's words when they differ (查看并确认计划 →). */
-  readonly open?: string
+  /** The Turn-tail summary's title when the Turn wrote several places (本轮写入). */
+  readonly turnTitle?: string
 }
 
 /** The shell's props. */
 export interface DestinationCardProps {
   readonly copy: CardCopy
   readonly model: ToolCardModel
-  /** The mode's body; undefined: the compact line. */
-  readonly body?: CardBody | undefined
   /** Open the destination (the owner's `go`); undefined: no door (the panel is not composed). */
   readonly go?: ((destination: Destination) => void) | undefined
 }
 
-/** One card: the compact line, or the card with the mode's body. */
-export function DestinationCard({ copy, model, body, go }: DestinationCardProps): ReactNode {
+/** The card data of one destination, live: re-renders when the follower or `updateCards` moves it. */
+function useCardState(destination: Destination | undefined): { live: boolean; card: DestinationCardData } {
+  useSyncExternalStore(subscribeCards, cardsVersion, cardsVersion)
+  return destination === undefined ? { live: false, card: {} } : cardStateOf(destination)
+}
+
+/**
+ * The one card: the mode, the label, a status while the write is live on this
+ * page (a replayed card has none — what holds now is in the panel), and the
+ * door. The plugin decides none of the look; it only handed the data.
+ */
+export function DestinationCard({ copy, model, go }: DestinationCardProps): ReactNode {
   const { destination } = model
-  const door = destination !== undefined && go !== undefined
-    ? (
-        <button type="button" className={css.door} data-primary={body?.awaiting === true || undefined} onClick={() => { go(destination) }}>
-          {body?.open ?? copy.open}
-        </button>
-      )
-    : null
-  if (model.state !== 'done' || body === undefined) {
-    const said = model.state === 'running' ? copy.running
-      : model.state === 'failed' ? (model.text.split('\n')[0]?.replace(/^失败：/, '') || copy.failed)
-        : (destination?.label || model.text.split('\n')[0] || '')
-    return (
-      <div className={css.row} data-nav-card={destination?.kind} data-state={model.state}>
-        <span className={css.kind}>{copy.kind}</span>
-        <span className={model.state === 'failed' ? css.warn : model.state === 'running' ? css.note : css.label} title={model.text || said}>{said}</span>
-        {model.state === 'done' && door}
-      </div>
-    )
-  }
+  const { live, card } = useCardState(destination)
+  const status = live ? card.status : undefined
+  const awaiting = live && card.awaiting === true
+  const said = model.state === 'running' ? copy.running
+    : model.state === 'failed' ? (model.text.split('\n')[0]?.replace(/^失败：/, '') || copy.failed)
+      : (destination?.label || model.text.split('\n')[0] || '')
   return (
-    <div className={css.card} data-nav-card={destination?.kind} data-tone={body.awaiting === true ? 'awaiting' : 'plain'}>
+    <div className={css.row} data-nav-card={destination?.kind} data-state={model.state} data-awaiting={awaiting || undefined}>
+      <span className={css.kind}>{copy.kind}</span>
+      <span className={model.state === 'failed' ? css.warn : model.state === 'running' ? css.note : css.label} title={model.text || said}>{said}</span>
+      {status !== undefined && <span className={css.status} data-settled={card.awaiting !== true || undefined}>{status}</span>}
+      {model.state === 'done' && destination !== undefined && go !== undefined && (
+        <button type="button" className={css.door} data-primary={awaiting || undefined} onClick={() => { go(destination) }}>
+          {(live ? card.door : undefined) ?? copy.open}
+        </button>
+      )}
+    </div>
+  )
+}
+
+/** One line of a summary card: what changed, and where it is. */
+export interface SummaryRow {
+  readonly label: string
+  readonly destination?: Destination | undefined
+}
+
+/** A mode's summary of one Turn (the game's 本轮改动): a title and its lines. */
+export interface TurnSummary {
+  readonly title: string
+  readonly rows: readonly SummaryRow[]
+}
+
+/** The summary card: the same shell, one line per change, each with its door. */
+export function SummaryCard({ copy, summary, go }: { readonly copy: CardCopy; readonly summary: TurnSummary; readonly go?: ((destination: Destination) => void) | undefined }): ReactNode {
+  return (
+    <div className={css.multi} data-nav-card="summary">
       <div className={css.head}>
         <span className={css.kind}>{copy.kind}</span>
-        {body.status !== undefined && <span className={css.status} data-settled={body.status.settled === true || undefined}>{body.status.text}</span>}
+        <span className={css.label}>{summary.title}</span>
       </div>
-      <div className={css.title}>{body.title ?? destination?.label}</div>
-      {body.children}
-      {door}
+      {summary.rows.map((row, index) => (
+        <div key={`${index}:${row.label}`} className={css.line}>
+          <span className={css.text} title={row.label}>{row.label}</span>
+          {row.destination !== undefined && go !== undefined && (
+            <button type="button" className={css.door} onClick={() => { go(row.destination!) }}>{copy.open}</button>
+          )}
+        </div>
+      ))}
     </div>
   )
 }
 
 /* ------------------------------------------------------- the tool row seat */
 
-/** What an owner hands the shell: its copy, its `go`, and optionally its body. */
+/** What an owner hands the shell: its copy and its `go`. Nothing it draws. */
 export interface CardFace {
   readonly copy: () => CardCopy
   readonly go: () => ((destination: Destination) => void) | undefined
-  /**
-   * The mode's body for one card — a hook-free function of the model is not
-   * required: it renders as a component, so it may read live state. Return
-   * undefined for the compact line.
-   */
-  readonly Body?: ((props: { readonly model: ToolCardModel; readonly destination: Destination }) => ReactNode) | undefined
 }
 
 /** The props the keyed `tool.call.toolview` seat composes. */
 export type DestinationToolRowProps = CardFace & { readonly block?: ToolBlockLike | null; readonly phase?: string }
 
 /** The row that replaces a write tool's generic row. */
-export function DestinationToolRow({ block, phase, copy, go, Body }: DestinationToolRowProps): ReactNode {
-  const model = toolCardModel(block, phase)
-  if (Body !== undefined && model.state === 'done' && model.destination !== undefined) {
-    return <Body model={model} destination={model.destination} />
-  }
-  return <DestinationCard copy={copy()} model={model} go={go()} />
+export function DestinationToolRow({ block, phase, copy, go }: DestinationToolRowProps): ReactNode {
+  return <DestinationCard copy={copy()} model={toolCardModel(block, phase)} go={go()} />
 }
 
 /* ------------------------------------------------------- the Turn tail */
@@ -246,17 +255,18 @@ export function turnCardItems(owner: TurnOwnerLike | null | undefined, key: stri
 /** The props of an owner's Turn-tail entry: ui-chat's owner props plus the face and the key. */
 export type DestinationTurnTailProps = CardFace & TurnOwnerLike & { readonly turnKey: string }
 
-/** The Turn tail: every place the Turn wrote, as its cards, beneath the closing prose. Never opens anything itself. */
+/** The Turn tail: every place the Turn wrote — one card, or one summary card when it wrote several. Never opens anything itself. */
 export function DestinationTurnTail(props: DestinationTurnTailProps): ReactNode {
   const items = turnCardItems(props, props.turnKey)
   if (items.length === 0) return null
-  const { Body } = props
+  const copy = props.copy()
+  if (items.length === 1) return <DestinationCard copy={copy} model={items[0]!.model} go={props.go()} />
   return (
-    <div className={css.tail}>
-      {items.map(item => Body !== undefined && item.model.destination !== undefined
-        ? <Body key={item.key} model={item.model} destination={item.model.destination} />
-        : <DestinationCard key={item.key} copy={props.copy()} model={item.model} go={props.go()} />)}
-    </div>
+    <SummaryCard
+      copy={copy}
+      go={props.go()}
+      summary={{ title: copy.turnTitle ?? copy.kind, rows: items.map(item => ({ label: item.model.destination?.label ?? item.model.text, destination: item.model.destination })) }}
+    />
   )
 }
 
@@ -322,4 +332,104 @@ export function registerDestinationCards(
     }, DestinationTurnTail)
     return () => { disposeEntry(); disposeDefinition() }
   }), `${owner}: turn-tail cards`)
+}
+
+/* ------------------------------------------------------- a mode's Turn summary */
+
+interface TurnEndState { readonly turn: number; readonly ended: boolean }
+
+/** A Conversation Definition that only records each Turn's number and whether it ended. */
+export function turnEndDefinition(key: string) {
+  const turnOf = (event: EventLike): number | null => {
+    const turn = record(event.data)?.['turn']
+    return typeof turn === 'number' ? turn : null
+  }
+  return {
+    kind: key,
+    match(event: EventLike): { id: string; role: 'start' | 'update' } | null {
+      const turn = turnOf(event)
+      if (turn === null) return null
+      if (event.type === 'turn/start') return { id: String(turn), role: 'start' }
+      if (event.type === 'turn/end') return { id: String(turn), role: 'update' }
+      return null
+    },
+    start(_context: unknown, match: { readonly event: EventLike }): TurnEndState {
+      return { turn: turnOf(match.event) ?? -1, ended: false }
+    },
+    update(context: { readonly state: TurnEndState }, match: { readonly event: EventLike }): TurnEndState {
+      return match.event.type === 'turn/end' ? { ...context.state, ended: true } : context.state
+    },
+    buildLocationData(
+      context: { readonly state: TurnEndState | undefined },
+      scope: string,
+      previous: { kind: 'turn'; turn: number; key: string; value: TurnEndState } | null | undefined,
+    ) {
+      if (scope !== 'turn' || context.state === undefined) return null
+      if (previous?.kind === 'turn' && previous.turn === context.state.turn && previous.value.ended === context.state.ended) return previous
+      return { kind: 'turn' as const, turn: context.state.turn, key, value: context.state }
+    },
+  }
+}
+
+/** How a mode hands one Turn's summary: data only, read when the Turn ended (null: nothing to show). */
+export type TurnSummaryLoader = (turn: { readonly sessionId: string; readonly turn: number }) => Promise<TurnSummary | null>
+
+/** The props of a summary Turn-tail entry. */
+export type TurnSummaryTailProps = CardFace & TurnOwnerLike & {
+  readonly sessionId?: string
+  readonly turnKey: string
+  readonly kind: string
+  readonly load: TurnSummaryLoader
+}
+
+/** The Turn tail of a mode that summarizes its own Turns: the summary card, read when the Turn ends and again on a write. */
+export function TurnSummaryTail(props: TurnSummaryTailProps): ReactNode {
+  const state = record(props.turn.data.get(props.turnKey)) as TurnEndState | null
+  const sessionId = props.sessionId
+  const turn = state?.turn
+  const ended = state?.ended === true
+  const { load, kind } = props
+  const [summary, setSummary] = useState<TurnSummary | null>(null)
+  useEffect(() => {
+    if (!ended || sessionId === undefined || turn === undefined) return
+    let alive = true
+    const read = (): void => { void load({ sessionId, turn }).then(value => { if (alive) setSummary(value) }, () => {}) }
+    read()
+    // The report can settle a moment after the Turn's end event.
+    const again = setTimeout(read, 1500)
+    const stop = subscribeWrites(kind, read)
+    return () => { alive = false; clearTimeout(again); stop() }
+  }, [ended, sessionId, turn, load, kind])
+  if (summary === null || summary.rows.length === 0) return null
+  return <SummaryCard copy={props.copy()} summary={summary} go={props.go()} />
+}
+
+/**
+ * Seat a mode's own Turn summary in the Turn tail: the shell draws it, the mode
+ * only loads the data.
+ * @param effect - the context's `ctx.effect`.
+ * @param slots - the slot registry.
+ * @param conversation - reads `uiConversation` once the tail seat exists.
+ * @param options - the owner, its tab kind, locale, face and loader.
+ */
+export function registerTurnSummary(
+  effect: (body: () => () => void, label: string) => void,
+  slots: SlotsLike,
+  conversation: () => ConversationLike | undefined,
+  options: { readonly owner: string; readonly kind: string; readonly locale?: string; readonly face: () => CardFace; readonly load: TurnSummaryLoader; readonly order?: number },
+): void {
+  const turnKey = `${options.owner}/summary`
+  effect(() => slots.inject('conversation.chat.turnTail', () => {
+    const events = conversation()?.events
+    if (events?.register === undefined) return () => undefined
+    const disposeDefinition = events.register.call(events, turnEndDefinition(turnKey))
+    const disposeEntry = slots.register({
+      name: 'conversation.chat.turnTail',
+      id: turnKey,
+      order: options.order ?? 40,
+      ...(options.locale === undefined ? {} : { locale: options.locale }),
+      inject: () => ({ ...options.face(), turnKey, kind: options.kind, load: options.load }),
+    }, TurnSummaryTail)
+    return () => { disposeEntry(); disposeDefinition() }
+  }), `${options.owner}: turn summary`)
 }

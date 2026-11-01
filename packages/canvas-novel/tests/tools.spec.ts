@@ -165,9 +165,11 @@ describe('the novel tools', () => {
     // The answer names the canvas: the conversation card opens the chapter from it.
     expect(created).toContain(`已登记第 7 章《回响》（画布 ${DREAM.workId}）plan：情节 2 段 / 伏笔 1 条 / 出场 1 人。`)
     // …and its destination is that chapter in the 章节 face, on its plan — never a list or a detail page.
+    // The plugin hands the card's words with it: it waits for the person.
     expect(readDestinations(String(created))).toEqual([expect.objectContaining({
-      kind: 'canvas', label: '第 7 章《回响》',
+      kind: 'canvas', label: '第 7 章《回响》计划',
       params: { canvasId: DREAM.workId, face: 'manuscripts', item: '7', focus: 'plan' },
+      card: { status: '等你确认', awaiting: true, door: '查看并确认计划 →' },
     })])
     const replanned = await call(write, { what: 'chapter', chapter: 7, title: '回响·改', plan: { summary: '退回门缝' } })
     expect(replanned).toContain('第 7 章')

@@ -32,8 +32,25 @@ export interface Destination {
   readonly kind: string
   /** The owner's address inside its panel (the tab kind's navigation params). */
   readonly params: Readonly<Record<string, unknown>>
-  /** What the person reads on the card: `第 3 章《雨夜》`. */
+  /** What the person reads on the card: `第 3 章《雨夜》计划`. */
   readonly label: string
+  /**
+   * What the card says besides the label, handed over by the plugin with the
+   * write (proposal 2026-10-30-agent-sidebar-navigation: the shell is fixed,
+   * the plugin only hands data). Shown while the write is live on this page;
+   * a replayed card keeps only the label and the door.
+   */
+  readonly card?: DestinationCardData
+}
+
+/** The card data a plugin hands with a destination (or later, through `updateCards`). */
+export interface DestinationCardData {
+  /** A short pill: what the person is asked to do (等你确认), or what came of it (已确认). */
+  readonly status?: string
+  /** The card asks the person for something: its door stands out. */
+  readonly awaiting?: boolean
+  /** The door's words when they say more than 查看 → (查看并确认计划 →). */
+  readonly door?: string
 }
 
 /**
@@ -80,7 +97,19 @@ function parse(json: string): Destination | undefined {
   const { id, kind, label } = row
   const params = record(row['params'])
   if (typeof id !== 'string' || id === '' || typeof kind !== 'string' || kind === '' || params === null) return undefined
-  return { id, kind, params, label: typeof label === 'string' ? label : '' }
+  const card = cardOf(row['card'])
+  return { id, kind, params, label: typeof label === 'string' ? label : '', ...(card === undefined ? {} : { card }) }
+}
+
+/** A destination's card data, keeping only well-formed fields. */
+function cardOf(value: unknown): DestinationCardData | undefined {
+  const raw = record(value)
+  if (raw === null) return undefined
+  const card: { status?: string; awaiting?: boolean; door?: string } = {}
+  if (typeof raw['status'] === 'string' && raw['status'] !== '') card.status = raw['status']
+  if (raw['awaiting'] === true) card.awaiting = true
+  if (typeof raw['door'] === 'string' && raw['door'] !== '') card.door = raw['door']
+  return Object.keys(card).length === 0 ? undefined : card
 }
 
 /**
