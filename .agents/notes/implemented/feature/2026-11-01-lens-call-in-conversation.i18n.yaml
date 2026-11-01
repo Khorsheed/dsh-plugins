@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-01-lens-call-in-conversation.md
-.agents/notes/implemented/feature/2026-11-01-lens-call-in-conversation.md: a2189482e8cb334358c4383b869d93c612de7123
-.agents/notes/implemented/feature/2026-11-01-lens-call-in-conversation.zh.md: 0efc8816b3770d3bcba2df729a9481e50c485bd4
+.agents/notes/implemented/feature/2026-11-01-lens-call-in-conversation.md: f743b1d50314e14d38d651b54dbdb01643ee8582
+.agents/notes/implemented/feature/2026-11-01-lens-call-in-conversation.zh.md: 6d98c149a55b05e84c07560fb5c9c2339d3a4665
