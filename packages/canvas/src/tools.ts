@@ -98,16 +98,19 @@ function cardNameOf(card: BoardCard, definition: TypeDefinition | undefined): st
 /**
  * The reference resolver `canvas_write` (op=card) checks `ref` fields with: a
  * card id on the board, else a card whose name matches exactly — within the
- * field's `refKind` when it names one. Archived cards never match by name.
+ * field's `refKind` when it names one — a category id, or a genre category's
+ * role (a genre seed cannot know a board's category ids). Archived cards
+ * never match by name.
  */
-function refResolverOf(board: CanvasBoard): RefResolver {
+export function refResolverOf(board: CanvasBoard): RefResolver {
   const definitions = new Map(board.categories.map(category => [category.id, category.definition]))
+  const roles = new Map(board.categories.map(category => [category.id, category.role]))
   return (entry, refKind) => {
     const byId = board.cards.find(card => card.id === entry)
     if (byId !== undefined) return byId.id
     const named = board.cards.filter(card =>
       card.status !== 'archived'
-      && (refKind === undefined || card.kind === refKind)
+      && (refKind === undefined || card.kind === refKind || roles.get(card.kind) === refKind)
       && cardNameOf(card, definitions.get(card.kind)) === entry)
     return named.length === 1 ? named[0]!.id : undefined
   }

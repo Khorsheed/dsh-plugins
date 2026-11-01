@@ -447,7 +447,10 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   const refCandidates = useMemo<readonly RefCandidate[]>(
     () => (open?.board.cards ?? [])
       .filter(row => row.status !== 'archived')
-      .map(row => ({ id: row.id, name: nameOf(row.id) ?? row.id, kind: row.kind })),
+      .map(row => {
+        const role = open?.board.categories.find(category => category.id === row.kind)?.role
+        return { id: row.id, name: nameOf(row.id) ?? row.id, kind: row.kind, ...(role === undefined ? {} : { role }) }
+      }),
     [open, nameOf],
   )
 
