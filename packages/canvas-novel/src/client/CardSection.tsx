@@ -18,11 +18,14 @@
 import { useState, type ReactNode } from 'react'
 import {
   NOVEL_GENRE_ID, PTS_PER_LEVEL, RELATION_LADDERS, STAR_SOFT_LIMIT,
-  type CurrentState, type NovelCardResult, type RelationView, type StoryAppearance,
+  type CardLinkGroup, type CurrentState, type NovelCardResult, type RelationView, type StoryAppearance,
 } from '../types.ts'
 import { STORY_LOG_PAGE, type NovelCardOwnerProps, type NovelRemote, type NovelSurfaceProps } from './contract.ts'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './novel.module.css'
+
+/** The card roles that get a section: the ledger ones, and every 世界观 shelf (their links). */
+const SECTION_ROLES: ReadonlySet<string> = new Set(['foreshadow', 'character', 'relation', 'world', 'system', 'place', 'faction', 'item'])
 
 /** The parts of 此刻, in reading order. */
 const STATE_PARTS = ['where', 'state', 'concern'] as const
@@ -31,7 +34,7 @@ const STATE_PARTS = ['where', 'state', 'concern'] as const
 export function CardSection(props: NovelSurfaceProps<NovelCardOwnerProps>): ReactNode {
   const { board, category } = props
   if (board.genre?.id !== NOVEL_GENRE_ID) return null
-  if (category.role !== 'foreshadow' && category.role !== 'character' && category.role !== 'relation') return null
+  if (!SECTION_ROLES.has(category.role ?? '')) return null
   return <CardSectionBody {...props} />
 }
 
@@ -81,8 +84,49 @@ function CardSectionBody(props: NovelSurfaceProps<NovelCardOwnerProps>): ReactNo
         />
       )}
       {view.relation !== undefined && <LadderRow relation={view.relation} t={t} />}
+      {view.links !== undefined && view.links.length > 0 && (
+        <LinksBlock
+          links={view.links}
+          onCard={(cardId, name) => { navigate.openCard(cardId, name) }}
+          onChapter={n => { navigate.openManuscripts(String(n)) }}
+          t={t}
+        />
+      )}
       {failure !== null && <div className={css.warn}>{failure}</div>}
     </section>
+  )
+}
+
+/** A card's links, both ways: one row per kind of tie, each a row of chips that open the card (or the chapter). */
+function LinksBlock({ links, onCard, onChapter, t }: {
+  readonly links: readonly CardLinkGroup[]
+  readonly onCard: (cardId: string, name: string) => void
+  readonly onChapter: (n: number) => void
+  readonly t: NovelSurfaceProps['t']
+}): ReactNode {
+  return (
+    <div className={css.story}>
+      <div className={css.storyHead}><h3>{t('card.links')}</h3></div>
+      <dl className={css.linkList}>
+        {links.map(group => (
+          <div key={group.kind} className={css.linkRow}>
+            <dt>{t(`card.link.${group.kind}`)}</dt>
+            <dd>
+              {group.items.map(item => (
+                <button
+                  key={item.cardId ?? `ch${item.chapter}`}
+                  type="button"
+                  className={css.linkChip}
+                  onClick={() => { if (item.cardId !== undefined) onCard(item.cardId, item.name); else if (item.chapter !== undefined) onChapter(item.chapter) }}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   )
 }
 

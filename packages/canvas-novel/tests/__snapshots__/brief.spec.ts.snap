@@ -70,7 +70,7 @@ exports[`the three brief variants on the《梦境监护者》seed (CP1) > render
 {
   "beats_delivered": [{ "beat": 走向的序号（从 1 起）, "evidence_in_text": "≤50字原文" }],
   "info_gaps_closed": [{ "gap": 信息差的序号（从 1 起）, "evidence_in_text": "≤50字原文" }],
-  "memories": [{ "kind": "世界|原则", "name": "仅世界：这条设定叫什么（地点、势力、道具或规则的名字）", "world_kind": "仅世界：地点|势力|道具|规则|历史|其他", "content": "具体的设定或写作原则，能复述", "evidence_in_text": "≤50字原文" }],
+  "memories": [{ "kind": "世界|原则", "name": "仅世界：这条设定叫什么（地点、势力、物品或规则的名字）", "world_kind": "仅世界：体系|地点|势力|物种与道具", "content": "具体的设定或写作原则，能复述", "evidence_in_text": "≤50字原文" }],
   "foreshadow_mentions": [{ "foreshadow_id": "#12", "kind": "planted|advanced|hinted|resolved", "answer": "仅 resolved 给", "note": "…", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "new_foreshadows": [{ "question": "…", "evidence_in_text": "≤50字原文" }],
   "new_characters": [{ "name": "…", "identity": "一句身份", "evidence_in_text": "≤50字原文" }],

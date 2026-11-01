@@ -16,6 +16,7 @@ import { DREAM, dreamCards } from './seed-dream.ts'
 export const categoryIdOf = (role: string): string => `cat_${role}`
 
 const NOVEL_ROLE_LIST = ['character', 'world', 'principle', 'foreshadow', 'relation'] as const
+const SHELVES = ['system', 'place', 'faction', 'item'] as const
 
 export class FakeCanvas implements CanvasBoardSlice {
   readonly boards = new Map<string, NovelBoardView>()
@@ -35,6 +36,34 @@ export class FakeCanvas implements CanvasBoardSlice {
       cards: board.cards ?? this.boards.get(board.id)?.cards ?? [],
     })
     return this
+  }
+
+  /** Boards whose next write seeds the 世界观 shelves (the canvas's genre catch-up, novel@5). */
+  readonly catchUpOnWrite = new Set<string>()
+
+  /** Seed the four 世界观 shelves on a board now (a board already caught up). */
+  addShelves(canvasId: string): this {
+    const board = this.boards.get(canvasId)
+    if (board === undefined) return this
+    const missing = SHELVES.filter(role => !board.categories.some(category => category.role === role))
+    this.boards.set(canvasId, { ...board, categories: [...board.categories, ...missing.map(role => ({ id: categoryIdOf(role), role }))] })
+    return this
+  }
+
+  /** The categories setCategories last switched off, by board. */
+  readonly disabled = new Map<string, string[]>()
+
+  async setCategories(request: { readonly canvasId: string; readonly categories: readonly Record<string, unknown>[] }): Promise<NovelBoardMutation> {
+    const board = this.boards.get(request.canvasId)
+    if (board === undefined) return { ok: false, error: 'missing' }
+    this.disabled.set(request.canvasId, request.categories.filter(row => row['enabled'] === false).map(row => String(row['id'])))
+    return { ok: true, board }
+  }
+
+  private caughtUp(canvasId: string): void {
+    if (!this.catchUpOnWrite.has(canvasId)) return
+    this.catchUpOnWrite.delete(canvasId)
+    this.addShelves(canvasId)
   }
 
   /** Bind a session to a canvas (or unbind with null). */
@@ -95,6 +124,7 @@ export class FakeCanvas implements CanvasBoardSlice {
   }
 
   async proposeCard(request: CardCreate & { readonly comment?: string; readonly live?: boolean }): Promise<NovelBoardMutation> {
+    this.caughtUp(request.canvasId)
     const board = this.boards.get(request.canvasId)
     if (board === undefined) return { ok: false, error: 'missing' }
     if (!board.categories.some(category => category.id === request.kind)) return { ok: false, error: 'invalid-name' }
@@ -116,11 +146,14 @@ export class FakeCanvas implements CanvasBoardSlice {
   async patchCard(request: {
     readonly canvasId: string
     readonly cardId: string
+    readonly kind?: string
     readonly status?: NovelCardStatus
     readonly fields?: Readonly<Record<string, NovelFieldValue>>
   }): Promise<NovelBoardMutation> {
+    this.caughtUp(request.canvasId)
     return this.update(request.canvasId, request.cardId, card => ({
       ...card,
+      ...(request.kind === undefined ? {} : { kind: request.kind }),
       ...(request.status === undefined ? {} : { status: request.status }),
       ...(request.fields === undefined ? {} : { fields: request.fields }),
     }))

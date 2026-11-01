@@ -14,7 +14,7 @@
  * @module @khorsheed/dsh-canvas-novel
  */
 import type { Session } from '@deepseek-ai/dsh-session'
-import type { NovelGenreAgent } from './genre.ts'
+import { SETTING_SORTS, settingSortOf, type NovelGenreAgent, type SettingSort } from './genre.ts'
 import type { NovelService, WorkEntries } from './store.ts'
 import {
   isOverdue, nextMilestoneOf, relationStanding,
@@ -22,10 +22,13 @@ import {
 } from './types.ts'
 
 /** The role names the model may send as kind (the genre's category labels). */
-const ROLE_OF_NAME: Readonly<Record<string, EntryRole>> = { 人物: 'character', 世界: 'world', 原则: 'principle', 伏笔: 'foreshadow', 关系: 'relation' }
+const ROLE_OF_NAME: Readonly<Record<string, EntryRole>> = {
+  人物: 'character', 世界: 'world', 世界观: 'world', 设定: 'world', 体系: 'world', 规则: 'world', 地点: 'world', 势力: 'world', 物种与道具: 'world', 道具: 'world',
+  原则: 'principle', 写作原则: 'principle', 伏笔: 'foreshadow', 关系: 'relation',
+}
 
 /** A role's display name. */
-export const ROLE_NAMES: Readonly<Record<EntryRole, string>> = { character: '人物', world: '世界', principle: '原则', foreshadow: '伏笔', relation: '关系' }
+export const ROLE_NAMES: Readonly<Record<EntryRole, string>> = { character: '人物', world: '设定', principle: '写作原则', foreshadow: '伏笔', relation: '关系' }
 
 /** The chapter phase's display name. */
 export const PHASE_NAMES: Readonly<Record<string, string>> = {
@@ -42,11 +45,20 @@ export const NOVEL_MANUSCRIPT_GUIDE =
  * label (a renamed category keeps its role), the genre's own label, or the
  * role itself.
  */
-function roleOfKind(entries: WorkEntries, kind: string): EntryRole | undefined {
+function roleOfKind(entries: WorkEntries, kind: string): { readonly role: EntryRole; readonly sort?: SettingSort } | undefined {
   const text = kind.trim()
-  const category = entries.board.categories.find(row => row.id === text)
-  if (category !== undefined) return category.role as EntryRole | undefined
-  return ROLE_OF_NAME[text] ?? (Object.keys(ROLE_NAMES) as EntryRole[]).find(role => role === text)
+  const category = entries.board.categories.find(row => row.id === text || row.role === text)
+  const word = category?.role ?? text
+  const sort = settingSortOf(word)
+  if (sort !== undefined) return { role: 'world', sort }
+  if (category !== undefined && category.role === undefined) return undefined
+  const role = ROLE_OF_NAME[word] ?? (Object.keys(ROLE_NAMES) as EntryRole[]).find(candidate => candidate === word)
+  return role === undefined ? undefined : { role }
+}
+
+/** A setting's shelf in words (体系 / 地点 / …). */
+function shelfOf(sort: SettingSort | undefined): string {
+  return sort === undefined ? '设定' : SETTING_SORTS[sort]
 }
 
 /** The flag a card not in the brief carries for the model: a canvas-native proposal, or an archived card. */
@@ -72,7 +84,7 @@ export function relationFacts(view: RelationView): string {
 }
 
 /** The cards of a work, one line each (archived ones only when asked for). */
-function cardLines(entries: WorkEntries, role: EntryRole | undefined, includeArchived: boolean): string[] {
+function cardLines(entries: WorkEntries, role: EntryRole | undefined, includeArchived: boolean, sort?: SettingSort): string[] {
   const lines: string[] = []
   const visible = (status: string): boolean => includeArchived || status !== 'archived'
   if (role === undefined || role === 'character') {
@@ -80,8 +92,10 @@ function cardLines(entries: WorkEntries, role: EntryRole | undefined, includeArc
       lines.push(`- [${view.ref}] 人物 ${view.name}${view.identity === undefined ? '' : `（${view.identity}）`}${cardFlags(view.cardStatus)}`)
     }
   }
-  for (const view of entries.rules.filter(view => visible(view.status) && (role === undefined || role === view.role))) {
-    lines.push(`- [${view.ref}] ${ROLE_NAMES[view.role]} ${view.text}${cardFlags(view.status)}`)
+  const nameOf = (id: string): string => entries.rules.find(view => view.cardId === id)?.name ?? id
+  for (const view of entries.rules.filter(view => visible(view.status) && (role === undefined || role === view.role) && (sort === undefined || view.sort === sort))) {
+    const under = view.parents === undefined ? '' : `（属于 ${view.parents.map(nameOf).join('、')}）`
+    lines.push(`- [${view.ref}] ${view.role === 'world' ? shelfOf(view.sort) : ROLE_NAMES[view.role]} ${view.text}${under}${cardFlags(view.status)}`)
   }
   if (role === undefined || role === 'foreshadow') {
     for (const view of entries.foreshadows.filter(view => visible(view.cardStatus))) {
@@ -124,9 +138,9 @@ export function novelGenreAgent(store: NovelService): NovelGenreAgent {
     async cardLines(request, session) {
       const entries = await entriesOf(request.canvasId, session as Session)
       if (entries === undefined) return []
-      const role = request.kind === undefined ? undefined : roleOfKind(entries, request.kind)
-      if (request.kind !== undefined && role === undefined) return []
-      return cardLines(entries, role, request.includeArchived)
+      const kind = request.kind === undefined ? undefined : roleOfKind(entries, request.kind)
+      if (request.kind !== undefined && kind === undefined) return []
+      return cardLines(entries, kind?.role, request.includeArchived, kind?.sort)
     },
 
     async cardDetail(request, session) {
@@ -140,6 +154,7 @@ export function novelGenreAgent(store: NovelService): NovelGenreAgent {
       const entries = await entriesOf(request.canvasId, session as Session)
       if (entries === undefined) return undefined
       let role: EntryRole | undefined
+      let sort: SettingSort | undefined
       let id: string | undefined
       if (request.cardId !== undefined) {
         const handle = store.resolveCard(entries, request.cardId)
@@ -152,8 +167,10 @@ export function novelGenreAgent(store: NovelService): NovelGenreAgent {
         role = handle.role
         id = handle.cardId
       } else {
-        role = request.kind === undefined ? undefined : roleOfKind(entries, request.kind)
-        if (role === undefined) return undefined
+        const kind = request.kind === undefined ? undefined : roleOfKind(entries, request.kind)
+        if (kind === undefined) return undefined
+        role = kind.role
+        sort = kind.sort
       }
       if (request.fields === undefined || Object.keys(request.fields).length === 0) {
         return `失败：${ROLE_NAMES[role]}卡按字段写，放在 fields 里（字段见 canvas_read 带 kind）；fields 到不了的话，在 text 里每行写一个「字段名：值」。`
@@ -161,20 +178,24 @@ export function novelGenreAgent(store: NovelService): NovelGenreAgent {
       const outcome = await store.writeCard({
         workId: request.canvasId, role, fields: request.fields,
         ...(id === undefined ? {} : { id }),
+        ...(sort === undefined ? {} : { sort }),
         ...(request.comment === undefined ? {} : { comment: request.comment }),
       }, session as Session)
       if (!outcome.ok) return cardErrorMessage(outcome.error, role, outcome.ref, outcome.problem)
       // A foreshadow's status and 埋于 are the 对账's to set (store.writeCard
       // drops them), which is not the same as a key nobody knows.
       const ledgerOwned = role === 'foreshadow' ? ['status', 'plantedAt'] : []
+      const linkKeys = ['parent', 'base', 'faction', 'home']
+      const badLinks = (outcome.ignored ?? []).filter(key => linkKeys.includes(key))
       const badStage = role === 'relation' && (outcome.ignored ?? []).includes('stage')
-      const unknown = (outcome.ignored ?? []).filter(key => !ledgerOwned.includes(key) && !(badStage && key === 'stage'))
+      const unknown = (outcome.ignored ?? []).filter(key => !ledgerOwned.includes(key) && !(badStage && key === 'stage') && !linkKeys.includes(key))
       const owned = (outcome.ignored ?? []).filter(key => ledgerOwned.includes(key))
       const ignored = (unknown.length === 0 ? '' : `（忽略了不认识的字段：${unknown.join('、')}）`)
         + (owned.length === 0 ? '' : '（伏笔的状态和埋于第几章由对账按正文更新，没有用你填的值；新伏笔一律从「未埋」开始，不想要了可以填「已放弃」）')
         + (badStage ? '（阶段没认出来，按该类型的第一级记；各类型的阶段名见 novel 技能「关系卡」）' : '')
+        + (badLinks.length === 0 ? '' : `（${badLinks.join('、')} 对不上画布上的设定卡，没记：填编号如 w3，或卡的准确名字；要指的卡还没有就先建）`)
       return id === undefined
-        ? `已落卡 [${outcome.ref}]（${ROLE_NAMES[role]}·已进 brief，画布上带 ✦ 新卡标记）${ignored}。`
+        ? `已落卡 [${outcome.ref}]（${role === 'world' ? shelfOf(sort ?? 'system') : ROLE_NAMES[role]}·已进 brief，画布上带 ✦ 新卡标记）${ignored}。`
         : `已更新 [${outcome.ref}]${ignored}。`
     },
 
@@ -196,6 +217,21 @@ export function novelGenreAgent(store: NovelService): NovelGenreAgent {
   }
 }
 
+/** A character's links: the faction they belong to and where they usually are. */
+function linkLines(entries: WorkEntries, cardId: string): string[] {
+  const card = entries.board.cards.find(candidate => candidate.id === cardId)
+  const names = (key: string): string[] => {
+    const ids = card?.fields?.[key]
+    return Array.isArray(ids) ? ids.map(id => entries.rules.find(view => view.cardId === id)).filter(view => view !== undefined).map(view => `[${view.ref}] ${view.name ?? view.ref}`) : []
+  }
+  const faction = names('faction')
+  const home = names('home')
+  return [
+    ...(faction.length === 0 ? [] : [`所属势力：${faction.join('、')}`]),
+    ...(home.length === 0 ? [] : [`常在地点：${home.join('、')}`]),
+  ]
+}
+
 /** One card in full, as `canvas_read(cardId)` answers it on a novel canvas. */
 async function cardDetail(store: NovelService, workId: string, entries: WorkEntries, cardId: string, role: EntryRole): Promise<string> {
   const note = entries.annotations.notes[cardId]
@@ -213,6 +249,7 @@ async function cardDetail(store: NovelService, workId: string, entries: WorkEntr
       `不知道的事：${join(view.unaware)}`,
       `秘密：${join(view.secrets)}`,
       ...(view.relations.length === 0 ? [] : [`关系：${view.relations.join('；')}`]),
+      ...linkLines(entries, cardId),
       ...(current === undefined ? [] : [`当前态：${current.where ?? '—'} / ${current.state ?? '—'} / 牵挂 ${current.concern ?? '—'}`]),
       ...(experiences.length === 0 ? [] : ['经历：', ...experiences.slice(-8).map(entry => `- 第${entry.chapter}章 ${entry.entry}`)]),
       ...(audit === undefined ? [] : [audit]),
@@ -245,8 +282,22 @@ async function cardDetail(store: NovelService, workId: string, entries: WorkEntr
     ].join('\n')
   }
   const view = entries.rules.find(candidate => candidate.cardId === cardId)!
+  const named = (id: string): string => {
+    const hit = entries.rules.find(candidate => candidate.cardId === id)
+    return hit === undefined ? id : `[${hit.ref}] ${hit.name ?? hit.ref}`
+  }
+  // What points here: settings under it, factions based in it, characters belonging to or living in it.
+  const under = entries.rules.filter(candidate => candidate.status !== 'archived' && candidate.parents?.includes(cardId) === true).map(candidate => named(candidate.cardId))
+  const based = entries.rules.filter(candidate => candidate.status !== 'archived' && candidate.base?.includes(cardId) === true).map(candidate => named(candidate.cardId))
+  const people = entries.board.cards.filter(card => card.status !== 'archived' && ['faction', 'home'].some(key => Array.isArray(card.fields?.[key]) && (card.fields![key] as string[]).includes(cardId)))
+    .map(card => entries.characters.find(candidate => candidate.cardId === card.id)?.name).filter((name): name is string => name !== undefined)
   return [
-    `[${view.ref}] ${ROLE_NAMES[view.role]}：${view.text}${cardFlags(view.status)}`,
+    `[${view.ref}] ${view.role === 'world' ? shelfOf(view.sort) : ROLE_NAMES[view.role]}：${view.text}${cardFlags(view.status)}`,
+    ...(view.parents === undefined ? [] : [`属于：${view.parents.map(named).join('、')}`]),
+    ...(view.base === undefined ? [] : [`据点：${view.base.map(named).join('、')}`]),
+    ...(under.length === 0 ? [] : [`下属：${under.join('、')}`]),
+    ...(based.length === 0 ? [] : [`以此为据点：${based.join('、')}`]),
+    ...(people.length === 0 ? [] : [`相关人物：${people.join('、')}`]),
     ...(audit === undefined ? [] : [audit]),
   ].join('\n')
 }

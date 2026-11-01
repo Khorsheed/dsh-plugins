@@ -25,7 +25,7 @@ import type { NovelService, WorkEntries } from './store.ts'
 import { planToText } from './text-forms.ts'
 import {
   coreSuspenseNudge, revealText, revealVolume, targetWordsOf,
-  type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
+  type CardLinkGroup, type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
   type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelPlanEditRequest, type NovelRecentResult, type NovelPlanEditResult, type NovelStarRequest, type NovelStateRequest,
   type NovelWorkRequest, type OutlineCore, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
 } from './types.ts'
@@ -244,9 +244,11 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     // 出场 is the story log's read (plan cast, experience journal, source chapter); reuse it rather than fork it.
     const appearances = character === undefined ? undefined
       : (await this.core.storyLog({ workId: request.canvasId })).characters.find(row => row.cardId === request.cardId)?.appearances
+    const links = role === 'world' || role === 'character' ? await this.linksOf(entries, request.canvasId, request.cardId, role) : []
     return {
       ok: true,
       role,
+      ...(links.length === 0 ? {} : { links }),
       ...(foreshadow === undefined ? {} : {
         starred: foreshadow.starred,
         starredCount: entries.foreshadows.filter(view => view.starred).length,
@@ -256,6 +258,33 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
       ...(appearances === undefined || appearances.length === 0 ? {} : { appearances }),
       ...(relation === undefined ? {} : { relation }),
     }
+  }
+
+  /** A setting's or a character's links, both ways, plus the chapters that used a setting. */
+  private async linksOf(entries: WorkEntries, workId: string, cardId: string, role: 'world' | 'character'): Promise<CardLinkGroup[]> {
+    const live = entries.board.cards.filter(card => card.status !== 'archived')
+    const nameOf = (id: string): string => entries.rules.find(view => view.cardId === id)?.name
+      ?? entries.characters.find(view => view.cardId === id)?.name ?? id
+    const ids = (card: (typeof live)[number] | undefined, key: string): string[] => {
+      const value = card?.fields?.[key]
+      return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string' && live.some(row => row.id === id)) : []
+    }
+    const self = live.find(card => card.id === cardId)
+    const group = (kind: CardLinkGroup['kind'], list: readonly string[]): CardLinkGroup[] =>
+      list.length === 0 ? [] : [{ kind, items: list.map(id => ({ cardId: id, name: nameOf(id) })) }]
+    if (role === 'character') return [...group('faction', ids(self, 'faction')), ...group('home', ids(self, 'home'))]
+    const naming = (key: string): string[] => live.filter(card => ids(card, key).includes(cardId)).map(card => card.id)
+    const characters = new Set(entries.characters.map(view => view.cardId))
+    const people = [...naming('faction'), ...naming('home')].filter((id, index, all) => characters.has(id) && all.indexOf(id) === index)
+    const chapters = (await this.core.listChapters({ workId })).filter(row => row.chapter.settings?.includes(cardId) === true).map(row => row.chapter.n)
+    return [
+      ...group('parent', ids(self, 'parent')),
+      ...group('base', ids(self, 'base')),
+      ...group('children', naming('parent')),
+      ...group('based', naming('base')),
+      ...group('people', people),
+      ...(chapters.length === 0 ? [] : [{ kind: 'chapters' as const, items: chapters.map(n => ({ chapter: n, name: `第${n}章` })) }]),
+    ]
   }
 
   /** The person's ★ on a foreshadow. */

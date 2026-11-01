@@ -6,13 +6,14 @@ English | [中文](README.md)
 
 Write a long serial novel with the agent: by chapter one hundred it still knows who your characters are, where you left off, and which foreshadowing is still waiting to pay off.
 
-The trouble with writing a long novel with a model is that it forgets: characters drift out of character, planted clues never get picked up, and every new conversation means pasting the background in again. The novel is a genre of the idea canvas: one book is one canvas, and its characters, world, principles and foreshadowing are cards on it. You and the agent settle the outline first, then plan and write one chapter at a time; after each chapter the agent goes back over it and records what happened on the cards. Pick it up in a new session later and what it reads from the cards is the book as it stands now.
+The trouble with writing a long novel with a model is that it forgets: characters drift out of character, planted clues never get picked up, and every new conversation means pasting the background in again. The novel is a genre of the idea canvas: one book is one canvas, and its characters, world (systems, places, factions, creatures and items), foreshadowing, relationships and writing principles are cards on it. You and the agent settle the outline first, then plan and write one chapter at a time; after each chapter the agent goes back over it and records what happened on the cards. Pick it up in a new session later and what it reads from the cards is the book as it stands now.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-board.png" width="560" alt="A novel canvas: a thin strip on top with the current chapter and items to review, and below it character, world, principle and foreshadowing cards">
 
 ## What it does
 
-- **One book, one canvas**: when you create a canvas, pick the "长篇小说" (novel) genre and the character, world, principle, foreshadowing and relationship cards are set up for you, each with ready-made fields to fill in.
+- **One book, one canvas**: when you create a canvas, pick the "长篇小说" (novel) genre and the character, system, place, faction, creature-and-item, foreshadowing, relationship and writing-principle cards are set up for you, each with ready-made fields to fill in.
+- **Settings that hang together**: a place says which larger place it sits in, a faction names its base, a character names their faction and where they usually are; open any card to see what it belongs to, what sits under it, who is tied to it and which chapters it appears in. An older book can be reorganized into the new categories by the agent in one go — it shows you the result before anything moves.
 - **Outline first, then write**: talk through the main line, the protagonist, where it ends and how long it runs; the agent drafts a one-page outline and the volumes on the "Plan" page, and nothing counts until you press "Adopt". You can change it any time.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/canvas-novel-planning.png" width="560" alt="The Plan page: whole-book progress on top, the one-page outline, the agent's outline proposal in a dashed box with Adopt / Discard, and the chapter route by volume below">
