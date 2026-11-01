@@ -12,7 +12,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
-  LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelWorldMapResult, NovelTimelineResult, NovelCodexResult, NovelPinsRequest, NovelIdeasResult, NovelIdeaRequest, NovelDeleteRequest, NovelDeletePreviewResult, NovelBodyEditRequest, NovelBodyEditResult, NovelOwnChapterRequest, NovelPendingResult, NovelPlanEditRequest, NovelRecentResult, NovelPlanEditResult, NovelStarRequest, NovelStateRequest,
+  LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelWorldMapResult, NovelTimelineResult, NovelCodexResult, NovelPinsRequest, NovelIdeasResult, NovelIdeaRequest, NovelDeleteRequest, NovelDeletePreviewResult, NovelAlignResult, NovelAlignAckRequest, NovelBodyEditRequest, NovelBodyEditResult, NovelOwnChapterRequest, NovelPendingResult, NovelPlanEditRequest, NovelRecentResult, NovelPlanEditResult, NovelStarRequest, NovelStateRequest,
   NovelWorkRequest, StoryLogResult,
 } from '../types.ts'
 import type {} from './locales.ts'
@@ -85,6 +85,8 @@ export interface NovelRemote {
   decideOutline: (sessionId: SessionId, request: NovelOutlineDecideRequest) => Promise<RemoteResult<NovelGestureResult>>
   deletePreview: (request: NovelDeleteRequest) => Promise<RemoteResult<NovelDeletePreviewResult>>
   deleteNode: (sessionId: SessionId, request: NovelDeleteRequest) => Promise<RemoteResult<NovelGestureResult>>
+  align: (request: NovelWorkRequest) => Promise<RemoteResult<NovelAlignResult>>
+  alignAck: (sessionId: SessionId, request: NovelAlignAckRequest) => Promise<RemoteResult<NovelGestureResult>>
 }
 
 /** What every surface is injected with. */
@@ -112,6 +114,8 @@ export type NovelSurfaceProps<O extends NovelOwnerProps = NovelOwnerProps> = O &
 
 /** The story-log page's key under the canvas's `genreKey`. */
 export const STORY_LOG_PAGE = 'novel:story-log'
+/** The 待对齐 page (2026-11-02). */
+export const ALIGN_PAGE = 'novel:align'
 /** The 章节 face's ask: one chapter to show, on its plan or its text (the canvas's `target`). */
 export interface ChapterTarget {
   readonly item: string

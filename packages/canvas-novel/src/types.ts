@@ -1832,6 +1832,37 @@ export interface NovelPinsRequest extends NovelWorkRequest {
   readonly block: readonly string[]
 }
 
+/** 待对齐 as the page reads it (2026-11-02). */
+export interface NovelAlignResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  /** When the book was last aligned. */
+  readonly at?: string
+  readonly items?: readonly AlignItemView[]
+  /** Changes the rules settled, nothing to check. */
+  readonly auto?: readonly { readonly node: string; readonly name: string; readonly change: 'changed' | 'removed'; readonly kind: string }[]
+  /** What 让 Agent 对齐 will read: passages per chapter, events, characters in all. */
+  readonly cost?: { readonly chapters: readonly { readonly n: number; readonly passages: number }[]; readonly chars: number }
+}
+
+/** One change that needs the agent. */
+export interface AlignItemView {
+  readonly node: string
+  readonly kind: 'chapter' | 'setting' | 'character' | 'relation' | 'foreshadow' | 'event' | 'idea'
+  readonly name: string
+  readonly change: 'changed' | 'removed' | 'text'
+  readonly chapters: readonly number[]
+  readonly paragraphs?: number
+  readonly share?: number
+  readonly near: readonly { readonly label: string; readonly names: readonly string[] }[]
+  readonly passages: readonly { readonly chapter: number; readonly text: string }[]
+}
+
+/** Items to tick off in 待对齐 (or all of them). */
+export interface NovelAlignAckRequest extends NovelWorkRequest {
+  readonly ids: readonly string[] | 'all'
+}
+
 /** One thing to delete: a card id, an event id (e3) or an idea id (i2). */
 export interface NovelDeleteRequest extends NovelWorkRequest {
   readonly node: string

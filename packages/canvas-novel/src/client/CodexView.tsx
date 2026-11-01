@@ -20,6 +20,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { NOVEL_GENRE_ID, type CodexCharacter, type CodexForeshadow, type CodexSetting, type NovelCodexResult } from '../types.ts'
 import type { NovelSurfaceProps } from './contract.ts'
+import { AlignBadge } from './AlignPage.tsx'
 import { DeleteNode } from './DeleteNode.tsx'
 import { OnePage } from './OnePage.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
@@ -71,6 +72,7 @@ function Codex(props: NovelSurfaceProps): ReactNode {
             {label}{count === undefined ? null : <span className={css.count}>{count}</span>}
           </button>
         ))}
+        <span className={css.grow} /><AlignBadge {...props} />
       </nav>
       {part === 'overview' && <Overview {...props} data={data} go={go} />}
       {part === 'world' && <World data={data} picked={picked} onPick={setPicked} onlyOpen={onlyOpen} setOnlyOpen={setOnlyOpen} del={del} openCard={props.navigate.openCard} openChapter={n => { props.navigate.openManuscripts(String(n)) }} t={t} />}

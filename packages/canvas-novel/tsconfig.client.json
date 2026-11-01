@@ -31,6 +31,7 @@
     "src/client/CodexView.tsx",
     "src/client/OnePage.tsx",
     "src/client/DeleteNode.tsx",
+    "src/client/AlignPage.tsx",
     "src/client/ChapterReader.tsx",
     "src/client/ChapterBook.tsx",
     "src/client/CardSection.tsx",

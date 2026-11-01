@@ -69,6 +69,7 @@ import {
 } from './types.ts'
 import { changedPlanFields, type PlanField } from './text-forms.ts'
 import { buildGraph, deleteImpact, type BookGraph, type DeleteImpact, type GraphInput } from './graph.ts'
+import { ackNodes, alignChanges, baselineOf, fingerprint, normalizeAlign, type AlignAuto, type AlignDoc, type AlignItem, type NodeNow } from './align.ts'
 
 /** The package's npm name, stamped on store errors. */
 const PACKAGE_NAME = '@khorsheed/dsh-canvas-novel'
@@ -90,6 +91,7 @@ export const WORK_FILES = {
   timeline: 'timeline.json',
   ideas: 'ideas.json',
   minds: 'minds.jsonl',
+  align: 'align.json',
 } as const
 
 /**
@@ -1981,6 +1983,86 @@ export class NovelService {
       if (!gone.ok) return { ok: false, error: gone.error === 'missing' ? 'missing' : 'io' }
     }
     return { ok: true, impact }
+  }
+
+  /* ------------------------------------------------------------ 待对齐 */
+
+  /** Every node's fingerprint now (a written chapter with its text). */
+  private async nodesNow(workId: string, built: { readonly graph: BookGraph; readonly written: ReadonlySet<number>; readonly entries: WorkEntries }, only?: ReadonlySet<string>): Promise<{ readonly now: Map<string, NodeNow>; readonly bodies: Map<number, string> }> {
+    const now = new Map<string, NodeNow>()
+    const bodies = new Map<number, string>()
+    const cards = new Map(built.entries.board.cards.map(card => [card.id, card]))
+    const { events } = await this.allEvents(workId)
+    const ideas = await this.readIdeas(workId)
+    const meta = await this.readWorkMeta(workId)
+    const chapters = await this.readChapters(workId)
+    for (const [id, node] of built.graph.nodes) {
+      if (only !== undefined && !only.has(id)) continue
+      if (node.kind === 'chapter') {
+        const n = Number(id.slice(3))
+        const chapter = chapters.find(row => row.n === n)
+        if (chapter === undefined || meta === undefined || !built.written.has(n)) { now.set(id, { fp: fingerprint(chapter?.plan ?? null) }); continue }
+        const body = await this.readChapterBody(meta, chapter)
+        bodies.set(n, body)
+        now.set(id, { fp: bodyFingerprint(body) ?? '', body })
+      } else if (node.kind === 'event') {
+        const event = events.find(row => row.id === id)
+        if (event === undefined || event.foreshadowId !== undefined) continue
+        const { order: _o, createdAt: _c, touched: _t, since: _s, pre: _p, ...stable } = event
+        now.set(id, { fp: fingerprint(stable) })
+      } else if (node.kind === 'idea') {
+        const idea = ideas.ideas.find(row => row.id === id)
+        if (idea !== undefined) now.set(id, { fp: fingerprint({ text: idea.text, eventId: idea.eventId ?? null }) })
+      } else {
+        const card = cards.get(id)
+        if (card !== undefined) now.set(id, { fp: fingerprint({ kind: card.kind, status: card.status, fields: card.fields ?? {} }) })
+      }
+    }
+    return { now, bodies }
+  }
+
+  /**
+   * What changed since the book was last aligned (align.ts). The first read
+   * of a book takes the book as it is as the baseline: nothing is pending.
+   */
+  async alignRead(request: { readonly workId: string }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly items?: readonly AlignItem[]; readonly auto?: readonly AlignAuto[]; readonly at?: string }> {
+    this.assertAlive('alignRead')
+    const built = await this.bookGraph(request.workId)
+    if (built === undefined) return { ok: false, error: 'missing' }
+    const workId = built.entries.board.id
+    const target = await this.fileTarget(workId, WORK_FILES.align)
+    const read = await this.readJson(target, raw => normalizeAlign(raw))
+    const { now, bodies } = await this.nodesNow(workId, built)
+    if (typeof read !== 'object') {
+      const at = new Date().toISOString()
+      const doc = baselineOf(built.graph, now, built.written, at)
+      const wrote = await this.mutateJson(target, session, raw => normalizeAlign(raw), () => doc, () => doc)
+      return wrote.ok ? { ok: true, items: [], auto: [], at } : { ok: false, error: wrote.error }
+    }
+    const { items, auto } = alignChanges(read.data, built.graph, now, built.written, bodies)
+    return { ok: true, items, auto, at: read.data.at }
+  }
+
+  /** Bring nodes up to now in the baseline ('all': the whole book); an item done is an item gone. */
+  async alignAck(request: { readonly workId: string; readonly ids: readonly string[] | 'all' }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    this.assertAlive('alignAck')
+    const built = await this.bookGraph(request.workId)
+    if (built === undefined) return { ok: false, error: 'missing' }
+    const workId = built.entries.board.id
+    const target = await this.fileTarget(workId, WORK_FILES.align)
+    const whole = request.ids === 'all' || typeof await this.readJson(target, raw => normalizeAlign(raw)) !== 'object'
+    const { now } = await this.nodesNow(workId, built, whole ? undefined : new Set(request.ids))
+    const at = new Date().toISOString()
+    const outcome = await this.mutateJson(target, session, raw => normalizeAlign(raw),
+      () => baselineOf(built.graph, now, built.written, at),
+      (doc: AlignDoc) => request.ids === 'all' ? baselineOf(built.graph, now, built.written, at) : ackNodes(doc, request.ids, built.graph, now, built.written, at))
+    return outcome.ok ? { ok: true } : { ok: false, error: outcome.error }
+  }
+
+  /** The nodes whose fingerprint moved since the baseline (for acking what a tool just did). */
+  async alignMoved(workId: string): Promise<string[]> {
+    const read = await this.alignRead({ workId }, undefined)
+    return [...(read.items ?? []).map(item => item.node), ...(read.auto ?? []).map(item => item.node)]
   }
 
   /* ----------------------------------------------------- character minds */

@@ -17,6 +17,7 @@
 import { useState, type ReactNode } from 'react'
 import { NOVEL_GENRE_ID, type NovelTimelineResult, type TimelineEventView, type TimelineFutureView } from '../types.ts'
 import type { NovelSurfaceProps } from './contract.ts'
+import { AlignBadge } from './AlignPage.tsx'
 import { DeleteNode } from './DeleteNode.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './timeline.module.css'
@@ -41,6 +42,7 @@ export function TimelineView(props: NovelSurfaceProps): ReactNode {
           {mode === 'story' ? t('tl.storyHint') : t('tl.chapterHint')}
           {mode === 'story' && <button type="button" className={css.info} aria-expanded={info} aria-label={t('tl.ruleHead')} title={t('tl.ruleHead')} onClick={() => { setInfo(value => !value) }}>i</button>}
         </span>
+        <AlignBadge {...props} />
         <NowTag {...props} />
         {info && mode === 'story' && (
           <div className={css.pop} role="dialog" aria-label={t('tl.ruleHead')}>
