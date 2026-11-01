@@ -42,8 +42,8 @@ describe('novelWriteItems', () => {
       { action: 'changed', title: '命名（修订）', cardId: 'c2', kind: '人物' },
       { action: 'archived', title: '旧', cardId: 'c3', kind: '人物' },
       { action: 'added', title: '青崖', cardId: 'c4', kind: '人物' },
-      { action: 'chapter', title: '第 1 章《别替我起名》' },
-      { action: 'chapter', title: '第 2 章《雨夜》' },
+      { action: 'chapter', title: '第 1 章《别替我起名》', chapter: 1 },
+      { action: 'chapter', title: '第 2 章《雨夜》', chapter: 2 },
     ])
     expect(novelWriteItems(before, before, kinds)).toEqual([])
   })

@@ -4,7 +4,9 @@
  * Inside the member's card it names only the canvas; on a row of its own it
  * names the member too. A member's write seen arriving puts the canvas on the
  * strip beside the one being read (choice A); a coordinator's needs nothing —
- * it writes on the canvas the room already shows.
+ * it writes on the canvas the room already shows. The door lands where the
+ * writes are (`deskWritePlace`): the chapter, the one card, or every card the
+ * turn touched under the board's 「本轮改动」 chip.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -12,17 +14,16 @@ import { useEffect, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '../locales.ts'
 import { shouldFollow } from './desk-row.ts'
-import { onlyCardOf, writeSummaryParts, type DeskWriteGroup } from './desk-write.ts'
+import { deskWritePlace, writeSummaryParts, type DeskWriteGroup } from './desk-write.ts'
+import type { CanvasNavParams } from '../slots.ts'
 import css from '../type/ProposeTypeRow.module.css'
 
 /** What the line reaches outside itself. */
 export interface DeskWroteRowFace {
-  /** Show the canvas tab with this canvas open. */
-  openCanvas: (canvasId: string) => void
-  /** Show the canvas tab on one card. */
-  openCard: (canvasId: string, cardId: string, heading: string) => void
   /** Put the canvas on the strip without showing it. */
   addCanvas: (canvasId: string) => void
+  /** Open the canvas tab at one address (the line's door). */
+  go: (params: CanvasNavParams) => void
 }
 
 export interface DeskWroteRowProps extends DeskWroteRowFace {
@@ -39,7 +40,7 @@ export interface DeskWroteRowProps extends DeskWroteRowFace {
  * Render one canvas's writes of a turn.
  * @param props - the folded group, the face, the copy.
  */
-export function DeskWroteRow({ group, sessionId, t, follow, own, openCanvas, openCard, addCanvas }: DeskWroteRowProps): ReactNode {
+export function DeskWroteRow({ group, sessionId, t, follow, own, go, addCanvas }: DeskWroteRowProps): ReactNode {
   const { last } = group
   useEffect(() => {
     if (!follow || last.role !== 'member' || !shouldFollow(`${sessionId}:wrote`, { seq: last.seq, time: last.time })) return
@@ -50,7 +51,6 @@ export function DeskWroteRow({ group, sessionId, t, follow, own, openCanvas, ope
   if (parts.length === 0) return null
   const where = own ? t('deskwrite.canvas', { title: group.title }) : t('deskwrite.memberCanvas', { member: last.member, title: group.title })
   const said = `${where} ${parts.join(' · ')}`
-  const card = onlyCardOf(group.items)
   return (
     <div className={css.row} data-desk-write={group.canvasId}>
       <span className={css.kind}>{t('openrow.kind')}</span>
@@ -58,7 +58,7 @@ export function DeskWroteRow({ group, sessionId, t, follow, own, openCanvas, ope
       <button
         type="button"
         className={css.open}
-        onClick={() => { if (card?.cardId !== undefined) openCard(group.canvasId, card.cardId, card.title); else openCanvas(group.canvasId) }}
+        onClick={() => { go(deskWritePlace(group.canvasId, group.items)) }}
       >
         {t('deskwrite.view')}
       </button>

@@ -3,8 +3,7 @@
  * 2026-10-29-room-desk): the `room/desk-wrote` events of one run (or a lone
  * one) folded per canvas — a card added then edited in the same turn counts
  * once, as added — and spelled 「新增人物卡「数据标注员」 · 新增 2 张世界卡 ·
- * 批注 1 张卡」. Its door opens the canvas, on the card when the turn touched
- * exactly one.
+ * 批注 1 张卡」. Its door lands where the writes are (`deskWritePlace`).
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -20,6 +19,8 @@ export interface DeskWriteItem {
   readonly cardId?: string
   readonly manuscriptId?: string
   readonly kind?: string
+  /** `chapter`: its number (events written before 2026-11-01 carry it only in the title). */
+  readonly chapter?: number
 }
 
 /** One `room/desk-wrote` event of this owner, as the line reads it. */
@@ -52,6 +53,7 @@ export function deskWriteOf(event: { readonly type: string; readonly seq: number
       ...typeof item.cardId === 'string' ? { cardId: item.cardId } : {},
       ...typeof item.manuscriptId === 'string' ? { manuscriptId: item.manuscriptId } : {},
       ...typeof item.kind === 'string' ? { kind: item.kind } : {},
+      ...chapterOf(item),
     }]
   })
   return {
@@ -127,7 +129,41 @@ export function writeSummaryParts(items: readonly DeskWriteItem[], t: DeskWriteC
   return parts
 }
 
-/** The one card the door opens on, when the turn touched exactly one (and no manuscript). */
-export function onlyCardOf(items: readonly DeskWriteItem[]): DeskWriteItem | undefined {
-  return items.length === 1 && items[0]!.cardId !== undefined ? items[0] : undefined
+/** A chapter item's number: its own field, else the 「第 N 章」 its title opens with (older events). */
+function chapterOf(item: Partial<Record<keyof DeskWriteItem, unknown>>): { chapter?: number } {
+  if (item.action !== 'chapter') return {}
+  if (typeof item.chapter === 'number') return { chapter: item.chapter }
+  const n = typeof item.title === 'string' ? /^第\s*(\d+)\s*章/.exec(item.title)?.[1] : undefined
+  return n === undefined ? {} : { chapter: Number(n) }
+}
+
+/**
+ * Where a turn's writes on one canvas are seen best (proposal
+ * 2026-10-30-agent-sidebar-navigation): the chapter it wrote (the last one),
+ * else the one card or manuscript it touched, else every card it touched under
+ * the board's 「本轮改动」 chip, else the canvas.
+ * @param canvasId - the canvas.
+ * @param items - the folded items of the turn.
+ */
+export function deskWritePlace(canvasId: string, items: readonly DeskWriteItem[]): {
+  readonly canvasId: string
+  readonly card?: string
+  readonly manuscript?: string
+  readonly face?: 'board' | 'manuscripts'
+  readonly item?: string
+  readonly focus?: string
+  readonly cards?: readonly string[]
+  readonly heading?: string
+} {
+  const chapter = [...items].reverse().find(item => item.action === 'chapter' && item.chapter !== undefined)
+  if (chapter !== undefined) return { canvasId, face: 'manuscripts', item: String(chapter.chapter), focus: 'body' }
+  const cards = [...new Set(items.filter(item => item.cardId !== undefined && item.action !== 'archived').map(item => item.cardId!))]
+  const manuscripts = items.filter(item => item.manuscriptId !== undefined)
+  if (cards.length === 1 && manuscripts.length === 0) {
+    const card = items.find(item => item.cardId === cards[0])!
+    return { canvasId, card: card.cardId!, heading: card.title }
+  }
+  if (cards.length === 0 && manuscripts.length === 1) return { canvasId, manuscript: manuscripts[0]!.manuscriptId!, heading: manuscripts[0]!.title }
+  if (cards.length > 1) return { canvasId, face: 'board', cards }
+  return { canvasId }
 }

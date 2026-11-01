@@ -118,6 +118,8 @@ export interface CanvasDeskWriteItem {
   readonly manuscriptId?: string
   /** The card's category name (人物, 世界…). */
   readonly kind?: string
+  /** A genre's chapter item: its number. */
+  readonly chapter?: number
 }
 
 /** A room member wrote on a canvas: room's `room/desk-wrote` payload, the canvas's fields under `data`. */

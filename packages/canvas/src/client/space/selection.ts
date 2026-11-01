@@ -123,6 +123,8 @@ export interface CanvasFaceAsk {
   /** One thing on that face the genre should show (the novel's chapter number), and how. */
   readonly item?: string
   readonly focus?: string
+  /** Narrow the board to these cards (a temporary 「本轮改动」 scope). */
+  readonly cards?: readonly string[]
   readonly n: number
 }
 
@@ -224,13 +226,18 @@ export class CanvasSelectionStore {
   /** Asks made so far: a later strip write drops the ask, so its number cannot restart from the snapshot. */
   private asks = 0
 
-  openBoardFace(canvasId: string, face: CanvasBoardFace, scope: string | null, item?: string, focus?: string): void {
+  openBoardFace(canvasId: string, face: CanvasBoardFace, scope: string | null, item?: string, focus?: string, cards?: readonly string[]): void {
     this.ensure(canvasId, AT_BOARD)
     const current = this.source.getSnapshot()
     this.asks += 1
     this.source.set({
       ...current,
-      ask: { canvasId, face, scope, ...(item === undefined ? {} : { item }), ...(focus === undefined ? {} : { focus }), n: this.asks },
+      ask: {
+        canvasId, face, scope,
+        ...(item === undefined ? {} : { item }), ...(focus === undefined ? {} : { focus }),
+        ...(cards === undefined || cards.length === 0 ? {} : { cards }),
+        n: this.asks,
+      },
     })
   }
 
