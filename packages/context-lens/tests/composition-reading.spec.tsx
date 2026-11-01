@@ -83,6 +83,19 @@ describe('composition reading', () => {
     fireEvent.click(screen.getByRole('button', { name: '返回 006 ↩' }))
     expect(document.activeElement).toBe(summary('result-6'))
   })
+  it('offers 在会话中查看 for a call row only when the scope\'s calls are in the conversation', () => {
+    const result = { ...message(4, 'tool-result'), preview: 'result-4', toolCallId: 'c9', sourceTurn: 12 }
+    const captured = { ...request, segments: { ...request.segments, history: [], added: [result] } }
+    const locate = vi.fn()
+    const view = render(<SegmentBlocks request={captured} filterCat={null} onLocateCall={locate} previousResponseNumber={null} t={t} />)
+    fireEvent.click(summary('result-4'))
+    fireEvent.click(screen.getByRole('button', { name: '在会话中查看 ↗' }))
+    expect(locate).toHaveBeenCalledWith('c9', 12)
+    view.unmount()
+    render(<SegmentBlocks request={captured} filterCat={null} previousResponseNumber={null} t={t} />)
+    fireEvent.click(summary('result-4'))
+    expect(screen.queryByRole('button', { name: '在会话中查看 ↗' })).toBeNull()
+  })
   it('never links short repeated text or matching previews with different full content', () => {
     const short = { ...message(1), full: 'short' }
     const shortCopy = { ...message(2), full: 'short' }

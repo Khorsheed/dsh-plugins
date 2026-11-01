@@ -226,6 +226,65 @@ export function scrollConversationToMessage(
   }
 }
 
+/** One tool call's row (root or nested), mounted or folded — the host's `data-chat-call-id` convention (ui-tool ToolCallTree). */
+function callRow(scope: ParentNode, callId: string): Element | null {
+  const id = callId.replace(/["\\]/g, '')
+  return scope.querySelector(`[data-chat-call-id="${id}"]`)
+}
+
+/** Whether the conversation holds one tool call's row (possibly inside a folded step group). */
+export function hasCallAnchor(callId: string, root: ParentNode = document): boolean {
+  try {
+    return callRow(scrollport(root) ?? root, callId) !== null
+  } catch {
+    return false
+  }
+}
+
+/** Frames a folded call may take to unfold before the jump gives up on it. */
+const REVEAL_FRAMES = 60
+
+/**
+ * Scroll the conversation to one tool call's row. A folded step group keeps
+ * its rows in the DOM under `hidden="until-found"` and opens on the
+ * standard `beforematch` event (ui-chat searchable-hidden) — the same path
+ * the browser's find-in-page takes — so every such ancestor gets that event
+ * first, and the jump lands once the row renders. Not mounted is a no-op.
+ * @param callId - the provider-issued call id.
+ * @param root - the DOM scope (document in production).
+ * @param behavior - scroll motion.
+ * @returns whether the call's row was found (the landing may follow a few frames later).
+ */
+export function scrollConversationToCall(
+  callId: string,
+  root: ParentNode = document,
+  behavior: 'smooth' | 'auto' = preferredScrollBehavior(),
+): boolean {
+  try {
+    const port = scrollport(root)
+    const scope: ParentNode = port ?? root
+    const row = callRow(scope, callId)
+    if (row === null) return false
+    for (let folded = row.closest('[hidden="until-found"]'); folded !== null; folded = folded.parentElement?.closest('[hidden="until-found"]') ?? null) {
+      folded.dispatchEvent(new Event('beforematch', { bubbles: true }))
+    }
+    const find = (): Element | null => {
+      const current = callRow(scope, callId)
+      return current === null || current.closest('[hidden]') !== null ? null : landingOf(current)
+    }
+    let frames = 0
+    const land = (): void => {
+      if (find() !== null || frames >= REVEAL_FRAMES || typeof requestAnimationFrame !== 'function') { landOn(find, port, behavior); return }
+      frames += 1
+      requestAnimationFrame(land)
+    }
+    land()
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
  * Scroll the conversation to its floor (the 最新 button): the scrollport's
  * own `scrollTo` when present, else the largest mounted turn row as the
