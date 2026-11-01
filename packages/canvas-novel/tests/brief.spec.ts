@@ -8,7 +8,9 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { BRIEF_BUDGETS, estimateTokens, renderExtractBrief, renderPlanBrief, renderWriteBrief, type BriefData } from '../src/brief.ts'
+import { BRIEF_BUDGETS, estimateTokens, planWords, renderExtractBrief, renderPlanBrief, renderWriteBrief, workingRulesOf, type BriefData } from '../src/brief.ts'
+import { planFromText, planToText } from '../src/text-forms.ts'
+import { normalizePlan, type RuleView } from '../src/types.ts'
 import { NovelService } from '../src/store.ts'
 import { provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
@@ -103,5 +105,63 @@ describe('the three brief variants on the《梦境监护者》seed (CP1)', () =>
       expect(text).toContain('[#99] ★ 星标的那条')
       expect(text).toContain('预算从略')
     }
+  })
+})
+
+describe('the three-layer settings (2026-11-01): this chapter in full, the rest by name', () => {
+  const rule = (ref: string, name: string | undefined, text: string): RuleView => ({ cardId: `c_${ref}`, ref, role: 'world', ...(name === undefined ? {} : { name }), text, status: 'kept' })
+  const RULES = [
+    rule('w1', '命名（工作稿）', '命名（规则）：命名让失稳者获得暂时的形体。状态：暂定。'),
+    rule('w2', '信用点', '信用点（规则）：两界通用的计价单位。'),
+    rule('w3', '公共接入站', '公共接入站（地点）：按时计费的接入场所。'),
+    rule('w4', '鹿', '鹿（规则）：名字太短，不按名字匹配。'),
+  ]
+
+  it('picks the plan\'s 用到的设定 and every setting whose name the text mentions, in board order', () => {
+    expect(workingRulesOf(RULES, ['w3'], '命名人为她起名：命名之后她稳定下来。鹿跑了。').map(view => view.ref)).toEqual(['w1', 'w3'])
+    expect(workingRulesOf(RULES, ['信用点'], '').map(view => view.ref)).toEqual(['w2'])
+    expect(workingRulesOf(RULES, undefined, '')).toEqual([])
+  })
+
+  it('reads a plan\'s words: summary, beats, roles, facts and notes', () => {
+    const text = planWords({ summary: '梗概', beats: [{ at: '午后', text: '推门' }], foreshadowOps: [{ op: '推进', id: '#1', note: '线索' }], cast: [{ who: 'c1', role: '带路' }], infoGaps: [{ who: 'c1', fact: '得知' }], hook: '钩子' })
+    for (const word of ['梗概', '午后', '推门', '线索', '带路', '得知', '钩子']) expect(text).toContain(word)
+  })
+
+  it('renders this chapter\'s settings in full, flags the unsettled ones, and indexes the rest', async () => {
+    const data = { ...await seededBrief(), canonRules: RULES, workingRules: [RULES[0]!] }
+    const write = renderWriteBrief(data)
+    expect(write).toContain('## 本章用到的设定（照此写，违反即返工）')
+    expect(write).toContain('- [w1] 命名（规则）：命名让失稳者获得暂时的形体。状态：暂定。（未定：别在正文里写死）')
+    expect(write).toContain('## 其余设定（只列名字；要用先 canvas_read 看全文，不凭名字猜）\n[w2] 信用点；[w3] 公共接入站；[w4] 鹿')
+    expect(write).not.toContain('两界通用的计价单位')
+    const plan = renderPlanBrief(data)
+    expect(plan).toContain('## 最近几章用到的设定')
+    expect(plan).toContain('[w2] 信用点；[w3] 公共接入站；[w4] 鹿')
+    expect(renderWriteBrief({ ...data, workingRules: [] })).toContain('计划没列用到的设定')
+  })
+
+  it('round-trips 用到的设定 through the plan text form', () => {
+    const plan = normalizePlan(planFromText('梗概：她被命名\n用到的设定：w1、信用点'))!
+    expect(plan.uses).toEqual(['w1', '信用点'])
+    expect(planToText(plan, id => id)).toContain('用到的设定：w1、信用点')
+    expect(normalizePlan({ summary: 's', uses: 'w1，w2' })?.uses).toEqual(['w1', 'w2'])
+  })
+})
+
+describe('the working settings on the seed', () => {
+  it('carries the settings the last two chapters used, and indexes the rest', async () => {
+    const fs = new FakeFs()
+    seedDreamKeeper(fs)
+    const ctx = new Context()
+    ctx.provide('fs', fs as never)
+    provideCanvas(ctx)
+    const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
+    const write = await store.gatherBrief({ workId: DREAM.workId, chapter: 3, for: 'write' })
+    // 第2章's 对账 found the leaf card: 第3章 carries it in full.
+    expect(write.data?.workingRules?.map(view => view.ref)).toContain('w2')
+    expect(renderWriteBrief(write.data!)).toContain('## 本章用到的设定（照此写，违反即返工）')
+    const legacy = await store.gatherBrief({ workId: DREAM.workId, chapter: 3 })
+    expect(legacy.data?.workingRules).toBeUndefined()
   })
 })

@@ -496,6 +496,12 @@ export interface ChapterPlan {
   readonly hook?: string
   /** 目标字数: how long the chapter is meant to run — what the plan's contents are budgeted against. */
   readonly words?: number
+  /**
+   * 用到的设定: the setting cards this chapter leans on (card ids once
+   * registered; a token no card answers is kept as written). The write
+   * brief carries these in full and the rest by name only (2026-11-01).
+   */
+  readonly uses?: readonly string[]
 }
 
 /**
@@ -685,6 +691,9 @@ export function normalizePlan(raw: unknown): ChapterPlan | undefined {
     const fact = cleanText(row['fact'], 200)
     return who === undefined || fact === undefined ? undefined : { who, fact }
   }).filter((gap): gap is PlanInfoGap => gap !== undefined)
+  const usesRaw = record['uses']
+  const uses = [...new Set((Array.isArray(usesRaw) ? usesRaw : typeof usesRaw === 'string' ? usesRaw.split(/[、,，；;]/) : [])
+    .map(item => cleanText(item, 80)).filter((item): item is string => item !== undefined))].slice(0, 16)
   return {
     summary,
     beats,
@@ -696,6 +705,7 @@ export function normalizePlan(raw: unknown): ChapterPlan | undefined {
     ...(pov === undefined ? {} : { pov }),
     ...(hook === undefined ? {} : { hook }),
     ...(words === undefined ? {} : { words }),
+    ...(uses.length === 0 ? {} : { uses }),
   }
 }
 

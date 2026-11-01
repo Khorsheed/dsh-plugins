@@ -123,7 +123,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       if ('message' in resolved) return resolved.message
       const { workId } = resolved
       if (args.what === 'brief') {
-        const gathered = await store.gatherBrief({ workId, ...(args.chapter === undefined ? {} : { chapter: args.chapter }) })
+        const gathered = await store.gatherBrief({
+          workId, ...(args.chapter === undefined ? {} : { chapter: args.chapter }),
+          ...(args.for === 'plan' ? { for: 'plan' as const } : args.for === 'extract' ? {} : { for: 'write' as const }),
+        })
         if (!gathered.ok || gathered.data === undefined) {
           return gathered.error === 'missing'
             ? '还没有可定位的章节：先 novel_write(what=chapter, title=…[, plan=…]) 建章，再取 brief。'
@@ -221,7 +224,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       plan: {
         type: 'object', additionalProperties: true,
         description: 'chapter: {words (目标字数, default the outline\'s per-chapter length), summary (梗概, 2-3 sentences), beats[{at (time label), text, mark?: 转折|落点}], conflict, highlight (看点), '
-          + 'foreshadowOps[{op: 推进|暗示|新埋|揭晓, id (the foreshadow\'s ref, e.g. #12 — never its question) | question (新埋 only), note (what it advances or plants)}], cast[{who (ref or name), role}], infoGaps[{who (ref or name), fact (what they learn this chapter — ideally a line of their 不知道)}], pov, hook}.',
+          + 'foreshadowOps[{op: 推进|暗示|新埋|揭晓, id (the foreshadow\'s ref, e.g. #12 — never its question) | question (新埋 only), note (what it advances or plants)}], cast[{who (ref or name), role}], infoGaps[{who (ref or name), fact (what they learn this chapter — ideally a line of their 不知道)}], uses (用到的设定: the setting refs or names this chapter leans on, e.g. ["w3", "命名"] — the write brief carries these in full, the rest by name only), pov, hook}.',
       },
       action: { type: 'string', enum: ['accept', 'discard'], description: 'review: accept or discard the pending item.' },
       volume: { type: 'string', description: 'chapter: the volume to file it under (id, title or 卷二); omit to stay in the previous chapter\'s.' },

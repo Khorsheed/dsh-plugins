@@ -84,7 +84,11 @@ The run happens once, in the conversation, and ends with a 整理结果 the pers
    - The confirm button reads 按计划开写. It confirms, then sends 「第 N 章计划确认，按计划开写。」 as the person's message through the conversation input's `submit`. A draft the person is typing is never sent: the line is appended to it instead.
    - `resolvePlan` resolves `infoGaps[].who` to a card.
    - The chapter Remote also maps a character's ref (c2) to its name, so plans stored before the fix read correctly.
-2. 世界观 categories, card links, migration, and the three-layer brief.
+2. 世界观 categories, card links, migration, and the three-layer brief. **The brief's settings layer is implemented ahead of the rest**:
+   - The plan gains 用到的设定 (`uses`), resolved to cards on registration and editable in the plan's text form.
+   - `gatherBrief({ for })` carries in full the plan's `uses`, the settings the last two chapters' 对账 recorded (`ChapterRecord.settings`), and every setting whose name the plan mentions (the plan brief also scans the latest two recaps and the previous tail). Other settings go by name only.
+   - Settings whose text says 工作稿 / 待定 / 未决 / 暂定 / 待调整 carry 「未定：别在正文里写死」.
+   - A caller without `for` gets the old all-in-full brief.
 3. Timeline, future events, tension, the recall tool, and the five-part character memory.
 4. In-place chapter editing and the 灵感 tab.
 

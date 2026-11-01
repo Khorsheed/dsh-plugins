@@ -29,8 +29,14 @@ export interface BriefData {
   readonly workTitle: string
   /** The chapter being planned / written / reconciled. */
   readonly target: ChapterRecord
-  /** 世界 cards — the 硬约束. */
+  /** Every kept 世界 card. */
   readonly canonRules: readonly RuleView[]
+  /**
+   * The 世界 cards this chapter leans on, carried in full: the plan's 用到的设定
+   * plus every card whose name the plan (write) or the latest chapters (plan)
+   * mention. Absent on data gathered before 2026-11-01: everything is in full.
+   */
+  readonly workingRules?: readonly RuleView[]
   /** 原则 cards — the 创作原则. */
   readonly principles: readonly RuleView[]
   /** The live ledger (已埋/推进中), longest-slept first. */
@@ -59,6 +65,56 @@ export interface BriefData {
   readonly outline?: OutlineDoc
   /** The whole chapter index, seq-ordered (where the book stands against its volumes). */
   readonly chapters?: readonly ChapterRecord[]
+}
+
+/* ------------------------------------------------------- working settings */
+
+/** A setting still being worked out: its text says so. */
+const UNSETTLED = /工作稿|待定|未决|暂定|待调整/
+
+/** The name a setting is mentioned by: its 名称 without bracketed asides (「命名（工作稿）」 → 命名). */
+function mentionName(rule: RuleView): string | undefined {
+  const name = rule.name?.replace(/[（(][^）)]*[）)]/g, '').trim()
+  return name === undefined || [...name].length < 2 ? undefined : name
+}
+
+/**
+ * The 世界 cards one chapter leans on (2026-11-01, the three-layer brief):
+ * the plan's 用到的设定 (card ids or the tokens a person typed), then every
+ * card whose name the given text mentions — in board order.
+ * @param rules - every kept 世界 card.
+ * @param uses - the plan's 用到的设定, when it has one.
+ * @param text - what to scan for names: the plan's own words, or the latest recaps.
+ */
+export function workingRulesOf(rules: readonly RuleView[], uses: readonly string[] | undefined, text: string): readonly RuleView[] {
+  const wanted = new Set(uses ?? [])
+  return rules.filter(rule => {
+    if (wanted.has(rule.cardId) || wanted.has(rule.ref) || (rule.name !== undefined && wanted.has(rule.name))) return true
+    const name = mentionName(rule)
+    return name !== undefined && text.includes(name)
+  })
+}
+
+/** Everything a plan says, as one string to scan for setting names. */
+export function planWords(plan: ChapterPlan | undefined): string {
+  if (plan === undefined) return ''
+  return [
+    plan.summary, plan.conflict, plan.highlight, plan.hook,
+    ...plan.beats.flatMap(beat => [beat.at, beat.text]),
+    ...plan.cast.map(member => member.role),
+    ...(plan.infoGaps ?? []).map(gap => gap.fact),
+    ...plan.foreshadowOps.flatMap(op => [op.note, op.question]),
+  ].filter((part): part is string => part !== undefined).join('\n')
+}
+
+/** One setting in full, flagged when it is still being worked out. */
+function ruleLine(rule: RuleView): string {
+  return `- [${rule.ref}] ${rule.text}${UNSETTLED.test(rule.text) ? '（未定：别在正文里写死）' : ''}`
+}
+
+/** The settings not carried in full, by name: the index the model looks things up from. */
+function ruleIndex(rules: readonly RuleView[]): string {
+  return rules.map(rule => `[${rule.ref}] ${rule.name ?? rule.text.slice(0, 16)}`).join('；')
 }
 
 /* ------------------------------------------------------------- budget (字数) */
@@ -361,8 +417,7 @@ function renderWriteWithin(data: BriefData, limits: RenderLimits, budget: number
     `# 《${data.workTitle}》写作约束 · 第${data.target.n}章 ${data.target.title}`,
     ...(words === undefined ? [] : ['', `目标字数：约 ${words} 字（上下两成以内）。`]),
     '',
-    '## 硬约束（违反即返工）',
-    ...(data.canonRules.length === 0 ? ['（还没有固化约束。）'] : data.canonRules.map(rule => `- [${rule.ref}] ${rule.text}`)),
+    ...settingBlocksWrite(data),
     '',
     '## 创作原则',
     ...(data.principles.length === 0 ? ['（还没有创作原则。）'] : data.principles.map(rule => `- ${rule.text}`)),
@@ -394,6 +449,36 @@ function renderWriteWithin(data: BriefData, limits: RenderLimits, budget: number
   return text
 }
 
+/** The write brief's settings: this chapter's in full, the rest by name. */
+function settingBlocksWrite(data: BriefData): string[] {
+  if (data.workingRules === undefined) {
+    return ['## 硬约束（违反即返工）', ...(data.canonRules.length === 0 ? ['（还没有固化约束。）'] : data.canonRules.map(rule => `- [${rule.ref}] ${rule.text}`))]
+  }
+  const working = new Set(data.workingRules.map(rule => rule.cardId))
+  const rest = data.canonRules.filter(rule => !working.has(rule.cardId))
+  return [
+    '## 本章用到的设定（照此写，违反即返工）',
+    ...(data.workingRules.length === 0
+      ? [data.canonRules.length === 0 ? '（还没有设定卡。）' : '（计划没列用到的设定，也没点到哪条设定的名字。要用哪条，先 canvas_read 看全文。）']
+      : data.workingRules.map(ruleLine)),
+    ...(rest.length === 0 ? [] : ['', '## 其余设定（只列名字；要用先 canvas_read 看全文，不凭名字猜）', ruleIndex(rest)]),
+  ]
+}
+
+/** The plan brief's settings: what the latest chapters leaned on in full, every other setting by name. */
+function settingBlocksPlan(data: BriefData): string[] {
+  if (data.workingRules === undefined) {
+    return ['## 硬约束', ...(data.canonRules.length === 0 ? ['（还没有固化约束。）'] : data.canonRules.map(rule => `- [${rule.ref}] ${rule.text}`))]
+  }
+  const working = new Set(data.workingRules.map(rule => rule.cardId))
+  const rest = data.canonRules.filter(rule => !working.has(rule.cardId))
+  return [
+    '## 最近几章用到的设定',
+    ...(data.workingRules.length === 0 ? ['（最近的章节没点到哪条设定的名字。）'] : data.workingRules.map(ruleLine)),
+    ...(rest.length === 0 ? [] : ['', '## 设定目录（只列名字；本章要依赖的写进计划的 uses，细节先 canvas_read）', ruleIndex(rest)]),
+  ]
+}
+
 /**
  * The plan variant (`for=plan`, CP0 §2.B): hard constraints, the WHOLE live
  * ledger (active + sleeping — capped by budget with a 从略 note), resolved
@@ -418,8 +503,7 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
     '',
     ...(words === undefined ? [] : ['## 篇幅', budgetLine(words), '']),
     ...outlineBlock(data),
-    '## 硬约束',
-    ...(data.canonRules.length === 0 ? ['（还没有固化约束。）'] : data.canonRules.map(rule => `- [${rule.ref}] ${rule.text}`)),
+    ...settingBlocksPlan(data),
     '',
     '## 伏笔台账（全部活跃+沉睡；已揭带答案）',
     ...(foreshadows.length === 0 && data.resolvedForeshadows.length === 0
