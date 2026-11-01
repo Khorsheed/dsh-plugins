@@ -24,6 +24,9 @@ import { IconCheckOutlineMedium } from '../icons.tsx'
 import { IconChatOutlineMedium, IconFlagOutlineMedium } from '../icons-local.tsx'
 import css from '../LibraryPane.module.css'
 
+/** How many unsubmitted question numbers the 交卷 hint lists before it trails off. */
+const PENDING_SHOWN = 6
+
 /** One question's state in the sitting. */
 interface Answered {
   readonly given: string
@@ -70,11 +73,14 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
     : undefined
   const total = quiz?.questions.length ?? 0
   const done = quiz === undefined ? 0 : quiz.questions.filter(item => answers[item.id] !== undefined).length
-  const allAnswered = quiz !== undefined && done === total
-  // The questions still holding 交卷 back, by paper number — listed under the button so none hides on a long scroll.
+  // The questions still holding 交卷 back, by paper number. 交卷 stays clickable: pressing it early lands on the first of
+  // them, marks every one on the paper, and lists a capped few under the button — no standing reminder while answering.
   const pending = quiz === undefined ? [] : quiz.questions.flatMap((item, at) => answers[item.id] === undefined
     ? [{ id: item.id, number: at + 1, drafted: (drafts[item.id] ?? '').trim() !== '' }]
     : [])
+  const [nudged, setNudged] = useState(false)
+  const shown = pending.slice(0, PENDING_SHOWN)
+  const drafted = pending.filter(item => item.drafted).slice(0, PENDING_SHOWN)
   const bodyRef = useRef<HTMLDivElement>(null)
   const jumpTo = (id: string): void => {
     const card = [...(bodyRef.current?.querySelectorAll<HTMLElement>('[data-question]') ?? [])].find(el => el.dataset.question === id)
@@ -197,25 +203,39 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
             onDraft={text => { recordDraft(question.id, text) }}
             onAnswer={entry => { record(question.id, entry) }}
             onReopen={handedOver ? undefined : () => { reopen(question.id) }}
+            pending={nudged && answers[question.id] === undefined}
             onExplain={() => explain(question, at + 1)}
           />
         ))}
         {notice !== undefined && <div className={css.notice}>{notice}</div>}
         {quiz !== undefined && (
           <div className={css.actions}>
-            <button type="button" className={css.primary} disabled={busy || handedOver || !allAnswered} onClick={() => { void finish() }}>
-              {handedOver ? t('quiz.handedOverButton') : busy ? t('quiz.finishing') : allAnswered ? t('quiz.finish') : t('quiz.remaining', { count: String(total - done) })}
+            <button
+              type="button"
+              className={css.primary}
+              disabled={busy || handedOver}
+              onClick={() => {
+                if (pending[0] === undefined) { void finish(); return }
+                setNudged(true)
+                jumpTo(pending[0].id)
+              }}
+            >
+              {handedOver ? t('quiz.handedOverButton') : busy ? t('quiz.finishing') : t('quiz.finish')}
             </button>
           </div>
         )}
-        {quiz !== undefined && !handedOver && pending.length > 0 && (
-          <div className={css.pending}>
-            <span className={css.muted}>{t('quiz.pending')}</span>
-            {pending.map(item => (
-              <button key={item.id} type="button" className={css.textButton} onClick={() => { jumpTo(item.id) }}>
-                {t(item.drafted ? 'quiz.pendingDrafted' : 'quiz.pendingItem', { number: String(item.number) })}
+        {quiz !== undefined && nudged && !handedOver && pending.length > 0 && (
+          <div className={css.pending} role="status">
+            <span className={css.muted}>{t('quiz.pending', { count: String(pending.length) })}</span>
+            {shown.map(item => (
+              <button key={item.id} type="button" className={css.textButton} title={t('quiz.jumpTo', { number: String(item.number) })} onClick={() => { jumpTo(item.id) }}>
+                {item.number}
               </button>
             ))}
+            {pending.length > shown.length && <span className={css.muted}>…</span>}
+            {drafted.length > 0 && (
+              <span className={css.muted}>{t('quiz.pendingDrafted', { numbers: drafted.map(item => item.number).join('、') + (pending.filter(item => item.drafted).length > drafted.length ? '…' : '') })}</span>
+            )}
           </div>
         )}
       </div>
@@ -224,7 +244,7 @@ export function QuizView({ p, projectId, resourceId, quizId }: ViewProps & { pro
 }
 
 /** One question on the paper: its number, two tags, the answer control, the feedback. The evidence quote shows only after answering — quoted up front, it often IS the answer. */
-function QuestionCard({ p, profile, question, number, answered, draft, onDraft, onAnswer, onReopen, onExplain }: {
+function QuestionCard({ p, profile, question, number, answered, draft, onDraft, onAnswer, onReopen, pending, onExplain }: {
   p: ViewProps['p']
   profile: LibraryProfile
   question: LibraryQuizQuestion
@@ -235,6 +255,8 @@ function QuestionCard({ p, profile, question, number, answered, draft, onDraft, 
   onAnswer: (entry: Answered) => void
   /** Take a submitted answer back to editing; undefined once the sitting is handed to the coach. */
   onReopen: (() => void) | undefined
+  /** 交卷 was pressed while this one is still unsubmitted: its number turns amber. */
+  pending: boolean
   /** Put a 讲讲这题 draft into the conversation input; false without a conversation. */
   onExplain: () => boolean
 }): ReactNode {
@@ -256,7 +278,7 @@ function QuestionCard({ p, profile, question, number, answered, draft, onDraft, 
     el.style.height = `${Math.min(el.scrollHeight, 240)}px`
   }, [draft, answered])
   return (
-    <section className={css.question} data-question={question.id}>
+    <section className={css.question} data-question={question.id} data-pending={pending}>
       <div className={css.chips}>
         <span className={css.optionKey} aria-hidden="true">{number}</span>
         <span className={css.chip} data-tone={question.target.kind === 'asked' || question.target.kind === 'missed' ? 'weak' : undefined}>{t(`target.${question.target.kind}`)}</span>

@@ -243,12 +243,18 @@
   gap: 8px;
 }
 
-/* 交卷 held back: the unsubmitted question numbers, each a jump. */
+/* 交卷 pressed early: a capped list of unsubmitted question numbers, each a jump. */
 .pending {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 12px;
+  gap: 4px 10px;
+}
+
+/* …and each unsubmitted question's number on the paper turns amber. */
+.question[data-pending='true'] > .chips > .optionKey {
+  background: var(--lib-warn-soft);
+  color: var(--lib-warn);
 }
 
 /* 今日 */
