@@ -11,7 +11,7 @@ import type {
 import { WINDOW_TURNS, fmtSpan, gapShown, isHollowTurn, latestTurnSeq, requestOfLocate, resolveTurnSeq, turnGaps, turnNumber, turnOfLocate, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
-import { rememberSelection, takeSelection } from './member-jump.ts'
+import { foreignLocate, forgetSelection, rememberSelection, takeSelection } from './member-jump.ts'
 import { hasMessageAnchor, hasTurnAnchor, locateCallPaging, scrollConversationToBottom, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
@@ -55,7 +55,8 @@ export function InspectorPanel({
   const { tab } = useTabInfo()
   // The place this panel kept when it sent the reader to a member's session
   // (the panel unmounts with its session's Sidebar): restored once on remount.
-  const [restored] = useState(() => takeSelection(ownSessionId, tab.navigation.revision))
+  const [restored] = useState(() => takeSelection(ownSessionId, tab.navigation.revision,
+    foreignLocate(tab.navigation.params as RequestInspectorTabParams | undefined, ownSessionId)))
   // A navigation may point the panel at another session (a room member's
   // child session); the next navigation without one returns to the own session.
   const [viewed, setViewed] = useState<string | null>(restored?.viewed ?? null)
@@ -113,6 +114,13 @@ export function InspectorPanel({
   const revision = tab.navigation.revision
   const navParams = tab.navigation.params as RequestInspectorTabParams | undefined
   const navTurnSeq = navParams?.turnSeq
+  // The kept place stays until the reader leaves it (a second mount on the way back gets it too).
+  useEffect(() => {
+    if (restored === undefined) return
+    if (turnSeq === restored.turnSeq && scopeId === restored.scopeId && selectedSeq === restored.selectedSeq
+      && viewed === restored.viewed && mainTab === restored.mainTab) return
+    forgetSelection(ownSessionId)
+  }, [restored, turnSeq, scopeId, selectedSeq, viewed, mainTab, ownSessionId])
   // A restored place already reflects every navigation up to its revision; re-applying them would undo it.
   const lastNavRevision = useRef(restored === undefined ? 0 : revision)
   /** The call a navigation asked to show; consumed once the turn list arrives. */
@@ -124,6 +132,8 @@ export function InspectorPanel({
   useEffect(() => {
     if (revision === 0 || revision === lastNavRevision.current) return
     lastNavRevision.current = revision
+    // A call handed to another session's lens: not this panel's navigation.
+    if (foreignLocate(navParams, ownSessionId)) return
     const target = navParams?.sessionId
     setViewed(target === undefined || target === ownSessionId ? null : target)
     pendingMessage.current = navParams?.messageId

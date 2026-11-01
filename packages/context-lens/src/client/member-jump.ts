@@ -32,7 +32,7 @@ export interface MemberJumpDeps {
   /** The session the conversation shows now. */
   readonly currentSession: () => string | undefined
   /** Open the lens tab in the current session's Sidebar; false when it cannot (yet). */
-  readonly openTab: (params: { locateCall: LocateCallTarget }) => boolean
+  readonly openTab: (params: { locateCall: LocateCallTarget & { readonly session: string } }) => boolean
   /** Timer seam (tests). */
   readonly schedule?: (callback: () => void, ms: number) => void
   readonly now?: () => number
@@ -66,7 +66,7 @@ export function openInMemberSession(deps: MemberJumpDeps, memberSession: string,
   // The tab may only open once the member session is on screen (its Sidebar
   // is the one that gets the tab) and the lens kind is registered for it.
   const attempt = (): void => {
-    if (sameSession(deps.currentSession(), memberSession) && deps.openTab({ locateCall: target })) return
+    if (sameSession(deps.currentSession(), memberSession) && deps.openTab({ locateCall: { ...target, session: memberSession } })) return
     if (now() >= deadline) return
     schedule(attempt, MEMBER_JUMP_POLL_MS)
   }
@@ -85,20 +85,47 @@ export interface PanelSelection {
   readonly mainTab: 'token' | 'time'
 }
 
-const selections = new Map<string, PanelSelection>()
+const selections = new Map<string, { readonly place: PanelSelection; readonly at: number }>()
+
+/** How long a kept place waits for the reader to come back. */
+export const KEPT_PLACE_MS = 30 * 60_000
 
 /** Keep a panel's place for its session (before the panel goes away). */
-export function rememberSelection(sessionId: string, selection: PanelSelection): void {
-  selections.set(sessionId, selection)
+export function rememberSelection(sessionId: string, selection: PanelSelection, now: number = Date.now()): void {
+  selections.set(sessionId, { place: selection, at: now })
+}
+
+/** Drop a session's kept place: the reader has moved on from it. */
+export function forgetSelection(sessionId: string): void {
+  selections.delete(sessionId)
 }
 
 /**
- * Take a session's kept place back, once. A navigation newer than the place
+ * Take a session's kept place back. It is NOT consumed: the session's panel
+ * may mount more than once on the way back (a Sidebar re-adopting its store),
+ * and a place handed to the first mount only would leave the next one on the
+ * latest turn; the panel drops it once the reader moves away
+ * ({@link forgetSelection}), and it expires after {@link KEPT_PLACE_MS}. A navigation newer than the place
  * (a higher revision) wins: it is what the reader asked for since. A tab
- * whose revision restarted (a lower one) still gets the place back.
+ * whose revision restarted (a lower one) still gets the place back, and so
+ * does one whose newer navigation was a call meant for another session
+ * (`foreign`: it reached this Sidebar while the switch was in flight).
  */
-export function takeSelection(sessionId: string, revision: number): PanelSelection | undefined {
+export function takeSelection(sessionId: string, revision: number, foreign = false, now: number = Date.now()): PanelSelection | undefined {
   const kept = selections.get(sessionId)
-  selections.delete(sessionId)
-  return kept !== undefined && revision <= kept.revision ? kept : undefined
+  if (kept === undefined) return undefined
+  if (now - kept.at > KEPT_PLACE_MS || (revision > kept.place.revision && !foreign)) {
+    selections.delete(sessionId)
+    return undefined
+  }
+  return kept.place
+}
+
+/**
+ * Whether a navigation is a call handed to ANOTHER session's lens (it names
+ * that session): this lens leaves it alone and keeps the reader's place.
+ */
+export function foreignLocate(params: { readonly locateCall?: { readonly session?: string } } | undefined, ownSession: string): boolean {
+  const target = params?.locateCall?.session
+  return target !== undefined && !sameSession(target, ownSession)
 }

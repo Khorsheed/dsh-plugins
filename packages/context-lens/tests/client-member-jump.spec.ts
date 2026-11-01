@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import {
-  MEMBER_JUMP_TIMEOUT_MS, openInMemberSession, rememberSelection, sameSession, takeSelection, type MemberJumpDeps,
+  KEPT_PLACE_MS, MEMBER_JUMP_TIMEOUT_MS, foreignLocate, forgetSelection, openInMemberSession, rememberSelection, sameSession, takeSelection, type MemberJumpDeps,
 } from '../src/client/member-jump.ts'
 
 /** A manual clock: `tick` runs the scheduled attempt after advancing time. */
@@ -45,7 +45,8 @@ describe('openInMemberSession', () => {
     expect(openTab).toHaveBeenCalledTimes(1)
     c.tick()
     expect(openTab).toHaveBeenCalledTimes(2)
-    expect(openTab).toHaveBeenLastCalledWith({ locateCall: { callId: 'tool_x', hostTurn: 53 } })
+    // The navigation names the member session: another session's lens leaves it alone.
+    expect(openTab).toHaveBeenLastCalledWith({ locateCall: { callId: 'tool_x', hostTurn: 53, session: '443e7c65' } })
     expect(c.pending()).toBe(0)
   })
 
@@ -68,17 +69,33 @@ describe('openInMemberSession', () => {
 describe('kept panel place', () => {
   const place = { revision: 3, viewed: null, turnSeq: 84, scopeId: 'main', selectedSeq: 12, mainTab: 'token' as const }
 
-  it('is taken back once, under the same or a restarted revision', () => {
+  it('is taken back by every mount on the way back, under the same or a restarted revision, until forgotten', () => {
     rememberSelection('room', place)
     expect(takeSelection('room', 3)).toEqual(place)
-    expect(takeSelection('room', 3)).toBeUndefined()
-    rememberSelection('room', place)
+    // A second mount (the Sidebar re-adopting its store) still gets it.
+    expect(takeSelection('room', 3)).toEqual(place)
     expect(takeSelection('room', 0)).toEqual(place)
+    forgetSelection('room')
+    expect(takeSelection('room', 3)).toBeUndefined()
   })
 
-  it('loses to a newer navigation', () => {
+  it('loses to a newer navigation, for good', () => {
     rememberSelection('room', place)
     expect(takeSelection('room', 4)).toBeUndefined()
     expect(takeSelection('room', 3)).toBeUndefined()
+  })
+
+  it('a newer navigation that is a call for another session does not take it away', () => {
+    rememberSelection('room', place)
+    const params = { locateCall: { callId: 'tool_x', session: '443e7c65' } }
+    expect(foreignLocate(params, 'room')).toBe(true)
+    expect(foreignLocate(params, 'session-443e7c65')).toBe(false)
+    expect(foreignLocate({ locateCall: { callId: 'tool_x' } }, 'room')).toBe(false)
+    expect(takeSelection('room', 4, foreignLocate(params, 'room'))).toEqual(place)
+  })
+
+  it('expires', () => {
+    rememberSelection('room', place, 1_000)
+    expect(takeSelection('room', 3, false, 1_000 + KEPT_PLACE_MS + 1)).toBeUndefined()
   })
 })

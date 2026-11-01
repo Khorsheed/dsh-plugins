@@ -411,6 +411,17 @@ describe('InspectorPanel · a room member\'s calls', () => {
     memberBench(open)
     await waitFor(() => expect(screen.getByText('Replaced 1 occurrence')).toBeTruthy())
     expect(screen.getByRole('tab', { name: /提取 JSON/ }).getAttribute('aria-selected')).toBe('true')
+    // Mounted again on the way back (the Sidebar re-adopting its store): still the same place.
+    cleanup()
+    memberBench(open)
+    await waitFor(() => expect(screen.getByText('Replaced 1 occurrence')).toBeTruthy())
+    expect(screen.getByRole('tab', { name: /提取 JSON/ }).getAttribute('aria-selected')).toBe('true')
+    // Once the reader moves on, the kept place is dropped: a later mount opens as usual.
+    fireEvent.click(screen.getByRole('tab', { name: /主对话|Main/ }))
+    cleanup()
+    memberBench(open)
+    await waitFor(() => expect(screen.getByRole('tab', { name: /提取 JSON/ })).toBeTruthy())
+    expect(screen.getByRole('tab', { name: /提取 JSON/ }).getAttribute('aria-selected')).toBe('false')
   })
 
   it('no hand-over without a way to open sessions: no button', async () => {

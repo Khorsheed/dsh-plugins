@@ -127,6 +127,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     const open = workspace?.openSession
     return typeof open === 'function' ? (sessionId => open.call(workspace, sessionId as SessionId)) : undefined
   }
+  /** The Sidebar's on-screen session (`ctx.sidebarRight.mounted`), probed: absent on an older face. */
+  const sidebarSession = (): string | undefined => {
+    try {
+      const mounted = (ctx.sidebarRight as { mounted?: { getSnapshot?: () => string | undefined } }).mounted
+      return typeof mounted?.getSnapshot === 'function' ? mounted.getSnapshot() : undefined
+    } catch {
+      return undefined
+    }
+  }
   const tabFace = (): InspectorTabInjected => ({
     ...wire(),
     loadThrough: async (sessionId, seq) => {
@@ -137,7 +146,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       openInMemberSession: (memberSession: string, target: LocateCallTarget) => {
         openInMemberSession({
           openSession: workspaceOpen(),
-          currentSession: () => mainSessionId(ctx.sessions.list.getSnapshot()),
+          // The session openTab acts on is the Sidebar's own on-screen one
+          // (`mounted`); the session list can move first, and a tab opened in
+          // that gap lands in the room's Sidebar instead.
+          currentSession: () => sidebarSession() ?? mainSessionId(ctx.sessions.list.getSnapshot()),
           openTab: params => {
             try {
               ctx.sidebarRight.openTab(REQUEST_INSPECTOR_KIND, { params })

@@ -46,6 +46,8 @@ export interface RequestInspectorTabParams {
     readonly hostTurn?: number
     /** The request the reader was on (start time, request number): selected, so both lenses show the same context. */
     readonly request?: { readonly startedAt: number; readonly requestNumber?: number }
+    /** The session this call is for; another session's lens ignores the navigation. */
+    readonly session?: string
   }
 }
 
