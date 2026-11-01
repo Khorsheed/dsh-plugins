@@ -487,10 +487,25 @@ function buildCliCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: 
   const num = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) ? value : undefined
   const between = cursor.turnHost === undefined
   const hostTurn = cursor.turnHost ?? cursor.lastTurnHost
+  // The call's input is the member's whole context at that moment — the
+  // history this log already folded, under the same system prompt and tools
+  // (kimi's llm.request kind:compaction: messageCount = the history,
+  // droppedCount 0, the same prompt and tools hashes); only the CLI's own
+  // compaction instruction is not in the log (inputPartial). It takes no
+  // request number: its log index sits between the requests around it (a
+  // body rebuild selects it by that index, like any bodiless request).
+  const logIndex = cursor.requests.length - 0.5
   const temp = openCursor()
+  temp.messages = cursor.messages
+  if (cursor.tools !== undefined) temp.tools = cursor.tools
+  if (cursor.materialize !== undefined) {
+    const materialize = cursor.materialize
+    temp.materialize = host => materialize(host, logIndex)
+  }
   temp.turnHost = hostTurn
   temp.stepStartAt = num(data['startedAt']) ?? row.time
   temp.config = {
+    ...cursor.config,
     ...typeof data['provider'] === 'string' ? { provider: data['provider'] } : {},
     ...typeof data['model'] === 'string' ? { model: data['model'] } : {},
   }
@@ -502,11 +517,9 @@ function buildCliCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: 
     usage: data['usage'],
   }, outcome !== 'completed')
   const before = num(data['beforeTokens']), after = num(data['afterTokens'])
-  // Built on its own cursor: its log index is not this log's (a body rebuild
-  // selects requests by index), and it has no body to rebuild.
-  const { logIndex: _own, ...rest } = result
   return {
-    ...rest,
+    ...result,
+    logIndex,
     ...outcome === 'completed' ? {} : { status: 'failed' as const, error: typeof data['error'] === 'string' ? data['error'] : `compaction ${outcome}` },
     responseSummary: { kind: 'compaction' }, purpose: 'compaction',
     compaction: {

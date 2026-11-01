@@ -12,7 +12,8 @@ Status: implemented
   - 压缩调用的用量就是这条请求的用量，CLI 的摘要作为它的输出。
   - `CompactionInfo` 新增 `source`、`beforeTokens`、`afterTokens`、`betweenTurns`。
   - 发生在一轮里的压缩（CLI 自己触发的）归那一轮；发生在两轮之间的压缩（`/compact`）归最后结束的那一轮。为此 cursor 记下 `lastTurnHost`。
-  - 这条请求用独立的 cursor 生成，并去掉 `logIndex`，这样重建请求正文时不会把它当成日志里的第一个请求。
+  - 它的输入是成员当时折叠出的上下文。Kimi 自己的记录（`llm.request kind:compaction`）显示，这次调用发送了全部历史（`droppedCount: 0`），系统提示和工具的哈希也与平时相同；只有 CLI 的压缩指令没有记录。
+  - 它不占请求编号：`logIndex` 取前后两个请求之间的位置（`n - 0.5`），所以成员日志不带正文时，也能像其他请求一样在读取时重建它的正文。
 - **房间轮次**：
   - 人发的 `/compact` 派发不再单独成轮。
   - 在每一轮里，成员 scope 的压缩请求移到 `compaction:<子会话>` scope（`kind: 'compaction'`），也就是排在该成员之后的「压缩」页签。它的概览带 `compaction.member {name, source, beforeTokens, afterTokens}`。

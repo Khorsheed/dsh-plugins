@@ -12,7 +12,8 @@ An external CLI member's compaction left no trace in Context Lens. It runs no tu
   - The call's usage is the request's usage, and the CLI's summary is its output.
   - `CompactionInfo` gains `source`, `beforeTokens`, `afterTokens` and `betweenTurns`.
   - A compaction run inside a turn (the CLI's own) belongs to that turn. One run between turns (`/compact`) belongs to the turn that closed last. The cursor keeps `lastTurnHost` for this.
-  - The request is built on its own cursor and drops `logIndex`, so a body rebuild never mistakes it for the log's first request.
+  - Its input is the member's folded context at that moment. Kimi's own record (`llm.request kind:compaction`) shows the call sends the whole history (`droppedCount: 0`) under the same prompt and tools hashes; only the CLI's compaction instruction is unrecorded.
+  - It takes no request number. Its `logIndex` sits between the requests around it (`n - 0.5`), so a bodiless member log rebuilds its body on read like any other request.
 - **Room rounds.**
   - A human `/compact` dispatch is no longer a round.
   - In each round, a member scope's compaction requests move to a `compaction:<child>` scope (`kind: 'compaction'`, the 压缩 tab after the member's). Its overview carries `compaction.member {name, source, beforeTokens, afterTokens}`.
