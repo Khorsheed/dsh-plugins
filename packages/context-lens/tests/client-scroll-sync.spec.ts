@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  preferredScrollBehavior, scrollConversationToBottom, scrollConversationToTurn,
+  hasCallAnchor, preferredScrollBehavior, scrollConversationToBottom, scrollConversationToCall, scrollConversationToTurn,
 } from '../src/client/scroll-sync.ts'
 
 /** Build a fake conversation: a scrollport with turn rows (and one hidden row). */
@@ -192,5 +192,30 @@ describe('scrollConversationToMessage', () => {
     port.dispatchEvent(new Event('wheel'))
     run(10)
     expect(scrollIntoView).toHaveBeenCalledTimes(3)
+  })
+})
+
+describe('scrollConversationToCall', () => {
+  it('unfolds the folded step group holding the call (beforematch), then lands on the call row', () => {
+    const { rows } = conversation([5])
+    const group = document.createElement('div')
+    group.setAttribute('hidden', 'until-found')
+    const opened = vi.fn(() => { group.removeAttribute('hidden') })
+    group.addEventListener('beforematch', opened)
+    const call = document.createElement('div')
+    call.setAttribute('data-chat-call-id', 'call_7')
+    group.appendChild(call)
+    rows.get(5)!.appendChild(group)
+    expect(hasCallAnchor('call_7')).toBe(true)
+    expect(scrollConversationToCall('call_7', document, 'auto')).toBe(true)
+    expect(opened).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.instances[0]).toBe(call)
+  })
+
+  it('a call the conversation has not rendered is a silent false', () => {
+    conversation([1])
+    expect(hasCallAnchor('missing')).toBe(false)
+    expect(scrollConversationToCall('missing')).toBe(false)
+    expect(scrollIntoView).not.toHaveBeenCalled()
   })
 })

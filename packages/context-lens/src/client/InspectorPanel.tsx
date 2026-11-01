@@ -11,7 +11,7 @@ import type {
 import { WINDOW_TURNS, fmtSpan, gapShown, isHollowTurn, latestTurnSeq, resolveTurnSeq, turnGaps, turnNumber, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
-import { hasMessageAnchor, hasTurnAnchor, scrollConversationToBottom, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
+import { hasCallAnchor, hasMessageAnchor, hasTurnAnchor, scrollConversationToBottom, scrollConversationToCall, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
 import { TokenView } from './TokenView.tsx'
@@ -349,6 +349,39 @@ export function InspectorPanel({
     })
   }
 
+  /**
+   * Show one tool call in the conversation on the left: its own row (unfolded
+   * when its step group is folded); a call not rendered yet pages history back
+   * to its turn first; failing that, its turn. `hostTurn` is the call's host
+   * turn when known (main-scope rows carry it), else the selected turn.
+   */
+  const locateCall = (callId: string, hostTurn: number | undefined): void => {
+    const jump = ++jumpToken.current
+    const fallbackTurn = hostTurn ?? turn?.hostTurn
+    if (scrollConversationToCall(callId)) return
+    const listed = fallbackTurn === undefined ? undefined : turns?.find(candidate => candidate.hostTurn === fallbackTurn)
+    if (!loadThrough || listed?.startSeq === undefined) {
+      if (fallbackTurn !== undefined) scrollConversationToTurn(fallbackTurn)
+      return
+    }
+    void loadThrough(sessionId, listed.startSeq).catch(() => undefined).then(() => {
+      let frames = 0
+      const land = (): void => {
+        if (jump !== jumpToken.current) return
+        if (hasCallAnchor(callId)) { scrollConversationToCall(callId); return }
+        if (frames >= 60) { scrollConversationToTurn(fallbackTurn!); return }
+        frames += 1
+        requestAnimationFrame(land)
+      }
+      land()
+    })
+  }
+  // A call lives in this conversation when the scope is the main agent or a
+  // child it delegated by a tool call (nested under that call); a room
+  // member's calls live in the member's own session.
+  const callsInConversation = viewed === null && effectiveScope !== undefined
+    && (effectiveScope.kind === 'main' || effectiveScope.delegatedBy !== undefined)
+
   const onSelectTurn = (next: number): void => {
     if (next === turnSeq) return
     selectTurnState(next)
@@ -490,6 +523,7 @@ export function InspectorPanel({
           previousResponseNumber={previousResponseNumber}
           onSelect={seq => { setSelectedSeq(seq); setFilterCat(null) }}
           onToggleFilter={category => { setFilterCat(previous => previous === category ? null : category) }}
+          onLocateCall={callsInConversation ? (callId, sourceTurn) => locateCall(callId, effectiveScope?.kind === 'main' ? sourceTurn : undefined) : undefined}
           t={t}
         />
       </div>
