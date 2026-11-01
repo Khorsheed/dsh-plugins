@@ -284,7 +284,19 @@ export function registerDestinationCards(
   effect: (body: () => () => void, label: string) => void,
   slots: SlotsLike,
   conversation: () => ConversationLike | undefined,
-  options: { readonly owner: string; readonly tools: readonly string[]; readonly locale?: string; readonly face: () => CardFace; readonly order?: number },
+  options: {
+    readonly owner: string
+    readonly tools: readonly string[]
+    readonly locale?: string
+    readonly face: () => CardFace
+    readonly order?: number
+    /**
+     * False: seat the tool rows only. For a mode whose own Turn summary already
+     * names every place the Turn wrote (the game's turn card, itself a body in
+     * this shell), so the same write never shows twice under one reply.
+     */
+    readonly turnTail?: boolean
+  },
 ): void {
   const { owner, tools, locale, face } = options
   for (const tool of tools) {
@@ -295,6 +307,7 @@ export function registerDestinationCards(
       inject: face,
     }, DestinationToolRow)), `${owner}: ${tool} card`)
   }
+  if (options.turnTail === false) return
   const turnKey = `${owner}/cards`
   effect(() => slots.inject('conversation.chat.turnTail', () => {
     const events = conversation()?.events
