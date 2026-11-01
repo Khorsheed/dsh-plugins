@@ -33,8 +33,33 @@ describe('CLI member compactions', () => {
       compaction: { applied: true, inputPartial: true, hostTurn: 1, betweenTurns: true, source: 'manual', beforeTokens: 288_536, afterTokens: 44_671 },
     })
     expect(JSON.stringify(built[0]!.response)).toContain('前情提要')
-    expect(built[0]!.logIndex).toBeUndefined()
+    // No request number of its own: its index sits between the requests around it.
+    expect(built[0]!.logIndex).toBe(-0.5)
+    expect(built[0]!.requestNumber).toBeUndefined()
     expect(built[1]).toMatchObject({ hostTurn: 2, status: 'failed', error: 'boom', compaction: { source: 'auto', applied: false } })
     expect(built[1]!.compaction!.betweenTurns).toBeUndefined()
+  })
+
+  it('its input is the member\'s folded context at that moment; a bodiless log rebuilds it by its own index', () => {
+    const rows: SessionLogRow[] = [
+      { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
+      { type: 'user/message', seq: 1, time: 1, surfaceOp: 'append', data: { id: 'u1', role: 'user', content: [{ type: 'text', text: '写第四章' }], source: { kind: 'user' } } },
+      { type: 'assistant/message', seq: 2, time: 2, surfaceOp: 'append', data: { turn: 1, message: { id: 'a2', role: 'assistant', content: [{ type: 'text', text: '写好了' }] }, usage: { inputTokens: 10, outputTokens: 2 } } },
+      { type: 'turn/end', seq: 3, time: 3, data: { turn: 1, reason: { kind: 'completed' } } },
+      { type: 'local-agent/compaction', seq: 4, time: 9, data: { source: 'manual', outcome: 'completed', provider: 'kimi-cli', summary: '摘要', startedAt: 5, endedAt: 9, boundarySeq: 3 } },
+    ]
+    const full = foldLogRows(openCursor(), rows)
+    const compaction = full.find(request => request.purpose === 'compaction')!
+    expect(compaction.logIndex).toBe(0.5)
+    expect(JSON.stringify(compaction.segments)).toContain('写第四章')
+    expect(JSON.stringify(compaction.segments)).toContain('写好了')
+    const bodiless = openCursor()
+    bodiless.materialize = () => false
+    expect(foldLogRows(bodiless, rows).find(request => request.purpose === 'compaction')!.bodiless).toBe(true)
+    const rebuild = openCursor()
+    rebuild.materialize = (_host, index) => index === 0.5
+    const rebuilt = foldLogRows(rebuild, rows).filter(request => request.bodiless !== true && request.logIndex === 0.5)
+    expect(rebuilt).toHaveLength(1)
+    expect(rebuilt[0]!.totalChars).toBeGreaterThan(0)
   })
 })
