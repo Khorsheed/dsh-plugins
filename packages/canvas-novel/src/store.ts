@@ -40,7 +40,7 @@ import { FsError, FsVersion, type FsTarget } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { renderExtractBrief, type BriefData } from './brief.ts'
+import { planWords, renderExtractBrief, workingRulesOf, type BriefData } from './brief.ts'
 import {
   canvasBoardOf, NOVEL_GENRE, NOVEL_ROLES, WORLD_KINDS,
   type CanvasBoardSlice, type NovelBoardMutation, type NovelBoardView, type NovelCardSource, type NovelCardView,
@@ -1542,6 +1542,10 @@ export class NovelService {
         foreshadowOps: rawPlan.foreshadowOps.map(op => op.id === undefined ? op : { ...op, id: toCard(op.id, 'foreshadow') }),
         cast: rawPlan.cast.map(member => ({ ...member, who: toCard(member.who, 'character') })),
         ...(rawPlan.infoGaps === undefined ? {} : { infoGaps: rawPlan.infoGaps.map(gap => ({ ...gap, who: toCard(gap.who, 'character') })) }),
+        ...(rawPlan.uses === undefined ? {} : { uses: rawPlan.uses.map(token => {
+          const handle = this.resolveCard(entries, token, 'world')
+          return handle?.role === 'world' || handle?.role === 'principle' ? handle.cardId : token
+        }) }),
         ...(rawPlan.pov === undefined ? {} : { pov: toCard(rawPlan.pov, 'character') }),
       },
     }
@@ -1952,7 +1956,18 @@ export class NovelService {
    * @param request - work id and optional chapter number.
    * @returns the render data, or the failure code.
    */
-  async gatherBrief(request: { readonly workId: string; readonly chapter?: number }): Promise<{
+  async gatherBrief(request: {
+    readonly workId: string
+    readonly chapter?: number
+    /**
+     * Which brief the data is for: write and plan pick the settings carried
+     * in full — the plan's 用到的设定, the settings the last two chapters'
+     * 对账 found, and the names the plan (write) or also the latest two
+     * recaps (plan) mention — the rest go by name. Absent:
+     * every setting in full, as before 2026-11-01.
+     */
+    readonly for?: 'write' | 'plan'
+  }): Promise<{
     readonly ok: boolean
     readonly error?: NovelError
     readonly data?: BriefData
@@ -1976,12 +1991,26 @@ export class NovelService {
     const previous = chapters.filter(candidate => candidate.seq < target.seq)
     const previousChapter = previous[previous.length - 1]
     const previousTail = previousChapter === undefined ? undefined : tailOf(await this.readChapterBody(meta, previousChapter))
+    const worldRules = rules.filter(view => view.role === 'world')
+    // The settings the last two reconciled chapters used ride along either
+    // way: the next chapter picks up where those left off.
+    const carried = [...target.plan?.uses ?? [], ...previous.slice(-2).flatMap(candidate => candidate.settings ?? [])]
+    const workingRules = request.for === 'write'
+      ? workingRulesOf(worldRules, carried, planWords(target.plan))
+      : request.for === 'plan'
+        ? workingRulesOf(worldRules, carried, [
+          planWords(target.plan),
+          ...previous.slice(-2).map(candidate => candidate.recap ?? ''),
+          previousTail ?? '',
+        ].join('\n'))
+        : undefined
     return {
       ok: true,
       data: {
         workTitle: meta.title,
         target,
-        canonRules: rules.filter(view => view.role === 'world'),
+        canonRules: worldRules,
+        ...(workingRules === undefined ? {} : { workingRules }),
         principles: rules.filter(view => view.role === 'principle'),
         activeForeshadows: sortBySleep(foreshadows.filter(isLiveForeshadow)),
         unplantedForeshadows: foreshadows.filter(view => view.state === '未埋'),
