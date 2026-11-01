@@ -51,10 +51,26 @@ A character stores only what they believe. 「误以为」 and 「不知道」 a
 ### Surfaces
 
 - Tabs read 章节 · 设定 · 时间轴 · 灵感. The canvas gained a third genre face, `faces.extra`, and `faces.board`: a genre's own face in the 卡板 seat, which replaces the card wall (with its scopes and 网格 / 连线 tools) on that genre's canvases only.
-- **设定** (`novel:codex`, from the `codex` Remote) follows the agreed prototype. Its parts are 总览 (the one-page outline and its proposal, the four shelves at a glance, the 待定 tray, 写作原则, the 整理设定 button), 世界观 (a tree beside the picked entry's text, links both ways and chapters), 人物 (by faction, with 此刻 / 打算 / 相信的事), 关系 (a graph scrubbed by chapter) and 伏笔 (the reader-knows ladder topped by the truth). Editing a card opens the canvas's card page.
-- **章节** groups the contents by volume, with a progress bar, goal and landing. It also holds 下一章候选 with 优先推进 / 本章屏蔽, and 新建一章，自己写 (用户原稿, opening in the editor).
+- **设定** (`novel:codex`, from the `codex` Remote) follows the 11-02 改版稿 in five parts.
+  - **总览** runs 一页纸, people, 世界观 and 写作原则. The 一页纸 leads with the logline; every other field shows two lines, and three fields show before 展开全部. A proposal puts 采用 / 不采用 at the top of the block and strikes the adopted text it changes. Each person is one row: faction, then the current intention, or 此刻 when there is none. One line below them covers relations and foreshadows. 世界观 is one row per shelf. 「N 条还在待定」 appears once and opens 世界观 filtered to those settings. 写作原则 bolds the lead of each principle.
+  - **世界观** shows a tree with indent guides, a dot for 待定 and an all / 待定 filter. The picked entry's text reads as 「键：值」 rows, with 未决 in its own box, 状态 in the head and links last.
+  - **人物** and **关系** are unchanged.
+  - **伏笔** gives each item in the list a progress track. The head says where it was planted, how many times it advanced and whether the reveal is set. The two advice lines form one block with 和 Agent 定真相与时机, which sends a message to the conversation. The ladder ends in a dashed 真相.
+  - Editing a card opens the canvas's card page.
+- **章节** opens on 接下来, which lists in order:
+  1. chapters waiting for 对账 (让 Agent 对账 sends 「对账第 N 章。」);
+  2. items waiting for the person;
+  3. the chapter in hand (看计划 / 继续写);
+  4. the next chapter's candidates (看候选, 让 Agent 规划).
+
+  Only the first item is the primary button. The contents follow by volume. Each volume draws one cell per planned chapter, with a gap where a segment of the goal ends, and shows only the goal's current segment until expanded. Each chapter row has a one-line recap (the plan's summary while the chapter is being planned), and a state appears only where something is needed. 「新建第 N 章，自己写」 is the last row; it registers the person's manuscript and opens the editor at once. The 全部 / 待处理 / 未对账 chips appear past 12 chapters.
 - **The reader edits the chapter file.** The top bar uses the host's back button and Preview / Edit segments rather than edit doors in the prose. Preview renders the current draft; switching modes keeps it, Cancel discards it, and saving returns to Preview. `editChapterBody` writes through the fenced path with a stale check, and the draft is kept on the device. A change under 5% of a reconciled chapter stays 已对账 and is noted as `editedAfterExtract`. The editor can keep a selection as an idea and ask the agent to continue. 按计划开写 confirms the plan, then sends 「第 N 章计划确认，按计划开写。」 through the input's `submit`; a half-typed draft is never sent.
-- **时间轴** shows 已发生 by story time: before the story, in the text, and 时间待定 (backstory not yet placed). It shows 将发生 by priority, each event with a tension bar and its reason, plus the formula and each event's parts. Event cards carry the story time, places and people, tinted by 世界层: the top-level place above the event's place along 属于 (a faction counts by its 据点). Chapters reconciled before the timeline existed show only a recap, with people and places matched by the names it uses. A banner names those chapters and offers 让 Agent 补录事件, which sends one message so the agent backfills with `novel_write(what=event)` in a visible turn. 按章节 shows the old 故事 table, its 世界 tab renamed 设定 and filtered by the four shelves.
+- **时间轴**
+  - **已发生**, on the left, is in story time and has three sections: before the story (events marked `backstory`), in the text, and 时间待定 (neither told nor placed). A flashback sits where it happened, marked 「第 N 章才写到」.
+  - **将发生**, on the right, is grouped by priority, each event with a tension bar and its reason. How priority is worked out sits behind the ⓘ after the hint.
+  - **Event cards** carry the story time, places and people. A stripe on the left marks 世界层: the top-level place above the event's place along 属于 (a faction counts by its 据点).
+  - Chapters reconciled before the timeline existed show only a recap, and the page offers 让 Agent 补录事件.
+  - **按章节** groups the same events by the chapter that tells them and marks flashbacks. The old card × chapter table is no longer in the timeline.
 - **灵感** stores ideas (`ideas.json`) without asking anything. 排进时间轴 sends a message. 手动绑定 offers events by the names an idea mentions. States are 待写入 / 已写入第 N 章, and ideas can be deleted.
 - Character cards show 当前打算 and 相信的事 with their source.
 
