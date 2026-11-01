@@ -10,7 +10,7 @@
 |---|---|---|
 | 地址 | 每个面板的每个用户可见位置有一个类型化地址（面板的 `navigation.params` 类型，`SidebarRightTabParamsMap` 里声明）；外部只经由它进入 | 模块级全局（`parkedNav`、`requestPanelProject`）、全页单槽（`RevealedProject`）、从外面直写面板内部 store |
 | 信号 | 写入类工具在回答末尾加**一行**去向：`⟦dsh-nav⟧{"id","kind","params","label"}` | 浏览器轮询「最近活动」决定跳转；用正则解析中文回答找位置 |
-| 呈现 | 跟随器 `startNavFollower` + 唯一规则 `decideFollow`；会话里只有一种卡片壳 `registerDestinationCards`（工具行下 + 回合尾），门开到去向行，模式只填正文 | 工具行自己 `sawRunning` 自动打开；每个包一份 `shouldFollow`；每个包自己的卡片外框 / 回合尾折叠 / 从回答文字解析位置 |
+| 呈现 | 跟随器 `startNavFollower` + 唯一规则 `decideFollow`；会话里只有一种**固定**卡片壳（工具行下 + 回合尾），门开到去向；插件只交数据（标签、可选的状态与门上的字），不画任何卡片界面 | 工具行自己 `sawRunning` 自动打开；每个包一份 `shouldFollow`；插件自己的卡片界面 / 卡片正文组件 / 回合尾折叠 / 从回答文字解析位置 |
 | 刷新 | 跟随器对每个实时去向发写入通知（`subscribeWrites(kind)`；面板自己的确认等操作用 `notifyWritten`），面板收到就重读；外加只在页面可见时的 30 秒兜底 | 为了发现模型写入而每几秒轮询 |
 
 ### 去向行
@@ -49,13 +49,18 @@
 
 badge 由各包决定样子（画布：标签条小点）。卡片永远在，点了就去。
 
-### 卡片壳
+### 卡片壳（固定）
 
-`registerDestinationCards(effect, slots, conversation, { owner, tools, locale, face, turnTail? })`：
+壳是固定的，插件只交数据：调用就显示，不调用就没有；流程删了，调用跟着删，界面不会残留。丰富的内容（计划全文、改动对比、提议明细、图片）只在门打开的侧栏里。
 
-- 给每个写入工具挂一行卡片（`tool.call.toolview`），并在回合尾挂一份汇总（回合结束后宿主会把工具行折进「已调用工具」，汇总在回复正文下方再列一遍；同一位置写两次只留最新一次）。
-- `face.copy()`：模式名、进行中、失败、门的文字；`face.go()`：开到去向；`face.Body`（可选）：模式自己的正文，用 `DestinationCard` 的 `body`（标题、状态、内容、是否等你处理、门的文字）填进同一个壳。不给 `Body` 就是一行紧凑卡：「模式 · 去向标签 · 查看 →」。
-- `turnTail: false`：模式自己的回合汇总已经列出这一轮每处改动（游戏的回合卡，本身也是这个壳里的正文），不再挂通用汇总，免得同一处改动在一条回复下出现两次。
+- **一张卡**：模式名 · 标签 · 状态（可选）· 门。状态只在这次写入**在当前页面实时到达**时显示；刷新或翻历史后只剩标签和「查看 →」（要看真实状态就点进面板）。
+- **插件交数据的两个时机**：
+  1. 写入时：去向行带 `card: { status, awaiting, door }`（如小说计划 `{ status: '等你确认', awaiting: true, door: '查看并确认计划 →' }`）。
+  2. 你在面板里改变了那个状态时：插件调用 `updateCards(kind, 位置的部分参数, { status, awaiting, door })`（如章节页「确认计划」→「已确认」）。同一位置后来又有一次带卡片数据的实时写入（模型用工具确认了计划），也会更新这个位置先前的卡片。
+- **登记**：`registerDestinationCards(effect, slots, conversation, { owner, tools, locale, face, turnTail? })` 给每个写入工具挂一行卡片，并在回合尾挂一份汇总（一回合只写了一处就是一张卡，多处就是一张多行卡，每处一行一个门）。`face` 只有 `copy()`（模式名、进行中、失败、门、汇总标题的字）和 `go()`。
+- **模式自己的回合汇总**：`registerTurnSummary(…, { owner, kind, face, load })`，插件只提供 `load({ sessionId, turn })` 返回 `{ title, rows: [{ label, destination? }] }`，壳画成多行卡（游戏的「本轮改动」）；这时工具卡登记用 `turnTail: false`，免得同一处改动出现两次。
+- **协作间的消息条**也用同一个壳（`DestinationCard`），插件只给文字和地址。
+- **机械检查**（`pnpm check:plugins`）：一个包只能给自己定义了的工具挂卡片；写去向行（`src/nav-line.ts`）的包必须挂卡片。
 
 ### 刷新
 
@@ -79,7 +84,7 @@ badge 由各包决定样子（画布：标签条小点）。卡片永远在，�
 1. 面板：在 `SidebarRightTabParamsMap` 声明 kind 的地址类型；面板体读 `tab.navigation.params` + `revision`，每个 revision 应用一次。提供一个 `go(params)`（打开 tab + 落位），所有外部入口（卡片、桌面行、跟随器）都走它。
 2. 工具：写入类工具回答末尾加去向行（内联 `nav-line.ts` + 钉格式的测试）。
 3. 客户端：`startNavFollower(followerHostOf(ctx.get), { kinds, open: go, badge })`；面板根节点 `{...interactionHandlers}`。
-4. 卡片：`registerDestinationCards`，模式需要时给 `Body`；不要自己写卡片外框、回合尾折叠或从回答文字找位置。
+4. 卡片：`registerDestinationCards`；要提示用户处理时在去向行带 `card` 数据，面板里结束这个状态的操作调用 `updateCards`。不写任何卡片界面、回合尾折叠或从回答文字找位置。
 5. 刷新：`subscribeWrites(kind)` + 30 秒可见兜底；不为发现模型写入而轮询。
 6. `package.json` devDependencies 加 `"@khorsheed/dsh-client-ui-agent-nav": "workspace:*"`，`scripts/check-plugin-independence.ts` 的 `ALLOWED_EDGES` 加这条边。
 
@@ -87,6 +92,7 @@ badge 由各包决定样子（画布：标签条小点）。卡片永远在，�
 
 | 包 | 状态 |
 |---|---|
+| 固定卡片壳（11-02） | 插件不再画卡片：小说的四种卡片正文、游戏回合卡界面、各包协作间消息条的样式都删了；卡片状态只来自插件交的数据（去向行的 `card` + `updateCards`），只在实时到达的卡片上显示；`check:plugins` 校验卡片登记与工具对得上 |
 | 统一收尾（11-01） | 各包只剩统一机制：画布三个写入工具、小说（计划 / 正文 / 大纲 / 对账正文）、图书馆七个工具、游戏（工具行；回合卡作为壳里的正文，`turnTail: false`）、剪辑四个工具、阅读器两个工具都用同一个卡片壳；删掉了各包自己的卡片 / 回合尾折叠 / 回答文字解析、图书馆站点页的「等着跳」与宿主侧旧揭示代码、小说已退役的章节页和规划页；为发现模型写入的轮询（画布 4 秒、小说计划卡 10 秒、阅读器笔记 5 秒、游戏 6 / 8 秒、剪辑 3 / 8 / 15 秒、图书馆提示）都换成写入通知 + 30 秒兜底；游戏成员在协作间的发布 / 提议发 `room/desk-wrote`。剩下的轮询只跟后台任务进度 |
 | canvas、canvas-novel | 已接入（P1）。章节一律落在「章节」页签里的第 N 章 |
 | library | 已接入（P2）。项目、书、路线（落到要「采用」的那本书）、讲义、测验、拍页各落确切位置；记卡片不跳（右栏「已记下」提示是入口）；5 秒揭示轮询和 `RevealedProject` 已删；站点页的等待已删：点「开始 / 出题」把事情交给模型时调 `releaseInteraction()`，讲义 / 测验写好由跟随器直接打开；记卡片的去向是只给卡片的 `library-record`，它的写入通知触发「已记下」提示 |
