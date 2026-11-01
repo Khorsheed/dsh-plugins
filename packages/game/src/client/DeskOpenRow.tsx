@@ -17,7 +17,7 @@ import { DestinationCard, type Destination } from '@khorsheed/dsh-client-ui-agen
 /** What the row reaches outside its own node. */
 export interface DeskOpenRowFace {
   /** Show the game tab on this project in that (room) session's sidebar, binding the room to it when it shows another. */
-  openProject: (sessionId: string, projectId: string) => void
+  openProject: (sessionId: string, projectId: string, place?: Readonly<Record<string, unknown>>) => void
 }
 
 /** The props the keyed chat-node slot composes for this row. */

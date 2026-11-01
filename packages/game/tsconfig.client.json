@@ -22,6 +22,7 @@
     "src/client/desk-row.ts",
     "src/client/DeskAttachment.tsx",
     "src/client/DeskOpenRow.tsx",
+    "src/client/DeskWroteRow.tsx",
     "src/client/DesignView.tsx",
     "src/client/ElementsView.tsx",
     "src/client/GameTab.tsx",
