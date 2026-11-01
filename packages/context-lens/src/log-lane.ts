@@ -29,6 +29,7 @@ import type { RequestConfig, RequestUsage, ResponseSummary } from './types.ts'
 import type { CapturedResponse } from './types.ts'
 import { responseFromSpans, type BlockSpan, type StoredRequest } from './store.ts'
 import { contentHash, splitRequest, type ScopeFingerprint } from './segmenter.ts'
+import type { ReplacementFact } from './changes.ts'
 import { AMBIENT_SOURCES, fromLogMessage, lastParagraph, messageKey, previewLine, serializeMessage, type CapturedMessage } from './messages.ts'
 
 /** The structural minimum of one decoded session-log row (untrusted JSON). */
@@ -168,6 +169,8 @@ export interface FoldSink {
   request?(hostTurn: number | undefined, request: BuiltLogRequest): void
   /** One delegation run, emitted when its tool/result lands (or at fold flush). */
   delegation?(delegation: LogDelegation): void
+  /** A surface replacement the log implies without a replace op (a CLI member's compaction). */
+  replacement?(fact: ReplacementFact): void
 }
 
 /**
@@ -410,6 +413,10 @@ export function foldLogRows(
       case 'local-agent/compaction': {
         const request = buildCliCompaction(cursor, row, data)
         if (request) { built.push(request); sink.request?.(request.compaction!.hostTurn, request) }
+        if (request?.status === 'ok') {
+          const fact = applyCliCompaction(cursor, row, data, request.compaction!.id)
+          if (fact !== undefined) sink.replacement?.(fact)
+        }
         break
       }
       case 'compaction/end':
@@ -533,6 +540,43 @@ function buildCliCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: 
   }
 }
 
+/**
+ * What a CLI member's compaction did to its context, applied to the folded
+ * surface. The member log is append-only (a mirror never rewrites what it
+ * wrote), so the replacement is implied, not recorded: the CLI kept the user
+ * messages verbatim (kimi: `keptUserMessageCount`, the newest ones when it
+ * kept fewer) and put one summary note in place of everything else — the text
+ * the CLI itself put there (`contextSummary`), else its summary, else a
+ * marker (Codex states none). The returned fact types the next request's
+ * cache break as this compaction, linked to its request.
+ */
+function applyCliCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: Record<string, unknown>, compactionId: string): ReplacementFact | undefined {
+  const users = cursor.messages.filter(item => item.message.role === 'user')
+  const keep = typeof data['keptUserMessages'] === 'number' && Number.isFinite(data['keptUserMessages'])
+    ? users.slice(Math.max(0, users.length - data['keptUserMessages']))
+    : users
+  const kept = new Set(keep)
+  const replaced = cursor.messages.filter(item => !kept.has(item))
+  if (replaced.length === 0) return undefined
+  const text = typeof data['contextSummary'] === 'string' && data['contextSummary'] !== '' ? data['contextSummary']
+    : typeof data['summary'] === 'string' && data['summary'] !== '' ? data['summary']
+      : '（CLI 未提供摘要）'
+  const id = `cli-compaction:${row.seq ?? cursor.consumed}`
+  const summary: CapturedMessage = { id, role: 'user', sourceKind: 'compact-checkpoint', compactionId, content: [{ type: 'text', text }] }
+  cursor.messages = [...keep, { seq: row.seq ?? cursor.consumed, message: summary }]
+  const replacedSeqs = replaced.map(item => item.seq)
+  return {
+    newId: id,
+    replacedIds: replaced.map(item => item.message.id).filter((value): value is string => value !== undefined),
+    kind: 'compaction',
+    sourceKind: 'local-agent',
+    sourceOp: data['source'] === 'auto' ? 'auto' : 'manual',
+    ...row.seq === undefined ? {} : { eventSeq: row.seq },
+    replacedSeqs,
+    compactionId,
+  }
+}
+
 /** Recover recorded model-backed summaries without inventing the missing instruction. */
 function buildCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: Record<string, unknown>): BuiltLogRequest | undefined {
   const id = data['compactionId']
@@ -572,7 +616,7 @@ function buildCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: Rec
  * carry it; a torn bracket falls back to the fold's open-turn state). Turns
  * never closed by a turn/end (a crash) come out with `endReasonKind` unset.
  */
-export function reconstructSession(rows: readonly SessionLogRow[], materialize?: (hostTurn: number | undefined, index: number) => boolean): LogTurn[] {
+export function reconstructSession(rows: readonly SessionLogRow[], materialize?: (hostTurn: number | undefined, index: number) => boolean, onReplacement?: (fact: ReplacementFact) => void): LogTurn[] {
   const cursor = openCursor()
   if (materialize !== undefined) cursor.materialize = materialize
   const turns: LogTurn[] = []
@@ -635,6 +679,7 @@ export function reconstructSession(rows: readonly SessionLogRow[], materialize?:
     delegation: (delegation) => {
       place(delegation)
     },
+    ...onReplacement === undefined ? {} : { replacement: onReplacement },
   }
   foldLogRows(cursor, rows, sink)
   // An external call still in progress shows the steps it wrote so far.

@@ -62,4 +62,36 @@ describe('CLI member compactions', () => {
     expect(rebuilt).toHaveLength(1)
     expect(rebuilt[0]!.totalChars).toBeGreaterThan(0)
   })
+
+  it('the context after it is the kept user messages plus the CLI\'s summary note; the replacement is reported for the change list', () => {
+    const rows: SessionLogRow[] = [
+      { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
+      { type: 'user/message', seq: 1, time: 1, surfaceOp: 'append', data: { id: 'u1', role: 'user', content: [{ type: 'text', text: '写第四章' }], source: { kind: 'user' } } },
+      { type: 'assistant/message', seq: 2, time: 2, surfaceOp: 'append', data: { turn: 1, message: { id: 'a2', role: 'assistant', content: [{ type: 'text', text: '写好了' }] }, usage: { inputTokens: 10, outputTokens: 2 } } },
+      { type: 'turn/end', seq: 3, time: 3, data: { turn: 1, reason: { kind: 'completed' } } },
+      { type: 'local-agent/compaction', seq: 4, time: 9, data: { source: 'manual', outcome: 'completed', provider: 'kimi-cli', summary: '摘要', contextSummary: '前言\n摘要', keptUserMessages: 1, startedAt: 5, endedAt: 9, boundarySeq: 3 } },
+      { type: 'turn/start', seq: 5, time: 10, data: { turn: 2 } },
+      { type: 'user/message', seq: 6, time: 11, surfaceOp: 'append', data: { id: 'u6', role: 'user', content: [{ type: 'text', text: '继续' }], source: { kind: 'user' } } },
+      { type: 'assistant/message', seq: 7, time: 12, surfaceOp: 'append', data: { turn: 2, message: { id: 'a7', role: 'assistant', content: [{ type: 'text', text: '好' }] }, usage: { inputTokens: 5, outputTokens: 1 } } },
+      { type: 'turn/end', seq: 8, time: 13, data: { turn: 2, reason: { kind: 'completed' } } },
+    ]
+    const facts: unknown[] = []
+    const built = foldLogRows(openCursor(), rows, { replacement: fact => facts.push(fact) })
+    const next = built.find(request => request.hostTurn === 2)!
+    const text = JSON.stringify(next.segments)
+    expect(text).toContain('写第四章')
+    expect(text).toContain('前言')
+    expect(text).not.toContain('写好了')
+    expect(facts).toEqual([{ newId: 'cli-compaction:4', replacedIds: ['a2'], kind: 'compaction', sourceKind: 'local-agent', sourceOp: 'manual', eventSeq: 4, replacedSeqs: [2], compactionId: 'cli:4' }])
+  })
+
+  it('a failed compaction leaves the context as it was', () => {
+    const rows: SessionLogRow[] = [
+      { type: 'user/message', seq: 1, time: 1, surfaceOp: 'append', data: { id: 'u1', role: 'user', content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } } },
+      { type: 'local-agent/compaction', seq: 2, time: 3, data: { source: 'manual', outcome: 'failed', provider: 'kimi-cli', error: 'x', startedAt: 2, endedAt: 3, boundarySeq: 1 } },
+    ]
+    const facts: unknown[] = []
+    foldLogRows(openCursor(), rows, { replacement: fact => facts.push(fact) })
+    expect(facts).toEqual([])
+  })
 })

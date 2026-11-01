@@ -24,6 +24,10 @@ export interface KimiCompactionReading {
   readonly outcome?: 'completed' | 'failed' | 'cancelled'
   readonly source?: 'manual' | 'auto'
   readonly summary?: string
+  /** The text kimi puts in the context in place of the history (the summary with its preamble and recovery note). */
+  readonly contextSummary?: string
+  /** User messages kimi kept verbatim (the rest became the summary). */
+  readonly keptUserMessages?: number
   readonly usage?: TokenUsage
   readonly beforeTokens?: number
   readonly afterTokens?: number
@@ -90,6 +94,8 @@ export function readKimiCompaction(text: string, fromLine: number): KimiCompacti
       }
       case 'context.apply_compaction':
         if (typeof row['summary'] === 'string' && row['summary'].trim() !== '') reading.summary = row['summary']
+        if (typeof row['contextSummary'] === 'string' && row['contextSummary'].trim() !== '') reading.contextSummary = row['contextSummary']
+        if (typeof row['keptUserMessageCount'] === 'number' && Number.isFinite(row['keptUserMessageCount'])) reading.keptUserMessages = row['keptUserMessageCount']
         break
       case 'token_counting.rebased': {
         const after = tokensOf(row)

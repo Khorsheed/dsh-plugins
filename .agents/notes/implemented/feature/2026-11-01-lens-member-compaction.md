@@ -27,7 +27,13 @@ An external CLI member's compaction left no trace in Context Lens. It runs no tu
 - **Keeping `/compact` as a round of its own, holding only the compaction.** Rejected: it is no conversation turn, and the host's own compactions do not count as rounds either.
 - **Putting the compaction inline in the member's request list.** Rejected: it would read as one of the round's model calls. A tab of its own matches the host's 压缩 tab.
 
+- **The context after it.**
+  - Kimi's `context.apply_compaction` records what its context became (`contextSummary`, `keptUserMessageCount`). local-agent now copies both into its event as `contextSummary` and `keptUserMessages`.
+  - The lane applies them to the folded surface: the user messages are kept (the newest N when a count is given), and one `compact-checkpoint` message carrying that text replaces the rest. Older events carry only the summary, and Codex carries neither, so the lane falls back to the summary, then to a marker.
+  - The member log is append-only, so the replacement is implied rather than recorded. The lane reports it through a new `FoldSink.replacement` as a `ReplacementFact` (`kind: 'compaction'`, `compactionId` = the request's id), and the service feeds it to the store's fact registry from both the child and the main backfill paths.
+  - The next request's cache break then reads as this compaction, linked to its request. On 75844e33 (member 443e7c65), #167 holds 65 messages (63 kept, the summary, the new prompt), which matches kimi's own count.
+
 ## Consequences
 
 - Round numbers after a `/compact` move down by one, because the rounds are numbered on read.
-- The next request's input still shows the whole history, and its cache break is unexplained. Rebuilding requests around the compaction boundary is the second step.
+- Kimi keeps the user messages it kept verbatim, while our mirror has only the human prompts. Kimi's injected reminders are absent on both sides, so the counts agree for kimi's prompts.

@@ -953,6 +953,8 @@ export class KimiAcpLiveDriver {
           ...context?.size === undefined ? {} : { contextWindow: context.size },
           ...reading.usage === undefined ? {} : { usage: reading.usage },
           ...reading.summary === undefined ? {} : { summary: reading.summary },
+          ...reading.contextSummary === undefined ? {} : { contextSummary: reading.contextSummary },
+          ...reading.keptUserMessages === undefined ? {} : { keptUserMessages: reading.keptUserMessages },
           ...reading.error === undefined ? {} : { error: reading.error },
           startedAt, endedAt: Date.now(), boundarySeq: childSession.snapshotEvents().at(-1)?.seq ?? -1,
         })
@@ -1020,6 +1022,8 @@ export class KimiAcpLiveDriver {
         ...reading.afterTokens === undefined ? {} : { afterTokens: reading.afterTokens },
         ...reading.usage === undefined ? {} : { usage: reading.usage },
         ...reading.summary === undefined ? {} : { summary: reading.summary },
+        ...reading.contextSummary === undefined ? {} : { contextSummary: reading.contextSummary },
+        ...reading.keptUserMessages === undefined ? {} : { keptUserMessages: reading.keptUserMessages },
         ...outcome === 'completed' ? {} : { error: reading.error ?? (reading.done ? `compaction ${outcome}` : 'compaction did not finish in time') },
         startedAt, endedAt: Date.now(), boundarySeq,
       })

@@ -68,6 +68,10 @@ export interface LocalAgentCompactionEvent {
   usage?: TokenUsage
   /** The CLI's summary text, when it gives one (Kimi does, Codex does not). */
   summary?: string
+  /** The text the CLI puts in its context in place of the history, when it differs from `summary` (Kimi wraps it). */
+  contextSummary?: string
+  /** User messages the CLI kept verbatim across the compaction (Kimi keeps them; the rest becomes the summary). */
+  keptUserMessages?: number
   error?: string
   startedAt: number
   endedAt: number
