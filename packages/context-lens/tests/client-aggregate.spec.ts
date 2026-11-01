@@ -8,7 +8,7 @@ import { duplicateStats } from '../src/client/aggregate.ts'
 import { describe, expect, it } from 'vitest'
 import type { CapturedRequest, TimingLane, TurnListItem } from '../src/types.ts'
 import {
-  aggregateCategories, cachePct, fmtDur, fmtK, fmtSpan, inputMiss, inputTotal, latestTurnSeq, resolveTurnSeq, summarizeLanes, summaryText,
+  aggregateCategories, cachePct, fmtDur, fmtK, fmtSpan, inputMiss, inputTotal, isHollowTurn, latestTurnSeq, resolveTurnSeq, summarizeLanes, summaryText,
 } from '../src/client/aggregate.ts'
 
 const turn = (over: Partial<TurnListItem>): TurnListItem => ({
@@ -40,6 +40,17 @@ describe('resolveTurnSeq', () => {
     expect(resolveTurnSeq(turns, 'm-unknown')).toBe(3)
     expect(resolveTurnSeq(turns, undefined)).toBe(3)
     expect(latestTurnSeq(turns)).toBe(3)
+  })
+
+  it('never defaults to a hollow turn (no request, no human message, no reply) unless every turn is one', () => {
+    // A restart followup the room refused before the first model call.
+    const hollow = turn({ turnSeq: 4, hostTurn: 4, query: '', requestCount: 0, trigger: { source: 'ankh-guard', text: '[ankh-guard] …' } })
+    expect(isHollowTurn(hollow)).toBe(true)
+    expect(isHollowTurn(turn({ turnSeq: 5, query: '', requestCount: 0, room: { targets: ['coco'] } }))).toBe(false)
+    expect(isHollowTurn(turn({ turnSeq: 6, query: 'hi', requestCount: 0 }))).toBe(false)
+    expect(latestTurnSeq([...turns, hollow])).toBe(3)
+    expect(resolveTurnSeq([...turns, hollow], 'm-unknown')).toBe(3)
+    expect(latestTurnSeq([hollow])).toBe(4)
   })
 
   it('returns undefined for a session with no captured turns', () => {

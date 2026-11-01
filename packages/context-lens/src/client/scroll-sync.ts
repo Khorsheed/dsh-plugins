@@ -130,6 +130,25 @@ function landOn(find: () => Element | null, scroller: Element | null, behavior: 
   return true
 }
 
+/** The first rendering box of one message row, in DOM order. */
+function messageLanding(scope: ParentNode, messageId: string): Element | null {
+  const id = messageId.replace(/["\\]/g, '')
+  for (const row of scope.querySelectorAll(`[data-chat-node-key$="${id}"]:not([hidden]):not([hidden] *)`)) {
+    const landing = landingOf(row)
+    if (landing !== null) return landing
+  }
+  return null
+}
+
+/** Whether the conversation has rendered one message's row (a room round's anchor) yet. */
+export function hasMessageAnchor(messageId: string, root: ParentNode = document): boolean {
+  try {
+    return messageLanding(scrollport(root) ?? root, messageId) !== null
+  } catch {
+    return false
+  }
+}
+
 /** The first rendering box of one host turn, in DOM order. */
 function turnLanding(scope: ParentNode, hostTurn: number): Element | null {
   for (const row of scope.querySelectorAll(`[data-chat-turn="${hostTurn}"]:not([hidden]):not([hidden] *)`)) {
@@ -201,15 +220,7 @@ export function scrollConversationToMessage(
   try {
     const port = scrollport(root)
     const scope: ParentNode = port ?? root
-    const id = messageId.replace(/["\\]/g, '')
-    const find = (): Element | null => {
-      for (const row of scope.querySelectorAll(`[data-chat-node-key$="${id}"]:not([hidden]):not([hidden] *)`)) {
-        const landing = landingOf(row)
-        if (landing !== null) return landing
-      }
-      return null
-    }
-    return landOn(find, port, behavior)
+    return landOn(() => messageLanding(scope, messageId), port, behavior)
   } catch {
     return false
   }
