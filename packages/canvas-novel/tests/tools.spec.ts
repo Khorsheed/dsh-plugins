@@ -145,6 +145,17 @@ describe('the novel tools', () => {
     expect(await call(write, { what: 'review', id: 'p1' })).toContain('要给 id（待审项）和 action')
   })
 
+  it('novel_write(chapter) files a 信息差 by card, whether the model typed a ref or a name', async () => {
+    const { write, fs } = await bench({ bound: true })
+    await call(write, {
+      what: 'chapter', title: '回响',
+      plan: { summary: '穿过第一层', cast: [{ who: 'c1' }], infoGaps: [{ who: 'c1', fact: '门后有人' }, { who: '没这个人', fact: '随便' }] },
+    })
+    const table = JSON.parse(fs.read(`${DREAM.stateRoot}/${DREAM.workId}/chapters.json`)) as { chapters: { n: number; plan?: { infoGaps?: { who: string }[] } }[] }
+    const gaps = table.chapters.find(row => row.n === 7)?.plan?.infoGaps ?? []
+    expect(gaps.map(gap => gap.who)).toEqual([CARD.zhao, '没这个人'])
+  })
+
   it('novel_write(chapter) numbers max+1 and stores the plan; re-planning keeps the number', async () => {
     const { write } = await bench({ bound: true })
     const created = await call(write, {

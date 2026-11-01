@@ -99,6 +99,40 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
    * never imported: a composition may omit it, and `sessions` is read
    * lazily for the same reason).
    */
+  type InputFacade = {
+    state?: { getSnapshot(): { draft: string } }
+    setDraft?: (value: string) => void
+    focus?: () => void
+    submit?: (mode?: unknown, source?: 'click' | 'enter') => void
+  }
+  const inputOf = (sessionId: SessionId): InputFacade | undefined => {
+    const scope = (ctx.get.bind(ctx) as (name: string) => unknown)('sessions') as { scope(id: SessionId): { get(name: string): unknown } } | undefined
+    const session = scope?.scope(sessionId)
+    return (session?.get('conversation') as { input?: { for(actx: unknown): unknown } } | undefined)?.input?.for(session) as InputFacade | undefined
+  }
+  /**
+   * Send a line as the person's message. Only into an empty input: a draft
+   * the person is still typing is never sent along — the line is appended to
+   * it instead and nothing goes out ('drafted'). False when the composition
+   * has no conversation input.
+   */
+  const sendToConversation = (sessionId: SessionId, text: string): 'sent' | 'drafted' | false => {
+    try {
+      const input = inputOf(sessionId)
+      if (typeof input?.setDraft !== 'function' || typeof input.state?.getSnapshot !== 'function') return false
+      const draft = input.state.getSnapshot().draft.trimEnd()
+      if (draft !== '' || typeof input.submit !== 'function') {
+        input.setDraft(draft === '' ? text : `${draft}\n\n${text}`)
+        if (typeof input.focus === 'function') input.focus()
+        return 'drafted'
+      }
+      input.setDraft(text)
+      input.submit(undefined, 'click')
+      return 'sent'
+    } catch {
+      return false
+    }
+  }
   const draftToConversation = (sessionId: SessionId, text: string): boolean => {
     try {
       const scope = (ctx.get.bind(ctx) as (name: string) => unknown)('sessions') as { scope(id: SessionId): { get(name: string): unknown } } | undefined
@@ -139,7 +173,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
     return wrapped
   }
-  const face: NovelFace = { remote: remoteOf, draftToConversation }
+  const face: NovelFace = { remote: remoteOf, draftToConversation, sendToConversation }
   // The seats are declared by @khorsheed/dsh-canvas, outside this type graph.
   const seats = ctx.slots as unknown as {
     inject: (key: string, callback: () => () => void) => () => void

@@ -87,6 +87,12 @@ export interface NovelFace {
    * when the composition has no conversation input.
    */
   readonly draftToConversation?: (sessionId: SessionId, text: string) => boolean
+  /**
+   * Send a line as the person's message when the input is empty; with a
+   * draft in it, append instead and send nothing ('drafted'). False when the
+   * composition has no conversation input.
+   */
+  readonly sendToConversation?: (sessionId: SessionId, text: string) => 'sent' | 'drafted' | false
 }
 
 /** Props of a strip/page entry: the owner share, the face, the copy. */

@@ -265,14 +265,15 @@ describe('ChapterReader', () => {
 })
 
 describe('PlanBlock', () => {
-  function renderChapter(row: Row) {
+  function renderChapter(row: Row, sendToConversation?: ReturnType<typeof vi.fn>) {
     const remote = fakeRemote({ items: [], rows: [row] })
-    render(<ChapterBook {...props(remote)} target={ask('1')} />)
+    render(<ChapterBook {...props(remote)} {...(sendToConversation === undefined ? {} : { sendToConversation })} target={ask('1')} />)
     return remote
   }
 
-  it('leads while planning: open, names resolved, and ✓ 确认计划 through the Remote', async () => {
-    const remote = renderChapter({ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' })
+  it('leads while planning: open, names resolved, and 按计划开写 confirms then sends the go-ahead', async () => {
+    const send = vi.fn(() => 'sent' as const)
+    const remote = renderChapter({ chapter: chapter(1, '门', { phase: 'planning', plan: PLAN }), phase: 'planning' }, send)
     expect(await screen.findByText(PLAN.summary)).toBeTruthy()
     expect(screen.getByText('数钟声找到门缝')).toBeTruthy()
     expect(screen.getByText('#12 门缝里的东西')).toBeTruthy()
@@ -281,6 +282,7 @@ describe('PlanBlock', () => {
     expect(screen.getByText(zh['chapter.noBodyConfirm'])).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh['chapter.confirmPlan'] }))
     await waitFor(() => { expect(remote.confirmPlan).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, n: 1 }) })
+    await waitFor(() => { expect(send).toHaveBeenCalledWith(SESSION, '第 1 章计划确认，按计划开写。') })
   })
 
   it('folds once there is text; after extraction it says what the text carried, ✗ where it did not', async () => {

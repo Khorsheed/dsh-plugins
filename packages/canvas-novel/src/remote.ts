@@ -44,7 +44,11 @@ function namesOf(entries: WorkEntries | undefined): Map<string, string> {
   const names = new Map<string, string>()
   if (entries === undefined) return names
   for (const view of entries.foreshadows) names.set(view.cardId, `${view.ref} ${view.question}`)
-  for (const view of entries.characters) names.set(view.cardId, view.name)
+  for (const view of entries.characters) {
+    names.set(view.cardId, view.name)
+    // A plan written before 信息差 handles were resolved keeps the ref (c2) the model typed.
+    if (!names.has(view.ref)) names.set(view.ref, view.name)
+  }
   return names
 }
 
@@ -124,7 +128,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     const known = namesOf(entries)
     const names: Record<string, string> = {}
     const plan = read.chapter.plan
-    for (const id of [plan?.pov, ...(plan?.cast ?? []).map(member => member.who), ...(plan?.foreshadowOps ?? []).map(op => op.id)]) {
+    for (const id of [plan?.pov, ...(plan?.cast ?? []).map(member => member.who), ...(plan?.infoGaps ?? []).map(gap => gap.who), ...(plan?.foreshadowOps ?? []).map(op => op.id)]) {
       const name = id === undefined ? undefined : known.get(id)
       if (id !== undefined && name !== undefined) names[id] = name
     }
