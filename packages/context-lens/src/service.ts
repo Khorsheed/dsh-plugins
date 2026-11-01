@@ -380,7 +380,8 @@ export class InspectorService {
       const descriptor = events.find(row => row.type === 'subagent/descriptor')
       const provider = (descriptor?.data as Record<string, unknown> | undefined)?.['provider']
       if (typeof provider === 'string') this.store.noteChildProvider(childId, provider)
-      for (const request of foldLogRows(cursor, events)) {
+      // A CLI member's compaction implies a surface replacement: recorded for the change list.
+      for (const request of foldLogRows(cursor, events, { replacement: fact => this.store.noteReplacement(rootSessionId, fact) })) {
         this.store.appendLogRequest(rootSessionId, childId, request)
       }
       this.store.refreshExecutionResults(rootSessionId, childId)
@@ -478,7 +479,7 @@ export class InspectorService {
         const keep = this.store.windowHosts(sessionId, hosts)
         // An external agent's own session keeps every request bodiless, as its
         // child scope does (its contexts are as large); bodies rebuild on read.
-        this.store.insertLogTurns(sessionId, reconstructSession(events, host => !external && (host === undefined || keep.has(host))))
+        this.store.insertLogTurns(sessionId, reconstructSession(events, host => !external && (host === undefined || keep.has(host)), fact => this.store.noteReplacement(sessionId, fact)))
         for (const fact of replacementFactsOf(events)) this.store.noteReplacement(sessionId, fact)
         const bySeq = new Map(events.filter(row => row.seq !== undefined).map(row => [row.seq as number, row]))
         for (const row of events) {

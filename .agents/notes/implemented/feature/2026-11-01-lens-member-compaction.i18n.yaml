@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-01-lens-member-compaction.md
-.agents/notes/implemented/feature/2026-11-01-lens-member-compaction.md: 0bec247c8a389c2bdf4020bb4c7f3cdeb78e38af
-.agents/notes/implemented/feature/2026-11-01-lens-member-compaction.zh.md: 653ca8da9aa06beb1184e2890944ce9183ebcc26
+.agents/notes/implemented/feature/2026-11-01-lens-member-compaction.md: 073eee9251bf80cafb9976a56d6f00a6eb47b181
+.agents/notes/implemented/feature/2026-11-01-lens-member-compaction.zh.md: f23ce4c816f1dfd773a43d5742fc23845aec3411
