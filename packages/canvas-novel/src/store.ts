@@ -69,7 +69,7 @@ import {
 } from './types.ts'
 import { changedPlanFields, type PlanField } from './text-forms.ts'
 import { buildGraph, deleteImpact, type BookGraph, type DeleteImpact, type GraphInput } from './graph.ts'
-import { ackNodes, alignChanges, baselineOf, fingerprint, normalizeAlign, type AlignAuto, type AlignDoc, type AlignItem, type NodeNow } from './align.ts'
+import { ackNodes, alignChanges, ALIGN_VERSION, baselineOf, fingerprint, normalizeAlign, type AlignAuto, type AlignDoc, type AlignItem, type NodeNow } from './align.ts'
 
 /** The package's npm name, stamped on store errors. */
 const PACKAGE_NAME = '@khorsheed/dsh-canvas-novel'
@@ -2015,7 +2015,8 @@ export class NovelService {
         if (idea !== undefined) now.set(id, { fp: fingerprint({ text: idea.text, eventId: idea.eventId ?? null }) })
       } else {
         const card = cards.get(id)
-        if (card !== undefined) now.set(id, { fp: fingerprint({ kind: card.kind, status: card.status, fields: card.fields ?? {} }) })
+        // What a card says, not where it is filed: 整理设定 moving a card to another shelf is not a change to check.
+        if (card !== undefined) now.set(id, { fp: fingerprint({ status: card.status, fields: card.fields ?? {} }) })
       }
     }
     return { now, bodies }
@@ -2033,7 +2034,7 @@ export class NovelService {
     const target = await this.fileTarget(workId, WORK_FILES.align)
     const read = await this.readJson(target, raw => normalizeAlign(raw))
     const { now, bodies } = await this.nodesNow(workId, built)
-    if (typeof read !== 'object') {
+    if (typeof read !== 'object' || read.data.version !== ALIGN_VERSION) {
       const at = new Date().toISOString()
       const doc = baselineOf(built.graph, now, built.written, at)
       const wrote = await this.mutateJson(target, session, raw => normalizeAlign(raw), () => doc, () => doc)
@@ -2050,12 +2051,13 @@ export class NovelService {
     if (built === undefined) return { ok: false, error: 'missing' }
     const workId = built.entries.board.id
     const target = await this.fileTarget(workId, WORK_FILES.align)
-    const whole = request.ids === 'all' || typeof await this.readJson(target, raw => normalizeAlign(raw)) !== 'object'
+    const current = await this.readJson(target, raw => normalizeAlign(raw))
+    const whole = request.ids === 'all' || typeof current !== 'object' || current.data.version !== ALIGN_VERSION
     const { now } = await this.nodesNow(workId, built, whole ? undefined : new Set(request.ids))
     const at = new Date().toISOString()
     const outcome = await this.mutateJson(target, session, raw => normalizeAlign(raw),
       () => baselineOf(built.graph, now, built.written, at),
-      (doc: AlignDoc) => request.ids === 'all' ? baselineOf(built.graph, now, built.written, at) : ackNodes(doc, request.ids, built.graph, now, built.written, at))
+      (doc: AlignDoc) => whole ? baselineOf(built.graph, now, built.written, at) : ackNodes(doc, request.ids as readonly string[], built.graph, now, built.written, at))
     return outcome.ok ? { ok: true } : { ok: false, error: outcome.error }
   }
 
