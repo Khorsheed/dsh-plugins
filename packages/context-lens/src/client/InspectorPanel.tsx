@@ -3,7 +3,7 @@ import { Trend } from './Trend.tsx'
 import { AgentTabs, ParentLine, ROOM_TAB } from './AgentTabs.tsx'
 import { RoomDecisionsView } from './RoomDecisionsView.tsx'
 /** Session/turn/scope navigation; request detail owns its JSON toggle. */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import type {
   AgentScopeOverview, BackfillInfo, CapturedRequest, ListTurnsResult, TurnListItem, TurnOverview, TurnTiming,
@@ -11,7 +11,8 @@ import type {
 import { WINDOW_TURNS, fmtSpan, gapShown, isHollowTurn, latestTurnSeq, requestOfLocate, resolveTurnSeq, turnGaps, turnNumber, turnOfLocate, type CompositionFilter, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
-import { foreignLocate, forgetSelection, rememberSelection, takeSelection } from './member-jump.ts'
+import { foreignLocate, forgetSelection, rememberSelection, takeSelection, type ReadingView } from './member-jump.ts'
+import type { RowPlace } from './SegmentBlocks.tsx'
 import { hasMessageAnchor, hasTurnAnchor, locateCallPaging, scrollConversationToBottom, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
@@ -88,7 +89,30 @@ export function InspectorPanel({
   const [timing, setTiming] = useState<TurnTiming | null>(null)
   const [request, setRequest] = useState<CapturedRequest | null>(null)
   const [mainTab, setMainTab] = useState<MainTab>(restored?.mainTab ?? 'token')
-  const [filterCat, setFilterCat] = useState<CompositionFilter>(null)
+  const [filterCat, setFilterCat] = useState<CompositionFilter>(restored?.view?.filterCat ?? null)
+  /**
+   * A row to open once its request is on screen: the kept place's open row on
+   * the way back, or the row a room's lens handed over with a call. `request`
+   * names the request it belongs to (seq here, start time across sessions).
+   */
+  const [focus, setFocus] = useState<(RowPlace & { token: number; request: { seq?: number; startedAt?: number } }) | null>(() =>
+    restored?.view?.focus === undefined ? null
+      : { ...restored.view.focus, token: 1, request: restored.selectedSeq === null ? {} : { seq: restored.selectedSeq } })
+  /** The kept detail scroll offset, applied once the request is back (when no row is focused). */
+  const pendingDetailScroll = useRef<number | undefined>(restored?.view?.focus === undefined ? restored?.view?.detailScroll : undefined)
+  /** The row the reader has open now (kept with the place). */
+  const openRow = useRef<RowPlace | null>(null)
+  const onFocusChange = useCallback((place: RowPlace | null) => { openRow.current = place }, [])
+  const bodyRef = useRef<HTMLDivElement>(null)
+  /** How the reader is reading the selected request right now. */
+  const readingView = (): ReadingView => {
+    const detail = bodyRef.current?.querySelector('[data-lens-detail]')
+    return {
+      filterCat,
+      ...openRow.current === null ? {} : { focus: { layer: openRow.current.layer, position: openRow.current.position } },
+      ...detail === null || detail === undefined ? {} : { detailScroll: detail.scrollTop },
+    }
+  }
   const [requestTrail, setRequestTrail] = useState<{ turnSeq: number; scopeId: string; seq: number }[]>([])
   const [scopeId, setScopeId] = useState<string>(restored?.scopeId ?? 'main')
   const [selectedSeq, setSelectedSeq] = useState<number | null>(restored?.selectedSeq ?? null)
@@ -143,7 +167,12 @@ export function InspectorPanel({
       setTurnSeq(null)
       setScopeId('main')
       setSelectedSeq(null)
-      setFilterCat(null)
+      // Read the handed-over request the way the room's lens was reading it.
+      const view = navParams.locateCall.view
+      setFilterCat(view?.filterCat ?? null)
+      const startedAt = navParams.locateCall.request?.startedAt
+      setFocus(view?.focus === undefined ? null
+        : { ...view.focus, token: revision + 1, request: startedAt === undefined ? {} : { startedAt } })
       setMainTab('token')
     }
     if (navParams?.roomDecision !== undefined) {
@@ -433,15 +462,35 @@ export function InspectorPanel({
   /** Keep this panel's place, then send the reader to the member's session, on the call. */
   const locateInMember = memberSession === undefined || openInMemberSession === undefined ? undefined
     : (callId: string, sourceTurn: number | undefined): void => {
-      rememberSelection(ownSessionId, { revision, viewed, turnSeq, scopeId, selectedSeq, mainTab })
+      const view = readingView()
+      rememberSelection(ownSessionId, { revision, viewed, turnSeq, scopeId, selectedSeq, mainTab, view })
       const request = selectedItem === undefined ? undefined
         : { startedAt: selectedItem.startedAt, ...selectedItem.requestNumber === undefined ? {} : { requestNumber: selectedItem.requestNumber } }
       openInMemberSession(memberSession, {
         callId,
         ...sourceTurn === undefined ? {} : { hostTurn: sourceTurn },
         ...request === undefined ? {} : { request },
+        view: { filterCat: view.filterCat, ...view.focus === undefined ? {} : { focus: view.focus } },
       })
     }
+
+  /** The pending focus, only for the request it belongs to (another request loading first must not take it). */
+  const focusHere = focus !== null && request !== null
+    && (focus.request.seq === undefined || focus.request.seq === request.seq)
+    && (focus.request.startedAt === undefined || focus.request.startedAt === request.startedAt)
+    ? { layer: focus.layer, position: focus.position, token: focus.token } : undefined
+  // The kept scroll offset (no open row to bring into view): once the request is back on screen.
+  useEffect(() => {
+    const offset = pendingDetailScroll.current
+    if (offset === undefined || request === null) return
+    pendingDetailScroll.current = undefined
+    const apply = (): void => {
+      const detail = bodyRef.current?.querySelector('[data-lens-detail]')
+      if (detail) detail.scrollTop = offset
+    }
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(apply)
+    else apply()
+  }, [request])
 
   const onSelectTurn = (next: number): void => {
     if (next === turnSeq) return
@@ -582,7 +631,10 @@ export function InspectorPanel({
           request={request}
           filterCat={filterCat}
           previousResponseNumber={previousResponseNumber}
-          onSelect={seq => { setSelectedSeq(seq); setFilterCat(null) }}
+          onSelect={seq => { setSelectedSeq(seq); setFilterCat(null); setFocus(null) }}
+          focus={focusHere}
+          onFocusApplied={token => setFocus(current => current?.token === token ? null : current)}
+          onFocusChange={onFocusChange}
           onToggleFilter={category => { setFilterCat(previous => previous === category ? null : category) }}
           onLocateCall={callsInConversation ? (callId, sourceTurn) => locateCall(callId, effectiveScope?.kind === 'main' ? sourceTurn : undefined) : locateInMember}
           locateInMember={!callsInConversation && locateInMember !== undefined}
@@ -657,7 +709,7 @@ export function InspectorPanel({
           />
         )}
       </div>
-      <div className={css.body}>{body}</div>
+      <div className={css.body} ref={bodyRef}>{body}</div>
     </PanelRoot>
   )
 }

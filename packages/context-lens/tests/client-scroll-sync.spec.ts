@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  hasCallAnchor, locateCallPaging, preferredScrollBehavior, scrollConversationToBottom, scrollConversationToCall, scrollConversationToTurn,
+  emphasizeCall, hasCallAnchor, locateCallPaging, preferredScrollBehavior, scrollConversationToBottom, scrollConversationToCall, scrollConversationToTurn,
 } from '../src/client/scroll-sync.ts'
 
 /** Build a fake conversation: a scrollport with turn rows (and one hidden row). */
@@ -366,5 +366,49 @@ describe('locateCallPaging', () => {
     await clock.tick(400)
     expect(await gone).toBe(false)
     expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+})
+
+describe('emphasizeCall', () => {
+  it('opens the located call\'s own card (not a nested call\'s) and outlines it', () => {
+    const { rows } = conversation([3])
+    const call = document.createElement('div')
+    call.setAttribute('data-chat-call-id', 'call_e')
+    const header = document.createElement('div')
+    header.setAttribute('data-disclosure-row', '')
+    header.setAttribute('aria-expanded', 'false')
+    const opened = vi.fn(() => header.setAttribute('aria-expanded', 'true'))
+    header.addEventListener('click', opened)
+    const nested = document.createElement('div')
+    nested.setAttribute('data-chat-call-id', 'call_nested')
+    const nestedHeader = document.createElement('div')
+    nestedHeader.setAttribute('data-disclosure-row', '')
+    nestedHeader.setAttribute('aria-expanded', 'false')
+    const nestedOpened = vi.fn()
+    nestedHeader.addEventListener('click', nestedOpened)
+    nested.appendChild(nestedHeader)
+    call.append(header, nested)
+    rows.get(3)!.appendChild(call)
+    const animate = vi.fn()
+    Object.defineProperty(call, 'animate', { value: animate, configurable: true })
+    expect(scrollConversationToCall('call_e', document, 'auto')).toBe(true)
+    expect(opened).toHaveBeenCalledTimes(1)
+    expect(nestedOpened).not.toHaveBeenCalled()
+    expect(animate).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves an already open card open', () => {
+    const { rows } = conversation([3])
+    const call = document.createElement('div')
+    call.setAttribute('data-chat-call-id', 'call_open')
+    const header = document.createElement('div')
+    header.setAttribute('data-disclosure-row', '')
+    header.setAttribute('aria-expanded', 'true')
+    const clicked = vi.fn()
+    header.addEventListener('click', clicked)
+    call.appendChild(header)
+    rows.get(3)!.appendChild(call)
+    emphasizeCall('call_open')
+    expect(clicked).not.toHaveBeenCalled()
   })
 })

@@ -253,6 +253,36 @@ function outermostFold(row: Element, scope: ParentNode): Element | null {
   return outer
 }
 
+/** How long a located call stays outlined. */
+export const CALL_EMPHASIS_MS = 2_400
+
+/**
+ * Make a located call obvious: open its card (the host's own disclosure
+ * header — `[data-disclosure-row]` with `aria-expanded`, ui-primitives
+ * DisclosureRow — clicked exactly as the reader would; nested calls' headers
+ * are skipped) and outline it for a moment with a self-removing animation
+ * (no stylesheet, nothing left behind). A host without those attributes just
+ * gets the scroll.
+ */
+export function emphasizeCall(callId: string, root: ParentNode = document): void {
+  try {
+    const row = callRow(scrollport(root) ?? root, callId)
+    if (row === null) return
+    const header = [...row.querySelectorAll<HTMLElement>('[data-disclosure-row][aria-expanded]')]
+      .find(candidate => candidate.closest('[data-chat-call-id]') === row)
+    if (header?.getAttribute('aria-expanded') === 'false') header.click()
+    const box = landingOf(row) as HTMLElement | null
+    const ring = '0 0 0 2px var(--dsw-alias-brand-primary, #4c8dff)'
+    box?.animate?.([
+      { boxShadow: ring, borderRadius: '8px' },
+      { boxShadow: ring, borderRadius: '8px', offset: 0.7 },
+      { boxShadow: '0 0 0 2px transparent', borderRadius: '8px' },
+    ], { duration: CALL_EMPHASIS_MS, easing: 'ease-out' })
+  } catch {
+    // Emphasis is a nicety; the jump already happened.
+  }
+}
+
 /**
  * Scroll the conversation to one tool call's row. A folded step group keeps
  * its rows in the DOM under `hidden="until-found"` and opens on the standard
@@ -295,14 +325,14 @@ export function scrollConversationToCall(
     if (typeof requestAnimationFrame !== 'function') {
       // No frame clock: open every layer now, then land once.
       for (let current = callRow(scope, callId); current !== null && open(current); current = callRow(scope, callId)) { /* next layer */ }
-      landOn(find, port, behavior)
+      if (landOn(find, port, behavior)) emphasizeCall(callId, root)
       return true
     }
     let frames = 0
     const step = (): void => {
       const current = callRow(scope, callId)
       if (current === null) return
-      if (find() !== null || frames >= REVEAL_FRAMES) { landOn(find, port, behavior); return }
+      if (find() !== null || frames >= REVEAL_FRAMES) { if (landOn(find, port, behavior)) emphasizeCall(callId, root); return }
       open(current)
       frames += 1
       requestAnimationFrame(step)

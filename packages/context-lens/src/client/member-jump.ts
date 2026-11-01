@@ -15,6 +15,7 @@
  *
  * @module @khorsheed/dsh-context-lens/client/member-jump
  */
+import type { CompositionFilter } from './aggregate.ts'
 
 /** Where the member session's lens should land: one call, in its host turn when known. */
 export interface LocateCallTarget {
@@ -23,6 +24,19 @@ export interface LocateCallTarget {
   readonly hostTurn?: number
   /** The request the reader was on, so the member's lens opens on the same context. */
   readonly request?: { readonly startedAt: number; readonly requestNumber?: number }
+  /** How the reader was reading that request: the same filter, the same open row. */
+  readonly view?: ReadingView
+}
+
+/**
+ * How a request is being read: the composition filter, the row the reader
+ * has open (its layer and position — the same request reconstructs the same
+ * rows in either session's lens), and the detail pane's scroll offset.
+ */
+export interface ReadingView {
+  readonly filterCat: CompositionFilter
+  readonly focus?: { readonly layer: 'system' | 'history' | 'added'; readonly position: number }
+  readonly detailScroll?: number
 }
 
 /** The pieces the jump needs, all probed by the caller. */
@@ -83,6 +97,8 @@ export interface PanelSelection {
   readonly scopeId: string
   readonly selectedSeq: number | null
   readonly mainTab: 'token' | 'time'
+  /** The filter, open row and scroll offset the reader had on that request. */
+  readonly view?: ReadingView
 }
 
 const selections = new Map<string, { readonly place: PanelSelection; readonly at: number }>()
