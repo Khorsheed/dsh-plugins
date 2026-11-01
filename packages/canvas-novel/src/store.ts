@@ -1541,6 +1541,7 @@ export class NovelService {
         ...rawPlan,
         foreshadowOps: rawPlan.foreshadowOps.map(op => op.id === undefined ? op : { ...op, id: toCard(op.id, 'foreshadow') }),
         cast: rawPlan.cast.map(member => ({ ...member, who: toCard(member.who, 'character') })),
+        ...(rawPlan.infoGaps === undefined ? {} : { infoGaps: rawPlan.infoGaps.map(gap => ({ ...gap, who: toCard(gap.who, 'character') })) }),
         ...(rawPlan.pov === undefined ? {} : { pov: toCard(rawPlan.pov, 'character') }),
       },
     }
@@ -2391,7 +2392,7 @@ export class NovelService {
       }
       gapsSeen.add(index!)
       pend({
-        kind: 'info-gap', chapter: chapter.n, reason: `${gap.who} 得知「${gap.fact}」`,
+        kind: 'info-gap', chapter: chapter.n, reason: `${entries.characters.find(view => view.cardId === characterId)?.name ?? gap.who} 得知「${gap.fact}」`,
         payload: { characterId, fact: gap.fact },
         evidenceInText: evidence!,
       })

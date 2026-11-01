@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-11-01-canvas-novel-world-memory.md
+.agents/notes/proposed/feature/2026-11-01-canvas-novel-world-memory.md: e35390d25cc19e405ca5e1bcab8e0ae8e46cd429
+.agents/notes/proposed/feature/2026-11-01-canvas-novel-world-memory.zh.md: 255ccc149034ae1974ff98b96b6705749f9b3c33

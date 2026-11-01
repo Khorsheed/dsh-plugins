@@ -79,6 +79,9 @@ export function ChapterReader(props: NovelSurfaceProps & {
       const result = await api[call](sessionId, { canvasId, n })
       if (!result.ok) setFailure(t('error.generic', { message: result.error.message }))
       else if (!result.value.ok) setFailure(t(errorKey(result.value.error)))
+      // 按计划开写 (2026-11-01): the confirmation is also the go-ahead — the
+      // line goes out as the person's message so the agent starts writing.
+      else props.sendToConversation?.(sessionId, t('plan.startWriting', { n }))
       navigate.refresh()
     } finally {
       setBusy(false)

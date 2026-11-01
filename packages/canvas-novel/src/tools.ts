@@ -282,7 +282,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           if (outcome.error === 'plan-unconfirmed') {
             return args.chapter === undefined
               ? '失败：正文只能写进已确认计划的章节。先 novel_write(what=chapter, title, plan) 登记计划、等用户确认，再带 chapter=N 写正文；用户自己写好的稿子加 byUser=true 登记。'
-              : `失败：第 ${args.chapter} 章的计划还没经用户确认（或刚改过计划），不写正文。用户在对话里已经明确同意这版计划的话，先 novel_write(what=confirm, chapter=${args.chapter}) 登记确认再写；没有就请用户确认（对话里说一声，或点章节页的「确认计划」）。`
+              : `失败：第 ${args.chapter} 章的计划还没经用户确认（或刚改过计划），不写正文。用户在对话里已经明确同意这版计划的话，先 novel_write(what=confirm, chapter=${args.chapter}) 登记确认再写；没有就请用户确认（对话里说一声，或点章节页的「按计划开写」）。`
           }
           if (outcome.error === 'unknown-foreshadow') {
             return `失败：计划里的伏笔要写编号，这几条对不上伏笔卡：${(outcome.unknown ?? []).map(id => `「${id}」`).join('、')}。`
