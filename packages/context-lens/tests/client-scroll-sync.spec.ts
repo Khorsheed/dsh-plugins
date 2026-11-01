@@ -160,4 +160,37 @@ describe('scrollConversationToMessage', () => {
     expect(scrollIntoView.mock.instances[0]).toBe(row)
     expect(scrollConversationToMessage('missing')).toBe(false)
   })
+
+  it('a jump the chat view cut short is brought to the top once the scroll is still; the reader\'s own scroll ends the watch', async () => {
+    const { scrollConversationToMessage } = await import('../src/client/scroll-sync.ts')
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const run = (count: number): void => { for (let i = 0; i < count; i += 1) frames.shift()?.(0) }
+    const { port } = conversation([1])
+    Object.defineProperty(port, 'scrollHeight', { value: 10_000, configurable: true })
+    Object.defineProperty(port, 'clientHeight', { value: 800, configurable: true })
+    const row = document.createElement('div')
+    row.setAttribute('data-chat-node-key', 'input-message-abc')
+    port.appendChild(row)
+    // The host's own scroll write left the row 600px below the top.
+    let rowTop = 600
+    row.getBoundingClientRect = () => ({ top: rowTop }) as DOMRect
+    port.getBoundingClientRect = () => ({ top: 0 }) as DOMRect
+    expect(scrollConversationToMessage('abc')).toBe(true)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    run(6)
+    // Still and off target: one instant correction.
+    expect(scrollIntoView).toHaveBeenCalledTimes(2)
+    expect(scrollIntoView.mock.calls[1]![0]).toEqual({ behavior: 'auto', block: 'start' })
+    rowTop = 0
+    run(10)
+    expect(scrollIntoView).toHaveBeenCalledTimes(2)
+    // A new jump the reader then scrolls away from is left alone.
+    rowTop = 600
+    scrollConversationToMessage('abc')
+    port.dispatchEvent(new Event('wheel'))
+    run(10)
+    expect(scrollIntoView).toHaveBeenCalledTimes(3)
+  })
 })
