@@ -64,6 +64,13 @@ describe('DeskOpenRow', () => {
     }])
     expect(deskDestinationsOf('game', event(2, payload({ role: 'member' })))[0]?.role).toBe('member')
     expect(deskDestinationsOf('game', event(3, payload({ owner: '@khorsheed/dsh-canvas' })))).toEqual([])
+    // A write on the room's project only refreshes: read as a member's act whoever wrote it.
+    const wrote = { type: 'room/desk-wrote', seq: 4, time: Date.now(), data: payload({ data: { projectId: 'g_1', what: 'publish', place: { view: 'elements', elementId: 'e1' }, label: 'v2：改了九尾狐' } }) }
+    expect(deskDestinationsOf('game', wrote)).toEqual([{
+      destination: { id: 'desk:@khorsheed/dsh-game:4', kind: 'game', params: { view: 'elements', elementId: 'e1', projectId: 'g_1' }, label: 'v2：改了九尾狐' },
+      role: 'member',
+    }])
+    expect(deskDestinationsOf('game', { ...wrote, data: { ...wrote.data, owner: '@khorsheed/dsh-canvas' } })).toEqual([])
   })
 
   it('a member\'s open never takes the foreground; its door opens it', () => {

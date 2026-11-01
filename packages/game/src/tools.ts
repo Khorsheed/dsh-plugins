@@ -17,7 +17,7 @@ import { isAbsolute, join } from 'node:path'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { defineTool, type ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { actingSession, announceDeskOpen, deskOf, type GameDesk } from './desk.ts'
+import { actingSession, announceDeskOpen, announceDeskWrite, deskOf, type GameDesk } from './desk.ts'
 import { withGameDestination } from './nav-line.ts'
 import { artStyleLabel, lookText } from './project.ts'
 import type { GameService } from './store.ts'
@@ -288,6 +288,12 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       const result = await store.proposeLooks(place.bindingId, (args.element ?? '').trim(), args.request ?? '',
         variants.map(v => (v !== null && typeof v === 'object' ? v as { label?: string; note?: string; look: unknown } : { look: null })))
       if (!result.ok) return `失败：${result.error}`
+      if (place.desk !== undefined && place.row !== undefined) {
+        announceDeskWrite(place.desk, {
+          projectId: place.row.id, what: 'propose',
+          place: { view: 'elements', elementId: (args.element ?? '').trim() }, label: `「${result.name}」的外观方案`,
+        })
+      }
       return `完成：「${result.name}」的 ${result.count} 个外观方案已放到右栏「元素」里等用户挑；挑中的会直接替换进游戏，下一轮你会收到用户的选择。`
     },
   })
@@ -333,10 +339,13 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
       if (outcome.kind === 'pass') {
         const tail = outcome.record.skipped === undefined ? '' : `（${outcome.record.skipped}）`
         const cut = outcome.deployed ?? outcome.candidate
-        // In a room the desk carries the project; a desk call names no destination.
-        const landed = cut === null || place.desk !== undefined
-          ? undefined
-          : await store.publishedPlace(place.bindingId, cut.version, outcome.candidate !== null, args.note)
+        // In a room the desk carries the project: a desk call names no
+        // destination, and tells the room what it wrote instead.
+        const placed = cut === null ? undefined : await store.publishedPlace(place.bindingId, cut.version, outcome.candidate !== null, args.note)
+        if (place.desk !== undefined && placed !== undefined) {
+          announceDeskWrite(place.desk, { projectId: placed.projectId, what: 'publish', place: placed.target, label: placed.label })
+        }
+        const landed = place.desk !== undefined ? undefined : placed
         const where = landed === undefined ? '' : `用户在右栏游戏页签的${landed.where}能看到（会话里有卡片直达）。`
         const named = (answer: string): string => landed === undefined || cut === null
           ? answer

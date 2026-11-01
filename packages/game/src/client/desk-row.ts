@@ -114,7 +114,10 @@ export const deskRowDefinition = {
  * The follower's reading of this owner's desk events (proposal
  * 2026-10-30-agent-sidebar-navigation): a live `room/desk-opened` names its
  * place and whose act it was — the coordinator's follows, a member's only
- * marks. The rows themselves only offer the door.
+ * marks. A live `room/desk-wrote` (a version published, variants offered on
+ * the room's project) only refreshes: it is read as a member's act whoever
+ * wrote it, so it never moves the sidebar, and the follower's write signal
+ * re-reads the room's game tab. The rows themselves only offer the door.
  * @param kind - the tab kind the place belongs to.
  * @param event - one appended session event.
  */
@@ -123,6 +126,16 @@ export function deskDestinationsOf(kind: string, event: { readonly type: string;
   role: 'coordinator' | 'member'
 }> {
   const row = deskRowOf({ ...event, seq: event.seq ?? 0, time: event.time ?? 0 } as Parameters<typeof deskRowOf>[0])
-  if (row === null) return []
-  return [{ destination: { id: `desk:${DESK_OWNER}:${row.seq}`, kind, params: { projectId: row.projectId, view: 'play' }, label: row.title }, role: row.role }]
+  if (row !== null) {
+    return [{ destination: { id: `desk:${DESK_OWNER}:${row.seq}`, kind, params: { projectId: row.projectId, view: 'play' }, label: row.title }, role: row.role }]
+  }
+  if (event.type !== 'room/desk-wrote') return []
+  const outer = event.data as { owner?: unknown; data?: { projectId?: unknown; place?: unknown; label?: unknown } } | undefined
+  const data = outer?.data
+  if (outer?.owner !== DESK_OWNER || typeof data?.projectId !== 'string') return []
+  const place = typeof data.place === 'object' && data.place !== null ? data.place as Record<string, unknown> : { view: 'play' }
+  return [{
+    destination: { id: `desk:${DESK_OWNER}:${event.seq ?? 0}`, kind, params: { ...place, projectId: data.projectId }, label: typeof data.label === 'string' ? data.label : '' },
+    role: 'member',
+  }]
 }

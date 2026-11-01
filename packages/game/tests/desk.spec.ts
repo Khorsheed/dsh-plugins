@@ -126,6 +126,11 @@ describe('game_open on a room desk', () => {
     expect((await store.view(project.id))?.current).toMatchObject({ version: 1, by: 'agent' })
     // A desk call names no destination: in a room the desk row brings the project.
     expect(published).not.toContain('⟦dsh-nav⟧')
+    // …and tells the room what it wrote, so the room's game tab re-reads.
+    expect(room.appended.at(-1)).toEqual({ type: 'room/desk-wrote', data: {
+      version: 1, owner: '@khorsheed/dsh-game', member: 'codex', role: 'member',
+      data: { projectId: project.id, what: 'publish', place: { view: 'play' }, label: 'v1 已上线' },
+    } })
 
     // Its own choice wins once it has one.
     await tool('game_open')({ create: 'Harbor', ...GATE }, { agent: member })

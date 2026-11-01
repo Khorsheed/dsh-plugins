@@ -16,7 +16,7 @@ import { artStyleLabel, artStyleName } from '../project.ts'
 import type { ProjectView, SessionGameState, WorkingChanges } from '../types.ts'
 import { exportHtml } from '../vfs.ts'
 import { failureOf, type GameNavParams, type GameTabProps, type ViewProps } from './contract.ts'
-import { interactionHandlers } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { interactionHandlers, subscribeWrites } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { DesignView } from './DesignView.tsx'
 import { ElementsView } from './ElementsView.tsx'
 import { PlayView } from './PlayView.tsx'
@@ -246,8 +246,9 @@ function ProjectWorkbench(p: ViewProps & {
  * 有新改动还没进游戏: whatever the working files hold that the play area
  * does not — panel edits, the agent's or a CLI member's writes, the user's
  * own editor — with 检查并发版 to cut a version through the same checks
- * (published by the user). It polls while the page is visible, which is how
- * a member's writes show up without a turn. While someone is still writing
+ * (published by the user). It looks again on every game write the
+ * conversation or a room member makes (the write signal), and slowly while
+ * the page is visible for writes that pass through no session. While someone is still writing
  * (a turn runs, or a file changed in the last 20 s) the button is disabled.
  */
 function CommitBar({ t, sessionId, api, project, refresh, toast, insertDraft, onOpenVersions }: ViewProps & {
@@ -263,9 +264,14 @@ function CommitBar({ t, sessionId, api, project, refresh, toast, insertDraft, on
     void api.changes(project.id).then(r => { if (live && r.ok && r.value.ok) setChanges(r.value) })
     return () => { live = false }
   }, [api, project, tick])
+  // A game write in the conversation or a room member's write on this project
+  // (the follower's write signal) looks again at once; a slow look while the
+  // page is visible catches what never passes through a session (another tab,
+  // a file written by hand).
   useEffect(() => {
-    const id = setInterval(() => { if (document.visibilityState === 'visible') setTick(n => n + 1) }, POLL_MS)
-    return () => { clearInterval(id) }
+    const stop = subscribeWrites('game', () => { setTick(n => n + 1) })
+    const id = setInterval(() => { if (document.visibilityState === 'visible') setTick(n => n + 1) }, FALLBACK_MS)
+    return () => { stop(); clearInterval(id) }
   }, [])
   // A 'recent' writer goes quiet on its own: look again right after.
   const lastAt = changes?.lastAt ?? null
@@ -335,8 +341,8 @@ function CommitBar({ t, sessionId, api, project, refresh, toast, insertDraft, on
   </>
 }
 
-/** How often the bar looks at the working files while the page is visible. */
-const POLL_MS = 8_000
+/** The bar's slow fallback look while the page is visible (writes re-read at once). */
+const FALLBACK_MS = 30_000
 /** Matches the host's quiet window for a 'recent' writer (store BUSY_QUIET_MS). */
 const QUIET_MS = 20_000
 
