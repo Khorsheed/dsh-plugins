@@ -23,9 +23,21 @@ The 2e9c1ffb log was repaired offline. The 591 backlog events written into close
 
 The same day a fresh Kimi member (fbc8ba18…) broke within its first round. After a `Skill` call, kimi appends the skill's instructions as a user `context.append_message` plus a `turn.steer`; its loop events keep `turnId: 0`. `readKimiTranscript` counted every distinct user message as a new turn, so the rest of round 1 was folded as turn 2, a turn the log never opened. A wire that marks rounds with `turn.prompt` now treats any other user message as kimi's own injection: it opens no turn and is not mirrored as the human's message. Wires without `turn.prompt` (older kimi) keep one round per user message. On the real wire, the old parse split the round 3 + 17 lines; the new one keeps all 19 in turn 1.
 
+## Also: a round kimi opens itself is not a dsh round
+
+When a background subagent finishes while no dsh round runs, kimi starts a round on its own. The prompt is a `turn.prompt` with `origin.kind: 'task'` and a `<notification …>` text. `readKimiTranscript` counted every `turn.prompt` as a round. After the first such notification (6a56 room, 人物建模大师, 10-27 22:35), every later wire round was tagged one turn above the child session's:
+
+- The fold's user-message dedupe looked for the next turn's `turn/start`, so every round got a second copy of the human's message.
+- `completeStreams(turn)` never matched the live round's turn, so no live stream paired with its wire step. At settle every streamed think/text was written again as an extra step without usage. Context Lens showed these as trailing "助手回复" requests with no tokens, and rounds 35–47 all had them.
+
+Now only a user-origin `turn.prompt` (or one with no `origin`, on older wires) opens a dsh turn. A kimi-opened round takes the NEXT dsh turn number, and the next human prompt joins that same turn, so its work folds into the round the human starts next. Its prompt stays a transcript line (`injected: true`), so line positions, the mirror offset's unit, do not move. The fold writes no user message for it and carries its usage forward. On wires that mark rounds with `turn.prompt`, the loop events' `turnId` is ignored for numbering; kimi writes it as a string anyway. On the real wire, the "感觉整体还不错" round now reads as turn 44, matching the child session.
+
+The log keeps the duplicates already written; new rounds are clean.
+
 ## Alternatives considered
 
 - **Persist the mirror offset across restarts.** This avoids re-reading the wire, but a backlog the offset never covered would still be written into closed turns. The guard is still needed.
+- **Drop a kimi-opened round's content (fold it into the previous, closed turn).** That would hide work kimi did, along with the tool calls it made. Folding it into the next round shows it where the human next looks.
 - **Map backlog units onto the current turn.** That would mix old work into the current round's view and accounting.
 
 ## Consequences

@@ -258,6 +258,35 @@ describe('session-view', () => {
     ])
   })
 
+  it('a round kimi opens on its own (a task notification) opens no dsh round: it folds into the next one, and later rounds keep the dsh numbering', async () => {
+    const home = tempHome('kimi-session-injected-')
+    const dir = join(home, 'sessions', 'wd_x', 'session_injected')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    const notice = '<notification id="task:a:completed" category="task">\nBackground agent completed\n</notification>'
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '做模型' }], origin: { kind: 'user' }, turnId: 0 }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: '0', step: 1, part: { type: 'text', text: '已派后台任务' } } }),
+      // dsh's round ended; the background task completes and kimi runs a round of its own.
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: notice }], origin: { kind: 'task', taskId: 'a' }, turnId: 1 }),
+      JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: notice }] } }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: '1', step: 1, part: { type: 'text', text: '后台任务完成了' } } }),
+      // The human's next message: dsh round 2, wire turnId 2.
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '继续' }], origin: { kind: 'user' }, turnId: 2 }),
+      JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: '2', step: 1, part: { type: 'text', text: '好的' } } }),
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '第三轮' }], origin: { kind: 'user' }, turnId: 3 }),
+    ].join('\n'))
+    const transcript = await readKimiTranscript(dir)
+    expect(transcript.lines.map(line => [line.kind, line.turn, line.kind === 'tool' ? line.name : line.text, line.kind === 'user' && line.injected === true])).toEqual([
+      ['user', 1, '做模型', false],
+      ['assistant', 1, '已派后台任务', false],
+      ['user', 2, notice, true],
+      ['assistant', 2, '后台任务完成了', false],
+      ['user', 2, '继续', false],
+      ['assistant', 2, '好的', false],
+      ['user', 3, '第三轮', false],
+    ])
+  })
+
   it('a wire without turn.prompt still opens a round per user message (older kimi)', async () => {
     const home = tempHome('kimi-session-legacy-')
     const dir = join(home, 'sessions', 'wd_x', 'session_legacy')
