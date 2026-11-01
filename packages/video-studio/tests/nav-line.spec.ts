@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { NAV_MARK as REFERENCE_MARK, readDestinations } from '@khorsheed/dsh-client-ui-agent-nav/src/destination.ts'
-import { NAV_MARK, VIDEO_NAV_KIND, withVideoDestination } from '../src/nav-line.ts'
+import { NAV_MARK, PROPOSAL_CARD, SETTLED_CARD, VIDEO_NAV_KIND, withVideoDestination } from '../src/nav-line.ts'
 import { VIDEO_KIND } from '../src/client/definition.tsx'
 
 describe('video destination line', () => {
@@ -17,5 +17,12 @@ describe('video destination line', () => {
     expect(readDestinations(answer)).toEqual([expect.objectContaining({
       kind: 'video-studio', label: '粗剪提议', params: { projectId: 'p_1', tab: 'transcript', groupId: 'g_1' },
     })])
+  })
+  it('hands the card data with it: a proposal waits for the person, a settled one does not', () => {
+    const waiting = withVideoDestination('已提议 g_2', 'group:g_2', { projectId: 'p_1', tab: 'transcript', groupId: 'g_2' }, '剪掉「然后」', PROPOSAL_CARD)
+    expect(readDestinations(waiting)[0]?.card).toEqual({ status: '等你过一遍', awaiting: true, door: '去文稿处理 →' })
+    const settled = withVideoDestination('已采纳 g_2', 'settled:g_2', { projectId: 'p_1', tab: 'transcript', groupId: 'g_2' }, '已采纳 g_2', SETTLED_CARD)
+    expect(readDestinations(settled)[0]?.card).toEqual({ status: '已处理', door: '查看 →' })
+    expect(readDestinations(settled)[0]?.params).toEqual(readDestinations(waiting)[0]?.params)
   })
 })

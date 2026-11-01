@@ -21,7 +21,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import videoRemote from '@khorsheed/dsh-video-studio/remote'
 import type { VideoPaneInjected } from './contract.ts'
-import { followerHostOf, openDestination, registerDestinationCards, startNavFollower } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import { followerHostOf, openDestination, registerDestinationCards, startNavFollower, updateCards } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { VIDEO_KIND, VIDEO_TAB_ID, videoDefinition, type VideoNavParams } from './definition.tsx'
 import { DESK_OWNER, DESK_ROW_KIND, deskDestinationsOf, deskRowDefinition, setDeskRowSeated } from './desk-row.ts'
 import { DeskAttachment } from './DeskAttachment.tsx'
@@ -89,7 +89,21 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return true
     },
     setCut: request => remote.setCut(request),
-    decide: request => remote.decide(request),
+    // A proposal group settled in the 文稿 tab: its conversation card hears it
+    // (shown while live) once no edit of the group is left pending.
+    decide: async request => {
+      const result = await remote.decide(request)
+      if (result.ok) {
+        const edits: ReadonlyArray<{ readonly id: string; readonly group: string; readonly state: string }> = result.value.project.edits
+        const touched = new Set(request.groupId !== undefined ? [request.groupId] : [])
+        for (const edit of edits) if (request.editIds?.includes(edit.id) === true) touched.add(edit.group)
+        for (const groupId of touched) {
+          if (edits.some(edit => edit.group === groupId && edit.state === 'proposed')) continue
+          updateCards(VIDEO_KIND, { projectId: request.projectId, groupId }, { status: t('card.settled'), awaiting: false, door: t('card.open') })
+        }
+      }
+      return result
+    },
     scan: projectId => remote.scan({ projectId }),
     renameSpeaker: request => remote.renameSpeaker(request),
     mergeSpeakers: request => remote.mergeSpeakers(request),
