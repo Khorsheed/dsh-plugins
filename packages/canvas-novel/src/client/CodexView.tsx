@@ -20,7 +20,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { NOVEL_GENRE_ID, type CodexCharacter, type CodexForeshadow, type CodexSetting, type NovelCodexResult } from '../types.ts'
 import type { NovelSurfaceProps } from './contract.ts'
-import { OutlineSheet } from './PlanView.tsx'
+import { OnePage } from './OnePage.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './codex.module.css'
 
@@ -45,12 +45,13 @@ function Codex(props: NovelSurfaceProps): ReactNode {
   const read = useNovelRead(api, r => r.codex({ canvasId }), `codex:${canvasId}`, rev)
   const [part, setPart] = useState<Part>('overview')
   const [picked, setPicked] = useState<string | null>(null)
+  const [onlyOpen, setOnlyOpen] = useState(false)
   if (api === undefined) return null
   if (read.state === 'loading') return <div className={css.page}><div className={css.muted}>{t('state.loading')}</div></div>
   if (read.state === 'error') return <div className={css.page}><div className={css.warn}>{t('error.generic', { message: read.message })}</div></div>
   if (!read.value.ok) return <div className={css.page}><div className={css.warn}>{t(errorKey(read.value.error))}</div></div>
   const data = read.value
-  const go = (next: Part, cardId?: string): void => { setPart(next); setPicked(cardId ?? null) }
+  const go = (next: Part, cardId?: string, unsettled = false): void => { setPart(next); setPicked(cardId ?? null); setOnlyOpen(unsettled) }
   const parts: readonly [Part, string, number | undefined][] = [
     ['overview', t('codex.overview'), undefined],
     ['world', t('codex.world'), data.settings?.length ?? 0],
@@ -68,21 +69,27 @@ function Codex(props: NovelSurfaceProps): ReactNode {
         ))}
       </nav>
       {part === 'overview' && <Overview {...props} data={data} go={go} />}
-      {part === 'world' && <World data={data} picked={picked} onPick={setPicked} openCard={props.navigate.openCard} openChapter={n => { props.navigate.openManuscripts(String(n)) }} t={t} />}
+      {part === 'world' && <World data={data} picked={picked} onPick={setPicked} onlyOpen={onlyOpen} setOnlyOpen={setOnlyOpen} openCard={props.navigate.openCard} openChapter={n => { props.navigate.openManuscripts(String(n)) }} t={t} />}
       {part === 'people' && <People data={data} openCard={props.navigate.openCard} t={t} />}
       {part === 'relations' && <Relations data={data} openCard={props.navigate.openCard} t={t} />}
-      {part === 'foreshadow' && <Foreshadows data={data} picked={picked} onPick={setPicked} openCard={props.navigate.openCard} openChapter={n => { props.navigate.openManuscripts(String(n)) }} t={t} />}
+      {part === 'foreshadow' && <Foreshadows data={data} picked={picked} onPick={setPicked} openCard={props.navigate.openCard} openChapter={n => { props.navigate.openManuscripts(String(n)) }} send={props.sessionId !== undefined && props.sendToConversation !== undefined ? text => { props.sendToConversation?.(props.sessionId!, text) } : undefined} t={t} />}
     </div>
   )
 }
 
 /* ------------------------------------------------------------------ 总览 */
 
-function Overview(props: NovelSurfaceProps & { readonly data: NovelCodexResult; readonly go: (part: Part, cardId?: string) => void }): ReactNode {
+function Overview(props: NovelSurfaceProps & { readonly data: NovelCodexResult; readonly go: (part: Part, cardId?: string, unsettled?: boolean) => void }): ReactNode {
   const { data, go, t, sessionId } = props
   const settings = data.settings ?? []
   const unsettled = settings.filter(row => row.unsettled)
   const principles = data.principles ?? []
+  const people = data.characters ?? []
+  const byId = new Map(settings.map(row => [row.cardId, row]))
+  const names = new Map(people.map(row => [row.cardId, row.name]))
+  const relations = data.relations ?? []
+  const foreshadows = data.foreshadows ?? []
+  const openReveal = foreshadows.filter(row => row.reveal === undefined && row.state !== '已揭晓').length
   return (
     <div className={css.stack}>
       {(data.unorganized ?? 0) > 0 && (
@@ -93,95 +100,161 @@ function Overview(props: NovelSurfaceProps & { readonly data: NovelCodexResult; 
           )}
         </div>
       )}
-      <div className={css.sheetWrap}><OutlineSheet {...props} /></div>
+      <OnePage {...props} />
+      {people.length > 0 && (
+        <section className={css.section}>
+          <h3 className={css.h3}>{t('codex.people')}<span className={css.h3Meta}>{people.length}</span><span className={css.grow} /><button type="button" className={css.link} onClick={() => { go('people') }}>{t('onepage.allPeople')}</button></h3>
+          <div className={css.index}>
+            {people.slice(0, PEOPLE_SHOWN).map(person => (
+              <button key={person.cardId} type="button" className={css.personRow} onClick={() => { go('people') }}>
+                <span className={css.personRowName}>{shortName(person.name)}</span>
+                <span className={css.personRowFac}>{person.factions[0] === undefined ? '—' : shortName(byId.get(person.factions[0])?.name ?? '')}</span>
+                <span className={css.personRowNow}>
+                  {person.intent !== undefined
+                    ? <><em>{t('card.intent')}</em>{person.intent}</>
+                    : <><em>{t('codex.now')}</em>{[person.where, person.state].filter(Boolean).join('；') || '—'}</>}
+                </span>
+              </button>
+            ))}
+          </div>
+          {people.length > PEOPLE_SHOWN && <button type="button" className={css.link} onClick={() => { go('people') }}>{t('onepage.morePeople', { count: people.length - PEOPLE_SHOWN })}</button>}
+          {(relations.length > 0 || foreshadows.length > 0) && (
+            <div className={css.glance}>
+              {relations.length > 0 && (
+                <button type="button" className={css.link} onClick={() => { go('relations') }}>
+                  {t('onepage.relations', { count: relations.length, first: relations[0]!.pair.map(id => names.get(id) ?? '').join(' ↔ ') })}
+                </button>
+              )}
+              {foreshadows.length > 0 && (
+                <button type="button" className={css.link} onClick={() => { go('foreshadow') }}>
+                  {openReveal > 0 ? t('onepage.foreshadowsOpen', { count: foreshadows.length, open: openReveal }) : t('onepage.foreshadows', { count: foreshadows.length })}
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      )}
       <section className={css.section}>
-        <h3 className={css.h3}>{t('codex.world')}</h3>
-        <div className={css.shelfGrid}>
+        <h3 className={css.h3}>
+          {t('codex.world')}<span className={css.h3Meta}>{t('onepage.settingCount', { count: settings.length })}</span><span className={css.grow} />
+          {unsettled.length > 0 && <button type="button" className={css.link} onClick={() => { go('world', undefined, true) }}><i className={css.dot} />{t('onepage.unsettled', { count: unsettled.length })}</button>}
+        </h3>
+        <div className={css.index}>
           {SHELVES.map(sort => {
             const rows = settings.filter(row => row.sort === sort)
             const roots = rows.filter(row => !row.parents.some(id => rows.some(other => other.cardId === id)))
+            const ordered = [...roots, ...rows.filter(row => !roots.includes(row))]
             return (
-              <div key={sort} className={css.shelfCard}>
-                <div className={css.shelfHead}><b>{t(`world.shelf.${sort}`)}</b><span className={css.muted}>{rows.length}</span></div>
-                {rows.length === 0
-                  ? <span className={css.muted}>{t('world.shelfEmpty')}</span>
-                  : (
-                    <div className={css.chips}>
-                      {roots.slice(0, 8).map(row => (
-                        <button key={row.cardId} type="button" className={css.chip} data-draft={row.unsettled || undefined} onClick={() => { go('world', row.cardId) }}>{shortName(row.name)}</button>
-                      ))}
-                      {roots.length > 8 && <button type="button" className={css.chipGhost} onClick={() => { go('world') }}>{t('codex.more', { count: roots.length - 8 })}</button>}
-                    </div>
-                  )}
+              <div key={sort} className={css.shelfRow}>
+                <span className={css.shelfKey}>{t(`world.shelf.${sort}`)}<i>{rows.length}</i></span>
+                <span className={css.shelfNames}>
+                  {rows.length === 0 ? <span className={css.mutedInline}>{t('world.shelfEmpty')}</span> : ordered.slice(0, 8).map((row, index) => (
+                    <span key={row.cardId}>
+                      {index > 0 && <span className={css.sep}>·</span>}
+                      <button type="button" className={css.nameLink} onClick={() => { go('world', row.cardId) }}>{shortName(row.name)}</button>
+                    </span>
+                  ))}
+                </span>
+                {rows.length > 0 && <button type="button" className={css.link} onClick={() => { go('world', ordered[0]!.cardId) }}>{t('onepage.all')}</button>}
               </div>
             )
           })}
         </div>
-        <p className={css.muted}>{t('codex.worldHint')}</p>
       </section>
-      {unsettled.length > 0 && (
-        <section className={css.tray}>
-          <b>{t('codex.unsettled', { count: unsettled.length })}</b>
-          <div className={css.chips}>
-            {unsettled.map(row => <button key={row.cardId} type="button" className={css.chip} onClick={() => { go('world', row.cardId) }}>{shortName(row.name)}</button>)}
-          </div>
-          <span className={css.muted}>{t('codex.unsettledHint')}</span>
-        </section>
-      )}
       {principles.length > 0 && (
-        <details className={css.fold}>
-          <summary>{t('world.principles', { count: principles.length })}</summary>
-          <ol>{principles.map(row => <li key={row.cardId}>{row.text}</li>)}</ol>
-        </details>
+        <section className={css.section}>
+          <h3 className={css.h3}>{t('onepage.principles')}<span className={css.h3Meta}>{t('onepage.principlesHint')}</span></h3>
+          <ol className={css.rules}>
+            {principles.map(row => {
+              const [lead, rest] = splitLead(row.text)
+              return <li key={row.cardId}>{lead !== undefined && <b>{lead}</b>}<span className={css.clamp2}>{rest}</span></li>
+            })}
+          </ol>
+        </section>
       )}
     </div>
   )
 }
 
+/** People listed on 总览 before 「还有 N 人」. */
+const PEOPLE_SHOWN = 8
+
+/** 「全书命题（工作稿）：书写……」 → [「全书命题。」, 「书写……」]; a principle without a short lead stays whole. */
+function splitLead(text: string): [string | undefined, string] {
+  const m = /^([^：:。\n]{2,24})[：:]\s*/.exec(text)
+  if (m === null) return [undefined, text]
+  return [`${shortName(m[1]!)}。`, text.slice(m[0].length)]
+}
+
 /* ---------------------------------------------------------------- 世界观 */
 
-function World({ data, picked, onPick, openCard, openChapter, t }: {
+function World({ data, picked, onPick, onlyOpen, setOnlyOpen, openCard, openChapter, t }: {
   readonly data: NovelCodexResult
   readonly picked: string | null
   readonly onPick: (cardId: string) => void
+  readonly onlyOpen: boolean
+  readonly setOnlyOpen: (value: boolean) => void
   readonly openCard: (cardId: string, heading: string) => void
   readonly openChapter: (n: number) => void
   readonly t: T
 }): ReactNode {
   const settings = data.settings ?? []
   const byId = useMemo(() => new Map(settings.map(row => [row.cardId, row])), [settings])
-  const current = (picked === null ? undefined : byId.get(picked)) ?? settings[0]
+  const open = settings.filter(row => row.unsettled)
+  const listed = onlyOpen ? open : settings
+  const current = (picked === null ? undefined : byId.get(picked)) ?? listed[0] ?? settings[0]
   if (settings.length === 0) return <p className={css.empty}>{t('world.empty')}</p>
   const childrenOf = (id: string, sort: string): CodexSetting[] => settings.filter(row => row.sort === sort && row.parents.includes(id))
-  const item = (row: CodexSetting, depth: number, seen: ReadonlySet<string>): ReactNode => (
-    <li key={row.cardId}>
-      <button type="button" className={css.treeItem} style={{ paddingLeft: `${8 + depth * 14}px` }} aria-current={row.cardId === current?.cardId || undefined} onClick={() => { onPick(row.cardId) }}>
-        <span className={css.treeName}>{shortName(row.name)}</span>
-        {row.unsettled && <span className={css.draftTag}>{t('world.unsettled')}</span>}
-      </button>
-      {childrenOf(row.cardId, row.sort).filter(child => !seen.has(child.cardId)).length > 0 && (
-        <ul className={css.tree}>{childrenOf(row.cardId, row.sort).filter(child => !seen.has(child.cardId)).map(child => item(child, depth + 1, new Set([...seen, child.cardId])))}</ul>
-      )}
-    </li>
+  const node = (row: CodexSetting, depth: number): ReactNode => (
+    <button key={row.cardId} type="button" className={css.node} style={{ ['--d' as string]: depth }} data-guide={depth > 0 || undefined} aria-current={row.cardId === current?.cardId || undefined} onClick={() => { onPick(row.cardId) }}>
+      <span className={css.nodeName}>{shortName(row.name)}</span>
+      {row.unsettled && <i className={css.dot} title={t('world.unsettled')} />}
+    </button>
   )
+  const walk = (row: CodexSetting, depth: number, seen: ReadonlySet<string>): ReactNode[] => [
+    node(row, depth),
+    ...childrenOf(row.cardId, row.sort).filter(child => !seen.has(child.cardId)).flatMap(child => walk(child, depth + 1, new Set([...seen, child.cardId]))),
+  ]
   return (
     <div className={css.split}>
-      <div className={css.side}>
+      <nav className={css.side} aria-label={t('codex.world')}>
+        {open.length > 0 && (
+          <div className={css.seg} role="group" aria-label={t('onepage.filter')}>
+            <button type="button" aria-pressed={!onlyOpen} onClick={() => { setOnlyOpen(false) }}>{t('onepage.filterAll', { count: settings.length })}</button>
+            <button type="button" aria-pressed={onlyOpen} onClick={() => { setOnlyOpen(true) }}>{t('onepage.filterOpen', { count: open.length })}</button>
+          </div>
+        )}
         {SHELVES.map(sort => {
           const rows = settings.filter(row => row.sort === sort)
           if (rows.length === 0) return null
+          if (onlyOpen) {
+            const flagged = rows.filter(row => row.unsettled)
+            if (flagged.length === 0) return null
+            return <div key={sort} className={css.sideGroup}><h4>{t(`world.shelf.${sort}`)} · {flagged.length}</h4>{flagged.map(row => node(row, 0))}</div>
+          }
           const roots = rows.filter(row => !row.parents.some(id => rows.some(other => other.cardId === id)))
-          return (
-            <div key={sort} className={css.sideGroup}>
-              <h4>{t(`world.shelf.${sort}`)}<span className={css.muted}> {rows.length}</span></h4>
-              <ul className={css.tree}>{roots.map(row => item(row, 0, new Set([row.cardId])))}</ul>
-            </div>
-          )
+          return <div key={sort} className={css.sideGroup}><h4>{t(`world.shelf.${sort}`)} · {rows.length}</h4>{roots.flatMap(row => walk(row, 0, new Set([row.cardId])))}</div>
         })}
-      </div>
+      </nav>
       {current !== undefined && <SettingDetail setting={current} data={data} byId={byId} onPick={onPick} openCard={openCard} openChapter={openChapter} t={t} />}
     </div>
   )
+}
+
+/** A setting's text as it is written: 「键：值」 lines become rows, 未决 its own box, 状态 goes to the head. */
+export function settingParts(text: string): { readonly rows: { readonly key?: string; readonly text: string }[]; readonly open: readonly string[]; readonly status?: string } {
+  const rows: { key?: string; text: string }[] = []
+  const open: string[] = []
+  let status: string | undefined
+  for (const line of text.replace(/\\n/g, '\n').split('\n').map(item => item.trim()).filter(Boolean)) {
+    const m = /^([^：:，。,\s]{1,6})[：:]\s*(.+)$/.exec(line)
+    if (m === null) { rows.push({ text: line }); continue }
+    const [, key, value] = m as unknown as [string, string, string]
+    if (key === '状态') { status = value; continue }
+    if (/^(未决|未定|待定|待决)$/.test(key)) { open.push(...value.replace(/[。.]$/, '').split(/[、；;]/).map(item => item.trim()).filter(Boolean)); continue }
+    rows.push({ key, text: value })
+  }
+  return { rows, open, ...(status === undefined ? {} : { status }) }
 }
 
 function SettingDetail({ setting, data, byId, onPick, openCard, openChapter, t }: {
@@ -201,31 +274,46 @@ function SettingDetail({ setting, data, byId, onPick, openCard, openChapter, t }
   const based = settings.filter(row => row.base.includes(setting.cardId))
   const people = (data.characters ?? []).filter(row => row.factions.includes(setting.cardId) || row.homes.includes(setting.cardId))
   const link = (row: CodexSetting): ReactNode => <button key={row.cardId} type="button" className={css.chip} onClick={() => { onPick(row.cardId) }}>{shortName(row.name)}</button>
-  const rows: [string, ReactNode][] = [
+  const rels: [string, ReactNode][] = [
     ...(setting.parents.length === 0 ? [] : [[t('card.link.parent'), setting.parents.map(id => byId.get(id)).filter((row): row is CodexSetting => row !== undefined).map(link)] as [string, ReactNode]]),
     ...(setting.base.length === 0 ? [] : [[t('card.link.base'), setting.base.map(id => byId.get(id)).filter((row): row is CodexSetting => row !== undefined).map(link)] as [string, ReactNode]]),
     ...(children.length === 0 ? [] : [[t('card.link.children'), children.map(link)] as [string, ReactNode]]),
     ...(based.length === 0 ? [] : [[t('card.link.based'), based.map(link)] as [string, ReactNode]]),
     ...(people.length === 0 ? [] : [[t('card.link.people'), people.map(row => <button key={row.cardId} type="button" className={css.chip} onClick={() => { openCard(row.cardId, row.name) }}>{row.name}</button>)] as [string, ReactNode]]),
+    ...(setting.chapters.length === 0 ? [] : [[t('card.link.chapters'), setting.chapters.map(n => <button key={n} type="button" className={css.chap} onClick={() => { openChapter(n) }}>{t('card.inChapter', { n })}</button>)] as [string, ReactNode]]),
   ]
+  const parts = settingParts(setting.text)
   return (
     <article className={css.detail}>
-      <div className={css.crumbs}>{[t(`world.shelf.${setting.sort}`), ...chain.map(row => shortName(row.name))].join(' › ')}</div>
-      <header className={css.detailHead}>
+      <header className={css.dHead}>
+        <div className={css.crumbs}>{[t(`world.shelf.${setting.sort}`), ...chain.map(row => shortName(row.name))].join(' › ')}</div>
+        <button type="button" className={css.ghost} onClick={() => { openCard(setting.cardId, shortName(setting.name)) }}>{t('codex.edit')}</button>
         <h2>{shortName(setting.name)}</h2>
-        <span className={css.pill}>{t(`world.shelf.${setting.sort}`)}</span>
-        {setting.unsettled && <span className={css.pillWarn}>{t('codex.draft')}</span>}
-        <span className={css.grow} />
-        <button type="button" className={css.button} onClick={() => { openCard(setting.cardId, shortName(setting.name)) }}>{t('codex.edit')}</button>
-      </header>
-      <p className={css.body}>{setting.text}</p>
-      <dl className={css.links}>
-        {rows.map(([label, value]) => <div key={label} className={css.linkRow}><dt>{label}</dt><dd>{value}</dd></div>)}
-        <div className={css.linkRow}>
-          <dt>{t('card.link.chapters')}</dt>
-          <dd>{setting.chapters.length === 0 ? <span className={css.muted}>{t('codex.noChapters')}</span> : setting.chapters.map(n => <button key={n} type="button" className={css.chap} onClick={() => { openChapter(n) }}>{n}</button>)}</dd>
+        <div className={css.dMeta}>
+          {setting.unsettled && <span className={css.pillWarn}>{t('world.unsettled')}</span>}
+          <span>{setting.chapters.length === 0 ? t('codex.noChapters') : t('onepage.inChapters', { list: setting.chapters.join('、') })}</span>
+          {children.length > 0 && <span>· {t('onepage.children', { count: children.length })}</span>}
         </div>
-      </dl>
+      </header>
+      {parts.rows.length > 0 && (
+        <dl className={css.kv}>
+          {parts.rows.map((row, index) => row.key === undefined
+            ? <p key={index} className={css.kvPara}>{row.text}</p>
+            : <div key={index}><dt>{row.key}</dt><dd>{row.text}</dd></div>)}
+        </dl>
+      )}
+      {(parts.open.length > 0 || (setting.unsettled && parts.status !== undefined)) && (
+        <div className={css.openQ}>
+          <b>{t('onepage.openHead')}</b>
+          {parts.open.length > 0 && <ul>{parts.open.map((item, index) => <li key={index}>{item}</li>)}</ul>}
+          <span className={css.mutedInline}>{[t('codex.unsettledHint'), parts.status].filter(Boolean).join(' ')}</span>
+        </div>
+      )}
+      {rels.length > 0 && (
+        <dl className={css.links}>
+          {rels.map(([label, value]) => <div key={label} className={css.linkRow}><dt>{label}</dt><dd>{value}</dd></div>)}
+        </dl>
+      )}
     </article>
   )
 }
@@ -344,71 +432,92 @@ function Relations({ data, openCard, t }: { readonly data: NovelCodexResult; rea
 
 /* ------------------------------------------------------------------ 伏笔 */
 
-function Foreshadows({ data, picked, onPick, openCard, openChapter, t }: {
+function Foreshadows({ data, picked, onPick, openCard, openChapter, send, t }: {
   readonly data: NovelCodexResult
   readonly picked: string | null
   readonly onPick: (cardId: string) => void
   readonly openCard: (cardId: string, heading: string) => void
   readonly openChapter: (n: number) => void
+  readonly send: ((text: string) => void) | undefined
   readonly t: T
 }): ReactNode {
   const list = data.foreshadows ?? []
   if (list.length === 0) return <p className={css.empty}>{t('codex.noForeshadows')}</p>
   const current = list.find(row => row.cardId === picked) ?? list[0]!
+  const now = data.current ?? 0
   const groups: [string, CodexForeshadow[]][] = [
     [t('codex.fsBig'), list.filter(row => row.revealKind === 'volume' || row.revealKind === 'final')],
     [t('codex.fsChapter'), list.filter(row => row.revealKind === 'chapter')],
     [t('codex.fsOpen'), list.filter(row => row.revealKind === undefined)],
   ]
-  const now = data.current ?? 0
   const recent = current.steps.filter(step => step.chapter > now - 4 && step.kind !== 'planted').length
+  const planted = current.steps.find(step => step.kind === 'planted')?.chapter ?? current.steps[0]?.chapter
+  const advanced = current.steps.filter(step => step.kind === 'advanced' || step.kind === 'hinted').length
+  const advice = [
+    ...(recent >= 3 ? [t('codex.pace', { count: recent })] : []),
+    ...(current.reveal === undefined || current.answer === undefined ? [t('onepage.fsOpen')] : []),
+  ]
+  const track = (row: CodexForeshadow): ReactNode => {
+    const chapters = new Set(row.steps.map(step => step.chapter))
+    const span = Math.max(now, ...chapters, 1)
+    const touched = [...chapters].sort((a, b) => a - b)
+    return (
+      <span className={css.track}>
+        {Array.from({ length: Math.min(span, 12) }, (_, i) => span - Math.min(span, 12) + i + 1).map(n => <i key={n} data-on={chapters.has(n) || undefined} />)}
+        <span>{row.state}{touched.length > 0 ? ` · ${t('onepage.chapterSpan', { from: touched[0]!, to: touched.at(-1)! })}` : ''}</span>
+      </span>
+    )
+  }
   return (
     <div className={css.split}>
-      <div className={css.side}>
+      <nav className={css.side} aria-label={t('codex.foreshadow')}>
         {groups.map(([label, rows]) => rows.length === 0 ? null : (
           <div key={label} className={css.sideGroup}>
             <h4>{label}</h4>
-            <ul className={css.tree}>
-              {rows.map(row => (
-                <li key={row.cardId}>
-                  <button type="button" className={css.treeItem} aria-current={row.cardId === current.cardId || undefined} onClick={() => { onPick(row.cardId) }}>
-                    <span className={css.treeName}>{row.starred ? '★ ' : ''}{row.question}</span>
-                    <span className={css.treeMeta}>{row.state}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {rows.map(row => (
+              <button key={row.cardId} type="button" className={css.fsItem} aria-current={row.cardId === current.cardId || undefined} onClick={() => { onPick(row.cardId) }}>
+                <span className={css.fsQ}>{row.starred ? '★ ' : ''}{row.question}</span>
+                {track(row)}
+              </button>
+            ))}
           </div>
         ))}
-      </div>
+      </nav>
       <article className={css.detail}>
-        <header className={css.detailHead}>
-          <h2>{current.question}</h2>
-          <span className={css.pill}>{current.state}</span>
-          {current.reveal !== undefined && <span className={css.pillDream}>{t('codex.reveal', { when: current.reveal })}</span>}
-          <span className={css.pill}>{current.ref}</span>
-          <span className={css.grow} />
-          <button type="button" className={css.button} onClick={() => { openCard(current.cardId, current.question) }}>{t('codex.edit')}</button>
+        <header className={css.dHead}>
+          <div className={css.crumbs}>{t('codex.foreshadow')}</div>
+          <button type="button" className={css.ghost} onClick={() => { openCard(current.cardId, current.question) }}>{t('codex.edit')}</button>
+          <h2>{current.starred ? '★ ' : ''}{current.question}</h2>
+          <div className={css.dMeta}>
+            {planted !== undefined && <span>{t('onepage.planted', { n: planted })}</span>}
+            {advanced > 0 && <span>· {t('onepage.advancedTimes', { count: advanced })}</span>}
+            <span>· {current.reveal === undefined ? <>{t('onepage.revealLabel')}<b className={css.warnText}>{t('onepage.notSet')}</b></> : t('codex.reveal', { when: current.reveal })}</span>
+          </div>
         </header>
+        {advice.length > 0 && (
+          <div className={css.advice}>
+            <div>{advice.map((line, index) => <p key={index}>{line}</p>)}</div>
+            {send !== undefined && (current.reveal === undefined || current.answer === undefined) && (
+              <button type="button" className={css.button} onClick={() => { send(t('onepage.fsAsk', { q: current.question })) }}>{t('onepage.fsAskBtn')}</button>
+            )}
+          </div>
+        )}
         <ol className={css.ladder}>
           {current.steps.map((step, index) => (
             <li key={index} data-kind={step.kind}>
-              <button type="button" className={css.rungHead} onClick={() => { openChapter(step.chapter) }}>{t('card.inChapter', { n: step.chapter })} · {t(`codex.step.${step.kind}` as 'codex.step.planted')}</button>
-              <div>
-                {step.note !== undefined && <span><b>{t('codex.readerKnows')}</b>{step.note}</span>}
-                {step.evidence !== undefined && <q className={css.quote}>{step.evidence}</q>}
+              <button type="button" className={css.rungWhen} onClick={() => { openChapter(step.chapter) }}><i>{step.chapter}</i>{t(`codex.step.${step.kind}` as 'codex.step.planted')}</button>
+              <div className={css.rungBody}>
+                {step.note !== undefined && <p>{step.note}</p>}
+                {step.evidence !== undefined && <blockquote>{step.evidence}</blockquote>}
               </div>
             </li>
           ))}
           <li data-kind="goal">
-            <span className={css.rungHead}>{current.reveal === undefined ? t('codex.revealOpen') : t('codex.reveal', { when: current.reveal })}</span>
-            <div>{current.answer === undefined ? <span className={css.muted}>{t('codex.noAnswer')}</span> : <span><b>{t('codex.truth')}</b>{current.answer}</span>}</div>
+            <span className={css.rungWhen}><i>?</i>{t('onepage.truth')}</span>
+            <div className={css.rungBody}><p>{current.answer ?? t('codex.noAnswer')}</p>{current.reveal !== undefined && <span className={css.mutedInline}>{t('codex.reveal', { when: current.reveal })}</span>}</div>
           </li>
         </ol>
-        {recent >= 3 && <div className={css.callout}>{t('codex.pace', { count: recent })}</div>}
-        {current.reveal === undefined && <div className={css.callout}>{t('codex.noReveal')}</div>}
       </article>
     </div>
   )
 }
-

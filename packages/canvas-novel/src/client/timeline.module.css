@@ -1,6 +1,6 @@
 /* 时间轴 and 灵感: one layout that adapts to the panel's width (docs/panel-design.md). */
 .page { flex: 1; min-height: 0; overflow-y: auto; display: grid; gap: 14px; padding: 16px 18px 48px; container-type: inline-size; container-name: dsh-panel; align-content: start; }
-.toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.toolbar { position: relative; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .seg { display: inline-flex; border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; overflow: hidden; }
 .seg button {
   border: 0; background: none; padding: 3px 12px; cursor: pointer;
@@ -92,20 +92,20 @@
 .state { font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
 .batch { position: sticky; bottom: 0; display: flex; gap: 10px; align-items: center; padding: 8px 0; background: var(--dsw-alias-bg-base); border-top: 1px solid var(--dsw-alias-border-l1); }
 
-/* 世界层: two lanes tinted, the rest plain; a recap reads quieter, clamped to three lines. */
-.event[data-lane="0"] { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 9%, transparent); border-color: transparent; }
-.event[data-lane="1"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 9%, transparent); border-color: transparent; }
-.event[data-lane="2"], .event[data-lane="3"] { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 9%, transparent); border-color: transparent; }
-.event:not([data-tier]) { border-left-width: 1px; }
-.event[data-lane]:hover, .event[data-lane][aria-current="true"] { border-color: var(--dsw-alias-brand-primary); }
+/* 世界层: a stripe on the left, so the cards stay quiet (2026-11-02 改版稿); a recap reads quieter, clamped to three lines. */
+.event:not([data-tier]) { background: var(--dsw-alias-interactive-bg-hover); border-color: transparent; border-left: 3px solid transparent; }
+.event[data-lane="0"] { border-left-color: var(--dsw-alias-state-warn-primary); }
+.event[data-lane="1"] { border-left-color: var(--dsw-alias-brand-primary); }
+.event[data-lane="2"], .event[data-lane="3"] { border-left-color: var(--dsw-alias-state-business-primary); }
+.event:not([data-tier]):hover, .event:not([data-tier])[aria-current="true"] { outline: 1px solid var(--dsw-alias-brand-primary); }
 .event[data-recap] .title { font-weight: 400; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .event[data-recap][aria-current="true"] .title { -webkit-line-clamp: unset; }
 .legend { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .laneKey { display: inline-flex; align-items: center; gap: 5px; font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
 .laneKey::before { content: ''; width: 10px; height: 10px; border-radius: 3px; background: var(--dsw-alias-border-l1); }
-.laneKey[data-lane="0"]::before { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 35%, transparent); }
-.laneKey[data-lane="1"]::before { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 35%, transparent); }
-.laneKey[data-lane="2"]::before, .laneKey[data-lane="3"]::before { background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 35%, transparent); }
+.laneKey[data-lane="0"]::before { background: var(--dsw-alias-state-warn-primary); }
+.laneKey[data-lane="1"]::before { background: var(--dsw-alias-brand-primary); }
+.laneKey[data-lane="2"]::before, .laneKey[data-lane="3"]::before { background: var(--dsw-alias-state-business-primary); }
 .chapDot {
   min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; border-radius: 9px; display: inline-grid; place-items: center;
   background: var(--dsw-alias-label-primary); color: var(--dsw-alias-bg-base); font: 600 11px/1 var(--dsw-font-family); font-variant-numeric: tabular-nums;
@@ -124,6 +124,26 @@
   font: var(--dsh-panel-text-body, 13px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-primary);
 }
 
+
+/* ⓘ: how priority is worked out, on demand */
+.info {
+  width: 17px; height: 17px; margin-left: 6px; padding: 0; border-radius: 50%; vertical-align: 1px; cursor: pointer;
+  border: 1px solid var(--dsw-alias-border-l1); background: none; color: var(--dsw-alias-label-tertiary); font: italic 600 11px/15px Georgia, serif;
+}
+.info[aria-expanded="true"] { border-color: var(--dsw-alias-brand-primary); color: var(--dsw-alias-brand-primary); }
+.pop {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; max-width: min(520px, 100%); box-sizing: border-box;
+  display: grid; gap: 6px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--dsw-alias-border-l1); background: var(--dsw-alias-bg-base);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.22); font: var(--dsh-panel-text-body, 13px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-primary);
+}
+.pop p { margin: 0; }
+.pop ol { margin: 0; padding-left: 1.3em; display: grid; gap: 2px; }
+
+/* 按章节 */
+.chapList { display: grid; gap: 4px; }
+.chapBlock { display: grid; gap: 6px; padding-bottom: 10px; }
+.chapHead { display: flex; gap: 10px; align-items: baseline; padding: 8px 0 2px; border-top: 1px solid var(--dsw-alias-border-l1); font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-tertiary); }
+.chapHead b { font: 600 var(--dsh-panel-text-title, 15px)/1.4 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
 @container dsh-panel (max-width: 560px) {
   .columns { grid-template-columns: 1fr; gap: 14px; }
   .now { height: 2px; }
