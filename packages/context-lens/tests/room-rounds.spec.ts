@@ -77,6 +77,30 @@ describe('room rounds', () => {
     expect(store.getSessionTrend('s').requests.filter(r => r.turnSeq === first!.turnSeq).map(r => r.startedAt)).toEqual([6000])
   })
 
+  it('a /compact is no round: its compaction shows in the 压缩 tab of the member\'s previous round', () => {
+    const rows = [...turn1, ...room,
+      { type: 'room/dispatch', seq: 40, time: 60_000, data: { origin: 'human', text: '/compact', targets: ['coco'], targetIds: ['m-coco'] } },
+      // Before the producer stopped borrowing it, a /compact run named the previous child turn too.
+      { type: 'room/run-state', seq: 41, time: 60_050, data: { runId: '40:m-coco', member: 'coco', state: 'done', startedAt: 60_050, elapsedMs: 9000, childSessionId: 'child-coco', childTurn: 2 } },
+    ] satisfies SessionLogRow[]
+    const store = new InspectorStore()
+    store.insertLogTurns('s', reconstructSession(rows))
+    for (const row of rows) if (row.type.startsWith('room/')) store.noteRoomEvent('s', row.type, row.data, row.seq, row.time)
+    store.appendLogRequest('s', 'child-coco', childRequest(6000, 1))
+    store.appendLogRequest('s', 'child-coco', childRequest(51_000, 2))
+    store.appendLogRequest('s', 'child-coco', { ...childRequest(60_100, 2), settledAt: 69_000, purpose: 'compaction', responseSummary: { kind: 'compaction' },
+      usage: { inputTokens: 266_149, outputTokens: 2_819, cacheReadTokens: 18_944 },
+      compaction: { id: 'cli:9', applied: true, inputPartial: true, hostTurn: 2, betweenTurns: true, source: 'manual', beforeTokens: 288_536, afterTokens: 44_671 } })
+    const list = store.listTurns('s')
+    expect(list.turns.map(t => t.query)).toEqual(['邀请 Kimi', '你好', '列出工具'])
+    const scopes = store.getTurn('s', list.turns[2]!.turnSeq)!.scopes
+    expect(scopes.map(scope => [scope.scopeId, scope.kind, scope.requests.length])).toEqual([
+      ['child-coco', 'subagent', 1],
+      ['compaction:child-coco', 'compaction', 1],
+    ])
+    expect(scopes[1]!.compaction).toEqual({ member: { name: 'coco', source: 'manual', beforeTokens: 288_536, afterTokens: 44_671 } })
+  })
+
   it('skips a dispatch made inside a main turn', () => {
     const store = new InspectorStore()
     store.insertLogTurns('s', reconstructSession(turn1))

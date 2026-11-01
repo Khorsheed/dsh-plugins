@@ -56,7 +56,11 @@ export function TokenView({ scope, selectedSeq, request, filterCat, previousResp
           {request.compaction && <div className={css.prefix}>
             <b>{t('compaction.title')}{request.compaction.hostTurn === undefined ? '' : ` · ${t('lens.sourceTurn', { turn: String(request.compaction.hostTurn) })}`}</b>
             {request.compaction.replacedCount !== undefined && <span>{t(request.compaction.applied ? 'compaction.replaced' : 'compaction.selected', { count: String(request.compaction.replacedCount) })}</span>}
-            {request.compaction.inputPartial && <span title={t('compaction.partial')}>{t('compaction.partialShort')} ⓘ</span>}
+            {request.compaction.source !== undefined && request.compaction.beforeTokens !== undefined && request.compaction.afterTokens !== undefined
+              && <span>{t('compaction.cliTokens', { before: fmt(request.compaction.beforeTokens), after: fmt(request.compaction.afterTokens) })}</span>}
+            {request.compaction.inputPartial && (request.compaction.source !== undefined
+              ? <span title={t('compaction.cliPartial')}>{t(request.compaction.source === 'auto' ? 'compaction.cliAuto' : 'compaction.cliManual')} ⓘ</span>
+              : <span title={t('compaction.partial')}>{t('compaction.partialShort')} ⓘ</span>)}
             {request.compaction.before && onOpenRequest && <button type="button" className={css.jsonToggle} onClick={() => onOpenRequest(request.compaction!.before!)}>{t('compaction.before')} ↗</button>}
           </div>}
           <CacheFacts request={request} onOpenRequest={onOpenRequest} onShowCategory={category => { if (filterCat !== category) onToggleFilter(category) }} t={t} />

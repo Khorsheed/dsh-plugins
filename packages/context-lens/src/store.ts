@@ -162,7 +162,8 @@ export interface ScopeRecord {
   scopeId: string
   /** Per-session 1-based ordinal in scope-creation order (the chip's `#N`). */
   scopeSeq: number
-  kind: 'main' | 'subagent'
+  /** `compaction`: a room round's 压缩 tab — a member's CLI compactions (built on read, never stored). */
+  kind: 'main' | 'subagent' | 'compaction'
   label?: string
   status: 'running' | 'ok' | 'failed'
   error?: string
@@ -1458,7 +1459,10 @@ export class InspectorStore {
   private roomTurns(session: SessionRecord, filter?: ScopeFilter): TurnRecord[] {
     const room = session.room
     if (room === undefined) return []
-    return room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at)).map((dispatch): TurnRecord => {
+    // A human's `/compact` is no round of its own: the compaction it ran shows
+    // in the 压缩 tab of the member's previous round (its request belongs to
+    // the child turn that closed last).
+    return room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at) && dispatch.text.trim() !== '/compact').map((dispatch): TurnRecord => {
       const scopes = new Map<string, ScopeRecord>()
       const runs = runsOf(room, dispatch.seq)
       for (const run of runs) {
@@ -1467,9 +1471,11 @@ export class InspectorStore {
         // The child's own scope id: its requests open by that id from any view.
         const scopeId = child?.scopeId ?? `room:${dispatch.seq}:${run.memberId}`
         const from = (run.startedAt ?? dispatch.at) - 2000, to = (run.endedAt ?? this.now()) + 2000
-        const requests = (child?.requests ?? []).filter(request => run.childTurn !== undefined && request.hostTurn !== undefined
+        const matched = (child?.requests ?? []).filter(request => run.childTurn !== undefined && request.hostTurn !== undefined
           ? request.hostTurn === run.childTurn
           : request.startedAt >= from && request.startedAt <= to)
+        const requests = matched.filter(request => request.purpose !== 'compaction')
+        const compactions = matched.filter(request => request.purpose === 'compaction')
         scopes.set(scopeId, {
           scopeId,
           scopeSeq: child?.scopeSeq ?? 0,
@@ -1484,6 +1490,22 @@ export class InspectorStore {
           live: false,
           logFilled: true,
         })
+        if (compactions.length > 0) {
+          scopes.set(`compaction:${scopeId}`, {
+            scopeId: `compaction:${scopeId}`,
+            scopeSeq: child?.scopeSeq ?? 0,
+            kind: 'compaction',
+            label: run.member ?? room.members.get(run.memberId) ?? child?.label ?? run.memberId,
+            ...child?.provider === undefined ? {} : { provider: child.provider },
+            status: compactions.some(request => request.status === 'failed') ? 'failed' : 'ok',
+            config: compactions.at(-1)!.config,
+            requests: compactions,
+            startedAt: compactions[0]!.startedAt,
+            endedAt: Math.max(...compactions.map(request => request.settledAt ?? request.startedAt)),
+            live: false,
+            logFilled: true,
+          })
+        }
       }
       const ends = runs.map(run => run.endedAt).filter((end): end is number => end !== undefined)
       return {
@@ -1573,7 +1595,7 @@ export class InspectorStore {
     const main = turn.scopes.get('main')
     const delegator = scope.callId === undefined ? undefined
       : main?.requests.find(r => r.response?.toolCalls.some(call => call.callId === scope.callId))
-    const compaction = host === undefined ? undefined : scope.requests.find(r => r.compaction !== undefined)?.compaction
+    const compaction = host === undefined && scope.kind !== 'compaction' ? undefined : scope.requests.find(r => r.compaction !== undefined)?.compaction
     const after = host === undefined ? undefined : host.scopes.get('main')?.requests
       .filter(r => r.startedAt <= turn.startedAt).sort((a, b) => b.startedAt - a.startedAt)[0]
     return {
@@ -1586,7 +1608,13 @@ export class InspectorStore {
       ...compaction === undefined ? {} : { compaction: {
         ...compaction.replacedCount === undefined ? {} : { replacedCount: compaction.replacedCount },
         ...after === undefined ? {} : { after: this.addressOf(session, after) },
-        ...compaction.hostTurn === undefined ? { betweenTurns: true } : {},
+        ...compaction.hostTurn === undefined && compaction.source === undefined ? { betweenTurns: true } : {},
+        ...compaction.source === undefined ? {} : { member: {
+          ...scope.label === undefined ? {} : { name: scope.label },
+          source: compaction.betweenTurns === true ? 'manual' : compaction.source,
+          ...compaction.beforeTokens === undefined ? {} : { beforeTokens: compaction.beforeTokens },
+          ...compaction.afterTokens === undefined ? {} : { afterTokens: compaction.afterTokens },
+        } },
       } },
       status: scope.status,
       ...scope.error === undefined ? {} : { error: scope.error },

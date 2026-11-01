@@ -91,6 +91,8 @@ export interface SessionLogCursor {
   /** Model-visible messages folded so far, in log order. */
   messages: FoldedMessage[]
   compactions: Map<string, { startedAt: number; hostTurn?: number; request?: BuiltLogRequest }>
+  /** The last turn that closed (a CLI compaction between turns belongs to it). */
+  lastTurnHost?: number
   /** The latest step/start time — the next request's dispatch proxy. */
   stepStartAt: number | undefined
   /**
@@ -236,6 +238,7 @@ export function foldLogRows(
           ? data['reason'] as { kind: string; error?: { message?: string } }
           : { kind: 'unknown' }
         if (hostTurn !== undefined) sink.turnEnd?.(hostTurn, reason, row.time)
+        if (hostTurn !== undefined) cursor.lastTurnHost = hostTurn
         cursor.turnHost = undefined
         break
       }
@@ -404,6 +407,11 @@ export function foldLogRows(
         }
         break
       }
+      case 'local-agent/compaction': {
+        const request = buildCliCompaction(cursor, row, data)
+        if (request) { built.push(request); sink.request?.(request.compaction!.hostTurn, request) }
+        break
+      }
       case 'compaction/end':
         if (typeof data['compactionId'] === 'string') cursor.compactions.delete(data['compactionId'])
         break
@@ -463,6 +471,53 @@ function placeMessage(cursor: SessionLogCursor, row: SessionLogRow, message: Cap
   cursor.messages.splice(start, end - start + 1, node)
   const compression = message.compactionId === undefined ? undefined : cursor.compactions.get(message.compactionId)?.request?.compaction
   if (compression) compression.applied = true
+}
+
+/**
+ * An external CLI member's compaction (local-agent's `local-agent/compaction`,
+ * read structurally): one compaction request with the call's usage and the
+ * CLI's summary as its output. The CLI's input is not in the log, so the
+ * request carries none (inputPartial). It belongs to the turn it ran in (the
+ * CLI's own, mid-turn) or, run between turns (`/compact`), to the turn that
+ * closed last — the room round that turn served shows it in its 压缩 tab.
+ */
+function buildCliCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: Record<string, unknown>): BuiltLogRequest | undefined {
+  const outcome = data['outcome']
+  if (outcome !== 'completed' && outcome !== 'failed' && outcome !== 'cancelled') return undefined
+  const num = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  const between = cursor.turnHost === undefined
+  const hostTurn = cursor.turnHost ?? cursor.lastTurnHost
+  const temp = openCursor()
+  temp.turnHost = hostTurn
+  temp.stepStartAt = num(data['startedAt']) ?? row.time
+  temp.config = {
+    ...typeof data['provider'] === 'string' ? { provider: data['provider'] } : {},
+    ...typeof data['model'] === 'string' ? { model: data['model'] } : {},
+  }
+  const summary = typeof data['summary'] === 'string' && data['summary'] !== '' ? data['summary'] : undefined
+  const endedAt = num(data['endedAt'])
+  const ended: SessionLogRow = endedAt === undefined ? row : { ...row, time: endedAt }
+  const result = buildRequest(temp, ended, {
+    ...summary === undefined ? {} : { message: { role: 'assistant', content: [{ type: 'text', text: summary }] } },
+    usage: data['usage'],
+  }, outcome !== 'completed')
+  const before = num(data['beforeTokens']), after = num(data['afterTokens'])
+  // Built on its own cursor: its log index is not this log's (a body rebuild
+  // selects requests by index), and it has no body to rebuild.
+  const { logIndex: _own, ...rest } = result
+  return {
+    ...rest,
+    ...outcome === 'completed' ? {} : { status: 'failed' as const, error: typeof data['error'] === 'string' ? data['error'] : `compaction ${outcome}` },
+    responseSummary: { kind: 'compaction' }, purpose: 'compaction',
+    compaction: {
+      id: `cli:${row.seq ?? row.time ?? 0}`, applied: outcome === 'completed', inputPartial: true,
+      ...hostTurn === undefined ? {} : { hostTurn },
+      ...between ? { betweenTurns: true } : {},
+      source: data['source'] === 'auto' ? 'auto' : 'manual',
+      ...before === undefined ? {} : { beforeTokens: before },
+      ...after === undefined ? {} : { afterTokens: after },
+    },
+  }
 }
 
 /** Recover recorded model-backed summaries without inventing the missing instruction. */
