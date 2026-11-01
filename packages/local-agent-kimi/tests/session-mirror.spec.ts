@@ -120,6 +120,52 @@ describe('session-mirror', () => {
     expectValidReleasedLog(child)
   })
 
+  it('a round kimi opened on its own folds into the next dsh round without a user message, and that round\'s lines keep its turn (f8 / 6a56 turn 35+)', async () => {
+    const notice = '<notification id="task:a:completed">done</notification>'
+    const wire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '做模型' }], origin: { kind: 'user' } },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: '0', step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: '0', step: 1, part: { type: 'text', text: '已派后台任务' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: '0', step: 1 } },
+      { type: 'turn.prompt', input: [{ type: 'text', text: notice }], origin: { kind: 'task' } },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: '1', step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: '1', step: 1, part: { type: 'text', text: '后台任务完成了' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: '1', step: 1 } },
+      { type: 'turn.prompt', input: [{ type: 'text', text: '继续' }], origin: { kind: 'user' } },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: '2', step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: '2', step: 1, part: { type: 'text', text: '好的' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: '2', step: 1 } },
+    ]
+    // Round 1 settles before the background task finishes: only its lines exist then.
+    const { home, dir } = wireHome('injected-round', wire.slice(0, 4))
+    const child = Session.create(SessionId('injected-round'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+    child.append('user/message', createUserMessage({ content: [{ type: 'text', text: '做模型' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+    const first = await mirrorKimiSessionDelta(ctx, child, home, 'injected-round', 0, { turn: 1, settle: true })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    appendFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), '\n' + wire.slice(4).map(line => JSON.stringify(line)).join('\n'))
+    // The live driver opens round 2 with the human's message.
+    child.append('turn/start', { turn: 2 })
+    child.append('user/message', createUserMessage({ content: [{ type: 'text', text: '继续' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+    const pairedTurns: number[] = []
+    await mirrorKimiSessionDelta(ctx, child, home, 'injected-round', first.total, {
+      turn: 2, settle: true,
+      streams: { reservedSteps: () => [], completeStreams: (turn) => { pairedTurns.push(turn); return undefined } },
+    })
+    child.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    const round2 = child.snapshotEvents().filter(event => (event.data as { turn?: number }).turn === 2 || event.type === 'user/message')
+    // One user message per round — the notification is not the human's.
+    expect(child.snapshotEvents().filter(event => event.type === 'user/message').map(event => JSON.stringify(event.data))).toHaveLength(2)
+    expect(round2.filter(event => event.type === 'assistant/message').map(event => JSON.stringify(event.data))).toEqual([
+      expect.stringContaining('后台任务完成了'), expect.stringContaining('好的'),
+    ])
+    // The fold asks the live round's own turn for its streams.
+    expect(pairedTurns).toEqual([2, 2])
+    expectValidReleasedLog(child)
+  })
+
   it('counts a boundary usage record once while a held unit keeps the offset still (3.2M = 10 × 320k)', async () => {
     // In the wild (fbc8ba18 turn 43): the round's only wire step never closed,
     // so every poll re-read the same window and re-carried its usage record.

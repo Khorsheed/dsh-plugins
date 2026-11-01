@@ -29,7 +29,12 @@ export interface KimiRequestConfig {
 
 /** One rendered transcript line. */
 export type KimiTranscriptLine = (
-  | { kind: 'user'; text: string; turn: number }
+  /**
+   * `injected`: a round kimi opened on its own (a background task's completion
+   * notification) — kept so line positions match the wire, but it is not the
+   * human's message and opens no dsh round.
+   */
+  | { kind: 'user'; text: string; turn: number; injected?: true }
   | { kind: 'assistant'; text: string; turn: number; wireStep?: number; requestConfig?: KimiRequestConfig }
   | { kind: 'think'; text: string; turn: number; wireStep?: number; requestConfig?: KimiRequestConfig }
   /**
@@ -233,6 +238,8 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
   let turnSeen = false
   /** The wire marks rounds with turn.prompt (current kimi): a user message it did not prompt is an injection. */
   let promptsMarkTurns = false
+  /** An injected (kimi-opened) round already advanced `turn` to the next dsh round. */
+  let injectedPending = false
   // Tool calls by uuid and toolCallId, so a result attaches to its own call
   // even when several calls run in parallel within one step.
   const callsByUuid = new Map<string, number>()
@@ -292,11 +299,31 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
     if (event.type === 'turn.prompt') {
       promptsMarkTurns = true
       lineModel = undefined
-      // Each round's user prompt opens the next turn; the matching
-      // context.append_message below is deduped against this text.
-      turnSeen = true
-      turn += 1
       const prompt = textOf((event.input as unknown[] | undefined) ?? [])
+      // A round kimi opened on its own — a background task's completion
+      // notification (`origin.kind: 'task'`) — is no dsh round: dsh never
+      // sent it, so counting it put every later wire round one turn ahead of
+      // the child session's (the fold then never paired the live streams and
+      // re-wrote them at settle). Its work folds into the NEXT dsh round,
+      // which the next human prompt opens at the same number.
+      const origin = (event.origin as { kind?: unknown } | undefined)?.kind
+      if (origin !== undefined && origin !== 'user') {
+        if (!injectedPending) {
+          injectedPending = true
+          turn += 1
+        }
+        turnSeen = true
+        // Kept as a line (positions are the mirror offset's unit) but marked:
+        // the fold writes no user message for it.
+        if (prompt.trim() !== '' && !isSystemReminder(prompt)) push({ kind: 'user', text: prompt, turn: turn === 0 ? 1 : turn, injected: true })
+        continue
+      }
+      // Each round's user prompt opens the next turn — unless an injected
+      // round already opened it; the matching context.append_message below
+      // is deduped against this text.
+      turnSeen = true
+      if (injectedPending) injectedPending = false
+      else turn += 1
       if (prompt.trim() !== '' && !isSystemReminder(prompt)) {
         push({ kind: 'user', text: prompt, turn: turn === 0 ? 1 : turn })
       }
@@ -335,7 +362,9 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
     if (event.type === 'context.append_loop_event') {
       const loop = event.event as Record<string, unknown> | undefined
       if (loop === undefined) continue
-      const loopTurn = typeof loop.turnId === 'number' ? loop.turnId + 1 : undefined
+      // Wires that mark rounds with turn.prompt number turns by prompts (an
+      // injected round shifts the wire's own turnId off the dsh count).
+      const loopTurn = !promptsMarkTurns && typeof loop.turnId === 'number' ? loop.turnId + 1 : undefined
       if (loopTurn !== undefined) {
         turn = Math.max(turn, loopTurn)
         turnSeen = true

@@ -512,6 +512,12 @@ export async function mirrorKimiSessionDelta(
     const turn = head.turn
     if (closedTurns.has(turn)) continue
     if (head.kind === 'user') {
+      // A kimi-opened round's prompt (a task notification) is not the
+      // human's message: nothing to write, its usage rides the next fold.
+      if (head.injected === true) {
+        carryUsage = usage
+        continue
+      }
       // The live driver appends the round's user/message at turn start (so the
       // question renders before the streamed think/text instead of after it).
       // Skip the wire's copy of the same prompt — scoped to THIS turn so two
