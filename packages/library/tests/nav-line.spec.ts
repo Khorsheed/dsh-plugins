@@ -57,3 +57,23 @@ describe('a noted weak point', () => {
     expect(readDestinations(rendered)).toEqual([expect.objectContaining({ kind: 'library-record', params: { view: 'cards', projectId: 'p' }, label: '记下：动作电位' })])
   })
 })
+
+describe('the card data a write hands the shell', () => {
+  it('a roadmap draft waits to be adopted; a quiz waits to be answered; other writes carry the label only', () => {
+    const draft = jsonOutput().render(undefined, landed(undefined, { ok: true }, { view: 'book', projectId: 'p', resourceId: 'r', draft: true },
+      '《神经科学原理》的学习路线', undefined, { status: '等你采用', awaiting: true, door: '去书里采用 →' }))
+    expect(readDestinations(draft)).toEqual([expect.objectContaining({
+      params: { view: 'book', projectId: 'p', resourceId: 'r', draft: true },
+      card: { status: '等你采用', awaiting: true, door: '去书里采用 →' },
+    })])
+    const quiz = jsonOutput().render(undefined, landed(undefined, { ok: true }, { view: 'quiz', projectId: 'p', quizId: 'q1' },
+      '新出的测验（5 题）', undefined, { status: '等你作答', awaiting: true, door: '去作答 →' }))
+    expect(readDestinations(quiz)[0]?.card).toEqual({ status: '等你作答', awaiting: true, door: '去作答 →' })
+    const notes = jsonOutput().render(undefined, landed(undefined, { ok: true }, { view: 'lesson', projectId: 'p', resourceId: 'r', nodeId: 'n' }, '讲义'))
+    expect(readDestinations(notes)[0]?.card).toBeUndefined()
+  })
+
+  it('the roadmap draft still opens the book', () => {
+    expect(stackOf({ view: 'book', projectId: 'p', resourceId: 'r', draft: true }).map(route => route.view)).toEqual(['today', 'project', 'resource'])
+  })
+})

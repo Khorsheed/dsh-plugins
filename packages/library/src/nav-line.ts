@@ -39,11 +39,22 @@ export type LibraryNavCardFilter = 'all' | 'photo' | 'chat' | 'quiz' | 'due'
 export type LibraryNavParams =
   | { readonly view: 'today' }
   | { readonly view: 'project'; readonly projectId: string }
-  | { readonly view: 'book'; readonly projectId: string; readonly resourceId: string }
+  /** `draft`: the book's roadmap waiting to be 采用 (its card hears the adoption; the pane lands on the book). */
+  | { readonly view: 'book'; readonly projectId: string; readonly resourceId: string; readonly draft?: true }
   | { readonly view: 'station'; readonly projectId: string; readonly resourceId: string; readonly nodeId: string; readonly tab?: LibraryNavTab }
   | { readonly view: 'lesson'; readonly projectId: string; readonly resourceId: string; readonly nodeId: string }
   | { readonly view: 'quiz'; readonly projectId: string; readonly resourceId?: string; readonly quizId: string }
   | { readonly view: 'cards'; readonly projectId: string; readonly filter?: LibraryNavCardFilter }
+
+/**
+ * What the card says besides the label, when the write waits for the learner
+ * (the shell draws it; the agent-nav `DestinationCardData`).
+ */
+export interface LibraryCardData {
+  readonly status?: string
+  readonly awaiting?: boolean
+  readonly door?: string
+}
 
 /** What a tool hands over under {@link NAV_KEY}. */
 export interface LibraryDestination {
@@ -52,6 +63,7 @@ export interface LibraryDestination {
   readonly id: string
   readonly params: LibraryNavParams
   readonly label: string
+  readonly card?: LibraryCardData
 }
 
 /**
@@ -60,5 +72,8 @@ export interface LibraryDestination {
  * @returns the line, without a trailing newline.
  */
 export function libraryDestinationLine(destination: LibraryDestination): string {
-  return `${NAV_MARK}${JSON.stringify({ id: destination.id, kind: destination.kind ?? 'library', params: destination.params, label: destination.label })}`
+  return `${NAV_MARK}${JSON.stringify({
+    id: destination.id, kind: destination.kind ?? 'library', params: destination.params, label: destination.label,
+    ...(destination.card === undefined ? {} : { card: destination.card }),
+  })}`
 }

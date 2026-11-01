@@ -11,7 +11,7 @@ import { formatLocator, type LibraryBinding, type LibraryOutcome } from '../type
 import type { LibraryService } from '../service.ts'
 import { ImageRefCache } from '../image-refs.ts'
 import { announceDeskOpen, deskOf } from '../desk.ts'
-import { libraryDestinationLine, NAV_KEY, type LibraryDestination, type LibraryNavParams } from '../nav-line.ts'
+import { libraryDestinationLine, NAV_KEY, type LibraryCardData, type LibraryDestination, type LibraryNavParams } from '../nav-line.ts'
 
 /**
  * JSON pass-through output — what the render emits IS what the model reads, so it goes compact (indentation doubled every result).
@@ -40,12 +40,18 @@ export function jsonOutput() {
  * @param params - the place in the library tab.
  * @param label - what the learner reads on the card.
  * @param kind - {@link RECORD_KIND} for a noted weak point (never followed).
+ * @param card - the card's status and door, when the write waits for the learner.
  * @returns the answer, carrying the destination for the output render.
  */
-export function landed<T extends object>(exec: Exec | undefined, value: T, params: LibraryNavParams, label: string, kind?: LibraryDestination['kind']): T {
+export function landed<T extends object>(
+  exec: Exec | undefined, value: T, params: LibraryNavParams, label: string, kind?: LibraryDestination['kind'], card?: LibraryCardData,
+): T {
   if (deskOf(exec?.agent) !== undefined) return value
   const thing = params.view === 'today' ? 'today' : Object.values(params).slice(1).join(':')
-  const destination: LibraryDestination = { ...(kind === undefined ? {} : { kind }), id: `library:${params.view}:${thing}:${Date.now()}`, params, label }
+  const destination: LibraryDestination = {
+    ...(kind === undefined ? {} : { kind }), id: `library:${params.view}:${thing}:${Date.now()}`, params, label,
+    ...(card === undefined ? {} : { card }),
+  }
   return { ...value, [NAV_KEY]: destination }
 }
 

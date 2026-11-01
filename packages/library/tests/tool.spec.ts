@@ -526,8 +526,9 @@ describe('the per-noun tools take flat fields', () => {
     const resourceId = added.resource.id
     expect(added[NAV_KEY]).toMatchObject({ params: { view: 'book', projectId, resourceId }, label: '《普林斯顿微积分读本》' })
     const drafted = (await call('library_roadmap', { resource: resourceId, nodes: [{ id: 'n1', title: '函数', gate: 'quiz', chapters: '1' }] })) as Landed
-    // The draft waits for 采用 on the book's page: that is where it lands.
-    expect(drafted[NAV_KEY]?.params).toEqual({ view: 'book', projectId, resourceId })
+    // The draft waits for 采用 on the book's page: that is where it lands, and its card says it waits.
+    expect(drafted[NAV_KEY]?.params).toEqual({ view: 'book', projectId, resourceId, draft: true })
+    expect(drafted[NAV_KEY]?.card).toEqual({ status: '等你采用', awaiting: true, door: '去书里采用 →' })
     const adopted = await service.adoptRoadmap({ projectId, resourceId })
     if (!adopted.ok) throw new Error(adopted.message)
     const noted = (await call('library_notes', { node: 'n1', text: lessonFor(FIXTURE_POINTS) })) as Landed

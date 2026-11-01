@@ -108,7 +108,8 @@ export function libraryRoadmapTool(kit: ToolKit): ToolDefinition {
         waitingForAdoption: after.project.resources.filter(row => row.hasDraft).map(row => `${row.seq ?? '-'}. 《${row.title}》 ${row.draftTotal ?? 0} stations`),
         ...(adjusted.length === 0 ? {} : { adjusted }),
         next: 'Describe the path to the learner in two lines and ask them to review and adopt it on the book\'s page in the 图书馆 tab (采用; the card in the conversation goes there). Then stop: before they adopt it, write no 讲义, teach nothing, set no quiz.',
-      }, { view: 'book', projectId, resourceId }, `《${textbook?.title ?? resourceId}》的学习路线（待采用）`) as unknown as JsonValue
+      }, { view: 'book', projectId, resourceId, draft: true }, `《${textbook?.title ?? resourceId}》的学习路线`, undefined,
+      { status: '等你采用', awaiting: true, door: '去书里采用 →' }) as unknown as JsonValue
     },
   })
 }
