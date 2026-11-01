@@ -24,7 +24,7 @@ import {
   processIdentityMatches, signalProcessIdentity,
 } from '../src/processes.ts'
 import {
-  acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, isParkedOnUserInput, pendingRestartRecord,
+  acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, isExternalCoordinatorRoom, isParkedOnUserInput, pendingRestartRecord,
   readInstanceLaunch, readInterruptedSnapshot, restartContextText, writeInstanceLaunch,
   writeInstanceLaunchAsSupervisor, writeInterruptedSnapshot, writeSkillRegistration,
 } from '../src/restart-context.ts'
@@ -4773,6 +4773,90 @@ describe('restart context injection', () => {
     // question card in its log is still the live continuation surface.
     expect(followups.get('session-working')).toHaveBeenCalledTimes(1)
     expect(followups.has('session-parked')).toBe(false)
+    await fiber.dispose()
+  })
+
+  // The incident (2026-11-01): the first session opened after an unplanned
+  // recovery was a room led by a kimi CLI member; the queued report ran a
+  // host turn the room plugin refused ("Use the room input route …").
+  const cliRoomEvents = [
+    { type: 'room/created', seq: 24, data: { version: 1 } },
+    { type: 'room/member-added', seq: 25, data: { name: 'dsh', kind: 'main-agent', invitedBy: 'human' } },
+    { type: 'room/member-added', seq: 26, data: { id: 'm-cli', name: '尼尔盖曼', kind: 'cli', invitedBy: 'agent' } },
+    { type: 'room/coordinator', seq: 101, data: { memberId: 'm-cli', previousMemberId: 'legacy:25' } },
+  ]
+
+  it('isExternalCoordinatorRoom: true only while a cli member coordinates the room', () => {
+    expect(isExternalCoordinatorRoom(cliRoomEvents)).toBe(true)
+    // Handed back to the main agent (its id is legacy:<seq>).
+    expect(isExternalCoordinatorRoom([...cliRoomEvents, { type: 'room/coordinator', seq: 200, data: { memberId: 'legacy:25' } }])).toBe(false)
+    // A room that never changed coordinator: the main agent leads.
+    expect(isExternalCoordinatorRoom(cliRoomEvents.slice(0, 3))).toBe(false)
+    // Not a room at all.
+    expect(isExternalCoordinatorRoom(cliRoomEvents.slice(1))).toBe(false)
+    expect(isExternalCoordinatorRoom([])).toBe(false)
+  })
+
+  it('a room led by a cli member is neither reported to nor continued; the report waits for an ordinary session', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-ctx-')
+    writeFileSync(join(stateDir, 'last-restart.json'), JSON.stringify({ exitAt: 1_700_000_000_000, unexpected: true }))
+    const roomFollowup = vi.fn()
+    const room = { id: 'session-room', followup: roomFollowup, session: { snapshotEvents: () => cliRoomEvents } }
+    const plainFollowup = vi.fn()
+    const plain = { id: 'session-plain', followup: plainFollowup, session: { snapshotEvents: () => [] } }
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    ctx.provide('agents', { roots: () => [room, plain] } as never)
+    const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5 })
+    await fiber.await()
+    ctx.emit('agent/created', { agent: room } as never)
+    expect(roomFollowup).not.toHaveBeenCalled()
+    expect(pendingRestartRecord(stateDir)).not.toBeNull()
+    ctx.emit('agent/created', { agent: plain } as never)
+    expect(plainFollowup).toHaveBeenCalledTimes(1)
+    expect(pendingRestartRecord(stateDir)).toBeNull()
+    await fiber.dispose()
+  })
+
+  it('an interrupted room led by a cli member is not resumed', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-ctx-')
+    writeFileSync(join(stateDir, 'interrupted-sessions.json'),
+      JSON.stringify({ exitAt: Date.now(), resume: [], interrupted: ['session-room', 'session-working'] }))
+    const workingEvents = [
+      { type: 'turn/start', seq: 1, data: { turn: 1 } },
+      { type: 'turn/end', seq: 2, data: { turn: 1, reason: { kind: 'interrupted' } } },
+    ]
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    const resumed: string[] = []
+    const liveAgents: unknown[] = []
+    ctx.provide('agents', {
+      roots: () => liveAgents,
+      list: () => liveAgents,
+      resume: async (options: { resumeSessionId: string }) => {
+        resumed.push(options.resumeSessionId)
+        const agent = { id: options.resumeSessionId, status: 'idle', followup: vi.fn() }
+        liveAgents.push(agent)
+        ctx.emit('agent/created', { agent } as never)
+        return agent
+      },
+    } as never)
+    ctx.provide('sessionPersistence', {
+      open: async (id: string) => ({
+        header: {},
+        read: async () => ({ events: id === 'session-room' ? cliRoomEvents : workingEvents, eventState: 'detached' }),
+        close: async () => {},
+      }),
+    } as never)
+    const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5, resumeDelayMs: 1 })
+    await fiber.await()
+    const deadline = Date.now() + 5000
+    while (!resumed.includes('session-working') && Date.now() < deadline) {
+      await new Promise((resolve) => { setTimeout(resolve, 20) })
+    }
+    expect(resumed).toEqual(['session-working'])
     await fiber.dispose()
   })
 

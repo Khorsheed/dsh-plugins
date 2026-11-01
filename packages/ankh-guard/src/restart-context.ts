@@ -429,6 +429,34 @@ export function readSkillRegistration(stateDir: string): SkillRegistrationRecord
   }
 }
 
+/**
+ * Whether the session is a collaboration room whose coordinator is an
+ * external command-line member. The room plugin refuses any host turn there
+ * that it did not dispatch itself ("Use the room input route …"), and it
+ * carries its own continue design for interrupted member runs — so a restart
+ * report or a "continue" followup queued into such a session only produces a
+ * failed empty turn. Reads the room's own durable events (`room/created`,
+ * `room/member-added`, `room/coordinator`); no coordinator event means the
+ * main agent still coordinates. Any unreadable shape answers false (deliver
+ * as before).
+ * @param events - the session's durable events.
+ * @returns whether the room's current coordinator is an external member.
+ */
+export function isExternalCoordinatorRoom(events: readonly ParkedProbeEvent[]): boolean {
+  if (!events.some(event => event.type === 'room/created')) return false
+  const kinds = new Map<string, unknown>()
+  let coordinator: unknown
+  for (const event of events) {
+    if (event.type === 'room/member-added') {
+      const id = event.data['id'] ?? (event.seq === undefined ? undefined : `legacy:${event.seq}`)
+      if (typeof id === 'string') kinds.set(id, event.data['kind'])
+    } else if (event.type === 'room/coordinator') {
+      coordinator = event.data['memberId']
+    }
+  }
+  return typeof coordinator === 'string' && kinds.get(coordinator) === 'cli'
+}
+
 /** The tool whose open call means the turn is parked waiting for the human. */
 const USER_INPUT_TOOL = 'ask_user_question'
 

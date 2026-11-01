@@ -61,7 +61,7 @@ const tasks = lane === 'unit' ? unitTasks : lane === 'integration' ? integration
 // deployment-machine count.
 const lifecycleDriftExpected = 14 + (driftTripwireRunnable() ? 1 : 0) + (driftBuiltCliAvailable() ? 1 : 0)
 const inventory = { pure: 73, 'self-unit': 19, 'supervise-1-of-4': 17, 'supervise-2-of-4': 10,
-  'supervise-3-of-4': 17, 'supervise-4-of-4': 13, 'self-process': 71, 'lifecycle-drift': lifecycleDriftExpected }
+  'supervise-3-of-4': 17, 'supervise-4-of-4': 13, 'self-process': 74, 'lifecycle-drift': lifecycleDriftExpected }
 for (const task of tasks) task.expected = inventory[task.name]
 const artifacts = mkdtempSync(join(tmpdir(), 'ankh-test-results-'))
 process.stdout.write(`ankh-guard test artifacts: ${artifacts}\n`)
