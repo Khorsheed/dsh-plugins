@@ -13,6 +13,14 @@ import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sideb
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { IconGlobeOutlineMedium, type IconProps } from './icons.tsx'
 import type {} from './locales.ts'
+import type { ReaderNavParams } from '../nav-line.ts'
+
+declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  interface SidebarRightTabParamsMap {
+    /** One article, on its text or its notes (proposal 2026-10-30-agent-sidebar-navigation). */
+    'reader': ReaderNavParams
+  }
+}
 
 /** The tab kind: minted, since no official kind means "reader". */
 export const READER_KIND = 'reader'

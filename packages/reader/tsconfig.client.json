@@ -20,6 +20,8 @@
     "src/client/contract.ts",
     "src/client/definition.tsx",
     "src/client/index.ts",
+    "src/client/WriteToolRow.tsx",
+    "src/nav-line.ts",
     "src/client/locales.ts",
     "src/client/parse-rss.ts",
     "src/client/extract-article.ts",

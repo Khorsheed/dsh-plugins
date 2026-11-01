@@ -33,7 +33,10 @@ import type { CanvasInboxLike } from './canvas-sync.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import { ReaderTabVisibility, RegistrationToggle, type ReaderPluginInventorySnapshot } from './preset-visibility.ts'
-import { READER_TAB_ID, readerDefinition } from './definition.tsx'
+import { READER_KIND, READER_TAB_ID, readerDefinition } from './definition.tsx'
+import { ReaderWriteRow, type ReaderWriteRowFace } from './WriteToolRow.tsx'
+import { openDestination } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
+import type { ReaderNavParams } from '../nav-line.ts'
 import { ReaderPane } from './ReaderPane.tsx'
 import { createReaderStore } from './store.ts'
 import { en, NS, zh } from './locales.ts'
@@ -354,6 +357,32 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     store: createReaderStore,
     inject: face,
   }, ReaderPane)), 'reader: sidebar tab body')
+
+  // The reader's one way in from outside (proposal 2026-10-30-agent-sidebar-
+  // navigation): the tab kind with its typed params, which the pane applies
+  // once per navigation revision. Nothing follows by itself — the reader only
+  // offers doors (user decision 2026-10-30), so no destination follower starts.
+  const go = (params: ReaderNavParams): void => {
+    openDestination(name => (ctx.get.bind(ctx) as (key: string) => unknown)(name), { kind: READER_KIND, params: { ...params } })
+  }
+  // The reader_note / reader_translate rows: what was written, and 查看 → to
+  // it. The slot is declared by @deepseek-ai/dsh-client-ui-tool, which this
+  // package does not depend on — a structural registration (the canvas
+  // precedent); without that package the inject never fires and the call
+  // keeps the host's generic row.
+  const toolSlots = ctx.slots as unknown as {
+    inject: (key: string, callback: () => () => void) => () => void
+    register: (options: Record<string, unknown>, component: unknown) => () => void
+  }
+  const rowFace: ReaderWriteRowFace = { go }
+  for (const tool of ['reader_note', 'reader_translate'] as const) {
+    ctx.effect(() => toolSlots.inject('tool.call.toolview', () => toolSlots.register({
+      name: 'tool.call.toolview',
+      key: tool,
+      locale: NS,
+      inject: () => rowFace,
+    }, ReaderWriteRow)), `reader: ${tool} tool row`)
+  }
 
   return async () => {
     for (const dispose of disposers.reverse()) await dispose()

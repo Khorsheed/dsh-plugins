@@ -267,8 +267,10 @@ export const ALLOWED_EDGES: Readonly<Record<string, ReadonlyArray<string>>> = {
   'client-ui-content-preview': ['@khorsheed/dsh-client-ui-panel-kit'],
   // reader → client-ui-panel-kit: the inspiration space's compact header, chip
   // row and panel root (panel-responsive-spec P2) — the same inlined,
-  // zero-runtime source-plane edge as the file surfaces above.
-  'reader': ['@khorsheed/dsh-client-ui-panel-kit'],
+  // zero-runtime source-plane edge as the file surfaces above; and ui-agent-nav,
+  // the destination reader behind its conversation cards' 查看 → (proposal
+  // agent-sidebar-navigation).
+  'reader': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],
   // canvas-novel → ui-panel-kit: the chapter book's compact header and the
   // story view's tabs (panel-responsive-spec P3) — the same inlined edge.
   'canvas-novel': ['@khorsheed/dsh-client-ui-panel-kit', '@khorsheed/dsh-client-ui-agent-nav'],

@@ -21,6 +21,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ReaderDiscussionPoint, ReaderEntryNotes, ReaderEntrySnapshot, ReaderNotesStore } from './notes.ts'
 import type { ReaderRecentEntry } from './types.ts'
 import { formatClock } from './captions.ts'
+import { withReaderDestination } from './nav-line.ts'
 
 /** The package name the tools are tagged with. */
 export const READER_PACKAGE_NAME = '@khorsheed/dsh-reader'
@@ -320,7 +321,8 @@ export function readerToolDefinitions(core: ReaderToolCore, notes: ReaderNotesSt
           throw new ReaderToolError(`失败：《${target.title}》没有笔记 ${noteId}。现有：${ids === '' ? '（无）' : ids}。`)
         }
         if (outcome !== 'ok') throw new ReaderToolError(`失败：${outcome}`)
-        return `完成：结论已写在《${target.title}》的笔记 ${noteId} 下。`
+        return withReaderDestination(`完成：结论已写在《${target.title}》的笔记 ${noteId} 下（灵感空间里这篇文章的「笔记」页签；会话里有卡片直达）。`,
+          `reader:${target.entryId}:note:${noteId}:${Date.now()}`, { entryId: target.entryId, tab: 'notes' }, `《${target.title}》笔记 ${noteId}`)
       }
       const { points, aside } = pointsOf(header.body)
       const kind = args.kind === 'check' || args.kind === 'discussion' ? args.kind : header.kind ?? 'discussion'
@@ -335,7 +337,9 @@ export function readerToolDefinitions(core: ReaderToolCore, notes: ReaderNotesSt
         ...(aside === undefined ? {} : { aside }),
       })
       if (created === 'empty') throw new ReaderToolError('失败：没有可记的要点（text 里每行一点）。')
-      return `完成：《${target.title}》新增${kind === 'check' ? '考考我' : '讨论'}笔记 ${created.id}，${String(points.length)} 点。`
+      const noun = kind === 'check' ? '考考我' : '讨论'
+      return withReaderDestination(`完成：《${target.title}》新增${noun}笔记 ${created.id}，${String(points.length)} 点（在这篇文章的「笔记」页签；会话里有卡片直达）。`,
+        `reader:${target.entryId}:discussion:${created.id}`, { entryId: target.entryId, tab: 'notes' }, `《${target.title}》${noun}笔记 ${created.id}`)
     },
   })
   const translate = defineTool({
@@ -384,7 +388,8 @@ export function readerToolDefinitions(core: ReaderToolCore, notes: ReaderNotesSt
       lines.push(missing.length === 0
         ? '全部段落都已润色，读者那边已经换成你的译文。'
         : `还剩 ${String(missing.length)} 段，下一批从 ¶${String(missing[0])} 开始：reader_read from=${String(missing[0])}。`)
-      return lines.join('\n')
+      return withReaderDestination(lines.join('\n'), `reader:${target.entryId}:polish:${String(view.done)}`,
+        { entryId: target.entryId, tab: 'article' }, `《${target.title}》译文 ${String(view.done)} / ${String(total)} 段`)
     },
   })
   return [tagOrigin(read), tagOrigin(write), tagOrigin(translate)]
