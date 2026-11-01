@@ -36,7 +36,7 @@ export interface DeskAttachmentProps extends DeskOpenRowFace, DeskWroteRowFace {
  * Render a turn's canvas desk events inside the member's card.
  * @param props - the turn's events of this owner, whether the card is live, the face, the copy.
  */
-export function DeskAttachment({ sessionId, attachments, live, t, openCanvas, openCard, addCanvas }: DeskAttachmentProps): ReactNode {
+export function DeskAttachment({ sessionId, attachments, live, t, openCanvas, go, addCanvas }: DeskAttachmentProps): ReactNode {
   const opened = attachments.flatMap(attachment => {
     const row = attachment.type === 'room/desk-opened' ? deskRowOf(attachment) : null
     return row === null ? [] : [row]
@@ -51,7 +51,7 @@ export function DeskAttachment({ sessionId, attachments, live, t, openCanvas, op
         <DeskOpenRow key={row.seq} node={{ data: row }} sessionId={sessionId} t={t} follow={live} own openCanvas={openCanvas} addCanvas={addCanvas} />
       ))}
       {foldWrites(writes).map(group => (
-        <DeskWroteRow key={group.canvasId} group={group} sessionId={sessionId} t={t} follow={live} own openCanvas={openCanvas} openCard={openCard} addCanvas={addCanvas} />
+        <DeskWroteRow key={group.canvasId} group={group} sessionId={sessionId} t={t} follow={live} own go={go} addCanvas={addCanvas} />
       ))}
     </>
   )

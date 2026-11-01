@@ -56,19 +56,19 @@ describe('deskRowDefinition', () => {
   it('in the member\'s card the row names only the canvas, and only the live card follows', () => {
     const openCanvas = vi.fn()
     const addCanvas = vi.fn()
-    const openCard = vi.fn()
+    const go = vi.fn()
     const attachment = { type: 'room/desk-opened', seq: 40, time: Date.now(), data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'coordinator', runId: 'r1', data: { canvasId: 'canvas_r', title: '潜梦者', created: true } } }
-    render(<DeskAttachment sessionId="room-b" attachments={[attachment]} live={false} t={t} openCanvas={openCanvas} openCard={openCard} addCanvas={addCanvas} />)
+    render(<DeskAttachment sessionId="room-b" attachments={[attachment]} live={false} t={t} openCanvas={openCanvas} go={go} addCanvas={addCanvas} />)
     expect(screen.getByText('新建了《潜梦者》')).toBeTruthy()
     expect(openCanvas).not.toHaveBeenCalled()
     cleanup()
-    render(<DeskAttachment sessionId="room-b" attachments={[attachment]} live t={t} openCanvas={openCanvas} openCard={openCard} addCanvas={addCanvas} />)
+    render(<DeskAttachment sessionId="room-b" attachments={[attachment]} live t={t} openCanvas={openCanvas} go={go} addCanvas={addCanvas} />)
     expect(openCanvas).toHaveBeenCalledExactlyOnceWith('canvas_r')
   })
 
-  it('folds a turn\'s writes into one line per canvas: a new card counts once, the door opens the only card', () => {
+  it('folds a turn\'s writes into one line per canvas: a new card counts once, the door lands where the writes are', () => {
     const openCanvas = vi.fn()
-    const openCard = vi.fn()
+    const go = vi.fn()
     const addCanvas = vi.fn()
     const wrote = (seq: number, items: unknown[]) => ({ type: 'room/desk-wrote', seq, time: Date.now(), data: { version: 1, owner: '@khorsheed/dsh-canvas', member: 'bill', role: 'member', runId: 'r2', data: { canvasId: 'canvas_q', title: '潜梦者', items } } })
     const added = { action: 'added', cardId: 'c1', title: '数据标注员（姓名待定）', kind: '人物' }
@@ -76,28 +76,33 @@ describe('deskRowDefinition', () => {
       wrote(50, [added]),
       // The same card edited later in the turn: still one new card.
       wrote(51, [{ action: 'changed', cardId: 'c1', title: '数据标注员（姓名待定）', kind: '人物' }]),
-    ]} live t={t} openCanvas={openCanvas} openCard={openCard} addCanvas={addCanvas} />)
+    ]} live t={t} openCanvas={openCanvas} go={go} addCanvas={addCanvas} />)
     expect(screen.getByText('《潜梦者》 新增人物卡「数据标注员（姓名待定）」')).toBeTruthy()
     // A member's write seen arriving goes on the strip, once.
     expect(addCanvas).toHaveBeenCalledExactlyOnceWith('canvas_q')
     fireEvent.click(screen.getByText('查看 →'))
-    expect(openCard).toHaveBeenCalledExactlyOnceWith('canvas_q', 'c1', '数据标注员（姓名待定）')
+    expect(go).toHaveBeenLastCalledWith({ canvasId: 'canvas_q', card: 'c1', heading: '数据标注员（姓名待定）' })
     cleanup()
     render(<DeskAttachment sessionId="room-c" attachments={[wrote(60, [
       { action: 'added', cardId: 'w1', title: 'A', kind: '世界' }, { action: 'added', cardId: 'w2', title: 'B', kind: '世界' },
       { action: 'commented', cardId: 'p1', title: '全书命题' },
-    ])]} live={false} t={t} openCanvas={openCanvas} openCard={openCard} addCanvas={addCanvas} />)
+    ])]} live={false} t={t} openCanvas={openCanvas} go={go} addCanvas={addCanvas} />)
     expect(screen.getByText('《潜梦者》 新增 2 张世界卡 · 批注「全书命题」')).toBeTruthy()
+    // Several cards: the board, narrowed to every card the turn touched.
+    fireEvent.click(screen.getByText('查看 →'))
+    expect(go).toHaveBeenLastCalledWith({ canvasId: 'canvas_q', face: 'board', cards: ['w1', 'w2', 'p1'] })
     cleanup()
     // A novel turn: a chapter written, a card that nothing names, two unnamed edits.
     render(<DeskAttachment sessionId="room-c" attachments={[wrote(70, [
       { action: 'chapter', title: '第 1 章《别替我起名》' },
       { action: 'added', cardId: 'q1', title: '', kind: '原则' },
       { action: 'changed', cardId: 'c1', title: '' },
-    ])]} live={false} t={t} openCanvas={openCanvas} openCard={openCard} addCanvas={addCanvas} />)
+    ])]} live={false} t={t} openCanvas={openCanvas} go={go} addCanvas={addCanvas} />)
     expect(screen.getByText('《潜梦者》 新增 1 张原则卡 · 写了第 1 章《别替我起名》 · 修改 1 张卡')).toBeTruthy()
+    // A chapter written (an older event: the number only in the title): that chapter's text.
     fireEvent.click(screen.getByText('查看 →'))
-    expect(openCanvas).toHaveBeenCalledExactlyOnceWith('canvas_q')
+    expect(go).toHaveBeenLastCalledWith({ canvasId: 'canvas_q', face: 'manuscripts', item: '1', focus: 'body' })
+    expect(openCanvas).not.toHaveBeenCalled()
   })
 })
 

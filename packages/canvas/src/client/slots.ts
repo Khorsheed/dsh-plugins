@@ -65,6 +65,11 @@ export interface CanvasNavParams {
   readonly item?: string
   /** How the genre shows it (the novel: `plan` or `body`). */
   readonly focus?: string
+  /**
+   * With `face: 'board'`: narrow the board to these cards under a temporary
+   * 「本轮改动」 chip (a room member's turn that touched several cards).
+   */
+  readonly cards?: readonly string[]
   /** The strip chip's words for a card, manuscript or type page. */
   readonly heading?: string
 }

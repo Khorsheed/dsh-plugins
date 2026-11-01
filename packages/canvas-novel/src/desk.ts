@@ -71,6 +71,8 @@ export interface NovelDeskWriteItem {
   readonly title: string
   readonly cardId?: string
   readonly kind?: string
+  /** `chapter`: its number (the canvas's desk line opens that chapter). */
+  readonly chapter?: number
 }
 
 /** The snapshot `NovelService.deskSnapshot` returns, as the diff reads it. */
@@ -123,7 +125,7 @@ export function novelWriteItems(before: DeskSnapshotLike, after: DeskSnapshotLik
   const chapters = new Map(before.chapters.map(row => [row.chapter.n, JSON.stringify(row)]))
   for (const row of after.chapters) {
     if (chapters.get(row.chapter.n) === JSON.stringify(row)) continue
-    items.push({ action: 'chapter', title: `第 ${row.chapter.n} 章《${row.chapter.title}》` })
+    items.push({ action: 'chapter', title: `第 ${row.chapter.n} 章《${row.chapter.title}》`, chapter: row.chapter.n })
   }
   return items
 }

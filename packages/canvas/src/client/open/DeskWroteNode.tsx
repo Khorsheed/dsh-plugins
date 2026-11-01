@@ -16,8 +16,8 @@ export interface DeskWroteNodeProps extends DeskWroteRowFace {
 }
 
 /** Render one lone write event. */
-export function DeskWroteNode({ node, sessionId, t, openCanvas, openCard, addCanvas }: DeskWroteNodeProps): ReactNode {
+export function DeskWroteNode({ node, sessionId, t, go, addCanvas }: DeskWroteNodeProps): ReactNode {
   const [group] = foldWrites([node.data])
   if (group === undefined) return null
-  return <DeskWroteRow group={group} sessionId={sessionId ?? ''} t={t} follow own={false} openCanvas={openCanvas} openCard={openCard} addCanvas={addCanvas} />
+  return <DeskWroteRow group={group} sessionId={sessionId ?? ''} t={t} follow own={false} go={go} addCanvas={addCanvas} />
 }

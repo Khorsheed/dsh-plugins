@@ -133,6 +133,10 @@ interface DiscardAsk {
   readonly then: 'close' | 'back'
 }
 
+/** The temporary scope an outside ask narrows the board to (`CanvasNavParams.cards`). */
+const TOUCHED_SCOPE = '__touched'
+const NO_SCOPES: readonly CanvasCardScope[] = []
+
 /** The canvas tab: the strip plus the row it is showing. */
 export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
@@ -243,10 +247,18 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   // canvas is the open one, show the face and press the scope it names.
   const ask = selection.ask
   const answeredAsk = useRef(0)
+  /**
+   * The cards an outside ask narrowed the board to (a member's turn that
+   * touched several): shown as one more scope chip, 「本轮改动」, until the
+   * next such ask replaces it or the tab remounts.
+   */
+  const [touched, setTouched] = useState<{ canvasId: string; cardIds: readonly string[] } | null>(null)
   useEffect(() => {
     if (ask === undefined || ask.n <= answeredAsk.current || ask.canvasId !== openId) return
     answeredAsk.current = ask.n
-    setViews(all => ({ ...all, [ask.canvasId]: { ...(all[ask.canvasId] ?? FRESH_VIEW), face: ask.face, faceChosen: true, scope: ask.scope } }))
+    if (ask.cards !== undefined) setTouched({ canvasId: ask.canvasId, cardIds: ask.cards })
+    const scope = ask.cards !== undefined ? TOUCHED_SCOPE : ask.scope
+    setViews(all => ({ ...all, [ask.canvasId]: { ...(all[ask.canvasId] ?? FRESH_VIEW), face: ask.face, faceChosen: true, scope } }))
   }, [ask, openId])
   const toggleShowArchived = useCallback(() => { patchView(was => ({ showArchived: !was.showArchived })) }, [patchView])
   const setWire = useCallback((next: BoardLink | null) => { patchView(() => ({ wire: next })) }, [patchView])
@@ -309,7 +321,10 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       ? was
       : { canvasId, rows })
   }, [])
-  const openScopes = scopes !== null && scopes.canvasId === openId ? scopes.rows : []
+  const genreScopes = scopes !== null && scopes.canvasId === openId ? scopes.rows : NO_SCOPES
+  const openScopes = useMemo((): readonly CanvasCardScope[] => touched === null || touched.canvasId !== openId
+    ? genreScopes
+    : [...genreScopes, { id: TOUCHED_SCOPE, label: t('board.scope.touched'), cardIds: touched.cardIds }], [genreScopes, touched, openId, t])
   const scopeRow = scope === null ? undefined : openScopes.find(candidate => candidate.id === scope)
   const scopeIds = useMemo(() => scopeRow === undefined ? undefined : new Set(scopeRow.cardIds), [scopeRow])
   /** The open board's live (unarchived) cards: the scope counts count these. */
