@@ -502,6 +502,8 @@ export interface ChapterPlan {
    * brief carries these in full and the rest by name only (2026-11-01).
    */
   readonly uses?: readonly string[]
+  /** 本章推进: the future events this chapter moves (event ids, 2026-11-01): the write brief expands them; the 对账 checks them. */
+  readonly advances?: readonly string[]
 }
 
 /**
@@ -691,6 +693,9 @@ export function normalizePlan(raw: unknown): ChapterPlan | undefined {
     const fact = cleanText(row['fact'], 200)
     return who === undefined || fact === undefined ? undefined : { who, fact }
   }).filter((gap): gap is PlanInfoGap => gap !== undefined)
+  const advancesRaw = record['advances']
+  const advances = [...new Set((Array.isArray(advancesRaw) ? advancesRaw : typeof advancesRaw === 'string' ? advancesRaw.split(/[、,，；;\s]+/) : [])
+    .map(item => cleanText(item, 80)).filter((item): item is string => item !== undefined))].slice(0, 6)
   const usesRaw = record['uses']
   const uses = [...new Set((Array.isArray(usesRaw) ? usesRaw : typeof usesRaw === 'string' ? usesRaw.split(/[、,，；;]/) : [])
     .map(item => cleanText(item, 80)).filter((item): item is string => item !== undefined))].slice(0, 16)
@@ -706,6 +711,7 @@ export function normalizePlan(raw: unknown): ChapterPlan | undefined {
     ...(hook === undefined ? {} : { hook }),
     ...(words === undefined ? {} : { words }),
     ...(uses.length === 0 ? {} : { uses }),
+    ...(advances.length === 0 ? {} : { advances }),
   }
 }
 
@@ -1443,6 +1449,16 @@ export interface ExtractNewRelationInput {
 
 /** The subagent's strict JSON, as `novel_extract` import receives it (tolerant reads throughout). */
 export interface ExtractPayload {
+  /** This chapter's events (2026-11-01): what happened, in story time. */
+  readonly events?: readonly { readonly title?: unknown; readonly when?: unknown; readonly after?: unknown; readonly people?: unknown; readonly places?: unknown; readonly evidence_in_text?: unknown }[]
+  /** Future events this chapter moved: advanced, happened (now in 已发生), failed (落空). */
+  readonly event_progress?: readonly { readonly event_id?: unknown; readonly kind?: unknown; readonly evidence_in_text?: unknown }[]
+  /** Preconditions this chapter met (1-based within the event). */
+  readonly preconditions_met?: readonly { readonly event_id?: unknown; readonly index?: unknown; readonly evidence_in_text?: unknown }[]
+  /** What characters came to believe, with where it came from. */
+  readonly beliefs?: readonly { readonly character_id?: unknown; readonly belief?: unknown; readonly source?: unknown; readonly from?: unknown; readonly evidence_in_text?: unknown }[]
+  /** What characters now intend. */
+  readonly intents?: readonly { readonly character_id?: unknown; readonly intent?: unknown; readonly evidence_in_text?: unknown }[]
   readonly beats_delivered?: readonly ExtractBeatInput[]
   readonly info_gaps_closed?: readonly ExtractInfoGapInput[]
   readonly memories?: readonly ExtractMemoryInput[]
@@ -1492,6 +1508,16 @@ export interface ImportReport {
   readonly planMisses: readonly string[]
   /** The live cards this import landed (new rules, foreshadows, characters), marked new (✦) on the board. */
   readonly newCards: readonly { readonly cardId: string; readonly role: EntryRole; readonly text: string; readonly ref?: string }[]
+  /** What the 对账 wrote to the timeline and the character memory. */
+  readonly memory?: {
+    readonly events: number
+    readonly advanced: readonly string[]
+    readonly happened: readonly string[]
+    readonly failed: readonly string[]
+    readonly preconditions: number
+    readonly beliefs: number
+    readonly intents: number
+  }
 }
 
 /** The ledger answer (伏笔沉睡榜 + 健康度, and where each kept relation stands). */

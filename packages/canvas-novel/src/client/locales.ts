@@ -247,6 +247,8 @@ export const zh = {
   'plan.field.pov': '视角',
   'plan.field.infoGaps': '谁得知了什么',
   'plan.field.uses': '用到的设定',
+  'plan.field.advances': '本章推进',
+  'plan.advances': '本章推进',
   'plan.field.hook': '章末钩子',
 
   'reader.kicker': '第 {n} 章',
@@ -656,6 +658,8 @@ export const en: Record<keyof typeof zh, string> = {
   'plan.field.pov': 'POV',
   'plan.field.infoGaps': 'who learns what',
   'plan.field.uses': 'settings used',
+  'plan.field.advances': 'events advanced',
+  'plan.advances': 'Advances',
   'plan.field.hook': 'closing hook',
 
   'reader.kicker': 'Chapter {n}',

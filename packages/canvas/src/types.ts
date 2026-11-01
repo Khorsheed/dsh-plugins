@@ -539,6 +539,8 @@ export interface CanvasGenreFaces {
    * way. A fresh canvas of the genre opens on it while nothing is written.
    */
   readonly lead?: string
+  /** A third face read LAST, after the view (the novel's 灵感), keyed the same way. */
+  readonly extra?: string
 }
 
 /** One registered genre as the browser lists it. */

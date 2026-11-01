@@ -28,6 +28,7 @@ import { planOvershoots, renderOutlineRead, renderPlanBrief, renderWriteBrief, t
 import { PHASE_NAMES, ROLE_NAMES, foreshadowFacts, relationFacts } from './genre-agent.ts'
 import type { NovelService } from './store.ts'
 import { volumeNumeral, volumePosition, type ChapterPlan, type ExtractPayload, type ImportDrop, type PendingItem, type ReviewAction } from './types.ts'
+import { isFuture, TIER_LABELS, tensionOf, tierReason, type StoryEvent } from './timeline.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
 function tagOrigin<T extends object>(definition: T): T {
@@ -98,16 +99,18 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
     description:
       'Read the bound novel canvas. what=brief renders a material pack (for=write/plan/extract); '
       + 'outline reads the one-page outline, volumes and core suspenses; '
-      + 'chapters/ledger/pending/chapter read the work (cards: canvas_read). Load the novel skill for the workflow.',
+      + 'chapters/ledger/pending/chapter read the work (cards: canvas_read); events reads the timeline (ids: those events in full); '
+      + 'ideas reads the person\'s 灵感. Load the novel skill for the workflow.',
     parameters: {
       what: {
         type: 'string',
-        enum: ['brief', 'outline', 'chapters', 'ledger', 'pending', 'chapter'],
+        enum: ['brief', 'outline', 'chapters', 'ledger', 'pending', 'chapter', 'events', 'ideas'],
         required: true,
         description: 'What to read.',
       },
       for: { type: 'string', enum: ['write', 'plan', 'extract'], description: 'brief: the variant (default write).' },
       chapter: { type: 'number', description: 'brief/chapter: the chapter number (default: the one being planned).' },
+      ids: { type: 'array', items: { type: 'string' }, description: 'events: the event ids to read in full (causes, the people\'s minds, the settings, bound ideas); omit for the whole timeline, one line each.' },
     },
     output: {
       schema: { type: 'string' },
@@ -118,10 +121,17 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       what: string
       for?: 'write' | 'plan' | 'extract'
       chapter?: number
+      ids?: string[]
     }, exec: { agent?: Agent }): Promise<string> => {
       const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       const { workId } = resolved
+      if (args.what === 'events') return renderEvents(store, workId, args.ids)
+      if (args.what === 'ideas') {
+        const doc = await store.readIdeas(workId)
+        if (doc.ideas.length === 0) return '还没有灵感。'
+        return ['灵感（i 编号；绑定事件用 novel_write(what=idea, id, event)）：', ...doc.ideas.map(idea => `- [${idea.id}]${idea.eventId === undefined ? '（未绑定）' : `（绑定 ${idea.eventId}${idea.writtenIn === undefined ? '' : `，已写入第${idea.writtenIn}章`}）`} ${idea.text}`)].join('\n')
+      }
       if (args.what === 'brief') {
         const gathered = await store.gatherBrief({
           workId, ...(args.chapter === undefined ? {} : { chapter: args.chapter }),
@@ -203,7 +213,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       + '(phase=preview proposes and answers the 整理结果; phase=apply only after the user agreed). review decides a pending item '
       + '(action=accept|discard). Cards: canvas_write. Load the novel skill first.',
     parameters: {
-      what: { type: 'string', enum: ['chapter', 'confirm', 'outline', 'organize', 'review'], required: true, description: 'What to write. confirm: record the user\'s confirmation of a chapter plan (chapter=N) — only when their latest message says so.' },
+      what: { type: 'string', enum: ['chapter', 'confirm', 'outline', 'organize', 'event', 'idea', 'review'], required: true, description: 'What to write. confirm: record the user\'s confirmation of a chapter plan (chapter=N) — only when their latest message says so.' },
       id: { type: 'string', description: 'review: the pending item id.' },
       title: { type: 'string', description: 'chapter: the title.' },
       content: {
@@ -243,6 +253,13 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         description: 'outline: one-line sketches of the next one or two chapters [{n, line}].',
       },
       rationale: { type: 'string', description: 'outline: why, in a sentence.' },
+      event: {
+        type: 'object', additionalProperties: true,
+        description: 'event: {id? (to change one), title, when (story time as a label), status (happened|preset|planned|hidden|failed; default preset = to come), '
+          + 'source (预设|打算|后果|承诺 — a future event\'s origin), who (character refs or names), places (setting refs or names), value (0–1, how much the story needs it), valueWhy, '
+          + 'window (卷一末 / 第8章前), windowChapter (that window as a chapter number), pre (["the preconditions"]), causes (event ids it follows from), after (event id it comes right after in story time), delete (true)}. '
+          + 'idea: the event id to bind the idea to (null unbinds).',
+      },
       phase: { type: 'string', enum: ['preview', 'apply'], description: 'organize: preview (default) stores the plan and answers the 整理结果; apply carries out the stored plan — only after the user agreed in a later message.' },
       moves: {
         type: 'array', items: { type: 'object', additionalProperties: true },
@@ -347,6 +364,41 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           + `\n完整计划在画布「章节」页签的第 ${chapter.n} 章（会话里有卡片直达）。回复只用两三句说这章怎么走、最想让用户拍板的是什么，不要再贴一遍计划表。`
           + `用户在对话里同意后，先 novel_write(what=confirm, chapter=${chapter.n}) 再开写；他也可能直接在章节页点了确认。`,
         workId, chapter.n, chapter.title, 'plan', String(Date.now()), { status: '等你确认', awaiting: true, door: '查看并确认计划 →' })
+      }
+      if (args.what === 'event') {
+        const raw = (typeof args.event === 'object' && args.event !== null ? args.event : {}) as Record<string, unknown>
+        const outcome = await store.writeEvent({
+          workId,
+          ...(typeof raw['id'] === 'string' ? { id: raw['id'] } : {}),
+          ...(typeof raw['title'] === 'string' ? { title: raw['title'] } : {}),
+          ...(typeof raw['when'] === 'string' ? { when: raw['when'] } : {}),
+          ...(typeof raw['status'] === 'string' ? { status: raw['status'] } : {}),
+          ...(typeof raw['source'] === 'string' ? { source: raw['source'] } : {}),
+          ...(raw['who'] === undefined ? {} : { who: raw['who'] }),
+          ...(raw['places'] === undefined ? {} : { places: raw['places'] }),
+          ...(raw['value'] === undefined ? {} : { value: raw['value'] }),
+          ...(typeof raw['valueWhy'] === 'string' ? { valueWhy: raw['valueWhy'] } : {}),
+          ...(typeof raw['window'] === 'string' ? { window: raw['window'] } : {}),
+          ...(raw['windowChapter'] === undefined ? {} : { windowChapter: raw['windowChapter'] }),
+          ...(raw['pre'] === undefined ? {} : { pre: raw['pre'] }),
+          ...(raw['causes'] === undefined ? {} : { causes: raw['causes'] }),
+          ...(typeof raw['after'] === 'string' ? { after: raw['after'] } : {}),
+          ...(raw['chapters'] === undefined ? {} : { chapters: raw['chapters'] }),
+          ...(raw['delete'] === true ? { delete: true } : {}),
+        }, resolved.session)
+        if (!outcome.ok) {
+          if (outcome.unknown !== undefined) return `失败：这些对不上画布上的卡：${outcome.unknown.join('、')}（人物和设定填编号或准确名字；要的卡还没有就先建）。`
+          if (outcome.error === 'missing') return '失败：没有这个事件（novel_read(what=events) 看编号）。'
+          return `失败：${outcome.error === 'invalid-name' ? '新事件至少要有 title' : outcome.error ?? 'io'}。`
+        }
+        return raw['delete'] === true ? `已删除事件 ${outcome.id}。` : `已记下事件 [${outcome.id}]，在时间轴上。`
+      }
+      if (args.what === 'idea') {
+        if (args.id === undefined) return '失败：what=idea 要给 id（灵感编号，novel_read(what=ideas) 看）。'
+        const eventId = args.event === null ? null : typeof args.event === 'string' ? args.event : undefined
+        if (eventId === undefined) return '失败：what=idea 要给 event（事件编号；null 表示解绑）。'
+        const outcome = await store.changeIdea({ workId, id: args.id, eventId }, resolved.session)
+        return outcome.ok ? (eventId === null ? `已解绑灵感 ${args.id}。` : `已把灵感 ${args.id} 绑到事件 ${eventId}：规划到这件事时原文会一起带上。`) : `失败：${outcome.error ?? 'io'}`
       }
       if (args.what === 'organize') {
         if (args.phase === 'apply') {
@@ -502,6 +554,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       if (report.planMisses.length > 0) {
         lines.push(`计划里没写到（只提醒，回复里提一句）：${report.planMisses.join('、')}`)
       }
+      const memory = report.memory
+      if (memory !== undefined && memory.events + memory.advanced.length + memory.happened.length + memory.failed.length + memory.preconditions + memory.beliefs + memory.intents > 0) {
+        lines.push(`时间轴与人物记忆：本章事件 +${memory.events}${memory.happened.length === 0 ? '' : `；实现了 ${memory.happened.join('、')}`}${memory.advanced.length === 0 ? '' : `；推进了 ${memory.advanced.join('、')}`}`
+          + `${memory.failed.length === 0 ? '' : `；落空 ${memory.failed.join('、')}`}${memory.preconditions === 0 ? '' : `；满足前置 ×${memory.preconditions}`}${memory.beliefs + memory.intents === 0 ? '' : `；人物新认识 ×${memory.beliefs}、新打算 ×${memory.intents}`}。`)
+      }
       if (report.dropped.length > 0) {
         lines.push('丢弃（防编造闸）：', ...report.dropped.map(drop => `- ${drop.kind}「${drop.ref}」：${dropReason(drop)}`))
       }
@@ -594,8 +651,63 @@ interface WriteArgs {
   sketches?: unknown[]
   rationale?: string
   phase?: string
+  event?: unknown
   moves?: unknown[]
   create?: unknown[]
+}
+
+/** The timeline as novel_read(what=events) answers it: every event in a line, or the named ones in full. */
+async function renderEvents(store: NovelService, workId: string, ids: readonly string[] | undefined): Promise<string> {
+  const { events, current } = await store.allEvents(workId)
+  const entries = await store.readEntries(workId)
+  const nameOf = (id: string): string => entries?.characters.find(view => view.cardId === id)?.name ?? entries?.rules.find(view => view.cardId === id)?.name ?? id
+  const line = (event: StoryEvent): string => {
+    const people = [...(event.who ?? []), ...(event.places ?? [])].map(nameOf)
+    return `[${event.id}] ${event.when === undefined ? '' : `${event.when} · `}${event.title}${people.length === 0 ? '' : `（${people.join('、')}）`}${event.chapters === undefined ? '' : ` 第${event.chapters.join('、')}章`}`
+  }
+  if (ids === undefined || ids.length === 0) {
+    const past = events.filter(event => event.status === 'happened' || event.status === 'failed').sort((a, b) => a.order - b.order)
+    const future = events.filter(isFuture)
+    if (past.length + future.length === 0) return '时间轴是空的。和用户聊接下来要发生什么，用 novel_write(what=event) 记下来；对账时本章的事件会自动记上。'
+    return [
+      `已发生（按故事时间，${past.length} 件）：`, ...past.map(event => `- ${line(event)}${event.status === 'failed' ? '（落空）' : ''}`),
+      '', `将发生（${future.length} 件）：`, ...future.map(event => {
+        const parts = tensionOf(event, current)
+        return `- ${TIER_LABELS[parts.tier]} ${line(event)}${event.source === undefined ? '' : ` · ${event.source}`} —— ${tierReason(event, parts)}`
+      }),
+    ].join('\n')
+  }
+  const minds = await store.listMinds({ workId })
+  const ideas = await store.readIdeas(workId)
+  const out: string[] = []
+  for (const id of ids) {
+    const event = events.find(candidate => candidate.id === id)
+    if (event === undefined) { out.push(`[${id}] 没有这个事件。`); continue }
+    const parts = isFuture(event) ? tensionOf(event, current) : undefined
+    out.push(`## ${line(event)}`)
+    if (event.source !== undefined) out.push(`来源：${event.source}${event.window === undefined ? '' : `；时间窗口：${event.window}`}`)
+    if (parts !== undefined) out.push(`张力：${TIER_LABELS[parts.tier]}（${tierReason(event, parts)}）；价值 ${parts.V.toFixed(1)}${event.valueWhy === undefined ? '' : `：${event.valueWhy}`}`)
+    if ((event.pre ?? []).length > 0) out.push(`前置：${event.pre!.map((row, index) => `${index + 1}. ${row.text}${row.met === undefined ? '（未满足）' : `（第${row.met}章满足）`}`).join(' ')}`)
+    for (const cause of event.causes ?? []) {
+      const hit = events.find(candidate => candidate.id === cause)
+      if (hit !== undefined) out.push(`起因：${line(hit)}`)
+    }
+    for (const who of event.who ?? []) {
+      const own = minds.filter(row => row.characterId === who)
+      const intent = own.filter(row => row.kind === 'intent').at(-1)
+      const beliefs = own.filter(row => row.kind === 'belief').slice(-4)
+      if (intent !== undefined || beliefs.length > 0) {
+        out.push(`${nameOf(who)}：${intent === undefined ? '' : `打算 ${intent.text}；`}${beliefs.length === 0 ? '' : `相信 ${beliefs.map(row => `${row.text}（${row.source ?? '亲历'}）`).join('、')}`}`)
+      }
+    }
+    for (const place of event.places ?? []) {
+      const rule = entries?.rules.find(view => view.cardId === place)
+      if (rule !== undefined) out.push(`设定 [${rule.ref}] ${rule.text}`)
+    }
+    for (const idea of ideas.ideas.filter(row => row.eventId === event.id && row.writtenIn === undefined)) out.push(`作者写的片段（尽量保留原文）：「${idea.text}」`)
+    out.push('')
+  }
+  return out.join('\n').trim()
 }
 
 /**

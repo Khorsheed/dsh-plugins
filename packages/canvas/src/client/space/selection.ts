@@ -113,7 +113,7 @@ export interface CanvasBoardState {
 }
 
 /** The faces of a canvas board (卡板, 连线, 成稿, the genre's own, its lead). */
-export type CanvasBoardFace = 'board' | 'link' | 'manuscripts' | 'view' | 'lead'
+export type CanvasBoardFace = 'board' | 'link' | 'manuscripts' | 'view' | 'lead' | 'extra'
 
 /** Show one canvas on one face, a genre scope pressed (null: 全部). */
 export interface CanvasFaceAsk {

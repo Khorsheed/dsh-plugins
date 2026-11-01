@@ -1078,7 +1078,7 @@ export class CanvasBoardService {
       ...(genre.agentRow === undefined ? {} : { agentRow: genre.agentRow }),
       ...(genre.ownsManuscripts === true ? { ownsManuscripts: true } : {}),
       // Faces ride the 成稿 ownership: a genre's own face sits beside its text.
-      ...(genre.ownsManuscripts === true && genre.faces !== undefined ? { faces: { view: genre.faces.view, ...(genre.faces.lead === undefined ? {} : { lead: genre.faces.lead }) } } : {}),
+      ...(genre.ownsManuscripts === true && genre.faces !== undefined ? { faces: { view: genre.faces.view, ...(genre.faces.lead === undefined ? {} : { lead: genre.faces.lead }), ...(genre.faces.extra === undefined ? {} : { extra: genre.faces.extra }) } } : {}),
     }))
   }
 
