@@ -23,13 +23,21 @@ export interface GamePlace {
   readonly chapterId?: string
 }
 
+/** What the card says besides the label (the shell draws it; the agent-nav `DestinationCardData`). */
+export interface GameCardData {
+  readonly status?: string
+  readonly awaiting?: boolean
+  readonly door?: string
+}
+
 /**
  * The answer with its destination line.
  * @param answer - the tool's answer.
  * @param id - stable per landing (`game:<project>:<thing>:<version>`).
  * @param params - the game tab address.
  * @param label - what the person reads on the card.
+ * @param card - the card's status and door, when the write waits for the person.
  */
-export function withGameDestination(answer: string, id: string, params: GamePlace, label: string): string {
-  return `${answer}\n${NAV_MARK}${JSON.stringify({ id, kind: 'game', params, label })}`
+export function withGameDestination(answer: string, id: string, params: GamePlace, label: string, card?: GameCardData): string {
+  return `${answer}\n${NAV_MARK}${JSON.stringify({ id, kind: 'game', params, label, ...(card === undefined ? {} : { card }) })}`
 }

@@ -349,7 +349,9 @@ export function gameToolDefinitions(store: GameService): ToolDefinition[] {
         const where = landed === undefined ? '' : `用户在右栏游戏页签的${landed.where}能看到（会话里有卡片直达）。`
         const named = (answer: string): string => landed === undefined || cut === null
           ? answer
-          : withGameDestination(answer, `game:${landed.projectId}:v${cut.version}`, { projectId: landed.projectId, ...landed.target }, landed.label)
+          : withGameDestination(answer, `game:${landed.projectId}:v${cut.version}`, { projectId: landed.projectId, ...landed.target }, landed.label,
+            // A candidate waits for the person: the card says so while live; the play area's 确认 / 退回 hand what came of it.
+            outcome.candidate !== null ? { status: '等你确认上线', awaiting: true, door: '去试玩确认 →' } : undefined)
         if (outcome.deployed !== null) return named(`完成：v${outcome.deployed.version} 通过检查${outcome.record.passed > 0 ? `（${outcome.record.passed} 个用例）` : ''}，已进试玩区，可以请用户试玩了。${where}${tail}`)
         if (outcome.candidate !== null) return named(`完成：v${outcome.candidate.version} 通过检查，作为候选等用户在右栏确认（自动上线关着或是换风格的版本）；确认后才进试玩区。${where}${tail}`)
         return `检查通过，但这个会话是只读模式，没有生成版本。${tail}`

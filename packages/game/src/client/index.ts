@@ -21,9 +21,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import { GAME_CHAT_KIND, GameChatRow, gameMessageDefinition } from './chat-node.tsx'
 import type { GameApi, GameNavParams, GameTabInjected } from './contract.ts'
-import { gameTurnDefinition, GameTurnCard } from './TurnCard.tsx'
+import { turnSummaryOf } from './turn-summary.ts'
 import {
-  followerHostOf, registerDestinationCards, startNavFollower, subscribeWrites, type CardFace,
+  followerHostOf, registerDestinationCards, registerTurnSummary, startNavFollower, subscribeWrites, type CardFace,
 } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import { encodeGameRef, GAME_REF_SOURCE, gameRefCodec } from './refs.ts'
 import { GAME_KIND, GAME_TAB_ID, gameDefinition } from './definition.tsx'
@@ -281,10 +281,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     register: (options: Record<string, unknown>, component: unknown) => () => void
   }
   // The conversation cards (proposal 2026-10-30-agent-sidebar-navigation):
-  // game_open / game_publish show the one shell's compact line under the call,
-  // its door the answer's destination. The Turn tail is the turn card below
-  // (the same shell, the game's report as its body), which already names
-  // every change of the turn — so the shell's own tail is not seated twice.
+  // game_open / game_publish show the one shell's line under the call, its
+  // door the answer's destination. The Turn tail is the turn summary below,
+  // which already names every change of the turn — so the shell's own tail
+  // is not seated twice.
   const cardFace: CardFace = {
     copy: () => ({ kind: t('desk.kind'), running: t('card.running'), failed: t('card.failed'), open: t('card.open') }),
     go: () => destination => { go(destination.params as unknown as GameNavParams) },
@@ -296,27 +296,25 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     { owner: '@khorsheed/dsh-game', tools: ['game_open', 'game_publish'], locale: NS, face: () => cardFace, turnTail: false },
   )
 
-  // The turn card: what each agent turn changed in the game, beneath the
-  // turn's closing prose (outside the fold), with jumps into the tab.
-  ctx.effect(() => seats.inject('conversation.chat.turnTail', () => {
-    const conversation = (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as {
-      events?: { register?: (definition: unknown) => () => void }
-    } | undefined
-    const register = conversation?.events?.register
-    if (register === undefined) return () => undefined
-    const disposeDefinition = register.call(conversation?.events, gameTurnDefinition)
-    const disposeEntry = seats.register({
-      name: 'conversation.chat.turnTail',
-      id: '@khorsheed/dsh-game/turn',
-      order: 45,
+  // The turn summary: what each agent turn changed in the game, beneath the
+  // turn's closing prose (outside the fold). The shell draws it; the game only
+  // hands the lines (turn-summary.ts) — every line's door is the same `go`.
+  registerTurnSummary(
+    (body, label) => { ctx.effect(body, label) },
+    seats,
+    () => (ctx.get.bind(ctx) as (name: string) => unknown)('uiConversation') as { events?: { register?: (definition: unknown) => () => void } } | undefined,
+    {
+      owner: '@khorsheed/dsh-game',
+      kind: GAME_KIND,
       locale: NS,
-      inject: (): GameTabInjected => face,
-    }, GameTurnCard)
-    return () => {
-      disposeEntry()
-      disposeDefinition()
-    }
-  }), 'game: turn-tail card')
+      order: 45,
+      face: () => cardFace,
+      load: async ({ sessionId, turn }) => {
+        const result = await api.turnReport(sessionId as never, turn)
+        return result.ok && result.value !== null ? turnSummaryOf(result.value, t) : null
+      },
+    },
+  )
 
   // In a room, a member's game_open writes a room/desk-opened event into the
   // ROOM (../desk.ts): its row tells the room who opened which project. The
