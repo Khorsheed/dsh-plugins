@@ -662,17 +662,27 @@ describe('the three faces', () => {
 const FIVE: Row[] = [1, 2, 3, 4, 5].map(n => ({ chapter: chapter(n, `第${n}章`), phase: 'extracted' as const, body: '他推开门。' }))
 
 describe('the timeline, ideas, candidates and editing (2026-11-01)', () => {
-  it('draws the timeline by priority with the formula, and the chapter view switches to the table', async () => {
+  it('draws the timeline by priority, keeps the formula behind ⓘ, and 按章节 lists the same events by chapter', async () => {
     const remote = fakeRemote({ items: [], rows: FIVE })
+    remote.timeline.mockImplementation(() => ok({
+      ...TIMELINE,
+      past: [
+        { id: 'e7', title: '往事', status: 'happened', backstory: true, chapters: [2], when: '十年前', ideas: 0 },
+        { id: 'e8', title: '值夜', status: 'happened', chapters: [1], ideas: 0 },
+      ],
+    }))
     render(<TimelineView {...props(remote)} />)
     expect(await screen.findByText('赵启明推开门')).toBeTruthy()
     expect(screen.getByText('离时间窗口还有约 1 章')).toBeTruthy()
-    expect(screen.getByText(zh['tl.ruleHead'])).toBeTruthy()
+    expect(screen.queryByText(zh['tl.formula'])).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['tl.ruleHead'] }))
+    expect(screen.getByText(zh['tl.formula'])).toBeTruthy()
+    expect(screen.getByText('第 2 章才写到')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /赵启明推开门/ }))
     expect(await screen.findByText(zh['tl.V'])).toBeTruthy()
-    remote.storyLog = vi.fn(() => ok({ ok: true, chapters: [], foreshadows: [], characters: [], relations: [], world: [] }))
     fireEvent.click(screen.getByRole('button', { name: zh['tl.byChapter'] }))
-    await waitFor(() => { expect(remote.storyLog).toHaveBeenCalled() })
+    expect(await screen.findByText(zh['tl.flagBackstory'])).toBeTruthy()
+    expect(screen.getByRole('button', { name: /值夜/ })).toBeTruthy()
   })
 
   it("lists the next chapter's candidates in 章节 and saves 优先推进 / 本章屏蔽 as pins", async () => {

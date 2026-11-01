@@ -6,6 +6,7 @@
 }
 /* The one-page outline on 总览 reads at the codex's size, a step below the old 规划 page. */
 .stack { display: grid; gap: 16px; align-content: start; }
+.stack > *, .section > *, .onePage > * { min-width: 0; }
 .section { display: grid; gap: 10px; }
 .h3 { margin: 0; display: flex; gap: 8px; align-items: baseline; font: 600 var(--dsh-panel-text-meta, 13px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
 .h3Meta { font-weight: 400; color: var(--dsw-alias-label-tertiary); }
