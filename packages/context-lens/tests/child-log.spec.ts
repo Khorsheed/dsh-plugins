@@ -158,6 +158,23 @@ describe('child-log lane', () => {
     service.dispose()
   })
 
+  it('keeps the member log readable when historical timing throws synchronously', async () => {
+    const warnings: string[] = []
+    const reader = new FixtureReader(structuredClone(fixtureRows), undefined, 'child-fixture')
+    const { ctx, service } = await mount(reader, warnings)
+    ctx.provide('localAgent', {
+      memberModelTiming: () => { throw new Error('localAgent: unknown harness kimi-cli') },
+    })
+    const rootId = delegate(service, 'child-fixture', false)
+
+    const overview = await service.getTurn(rootId, 1)
+    const child = overview?.scopes.find(scope => scope.kind === 'subagent')
+    expect(child).toMatchObject({ scopeId: 'child-fixture', status: 'ok' })
+    expect(child?.requests).toHaveLength(3)
+    expect(warnings.filter(message => message.includes('child-fixture'))).toEqual([])
+    service.dispose()
+  })
+
   it('keeps member requests bodiless and rebuilds one body when it is read', async () => {
     const reader = new FixtureReader(structuredClone(fixtureRows), undefined, 'child-fixture')
     const { service } = await mount(reader)

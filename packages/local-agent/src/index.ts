@@ -1731,8 +1731,9 @@ export class LocalAgentRegistry {
   memberModelTiming(childSessionId: string): Promise<LocalAgentMemberModelTiming | undefined> {
     const record = this.getDelegation(childSessionId)
     if (record === undefined) return Promise.resolve(undefined)
-    const harness = this.requireHarness(record.provider)
-    return harness.timing?.read(this.homeDir(record.provider, record.scope), record.cliSessionId)
+    const harness = this.harnessForProvider(record.provider)
+    if (harness === undefined) return Promise.resolve(undefined)
+    return harness.timing?.read(this.homeDir(harness.name, record.scope), record.cliSessionId)
       ?? Promise.resolve(undefined)
   }
 

@@ -369,8 +369,7 @@ export class InspectorService {
     let pending = this.memberTimingCache.get(sessionId)
     if (pending === undefined) {
       const localAgent = this.ctx.get('localAgent') as MemberTimingReader | undefined
-      pending = localAgent?.memberModelTiming?.(sessionId).catch(() => undefined)
-        ?? Promise.resolve(undefined)
+      pending = Promise.resolve().then(() => localAgent?.memberModelTiming?.(sessionId)).catch(() => undefined)
       this.memberTimingCache.set(sessionId, pending)
     }
     return pending
