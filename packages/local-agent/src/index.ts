@@ -236,14 +236,14 @@ export function establishSubagentCatalogChild(
  * Persist a delegated child session's events, the family providers' one entry
  * point after every mirror pass. Two paths:
  *
- * - **live session + a core with {@link LocalAgentRegistry.syncChildSession}**
- *   (the production wiring): delegate to the registry, which syncs through
+ * - **live session + the family core provided** (the production wiring):
+ *   delegate to {@link LocalAgentRegistry.syncChildSession}, which syncs through
  *   its cached per-child write handle — the same handle the reattach recipe
  *   holds, so live write routing and the explicit suffix sync share one
  *   owner and never collide on SessionAlreadyOwnedError. The registry
  *   downgrades a sync failure to a warn, so this path never throws.
- * - **anything else** (standalone tests, ad-hoc mirrors, a core predating
- *   syncChildSession): a one-shot handle flow — claim the write handle
+ * - **anything else** (standalone tests, ad-hoc mirrors, no core provided):
+ *   a one-shot handle flow — claim the write handle
  *   (creating the stored session on first persist), append only the unstored
  *   suffix (re-appending the full snapshot violates the contiguous-seq
  *   contract), flush, close. There is deliberately NO live-session skip:
@@ -258,8 +258,8 @@ export function establishSubagentCatalogChild(
 export async function persistChildSession(ctx: Context, childSession: Session): Promise<void> {
   const sessions = ctx.get('sessions')
   if (sessions !== undefined && sessions.get(childSession.id) !== undefined) {
-    const registry = ctx.get('localAgent') as unknown as { syncChildSession?: (session: Session) => Promise<void> } | undefined
-    if (registry?.syncChildSession !== undefined) {
+    const registry = ctx.get('localAgent') as LocalAgentRegistry | undefined
+    if (registry !== undefined) {
       await registry.syncChildSession(childSession)
       return
     }
@@ -2766,9 +2766,7 @@ export class LocalAgentRegistry {
       // the strict reader rejects the whole log. Close it the way the agent
       // loop's own resume does: synthetic closers (missing tool errors,
       // step/end, an `interrupted` turn/end) appended through the handle.
-      // Older hosts without the helper keep the previous behavior.
-      const closeOpenTurn = (sessionModule as { interruptedTurnClosers?: (events: readonly SessionEvent[]) => SessionEvent[] }).interruptedTurnClosers
-      const closers = closeOpenTurn === undefined ? [] : closeOpenTurn(cold.events)
+      const closers = sessionModule.interruptedTurnClosers(cold.events)
       if (closers.length > 0) await handle.append(closers)
       const session = sessions.prepare(SessionId(childSessionId), {
         seed: [...cold.events, ...closers],

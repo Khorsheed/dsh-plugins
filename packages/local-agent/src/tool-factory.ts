@@ -304,10 +304,8 @@ export function mountSubagentDelegationTool(ctx: Context, config: SubagentToolCo
         } else if (resume !== undefined) {
           // A host restart evicts the child session from the live store, and
           // the tool starts runs directly (no facade) — reattach it here or
-          // the provider refuses the resume as "not live". Duck-typed: a core
-          // predating ensureChildLive keeps the old loud refusal.
-          const live = ctx.localAgent as unknown as { ensureChildLive?: (childSessionId: string) => Promise<void> }
-          await live.ensureChildLive?.(resumeHandle)
+          // the provider refuses the resume as "not live".
+          await ctx.localAgent.ensureChildLive(resumeHandle)
           ctx.localAgent.stageDelegationIntent(parentSessionId, config.provider, {
             kind: 'resume',
             childSessionId: resumeHandle,
@@ -352,19 +350,13 @@ export function mountSubagentDelegationTool(ctx: Context, config: SubagentToolCo
         // <childSessionId>` — and the taskpilot stop button that dispatches
         // it — can cancel a tool-started delegation. The tool starts runs
         // directly (not through the facade), so without this registration the
-        // stop command would miss them. Declare-and-degrade: a core that
-        // predates the registry simply leaves the run untracked, as before.
-        const registry = ctx.localAgent as unknown as {
-          trackDelegationRun?: (childSessionId: string, run: SubagentRun, cancel: () => void) => void
-        }
-        if (typeof registry.trackDelegationRun === 'function') {
-          registry.trackDelegationRun(childSessionId, run, () => {
-            controller.abort()
-            void dispose().catch((error: unknown) => {
-              ctx.logger.warn(`subagent tool: stop disposal of ${childSessionId} failed: ${String(error)}`)
-            })
+        // stop command would miss them.
+        ctx.localAgent.trackDelegationRun(childSessionId, run, () => {
+          controller.abort()
+          void dispose().catch((error: unknown) => {
+            ctx.logger.warn(`subagent tool: stop disposal of ${childSessionId} failed: ${String(error)}`)
           })
-        }
+        })
         const settled = await settleForegroundRun(run)
         if (resume === undefined) {
           // Fresh delegation: self-describe the resume handle (the dsh child

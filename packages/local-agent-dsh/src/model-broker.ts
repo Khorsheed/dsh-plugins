@@ -117,12 +117,9 @@ export class DshModelBroker implements LocalAgentModelBroker {
     for await (const _snapshot of this.deps.catalog.follow(signal)) yield await this.modelDirectory(childSessionId)
   }
 
-  /** The member's in-flight rounds (an empty answer on a core that predates the read). */
+  /** The member's in-flight rounds. */
   private activeDelegations(): readonly string[] {
-    const registry = this.deps.ctx.localAgent as unknown as {
-      activeDelegations?: () => readonly string[]
-    }
-    return typeof registry.activeDelegations === 'function' ? registry.activeDelegations() : []
+    return this.deps.ctx.localAgent.activeDelegations()
   }
 
   /** The model the member's NEXT spawn binds explicitly: override → recorded → settings. */

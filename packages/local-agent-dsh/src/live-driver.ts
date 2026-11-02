@@ -928,14 +928,13 @@ export class DshLiveDriver {
             // drive's half of the exec path's settle-mirror report: the
             // sub-dsh session's own model attribution, the round's usage and
             // tool-call accounting, each absent when the round's events name
-            // none. Degrades silently on a core predating recordRoundSettled.
+            // none.
             const round = {
               ...delta.observedModel === undefined ? {} : { observedModel: delta.observedModel },
               ...delta.usage === undefined ? {} : { usage: delta.usage },
               ...delta.toolCalls === undefined ? {} : { toolCalls: delta.toolCalls },
             }
-            const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
-            registry?.recordRoundSettled?.(childSession.id, round)
+            localAgent.recordRoundSettled(childSession.id, round)
           }
         } catch (error) {
           this.ctx.logger.warn(`subagent-dsh: live settle mirror failed: ${thrown(error).message}`)
