@@ -17,31 +17,24 @@ import { apply } from '../src/index.ts'
 import { DshLiveDriver } from '../src/live-driver.ts'
 import type { DshLiveSettings } from '../src/live-switch.ts'
 
-/** A fake settings service: register captures the scope; set() drives watch. */
-function fakeSettings(initial: DshLiveSettings) {
-  let value = initial
-  const watchers: ((next: DshLiveSettings, prev: DshLiveSettings) => void)[] = []
-  const registrations: unknown[] = []
+/** The settings fields the row config carries as volatile references. */
+const SETTINGS_KEYS = ['enabled', 'live', 'liveMirrorGranularity', 'model', 'recentModels'] as const
+
+/**
+ * A fake of the host's row-config settings: each settings field is a
+ * volatile `{ get() }` reference over one mutable document; set() merges
+ * into the document and emits `settings/document-updated` for the row id.
+ */
+function fakeSettings(ctx: Context, initial: DshLiveSettings) {
+  let value: Record<string, unknown> = { ...initial }
+  const refs: Record<string, { get(): unknown }> = {}
+  for (const key of SETTINGS_KEYS) refs[key] = { get: () => value[key] }
   return {
-    registrations,
-    service: {
-      register: (ns: unknown, schema: unknown, options?: unknown) => {
-        registrations.push({ ns, schema, options })
-        return {
-          get: () => value,
-          watch: (cb: (next: DshLiveSettings, prev: DshLiveSettings) => void) => {
-            watchers.push(cb)
-            return () => {}
-          },
-          update: async () => {},
-          replace: async () => {},
-        }
-      },
-    },
+    refs,
+    service: {},
     set(next: Partial<DshLiveSettings>): void {
-      const prev = value
       value = { ...value, ...next }
-      for (const watch of watchers) watch(value, prev)
+      ;(ctx.emit as (name: string, ...args: unknown[]) => void)('settings/document-updated', 'local-agent-dsh', 1)
     },
   }
 }
@@ -66,7 +59,10 @@ function mount(
   const providers: unknown[] = []
   const mountedTools: unknown[] = []
   const home = mkdtempSync(join(tmpdir(), 'dsh-apply-home-'))
-  const settings = fakeSettings({ enabled: false, live: false, liveMirrorGranularity: 'event', ...initial })
+  // The row config IS the settings document: settings keys handed in through
+  // `config` seed it, `initial` layers on top (a test's direct settings).
+  const fromConfig = Object.fromEntries(SETTINGS_KEYS.filter(key => config[key] !== undefined).map(key => [key, config[key]]))
+  const settings = fakeSettings(ctx, { enabled: false, live: false, liveMirrorGranularity: 'event', ...fromConfig, ...initial } as DshLiveSettings)
   let resolveLive: Mount['resolveLive'] = () => undefined
   ctx.provide('localAgent', {
     homeDir: () => home,
@@ -93,7 +89,7 @@ function mount(
       onFulfilled({ dispose: () => Promise.resolve() })
     } }
   }) as never
-  apply(ctx, config as never)
+  apply(ctx, { ...config, ...settings.refs } as never)
   return { ctx, registered, providers, mountedTools, settings, resolveLive: id => resolveLive(id) }
 }
 
@@ -184,23 +180,16 @@ describe('local-agent-dsh toggle controller', () => {
     expect(providers).toHaveLength(1)
   })
 
-  it('registers the settings namespace with an empty base for a bare config', () => {
-    const { settings } = mount()
-    expect(settings.registrations).toHaveLength(1)
-    const registration = settings.registrations[0] as { ns: unknown; options?: { base?: object } }
-    expect(String(registration.ns)).toBe('local-agent-dsh')
-    // A bare config leaves the base empty: the schema defaults rule.
-    expect(registration.options?.base).toEqual({})
+  it('serves the settings from the row config (the YAML value rules)', () => {
+    const { providers, resolveLive } = mount({}, { live: true, liveMirrorGranularity: 'token' })
+    expect(providers).toHaveLength(1)
+    expect(resolveLive('child-x')).toBeInstanceOf(DshLiveDriver)
   })
 
-  it('carries the YAML config into the composition base (settings unset → YAML rules)', () => {
-    const { settings, providers } = mount({ enabled: true }, { live: true, liveMirrorGranularity: 'token' })
-    const registration = settings.registrations[0] as { options?: { base?: object } }
-    expect(registration.options?.base).toEqual({ live: true, liveMirrorGranularity: 'token' })
-    // The fake settings service starts at live:false, so no driver is built —
-    // on the real host the scope resolves base ← user, and this base would
-    // turn live on. What we pin here is the base payload itself.
-    expect(providers).toHaveLength(1)
+  it('ignores a document update for another row', () => {
+    const { ctx, resolveLive } = mount({ live: false })
+    ;(ctx.emit as (name: string, ...args: unknown[]) => void)('settings/document-updated', 'local-agent-kimi', 1)
+    expect(resolveLive('child-x')).toBeUndefined()
   })
 
   it('builds the live driver whatever a leftover enabled field says', () => {

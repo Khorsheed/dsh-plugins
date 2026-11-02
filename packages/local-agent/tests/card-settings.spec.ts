@@ -28,7 +28,7 @@ describe('settings face over the card store', () => {
       on: () => () => {},
     }
     const face = settingsFace<{ live: boolean; model?: string }>(ctx as never, {
-      namespace: 'local-agent-x', legacySchema: undefined, legacyBase: {}, read: () => ({ live: true, model: 'row' }), harness: 'x',
+      namespace: 'local-agent-x', read: () => ({ live: true, model: 'row' }), harness: 'x',
     })
     expect(face.get()).toEqual({ live: true, model: 'row' })
     const seen = vi.fn()

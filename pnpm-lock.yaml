@@ -1747,7 +1747,7 @@ importers:
         specifier: 0.2.1-rc.5
         version: 0.2.1-rc.5(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.1-rc.5(@deepseek-ai/cordis@4.0.4))
       '@deepseek-ai/schemastery':
-        specifier: ^3.18.1
+        specifier: ^3.18.4
         version: 3.18.4
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*
@@ -1835,7 +1835,7 @@ importers:
         specifier: 0.2.1-rc.5
         version: 0.2.1-rc.5(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.1-rc.5(@deepseek-ai/cordis@4.0.4))
       '@deepseek-ai/schemastery':
-        specifier: ^3.18.1
+        specifier: ^3.18.4
         version: 3.18.4
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*
@@ -1914,7 +1914,7 @@ importers:
   packages/local-agent-dsh:
     dependencies:
       '@deepseek-ai/schemastery':
-        specifier: ^3.18.1
+        specifier: ^3.18.4
         version: 3.18.4
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*
@@ -2084,7 +2084,7 @@ importers:
         specifier: 0.2.1-rc.5
         version: 0.2.1-rc.5(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.1-rc.5(@deepseek-ai/cordis@4.0.4))
       '@deepseek-ai/schemastery':
-        specifier: ^3.18.1
+        specifier: ^3.18.4
         version: 3.18.4
       '@khorsheed/dsh-local-agent':
         specifier: workspace:*

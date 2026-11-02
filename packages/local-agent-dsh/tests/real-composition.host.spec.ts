@@ -30,10 +30,9 @@ afterEach(async () => {
   vi.restoreAllMocks()
 })
 
-/** Boot the real composition with the DeepSeek toggle at a given state. */
-async function boot(initialEnabled: boolean): Promise<{
+/** Boot the real composition with the given provider row config. */
+async function boot(rowConfig: Record<string, unknown>): Promise<{
   ctx: Context
-  setEnabled: (enabled: boolean) => void
   parent: Agent
 }> {
   const ctx = new Context()
@@ -54,25 +53,13 @@ async function boot(initialEnabled: boolean): Promise<{
   await ctx.plugin(localAgentCore, { homesRoot: mkdtempSync(join(tmpdir(), 'dsh-realcomp-')) })
   // External faces the controller reads; subprocess spawn is never exercised
   // (no delegation is started in this spec).
-  let current = { enabled: initialEnabled }
-  const watchers: Array<(next: { enabled: boolean }) => void> = []
-  ctx.provide('settings', {
-    register: () => ({
-      get: () => current,
-      watch: (callback: (next: { enabled: boolean }) => void) => {
-        watchers.push(callback)
-        return () => { watchers.splice(watchers.indexOf(callback), 1) }
-      },
-      update: async () => {},
-      replace: async () => {},
-    }),
-  })
+  ctx.provide('settings', {})
   ctx.provide('credentials', { resolve: async () => undefined })
   ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in real-composition test') } })
   ctx.provide('logger', { warn: () => {}, info: () => {}, error: () => {} })
   // The controller module carries `inject`; a bare function would mount
   // without the injected service scope and fail on ctx.localAgent.
-  await ctx.plugin(localAgentDsh, {})
+  await ctx.plugin(localAgentDsh, rowConfig)
   disposers.push(async () => { await ctx.fiber.dispose() })
   // The activation probe's exact live parent (host 0.2.1 startActivation
   // compares identity against the registry); its session carries no cwd, so
@@ -81,14 +68,7 @@ async function boot(initialEnabled: boolean): Promise<{
   const id = SessionId('parent-1')
   const parent = { id, session: { id, header: {} } } as unknown as Agent
   ctx.agents.enter(parent, undefined)
-  return {
-    ctx,
-    parent,
-    setEnabled: (enabled) => {
-      current = { enabled }
-      for (const watcher of [...watchers]) watcher(current)
-    },
-  }
+  return { ctx, parent }
 }
 
 /** A caller-delivered activation probe: a REGISTERED dsh-cli provider reaches the
@@ -106,7 +86,8 @@ function startDshCli(ctx: Context, parent: Agent): Promise<unknown> {
 
 describe('local-agent-dsh (real composition)', () => {
   it('registers the harness and provider even when the profile still says enabled: false; ./tool grants the tool; the card store drives live', async () => {
-    const { ctx, setEnabled, parent } = await boot(false)
+    // A profile row written while the switch existed still carries the key.
+    const { ctx, parent } = await boot({ enabled: false, live: false })
 
     // Always on: harness registered in the real registry, provider
     // dispatchable; the tool is NOT at the root (a preset grants ./tool).
@@ -120,14 +101,9 @@ describe('local-agent-dsh (real composition)', () => {
     await vi.waitFor(() => { expect(ctx.tools.get('subagent_dsh')).toBeDefined() }, { timeout: 5000 })
     await expect(startDshCli(ctx, parent)).rejects.toThrow('no working directory')
 
-    // A leftover enabled write changes nothing.
-    setEnabled(false)
-    await new Promise(resolve => setTimeout(resolve, 20))
-    expect(ctx.localAgent.get('dsh')).toBeDefined()
-
     // The card's writes go to the harness's own store, not the profile patch,
     // and win over the row config on the next read; clearing falls back to it
-    // (this fixture's row carries no live, so exec).
+    // (this fixture's row says live: false, so exec).
     const harness = ctx.localAgent.get('dsh')!
     const home = ctx.localAgent.homeDir('dsh')
     expect((await harness.effectiveSettings!(home)).drive).toBe('exec')

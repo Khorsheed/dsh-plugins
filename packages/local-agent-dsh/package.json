@@ -84,7 +84,7 @@
     "dsh": ">=0.1.5-rc.1 <0.3.0-0"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.1",
+    "@deepseek-ai/schemastery": "^3.18.4",
     "@khorsheed/dsh-local-agent": "workspace:*",
     "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
     "js-yaml": "^4.3.1"

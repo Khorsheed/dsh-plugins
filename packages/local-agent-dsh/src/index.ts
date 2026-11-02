@@ -121,34 +121,14 @@ export interface LocalAgentDshConfig {
 /**
  * Runtime schema so the Loader always passes an object, never undefined.
  * The settings fields (`enabled`, `live`, `liveMirrorGranularity`, `model`,
- * `recentModels`) ride the same schema, marked `.volatile()` where the host's
- * schemastery has it (3.18.4+, the rc.1 line — probed, never sniffed): there
- * the SettingsForms writes hot-track the running fiber's Volatile references
- * without a remount, and the official one-shot import moves an old
- * settings.yaml section into this row's config. On 0.1.5 the call is absent,
- * the fields stay plain config keys (a semantic superset — the profile row
- * can now preset them too), and the legacy settings namespace below carries
- * the user layer exactly as before.
+ * `recentModels`) ride the same schema marked `.volatile()`: the
+ * SettingsForms writes hot-track the running fiber's Volatile references
+ * without a remount.
  *
  * Bare `z` annotation: `z<LocalAgentDshConfig>` fails schemastery 3.18.4's
  * variance under exactOptionalPropertyTypes (TS2375) and dropping the
  * annotation trips TS2742; the interface stays the apply signature's contract.
  */
-const SETTINGS_FIELDS = {
-  enabled: z.boolean().default(false),
-  live: z.boolean().default(true),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
-  // `model` deliberately carries NO default: an unset key must resolve to
-  // undefined, which is what keeps the pre-key behavior byte-identical.
-  model: z.string(),
-  recentModels: z.array(z.string()).default([]),
-}
-
-/** Mark one schema field volatile when the host's schemastery has the method (rc.1), pass it through plain when not (0.1.5). */
-function volatilize<S extends { volatile?: unknown }>(field: S): S {
-  return typeof field.volatile === 'function' ? (field.volatile as () => S)() : field
-}
-
 export const Config: z = z.object({
   profileName: z.string().default(DEFAULT_SUB_PROFILE_NAME),
   apiKeyRef: z.string(),
@@ -156,30 +136,21 @@ export const Config: z = z.object({
   headlessBundleDir: z.string(),
   unitHeadlessBundleDir: z.string(),
   permissions: z.union([z.const('read-only'), z.const('workspace-write'), z.const('danger-full-access')]),
-  model: volatilize(SETTINGS_FIELDS.model),
-  live: volatilize(SETTINGS_FIELDS.live),
+  // `model` deliberately carries NO default: an unset key must resolve to
+  // undefined, which is what keeps the pre-key behavior byte-identical.
+  model: z.string().volatile(),
+  live: z.boolean().default(true).volatile(),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
-  liveMirrorGranularity: volatilize(SETTINGS_FIELDS.liveMirrorGranularity),
-  enabled: volatilize(SETTINGS_FIELDS.enabled),
-  recentModels: volatilize(SETTINGS_FIELDS.recentModels),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token').volatile(),
+  enabled: z.boolean().default(false).volatile(),
+  recentModels: z.array(z.string()).default([]).volatile(),
 })
 
 /**
- * Settings namespace owning the DeepSeek toggle and the live preferences. On
- * 0.1.5 the Cordis config feeds the namespace's composition `base` layer, so
- * a field absent from the user layer inherits the YAML value — the settings
- * card only ever stores deliberate overrides. On rc.1 the namespace is the
- * plugin row id itself: the row config IS the document, and the settings
- * form's user layer rides the profile patch.
+ * The settings row id: the namespace `settings/document-updated` emits for
+ * this provider (the row config IS the settings document).
  */
-export const DSH_SETTINGS_NAMESPACE = 'local-agent-dsh'
-
-/**
- * The card's 0.1.5 schema: `enabled` OFF (default) means the official
- * in-process subagent stays the only delegation path; the live fields mirror
- * the YAML config's deployment defaults through the composition base.
- */
-const DSH_SETTINGS_SCHEMA = z.object(SETTINGS_FIELDS)
+const SETTINGS_NAMESPACE = 'local-agent-dsh'
 
 /** The resolved settings the controller and the live switch consume. */
 export interface DshSettings {
@@ -204,10 +175,9 @@ export interface DshSettings {
  */
 export function apply(ctx: Context, config: LocalAgentDshConfig): void {
   ctx.effect(() => {
-    // The settings face hides the two host lines: 0.1.5 serves the legacy
-    // namespace scope (register + base); rc.1 reads the row config's volatile
-    // fields and re-reads on `settings/document-updated`. Both hot-apply the
-    // card's writes without a reload.
+    // The settings face reads the row config's volatile fields and re-reads
+    // on `settings/document-updated`, hot-applying the card's writes without
+    // a reload.
     const readSettings = (): DshSettings => ({
       enabled: vol(config.enabled) ?? false,
       live: vol(config.live) ?? true,
@@ -215,17 +185,10 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       model: vol(config.model),
       recentModels: vol(config.recentModels) ?? [],
     })
-    const legacyBase: Record<string, unknown> = {}
-    for (const field of ['enabled', 'live', 'liveMirrorGranularity', 'model'] as const) {
-      const value = vol(config[field])
-      if (value !== undefined) legacyBase[field] = value
-    }
     const face = settingsFace<DshSettings>(ctx, {
-      namespace: DSH_SETTINGS_NAMESPACE,
+      namespace: SETTINGS_NAMESPACE,
       // Card writes live in the harness's own store (card-settings.ts), never the profile patch.
       harness: 'dsh',
-      legacySchema: DSH_SETTINGS_SCHEMA,
-      legacyBase,
       read: readSettings,
     })
     // Read PER ROUND, not captured at apply: the settings card writes the same

@@ -1,18 +1,9 @@
 /**
- * Dual-line client settings scope for the family settings cards: one
- * snapshot/write contract over the two host client generations, probed by
- * capability, never by version.
- *
- * - 0.1.5: `ctx.settingsScope.bind({ namespace })` — the removed
- *   `SettingsScope` face.
- * - 0.1.7-rc.1: `ctx.configForms.get(entryId)` — the `ConfigForm` controller
- *   (`packages/client/ui-settings/src/client/config-form.ts`), keyed by the
- *   plugin row id, which is the same string the 0.1.5 namespace used.
- *
- * Both are snapshot stores with ordered field writes, so the cards consume
- * one structural type. The 0.1.5 card keeps reading old `settings.yaml`
- * values through the legacy arm; on rc.1 the official one-shot import has
- * already moved the same-named section into the row's config.
+ * Client settings scope for the family settings cards: one snapshot/write
+ * contract over the host's `ctx.configForms.get(entryId)` — the `ConfigForm`
+ * controller (`packages/client/ui-settings/src/client/config-form.ts`),
+ * keyed by the plugin row id. It is a snapshot store with ordered field
+ * writes, which the cards consume through one structural type.
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -53,25 +44,20 @@ export interface SettingsScope<T> {
   unset(field: string): Promise<unknown>
 }
 
-/** The rc.1 settings client face, structurally probed (`configForms` exists only there). */
+/** The settings client face, structurally probed. */
 interface ConfigFormsFace {
   get<T>(entryId: string): SettingsScope<T>
 }
 
-/** The 0.1.5 settings client face, structurally probed (`settingsScope` was removed in rc.1). */
-interface LegacySettingsScopeBinder {
-  bind<T>(spec: { namespace: string }): SettingsScope<T>
-}
-
 /**
  * Observable channel behind the card's settings face: delegates to the armed
- * line scope and republishes on arming, reporting the degraded face until
- * either host line's deferred probe arms it. The channel exists because the
- * line probe cannot run as a direct property read — cordis 4.0.4's
- * service-access guard throws `cannot get property "<name>" without inject`
- * on any undeclared `ctx.<service>` touch, and neither service name exists on
- * the other host line, so a static inject would pend there; `ctx.inject` +
- * `ctx.get` is the only probe that is safe on both.
+ * scope and republishes on arming, reporting the degraded face until the
+ * deferred `configForms` probe arms it. The channel exists because the probe
+ * cannot run as a direct property read — cordis 4.0.4's service-access guard
+ * throws `cannot get property "<name>" without inject` on any undeclared
+ * `ctx.<service>` touch, and a static inject would leave the provider
+ * pending in a composition without the settings client; `ctx.inject` +
+ * `ctx.get` keeps it alive and degraded instead.
  */
 class SettingsScopeChannel<T> implements SettingsScope<T> {
   private inner: SettingsScope<T> = unavailableSettingsScope<T>()
@@ -88,7 +74,7 @@ class SettingsScopeChannel<T> implements SettingsScope<T> {
 
   readonly unset = (field: string): Promise<unknown> => this.inner.unset(field)
 
-  /** Bind the line-served scope; the first arm wins (the two lines never coexist). */
+  /** Bind the served scope. */
   arm(scope: SettingsScope<T>): void {
     this.inner = scope
     scope.subscribe(() => { this.emit() })
@@ -125,17 +111,15 @@ export function unavailableSettingsScope<T>(): SettingsScope<T> {
 }
 
 /**
- * Bind the provider row's settings scope on the host line actually serving.
- * Returns the channel synchronously; both line probes ride deferred injects,
- * so the serving line's arm fires as soon as its settings service is up (the
- * settings client package is a declared client inject of every family
- * provider, so in a normal composition arming lands immediately) and a
- * provider mounting first still gets armed later. Absent both — a broken
- * composition — the channel keeps the card on the degraded face, alive and
- * disabled.
+ * Bind the provider row's settings scope. Returns the channel synchronously;
+ * the `configForms` probe rides a deferred inject, so the arm fires as soon
+ * as the settings service is up (the settings client package is a declared
+ * client inject of every family provider, so in a normal composition arming
+ * lands immediately) and a provider mounting first still gets armed later.
+ * Absent the service — a broken composition — the channel keeps the card on
+ * the degraded face, alive and disabled.
  * @param ctx - the provider's client context.
- * @param entryId - the plugin row id (`local-agent-dsh` and friends), the
- *   same string the 0.1.5 namespace used.
+ * @param entryId - the plugin row id (`local-agent-dsh` and friends).
  * @returns the bound scope channel.
  */
 export function bindSettingsScope<T>(ctx: Context, entryId: string): SettingsScope<T> {
@@ -143,10 +127,6 @@ export function bindSettingsScope<T>(ctx: Context, entryId: string): SettingsSco
   ctx.inject(['configForms'], (formsCtx) => {
     const forms = formsCtx.get('configForms') as ConfigFormsFace | undefined
     if (typeof forms?.get === 'function') channel.arm(forms.get<T>(entryId))
-  })
-  ctx.inject(['settingsScope'], (legacyCtx) => {
-    const legacy = legacyCtx.get('settingsScope') as LegacySettingsScopeBinder | undefined
-    if (typeof legacy?.bind === 'function') channel.arm(legacy.bind<T>({ namespace: entryId }))
   })
   return channel
 }
