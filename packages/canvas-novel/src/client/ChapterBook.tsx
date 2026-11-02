@@ -7,7 +7,7 @@
  * planned chapter in its phase's color (a gap where the goal's segment ends),
  * the goal's current segment (the whole goal folds behind it), and the
  * chapters with a one-line recap; a state shows only when it needs something.
- * 新建第 N 章 offers your own manuscript or an Agent plan in the last row. The 全部 / 待处理 / 未对账 chips appear
+ * Import and 新建第 N 章 live in the toolbar; a lightweight new-chapter menu also follows the list. The 全部 / 待处理 / 未对账 chips appear
  * on a long book only. A row opens the chapter reader in place; the reader's
  * 目录 comes back here. A work without chapters tells the canvas (`onEmpty`),
  * which then opens on 设定.
@@ -21,7 +21,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Menu, Modal, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ChipRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { NOVEL_GENRE_ID, volumeNumeral, type ChapterRow, type EffectiveChapterPhase } from '../types.ts'
 import { goalSegments } from './PlanView.tsx'
@@ -130,8 +130,7 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
     return (
       <div className={css.book} data-canvas-scroll="novel-book">
         <div className={css.bookEmpty}>{t('toc.empty')}</div>
-        <ImportNovel {...surface} />
-        <NewOwnChapter {...surface} n={1} onPlan={sessionId !== undefined && rest.sendToConversation !== undefined ? () => { rest.sendToConversation?.(sessionId, t('cand.planAsk', { n: 1 })) } : undefined} onCreated={n => { onRead(n, true) }} />
+        <ChapterActions {...surface} n={1} onPlan={sessionId !== undefined && rest.sendToConversation !== undefined ? () => { rest.sendToConversation?.(sessionId, t('cand.planAsk', { n: 1 })) } : undefined} onCreated={n => { onRead(n, true) }} />
       </div>
     )
   }
@@ -231,15 +230,20 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
           )
         })}
       </section>
-      {rows.length > FILTER_FROM && (
-        <ChipRow<Filter>
-          className={css.filters}
-          label={t('toc.filter.label')}
-          value={filter}
-          onSelect={setFilter}
-          chips={([['all', rows.length], ['todo', rows.filter(item => needsPerson(item, pending)).length], ['open', rows.filter(item => !settled(item.phase)).length]] as const).map(([id, count]) => ({ id, label: t(`toc.filter.${id}Label`), count }))}
-        />
-      )}
+      <div className={book.tocBar}>
+        {rows.length > FILTER_FROM
+          ? (
+            <ChipRow<Filter>
+              className={css.filters}
+              label={t('toc.filter.label')}
+              value={filter}
+              onSelect={setFilter}
+              chips={([['all', rows.length], ['todo', rows.filter(item => needsPerson(item, pending)).length], ['open', rows.filter(item => !settled(item.phase)).length]] as const).map(([id, count]) => ({ id, label: t(`toc.filter.${id}Label`), count }))}
+            />
+          )
+          : <span />}
+        <ChapterActions {...surface} n={nextN} onPlan={canSend ? () => { send(t('cand.planAsk', { n: nextN })) } : undefined} onCreated={n => { onRead(n, true) }} />
+      </div>
       {filter !== 'all' ? (
         <div className={book.chs}>
           {(filter === 'todo' ? rows.filter(item => needsPerson(item, pending)) : rows.filter(item => !settled(item.phase))).map(row)}
@@ -290,8 +294,7 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
             {isOpen && (
               <div className={book.chs}>
                 {group.map(row)}
-                {index === lastGroup && <ImportNovel {...surface} />}
-                {index === lastGroup && <NewOwnChapter {...surface} n={nextN} onPlan={canSend ? () => { send(t('cand.planAsk', { n: nextN })) } : undefined} onCreated={n => { onRead(n, true) }} />}
+                {index === lastGroup && <NewOwnChapter {...surface} n={nextN} variant="row" onPlan={canSend ? () => { send(t('cand.planAsk', { n: nextN })) } : undefined} onCreated={n => { onRead(n, true) }} />}
               </div>
             )}
           </section>
@@ -357,47 +360,92 @@ function NextCandidates(props: NovelSurfaceProps & { readonly chapter: number; r
   )
 }
 
-/** 新建第 N 章: choose your own manuscript or an Agent plan; your own manuscript asks for a title first. */
-function NewOwnChapter(props: NovelSurfaceProps & { readonly n: number; readonly onCreated: (n: number) => void; readonly onPlan?: (() => void) | undefined }): ReactNode {
+type NewChapterProps = NovelSurfaceProps & {
+  readonly n: number
+  readonly onCreated: (n: number) => void
+  readonly onPlan?: (() => void) | undefined
+  readonly variant?: 'button' | 'row'
+}
+
+/** Import and new-chapter commands belong to the book, not to the last chapter row. */
+function ChapterActions(props: NewChapterProps): ReactNode {
+  return (
+    <div className={book.tocActions}>
+      <ImportNovel {...props} />
+      <NewOwnChapter {...props} />
+    </div>
+  )
+}
+
+/** 新建第 N 章: the same own-manuscript or Agent-plan menu at the top and after the list. */
+function NewOwnChapter(props: NewChapterProps): ReactNode {
   const { canvasId, remote, sessionId, navigate, t } = props
+  const variant = props.variant ?? 'button'
   const api = remote()
+  const [menuOpen, setMenuOpen] = useState(false)
   const [title, setTitle] = useState<string | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   if (api === undefined || sessionId === undefined) return null
-  if (title === null) {
-    return (
-      <div className={book.chAdd}>
-        <span className={book.chNo}>＋</span>
-        <span className={book.chAddText}>{t('toc.newChapter', { n: props.n })}<small>{t('toc.newChoices')}</small></span>
-        <span className={book.chAddActions}>
-          <Button size="sm" variant="outline" onClick={() => { setTitle('') }}>{t('toc.newOwnAction')}</Button>
-          {props.onPlan !== undefined && <Button size="sm" variant="outline" onClick={props.onPlan}>{t('cand.plan', { n: props.n })}</Button>}
-        </span>
-      </div>
-    )
+  const items: MenuEntry[] = [
+    { id: 'own', label: t('toc.newOwnAction') },
+    ...(props.onPlan === undefined ? [] : [{ id: 'plan', label: t('cand.plan', { n: props.n }) }]),
+  ]
+  const create = (): void => {
+    if (title === null) return
+    void api.newOwnChapter(sessionId, { canvasId, title: title.trim() }).then(result => {
+      if (!result.ok) { setFailure(t('error.generic', { message: result.error.message })); return }
+      if (!result.value.ok || result.value.n === undefined) { setFailure(t('error.generic', { message: result.value.error ?? '' })); return }
+      navigate.refresh()
+      setTitle(null)
+      props.onCreated(result.value.n)
+    }).catch((error: unknown) => {
+      setFailure(t('error.generic', { message: error instanceof Error ? error.message : String(error) }))
+    })
   }
   return (
-    <div className={book.ownRow}>
-      <input className={css.ownInput} aria-label={t('toc.newOwnTitle')} placeholder={t('toc.newOwnTitle')} value={title} onChange={event => { setTitle(event.target.value) }} />
-      <Button
-        size="sm"
-        variant="primary"
-        disabled={title.trim() === ''}
-        onClick={() => {
-          void api.newOwnChapter(sessionId, { canvasId, title: title.trim() }).then(result => {
-            if (!result.ok) { setFailure(t('error.generic', { message: result.error.message })); return }
-            if (!result.value.ok || result.value.n === undefined) { setFailure(t('error.generic', { message: result.value.error ?? '' })); return }
-            navigate.refresh()
-            setTitle(null)
-            props.onCreated(result.value.n)
-          })
+    <>
+      <Menu
+        open={menuOpen}
+        portal
+        align={variant === 'row' ? 'start' : 'end'}
+        dense
+        items={items}
+        onSelect={id => {
+          setMenuOpen(false)
+          if (id === 'own') { setFailure(null); setTitle('') }
+          else if (id === 'plan') props.onPlan?.()
         }}
+        onClose={() => { setMenuOpen(false) }}
+        anchor={variant === 'row'
+          ? (
+            <button type="button" className={book.chAdd} aria-label={t('toc.newChapter', { n: props.n })} aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => { setMenuOpen(value => !value) }}>
+              <span className={book.chNo}>＋</span>
+              <span className={book.chAddText}>{t('toc.newChapter', { n: props.n })}<small>{t('toc.newChoices')}</small></span>
+            </button>
+          )
+          : (
+            <Button size="sm" variant="outline" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => { setMenuOpen(value => !value) }}>
+              {t('toc.newChapter', { n: props.n })}<span aria-hidden="true"> ▾</span>
+            </Button>
+          )}
+      />
+      <Modal
+        open={title !== null}
+        onClose={() => { setTitle(null) }}
+        title={t('toc.newChapter', { n: props.n })}
+        closeLabel={t('import.close')}
+        description={t('toc.newOwnHint')}
+        footer={(
+          <>
+            <Button size="sm" variant="ghost" onClick={() => { setTitle(null) }}>{t('edit.cancel')}</Button>
+            <Button size="sm" variant="primary" disabled={title === null || title.trim() === ''} onClick={create}>{t('toc.newOwnGo')}</Button>
+          </>
+        )}
       >
-        {t('toc.newOwnGo')}
-      </Button>
-      <Button size="sm" variant="ghost" onClick={() => { setTitle(null) }}>{t('edit.cancel')}</Button>
-      {failure !== null && <span className={css.warn}>{failure}</span>}
-    </div>
+        <input className={`${css.ownInput} ${book.newTitleInput}`} aria-label={t('toc.newOwnTitle')} placeholder={t('toc.newOwnTitle')} value={title ?? ''} onChange={event => { setTitle(event.target.value) }} autoFocus />
+        {failure !== null && <p className={css.warn} role="alert">{failure}</p>}
+      </Modal>
+    </>
   )
 }
 

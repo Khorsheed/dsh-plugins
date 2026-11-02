@@ -1,10 +1,3 @@
-.launchers { display: flex; border-top: 1px solid var(--dsw-alias-border-l1); }
-.launch {
-  display: flex; flex: 1; align-items: center; gap: 8px; padding: 10px 6px; border: 0;
-  background: none; cursor: pointer; text-align: left; font: var(--dsh-panel-text-body, 14px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-brand-primary);
-}
-.launch + .launch { border-left: 1px solid var(--dsw-alias-border-l1); }
-.launch:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .fileInput { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .body { display: grid; gap: 10px; min-width: 0; font: var(--dsh-panel-text-body, 14px)/1.55 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
 .body > button { justify-self: start; }
@@ -34,6 +27,6 @@
 }
 
 @media (pointer: coarse) {
-  .launch, .row { min-height: 44px; }
+  .row { min-height: 44px; }
   .row input { width: 20px; height: 20px; }
 }

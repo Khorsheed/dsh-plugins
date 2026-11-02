@@ -1,5 +1,5 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Button, Modal, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Menu, Modal, writeClipboard, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { browserOnHost } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { NOVEL_GENRE_ID } from '../types.ts'
 import type { NovelSurfaceProps } from './contract.ts'
@@ -28,8 +28,13 @@ export function ImportNovel(props: NovelSurfaceProps): ReactNode {
   const [completed, setCompleted] = useState<'done' | null>(null)
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const [browsing, setBrowsing] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   if (api === undefined || sessionId === undefined || props.board.genre?.id !== NOVEL_GENRE_ID) return null
   const DirectoryFlow = props.directoryFlow?.()
+  const importItems: MenuEntry[] = [
+    { id: 'documents', label: t('import.choose') },
+    ...(browserOnHost() ? [{ id: 'directory', label: t('import.directory') }] : []),
+  ]
 
   const close = (): void => {
     if (progress !== null) return
@@ -140,10 +145,24 @@ export function ImportNovel(props: NovelSurfaceProps): ReactNode {
 
   return (
     <>
-      <div className={css.launchers}>
-        <button type="button" className={css.launch} onClick={() => { input.current?.click() }}>{t('import.open')}</button>
-        {browserOnHost() && <button type="button" className={css.launch} onClick={() => { void pickFolder() }}>{t('import.directory')}</button>}
-      </div>
+      <Menu
+        open={menuOpen}
+        portal
+        align="end"
+        dense
+        items={importItems}
+        onSelect={id => {
+          setMenuOpen(false)
+          if (id === 'documents') input.current?.click()
+          else if (id === 'directory') void pickFolder()
+        }}
+        onClose={() => { setMenuOpen(false) }}
+        anchor={(
+          <Button size="sm" variant="outline" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => { setMenuOpen(value => !value) }}>
+            {t('import.open')}<span aria-hidden="true"> ▾</span>
+          </Button>
+        )}
+      />
       <input
         ref={input}
         className={css.fileInput}
