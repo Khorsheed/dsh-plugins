@@ -48,7 +48,11 @@
   gap: 10px;
 }
 
+/* Each card is its own width container: the same card sits in the members
+   grid and atop the edit dialog, so its narrow layout reads the card's own
+   width, not the viewport's or the panel's. */
 .card {
+  container: member-card / inline-size;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -136,6 +140,41 @@
 .head > .chipIdle {
   margin-left: auto;
   flex: none;
+}
+
+/* A narrow card (a phone, the dialog's head card) keeps the name readable:
+   the status chip drops to its own line under the provider line, and the
+   role chip gives way before the name does. Wide cards are unchanged. */
+@container member-card (max-width: 360px) {
+  .head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 10px;
+    row-gap: 4px;
+  }
+
+  .avatarTile {
+    grid-row: 1 / span 2;
+    align-self: start;
+  }
+
+  .head > .chipRunning,
+  .head > .chipFailed,
+  .head > .chipIdle {
+    grid-column: 2;
+    justify-self: start;
+    margin-left: 0;
+  }
+
+  .role {
+    flex: 0 100 auto;
+    min-width: 3em;
+  }
+
+  .hint {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .instructionsBlock {

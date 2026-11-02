@@ -2,15 +2,17 @@
  * Manual UI fixture for the edit dialog's 模式工具 line and the room's
  * mode-tools notice (the real components, with a scripted local-agent read):
  *   pnpm exec vite packages/room/tests/preview --config packages/room/tests/preview/vite.config.ts --host 127.0.0.1
- * then open /member-tools.html?state=<ok|okOpen|missing|queued|reloaded|running|scheduled|healed|unknown|nomode|feed>[&lang=en][&dark=1]
+ * then open /member-tools.html?state=<ok|okOpen|missing|queued|reloaded|running|scheduled|healed|unknown|nomode|feed|members>[&lang=en][&dark=1]
+ * (`members` = the members page: a long name, a running member, an idle and a failed one.)
  */
 import React, { useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsStatus } from '@khorsheed/dsh-local-agent/types'
 import { InviteDialog } from '../../src/client/InviteDialog.tsx'
+import { MembersView } from '../../src/client/MembersView.tsx'
 import { RoomEventView } from '../../src/client/RoomEventView.tsx'
 import { en, zh } from '../../src/client/locales.ts'
-import type { RoomMember } from '../../src/types.ts'
+import type { RoomMember, RoomState } from '../../src/types.ts'
 
 const params = new URLSearchParams(location.search)
 const state = params.get('state') ?? 'ok'
@@ -112,4 +114,32 @@ function Feed() {
   )
 }
 
-createRoot(document.getElementById('root')!).render(state === 'feed' ? <Feed /> : <Dialog />)
+function Members() {
+  const room: RoomState = {
+    members: [
+      { name: 'main', kind: 'main-agent', invitedBy: 'human' },
+      member,
+      { name: '游戏大师', kind: 'cli', provider: 'codex', role: '玩法设计', invitedBy: 'human', childSessionId: 'child-gd' as never, instructions: '负责玩法与关卡。' },
+      { name: 'Ada Lovelace-Byron', kind: 'cli', provider: 'claude-code', role: '后端与数据持久化', invitedBy: 'agent', childSessionId: 'child-ada' as never },
+    ],
+    relays: [],
+    tasks: [],
+    runs: [
+      { member: member.name, state: 'running', startedAt: Date.now() - 68_000 } as never,
+      { member: 'Ada Lovelace-Byron', state: 'failed', startedAt: Date.now() - 300_000 } as never,
+    ],
+  }
+  const roomStore = { subscribe: () => () => {}, getCached: () => room, refresh: async () => {}, isRoomCached: () => true }
+  const noop = async () => undefined as never
+  return (
+    <MembersView
+      {...{
+        sessionId: 'room-1', roomStore, openSession: () => {}, removeMember: noop, restoreMember: noop, setSettings: noop,
+        updateMember: noop, invite: noop, listProviders: noop, browseDirectory: async () => null,
+        memberModel: async (child: string) => (child === 'child-gm' ? { effective: 'kimi-code/k3' } : null), t,
+      } as never}
+    />
+  )
+}
+
+createRoot(document.getElementById('root')!).render(state === 'feed' ? <Feed /> : state === 'members' ? <Members /> : <Dialog />)
