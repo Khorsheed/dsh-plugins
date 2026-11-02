@@ -187,6 +187,8 @@ export const CODEX_LIVE_AUTH_FAILURE = /401 unauthorized|unauthorized|authentica
 
 /** A compaction round waits for its turn to complete at most this long. */
 const COMPACTION_TIMEOUT_MS = 10 * 60_000
+/** How long a requested reload may take to spawn the fresh process and resume the session. */
+const RELOAD_TIMEOUT_MS = 30_000
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
@@ -577,6 +579,10 @@ export class CodexLiveDriver {
   private readonly idleTimers = new Map<string, NodeJS.Timeout>()
   /** Per-member round serialization (the resume lock covers resume-vs-resume only). */
   private readonly roundChains = new Map<string, Promise<unknown>>()
+  /** Rounds accepted and not yet settled, per member (a reload asked meanwhile waits for them). */
+  private readonly roundsInFlight = new Map<string, number>()
+  /** The spec each member's runtime was last ensured with: a reload respawns from it. */
+  private readonly lastSpecs = new Map<string, CodexLiveRoundSpec>()
   private channelBrokenAt: number | undefined
   private disposed = false
   /**
@@ -715,6 +721,49 @@ export class CodexLiveDriver {
     if (reason === undefined || this.runtimes.get(key) !== runtime) return
     this.ctx.logger.warn(`local-agent-codex: respawning member ${key}'s codex process before its round: ${reason}`)
     await this.retireRuntime(key)
+    // The edit dialog and the room show that it happened (an older core lacks the hook).
+    if (typeof registry.noteMemberToolsRespawn === 'function') registry.noteMemberToolsRespawn(key, token)
+  }
+
+  /**
+   * Reload a member's process on request (the room's edit dialog): retire the
+   * resident runtime and spawn a fresh one that resumes the same CLI session,
+   * without a prompt. `codex app-server` starts the
+   * bridge and lists its tools at thread/start and thread/resume.
+   * Chained on the member's round queue, so a running round finishes first
+   * (`after-round`) and the next round waits for the reload. Undefined when
+   * this driver hosts no process for the member.
+   */
+  reloadMember(key: string, hooks: { readonly onStart: () => void }): { readonly when: 'now' | 'after-round'; readonly done: Promise<'respawned' | 'no-process' | 'failed'> } | undefined {
+    if (this.disposed || this.draining || !this.hasRuntime(key)) return undefined
+    const when = (this.roundsInFlight.get(key) ?? 0) > 0 ? 'after-round' : 'now'
+    const previous = this.roundChains.get(key) ?? Promise.resolve()
+    const done = previous.catch(() => {}).then(async () => {
+      hooks.onStart()
+      return await this.reloadLocked(key)
+    })
+    this.roundChains.set(key, done.catch(() => ({})))
+    return { when, done }
+  }
+
+  /** The reload body, between rounds. */
+  private async reloadLocked(key: string): Promise<'respawned' | 'no-process' | 'failed'> {
+    if (this.disposed || this.draining) return 'no-process'
+    const pending = this.ensuring.get(key)
+    if (pending !== undefined) await pending.catch(() => undefined)
+    const runtime = this.runtimes.get(key)
+    const spec = this.lastSpecs.get(key)
+    if (runtime === undefined || runtime.dead || spec === undefined) return 'no-process'
+    const cliSessionId = runtime.threadId ?? spec.resume?.cliSessionId
+    await this.retireRuntime(key)
+    const { onThreadId: _fresh, operation: _operation, ...base } = spec
+    try {
+      await this.prepare({ ...base, ...cliSessionId === undefined ? {} : { resume: { cliSessionId, turn: spec.resume?.turn ?? 0 } } }, AbortSignal.timeout(RELOAD_TIMEOUT_MS))
+      return 'respawned'
+    } catch (error) {
+      this.ctx.logger.warn(`local-agent-codex: reloading member ${key}'s codex process failed: ${thrown(error).message}`)
+      return 'failed'
+    }
   }
 
   /**
@@ -730,6 +779,7 @@ export class CodexLiveDriver {
   /** The member's runtime, spawning it (once per member at a time) when absent or dead. */
   private async ensureRuntime(spec: CodexLiveRoundSpec, signal: AbortSignal): Promise<CodexLiveRuntime> {
     const key = String(spec.childSession.id)
+    this.lastSpecs.set(key, spec)
     const startModel = spec.startModel?.trim()
     const existing = this.runtimes.get(key)
     if (existing !== undefined && !existing.dead) {
@@ -968,10 +1018,15 @@ export class CodexLiveDriver {
     const key = String(spec.childSession.id)
     const previous = this.roundChains.get(key) ?? Promise.resolve()
     const round = previous.catch(() => {}).then(() => spec.operation === 'compact' ? this.compactLocked(request, spec) : this.startRoundLocked(request, spec))
+    this.roundsInFlight.set(key, (this.roundsInFlight.get(key) ?? 0) + 1)
     this.roundChains.set(key, round.then(
       handle => handle.result.catch(() => ({})),
       () => ({}),
-    ))
+    ).finally(() => {
+      const left = (this.roundsInFlight.get(key) ?? 1) - 1
+      if (left > 0) this.roundsInFlight.set(key, left)
+      else this.roundsInFlight.delete(key)
+    }))
     return round
   }
 

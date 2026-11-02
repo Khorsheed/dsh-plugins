@@ -27,6 +27,8 @@ import type {
   LocalAgentControlReceipt,
   LocalAgentMemberFeedRequest,
   LocalAgentMemberFeedEvent,
+  LocalAgentMemberToolsReload,
+  LocalAgentMemberToolsStatus,
 } from './types.ts'
 import type { CardSettings, CardSettingValue, LocalAgentMemberContext, LocalAgentRosterRow, LocalAgentStatus, LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState } from './types.ts'
 import { extendModelDirectory } from './model-directory.ts'
@@ -381,6 +383,32 @@ export default class LocalAgentGateway extends TypertRemoteService {
    * @param childSessionId - the dsh child session id of the member.
    * @returns the layer-by-layer surface, or null.
    */
+  /**
+   * What a member's current process holds of its mode tools (the room's edit
+   * dialog, 模式工具). Null for a member without a mode, an unknown member,
+   * or a core without a member channel.
+   * @param childSessionId - the dsh child session id of the member.
+   * @returns the status, or null.
+   */
+  @Remote('memberTools')
+  async memberTools(childSessionId: string): Promise<LocalAgentMemberToolsStatus | null> {
+    const registry = this.ctx.localAgent
+    return typeof registry.memberToolsStatus === 'function' ? await registry.memberToolsStatus(childSessionId) : null
+  }
+
+  /**
+   * Reload a member's mode tools: replace its resident process with one that
+   * resumes the same CLI session, now when idle, right after its round when
+   * running (no round is interrupted, no model is called).
+   * @param childSessionId - the dsh child session id of the member.
+   * @returns when it happens, or why it cannot.
+   */
+  @Remote('reloadMemberTools')
+  async reloadMemberTools(childSessionId: string): Promise<LocalAgentMemberToolsReload> {
+    const registry = this.ctx.localAgent
+    return typeof registry.reloadMemberTools === 'function' ? registry.reloadMemberTools(childSessionId) : { ok: false, reason: 'unsupported' }
+  }
+
   @Remote('memberModel')
   async memberModel(childSessionId: string): Promise<LocalAgentModelInfo | null> {
     const registry = this.ctx.localAgent

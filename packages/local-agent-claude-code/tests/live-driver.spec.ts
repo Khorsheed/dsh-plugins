@@ -538,6 +538,28 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('reloads an idle member on request: a fresh process resumes the same session, no prompt', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-reload'))
+    child.append('turn/start', { turn: 1 })
+    m.queueChild(new FakeClaude({ turn: () => ({ events: answerEvents('第一条') }) }))
+    await (await m.driver.startRound(request() as never, roundSpec(m, child, { onSessionId: () => {} }))).result
+    // The round's queue entry settles right after its result.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const second = new FakeClaude({ turn: () => ({ events: answerEvents('第二条') }) })
+    m.queueChild(second)
+    const reload = m.driver.reloadMember('child-claude-reload', { onStart: () => {} })
+    expect(reload?.when).toBe('now')
+    await expect(reload!.done).resolves.toBe('respawned')
+    expect(m.spawns).toHaveLength(2)
+    expect(m.spawns[1]!.spec.argv).toContain('--resume')
+    expect(m.spawns[1]!.spec.argv).toContain('claude-session-1')
+    // No prompt went to the fresh process.
+    expect(second.userMessages).toHaveLength(0)
+    expect(m.driver.reloadMember('child-none', { onStart: () => {} })).toBeUndefined()
+    await m.driver.disposeAll()
+  })
+
   it('cancels via the interrupt control request — the process survives', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-4'))

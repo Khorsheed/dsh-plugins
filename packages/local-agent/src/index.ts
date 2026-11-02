@@ -99,6 +99,8 @@ import type {
   LocalAgentCompactionEvent,
   LocalAgentContextEvent,
   LocalAgentMemberContext,
+  LocalAgentMemberToolsReload,
+  LocalAgentMemberToolsStatus,
 } from './types.ts'
 import LocalAgentGateway from './gateway.ts'
 import { guardChildLog, type QuarantineEntry } from './child-log-guard.ts'
@@ -143,6 +145,9 @@ export type {
 
 export type {
   LocalAgentMemberMessage,
+  LocalAgentMemberToolsReload,
+  LocalAgentMemberToolsStatus,
+  MemberToolsNotice,
   MemberMessageOutcome,
   RoomMemberMessageGate,
   RoomMemberMessageReceipt,
@@ -404,9 +409,41 @@ export interface LocalAgentPreparation {
   signal: AbortSignal
 }
 
+/** The member channel's half of the 模式工具 read and reload (see {@link LocalAgentRegistry.setMemberToolsFace}). */
+export interface MemberToolsFace {
+  status(childSessionId: string): Promise<LocalAgentMemberToolsStatus | null>
+  autoReloaded(childSessionId: string, oldToken: string | undefined): void
+  reloadPending(childSessionId: string): boolean
+  reloadAccepted(childSessionId: string, when: 'now' | 'after-round'): void
+  reloadStarted(childSessionId: string): void
+  reloadDone(childSessionId: string, outcome: 'respawned' | 'no-process' | 'failed', oldToken: string | undefined): void
+}
+
+/**
+ * One member-process reload a harness accepted (see
+ * {@link LocalAgentHarness.reloadMember}): `now` when the member was idle,
+ * `after-round` when a round is running (the reload waits for it to end).
+ * `done` settles once the reload ran: the resident process was replaced and
+ * its CLI session resumed (`respawned`), there was none to replace
+ * (`no-process`), or the fresh process did not start (`failed`).
+ */
+export interface LocalAgentMemberReload {
+  readonly when: 'now' | 'after-round'
+  readonly done: Promise<'respawned' | 'no-process' | 'failed'>
+}
+
 export interface LocalAgentHarness {
   /** Native handshake/configuration only; no prompt, turn, or side-effecting task. */
   prepareMember?: (request: LocalAgentPreparation) => Promise<void>
+  /**
+   * Replace a member's resident CLI process with a fresh one that resumes the
+   * same CLI session, WITHOUT a round (no prompt, no model call), so the new
+   * process lists its tools again. Queued behind a running round, never
+   * interrupting it. Undefined = this harness does not host the member on a
+   * resident process right now (exec path, live driver off).
+   * `onStart` fires when the replacement actually begins.
+   */
+  reloadMember?: (childSessionId: string, hooks: { readonly onStart: () => void }) => LocalAgentMemberReload | undefined
   /** Command prefix and scoped-home directory name (lowercase, dashed). */
   name: string
   /** Human display name, used in command replies and UI labels. */
@@ -2118,6 +2155,94 @@ export class LocalAgentRegistry {
     } catch (error) {
       this.ctx.logger.warn(`localAgent: the member tool check failed: ${error instanceof Error ? error.message : String(error)}`)
       return undefined
+    }
+  }
+
+  private memberToolsFace: MemberToolsFace | undefined
+
+  /** The member channel installs (and on dispose removes) the bookkeeping behind the 模式工具 read and reload. */
+  setMemberToolsFace(face: MemberToolsFace | undefined): void {
+    this.memberToolsFace = face
+  }
+
+  /**
+   * The member-channel token of the member's current process: the most
+   * recently registered one still valid (a resident live process, or an
+   * exec run in flight). Undefined = no process.
+   * @param childSessionId - the member's child session.
+   * @returns the token, or undefined.
+   */
+  currentMemberToken(childSessionId: string): string | undefined {
+    let current: string | undefined
+    for (const [token, run] of this.memberRuns) {
+      if (run.childSessionId === childSessionId) current = token
+    }
+    return current
+  }
+
+  /**
+   * What the member's current process holds of its mode tools (the room's
+   * edit dialog). Null without a member channel, for an unknown member, or
+   * for a member without a mode.
+   * @param childSessionId - the member's child session.
+   * @returns the status, or null.
+   */
+  async memberToolsStatus(childSessionId: string): Promise<LocalAgentMemberToolsStatus | null> {
+    try {
+      return await this.memberToolsFace?.status(childSessionId) ?? null
+    } catch (error) {
+      this.ctx.logger.warn(`localAgent: the member tool status read failed: ${error instanceof Error ? error.message : String(error)}`)
+      return null
+    }
+  }
+
+  /**
+   * Replace the member's resident process so it lists its mode tools again,
+   * resuming the same CLI session without a round. An idle member reloads
+   * now; a running one right after its round ends (never interrupted).
+   * @param childSessionId - the member's child session.
+   * @returns when it happens, or why it cannot.
+   */
+  reloadMemberTools(childSessionId: string): LocalAgentMemberToolsReload {
+    const face = this.memberToolsFace
+    const binding = this.memberBinding(childSessionId)
+    if (face === undefined || binding === undefined) return { ok: false, reason: 'unknown-member' }
+    const harness = this.harnessForProvider(binding.provider)
+    if (harness?.reloadMember === undefined) return { ok: false, reason: 'unsupported' }
+    if (face.reloadPending(childSessionId)) return { ok: false, reason: 'busy' }
+    const oldToken = this.currentMemberToken(childSessionId)
+    let accepted = false
+    let startedEarly = false
+    const handle = harness.reloadMember(childSessionId, {
+      onStart: () => {
+        if (accepted) face.reloadStarted(childSessionId)
+        else startedEarly = true
+      },
+    })
+    if (handle === undefined) return { ok: false, reason: 'no-process' }
+    accepted = true
+    face.reloadAccepted(childSessionId, handle.when)
+    if (startedEarly) face.reloadStarted(childSessionId)
+    void handle.done.then(
+      (outcome) => { face.reloadDone(childSessionId, outcome, oldToken) },
+      () => { face.reloadDone(childSessionId, 'failed', oldToken) },
+    )
+    return { ok: true, when: handle.when }
+  }
+
+  /**
+   * A live driver replaced a member's process at round start because it
+   * lacked its mode tools (after {@link memberToolsStale} gave a reason):
+   * the edit dialog shows it until the next normal load, and the room gets
+   * one line before the round.
+   * @param childSessionId - the member's child session.
+   * @param oldToken - the replaced process's token.
+   */
+  noteMemberToolsRespawn(childSessionId: string, oldToken: string | undefined): void {
+    try {
+      this.memberToolsFace?.autoReloaded(childSessionId, oldToken)
+    } catch (error) {
+      this.ctx.logger.warn(`localAgent: recording a member respawn failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

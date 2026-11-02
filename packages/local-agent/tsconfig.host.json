@@ -15,6 +15,7 @@
     "src/model-stream.ts",
     "src/gateway.ts",
     "src/member-channel.ts",
+    "src/member-tools.ts",
     "src/preset-tool-host.ts",
     "src/mode-skills.ts",
     "src/member-feed.ts",

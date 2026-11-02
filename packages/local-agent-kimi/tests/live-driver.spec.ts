@@ -1745,6 +1745,88 @@ describe('kimi live driver member model', () => {
   })
 })
 
+describe('kimi live driver member reload (the room\'s 重新载入)', () => {
+  it('an idle member reloads now: a fresh process session/loads the same session, with no prompt', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-reload'))
+    const first = new FakeAcpServer({ turn: () => ({ chunks: ['ok'] }) })
+    m.queueChild(first)
+    await (await m.driver.startRound(request() as never, roundSpec(m, child, { onCliSessionId: () => {} }))).result
+    // The round's queue entry settles right after its result.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const second = new FakeAcpServer({ turn: () => ({ chunks: ['back'] }) })
+    m.queueChild(second)
+    const onStart = vi.fn()
+    const reload = m.driver.reloadMember('child-kimi-reload', { onStart })
+    expect(reload?.when).toBe('now')
+    await expect(reload!.done).resolves.toBe('respawned')
+    expect(onStart).toHaveBeenCalledOnce()
+    await vi.waitFor(() => { expect(first.stdinEnded || first.terminated).toBe(true) })
+    // No round, no model call: the new process only loads the session (kimi lists the bridge there).
+    expect(second.requests.map(r => r.method)).toEqual(['initialize', 'session/load'])
+    // The same kimi session, in its ACP form (as every resume sends it).
+    expect(second.requests[1]!.params).toMatchObject({ sessionId: 'session_acp-session-1' })
+    // The next round runs on the reloaded process.
+    await (await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))).result
+    expect(m.spawns).toHaveLength(2)
+    expect(second.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/prompt'])
+    await m.driver.disposeAll()
+  })
+
+  it('a running member reloads after its round ends, never during it', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-reload-run'))
+    const first = new FakeAcpServer({ turn: (params) => JSON.stringify(params['prompt']).includes('慢') ? { hang: true } : { chunks: ['ok'] } })
+    m.queueChild(first)
+    await (await m.driver.startRound(request() as never, roundSpec(m, child))).result
+    const slow = await m.driver.startRound(request({ prompt: '慢' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
+    await vi.waitFor(() => { expect(first.pendingPrompts).toHaveLength(1) })
+    const second = new FakeAcpServer({ turn: () => ({ chunks: ['back'] }) })
+    m.queueChild(second)
+    const onStart = vi.fn()
+    const reload = m.driver.reloadMember('child-kimi-reload-run', { onStart })
+    expect(reload?.when).toBe('after-round')
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(onStart).not.toHaveBeenCalled()
+    expect(first.terminated || first.stdinEnded).toBe(false)
+    expect(m.spawns).toHaveLength(1)
+    first.resolvePrompt({ stopReason: 'end_turn' })
+    await slow.result
+    await expect(reload!.done).resolves.toBe('respawned')
+    expect(onStart).toHaveBeenCalledOnce()
+    expect(second.requests.map(r => r.method)).toEqual(['initialize', 'session/load'])
+    await m.driver.disposeAll()
+  })
+
+  it('no resident process, nothing to reload', async () => {
+    const m = mount()
+    expect(m.driver.reloadMember('child-kimi-none', { onStart: () => {} })).toBeUndefined()
+    await m.driver.disposeAll()
+  })
+
+  it('a round-start respawn is reported to the core with the replaced process\'s token', async () => {
+    const m = mount()
+    const tokens: string[] = []
+    const noteMemberToolsRespawn = vi.fn()
+    Object.assign(m.ctx.logger, { warn: vi.fn() })
+    Object.assign(m.ctx.localAgent, {
+      registerMemberRun: () => { tokens.push(`token-${tokens.length + 1}`); return tokens.at(-1)! },
+      unregisterMemberRun: () => {},
+      memberBridgeSocketPath: () => '/home/user/member.sock',
+      memberBridgeCommand: () => ({ command: 'node', args: ['member-bridge.js'] }),
+      memberToolsStale: async () => 'it was served the mode-tools placeholder (socket refused)',
+      noteMemberToolsRespawn,
+    })
+    const child = Session.create(SessionId('child-kimi-note'))
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['ok'] }) }))
+    await (await m.driver.startRound(request() as never, roundSpec(m, child))).result
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['back'] }) }))
+    await (await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))).result
+    expect(noteMemberToolsRespawn).toHaveBeenCalledExactlyOnceWith('child-kimi-note', 'token-1')
+    await m.driver.disposeAll()
+  })
+})
+
 describe('kimi live driver transcript completeness', () => {
   /** Every reasoning block the child session carries. */
   function reasoningTexts(child: Session): string[] {

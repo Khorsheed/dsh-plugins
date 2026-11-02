@@ -121,6 +121,8 @@ export const DEFAULT_LIVE_CHANNEL_RETRY_MS = 5 * 60_000
 
 /** Grace between stdin EOF and SIGTERM when reclaiming a stream-json process. */
 const RECLAIM_EOF_GRACE_MS = 1_000
+/** How long a requested reload may take to spawn the fresh process and resume the session. */
+const RELOAD_TIMEOUT_MS = 30_000
 
 /** Default minimum interval between one streaming kind's snapshot messages. */
 export const DEFAULT_SNAPSHOT_MIN_INTERVAL_MS = LIVE_FLUSH_INTERVAL_MS
@@ -393,6 +395,10 @@ export class ClaudeLiveDriver {
   private readonly idleTimers = new Map<string, NodeJS.Timeout>()
   /** Per-member round serialization (the resume lock covers resume-vs-resume only). */
   private readonly roundChains = new Map<string, Promise<unknown>>()
+  /** Rounds accepted and not yet settled, per member (a reload asked meanwhile waits for them). */
+  private readonly roundsInFlight = new Map<string, number>()
+  /** The spec each member's runtime was last ensured with: a reload respawns from it. */
+  private readonly lastSpecs = new Map<string, ClaudeLiveRoundSpec>()
   private channelBrokenAt: number | undefined
   private disposed = false
   /**
@@ -511,6 +517,7 @@ export class ClaudeLiveDriver {
 
   private ensureRuntime(spec: ClaudeLiveRoundSpec, signal: AbortSignal): Promise<ClaudeLiveRuntime> {
     const key = String(spec.childSession.id)
+    this.lastSpecs.set(key, spec)
     const existing = this.runtimes.get(key)
     if (existing !== undefined && !existing.dead && existing.model === this.spawnModel(key, spec)
       && existing.configurationKey === (spec.configuration === undefined ? undefined : JSON.stringify(spec.configuration))) {
@@ -565,6 +572,50 @@ export class ClaudeLiveDriver {
     if (reason === undefined || this.runtimes.get(key) !== runtime) return
     this.ctx.logger.warn(`local-agent-claude-code: respawning member ${key}'s claude process before its round: ${reason}`)
     await this.retireRuntime(key)
+    // The edit dialog and the room show that it happened (an older core lacks the hook).
+    if (typeof registry.noteMemberToolsRespawn === 'function') registry.noteMemberToolsRespawn(key, token)
+  }
+
+  /**
+   * Reload a member's process on request (the room's edit dialog): retire the
+   * resident runtime and spawn a fresh one that resumes the same CLI session,
+   * without a prompt. Whether `claude -p` lists the
+   * bridge before its first input is not verified; a process that has not
+   * listed reads as a pending reload until its next round.
+   * Chained on the member's round queue, so a running round finishes first
+   * (`after-round`) and the next round waits for the reload. Undefined when
+   * this driver hosts no process for the member.
+   */
+  reloadMember(key: string, hooks: { readonly onStart: () => void }): { readonly when: 'now' | 'after-round'; readonly done: Promise<'respawned' | 'no-process' | 'failed'> } | undefined {
+    if (this.disposed || this.draining || !this.hasRuntime(key)) return undefined
+    const when = (this.roundsInFlight.get(key) ?? 0) > 0 ? 'after-round' : 'now'
+    const previous = this.roundChains.get(key) ?? Promise.resolve()
+    const done = previous.catch(() => {}).then(async () => {
+      hooks.onStart()
+      return await this.reloadLocked(key)
+    })
+    this.roundChains.set(key, done.catch(() => ({})))
+    return { when, done }
+  }
+
+  /** The reload body, between rounds. */
+  private async reloadLocked(key: string): Promise<'respawned' | 'no-process' | 'failed'> {
+    if (this.disposed || this.draining) return 'no-process'
+    const pending = this.ensuring.get(key)
+    if (pending !== undefined) await pending.catch(() => undefined)
+    const runtime = this.runtimes.get(key)
+    const spec = this.lastSpecs.get(key)
+    if (runtime === undefined || runtime.dead || spec === undefined) return 'no-process'
+    const cliSessionId = runtime.sessionId ?? spec.resume?.cliSessionId
+    await this.retireRuntime(key)
+    const { onSessionId: _fresh, ...base } = spec
+    try {
+      await this.prepare({ ...base, ...cliSessionId === undefined ? {} : { resume: { cliSessionId, turn: spec.resume?.turn ?? 0 } } }, AbortSignal.timeout(RELOAD_TIMEOUT_MS))
+      return 'respawned'
+    } catch (error) {
+      this.ctx.logger.warn(`local-agent-claude-code: reloading member ${key}'s claude process failed: ${thrown(error).message}`)
+      return 'failed'
+    }
   }
 
   /**
@@ -701,10 +752,15 @@ export class ClaudeLiveDriver {
     const key = String(spec.childSession.id)
     const previous = this.roundChains.get(key) ?? Promise.resolve()
     const round = previous.catch(() => {}).then(() => this.startRoundLocked(request, spec))
+    this.roundsInFlight.set(key, (this.roundsInFlight.get(key) ?? 0) + 1)
     this.roundChains.set(key, round.then(
       handle => handle.result.catch(() => ({})),
       () => ({}),
-    ))
+    ).finally(() => {
+      const left = (this.roundsInFlight.get(key) ?? 1) - 1
+      if (left > 0) this.roundsInFlight.set(key, left)
+      else this.roundsInFlight.delete(key)
+    }))
     return round
   }
 
