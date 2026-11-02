@@ -27,16 +27,14 @@ import type {
 } from '../types.ts'
 
 /**
- * The session the main view shows, read off both host lines: alpha.2 deleted
- * the list's `current` for the per-row `retainedBy.mainView` reference count;
- * 0.1.5 carries only `current`.
+ * The session the main view shows: the row whose `retainedBy.mainView`
+ * reference count is positive.
  * @param list - the sessions list snapshot.
  * @returns the main-view session id, or undefined when no session is shown.
  */
 export function mainSessionId(list: SessionListState): SessionId | undefined {
   return Object.values(list.byId).find(summary =>
     ((summary.retainedBy as { mainView?: number } | undefined)?.mainView ?? 0) > 0)?.id
-    ?? (list as { current?: SessionId }).current
 }
 
 /** The slice of the mounted room Remote the store reads. */

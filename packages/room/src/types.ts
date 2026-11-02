@@ -995,16 +995,6 @@ export interface RoomState {
   readonly helpNudgesDismissed?: readonly string[]
 }
 
-/**
- * The goal progress pair: done tasks over the COUNTABLE total — cancelled
- * and failed tasks leave the denominator (a cancelled task was never part of
- * the plan; a failed one never advanced it).
- */
-export interface RoomTaskProgress {
-  readonly done: number
-  readonly total: number
-}
-
 /** Closed failure vocabulary of the room Remote surface. */
 export type RoomFailure =
   | { readonly code: 'request-conflict' }

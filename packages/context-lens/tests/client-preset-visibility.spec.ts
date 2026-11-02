@@ -92,15 +92,6 @@ describe('InspectorTabVisibility.show', () => {
     expect(visibility.show('s1' as SessionId)).toBe(false)
   })
 
-  it('reads the legacy top-level preset key too (the 0.1.1 host line)', async () => {
-    const { visibility } = bench({
-      rows: { s1: { agentPreset: 'dev' } },
-      composition: PRESET_MOUNTED,
-    })
-    await settled()
-    expect(visibility.show('s1' as SessionId)).toBe(true)
-  })
-
   it('fails open on every unreadable path', async () => {
     // No namespace at all.
     const none = bench({ rows: { s1: { projectionValues: { agentPreset: 'standard' } } } })

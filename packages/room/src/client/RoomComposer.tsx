@@ -40,8 +40,7 @@
  * re-homed INTO this component — the main agent's turn Stop (the send circle
  * swaps while `running`), the task capsule (RoomTaskCapsule), the main
  * agent's todo strip (RoomTodoStrip, the `todos` projection), the queued-
- * messages strip (RoomQueueStrip, the `inbox` projection — the 0.1.5 session
- * snapshot's queue on the old line), the session
+ * messages strip (RoomQueueStrip, the `inbox` projection), the session
  * stats row (RoomStatsLine below the card), and the main agent's model seat
  * (RoomModelPicker over the official per-session ModelDirectory — the seat
  * itself is single-owner and cannot be re-hosted, so the picker is our own
@@ -75,15 +74,7 @@ import { Menu, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { RoomAttachments } from './RoomAttachments.tsx'
 import css from './RoomComposer.module.css'
 
-/** The 0.1.5 session-snapshot queue row (alpha.2 deleted the snapshot queue for the inbox projection). */
-interface LegacyQueuedMessage {
-  readonly id: unknown
-  readonly placement: string
-  readonly preview: string
-}
-
 const NO_TAGS = (): (() => void) => () => {}
-const EMPTY_LEGACY_QUEUE: readonly LegacyQueuedMessage[] = []
 const QUEUE_PREVIEW_CHARS = 200
 
 /** The queue row's flat preview: attachment blocks dropped, the rest joined and whitespace-collapsed, 200 chars max (the official QueueDock's rule). */
@@ -286,23 +277,15 @@ export function RoomComposer({
   const candidates: readonly AtRow[] = [...memberRows, ...others]
   // The inherited environment state: the room's own main-agent turn flag
   // (drives the Send/Stop swap) and the still-queued inbox rows (the official
-  // queue dock's data, re-homed as a read-only strip). alpha.2 moved the
-  // queue off the session snapshot into the `inbox` projection; 0.1.5 serves
-  // no `inbox` key — the undefined read falls back to the legacy snapshot
-  // queue.
+  // queue dock's data, re-homed as a read-only strip, from the `inbox`
+  // projection).
   const nativeRunning = useSession(snapshot => snapshot.running) ?? false
   const coordinator = state === undefined ? undefined : coordinatorMember(state)
   const external = coordinator?.kind === 'cli'
   const running = external ? state?.runs.some(run => run.member === coordinator.name && run.state === 'running') ?? false : nativeRunning
-  const legacyQueue = useSession(snapshot => (snapshot as { queue?: readonly LegacyQueuedMessage[] }).queue)
-    ?? EMPTY_LEGACY_QUEUE
-  const inbox = (useProjection === undefined ? undefined : useProjection('inbox')) as unknown as InboxState | undefined
-  const nextTurn = inbox?.['next-turn']
-  const queued: readonly RoomQueueItem[] = nextTurn === undefined
-    ? legacyQueue
-      .filter(row => row.placement === 'queued')
-      .map(row => ({ id: String(row.id), preview: row.preview }))
-    : nextTurn.map(row => ({ id: String(row.id), preview: previewOf(row.content) }))
+  const inbox = useProjection('inbox') as unknown as InboxState | undefined
+  const queued: readonly RoomQueueItem[] = (inbox?.['next-turn'] ?? [])
+    .map(row => ({ id: String(row.id), preview: previewOf(row.content) }))
 
   // The coordinator switch: any other member may take the role, but not
   // while work is in flight — the host refuses a handover while the
@@ -589,7 +572,7 @@ export function RoomComposer({
           seat), the task capsule, and the queued-messages strip (the
           official QueueDock, read-only). */}
       <div className={css.dock}>
-        {!external && useProjection !== undefined && <RoomTodoStrip useProjection={useProjection} t={t} />}
+        {!external && <RoomTodoStrip useProjection={useProjection} t={t} />}
         {state !== undefined && <RoomTaskCapsule
           state={state}
           openTasks={openTasks}
@@ -873,21 +856,17 @@ export function RoomComposer({
         </div>
       </div>
       {/* The stats row's home (the official composer dock) is hidden with the
-          fallback; re-rendered here from the same projections. The framework
-          omits the seat entirely on a host without the projection subsystem —
-          degrade to no row. */}
+          fallback; re-rendered here from the same projections. */}
       {/* An external coordinator keeps the members chip: the room session's
           own turn figures belong to its idle main agent, not the coordinator. */}
-      {useProjection !== undefined && (
-        <RoomStatsLine
-          useProjection={useProjection}
-          state={state}
-          membersOnly={external}
-          renderMemberTools={renderMemberTools}
-          coordinatorSession={external ? coordinator.childSessionId : undefined}
-          t={t}
-        />
-      )}
+      <RoomStatsLine
+        useProjection={useProjection}
+        state={state}
+        membersOnly={external}
+        renderMemberTools={renderMemberTools}
+        coordinatorSession={external ? coordinator.childSessionId : undefined}
+        t={t}
+      />
     </div>
   )
 }

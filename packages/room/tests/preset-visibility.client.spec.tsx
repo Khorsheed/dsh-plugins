@@ -87,15 +87,6 @@ describe('RoomPresetVisibility.show', () => {
     expect(visibility.show('s1' as SessionId)).toBe(false)
   })
 
-  it('hides via the 0.1.1 top-level agentPreset key too', async () => {
-    const { visibility } = bench({
-      rows: { s1: { agentPreset: 'standard' } },
-      composition: DEV,
-    })
-    await settled()
-    expect(visibility.show('s1' as SessionId)).toBe(false)
-  })
-
   it('fails open on a namespace-less host, a failed RPC, a missing or broken group, and preset-less sessions', async () => {
     const noNamespace = bench({ rows: { s1: { projectionValues: { agentPreset: 'standard' } } } })
     expect(noNamespace.visibility.show('s1' as SessionId)).toBe(true)

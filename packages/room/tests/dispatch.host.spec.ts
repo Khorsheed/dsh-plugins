@@ -1400,14 +1400,12 @@ describe('coordinator routing and durable deliveries', () => {
 })
 
 describe('isRoomSource (durable source forms)', () => {
-  // The room producer identity survives in three durable forms: the current
-  // producer-owned kind, the V3→V4 migrated kind (released V3 files rewritten
-  // once by the official migration), and the released V3 wrapper a pre-V4
-  // (0.1.5) host still serves verbatim.
+  // The room producer identity survives in two durable forms: the current
+  // producer-owned kind and the V3→V4 migrated kind (released V3 files
+  // rewritten by the official migration before any read serves them).
   const forms = [
     ['current producer kind', { kind: ROOM_KIND }],
     ['V3→V4 migrated kind', { kind: `plugin:${ROOM_PLUGIN}` }],
-    ['released V3 wrapper (0.1.5)', { kind: 'plugin', plugin: ROOM_PLUGIN }],
   ] as const
 
   it.each(forms)('accepts the %s form', (_label, source) => {

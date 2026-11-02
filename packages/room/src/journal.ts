@@ -15,7 +15,7 @@ import { replayJobs } from './jobs.ts'
 import { replayHelps, replayLinks } from './helps.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type {
-  RoomApproval, RoomAsk, RoomQuestion, RoomExecution, RoomJsonValue, RoomMember, RoomMemberRun, RoomRelay, RoomRunAttachment, RoomSettings, RoomState, RoomTask, RoomTaskProgress,
+  RoomApproval, RoomAsk, RoomQuestion, RoomExecution, RoomJsonValue, RoomMember, RoomMemberRun, RoomRelay, RoomRunAttachment, RoomSettings, RoomState, RoomTask,
 } from './types.ts'
 
 /**
@@ -431,18 +431,6 @@ export function replay(events: readonly SessionEvent[]): RoomState {
     ...helps.length === 0 ? {} : { helps },
     ...links.linked.length === 0 ? {} : { linked: links.linked },
     ...links.nudgesDismissed.length === 0 ? {} : { helpNudgesDismissed: links.nudgesDismissed }, members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, ...questions.size === 0 ? {} : { questions: [...questions.values()] }, ...asks.size === 0 ? {} : { askLog: [...asks.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, ...latestSpeechSeq === undefined ? {} : { latestSpeechSeq }, settings, ...jobs.length === 0 ? {} : { jobs } }
-}
-
-/**
- * The goal progress pair: done tasks over the COUNTABLE total — cancelled
- * and failed tasks leave the denominator (a cancelled task was never part
- * of the plan; a failed one was planned but never advanced it).
- * @param tasks - the folded task board.
- * @returns done/total.
- */
-export function taskProgress(tasks: readonly RoomTask[]): RoomTaskProgress {
-  const countable = tasks.filter(task => task.status !== 'cancelled' && task.status !== 'failed')
-  return { done: countable.filter(task => task.status === 'done').length, total: countable.length }
 }
 
 /**

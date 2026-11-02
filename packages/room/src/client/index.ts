@@ -207,8 +207,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     return { ok: true }
   }
 
-  // alpha.2 deleted sessions.open; uiWorkspace.openSession is the entry on
-  // both lines (0.1.5 navigation.ts:134, alpha.2 navigation.ts:161) and
+  // uiWorkspace.openSession is the navigation entry; it
   // throws synchronously on a target the runtime cannot retain — a torn-down
   // member session degrades to staying on the current view. Probed at
   // gesture time like browseDirectory, never injected.
@@ -336,9 +335,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }
     },
     browseDirectory: () => {
-      // Host 0.1.2 hangs the native picker on ui-workspace's service (the
-      // rc-era workspaces.pickDirectory wire primitive moved there,
-      // commit be531688f3). Absent service = the picker's cancel value.
+      // The native picker hangs on ui-workspace's service. Absent service =
+      // the picker's cancel value.
       const uiWorkspace = ctx.get('uiWorkspace') as { pickDirectory(): Promise<string | null> } | undefined
       return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
     },
@@ -461,10 +459,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
   })
 
-  // The journal projections: claim the room/* events into chat nodes. Host
-  // 0.1.2 folded the event-Definition registry into `uiConversation.events`
-  // (commit be531688f3); the deferred arm never fires in a composition
-  // without the service, losing only the room chat rows, never the boot.
+  // The journal projections: claim the room/* events into chat nodes through
+  // the event-Definition registry on `uiConversation.events`; the deferred
+  // arm never fires in a composition without the service, losing only the
+  // room chat rows, never the boot.
   // The session list's 等你处理: a room's waiting question/approval cards are
   // published as the host's pending interactions (lowest precedence, so an
   // official approval in the same session still wins). The host tracks the

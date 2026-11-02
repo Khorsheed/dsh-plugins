@@ -15,9 +15,8 @@ const RUNNING_ROOM: RoomState = {
   runs: [{ member: 'ada', state: 'running', startedAt: 1 }],
 }
 
-/** The sessions-list double: the 0.1.5 `current` plus alpha.2's per-row retention (both read paths exercised). */
+/** The sessions-list double: per-row retention, `retainedBy.mainView` marking the on-screen session. */
 interface ListDouble {
-  current: SessionId | undefined
   byId: Record<SessionId, { id: SessionId; retainedBy?: { mainView?: number } }>
 }
 
@@ -30,7 +29,7 @@ interface Bench {
 }
 
 function bench(): Bench {
-  const list = createSnapshotStore<ListDouble>({ current: undefined, byId: {} })
+  const list = createSnapshotStore<ListDouble>({ byId: {} })
   const live = new Map<SessionId, ReturnType<typeof createSnapshotStore<{ tick: number }>>>()
   const ctx = {
     sessions: {
@@ -50,6 +49,13 @@ function bench(): Bench {
     getState: vi.fn(async () => ({ ok: true as const, value: { ok: true as const, value: IDLE_ROOM } })),
   }
   return { list, live, gateway, store: new RoomStore(ctx, gateway) }
+}
+
+/** Put one session on screen: its row alone carries a `mainView` retention. */
+function show(list: Bench['list'], sessionId: string): void {
+  list.update((draft) => {
+    draft.byId = { [sessionId]: { id: sessionId as SessionId, retainedBy: { mainView: 1 } } }
+  })
 }
 
 /** Register a live conversation feed for a session and poke it once. */
@@ -123,18 +129,7 @@ describe('RoomStore', () => {
   it('follows the current session into its first pull', async () => {
     const { list, store, gateway } = bench()
     const dispose = store.start()
-    list.update((draft) => { draft.current = 'room-1' as SessionId })
-    await vi.waitFor(() => { expect(gateway.isRoom).toHaveBeenCalledWith({ sessionId: 'room-1' }) })
-    await vi.waitFor(() => { expect(store.isRoomCached('room-1' as SessionId)).toBe(true) })
-    dispose()
-  })
-
-  it('follows the alpha.2 main-view retention row when the legacy current is absent', async () => {
-    const { list, store, gateway } = bench()
-    const dispose = store.start()
-    list.update((draft) => {
-      draft.byId['room-1' as SessionId] = { id: 'room-1' as SessionId, retainedBy: { mainView: 1 } }
-    })
+    show(list, 'room-1')
     await vi.waitFor(() => { expect(gateway.isRoom).toHaveBeenCalledWith({ sessionId: 'room-1' }) })
     await vi.waitFor(() => { expect(store.isRoomCached('room-1' as SessionId)).toBe(true) })
     dispose()
@@ -145,7 +140,7 @@ describe('RoomStore', () => {
     const { list, store, gateway } = bench()
     gateway.getState.mockResolvedValue({ ok: true, value: { ok: true, value: RUNNING_ROOM } } as never)
     const dispose = store.start()
-    list.update((draft) => { draft.current = 'room-1' as SessionId })
+    show(list, 'room-1')
     await vi.advanceTimersByTimeAsync(0)
     const baseline = gateway.getState.mock.calls.length
     expect(baseline).toBeGreaterThan(0)
@@ -167,7 +162,7 @@ describe('RoomStore', () => {
     vi.useFakeTimers()
     const { list, store, gateway } = bench()
     const dispose = store.start()
-    list.update((draft) => { draft.current = 'room-1' as SessionId })
+    show(list, 'room-1')
     await vi.advanceTimersByTimeAsync(0)
     const afterFirstPull = gateway.getState.mock.calls.length
     await vi.advanceTimersByTimeAsync(ROOM_POLL_INTERVAL_MS * 3)
@@ -180,7 +175,7 @@ describe('RoomStore', () => {
     const { list, store, gateway } = bench()
     gateway.getState.mockResolvedValue({ ok: true, value: { ok: true, value: RUNNING_ROOM } } as never)
     const dispose = store.start()
-    list.update((draft) => { draft.current = 'room-1' as SessionId })
+    show(list, 'room-1')
     await vi.advanceTimersByTimeAsync(0)
     dispose()
     const count = gateway.getState.mock.calls.length
@@ -194,7 +189,7 @@ describe('RoomStore', () => {
     const { list, store, gateway } = b
     const dispose = store.start()
     poke(b, 'room-1' as SessionId)
-    list.update((draft) => { draft.current = 'room-1' as SessionId })
+    show(list, 'room-1')
     await vi.advanceTimersByTimeAsync(0)
     const baseline = gateway.getState.mock.calls.length
     expect(baseline).toBeGreaterThan(0)
@@ -216,7 +211,7 @@ describe('RoomStore', () => {
     const { list, store, gateway } = b
     const dispose = store.start()
     poke(b, 'plain-1' as SessionId)
-    list.update((draft) => { draft.current = 'plain-1' as SessionId })
+    show(list, 'plain-1')
     await vi.advanceTimersByTimeAsync(0)
     expect(store.isRoomCached('plain-1' as SessionId)).toBe(false)
     const stateCalls = gateway.getState.mock.calls.length
@@ -248,7 +243,7 @@ describe('RoomStore', () => {
     const { list, store, gateway } = b
     const dispose = store.start()
     poke(b, 'room-1' as SessionId)
-    list.update((draft) => { draft.current = 'room-1' as SessionId })
+    show(list, 'room-1')
     await vi.advanceTimersByTimeAsync(0)
     const baseline = gateway.getState.mock.calls.length
 
