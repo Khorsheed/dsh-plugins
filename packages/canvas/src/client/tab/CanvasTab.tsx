@@ -238,7 +238,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
   // The tab's navigation (`sidebarRight.openTab('canvas', { params })`, from
   // a destination or any other package): applied once per revision, so a
   // repeat open of the same place still lands there.
-  const navigation = (props as { tab?: { navigation?: { params?: unknown; revision?: number } } }).tab?.navigation
+  const navigation = (props as { useTabInfo?: () => { tab?: { navigation?: { params?: unknown; revision?: number } } } }).useTabInfo?.().tab?.navigation
   const navRevision = navigation?.revision ?? 0
   const navParams = navigation?.params as Partial<CanvasNavParams> | undefined
   const appliedNav = useRef(0)

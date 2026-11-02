@@ -43,7 +43,7 @@ export function LibraryPane(props: LibraryPaneProps): ReactNode {
   // applied once per navigation revision, on mount when it opened this tab,
   // at once when the tab was already open, and again for a repeat of the
   // same place.
-  const navigation = (props as { tab?: { navigation?: { params?: unknown; revision?: number } } }).tab?.navigation
+  const navigation = (props as { useTabInfo?: () => { tab?: { navigation?: { params?: unknown; revision?: number } } } }).useTabInfo?.().tab?.navigation
   const navRevision = navigation?.revision ?? 0
   const navParams = navigation?.params as LibraryNavParams | undefined
   const appliedNav = useRef(0)

@@ -58,7 +58,7 @@ export function GameTab(props: GameTabProps): ReactNode {
   // The tab's navigation (`go` — a turn card door, the desk row, the destination
   // follower): applied once per revision, so a repeat open of the same place
   // still lands there, and one made before this tab mounted lands on mount.
-  const navigation = (props as { tab?: { navigation?: { params?: unknown; revision?: number } } }).tab?.navigation
+  const navigation = (props as { useTabInfo?: () => { tab?: { navigation?: { params?: unknown; revision?: number } } } }).useTabInfo?.().tab?.navigation
   const navRevision = navigation?.revision ?? 0
   const navParams = navigation?.params as Partial<GameNavParams> | undefined
   const appliedNav = useRef(0)

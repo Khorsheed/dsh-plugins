@@ -126,5 +126,5 @@ export function deskDestinationsOf(kind: string, event: { readonly type: string;
 }> {
   const row = deskRowOf({ ...event, seq: event.seq ?? 0, time: event.time ?? 0 } as Parameters<typeof deskRowOf>[0])
   if (row === null) return []
-  return [{ destination: { id: `desk:${DESK_OWNER}:${row.seq}`, kind, params: { projectId: row.projectId, ...(row.resourceId === undefined ? {} : { resourceId: row.resourceId }) }, label: row.resourceTitle ?? row.projectName }, role: row.role }]
+  return [{ destination: { id: `desk:${DESK_OWNER}:${row.seq}`, kind, params: row.resourceId === undefined ? { view: 'project', projectId: row.projectId } : { view: 'book', projectId: row.projectId, resourceId: row.resourceId }, label: row.resourceTitle ?? row.projectName }, role: row.role }]
 }

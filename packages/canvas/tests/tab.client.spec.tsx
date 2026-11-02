@@ -1130,3 +1130,20 @@ describe('CanvasSelectionStore — the genre page row', () => {
     expect(restored.tabs[0]?.at).toEqual({ kind: 'page', page: 'novel:chapter', param: 'ms_3', heading: '第三章' })
   })
 })
+
+describe('CanvasTab — the tab\'s navigation (agent-nav)', () => {
+  it('applies the navigation params the runtime hands through useTabInfo, once per revision', async () => {
+    const { props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')])] })
+    const goTo = vi.fn()
+    let revision = 1
+    const params = { canvasId: CANVAS_ID, card: 'c_1' }
+    const useTabInfo = () => ({ tab: { navigation: { address: '', revision, params } } })
+    const { rerender } = render(<CanvasTab {...props} goTo={goTo} {...{ useTabInfo } as object} />)
+    await waitFor(() => { expect(goTo).toHaveBeenCalledExactlyOnceWith(params) })
+    rerender(<CanvasTab {...props} goTo={goTo} {...{ useTabInfo } as object} />)
+    expect(goTo).toHaveBeenCalledTimes(1)
+    revision = 2
+    rerender(<CanvasTab {...props} goTo={goTo} {...{ useTabInfo } as object} />)
+    await waitFor(() => { expect(goTo).toHaveBeenCalledTimes(2) })
+  })
+})
