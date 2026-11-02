@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { reconstructSession, type BuiltLogRequest, type SessionLogRow } from '../src/log-lane.ts'
+import { applyRoomEvent, emptyRoom } from '../src/room.ts'
 import { InspectorStore } from '../src/store.ts'
 
 const turn1: SessionLogRow[] = [
@@ -120,6 +121,29 @@ describe('room rounds', () => {
     expect(store.getTurn('s', third!.turnSeq)!.scopes[0]?.requests.map(r => r.startedAt)).toEqual([91_000])
     const seqs = store.getSessionTrend('s').requests.filter(r => r.scopeId === 'child-coco').map(r => r.seq)
     expect(new Set(seqs).size).toBe(seqs.length)
+  })
+
+  it('a cancelled run reads cancelled and ends where it was cancelled', () => {
+    // The room records a stop without elapsedMs; the run must not stay open until the next dispatch.
+    const rows = [...turn1, ...room.filter(row => row.seq !== 23),
+      { type: 'room/run-state', seq: 23, time: 7000, data: { runId: '20:m-coco', member: 'coco', state: 'cancelled', startedAt: 5050, childSessionId: 'child-coco' } },
+    ] satisfies SessionLogRow[]
+    const store = new InspectorStore()
+    store.insertLogTurns('s', reconstructSession(rows))
+    for (const row of rows) if (row.type.startsWith('room/')) store.noteRoomEvent('s', row.type, row.data, row.seq, row.time)
+    const [, first] = store.listTurns('s').turns
+    const scope = store.getTurn('s', first!.turnSeq)!.scopes[0]!
+    expect(scope.status).toBe('cancelled')
+    expect(scope.endedAt).toBe(7000)
+  })
+
+  it('a member renamed by name keeps its runs labelled with the new name', () => {
+    const state = emptyRoom()
+    applyRoomEvent(state, 'room/member-added', { id: 'm-coco', name: 'coco' }, 1, 1)
+    applyRoomEvent(state, 'room/member-updated', { name: 'coco', role: '测试' }, 2, 2)
+    expect(state.members.get('m-coco')).toBe('coco')
+    applyRoomEvent(state, 'room/member-updated', { name: 'coco', rename: 'codex' }, 3, 3)
+    expect(state.members.get('m-coco')).toBe('codex')
   })
 
   it('a round anchored on the human message carries where the chat pages back to', () => {

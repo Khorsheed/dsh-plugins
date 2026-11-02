@@ -346,7 +346,8 @@ export interface AgentScopeSummary {
   kind: 'main' | 'subagent'
   /** Delegation label from `subagent/catalog` (e.g. 第一章对账 JSON 提取). */
   label?: string
-  status: 'running' | 'ok' | 'failed'
+  /** `cancelled`: a room member run the human or the room stopped. */
+  status: 'running' | 'ok' | 'failed' | 'cancelled'
   error?: string
   config: RequestConfig
   requests: CapturedRequest[]
@@ -563,7 +564,8 @@ export interface AgentScopeOverview {
     /** An external CLI member's compaction (`/compact`, after this round), or the CLI's own (`auto`, inside it). */
     member?: { name?: string; source: 'manual' | 'auto'; beforeTokens?: number; afterTokens?: number }
   }
-  status: 'running' | 'ok' | 'failed'
+  /** `cancelled`: a room member run the human or the room stopped. */
+  status: 'running' | 'ok' | 'failed' | 'cancelled'
   error?: string
   config: RequestConfig
   startedAt: number
