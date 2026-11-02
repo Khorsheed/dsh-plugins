@@ -158,7 +158,7 @@ export function VideoPane(props: VideoPaneProps): ReactNode {
   const projectId = props.useStore((s) => s.projectId)
   // The tab's navigation (`openTab('video-studio', { params })`: a
   // destination, a desk row's 打开 →), applied once per revision.
-  const navigation = (props as { tab?: { navigation?: { params?: unknown; revision?: number } } }).tab?.navigation
+  const navigation = (props as { useTabInfo?: () => { tab?: { navigation?: { params?: unknown; revision?: number } } } }).useTabInfo?.().tab?.navigation
   const navRevision = navigation?.revision ?? 0
   const navParams = navigation?.params as Partial<VideoNavParams> | undefined
   const asked = navRevision > 0 && navRevision !== appliedNavigation.get(props.sessionId) && typeof navParams?.projectId === 'string'

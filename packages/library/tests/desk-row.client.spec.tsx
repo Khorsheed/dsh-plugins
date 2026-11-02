@@ -63,7 +63,7 @@ describe('DeskOpenRow', () => {
     expect(screen.getByText('bill 打开了《神经科学原理》')).toBeTruthy()
     expect(openBook).not.toHaveBeenCalled()
     expect(deskDestinationsOf('library', event(1, payload('coordinator')))).toEqual([{
-      destination: { id: `desk:${OWNER}:1`, kind: 'library', params: { projectId: 'p_neuro', resourceId: 'r_kandel' }, label: '神经科学原理' }, role: 'coordinator',
+      destination: { id: `desk:${OWNER}:1`, kind: 'library', params: { view: 'book', projectId: 'p_neuro', resourceId: 'r_kandel' }, label: '神经科学原理' }, role: 'coordinator',
     }])
     expect(deskDestinationsOf('library', event(2, payload('member')))[0]?.role).toBe('member')
     expect(deskDestinationsOf('library', event(3, { ...payload('member'), owner: '@khorsheed/dsh-canvas' }))).toEqual([])

@@ -2656,7 +2656,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
   // conversation card's 查看 →): open that article, then its notes or its
   // text. Applied once per revision, page-wide per session, so a remounted
   // pane does not pull the reader back to an old card's article.
-  const navigation = (props as { tab?: { navigation?: { params?: unknown; revision?: number } } }).tab?.navigation
+  const navigation = (props as { useTabInfo?: () => { tab?: { navigation?: { params?: unknown; revision?: number } } } }).useTabInfo?.().tab?.navigation
   const navRevision = navigation?.revision ?? 0
   const navParams = navigation?.params as Partial<ReaderNavParams> | undefined
   const navKey = String(props.sessionId ?? '')
