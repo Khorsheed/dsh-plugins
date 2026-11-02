@@ -35,7 +35,10 @@ export function turnSummaryOf(report: TurnReport, t: TranslateNS<'game'>): TurnS
     const said = report.version.kind === 'deployed'
       ? t('turn.deployed', { version: report.version.version })
       : t('turn.candidate', { version: report.version.version })
-    row('version', `${said}${check}`, { view: 'play' })
+    const names = report.version.names ?? []
+    const what = names.length === 0 ? '' : ` · ${t('turn.versionChanged', { names: names.slice(0, 3).join('、'), more: names.length > 3 ? t('turn.versionMore', { count: names.length }) : '' })}`
+    // Where the version's change is seen (the elements it touched); a candidate waits in play.
+    row('version', `${said}${what}${check}`, report.version.place ?? { view: 'play' })
   }
   if (report.check !== null && !report.check.ok) {
     row('check', report.check.gaveUp ? t('turn.gaveUp', { count: report.check.failures }) : t('turn.checkFailed', { count: report.check.failures }), { view: 'versions' })

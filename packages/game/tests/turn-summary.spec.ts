@@ -44,6 +44,16 @@ describe('turnSummaryOf', () => {
     expect(new Set(summary.rows.map(row => row.destination?.id)).size).toBe(summary.rows.length)
   })
 
+  it('the version line lands where the version changed — a re-modelled character, not play', () => {
+    const rows = turnSummaryOf({
+      ...report, elements: [], chapters: [], params: [], code: [], tests: [], check: null,
+      version: { kind: 'deployed', version: 35, place: { view: 'elements', elementId: 'xingzhe' }, names: ['行者'] },
+    }, t).rows
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.label).toBe('v35 已上线 · 改了行者')
+    expect(rows[0]!.destination?.params).toEqual({ projectId: report.projectId, view: 'elements', elementId: 'xingzhe' })
+  })
+
   it('a turn that changed nothing has no lines', () => {
     expect(turnSummaryOf({ ...report, version: null, check: null, elements: [], chapters: [], params: [], code: [], tests: [] }, t).rows).toEqual([])
   })
