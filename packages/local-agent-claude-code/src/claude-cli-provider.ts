@@ -49,6 +49,7 @@ import {
   appendMirrorStep,
   appendRequestHeaderIfChanged,
   closeMirrorTurn,
+  type MirrorSource,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
@@ -1587,8 +1588,14 @@ export async function startClaudeCliRun(
   }))
 }
 
-/** The mirror source for every message the claude route writes. */
-export const CLAUDE_MIRROR_SOURCE = { provider: 'claude-local', model: 'claude' } as const
+/**
+ * The mirror source for a message the claude route writes: the model the
+ * round observed (the stream's init event, else the model the launch
+ * requested), or the bare `claude` label when neither is known.
+ */
+export function claudeMirrorSource(model?: string): MirrorSource {
+  return { provider: 'claude-local', model: model === undefined || model === '' ? 'claude' : model }
+}
 
 /** The delta-progress text for one transcript line. */
 export function claudeLineText(line: ClaudeTranscriptLine): string {
@@ -1611,9 +1618,10 @@ export function appendClaudeTranscriptGroup(
   step: number,
   group: readonly ClaudeTranscriptLine[],
   usage: TokenUsage | undefined,
+  model?: string,
 ): void {
   const lineUsage = group.map(line => line.usage).find(value => value !== undefined) ?? usage
-  appendMirrorStep(childSession, turn, step, { blocks: group, ...lineUsage === undefined ? {} : { usage: lineUsage } }, CLAUDE_MIRROR_SOURCE)
+  appendMirrorStep(childSession, turn, step, { blocks: group, ...lineUsage === undefined ? {} : { usage: lineUsage } }, claudeMirrorSource(model))
 }
 
 /**
@@ -1743,7 +1751,7 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
           for (let scan = 0; scan < uptoGroups; scan += 1) {
             if (groupStarts[scan]! < mirrored) continue
             const group = groups[scan]!
-            appendClaudeTranscriptGroup(childSession, turn, scan + 1, group, scan === carrier ? parser.usage : undefined)
+            appendClaudeTranscriptGroup(childSession, turn, scan + 1, group, scan === carrier ? parser.usage : undefined, parser.model ?? spec.model)
             mirrored = groupStarts[scan]! + group.length
             for (const line of group) localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
           }
@@ -1777,7 +1785,7 @@ async function appendClaudeResponse(
   spec: ClaudeCliRunSpec,
   task: string,
   turn: number,
-  parsed: { lines: readonly ClaudeTranscriptLine[]; output: ContentBlock[]; usage?: TokenUsage },
+  parsed: { lines: readonly ClaudeTranscriptLine[]; output: ContentBlock[]; usage?: TokenUsage; model?: string },
   fromLines = 0,
   userMirrored = false,
 ): Promise<void> {
@@ -1807,7 +1815,7 @@ async function appendClaudeResponse(
   for (let scan = 0; scan < groups.length; scan += 1) {
     if (groupStarts[scan]! < fromLines) continue
     const group = groups[scan]!
-    appendClaudeTranscriptGroup(childSession, turn, scan + 1, group, scan === carrier ? parsed.usage : undefined)
+    appendClaudeTranscriptGroup(childSession, turn, scan + 1, group, scan === carrier ? parsed.usage : undefined, parsed.model ?? spec.model)
     for (const line of group) localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
   }
   const carrierLine = carrier === -1 ? -1 : (groupStarts[carrier] ?? -1)
@@ -1889,6 +1897,7 @@ async function mirrorClaudeAfterExit(
       lines: parsed.lines,
       output: trimmed === undefined || trimmed === '' ? [] : [{ type: 'text', text: trimmed }],
       ...parsed.usage === undefined ? {} : { usage: parsed.usage },
+      ...parsed.model === undefined ? {} : { model: parsed.model },
     }, fromLines, userMirrored)
   }
   try {

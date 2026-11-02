@@ -82,7 +82,7 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
         "role": "assistant",
         "source": {
           "kind": "model",
-          "model": "codex",
+          "model": "gpt-5.4",
           "provider": "codex-local",
         },
       },
@@ -128,7 +128,7 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
         "role": "assistant",
         "source": {
           "kind": "model",
-          "model": "codex",
+          "model": "gpt-5.4",
           "provider": "codex-local",
         },
       },
@@ -248,7 +248,7 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
         "role": "assistant",
         "source": {
           "kind": "model",
-          "model": "codex",
+          "model": "gpt-5.4",
           "provider": "codex-local",
         },
       },
@@ -339,7 +339,7 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
         "role": "assistant",
         "source": {
           "kind": "model",
-          "model": "codex",
+          "model": "gpt-5.4",
           "provider": "codex-local",
         },
       },

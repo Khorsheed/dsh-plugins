@@ -93,7 +93,7 @@ import {
 } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
-  CLAUDE_MIRROR_SOURCE,
+  claudeMirrorSource,
   claudeLineText,
   ClaudeStreamParser,
   claudeVersionFromInit,
@@ -905,7 +905,7 @@ export class ClaudeLiveDriver {
         blocks: [{ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } }],
         ...totalFallback ? { usage } : {},
         interrupted,
-      }, CLAUDE_MIRROR_SOURCE)
+      }, claudeMirrorSource(roundModel ?? spec.configuration?.model))
       if (totalFallback) usageCarried = true
       stream.lastSnapshotAt = now
       stream.lastSnapshotLen = stream.text.length
@@ -969,7 +969,7 @@ export class ClaudeLiveDriver {
         appendMirrorContent(childSession, turn, stream.durable!, {
           blocks: [{ kind: stream.kind, text: line.kind === 'tool' ? '' : line.text, ...line.generation === undefined ? {} : { generation: line.generation } }],
           ...effectiveUsage === undefined ? {} : { usage: effectiveUsage },
-        }, CLAUDE_MIRROR_SOURCE)
+        }, claudeMirrorSource(roundModel ?? spec.configuration?.model))
         finishStream(stream)
         closeOpenStep()
       } else {
@@ -979,7 +979,7 @@ export class ClaudeLiveDriver {
         appendMirrorStep(childSession, turn, lastStep, {
           blocks: [line],
           ...effectiveUsage === undefined ? {} : { usage: effectiveUsage },
-        }, CLAUDE_MIRROR_SOURCE)
+        }, claudeMirrorSource(roundModel ?? spec.configuration?.model))
       }
       folded.add(index)
       localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })

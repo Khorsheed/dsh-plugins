@@ -47,6 +47,7 @@ import {
   appendMirrorStep,
   appendRequestHeaderIfChanged,
   closeMirrorTurn,
+  type MirrorSource,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
@@ -1367,8 +1368,14 @@ export function startCodexCliRun(
   }))
 }
 
-/** The mirror source for every message the codex route writes. */
-export const CODEX_MIRROR_SOURCE = { provider: 'codex-local', model: 'codex' } as const
+/**
+ * The mirror source for a message the codex route writes: the model the round
+ * requested (codex's event stream never names one; the argv or the turn/start
+ * parameters are the authority), or the bare `codex` label when none was set.
+ */
+export function codexMirrorSource(model?: string): MirrorSource {
+  return { provider: 'codex-local', model: model === undefined || model === '' ? 'codex' : model }
+}
 
 /**
  * Fold one transcript line into the child session as one closed assistant
@@ -1385,8 +1392,9 @@ export function appendCodexTranscriptLine(
   step: number,
   line: CodexTranscriptLine,
   usage: TokenUsage | undefined,
+  model?: string,
 ): void {
-  appendMirrorStep(childSession, turn, step, { blocks: [line], ...usage === undefined ? {} : { usage } }, CODEX_MIRROR_SOURCE)
+  appendMirrorStep(childSession, turn, step, { blocks: [line], ...usage === undefined ? {} : { usage } }, codexMirrorSource(model))
 }
 
 /** The delta-progress text for one transcript line. */
@@ -1476,7 +1484,7 @@ function createCodexLiveMirror(spec: CodexCliRunSpec, task: string, turn: number
             const line = parser.lines[index]
             if (line === undefined) continue
             const usage = index === carrier ? parser.usage : undefined
-            appendCodexTranscriptLine(childSession, turn, index + 1, line, usage)
+            appendCodexTranscriptLine(childSession, turn, index + 1, line, usage, spec.model)
             mirrored = index + 1
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
           }
@@ -1535,7 +1543,7 @@ async function appendCodexResponse(
   }
   let step = fromLines + 1
   for (const line of parsed.lines.slice(fromLines)) {
-    appendCodexTranscriptLine(childSession, turn, step, line, step - 1 === usageIndex ? parsed.usage : undefined)
+    appendCodexTranscriptLine(childSession, turn, step, line, step - 1 === usageIndex ? parsed.usage : undefined, spec.model)
     localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
     step += 1
   }

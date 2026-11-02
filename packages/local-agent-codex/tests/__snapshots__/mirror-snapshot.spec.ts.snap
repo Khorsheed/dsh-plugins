@@ -66,7 +66,7 @@ exports[`codex mirror snapshot (exec) > one fixed exec --json stream → the exa
         "role": "assistant",
         "source": {
           "kind": "model",
-          "model": "codex",
+          "model": "gpt-5.4",
           "provider": "codex-local",
         },
       },
@@ -112,7 +112,7 @@ exports[`codex mirror snapshot (exec) > one fixed exec --json stream → the exa
         "role": "assistant",
         "source": {
           "kind": "model",
-          "model": "codex",
+          "model": "gpt-5.4",
           "provider": "codex-local",
         },
       },
@@ -232,7 +232,7 @@ exports[`codex mirror snapshot (exec) > one fixed exec --json stream → the exa
         "role": "assistant",
         "source": {
           "kind": "model",
-          "model": "codex",
+          "model": "gpt-5.4",
           "provider": "codex-local",
         },
       },
@@ -318,7 +318,7 @@ exports[`codex mirror snapshot (exec) > one fixed exec --json stream → the exa
         "role": "assistant",
         "source": {
           "kind": "model",
-          "model": "codex",
+          "model": "gpt-5.4",
           "provider": "codex-local",
         },
       },
@@ -369,7 +369,7 @@ exports[`codex mirror snapshot (exec) > one fixed exec --json stream → the exa
         "role": "assistant",
         "source": {
           "kind": "model",
-          "model": "codex",
+          "model": "gpt-5.4",
           "provider": "codex-local",
         },
       },

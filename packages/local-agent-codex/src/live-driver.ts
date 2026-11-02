@@ -53,7 +53,7 @@ import type { Config } from './index.ts'
 import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import {
   appendCodexTranscriptLine,
-  CODEX_MIRROR_SOURCE,
+  codexMirrorSource,
   codexLineText,
   commandOutcome,
   DEFAULT_DISPOSE_GRACE_MS,
@@ -1241,7 +1241,7 @@ export class CodexLiveDriver {
         blocks: [{ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } }],
         ...attachUsage && usage !== undefined ? { usage } : {},
         interrupted,
-      }, CODEX_MIRROR_SOURCE)
+      }, codexMirrorSource(spec.configuration?.model ?? runtime?.boundModel))
       if (attachUsage) usageCarried = true
       stream.lastSnapshotAt = now
       stream.lastSnapshotLen = stream.text.length
@@ -1297,13 +1297,13 @@ export class CodexLiveDriver {
         appendMirrorContent(childSession, turn, stream.durable!, {
           blocks: [{ kind: stream.kind, text: line.kind === 'tool' ? '' : line.text, ...line.generation === undefined ? {} : { generation: line.generation } }],
           ...lineUsage === undefined ? {} : { usage: lineUsage },
-        }, CODEX_MIRROR_SOURCE)
+        }, codexMirrorSource(spec.configuration?.model ?? runtime?.boundModel))
         finishStream(stream)
         closeOpenStep()
       } else {
         closeOpenStep()
         lastStep += 1
-        appendCodexTranscriptLine(childSession, turn, lastStep, line, lineUsage)
+        appendCodexTranscriptLine(childSession, turn, lastStep, line, lineUsage, spec.configuration?.model ?? runtime?.boundModel)
       }
       folded.add(index)
       localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
