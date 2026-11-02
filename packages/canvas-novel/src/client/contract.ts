@@ -85,7 +85,8 @@ export interface NovelRemote {
   editChapterBody: (sessionId: SessionId, request: NovelBodyEditRequest) => Promise<RemoteResult<NovelBodyEditResult>>
   newOwnChapter: (sessionId: SessionId, request: NovelOwnChapterRequest) => Promise<RemoteResult<NovelGestureResult & { readonly n?: number }>>
   importOwnChapter: (sessionId: SessionId, request: NovelImportChapterRequest) => Promise<RemoteResult<NovelImportChapterResult>>
-  importDirectory: (sessionId: SessionId, selection?: NovelDirectorySelection) => Promise<RemoteResult<NovelDirectoryImportResult>>
+  /** The gateway counts both declared arguments; native selection passes an explicit undefined. */
+  importDirectory: (sessionId: SessionId, selection: NovelDirectorySelection | undefined) => Promise<RemoteResult<NovelDirectoryImportResult>>
   decideOutline: (sessionId: SessionId, request: NovelOutlineDecideRequest) => Promise<RemoteResult<NovelGestureResult>>
   deletePreview: (request: NovelDeleteRequest) => Promise<RemoteResult<NovelDeletePreviewResult>>
   deleteNode: (sessionId: SessionId, request: NovelDeleteRequest) => Promise<RemoteResult<NovelGestureResult>>
