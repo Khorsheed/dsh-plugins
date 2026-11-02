@@ -50,9 +50,9 @@ import {
   KimiBundleConfig, KimiCardSection, type KimiLiveSettings, type KimiSettingsCardInjected,
 } from './SettingsCard.tsx'
 
-export { KimiBundleConfig, KimiCardSection, KimiSettingsCard } from './SettingsCard.tsx'
+export { KimiBundleConfig, KimiCardSection } from './SettingsCard.tsx'
 export type {
-  KimiLiveSettings, KimiBundleConfigProps, KimiCardSectionProps, KimiSettingsCardInjected, KimiSettingsCardProps,
+  KimiLiveSettings, KimiBundleConfigProps, KimiCardSectionProps, KimiSettingsCardInjected,
 } from './SettingsCard.tsx'
 export { en, NS, zh }
 export type { LocalAgentKimiKey }

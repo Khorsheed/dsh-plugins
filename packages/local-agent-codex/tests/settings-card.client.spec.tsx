@@ -16,8 +16,8 @@ import type { SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/clien
 import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import {
-  CodexBundleConfig, CodexSettingsCard,
-  type CodexLiveSettings, type CodexBundleConfigProps, type CodexSettingsCardProps,
+  CodexBundleConfig, CodexCardSection,
+  type CodexLiveSettings, type CodexBundleConfigProps, type CodexCardSectionProps,
 } from '../src/client/SettingsCard.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -138,34 +138,26 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
   return { props, scope: { set, unset } }
 }
 
-/** Render the 0.1.5 card over a scope whose writes update the snapshot reactively. */
+/** Render the family-card section (expanded) over a scope whose writes update the snapshot reactively. */
 function renderCard(options: CardOptions): CardHarness {
   const { props, scope } = makeCardProps(options)
-  render(<CodexSettingsCard {...props as unknown as CodexSettingsCardProps} />)
+  render(<CodexCardSection {...{ active: true, ...props } as unknown as CodexCardSectionProps} />)
   return { scope }
 }
 
-/** Render the alpha.2 bundle-config entry over the same reactive scope. */
+/** Render the plugins.item entry over the same reactive scope. */
 function renderBundleConfig(entryView: 'summary' | 'page', options: CardOptions = {}): CardHarness {
   const { props, scope } = makeCardProps(options)
   render(<CodexBundleConfig {...{ view: entryView, ...props } as unknown as CodexBundleConfigProps} />)
   return { scope }
 }
 
-/** The disclosure header: the only button carrying aria-expanded. */
-function headerButton(): HTMLButtonElement {
-  const header = document.body.querySelector('button[aria-expanded]')
-  if (header === null) throw new Error('card header button missing')
-  return header as HTMLButtonElement
-}
-
-/** Open the card and flush the auth block's mount probe. */
+/** Flush the auth block's mount probe (the section renders expanded). */
 async function openCard(): Promise<void> {
-  fireEvent.click(headerButton())
   await act(async () => {})
 }
 
-describe('CodexSettingsCard', () => {
+describe('CodexCardSection', () => {
   it('renders the three states: unauthenticated with live off, and no login affordance', async () => {
     renderCard({})
     await openCard()
@@ -251,7 +243,7 @@ describe('CodexSettingsCard', () => {
   })
 })
 
-describe('CodexSettingsCard endpoint credential block', () => {
+describe('CodexCardSection endpoint credential block', () => {
   /** A reactive endpointAuth face over a mutable resolved state. */
   function endpointFace(initial: { baseUrl?: string; apiKeySet: boolean }) {
     let state = { authTokenSet: false, ...initial }
@@ -316,7 +308,7 @@ describe('CodexSettingsCard endpoint credential block', () => {
   })
 })
 
-describe('CodexSettingsCard model list section', () => {
+describe('CodexCardSection model list section', () => {
   // The section's behavior (rows, delete, drag, the add dialog) is pinned by
   // the family core's own ModelListSection spec; here only the wiring: the
   // card renders the core section over the injected faces.

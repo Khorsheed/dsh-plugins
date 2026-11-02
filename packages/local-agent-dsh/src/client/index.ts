@@ -49,9 +49,9 @@ import {
   DshBundleConfig, DshCardSection, type DshCardSettings, type DshSettingsCardInjected,
 } from './SettingsCard.tsx'
 
-export { DshBundleConfig, DshCardSection, DshSettingsCard } from './SettingsCard.tsx'
+export { DshBundleConfig, DshCardSection } from './SettingsCard.tsx'
 export type {
-  DshCardSettings, DshBundleConfigProps, DshCardSectionProps, DshSettingsCardInjected, DshSettingsCardProps,
+  DshCardSettings, DshBundleConfigProps, DshCardSectionProps, DshSettingsCardInjected,
 } from './SettingsCard.tsx'
 export { en, NS, zh }
 export type { LocalAgentDshKey }

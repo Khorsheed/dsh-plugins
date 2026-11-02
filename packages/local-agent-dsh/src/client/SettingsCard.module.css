@@ -1,85 +1,12 @@
-/* dsh harness settings card: the official plugin-card chrome, re-implemented
- * locally (the client bundle-purity gate forbids value-importing the official
- * card chrome — same pattern as context-guard). The auth block inside is the
- * family core's shared ProviderAuthBlock; the enable/live blocks write
+/* dsh harness settings card body (the family card section and the
+ * plugins.item page view). The auth block inside is the
+ * family core's shared ProviderAuthBlock; the live and model blocks write
  * through the bound settingsScope immediately (no staging). */
-
-.card {
-  list-style: none;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
-  background: var(--dsw-alias-bg-layer-3);
-  transition: border-color 0.16s, background 0.16s;
-}
-
-.card:hover {
-  border-color: var(--dsw-alias-label-dimmed);
-}
-
-/* An open card reads as the one being worked on, not merely taller. */
-.cardOpen {
-  background: var(--dsw-alias-bg-layer-2);
-  border-color: var(--dsw-alias-label-dimmed);
-}
-
-.header {
-  width: 100%;
-  appearance: none;
-  border: 0;
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border-radius: 12px;
-}
-
-.header:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
-  outline-offset: -2px;
-}
-
-/* Name over description: the description is what tells two plugins apart,
-   so it gets its own line rather than trailing the name. */
-.headText {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.nameRow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.name {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--dsw-alias-label-primary);
-}
 
 .description {
   font-size: 13px;
   line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
-}
-
-.chevron {
-  flex: none;
-  color: var(--dsw-alias-label-tertiary);
-  transition: transform 0.16s;
-}
-
-.chevronOpen {
-  transform: rotate(180deg);
 }
 
 .body {

@@ -16,8 +16,8 @@ import type { SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/clien
 import type { LocalAgentModelDirectory, LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import {
-  ClaudeCodeBundleConfig, ClaudeCodeSettingsCard,
-  type ClaudeLiveSettings, type ClaudeCodeBundleConfigProps, type ClaudeCodeSettingsCardProps,
+  ClaudeCodeBundleConfig, ClaudeCodeCardSection,
+  type ClaudeLiveSettings, type ClaudeCodeBundleConfigProps, type ClaudeCodeCardSectionProps,
 } from '../src/client/SettingsCard.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -141,34 +141,26 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
   return { props, scope: { set, unset } }
 }
 
-/** Render the 0.1.5 card over a scope whose writes update the snapshot reactively. */
+/** Render the family-card section (expanded) over a scope whose writes update the snapshot reactively. */
 function renderCard(options: CardOptions): CardHarness {
   const { props, scope } = makeCardProps(options)
-  render(<ClaudeCodeSettingsCard {...props as unknown as ClaudeCodeSettingsCardProps} />)
+  render(<ClaudeCodeCardSection {...{ active: true, ...props } as unknown as ClaudeCodeCardSectionProps} />)
   return { scope }
 }
 
-/** Render the alpha.2 bundle-config entry over the same reactive scope. */
+/** Render the plugins.item entry over the same reactive scope. */
 function renderBundleConfig(entryView: 'summary' | 'page', options: CardOptions = {}): CardHarness {
   const { props, scope } = makeCardProps(options)
   render(<ClaudeCodeBundleConfig {...{ view: entryView, ...props } as unknown as ClaudeCodeBundleConfigProps} />)
   return { scope }
 }
 
-/** The disclosure header: the only button carrying aria-expanded. */
-function headerButton(): HTMLButtonElement {
-  const header = document.body.querySelector('button[aria-expanded]')
-  if (header === null) throw new Error('card header button missing')
-  return header as HTMLButtonElement
-}
-
-/** Open the card and flush the auth block's mount probe. */
+/** Flush the auth block's mount probe (the section renders expanded). */
 async function openCard(): Promise<void> {
-  fireEvent.click(headerButton())
   await act(async () => {})
 }
 
-describe('ClaudeCodeSettingsCard', () => {
+describe('ClaudeCodeCardSection', () => {
   it('renders the three states: unauthenticated with live off', async () => {
     renderCard({ endpointAuth: { read: vi.fn(async () => ({ apiKeySet: false, authTokenSet: false })), write: vi.fn(async () => ({ apiKeySet: false, authTokenSet: false })) } })
     await openCard()
@@ -229,7 +221,7 @@ describe('ClaudeCodeSettingsCard', () => {
   })
 })
 
-describe('ClaudeCodeSettingsCard model list section', () => {
+describe('ClaudeCodeCardSection model list section', () => {
   // The section's behavior (rows, delete, drag, the add dialog) is pinned by
   // the family core's own ModelListSection spec; here only the wiring: the
   // card renders the core section over the injected faces.
@@ -269,7 +261,7 @@ describe('ClaudeCodeBundleConfig', () => {
   })
 })
 
-describe('ClaudeCodeSettingsCard endpoint credential block', () => {
+describe('ClaudeCodeCardSection endpoint credential block', () => {
   /** A reactive endpointAuth face over a mutable resolved state. */
   function endpointFace(initial: { baseUrl?: string; apiKeySet: boolean; authTokenSet: boolean }) {
     let state = initial
@@ -363,7 +355,7 @@ describe('ClaudeCodeSettingsCard endpoint credential block', () => {
   })
 })
 
-describe('ClaudeCodeSettingsCard endpoint verify button', () => {
+describe('ClaudeCodeCardSection endpoint verify button', () => {
   const face = (): { read: () => Promise<{ apiKeySet: boolean; authTokenSet: boolean }>; write: () => Promise<{ apiKeySet: boolean; authTokenSet: boolean }> } => ({
     read: vi.fn(async () => ({ apiKeySet: true, authTokenSet: false })),
     write: vi.fn(async () => ({ apiKeySet: true, authTokenSet: false })),

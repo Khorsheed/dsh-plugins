@@ -52,9 +52,9 @@ import {
   CodexBundleConfig, CodexCardSection, type CodexLiveSettings, type CodexSettingsCardInjected,
 } from './SettingsCard.tsx'
 
-export { CodexBundleConfig, CodexCardSection, CodexSettingsCard } from './SettingsCard.tsx'
+export { CodexBundleConfig, CodexCardSection } from './SettingsCard.tsx'
 export type {
-  CodexLiveSettings, CodexBundleConfigProps, CodexCardSectionProps, CodexSettingsCardInjected, CodexSettingsCardProps,
+  CodexLiveSettings, CodexBundleConfigProps, CodexCardSectionProps, CodexSettingsCardInjected,
 } from './SettingsCard.tsx'
 export { en, NS, zh }
 export type { LocalAgentCodexKey }

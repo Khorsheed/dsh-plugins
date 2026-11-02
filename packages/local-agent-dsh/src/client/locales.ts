@@ -7,8 +7,6 @@ export const NS = 'local-agent-dsh'
 export const zh = {
   'card.title': '本机 DSH 委派',
   'card.description': 'dsh 自委派：认证状态、默认模型与常驻模式（live）',
-  'card.expand': '展开',
-  'card.collapse': '收起',
   'auth.title': '认证',
   'model.title': '默认模型',
   'model.info.aria': '默认模型说明',
@@ -45,8 +43,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const en = {
   'card.title': 'Local DSH Delegation',
   'card.description': 'dsh self-delegation: credential status, default model, and resident (live) mode',
-  'card.expand': 'Expand',
-  'card.collapse': 'Collapse',
   'auth.title': 'Authentication',
   'model.title': 'Default model',
   'model.info.aria': 'About the default model',

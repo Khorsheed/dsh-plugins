@@ -16,8 +16,8 @@ import type { SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/clien
 import type { LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import {
-  DshBundleConfig, DshSettingsCard,
-  type DshCardSettings, type DshBundleConfigProps, type DshSettingsCardProps,
+  DshBundleConfig, DshCardSection,
+  type DshCardSettings, type DshBundleConfigProps, type DshCardSectionProps,
 } from '../src/client/SettingsCard.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -129,34 +129,26 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
   return { props, scope: { set, unset } }
 }
 
-/** Render the 0.1.5 card over a scope whose writes update the snapshot reactively. */
+/** Render the family-card section (expanded) over a scope whose writes update the snapshot reactively. */
 function renderCard(options: CardOptions): CardHarness {
   const { props, scope } = makeCardProps(options)
-  render(<DshSettingsCard {...props as unknown as DshSettingsCardProps} />)
+  render(<DshCardSection {...{ active: true, ...props } as unknown as DshCardSectionProps} />)
   return { scope }
 }
 
-/** Render the alpha.2 bundle-config entry over the same reactive scope. */
+/** Render the plugins.item entry over the same reactive scope. */
 function renderBundleConfig(entryView: 'summary' | 'page', options: CardOptions = {}): CardHarness {
   const { props, scope } = makeCardProps(options)
   render(<DshBundleConfig {...{ view: entryView, ...props } as unknown as DshBundleConfigProps} />)
   return { scope }
 }
 
-/** The disclosure header: the only button carrying aria-expanded. */
-function headerButton(): HTMLButtonElement {
-  const header = document.body.querySelector('button[aria-expanded]')
-  if (header === null) throw new Error('card header button missing')
-  return header as HTMLButtonElement
-}
-
-/** Open the card and flush the auth block's mount probe. */
+/** Flush the auth block's mount probe (the section renders expanded). */
 async function openCard(): Promise<void> {
-  fireEvent.click(headerButton())
   await act(async () => {})
 }
 
-describe('DshSettingsCard', () => {
+describe('DshCardSection', () => {
   it('renders the default states: no 启用 switch (always on), live off — and NO login action', async () => {
     renderCard({})
     await openCard()
@@ -225,7 +217,7 @@ describe('DshSettingsCard', () => {
   })
 })
 
-describe('DshSettingsCard default-model block', () => {
+describe('DshCardSection default-model block', () => {
   it('shows the stored model and saves an edited one as the model key', async () => {
     const harness = renderCard({ value: { live: false, model: 'model-a' } })
     await openCard()
@@ -287,7 +279,7 @@ describe('DshSettingsCard default-model block', () => {
   })
 })
 
-describe('DshSettingsCard model surface (harness broker)', () => {
+describe('DshCardSection model surface (harness broker)', () => {
   /** One broker answer, with every layer overridable. */
   function info(over: Partial<LocalAgentModelInfo> = {}): LocalAgentModelInfo {
     return {

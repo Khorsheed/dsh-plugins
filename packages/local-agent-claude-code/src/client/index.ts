@@ -50,9 +50,9 @@ import {
   ClaudeCodeBundleConfig, ClaudeCodeCardSection, type ClaudeLiveSettings, type ClaudeCodeSettingsCardInjected,
 } from './SettingsCard.tsx'
 
-export { ClaudeCodeBundleConfig, ClaudeCodeCardSection, ClaudeCodeSettingsCard } from './SettingsCard.tsx'
+export { ClaudeCodeBundleConfig, ClaudeCodeCardSection } from './SettingsCard.tsx'
 export type {
-  ClaudeLiveSettings, ClaudeCodeBundleConfigProps, ClaudeCodeCardSectionProps, ClaudeCodeSettingsCardInjected, ClaudeCodeSettingsCardProps,
+  ClaudeLiveSettings, ClaudeCodeBundleConfigProps, ClaudeCodeCardSectionProps, ClaudeCodeSettingsCardInjected,
 } from './SettingsCard.tsx'
 export { en, NS, zh }
 export type { LocalAgentClaudeCodeKey }
