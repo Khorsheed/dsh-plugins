@@ -68,7 +68,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
@@ -79,14 +79,22 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
+import {
+  appendMirrorContent,
+  appendMirrorStep,
+  appendRequestHeaderIfChanged,
+  closeMirrorTurn,
+  delegationEnv,
+  persistChildSession,
+  recordContextOccupancy,
+  LiveStreamPublisher,
+  LiveFlush,
+  LIVE_FLUSH_INTERVAL_MS,
+} from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
-  appendClaudeTranscriptLine,
-  assistantEvent,
-  appendClaudeRequestHeader,
+  CLAUDE_MIRROR_SOURCE,
   claudeLineText,
-  claudeStreamFromLines,
   ClaudeStreamParser,
   claudeVersionFromInit,
   DEFAULT_DISPOSE_GRACE_MS,
@@ -893,18 +901,11 @@ export class ClaudeLiveDriver {
       // Per-call folds carry the accounting; the round total only ever
       // back-fills a stream that named none (a sum would double count).
       const totalFallback = withUsage && !usageCarried && usage !== undefined && !parser.lines.some(line => line.usage !== undefined)
-      childSession.append('assistant/message', {
-        turn,
-        step: stream.durable!,
-        message: assistantEvent([
-          stream.kind === 'think'
-            ? { type: 'reasoning' as const, text: stream.text }
-            : { type: 'text' as const, text: stream.text },
-        ]),
-        stream: claudeStreamFromLines([{ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } }]),
+      appendMirrorContent(childSession, turn, stream.durable!, {
+        blocks: [{ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } }],
         ...totalFallback ? { usage } : {},
-        ...interrupted ? { interrupted: true } : {},
-      }, { surfaceOp: 'append' })
+        interrupted,
+      }, CLAUDE_MIRROR_SOURCE)
       if (totalFallback) usageCarried = true
       stream.lastSnapshotAt = now
       stream.lastSnapshotLen = stream.text.length
@@ -965,24 +966,20 @@ export class ClaudeLiveDriver {
         // A streamed line finalizes its own step (opening it now if no
         // snapshot ever could) and closes it.
         if (!stream.opened) { closeOpenStep(); openStreamStep(stream) }
-        const blocks = stream.kind === 'think'
-          ? [{ type: 'reasoning' as const, text: line.kind === 'tool' ? '' : line.text }]
-          : [{ type: 'text' as const, text: line.kind === 'tool' ? '' : line.text }]
-        childSession.append('assistant/message', {
-          turn,
-          step: stream.durable!,
-          message: assistantEvent(blocks),
-          stream: claudeStreamFromLines([line]),
+        appendMirrorContent(childSession, turn, stream.durable!, {
+          blocks: [{ kind: stream.kind, text: line.kind === 'tool' ? '' : line.text, ...line.generation === undefined ? {} : { generation: line.generation } }],
           ...effectiveUsage === undefined ? {} : { usage: effectiveUsage },
-        }, { surfaceOp: 'append' })
+        }, CLAUDE_MIRROR_SOURCE)
         finishStream(stream)
         closeOpenStep()
       } else {
         closeOpenStep()
         lastStep += 1
         // The fold decided the usage; the line's own (per-block snapshot) must not override it.
-        const { usage: _snapshot, ...bare } = line
-        appendClaudeTranscriptLine(childSession, turn, lastStep, bare as typeof line, effectiveUsage)
+        appendMirrorStep(childSession, turn, lastStep, {
+          blocks: [line],
+          ...effectiveUsage === undefined ? {} : { usage: effectiveUsage },
+        }, CLAUDE_MIRROR_SOURCE)
       }
       folded.add(index)
       localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
@@ -1187,7 +1184,7 @@ export class ClaudeLiveDriver {
       // the authoritative source. The header contract requires a model: an
       // unconfigured round records nothing rather than inventing one.
       if (spec.configuration?.model !== undefined) {
-        appendClaudeRequestHeader(childSession, {
+        appendRequestHeaderIfChanged(childSession, {
           provider: 'claude-local',
           model: spec.configuration.model,
           reasoningEffort: (spec.configuration.effort ?? 'auto') as ReasoningEffortId,
@@ -1277,17 +1274,11 @@ export class ClaudeLiveDriver {
           streams.clear()
           activeStream = undefined
         }
-        if (settled.stopReason === 'completed') {
-          childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-        } else if (settled.stopReason === 'aborted') {
-          childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-        } else {
-          childSession.append('turn/end', {
-            turn,
-            reason: { kind: 'error', error: { message: 'the live round did not complete', code: 'UNKNOWN' } },
-          })
-        }
-        recordRoundContext(childSession, contextTracker.reading())
+        closeMirrorTurn(childSession, turn, settled.stopReason, 'the live round did not complete')
+        // The member's occupancy, so the room's and the composer's ring read
+        // Claude Code like the other CLIs.
+        const reading = contextTracker.reading()
+        if (reading !== undefined) recordContextOccupancy(childSession, { provider: 'claude-local', ...reading })
       }
       // Settlement clears the round's event sink — by identity, and only once
       // the turn's result landed: an in-flight turn's late result must still
@@ -1359,19 +1350,4 @@ export class ClaudeLiveDriver {
       },
     })
   }
-}
-
-/**
- * After a round: the member's occupancy (one `local-agent/context`, when it
- * moved), so the room's and the composer's ring read Claude Code like the
- * other CLIs.
- */
-function recordRoundContext(childSession: Session, reading: { usedTokens: number; contextWindow?: number } | undefined): void {
-  if (reading === undefined) return
-  const last = childSession.snapshotEvents().findLast(event => event.type === 'local-agent/context')?.data as SessionEventMap['local-agent/context'] | undefined
-  if (last?.usedTokens === reading.usedTokens && last.contextWindow === reading.contextWindow) return
-  childSession.append('local-agent/context', {
-    provider: 'claude-local', usedTokens: reading.usedTokens,
-    ...reading.contextWindow === undefined ? {} : { contextWindow: reading.contextWindow },
-  })
 }

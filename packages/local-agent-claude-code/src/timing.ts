@@ -1,7 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { LocalAgentMemberModelTiming } from '@khorsheed/dsh-local-agent/types'
-import { claudeStreamFromLines, groupClaudeTranscriptLines, parseClaudeStreamJson } from './claude-cli-provider.ts'
+import { mirrorStreamRecords } from '@khorsheed/dsh-local-agent'
+import { groupClaudeTranscriptLines, parseClaudeStreamJson } from './claude-cli-provider.ts'
 
 async function findClaudeTranscript(homeDir: string, cliSessionId: string): Promise<string | undefined> {
   let projects: string[]
@@ -41,7 +42,7 @@ export async function readClaudeModelTiming(homeDir: string, cliSessionId: strin
     const groups = groupClaudeTranscriptLines(parsed.lines)
     for (const [index, group] of groups.entries()) {
       const key = `${turn}:${index + 1}`
-      const stream = claudeStreamFromLines(group)
+      const stream = mirrorStreamRecords(group)
       if (stream.length > 0) streams[key] = stream
       const messageId = group[0]?.messageId
       const startedAt = (messageId === undefined ? undefined : nativeRequestStarts.get(messageId)) ?? group[0]?.generation?.startedAt

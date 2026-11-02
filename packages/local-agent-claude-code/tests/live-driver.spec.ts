@@ -16,9 +16,9 @@ import { PassThrough, Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
+import { LocalAgentStreams, MIRROR_INTERRUPTED_TOOL_RESULT } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
-import { CLAUDE_INTERRUPTED_TOOL_RESULT, ClaudeCliProvider } from '../src/claude-cli-provider.ts'
+import { ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 import { ClaudeLiveDriver } from '../src/live-driver.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { mirrorSnapshot, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
@@ -636,7 +636,7 @@ describe('claude live driver rounds', () => {
     expect(results).toHaveLength(1)
     expect(results[0]!.data.message).toMatchObject({
       toolCallId: 'tu-stuck',
-      content: [{ type: 'text', text: CLAUDE_INTERRUPTED_TOOL_RESULT }],
+      content: [{ type: 'text', text: MIRROR_INTERRUPTED_TOOL_RESULT }],
       isError: true,
     })
     expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'aborted' } })
@@ -859,7 +859,7 @@ describe('claude live driver rounds', () => {
     expect(interrupted).toHaveLength(3)
     for (const message of interrupted) {
       expect(message.isError).toBe(true)
-      expect(message.content[0]?.text).toBe(CLAUDE_INTERRUPTED_TOOL_RESULT)
+      expect(message.content[0]?.text).toBe(MIRROR_INTERRUPTED_TOOL_RESULT)
     }
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message'
       && (e.data as { message: { content: { type: string }[] } }).message.content[0]?.type === 'text')!
