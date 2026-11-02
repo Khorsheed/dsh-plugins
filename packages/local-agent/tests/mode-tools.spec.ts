@@ -177,4 +177,69 @@ describe('MemberChannel mode tools', () => {
     expect(await listModeTools({ socket: '/home/user/missing.sock', token: 't' })).toEqual([])
     expect(await callModeTool({ socket: '/home/user/missing.sock', token: 't' }, 'video_read', {})).toMatchObject({ isError: true })
   })
+
+  it('a host-side listing failure is not "no mode": the bridge gets an error to retry on', async () => {
+    const h = host()
+    h.mount.mockRejectedValue(new Error('preset mount failed'))
+    h.ctx.provide('room' as never, { receiveMemberMessage: async () => 'sent', memberMode: async () => ({ preset: 'dsh-video' }) } as never)
+    const channel = new MemberChannel(h.ctx, registry, '/home/user/unused.sock', new PresetToolHost(h.ctx))
+    expect(await channel.handleModeTools({ token: 'live', modeTools: { list: true } })).toEqual({ ok: false, error: 'mode dsh-video tools could not be listed: preset mount failed' })
+    expect(channel.servedModeTools('live')).toBeUndefined()
+  })
 })
+
+describe('MemberChannel served mode tools (round-start self-heal)', () => {
+  const runs: Record<string, { childSessionId: string; parentSessionId: string; provider: string }> = {
+    live: { childSessionId: 'child-codex', parentSessionId: 'room-1', provider: 'codex-cli' },
+    quiet: { childSessionId: 'child-codex', parentSessionId: 'room-1', provider: 'codex-cli' },
+  }
+  const registry = { resolveMemberRun: (token: string) => runs[token] } as never
+
+  function channelWithMode(mode: { preset: string } | undefined) {
+    const h = host()
+    const memberMode = vi.fn(async () => mode)
+    h.ctx.provide('room' as never, { receiveMemberMessage: async () => 'sent', memberMode } as never)
+    return { h, memberMode, channel: new MemberChannel(h.ctx, registry, '/home/user/unused.sock', new PresetToolHost(h.ctx)) }
+  }
+
+  it('records each served list per process and asks for a respawn only after a placeholder', async () => {
+    const { channel } = channelWithMode({ preset: 'dsh-video' })
+    await channel.handleModeTools({ token: 'live', modeTools: { list: true } })
+    expect(channel.servedModeTools('live')).toMatchObject({ served: 'complete', count: 1 })
+    expect(await channel.staleModeTools('live')).toBeUndefined()
+
+    // The bridge could not ask and served its placeholder: the next round respawns.
+    expect(await channel.handleModeTools({ token: 'live', modeTools: { report: { served: 'placeholder', reason: 'host restarting' } } })).toEqual({ ok: true, recorded: true })
+    expect(await channel.staleModeTools('live')).toMatch(/placeholder \(host restarting\)/)
+
+    // The CLI honored list_changed and re-listed: healthy again.
+    await channel.handleModeTools({ token: 'live', modeTools: { list: true } })
+    expect(await channel.staleModeTools('live')).toBeUndefined()
+
+    // A background probe means the CLI still holds the placeholder, whatever the probe found.
+    expect(await channel.handleModeTools({ token: 'live', modeTools: { list: true, probe: true } })).toMatchObject({ ok: true, tools: [{ name: 'video_read' }] })
+    expect(channel.servedModeTools('live')).toMatchObject({ served: 'placeholder' })
+    expect(await channel.staleModeTools('live')).toMatch(/placeholder/)
+  })
+
+  it('keeps a process that never listed, and replaces one whose token is gone', async () => {
+    const { channel } = channelWithMode({ preset: 'dsh-video' })
+    // A bridge from before reports existed, or a CLI that lists at its first prompt.
+    expect(await channel.staleModeTools('quiet')).toBeUndefined()
+    expect(await channel.staleModeTools('gone')).toMatch(/no longer registered/)
+    // An unknown token's report is refused, never recorded.
+    expect(await channel.handleModeTools({ token: 'gone', modeTools: { report: { served: 'placeholder' } } })).toMatchObject({ ok: false })
+  })
+
+  it('an empty list is stale only when the member\'s mode has tools now', async () => {
+    const { channel, memberMode } = channelWithMode(undefined)
+    await channel.handleModeTools({ token: 'live', modeTools: { list: true } })
+    expect(channel.servedModeTools('live')).toMatchObject({ served: 'complete', count: 0 })
+    // Still no mode: a member without one is never respawned.
+    expect(await channel.staleModeTools('live')).toBeUndefined()
+    // The room was not ready when it listed; it is now, and the mode has tools.
+    memberMode.mockResolvedValue({ preset: 'dsh-video' } as never)
+    expect(await channel.staleModeTools('live')).toMatch(/listed no mode tools, but mode dsh-video has 1 now/)
+  })
+})
+

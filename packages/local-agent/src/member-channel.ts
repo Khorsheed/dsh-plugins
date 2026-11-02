@@ -64,17 +64,35 @@ export interface MemberCommandBridgeRequest {
   command: MemberRoomCommand
 }
 
-/** The bridge asking for (`list`) or calling (`call`) the member's mode tools. */
+/**
+ * The bridge asking for (`list`), calling (`call`) or reporting on (`report`)
+ * the member's mode tools. `probe` marks a background recovery fetch: the CLI
+ * still holds the placeholder, so it is not a served list. Bridges from before
+ * the report existed send only `list` and `call`.
+ */
 export interface MemberModeToolsBridgeRequest {
   token: string
-  modeTools: { readonly list: true } | { readonly call: { readonly name: string; readonly arguments?: unknown } }
+  modeTools:
+    | { readonly list: true; readonly probe?: boolean }
+    | { readonly call: { readonly name: string; readonly arguments?: unknown } }
+    | { readonly report: { readonly served: 'placeholder'; readonly reason?: string } }
 }
 
-/** A mode-tools answer: the list, or one call's MCP result. */
+/** A mode-tools answer: the list, one call's MCP result, or a report's receipt. */
 export type MemberModeToolsOutcome =
   | { readonly ok: true; readonly tools: readonly BridgedTool[] }
   | { readonly ok: true; readonly result: BridgedToolResult }
+  | { readonly ok: true; readonly recorded: true }
   | { readonly ok: false; readonly error: string }
+
+/**
+ * What one member process (one bridge token) was last served as its mode-tool
+ * list: the host's own answer (`complete`, with how many mode tools), or the
+ * bridge's placeholder (it could not ask).
+ */
+export type ServedModeTools =
+  | { readonly served: 'complete'; readonly count: number; readonly at: number }
+  | { readonly served: 'placeholder'; readonly reason: string; readonly at: number }
 
 /** How long one bridged mode-tool call may run before it is cancelled. */
 const MODE_TOOL_TIMEOUT_MS = 30 * 60_000
@@ -85,13 +103,65 @@ const MODE_TOOL_TIMEOUT_MS = 30 * 60_000
  */
 export class MemberChannel {
   private server: Server | undefined
+  /** Per bridge token: what that member process was last served (see {@link ServedModeTools}). */
+  private readonly served = new Map<string, ServedModeTools>()
 
   constructor(
     private readonly ctx: Context,
     private readonly registry: LocalAgentRegistry,
     private readonly socketPath: string,
     private readonly modeTools?: PresetToolHost,
-  ) {}
+  ) {
+    // The live drivers ask the registry before each round; the answer lives here.
+    if (typeof registry.setMemberToolsCheck === 'function') registry.setMemberToolsCheck(token => this.staleModeTools(token))
+  }
+
+  /** What the member process behind a token was last served, if it listed since spawn. */
+  servedModeTools(token: string): ServedModeTools | undefined {
+    return this.served.get(token)
+  }
+
+  /** Record a served list, dropping entries whose run is gone (tokens die with their process). */
+  private recordServed(token: string, state: ServedModeTools): void {
+    for (const known of [...this.served.keys()]) {
+      if (this.registry.resolveMemberRun(known) === undefined) this.served.delete(known)
+    }
+    this.served.set(token, state)
+  }
+
+  /**
+   * The round-start check: whether the member process behind a token must be
+   * replaced before its next round because its CLI lacks the mode tools.
+   * Undefined = keep it. A reason when
+   * - the token no longer resolves (a live process nobody can authenticate);
+   * - the process was last served the placeholder (the bridge could not ask);
+   * - it was served an empty list but the member's mode has tools now (the
+   *   room or the session was not ready when it listed).
+   * A process that never listed (a bridge from before reports existed, or a
+   * CLI that lists lazily at its first prompt) is kept: its list is either
+   * coming now or unknowable, and replacing every such process would respawn
+   * the whole room for nothing.
+   * Called only between rounds (the drivers' serialized round start).
+   * @param token - the member process's bridge token.
+   * @returns why to respawn, or undefined.
+   */
+  async staleModeTools(token: string): Promise<string | undefined> {
+    const run = this.registry.resolveMemberRun(token)
+    if (run === undefined) return 'its member token is no longer registered'
+    const state = this.served.get(token)
+    if (state === undefined) return undefined
+    let reason: string | undefined
+    if (state.served === 'placeholder') reason = `it was served the mode-tools placeholder (${state.reason})`
+    else if (state.count === 0 && this.modeTools !== undefined) {
+      const mode = await this.probeRoom()?.memberMode?.(run)
+      if (mode !== undefined) {
+        const tools = await this.modeTools.list(run.childSessionId, mode.preset, mode.cwd, mode.desk).catch(() => [])
+        if (tools.length > 0) reason = `it listed no mode tools, but mode ${mode.preset} has ${tools.length} now`
+      }
+    }
+    if (reason !== undefined) this.modeTools?.note({ childSessionId: run.childSessionId, provider: run.provider, respawn: reason })
+    return reason
+  }
 
   /**
    * Start listening. A listener failure (e.g. a socket path beyond the
@@ -124,6 +194,8 @@ export class MemberChannel {
     const server = this.server
     this.server = undefined
     this.registry.setMemberBridgeAvailable(false)
+    if (typeof this.registry.setMemberToolsCheck === 'function') this.registry.setMemberToolsCheck(undefined)
+    this.served.clear()
     if (server === undefined) return
     await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
     rmSync(this.socketPath, { force: true })
@@ -234,22 +306,41 @@ export class MemberChannel {
    * @returns the list or the call result.
    */
   async handleModeTools(request: MemberModeToolsBridgeRequest): Promise<MemberModeToolsOutcome> {
-    const run = typeof request.token === 'string' ? this.registry.resolveMemberRun(request.token) : undefined
+    const token = request.token
+    const run = typeof token === 'string' ? this.registry.resolveMemberRun(token) : undefined
     if (run === undefined) return { ok: false, error: 'localAgent: unknown or expired member token' }
+    if ('report' in request.modeTools) {
+      // The bridge could not fetch the list and served its placeholder: the
+      // member works without its mode tools until its process is replaced.
+      const reason = typeof request.modeTools.report.reason === 'string' ? request.modeTools.report.reason : 'unknown'
+      this.recordServed(token, { served: 'placeholder', reason, at: Date.now() })
+      this.ctx.logger.warn(`localAgent: member ${run.childSessionId} (${run.provider}) is running without its mode tools (${reason}); its process is replaced at its next round`)
+      this.modeTools?.note({ childSessionId: run.childSessionId, provider: run.provider, placeholder: reason })
+      return { ok: true, recorded: true }
+    }
     const mode = this.modeTools === undefined ? undefined : await this.probeRoom()?.memberMode?.(run)
     if ('list' in request.modeTools) {
+      const probe = request.modeTools.probe === true
+      // A probe is the bridge recovering while its CLI still holds the
+      // placeholder: whatever it finds, the CLI was not served it.
+      if (probe) this.recordServed(token, { served: 'placeholder', reason: 'the bridge recovered after serving the placeholder', at: Date.now() })
       if (mode === undefined) {
         // Visible in the diagnostics: a member whose room gave it no mode.
         this.modeTools?.note({ childSessionId: run.childSessionId, provider: run.provider, mode: false })
+        if (!probe) this.recordServed(token, { served: 'complete', count: 0, at: Date.now() })
         return { ok: true, tools: [] }
       }
       try {
         const tools = await this.modeTools!.list(run.childSessionId, mode.preset, mode.cwd, mode.desk)
         await this.installSkills(run, mode.preset)
+        if (!probe) this.recordServed(token, { served: 'complete', count: tools.length, at: Date.now() })
         return { ok: true, tools }
       } catch (error) {
+        // Not "no mode": the member has one and the host failed to list it, so
+        // the bridge must not mistake this for an empty mode (it retries, then
+        // serves its placeholder).
         this.ctx.logger.warn(`localAgent: mode tools for ${run.childSessionId} unavailable: ${String(error)}`)
-        return { ok: true, tools: [] }
+        return { ok: false, error: `mode ${mode.preset} tools could not be listed: ${error instanceof Error ? error.message : String(error)}` }
       }
     }
     if (mode === undefined) return { ok: false, error: 'This member has no mode tools' }

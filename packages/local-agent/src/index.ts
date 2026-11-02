@@ -2100,6 +2100,33 @@ export class LocalAgentRegistry {
     this.memberRuns.delete(token)
   }
 
+  private memberToolsCheck: ((token: string) => Promise<string | undefined>) | undefined
+
+  /** The member channel installs (and on dispose removes) the check behind {@link memberToolsStale}. */
+  setMemberToolsCheck(check: ((token: string) => Promise<string | undefined>) | undefined): void {
+    this.memberToolsCheck = check
+  }
+
+  /**
+   * Round-start self-heal, provider-generic: whether the resident member
+   * process behind a bridge token must be replaced before the round because
+   * its CLI lacks its mode tools (it was served the bridge's placeholder, or
+   * an empty list while its mode has tools, or its token is gone). A live
+   * driver calls this between rounds — never mid-round — and on a reason
+   * retires the runtime, so the round respawns a fresh process that lists
+   * again (resuming the same CLI session). Undefined without a member channel.
+   * @param token - the member process's bridge token.
+   * @returns why to respawn, or undefined to keep the process.
+   */
+  async memberToolsStale(token: string): Promise<string | undefined> {
+    try {
+      return await this.memberToolsCheck?.(token)
+    } catch (error) {
+      this.ctx.logger.warn(`localAgent: the member tool check failed: ${error instanceof Error ? error.message : String(error)}`)
+      return undefined
+    }
+  }
+
   /**
    * The loopback socket path the member-bridge listener owns. Providers inject
    * it into the bridge's environment so the stdio MCP server knows where to

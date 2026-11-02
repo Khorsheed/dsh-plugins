@@ -13,6 +13,18 @@
  * `notifications/initialized`, `ping`, `tools/list`, `tools/call`. A member
  * with a mode also gets that preset's plugin tools: `tools/list` asks the
  * host for them and any other tool name is forwarded as a mode-tool call.
+ *
+ * The mode-tool list is never silently empty. "The member has no mode" (the
+ * host answered, with no tools) lists nothing extra; "could not ask" (the
+ * socket failed, the host refused, the request timed out) is retried briefly,
+ * and if it still fails `tools/list` carries one placeholder,
+ * {@link MODE_TOOLS_UNAVAILABLE_TOOL}, the failure goes to stderr and to the
+ * host (a `report`), and the bridge keeps probing in the background with
+ * backoff; on success it sends `notifications/tools/list_changed` (the server
+ * declares `tools.listChanged`). A CLI that ignores the notification keeps the
+ * placeholder until its process is replaced: the host remembers what this
+ * process was served, and the live drivers respawn such a process at the
+ * start of the member's next round (`LocalAgentRegistry.memberToolsStale`).
  * @module @khorsheed/dsh-local-agent/member-bridge
  */
 
@@ -105,7 +117,36 @@ export interface MemberBridgeEnv {
   readonly socket?: string | undefined
   /** This run's member-channel token. */
   readonly token?: string | undefined
+  /** Mode-tool fetch timing (tests shrink it); see {@link MODE_TOOLS_TIMING}. */
+  readonly timing?: Partial<ModeToolsTiming> | undefined
+  /** Where the bridge reports problems (default: stderr; stdout is the MCP wire). */
+  readonly log?: ((line: string) => void) | undefined
 }
+
+/** How the bridge fetches the member's mode tools. */
+export interface ModeToolsTiming {
+  /** Pauses between the attempts one `tools/list` makes before serving the placeholder. */
+  readonly retryDelaysMs: readonly number[]
+  /** One list request's bound (a wedged host never hangs `tools/list`). */
+  readonly requestTimeoutMs: number
+  /** Background probe pauses after a placeholder was served; the last one repeats. */
+  readonly recoveryDelaysMs: readonly number[]
+}
+
+/** Defaults: about three seconds of retries per list, then a backoff capped at a minute. */
+export const MODE_TOOLS_TIMING: ModeToolsTiming = {
+  retryDelaysMs: [250, 750, 1500],
+  requestTimeoutMs: 5_000,
+  recoveryDelaysMs: [2_000, 5_000, 15_000, 30_000, 60_000],
+}
+
+/** The one tool a member is listed when its mode tools could not be fetched. */
+export const MODE_TOOLS_UNAVAILABLE_TOOL = 'mode_tools_unavailable'
+
+/** One mode-tool fetch: the host's list (possibly empty: no mode), or why it could not be asked. */
+export type ModeToolsFetch =
+  | { readonly ok: true; readonly tools: readonly Record<string, unknown>[] }
+  | { readonly ok: false; readonly reason: string }
 
 interface JsonRpcRequest {
   jsonrpc?: string
@@ -114,13 +155,66 @@ interface JsonRpcRequest {
   params?: unknown
 }
 
+const timing = (env: MemberBridgeEnv): ModeToolsTiming => ({ ...MODE_TOOLS_TIMING, ...env.timing })
+
+const pause = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms).unref() })
+
+/**
+ * Ask the host once for the member's mode tools. An unconfigured channel
+ * (no socket/token: not a member run) has nothing to ask and lists nothing.
+ * @param env - the bridge's environment.
+ * @param probe - true for a background recovery probe: the CLI still holds
+ *   the placeholder, so the host must not record this as a served list.
+ * @returns the list, or why the host could not be asked.
+ */
+export async function fetchModeTools(env: MemberBridgeEnv, probe = false): Promise<ModeToolsFetch> {
+  if (env.socket === undefined || env.token === undefined) return { ok: true, tools: [] }
+  let outcome: { ok: boolean; tools?: unknown; error?: string }
+  try {
+    outcome = await callHost(env.socket, { token: env.token, modeTools: probe ? { list: true, probe: true } : { list: true } }, timing(env).requestTimeoutMs)
+  } catch (error) {
+    return { ok: false, reason: `member channel unreachable: ${error instanceof Error ? error.message : String(error)}` }
+  }
+  if (!outcome.ok) return { ok: false, reason: outcome.error ?? 'the host refused the mode-tool list' }
+  if (!Array.isArray(outcome.tools)) return { ok: false, reason: 'the host answered without a tool list' }
+  return { ok: true, tools: outcome.tools as Record<string, unknown>[] }
+}
+
+/** {@link fetchModeTools} with the brief retry one `tools/list` affords. */
+export async function fetchModeToolsWithRetry(env: MemberBridgeEnv): Promise<ModeToolsFetch> {
+  let fetched = await fetchModeTools(env)
+  for (const delay of timing(env).retryDelaysMs) {
+    if (fetched.ok) return fetched
+    await pause(delay)
+    fetched = await fetchModeTools(env)
+  }
+  return fetched
+}
+
 /** The member's mode tools (the preset's plugin tools), empty when it has none or the host is unreachable. */
 export async function listModeTools(env: MemberBridgeEnv): Promise<readonly Record<string, unknown>[]> {
-  if (env.socket === undefined || env.token === undefined) return []
+  const fetched = await fetchModeTools(env)
+  return fetched.ok ? fetched.tools : []
+}
+
+/** Tell the host this process's CLI was served the placeholder (best-effort, one attempt). */
+async function reportPlaceholder(env: MemberBridgeEnv, reason: string): Promise<void> {
+  if (env.socket === undefined || env.token === undefined) return
   try {
-    const outcome = await callHost(env.socket, { token: env.token, modeTools: { list: true } }) as { ok: boolean; tools?: readonly Record<string, unknown>[] }
-    return outcome.ok && Array.isArray(outcome.tools) ? outcome.tools : []
-  } catch { return [] }
+    await callHost(env.socket, { token: env.token, modeTools: { report: { served: 'placeholder', reason } } }, timing(env).requestTimeoutMs)
+  } catch { /* the background probe tells the host once it is reachable */ }
+}
+
+/** The placeholder listed instead of the mode tools the bridge could not fetch. */
+function placeholderTool(reason: string): Record<string, unknown> {
+  return {
+    name: MODE_TOOLS_UNAVAILABLE_TOOL,
+    description: `Your dsh mode tools (the plugin tools of your room mode) are ABSENT from this process: ${reason}. `
+      + 'Calling them will not work until this member is reloaded, which happens automatically when your next round starts. '
+      + 'Do not retry them and do not call another tool (room_read or any other) in their place: no other tool does their work. '
+      + 'Tell the user which step you could not do and stop there. Calling this tool reports the problem to the room.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+  }
 }
 
 /** Run one mode tool on the host; the host's MCP result passes through. */
@@ -132,10 +226,18 @@ export async function callModeTool(env: MemberBridgeEnv, name: string, args: unk
   } catch (error) { return toolText(`Mode tool unavailable: ${String(error)}`, true) }
 }
 
-/** One socket round trip: send the request line, read the one-line response. */
-function callHost(socket: string, payload: Record<string, unknown>): Promise<{ ok: boolean; receipt?: string; error?: string }> {
+/** One socket round trip: send the request line, read the one-line response (bounded when `timeoutMs` is given). */
+function callHost(socket: string, payload: Record<string, unknown>, timeoutMs?: number): Promise<{ ok: boolean; receipt?: string; error?: string }> {
   return new Promise((resolve, reject) => {
     const connection = connect(socket)
+    if (timeoutMs !== undefined) {
+      const timer = setTimeout(() => {
+        connection.destroy()
+        reject(new Error(`no answer within ${timeoutMs}ms`))
+      }, timeoutMs)
+      timer.unref()
+      connection.on('close', () => { clearTimeout(timer) })
+    }
     let buffer = ''
     connection.on('connect', () => {
       connection.write(`${JSON.stringify(payload)}\n`)
@@ -205,10 +307,48 @@ export async function callMemberMessage(
  * @param output - the stdout side.
  */
 export function serveMemberBridge(env: MemberBridgeEnv, input: Readable, output: Writable): void {
+  let closed = false
   const write = (message: Record<string, unknown>): void => {
-    output.write(`${JSON.stringify(message)}\n`)
+    if (!closed) output.write(`${JSON.stringify(message)}\n`)
+  }
+  const log = env.log ?? ((line: string): void => { process.stderr.write(`${line}\n`) })
+  /** Why the CLI currently holds the placeholder instead of the mode tools (undefined: it does not). */
+  let placeholder: string | undefined
+  /** The mode tools a background probe found while the CLI still held the placeholder. */
+  let recovered: readonly Record<string, unknown>[] | undefined
+  let probing = false
+  /** Probe until the host answers, then tell the CLI its tool list changed. */
+  const recover = async (): Promise<void> => {
+    if (probing) return
+    probing = true
+    const delays = timing(env).recoveryDelaysMs
+    for (let attempt = 0; !closed && placeholder !== undefined; attempt++) {
+      await pause(delays[Math.min(attempt, delays.length - 1)] ?? 60_000)
+      if (closed || placeholder === undefined) break
+      const fetched = await fetchModeTools(env, true)
+      if (!fetched.ok) continue
+      recovered = fetched.tools
+      log(`dsh-member-bridge: mode tools are reachable again (${fetched.tools.length}); sending notifications/tools/list_changed`)
+      write({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' })
+      break
+    }
+    probing = false
+  }
+  /**
+   * The placeholder's call: report again and answer a tool error the room
+   * shows. Never "call them by name": a CLI rejects a tool name its list
+   * lacks, so only a reload brings them back.
+   */
+  const placeholderCall = async (): Promise<Record<string, unknown>> => {
+    const reason = placeholder ?? 'the mode-tool list failed earlier'
+    log(`dsh-member-bridge: the member called ${MODE_TOOLS_UNAVAILABLE_TOOL} (${reason})`)
+    await reportPlaceholder(env, reason)
+    const back = recovered !== undefined ? 'The host answers again, but this process still lacks them. ' : ''
+    return toolText(`Mode tools unavailable: ${reason}. ${back}Reported to the room; this member is reloaded with its mode tools when its next round starts. `
+      + 'Do not retry them and do not use another tool in their place: tell the user which step you could not do and end your turn.', true)
   }
   const lines = createInterface({ input, terminal: false })
+  lines.on('close', () => { closed = true })
   lines.on('line', (line) => {
     if (line.trim() === '') return
     let request: JsonRpcRequest
@@ -227,7 +367,8 @@ export function serveMemberBridge(env: MemberBridgeEnv, input: Readable, output:
           id: id ?? null,
           result: {
             protocolVersion: params?.protocolVersion ?? '2024-11-05',
-            capabilities: { tools: {} },
+            // listChanged: a recovered mode-tool list is announced (see recover()).
+            capabilities: { tools: { listChanged: true } },
             serverInfo: { name: 'dsh-member-bridge', version: '0.1.0' },
           },
         })
@@ -237,23 +378,43 @@ export function serveMemberBridge(env: MemberBridgeEnv, input: Readable, output:
         write({ jsonrpc: '2.0', id: id ?? null, result: {} })
         return
       case 'tools/list':
-        // The member's mode tools (its preset's plugin tools) join the room set.
-        void listModeTools(env).then(modeTools => write({
-          jsonrpc: '2.0',
-          id: id ?? null,
-          result: {
-            tools: [{
-              name: MEMBER_MESSAGE_TOOL,
-              description: TOOL_DESCRIPTION,
-              inputSchema: TOOL_SCHEMA,
-            }, ...ROOM_TOOLS, ...modeTools.filter(tool => tool['name'] !== MEMBER_MESSAGE_TOOL && !ROOM_TOOLS.some(room => room.name === tool['name']))],
-          },
-        }))
+        // The member's mode tools (its preset's plugin tools) join the room set;
+        // a fetch that failed even after retries lists the placeholder instead.
+        void fetchModeToolsWithRetry(env).then((fetched) => {
+          let modeTools: readonly Record<string, unknown>[]
+          if (fetched.ok) {
+            placeholder = undefined
+            recovered = undefined
+            modeTools = fetched.tools.filter(tool => tool['name'] !== MEMBER_MESSAGE_TOOL && tool['name'] !== MODE_TOOLS_UNAVAILABLE_TOOL && !ROOM_TOOLS.some(room => room.name === tool['name']))
+          } else {
+            placeholder = fetched.reason
+            recovered = undefined
+            log(`dsh-member-bridge: mode tools unavailable, serving ${MODE_TOOLS_UNAVAILABLE_TOOL}: ${fetched.reason}`)
+            modeTools = [placeholderTool(fetched.reason)]
+            void reportPlaceholder(env, fetched.reason)
+            void recover()
+          }
+          write({
+            jsonrpc: '2.0',
+            id: id ?? null,
+            result: {
+              tools: [{
+                name: MEMBER_MESSAGE_TOOL,
+                description: TOOL_DESCRIPTION,
+                inputSchema: TOOL_SCHEMA,
+              }, ...ROOM_TOOLS, ...modeTools],
+            },
+          })
+        })
         return
       case 'tools/call': {
         const params = request.params as { name?: string; arguments?: { to?: unknown; text?: unknown } } | undefined
         if (ROOM_TOOLS.some(tool => tool.name === params?.name)) {
           void callRoomCommand(env, params!.name as MemberRoomCommandName, params!.arguments ?? {}).then(result => write({ jsonrpc: '2.0', id: id ?? null, result }))
+          return
+        }
+        if (params?.name === MODE_TOOLS_UNAVAILABLE_TOOL) {
+          void placeholderCall().then(result => write({ jsonrpc: '2.0', id: id ?? null, result }))
           return
         }
         if (params?.name !== MEMBER_MESSAGE_TOOL) {
