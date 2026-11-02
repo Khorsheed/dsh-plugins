@@ -393,6 +393,10 @@ describe('dsh live driver rounds', () => {
     expect((await run.result).stopReason).toBe('aborted')
     const final = child.snapshotEvents().find(event => event.type === 'assistant/message')
     expect(final?.data).toMatchObject({ interrupted: true, message: { content: [{ type: 'reasoning', text: '推理片段' }, { type: 'text', text: '部分内容' }] } })
+    expect(final?.data.stream).toEqual([
+      { type: 'chunk', time: 2, chunk: { type: 'reasoning-delta', index: 0, text: '推理片段' } },
+      { type: 'chunk', time: 3, chunk: { type: 'text-delta', index: 1, text: '部分内容' } },
+    ])
     // The fold landed inside the still-open copied step; the settle closure
     // ended the step and the turn — the stored log passes the cold read.
     expect(child.snapshotEvents().filter(event => event.type === 'step/end')).toHaveLength(1)

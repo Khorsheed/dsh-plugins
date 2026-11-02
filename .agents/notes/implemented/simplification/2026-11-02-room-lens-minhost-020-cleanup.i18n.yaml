@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-11-02-room-lens-minhost-020-cleanup.md
-.agents/notes/implemented/simplification/2026-11-02-room-lens-minhost-020-cleanup.md: fc884c8e239844dfe0b93b021cce4edb5f305de3
-.agents/notes/implemented/simplification/2026-11-02-room-lens-minhost-020-cleanup.zh.md: 8f1c26ed43a3ab88565b924288dac0ad0ac1ef30
+.agents/notes/implemented/simplification/2026-11-02-room-lens-minhost-020-cleanup.md: 253eac61fd7f68d7ab8d9eab00bb66315133371c
+.agents/notes/implemented/simplification/2026-11-02-room-lens-minhost-020-cleanup.zh.md: 2a23017cd19687e05cb4f8bab8c9df3c694498d5

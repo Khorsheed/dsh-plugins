@@ -126,6 +126,8 @@ base_url = "https://your-router.example/v1"
 
 **工具执行计时。** wire 的 `tool.call` / `tool.result` 外层 `time` 作为真实执行区间写入 `tool/result.meta.localAgentTiming`；空输出也保留结束时间，未记录结果的中断占位不伪造区间。事件 envelope `time` 仍是镜像写入时间，Context Lens 优先读取执行区间，旧记录保持回退。共享契约与上游退役路径见 [Agent Note](../../../.agents/notes/implemented/bug-fix/2026-11-02-local-agent-tool-execution-timing.zh.md)。
 
+**模型流与历史计时。** `assistant/message.stream` 以 wire 的首 token 延迟和 content-part 时间记录标准模型块。旧镜像缺少流时，Context Lens 通过家族只读适配器重读 wire 的请求时间、模型块和工具区间，不改写任何日志；旧 dsh step 与 wire step 编号不一致时按工具 ID 或唯一文本内容对齐，并只保留当前消息实际包含的块。
+
 **命名 scope。** `/kimi login --scope <名>` 在 `<homesRoot>/kimi@<名>` 里另开一份 `KIMI_CODE_HOME`：目录建立时跑同一份 provision（provider/model 配置，然后是权限规则——顺序不能反，权限写入要读配置文件），之后该 scope 各自的 endpoint-auth.json、各自 wire 日志、各自转写镜像。带 scope 的委派只走 exec（常驻 `kimi acp` 按成员绑缺省目录），且**不带成员通道**：成员桥声明写在作用域目录的 `mcp.json` 里、socket 又是 homes 根级单例，与其半接上不如这一轮明确不要。
 
 **容器内委派。** 编排器可以经门面 `DelegationCallOptions.exec`（`{ container, workdir, env? }`）让本轮跑在一个**已取得的容器**里：argv 变成 `docker exec -w <workdir> [-e NAME…] <container> kimi -p …`，其余（wire.jsonl 镜像与回读、settle、记录）逐字节不变。`env` 必须给出容器内的 `KIMI_CODE_HOME`，且它应当是宿主作用域目录的 rw bind 挂载点——转写镜像与模型回读读的是宿主那份 wire 日志。容器轮固定走 exec 一次性驱动（常驻 `kimi acp` 是宿主进程），且**不写** `mcp.json` 的成员桥条目：那条声明带着宿主 node 路径，容器里起不来，与其在共享配置文件里留一个坏 server，不如这一轮不要成员通道。

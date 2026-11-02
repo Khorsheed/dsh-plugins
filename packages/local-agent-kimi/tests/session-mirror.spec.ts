@@ -265,6 +265,31 @@ describe('session-mirror', () => {
     expectValidReleasedLog(child)
   })
 
+  it('persists model block timing in the native assistant stream', async () => {
+    const { home } = wireHome('timed-stream', [
+      { type: 'turn.prompt', time: 1000, input: [{ type: 'text', text: 'write' }] },
+      { type: 'context.append_loop_event', time: 1000, event: { type: 'step.begin', turnId: 0, step: 1 } },
+      { type: 'llm.request', time: 1000, turnStep: '1.1' },
+      { type: 'context.append_loop_event', time: 1100, event: { type: 'content.part', turnId: 0, step: 1, part: { type: 'think', think: 'reason' } } },
+      { type: 'context.append_loop_event', time: 1200, event: { type: 'tool.call', turnId: 0, step: 1, toolCallId: 'tc1', name: 'Write' } },
+      { type: 'context.append_loop_event', time: 1300, event: { type: 'tool.result', toolCallId: 'tc1', result: { output: 'ok' } } },
+      { type: 'context.append_loop_event', time: 1300, event: { type: 'step.end', turnId: 0, step: 1, llmFirstTokenLatencyMs: 50 } },
+    ])
+    const child = Session.create(SessionId('timed-stream'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+    await mirrorKimiSession(ctx, child, home)
+    const assistant = child.snapshotEvents().find(event => event.type === 'assistant/message')
+    expect(assistant?.data.stream).toEqual([
+      { type: 'chunk', time: 1050, chunk: { type: 'block-start', index: 0, blockType: 'reasoning' } },
+      { type: 'chunk', time: 1100, chunk: { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'reason' } } },
+      { type: 'chunk', time: 1100, chunk: { type: 'block-start', index: 1, blockType: 'tool-call' } },
+      { type: 'chunk', time: 1200, chunk: { type: 'block-end', index: 1, block: { type: 'tool-call', id: 'tc1', name: 'Write', arguments: '' } } },
+    ])
+    expectValidReleasedLog(child)
+  })
+
   it('mirrors user prompts and folds assistant activity into messages', async () => {
     const { home } = wireHome('s1', fullWire)
     const child = Session.create(SessionId('child-1'))

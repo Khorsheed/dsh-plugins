@@ -168,6 +168,28 @@ describe('claude stream-json parsing', () => {
     expect(empty).toMatchObject({ kind: 'tool', timing: { endedAt: Date.parse('2026-08-16T17:19:40.200Z') } })
     expect(empty?.kind === 'tool' && empty.result).toBeUndefined()
   })
+
+  it('writes coarse model block intervals into the native assistant stream', () => {
+    const parsed = parseClaudeStreamJson([
+      JSON.stringify({ type: 'system', timestamp: '2026-08-16T00:00:00.000Z' }),
+      JSON.stringify({ type: 'assistant', timestamp: '2026-08-16T00:00:00.100Z', message: { id: 'm1', content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'true' } }] } }),
+      JSON.stringify({ type: 'user', timestamp: '2026-08-16T00:00:00.300Z', message: { content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'ok' }] } }),
+      JSON.stringify({ type: 'assistant', timestamp: '2026-08-16T00:00:00.600Z', message: { id: 'm2', content: [{ type: 'text', text: 'done' }] } }),
+    ].join('\n'))
+    const child = Session.create(SessionId('child-claude-model-stream'))
+    child.append('turn/start', { turn: 1 })
+    for (const [index, line] of parsed.lines.entries()) appendClaudeTranscriptGroup(child, 1, index + 1, [line], undefined)
+    const assistants = child.snapshotEvents().filter(event => event.type === 'assistant/message')
+    expect(assistants[0]?.data.stream).toEqual([
+      { type: 'chunk', time: Date.parse('2026-08-16T00:00:00.000Z'), chunk: { type: 'block-start', index: 0, blockType: 'tool-call' } },
+      { type: 'chunk', time: Date.parse('2026-08-16T00:00:00.100Z'), chunk: { type: 'block-end', index: 0, block: { type: 'tool-call', id: 'tu1', name: 'Bash', arguments: 'true' } } },
+    ])
+    expect(assistants[1]?.data.stream).toEqual([
+      { type: 'chunk', time: Date.parse('2026-08-16T00:00:00.300Z'), chunk: { type: 'block-start', index: 0, blockType: 'text' } },
+      { type: 'chunk', time: Date.parse('2026-08-16T00:00:00.600Z'), chunk: { type: 'block-end', index: 0, block: { type: 'text', text: 'done' } } },
+    ])
+    expectValidReleasedLog(child)
+  })
 })
 
 describe('claude stream fold content completeness', () => {

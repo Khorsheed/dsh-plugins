@@ -40,7 +40,7 @@ The context lens comes with the Dev Suite, and with 「多Agent协作」 (multi-
 
 - A turn that's still running doesn't update live; open it again once it's done.
 - For older turns filled in from the session record, the system prompt shows as one block, without where each part came from.
-- External CLI records written by earlier versions lack real execution times, so their tool time can read close to zero. New records use the actual execution interval when available.
+- Model blocks, request bounds and tool execution for external CLI members are filled in from their original CLI records. Each CLI preserves a different level of detail; unknown intervals remain in “other” rather than inventing Deepseek's token-level precision.
 - What you see is the content as assembled before sending, not the raw bytes that finally go to the model provider.
 
 ## Compatibility

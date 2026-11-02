@@ -13,7 +13,6 @@
  * plugin out of cordis.yml removes every surface it adds.
  * @module @khorsheed/dsh-room/client
  */
-import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the ctx.sessions service merge (ISessions).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
@@ -45,7 +44,7 @@ import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
 import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpReplyDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomDispatchDefinition, roomCompactionDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
-import { mainSessionId, RoomStore } from './room-store.ts'
+import { mainSessionId, RoomStore, type RoomClientContext } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomDispatchView } from './RoomDispatchView.tsx'
@@ -95,7 +94,7 @@ export const inject = ['slots', 'sessions', 'remote', 'locale']
  * @param ctx - client root context.
  * @returns disposer unwinding the mounted Remote namespace.
  */
-export async function apply(ctx: Context): Promise<() => Promise<void>> {
+export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
   try {
     disposers.push(await ctx.remote.$mount(roomRemote))

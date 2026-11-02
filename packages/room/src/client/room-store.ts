@@ -20,11 +20,14 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: SessionListState plus the ctx.sessions service merge (ISessions).
-import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ISessions, SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   RoomGetStateRequest, RoomGetStateResult, RoomIsRoomRequest, RoomState,
 } from '../types.ts'
+
+/** Browser session service, distinct from the host SessionStore sharing the Context key. */
+export type RoomClientContext = Context & { sessions: ISessions }
 
 /**
  * The session the main view shows: the row whose `retainedBy.mainView`
@@ -69,7 +72,7 @@ export class RoomStore {
    * @param gateway - the mounted room Remote, undefined when the mount failed.
    */
   constructor(
-    private readonly ctx: Context,
+    private readonly ctx: RoomClientContext,
     private readonly gateway: RoomGateway | undefined,
   ) {}
 

@@ -24,7 +24,7 @@ import { StringDecoder } from 'node:string_decoder'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { BlockAssembler, createAssistantMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { AssistantStreamRecord, ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -696,7 +696,7 @@ export class DshLiveDriver {
       : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
         error => this.ctx.logger.warn(`live checkpoint failed: ${String(error)}`))
     const liveFlush = new LiveFlush(error => this.ctx.logger.warn(`subagent-dsh: live flush failed: ${String(error)}`))
-    let streaming: { id: string; step: number; assembler: BlockAssembler; next: number; receivedAt?: number } | undefined
+    let streaming: { id: string; step: number; assembler: BlockAssembler; records: AssistantStreamRecord[]; next: number; receivedAt?: number } | undefined
     const publishStream = (): void => {
       if (streaming === undefined || streamPublisher === undefined) return
       const blocks = streaming.assembler.interruptedBlocks()
@@ -710,12 +710,13 @@ export class DshLiveDriver {
       if (streamPublisher === undefined) return
       if (frame.type === 'start') {
         if (streaming !== undefined) liveFlush.cancel(streaming.step)
-        streaming = { id: String(frame.attemptId), step: frame.step, assembler: new BlockAssembler(), next: 0 }
+        streaming = { id: String(frame.attemptId), step: frame.step, assembler: new BlockAssembler(), records: [], next: 0 }
       } else if (frame.type === 'chunk' && streaming?.id === frame.attemptId) {
         if (frame.index < streaming.next) return
         if (frame.index !== streaming.next) throw new Error('non-contiguous DSH assistant stream')
         streaming.next++
         streaming.receivedAt ??= Date.now()
+        streaming.records.push({ type: 'chunk', time: frame.time, chunk: frame.chunk })
         streaming.assembler.push(frame.chunk)
         liveFlush.schedule(streaming.step, publishStream)
       }
@@ -888,7 +889,7 @@ export class DshLiveDriver {
         if (blocks.length > 0) {
           childSession.append('assistant/message', {
             turn, step: streaming.step,
-            message: createAssistantMessage({ content: blocks, source: { provider: 'dsh-local', model: 'unobserved' } }), stream: [],
+            message: createAssistantMessage({ content: blocks, source: { provider: 'dsh-local', model: 'unobserved' } }), stream: streaming.records,
             interrupted: true,
           }, { surfaceOp: 'append' })
           streamPublisher.finish(streaming.step)

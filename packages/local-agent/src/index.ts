@@ -93,6 +93,8 @@ import type {
   LocalAgentSessionRecord,
   LocalAgentStatus,
   LocalAgentToolCalls,
+  LocalAgentTimingAdapter,
+  LocalAgentMemberModelTiming,
   LocalAgentCompactionEvent,
   LocalAgentContextEvent,
   LocalAgentMemberContext,
@@ -418,6 +420,8 @@ export interface LocalAgentHarness {
   login?: LocalAgentLogin
   /** Session records reader for this harness's format. */
   records: LocalAgentRecordsAdapter
+  /** Optional read-only reconstruction of historical model and tool timing. */
+  timing?: LocalAgentTimingAdapter
   /**
    * Bring one scoped home of this harness to the state its CLI needs before a
    * login or a round can use it (codex's `config.toml` storage pin, kimi's
@@ -1710,6 +1714,15 @@ export class LocalAgentRegistry {
    */
   sessionsOf(name: string, scope?: string): Promise<readonly LocalAgentSessionRecord[]> {
     return this.requireHarness(name).records.listSessions(this.homeDir(name, scope))
+  }
+
+  /** Reconstruct one member's historical model and tool timing without changing either log. */
+  memberModelTiming(childSessionId: string): Promise<LocalAgentMemberModelTiming | undefined> {
+    const record = this.getDelegation(childSessionId)
+    if (record === undefined) return Promise.resolve(undefined)
+    const harness = this.requireHarness(record.provider)
+    return harness.timing?.read(this.homeDir(record.provider, record.scope), record.cliSessionId)
+      ?? Promise.resolve(undefined)
   }
 
   /**

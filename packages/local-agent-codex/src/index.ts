@@ -36,6 +36,7 @@ import type { CodexLiveSettings } from './live-switch.ts'
 import { CodexModelBroker } from './model-broker.ts'
 import { CodexModelCatalog } from './model-catalog.ts'
 import { listCodexSessions } from './records.ts'
+import { readCodexModelTiming } from './timing.ts'
 import { provisionCodexConfig, readCodexBaseUrl, readCodexModel, readCodexReasoningEffort } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
@@ -285,6 +286,7 @@ export function apply(ctx: Context, config: Config): void {
       // and `/codex login` answers that there is no login flow — no browser,
       // no device code, nothing to authorize inside a container.
       records: { listSessions: homeDir => listCodexSessions(homeDir) },
+      timing: { read: readCodexModelTiming },
       // A NAMED scope's directory is provisioned through this hook when the
       // registry materializes it — the same `config.toml` storage pin the
       // default scope gets from the apply above.

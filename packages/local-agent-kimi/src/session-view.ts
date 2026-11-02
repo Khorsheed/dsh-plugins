@@ -46,7 +46,13 @@ export type KimiTranscriptLine = (
    * preserves the wire's execution interval, independently of mirror writes.
    */
   | { kind: 'tool'; id: string; name: string; args?: string; result?: string; turn: number; wireStep?: number; requestConfig?: KimiRequestConfig; timing?: LocalAgentToolTiming }
-) & { model?: string }
+) & { model?: string; at?: number }
+
+/** Timing facts one closed wire step reports about its model request. */
+export interface KimiStepTiming {
+  requestAt?: number
+  firstChunkAt?: number
+}
 
 /** A parsed transcript of one kimi session. */
 export interface KimiSessionTranscript {
@@ -70,6 +76,8 @@ export interface KimiSessionTranscript {
    * markers; their lines simply never appear here.
    */
   closedSteps: ReadonlySet<string>
+  /** Request and first-content times for steps that report them. */
+  stepTimings: ReadonlyMap<string, KimiStepTiming>
   /**
    * The model identifier the wire named: the `model` field of a `usage.record`
    * or `llm.request` event, LAST one seen (a resumed session's later rounds
@@ -217,6 +225,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
   const lines: KimiTranscriptLine[] = []
   const usageRecords: { line: number; usage: TokenUsage; step?: string }[] = []
   const closedSteps = new Set<string>()
+  const stepTimings = new Map<string, KimiStepTiming>()
   /** The wire step begun and not yet ended (`${turn}:${wireStep}`). */
   let openStep: string | undefined
   let model: string | undefined
@@ -251,7 +260,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
     text = await readFile(wirePath(sessionDir), 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { sessionId, lines, usageRecords, closedSteps }
+      return { sessionId, lines, usageRecords, closedSteps, stepTimings }
     }
     throw error
   }
@@ -295,6 +304,11 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
         model: lineModel,
         ...typeof event.thinkingEffort === 'string' && event.thinkingEffort !== '' ? { reasoningEffort: event.thinkingEffort as ReasoningEffortId } : {},
         ...typeof event.maxTokens === 'number' && Number.isFinite(event.maxTokens) ? { maxTokens: event.maxTokens } : {},
+      }
+      const requestStep = typeof event.turnStep === 'string' ? Number(event.turnStep.split('.').at(-1)) : Number.NaN
+      if (Number.isSafeInteger(requestStep) && typeof event.time === 'number' && Number.isFinite(event.time)) {
+        const key = `${turn === 0 ? 1 : turn}:${requestStep}`
+        stepTimings.set(key, { ...stepTimings.get(key), requestAt: event.time })
       }
       continue
     }
@@ -379,13 +393,19 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       const lineTurn = turn === 0 ? 1 : turn
       if (loop.type === 'step.begin' && wireStep !== undefined) openStep = `${lineTurn}:${wireStep}`
       if (loop.type === 'step.end' && wireStep !== undefined) {
-        closedSteps.add(`${lineTurn}:${wireStep}`)
-        if (openStep === `${lineTurn}:${wireStep}`) openStep = undefined
+        const key = `${lineTurn}:${wireStep}`
+        closedSteps.add(key)
+        const latency = loop.llmFirstTokenLatencyMs
+        const requestAt = stepTimings.get(key)?.requestAt
+        if (requestAt !== undefined && typeof latency === 'number' && Number.isFinite(latency)) {
+          stepTimings.set(key, { ...stepTimings.get(key), firstChunkAt: requestAt + latency })
+        }
+        if (openStep === key) openStep = undefined
       }
       if (part?.type === 'text' && part.text !== undefined && part.text.trim() !== '') {
-        push({ kind: 'assistant', text: part.text, turn: lineTurn, ...wireStep === undefined ? {} : { wireStep } })
+        push({ kind: 'assistant', text: part.text, turn: lineTurn, ...wireStep === undefined ? {} : { wireStep }, ...typeof event.time === 'number' && Number.isFinite(event.time) ? { at: event.time } : {} })
       } else if (part?.type === 'think' && part.think !== undefined && part.think.trim() !== '') {
-        push({ kind: 'think', text: part.think, turn: lineTurn, ...wireStep === undefined ? {} : { wireStep } })
+        push({ kind: 'think', text: part.think, turn: lineTurn, ...wireStep === undefined ? {} : { wireStep }, ...typeof event.time === 'number' && Number.isFinite(event.time) ? { at: event.time } : {} })
       } else if (loop.type === 'tool.call') {
         const call = loop as {
           toolCall?: { name?: string; args?: unknown }
@@ -407,7 +427,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
           turn: lineTurn,
           ...wireStep === undefined ? {} : { wireStep },
           ...typeof event.time === 'number' && Number.isFinite(event.time)
-            ? { timing: { startedAt: event.time, source: 'provider' as const } } : {},
+            ? { at: event.time, timing: { startedAt: event.time, source: 'provider' as const } } : {},
         })
         if (typeof call.uuid === 'string') callsByUuid.set(call.uuid, lineIndex)
         if (typeof call.toolCallId === 'string') callsByToolCallId.set(call.toolCallId, lineIndex)
@@ -458,7 +478,7 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       }
     }
   }
-  return { sessionId, lines, usageRecords, closedSteps, ...model === undefined ? {} : { model }, ...modelTurn === undefined ? {} : { modelTurn } }
+  return { sessionId, lines, usageRecords, closedSteps, stepTimings, ...model === undefined ? {} : { model }, ...modelTurn === undefined ? {} : { modelTurn } }
 }
 
 /**

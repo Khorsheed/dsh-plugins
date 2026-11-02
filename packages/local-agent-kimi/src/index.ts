@@ -26,6 +26,7 @@ import type { KimiLiveSettings } from './live-switch.ts'
 import { KimiModelCatalog } from './model-catalog.ts'
 import { KimiModelBroker } from './model-broker.ts'
 import { listKimiSessions } from './records.ts'
+import { readKimiModelTiming } from './timing.ts'
 import {
   DEFAULT_THINKING_EFFORT,
   ensureKimiEndpointProvider,
@@ -291,6 +292,7 @@ export function apply(ctx: Context, config: Config): void {
       // and `/kimi login` answers that there is no login flow — no browser,
       // no device code, nothing to authorize inside a container.
       records: { listSessions: homeDir => listKimiSessions(homeDir) },
+      timing: { read: readKimiModelTiming },
       // A NAMED scope's directory is provisioned through this hook when the
       // registry materializes it — the same provider/model config and
       // permission bootstrap the default scope gets from the apply above, in

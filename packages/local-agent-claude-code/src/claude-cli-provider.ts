@@ -49,8 +49,8 @@ import {
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
-import type { LocalAgentAppliedConfiguration, DelegationExecTarget, LocalAgentToolCalls, LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
-import { localAgentToolTimingMeta, MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentAppliedConfiguration, DelegationExecTarget, LocalAgentModelBlock, LocalAgentToolCalls, LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
+import { localAgentStreamRecords, localAgentToolTimingMeta, MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { ClaudeLiveDriver } from './live-driver.ts'
 import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
@@ -729,10 +729,16 @@ export function textTask(prompt: readonly ContentBlock[]): string {
   return texts.join('\n')
 }
 
+/** A coarse model-content interval reconstructed from consecutive CLI events. */
+export interface ClaudeGenerationTiming {
+  startedAt: number
+  endedAt: number
+}
+
 /** One ordered transcript line from a `claude --output-format stream-json` stream. */
 export type ClaudeTranscriptLine =
-  | { kind: 'think'; text: string; streamId?: string; messageId?: string; usage?: TokenUsage }
-  | { kind: 'text'; text: string; streamId?: string; messageId?: string; usage?: TokenUsage }
+  | { kind: 'think'; text: string; streamId?: string; messageId?: string; usage?: TokenUsage; generation?: ClaudeGenerationTiming }
+  | { kind: 'text'; text: string; streamId?: string; messageId?: string; usage?: TokenUsage; generation?: ClaudeGenerationTiming }
   /**
    * Tool activity: one `tool_use` with its (possibly still pending)
    * `tool_result`. `id` is the stream's tool_use id when present, else a
@@ -745,7 +751,7 @@ export type ClaudeTranscriptLine =
    * per content block, each repeating the message's usage). `timing` preserves
    * the provider timestamps as the execution interval.
    */
-  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; messageId?: string; usage?: TokenUsage; timing?: LocalAgentToolTiming }
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; messageId?: string; usage?: TokenUsage; timing?: LocalAgentToolTiming; generation?: ClaudeGenerationTiming }
 
 /** Group the lines of one API call (consecutive lines sharing a message id).
  * Lines without an id stay singleton units (the pre-grouping shape). */
@@ -762,6 +768,8 @@ export function groupClaudeTranscriptLines(lines: readonly ClaudeTranscriptLine[
 /** Mutable fold state shared by the batch parse and the incremental parser. */
 interface ClaudeStreamFoldState {
   readonly lines: ClaudeTranscriptLine[]
+  /** Timestamp of the previous CLI event, used as a coarse block boundary. */
+  lastEventAt: number | undefined
   /** tool_use id → transcript line index, so a result pairs with its own call. */
   readonly callsById: Map<string, number>
   /** message id → the line index its usage currently rides (per-call dedupe:
@@ -910,6 +918,11 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
   } catch {
     return
   }
+  const parsedAt = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : Number.NaN
+  const eventAt = Number.isFinite(parsedAt) ? parsedAt : undefined
+  const previousAt = state.lastEventAt
+  const generation = previousAt !== undefined && eventAt !== undefined ? { startedAt: previousAt, endedAt: eventAt } : undefined
+  if (eventAt !== undefined) state.lastEventAt = eventAt
   if (event.type === 'system' && typeof event.session_id === 'string') {
     state.sessionId = event.session_id
     if (typeof event.model === 'string' && event.model !== '') state.model = event.model
@@ -932,8 +945,6 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
     return
   }
   if (event.type !== 'assistant' && event.type !== 'user') return
-  const parsedAt = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : Number.NaN
-  const eventAt = Number.isFinite(parsedAt) ? parsedAt : undefined
   const blocks = event.message?.content ?? []
   const linesBefore = state.lines.length
   const messageId = event.type === 'assistant' && typeof event.message?.id === 'string' ? event.message.id : undefined
@@ -948,16 +959,16 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
     // round's prompt is mirrored separately as the user message.
     if (kind === 'text' && event.type === 'user') continue
     if (kind === 'text' && typeof record['text'] === 'string' && (record['text'] as string).trim() !== '') {
-      state.lines.push({ kind: 'text', text: record['text'] as string, ...identity })
+      state.lines.push({ kind: 'text', text: record['text'] as string, ...identity, ...generation === undefined ? {} : { generation } })
       // The final assistant text block is the run output.
       if (event.type === 'assistant') state.text = record['text'] as string
     } else if (kind === 'thinking' && typeof record['thinking'] === 'string' && (record['thinking'] as string).trim() !== '') {
-      state.lines.push({ kind: 'think', text: record['thinking'] as string, ...identity })
+      state.lines.push({ kind: 'think', text: record['thinking'] as string, ...identity, ...generation === undefined ? {} : { generation } })
     } else if (kind === 'redacted_thinking') {
       // The model reasoned, but the content is opaque by design (encrypted on
       // the server): a visible placeholder line says so instead of dropping
       // the block and misreporting the round as reasoning-free.
-      state.lines.push({ kind: 'think', text: REDACTED_THINKING_TEXT, ...identity })
+      state.lines.push({ kind: 'think', text: REDACTED_THINKING_TEXT, ...identity, ...generation === undefined ? {} : { generation } })
     } else if (kind === 'tool_use' || kind === 'server_tool_use') {
       const name = typeof record['name'] === 'string' ? record['name'] : 'tool'
       // Counted here, ahead of the TodoWrite intercept below: that intercept
@@ -990,6 +1001,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
           ...messageId === undefined ? {} : { messageId },
           ...edit.patch === undefined ? {} : { result: edit.patch },
           ...timing === undefined ? {} : { timing },
+          ...generation === undefined ? {} : { generation },
         })
       } else {
         const detail = inputDetail(record['input'])
@@ -1002,6 +1014,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
           ...messageId === undefined ? {} : { messageId },
           ...detail === undefined ? {} : { args: detail },
           ...timing === undefined ? {} : { timing },
+          ...generation === undefined ? {} : { generation },
         })
       }
     } else if (kind === 'tool_result') {
@@ -1072,6 +1085,7 @@ function attachToolResult(state: ClaudeStreamFoldState, useId: unknown, resultTe
 export class ClaudeStreamParser implements ClaudeStreamFoldState {
   private buffer = ''
   readonly lines: ClaudeTranscriptLine[] = []
+  lastEventAt: number | undefined
   readonly callsById: Map<string, number> = new Map()
   readonly usageStamped: Map<string, number> = new Map()
   text: string | undefined
@@ -1126,6 +1140,7 @@ export function parseClaudeStreamJson(output: string): {
 } {
   const state: ClaudeStreamFoldState = {
     lines: [],
+    lastEventAt: undefined,
     callsById: new Map(),
     usageStamped: new Map(),
     toolCalls: new Map(),
@@ -1629,6 +1644,18 @@ export function assistantEvent(blocks: readonly ContentBlock[]) {
   })
 }
 
+/** Build one API call's coarse model stream from consecutive CLI event times. */
+export function claudeStreamFromLines(lines: readonly ClaudeTranscriptLine[]) {
+  return localAgentStreamRecords(lines.flatMap((line, index): LocalAgentModelBlock[] => {
+    const generation = line.generation
+    if (generation === undefined) return []
+    const base = { index, startedAt: generation.startedAt, endedAt: generation.endedAt }
+    if (line.kind === 'think') return [{ ...base, kind: 'reasoning' as const, text: line.text }]
+    if (line.kind === 'text') return [{ ...base, kind: 'text' as const, text: line.text }]
+    return [{ ...base, kind: 'tool-call' as const, call: { id: line.id as ToolCallBlockId, name: line.name, arguments: line.args ?? '' } }]
+  }))
+}
+
 /**
  * Fold one transcript line into the child session as one assistant step,
  * wrapped in the step/start–step/end boundary pair the live conversation
@@ -1668,7 +1695,7 @@ export function appendClaudeTranscriptLine(
       turn,
       step,
       message: assistantEvent([{ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: args }]),
-      stream: [],
+      stream: claudeStreamFromLines([line]),
       ...lineUsage === undefined ? {} : { usage: lineUsage },
     }, { surfaceOp: 'append' })
     const call = childSession.append('tool/call', {
@@ -1698,7 +1725,7 @@ export function appendClaudeTranscriptLine(
     turn,
     step,
     message: assistantEvent(blocks),
-    stream: [],
+    stream: claudeStreamFromLines([line]),
     ...lineUsage === undefined ? {} : { usage: lineUsage },
   }, { surfaceOp: 'append' })
   childSession.append('step/end', { turn, step })
@@ -1737,7 +1764,7 @@ export function appendClaudeTranscriptGroup(
     turn,
     step,
     message: assistantEvent(blocks),
-    stream: [],
+    stream: claudeStreamFromLines(group),
     ...lineUsage === undefined ? {} : { usage: lineUsage },
   }, { surfaceOp: 'append' })
   for (const line of group) {

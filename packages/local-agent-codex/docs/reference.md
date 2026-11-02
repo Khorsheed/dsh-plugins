@@ -150,6 +150,8 @@ model_provider = "dsh-router"
 
 **工具执行计时。** 增量 `item.started` / `item.completed`（exec 与 app-server 常驻路径）按通知到达时间配成真实执行区间，写入 `tool/result.meta.localAgentTiming`；空输出同样更新结束时间。事后批量解析与缺少起点的通知不伪造计时。事件 envelope `time` 仍是镜像写入时间，Context Lens 优先读取执行区间，旧记录保持回退。共享契约与上游退役路径见 [Agent Note](../../../.agents/notes/implemented/bug-fix/2026-11-02-local-agent-tool-execution-timing.zh.md)。
 
+**模型流与历史计时。** 镜像按通知起点/终点记录模型块，工具参数块的起点取工具开始前的上一条事件，而不是把工具执行混进参数生成。历史适配器只读 rollout，优先使用 `event_msg.item_completed` 的原生 ID、起止和 `duration`（工具自身执行口径），没有这些记录才回退到 `response_item` 的粗粒度区间；前置指令不会被误算成第 0 轮。
+
 **模型体验。** 每次委派都是委派 Session 工作区内一个全新的一次性 `codex exec` 进程。父级只提交任务文本、只看到最终回答或精确错误——Codex 的评论、工具活动、工作区 diff 不会跨进父级会话,子会话 token 也永不进入父级上下文。
 
 **长驻驱动(`live: true`)。** 替代每轮 spawn:成员首轮委派拉起一个常驻 `codex app-server --stdio` 进程(同 scoped home、同 `-c` 成员桥声明),创建持久线程(`thread/start`,`ephemeral: false`),之后每轮 = 向活着的 runtime 发 `turn/start`;`item/completed` 事件即时折进子会话(与 exec 共享同一 `CodexTranscriptLine` 折叠与 append 核,最后一行留置到 `turn/completed` 以挂用量),`cancel` 落地为 `turn/interrupt`——进程不死、线程可续。审批类 server→client 请求按无人值守策略自动应答(cancel/decline,与 exec 行为一致)。runtime 空闲超时回收(app-server 无 shutdown 方法:stdin EOF → SIGTERM 阶梯),崩溃后下一轮自动重连并 `thread/resume` 盘上线程;握手失败进冷却熔断,逐轮回退 exec。

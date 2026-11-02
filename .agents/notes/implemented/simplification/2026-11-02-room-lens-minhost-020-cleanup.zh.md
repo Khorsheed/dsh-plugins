@@ -21,6 +21,7 @@ Status: implemented
 - `PresetDerivationSurface` 只保留 `agentPresetProjectionDefinition`。
 - 输入框只从 `inbox.next-turn` 读排队行，待办条和统计行无条件渲染。`LegacyQueuedMessage`、`EMPTY_LEGACY_QUEUE` 和 `useProjection` 判空一并删除。
 - `mainSessionId`（room 与 lens）只读 `retainedBy.mainView`；`presetOf`（room 与 lens）只读 `projectionValues.agentPreset`。
+- room 客户端把 `Context` 收窄为浏览器端的 `ISessions`（`RoomClientContext`），使 `list`、`scope` 和 `binding` 不会落到共享同一 Context 键的宿主 `SessionStore`。这只是类型区分，运行时行为不变。
 - `RoomModelDirectory.select` 的类型定为 `Promise<RemoteResult<void>>`。选择器和成员编辑只看 `result.ok`，reject 仍算失败。
 - `isRoomSource` 只认 `room` 和 `plugin:@khorsheed/dsh-room`。在 0.2.0-rc.1 里，`JsonlSessionPersistence.open` 通过 `requireStoredLog` 加载历史文件，先跑 V3→V4 迁移（`session-format-v3-to-v4` 的 `rewriteV3MessageSource` → `rewritePluginSource`），然后才交出读句柄或写句柄。所以 V3 包装到不了 room 的活会话，也到不了 `inspectCold` 的读句柄；写入时 V4 落盘准入也会拒收这种包装（`persistence.host.spec.ts` 钉住了这一点）。
 - 删除 `view.wireHint`，以及 SegCtl 注释里的 `≥0.1.2` 说法。room 里描述旧宿主线的注释改为只描述现行行为。

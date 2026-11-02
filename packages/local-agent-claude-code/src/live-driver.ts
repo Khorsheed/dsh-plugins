@@ -86,6 +86,7 @@ import {
   assistantEvent,
   appendClaudeRequestHeader,
   claudeLineText,
+  claudeStreamFromLines,
   ClaudeStreamParser,
   claudeVersionFromInit,
   DEFAULT_DISPOSE_GRACE_MS,
@@ -134,6 +135,8 @@ interface ClaudeStream {
   /** Lines completed before the block's first delta: it sorts before every later one. */
   readonly after: number
   text: string
+  /** Arrival time of the block's first delta. */
+  startedAt: number
   lastSnapshotAt: number
   lastSnapshotLen: number
   /** step/start written for this block. */
@@ -898,7 +901,7 @@ export class ClaudeLiveDriver {
             ? { type: 'reasoning' as const, text: stream.text }
             : { type: 'text' as const, text: stream.text },
         ]),
-        stream: [],
+        stream: claudeStreamFromLines([{ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } }]),
         ...totalFallback ? { usage } : {},
         ...interrupted ? { interrupted: true } : {},
       }, { surfaceOp: 'append' })
@@ -935,7 +938,7 @@ export class ClaudeLiveDriver {
       let stream = streams.get(itemId)
       if (stream === undefined) {
         streamKeys += 1
-        stream = { itemId, kind, step: streamKeys, after: parser.lines.length, text: '', lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
+        stream = { itemId, kind, step: streamKeys, after: parser.lines.length, text: '', startedAt: Date.now(), lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
         streams.set(itemId, stream)
       }
       activeStream = itemId
@@ -969,7 +972,7 @@ export class ClaudeLiveDriver {
           turn,
           step: stream.durable!,
           message: assistantEvent(blocks),
-          stream: [],
+          stream: claudeStreamFromLines([line]),
           ...effectiveUsage === undefined ? {} : { usage: effectiveUsage },
         }, { surfaceOp: 'append' })
         finishStream(stream)

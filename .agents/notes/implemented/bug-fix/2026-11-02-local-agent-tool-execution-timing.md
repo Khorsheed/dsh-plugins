@@ -25,7 +25,7 @@ Context Lens computed tool execution time as `tool/result.time − tool/call.tim
 
 ## Consequences
 
-New mirrors carry accurate execution intervals without changing model-visible content, step atomicity, or released-log relationships. Context Lens is fixed; the host's own `sessionStats.toolMs` remains on the old envelope-time basis until the upstream capability lands. Old mirror logs cannot be corrected from themselves; accurate historical repair requires their original CLI records. The transitional metadata can be removed after producers and consumers migrate to the standard field.
+New mirrors carry accurate execution intervals without changing model-visible content, step atomicity, or released-log relationships. Context Lens is fixed; the host's own `sessionStats.toolMs` remains on the old envelope-time basis until the upstream capability lands. Old mirror logs cannot be corrected from themselves; [the model-stream and historical-timing decision](2026-11-02-external-cli-model-stream-timing.md) defines their read-only recovery from original CLI records. The transitional metadata can be removed after producers and consumers migrate to the standard field.
 
 ## Testing
 

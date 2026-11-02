@@ -46,6 +46,7 @@ import {
   appendCodexTranscriptLine,
   codexAssistantEvent,
   codexLineText,
+  codexStreamFromLines,
   commandOutcome,
   DEFAULT_DISPOSE_GRACE_MS,
   registerCodexMemberRun,
@@ -94,6 +95,8 @@ interface CodexStream {
   /** Lines completed before the item's first delta: it sorts before every later one. */
   readonly after: number
   text: string
+  /** Arrival time of the item's first delta. */
+  startedAt: number
   lastSnapshotAt: number
   lastSnapshotLen: number
   /** step/start written for this item. */
@@ -1105,6 +1108,8 @@ export class CodexLiveDriver {
     let activeStream: string | undefined
     /** Tool item id → its notification time, paired with item/completed. */
     const toolStarts = new Map<string, number>()
+    const toolArgStarts = new Map<string, number>()
+    let lastEventAt: number | undefined
     /** Items/completions that arrived before the turn id was known. */
     const earlyNotifications: { method: string; params: JsonObject; observedAt: number }[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
@@ -1232,7 +1237,7 @@ export class CodexLiveDriver {
             ? { type: 'reasoning' as const, text: stream.text }
             : { type: 'text' as const, text: stream.text },
         ]),
-        stream: [],
+        stream: codexStreamFromLines([{ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } }]),
         ...withUsage && !usageCarried && usageByLine.size === 0 && usage !== undefined ? { usage } : {},
         ...interrupted ? { interrupted: true } : {},
       }, { surfaceOp: 'append' })
@@ -1270,7 +1275,7 @@ export class CodexLiveDriver {
       let stream = streams.get(itemId)
       if (stream === undefined) {
         streamKeys += 1
-        stream = { itemId, kind, step: streamKeys, after: lines.length, text: '', lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
+        stream = { itemId, kind, step: streamKeys, after: lines.length, text: '', startedAt: Date.now(), lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
         streams.set(itemId, stream)
       }
       activeStream = itemId
@@ -1295,7 +1300,7 @@ export class CodexLiveDriver {
           turn,
           step: stream.durable!,
           message: codexAssistantEvent(blocks),
-          stream: [],
+          stream: codexStreamFromLines([line]),
           ...lineUsage === undefined ? {} : { usage: lineUsage },
         }, { surfaceOp: 'append' })
         finishStream(stream)
@@ -1386,10 +1391,15 @@ export class CodexLiveDriver {
 
     /** Process one turn-scoped notification for the round's own turn id. */
     const dispatchTurnNotification = (method: string, params: JsonObject, observedAt: number): void => {
+      const previousAt = lastEventAt
+      lastEventAt = observedAt
       if (method === 'item/started') {
         const item = params['item'] as JsonObject | undefined
         const id = item?.['id']
-        if (typeof id === 'string') toolStarts.set(id, observedAt)
+        if (typeof id === 'string') {
+          toolStarts.set(id, observedAt)
+          if (previousAt !== undefined) toolArgStarts.set(id, previousAt)
+        }
         return
       }
       if (method === 'item/completed') {
@@ -1400,7 +1410,11 @@ export class CodexLiveDriver {
         }
         const itemId = typeof item['id'] === 'string' ? item['id'] : undefined
         const startedAt = itemId === undefined ? undefined : toolStarts.get(itemId)
-        if (itemId !== undefined) toolStarts.delete(itemId)
+        const argStartedAt = itemId === undefined ? undefined : toolArgStarts.get(itemId)
+        if (itemId !== undefined) {
+          toolStarts.delete(itemId)
+          toolArgStarts.delete(itemId)
+        }
         const line = codexAppServerItemToLine(item)
         if (item['type'] === 'agentMessage' && typeof item['text'] === 'string') {
           const phase = item['phase']
@@ -1409,6 +1423,11 @@ export class CodexLiveDriver {
           lastText = item['text']
         }
         if (line === undefined) return
+        if (startedAt !== undefined) {
+          line.generation = line.kind === 'tool'
+            ? { startedAt: argStartedAt ?? startedAt, endedAt: startedAt }
+            : { startedAt, endedAt: observedAt }
+        }
         if (line.kind === 'tool' && startedAt !== undefined) {
           line.timing = { startedAt, endedAt: observedAt, source: 'observed' }
         }
