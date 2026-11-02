@@ -699,6 +699,25 @@ export class CodexLiveDriver {
   }
 
   /**
+   * Round-start self-heal: a resident process whose CLI lacks the member's
+   * mode tools (its bridge served the placeholder, or an empty list while the
+   * mode has tools) is retired here, between rounds, so this round respawns
+   * a fresh `codex app-server` that resumes the same CLI session and lists again.
+   * codex only logs `notifications/tools/list_changed` (codex 0.163), so a new process is the only way its tool list refreshes. The registry decides (`memberToolsStale`); an older core
+   * without it keeps the process.
+   */
+  private async retireIfToolsStale(key: string): Promise<void> {
+    const runtime = this.runtimes.get(key)
+    const token = runtime === undefined || runtime.dead ? undefined : runtimeTokens.get(runtime)
+    const registry = this.ctx.localAgent
+    if (token === undefined || typeof registry.memberToolsStale !== 'function') return
+    const reason = await registry.memberToolsStale(token).catch(() => undefined)
+    if (reason === undefined || this.runtimes.get(key) !== runtime) return
+    this.ctx.logger.warn(`local-agent-codex: respawning member ${key}'s codex process before its round: ${reason}`)
+    await this.retireRuntime(key)
+  }
+
+  /**
    * Retire the member's resident runtime so the NEXT round respawns (the CLI
    * session itself carries over via thread/resume). The composer's model
    * switch calls this after storing the new override; the caller guarantees
@@ -808,6 +827,7 @@ export class CodexLiveDriver {
       this.clearIdleTimer(key)
       member?.release()
     }
+    if (member !== undefined) runtimeTokens.set(runtime, member.token)
     const aborted = new Promise<never>((_, reject) => {
       const cancel = (): void => { reject(new Error('subagent-codex: run cancelled locally')) }
       const unload = (): void => { reject(new LiveChannelUnavailableError('the live driver was disposed during spawn')) }
@@ -1525,6 +1545,7 @@ export class CodexLiveDriver {
     }
 
     const accepted: Promise<void> = (async () => {
+      await this.retireIfToolsStale(String(childSession.id))
       const rt = await this.ensureRuntime(spec, request.signal)
       runtime = rt
       if (runAbort.signal.aborted) {
@@ -1748,3 +1769,6 @@ function recordRoundContext(
   recordContextOccupancy(childSession, { provider: 'codex-local', usedTokens: rt.contextTokens, contextWindow: rt.contextWindow },
     { force: autoCompactions.length > 0 })
 }
+
+/** Each resident runtime's member-bridge token (the round-start tool check asks by it). */
+const runtimeTokens = new WeakMap<CodexLiveRuntime, string>()
