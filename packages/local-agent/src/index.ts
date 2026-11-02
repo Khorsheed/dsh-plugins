@@ -154,6 +154,17 @@ export { MemberConfigurationController } from './member-control.ts'
 export type { MemberConfigurationAdapter, MemberControlStorage, MemberControlRecord } from './member-control.ts'
 export { FileMemberControlStorage } from './member-control-storage.ts'
 export { LiveFlush, LIVE_FLUSH_INTERVAL_MS } from './live-flush.ts'
+export {
+  MIRROR_INTERRUPTED_TOOL_RESULT,
+  appendMirrorContent,
+  appendMirrorStep,
+  appendRequestHeaderIfChanged,
+  closeMirrorTurn,
+  mirrorAssistantMessage,
+  mirrorStreamRecords,
+  recordContextOccupancy,
+} from './mirror-step.ts'
+export type { MirrorBlock, MirrorGeneration, MirrorRequestConfig, MirrorSource, MirrorUnit } from './mirror-step.ts'
 import { LocalAgentStreams } from './live-stream.ts'
 export { LocalAgentStreams, LiveStreamPublisher, LIVE_CHECKPOINT_INTERVAL_MS } from './live-stream.ts'
 export { containerExecSpawn, containerScopedHome } from './container.ts'

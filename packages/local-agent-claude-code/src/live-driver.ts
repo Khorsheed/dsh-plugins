@@ -68,7 +68,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
@@ -79,14 +79,22 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
+import {
+  appendMirrorContent,
+  appendRequestHeaderIfChanged,
+  closeMirrorTurn,
+  delegationEnv,
+  persistChildSession,
+  recordContextOccupancy,
+  LiveStreamPublisher,
+  LiveFlush,
+  LIVE_FLUSH_INTERVAL_MS,
+  type MirrorBlock,
+} from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import {
-  appendClaudeTranscriptLine,
-  assistantEvent,
-  appendClaudeRequestHeader,
+  claudeMirrorSource,
   claudeLineText,
-  claudeStreamFromLines,
   ClaudeStreamParser,
   claudeVersionFromInit,
   DEFAULT_DISPOSE_GRACE_MS,
@@ -139,10 +147,14 @@ interface ClaudeStream {
   startedAt: number
   lastSnapshotAt: number
   lastSnapshotLen: number
-  /** step/start written for this block. */
+  /** step/start written for this block (or it joined its call's open step). */
   opened: boolean
   /** The log step it occupies, once opened. */
   durable?: number
+  /** The API call (native message id) it belongs to; its blocks share one step. */
+  readonly call?: string
+  /** It streams under a step an earlier block of its call opened (a sub-item of that step). */
+  joined?: boolean
 }
 export class LiveChannelUnavailableError extends Error {
   constructor(message: string) {
@@ -403,7 +415,6 @@ export class ClaudeLiveDriver {
        */
       endpoint?: (homeDir: string) => Promise<ClaudeEndpointAuth>
       liveIdleMs?: number
-      liveMirrorGranularity?: ClaudeLiveMirrorGranularity
       /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
       /** @deprecated Character growth no longer gates live publication. */
@@ -447,9 +458,6 @@ export class ClaudeLiveDriver {
   hasRuntime(key: string): boolean {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
-
-  /** @deprecated Compatibility no-op: live output is always incremental. */
-  setLiveMirrorGranularity(_granularity: ClaudeLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
@@ -828,19 +836,34 @@ export class ClaudeLiveDriver {
     )
 
     // The step ledger. The log admits steps strictly in sequence — one open
-    // at a time, numbered when WRITTEN (`lastStep`) — while chronology is
-    // kept by start order: a stream sorts before every line that completed
-    // after its first delta (`after`). A stream's step opens in the log only
-    // once it is the oldest unfinished stream and everything before it is
-    // written; until then the browser previews it and its fold writes it.
+    // at a time, numbered when WRITTEN (`lastStep`) — and one API call (a
+    // native message id) is ONE step, the exec path's grouping: its reasoning,
+    // text and tool blocks land in one assistant/message, then each tool's
+    // lifecycle, then step/end. Chronology is kept by start order: a stream
+    // sorts before every line that completed after its first delta (`after`).
+    // A call's step opens in the log once its first stream is the oldest
+    // unfinished stream and everything before it is written (until then the
+    // browser previews it); the call's later streams join that open step.
+    // Lines without a message id stay one step each.
     let lastStep = 0
     let openStep: number | undefined
+    /** call → the step it holds open while its blocks stream. */
+    const callSteps = new Map<string, number>()
+    const mirrorSource = () => claudeMirrorSource(roundModel ?? spec.configuration?.model)
+    const callOwnsOpenStep = (call: string | undefined): boolean =>
+      call !== undefined && openStep !== undefined && callSteps.get(call) === openStep
     const openStreamStep = (stream: ClaudeStream): void => {
-      lastStep += 1
-      childSession.append('step/start', { turn, step: lastStep })
-      stream.durable = lastStep
+      if (callOwnsOpenStep(stream.call)) {
+        stream.durable = openStep!
+        stream.joined = true
+      } else {
+        lastStep += 1
+        childSession.append('step/start', { turn, step: lastStep })
+        stream.durable = lastStep
+        openStep = lastStep
+        if (stream.call !== undefined) callSteps.set(stream.call, lastStep)
+      }
       stream.opened = true
-      openStep = lastStep
       // From here it streams under its durable step: the preview goes
       // (a core predating dropPreview keeps it until the item finishes).
       streamPublisher?.dropPreview?.(stream.step, stream.itemId)
@@ -848,66 +871,53 @@ export class ClaudeLiveDriver {
     const closeOpenStep = (): void => {
       if (openStep === undefined) return
       childSession.append('step/end', { turn, step: openStep })
+      for (const [call, step] of callSteps) if (step === openStep) callSteps.delete(call)
       openStep = undefined
     }
-    const canOpenStream = (stream: ClaudeStream): boolean =>
-      openStep === undefined && mirrored >= stream.after && streams.keys().next().value === stream.itemId
+    const canOpenStream = (stream: ClaudeStream): boolean => callOwnsOpenStep(stream.call)
+      || (openStep === undefined && mirrored >= stream.after && streams.keys().next().value === stream.itemId)
+    /** The streams one call (or, for an id-less stream, the stream alone) owns, in start order. */
+    const callStreams = (stream: ClaudeStream): ClaudeStream[] => stream.call === undefined
+      ? [stream]
+      : [...streams.values()].filter(candidate => candidate.call === stream.call)
+    const streamBlock = (stream: ClaudeStream, now: number): MirrorBlock =>
+      ({ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } })
 
     const pendingStreamArrival = new Map<number, number>()
-    const appendStreamSnapshot = (
-      stream: ClaudeStream,
-      force: boolean,
-      interrupted: boolean,
-      withUsage = false,
-      final = false,
-    ): void => {
+    /**
+     * Append one live snapshot of a stream at its call's step. Batched per
+     * stream on a bounded deadline unless `force`. With live streams the text
+     * goes to the publisher (a joined block as a sub-item of the call's
+     * step); without them the snapshot is a durable assistant/message at the
+     * step carrying every opened block of the call so far.
+     */
+    const appendStreamSnapshot = (stream: ClaudeStream, force: boolean): void => {
       if (stream.text.trim() === '') return
       const now = Date.now()
       if (!force) {
         if (!pendingStreamArrival.has(stream.step)) pendingStreamArrival.set(stream.step, now)
-        liveFlush.schedule(stream.step, () => appendStreamSnapshot(stream, true, interrupted, withUsage))
+        liveFlush.schedule(stream.step, () => appendStreamSnapshot(stream, true))
         return
       }
       liveFlush.cancel(stream.step)
       const receivedAt = pendingStreamArrival.get(stream.step) ?? now
       pendingStreamArrival.delete(stream.step)
       if (!stream.opened) {
-        if (canOpenStream(stream)) openStreamStep(stream)
-        else if (!final) {
+        if (!canOpenStream(stream)) {
           // Not its turn in the log yet: show it live, write it later.
           streamPublisher?.preview(stream.step, stream.kind, stream.text, { itemId: stream.itemId, receivedAt })
           return
-        } else {
-          // Settle: every line has folded; take the next step.
-          closeOpenStep()
-          openStreamStep(stream)
         }
+        openStreamStep(stream)
       }
-      if (streamPublisher !== undefined && !final) {
-        streamPublisher.update(stream.durable!, stream.kind, stream.text, { receivedAt })
-        stream.lastSnapshotAt = now
-        stream.lastSnapshotLen = stream.text.length
-        return
-      }
-      const usage = parser.usage
-      // Per-call folds carry the accounting; the round total only ever
-      // back-fills a stream that named none (a sum would double count).
-      const totalFallback = withUsage && !usageCarried && usage !== undefined && !parser.lines.some(line => line.usage !== undefined)
-      childSession.append('assistant/message', {
-        turn,
-        step: stream.durable!,
-        message: assistantEvent([
-          stream.kind === 'think'
-            ? { type: 'reasoning' as const, text: stream.text }
-            : { type: 'text' as const, text: stream.text },
-        ]),
-        stream: claudeStreamFromLines([{ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } }]),
-        ...totalFallback ? { usage } : {},
-        ...interrupted ? { interrupted: true } : {},
-      }, { surfaceOp: 'append' })
-      if (totalFallback) usageCarried = true
       stream.lastSnapshotAt = now
       stream.lastSnapshotLen = stream.text.length
+      if (streamPublisher !== undefined) {
+        streamPublisher.update(stream.durable!, stream.kind, stream.text, { receivedAt, ...stream.joined === true ? { itemId: stream.itemId } : {} })
+        return
+      }
+      const blocks = callStreams(stream).filter(candidate => candidate.opened && candidate.text.trim() !== '').map(candidate => streamBlock(candidate, now))
+      appendMirrorContent(childSession, turn, stream.durable!, { blocks }, mirrorSource())
       persist()
     }
 
@@ -920,10 +930,45 @@ export class ClaudeLiveDriver {
       if (stream.durable !== undefined) streamPublisher?.finish(stream.durable)
     }
 
+    /** Take the step a call writes at: its open step, else a fresh one. */
+    const takeStep = (owned: readonly ClaudeStream[]): number => {
+      const opened = owned.find(stream => stream.opened)
+      if (opened?.durable !== undefined && opened.durable === openStep) return opened.durable
+      closeOpenStep()
+      lastStep += 1
+      childSession.append('step/start', { turn, step: lastStep })
+      openStep = lastStep
+      return lastStep
+    }
+
     /**
-     * Track one new streaming block: its provisional key and how many lines
-     * had completed when it began. A different block's deltas force one
-     * freshness snapshot of the current stream.
+     * Finalize the streams of a call whose lines never came (an abort, or the
+     * turn ended mid-message) from their live text, as one step — the
+     * non-completed round's partial reads 已停止 legitimately; `withUsage`
+     * back-fills the round total when no folded line carried any.
+     */
+    const finalizeStreams = (stream: ClaudeStream, interrupted: boolean, withUsage: boolean): void => {
+      const owned = callStreams(stream)
+      const now = Date.now()
+      const blocks = owned.filter(candidate => candidate.text.trim() !== '').map(candidate => streamBlock(candidate, now))
+      if (blocks.length > 0) {
+        const step = takeStep(owned)
+        const usage = parser.usage
+        // Per-call folds carry the accounting; the round total only ever
+        // back-fills a stream that named none (a sum would double count).
+        const totalFallback = withUsage && !usageCarried && usage !== undefined && !parser.lines.some(line => line.usage !== undefined)
+        appendMirrorContent(childSession, turn, step, { blocks, ...totalFallback ? { usage } : {}, interrupted }, mirrorSource())
+        if (totalFallback) usageCarried = true
+        persist()
+      }
+      for (const candidate of owned) finishStream(candidate)
+      closeOpenStep()
+    }
+
+    /**
+     * Track one new streaming block: its provisional key, its call, and how
+     * many lines had completed when it began. A different block's deltas
+     * force one freshness snapshot of the current stream.
      */
     const reserveStream = (itemId: string, kind: 'think' | 'text'): void => {
       if (activeStream !== undefined && activeStream !== itemId) {
@@ -931,115 +976,141 @@ export class ClaudeLiveDriver {
         // A freshness snapshot on the kind switch, skipped when the text has
         // not grown since the last one (the settle force always lands).
         if (previous !== undefined && previous.text.length !== previous.lastSnapshotLen) {
-          appendStreamSnapshot(previous, true, false)
+          appendStreamSnapshot(previous, true)
         }
         activeStream = undefined
       }
       let stream = streams.get(itemId)
       if (stream === undefined) {
         streamKeys += 1
-        stream = { itemId, kind, step: streamKeys, after: parser.lines.length, text: '', startedAt: Date.now(), lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
+        const call = currentCall !== undefined && openCalls.has(currentCall) ? currentCall : undefined
+        stream = { itemId, kind, step: streamKeys, after: parser.lines.length, text: '', startedAt: Date.now(), lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false, ...call === undefined ? {} : { call } }
         streams.set(itemId, stream)
       }
       activeStream = itemId
     }
 
-    /** The stream a completed line finalizes, if it was streamed. */
-    const streamOfLine = (line: (typeof parser.lines)[number] | undefined): ClaudeStream | undefined =>
-      line === undefined || line.kind === 'tool' ? undefined
-        : (line.streamId === undefined ? undefined : streams.get(line.streamId))
-          ?? [...streams.values()].find(candidate => candidate.kind === line.kind && (line.streamId === undefined || candidate.itemId.startsWith('legacy-')))
-
-    /** Write parser.lines[index] at the next step(s). */
-    const foldLine = (index: number, lineUsage: typeof parser.usage): void => {
-      const line = parser.lines[index]!
-      // The fold's per-call usage (the assistant event's inline report) wins
-      // over the round-total fallback; once any line carries its own, the
-      // round total never joins the log (a sum would double count).
-      const perCall = callLineUsage(index)
-      const effectiveUsage = perCall === null ? line.usage ?? lineUsage
-        : 'skip' in perCall ? undefined : perCall.usage ?? lineUsage
-      if (effectiveUsage !== undefined) usageCarried = true
-      const stream = streamOfLine(line)
-      if (stream !== undefined) {
-        // A streamed line finalizes its own step (opening it now if no
-        // snapshot ever could) and closes it.
-        if (!stream.opened) { closeOpenStep(); openStreamStep(stream) }
-        const blocks = stream.kind === 'think'
-          ? [{ type: 'reasoning' as const, text: line.kind === 'tool' ? '' : line.text }]
-          : [{ type: 'text' as const, text: line.kind === 'tool' ? '' : line.text }]
-        childSession.append('assistant/message', {
-          turn,
-          step: stream.durable!,
-          message: assistantEvent(blocks),
-          stream: claudeStreamFromLines([line]),
-          ...effectiveUsage === undefined ? {} : { usage: effectiveUsage },
-        }, { surfaceOp: 'append' })
-        finishStream(stream)
-        closeOpenStep()
-      } else {
-        closeOpenStep()
-        lastStep += 1
-        // The fold decided the usage; the line's own (per-block snapshot) must not override it.
-        const { usage: _snapshot, ...bare } = line
-        appendClaudeTranscriptLine(childSession, turn, lastStep, bare as typeof line, effectiveUsage)
-      }
-      folded.add(index)
-      localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
+    /** The lines of each call (consecutive lines sharing a message id), as line indexes. */
+    const lineGroups = (): number[][] => {
+      const groups: number[][] = []
+      parser.lines.forEach((line, index) => {
+        const last = groups.at(-1)
+        if (line.messageId !== undefined && last !== undefined && parser.lines[last[0]!]?.messageId === line.messageId) last.push(index)
+        else groups.push([index])
+      })
+      return groups
     }
 
     /**
-     * Mirror the completed lines before `upto` in chronological order; the
-     * last line is held back until `result`. A line waits behind every stream
-     * that began before it completed (that stream's line folds first, or the
-     * mirror stops while it still streams). A tool line whose result the
-     * stream has not recorded yet HOLDS the fold mid-round: the fold writes
-     * the native lifecycle as one closed step (the released-log reader
-     * resolves every advertised call before step/end), and the result merges
-     * into the call's line in place, so a later pass retries from here. The
-     * settle flushes (`settle: true` — the turn's result event, or the final
-     * flush after a cancel/failure) never hold: a result that will never
-     * arrive folds as the interrupted placeholder.
+     * The streams a group of lines finalizes: every stream of its call, or —
+     * for an id-less line — the stream it completes (its stream id, else the
+     * oldest legacy-keyed stream of its kind).
      */
-    const mirrorUpTo = (upto: number, withUsage: boolean, settle = false): void => {
+    const groupStreams = (group: readonly number[]): ClaudeStream[] => {
+      const head = parser.lines[group[0]!]!
+      if (head.messageId !== undefined) {
+        return [...streams.values()].filter(stream => stream.call === head.messageId
+          // A partial-message stream keyed before its call id was known.
+          || (stream.call === undefined && group.some(index => (parser.lines[index] as { streamId?: string } | undefined)?.streamId === stream.itemId)))
+      }
+      if (head.kind === 'tool') return []
+      const own = (head.streamId === undefined ? undefined : streams.get(head.streamId))
+        ?? [...streams.values()].find(candidate => candidate.kind === head.kind && (head.streamId === undefined || candidate.itemId.startsWith('legacy-')))
+      return own === undefined ? [] : [own]
+    }
+
+    /** Whether a group may fold now: its call ended and every tool resolved (settle never holds). */
+    const groupReady = (group: readonly number[], settle: boolean): boolean => {
+      if (settle) return true
+      const call = parser.lines[group[0]!]?.messageId
+      if (call !== undefined && openCalls.has(call)) return false
+      return group.every(index => { const line = parser.lines[index]!; return line.kind !== 'tool' || line.result !== undefined })
+    }
+
+    /**
+     * Write one group (one API call) at its step: one assistant/message with
+     * the call's blocks (a block whose stream never completed rides from its
+     * live text), each tool's lifecycle, step/end. The call's usage — the
+     * start snapshot completed by its message_delta — rides it once.
+     */
+    const foldGroup = (group: readonly number[], fallback: (index: number) => typeof parser.usage, interrupted: boolean): void => {
+      const lines = group.map(index => parser.lines[index]!)
+      const owned = groupStreams(group)
+      const lastIndex = group[group.length - 1]!
+      const perCall = callLineUsage(lastIndex)
+      const fallbackUsage = group.map(fallback).find(value => value !== undefined)
+      const usage = perCall === null ? lines.find(line => line.usage !== undefined)?.usage ?? fallbackUsage
+        : 'skip' in perCall ? undefined : perCall.usage ?? fallbackUsage
+      if (usage !== undefined) usageCarried = true
+      // A stream with no completed line of its kind left (the call was cut
+      // off mid-block) still lands, from its live text.
+      const unpaired = [...owned]
+      for (const line of lines) {
+        if (line.kind === 'tool') continue
+        const at = unpaired.findIndex(stream => stream.itemId === line.streamId && stream.kind === line.kind)
+        const match = at >= 0 ? at : unpaired.findIndex(stream => stream.kind === line.kind)
+        if (match >= 0) unpaired.splice(match, 1)
+      }
+      const now = Date.now()
+      const partial = unpaired.filter(stream => stream.text.trim() !== '').map(stream => streamBlock(stream, now))
+      const step = takeStep(owned)
+      appendMirrorContent(childSession, turn, step, {
+        blocks: [...lines, ...partial],
+        ...usage === undefined ? {} : { usage },
+        interrupted: interrupted && partial.length > 0,
+      }, mirrorSource())
+      for (const stream of owned) finishStream(stream)
+      closeOpenStep()
+      for (const index of group) folded.add(index)
+      for (const line of lines) localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
+    }
+
+    /**
+     * Mirror the completed calls before `upto` in chronological order; the
+     * last line is held back until `result`. A call folds once it ended (its
+     * usage is final then) and every tool line in it has its result — the
+     * released-log reader resolves every advertised call before step/end, and
+     * the result merges into the call's line in place, so a later pass
+     * retries from here. A call waits behind every other stream that began
+     * before it (that stream's call folds first, or the mirror stops while it
+     * still streams). The settle flushes (`settle: true` — the turn's result
+     * event, or the final flush after a cancel/failure) never hold: a result
+     * that will never arrive folds as the interrupted placeholder, and
+     * `interrupted` marks a call's cut-off block on a non-completed round.
+     */
+    const mirrorUpTo = (upto: number, withUsage: boolean, settle = false, interrupted = false): void => {
       // Fallback carrier only: when the fold stamped per-call usage onto any
       // line, the round total never joins the log (a sum would double count);
-      // otherwise it rides the last NON-tool line (tool/call and tool/result
-      // events carry no usage slot, and a kill mid-command ends the
-      // transcript with a tool line). A carrier mirrored in an earlier flush
-      // (before the usage was knowable) loses the accounting to the settle's
-      // final snapshot — host 0.1.5 has no usage-backfill event.
+      // otherwise it rides the last NON-tool line's call (tool/call and
+      // tool/result events carry no usage slot, and a kill mid-command ends
+      // the transcript with a tool line). A carrier mirrored in an earlier
+      // flush (before the usage was knowable) loses the accounting to the
+      // settle's final snapshot — there is no usage-backfill event.
       let usageIndex = -1
       if (withUsage && !parser.lines.some(line => line.usage !== undefined)) {
         for (let index = 0; index < parser.lines.length; index += 1) {
           if (parser.lines[index]?.kind !== 'tool') usageIndex = index
         }
       }
-      const usageFor = (index: number): typeof parser.usage => {
-        const lineUsage = withUsage && index === usageIndex ? parser.usage : undefined
-        if (lineUsage !== undefined) usageCarried = true
-        return lineUsage
-      }
-      outer: for (let index = mirrored; index < upto; index += 1) {
-        if (folded.has(index)) continue
-        const line = parser.lines[index]
-        if (line === undefined) continue
-        if (!settle && line.kind === 'tool' && line.result === undefined) break
-        // A call still streaming more blocks folds once it ends (its usage is final then).
-        if (!settle && line.messageId !== undefined && openCalls.has(line.messageId)) break
-        const own = streamOfLine(line)
-        // Streams order among themselves by start; a plain line follows every
-        // stream that began before it completed.
+      const usageFor = (index: number): typeof parser.usage => (withUsage && index === usageIndex ? parser.usage : undefined)
+      const groups = lineGroups().filter(group => !group.every(index => folded.has(index)))
+      outer: for (const group of groups) {
+        if (group.every(index => folded.has(index))) continue
+        if (group.some(index => index >= upto) || !groupReady(group, settle)) break
+        // Streams order among themselves by start; a call follows every
+        // other stream that began before its first line completed.
+        const owned = groupStreams(group)
         const all = [...streams.values()]
-        const before = own === undefined ? all.filter(stream => stream.after <= index) : all.slice(0, all.indexOf(own))
+        const firstOwned = owned.length === 0 ? -1 : Math.min(...owned.map(stream => all.indexOf(stream)))
+        const before = all.filter((stream, position) => !owned.includes(stream)
+          && (firstOwned >= 0 ? position < firstOwned : stream.after <= group[0]!))
         for (const earlier of before) {
-          const at = parser.lines.findIndex((candidate, position) => position > index && position < upto && !folded.has(position) && streamOfLine(candidate) === earlier)
-          if (at < 0) break outer
-          const atCall = parser.lines[at]?.messageId
-          if (!settle && atCall !== undefined && openCalls.has(atCall)) break outer
-          foldLine(at, usageFor(at))
+          if (!streams.has(earlier.itemId)) continue
+          const holder = groups.find(candidate => !candidate.every(index => folded.has(index)) && groupStreams(candidate).includes(earlier))
+          if (holder === undefined || holder.some(index => index >= upto) || !groupReady(holder, settle)) break outer
+          foldGroup(holder, usageFor, interrupted)
         }
-        foldLine(index, usageFor(index))
+        foldGroup(group, usageFor, interrupted)
       }
       while (folded.has(mirrored)) mirrored += 1
       if (upto > 0) persist()
@@ -1113,7 +1184,7 @@ export class ClaudeLiveDriver {
           const stream = activeStream === undefined ? undefined : streams.get(activeStream)
           if (stream !== undefined) {
             stream.text += text
-            appendStreamSnapshot(stream, false, false)
+            appendStreamSnapshot(stream, false)
           }
           // The delta still rides the run-progress channel live.
           localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
@@ -1187,7 +1258,7 @@ export class ClaudeLiveDriver {
       // the authoritative source. The header contract requires a model: an
       // unconfigured round records nothing rather than inventing one.
       if (spec.configuration?.model !== undefined) {
-        appendClaudeRequestHeader(childSession, {
+        appendRequestHeaderIfChanged(childSession, {
           provider: 'claude-local',
           model: spec.configuration.model,
           reasoningEffort: (spec.configuration.effort ?? 'auto') as ReasoningEffortId,
@@ -1253,41 +1324,30 @@ export class ClaudeLiveDriver {
         // An aborted or failed turn never sees the result event, so its
         // held-back line (and the usage already observed) would be lost —
         // flush it now (the exec settle-mirror's partial-work contract).
-        if (mirrored < parser.lines.length) mirrorUpTo(parser.lines.length, true, true)
-        // A line still waiting behind a stream whose completion never came:
-        // finalize that stream from its last snapshot, then keep folding.
+        const cutOff = settled.stopReason !== 'completed'
+        if (mirrored < parser.lines.length) mirrorUpTo(parser.lines.length, true, true, cutOff)
+        // A call still waiting behind a stream whose completion never came:
+        // finalize that stream's call from its live text, then keep folding.
         while (mirrored < parser.lines.length && streams.size > 0) {
           const oldest = streams.values().next().value!
-          appendStreamSnapshot(oldest, true, settled.stopReason !== 'completed', false, true)
-          finishStream(oldest)
-          closeOpenStep()
-          mirrorUpTo(parser.lines.length, true, true)
+          finalizeStreams(oldest, cutOff, false)
+          mirrorUpTo(parser.lines.length, true, true, cutOff)
         }
         // Streams whose completion never arrived (abort, or the turn ended
-        // mid-message) still finalize INSIDE the turn window: one forced
-        // snapshot each — interrupted on a non-completed round, the LAST one
-        // carrying the usage when no folded line did — then step/end.
-        if (streams.size > 0) {
-          const remaining = [...streams.values()]
-          for (const [position, stream] of remaining.entries()) {
-            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1, true)
-            finishStream(stream)
-            closeOpenStep()
-          }
-          streams.clear()
-          activeStream = undefined
+        // mid-message) still finalize INSIDE the turn window: one step per
+        // call from its live text — interrupted on a non-completed round, the
+        // LAST call carrying the round total when no folded line did.
+        while (streams.size > 0) {
+          const oldest = streams.values().next().value!
+          const last = [...streams.values()].every(stream => callStreams(oldest).includes(stream))
+          finalizeStreams(oldest, cutOff, last)
         }
-        if (settled.stopReason === 'completed') {
-          childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-        } else if (settled.stopReason === 'aborted') {
-          childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-        } else {
-          childSession.append('turn/end', {
-            turn,
-            reason: { kind: 'error', error: { message: 'the live round did not complete', code: 'UNKNOWN' } },
-          })
-        }
-        recordRoundContext(childSession, contextTracker.reading())
+        activeStream = undefined
+        closeMirrorTurn(childSession, turn, settled.stopReason, 'the live round did not complete')
+        // The member's occupancy, so the room's and the composer's ring read
+        // Claude Code like the other CLIs.
+        const reading = contextTracker.reading()
+        if (reading !== undefined) recordContextOccupancy(childSession, { provider: 'claude-local', ...reading })
       }
       // Settlement clears the round's event sink — by identity, and only once
       // the turn's result landed: an in-flight turn's late result must still
@@ -1318,8 +1378,7 @@ export class ClaudeLiveDriver {
         // channel (record merge + `settled` event) — the live drive's half of
         // the exec path's onRoundSettled: the init event's model and build,
         // the result event's usage, and the round's tool-call accounting, each
-        // absent when the stream never yielded it. Degrades silently on a
-        // core predating recordRoundSettled (the round still settles).
+        // absent when the stream never yielded it.
         if (turnOpened) {
           const toolCalls = toolCallsOf(parser.toolCalls)
           const round = {
@@ -1328,8 +1387,7 @@ export class ClaudeLiveDriver {
             ...parser.usage === undefined ? {} : { usage: parser.usage },
             ...toolCalls === undefined ? {} : { toolCalls },
           }
-          const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
-          registry?.recordRoundSettled?.(childSession.id, round)
+          localAgent?.recordRoundSettled(childSession.id, round)
         }
         this.armIdleTimer(String(childSession.id))
       }
@@ -1359,19 +1417,4 @@ export class ClaudeLiveDriver {
       },
     })
   }
-}
-
-/**
- * After a round: the member's occupancy (one `local-agent/context`, when it
- * moved), so the room's and the composer's ring read Claude Code like the
- * other CLIs.
- */
-function recordRoundContext(childSession: Session, reading: { usedTokens: number; contextWindow?: number } | undefined): void {
-  if (reading === undefined) return
-  const last = childSession.snapshotEvents().findLast(event => event.type === 'local-agent/context')?.data as SessionEventMap['local-agent/context'] | undefined
-  if (last?.usedTokens === reading.usedTokens && last.contextWindow === reading.contextWindow) return
-  childSession.append('local-agent/context', {
-    provider: 'claude-local', usedTokens: reading.usedTokens,
-    ...reading.contextWindow === undefined ? {} : { contextWindow: reading.contextWindow },
-  })
 }

@@ -16,11 +16,12 @@ import { PassThrough, Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
+import { LocalAgentStreams, MIRROR_INTERRUPTED_TOOL_RESULT } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
-import { CLAUDE_INTERRUPTED_TOOL_RESULT, ClaudeCliProvider } from '../src/claude-cli-provider.ts'
+import { ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 import { ClaudeLiveDriver } from '../src/live-driver.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
+import { mirrorSnapshot, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
 
 /** One scripted turn: assistant events, the terminal result, or a hang. */
 interface FakeTurn {
@@ -344,11 +345,12 @@ describe('claude live driver rounds', () => {
     expect(live).toEqual(expect.arrayContaining(['first', 'second', 'third']))
     const checkpoints = child.snapshotEvents().filter(event => event.type === 'local-agent/stream')
     expect(checkpoints.map(event => event.data.text)[0]).toBe('first')
+    // One API call is one step: message-one's two blocks share one message.
     const messages = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(messages.map(event => event.data.message.content)).toEqual([
-      [{ type: 'text', text: 'first' }], [{ type: 'text', text: 'second' }], [{ type: 'text', text: 'third' }],
+      [{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }], [{ type: 'text', text: 'third' }],
     ])
-    expect(new Set(messages.map(event => event.data.step)).size).toBe(3)
+    expect(new Set(messages.map(event => event.data.step)).size).toBe(2)
     expect(messages.at(-1)!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
     expectStepBoundaries(child)
     expectValidReleasedLog(child)
@@ -595,9 +597,9 @@ describe('claude live driver rounds', () => {
     expect((await run.result).stopReason).toBe('completed')
     const messages = child.snapshotEvents().filter(e => e.type === 'assistant/message')
       .map(e => e.data as { message: { content: { type: string; name?: string; text?: string }[] }; usage?: Record<string, number> })
-    expect(messages.map(m => m.message.content.map(block => block.name ?? block.text))).toEqual([['Skill'], ['ToolSearch'], ['看完了']])
+    // One step per API call: A's two tool blocks share one message, carrying A's final usage once.
+    expect(messages.map(m => m.message.content.map(block => block.name ?? block.text))).toEqual([['Skill', 'ToolSearch'], ['看完了']])
     expect(messages.map(m => m.usage)).toEqual([
-      undefined,
       { inputTokens: 2, outputTokens: 242, cacheReadTokens: 0, cacheWriteTokens: 22711 },
       { inputTokens: 4, outputTokens: 109, cacheReadTokens: 22711, cacheWriteTokens: 2013 },
     ])
@@ -635,7 +637,7 @@ describe('claude live driver rounds', () => {
     expect(results).toHaveLength(1)
     expect(results[0]!.data.message).toMatchObject({
       toolCallId: 'tu-stuck',
-      content: [{ type: 'text', text: CLAUDE_INTERRUPTED_TOOL_RESULT }],
+      content: [{ type: 'text', text: MIRROR_INTERRUPTED_TOOL_RESULT }],
       isError: true,
     })
     expect(child.snapshotEvents().find(e => e.type === 'turn/end')?.data).toMatchObject({ turn: 1, reason: { kind: 'aborted' } })
@@ -710,7 +712,7 @@ describe('claude live driver rounds', () => {
   })
 
   it('keeps partial-message flags before the variadic member tool terminator for legacy profiles', async () => {
-    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'event' } })
+    const m = mount({ config: { permissionMode: 'skip' } })
     Object.assign(m.ctx.localAgent, {
       registerMemberRun: () => 'test-member',
       unregisterMemberRun: () => {},
@@ -743,7 +745,7 @@ describe('claude live driver rounds', () => {
     // granularity keeps the partial-message spawn flag, reports deltas over
     // the run-progress channel, AND mirrors them into the session log as
     // snapshots at the stream's reserved (turn, step).
-    const on = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const on = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const onChild = Session.create(SessionId('child-claude-7b'))
     on.queueChild(new FakeClaude({ turn: () => ({ deltas, events: answerEvents('hello') }) }))
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
@@ -766,7 +768,7 @@ describe('claude live driver rounds', () => {
   })
 
   it('token granularity: each streamed kind finalizes at its own reserved step (no duplicate fold)', async () => {
-    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const child = Session.create(SessionId('child-claude-token-final'))
     m.queueChild(new FakeClaude({
       turn: () => ({
@@ -810,7 +812,7 @@ describe('claude live driver rounds', () => {
   })
 
   it('token granularity: a cancelled round completes the stream as interrupted (legitimate 已停止)', async () => {
-    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+    const m = mount({ config: { permissionMode: 'skip' } })
     const child = Session.create(SessionId('child-claude-token-abort'))
     const fake = new FakeClaude({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
@@ -831,7 +833,7 @@ describe('claude live driver rounds', () => {
   })
 
   it('token granularity: a tool-first round renders the answer after its tool cards (lazy stream step)', async () => {
-    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+    const m = mount({ config: { permissionMode: 'skip' } })
     const child = Session.create(SessionId('child-claude-token-toolfirst'))
     const fake = new FakeClaude({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
@@ -858,7 +860,7 @@ describe('claude live driver rounds', () => {
     expect(interrupted).toHaveLength(3)
     for (const message of interrupted) {
       expect(message.isError).toBe(true)
-      expect(message.content[0]?.text).toBe(CLAUDE_INTERRUPTED_TOOL_RESULT)
+      expect(message.content[0]?.text).toBe(MIRROR_INTERRUPTED_TOOL_RESULT)
     }
     const final = child.snapshotEvents().find(e => e.type === 'assistant/message'
       && (e.data as { message: { content: { type: string }[] } }).message.content[0]?.type === 'text')!
@@ -870,7 +872,7 @@ describe('claude live driver rounds', () => {
   })
 
   it('token granularity: a stream-less round folds every line (no reservation, no snapshots)', async () => {
-    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+    const m = mount({ config: { permissionMode: 'skip' } })
     const child = Session.create(SessionId('child-claude-token-nostream'))
     // Events only, no deltas: thinking + tool + final answer.
     m.queueChild(new FakeClaude({
@@ -1042,7 +1044,7 @@ describe('claude live driver drain (settings handoff)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('legacy granularity changes leave incremental rounds on the same generation', async () => {
+  it('a resume round rides the same generation and folds incrementally', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-drain4'))
     child.append('turn/start', { turn: 1 })
@@ -1052,7 +1054,6 @@ describe('claude live driver drain (settings handoff)', () => {
     // Event granularity folds the stream lines into per-line messages.
     const eventModeMessages = child.snapshotEvents().filter(e => e.type === 'assistant/message').length
     expect(eventModeMessages).toBeGreaterThan(0)
-    m.driver.setLiveMirrorGranularity('event')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))
     await second.result
     // Token granularity folds every line too; the streamed answer finalizes
@@ -1301,4 +1302,72 @@ it('prepares native controls without a user prompt and reuses that process for r
   expect(fake.userMessages).toHaveLength(1)
   expect(m.spawns).toHaveLength(1)
   await m.driver.disposeAll()
+})
+
+describe('claude mirror snapshot (live)', () => {
+  const partial = (fake: FakeClaude, event: Record<string, unknown>): void => { fake.emit({ type: 'stream_event', event }) }
+  const usage1 = { input_tokens: 3, output_tokens: 1, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 }
+  const usage2 = { input_tokens: 4, output_tokens: 1, cache_read_input_tokens: 140, cache_creation_input_tokens: 0 }
+
+  it('a completed round with streamed blocks, a mixed call and a tool → the exact child-session event sequence', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const liveStreams = new LocalAgentStreams()
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
+    try {
+      Object.assign(m.ctx.localAgent, { liveStreams })
+      const child = Session.create(SessionId('child-claude-live-snapshot'))
+      const fake = new FakeClaude({ init: { model: 'claude-opus-5-5' }, nativeModels: [{ value: 'opus', displayName: 'Opus', supportedEffortLevels: ['high'] }], turn: () => ({ hang: true }) })
+      m.queueChild(fake)
+      const run = await m.driver.startRound(request() as never, { ...roundSpec(m, child), configuration: { model: 'opus', effort: 'high' } })
+      partial(fake, { type: 'message_start', message: { id: 'm1', usage: usage1 } })
+      partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '先列' } })
+      partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '目录' } })
+      fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'thinking', thinking: '先列目录' }] } })
+      partial(fake, { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: '我看看。' } })
+      fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'text', text: '我看看。' }] } })
+      fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'ls' } }] } })
+      partial(fake, { type: 'message_delta', usage: { output_tokens: 40 } })
+      partial(fake, { type: 'message_stop' })
+      fake.emit({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'a.txt' }] } })
+      partial(fake, { type: 'message_start', message: { id: 'm2', usage: usage2 } })
+      partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '完成' } })
+      partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '了。' } })
+      fake.emit({ type: 'assistant', message: { id: 'm2', role: 'assistant', usage: usage2, content: [{ type: 'text', text: '完成了。' }] } })
+      partial(fake, { type: 'message_delta', usage: { output_tokens: 8 } })
+      partial(fake, { type: 'message_stop' })
+      fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 7, output_tokens: 48 },
+        modelUsage: { 'claude-opus-5-5': { contextWindow: 1_000_000 } } })
+      expect((await run.result).stopReason).toBe('completed')
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      liveStreams.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('a round cancelled mid-stream → the exact child-session event sequence (durable snapshots, no live streams)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
+    try {
+      const child = Session.create(SessionId('child-claude-live-abort-snapshot'))
+      const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+      m.queueChild(fake)
+      const controller = new AbortController()
+      const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+      partial(fake, { type: 'message_start', message: { id: 'm1', usage: usage1 } })
+      partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '想一下' } })
+      fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'thinking', thinking: '想一下' }] } })
+      partial(fake, { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: '写到一半' } })
+      await until(() => m.reports.some(report => report.progress.text === '写到一半'))
+      controller.abort()
+      expect((await run.result).stopReason).toBe('aborted')
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      vi.useRealTimers()
+    }
+  })
 })

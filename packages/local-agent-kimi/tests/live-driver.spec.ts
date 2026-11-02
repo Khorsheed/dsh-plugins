@@ -21,6 +21,7 @@ import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
 import { acpStopReasonToHarness, DEFAULT_TIMEOUTS, KimiAcpLiveDriver } from '../src/live-driver.ts'
 import { readKimiDefaultModel } from '../src/provision.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
+import { mirrorSnapshot, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
 
 /** One scripted turn: streamed chunks, the terminal stop reason, or a hang. */
 interface FakeTurn {
@@ -856,7 +857,7 @@ describe('kimi live driver rounds', () => {
 
   it('token granularity streams throttled snapshots live at the stream\'s step, never into the session log', async () => {
     // Zero thresholds: every delta lands a snapshot immediately.
-    const on = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const on = mount({ config: { snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const onStreams = new LocalAgentStreams()
     const onPublished = vi.spyOn(onStreams, 'publish')
     Object.assign(on.ctx.localAgent, { liveStreams: onStreams })
@@ -891,7 +892,7 @@ describe('kimi live driver rounds', () => {
   })
 
   it('token granularity: each streamed item finalizes at its own reserved step (no duplicate fold)', async () => {
-    const m = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const m = mount({ config: { snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const child = Session.create(SessionId('child-kimi-token-final'))
     const fake = new FakeAcpServer({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
@@ -941,7 +942,7 @@ describe('kimi live driver rounds', () => {
   })
 
   it('token granularity: a step-tagged wire folds think + answer into ONE durable step', async () => {
-    const m = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const m = mount({ config: { snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const liveStreams = new LocalAgentStreams()
     const published = vi.spyOn(liveStreams, 'publish')
     Object.assign(m.ctx.localAgent, { liveStreams })
@@ -990,7 +991,7 @@ describe('kimi live driver rounds', () => {
   })
 
   it('token granularity: a cancelled round completes the stream as interrupted (legitimate 已停止)', async () => {
-    const m = mount({ config: { liveMirrorGranularity: 'token' } })
+    const m = mount({ config: {} })
     const child = Session.create(SessionId('child-kimi-token-abort'))
     m.queueChild(new FakeAcpServer({ turn: () => ({ hang: true }) }))
     const controller = new AbortController()
@@ -1011,7 +1012,7 @@ describe('kimi live driver rounds', () => {
 
   it('token granularity: a tool-first round renders the answer after its tool cards (lazy stream step)', async () => {
     const m = mount({
-      config: { liveMirrorGranularity: 'token' },
+      config: {},
       timeouts: { initializeMs: 5_000, requestMs: 5_000, convergeMs: 50, channelRetryMs: 60_000, mirrorThrottleMs: 0, settleFoldWaitMs: 0 },
     })
     const child = Session.create(SessionId('child-kimi-token-toolfirst'))
@@ -1068,7 +1069,7 @@ describe('kimi live driver rounds', () => {
     // tools at once; each ACP notification reserved a step, the fold wrote
     // the whole wire step at one of them, and later writes filled the rest —
     // the log read 1, 3, 7, 8, 2, 3, … and the released reader rejected it.
-    const m = mount({ config: { liveMirrorGranularity: 'token' } })
+    const m = mount({ config: {} })
     const child = Session.create(SessionId('child-kimi-parallel-tools'))
     const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
     mkdirSync(wireDir, { recursive: true })
@@ -1135,7 +1136,7 @@ describe('kimi live driver rounds', () => {
     // In the wild (fbc8ba18 round 2): ACP reported "1:tool_x", the wire
     // "tool_x"; settle re-wrote both calls as interrupted orphans AFTER the
     // answer, and the chat folded the answer into the process.
-    const m = mount({ config: { liveMirrorGranularity: 'token' } })
+    const m = mount({ config: {} })
     const child = Session.create(SessionId('child-kimi-prefixed-id'))
     const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
     mkdirSync(wireDir, { recursive: true })
@@ -1171,7 +1172,7 @@ describe('kimi live driver rounds', () => {
   })
 
   it('token granularity: a round whose stream stayed under the throttle still folds every wire item 1:1', async () => {
-    const m = mount({ config: { liveMirrorGranularity: 'token' } })
+    const m = mount({ config: {} })
     const child = Session.create(SessionId('child-kimi-token-nostream'))
     const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
     mkdirSync(wireDir, { recursive: true })
@@ -1226,7 +1227,7 @@ describe('kimi live driver final-step usage (room 75844e33 turn 12)', () => {
     // think+text. kimi wrote the final step's usage.record, its content and
     // step.end within 8 ms, as the prompt resolved; the reply landed with no
     // usage and the record became the round's unattached rest.
-    const m = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0 }, timeouts: { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 10_000 } })
+    const m = mount({ config: { snapshotMinIntervalMs: 0 }, timeouts: { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 10_000 } })
     const child = Session.create(SessionId('child-kimi-final-usage'))
     const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
     mkdirSync(wireDir, { recursive: true })
@@ -1540,7 +1541,7 @@ describe('kimi live driver drain (settings handoff)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('legacy granularity changes leave incremental rounds on the same generation', async () => {
+  it('a resume round rides the same generation and folds incrementally', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-kimi-drain4'))
     child.append('turn/start', { turn: 1 })
@@ -1549,7 +1550,6 @@ describe('kimi live driver drain (settings handoff)', () => {
     await first.result
     // Without a wire file the live stream still finalizes in the transcript.
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1)
-    m.driver.setLiveMirrorGranularity('event')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))
     await second.result
     // Token granularity: no wire lines folded, so the unfinished stream
@@ -1722,7 +1722,7 @@ describe('kimi live driver transcript completeness', () => {
   })
 
   it('folds ACP plan updates as the host todo list, never as a step after the answer', async () => {
-    const m = mount({ config: { liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const m = mount({ config: { snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const child = Session.create(SessionId('child-kimi-plan-token'))
     const fake = new FakeAcpServer({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
@@ -1786,4 +1786,32 @@ it('prepares native protocol without a prompt, then reuses it for the first real
   expect(fake.requests.filter(request => request.method === 'session/prompt')).toHaveLength(1)
   expect(m.spawns).toHaveLength(1)
   await m.driver.disposeAll()
+})
+
+describe('kimi mirror snapshot (live)', () => {
+  it('a cancelled round: streamed think + text finalize from live text, an ACP-only tool folds as an orphan → the exact child-session event sequence', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const m = mount({ config: {} })
+    try {
+      const child = Session.create(SessionId('child-kimi-live-snapshot'))
+      m.queueChild(new FakeAcpServer({ turn: () => ({ hang: true }) }))
+      const controller = new AbortController()
+      const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+      const fake = m.spawns[0]!.fake!
+      const session = 'session_acp-session-1'
+      fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '先跑一下' } })
+      fake.update(session, { sessionUpdate: 'tool_call', toolCallId: 'orphan_1', title: 'Bash', status: 'in_progress' })
+      fake.update(session, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '写到一半' } })
+      await until(() => m.reports.some(report => report.progress.text === '写到一半'))
+      controller.abort()
+      expect((await run.result).stopReason).toBe('aborted')
+      fake.resolvePrompt({ stopReason: 'cancelled' })
+      await until(() => child.snapshotEvents().some(event => event.type === 'turn/end'))
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      vi.useRealTimers()
+    }
+  })
 })

@@ -1,0 +1,447 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`codex mirror snapshot (exec) > one fixed exec --json stream → the exact child-session event sequence 1`] = `
+[
+  {
+    "data": {
+      "turn": 1,
+    },
+    "seq": 0,
+    "time": 1767225600000,
+    "type": "turn/start",
+  },
+  {
+    "data": {
+      "header": {
+        "config": {
+          "model": "gpt-5.4",
+          "provider": "codex-local",
+          "reasoningEffort": "high",
+        },
+      },
+      "reason": "initial",
+    },
+    "seq": 1,
+    "time": 1767225600000,
+    "type": "request/header",
+  },
+  {
+    "data": {
+      "content": [
+        {
+          "text": "do the task",
+          "type": "text",
+        },
+      ],
+      "id": "<uuid>",
+      "role": "user",
+      "source": {
+        "kind": "user",
+      },
+    },
+    "seq": 2,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "user/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 3,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "先列目录",
+            "type": "reasoning",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "gpt-5.4",
+          "provider": "codex-local",
+        },
+      },
+      "step": 1,
+      "stream": [],
+      "turn": 1,
+    },
+    "seq": 4,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 5,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 6,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "arguments": "ls",
+            "id": "item_1",
+            "name": "Bash",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "gpt-5.4",
+          "provider": "codex-local",
+        },
+      },
+      "step": 2,
+      "stream": [
+        {
+          "chunk": {
+            "blockType": "tool-call",
+            "index": 0,
+            "type": "block-start",
+          },
+          "time": 1767225600000,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "arguments": "ls",
+              "id": "item_1",
+              "name": "Bash",
+              "type": "tool-call",
+            },
+            "index": 0,
+            "type": "block-end",
+          },
+          "time": 1767225600000,
+          "type": "chunk",
+        },
+      ],
+      "turn": 1,
+    },
+    "seq": 7,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "ls",
+      "callId": "item_1",
+      "name": "Bash",
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 8,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "a.txt",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": false,
+        "role": "tool",
+        "source": {
+          "callId": "item_1",
+          "kind": "tool",
+        },
+        "toolCallId": "item_1",
+      },
+      "meta": {
+        "localAgentTiming": {
+          "endedAt": 1767225600000,
+          "provider": "codex-local",
+          "source": "observed",
+          "startedAt": 1767225600000,
+          "version": 1,
+        },
+      },
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 9,
+    "sourceEventSeqs": [
+      8,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 10,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 11,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "arguments": "false",
+            "id": "item_2",
+            "name": "Bash",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "gpt-5.4",
+          "provider": "codex-local",
+        },
+      },
+      "step": 3,
+      "stream": [],
+      "turn": 1,
+    },
+    "seq": 12,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "false",
+      "callId": "item_2",
+      "name": "Bash",
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 13,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "boom
+（退出码 1）",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": true,
+        "role": "tool",
+        "source": {
+          "callId": "item_2",
+          "kind": "tool",
+        },
+        "toolCallId": "item_2",
+      },
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 14,
+    "sourceEventSeqs": [
+      13,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 15,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 4,
+      "turn": 1,
+    },
+    "seq": 16,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "完成了。",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "gpt-5.4",
+          "provider": "codex-local",
+        },
+      },
+      "step": 4,
+      "stream": [],
+      "turn": 1,
+      "usage": {
+        "cacheReadTokens": 6,
+        "inputTokens": 4,
+        "outputTokens": 4,
+      },
+    },
+    "seq": 17,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 4,
+      "turn": 1,
+    },
+    "seq": 18,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 5,
+      "turn": 1,
+    },
+    "seq": 19,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "arguments": "sleep 9",
+            "id": "item_4",
+            "name": "Bash",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "gpt-5.4",
+          "provider": "codex-local",
+        },
+      },
+      "step": 5,
+      "stream": [],
+      "turn": 1,
+    },
+    "seq": 20,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "sleep 9",
+      "callId": "item_4",
+      "name": "Bash",
+      "step": 5,
+      "turn": 1,
+    },
+    "seq": 21,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "（工具调用被中断，未能记录返回结果）",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": true,
+        "role": "tool",
+        "source": {
+          "callId": "item_4",
+          "kind": "tool",
+        },
+        "toolCallId": "item_4",
+      },
+      "step": 5,
+      "turn": 1,
+    },
+    "seq": 22,
+    "sourceEventSeqs": [
+      21,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 5,
+      "turn": 1,
+    },
+    "seq": 23,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "reason": {
+        "kind": "completed",
+      },
+      "turn": 1,
+    },
+    "seq": 24,
+    "time": 1767225600000,
+    "type": "turn/end",
+  },
+]
+`;

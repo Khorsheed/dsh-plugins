@@ -27,7 +27,7 @@ import { StringDecoder } from 'node:string_decoder'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock, ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
@@ -38,15 +38,23 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
+import {
+  appendMirrorContent,
+  appendRequestHeaderIfChanged,
+  closeMirrorTurn,
+  delegationEnv,
+  persistChildSession,
+  recordContextOccupancy,
+  LiveStreamPublisher,
+  LiveFlush,
+  LIVE_FLUSH_INTERVAL_MS,
+} from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import {
-  appendCodexRequestHeader,
   appendCodexTranscriptLine,
-  codexAssistantEvent,
+  codexMirrorSource,
   codexLineText,
-  codexStreamFromLines,
   commandOutcome,
   DEFAULT_DISPOSE_GRACE_MS,
   registerCodexMemberRun,
@@ -584,7 +592,6 @@ export class CodexLiveDriver {
     private readonly ctx: Context,
     private readonly config: Pick<Config, 'sandbox'> & {
       liveIdleMs?: number
-      liveMirrorGranularity?: CodexLiveMirrorGranularity
       /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
       /** @deprecated Character growth no longer gates live publication. */
@@ -660,9 +667,6 @@ export class CodexLiveDriver {
   hasRuntime(key: string): boolean {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
-
-  /** @deprecated Compatibility no-op: live output is always incremental. */
-  setLiveMirrorGranularity(_granularity: CodexLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
@@ -1229,18 +1233,11 @@ export class CodexLiveDriver {
       // Per-call folds carry the accounting; a final snapshot only falls back
       // to the last-call read when the wire named no per-call usage at all.
       const attachUsage = withUsage && !usageCarried && usageByLine.size === 0 && usage !== undefined
-      childSession.append('assistant/message', {
-        turn,
-        step: stream.durable!,
-        message: codexAssistantEvent([
-          stream.kind === 'think'
-            ? { type: 'reasoning' as const, text: stream.text }
-            : { type: 'text' as const, text: stream.text },
-        ]),
-        stream: codexStreamFromLines([{ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } }]),
-        ...withUsage && !usageCarried && usageByLine.size === 0 && usage !== undefined ? { usage } : {},
-        ...interrupted ? { interrupted: true } : {},
-      }, { surfaceOp: 'append' })
+      appendMirrorContent(childSession, turn, stream.durable!, {
+        blocks: [{ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } }],
+        ...attachUsage && usage !== undefined ? { usage } : {},
+        interrupted,
+      }, codexMirrorSource(spec.configuration?.model ?? runtime?.boundModel))
       if (attachUsage) usageCarried = true
       stream.lastSnapshotAt = now
       stream.lastSnapshotLen = stream.text.length
@@ -1293,22 +1290,16 @@ export class CodexLiveDriver {
         // A streamed item finalizes its own step (opening it now if no
         // snapshot ever could) and closes it.
         if (!stream.opened) { closeOpenStep(); openStreamStep(stream) }
-        const blocks = stream.kind === 'think'
-          ? [{ type: 'reasoning' as const, text: line.kind === 'tool' ? '' : line.text }]
-          : [{ type: 'text' as const, text: line.kind === 'tool' ? '' : line.text }]
-        childSession.append('assistant/message', {
-          turn,
-          step: stream.durable!,
-          message: codexAssistantEvent(blocks),
-          stream: codexStreamFromLines([line]),
+        appendMirrorContent(childSession, turn, stream.durable!, {
+          blocks: [{ kind: stream.kind, text: line.kind === 'tool' ? '' : line.text, ...line.generation === undefined ? {} : { generation: line.generation } }],
           ...lineUsage === undefined ? {} : { usage: lineUsage },
-        }, { surfaceOp: 'append' })
+        }, codexMirrorSource(spec.configuration?.model ?? runtime?.boundModel))
         finishStream(stream)
         closeOpenStep()
       } else {
         closeOpenStep()
         lastStep += 1
-        appendCodexTranscriptLine(childSession, turn, lastStep, line, lineUsage)
+        appendCodexTranscriptLine(childSession, turn, lastStep, line, lineUsage, spec.configuration?.model ?? runtime?.boundModel)
       }
       folded.add(index)
       localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
@@ -1371,7 +1362,7 @@ export class CodexLiveDriver {
       // request parameters the provider sends are the authoritative source.
       // The header contract requires a model: without one nothing is recorded.
       if (spec.configuration?.model !== undefined) {
-        appendCodexRequestHeader(childSession, {
+        appendRequestHeaderIfChanged(childSession, {
           provider: 'codex-local',
           model: spec.configuration.model,
           ...spec.configuration.effort === undefined ? {} : { reasoningEffort: spec.configuration.effort as ReasoningEffortId },
@@ -1648,16 +1639,7 @@ export class CodexLiveDriver {
           streams.clear()
           activeStream = undefined
         }
-        if (settled.stopReason === 'completed') {
-          childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-        } else if (settled.stopReason === 'aborted') {
-          childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-        } else {
-          childSession.append('turn/end', {
-            turn,
-            reason: { kind: 'error', error: { message: 'the live round did not complete', code: 'UNKNOWN' } },
-          })
-        }
+        closeMirrorTurn(childSession, turn, settled.stopReason, 'the live round did not complete')
         if (runtime !== undefined) recordRoundContext(childSession, runtime, autoCompactions)
       }
       // Settlement retires the turn: its late notifications are tagged out,
@@ -1762,10 +1744,7 @@ function recordRoundContext(
     })
   }
   if (rt.contextTokens === undefined) return
-  const last = childSession.snapshotEvents().findLast(event => event.type === 'local-agent/context')?.data as SessionEventMap['local-agent/context'] | undefined
-  if (autoCompactions.length === 0 && last?.usedTokens === rt.contextTokens && last.contextWindow === rt.contextWindow) return
-  childSession.append('local-agent/context', {
-    provider: 'codex-local', usedTokens: rt.contextTokens,
-    ...rt.contextWindow === undefined ? {} : { contextWindow: rt.contextWindow },
-  })
+  // A compaction just ran: the same number is news, so it is written anyway.
+  recordContextOccupancy(childSession, { provider: 'codex-local', usedTokens: rt.contextTokens, contextWindow: rt.contextWindow },
+    { force: autoCompactions.length > 0 })
 }

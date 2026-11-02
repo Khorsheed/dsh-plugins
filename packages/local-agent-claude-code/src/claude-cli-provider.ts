@@ -17,7 +17,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { ContentBlock, ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
-import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo'
 import {
@@ -34,7 +34,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
@@ -46,33 +46,20 @@ import {
   establishSubagentCatalogChild,
   persistChildSession,
   probeCliVersion,
+  appendMirrorStep,
+  appendRequestHeaderIfChanged,
+  closeMirrorTurn,
+  type MirrorSource,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
-import type { LocalAgentAppliedConfiguration, DelegationExecTarget, LocalAgentModelBlock, LocalAgentToolCalls, LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
-import { localAgentStreamRecords, localAgentToolTimingMeta, MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentAppliedConfiguration, DelegationExecTarget, LocalAgentToolCalls, LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
+import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { ClaudeLiveDriver } from './live-driver.ts'
 import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
 import { endpointAuthEnv } from './endpoint-auth.ts'
 
-// The host renamed its tool-call id brand between lines (`CallId` on the npm
-// rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
-// runtime value is a plain string, so instead of importing either brand
-// factory we extract the field types from the consuming APIs — the same
-// source then compiles against both lines.
-type ToolCallEventCallId = SessionEventMap['tool/call']['callId']
-type ToolResultCallId = Parameters<typeof createToolResultMessage>[0]['callId']
-type ToolCallBlockId = Extract<ContentBlock, { type: 'tool-call' }>['id']
-
-/**
- * The synthesized result for a call whose result the stream never recorded
- * (a settle-pass fold after a kill or a truncated stream). The released-log
- * contract resolves every advertised call before its step closes, so an
- * interrupted call folds with this error result. Shared verbatim with the
- * kimi provider (`KIMI_INTERRUPTED_TOOL_RESULT`) so the family reads one text.
- */
-export const CLAUDE_INTERRUPTED_TOOL_RESULT = '（工具调用被中断，未能记录返回结果）'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -1570,22 +1557,8 @@ export async function startClaudeCliRun(
         // Every terminal path closes the turn so the timing window never stays
         // open on a failed or cancelled run. An in-stream error result or a
         // non-zero exit settles 'error', a locally cancelled run 'aborted'.
-        if (settled.stopReason === 'completed') {
-          childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-        } else if (settled.stopReason === 'aborted') {
-          childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-        } else {
-          childSession.append('turn/end', {
-            turn,
-            reason: {
-              kind: 'error',
-              error: {
-                message: parseClaudeStreamJson(drainedStdout).error ?? `claude -p exited with code ${String(exitCode)}`,
-                code: 'UNKNOWN',
-              },
-            },
-          })
-        }
+        closeMirrorTurn(childSession, turn, settled.stopReason,
+          parseClaudeStreamJson(drainedStdout).error ?? `claude -p exited with code ${String(exitCode)}`)
         if (spec.ctx !== undefined) {
           await persistChildSession(spec.ctx, childSession).catch((error: unknown) => {
             spec.ctx?.logger.warn(`subagent-claude: turn/end persistence failed: ${thrown(error).message}`)
@@ -1615,120 +1588,13 @@ export async function startClaudeCliRun(
   }))
 }
 
-/** One assistant-role message event, attributed to the claude route. */
 /**
- * Write the round's request/header when the config differs from the child
- * log's last one (the host logs changed snapshots, not per-call duplicates):
- * the first write is `initial`, a differing one `change`, an identical one
- * skipped. Context Lens reads the child log's config from these headers.
+ * The mirror source for a message the claude route writes: the model the
+ * round observed (the stream's init event, else the model the launch
+ * requested), or the bare `claude` label when neither is known.
  */
-export function appendClaudeRequestHeader(childSession: Session, config: { provider: string; model: string; reasoningEffort?: ReasoningEffortId }): void {
-  const serialized = JSON.stringify(config)
-  let last: string | undefined
-  for (const event of childSession.snapshotEvents()) {
-    if (event.type === 'request/header') {
-      last = JSON.stringify((event.data as { header?: { config?: unknown } }).header?.config)
-    }
-  }
-  if (last === serialized) return
-  childSession.append('request/header', {
-    header: { config },
-    reason: last === undefined ? 'initial' : 'change',
-  })
-}
-
-export function assistantEvent(blocks: readonly ContentBlock[]) {
-  return createAssistantMessage({
-    content: blocks as ContentBlock[],
-    source: { provider: 'claude-local', model: 'claude' },
-  })
-}
-
-/** Build one API call's coarse model stream from consecutive CLI event times. */
-export function claudeStreamFromLines(lines: readonly ClaudeTranscriptLine[]) {
-  return localAgentStreamRecords(lines.flatMap((line, index): LocalAgentModelBlock[] => {
-    const generation = line.generation
-    if (generation === undefined) return []
-    const base = { index, startedAt: generation.startedAt, endedAt: generation.endedAt }
-    if (line.kind === 'think') return [{ ...base, kind: 'reasoning' as const, text: line.text }]
-    if (line.kind === 'text') return [{ ...base, kind: 'text' as const, text: line.text }]
-    return [{ ...base, kind: 'tool-call' as const, call: { id: line.id as ToolCallBlockId, name: line.name, arguments: line.args ?? '' } }]
-  }))
-}
-
-/**
- * Fold one transcript line into the child session as one assistant step,
- * wrapped in the step/start–step/end boundary pair the live conversation
- * assembler requires: without a boundary the step never enters the location
- * index, the line's assistant message resolves to a turn-level location, and
- * the real-time view renders nothing (only a full rebuild, which mints step
- * drafts from the explicit coordinates, recovers it). Tool cards escape that
- * fate only because their definition does not consult the step location.
- *
- * A tool line folds the native lifecycle inside its one step: an assistant
- * message advertising the tool-call block, the `tool/call`, and its
- * `tool/result` — the released-log reader pairs call and result against the
- * advertisement and resolves every advertised call before the step closes, so
- * a line whose result the stream has not recorded yet must NOT reach this
- * fold mid-round (the callers hold there; the result merges into the call's
- * line in place, so a later pass sees it). A line still unresulted at settle
- * folds with the interrupted placeholder ({@link CLAUDE_INTERRUPTED_TOOL_RESULT}).
- */
-export function appendClaudeTranscriptLine(
-  childSession: Session,
-  turn: number,
-  step: number,
-  line: ClaudeTranscriptLine,
-  usage: TokenUsage | undefined,
-): void {
-  // The line's own per-call usage (stamped by the fold from the assistant
-  // event's inline report) wins; the caller's round total is the fallback for
-  // a stream that named none.
-  const lineUsage = line.usage ?? usage
-  childSession.append('step/start', { turn, step })
-  if (line.kind === 'tool') {
-    // A tool-only call's usage rides the advertising assistant/message (the
-    // tool/call and tool/result events themselves have no usage slot).
-    const args = line.args ?? ''
-    const meta = line.timing === undefined ? undefined : localAgentToolTimingMeta('claude-local', line.timing)
-    childSession.append('assistant/message', {
-      turn,
-      step,
-      message: assistantEvent([{ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: args }]),
-      stream: claudeStreamFromLines([line]),
-      ...lineUsage === undefined ? {} : { usage: lineUsage },
-    }, { surfaceOp: 'append' })
-    const call = childSession.append('tool/call', {
-      turn,
-      step,
-      callId: line.id as ToolCallEventCallId,
-      name: line.name,
-      arguments: args,
-    })
-    childSession.append('tool/result', {
-      turn,
-      step,
-      message: createToolResultMessage({
-        callId: line.id as ToolResultCallId,
-        content: [{ type: 'text', text: line.result ?? CLAUDE_INTERRUPTED_TOOL_RESULT }],
-        isError: line.result === undefined,
-      }),
-      ...meta === undefined ? {} : { meta },
-    }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
-    childSession.append('step/end', { turn, step })
-    return
-  }
-  const blocks = line.kind === 'think'
-    ? [{ type: 'reasoning' as const, text: line.text }]
-    : [{ type: 'text' as const, text: line.text }]
-  childSession.append('assistant/message', {
-    turn,
-    step,
-    message: assistantEvent(blocks),
-    stream: claudeStreamFromLines([line]),
-    ...lineUsage === undefined ? {} : { usage: lineUsage },
-  }, { surfaceOp: 'append' })
-  childSession.append('step/end', { turn, step })
+export function claudeMirrorSource(model?: string): MirrorSource {
+  return { provider: 'claude-local', model: model === undefined || model === '' ? 'claude' : model }
 }
 
 /** The delta-progress text for one transcript line. */
@@ -1740,10 +1606,11 @@ export function claudeLineText(line: ClaudeTranscriptLine): string {
 
 /**
  * Fold one API call (a message-id group) into the child session as ONE
- * assistant step: a single assistant/message carrying the call's reasoning,
- * text and tool-call blocks (the host's own mixed-content shape), then each
- * call's native lifecycle, then step/end. The call's usage rides the message
- * once — the group's own per-call stamp wins over the round-total fallback.
+ * assistant step through the core writer: a single assistant/message carrying
+ * the call's reasoning, text and tool-call blocks, then each call's native
+ * lifecycle, then step/end. A line still unresulted at settle folds with the
+ * interrupted placeholder. The call's usage rides the message once — the
+ * group's own per-call stamp wins over the round-total fallback.
  */
 export function appendClaudeTranscriptGroup(
   childSession: Session,
@@ -1751,44 +1618,10 @@ export function appendClaudeTranscriptGroup(
   step: number,
   group: readonly ClaudeTranscriptLine[],
   usage: TokenUsage | undefined,
+  model?: string,
 ): void {
   const lineUsage = group.map(line => line.usage).find(value => value !== undefined) ?? usage
-  const blocks: ContentBlock[] = []
-  for (const line of group) {
-    if (line.kind === 'think') blocks.push({ type: 'reasoning', text: line.text })
-    else if (line.kind === 'text') blocks.push({ type: 'text', text: line.text })
-    else blocks.push({ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: line.args ?? '' })
-  }
-  childSession.append('step/start', { turn, step })
-  childSession.append('assistant/message', {
-    turn,
-    step,
-    message: assistantEvent(blocks),
-    stream: claudeStreamFromLines(group),
-    ...lineUsage === undefined ? {} : { usage: lineUsage },
-  }, { surfaceOp: 'append' })
-  for (const line of group) {
-    if (line.kind !== 'tool') continue
-    const meta = line.timing === undefined ? undefined : localAgentToolTimingMeta('claude-local', line.timing)
-    const call = childSession.append('tool/call', {
-      turn,
-      step,
-      callId: line.id as ToolCallEventCallId,
-      name: line.name,
-      arguments: line.args ?? '',
-    })
-    childSession.append('tool/result', {
-      turn,
-      step,
-      message: createToolResultMessage({
-        callId: line.id as ToolResultCallId,
-        content: [{ type: 'text', text: line.result ?? CLAUDE_INTERRUPTED_TOOL_RESULT }],
-        isError: line.result === undefined,
-      }),
-      ...meta === undefined ? {} : { meta },
-    }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
-  }
-  childSession.append('step/end', { turn, step })
+  appendMirrorStep(childSession, turn, step, { blocks: group, ...lineUsage === undefined ? {} : { usage: lineUsage } }, claudeMirrorSource(model))
 }
 
 /**
@@ -1896,7 +1729,7 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
             const observedModel = parser.model ?? spec.model
             if (observedModel !== undefined) {
               headerWritten = true
-              appendClaudeRequestHeader(childSession, {
+              appendRequestHeaderIfChanged(childSession, {
                 provider: 'claude-local',
                 model: observedModel,
                 ...spec.controlled ? { reasoningEffort: (spec.effort ?? 'auto') as ReasoningEffortId } : {},
@@ -1918,7 +1751,7 @@ function createClaudeLiveMirror(spec: ClaudeCliRunSpec, task: string, turn: numb
           for (let scan = 0; scan < uptoGroups; scan += 1) {
             if (groupStarts[scan]! < mirrored) continue
             const group = groups[scan]!
-            appendClaudeTranscriptGroup(childSession, turn, scan + 1, group, scan === carrier ? parser.usage : undefined)
+            appendClaudeTranscriptGroup(childSession, turn, scan + 1, group, scan === carrier ? parser.usage : undefined, parser.model ?? spec.model)
             mirrored = groupStarts[scan]! + group.length
             for (const line of group) localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
           }
@@ -1952,7 +1785,7 @@ async function appendClaudeResponse(
   spec: ClaudeCliRunSpec,
   task: string,
   turn: number,
-  parsed: { lines: readonly ClaudeTranscriptLine[]; output: ContentBlock[]; usage?: TokenUsage },
+  parsed: { lines: readonly ClaudeTranscriptLine[]; output: ContentBlock[]; usage?: TokenUsage; model?: string },
   fromLines = 0,
   userMirrored = false,
 ): Promise<void> {
@@ -1982,7 +1815,7 @@ async function appendClaudeResponse(
   for (let scan = 0; scan < groups.length; scan += 1) {
     if (groupStarts[scan]! < fromLines) continue
     const group = groups[scan]!
-    appendClaudeTranscriptGroup(childSession, turn, scan + 1, group, scan === carrier ? parsed.usage : undefined)
+    appendClaudeTranscriptGroup(childSession, turn, scan + 1, group, scan === carrier ? parsed.usage : undefined, parsed.model ?? spec.model)
     for (const line of group) localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: claudeLineText(line) })
   }
   const carrierLine = carrier === -1 ? -1 : (groupStarts[carrier] ?? -1)
@@ -1995,19 +1828,6 @@ async function appendClaudeResponse(
   }
   await persistChildSession(spec.ctx, childSession)
   localAgent?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: parsed.lines.length })
-}
-
-/**
- * Persist the child session's mirrored events. Thin wrapper over the core's
- * {@link persistChildSession}: a live session syncs through the core's cached
- * per-child write handle (host 0.1.5's live write-behind never checkpoints a
- * mirror session — it has no agent loop — so production child logs stayed
- * header-only until the explicit sync), a standalone one through a one-shot
- * handle flow. Kept under the historical name for the live driver. Root cause
- * and fix identical to codex's codex-cli-provider.ts persistIfStandalone.
- */
-export async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
-  await persistChildSession(ctx, childSession)
 }
 
 /**
@@ -2064,6 +1884,7 @@ async function mirrorClaudeAfterExit(
       lines: parsed.lines,
       output: trimmed === undefined || trimmed === '' ? [] : [{ type: 'text', text: trimmed }],
       ...parsed.usage === undefined ? {} : { usage: parsed.usage },
+      ...parsed.model === undefined ? {} : { model: parsed.model },
     }, fromLines, userMirrored)
   }
   try {

@@ -40,6 +40,7 @@ import {
   probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
+  closeMirrorTurn,
 } from '@khorsheed/dsh-local-agent'
 import type { DelegationExecTarget, LocalAgentToolCalls, LocalAgentAppliedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
@@ -1031,16 +1032,7 @@ export async function startKimiCliRun(
         // a failed or cancelled run settles 'error'/'aborted' instead of
         // leaving the turn open with a distorted tiny duration.
         if (spec.childSession !== undefined) {
-          if (settled.stopReason === 'completed') {
-            spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-          } else if (settled.stopReason === 'aborted') {
-            spec.childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-          } else {
-            spec.childSession.append('turn/end', {
-              turn,
-              reason: { kind: 'error', error: { message: 'kimi -p exited before the run completed', code: 'UNKNOWN' } },
-            })
-          }
+          closeMirrorTurn(spec.childSession, turn, settled.stopReason, 'kimi -p exited before the run completed')
           if (spec.ctx !== undefined) {
             await persistChildSession(spec.ctx, spec.childSession).catch((error: unknown) => {
               spec.ctx?.logger.warn(`subagent-kimi: turn/end persistence failed: ${thrown(error).message}`)
