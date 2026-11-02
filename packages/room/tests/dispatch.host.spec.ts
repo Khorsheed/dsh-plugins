@@ -142,6 +142,34 @@ describe('DispatchEngine (real composition)', () => {
     expect(edges.slice(1).every(event => event.data.childSessionId === 'child-1')).toBe(true)
   })
 
+  it('a run claims only the child rounds written inside its own range, never an earlier run\'s', async () => {
+    const bench = await bootRoom()
+    const child = bench.ctx.sessions.create(SessionId('child-1'))
+    bench.facade.start.mockImplementation(async () => {
+      child.append('turn/start', { turn: 1 })
+      return settledRun('child-1', '骨架已搭')
+    })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '搭骨架' })
+    await bench.service.engine.idle()
+    // The second run fails before its round starts: it reached no round, so
+    // it must not claim round 1 (the earlier run's).
+    bench.facade.resume.mockRejectedValueOnce(new Error('spawn failed'))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 再搭一块' })
+    await bench.service.engine.idle()
+    // The third run writes round 2 and claims it.
+    bench.facade.resume.mockImplementationOnce(async () => {
+      child.append('turn/start', { turn: 2 })
+      return settledRun('child-1', '搭好了')
+    })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第三块' })
+    await bench.service.engine.idle()
+    const edges = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().filter(event => event.type === 'room/run-state')
+    expect(edges.map(event => event.data.state)).toEqual(['running', 'done', 'running', 'failed', 'running', 'done'])
+    // Each running edge records where its run's child events begin.
+    expect(edges.filter(event => event.data.state === 'running').map(event => event.data.childFromSeq)).toEqual([0, 1, 1])
+    expect(edges.filter(event => event.data.state !== 'running').map(event => event.data.childTurn)).toEqual([1, undefined, 2])
+  })
+
   it('the invite-time model lands as the delegation start call option (absent without one)', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async () => settledRun('child-1', 'done'))

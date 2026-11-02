@@ -189,9 +189,44 @@ export function lastAssistantMessageId(session: Session | undefined, afterSeq = 
   return typeof id === 'string' ? id : undefined
 }
 
-export function runChildTurn(session: Session | undefined): number | undefined {
-  const last = session?.snapshotEvents().filter(event => event.type === 'turn/start').at(-1)
-  return (last?.data as { turn?: number } | undefined)?.turn
+export function runChildTurn(roomEvents: readonly SessionEvent[], runId: string | undefined, child: Session | undefined): number | undefined {
+  const last = runChildEvents(roomEvents, runId, child).filter(event => event.type === 'turn/start').at(-1)
+  return last?.type === 'turn/start' ? last.data.turn : undefined
+}
+
+/**
+ * Where a run's events start in its child session, recorded on the running
+ * edge at admission (see RoomRunStateEvent.childFromSeq): 0 for a member
+ * whose session does not exist yet, the child's next seq when it is loaded,
+ * undefined when it is not (the range then falls back to event times).
+ * @param childSessionId - the run's child session, when known.
+ * @param child - that session, when loaded.
+ * @returns the first seq that belongs to the run.
+ */
+export function childFromSeq(childSessionId: SessionId | undefined, child: Session | undefined): number | undefined {
+  if (childSessionId === undefined) return 0
+  if (child === undefined) return undefined
+  return (child.snapshotEvents().at(-1)?.seq ?? -1) + 1
+}
+
+/**
+ * The child session events one run wrote: from the seq its running edge
+ * recorded (else from its start time), so a run never claims an earlier
+ * run's round or compaction. A run with no running edge never got admitted
+ * and owns nothing; a legacy run without an id reads the whole log.
+ * @param roomEvents - the room log.
+ * @param runId - the run.
+ * @param child - the run's child session (the room itself for the main agent).
+ * @returns the run's child events, in log order.
+ */
+export function runChildEvents(roomEvents: readonly SessionEvent[], runId: string | undefined, child: Session | undefined): readonly SessionEvent[] {
+  if (child === undefined) return []
+  const events = child.snapshotEvents()
+  if (runId === undefined) return events
+  const running = roomEvents.find(event => event.type === 'room/run-state' && event.data.runId === runId && event.data.state === 'running')
+  if (running?.type !== 'room/run-state') return []
+  const from = running.data.childFromSeq
+  return from !== undefined ? events.filter(event => event.seq >= from) : events.filter(event => event.time >= running.data.startedAt)
 }
 
 /**
@@ -593,8 +628,12 @@ export class DispatchEngine {
       const current = replay(room.snapshotEvents()).members.find(entry => memberId(room.snapshotEvents(), entry) === identity)
       memberName = current?.name ?? memberName
       const childSessionId = runChildSessionId(room.id, current ?? member)
+      // Where this run's child events begin: settle reads the run's round
+      // (and a compaction its event) from there, never an earlier run's.
+      const fromSeq = childFromSeq(childSessionId, childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
       room.append('room/run-state', { member: memberName, state: 'running', startedAt, runId,
         ...childSessionId === undefined ? {} : { childSessionId },
+        ...fromSeq === undefined ? {} : { childFromSeq: fromSeq },
         ...compactRun ? { operation: 'compact' as const } : {},
       })
       await this.hooks.admitted?.(room, options.dispatchSeq)
@@ -1023,7 +1062,7 @@ export class DispatchEngine {
     }
     const childSessionId = runChildSessionId(room.id, currentMember ?? member)
     const compactRun = events.some(event => event.type === 'room/run-state' && event.data.runId === runId && event.data.operation === 'compact')
-    const childTurn = compactRun ? undefined : runChildTurn(childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
+    const childTurn = compactRun ? undefined : runChildTurn(events, runId, childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
     room.append('room/run-state', {
       member: memberName, runId, state: outcome.state, startedAt, elapsedMs: Date.now() - startedAt,
       ...childSessionId === undefined ? {} : { childSessionId },

@@ -288,8 +288,21 @@ export interface RoomRunStateEvent {
   /** `compact`: the human's `/compact` ran as a compaction round (no child turn, no reply). */
   readonly operation?: 'compact'
   readonly childSessionId?: SessionId
-  /** The child session's round this run reached (the last turn/start it wrote); terminal edges only, live sessions only. */
+  /**
+   * The child session's round this run reached: the last turn/start the
+   * child wrote inside this run's range (see `childFromSeq`), never an
+   * earlier run's. Terminal edges only, live sessions only; absent when the
+   * run started no round (it failed before its round, or it compacted).
+   */
   readonly childTurn?: number
+  /**
+   * Running edges only: the child session's events from this seq on belong
+   * to this run (the child's next seq at admission; 0 for a member whose
+   * session did not exist yet). Absent when the child was not loaded at
+   * admission: the run's child events are then the ones written since
+   * `startedAt`.
+   */
+  readonly childFromSeq?: number
   /** Observed round metadata, never a requested-model guess or session total. */
   readonly model?: string
   readonly effort?: string
