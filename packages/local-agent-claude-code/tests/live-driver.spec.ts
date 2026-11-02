@@ -345,11 +345,12 @@ describe('claude live driver rounds', () => {
     expect(live).toEqual(expect.arrayContaining(['first', 'second', 'third']))
     const checkpoints = child.snapshotEvents().filter(event => event.type === 'local-agent/stream')
     expect(checkpoints.map(event => event.data.text)[0]).toBe('first')
+    // One API call is one step: message-one's two blocks share one message.
     const messages = child.snapshotEvents().filter(event => event.type === 'assistant/message')
     expect(messages.map(event => event.data.message.content)).toEqual([
-      [{ type: 'text', text: 'first' }], [{ type: 'text', text: 'second' }], [{ type: 'text', text: 'third' }],
+      [{ type: 'text', text: 'first' }, { type: 'text', text: 'second' }], [{ type: 'text', text: 'third' }],
     ])
-    expect(new Set(messages.map(event => event.data.step)).size).toBe(3)
+    expect(new Set(messages.map(event => event.data.step)).size).toBe(2)
     expect(messages.at(-1)!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4 } })
     expectStepBoundaries(child)
     expectValidReleasedLog(child)
@@ -596,9 +597,9 @@ describe('claude live driver rounds', () => {
     expect((await run.result).stopReason).toBe('completed')
     const messages = child.snapshotEvents().filter(e => e.type === 'assistant/message')
       .map(e => e.data as { message: { content: { type: string; name?: string; text?: string }[] }; usage?: Record<string, number> })
-    expect(messages.map(m => m.message.content.map(block => block.name ?? block.text))).toEqual([['Skill'], ['ToolSearch'], ['看完了']])
+    // One step per API call: A's two tool blocks share one message, carrying A's final usage once.
+    expect(messages.map(m => m.message.content.map(block => block.name ?? block.text))).toEqual([['Skill', 'ToolSearch'], ['看完了']])
     expect(messages.map(m => m.usage)).toEqual([
-      undefined,
       { inputTokens: 2, outputTokens: 242, cacheReadTokens: 0, cacheWriteTokens: 22711 },
       { inputTokens: 4, outputTokens: 109, cacheReadTokens: 22711, cacheWriteTokens: 2013 },
     ])
