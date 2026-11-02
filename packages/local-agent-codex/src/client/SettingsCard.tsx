@@ -143,7 +143,8 @@ function useCardState(
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(false)
   const ready = snapshot.status === 'ready' && snapshot.writable
-  const live = snapshot.value?.live ?? false
+  // Unset means on: the provider resolves `live` as `vol(config.live) ?? true`.
+  const live = snapshot.value?.live ?? true
   // The endpoint credential form talks to the harness's OWN credential store
   // through the endpointAuth face — never the settings scope, so no key ever
   // lands in the profile patch document. baseUrl echoes (it is not a
