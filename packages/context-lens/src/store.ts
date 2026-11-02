@@ -1566,7 +1566,7 @@ export class InspectorStore {
       .map(other => other.startedAt ?? room.dispatches.find(d => d.seq === other.dispatchSeq)?.at)
       .filter((at): at is number => at !== undefined)
     if (next.length > 0) return Math.min(...next)
-    const nextDispatch = room.dispatches.find(d => d.seq > run.dispatchSeq && d.at > dispatchAt)
+    const nextDispatch = room.dispatches.find(d => d.seq > (run.dispatchSeq ?? -1) && d.at > dispatchAt)
     return nextDispatch?.at ?? this.now() + 2000
   }
 

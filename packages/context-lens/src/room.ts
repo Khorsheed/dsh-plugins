@@ -10,9 +10,13 @@
  * - `room/member-added`: member id → display name; `room/member-updated`
  *   with `rename`: that member's new name (it addresses the member by name).
  * - `room/dispatch` with `origin: 'human'`: the message, its time, its targets.
- * - `room/run-state`: one member run per `runId` (`<dispatchSeq>:<memberId>`),
- *   its time span, its child session, and — when the producer records it —
- *   the child turn the run became (`childTurn`).
+ * - `room/run-state`: one member run per `runId` — `<dispatchSeq>:<memberId>`
+ *   for a journaled dispatch's delivery, a bare UUID for one that is not (a
+ *   confirmed relay's delivery), absent on legacy journals (keyed by member
+ *   and start then) — its time span, its child session, and — when the
+ *   producer records it — the child turn the run became (`childTurn`). Only
+ *   runs with a dispatch seq belong to a round; the rest still bound the
+ *   member's earlier open runs and keep their child turns to themselves.
  * - `room/coordinator`: coordinator handoffs, drawn on the session map.
  *
  * @module @khorsheed/dsh-context-lens/room
@@ -22,8 +26,11 @@ import { readAnswers, readQuestions, type RoomQuestionRecord } from './ask.ts'
 
 /** One member run of a dispatch. */
 export interface RoomRun {
+  /** The producer's run id; `legacy:<member>:<startedAt>` for a legacy run without one. */
   runId: string
-  dispatchSeq: number
+  /** The human/agent dispatch the run delivered; absent for a run id that names none (a relay delivery's UUID, a legacy run). */
+  dispatchSeq?: number
+  /** The member's roster id: from the run id, else resolved from the run's member name, else that name. */
   memberId: string
   member?: string
   state?: string
@@ -62,13 +69,6 @@ export function emptyRoom(): RoomState {
   return { members: new Map(), dispatches: [], runs: new Map(), handoffs: [], decisions: [], questions: new Map(), seen: new Set() }
 }
 
-const str = (value: unknown): string | undefined => typeof value === 'string' && value.length > 0 ? value : undefined
-const num = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) ? value : undefined
-
-/**
- * Apply one `room/*` event. Unknown types and malformed payloads are ignored.
- * @returns whether the event was a room event this module reads.
- */
 /**
  * Mirror of the local-agent core's `isCompactCommand` (lens stays
  * dependency-free): a human dispatch that is `/compact` alone runs a
@@ -82,6 +82,13 @@ export function isCompactCommand(text: string): boolean {
   return text.trim() === '/compact'
 }
 
+const str = (value: unknown): string | undefined => typeof value === 'string' && value.length > 0 ? value : undefined
+const num = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) ? value : undefined
+
+/**
+ * Apply one `room/*` event. Unknown types and malformed payloads are ignored.
+ * @returns whether the event was a room event this module reads.
+ */
 export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq: number | undefined, at: number | undefined): boolean {
   if (!type.startsWith('room/')) return false
   if (seq !== undefined) {
@@ -110,14 +117,14 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
       return true
     }
     case 'room/run-state': {
-      const runId = str(d['runId'])
-      if (runId === undefined) return true
-      const [head, ...rest] = runId.split(':')
-      const dispatchSeq = Number(head)
-      if (!Number.isSafeInteger(dispatchSeq)) return true
-      const run = room.runs.get(runId) ?? { runId, dispatchSeq, memberId: rest.join(':') }
       const member = str(d['member']), state = str(d['state']), child = str(d['childSessionId'])
       const startedAt = num(d['startedAt']), elapsed = num(d['elapsedMs']), childTurn = num(d['childTurn'])
+      const runId = str(d['runId']) ?? (member !== undefined && startedAt !== undefined ? `legacy:${member}:${startedAt}` : undefined)
+      if (runId === undefined) return true
+      const delivery = /^(\d+):(.+)$/.exec(runId)
+      const dispatchSeq = delivery === null ? undefined : Number(delivery[1])
+      const memberId = delivery?.[2] ?? (member === undefined ? undefined : memberIdByName(room, member)) ?? member ?? runId
+      const run = room.runs.get(runId) ?? { runId, ...dispatchSeq === undefined || !Number.isSafeInteger(dispatchSeq) ? {} : { dispatchSeq }, memberId }
       if (member !== undefined) run.member = member
       if (state !== undefined) run.state = state
       if (startedAt !== undefined) run.startedAt = startedAt
@@ -186,6 +193,12 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
     default:
       return true
   }
+}
+
+/** A member's roster id by its current name (run-state edges name the member as it was called then). */
+function memberIdByName(room: RoomState, name: string): string | undefined {
+  for (const [id, current] of room.members) if (current === name) return id
+  return undefined
 }
 
 /** The runs a dispatch started, in start order. */
