@@ -111,6 +111,20 @@ describe('elapsed-time accounting', () => {
     })
     expect(data.gaps).toBe(200)
   })
+  it('attributes time to known tool execution instead of sharing it with request slack', () => {
+    const data = scopeTiming(
+      timing([
+        lane('other', 0, 1000),
+        lane('tool-exec', 100, 255, 'read'),
+      ]),
+      scope,
+    )
+    expect(data.exec).toBe(255)
+    expect(data.model).toBe(745)
+    expect(data.overlap).toBe(255)
+    expect(data.non.slack.get(1)).toBe(745)
+    expect(data.tools[0]).toMatchObject({ exec: 255, total: 255 })
+  })
   it('keeps pre-request gaps in the main turn, while children use their own bounds', () => {
     const fullTurn = { ...timing([lane('text', 200, 600)]), startedAt: 0 }
     const laterMain = { ...scope, startedAt: 200, endedAt: 800 }

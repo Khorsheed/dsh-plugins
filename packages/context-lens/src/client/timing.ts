@@ -48,8 +48,13 @@ export function scopeTiming(timing: TurnTiming, scope: AgentScopeOverview) {
       else if (a >= lastAt) gapsTail += b - a
     }
     if (active.length > 1) overlap += b - a
-    for (const lane of active)
-      amounts.set(lane, (amounts.get(lane) ?? 0) + (b - a) / active.length)
+    // Known execution supersedes unclassified request slack. External mirrors
+    // approximate a whole model call with `other`, including its tool time.
+    const accounted = active.some((lane) => lane.kind === 'tool-exec')
+      ? active.filter((lane) => lane.kind === 'tool-exec')
+      : active
+    for (const lane of accounted)
+      amounts.set(lane, (amounts.get(lane) ?? 0) + (b - a) / accounted.length)
   }
   const tools = new Map<
     string,

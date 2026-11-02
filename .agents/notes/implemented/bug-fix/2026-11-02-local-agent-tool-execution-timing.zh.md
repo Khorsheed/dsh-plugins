@@ -10,7 +10,7 @@ Context Lens 以 `tool/result.time − tool/call.time` 计算工具执行耗时�
 
 - local-agent 家族在 `tool/result.meta.localAgentTiming` 写入带版本的过渡元数据，包含 `provider`、`startedAt`、`endedAt`、`source`。共享构造函数位于 `packages/local-agent/src/tool-timing.ts`，经 `./types` 重导出。事件 envelope 的 `time` 仍表示镜像何时追加事件。
 - Kimi 使用 wire 事件时间，Claude Code 使用记录时间戳，Codex 配对增量 `item.started` / `item.completed` 的通知时间。结果合并即使遇到空输出也更新计时。Codex 事后批量解析不伪造区间；不完整或非法区间不写元数据。
-- Context Lens 在实时 `session/event` 与持久化回填两条通道结构化读取元数据，替换镜像形成的 `ToolExecSpan`。缺失或非法元数据保持旧行为；时间线和所有汇总继续使用同一区间及既有并行重叠处理。
+- Context Lens 在实时 `session/event` 与持久化回填两条通道结构化读取元数据，替换镜像形成的 `ToolExecSpan`。缺失或非法元数据保持旧行为。汇总时已知的工具执行优先于未分类的请求 `other`，只有并行工具执行之间分摊重叠，避免外部镜像的粗粒度模型调用区间把恢复出的工具耗时减半。
 - `docs/upstream-proposals/2026-11-02-tool-execution-timing.md` 提议标准 `tool/result.execution` 能力，接缝 S23 跟踪其退役条件。
 
 ## Alternatives considered
@@ -29,4 +29,4 @@ Context Lens 以 `tool/result.time − tool/call.time` 计算工具执行耗时�
 
 ## Testing
 
-各 provider 套件覆盖时间戳采集、空结果、Codex 增量与常驻路径、有效 released-log，以及批量路径不伪造计时。Context Lens 套件覆盖实时与回填读取、非法元数据回退。最初那轮 Kimi 会话的只读验收恢复了全部 48 个区间，并集为 1,579ms。
+各 provider 套件覆盖时间戳采集、空结果、Codex 增量与常驻路径、有效 released-log，以及批量路径不伪造计时。Context Lens 套件覆盖实时与回填读取、非法元数据回退，以及执行优先于请求空隙的分摊（255ms 不再被分成 127.5ms）。最初那轮 Kimi 会话的只读验收恢复了全部 48 个区间，并集为 1,579ms。

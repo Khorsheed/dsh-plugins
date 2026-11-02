@@ -10,7 +10,7 @@ Context Lens computed tool execution time as `tool/result.time − tool/call.tim
 
 - The local-agent family writes a versioned transitional `tool/result.meta.localAgentTiming` with `provider`, `startedAt`, `endedAt`, and `source`. The shared constructor lives in `packages/local-agent/src/tool-timing.ts` and is re-exported through `./types`. Event envelope times continue to mean when the mirror appended the event.
 - Kimi uses wire event times, Claude Code uses record timestamps, and Codex pairs incremental `item.started` / `item.completed` notification times. Result merging updates timing even for empty output. Post-hoc Codex batch parsing does not invent an interval, and incomplete or invalid spans produce no metadata.
-- Context Lens reads the metadata structurally in both the live `session/event` lane and the persistence backfill lane, then replaces the mirrored `ToolExecSpan`. Missing or invalid metadata retains the legacy behavior. All timeline and aggregate views therefore share the same interval and existing overlap handling.
+- Context Lens reads the metadata structurally in both the live `session/event` lane and the persistence backfill lane, then replaces the mirrored `ToolExecSpan`. Missing or invalid metadata retains the legacy behavior. During aggregation, known tool execution takes precedence over unclassified request `other`; only parallel tool executions share overlap. This prevents an external mirror's coarse model-call span from halving the recovered tool time.
 - `docs/upstream-proposals/2026-11-02-tool-execution-timing.md` proposes the standard `tool/result.execution` capability. Seam S23 tracks its retirement conditions.
 
 ## Alternatives considered
@@ -29,4 +29,4 @@ New mirrors carry accurate execution intervals without changing model-visible co
 
 ## Testing
 
-Provider suites cover timestamp capture, empty results, incremental and resident Codex paths, valid released logs, and no fabricated batch timing. Context Lens suites cover live and reconstructed reads plus invalid-metadata fallback. The original Kimi turn's read-only acceptance reconstructs all 48 intervals and a 1,579ms union.
+Provider suites cover timestamp capture, empty results, incremental and resident Codex paths, valid released logs, and no fabricated batch timing. Context Lens suites cover live and reconstructed reads, invalid-metadata fallback, and execution-over-slack precedence (255ms stays 255ms rather than becoming 127.5ms). The original Kimi turn's read-only acceptance reconstructs all 48 intervals and a 1,579ms union.
