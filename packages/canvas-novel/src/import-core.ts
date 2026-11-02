@@ -1,7 +1,7 @@
 export const MAX_IMPORT_CHAPTER_CHARS = 2_000_000
-export const NOVEL_DOCUMENT_EXTENSIONS: readonly string[] = ['.docx', '.txt', '.md', '.markdown']
+export const NOVEL_DOCUMENT_EXTENSIONS: readonly string[] = ['.txt', '.md', '.markdown']
 
-export type NovelImportIssueReason = 'legacy-doc' | 'unsupported' | 'read-failed' | 'docx-invalid' | 'encoding' | 'empty' | 'empty-chapter' | 'too-long'
+export type NovelImportIssueReason = 'legacy-doc' | 'unsupported' | 'read-failed' | 'encoding' | 'empty' | 'empty-chapter' | 'too-long'
 
 export interface NovelImportIssue {
   readonly file: string

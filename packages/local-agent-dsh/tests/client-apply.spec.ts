@@ -40,15 +40,15 @@ function stubScope() {
 /**
  * Boot apply over a registry that fires every inject immediately and records
  * registrations. `{ served }` boots a configForms host line whose whileServed
- * gate sees exactly that namespace set; 'legacy' boots the 0.1.5 line
- * (settingsScope only, no configForms — the card track must stay silent).
+ * gate sees exactly that namespace set; 'no-forms' boots without the settings
+ * client (no configForms — the card track must stay silent).
  * `core: 'family'` provides a localAgentUi with registerHarnessCard (the
  * family card exists); `core: 'old'` provides one without it (the pre-family
  * core — the standalone card must register); absent provides no core client.
  */
 async function bench(
   status: ReturnType<typeof vi.fn>,
-  line: { served: readonly string[]; core?: 'family' | 'old' } | 'legacy',
+  line: { served: readonly string[]; core?: 'family' | 'old' } | 'no-forms',
 ): Promise<{
   injectedFaces: InjectedFace[]
   registrations: Array<{ name: string; id: string }>
@@ -66,9 +66,7 @@ async function bench(
       injectedFaces.push(descriptor.inject())
     },
   } as never)
-  if (line === 'legacy') {
-    ctx.provide('settingsScope', { bind: () => stubScope() } as never)
-  } else {
+  if (line !== 'no-forms') {
     const served = new Set(line.served)
     ctx.provide('configForms', {
       get: () => stubScope(),
@@ -142,8 +140,8 @@ describe('client apply: the plugins.item settings card (the pre-family fallback)
     expect(registrations).toEqual([])
   })
 
-  it('registers no card on the 0.1.5 line (no configForms service)', async () => {
-    const { registrations } = await bench(vi.fn(), 'legacy')
+  it('registers no card without the settings client (no configForms service)', async () => {
+    const { registrations } = await bench(vi.fn(), 'no-forms')
     expect(registrations).toEqual([])
   })
 })

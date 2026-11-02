@@ -2,19 +2,16 @@
  * The settings-driven live-driver switch: owns the active driver generation
  * and retires old ones on a settings change, without a plugin reload.
  *
- * Toggle OFF (or the enabled generation unloading): the retiring generation
+ * Toggle OFF: the retiring generation
  * is DRAINED, not killed — new rounds are refused (the provider's catch falls
  * back to exec), in-flight rounds finish on their runtime, idle runtimes are
  * reclaimed at once. Toggling ON builds the next generation lazily (no
  * process until the first round). Legacy granularity settings are ignored.
  *
- * Composition with the `enabled` toggle: the switch lives INSIDE one enabled
- * generation (index.ts constructs it only while the harness/provider/tool are
- * registered, and disposes it with them). `enabled` gates EXISTENCE — its
- * teardown keeps the historical hard semantics (`dispose()` → disposeAll,
- * which may interrupt); `live` gates the MODE of an enabled generation and
- * never interrupts (drain). While `enabled` is off the live value is inert
- * and applies when the toggle turns on again.
+ * Lifetime: index.ts constructs the switch with the harness/provider
+ * registration and disposes it with them on plugin unload — that teardown
+ * keeps the hard semantics (`dispose()` → disposeAll, which may interrupt);
+ * `live` only gates the MODE and never interrupts (drain).
  *
  * @module @khorsheed/dsh-local-agent-dsh — internal, unit-tested directly.
  */
@@ -25,10 +22,8 @@ import type { LocalAgentDshConfig } from './index.ts'
 import { DshLiveDriver } from './live-driver.ts'
 import type { DshLiveMirrorGranularity } from './session-mirror.ts'
 
-/** The resolved `local-agent-dsh` settings (rc.1: volatile row config; 0.1.5: schema defaults ← YAML base ← user layer). */
+/** The resolved `local-agent-dsh` live settings (the volatile row config, card-settings overrides on top). */
 export interface DshLiveSettings {
-  /** The DeepSeek delegation toggle; the switch itself reads only the live fields. */
-  enabled: boolean
   live: boolean
   liveMirrorGranularity: DshLiveMirrorGranularity
 }
@@ -116,7 +111,7 @@ export class LiveDriverSwitch {
     }
   }
 
-  /** Enabled-generation unload: interrupt whatever survives (disposeAll, not drain). */
+  /** Plugin unload: interrupt whatever survives (disposeAll, not drain). */
   dispose(): void {
     this.unwatch()
     void this.active?.disposeAll()

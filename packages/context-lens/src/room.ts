@@ -7,7 +7,8 @@
  * and keeps what the panel needs to show each human dispatch made outside a
  * main turn as a round of its own, with the member runs it started:
  *
- * - `room/member-added` / `room/member-updated`: member id → display name.
+ * - `room/member-added`: member id → display name; `room/member-updated`
+ *   with `rename`: that member's new name (it addresses the member by name).
  * - `room/dispatch` with `origin: 'human'`: the message, its time, its targets.
  * - `room/run-state`: one member run per `runId` (`<dispatchSeq>:<memberId>`),
  *   its time span, its child session, and — when the producer records it —
@@ -76,10 +77,16 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
   }
   const d = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>
   switch (type) {
-    case 'room/member-added':
-    case 'room/member-updated': {
+    case 'room/member-added': {
       const id = str(d['id']), name = str(d['name'])
       if (id !== undefined && name !== undefined) room.members.set(id, name)
+      return true
+    }
+    case 'room/member-updated': {
+      // Addressed by the member's CURRENT name; a rename carries the new one.
+      const name = str(d['name']), rename = str(d['rename'])
+      if (name === undefined || rename === undefined) return true
+      for (const [id, current] of room.members) if (current === name) room.members.set(id, rename)
       return true
     }
     case 'room/dispatch': {
@@ -101,8 +108,12 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
       if (member !== undefined) run.member = member
       if (state !== undefined) run.state = state
       if (startedAt !== undefined) run.startedAt = startedAt
-      if (startedAt !== undefined && elapsed !== undefined) run.endedAt = startedAt + elapsed
-      else if ((state === 'done' || state === 'failed') && at !== undefined) run.endedAt ??= at
+      // Only a terminal edge ends a run: its own elapsedMs when it reports one,
+      // else the edge's time. The first terminal edge wins (a restart's
+      // `failed` is followed by a `cancelled` when the human moves on).
+      const terminal = state === 'done' || state === 'failed' || state === 'cancelled'
+      if (terminal && startedAt !== undefined && elapsed !== undefined) run.endedAt ??= startedAt + elapsed
+      else if (terminal && at !== undefined) run.endedAt ??= at
       if (child !== undefined) run.childSessionId = child
       if (childTurn !== undefined) run.childTurn = childTurn
       room.runs.set(runId, run)

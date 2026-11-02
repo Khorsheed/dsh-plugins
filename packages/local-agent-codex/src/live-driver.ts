@@ -850,19 +850,11 @@ export class CodexLiveDriver {
   /**
    * Report an auth-shaped round failure to the family registry's auth-failure
    * mark (the exec path's post-exit 401 detection ported to a process that
-   * never exits: the match runs against the settled error instead). Degrades
-   * silently on a core predating reportAuthFailure.
+   * never exits: the match runs against the settled error instead).
    */
   private reportAuthIfShaped(error: Error): void {
     if (!CODEX_LIVE_AUTH_FAILURE.test(error.message)) return
-    // Duck-typed: the method lands with the auth-truthfulness core; older
-    // cores simply skip the mark.
-    const registry = this.ctx.localAgent as unknown as {
-      reportAuthFailure?: (harness: string, detail: string) => void
-    }
-    if (typeof registry.reportAuthFailure === 'function') {
-      registry.reportAuthFailure('codex', error.message.split('\n').find(line => line.trim() !== '') ?? error.message)
-    }
+    this.ctx.localAgent.reportAuthFailure('codex', error.message.split('\n').find(line => line.trim() !== '') ?? error.message)
   }
 
   /**
@@ -1714,9 +1706,7 @@ export class CodexLiveDriver {
             ...facts.cliVersion === undefined ? {} : { cliVersion: facts.cliVersion },
             ...settledUsage === undefined ? {} : { usage: settledUsage },
           }
-          // Degrades silently on a core predating recordRoundSettled.
-          const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
-          registry?.recordRoundSettled?.(childSession.id, round)
+          localAgent?.recordRoundSettled(childSession.id, round)
         }
       } catch (error) {
         this.ctx.logger.warn(`subagent-codex: live settle observation failed: ${thrown(error).message}`)

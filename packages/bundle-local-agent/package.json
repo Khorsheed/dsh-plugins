@@ -88,9 +88,9 @@
       "@khorsheed/dsh-context-lens"
     ],
     "compat": {
-      "minHost": "0.1.5-rc.1",
+      "minHost": "0.2.0-rc.1",
       "verifiedHost": "0.2.1-rc.5",
-      "notes": "Pure composition: the bundle mounts the members' canonical rows and registers nothing of its own, so the floor is the members' highest — local-agent core, the four providers, room and context-lens all floor at 0.1.5-rc.1 (the deps-only library local-agent-dsh-headless floors lower). Individual member behaviors behind that floor (e.g. token-mode live-mirror granularity on 0.1.5) are documented in each member's own dsh.compat."
+      "notes": "Pure composition: the bundle mounts the members' canonical rows and registers nothing of its own, so the floor is the members' highest — the local-agent core, the four providers and local-agent-dsh-headless floor at 0.2.0-rc.1. Individual member behaviors are documented in each member's own dsh.compat."
     }
   }
 }

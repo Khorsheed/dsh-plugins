@@ -68,9 +68,8 @@
       "@khorsheed/dsh-room"
     ],
     "compat": {
-      "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.2.1-rc.5",
-      "notes": "The「本机 Agent 委派」family card (one Plugins-page plugins.item entry rendering each harness's registered settings section) mounts only on host 0.1.7-alpha.1+ (the Plugins page plugins.item seat, gated by configForms.whileServed on the served local-agent namespace); older hosts render no card, and companions on such a composition keep their own standalone cards — every other surface is unchanged."
+      "minHost": "0.2.0-rc.1",
+      "verifiedHost": "0.2.1-rc.5"
     }
   },
   "files": [
@@ -84,7 +83,7 @@
   ],
   "license": "MIT",
   "engines": {
-    "dsh": ">=0.1.5-rc.1 <0.3.0-0"
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1",

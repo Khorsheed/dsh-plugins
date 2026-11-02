@@ -6,12 +6,14 @@ import { ImportNovel } from '../src/client/ImportNovel.tsx'
 import type { NovelRemote, NovelSurfaceProps } from '../src/client/contract.ts'
 import { zh } from '../src/client/locales.ts'
 import { NOVEL_GENRE_ID } from '../src/types.ts'
+import TYPERT_REMOTE from '@khorsheed/dsh-canvas-novel/remote'
 
 const SESSION = 's-import' as SessionId
 const CANVAS = 'canvas_import'
 const t = ((key: keyof typeof zh, params?: Record<string, string | number>): string =>
   zh[key].replace(/\{(\w+)\}/g, (match, name: string) => String(params?.[name] ?? match))) as NovelSurfaceProps['t']
 const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value })
+const directoryDescriptor = TYPERT_REMOTE.descriptors.find(descriptor => descriptor.namespace === 'novel' && descriptor.method === 'importDirectory')!
 
 function fixture(remote: NovelRemote, sendToConversation?: NovelSurfaceProps['sendToConversation'], directoryFlow?: NovelSurfaceProps['directoryFlow']) {
   const navigate = { openCard: vi.fn(), openPage: vi.fn(), openManuscripts: vi.fn(), refresh: vi.fn() }
@@ -103,28 +105,35 @@ describe('ImportNovel', () => {
     expect(send).toHaveBeenCalledWith(SESSION, expect.stringContaining('第 5、6、7 章'))
   })
 
-  it('shows parsing failures without offering an empty import', async () => {
+  it('asks for Word documents as text without offering an empty import', async () => {
     const importOwnChapter = vi.fn()
     const remote = { importOwnChapter } as unknown as NovelRemote
     const { props } = fixture(remote)
     render(<ImportNovel {...props} />)
     const input = document.querySelector<HTMLInputElement>('input[type=file]')!
-    fireEvent.change(input, { target: { files: [new File(['not a zip'], 'broken.docx')] } })
-    await screen.findByText('broken.docx：无法读取这个 Word 文档，文件可能损坏或不是有效的 .docx')
+    expect(input.accept).toBe('.txt,.md,.markdown')
+    fireEvent.change(input, { target: { files: [new File(['Word prose'], 'chapter.docx')] } })
+    await screen.findByText('chapter.docx：Word（.doc/.docx）请先另存为 UTF-8 TXT 或 Markdown')
     expect(screen.getByText('没有可导入的章节。')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /导入 \d+ 章并对账/ })).toBeNull()
     expect(importOwnChapter).not.toHaveBeenCalled()
   })
 
   it('loads a host-picked folder into the same preview and imports it', async () => {
-    const importDirectory = vi.fn(() => ok({
-      ok: true,
-      rootName: 'source',
-      files: [{ file: '01/第一章.txt', titleBase: '第一章.txt', data: new TextEncoder().encode('第一章 门\n他推开门。') }],
-      issues: [],
-      skipped: 2,
-      truncated: true,
-    }))
+    expect(directoryDescriptor.parameters).toHaveLength(2)
+    const importDirectory = vi.fn((...args: unknown[]) => {
+      if (args.length !== directoryDescriptor.parameters.length) {
+        return Promise.reject(new Error(`client api: novel/importDirectory expected ${directoryDescriptor.parameters.length} argument(s), got ${args.length}`))
+      }
+      return ok({
+        ok: true,
+        rootName: 'source',
+        files: [{ file: '01/第一章.txt', titleBase: '第一章.txt', data: new TextEncoder().encode('第一章 门\n他推开门。') }],
+        issues: [],
+        skipped: 2,
+        truncated: true,
+      })
+    })
     const importOwnChapter = vi.fn(() => ok({ ok: true, n: 1 }))
     const send = vi.fn(() => 'sent' as const)
     const remote = { importDirectory, importOwnChapter } as unknown as NovelRemote
@@ -137,8 +146,9 @@ describe('ImportNovel', () => {
     expect(screen.getByText('目录内容超过导入上限，这里只显示前一部分；请分批选择子文件夹。')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '导入 1 章并对账' }))
     await screen.findByText('已导入 1 章，Agent 已开始逐章对账；结果会陆续写入画布。')
-    expect(importDirectory).toHaveBeenCalledWith(SESSION)
+    expect(importDirectory).toHaveBeenCalledWith(SESSION, undefined)
     expect(importOwnChapter).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS, title: '第一章 门', text: '他推开门。' })
+    await expect(importDirectory(SESSION)).rejects.toThrow('client api: novel/importDirectory expected 2 argument(s), got 1')
   })
 
   it('uses the host directory flow when the native picker is unavailable', async () => {
@@ -161,7 +171,7 @@ describe('ImportNovel', () => {
     fireEvent.click(screen.getByRole('button', { name: '导入文件夹' }))
     fireEvent.click(await screen.findByRole('button', { name: '宿主目录选择器' }))
     await screen.findByText('第一章 门')
-    expect(importDirectory).toHaveBeenNthCalledWith(1, SESSION)
+    expect(importDirectory).toHaveBeenNthCalledWith(1, SESSION, undefined)
     expect(importDirectory).toHaveBeenNthCalledWith(2, SESSION, { path: '/home/user/source' })
   })
 

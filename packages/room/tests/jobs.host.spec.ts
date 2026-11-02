@@ -93,6 +93,12 @@ describe('tasks', () => {
     // The filing is recorded with its model call.
     const decisions = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().flatMap(event => event.type === 'room/decision' ? [event.data] : [])
     expect(decisions).toMatchObject([{ scenario: 'task-filing', outcome: '1', probability: 0.88, about: { task: { number: 1 } }, call: { request: { questions: [{ id: 'task', type: 'choice' }] } } }])
+    // Each human dispatch names its own message; the filed follow-up's task is the first message, not its own.
+    const events = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
+    const humanIds = events.flatMap(event => event.type === 'user/message' && event.data.source.kind === 'user' ? [String(event.data.id)] : [])
+    const humanDispatches = events.flatMap(event => event.type === 'room/dispatch' && event.data.origin === 'human' ? [event.data] : [])
+    expect(humanDispatches.map(dispatch => dispatch.messageId)).toEqual(humanIds)
+    expect(humanDispatches[1]!.task).toBe(humanIds[0])
 
     // The room's agent answering that follow-up decides it is new work after all.
     const sent = await bench.service.messageMember({ sessionId: bench.sessionId, member: 'kimi', text: '另起：写部署脚本', task: 'new' })

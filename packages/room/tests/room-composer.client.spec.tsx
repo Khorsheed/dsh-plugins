@@ -6,6 +6,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ComposerChainProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -60,10 +61,9 @@ async function primedStore(state: RoomState = STATE): Promise<RoomStore> {
 /** The session-snapshot slice the composer's inherited duties read. */
 interface SessionSlice {
   readonly running: boolean
-  readonly queue: readonly { readonly id: string; readonly placement: string; readonly preview: string }[]
 }
 
-const IDLE: SessionSlice = { running: false, queue: [] }
+const IDLE: SessionSlice = { running: false }
 
 /** The input-machine slice the composer reads and writes (the draft only). */
 interface InputSlice {
@@ -577,31 +577,6 @@ describe('RoomComposer', () => {
     expect(screen.queryByText(/轮 · /)).toBeNull()
     expect(screen.queryByText(/tok/)).toBeNull()
   })
-
-  it('renders no stats row when the framework omits the projection seat entirely', async () => {
-    const roomStore = await primedStore()
-    const inputStore = createSnapshotStore<InputSlice>({ draft: '' })
-    const useSession = (<T,>(selector: (snapshot: SessionSlice) => T): T => selector(IDLE)) as unknown as RoomComposerProps['useSession']
-    const props = {
-      sessionId: SESSION,
-      matched: { room: true },
-      inputActions: { setDraft: vi.fn(), submit: vi.fn(), persistDraft: vi.fn() },
-      useInput: (<T,>(selector: (snapshot: InputSlice) => T): T =>
-        // eslint-disable-next-line react-hooks/rules-of-hooks -- the framework hook contract, faked
-        useSyncExternalStore(inputStore.subscribe, () => selector(inputStore.getSnapshot()))) as unknown as RoomComposerProps['useInput'],
-      roomStore,
-      submit: vi.fn(),
-      stop: vi.fn(),
-      useSession,
-      useProjection: undefined,
-      t: makeTranslate(zh),
-    } as unknown as RoomComposerProps
-    render(<RoomComposer {...props} />)
-    expect(screen.queryByText(/轮 · /)).toBeNull()
-    expect(screen.queryByText(/tok/)).toBeNull()
-    // The todo strip degrades with the same seat.
-    expect(screen.queryByTestId('room-todo-strip')).toBeNull()
-  })
 })
 
 /** A minimal chain-currency owner: no pending interaction, an ordinary session. */
@@ -635,7 +610,7 @@ describe('selectRoomComposer', () => {
 describe('RoomComposer inherited environment duties', () => {
   it('keeps Send beside Stop while the coordinator runs and stops only the current turn', async () => {
     const { stop } = await bench(vi.fn(), {
-      session: { running: true, queue: [] },
+      session: { running: true },
       t: makeTranslate(zh) as RoomComposerProps['t'],
     })
     expect((screen.getByRole('button', { name: '发送' }) as HTMLButtonElement).disabled).toBe(true)
@@ -647,7 +622,7 @@ describe('RoomComposer inherited environment duties', () => {
 
   it('accepts bare messages through the room while the coordinator is running', async () => {
     const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
-    const { area, inputActions } = await bench(submit, { session: { running: true, queue: [] } })
+    const { area, inputActions } = await bench(submit, { session: { running: true } })
     type(area, '排队等我')
     fireEvent.keyDown(area, { key: 'Enter' })
     await waitFor(() => { expect(area.value).toBe('') })
@@ -685,28 +660,7 @@ describe('RoomComposer inherited environment duties', () => {
     }
   })
 
-  it('renders the queued-messages strip from the legacy snapshot queue on 0.1.5 hosts (count header over one)', async () => {
-    await bench(vi.fn(), {
-      session: {
-        running: true,
-        queue: [
-          { id: 'q1', placement: 'queued', preview: '第一条跟进' },
-          { id: 'q2', placement: 'queued', preview: '第二条跟进' },
-          // A steering row is not queue business — filtered out.
-          { id: 'q3', placement: 'steering', preview: 'steering 不算' },
-        ],
-      },
-      t: makeTranslate(zh) as RoomComposerProps['t'],
-    })
-    const strip = screen.getByTestId('room-queue-strip')
-    expect(strip.textContent).toContain('2 条排队消息')
-    fireEvent.click(screen.getByRole('button', { name: /排队消息/ }))
-    expect(screen.getByText('第一条跟进')).toBeDefined()
-    expect(screen.getByText('第二条跟进')).toBeDefined()
-    expect(screen.queryByText('steering 不算')).toBeNull()
-  })
-
-  it('renders the queued-messages strip from the inbox projection on alpha.2 hosts', async () => {
+  it('renders the queued-messages strip from the inbox projection (count header over one)', async () => {
     const useProjection = ((key: string) => key === 'inbox'
       ? {
         'next-turn': [
@@ -726,8 +680,7 @@ describe('RoomComposer inherited environment duties', () => {
       }
       : undefined) as unknown as UseProjection
     await bench(vi.fn(), {
-      // A legacy queue alongside the projection is shadowed — the projection wins.
-      session: { running: true, queue: [{ id: 'legacy', placement: 'queued', preview: '旧队列不应出现' }] },
+      session: { running: true },
       useProjection,
       t: makeTranslate(zh) as RoomComposerProps['t'],
     })
@@ -736,24 +689,24 @@ describe('RoomComposer inherited environment duties', () => {
     fireEvent.click(screen.getByRole('button', { name: /排队消息/ }))
     expect(screen.getByText('第一条跟进')).toBeDefined()
     expect(screen.getByText('带图 跟进 [tool_reference]')).toBeDefined()
-    expect(screen.queryByText('旧队列不应出现')).toBeNull()
   })
 
-  it('a served-but-empty inbox projection hides the strip and shadows the legacy queue', async () => {
+  it('a served-but-empty inbox projection hides the strip', async () => {
     const useProjection = ((key: string) => key === 'inbox'
       ? { 'next-turn': [], 'next-step': [] }
       : undefined) as unknown as UseProjection
     await bench(vi.fn(), {
-      session: { running: true, queue: [{ id: 'q1', placement: 'queued', preview: '旧队列' }] },
+      session: { running: true },
       useProjection,
     })
     expect(screen.queryByTestId('room-queue-strip')).toBeNull()
   })
 
-  it('renders a single legacy queued message directly and nothing for an empty queue', async () => {
-    await bench(vi.fn(), {
-      session: { running: true, queue: [{ id: 'q1', placement: 'queued', preview: '唯一一条' }] },
-    })
+  it('renders a single queued message directly and nothing without an inbox value', async () => {
+    const useProjection = ((key: string) => key === 'inbox'
+      ? { 'next-turn': [{ id: 'q1', content: [{ type: 'text', text: '唯一一条' }], source: { kind: 'user' } }], 'next-step': [] }
+      : undefined) as unknown as UseProjection
+    await bench(vi.fn(), { session: { running: true }, useProjection })
     expect(screen.getByTestId('room-queue-strip').textContent).toContain('唯一一条')
     cleanup()
     await bench(vi.fn())
@@ -782,10 +735,9 @@ function modelDirectory(over: Partial<RoomModelDirectoryState> = {}) {
   return {
     store,
     load: vi.fn(async () => store.getSnapshot()),
-    // Promise<unknown>: the both-lines face (0.1.5 resolves void, alpha.2 a RemoteResult).
-    select: vi.fn(async (selection: RoomModelSelection): Promise<unknown> => {
+    select: vi.fn(async (selection: RoomModelSelection): Promise<RemoteResult<void>> => {
       store.set({ ...store.getSnapshot(), current: selection })
-      return undefined
+      return { ok: true, value: undefined }
     }),
   }
 }
@@ -860,7 +812,7 @@ describe('RoomComposer main-agent model picker', () => {
     expect(screen.getByRole('alert').textContent).toBe(zh['composer.model.failed'])
   })
 
-  it('surfaces a refused switch answered as a settled RemoteResult (alpha.2 semantics) and keeps the menu open', async () => {
+  it('surfaces a refused switch answered as a settled RemoteResult and keeps the menu open', async () => {
     const directory = modelDirectory()
     directory.select.mockResolvedValue({ ok: false, error: { code: 'session/writer-held', message: 'held' } })
     await bench(vi.fn(), { modelDirectory: directory, t: makeTranslate(zh) as RoomComposerProps['t'] })
@@ -869,11 +821,11 @@ describe('RoomComposer main-agent model picker', () => {
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'Model Two' }))
     expect(await screen.findByRole('alert')).toBeDefined()
     expect(screen.getByRole('alert').textContent).toBe(zh['composer.model.failed'])
-    // The failure branch never closes the menu (a mistaken close was the alpha.2 regression).
+    // The failure branch never closes the menu.
     expect(screen.getByRole('menu')).toBeDefined()
   })
 
-  it('a settled ok RemoteResult closes the menu (alpha.2 success)', async () => {
+  it('a settled ok RemoteResult closes the menu', async () => {
     const directory = modelDirectory()
     directory.select.mockResolvedValue({ ok: true, value: undefined })
     await bench(vi.fn(), { modelDirectory: directory, t: makeTranslate(zh) as RoomComposerProps['t'] })
@@ -917,8 +869,10 @@ describe('external coordinator composer', () => {
     }
     const submit = vi.fn(async () => ({ ok: true as const }))
     const { area, stop, inputActions } = await bench(submit, { state, stopMember, renderMemberConfiguration, renderMemberInbox,
-      session: { running: true, queue: [{ id: 'old', placement: 'queued', preview: 'old DSH input' }] },
-      useProjection: (() => [{ content: 'old DSH todo', status: 'in_progress' }]) as unknown as UseProjection,
+      session: { running: true },
+      useProjection: ((key: string) => key === 'inbox'
+        ? { 'next-turn': [{ id: 'old', content: [{ type: 'text', text: 'old DSH input' }], source: { kind: 'user' } }], 'next-step': [] }
+        : [{ content: 'old DSH todo', status: 'in_progress' }]) as unknown as UseProjection,
     })
     expect(screen.getByText('Configuration for child-ada')).toBeDefined()
     expect(screen.getByText('Inbox for child-ada')).toBeDefined()

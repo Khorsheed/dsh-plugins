@@ -13,11 +13,11 @@ import css from './SegCtl.module.css'
 export interface SegCtlOption<Id extends string = string> {
   readonly id: Id
   readonly label: ReactNode
-  /** Disabled options render dim and never fire (the wire-body seat). */
+  /** Disabled options render dim and never fire. */
   readonly disabled?: boolean | undefined
   /** Tooltip on a disabled option. */
   readonly hint?: string | undefined
-  /** A small trailing tag (the `≥0.1.2` marker). */
+  /** A small trailing tag. */
   readonly tag?: string | undefined
 }
 

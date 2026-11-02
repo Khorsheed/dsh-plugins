@@ -4,7 +4,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import RoomService from '../src/index.ts'
 import {
-  isRoomLog, parseMentions, pendingInstructions, previousCursor, replay, roomChangesSince, taskProgress,
+  isRoomLog, parseMentions, pendingInstructions, previousCursor, replay, roomChangesSince,
 } from '../src/journal.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
@@ -229,23 +229,6 @@ describe('replay (pure journal fold)', () => {
       { id: 't1', member: 'bill', title: '搭页面', status: 'pending', blockedBy: 'ada', updatedAt: 1000 },
       { id: 't2', member: 'ada', title: '定接口', status: 'pending', updatedAt: 1000 },
     ])
-  })
-
-  it('taskProgress counts done over the countable total (cancelled and failed leave the denominator)', () => {
-    resetSeq()
-    const state = replay([
-      ev('room/task-added', { id: 't1', member: 'ada', title: '一', status: 'pending' }),
-      ev('room/task-added', { id: 't2', member: 'ada', title: '二', status: 'pending' }),
-      ev('room/task-added', { id: 't3', member: 'ada', title: '三', status: 'pending' }),
-      ev('room/task-added', { id: 't4', member: 'ada', title: '四', status: 'pending' }),
-      ev('room/task-added', { id: 't5', member: 'ada', title: '五', status: 'pending' }),
-      ev('room/task-updated', { id: 't1', status: 'done' }),
-      ev('room/task-updated', { id: 't2', status: 'done' }),
-      ev('room/task-updated', { id: 't3', status: 'cancelled' }),
-      ev('room/task-updated', { id: 't4', status: 'failed' }),
-    ])
-    expect(taskProgress(state.tasks)).toEqual({ done: 2, total: 3 })
-    expect(taskProgress([])).toEqual({ done: 0, total: 0 })
   })
 
   it('folds task-edited: title renames, blockedBy re-targets, and null clears the wait', () => {

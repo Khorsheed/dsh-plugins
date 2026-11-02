@@ -68,9 +68,7 @@ export function ImportNovel(props: NovelSurfaceProps): ReactNode {
     if (progress !== null) return
     const ticket = begin()
     try {
-      const result = path === undefined
-        ? await api.importDirectory(sessionId)
-        : await api.importDirectory(sessionId, { path })
+      const result = await api.importDirectory(sessionId, path === undefined ? undefined : { path })
       if (ticket !== operation.current) return
       if (!result.ok) {
         setFailure(t('error.generic', { message: result.error.message }))
@@ -142,7 +140,7 @@ export function ImportNovel(props: NovelSurfaceProps): ReactNode {
         className={css.fileInput}
         type="file"
         multiple
-        accept=".docx,.txt,.md,.markdown"
+        accept=".txt,.md,.markdown"
         aria-label={t('import.choose')}
         onChange={event => {
           void pick([...(event.target.files ?? [])])

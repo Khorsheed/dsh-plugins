@@ -17,8 +17,8 @@ import type { LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import { publishAuthStatus, resetAuthStatuses } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
 import {
-  KimiBundleConfig, KimiSettingsCard,
-  type KimiLiveSettings, type KimiBundleConfigProps, type KimiSettingsCardProps,
+  KimiBundleConfig, KimiCardSection,
+  type KimiLiveSettings, type KimiBundleConfigProps, type KimiCardSectionProps,
 } from '../src/client/SettingsCard.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -114,7 +114,7 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
     unset,
   }
   const state = {
-    ids: [SESSION], byId: {}, current: SESSION, phase: 'ready',
+    ids: [SESSION], byId: { [SESSION]: { id: SESSION, retainedBy: { mainView: 1 } } }, phase: 'ready',
   } as unknown as SessionListState
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
@@ -138,34 +138,26 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
   return { props, scope: { set, unset } }
 }
 
-/** Render the 0.1.5 card over a scope whose writes update the snapshot reactively. */
+/** Render the family-card section (expanded) over a scope whose writes update the snapshot reactively. */
 function renderCard(options: CardOptions): CardHarness {
   const { props, scope } = makeCardProps(options)
-  render(<KimiSettingsCard {...props as unknown as KimiSettingsCardProps} />)
+  render(<KimiCardSection {...{ active: true, ...props } as unknown as KimiCardSectionProps} />)
   return { scope }
 }
 
-/** Render the alpha.2 bundle-config entry over the same reactive scope. */
+/** Render the plugins.item entry over the same reactive scope. */
 function renderBundleConfig(entryView: 'summary' | 'page', options: CardOptions = {}): CardHarness {
   const { props, scope } = makeCardProps(options)
   render(<KimiBundleConfig {...{ view: entryView, ...props } as unknown as KimiBundleConfigProps} />)
   return { scope }
 }
 
-/** The disclosure header: the only button carrying aria-expanded. */
-function headerButton(): HTMLButtonElement {
-  const header = document.body.querySelector('button[aria-expanded]')
-  if (header === null) throw new Error('card header button missing')
-  return header as HTMLButtonElement
-}
-
-/** Open the card and flush the auth block's mount probe. */
+/** Flush the auth block's mount probe (the section renders expanded). */
 async function openCard(): Promise<void> {
-  fireEvent.click(headerButton())
   await act(async () => {})
 }
 
-describe('KimiSettingsCard', () => {
+describe('KimiCardSection', () => {
   it('renders the three states: unauthenticated with live off', async () => {
     renderCard({})
     await openCard()
@@ -186,21 +178,12 @@ describe('KimiSettingsCard', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true')
   })
 
-  it('shows the credential dot in the collapsed header, fed by the status bus', async () => {
-    renderCard({ authenticated: true })
-    // The dot probes on mount (no expand needed) and lands on authenticated.
-    await act(async () => {})
-    const dot = document.body.querySelector('[data-auth-status]')
-    expect(dot?.getAttribute('data-auth-status')).toBe('authenticated')
-    expect(dot?.getAttribute('aria-label')).toBe(coreZh['settings.authenticated'])
-  })
+  it('shows live on when the setting is unset, matching the provider default', async () => {
+    renderCard({ authenticated: true, value: { liveMirrorGranularity: 'token' } })
+    await openCard()
 
-  it('the header dot lands on the not-authenticated color when the probe says anonymous', async () => {
-    renderCard({ authenticated: false })
-    await act(async () => {})
-    const dot = document.body.querySelector('[data-auth-status]')
-    expect(dot?.getAttribute('data-auth-status')).toBe('anonymous')
-    expect(dot?.getAttribute('aria-label')).toBe(coreZh['settings.notAuthenticated'])
+    const toggle = screen.getByRole('switch', { name: zh['live.title'] })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
   })
 
   it('marks the auth block unavailable when the probe reports undefined (core absent)', async () => {
@@ -244,7 +227,7 @@ describe('KimiSettingsCard', () => {
   })
 })
 
-describe('KimiSettingsCard model list section', () => {
+describe('KimiCardSection model list section', () => {
   // The section's behavior (rows, delete, drag, the add dialog) is pinned by
   // the family core's own ModelListSection spec; here only the wiring: the
   // card renders the core section over the injected faces.
@@ -262,7 +245,7 @@ describe('KimiSettingsCard model list section', () => {
   })
 })
 
-describe('KimiSettingsCard endpoint verify button', () => {
+describe('KimiCardSection endpoint verify button', () => {
   /** A settled endpointAuth face (credential saved), so the form renders. */
   const face = (): { read: () => Promise<{ apiKeySet: boolean; authTokenSet: boolean }>; write: () => Promise<{ apiKeySet: boolean; authTokenSet: boolean }> } => ({
     read: vi.fn(async () => ({ apiKeySet: true, authTokenSet: false })),

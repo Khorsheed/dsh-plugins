@@ -20,23 +20,24 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: SessionListState plus the ctx.sessions service merge (ISessions).
-import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ISessions, SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   RoomGetStateRequest, RoomGetStateResult, RoomIsRoomRequest, RoomState,
 } from '../types.ts'
 
+/** Browser session service, distinct from the host SessionStore sharing the Context key. */
+export type RoomClientContext = Context & { sessions: ISessions }
+
 /**
- * The session the main view shows, read off both host lines: alpha.2 deleted
- * the list's `current` for the per-row `retainedBy.mainView` reference count;
- * 0.1.5 carries only `current`.
+ * The session the main view shows: the row whose `retainedBy.mainView`
+ * reference count is positive.
  * @param list - the sessions list snapshot.
  * @returns the main-view session id, or undefined when no session is shown.
  */
 export function mainSessionId(list: SessionListState): SessionId | undefined {
   return Object.values(list.byId).find(summary =>
     ((summary.retainedBy as { mainView?: number } | undefined)?.mainView ?? 0) > 0)?.id
-    ?? (list as { current?: SessionId }).current
 }
 
 /** The slice of the mounted room Remote the store reads. */
@@ -71,7 +72,7 @@ export class RoomStore {
    * @param gateway - the mounted room Remote, undefined when the mount failed.
    */
   constructor(
-    private readonly ctx: Context,
+    private readonly ctx: RoomClientContext,
     private readonly gateway: RoomGateway | undefined,
   ) {}
 

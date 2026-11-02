@@ -1,23 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import JSZip from 'jszip'
 import { MAX_IMPORT_CHAPTER_CHARS, parseNovelFiles, splitNovelDocument } from '../src/client/import-documents.ts'
 
 function textFile(name: string, text: string): File {
   return new File([text], name)
 }
 
-async function wordFile(name: string, paragraphs: readonly string[]): Promise<File> {
-  const zip = new JSZip()
-  zip.file('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
-  zip.file('_rels/.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
-  const body = paragraphs.map(text => `<w:p><w:r><w:t>${text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</w:t></w:r></w:p>`).join('')
-  zip.file('word/document.xml', `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr/></w:body></w:document>`)
-  return new File([await zip.generateAsync({ type: 'arraybuffer' })], name)
-}
-
 describe('novel document parsing', () => {
-  it('reads a real DOCX and splits Chinese chapter headings without changing the prose', async () => {
-    const parsed = await parseNovelFiles([await wordFile('梦境.docx', ['书名：梦境', '第一章 门', '他推开门。', '第二章 叶', '叶子亮了。'])])
+  it('splits Chinese chapter headings without changing the prose', async () => {
+    const parsed = await parseNovelFiles([textFile('梦境.txt', '书名：梦境\n第一章 门\n他推开门。\n第二章 叶\n叶子亮了。')])
     expect(parsed.issues).toEqual([])
     expect(parsed.drafts.map(draft => ({ title: draft.title, text: draft.text }))).toEqual([
       { title: '第一章 门', text: '书名：梦境\n他推开门。' },
@@ -59,16 +49,17 @@ describe('novel document parsing', () => {
     expect(parsed.drafts[0]?.text).toBe('正文')
   })
 
-  it('reports unsupported, damaged, empty and oversized inputs without producing invalid drafts', async () => {
+  it('reports Word, unsupported, empty and oversized inputs without producing invalid drafts', async () => {
     const parsed = await parseNovelFiles([
       textFile('old.doc', ' legacy '),
       textFile('book.pdf', 'pdf'),
-      textFile('broken.docx', 'not a zip'),
+      textFile('word.docx', 'Word prose'),
       textFile('empty.txt', ' \n '),
       textFile('huge.txt', '甲'.repeat(MAX_IMPORT_CHAPTER_CHARS + 1)),
     ])
     expect(parsed.drafts).toEqual([])
     expect(parsed.issues).toHaveLength(5)
-    expect(parsed.issues.map(issue => issue.reason)).toEqual(expect.arrayContaining(['empty', 'too-long', 'legacy-doc', 'unsupported', 'docx-invalid']))
+    expect(parsed.issues.map(issue => issue.reason)).toEqual(expect.arrayContaining(['empty', 'too-long', 'legacy-doc', 'unsupported']))
+    expect(parsed.issues.filter(issue => issue.reason === 'legacy-doc').map(issue => issue.file)).toEqual(['old.doc', 'word.docx'])
   })
 })

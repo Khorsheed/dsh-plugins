@@ -22,17 +22,9 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./records": {
-      "types": "./lib/types/records.d.ts",
-      "default": "./lib/records.js"
-    },
     "./provision": {
       "types": "./lib/types/provision.d.ts",
       "default": "./lib/provision.js"
-    },
-    "./dsh-cli-provider": {
-      "types": "./lib/types/dsh-cli-provider.d.ts",
-      "default": "./lib/dsh-cli-provider.js"
     },
     "./tool": {
       "types": "./lib/types/tool.d.ts",
@@ -66,8 +58,7 @@
       "patch": "./cordis.patch.yml"
     },
     "compat": {
-      "minHost": "0.1.5-rc.1",
-      "notes": "liveMirrorGranularity token: host 0.1.5 retired the per-chunk session event, so token-mode deltas no longer land in the child session log — they ride the run-progress channel and the round settles as one combined assistant/message (identical final text); a late-arriving usage whose carrier message already mirrored is dropped with a warn (no usage-backfill event exists). The settings card mounts only on host 0.1.7-alpha.1+ (the Plugins page plugins.item seat, gated by configForms.whileServed on the served namespace); 0.1.5 renders no card (the host removed the settings.plugin.item seat) — every other surface is unchanged.",
+      "minHost": "0.2.0-rc.1",
       "verifiedHost": "0.2.1-rc.5"
     },
     "runtimeDependencies": [
@@ -81,10 +72,10 @@
   ],
   "license": "MIT",
   "engines": {
-    "dsh": ">=0.1.5-rc.1 <0.3.0-0"
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.1",
+    "@deepseek-ai/schemastery": "^3.18.4",
     "@khorsheed/dsh-local-agent": "workspace:*",
     "@khorsheed/dsh-local-agent-dsh-headless": "workspace:*",
     "js-yaml": "^4.3.1"

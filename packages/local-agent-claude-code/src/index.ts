@@ -110,32 +110,15 @@ export interface Config {
   recentModels?: readonly string[]
 }
 
-/**
- * The settings fields (`live`, `liveMirrorGranularity`, `model`,
- * `recentModels`, and the endpoint credential `baseUrl`/`apiKey`/`authToken`)
- * ride the plugin Config, marked `.volatile()` where the
- * host's schemastery has it (3.18.4+, the rc.1 line — probed, never sniffed):
- * there the SettingsForms writes hot-track the running fiber's Volatile
- * references without a remount, and the official one-shot import moves an old
- * settings.yaml section into this row's config. On 0.1.5 the call is absent,
- * the fields stay plain config keys (a semantic superset — the profile row
- * can now preset them too), and the legacy settings namespace below carries
- * the user layer exactly as before. `model` deliberately carries NO default:
- * an unset key must resolve to undefined, which is what keeps the pre-key
- * behavior byte-identical.
- */
-const SETTINGS_FIELDS = {
-  live: z.boolean().default(true),
-  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token'),
-  model: z.string(),
-  recentModels: z.array(z.string()).default([]),
-}
+/** The settings row id: the namespace `settings/document-updated` emits for this provider. */
+const SETTINGS_NAMESPACE = 'local-agent-claude-code'
 
-/** Mark one schema field volatile when the host's schemastery has the method (rc.1), pass it through plain when not (0.1.5). */
-function volatilize<S extends { volatile?: unknown }>(field: S): S {
-  return typeof field.volatile === 'function' ? (field.volatile as () => S)() : field
-}
-
+// The settings fields (`live`, `liveMirrorGranularity`, `model`,
+// `recentModels`) ride the plugin Config marked `.volatile()`: the
+// SettingsForms writes hot-track the running fiber's Volatile references
+// without a remount. `model` deliberately carries NO default: an unset key
+// must resolve to undefined, which is what keeps the pre-key behavior
+// byte-identical.
 // Bare `z` annotation: `z<Config>` fails schemastery 3.18.4's variance under
 // exactOptionalPropertyTypes (TS2375) and dropping the annotation trips
 // TS2742; the interface stays the apply signature's contract.
@@ -144,32 +127,19 @@ export const Config: z = z.object({
     z.const('skip'),
     z.const('normal'),
   ]),
-  model: volatilize(SETTINGS_FIELDS.model),
+  model: z.string().volatile(),
   baseUrl: z.string(),
   apiKey: z.string(),
   authToken: z.string(),
   proxyUrl: z.string(),
-  live: volatilize(SETTINGS_FIELDS.live),
+  live: z.boolean().default(true).volatile(),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
-  liveMirrorGranularity: volatilize(SETTINGS_FIELDS.liveMirrorGranularity),
-  recentModels: volatilize(SETTINGS_FIELDS.recentModels),
+  liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token').volatile(),
+  recentModels: z.array(z.string()).default([]).volatile(),
 })
 
 /** The permission mode a fresh delegation defaults to. */
 export const DEFAULT_PERMISSION_MODE: NonNullable<Config['permissionMode']> = 'skip'
-
-/**
- * Settings namespace for the settings-page card. The Cordis config feeds the
- * composition `base` layer, so a field absent from the user layer inherits the
- * YAML value — the card only ever stores deliberate overrides.
- */
-export const CLAUDE_SETTINGS_NAMESPACE = 'local-agent-claude-code'
-
-/**
- * The card's 0.1.5 schema; field defaults are the innermost layer below
- * `base`. Shared with the Config schema's settings fields above.
- */
-const CLAUDE_SETTINGS_SCHEMA = z.object(SETTINGS_FIELDS)
 
 /**
  * Register the Claude Code harness into the local-agent registry.
@@ -190,10 +160,9 @@ export function apply(ctx: Context, config: Config): void {
     // a reload. Toggling OFF drains the retiring generation — new rounds fall
     // back to exec, in-flight rounds finish on their runtime, idle runtimes
     // are reclaimed at once. Legacy granularity settings are accepted but ignored.
-    // The settings face hides the two host lines: 0.1.5 serves the legacy
-    // namespace scope (register + base); rc.1 reads the row config's volatile
-    // fields and re-reads on `settings/document-updated`. Both hot-apply the
-    // card's writes without a reload.
+    // The settings face reads the row config's volatile fields and re-reads
+    // on `settings/document-updated`, hot-applying the card's writes without
+    // a reload.
     const readSettings = (): ClaudeLiveSettings => {
       const model = vol(config.model)
       const recentModels = vol(config.recentModels)
@@ -204,17 +173,10 @@ export function apply(ctx: Context, config: Config): void {
         ...recentModels === undefined ? {} : { recentModels },
       }
     }
-    const legacyBase: Record<string, unknown> = {}
-    for (const field of ['live', 'liveMirrorGranularity', 'model'] as const) {
-      const value = vol(config[field])
-      if (value !== undefined) legacyBase[field] = value
-    }
     const face = settingsFace<ClaudeLiveSettings>(ctx, {
-      namespace: CLAUDE_SETTINGS_NAMESPACE,
+      namespace: SETTINGS_NAMESPACE,
       // Card writes live in the harness's own store (card-settings.ts), never the profile patch.
       harness: 'claude-code',
-      legacySchema: CLAUDE_SETTINGS_SCHEMA,
-      legacyBase,
       read: readSettings,
     })
     // The endpoint credential's deployment level: the plugin config triple,

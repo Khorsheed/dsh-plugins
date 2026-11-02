@@ -46,7 +46,6 @@ function modelInfo(over: Partial<LocalAgentModelInfo> = {}): LocalAgentModelInfo
 /** Chain owner currency around a session snapshot fragment. */
 function owner(session: Partial<SessionSnapshot> | undefined): ComposerChainProps {
   return {
-    interactions: [],
     sessionId: CHILD as SessionId,
     pendingInteraction: undefined,
     session: session === undefined ? undefined : {
@@ -119,19 +118,7 @@ describe('selectCliMember', () => {
         parentAvailable: true,
       },
     })
-    const pending = { ...base, interactions: [{ kind: 'question' } as never] }
-    expect(selectCliMember(pending)).toBeNull()
-  })
-
-  it('supports the 0.1.2 owner shape (singular pendingInteraction, no interactions array)', () => {
-    const base = owner({
-      subagent: {
-        address: { mode: 'one-shot', parentSessionId: 'p' as SessionId, childSessionId: CHILD as SessionId },
-        parentAvailable: true,
-      },
-    }) as unknown as Record<string, unknown>
-    delete base['interactions']
-    expect(selectCliMember(base as unknown as ComposerChainProps)).toEqual({ childSessionId: CHILD })
+    expect(selectCliMember(base)).toEqual({ childSessionId: CHILD })
     const pending = { ...base, pendingInteraction: { kind: 'question' } } as unknown as ComposerChainProps
     expect(selectCliMember(pending)).toBeNull()
   })

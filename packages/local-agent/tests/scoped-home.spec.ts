@@ -12,7 +12,6 @@ import {
   DELEGATIONS_FILENAME,
   LOCAL_AGENT_SERVICE,
   assertResumeScopeUnchanged,
-  assertScopeExecOnly,
   parseScopeFlag,
   scopedHomeName,
 } from '@khorsheed/dsh-local-agent'
@@ -345,10 +344,5 @@ describe('scoped homes: delegation records', () => {
     expect(() => assertResumeScopeUnchanged(plain, 'eval-b', 'subagent-fake')).toThrow(/differs from the first round's \(default\)/)
     // No record at all: the caller's own resolveDelegation refuses that first.
     expect(() => assertResumeScopeUnchanged(undefined, 'eval-b', 'subagent-fake')).not.toThrow()
-  })
-
-  it('refuses a scoped round that would be served by a live driver', () => {
-    expect(() => assertScopeExecOnly(undefined, 'subagent-fake')).not.toThrow()
-    expect(() => assertScopeExecOnly('eval-b', 'subagent-fake')).toThrow(/exec-only/)
   })
 })

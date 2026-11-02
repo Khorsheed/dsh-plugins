@@ -1,4 +1,3 @@
-import { extractRawText } from 'mammoth'
 import {
   compareNovelFileNames, decodeNovelText, novelImportExtension, NovelTextDecodeError, NOVEL_DOCUMENT_EXTENSIONS,
   parseNovelDocuments, type NovelImportDocument, type NovelImportIssue, type NovelImportParseResult,
@@ -25,7 +24,7 @@ export async function parseNovelBinaryDocuments(input: readonly NovelBinaryDocum
   const issues: NovelImportIssue[] = []
   for (const document of sorted) {
     const extension = novelImportExtension(document.file)
-    if (extension === '.doc') {
+    if (extension === '.doc' || extension === '.docx') {
       issues.push({ file: document.file, reason: 'legacy-doc' })
       continue
     }
@@ -35,21 +34,11 @@ export async function parseNovelBinaryDocuments(input: readonly NovelBinaryDocum
     }
     try {
       const bytes = typeof document.data === 'function' ? await document.data() : document.data
-      const text = extension === '.docx' ? await readDocx(bytes) : decodeNovelText(bytes)
-      documents.push({ file: document.file, ...(document.titleBase === undefined ? {} : { titleBase: document.titleBase }), text })
+      documents.push({ file: document.file, ...(document.titleBase === undefined ? {} : { titleBase: document.titleBase }), text: decodeNovelText(bytes) })
     } catch (error) {
-      issues.push({ file: document.file, reason: extension === '.docx' ? 'docx-invalid' : error instanceof NovelTextDecodeError ? 'encoding' : 'read-failed' })
+      issues.push({ file: document.file, reason: error instanceof NovelTextDecodeError ? 'encoding' : 'read-failed' })
     }
   }
   const parsed = parseNovelDocuments(documents)
   return { drafts: parsed.drafts, issues: [...issues, ...parsed.issues] }
-}
-
-async function readDocx(bytes: ArrayBuffer | Uint8Array): Promise<string> {
-  const arrayBuffer = bytes instanceof Uint8Array
-    ? bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
-    : bytes
-  // Mammoth's browser and Node entry points read different keys of the same ZIP bytes.
-  const result = await extractRawText({ arrayBuffer, buffer: arrayBuffer as never })
-  return result.value
 }

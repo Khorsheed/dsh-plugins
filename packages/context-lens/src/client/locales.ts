@@ -272,7 +272,6 @@ export const zh = {
   'view.time': '耗时分布',
   'view.structured': '结构化',
   'view.raw': '原始 JSON',
-  'view.wireHint': '需要宿主 ≥0.1.2（deepseekLlmApiExtensions）',
   'foot.note': '分段=字符数（精确）· 总计=真实 usage',
 
   'turn.label': 'turn {seq}',
@@ -668,7 +667,6 @@ export const en: Record<keyof typeof zh, string> = {
   'view.time': 'Timing',
   'view.structured': 'Structured',
   'view.raw': 'Raw JSON',
-  'view.wireHint': 'Requires host ≥0.1.2 (deepseekLlmApiExtensions)',
   'foot.note': 'segments = exact char counts · totals = real usage',
 
   'turn.label': 'turn {seq}',

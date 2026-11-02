@@ -4,7 +4,6 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 // Type-only: the plugins.item list-slot SlotMap merge.
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import { IconChevronDownOutlineMedium } from './icons.tsx'
 import type { LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState, LocalAgentModelDirectory } from '@khorsheed/dsh-local-agent/types'
 // The shared auth block is bundled from the family core's source — the
 // sanctioned core/companion edge (the host half already depends on the core);
@@ -12,8 +11,7 @@ import type { LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState, LocalAg
 import {
   ProviderAuthBlock, type ProviderAuthBlockProps, type ProviderAuthInjected,
 } from '@khorsheed/dsh-local-agent/src/client/ProviderAuthBlock.tsx'
-import { AuthStatusDot } from '@khorsheed/dsh-local-agent/src/client/AuthStatusDot.tsx'
-import { publishAuthStatus, useHarnessAuthStatus, usePublishedAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
+import { publishAuthStatus, usePublishedAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
 import { ModelListSection } from '@khorsheed/dsh-local-agent/src/client/ModelListSection.tsx'
 import { NS } from './locales.ts'
 import css from './SettingsCard.module.css'
@@ -83,23 +81,6 @@ export interface KimiSettingsCardInjected {
   }
 }
 
-/**
- * Full props of the retired 0.1.5 settings.plugin.item card. The host removed
- * that seat and client/index.ts no longer registers the component — the live
- * settings surface is the plugins.item entry built on the BundleConfig
- * component below; this export remains for the component spec and direct
- * composers. The removed slot's owner share was intentionally empty and its
- * root scope delivered the global seats; the structural type below is exact
- * about the one seat the auth block consumes.
- */
-export type KimiSettingsCardProps =
-  InjectFace<KimiSettingsCardInjected>
-  & PropsLocale<typeof NS>
-  & {
-    /** The standing root-scope global seat (ui-session's merge), delivered to the 0.1.5 card by the renderer. */
-    useSessions: ProviderAuthBlockProps['useSessions']
-  }
-
 /** Full props of the plugins.item entry (owner prop `view`). */
 export type KimiBundleConfigProps =
   PropsRuntime<'plugins.item'>
@@ -137,15 +118,16 @@ export type KimiCardSectionProps =
  */
 function useCardState(
   active: boolean,
-  useSettings: KimiSettingsCardProps['useSettings'],
-  scope: KimiSettingsCardProps['scope'],
+  useSettings: KimiCardSectionProps['useSettings'],
+  scope: KimiCardSectionProps['scope'],
   endpointAuth: KimiSettingsCardInjected['endpointAuth'],
 ) {
   const snapshot: SettingsScopeSnapshot<KimiLiveSettings> = useSettings(value => value)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(false)
   const ready = snapshot.status === 'ready' && snapshot.writable
-  const live = snapshot.value?.live ?? false
+  // Unset means on: the provider resolves `live` as `vol(config.live) ?? true`.
+  const live = snapshot.value?.live ?? true
   // The endpoint credential form talks to the harness's OWN credential store
   // through the endpointAuth face — never the settings scope, so no key ever
   // lands in the profile patch document. baseUrl echoes (it is not a
@@ -228,8 +210,8 @@ function CardBody({ state, active, auth, authT, modelList, modelDirectory, check
   readonly modelList: KimiSettingsCardInjected['modelList']
   readonly modelDirectory: KimiSettingsCardInjected['modelDirectory']
   readonly checkEndpoint: KimiSettingsCardInjected['checkEndpoint']
-  readonly useSessions: KimiSettingsCardProps['useSessions']
-  readonly t: KimiSettingsCardProps['t']
+  readonly useSessions: KimiCardSectionProps['useSessions']
+  readonly t: KimiCardSectionProps['t']
 }) {
   const {
     snapshot, saved, error, ready, live, write,
@@ -369,55 +351,6 @@ function CardBody({ state, active, auth, authT, modelList, modelDirectory, check
         )}
       </section>
     </div>
-  )
-}
-
-/**
- * The kimi harness settings card of the retired 0.1.5 plugin configuration
- * tab (no longer registered; the live surface is the plugins.item entry
- * below): the same collapsible chrome the official plugin cards use, re-implemented
- * locally (the bundle-purity gate forbids value-importing the official chrome
- * — the context-guard pattern), with the at-a-glance credential dot in the
- * header. Explanation copy lives in hover/focus bubbles behind ⓘ anchors —
- * the card's rows stay one line each.
- * @param props - the injected scope/auth faces and copy.
- * @returns the card.
- */
-export function KimiSettingsCard(props: KimiSettingsCardProps) {
-  const { useSettings, scope, auth, authT, modelList, modelDirectory, checkEndpoint, endpointAuth, useSessions, t } = props
-  const [open, setOpen] = useState(false)
-  const state = useCardState(open, useSettings, scope, endpointAuth)
-  // The at-a-glance credential dot in the collapsed header: every mount
-  // re-probes (a credential expiring mid-session must flip the dot at the
-  // next view); the bus dedupes identical results, so no re-render storm.
-  const authStatus = useHarnessAuthStatus('kimi', auth.status)
-  const dotLabel = authT(
-    authStatus === 'authenticated' ? 'settings.authenticated'
-      : authStatus === 'anonymous' ? 'settings.notAuthenticated'
-        : authStatus === 'checking' ? 'loading' : 'error',
-  )
-
-  const title = t('card.title')
-  return (
-    <li className={open ? `${css.card} ${css.cardOpen}` : css.card}>
-      <button
-        type="button"
-        className={css.header}
-        aria-expanded={open}
-        aria-label={`${t(open ? 'card.collapse' : 'card.expand')}: ${title}`}
-        onClick={() => { setOpen(!open) }}
-      >
-        <span className={css.headText}>
-          <span className={css.nameRow}>
-            <span className={css.name}>{title}</span>
-            <AuthStatusDot status={authStatus} label={dotLabel} />
-          </span>
-          <span className={css.description}>{t('card.description')}</span>
-        </span>
-        <IconChevronDownOutlineMedium className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
-      </button>
-      {open && <CardBody state={state} active={open} auth={auth} authT={authT} modelList={modelList} modelDirectory={modelDirectory} checkEndpoint={checkEndpoint} useSessions={useSessions} t={t} />}
-    </li>
   )
 }
 

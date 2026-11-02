@@ -74,8 +74,7 @@ async function bench(options: {
       ids: options.current === undefined ? [] as string[] : [options.current.id],
       byId: options.current === undefined
         ? {}
-        : { [options.current.id]: { ...(options.current.cwd === undefined ? {} : { cwd: options.current.cwd }) } },
-      current: options.current?.id as string | undefined,
+        : { [options.current.id]: { id: options.current.id, retainedBy: { mainView: 1 }, ...(options.current.cwd === undefined ? {} : { cwd: options.current.cwd }) } },
       phase: 'pending',
       subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
     }),

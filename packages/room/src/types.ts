@@ -193,6 +193,13 @@ export interface RoomDispatchEvent {
    */
   readonly task?: string
   /**
+   * The human `user/message` this dispatch carries, when it carries one. Unlike
+   * `task`, which names the task root, this is the message itself, so a reader
+   * can anchor the dispatch without matching its text. Absent on older journals
+   * and on human dispatches with no message (a late question answer).
+   */
+  readonly messageId?: string
+  /**
    * The delivery during which the sender sent this (`<seq>:<memberId>`), so
    * a member's sub-delegations nest under its own work in the task tree.
    */
@@ -986,16 +993,6 @@ export interface RoomState {
   readonly linked?: readonly RoomLinkedSession[]
   /** Sessions whose 加入房间成员 hint was dismissed (absent when none). */
   readonly helpNudgesDismissed?: readonly string[]
-}
-
-/**
- * The goal progress pair: done tasks over the COUNTABLE total — cancelled
- * and failed tasks leave the denominator (a cancelled task was never part of
- * the plan; a failed one never advanced it).
- */
-export interface RoomTaskProgress {
-  readonly done: number
-  readonly total: number
 }
 
 /** Closed failure vocabulary of the room Remote surface. */

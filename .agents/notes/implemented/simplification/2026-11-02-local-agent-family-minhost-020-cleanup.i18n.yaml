@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-11-02-local-agent-family-minhost-020-cleanup.md
+.agents/notes/implemented/simplification/2026-11-02-local-agent-family-minhost-020-cleanup.md: 81836198dba2322b61809aeb60c060cdeb00ad39
+.agents/notes/implemented/simplification/2026-11-02-local-agent-family-minhost-020-cleanup.zh.md: 783c8227c05eee55688f06ef3e0fcceb17ad91bc

@@ -16,8 +16,8 @@ import type { SettingsScopeSnapshot } from '@khorsheed/dsh-local-agent/src/clien
 import type { LocalAgentModelInfo, LocalAgentStatus } from '@khorsheed/dsh-local-agent/types'
 import { zh as coreZh } from '@khorsheed/dsh-local-agent/src/client/locales.ts'
 import {
-  DshBundleConfig, DshSettingsCard,
-  type DshCardSettings, type DshBundleConfigProps, type DshSettingsCardProps,
+  DshBundleConfig, DshCardSection,
+  type DshCardSettings, type DshBundleConfigProps, type DshCardSectionProps,
 } from '../src/client/SettingsCard.tsx'
 import { zh } from '../src/client/locales.ts'
 
@@ -74,7 +74,7 @@ interface CardOptions {
 
 /** The card props over a scope whose writes update the snapshot reactively. */
 function makeCardProps(options: CardOptions): { props: Record<string, unknown> } & CardHarness {
-  const defaults: DshCardSettings = { enabled: false, live: false }
+  const defaults: DshCardSettings = { live: false }
   let snapshot: SettingsScopeSnapshot<DshCardSettings> = options.snapshot
     ?? makeSnapshot(options.value ?? defaults, options.user, options.base)
   const listeners = new Set<() => void>()
@@ -107,7 +107,7 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
     unset,
   }
   const state = {
-    ids: [SESSION], byId: {}, current: SESSION, phase: 'ready',
+    ids: [SESSION], byId: { [SESSION]: { id: SESSION, retainedBy: { mainView: 1 } } }, phase: 'ready',
   } as unknown as SessionListState
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
@@ -129,34 +129,26 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
   return { props, scope: { set, unset } }
 }
 
-/** Render the 0.1.5 card over a scope whose writes update the snapshot reactively. */
+/** Render the family-card section (expanded) over a scope whose writes update the snapshot reactively. */
 function renderCard(options: CardOptions): CardHarness {
   const { props, scope } = makeCardProps(options)
-  render(<DshSettingsCard {...props as unknown as DshSettingsCardProps} />)
+  render(<DshCardSection {...{ active: true, ...props } as unknown as DshCardSectionProps} />)
   return { scope }
 }
 
-/** Render the alpha.2 bundle-config entry over the same reactive scope. */
+/** Render the plugins.item entry over the same reactive scope. */
 function renderBundleConfig(entryView: 'summary' | 'page', options: CardOptions = {}): CardHarness {
   const { props, scope } = makeCardProps(options)
   render(<DshBundleConfig {...{ view: entryView, ...props } as unknown as DshBundleConfigProps} />)
   return { scope }
 }
 
-/** The disclosure header: the only button carrying aria-expanded. */
-function headerButton(): HTMLButtonElement {
-  const header = document.body.querySelector('button[aria-expanded]')
-  if (header === null) throw new Error('card header button missing')
-  return header as HTMLButtonElement
-}
-
-/** Open the card and flush the auth block's mount probe. */
+/** Flush the auth block's mount probe (the section renders expanded). */
 async function openCard(): Promise<void> {
-  fireEvent.click(headerButton())
   await act(async () => {})
 }
 
-describe('DshSettingsCard', () => {
+describe('DshCardSection', () => {
   it('renders the default states: no 启用 switch (always on), live off — and NO login action', async () => {
     renderCard({})
     await openCard()
@@ -174,7 +166,7 @@ describe('DshSettingsCard', () => {
   it('renders authenticated state with delegation and live on, still without login actions', async () => {
     renderCard({
       authenticated: true,
-      value: { enabled: true, live: true },
+      value: { live: true },
     })
     await openCard()
 
@@ -185,7 +177,7 @@ describe('DshSettingsCard', () => {
   })
 
   it('marks the auth block unavailable when the probe reports undefined while switched on (core absent)', async () => {
-    renderCard({ authStatus: undefined, value: { enabled: true, live: false } })
+    renderCard({ authStatus: undefined, value: { live: false } })
     await openCard()
     expect(screen.getByText(coreZh['settings.statusFailed'])).toBeTruthy()
     expect(screen.queryByRole('button', { name: coreZh['settings.login'] })).toBeNull()
@@ -225,9 +217,9 @@ describe('DshSettingsCard', () => {
   })
 })
 
-describe('DshSettingsCard default-model block', () => {
+describe('DshCardSection default-model block', () => {
   it('shows the stored model and saves an edited one as the model key', async () => {
-    const harness = renderCard({ value: { enabled: true, live: false, model: 'model-a' } })
+    const harness = renderCard({ value: { live: false, model: 'model-a' } })
     await openCard()
     const input = screen.getByLabelText(zh['model.title']) as HTMLInputElement
     expect(input.value).toBe('model-a')
@@ -246,7 +238,7 @@ describe('DshSettingsCard default-model block', () => {
   })
 
   it('clearing the field UNSETS the key, so the YAML base decides again', async () => {
-    const harness = renderCard({ value: { enabled: true, live: false, model: 'model-a' } })
+    const harness = renderCard({ value: { live: false, model: 'model-a' } })
     await openCard()
     fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: '' } })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['model.save'] })) })
@@ -257,7 +249,7 @@ describe('DshSettingsCard default-model block', () => {
 
   it('a saved model joins the suggestions most-recent-first, deduplicated', async () => {
     const harness = renderCard({
-      value: { enabled: true, live: false, recentModels: ['model-a', 'model-b'] },
+      value: { live: false, recentModels: ['model-a', 'model-b'] },
     })
     await openCard()
     fireEvent.change(screen.getByLabelText(zh['model.title']), { target: { value: 'model-b' } })
@@ -267,7 +259,7 @@ describe('DshSettingsCard default-model block', () => {
 
   it('offers the saved suggestions through the menu without hardcoding any model catalog', async () => {
     renderCard({
-      value: { enabled: true, live: false, recentModels: ['model-a', 'model-b'] },
+      value: { live: false, recentModels: ['model-a', 'model-b'] },
     })
     await openCard()
     // No datalist anywhere: the chevron menu is the single choice list.
@@ -278,7 +270,7 @@ describe('DshSettingsCard default-model block', () => {
   })
 
   it('save stays disabled while the field still matches what is stored', async () => {
-    renderCard({ value: { enabled: true, live: false, model: 'model-a' } })
+    renderCard({ value: { live: false, model: 'model-a' } })
     await openCard()
     const save = screen.getByRole('button', { name: zh['model.save'] }) as HTMLButtonElement
     expect(save.disabled).toBe(true)
@@ -287,7 +279,7 @@ describe('DshSettingsCard default-model block', () => {
   })
 })
 
-describe('DshSettingsCard model surface (harness broker)', () => {
+describe('DshCardSection model surface (harness broker)', () => {
   /** One broker answer, with every layer overridable. */
   function info(over: Partial<LocalAgentModelInfo> = {}): LocalAgentModelInfo {
     return {
@@ -301,7 +293,7 @@ describe('DshSettingsCard model surface (harness broker)', () => {
 
   it('a set field shows the stored model as a real value, not a placeholder', async () => {
     renderCard({
-      value: { enabled: true, live: false, model: 'deepseek-official/deepseek-chat' },
+      value: { live: false, model: 'deepseek-official/deepseek-chat' },
       harnessModel: () => Promise.resolve(info({
         effective: 'deepseek-official/deepseek-chat',
         source: 'settings',
@@ -351,7 +343,7 @@ describe('DshSettingsCard model surface (harness broker)', () => {
 
   it('the menu vocabulary is the broker choices, not only the recent memory', async () => {
     renderCard({
-      value: { enabled: true, live: false, recentModels: ['recent/model'] },
+      value: { live: false, recentModels: ['recent/model'] },
       harnessModel: () => Promise.resolve(info({ choices: ['config/model', 'deepseek-official/deepseek-chat', 'recent/model'] })),
     })
     await openCard()
@@ -362,7 +354,7 @@ describe('DshSettingsCard model surface (harness broker)', () => {
 
   it('degrades to the bare input when the gateway answers null (recent models stay)', async () => {
     renderCard({
-      value: { enabled: true, live: false, recentModels: ['model-a'] },
+      value: { live: false, recentModels: ['model-a'] },
       harnessModel: () => Promise.resolve(null),
     })
     await openCard()
@@ -398,7 +390,7 @@ describe('DshSettingsCard model surface (harness broker)', () => {
 
   it('the default item clears the draft back to follow-default; a save then unsets the key', async () => {
     const harness = renderCard({
-      value: { enabled: true, live: false, model: 'config/model' },
+      value: { live: false, model: 'config/model' },
       harnessModel: () => Promise.resolve(info({
         effective: 'config/model', source: 'settings', settings: 'config/model',
         cliDefault: 'deepseek-official/deepseek-chat',
@@ -470,7 +462,7 @@ describe('DshSettingsCard model surface (harness broker)', () => {
 
   it('opens the menu from the recent-models memory too (broker absent)', async () => {
     renderCard({
-      value: { enabled: true, live: false, recentModels: ['model-a', 'model-b'] },
+      value: { live: false, recentModels: ['model-a', 'model-b'] },
       harnessModel: () => Promise.resolve(null),
     })
     await openCard()

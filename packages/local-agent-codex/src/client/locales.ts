@@ -7,8 +7,6 @@ export const NS = 'local-agent-codex'
 export const zh = {
   'card.title': '本机 Codex 委派',
   'card.description': 'Codex 委派：端点凭据与常驻模式（live）',
-  'card.expand': '展开',
-  'card.collapse': '收起',
   'auth.title': '认证',
   'endpoint.info.aria': '端点凭据说明',
   'endpoint.info': '这里保存的就是默认 scope 的 endpoint-auth.json（0600，只存本机），它优先于 profile 的 YAML 配置行；宿主 shell 的环境变量从不被读取。配置 API Key 后每轮委派以自定义 provider（wire_api=responses）路由到端点；端点地址留空 = OpenAI 官方端点。密钥绝不写进 profile 文件，也不进入评测条件指纹。没有网页登录：容器轮与宿主轮用同一套凭据，容器里不需要再授权一次。保存对下一轮委派生效，进行中的轮次不受影响。',
@@ -49,8 +47,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const en = {
   'card.title': 'Local Codex Delegation',
   'card.description': 'Codex delegation: endpoint credential and resident (live) mode',
-  'card.expand': 'Expand',
-  'card.collapse': 'Collapse',
   'auth.title': 'Authentication',
   'endpoint.info.aria': 'About the endpoint credential',
   'endpoint.info': "What you save here is the default scope's endpoint-auth.json (mode 0600, local only), which outranks the profile's YAML row; the host shell's environment is never read. With an API Key configured, every delegation round routes at the endpoint through a custom provider (wire_api=responses); a blank endpoint means OpenAI's own. Keys never enter the profile document or an evaluation's condition fingerprint. There is no web login: container rounds share the host's credential and nothing is authorized inside a container. Saving applies to the next delegation round; rounds in flight are unaffected.",

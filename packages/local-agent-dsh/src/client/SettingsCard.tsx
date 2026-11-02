@@ -13,8 +13,6 @@ import { IconChevronDownOutlineMedium } from './icons.tsx'
 import {
   ProviderAuthBlock, type ProviderAuthBlockProps, type ProviderAuthInjected,
 } from '@khorsheed/dsh-local-agent/src/client/ProviderAuthBlock.tsx'
-import { AuthStatusDot } from '@khorsheed/dsh-local-agent/src/client/AuthStatusDot.tsx'
-import { useHarnessAuthStatus } from '@khorsheed/dsh-local-agent/src/client/auth-status.ts'
 import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 import { NS } from './locales.ts'
 import css from './SettingsCard.module.css'
@@ -24,8 +22,6 @@ const RECENT_MODEL_LIMIT = 5
 
 /** The `local-agent-dsh` settings namespace section the card edits. */
 export interface DshCardSettings {
-  /** Whether the dsh harness, provider, and delegation tool are registered. */
-  enabled?: boolean
   /** Resident (live) mode: one resident sub-dsh serve process per member. */
   live?: boolean
   /**
@@ -61,23 +57,6 @@ export interface DshSettingsCardInjected {
   }
 }
 
-/**
- * Full props of the retired 0.1.5 settings.plugin.item card. The host removed
- * that seat and client/index.ts no longer registers the component — the live
- * settings surface is the plugins.item entry built on the BundleConfig
- * component below; this export remains for the component spec and direct
- * composers. The removed slot's owner share was intentionally empty and its
- * root scope delivered the global seats; the structural type below is exact
- * about the one seat the auth block consumes.
- */
-export type DshSettingsCardProps =
-  InjectFace<DshSettingsCardInjected>
-  & PropsLocale<typeof NS>
-  & {
-    /** The standing root-scope global seat (ui-session's merge), delivered to the 0.1.5 card by the renderer. */
-    useSessions: ProviderAuthBlockProps['useSessions']
-  }
-
 /** Full props of the plugins.item entry (owner prop `view`). */
 export type DshBundleConfigProps =
   PropsRuntime<'plugins.item'>
@@ -102,12 +81,12 @@ export type DshCardSectionProps =
   }
 
 /**
- * The staged card state both settings surfaces share: the delegation,
- * resident-mode, and model edits write through the bound settingsScope
+ * The staged card state both settings surfaces share: the resident-mode
+ * and model edits write through the bound settingsScope
  * immediately (revision-fenced), so a flip takes effect on the next
  * delegation round without a reload; the harness's model surface is fetched
- * while the surface is active (the 0.1.5 card opened, the alpha.2 page
- * mounted) and re-fetched after every save.
+ * while the surface is active (the family card section expanded, the page
+ * view mounted) and re-fetched after every save.
  * @param active - whether the surface currently shows the body (gates the model-surface fetch).
  * @param useSettings - the bound settings hook from the inject hooks compartment.
  * @param scope - the bound settings scope the writes go through.
@@ -116,17 +95,17 @@ export type DshCardSectionProps =
  */
 function useCardState(
   active: boolean,
-  useSettings: DshSettingsCardProps['useSettings'],
-  scope: DshSettingsCardProps['scope'],
+  useSettings: DshCardSectionProps['useSettings'],
+  scope: DshCardSectionProps['scope'],
   harnessModel: DshSettingsCardInjected['harnessModel'],
-  t: DshSettingsCardProps['t'],
+  t: DshCardSectionProps['t'],
 ) {
   const snapshot: SettingsScopeSnapshot<DshCardSettings> = useSettings(value => value)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(false)
   const ready = snapshot.status === 'ready' && snapshot.writable
-  const enabled = snapshot.value?.enabled ?? false
-  const live = snapshot.value?.live ?? false
+  // Unset means on: the provider resolves `live` as `vol(config.live) ?? true`.
+  const live = snapshot.value?.live ?? true
   // The model input is a DRAFT until saved: `null` means "showing whatever the
   // scope holds", so an external write (another tab, a YAML reload) still
   // reaches the field while the user is not typing in it.
@@ -240,7 +219,7 @@ function useCardState(
         : t('model.menuDefault')
 
   return {
-    snapshot, saved, error, ready, enabled, live, storedModel, modelValue,
+    snapshot, saved, error, ready, live, storedModel, modelValue,
     modelSaved, modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
     modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
     setModelDraft, setModelMenuOpen,
@@ -253,8 +232,8 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
   readonly auth: DshSettingsCardInjected['auth']
   readonly authT: DshSettingsCardInjected['authT']
   readonly renderModelPicker: DshSettingsCardInjected['renderModelPicker']
-  readonly useSessions: DshSettingsCardProps['useSessions']
-  readonly t: DshSettingsCardProps['t']
+  readonly useSessions: DshCardSectionProps['useSessions']
+  readonly t: DshCardSectionProps['t']
 }) {
   const {
     snapshot, saved, error, ready, live, storedModel, modelValue,
@@ -387,55 +366,6 @@ function CardBody({ state, auth, authT, renderModelPicker, useSessions, t }: {
       {saved && <span className={css.saved}>{t('live.applied')}</span>}
       {error && <span className={css.errorText}>{t('live.error')}</span>}
     </div>
-  )
-}
-
-/**
- * The dsh harness settings card of the retired 0.1.5 plugin configuration
- * tab (no longer registered; the live surface is the plugins.item entry
- * below): the same collapsible chrome the official plugin cards use, re-implemented
- * locally (the bundle-purity gate forbids value-importing the official chrome
- * — the context-guard pattern), with the at-a-glance credential dot in the
- * header. Explanation copy lives in hover/focus bubbles behind ⓘ anchors —
- * the card's rows stay one line each.
- * @param props - the injected scope/auth faces and copy.
- * @returns the card.
- */
-export function DshSettingsCard(props: DshSettingsCardProps) {
-  const { useSettings, scope, auth, authT, renderModelPicker, harnessModel, useSessions, t } = props
-  const [open, setOpen] = useState(false)
-  const state = useCardState(open, useSettings, scope, harnessModel, t)
-  // The at-a-glance credential dot in the collapsed header: every mount
-  // re-probes (a credential expiring mid-session must flip the dot at the
-  // next view); the bus dedupes identical results, so no re-render storm.
-  const authStatus = useHarnessAuthStatus('dsh', auth.status)
-  const dotLabel = authT(
-    authStatus === 'authenticated' ? 'settings.authenticated'
-      : authStatus === 'anonymous' ? 'settings.notAuthenticated'
-        : authStatus === 'checking' ? 'loading' : 'error',
-  )
-
-  const title = t('card.title')
-  return (
-    <li className={open ? `${css.card} ${css.cardOpen}` : css.card}>
-      <button
-        type="button"
-        className={css.header}
-        aria-expanded={open}
-        aria-label={`${t(open ? 'card.collapse' : 'card.expand')}: ${title}`}
-        onClick={() => { setOpen(!open) }}
-      >
-        <span className={css.headText}>
-          <span className={css.nameRow}>
-            <span className={css.name}>{title}</span>
-            <AuthStatusDot status={authStatus} label={dotLabel} />
-          </span>
-          <span className={css.description}>{t('card.description')}</span>
-        </span>
-        <IconChevronDownOutlineMedium className={open ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
-      </button>
-      {open && <CardBody state={state} auth={auth} authT={authT} renderModelPicker={renderModelPicker} useSessions={useSessions} t={t} />}
-    </li>
   )
 }
 

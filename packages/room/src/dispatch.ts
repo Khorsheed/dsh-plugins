@@ -37,8 +37,8 @@ import type { RoomHeldDispatch, RoomMember, RoomMemberCompactedEvent, RoomRelay,
  * The room producer's durable identity in its two historical forms: the
  * released V3 wrapper's `plugin` value (`@khorsheed/dsh-room` — the official
  * V3→V4 migration rewrites it to `kind: 'plugin:@khorsheed/dsh-room'`), and
- * the current producer-owned kind (`room`). {@link isRoomSource} accepts all
- * three forms; new writes always carry the producer kind.
+ * the current producer-owned kind (`room`). {@link isRoomSource} accepts the
+ * migrated and current forms; new writes always carry the producer kind.
  */
 export const ROOM_PLUGIN = '@khorsheed/dsh-room'
 
@@ -195,18 +195,18 @@ export function runChildTurn(session: Session | undefined): number | undefined {
 
 /**
  * Whether a durable source belongs to the room producer, in every form the
- * log can hold: the current producer-owned kind (`room`), the V3→V4 migrated
- * kind (`plugin:@khorsheed/dsh-room`), and the released V3 wrapper a pre-V4
- * (0.1.5) host still serves verbatim.
+ * log can hold: the current producer-owned kind (`room`) and the V3→V4
+ * migrated kind (`plugin:@khorsheed/dsh-room`). A released V3 wrapper never
+ * reaches here: every persistence read (live load, read handle) serves V3
+ * files through the official migration first.
  * @param source - the persisted message source to test.
  * @returns true when the source names this producer.
  */
 export function isRoomSource(source: unknown): boolean {
   if (typeof source !== 'object' || source === null) return false
-  const record = source as { kind?: unknown; plugin?: unknown }
+  const record = source as { kind?: unknown }
   return record.kind === ROOM_KIND
     || record.kind === `plugin:${ROOM_PLUGIN}`
-    || (record.kind === 'plugin' && record.plugin === ROOM_PLUGIN)
 }
 
 function closedGoal(state: RoomState, goalId: string | undefined): boolean {

@@ -14,8 +14,8 @@
  * room (the E1 regression rule).
  * @module @khorsheed/dsh-room/client/preset-visibility
  */
-import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { RoomClientContext } from './room-store.ts'
 // Type-only: pulls the ctx.sessions service merge (ISessions).
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 
@@ -47,11 +47,10 @@ export interface RoomChromeVisibility {
   subscribe: (listener: () => void) => () => void
 }
 
-/** The current session's agent preset, the badge's dual read per host line. */
+/** The current session's agent preset: the row's `agentPreset` projection value. */
 function presetOf(row: unknown): string | undefined {
-  const value = (row as { projectionValues?: { agentPreset?: unknown }; agentPreset?: unknown } | undefined)
+  const value = (row as { projectionValues?: { agentPreset?: unknown } } | undefined)
     ?.projectionValues?.agentPreset
-    ?? (row as { agentPreset?: unknown } | undefined)?.agentPreset
   return typeof value === 'string' ? value : undefined
 }
 
@@ -70,7 +69,7 @@ export class RoomPresetVisibility implements RoomChromeVisibility {
    * @param isRoom - the RoomStore's cached room verdict (the E1 escape).
    */
   constructor(
-    private readonly ctx: Context,
+    private readonly ctx: RoomClientContext,
     private readonly isRoom: (sessionId: SessionId) => boolean,
   ) {
     // The OFFICIAL pluginInventory namespace, probed through ctx.get (never

@@ -30,8 +30,7 @@ const t = makeTranslate(zh)
 function useSessionsWith<T>(current: string | undefined) {
   const state = {
     ids: current === undefined ? [] : [current],
-    byId: {},
-    current,
+    byId: current === undefined ? {} : { [current]: { id: current, retainedBy: { mainView: 1 } } },
     phase: 'ready',
   } as unknown as SessionListState
   return function useSessions<R>(select: (snapshot: SessionListState) => R): R {

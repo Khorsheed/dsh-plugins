@@ -4,35 +4,28 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { LocalAgentHarness, LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
-import { apply } from '../src/index.ts'
+import { apply, Config } from '../src/index.ts'
 import { ClaudeLiveDriver } from '../src/live-driver.ts'
 import type { ClaudeLiveSettings } from '../src/live-switch.ts'
 
-/** A fake settings service: register captures the scope; set() drives watch. */
-function fakeSettings(initial: ClaudeLiveSettings) {
-  let value = initial
-  const watchers: ((next: ClaudeLiveSettings, prev: ClaudeLiveSettings) => void)[] = []
-  const registrations: unknown[] = []
+/** The settings fields the row config carries as volatile references. */
+const SETTINGS_KEYS = ['live', 'liveMirrorGranularity', 'model', 'recentModels'] as const
+
+/**
+ * A fake of the host's row-config settings: each settings field is a
+ * volatile `{ get() }` reference over one mutable document; set() replaces
+ * the document and emits `settings/document-updated` for the row id.
+ */
+function fakeSettings(ctx: Context, initial: ClaudeLiveSettings) {
+  let value: Record<string, unknown> = { ...initial }
+  const refs: Record<string, { get(): unknown }> = {}
+  for (const key of SETTINGS_KEYS) refs[key] = { get: () => value[key] }
   return {
-    registrations,
-    service: {
-      register: (ns: unknown, schema: unknown, options?: unknown) => {
-        registrations.push({ ns, schema, options })
-        return {
-          get: () => value,
-          watch: (cb: (next: ClaudeLiveSettings, prev: ClaudeLiveSettings) => void) => {
-            watchers.push(cb)
-            return () => {}
-          },
-          update: async () => {},
-          replace: async () => {},
-        }
-      },
-    },
+    refs,
+    service: {},
     set(next: ClaudeLiveSettings): void {
-      const prev = value
-      value = next
-      for (const watch of watchers) watch(next, prev)
+      value = { ...next }
+      ;(ctx.emit as (name: string, ...args: unknown[]) => void)('settings/document-updated', 'local-agent-claude-code', 1)
     },
   }
 }
@@ -61,7 +54,10 @@ function mount(initial: Partial<ClaudeLiveSettings> = {}, config: Record<string,
       return () => {}
     },
   } as unknown as LocalAgentRegistry
-  const settings = fakeSettings({ live: false, liveMirrorGranularity: 'event', ...initial })
+  // The row config IS the settings document: settings keys handed in through
+  // `config` seed it, `initial` layers on top (a test's direct settings).
+  const fromConfig = Object.fromEntries(SETTINGS_KEYS.filter(key => config[key] !== undefined).map(key => [key, config[key]]))
+  const settings = fakeSettings(ctx, { live: false, liveMirrorGranularity: 'event', ...fromConfig, ...initial } as ClaudeLiveSettings)
   let resolveLive: Mount['resolveLive'] = () => undefined
   let resolveModel: Mount['resolveModel'] = () => undefined
   ctx.provide('localAgent', registry)
@@ -74,7 +70,7 @@ function mount(initial: Partial<ClaudeLiveSettings> = {}, config: Record<string,
   })
   ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in apply test') } })
   ctx.provide('settings', settings.service)
-  apply(ctx, config as never)
+  apply(ctx, { ...config, ...settings.refs } as never)
   return {
     ctx,
     registered,
@@ -108,22 +104,14 @@ describe('local-agent-claude-code apply', () => {
     await expect(access(home)).resolves.toBeUndefined()
   })
 
-  it('registers the settings namespace with the YAML config as the composition base', () => {
-    const { settings } = mount()
-    expect(settings.registrations).toHaveLength(1)
-    const registration = settings.registrations[0] as { ns: unknown; options?: { base?: object } }
-    expect(String(registration.ns)).toBe('local-agent-claude-code')
-    // A bare config leaves the base empty: the schema defaults rule.
-    expect(registration.options?.base).toEqual({})
+  it('serves the settings from the row config (the YAML value rules)', () => {
+    const { resolveLive } = mount({}, { live: true, liveMirrorGranularity: 'token' })
+    expect(resolveLive('child-x')).toBeDefined()
   })
 
-  it('carries the YAML config into the composition base (settings unset → YAML rules)', () => {
-    const { settings, resolveLive } = mount({}, { live: true, liveMirrorGranularity: 'token' })
-    const registration = settings.registrations[0] as { options?: { base?: object } }
-    expect(registration.options?.base).toEqual({ live: true, liveMirrorGranularity: 'token' })
-    // The fake settings service starts at live:false, so the resolver stays
-    // gated — on the real host the scope resolves base ← user, and this base
-    // would turn live on. What we pin here is the base payload itself.
+  it('ignores a document update for another row', () => {
+    const { ctx, resolveLive } = mount({ live: false })
+    ;(ctx.emit as (name: string, ...args: unknown[]) => void)('settings/document-updated', 'local-agent-kimi', 1)
     expect(resolveLive('child-x')).toBeUndefined()
   })
 
@@ -248,10 +236,9 @@ describe('local-agent-claude-code apply', () => {
 })
 
 describe('local-agent-claude-code model key', () => {
-  it('carries the YAML model into the composition base', () => {
-    const { settings } = mount({}, { model: 'claude-opus-5' })
-    const registration = settings.registrations[0] as { options?: { base?: object } }
-    expect(registration.options?.base).toEqual({ model: 'claude-opus-5' })
+  it('serves the YAML model from the row config', () => {
+    const { resolveModel } = mount({}, { model: 'claude-opus-5' })
+    expect(resolveModel()).toBe('claude-opus-5')
   })
 
   it('hands the provider a resolver that follows later settings writes (no reload)', () => {
@@ -332,13 +319,13 @@ describe('local-agent-claude-code endpoint auth', () => {
     await expect(registered[0]!.credentialStamp!(home)).resolves.toBeUndefined()
   })
 
-  it('never carries the credential into the settings composition base', () => {
+  it('never carries the credential into the volatile settings channel', () => {
     // A secret must not land in the volatile row-config channel at all: the
     // card writes the scope file through the endpointAuth face, and the
     // profile row stays the only config-layer home of the deployment triple.
-    const { settings } = mount({}, { baseUrl: 'https://relay.example.com', apiKey: 'sk-deploy' })
-    const registration = settings.registrations[0] as { options?: { base?: object } }
-    expect(registration.options?.base ?? {}).not.toMatchObject({ apiKey: expect.anything(), baseUrl: expect.anything() })
+    const dict = (Config as unknown as { dict: Record<string, { meta?: { volatile?: boolean } }> }).dict
+    for (const key of ['baseUrl', 'apiKey', 'authToken'] as const) expect(dict[key]!.meta?.volatile ?? false).toBe(false)
+    expect(dict.live!.meta?.volatile).toBe(true)
   })
 
   it('the config apiKey authenticates every scope (the deployment default)', async () => {
