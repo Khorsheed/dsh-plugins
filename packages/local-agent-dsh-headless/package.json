@@ -39,7 +39,7 @@
       "component": "sub-profile-patch"
     },
     "compat": {
-      "minHost": "0.1.5-rc.1",
+      "minHost": "0.2.0-rc.1",
       "verifiedHost": "0.2.1-rc.5"
     }
   },
@@ -49,7 +49,7 @@
   ],
   "license": "MIT",
   "engines": {
-    "dsh": ">=0.1.5-rc.1 <0.3.0-0"
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0"
   },
   "dependencies": {
     "@deepseek-ai/dsh-cmdline": "^0.1.0-rc.8 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
