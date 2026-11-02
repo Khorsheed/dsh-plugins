@@ -22,17 +22,9 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./records": {
-      "types": "./lib/types/records.d.ts",
-      "default": "./lib/records.js"
-    },
     "./provision": {
       "types": "./lib/types/provision.d.ts",
       "default": "./lib/provision.js"
-    },
-    "./dsh-cli-provider": {
-      "types": "./lib/types/dsh-cli-provider.d.ts",
-      "default": "./lib/dsh-cli-provider.js"
     },
     "./tool": {
       "types": "./lib/types/tool.d.ts",
