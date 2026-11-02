@@ -104,13 +104,22 @@ describe('LocalAgentRegistry', () => {
     expect(() => registry.register(harness())).toThrow(/already registered/)
   })
 
-  it('serves member model timing through the provider adapter', async () => {
-    const { ctx } = await harnessMount({ homesRoot: tempDir('timing-') })
+  it.each([
+    ['kimi', 'kimi-cli'],
+    ['claude-code', 'claude-local'],
+    ['codex', 'codex-local'],
+  ])('serves %s member model timing through provider %s', async (name, provider) => {
+    const homesRoot = tempDir('timing-')
+    const { ctx } = await harnessMount({ homesRoot })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
     const expected = { streams: {}, toolTimings: {} }
-    registry.register(harness({ timing: { read: async () => expected } }))
-    registry.recordDelegation({ childSessionId: 'child', provider: 'fake', parentSessionId: 'parent', cliSessionId: 'cli' })
+    const read = vi.fn(async () => expected)
+    registry.register(harness({ name, delegationProvider: provider, timing: { read } }))
+    registry.recordDelegation({ childSessionId: 'child', provider, parentSessionId: 'parent', cliSessionId: 'cli' })
+    registry.recordDelegation({ childSessionId: 'unregistered', provider: 'unregistered-cli', parentSessionId: 'parent', cliSessionId: 'cli' })
     expect(await registry.memberModelTiming('child')).toBe(expected)
+    expect(read).toHaveBeenCalledWith(join(homesRoot, name), 'cli')
+    expect(await registry.memberModelTiming('unregistered')).toBeUndefined()
     expect(await registry.memberModelTiming('missing')).toBeUndefined()
   })
 

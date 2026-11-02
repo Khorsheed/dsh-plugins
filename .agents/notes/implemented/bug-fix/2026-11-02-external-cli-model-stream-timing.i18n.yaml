@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-02-external-cli-model-stream-timing.md
-.agents/notes/implemented/bug-fix/2026-11-02-external-cli-model-stream-timing.md: cc1b1cbd54de2a5aadfabe2e4fc4b65064e8e4fe
-.agents/notes/implemented/bug-fix/2026-11-02-external-cli-model-stream-timing.zh.md: 7183ec2b61e85bd0d06977d715b4e8f77092b317
+.agents/notes/implemented/bug-fix/2026-11-02-external-cli-model-stream-timing.md: 396b3d7d7ae0f69db6423ea3d8587a71baf1f77f
+.agents/notes/implemented/bug-fix/2026-11-02-external-cli-model-stream-timing.zh.md: 8ffd3f9a51f066876f2f38863f6a93410762378e
