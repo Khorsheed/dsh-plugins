@@ -182,6 +182,8 @@ describe('room round scroll anchor', () => {
     expect(humanMessageBefore(seq => bySeq.get(seq), 42, { origin: 'human', text: '你好' })).toBe('own')
     expect(humanMessageBefore(seq => bySeq.get(seq), 42, { origin: 'human', text: '改过的' })).toBe('own')
     expect(humanMessageBefore(seq => bySeq.get(seq), 42, { origin: 'coordinator', text: '你好' })).toBeUndefined()
+    // A dispatch that records its message is not second-guessed by text.
+    expect(humanMessageBefore(seq => bySeq.get(seq), 42, { origin: 'human', text: '你好', messageId: 'other' })).toBe('other')
     const store = new InspectorStore()
     const all = [...turn1, ...room]
     store.insertLogTurns('s', reconstructSession(all))

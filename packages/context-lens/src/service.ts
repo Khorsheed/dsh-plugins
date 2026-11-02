@@ -60,13 +60,15 @@ const HYDRATED_BODIES = 8
 
 /**
  * The human's user/message a room post appended next to its `room/dispatch`
- * (RoomService.postMessage): the nearest earlier user-sourced message, the
- * one with the same text preferred. The chat renders it as the round's row,
- * so a map click on the round scrolls there (rounds have no host turn).
+ * (RoomService.postMessage). The chat renders it as the round's row, so a map
+ * click on the round scrolls there (rounds have no host turn). A dispatch that
+ * names its message (`messageId`) is taken at its word; an older journal falls
+ * back to the nearest earlier user-sourced message, the same text preferred.
  */
 export function humanMessageBefore(at: (seq: number) => SessionLogRow | undefined, dispatchSeq: number, data: unknown): string | undefined {
-  const dispatch = (data ?? {}) as { origin?: unknown; text?: unknown }
+  const dispatch = (data ?? {}) as { origin?: unknown; text?: unknown; messageId?: unknown }
   if (dispatch.origin !== 'human') return undefined
+  if (typeof dispatch.messageId === 'string' && dispatch.messageId.length > 0) return dispatch.messageId
   let nearest: string | undefined
   for (let seq = dispatchSeq - 1; seq >= Math.max(0, dispatchSeq - HUMAN_MESSAGE_LOOKBACK); seq -= 1) {
     const row = at(seq)
