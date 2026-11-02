@@ -26,7 +26,6 @@ import type { KimiLiveSettings } from './live-switch.ts'
 import { KimiModelCatalog } from './model-catalog.ts'
 import { KimiModelBroker } from './model-broker.ts'
 import { listKimiSessions } from './records.ts'
-import { removeLegacyVariants } from './preset-tools.ts'
 import {
   DEFAULT_THINKING_EFFORT,
   ensureKimiEndpointProvider,
@@ -223,11 +222,6 @@ export function apply(ctx: Context, config: Config): void {
     }
     const resolveEndpoint = (scopeHome: string): Promise<KimiEndpointAuth> =>
       resolveEndpointAuth(scopeHome, endpointConfig)
-    // Earlier versions bootstrapped <base>-kimi preset variants; the tool row
-    // now mounts at the profile root, so remove the leftovers once.
-    void removeLegacyVariants(ctx).catch((error: unknown) => {
-      ctx.logger.warn(`local-agent-kimi: legacy preset cleanup failed: ${error instanceof Error ? error.message : String(error)}`)
-    })
     // The one-shot CLI provider delegates through `kimi -p` in the scoped
     // home; ensure the scoped config allows the subagent's tool use. Chained
     // AFTER provisioning: both used to fire concurrently and the permission
