@@ -13,7 +13,7 @@ import type { InspectorTabProps } from './contract.ts'
 import type { RequestInspectorTabParams } from './definition.tsx'
 import { foreignLocate, forgetSelection, rememberSelection, takeSelection, type ReadingView } from './member-jump.ts'
 import type { RowPlace } from './SegmentBlocks.tsx'
-import { hasMessageAnchor, hasTurnAnchor, locateCallPaging, scrollConversationToBottom, scrollConversationToMessage, scrollConversationToTurn } from './scroll-sync.ts'
+import { locateCallPaging, locateTurnPaging, scrollConversationToBottom, scrollConversationToTurn } from './scroll-sync.ts'
 import { SegCtl } from './SegCtl.tsx'
 import { TimingView } from './TimingView.tsx'
 import { TokenView } from './TokenView.tsx'
@@ -396,26 +396,13 @@ export function InspectorPanel({
     // anchor even before the list resolves (the navigation-params path).
     const hostTurn = messageId !== undefined ? undefined : target?.hostTurn ?? (seq > 0 ? seq : undefined)
     if (messageId === undefined && hostTurn === undefined) return
-    const anchored = (): boolean => messageId !== undefined ? hasMessageAnchor(messageId) : hasTurnAnchor(hostTurn!)
-    const scroll = (): void => { if (messageId !== undefined) scrollConversationToMessage(messageId); else scrollConversationToTurn(hostTurn!) }
     const jump = ++jumpToken.current
-    if (anchored() || !loadThrough || target?.startSeq === undefined) {
-      scroll()
-      return
-    }
-    // The chat has not rendered that turn (or the round's message) yet: page
-    // its history back to the start (the session's own loader), then land
-    // once the row mounts. A newer jump supersedes this one; no progress
-    // falls back to the nearest row (a room round's missing row stays put).
-    void loadThrough(sessionId, target.startSeq).catch(() => undefined).then(() => {
-      let frames = 0
-      const land = (): void => {
-        if (jump !== jumpToken.current) return
-        if (anchored() || frames >= 60) { scroll(); return }
-        frames += 1
-        requestAnimationFrame(land)
-      }
-      land()
+    void locateTurnPaging({
+      messageId,
+      hostTurn,
+      startSeq: target?.startSeq,
+      loadThrough: loadThrough === undefined ? undefined : start => loadThrough(sessionId, start),
+      alive: () => jump === jumpToken.current,
     })
   }
 
@@ -689,6 +676,7 @@ export function InspectorPanel({
         {trend && <Trend data={trend} turnSeq={turnSeq} selectedSeq={effectiveScope?.kind === 'main' ? selectedRequestSeq : null} scopeId="main" scopeLabel={t('scope.mainName')} gaps={loadTurns ? gaps : []} onLoadGap={onLoadGap} t={t} onSelect={(next, seq, targetScope) => {
           // On the timing view the map picks the turn and stays there; on the request view it opens the request.
           onSelectTurn(next)
+          if (next === turnSeq) syncScrollToTurn(next)
           if (mainTab !== 'time') onOpenRequest(seq, targetScope)
         }} />}
         {turn !== undefined && (turn.query !== '' || turn.trigger !== undefined) && <div className={css.query}>

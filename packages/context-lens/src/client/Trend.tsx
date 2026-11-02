@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SessionTrend } from '../types.ts'
 import type { InspectorTabProps } from './contract.ts'
 import { requestNumberText, cachePct, gapShown, inputTotal, turnNumber, type TurnGap } from './aggregate.ts'
@@ -58,21 +58,34 @@ export function Trend({
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
+  const [scroll, setScroll] = useState({ left: 0, max: 0 })
+  const updateScroll = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    const max = Math.max(0, el.scrollWidth - el.clientWidth)
+    const left = Math.max(0, Math.min(max, el.scrollLeft))
+    setScroll(previous => previous.left === left && previous.max === max ? previous : { left, max })
+  }, [])
   useEffect(() => {
     const el = ref.current
     if (!el) return
     setWidth(el.clientWidth)
+    updateScroll()
     if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(entries => setWidth(entries[0]?.contentRect.width ?? el.clientWidth))
+    const observer = new ResizeObserver(entries => {
+      setWidth(entries[0]?.contentRect.width ?? el.clientWidth)
+      updateScroll()
+    })
     observer.observe(el)
     return () => observer.disconnect()
-  }, [])
+  }, [updateScroll])
   useEffect(() => {
     const el = ref.current,
       current = el?.querySelector<HTMLElement>('[data-current="true"]')
     if (el && current && el.scrollWidth > el.clientWidth)
       el.scrollLeft = current.offsetLeft - el.clientWidth / 2 + current.offsetWidth / 2
-  }, [turnSeq, scopeId, data, width])
+    updateScroll()
+  }, [turnSeq, scopeId, data, width, updateScroll])
 
   const main = scopeId === 'main'
   // On the session map a room round's member runs stand where the main turn would.
@@ -123,7 +136,7 @@ export function Trend({
 
   return (
     <section aria-label={t('lens.trendScope', { scope: scopeLabel })}>
-      <div ref={ref} className={css.trend} style={{ ['--trend-bar' as string]: `${barWidth}px` }}>
+      <div ref={ref} className={css.trend} style={{ ['--trend-bar' as string]: `${barWidth}px` }} onScroll={updateScroll}>
         {turns.map((turn) => {
           const rows = requests.filter(r => r.turnSeq === turn.turnSeq)
           const minWidth = Math.max(MIN_CELL, rows.length * (barWidth + 3) + 8)
@@ -162,6 +175,21 @@ export function Trend({
         })}
         {gaps.filter(gap => !placed.has(gap.from)).map(gapCell)}
       </div>
+      {scroll.max > 0 && <input
+        type="range"
+        className={css.trendScroll}
+        aria-label={t('trend.scroll')}
+        min={0}
+        max={Math.round(scroll.max)}
+        step={1}
+        value={Math.round(scroll.left)}
+        style={{ ['--trend-thumb' as string]: `${Math.max(24, Math.round(width * width / (width + scroll.max)))}px` }}
+        onChange={event => {
+          const left = Number(event.currentTarget.value)
+          if (ref.current) ref.current.scrollLeft = left
+          setScroll(previous => ({ ...previous, left }))
+        }}
+      />}
       {requests.length === 0 && <span className={css.trendLabel}>{t('lens.trendEmpty')}</span>}
     </section>
   )

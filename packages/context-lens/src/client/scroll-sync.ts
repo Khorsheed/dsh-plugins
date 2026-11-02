@@ -370,19 +370,62 @@ export function untilFrame(ready: () => boolean, frames: number, alive: () => bo
 
 /** Frames to wait for a freshly opened conversation's first rows (~5 s at 60 fps). */
 const FIRST_ROWS_FRAMES = 300
-/** Frames to wait for a paged call row after each page request. */
+/** Frames to wait for a paged row after each page request. */
 const PAGED_ROW_FRAMES = 90
 /** Page requests one jump may make (a page call can race the conversation's own first load). */
 const PAGE_ATTEMPTS = 3
 
 /**
+ * Wait for an anchor, paging history back when needed. The host's loadThrough
+ * resolves without paging while its first load or a plain loadOlder owns the
+ * busy flag, so one resolved call is not evidence that the target arrived.
+ */
+async function pageForAnchor(options: {
+  readonly ready: () => boolean
+  readonly startSeq?: number | undefined
+  readonly loadThrough?: ((seq: number) => Promise<void>) | undefined
+  readonly alive: () => boolean
+  readonly root: ParentNode
+}): Promise<boolean> {
+  const { ready, startSeq, loadThrough, alive, root } = options
+  if (ready()) return true
+  if (loadThrough === undefined || startSeq === undefined) return false
+  if (!await untilFrame(() => hasConversationRows(root), FIRST_ROWS_FRAMES, alive)) return false
+  if (ready()) return true
+  for (let attempt = 0; attempt < PAGE_ATTEMPTS; attempt += 1) {
+    await loadThrough(startSeq).catch(() => undefined)
+    if (await untilFrame(ready, PAGED_ROW_FRAMES, alive)) return true
+    if (!alive()) return false
+  }
+  return false
+}
+
+/**
+ * Show a host turn or a room round's human message, paging the conversation's
+ * history back when its row is not rendered yet. A host turn keeps the
+ * at-or-after fallback; a missing room message stays put.
+ * @returns whether the exact anchor was found and scrolled (false: fallback or superseded).
+ */
+export async function locateTurnPaging(options: {
+  readonly messageId?: string | undefined
+  readonly hostTurn?: number | undefined
+  readonly startSeq?: number | undefined
+  readonly loadThrough?: ((seq: number) => Promise<void>) | undefined
+  readonly alive: () => boolean
+  readonly root?: ParentNode
+}): Promise<boolean> {
+  const { messageId, hostTurn, startSeq, loadThrough, alive } = options
+  const root = options.root ?? document
+  const ready = (): boolean => messageId !== undefined ? hasMessageAnchor(messageId, root) : hostTurn !== undefined && hasTurnAnchor(hostTurn, root)
+  const scroll = (): boolean => messageId !== undefined ? scrollConversationToMessage(messageId, root) : hostTurn !== undefined && scrollConversationToTurn(hostTurn, root)
+  if (await pageForAnchor({ ready, startSeq, loadThrough, alive, root })) return alive() && scroll()
+  if (alive()) scroll()
+  return false
+}
+
+/**
  * Show one tool call, paging the conversation's history back when its row is
- * not rendered yet. A conversation just switched to (a member's session
- * opened from a room's lens) is still loading its own first page: a page
- * request issued then resolves without paging anything (seen on a throwaway
- * instance: loadThrough(1148) returned at once and turns 74-82 stayed the only
- * rendered ones). So the jump waits for the first rows, then pages, and
- * re-pages a few times before it settles for the turn.
+ * not rendered yet; after the page budget it settles for the call's turn.
  * @returns whether it landed on the call (false: fell back to the turn, or superseded).
  */
 export async function locateCallPaging(options: {
@@ -398,22 +441,11 @@ export async function locateCallPaging(options: {
 }): Promise<boolean> {
   const { callId, startSeq, fallbackTurn, loadThrough, alive } = options
   const root = options.root ?? document
-  if (scrollConversationToCall(callId, root)) return true
-  const fallback = (): false => {
-    if (alive() && fallbackTurn !== undefined) scrollConversationToTurn(fallbackTurn, root)
-    return false
+  if (await pageForAnchor({ ready: () => hasCallAnchor(callId, root), startSeq, loadThrough, alive, root })) {
+    return alive() && scrollConversationToCall(callId, root)
   }
-  if (!await untilFrame(() => hasConversationRows(root), FIRST_ROWS_FRAMES, alive)) return fallback()
-  if (scrollConversationToCall(callId, root)) return true
-  if (loadThrough === undefined || startSeq === undefined) return fallback()
-  for (let attempt = 0; attempt < PAGE_ATTEMPTS; attempt += 1) {
-    await loadThrough(startSeq).catch(() => undefined)
-    if (await untilFrame(() => hasCallAnchor(callId, root), PAGED_ROW_FRAMES, alive)) {
-      return alive() && scrollConversationToCall(callId, root)
-    }
-    if (!alive()) return false
-  }
-  return fallback()
+  if (alive() && fallbackTurn !== undefined) scrollConversationToTurn(fallbackTurn, root)
+  return false
 }
 
 /**

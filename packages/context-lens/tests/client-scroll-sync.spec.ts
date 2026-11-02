@@ -195,6 +195,30 @@ describe('scrollConversationToMessage', () => {
   })
 })
 
+describe('locateTurnPaging', () => {
+  it('retries a page request that resolved without mounting the room message', async () => {
+    const { locateTurnPaging } = await import('../src/client/scroll-sync.ts')
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const { port } = conversation([94])
+    const loadThrough = vi.fn(async () => {
+      if (loadThrough.mock.calls.length !== 2) return
+      const row = document.createElement('div')
+      row.setAttribute('data-chat-node-key', 'input-message-abc')
+      port.prepend(row)
+    })
+    const landed = locateTurnPaging({ messageId: 'abc', startSeq: 5, loadThrough, alive: () => true })
+    for (let i = 0; i < 10; i += 1) await Promise.resolve()
+    expect(loadThrough).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    for (let i = 0; i < 91; i += 1) frames.shift()?.(0)
+    expect(await landed).toBe(true)
+    expect(loadThrough).toHaveBeenCalledTimes(2)
+    expect(scrollIntoView.mock.instances[0]).toBe(port.querySelector('[data-chat-node-key="input-message-abc"]'))
+  })
+})
+
 describe('scrollConversationToCall', () => {
   /** A manual frame clock: `run` fires queued frames one by one. */
   function frameClock() {

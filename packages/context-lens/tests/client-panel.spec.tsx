@@ -639,6 +639,15 @@ describe('InspectorPanel · scroll-sync + 最新', () => {
     expect(scrollIntoView.mock.instances[0]).toBe(port?.querySelector('[data-chat-turn="1"]'))
   })
 
+  it('clicking another request bar in the current turn still re-syncs the conversation', async () => {
+    mountConversation([1, 2])
+    bench()
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /^turn 2 #102 · / }))
+    await waitFor(() => expect(screen.getByText('#102 · 助手回复', { selector: 'b' })).toBeTruthy())
+    expect(scrollIntoView.mock.instances[0]).toBe(port?.querySelector('[data-chat-turn="2"]'))
+  })
+
   it('pages the chat history back before landing on a turn it has not rendered', async () => {
     mountConversation([2])
     const turns = [{ ...TURNS[0]!, startSeq: 5 }, TURNS[1]!]
@@ -847,6 +856,24 @@ describe('Context Lens session trend', () => {
     // The map does not switch to the participant; the tabs below do.
     expect(mainBars()).toEqual(before)
     expect(screen.queryByRole('button', { name: 'turn 2 #201 · 0%' })).toBeNull()
+  })
+
+  it('keeps a draggable range in sync with the overflowing map in both directions', async () => {
+    bench()
+    await screen.findByText('#101 · read:a.ts')
+    const strip = screen.getByRole('region', { name: '主对话 · 输入走势' }).firstElementChild as HTMLElement
+    Object.defineProperties(strip, {
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 600 },
+    })
+    fireEvent.scroll(strip)
+    const slider = screen.getByRole('slider', { name: zh['trend.scroll'] }) as HTMLInputElement
+    expect(slider.max).toBe('400')
+    fireEvent.change(slider, { target: { value: '150' } })
+    expect(strip.scrollLeft).toBe(150)
+    strip.scrollLeft = 275
+    fireEvent.scroll(strip)
+    expect(slider.value).toBe('275')
   })
 
   it('handoffs in one gap share one marker naming who holds the room; the tooltip keeps the chain', async () => {

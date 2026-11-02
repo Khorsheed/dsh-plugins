@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-02-context-lens-map-jump-and-scrollbar.md
+.agents/notes/implemented/bug-fix/2026-11-02-context-lens-map-jump-and-scrollbar.md: 949cc13bc390ee56a4dfd942055a598d745882b4
+.agents/notes/implemented/bug-fix/2026-11-02-context-lens-map-jump-and-scrollbar.zh.md: ce5aa8e20e6043c26dda525cf882b9f43e3d8a4d
