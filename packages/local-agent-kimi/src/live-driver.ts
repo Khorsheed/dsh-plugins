@@ -488,7 +488,6 @@ export class KimiAcpLiveDriver {
     private readonly ctx: Context,
     private readonly config: {
       liveIdleMs?: number
-      liveMirrorGranularity?: KimiLiveMirrorGranularity
       /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
       /** @deprecated Character growth no longer gates live publication. */
@@ -565,9 +564,6 @@ export class KimiAcpLiveDriver {
   hasRuntime(key: string): boolean {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
-
-  /** @deprecated Compatibility no-op: live output is always incremental. */
-  setLiveMirrorGranularity(_granularity: KimiLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the

@@ -812,7 +812,7 @@ describe('codex live driver rounds', () => {
   })
 
   it('flushes a sparse delta before completion and never overwrites the final with a late timer', async () => {
-    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token' } })
+    const m = mount({ config: { sandbox: 'workspace-write' } })
     const liveStreams = new LocalAgentStreams()
     Object.assign(m.ctx.localAgent, { liveStreams })
     const child = Session.create(SessionId('child-sparse-live'))
@@ -844,7 +844,7 @@ describe('codex live driver rounds', () => {
   it('token granularity streams throttled snapshots into the session log at the stream\'s step', async () => {
     const deltas: [string, string][] = [['item-x', 'hel'], ['item-x', 'lo']]
     // Zero thresholds: every delta lands a snapshot immediately.
-    const on = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const on = mount({ config: { sandbox: 'workspace-write', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const onChild = Session.create(SessionId('child-codex-8b'))
     on.queueChild(new FakeAppServer({
       turn: () => ({
@@ -876,7 +876,7 @@ describe('codex live driver rounds', () => {
   })
 
   it('token granularity: each streamed item finalizes at its own reserved step (no duplicate fold)', async () => {
-    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const m = mount({ config: { sandbox: 'workspace-write', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const child = Session.create(SessionId('child-codex-token-final'))
     m.queueChild(new FakeAppServer({
       turn: () => ({
@@ -919,7 +919,7 @@ describe('codex live driver rounds', () => {
   })
 
   it('token granularity: a cancelled round completes the stream as interrupted (legitimate 已停止)', async () => {
-    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token' } })
+    const m = mount({ config: { sandbox: 'workspace-write' } })
     const child = Session.create(SessionId('child-codex-token-abort'))
     const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
@@ -940,7 +940,7 @@ describe('codex live driver rounds', () => {
   })
 
   it('token granularity: a tool-first round renders the answer after its tool cards (lazy stream step)', async () => {
-    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token' } })
+    const m = mount({ config: { sandbox: 'workspace-write' } })
     const child = Session.create(SessionId('child-codex-token-toolfirst'))
     const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
@@ -974,7 +974,7 @@ describe('codex live driver rounds', () => {
   })
 
   it('a later answer streaming before the earlier steps folded waits its turn in the log (text → tool → text)', async () => {
-    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const m = mount({ config: { sandbox: 'workspace-write', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const liveStreams = new LocalAgentStreams()
     const published = vi.spyOn(liveStreams, 'publish')
     Object.assign(m.ctx.localAgent, { liveStreams })
@@ -1006,7 +1006,7 @@ describe('codex live driver rounds', () => {
   })
 
   it('token granularity: a stream-less round folds every item (no reservation, no snapshots)', async () => {
-    const m = mount({ config: { sandbox: 'workspace-write', liveMirrorGranularity: 'token' } })
+    const m = mount({ config: { sandbox: 'workspace-write' } })
     const child = Session.create(SessionId('child-codex-token-nostream'))
     // Items only, no deltas: reasoning + tool + final answer.
     m.queueChild(new FakeAppServer({ turn: () => ({ items: answerItems('静默答案') }) }))
@@ -1242,7 +1242,7 @@ describe('codex live driver drain (settings handoff)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('legacy granularity changes leave incremental rounds on the same generation', async () => {
+  it('a resume round rides the same generation and folds incrementally', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-codex-drain4'))
     child.append('turn/start', { turn: 1 })
@@ -1252,7 +1252,6 @@ describe('codex live driver drain (settings handoff)', () => {
     await first.result
     // Event granularity folds the completed items into messages.
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThan(0)
-    m.driver.setLiveMirrorGranularity('event')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'thread-1', turn: 2 } }))
     await second.result
     // Token granularity additionally streams the in-flight item: the round

@@ -415,7 +415,6 @@ export class ClaudeLiveDriver {
        */
       endpoint?: (homeDir: string) => Promise<ClaudeEndpointAuth>
       liveIdleMs?: number
-      liveMirrorGranularity?: ClaudeLiveMirrorGranularity
       /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
       /** @deprecated Character growth no longer gates live publication. */
@@ -459,9 +458,6 @@ export class ClaudeLiveDriver {
   hasRuntime(key: string): boolean {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
-
-  /** @deprecated Compatibility no-op: live output is always incremental. */
-  setLiveMirrorGranularity(_granularity: ClaudeLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the

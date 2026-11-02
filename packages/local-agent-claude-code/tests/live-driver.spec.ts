@@ -712,7 +712,7 @@ describe('claude live driver rounds', () => {
   })
 
   it('keeps partial-message flags before the variadic member tool terminator for legacy profiles', async () => {
-    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'event' } })
+    const m = mount({ config: { permissionMode: 'skip' } })
     Object.assign(m.ctx.localAgent, {
       registerMemberRun: () => 'test-member',
       unregisterMemberRun: () => {},
@@ -745,7 +745,7 @@ describe('claude live driver rounds', () => {
     // granularity keeps the partial-message spawn flag, reports deltas over
     // the run-progress channel, AND mirrors them into the session log as
     // snapshots at the stream's reserved (turn, step).
-    const on = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const on = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const onChild = Session.create(SessionId('child-claude-7b'))
     on.queueChild(new FakeClaude({ turn: () => ({ deltas, events: answerEvents('hello') }) }))
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
@@ -768,7 +768,7 @@ describe('claude live driver rounds', () => {
   })
 
   it('token granularity: each streamed kind finalizes at its own reserved step (no duplicate fold)', async () => {
-    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const child = Session.create(SessionId('child-claude-token-final'))
     m.queueChild(new FakeClaude({
       turn: () => ({
@@ -812,7 +812,7 @@ describe('claude live driver rounds', () => {
   })
 
   it('token granularity: a cancelled round completes the stream as interrupted (legitimate 已停止)', async () => {
-    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+    const m = mount({ config: { permissionMode: 'skip' } })
     const child = Session.create(SessionId('child-claude-token-abort'))
     const fake = new FakeClaude({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
@@ -833,7 +833,7 @@ describe('claude live driver rounds', () => {
   })
 
   it('token granularity: a tool-first round renders the answer after its tool cards (lazy stream step)', async () => {
-    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+    const m = mount({ config: { permissionMode: 'skip' } })
     const child = Session.create(SessionId('child-claude-token-toolfirst'))
     const fake = new FakeClaude({ turn: () => ({ hang: true }) })
     m.queueChild(fake)
@@ -872,7 +872,7 @@ describe('claude live driver rounds', () => {
   })
 
   it('token granularity: a stream-less round folds every line (no reservation, no snapshots)', async () => {
-    const m = mount({ config: { permissionMode: 'skip', liveMirrorGranularity: 'token' } })
+    const m = mount({ config: { permissionMode: 'skip' } })
     const child = Session.create(SessionId('child-claude-token-nostream'))
     // Events only, no deltas: thinking + tool + final answer.
     m.queueChild(new FakeClaude({
@@ -1044,7 +1044,7 @@ describe('claude live driver drain (settings handoff)', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
-  it('legacy granularity changes leave incremental rounds on the same generation', async () => {
+  it('a resume round rides the same generation and folds incrementally', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-drain4'))
     child.append('turn/start', { turn: 1 })
@@ -1054,7 +1054,6 @@ describe('claude live driver drain (settings handoff)', () => {
     // Event granularity folds the stream lines into per-line messages.
     const eventModeMessages = child.snapshotEvents().filter(e => e.type === 'assistant/message').length
     expect(eventModeMessages).toBeGreaterThan(0)
-    m.driver.setLiveMirrorGranularity('event')
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))
     await second.result
     // Token granularity folds every line too; the streamed answer finalizes

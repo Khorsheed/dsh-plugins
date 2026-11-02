@@ -592,7 +592,6 @@ export class CodexLiveDriver {
     private readonly ctx: Context,
     private readonly config: Pick<Config, 'sandbox'> & {
       liveIdleMs?: number
-      liveMirrorGranularity?: CodexLiveMirrorGranularity
       /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
       /** @deprecated Character growth no longer gates live publication. */
@@ -668,9 +667,6 @@ export class CodexLiveDriver {
   hasRuntime(key: string): boolean {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
-
-  /** @deprecated Compatibility no-op: live output is always incremental. */
-  setLiveMirrorGranularity(_granularity: CodexLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
