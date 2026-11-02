@@ -10,41 +10,25 @@
 import { join } from 'node:path'
 import { readdir, stat } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
-import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
-import { localAgentStreamRecords, localAgentToolTimingMeta, type LocalAgentModelBlock, type LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
-import { persistChildSession } from '@khorsheed/dsh-local-agent'
+import { localAgentStreamRecords, type LocalAgentModelBlock, type LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
+import { appendMirrorStep, appendRequestHeaderIfChanged, persistChildSession, type MirrorBlock, type MirrorSource } from '@khorsheed/dsh-local-agent'
 import { addTokenUsage, readKimiTranscript, sumUsageRecords, type KimiStepTiming, type KimiTranscriptLine } from './session-view.ts'
 
-// The host renamed its tool-call id brand between lines (`CallId` on the npm
-// rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
-// runtime value is a plain string, so instead of importing either brand
-// factory we extract the field types from the consuming APIs — the same
-// source then compiles against both lines.
+// The tool-call id brand is compile-time only; take the field type from the
+// consuming API instead of importing a brand factory.
 type ToolCallEventCallId = SessionEventMap['tool/call']['callId']
-type ToolResultCallId = Parameters<typeof createToolResultMessage>[0]['callId']
-type ToolCallBlockId = Extract<ContentBlock, { type: 'tool-call' }>['id']
-
-/**
- * The synthesized result for a call whose result the wire never recorded
- * (a settle-pass fold, or a live reservation kimi never logged). The
- * released-log contract resolves every advertised call before its step
- * closes, so an interrupted call folds with this error result.
- */
-export const KIMI_INTERRUPTED_TOOL_RESULT = '（工具调用被中断，未能记录返回结果）'
 
 /** One user-role message event. */
 function userEvent(text: string) {
   return createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } })
 }
 
-/** One assistant-role message event, attributed to the kimi route. */
-export function assistantEvent(blocks: readonly ContentBlock[], model?: string) {
-  return createAssistantMessage({
-    content: blocks as ContentBlock[],
-    source: { provider: 'kimi-cli', model: model ?? 'unobserved' },
-  })
+/** The mirror source for a message the kimi route writes: the observed model, or `unobserved`. */
+export function kimiMirrorSource(model?: string): MirrorSource {
+  return { provider: 'kimi-cli', model: model ?? 'unobserved' }
 }
 
 /**
@@ -240,7 +224,7 @@ export function kimiStreamFromUnit(
     const base = { index, startedAt: cursor, endedAt: line.at }
     if (line.kind === 'think') blocks.push({ ...base, kind: 'reasoning', text: line.text })
     else if (line.kind === 'assistant') blocks.push({ ...base, kind: 'text', text: line.text })
-    else if (line.kind === 'tool') blocks.push({ ...base, kind: 'tool-call', call: { id: line.id as ToolCallBlockId, name: line.name, arguments: line.args ?? '' } })
+    else if (line.kind === 'tool') blocks.push({ ...base, kind: 'tool-call', call: { id: line.id as ToolCallEventCallId, name: line.name, arguments: line.args ?? '' } })
     cursor = line.at
   }
   return localAgentStreamRecords(blocks)
@@ -563,11 +547,18 @@ export async function mirrorKimiSessionDelta(
     // out of this message.
     const pairing = kinds.length === 0 ? undefined : options?.streams?.completeStreams(turn, kinds)
     const sealed = new Set(pairing?.sealed ?? [])
-    const blocks: ContentBlock[] = []
-    if (reasoning.trim() !== '' && !sealed.has('think')) blocks.push({ type: 'reasoning', text: reasoning })
-    if (text.trim() !== '' && !sealed.has('text')) blocks.push({ type: 'text', text })
+    const blocks: MirrorBlock[] = []
+    if (reasoning.trim() !== '' && !sealed.has('think')) blocks.push({ kind: 'think', text: reasoning })
+    if (text.trim() !== '' && !sealed.has('text')) blocks.push({ kind: 'text', text })
     for (const line of toolLines) {
-      blocks.push({ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: line.args ?? '' })
+      blocks.push({
+        kind: 'tool',
+        id: line.id,
+        name: line.name,
+        ...line.args === undefined ? {} : { args: line.args },
+        ...line.result === undefined ? {} : { result: line.result },
+        ...line.timing === undefined ? {} : { timing: line.timing },
+      })
     }
     for (const line of unit) texts.push(kimiLineProgressText(line))
     if (blocks.length === 0) {
@@ -608,37 +599,13 @@ export async function mirrorKimiSessionDelta(
       })
     }
     const model = [...unit].reverse().find(line => line.model !== undefined)?.model
-    childSession.append('step/start', { turn, step })
-    childSession.append('assistant/message', {
-      turn,
-      step,
-      message: assistantEvent(blocks, model),
+    // One atomic step: the message advertises every call (the wire step's own
+    // stream timing rides it), then each call resolves before the step closes.
+    appendMirrorStep(childSession, turn, step, {
+      blocks,
       stream: kimiStreamFromUnit(unit, transcript.stepTimings),
       ...usage === undefined ? {} : { usage },
-    }, { surfaceOp: 'append' })
-    // The native tool lifecycle inside the same step: the message advertises
-    // every call, then each call resolves before the step closes.
-    for (const line of toolLines) {
-      const meta = line.timing === undefined ? undefined : localAgentToolTimingMeta('kimi-cli', line.timing)
-      const call = childSession.append('tool/call', {
-        turn,
-        step,
-        callId: line.id as ToolCallEventCallId,
-        name: line.name,
-        arguments: line.args ?? '',
-      })
-      childSession.append('tool/result', {
-        turn,
-        step,
-        message: createToolResultMessage({
-          callId: line.id as ToolResultCallId,
-          content: [{ type: 'text', text: line.result ?? KIMI_INTERRUPTED_TOOL_RESULT }],
-          isError: line.result === undefined,
-        }),
-        ...meta === undefined ? {} : { meta },
-      }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
-    }
-    childSession.append('step/end', { turn, step })
+    }, kimiMirrorSource(model))
   }
   await persistChildSession(ctx, childSession)
   // The window's accounting that folded nowhere: dropped units' carry plus the
@@ -677,30 +644,6 @@ export function roundToolCalls(
     byName[line.name] = (byName[line.name] ?? 0) + 1
   }
   return count === 0 ? undefined : { count, byName }
-}
-
-/**
- * Write the fold's request/header when the wire's declared config differs from
- * the child log's last one (the host logs changed snapshots, not per-call
- * duplicates): first write is `initial`, a differing one `change`, an
- * identical one skipped.
- */
-function appendRequestHeaderIfChanged(
-  childSession: Session,
-  config: { provider: string; model: string; reasoningEffort?: ReasoningEffortId; maxTokens?: number },
-): void {
-  const serialized = JSON.stringify(config)
-  let last: string | undefined
-  for (const event of childSession.snapshotEvents()) {
-    if (event.type === 'request/header') {
-      last = JSON.stringify((event.data as { header?: { config?: unknown } }).header?.config)
-    }
-  }
-  if (last === serialized) return
-  childSession.append('request/header', {
-    header: { config },
-    reason: last === undefined ? 'initial' : 'change',
-  })
 }
 
 /**
