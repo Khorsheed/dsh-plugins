@@ -19,6 +19,7 @@ import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { CodexCliProvider } from '../src/codex-cli-provider.ts'
 import { CodexLiveDriver, codexAppServerItemToLine } from '../src/live-driver.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
+import { mirrorSnapshot, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
 
 /** One scripted turn: items to complete, optional deltas, terminal status. */
 interface FakeTurn {
@@ -1429,4 +1430,76 @@ it('prepares native protocol without a prompt, then reuses it for the first real
   expect(fake.requests.filter(request => request.method === 'turn/start')).toHaveLength(1)
   expect(m.spawns).toHaveLength(1)
   await m.driver.disposeAll()
+})
+
+describe('codex mirror snapshot (live)', () => {
+  const usage = (input: number, cached: number, output: number) => ({ inputTokens: input, cachedInputTokens: cached, outputTokens: output, reasoningOutputTokens: 0, totalTokens: input + output })
+
+  it('a completed round with streamed items, tools and per-call usage → the exact child-session event sequence', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const liveStreams = new LocalAgentStreams()
+    const m = mount({ config: { sandbox: 'workspace-write', snapshotMinIntervalMs: 0 } })
+    try {
+      Object.assign(m.ctx.localAgent, { liveStreams })
+      const child = Session.create(SessionId('child-codex-live-snapshot'))
+      const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+      m.queueChild(fake)
+      const run = await m.driver.startRound(request() as never, { ...roundSpec(m, child), configuration: { model: 'gpt-5.4', effort: 'high' } })
+      const turn = { threadId: 'thread-1', turnId: 'turn-1' }
+      // Each tick lands after the driver drained the notifications before it.
+      const tick = async (ms: number): Promise<void> => {
+        await new Promise(resolve => setImmediate(resolve))
+        vi.setSystemTime(SNAPSHOT_NOW + ms)
+      }
+      await tick(10)
+      fake.notify('item/reasoning/textDelta', { ...turn, itemId: 'r1', delta: '先列' })
+      fake.notify('item/reasoning/textDelta', { ...turn, itemId: 'r1', delta: '目录' })
+      await tick(100)
+      fake.notify('item/completed', { ...turn, item: { id: 'r1', type: 'reasoning', summary: ['先列目录'] } })
+      await tick(150)
+      fake.notify('item/started', { ...turn, item: { id: 'c1', type: 'commandExecution', command: 'ls', status: 'inProgress' } })
+      await tick(400)
+      fake.notify('item/completed', { ...turn, item: { id: 'c1', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a.txt', exitCode: 0, status: 'completed' } })
+      fake.notify('item/completed', { ...turn, item: { id: 'c2', type: 'commandExecution', command: 'false', aggregatedOutput: 'boom', exitCode: 1, status: 'failed' } })
+      fake.notify('thread/tokenUsage/updated', { ...turn, tokenUsage: { last: usage(10, 6, 3), total: usage(10, 6, 3) } })
+      await tick(500)
+      fake.notify('item/agentMessage/delta', { ...turn, itemId: 'a1', delta: '完成' })
+      fake.notify('item/agentMessage/delta', { ...turn, itemId: 'a1', delta: '了。' })
+      await tick(600)
+      fake.notify('item/completed', { ...turn, item: { id: 'a1', type: 'agentMessage', text: '完成了。', phase: 'final_answer' } })
+      fake.notify('thread/tokenUsage/updated', { ...turn, tokenUsage: { last: usage(20, 10, 4), total: usage(30, 16, 7), modelContextWindow: 258_000 } })
+      await tick(700)
+      fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
+      expect((await run.result).stopReason).toBe('completed')
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      liveStreams.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('a round cancelled mid-stream → the exact child-session event sequence (durable snapshots, no live streams)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const m = mount({ config: { sandbox: 'workspace-write', snapshotMinIntervalMs: 0 } })
+    try {
+      const child = Session.create(SessionId('child-codex-live-abort-snapshot'))
+      const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+      m.queueChild(fake)
+      const controller = new AbortController()
+      const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+      const turn = { threadId: 'thread-1', turnId: 'turn-1' }
+      fake.notify('item/completed', { ...turn, item: { id: 'c1', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a.txt', exitCode: 0, status: 'completed' } })
+      fake.notify('item/agentMessage/delta', { ...turn, itemId: 'a1', delta: '写到一半' })
+      await until(() => m.reports.some(report => report.progress.text === '写到一半'))
+      controller.abort()
+      expect((await run.result).stopReason).toBe('aborted')
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      vi.useRealTimers()
+    }
+  })
 })

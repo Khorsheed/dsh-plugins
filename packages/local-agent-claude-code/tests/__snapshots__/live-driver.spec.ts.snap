@@ -1,0 +1,533 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`claude mirror snapshot (live) > a completed round with streamed blocks, a mixed call and a tool → the exact child-session event sequence 1`] = `
+[
+  {
+    "data": {
+      "turn": 1,
+    },
+    "seq": 0,
+    "time": 1767225600000,
+    "type": "turn/start",
+  },
+  {
+    "data": {
+      "header": {
+        "config": {
+          "model": "opus",
+          "provider": "claude-local",
+          "reasoningEffort": "high",
+        },
+      },
+      "reason": "initial",
+    },
+    "seq": 1,
+    "time": 1767225600000,
+    "type": "request/header",
+  },
+  {
+    "data": {
+      "content": [
+        {
+          "text": "建个文件",
+          "type": "text",
+        },
+      ],
+      "id": "<uuid>",
+      "role": "user",
+      "source": {
+        "kind": "user",
+      },
+    },
+    "seq": 2,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "user/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 3,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "append": false,
+      "id": "1:1",
+      "kind": "think",
+      "opening": true,
+      "receivedAt": 1767225600000,
+      "sessionId": "child-claude-live-snapshot",
+      "step": 1,
+      "text": "先列",
+      "turn": 1,
+    },
+    "seq": 4,
+    "time": 1767225600000,
+    "type": "local-agent/stream",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "先列目录",
+            "type": "reasoning",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "claude",
+          "provider": "claude-local",
+        },
+      },
+      "step": 1,
+      "stream": [],
+      "turn": 1,
+    },
+    "seq": 5,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 6,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 7,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "我看看。",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "claude",
+          "provider": "claude-local",
+        },
+      },
+      "step": 2,
+      "stream": [],
+      "turn": 1,
+    },
+    "seq": 8,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 9,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 10,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "arguments": "ls",
+            "id": "tu1",
+            "name": "Bash",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "claude",
+          "provider": "claude-local",
+        },
+      },
+      "step": 3,
+      "stream": [],
+      "turn": 1,
+      "usage": {
+        "cacheReadTokens": 100,
+        "inputTokens": 3,
+        "outputTokens": 40,
+      },
+    },
+    "seq": 11,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "ls",
+      "callId": "tu1",
+      "name": "Bash",
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 12,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "a.txt",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": false,
+        "role": "tool",
+        "source": {
+          "callId": "tu1",
+          "kind": "tool",
+        },
+        "toolCallId": "tu1",
+      },
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 13,
+    "sourceEventSeqs": [
+      12,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 14,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 4,
+      "turn": 1,
+    },
+    "seq": 15,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "完成了。",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "claude",
+          "provider": "claude-local",
+        },
+      },
+      "step": 4,
+      "stream": [],
+      "turn": 1,
+      "usage": {
+        "cacheReadTokens": 140,
+        "inputTokens": 4,
+        "outputTokens": 8,
+      },
+    },
+    "seq": 16,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 4,
+      "turn": 1,
+    },
+    "seq": 17,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "reason": {
+        "kind": "completed",
+      },
+      "turn": 1,
+    },
+    "seq": 18,
+    "time": 1767225600000,
+    "type": "turn/end",
+  },
+  {
+    "data": {
+      "contextWindow": 1000000,
+      "provider": "claude-local",
+      "usedTokens": 144,
+    },
+    "seq": 19,
+    "time": 1767225600000,
+    "type": "local-agent/context",
+  },
+]
+`;
+
+exports[`claude mirror snapshot (live) > a round cancelled mid-stream → the exact child-session event sequence (durable snapshots, no live streams) 1`] = `
+[
+  {
+    "data": {
+      "turn": 1,
+    },
+    "seq": 0,
+    "time": 1767225600000,
+    "type": "turn/start",
+  },
+  {
+    "data": {
+      "content": [
+        {
+          "text": "建个文件",
+          "type": "text",
+        },
+      ],
+      "id": "<uuid>",
+      "role": "user",
+      "source": {
+        "kind": "user",
+      },
+    },
+    "seq": 1,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "user/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 2,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "想一下",
+            "type": "reasoning",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "claude",
+          "provider": "claude-local",
+        },
+      },
+      "step": 1,
+      "stream": [
+        {
+          "chunk": {
+            "blockType": "reasoning",
+            "index": 0,
+            "type": "block-start",
+          },
+          "time": 1767225600000,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "想一下",
+              "type": "reasoning",
+            },
+            "index": 0,
+            "type": "block-end",
+          },
+          "time": 1767225600000,
+          "type": "chunk",
+        },
+      ],
+      "turn": 1,
+    },
+    "seq": 3,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "想一下",
+            "type": "reasoning",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "claude",
+          "provider": "claude-local",
+        },
+      },
+      "step": 1,
+      "stream": [],
+      "turn": 1,
+      "usage": {
+        "cacheReadTokens": 100,
+        "inputTokens": 3,
+        "outputTokens": 1,
+      },
+    },
+    "seq": 4,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 5,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 6,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "interrupted": true,
+      "message": {
+        "content": [
+          {
+            "text": "写到一半",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "claude",
+          "provider": "claude-local",
+        },
+      },
+      "step": 2,
+      "stream": [
+        {
+          "chunk": {
+            "blockType": "text",
+            "index": 0,
+            "type": "block-start",
+          },
+          "time": 1767225600000,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "写到一半",
+              "type": "text",
+            },
+            "index": 0,
+            "type": "block-end",
+          },
+          "time": 1767225600000,
+          "type": "chunk",
+        },
+      ],
+      "turn": 1,
+    },
+    "seq": 7,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 8,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "reason": {
+        "kind": "aborted",
+        "reason": {
+          "kind": "parent",
+        },
+      },
+      "turn": 1,
+    },
+    "seq": 9,
+    "time": 1767225600000,
+    "type": "turn/end",
+  },
+  {
+    "data": {
+      "provider": "claude-local",
+      "usedTokens": 103,
+    },
+    "seq": 10,
+    "time": 1767225600000,
+    "type": "local-agent/context",
+  },
+]
+`;

@@ -21,6 +21,7 @@ import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
 import { acpStopReasonToHarness, DEFAULT_TIMEOUTS, KimiAcpLiveDriver } from '../src/live-driver.ts'
 import { readKimiDefaultModel } from '../src/provision.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
+import { mirrorSnapshot, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
 
 /** One scripted turn: streamed chunks, the terminal stop reason, or a hang. */
 interface FakeTurn {
@@ -1786,4 +1787,32 @@ it('prepares native protocol without a prompt, then reuses it for the first real
   expect(fake.requests.filter(request => request.method === 'session/prompt')).toHaveLength(1)
   expect(m.spawns).toHaveLength(1)
   await m.driver.disposeAll()
+})
+
+describe('kimi mirror snapshot (live)', () => {
+  it('a cancelled round: streamed think + text finalize from live text, an ACP-only tool folds as an orphan → the exact child-session event sequence', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const m = mount({ config: { liveMirrorGranularity: 'token' } })
+    try {
+      const child = Session.create(SessionId('child-kimi-live-snapshot'))
+      m.queueChild(new FakeAcpServer({ turn: () => ({ hang: true }) }))
+      const controller = new AbortController()
+      const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+      const fake = m.spawns[0]!.fake!
+      const session = 'session_acp-session-1'
+      fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '先跑一下' } })
+      fake.update(session, { sessionUpdate: 'tool_call', toolCallId: 'orphan_1', title: 'Bash', status: 'in_progress' })
+      fake.update(session, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '写到一半' } })
+      await until(() => m.reports.some(report => report.progress.text === '写到一半'))
+      controller.abort()
+      expect((await run.result).stopReason).toBe('aborted')
+      fake.resolvePrompt({ stopReason: 'cancelled' })
+      await until(() => child.snapshotEvents().some(event => event.type === 'turn/end'))
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      vi.useRealTimers()
+    }
+  })
 })

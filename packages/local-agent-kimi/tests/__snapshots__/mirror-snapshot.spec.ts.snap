@@ -1,0 +1,360 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`kimi mirror snapshot (wire fold) > one fixed wire.jsonl, folded at settle → the exact child-session event sequence 1`] = `
+[
+  {
+    "data": {
+      "turn": 1,
+    },
+    "seq": 0,
+    "time": 1767225600000,
+    "type": "turn/start",
+  },
+  {
+    "data": {
+      "content": [
+        {
+          "text": "建个文件",
+          "type": "text",
+        },
+      ],
+      "id": "<uuid>",
+      "role": "user",
+      "source": {
+        "kind": "user",
+      },
+    },
+    "seq": 1,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "user/message",
+  },
+  {
+    "data": {
+      "header": {
+        "config": {
+          "maxTokens": 1048576,
+          "model": "k3",
+          "provider": "kimi-cli",
+          "reasoningEffort": "high",
+        },
+      },
+      "reason": "initial",
+    },
+    "seq": 2,
+    "time": 1767225600000,
+    "type": "request/header",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 3,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "先写文件",
+            "type": "reasoning",
+          },
+          {
+            "text": "我开始了。",
+            "type": "text",
+          },
+          {
+            "arguments": "a.txt",
+            "id": "call_1",
+            "name": "Write",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "k3",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 1,
+      "stream": [
+        {
+          "chunk": {
+            "blockType": "reasoning",
+            "index": 0,
+            "type": "block-start",
+          },
+          "time": 1050,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "先写文件",
+              "type": "reasoning",
+            },
+            "index": 0,
+            "type": "block-end",
+          },
+          "time": 1100,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "blockType": "text",
+            "index": 1,
+            "type": "block-start",
+          },
+          "time": 1100,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "我开始了。",
+              "type": "text",
+            },
+            "index": 1,
+            "type": "block-end",
+          },
+          "time": 1200,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "blockType": "tool-call",
+            "index": 2,
+            "type": "block-start",
+          },
+          "time": 1200,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "arguments": "a.txt",
+              "id": "call_1",
+              "name": "Write",
+              "type": "tool-call",
+            },
+            "index": 2,
+            "type": "block-end",
+          },
+          "time": 1300,
+          "type": "chunk",
+        },
+      ],
+      "turn": 1,
+    },
+    "seq": 4,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "a.txt",
+      "callId": "call_1",
+      "name": "Write",
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 5,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "Wrote 10 bytes",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": false,
+        "role": "tool",
+        "source": {
+          "callId": "call_1",
+          "kind": "tool",
+        },
+        "toolCallId": "call_1",
+      },
+      "meta": {
+        "localAgentTiming": {
+          "endedAt": 1650,
+          "provider": "kimi-cli",
+          "source": "provider",
+          "startedAt": 1300,
+          "version": 1,
+        },
+      },
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 6,
+    "sourceEventSeqs": [
+      5,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 7,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 8,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "文件建好了。",
+            "type": "text",
+          },
+          {
+            "arguments": "sleep 9",
+            "id": "call_2",
+            "name": "Bash",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "k3",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 2,
+      "stream": [
+        {
+          "chunk": {
+            "blockType": "text",
+            "index": 0,
+            "type": "block-start",
+          },
+          "time": 1730,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "文件建好了。",
+              "type": "text",
+            },
+            "index": 0,
+            "type": "block-end",
+          },
+          "time": 1800,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "blockType": "tool-call",
+            "index": 1,
+            "type": "block-start",
+          },
+          "time": 1800,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "arguments": "sleep 9",
+              "id": "call_2",
+              "name": "Bash",
+              "type": "tool-call",
+            },
+            "index": 1,
+            "type": "block-end",
+          },
+          "time": 1850,
+          "type": "chunk",
+        },
+      ],
+      "turn": 1,
+      "usage": {
+        "cacheReadTokens": 180,
+        "inputTokens": 120,
+        "outputTokens": 30,
+      },
+    },
+    "seq": 9,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "sleep 9",
+      "callId": "call_2",
+      "name": "Bash",
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 10,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "（工具调用被中断，未能记录返回结果）",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": true,
+        "role": "tool",
+        "source": {
+          "callId": "call_2",
+          "kind": "tool",
+        },
+        "toolCallId": "call_2",
+      },
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 11,
+    "sourceEventSeqs": [
+      10,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 12,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+]
+`;

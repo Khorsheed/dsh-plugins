@@ -21,6 +21,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { CLAUDE_INTERRUPTED_TOOL_RESULT, ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 import { ClaudeLiveDriver } from '../src/live-driver.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
+import { mirrorSnapshot, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
 
 /** One scripted turn: assistant events, the terminal result, or a hang. */
 interface FakeTurn {
@@ -1301,4 +1302,72 @@ it('prepares native controls without a user prompt and reuses that process for r
   expect(fake.userMessages).toHaveLength(1)
   expect(m.spawns).toHaveLength(1)
   await m.driver.disposeAll()
+})
+
+describe('claude mirror snapshot (live)', () => {
+  const partial = (fake: FakeClaude, event: Record<string, unknown>): void => { fake.emit({ type: 'stream_event', event }) }
+  const usage1 = { input_tokens: 3, output_tokens: 1, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 }
+  const usage2 = { input_tokens: 4, output_tokens: 1, cache_read_input_tokens: 140, cache_creation_input_tokens: 0 }
+
+  it('a completed round with streamed blocks, a mixed call and a tool → the exact child-session event sequence', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const liveStreams = new LocalAgentStreams()
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
+    try {
+      Object.assign(m.ctx.localAgent, { liveStreams })
+      const child = Session.create(SessionId('child-claude-live-snapshot'))
+      const fake = new FakeClaude({ init: { model: 'claude-opus-5-5' }, nativeModels: [{ value: 'opus', displayName: 'Opus', supportedEffortLevels: ['high'] }], turn: () => ({ hang: true }) })
+      m.queueChild(fake)
+      const run = await m.driver.startRound(request() as never, { ...roundSpec(m, child), configuration: { model: 'opus', effort: 'high' } })
+      partial(fake, { type: 'message_start', message: { id: 'm1', usage: usage1 } })
+      partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '先列' } })
+      partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '目录' } })
+      fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'thinking', thinking: '先列目录' }] } })
+      partial(fake, { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: '我看看。' } })
+      fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'text', text: '我看看。' }] } })
+      fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'ls' } }] } })
+      partial(fake, { type: 'message_delta', usage: { output_tokens: 40 } })
+      partial(fake, { type: 'message_stop' })
+      fake.emit({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'a.txt' }] } })
+      partial(fake, { type: 'message_start', message: { id: 'm2', usage: usage2 } })
+      partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '完成' } })
+      partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '了。' } })
+      fake.emit({ type: 'assistant', message: { id: 'm2', role: 'assistant', usage: usage2, content: [{ type: 'text', text: '完成了。' }] } })
+      partial(fake, { type: 'message_delta', usage: { output_tokens: 8 } })
+      partial(fake, { type: 'message_stop' })
+      fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 7, output_tokens: 48 },
+        modelUsage: { 'claude-opus-5-5': { contextWindow: 1_000_000 } } })
+      expect((await run.result).stopReason).toBe('completed')
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      liveStreams.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('a round cancelled mid-stream → the exact child-session event sequence (durable snapshots, no live streams)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
+    try {
+      const child = Session.create(SessionId('child-claude-live-abort-snapshot'))
+      const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+      m.queueChild(fake)
+      const controller = new AbortController()
+      const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
+      partial(fake, { type: 'message_start', message: { id: 'm1', usage: usage1 } })
+      partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '想一下' } })
+      fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'thinking', thinking: '想一下' }] } })
+      partial(fake, { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: '写到一半' } })
+      await until(() => m.reports.some(report => report.progress.text === '写到一半'))
+      controller.abort()
+      expect((await run.result).stopReason).toBe('aborted')
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      vi.useRealTimers()
+    }
+  })
 })
