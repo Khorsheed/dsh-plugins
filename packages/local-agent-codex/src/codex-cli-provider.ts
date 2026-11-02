@@ -47,8 +47,8 @@ import {
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
-import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
-import type { DelegationExecTarget, LocalAgentToolCalls, LocalAgentAppliedConfiguration } from '@khorsheed/dsh-local-agent/types'
+import { localAgentToolTimingMeta, MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import type { DelegationExecTarget, LocalAgentToolCalls, LocalAgentAppliedConfiguration, LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { CodexLiveDriver } from './live-driver.ts'
 import { endpointAuthEnv, endpointConfigOverrides, hasEndpointCredential, type CodexEndpointAuth } from './endpoint-auth.ts'
@@ -796,13 +796,16 @@ export type CodexTranscriptLine =
    * Tool activity: one call with its (possibly absent) result. `id` is the
    * stream item's id when present, else a synthesized position-based id —
    * stable within a run either way, so the child session's
-   * `tool/call`/`tool/result` events pair by it.
+   * `tool/call`/`tool/result` events pair by it. Incremental paths carry
+   * `timing` from item start/completion; post-hoc batch parsing leaves it absent.
    */
-  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; failed?: boolean }
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; failed?: boolean; timing?: LocalAgentToolTiming }
 
 /** Mutable fold state shared by the batch parse and the incremental parser. */
 interface CodexStreamFoldState {
   readonly lines: CodexTranscriptLine[]
+  /** Item id → its observed start; empty during post-hoc batch parsing. */
+  readonly toolStarts: Map<string, number>
   text: string | undefined
   usage: TokenUsage | undefined
   threadId: string | undefined
@@ -858,7 +861,7 @@ export function toolCallsOf(counts: ReadonlyMap<string, number>): LocalAgentTool
  * {@link CodexStreamParser} (live incremental parse) so the two paths cannot
  * drift.
  */
-function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
+function foldCodexStreamLine(state: CodexStreamFoldState, raw: string, observedAt?: number): void {
   const line = raw.trim()
   if (line === '') return
   let event: {
@@ -884,8 +887,19 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
     if (typeof event.model === 'string' && event.model !== '') state.model = event.model
     return
   }
+  if (event.type === 'item.started') {
+    const id = event.item?.id
+    if (observedAt !== undefined && typeof id === 'string') state.toolStarts.set(id, observedAt)
+    return
+  }
   if (event.type !== 'item.completed' || event.item === undefined) return
   const item = event.item
+  const itemId = typeof item.id === 'string' ? item.id : undefined
+  const startedAt = itemId === undefined ? undefined : state.toolStarts.get(itemId)
+  if (itemId !== undefined) state.toolStarts.delete(itemId)
+  const pendingTiming = startedAt === undefined ? undefined : { startedAt, source: 'observed' as const }
+  const timing = startedAt === undefined || observedAt === undefined
+    ? undefined : { startedAt, endedAt: observedAt, source: 'observed' as const }
   if (item.type === 'reasoning' && typeof item.text === 'string' && item.text.trim() !== '') {
     state.lines.push({ kind: 'think', text: item.text })
   } else if (item.type === 'agent_message' && typeof item.text === 'string') {
@@ -905,6 +919,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
         ...command === undefined ? {} : { args: command },
         ...outcome.result === undefined ? {} : { result: outcome.result },
         ...outcome.failed ? { failed: true } : {},
+        ...timing === undefined ? {} : { timing },
       })
     }
   } else if (item.type === 'web_search_call') {
@@ -913,6 +928,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
       kind: 'tool',
       id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
       name: 'WebSearch',
+      ...timing === undefined ? {} : { timing },
     })
   } else if (item.type === 'file_change') {
     // A patch application ({changes: [{path, kind}]}): without this case
@@ -927,6 +943,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
         id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
         name: 'ApplyPatch',
         args,
+        ...timing === undefined ? {} : { timing },
       })
     }
   } else if (item.type === 'function_call') {
@@ -938,18 +955,20 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
       id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
       name: item.name ?? 'function',
       ...typeof item.arguments === 'string' && item.arguments !== '' ? { args: item.arguments } : {},
+      ...pendingTiming === undefined ? {} : { timing: pendingTiming },
     })
   } else if (item.type === 'function_call_output') {
     // A function/command result; attach to the previous tool line when one
     // is pending (web search or command output).
     const output = typeof item.output === 'string' ? item.output : undefined
-    if (output !== undefined && output.trim() !== '') {
-      const last = state.lines[state.lines.length - 1]
-      if (last !== undefined && last.kind === 'tool') {
-        state.lines[state.lines.length - 1] = {
-          ...last,
-          result: last.result === undefined ? output : `${last.result}\n${output}`,
-        }
+    const last = state.lines[state.lines.length - 1]
+    if (last !== undefined && last.kind === 'tool') {
+      state.lines[state.lines.length - 1] = {
+        ...last,
+        ...output !== undefined && output.trim() !== ''
+          ? { result: last.result === undefined ? output : `${last.result}\n${output}` } : {},
+        ...last.timing !== undefined && observedAt !== undefined
+          ? { timing: { ...last.timing, endedAt: observedAt } } : {},
       }
     }
   } else if (item.type === 'custom_tool_call') {
@@ -963,6 +982,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
       id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
       name: item.name ?? 'custom',
       ...typeof item.input === 'string' && item.input !== '' ? { args: item.input } : {},
+      ...pendingTiming === undefined ? {} : { timing: pendingTiming },
     })
   } else if (item.type === 'custom_tool_call_output') {
     // {call_id, output: string | content blocks} — pair by recency, the same
@@ -975,13 +995,14 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string): void {
             .map(block => block.text)
             .join('\n')
         : undefined
-    if (output !== undefined && output.trim() !== '') {
-      const last = state.lines[state.lines.length - 1]
-      if (last !== undefined && last.kind === 'tool') {
-        state.lines[state.lines.length - 1] = {
-          ...last,
-          result: last.result === undefined ? output : `${last.result}\n${output}`,
-        }
+    const last = state.lines[state.lines.length - 1]
+    if (last !== undefined && last.kind === 'tool') {
+      state.lines[state.lines.length - 1] = {
+        ...last,
+        ...output !== undefined && output.trim() !== ''
+          ? { result: last.result === undefined ? output : `${last.result}\n${output}` } : {},
+        ...last.timing !== undefined && observedAt !== undefined
+          ? { timing: { ...last.timing, endedAt: observedAt } } : {},
       }
     }
   }
@@ -1003,13 +1024,14 @@ export class CodexStreamParser implements CodexStreamFoldState {
   model: string | undefined
   completed = false
   readonly toolCalls = new Map<string, number>()
+  readonly toolStarts = new Map<string, number>()
 
-  /** Fold every complete NDJSON line in the chunk; the tail stays buffered. */
-  push(chunk: string): void {
+  /** Fold complete NDJSON lines at their arrival time; the tail stays buffered. */
+  push(chunk: string, observedAt = Date.now()): void {
     this.buffer += chunk
     const parts = this.buffer.split('\n')
     this.buffer = parts.pop() ?? ''
-    for (const raw of parts) foldCodexStreamLine(this, raw)
+    for (const raw of parts) foldCodexStreamLine(this, raw, observedAt)
   }
 }
 
@@ -1037,7 +1059,7 @@ export function parseCodexJsonStream(stream: string): {
   model?: string
   toolCalls?: LocalAgentToolCalls
 } {
-  const state: CodexStreamFoldState = { lines: [], text: undefined, usage: undefined, threadId: undefined, model: undefined, completed: false, toolCalls: new Map() }
+  const state: CodexStreamFoldState = { lines: [], text: undefined, usage: undefined, threadId: undefined, model: undefined, completed: false, toolCalls: new Map(), toolStarts: new Map() }
   for (const raw of stream.split('\n')) foldCodexStreamLine(state, raw)
   const toolCalls = toolCallsOf(state.toolCalls)
   return {
@@ -1398,6 +1420,7 @@ export function appendCodexTranscriptLine(
     // A tool-only call's usage rides the advertising assistant/message (the
     // tool/call and tool/result events themselves have no usage slot).
     const args = line.args ?? ''
+    const meta = line.timing === undefined ? undefined : localAgentToolTimingMeta('codex-local', line.timing)
     childSession.append('assistant/message', {
       turn,
       step,
@@ -1420,6 +1443,7 @@ export function appendCodexTranscriptLine(
         content: [{ type: 'text', text: line.result ?? CODEX_INTERRUPTED_TOOL_RESULT }],
         isError: line.result === undefined || line.failed === true,
       }),
+      ...meta === undefined ? {} : { meta },
     }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
     childSession.append('step/end', { turn, step })
     return true

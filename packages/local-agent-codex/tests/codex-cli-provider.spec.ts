@@ -11,7 +11,7 @@ import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeSessionPersistence } from './fake-persistence.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
-import { CODEX_INTERRUPTED_TOOL_RESULT, appendCodexTranscriptLine, parseCodexJsonStream, CodexCliProvider, startCodexCliRun } from '../src/codex-cli-provider.ts'
+import { CODEX_INTERRUPTED_TOOL_RESULT, appendCodexTranscriptLine, CodexStreamParser, parseCodexJsonStream, CodexCliProvider, startCodexCliRun } from '../src/codex-cli-provider.ts'
 
 /** The NDJSON event stream a real `codex exec --json` emits for one run. */
 const jsonStream = [
@@ -146,6 +146,25 @@ describe('codex json stream parsing', () => {
     expect(parsed.text).toContain('hello.txt')
   })
 
+  it('pairs incremental item times, closes an empty output, and invents none in batch parsing', () => {
+    const started = JSON.stringify({ type: 'item.started', item: { id: 'call-1', type: 'function_call', name: 'wait' } })
+    const completed = JSON.stringify({ type: 'item.completed', item: { id: 'call-1', type: 'function_call', name: 'wait' } })
+    const output = JSON.stringify({ type: 'item.completed', item: { id: 'output-1', type: 'function_call_output', output: '' } })
+    const parser = new CodexStreamParser()
+    parser.push(started + '\n', 1000)
+    parser.push(completed + '\n', 1100)
+    parser.push(output + '\n', 1600)
+    expect(parser.lines).toHaveLength(1)
+    expect(parser.lines[0]).toMatchObject({
+      kind: 'tool',
+      timing: { startedAt: 1000, endedAt: 1600, source: 'observed' },
+    })
+    expect(parser.lines[0]?.kind === 'tool' && parser.lines[0].result).toBeUndefined()
+
+    const batch = parseCodexJsonStream([started, completed, output].join('\n'))
+    expect(batch.lines[0]?.kind === 'tool' && batch.lines[0].timing).toBeUndefined()
+  })
+
   it('parses an agent-message-only fixture without tool events', () => {
     const fixture = readFileSync(
       fileURLToPath(new URL('./fixtures/agent-message.sample.ndjson', import.meta.url)),
@@ -161,7 +180,7 @@ describe('codex transcript fold (released-log contract)', () => {
   it('a tool line folds the native lifecycle in one step — advertisement, call, result', () => {
     const child = Session.create(SessionId('child-fold-tool'))
     child.append('turn/start', { turn: 1 })
-    appendCodexTranscriptLine(child, 1, 1, { kind: 'tool', id: 'call-1', name: 'Bash', args: 'ls -la', result: 'a.txt' }, undefined)
+    appendCodexTranscriptLine(child, 1, 1, { kind: 'tool', id: 'call-1', name: 'Bash', args: 'ls -la', result: 'a.txt', timing: { startedAt: 1000, endedAt: 1450, source: 'observed' } }, undefined)
     expect(child.snapshotEvents().map(event => event.type)).toEqual([
       'turn/start', 'step/start', 'assistant/message', 'tool/call', 'tool/result', 'step/end',
     ])
@@ -181,6 +200,9 @@ describe('codex transcript fold (released-log contract)', () => {
       content: [{ type: 'text', text: 'a.txt' }],
     })
     expect(result.sourceEventSeqs).toEqual([call.seq])
+    expect(result.data.meta).toEqual({
+      localAgentTiming: { version: 1, provider: 'codex-local', startedAt: 1000, endedAt: 1450, source: 'observed' },
+    })
     expectValidReleasedLog(child)
   })
 

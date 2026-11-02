@@ -8,6 +8,9 @@
 
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 
+export { localAgentToolTimingMeta } from './tool-timing.ts'
+export type { LocalAgentToolTiming } from './tool-timing.ts'
+
 /** In-flight text item, identified by the durable turn/step coordinate. */
 export interface LocalAgentStreamItem {
   id: string

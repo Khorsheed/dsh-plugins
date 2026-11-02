@@ -48,6 +48,24 @@ describe('external agent calls', () => {
     expect(requests[0]!.execs.map(e => e.name)).toEqual(['Skill', 'ToolSearch'])
   })
 
+  it('uses a mirrored result\'s real execution interval and ignores invalid metadata', () => {
+    const rows = log('kimi-cli')
+    const result = rows.find(row => row.type === 'tool/result' && (row.data as { message?: { toolCallId?: string } }).message?.toolCallId === 't2')!
+    result.data = {
+      ...result.data as object,
+      meta: { localAgentTiming: { version: 1, startedAt: 7000, endedAt: 8500 } },
+    }
+    const [turn] = reconstructSession(rows)
+    expect(turn!.requests[0]?.execs.find(exec => exec.callId === 't2')).toMatchObject({ start: 7000, end: 8500 })
+
+    result.data = {
+      ...result.data as object,
+      meta: { localAgentTiming: { version: 2, startedAt: 7000, endedAt: 8500 } },
+    }
+    const [legacy] = reconstructSession(rows)
+    expect(legacy!.requests[0]?.execs.find(exec => exec.callId === 't2')).toMatchObject({ start: 8002, end: 9000 })
+  })
+
   it('keeps an in-process subagent\'s steps as they are', () => {
     const [turn] = reconstructSession(log('spawn'))
     expect(turn!.requests.map(r => [r.startedAt, r.usage?.outputTokens])).toEqual([[8000, undefined], [8002, 242], [12000, 109]])

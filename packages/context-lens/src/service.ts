@@ -30,7 +30,7 @@ import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, TurnOverview, TurnTiming } from './types.ts'
-import { InspectorStore, scopeAuthorized, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
+import { InspectorStore, scopeAuthorized, toolExecutionFromMeta, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
 import { recordAssembly } from './segmenter.ts'
 import { HUMAN_MESSAGE_LOOKBACK, applyRoomEvent, emptyRoom } from './room.ts'
 import { fromRequestMessage, serializeMessage } from './messages.ts'
@@ -275,6 +275,7 @@ export class InspectorService {
           event.data.message.isError === true,
           serializeMessage(message),
           at,
+          toolExecutionFromMeta(event.data.meta),
         )
         return
       }

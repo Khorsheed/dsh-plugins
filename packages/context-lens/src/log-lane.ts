@@ -27,7 +27,7 @@
 import { countToolCalls } from './tool-summary.ts'
 import type { RequestConfig, RequestUsage, ResponseSummary } from './types.ts'
 import type { CapturedResponse } from './types.ts'
-import { responseFromSpans, type BlockSpan, type StoredRequest } from './store.ts'
+import { responseFromSpans, toolExecutionFromMeta, type BlockSpan, type StoredRequest } from './store.ts'
 import { contentHash, splitRequest, type ScopeFingerprint } from './segmenter.ts'
 import type { ReplacementFact } from './changes.ts'
 import { AMBIENT_SOURCES, fromLogMessage, lastParagraph, messageKey, previewLine, serializeMessage, type CapturedMessage } from './messages.ts'
@@ -430,10 +430,14 @@ export function foldLogRows(
         const callId = message?.toolCallId
           ?? (typeof data['toolCallId'] === 'string' ? data['toolCallId'] : undefined)
         if (callId !== undefined) {
+          const execution = toolExecutionFromMeta(data['meta'])
           const owner = cursor.callOwners.get(callId)
           const span = owner?.execs.find(exec => exec.callId === callId && exec.end === undefined)
           if (span !== undefined) {
-            if (row.time !== undefined) span.end = row.time
+            if (execution !== undefined) {
+              span.start = execution.startedAt
+              span.end = execution.endedAt
+            } else if (row.time !== undefined) span.end = row.time
             span.isError = message?.isError === true
             if (message !== undefined) span.result = serializeMessage(message)
           }

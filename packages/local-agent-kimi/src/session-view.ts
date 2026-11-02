@@ -19,6 +19,7 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
 
 /** The request config one `llm.request` wire event declares (its own words). */
 export interface KimiRequestConfig {
@@ -41,9 +42,10 @@ export type KimiTranscriptLine = (
    * Tool activity: one call with its (possibly still pending) result. `id`
    * is the wire's toolCallId/uuid when present, else a synthesized
    * position-based id — stable across mirror passes either way, so the
-   * child session's `tool/call`/`tool/result` events pair by it.
+   * child session's `tool/call`/`tool/result` events pair by it. `timing`
+   * preserves the wire's execution interval, independently of mirror writes.
    */
-  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; turn: number; wireStep?: number; requestConfig?: KimiRequestConfig }
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; turn: number; wireStep?: number; requestConfig?: KimiRequestConfig; timing?: LocalAgentToolTiming }
 ) & { model?: string }
 
 /** A parsed transcript of one kimi session. */
@@ -404,6 +406,8 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
           ...args === undefined ? {} : { args },
           turn: lineTurn,
           ...wireStep === undefined ? {} : { wireStep },
+          ...typeof event.time === 'number' && Number.isFinite(event.time)
+            ? { timing: { startedAt: event.time, source: 'provider' as const } } : {},
         })
         if (typeof call.uuid === 'string') callsByUuid.set(call.uuid, lineIndex)
         if (typeof call.toolCallId === 'string') callsByToolCallId.set(call.toolCallId, lineIndex)
@@ -430,10 +434,15 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
             }
           }
         }
-        if (output !== undefined && output.trim() !== '' && target !== undefined) {
+        if (target !== undefined) {
           const current = lines[target]
           if (current !== undefined && current.kind === 'tool') {
-            lines[target] = { ...current, result: output }
+            lines[target] = {
+              ...current,
+              ...output !== undefined && output.trim() !== '' ? { result: output } : {},
+              ...current.timing !== undefined && typeof event.time === 'number' && Number.isFinite(event.time)
+                ? { timing: { ...current.timing, endedAt: event.time } } : {},
+            }
           }
         }
       } else if (

@@ -438,6 +438,35 @@ describe('codex live driver rounds', () => {
     expect(m.driver.liveCount).toBe(0)
   })
 
+  it('records app-server tool execution times from started and completed notifications', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-tool-timing'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const startedAt = Date.now()
+    const endedAt = startedAt + 450
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(startedAt)
+      fake.notify('item/started', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't1', type: 'commandExecution', command: 'ls', status: 'in_progress' } })
+      vi.setSystemTime(endedAt)
+      fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't1', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a', status: 'completed' } })
+    } finally {
+      vi.useRealTimers()
+    }
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'm1', type: 'agentMessage', text: 'done', phase: 'final_answer' } })
+    fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'tool/result')).toHaveLength(1) })
+    const result = child.snapshotEvents().find(e => e.type === 'tool/result')
+    expect(result?.data.meta).toEqual({
+      localAgentTiming: { version: 1, provider: 'codex-local', startedAt, endedAt, source: 'observed' },
+    })
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
   it('stamps each API call\'s own usage on its last line, and the cumulative total on the settled report', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-codex-percall'))

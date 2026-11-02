@@ -8,7 +8,7 @@ import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeSessionPersistence } from './fake-persistence.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
-import { claudeVersionFromInit, CLAUDE_INTERRUPTED_TOOL_RESULT, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider, REDACTED_THINKING_TEXT } from '../src/claude-cli-provider.ts'
+import { appendClaudeTranscriptGroup, claudeVersionFromInit, CLAUDE_INTERRUPTED_TOOL_RESULT, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider, REDACTED_THINKING_TEXT } from '../src/claude-cli-provider.ts'
 
 /** The stream a real `claude -p --verbose --output-format stream-json` emits. */
 const streamJson = [
@@ -140,6 +140,33 @@ describe('claude stream-json parsing', () => {
     }
     expect(parsed.text).toBe('done')
     expect(parsed.usage?.inputTokens).toBeGreaterThan(0)
+  })
+
+  it('persists provider timestamps as execution metadata and closes an empty result', () => {
+    const fixture = readFileSync(fileURLToPath(new URL('./fixtures/stream-json.sample.jsonl', import.meta.url)), 'utf8')
+    const tool = parseClaudeStreamJson(fixture).lines[0]
+    expect(tool).toMatchObject({
+      kind: 'tool',
+      timing: {
+        startedAt: Date.parse('2026-08-16T17:19:39.515Z'),
+        endedAt: Date.parse('2026-08-16T17:19:39.830Z'),
+        source: 'provider',
+      },
+    })
+    if (tool?.kind !== 'tool') throw new Error('tool missing')
+    const child = Session.create(SessionId('child-claude-timing'))
+    child.append('turn/start', { turn: 1 })
+    appendClaudeTranscriptGroup(child, 1, 1, [tool], undefined)
+    const result = child.snapshotEvents().find(event => event.type === 'tool/result')
+    expect(result?.data.meta).toEqual({ localAgentTiming: { version: 1, provider: 'claude-local', ...tool.timing } })
+    expectValidReleasedLog(child)
+
+    const empty = parseClaudeStreamJson([
+      JSON.stringify({ type: 'assistant', timestamp: '2026-08-16T17:19:40.000Z', message: { content: [{ type: 'tool_use', id: 'empty', name: 'Bash' }] } }),
+      JSON.stringify({ type: 'user', timestamp: '2026-08-16T17:19:40.200Z', message: { content: [{ type: 'tool_result', tool_use_id: 'empty', content: '' }] } }),
+    ].join('\n')).lines[0]
+    expect(empty).toMatchObject({ kind: 'tool', timing: { endedAt: Date.parse('2026-08-16T17:19:40.200Z') } })
+    expect(empty?.kind === 'tool' && empty.result).toBeUndefined()
   })
 })
 

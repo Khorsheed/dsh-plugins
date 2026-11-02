@@ -7,8 +7,8 @@
  * member's resident thread instead of a fresh `codex exec` process, which buys
  * what the process boundary could not: runtime-level graceful interrupt
  * (`turn/interrupt`; the process survives and the thread stays continuable)
- * and push-mode mirroring (`item/completed` + delta notifications instead of
- * folding a polled stdout stream).
+ * and push-mode mirroring (`item/started` / `item/completed` + delta
+ * notifications instead of folding a polled stdout stream).
  *
  * Lifecycle mirrors the dsh live driver's discipline (M1): lazy spawn with an
  * initialize handshake, one in-flight spawn per member, idle-timeout reclaim
@@ -1111,8 +1111,10 @@ export class CodexLiveDriver {
     const folded = new Set<number>()
     /** The item deltas currently accumulate into (items stream sequentially). */
     let activeStream: string | undefined
+    /** Tool item id → its notification time, paired with item/completed. */
+    const toolStarts = new Map<string, number>()
     /** Items/completions that arrived before the turn id was known. */
-    const earlyNotifications: { method: string; params: JsonObject }[] = []
+    const earlyNotifications: { method: string; params: JsonObject; observedAt: number }[] = []
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
       persistQueue = persistQueue.then(() => persistChildSession(this.ctx, childSession)).catch((error: unknown) => {
@@ -1386,18 +1388,27 @@ export class CodexLiveDriver {
       persist()
       localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: task })
       for (const early of earlyNotifications.splice(0)) {
-        dispatchTurnNotification(early.method, early.params)
+        dispatchTurnNotification(early.method, early.params, early.observedAt)
       }
     }
 
     /** Process one turn-scoped notification for the round's own turn id. */
-    const dispatchTurnNotification = (method: string, params: JsonObject): void => {
+    const dispatchTurnNotification = (method: string, params: JsonObject, observedAt: number): void => {
+      if (method === 'item/started') {
+        const item = params['item'] as JsonObject | undefined
+        const id = item?.['id']
+        if (typeof id === 'string') toolStarts.set(id, observedAt)
+        return
+      }
       if (method === 'item/completed') {
         const item = params['item'] as JsonObject
         if (item['type'] === 'contextCompaction') {
           const beforeTokens = runtime?.contextTokens
-          autoCompactions.push({ at: Date.now(), ...beforeTokens === undefined ? {} : { beforeTokens } })
+          autoCompactions.push({ at: observedAt, ...beforeTokens === undefined ? {} : { beforeTokens } })
         }
+        const itemId = typeof item['id'] === 'string' ? item['id'] : undefined
+        const startedAt = itemId === undefined ? undefined : toolStarts.get(itemId)
+        if (itemId !== undefined) toolStarts.delete(itemId)
         const line = codexAppServerItemToLine(item)
         if (item['type'] === 'agentMessage' && typeof item['text'] === 'string') {
           const phase = item['phase']
@@ -1406,6 +1417,9 @@ export class CodexLiveDriver {
           lastText = item['text']
         }
         if (line === undefined) return
+        if (line.kind === 'tool' && startedAt !== undefined) {
+          line.timing = { startedAt, endedAt: observedAt, source: 'observed' }
+        }
         lines.push(line)
         // Hold back the volatile last line (a tool result may still merge
         // into it) — per-call usage arrives on thread/tokenUsage/updated and
@@ -1490,8 +1504,9 @@ export class CodexLiveDriver {
         }
         return
       }
-      if (!['item/completed', 'item/agentMessage/delta', 'item/reasoning/textDelta',
+      if (!['item/started', 'item/completed', 'item/agentMessage/delta', 'item/reasoning/textDelta',
         'thread/tokenUsage/updated', 'turn/completed'].includes(method)) return
+      const observedAt = Date.now()
       // turn/completed carries the id inside its turn object; the rest carry
       // a top-level turnId.
       const turnId = method === 'turn/completed'
@@ -1501,10 +1516,10 @@ export class CodexLiveDriver {
       const matchesPending = activeTurnId === undefined && pendingTurnId !== undefined && turnId === pendingTurnId
       if (!matchesActive && !matchesPending) return // retired or foreign turn
       if (!turnOpened) {
-        earlyNotifications.push({ method, params })
+        earlyNotifications.push({ method, params, observedAt })
         return
       }
-      dispatchTurnNotification(method, params)
+      dispatchTurnNotification(method, params, observedAt)
     }
 
     const accepted: Promise<void> = (async () => {

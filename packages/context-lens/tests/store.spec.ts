@@ -195,6 +195,24 @@ describe('turn timing aggregation', () => {
     expect(execLane).toMatchObject({ tool: 'read', durationMs: 46 })
     expect(timing?.tools).toEqual([{ tool: 'read', calls: 1, totalMs: 46, argsMs: 200 }])
   })
+
+  it('prefers the execution interval carried by a mirrored result', () => {
+    const at = clock()
+    const store = new InspectorStore({}, { now: at.now })
+    store.turnStart('s1', 1, at.tick(1))
+    runRequest(store, snap('s1', [msg('u1', '跑')]), at, { kind: 'tool' })
+    store.toolCall('s1', 'call_1', 'read', '{}', at.tick(1))
+    const endedAt = at.tick(1)
+    store.toolResult('s1', 'call_1', false, 'ok', at.tick(1), { startedAt: endedAt - 250, endedAt })
+    store.turnEnd('s1', 1, { kind: 'completed' }, at.tick(1))
+
+    const timing = store.getTurnTiming('s1', 1)
+    expect(timing?.buckets.toolExecMs).toBe(250)
+    expect(timing?.lanes.find(lane => lane.kind === 'tool-exec')).toMatchObject({
+      startedAt: endedAt - 250,
+      durationMs: 250,
+    })
+  })
 })
 
 describe('eviction', () => {

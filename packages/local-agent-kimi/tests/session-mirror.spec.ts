@@ -247,6 +247,24 @@ describe('session-mirror', () => {
     expectValidReleasedLog(child)
   })
 
+  it('persists the wire execution interval beside the mirrored result', async () => {
+    const { home } = wireHome('timed-tool', [
+      { type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: 'write' }] } },
+      { type: 'context.append_loop_event', time: 1000, event: { type: 'tool.call', toolCallId: 'tc1', name: 'Write' } },
+      { type: 'context.append_loop_event', time: 1350, event: { type: 'tool.result', toolCallId: 'tc1', result: { output: 'ok' } } },
+    ])
+    const child = Session.create(SessionId('timed-tool'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+    await mirrorKimiSession(ctx, child, home)
+    const result = child.snapshotEvents().find(event => event.type === 'tool/result')
+    expect(result?.data.meta).toEqual({
+      localAgentTiming: { version: 1, provider: 'kimi-cli', startedAt: 1000, endedAt: 1350, source: 'provider' },
+    })
+    expectValidReleasedLog(child)
+  })
+
   it('mirrors user prompts and folds assistant activity into messages', async () => {
     const { home } = wireHome('s1', fullWire)
     const child = Session.create(SessionId('child-1'))

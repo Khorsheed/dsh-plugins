@@ -84,6 +84,22 @@ describe('session-view', () => {
     ])
   })
 
+  it('keeps wire execution times even when a tool result has no text output', async () => {
+    const home = tempHome('kimi-session-times-')
+    const dir = join(home, 'sessions', 'wd_tmp_abc', 'session_times')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'context.append_loop_event', time: 1000, event: { type: 'tool.call', uuid: 'u1', toolCallId: 'tc1', name: 'Write' } }),
+      JSON.stringify({ type: 'context.append_loop_event', time: 1450, event: { type: 'tool.result', parentUuid: 'u1', toolCallId: 'tc1', result: { output: '' } } }),
+    ].join('\n'))
+    const [line] = (await readKimiTranscript(dir)).lines
+    expect(line).toMatchObject({
+      kind: 'tool',
+      timing: { startedAt: 1000, endedAt: 1450, source: 'provider' },
+    })
+    expect(line?.kind === 'tool' && line.result).toBeUndefined()
+  })
+
   it('tags lines with the wire step and records which steps closed', async () => {
     const home = tempHome('kimi-session-steps-')
     const dir = join(home, 'sessions', 'wd_x', 'session_steps')

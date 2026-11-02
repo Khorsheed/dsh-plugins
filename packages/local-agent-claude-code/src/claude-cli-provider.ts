@@ -49,8 +49,8 @@ import {
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
-import type { LocalAgentAppliedConfiguration, DelegationExecTarget, LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
-import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentAppliedConfiguration, DelegationExecTarget, LocalAgentToolCalls, LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
+import { localAgentToolTimingMeta, MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { ClaudeLiveDriver } from './live-driver.ts'
 import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
@@ -742,9 +742,10 @@ export type ClaudeTranscriptLine =
    * assistant event): it rides the call's LAST folded line — a tool-only
    * call's lands on the tool line's advertising message. `messageId` groups
    * the per-block events of ONE API call (claude emits one assistant event
-   * per content block, each repeating the message's usage).
+   * per content block, each repeating the message's usage). `timing` preserves
+   * the provider timestamps as the execution interval.
    */
-  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; messageId?: string; usage?: TokenUsage }
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; messageId?: string; usage?: TokenUsage; timing?: LocalAgentToolTiming }
 
 /** Group the lines of one API call (consecutive lines sharing a message id).
  * Lines without an id stay singleton units (the pre-grouping shape). */
@@ -901,6 +902,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
     usage?: unknown
     session_id?: unknown
     result?: unknown
+    timestamp?: unknown
     claude_code_version?: unknown
   }
   try {
@@ -930,6 +932,8 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
     return
   }
   if (event.type !== 'assistant' && event.type !== 'user') return
+  const parsedAt = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : Number.NaN
+  const eventAt = Number.isFinite(parsedAt) ? parsedAt : undefined
   const blocks = event.message?.content ?? []
   const linesBefore = state.lines.length
   const messageId = event.type === 'assistant' && typeof event.message?.id === 'string' ? event.message.id : undefined
@@ -972,6 +976,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
       const id = typeof record['id'] === 'string' ? record['id'] : undefined
       if (id !== undefined) state.callsById.set(id, state.lines.length)
       const edit = kind === 'tool_use' ? editToolDetail(name, record['input']) : undefined
+      const timing = eventAt === undefined ? undefined : { startedAt: eventAt, source: 'provider' as const }
       if (edit !== undefined) {
         // The apply-patch-style card (codex's fileChange idiom): the path as
         // the args, the actual edit — old/new strings or the file body — as
@@ -984,6 +989,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
           args: edit.args,
           ...messageId === undefined ? {} : { messageId },
           ...edit.patch === undefined ? {} : { result: edit.patch },
+          ...timing === undefined ? {} : { timing },
         })
       } else {
         const detail = inputDetail(record['input'])
@@ -995,20 +1001,15 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
           name: kind === 'server_tool_use' ? SERVER_TOOL_CARD_NAMES[name] ?? name : name,
           ...messageId === undefined ? {} : { messageId },
           ...detail === undefined ? {} : { args: detail },
+          ...timing === undefined ? {} : { timing },
         })
       }
     } else if (kind === 'tool_result') {
-      const resultText = toolResultText(record['content'])
-      if (resultText !== undefined && resultText.trim() !== '') {
-        attachToolResult(state, record['tool_use_id'], resultText, record['is_error'] === true)
-      }
+      attachToolResult(state, record['tool_use_id'], toolResultText(record['content']), record['is_error'] === true, eventAt)
     } else if (kind === 'web_search_tool_result' || kind === 'web_fetch_tool_result') {
       // The result half of a server_tool_use: pairs to its call by id like a
       // local tool_result, so server-side web activity stays visible.
-      const resultText = serverToolResultText(record)
-      if (resultText !== undefined && resultText.trim() !== '') {
-        attachToolResult(state, record['tool_use_id'], resultText, false)
-      }
+      attachToolResult(state, record['tool_use_id'], serverToolResultText(record), false, eventAt)
     }
   }
   // Claude reports the call's own usage inline on every assistant event
@@ -1039,7 +1040,7 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
  * patch) keeps it — the status text adds nothing to a successful edit — but
  * an error result always appends, since a failed edit's message is the point.
  */
-function attachToolResult(state: ClaudeStreamFoldState, useId: unknown, resultText: string, isError: boolean): void {
+function attachToolResult(state: ClaudeStreamFoldState, useId: unknown, resultText: string | undefined, isError: boolean, endedAt: number | undefined): void {
   let target = typeof useId !== 'string' ? undefined : state.callsById.get(useId)
   if (target === undefined) {
     for (let index = state.lines.length - 1; index >= 0; index -= 1) {
@@ -1052,10 +1053,12 @@ function attachToolResult(state: ClaudeStreamFoldState, useId: unknown, resultTe
   if (target === undefined) return
   const last = state.lines[target]
   if (last === undefined || last.kind !== 'tool') return
-  if (last.result === undefined) {
-    state.lines[target] = { ...last, result: resultText }
-  } else if (isError) {
-    state.lines[target] = { ...last, result: `${last.result}\n${resultText}` }
+  const hasText = resultText !== undefined && resultText.trim() !== ''
+  state.lines[target] = {
+    ...last,
+    ...hasText && last.result === undefined ? { result: resultText } : {},
+    ...hasText && isError && last.result !== undefined ? { result: `${last.result}\n${resultText}` } : {},
+    ...last.timing !== undefined && endedAt !== undefined ? { timing: { ...last.timing, endedAt } } : {},
   }
 }
 
@@ -1660,6 +1663,7 @@ export function appendClaudeTranscriptLine(
     // A tool-only call's usage rides the advertising assistant/message (the
     // tool/call and tool/result events themselves have no usage slot).
     const args = line.args ?? ''
+    const meta = line.timing === undefined ? undefined : localAgentToolTimingMeta('claude-local', line.timing)
     childSession.append('assistant/message', {
       turn,
       step,
@@ -1682,6 +1686,7 @@ export function appendClaudeTranscriptLine(
         content: [{ type: 'text', text: line.result ?? CLAUDE_INTERRUPTED_TOOL_RESULT }],
         isError: line.result === undefined,
       }),
+      ...meta === undefined ? {} : { meta },
     }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
     childSession.append('step/end', { turn, step })
     return
@@ -1737,6 +1742,7 @@ export function appendClaudeTranscriptGroup(
   }, { surfaceOp: 'append' })
   for (const line of group) {
     if (line.kind !== 'tool') continue
+    const meta = line.timing === undefined ? undefined : localAgentToolTimingMeta('claude-local', line.timing)
     const call = childSession.append('tool/call', {
       turn,
       step,
@@ -1752,6 +1758,7 @@ export function appendClaudeTranscriptGroup(
         content: [{ type: 'text', text: line.result ?? CLAUDE_INTERRUPTED_TOOL_RESULT }],
         isError: line.result === undefined,
       }),
+      ...meta === undefined ? {} : { meta },
     }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
   }
   childSession.append('step/end', { turn, step })

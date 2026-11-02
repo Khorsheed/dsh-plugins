@@ -191,6 +191,14 @@
 - **退役条件**：官方能让单次调用指定 HTTP 提供方（或声明要原始响应）后，阅读器回到 `ctx.web.fetch`，删掉 `document-fetch.ts`，`fetchLimits` 改回由 `web-fetch-http` 行配置。
 - **状态**：绕行中（@khorsheed/dsh-reader）。
 
+### S23. 工具事件只有镜像写入时间，没有真实执行区间
+
+- **需求**：`tool/call.time` / `tool/result.time` 表示会话事件追加时间；外部 CLI 镜像在结果已知后连续写两条事件，执行耗时因此被压成几毫秒。宿主需要标准的可选 `tool/result.execution { startedAt, endedAt, source }`，让原生工具、外部镜像、`sessionStats` 与观测插件共用真实执行区间；只有 duration 无法支撑时间线和并行去重。
+- **现状绕行**：local-agent 的 Kimi、Claude Code、Codex 在 `tool/result.meta.localAgentTiming` 写入版本化执行区间；Kimi 取 wire 时间，Claude 取记录时间戳，Codex 配对增量开始/完成通知。Context Lens 的实时与回填通道优先读取，缺失或非法时回退到 envelope 时间差。旧镜像日志仅凭自身无法修正；宿主 `sessionStats.toolMs` 仍是旧口径。
+- **建议的官方改动**：`SessionEventMap['tool/result']` 增加可选执行区间并保证持久化往返；原生工具执行路径产生该字段，`sessionStats` 优先按它累计。字段缺失时所有消费者保留旧日志回退，不篡改 envelope `time`。完整提案：`docs/upstream-proposals/2026-11-02-tool-execution-timing.md`。
+- **退役条件**：宿主升级时核对 core/session 类型、原生或外部生产路径、session-stats 消费是否齐备。落地后三家 provider 改写标准字段，Context Lens 优先读标准字段并保留旧 meta 回退一个兼容周期，随后停止写 `meta.localAgentTiming` 并删除本条。
+- **状态**：绕行中（@khorsheed/dsh-local-agent 家族 + @khorsheed/dsh-context-lens）。
+
 
 - 新增条目：发现"官方不支持 → 绕行"即登记，先登记者在提案总表更新计数。
 - 条目退役：官方落地后同一 PR 里拆绕行 + 标 `已退役` + 写明退役版本。

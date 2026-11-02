@@ -15,7 +15,8 @@
  *   fresh-process children fill the same scope from the log lane instead.
  * - **Tool timing** pairs `tool/call` → `tool/result` by callId and attributes
  *   the interval to the request whose response issued the call (callId owner
- *   table, fed from tool-call stream blocks).
+ *   table, fed from tool-call stream blocks). A mirrored result's execution
+ *   metadata supersedes the two mirror-write timestamps when present.
  *
  * Eviction is turn-granular (never a half turn): per-session turn cap and a
  * global request cap both evict the oldest CLOSED turn; a turn holding a live
@@ -95,6 +96,26 @@ export interface BlockSpan {
    * cancelled mid-block response partially visible.
    */
   text?: string
+}
+
+/** A mirrored tool's actual execution interval, persisted beside its result. */
+export interface ToolExecutionInterval {
+  startedAt: number
+  endedAt: number
+}
+
+/** Read the local-agent transitional timing metadata without taking a package dependency. */
+export function toolExecutionFromMeta(meta: unknown): ToolExecutionInterval | undefined {
+  if (typeof meta !== 'object' || meta === null) return undefined
+  const timing = (meta as Record<string, unknown>)['localAgentTiming']
+  if (typeof timing !== 'object' || timing === null) return undefined
+  const record = timing as Record<string, unknown>
+  const startedAt = record['startedAt']
+  const endedAt = record['endedAt']
+  if (record['version'] !== 1 || typeof startedAt !== 'number' || typeof endedAt !== 'number'
+    || !Number.isFinite(startedAt) || !Number.isFinite(endedAt)
+    || startedAt < 0 || endedAt < startedAt) return undefined
+  return { startedAt, endedAt }
 }
 
 /** One tool execution interval attributed to the request that issued the call. */
@@ -844,14 +865,15 @@ export class InspectorStore {
   }
 
   /** tool/result: close the exec interval; resolve a delegation scope's outcome. */
-  toolResult(sessionId: string, callId: string, isError: boolean, result: string, at: number): void {
+  toolResult(sessionId: string, callId: string, isError: boolean, result: string, at: number, execution?: ToolExecutionInterval): void {
     const rootId = this.rootOf(sessionId)
     const session = this.sessions.get(rootId)
     const owner = this.callOwners.get(callId)
     if (owner !== undefined) {
       const span = owner.execs.find(exec => exec.callId === callId && exec.end === undefined)
       if (span !== undefined) {
-        span.end = at
+        if (execution !== undefined) span.start = execution.startedAt
+        span.end = execution?.endedAt ?? at
         span.isError = isError
         span.result = result
         this.accountExecutionResults(owner)

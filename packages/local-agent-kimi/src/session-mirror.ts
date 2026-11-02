@@ -13,7 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
-import type { LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
+import { localAgentToolTimingMeta, type LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
 import { persistChildSession } from '@khorsheed/dsh-local-agent'
 import { addTokenUsage, readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
 
@@ -597,6 +597,7 @@ export async function mirrorKimiSessionDelta(
     // The native tool lifecycle inside the same step: the message advertises
     // every call, then each call resolves before the step closes.
     for (const line of toolLines) {
+      const meta = line.timing === undefined ? undefined : localAgentToolTimingMeta('kimi-cli', line.timing)
       const call = childSession.append('tool/call', {
         turn,
         step,
@@ -612,6 +613,7 @@ export async function mirrorKimiSessionDelta(
           content: [{ type: 'text', text: line.result ?? KIMI_INTERRUPTED_TOOL_RESULT }],
           isError: line.result === undefined,
         }),
+        ...meta === undefined ? {} : { meta },
       }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
     }
     childSession.append('step/end', { turn, step })
