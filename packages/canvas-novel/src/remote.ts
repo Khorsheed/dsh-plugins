@@ -16,6 +16,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { panelSession } from './panel-session.ts'
+import { pickNovelImportDirectory } from './import-directory.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
   confirmPlanGesture, decideOutlineGesture, decidePendingGesture, editPlanGesture,
@@ -31,7 +32,7 @@ import {
   type CardLinkGroup, type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
   type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelPlanEditRequest, type NovelRecentResult, type NovelPlanEditResult, type NovelStarRequest, type NovelStateRequest,
   type NovelWorkRequest, type NovelWorldMapResult, type NovelCodexResult, type CodexSetting, type NovelTimelineResult, type TimelineEventView, type TimelineFutureView,
-  type NovelPinsRequest, type NovelIdeasResult, type NovelIdeaRequest, type NovelDeleteRequest, type NovelDeletePreviewResult, type DeleteFixView, type NovelAlignResult, type NovelAlignAckRequest, type NovelBodyEditRequest, type NovelBodyEditResult, type NovelOwnChapterRequest, type OutlineCore, type WorldNode, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
+  type NovelPinsRequest, type NovelIdeasResult, type NovelIdeaRequest, type NovelDeleteRequest, type NovelDeletePreviewResult, type DeleteFixView, type NovelAlignResult, type NovelAlignAckRequest, type NovelBodyEditRequest, type NovelBodyEditResult, type NovelOwnChapterRequest, type NovelImportChapterRequest, type NovelImportChapterResult, type NovelDirectorySelection, type NovelDirectoryImportResult, type OutlineCore, type WorldNode, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
 } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -602,6 +603,20 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
   async newOwnChapter(sessionId: SessionId, request: NovelOwnChapterRequest): Promise<NovelGestureResult & { readonly n?: number }> {
     const outcome = await this.core.writeChapter({ workId: request.canvasId, title: request.title, byUser: true, content: '' }, await panelSession(this.ctx, sessionId))
     return outcome.ok ? { ok: true, ...(outcome.chapter === undefined ? {} : { n: outcome.chapter.n }) } : { ok: false, ...(outcome.error === undefined ? {} : { error: outcome.error }) }
+  }
+
+  /** One parsed document chapter, written as 用户原稿 through the usual manuscript fence. */
+  @Remote('importOwnChapter')
+  async importOwnChapter(sessionId: SessionId, request: NovelImportChapterRequest): Promise<NovelImportChapterResult> {
+    const outcome = await this.core.writeChapter({ workId: request.canvasId, title: request.title, byUser: true, content: request.text }, await panelSession(this.ctx, sessionId))
+    return outcome.ok ? { ok: true, ...(outcome.chapter === undefined ? {} : { n: outcome.chapter.n }) } : { ok: false, ...(outcome.error === undefined ? {} : { error: outcome.error }) }
+  }
+
+  /** Choose a native directory on the host, or read one confirmed by the official browse picker. */
+  @Remote('importDirectory')
+  async importDirectory(sessionId: SessionId, selection?: NovelDirectorySelection): Promise<NovelDirectoryImportResult> {
+    await panelSession(this.ctx, sessionId)
+    return pickNovelImportDirectory(this.ctx, selection?.path)
   }
 
   /** The person's ★ on a foreshadow. */

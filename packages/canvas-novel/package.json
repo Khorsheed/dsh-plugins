@@ -58,6 +58,7 @@
     "dsh": ">=0.2.0-rc.2 <0.3.0-0"
   },
   "dependencies": {
+    "mammoth": "^1.13.0",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
@@ -67,6 +68,7 @@
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
+    "@deepseek-ai/dsh-client-ui-workspace": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
     "@deepseek-ai/dsh-fs": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
     "@deepseek-ai/dsh-sandbox": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
     "@deepseek-ai/dsh-sandbox-policy": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1",
@@ -86,6 +88,9 @@
     "@deepseek-ai/dsh-client-ui-slots": {
       "optional": true
     },
+    "@deepseek-ai/dsh-client-ui-workspace": {
+      "optional": true
+    },
     "@deepseek-ai/dsh-tools": {
       "optional": true
     },
@@ -101,6 +106,7 @@
     "@deepseek-ai/dsh-client-ui-primitives": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-workspace": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-fs": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-sandbox": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-sandbox-policy": "^0.2.0-rc.1",
@@ -113,6 +119,7 @@
     "@types/node": "^22.0.0",
     "@types/react": "~18.3.1",
     "jsdom": "^30.0.1",
+    "jszip": "^3.10.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "tsdown": "^0.22.2",
@@ -143,7 +150,8 @@
       "inject": [
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-slots"
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-workspace"
       ],
       "platform": "web"
     },

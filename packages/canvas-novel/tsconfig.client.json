@@ -14,6 +14,7 @@
   "files": [
     "src/css-modules.d.ts",
     "src/genre.ts",
+    "src/import-core.ts",
     "src/types.ts",
     "src/timeline.ts",
     "src/ideas.ts",
@@ -32,6 +33,8 @@
     "src/client/OnePage.tsx",
     "src/client/DeleteNode.tsx",
     "src/client/AlignPage.tsx",
+    "src/client/import-documents.ts",
+    "src/client/ImportNovel.tsx",
     "src/client/ChapterReader.tsx",
     "src/client/ChapterBook.tsx",
     "src/client/CardSection.tsx",

@@ -28,6 +28,7 @@ import { ALIGN_PAGE, type ChapterTarget, type NovelSurfaceProps } from './contra
 import { awaitsReconcile } from './NovelFaces.tsx'
 import { currentChapter, PendingList } from './PendingList.tsx'
 import { useNovelRead } from './use-novel.ts'
+import { ImportNovel } from './ImportNovel.tsx'
 import css from './novel.module.css'
 import book from './book.module.css'
 
@@ -127,6 +128,7 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
     return (
       <div className={css.book} data-canvas-scroll="novel-book">
         <div className={css.bookEmpty}>{t('toc.empty')}</div>
+        <ImportNovel {...surface} />
         <NewOwnChapter {...surface} n={1} onCreated={n => { onRead(n, true) }} />
       </div>
     )
@@ -277,6 +279,7 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
             {isOpen && (
               <div className={book.chs}>
                 {group.map(row)}
+                {index === lastGroup && <ImportNovel {...surface} />}
                 {index === lastGroup && <NewOwnChapter {...surface} n={nextN} onCreated={n => { onRead(n, true) }} />}
               </div>
             )}

@@ -22,6 +22,7 @@ The trouble with writing a long novel with a model is that it forgets: character
 - **Decide what happens next**: the "Timeline" shows what has happened on the left, in story order, and what is to come on the right — events you have in mind, characters' intentions, consequences on their way, foreshadow reveals — grouped by priority (due, overdue, ready, saturated, on hold), each with the reason.
 - **See each chapter's plan before it's written**: planning the next chapter, the agent picks the events to move from the timeline and lays out the target length, plot beats, conflict, foreshadowing and who appears; on the "Chapters" page you can prioritize an event or skip it for this chapter. Read the plan and press "Write to this plan" to start.
 - **Write it yourself too**: edit a chapter's text right on the chapter page, or start a chapter of your own — on a phone as well; jot a scene or a line on the "Ideas" page, place it on the timeline, and its words come along when that event is written.
+- **Import an existing novel**: press "Import a novel" on the Chapters page and choose several Word (.docx), TXT or Markdown documents at once, or press "Import a folder" on the host machine to read a whole directory recursively. Files join in natural name or relative-path order, and standalone headings such as "第…章" and "Chapter…" become chapters automatically. Check the preview, confirm, and the text lands in the workspace while the agent reconciles every chapter.
 - **The text lives in your workspace**: each chapter is a Markdown file in your workspace that any editor can open.
 - **Reconcile after each chapter**: say "reconcile chapter 3" in the chat and the agent reads the text, puts what happened on the timeline, and records what the characters went through, what they now believe and intend, how relationships moved and where the foreshadowing stands.
 - **The whole book at a glance**: switch the "Timeline" to "By chapter" to lay out, chapter by chapter, where clues were planted and revealed, how relationships rose and fell and what each character went through, and flags foreshadowing that's been idle too long; the "Chapters" page is a table of contents by volume with a reader, and "Keep writing" picks up where you stopped.
@@ -43,6 +44,8 @@ It only appears in "写作模式" (writing mode) sessions; not seeing it in othe
 ## Known limitations
 
 - Chapter text has to be saved into a workspace attached to the canvas; if it can't be saved, the chapter isn't recorded.
+- Import reads document text only, not text inside images; save legacy .doc files as .docx first. A document with no recognizable chapter headings imports as one chapter.
+- Folder import appears only on the host machine; remote pages should choose several files instead. A folder can contain up to 32 levels, 500 supported documents and 100MB in total; truncation is shown in the preview.
 - A canvas that wasn't opened from the current session is read-only, so you can't handle items to review there.
 - Data from the old story-bible plugin is not carried over.
 

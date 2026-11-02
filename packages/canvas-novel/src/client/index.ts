@@ -36,7 +36,9 @@
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
+import { createElement, type ComponentType } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
+import type { DirectoryFlowOwnerProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the ctx.slots service merge.
@@ -64,6 +66,7 @@ import {
 export { CardSection } from './CardSection.tsx'
 export { ChapterBook } from './ChapterBook.tsx'
 export { ChapterReader } from './ChapterReader.tsx'
+export { ImportNovel } from './ImportNovel.tsx'
 export { ChaptersBadge, CardScopes, DeleteNote, FaceLabel, storyUsage } from './NovelFaces.tsx'
 export { PendingList } from './PendingList.tsx'
 export { PlanView } from './PlanView.tsx'
@@ -196,7 +199,19 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
     return wrapped
   }
-  const face: NovelFace = { remote: remoteOf, draftToConversation, sendToConversation }
+  let directoryComponent: ComponentType<DirectoryFlowOwnerProps> | undefined
+  const directoryFlow = (): ComponentType<DirectoryFlowOwnerProps> | undefined => {
+    if (ctx.slots.entries('sidebar.workspaces.directoryFlow').length === 0) return undefined
+    directoryComponent ??= (owner) => {
+      const entry = ctx.slots.entries('sidebar.workspaces.directoryFlow')[0]
+      if (entry === undefined) return null
+      const injected = typeof entry.inject === 'function' ? entry.inject() : entry.inject
+      const component = entry.component as unknown as ComponentType<DirectoryFlowOwnerProps & Record<string, unknown>>
+      return createElement(component, { ...injected, ...owner })
+    }
+    return directoryComponent
+  }
+  const face: NovelFace = { remote: remoteOf, draftToConversation, sendToConversation, directoryFlow }
   // The seats are declared by @khorsheed/dsh-canvas, outside this type graph.
   const seats = ctx.slots as unknown as {
     inject: (key: string, callback: () => () => void) => () => void

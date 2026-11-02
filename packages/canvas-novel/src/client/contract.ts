@@ -7,12 +7,14 @@
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
+import type { ComponentType } from 'react'
+import type { DirectoryFlowOwnerProps } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
-  LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelWorldMapResult, NovelTimelineResult, NovelCodexResult, NovelPinsRequest, NovelIdeasResult, NovelIdeaRequest, NovelDeleteRequest, NovelDeletePreviewResult, NovelAlignResult, NovelAlignAckRequest, NovelBodyEditRequest, NovelBodyEditResult, NovelOwnChapterRequest, NovelPendingResult, NovelPlanEditRequest, NovelRecentResult, NovelPlanEditResult, NovelStarRequest, NovelStateRequest,
+  LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelWorldMapResult, NovelTimelineResult, NovelCodexResult, NovelPinsRequest, NovelIdeasResult, NovelIdeaRequest, NovelDeleteRequest, NovelDeletePreviewResult, NovelAlignResult, NovelAlignAckRequest, NovelBodyEditRequest, NovelBodyEditResult, NovelOwnChapterRequest, NovelImportChapterRequest, NovelImportChapterResult, NovelDirectorySelection, NovelDirectoryImportResult, NovelPendingResult, NovelPlanEditRequest, NovelRecentResult, NovelPlanEditResult, NovelStarRequest, NovelStateRequest,
   NovelWorkRequest, StoryLogResult,
 } from '../types.ts'
 import type {} from './locales.ts'
@@ -82,6 +84,8 @@ export interface NovelRemote {
   changeIdea: (sessionId: SessionId, request: NovelIdeaRequest) => Promise<RemoteResult<NovelGestureResult>>
   editChapterBody: (sessionId: SessionId, request: NovelBodyEditRequest) => Promise<RemoteResult<NovelBodyEditResult>>
   newOwnChapter: (sessionId: SessionId, request: NovelOwnChapterRequest) => Promise<RemoteResult<NovelGestureResult & { readonly n?: number }>>
+  importOwnChapter: (sessionId: SessionId, request: NovelImportChapterRequest) => Promise<RemoteResult<NovelImportChapterResult>>
+  importDirectory: (sessionId: SessionId, selection?: NovelDirectorySelection) => Promise<RemoteResult<NovelDirectoryImportResult>>
   decideOutline: (sessionId: SessionId, request: NovelOutlineDecideRequest) => Promise<RemoteResult<NovelGestureResult>>
   deletePreview: (request: NovelDeleteRequest) => Promise<RemoteResult<NovelDeletePreviewResult>>
   deleteNode: (sessionId: SessionId, request: NovelDeleteRequest) => Promise<RemoteResult<NovelGestureResult>>
@@ -93,6 +97,8 @@ export interface NovelRemote {
 export interface NovelFace {
   /** The mounted Remote, or undefined when the host half is not composed. */
   readonly remote: () => NovelRemote | undefined
+  /** The host's registered directory flow, absent when this composition has no picker. */
+  readonly directoryFlow?: () => ComponentType<DirectoryFlowOwnerProps> | undefined
   /**
    * Put a line into the session's conversation input without sending it
    * (appended to a draft already there), and hand it the keyboard. False

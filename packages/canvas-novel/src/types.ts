@@ -20,6 +20,7 @@
  */
 
 import type { NovelCardStatus } from './genre.ts'
+import type { NovelImportIssue } from './import-core.ts'
 
 /* ------------------------------------------------------------------ works */
 
@@ -1927,6 +1928,39 @@ export interface NovelBodyEditResult {
 /** A new chapter the person writes themselves. */
 export interface NovelOwnChapterRequest extends NovelWorkRequest {
   readonly title: string
+}
+
+/** One parsed document chapter to import as the person's own manuscript. */
+export interface NovelImportChapterRequest extends NovelOwnChapterRequest {
+  readonly text: string
+}
+
+/** The imported chapter's allocated number, or the write fence's refusal. */
+export interface NovelImportChapterResult extends NovelGestureResult {
+  readonly n?: number
+}
+
+/** A directory confirmed through the host's in-app browse picker. */
+export interface NovelDirectorySelection {
+  readonly path: string
+}
+
+/** One supported file read inside the picker-confirmed directory. */
+export interface NovelDirectoryFile {
+  readonly file: string
+  readonly titleBase: string
+  readonly data: Uint8Array
+}
+
+/** The picker-confirmed directory's file bytes and read warnings, or the next interaction needed. */
+export interface NovelDirectoryImportResult {
+  readonly ok: boolean
+  readonly error?: 'browse' | 'cancelled' | 'unsupported' | 'unreadable'
+  readonly rootName?: string
+  readonly files: readonly NovelDirectoryFile[]
+  readonly issues: readonly NovelImportIssue[]
+  readonly skipped: number
+  readonly truncated: boolean
 }
 
 /** The person's own edit of a chapter plan: the lines of the page's edit box. */
