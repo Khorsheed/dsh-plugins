@@ -75,6 +75,7 @@ function Dialog() {
       existingNames={[member.name]}
       browseDirectory={async () => null}
       memberRunning={state === 'running' || state === 'scheduled'}
+      memberRun={state === 'running' || state === 'scheduled' ? { member: member.name, runId: 'r1', state: 'running', startedAt: Date.now() - 65_000 } as never : undefined}
       memberTools={read}
       reloadMemberTools={reload}
       onSubmit={async () => ({ ok: true })}

@@ -177,6 +177,7 @@ export function MembersView({
       readMemberSelection={readMemberSelection}
       mainModelDirectory={modelDirectory}
       memberRunning={dialog.mode === 'edit' && (state?.runs.some(run => run.member === dialog.member.name && run.state === 'running') ?? false)}
+      memberRun={dialog.mode === 'edit' ? state?.runs.find(run => run.member === dialog.member.name) : undefined}
       memberTools={memberTools}
       reloadMemberTools={reloadMemberTools}
       onSubmit={submitDialog}

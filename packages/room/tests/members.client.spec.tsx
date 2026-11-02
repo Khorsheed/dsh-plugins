@@ -458,7 +458,7 @@ describe('MembersView', () => {
   it('degrades the provider section when the facade is absent', async () => {
     await bench({ providers: { localAgentAvailable: false, providers: [] } })
     fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
-    await screen.findByText(/委派门面未挂载/)
+    await screen.findByText(/没有装本机 Agent 委派插件/)
     expect((screen.getByRole('button', { name: '邀请入队' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
@@ -513,7 +513,7 @@ describe('MembersView', () => {
     await screen.findByRole('dialog')
     await screen.findByText('Kimi Code', { selector: 'option' })
     fireEvent.click(screen.getByRole('button', { name: '浏览…' }))
-    await screen.findByText(/目录选择器不可用/)
+    await screen.findByText(/打不开选文件夹的窗口/)
   })
 
   it('previews the member card live as the form changes', async () => {
@@ -686,7 +686,7 @@ describe('MembersView', () => {
     const items = screen.getAllByRole('menuitemradio')
     // The leading 默认 item means "clear the override, follow settings" here;
     // the prefilled effective model reads checked.
-    expect(items[0].textContent).toBe('默认（清除覆盖，跟随设置）')
+    expect(items[0].textContent).toBe('默认（用默认模型）')
     expect(items.slice(1).map(item => item.textContent)).toEqual(['kimi-k2✓', 'kimi-k1'])
     expect(dialog.querySelector('datalist')).toBeNull()
   })

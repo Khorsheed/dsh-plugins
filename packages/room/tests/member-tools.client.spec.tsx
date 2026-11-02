@@ -8,6 +8,8 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsStatus } from '@khorsheed/dsh-local-agent/types'
 import { MemberToolsLine } from '../src/client/MemberToolsLine.tsx'
+import { InviteDialog } from '../src/client/InviteDialog.tsx'
+import type { RoomMember, RoomMemberRun } from '../src/types.ts'
 import { RoomEventView } from '../src/client/RoomEventView.tsx'
 import { memberToolsLine, modeShortName } from '../src/client/member-tools-view.ts'
 import { en, zh } from '../src/client/locales.ts'
@@ -199,5 +201,46 @@ describe('the room\'s mode-tools notice', () => {
   it('without the mode names it still reads, and the English line', async () => {
     notice({ tools: { kind: 'unavailable', preset: 'x', during: 'idle' } }, { modeNames: undefined }, en)
     await screen.findByText(/’s mode tools are still unavailable after reloading/)
+  })
+})
+
+describe('the edit dialog head agrees with the 模式工具 line', () => {
+  const member: RoomMember = { id: 'm1', name: 'gm', kind: 'cli', provider: 'kimi-cli', preset: 'dsh-gamedev', invitedBy: 'human', childSessionId: 'child-gm' as never }
+  function dialog(run: RoomMemberRun | undefined) {
+    const running = run?.state === 'running'
+    return render(
+      <InviteDialog
+        mode="edit"
+        member={member}
+        presets={[{ id: 'dsh-gamedev', name: '游戏开发模式', isDefault: false }]}
+        localAgentAvailable
+        existingNames={['gm']}
+        browseDirectory={async () => null}
+        memberRunning={running}
+        memberRun={run}
+        memberTools={async () => status({ process: 'placeholder', received: [] })}
+        reloadMemberTools={async () => ({ ok: true, when: running ? 'after-round' : 'now' })}
+        onSubmit={async () => ({ ok: true })}
+        onClose={() => {}}
+        t={makeTranslate(zh)}
+      />,
+    )
+  }
+
+  it('a running member reads 运行中 in the head card, never 空闲, while the line offers 结束后重新载入', async () => {
+    const view = dialog({ member: 'gm', state: 'running', startedAt: Date.now() - 65_000 } as RoomMemberRun)
+    await screen.findByText('结束后重新载入')
+    const card = view.container.querySelector('[data-member="gm"]')!
+    expect(card.textContent).toContain(zh['members.status.running'])
+    expect(card.textContent).not.toContain(zh['members.status.idle'])
+  })
+
+  it('an idle member reads 空闲, a failed one 失败', async () => {
+    const idle = dialog(undefined)
+    await screen.findByText('重新载入')
+    expect(idle.container.querySelector('[data-member="gm"]')!.textContent).toContain(zh['members.status.idle'])
+    cleanup()
+    const failed = dialog({ member: 'gm', state: 'failed', startedAt: 1 } as RoomMemberRun)
+    expect(failed.container.querySelector('[data-member="gm"]')!.textContent).toContain(zh['members.status.failed'])
   })
 })

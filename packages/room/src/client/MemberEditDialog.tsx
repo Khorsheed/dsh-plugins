@@ -116,6 +116,7 @@ export function MemberEditDialog({ sessionId, memberName, face, onClose, t }: Me
       readMemberSelection={face.readMemberSelection}
       mainModelDirectory={face.modelDirectory}
       memberRunning={state?.runs.some(run => run.member === member.name && run.state === 'running') ?? false}
+      memberRun={state?.runs.find(run => run.member === member.name)}
       memberTools={face.memberTools}
       reloadMemberTools={face.reloadMemberTools}
       onSubmit={async (values) => {
