@@ -7,8 +7,6 @@ export const NS = 'local-agent-claude-code'
 export const zh = {
   'card.title': '本机 Claude Code 委派',
   'card.description': '使用本机安装的 Claude Code CLI 委派：端点凭据与常驻模式（live）',
-  'card.expand': '展开',
-  'card.collapse': '收起',
   'auth.title': '认证',
   'endpoint.info.aria': '端点凭据说明',
   'endpoint.info': '这里保存的就是默认 scope 的 endpoint-auth.json（0600，只存本机），它优先于 profile 的 YAML 配置行；宿主 shell 的环境变量从不被读取。端点留空 = Anthropic 官方端点；API Key 与 Auth Token 至少填一个（分别对应 x-api-key 与 Bearer 头，看你的中转认哪种）。密钥绝不写进 profile 文件，也不进入评测条件指纹。保存对下一轮委派生效，进行中的轮次不受影响。',
@@ -50,8 +48,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const en = {
   'card.title': 'Local Claude Code Delegation',
   'card.description': "Delegate through this machine's Claude Code CLI: endpoint credential and resident (live) mode",
-  'card.expand': 'Expand',
-  'card.collapse': 'Collapse',
   'auth.title': 'Authentication',
   'endpoint.info.aria': 'About the endpoint credential',
   'endpoint.info': "What you save here is the default scope's endpoint-auth.json (mode 0600, local only), which outranks the profile's YAML row; the host shell's environment is never read. A blank endpoint means Anthropic's own; fill at least one of API Key and Auth Token (x-api-key and Bearer respectively — whichever your relay accepts). Keys never enter the profile document or an evaluation's condition fingerprint. Saving applies to the next delegation round; rounds in flight are unaffected.",

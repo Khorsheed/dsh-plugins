@@ -783,19 +783,11 @@ export class KimiAcpLiveDriver {
   /**
    * Report an auth-shaped round failure to the family registry's auth-failure
    * mark (the exec path's post-exit 401 detection ported to a process that
-   * never exits: the match runs against the settled error instead). Degrades
-   * silently on a core predating reportAuthFailure.
+   * never exits: the match runs against the settled error instead).
    */
   private reportAuthIfShaped(error: Error): void {
     if (!KIMI_LIVE_AUTH_FAILURE.test(error.message)) return
-    // Duck-typed: the method lands with the auth-truthfulness core; older
-    // cores simply skip the mark.
-    const registry = this.ctx.localAgent as unknown as {
-      reportAuthFailure?: (harness: string, detail: string) => void
-    }
-    if (typeof registry.reportAuthFailure === 'function') {
-      registry.reportAuthFailure('kimi', error.message.split('\n').find(line => line.trim() !== '') ?? error.message)
-    }
+    this.ctx.localAgent.reportAuthFailure('kimi', error.message.split('\n').find(line => line.trim() !== '') ?? error.message)
   }
 
   /**
@@ -1852,8 +1844,7 @@ export class KimiAcpLiveDriver {
       // registry's observation channel (record merge + `settled` event) —
       // the live drive's half of the exec path's onRoundSettled. A mirror
       // failure never drops an observation an earlier pass already saw, and
-      // a round that never opened owns no span to observe. Degrades
-      // silently on a core predating recordRoundSettled.
+      // a round that never opened owns no span to observe.
       if (turnOpened) {
         // The round's spend for the room's usage chip: the usage every folded
         // step of this turn carries, plus the uncarried rest. The rest rides
@@ -1872,8 +1863,7 @@ export class KimiAcpLiveDriver {
           ...roundModel === undefined ? {} : { observedModel: roundModel },
           ...usage === undefined ? {} : { usage },
         }
-        const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
-        registry?.recordRoundSettled?.(childSession.id, round)
+        localAgent?.recordRoundSettled(childSession.id, round)
       }
       this.armIdleTimer(String(childSession.id))
     })

@@ -101,7 +101,7 @@ describe('LocalAgentRegistry delegation persistence', () => {
 
     expect(second.registry.resolveDelegation('child-1', { provider: 'fake-cli', parentSessionId: 'parent-1' }))
       .toEqual({ cliSessionId: 'session_99' })
-    expect(second.registry.listDelegations()).toHaveLength(1)
+    expect(second.registry.getDelegation('child-1')).toBeDefined()
   })
 
   it('skips malformed and foreign-provider lines with a warn, loading valid siblings', async () => {

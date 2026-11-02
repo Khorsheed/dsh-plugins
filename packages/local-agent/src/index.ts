@@ -236,14 +236,14 @@ export function establishSubagentCatalogChild(
  * Persist a delegated child session's events, the family providers' one entry
  * point after every mirror pass. Two paths:
  *
- * - **live session + a core with {@link LocalAgentRegistry.syncChildSession}**
- *   (the production wiring): delegate to the registry, which syncs through
+ * - **live session + the family core provided** (the production wiring):
+ *   delegate to {@link LocalAgentRegistry.syncChildSession}, which syncs through
  *   its cached per-child write handle — the same handle the reattach recipe
  *   holds, so live write routing and the explicit suffix sync share one
  *   owner and never collide on SessionAlreadyOwnedError. The registry
  *   downgrades a sync failure to a warn, so this path never throws.
- * - **anything else** (standalone tests, ad-hoc mirrors, a core predating
- *   syncChildSession): a one-shot handle flow — claim the write handle
+ * - **anything else** (standalone tests, ad-hoc mirrors, no core provided):
+ *   a one-shot handle flow — claim the write handle
  *   (creating the stored session on first persist), append only the unstored
  *   suffix (re-appending the full snapshot violates the contiguous-seq
  *   contract), flush, close. There is deliberately NO live-session skip:
@@ -258,8 +258,8 @@ export function establishSubagentCatalogChild(
 export async function persistChildSession(ctx: Context, childSession: Session): Promise<void> {
   const sessions = ctx.get('sessions')
   if (sessions !== undefined && sessions.get(childSession.id) !== undefined) {
-    const registry = ctx.get('localAgent') as unknown as { syncChildSession?: (session: Session) => Promise<void> } | undefined
-    if (registry?.syncChildSession !== undefined) {
+    const registry = ctx.get('localAgent') as LocalAgentRegistry | undefined
+    if (registry !== undefined) {
       await registry.syncChildSession(childSession)
       return
     }
@@ -621,29 +621,6 @@ export function assertResumeScopeUnchanged(
 }
 
 /**
- * Refuse a round that names its own model and would be served by a live
- * driver — the model twin of {@link assertScopeExecOnly}, and refused for the
- * same reason. A resident runtime (codex's `app-server`, claude's and kimi's
- * ACP servers, the sub-dsh `serve`) binds its model when the PROCESS starts
- * and then serves many rounds of one member, so a per-delegation model would
- * either be ignored or would silently change what every other round of that
- * runtime runs. Refused rather than quietly downgraded to exec: the caller
- * named a model, and a fallback would answer a different question than the
- * one asked. The evaluation pins `drive: exec` anyway (web-eval frozen
- * decision 2).
- * @param model - the round's requested model, or undefined for none.
- * @param provider - the provider name, for the error message.
- * @throws when a named model meets an active live driver.
- */
-export function assertModelExecOnly(model: string | undefined, provider: string): void {
-  if (model === undefined) return
-  throw new Error(
-    `${provider}: a delegation that names model ${model} is exec-only — a resident runtime binds its model at spawn `
-    + 'and serves many rounds; turn the live driver off for this delegation, or drop the model',
-  )
-}
-
-/**
  * The model one round starts its CLI with, resolved in the family's fixed
  * order: the DELEGATION's own model (the `model` call option on the fresh
  * round, re-requested by every resume round from the record) first, then the
@@ -668,27 +645,6 @@ export function resolveRoundModel(
   if (own !== undefined && own !== '') return { model: own }
   const fallback = configured?.()?.trim()
   return fallback === undefined || fallback === '' ? {} : { model: fallback }
-}
-
-/**
- * Refuse a scoped round that would be served by a live driver. The resident
- * runtimes (codex's `app-server`, claude's and kimi's ACP servers, the
- * sub-dsh `serve`) are started per member against the DEFAULT scoped home and
- * outlive a single round, so a scoped round taken by one would run under the
- * wrong credentials and write its records into the wrong directory. Refused
- * rather than silently downgraded to exec: the caller named a scope, and a
- * quiet fallback would answer a different question than the one asked. The
- * evaluation pins `drive: exec` anyway (web-eval frozen decision 2).
- * @param scope - the round's scope, or undefined for the default one.
- * @param provider - the provider name, for the error message.
- * @throws when a named scope meets an active live driver.
- */
-export function assertScopeExecOnly(scope: string | undefined, provider: string): void {
-  if (scope === undefined) return
-  throw new Error(
-    `${provider}: a delegation in scope ${scope} is exec-only — the live driver binds the harness's default scoped home; `
-    + 'turn the live driver off for this round, or drop the scope',
-  )
 }
 
 /** Poll interval for a manual-handoff login watch. */
@@ -1908,14 +1864,6 @@ export class LocalAgentRegistry {
   }
 
   /**
-   * Every recorded delegation, in recording order.
-   * @returns the recorded delegations.
-   */
-  listDelegations(): readonly LocalAgentDelegationRecord[] {
-    return [...this.delegations.values()]
-  }
-
-  /**
    * Read-only lookup of one delegation by its dsh child session id — the
    * member channel's membership check. Unlike {@link resolveDelegation} this
    * never throws and performs no ownership assertion: the gateway composes it
@@ -2766,9 +2714,7 @@ export class LocalAgentRegistry {
       // the strict reader rejects the whole log. Close it the way the agent
       // loop's own resume does: synthetic closers (missing tool errors,
       // step/end, an `interrupted` turn/end) appended through the handle.
-      // Older hosts without the helper keep the previous behavior.
-      const closeOpenTurn = (sessionModule as { interruptedTurnClosers?: (events: readonly SessionEvent[]) => SessionEvent[] }).interruptedTurnClosers
-      const closers = closeOpenTurn === undefined ? [] : closeOpenTurn(cold.events)
+      const closers = sessionModule.interruptedTurnClosers(cold.events)
       if (closers.length > 0) await handle.append(closers)
       const session = sessions.prepare(SessionId(childSessionId), {
         seed: [...cold.events, ...closers],

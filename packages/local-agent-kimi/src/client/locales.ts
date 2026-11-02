@@ -7,8 +7,6 @@ export const NS = 'local-agent-kimi'
 export const zh = {
   'card.title': '本机 Kimi 委派',
   'card.description': 'Kimi Code 委派：端点凭据与常驻模式（live）',
-  'card.expand': '展开',
-  'card.collapse': '收起',
   'auth.title': '认证',
   'endpoint.info.aria': '端点凭据说明',
   'endpoint.info': '这里保存的就是默认 scope 的 endpoint-auth.json（0600，只存本机），它优先于 profile 的 YAML 配置行；宿主 shell 的环境变量从不被读取。kimi 的 managed provider 经 `api_key_env` 从子进程环境读 key——密钥不落 config.toml（它要进评测条件指纹）、绝不写进 profile 文件。端点地址留空 = kimi 官方服务。没有网页登录：容器轮与宿主轮用同一套凭据，容器里不需要再授权一次。保存对下一轮委派生效，进行中的轮次不受影响。',
@@ -49,8 +47,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const en = {
   'card.title': 'Local Kimi Delegation',
   'card.description': 'Kimi Code delegation: endpoint credential and resident (live) mode',
-  'card.expand': 'Expand',
-  'card.collapse': 'Collapse',
   'auth.title': 'Authentication',
   'endpoint.info.aria': 'About the endpoint credential',
   'endpoint.info': "What you save here is the default scope's endpoint-auth.json (mode 0600, local only), which outranks the profile's YAML row; the host shell's environment is never read. Kimi's managed provider reads the key through its `api_key_env` indirection from the child process's environment — the key never lands in config.toml (an evaluation-condition input) nor in the profile document. A blank endpoint means kimi's own service. There is no web login: container rounds share the host's credential and nothing is authorized inside a container. Saving applies to the next delegation round; rounds in flight are unaffected.",

@@ -17,31 +17,24 @@ vi.mock('node:os', async (importOriginal) => {
   return { ...actual, homedir: () => '/nonexistent-kimi-provision-test' }
 })
 
-/** A fake settings service: register captures the scope; set() drives watch. */
-function fakeSettings(initial: KimiLiveSettings) {
-  let value = initial
-  const watchers: ((next: KimiLiveSettings, prev: KimiLiveSettings) => void)[] = []
-  const registrations: unknown[] = []
+/** The settings fields the row config carries as volatile references. */
+const SETTINGS_KEYS = ['live', 'liveMirrorGranularity', 'model', 'recentModels'] as const
+
+/**
+ * A fake of the host's row-config settings: each settings field is a
+ * volatile `{ get() }` reference over one mutable document; set() replaces
+ * the document and emits `settings/document-updated` for the row id.
+ */
+function fakeSettings(ctx: Context, initial: KimiLiveSettings) {
+  let value: Record<string, unknown> = { ...initial }
+  const refs: Record<string, { get(): unknown }> = {}
+  for (const key of SETTINGS_KEYS) refs[key] = { get: () => value[key] }
   return {
-    registrations,
-    service: {
-      register: (ns: unknown, schema: unknown, options?: unknown) => {
-        registrations.push({ ns, schema, options })
-        return {
-          get: () => value,
-          watch: (cb: (next: KimiLiveSettings, prev: KimiLiveSettings) => void) => {
-            watchers.push(cb)
-            return () => {}
-          },
-          update: async () => {},
-          replace: async () => {},
-        }
-      },
-    },
+    refs,
+    service: {},
     set(next: KimiLiveSettings): void {
-      const prev = value
-      value = next
-      for (const watch of watchers) watch(next, prev)
+      value = { ...next }
+      ;(ctx.emit as (name: string, ...args: unknown[]) => void)('settings/document-updated', 'local-agent-kimi', 1)
     },
   }
 }
@@ -69,7 +62,10 @@ function mount(initial: Partial<KimiLiveSettings> = {}, config: Record<string, u
       return () => {}
     },
   } as unknown as LocalAgentRegistry
-  const settings = fakeSettings({ live: false, liveMirrorGranularity: 'event', ...initial })
+  // The row config IS the settings document: settings keys handed in through
+  // `config` seed it, `initial` layers on top (a test's direct settings).
+  const fromConfig = Object.fromEntries(SETTINGS_KEYS.filter(key => config[key] !== undefined).map(key => [key, config[key]]))
+  const settings = fakeSettings(ctx, { live: false, liveMirrorGranularity: 'event', ...fromConfig, ...initial } as KimiLiveSettings)
   let resolveLive: Mount['resolveLive'] = () => undefined
   let resolveModel: Mount['resolveModel'] = () => undefined
   ctx.provide('localAgent', registry)
@@ -82,7 +78,7 @@ function mount(initial: Partial<KimiLiveSettings> = {}, config: Record<string, u
   })
   ctx.provide('subprocess', { spawn: () => { throw new Error('not spawned in apply test') } })
   ctx.provide('settings', settings.service)
-  apply(ctx, config as never)
+  apply(ctx, { ...config, ...settings.refs } as never)
   return {
     ctx,
     registered,
@@ -119,22 +115,14 @@ describe('local-agent-kimi apply', () => {
     await expect(checkEndpoint!(home)).resolves.toContain('No endpoint credential configured')
   })
 
-  it('registers the settings namespace with the YAML config as the composition base', () => {
-    const { settings } = mount()
-    expect(settings.registrations).toHaveLength(1)
-    const registration = settings.registrations[0] as { ns: unknown; options?: { base?: object } }
-    expect(String(registration.ns)).toBe('local-agent-kimi')
-    // A bare config leaves the base empty: the schema defaults rule.
-    expect(registration.options?.base).toEqual({})
+  it('serves the settings from the row config (the YAML value rules)', () => {
+    const { resolveLive } = mount({}, { live: true, liveMirrorGranularity: 'token' })
+    expect(resolveLive('child-x')).toBeInstanceOf(KimiAcpLiveDriver)
   })
 
-  it('carries the YAML config into the composition base (settings unset → YAML rules)', () => {
-    const { settings, resolveLive } = mount({}, { live: true, liveMirrorGranularity: 'token' })
-    const registration = settings.registrations[0] as { options?: { base?: object } }
-    expect(registration.options?.base).toEqual({ live: true, liveMirrorGranularity: 'token' })
-    // The fake settings service starts at live:false, so the resolver stays
-    // gated — on the real host the scope resolves base ← user, and this base
-    // would turn live on. What we pin here is the base payload itself.
+  it('ignores a document update for another row', () => {
+    const { ctx, resolveLive } = mount({ live: false })
+    ;(ctx.emit as (name: string, ...args: unknown[]) => void)('settings/document-updated', 'local-agent-codex', 1)
     expect(resolveLive('child-x')).toBeUndefined()
   })
 
@@ -266,10 +254,9 @@ describe('local-agent-kimi model key', () => {
     })
   })
 
-  it('carries the YAML model into the composition base', () => {
-    const { settings } = mount({}, { model: 'kimi-code/k3' })
-    const registration = settings.registrations[0] as { options?: { base?: object } }
-    expect(registration.options?.base).toEqual({ model: 'kimi-code/k3' })
+  it('serves the YAML model from the row config', () => {
+    const { resolveModel } = mount({}, { model: 'kimi-code/k3' })
+    expect(resolveModel()).toBe('kimi-code/k3')
   })
 
   it('hands the provider a resolver that follows later settings writes (no reload)', () => {

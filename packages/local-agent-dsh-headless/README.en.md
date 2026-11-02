@@ -23,7 +23,7 @@ dsh --profile headless-local-agent-dsh --serve                               # r
 
 ## Compatibility
 
-Needs DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.5.
+Needs DSH 0.2.0-rc.1 or later; verified on 0.2.1-rc.5.
 
 ## For developers
 

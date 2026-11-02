@@ -12,9 +12,7 @@ import { bindCardSettingsScope, type SettingsScopeSnapshot } from '@khorsheed/ds
  * served namespace rather than any carrier bundle, and a composition without
  * the row shows no trace of it. The card carries the family core's shared
  * ProviderAuthBlock (dsh authenticates through the host credentials, so the
- * block renders status only), the DeepSeek delegation switch — migrated from
- * the core section's `local-agent.settings.row-action` seat, which this
- * plugin no longer contributes to — and the resident-mode block (live switch)
+ * block renders status only), the resident-mode block (live switch)
  * plus the default-model block (free-text input, the broker's effective-model
  * line and suggestion vocabulary), whose writes ride the bound settingsScope:
  * the host watcher hot-applies them, no reload. Every read degrades: an
@@ -51,21 +49,19 @@ import {
   DshBundleConfig, DshCardSection, type DshCardSettings, type DshSettingsCardInjected,
 } from './SettingsCard.tsx'
 
-export { DshBundleConfig, DshCardSection, DshSettingsCard } from './SettingsCard.tsx'
+export { DshBundleConfig, DshCardSection } from './SettingsCard.tsx'
 export type {
-  DshCardSettings, DshBundleConfigProps, DshCardSectionProps, DshSettingsCardInjected, DshSettingsCardProps,
+  DshCardSettings, DshBundleConfigProps, DshCardSectionProps, DshSettingsCardInjected,
 } from './SettingsCard.tsx'
 export { en, NS, zh }
 export type { LocalAgentDshKey }
 
 /**
  * Required services: slot registry, command Remote, and locale registry. The
- * settings scope is NOT a static inject — its service name differs per host
- * line (`settingsScope` on 0.1.5, `configForms` on rc.1), so a static entry
- * would pend the whole client plugin on the other line; bindSettingsScope
- * probes the serving one instead (the settings client package is a declared
- * client inject, so one of them is always already up). The card track probes
- * `configForms` through the same kind of deferred inject (see apply).
+ * settings scope (`configForms`) is NOT a static inject: bindSettingsScope
+ * and the card track probe it through deferred injects (see apply), so a
+ * composition without the settings client degrades instead of pending the
+ * whole client plugin.
  */
 export const inject = ['slots', 'remote', 'remote.commands', 'locale']
 
@@ -127,13 +123,10 @@ export function apply(ctx: Context): void {
   // convention), so a composition without the row shows no trace of the card.
   // This replaces the retired per-shape seats: `plugins.row.config` hardcoded
   // one carrier bundle into its key, and the host deleted
-  // `settings.plugin.item`. The probe rides a deferred inject because
-  // configForms exists only on the alpha.2+ host line; a 0.1.5 host never
-  // fires it, and a configForms predating whileServed (0.1.6-alpha.2) skips
-  // the card.
+  // `settings.plugin.item`. The probe rides a deferred inject so a
+  // composition without the settings client keeps the plugin alive, cardless.
   ctx.inject(['configForms'], (formsCtx) => {
     const forms = formsCtx.configForms
-    if (typeof forms.whileServed !== 'function') return
     return forms.whileServed(['local-agent-dsh'], () => {
       // The family card owns the Plugins-page seat when the core's client
       // provides it: a core new enough answers registerHarnessCard, and this

@@ -19,7 +19,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `@khorsheed/dsh-ankh-guard` | `packages/ankh-guard` | 0.4.4 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-basic` | `packages/basic` | 0.1.1 | bundle | — | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.3.2 | bundle | — | — | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-bundle-local-agent` | `packages/bundle-local-agent` | 0.3.2 | bundle | — | — | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-canvas` | `packages/canvas` | 0.6.0 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-canvas-novel` | `packages/canvas-novel` | 0.1.0 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | eval |
@@ -42,12 +42,12 @@
 | `@khorsheed/dsh-lab` | `packages/lab` | 0.2.0 | bundle | — | — | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-learning-suite` | `packages/learning-suite` | 0.1.1 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-library` | `packages/library` | 0.1.1 | bundle | — | web | 0.1.7-rc.1 | — |
-| `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.2.2 | bundle | — | web | 0.1.5-rc.1 | eval |
-| `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.2.2 | bundle | — | web | 0.1.5-rc.1 | eval |
-| `@khorsheed/dsh-local-agent-codex` | `packages/local-agent-codex` | 0.2.2 | bundle | — | web | 0.1.5-rc.1 | eval |
-| `@khorsheed/dsh-local-agent-dsh` | `packages/local-agent-dsh` | 0.2.2 | bundle | — | web | 0.1.5-rc.1 | eval |
-| `@khorsheed/dsh-local-agent-dsh-headless` | `packages/local-agent-dsh-headless` | 0.2.2 | composition | sub-profile-patch | — | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-local-agent-kimi` | `packages/local-agent-kimi` | 0.2.2 | bundle | — | web | 0.1.5-rc.1 | eval |
+| `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.2.2 | bundle | — | web | 0.2.0-rc.1 | eval |
+| `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.2.2 | bundle | — | web | 0.2.0-rc.1 | eval |
+| `@khorsheed/dsh-local-agent-codex` | `packages/local-agent-codex` | 0.2.2 | bundle | — | web | 0.2.0-rc.1 | eval |
+| `@khorsheed/dsh-local-agent-dsh` | `packages/local-agent-dsh` | 0.2.2 | bundle | — | web | 0.2.0-rc.1 | eval |
+| `@khorsheed/dsh-local-agent-dsh-headless` | `packages/local-agent-dsh-headless` | 0.2.2 | composition | sub-profile-patch | — | 0.2.0-rc.1 | — |
+| `@khorsheed/dsh-local-agent-kimi` | `packages/local-agent-kimi` | 0.2.2 | bundle | — | web | 0.2.0-rc.1 | eval |
 | `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.4 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.8 | bundle | — | web | 0.1.2-rc.1 | eval |
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.2.1 | bundle | — | web | 0.2.0-rc.2 | — |
