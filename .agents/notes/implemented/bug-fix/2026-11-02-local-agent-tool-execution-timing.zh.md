@@ -25,7 +25,7 @@ Context Lens 以 `tool/result.time − tool/call.time` 计算工具执行耗时�
 
 ## Consequences
 
-新镜像在不改变模型可见内容、步骤原子性与 released-log 关系的前提下携带准确执行区间。Context Lens 得到修复；宿主自身的 `sessionStats.toolMs` 在上游能力落地前仍采用旧的 envelope 时间口径。旧镜像日志无法仅凭自身修正，准确的历史回填需要对应的 CLI 原始记录。标准字段的生产者与消费者迁移完成后，可以删除过渡元数据。
+新镜像在不改变模型可见内容、步骤原子性与 released-log 关系的前提下携带准确执行区间。Context Lens 得到修复；宿主自身的 `sessionStats.toolMs` 在上游能力落地前仍采用旧的 envelope 时间口径。旧镜像日志无法仅凭自身修正；[模型流与历史计时决策](2026-11-02-external-cli-model-stream-timing.zh.md)定义了如何从原始 CLI 记录只读恢复。标准字段的生产者与消费者迁移完成后，可以删除过渡元数据。
 
 ## Testing
 

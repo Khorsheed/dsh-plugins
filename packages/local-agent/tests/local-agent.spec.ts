@@ -104,6 +104,16 @@ describe('LocalAgentRegistry', () => {
     expect(() => registry.register(harness())).toThrow(/already registered/)
   })
 
+  it('serves member model timing through the provider adapter', async () => {
+    const { ctx } = await harnessMount({ homesRoot: tempDir('timing-') })
+    const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry
+    const expected = { streams: {}, toolTimings: {} }
+    registry.register(harness({ timing: { read: async () => expected } }))
+    registry.recordDelegation({ childSessionId: 'child', provider: 'fake', parentSessionId: 'parent', cliSessionId: 'cli' })
+    expect(await registry.memberModelTiming('child')).toBe(expected)
+    expect(await registry.memberModelTiming('missing')).toBeUndefined()
+  })
+
   it('unregisters the command and harness through the disposer', async () => {
     const { ctx, agent } = await harnessMount({ homesRoot: tempDir('disp-') })
     const registry = ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry

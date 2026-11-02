@@ -122,6 +122,8 @@ bundle patch 把 `claude-code` harness 注册进家族 core（`@khorsheed/dsh-lo
 
 **工具执行计时。** `tool_use` / `tool_result` 记录的顶层 `timestamp` 作为真实执行区间写入 `tool/result.meta.localAgentTiming`；空输出与编辑卡同样保留结束时间，缺少可靠时间戳时不伪造。事件 envelope `time` 仍是镜像写入时间，Context Lens 优先读取执行区间，旧记录保持回退。共享契约与上游退役路径见 [Agent Note](../../../.agents/notes/implemented/bug-fix/2026-11-02-local-agent-tool-execution-timing.zh.md)。
 
+**模型流与历史计时。** 镜像以相邻 stream-json 事件的时间记录粗粒度模型块，首个增量输出有自己的起点。历史适配器只读原生 JSONL 转录，以 `queue-operation.dequeue` 划分轮次、以 `api-request` 恢复请求起点；只有 stream-json 的记录则以 `result` 划分轮次。没有逐 token 时间的部分保持粗粒度，不改写原始文件。
+
 **模型体验。** 子会话是委派会话工作区内一个全新的一次性 `claude -p`；父级只提交独立的任务文本，只看到最终回答或精确错误，以及首次委派时的续聊自述——Claude 的评论、工具活动、工作区 diff 不会复制进父级。子会话 token 永不进入父级上下文；子会话为独立的 Claude 上下文与回合付费（缓存复用只取决于作用域安装自身的 provider、模型与历史）；父级 KV cache 不受影响。
 
 **长驻驱动（`live: true`）。** 替代每轮 spawn：成员首轮委派拉起一个常驻 stream-json 进程（`claude -p --verbose --input-format stream-json --output-format stream-json`），第一条 stdin `user` 消息触发 `system/init`（server 分配 session id，即委派记录的 `cliSessionId`），之后每轮 = 一条 stdin 消息；事件流与 exec 的 stream-json **完全同形**，逐轮过同一个 `ClaudeStreamParser` 折叠（末行留置到 `result` 挂用量，与 exec 一致），`cancel` 落地为 `control_request interrupt`——进程不死、会话可续。回收阶梯是 stdin EOF → SIGTERM；崩溃后下一轮以 `--resume <session_id>` 重挂盘上会话。runtime 在 spawn 时绑定成员的生效模型（会话级覆盖 → 委派模型 → 设置键），并把它暂写进作用域 `settings.json`（`--resume` 重挂认文件不认旗标）；绑定模型与新一轮解析不一致的 runtime 先退役再重挂。`permissionMode: normal` 的 spawn 不带 `--dangerously-skip-permissions`，CLI 的 server→client 控制请求（`can_use_tool` 审批面）由驱动自动应答 allow——子代理没有审批面，与 exec 在 skip 下的有效行为一致；其余子类型应答 error 而不是沉默挂起。授权纪律与 exec 逐字一致：只注入作用域 `CLAUDE_CONFIG_DIR` 与解析出的端点凭据变量，绝不碰全局 `~/.claude`，绝不执行任何 `auth` 命令。

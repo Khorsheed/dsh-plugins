@@ -6,10 +6,28 @@
  * @module @khorsheed/dsh-local-agent/types
  */
 
-import type { TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { AssistantStreamRecord, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { LocalAgentToolTiming } from './tool-timing.ts'
 
 export { localAgentToolTimingMeta } from './tool-timing.ts'
 export type { LocalAgentToolTiming } from './tool-timing.ts'
+export { localAgentStreamRecords } from './model-stream.ts'
+export type { LocalAgentModelBlock } from './model-stream.ts'
+
+/** Read-only model timing reconstructed from one member's original CLI records. */
+export interface LocalAgentMemberModelTiming {
+  /** `${turn}:${step}` → the request's native model stream. */
+  streams: Record<string, AssistantStreamRecord[]>
+  /** `${turn}:${step}` → request dispatch, when the original records preserve it. */
+  requestStarts?: Record<string, number>
+  /** Tool call id → its actual execution interval. */
+  toolTimings: Record<string, LocalAgentToolTiming>
+}
+
+/** Optional provider-owned reader for historical model and tool timing. */
+export interface LocalAgentTimingAdapter {
+  read(homeDir: string, cliSessionId: string): Promise<LocalAgentMemberModelTiming | undefined>
+}
 
 /** In-flight text item, identified by the durable turn/step coordinate. */
 export interface LocalAgentStreamItem {

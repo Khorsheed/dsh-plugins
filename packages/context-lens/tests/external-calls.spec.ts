@@ -48,6 +48,102 @@ describe('external agent calls', () => {
     expect(requests[0]!.execs.map(e => e.name)).toEqual(['Skill', 'ToolSearch'])
   })
 
+  it('uses native stream blocks instead of folding model time into other', () => {
+    const rows = log('kimi-cli')
+    const assistant = rows.find(row => row.type === 'assistant/message' && (row.data as { message?: { id?: string } }).message?.id === 'm1')!
+    assistant.data = {
+      ...assistant.data as object,
+      stream: [
+        { type: 'chunk', time: 1000, chunk: { type: 'block-start', index: 0, blockType: 'reasoning' } },
+        { type: 'chunk', time: 2000, chunk: { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'think' } } },
+        { type: 'chunk', time: 2000, chunk: { type: 'block-start', index: 1, blockType: 'tool-call' } },
+        { type: 'chunk', time: 3000, chunk: { type: 'block-end', index: 1, block: { type: 'tool-call', id: 't1', name: 'Skill', arguments: '' } } },
+      ],
+    }
+    const [turn] = reconstructSession(rows)
+    expect(turn!.requests[0]?.blocks.slice(0, 2).map(block => [block.kind, block.start, block.end])).toEqual([
+      ['reasoning', 1000, 2000],
+      ['tool-call', 2000, 3000],
+    ])
+  })
+
+  it('backfills missing model streams and tool intervals from member history', () => {
+    const rows = log('kimi-cli')
+    const assistant = rows.find(row => row.type === 'assistant/message' && (row.data as { message?: { id?: string } }).message?.id === 'm1')!
+    ;(assistant.data as { message: { content: unknown[] } }).message.content.unshift({ type: 'reasoning', text: 'think' })
+    const [turn] = reconstructSession(rows, undefined, undefined, {
+      streams: new Map([['1:1', [
+        { type: 'chunk', time: 1000, chunk: { type: 'block-start', index: 0, blockType: 'reasoning' } },
+        { type: 'chunk', time: 2000, chunk: { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'think' } } },
+        { type: 'chunk', time: 2000, chunk: { type: 'block-start', index: 1, blockType: 'tool-call' } },
+        { type: 'chunk', time: 2100, chunk: { type: 'block-end', index: 1, block: { type: 'tool-call', id: 't1', name: 'Skill', arguments: '' } } },
+      ]]]),
+      requestStarts: new Map([['1:1', 500]]),
+      toolTimings: new Map([['t1', { startedAt: 2100, endedAt: 2500 }], ['t2', { startedAt: 7000, endedAt: 8500 }]]),
+    })
+    expect(turn!.requests[0]).toMatchObject({ startedAt: 500, firstChunkAt: 1000 })
+    expect(turn!.requests[0]?.blocks[0]).toMatchObject({ kind: 'reasoning', start: 1000, end: 2000 })
+    expect(turn!.requests[0]?.execs.find(exec => exec.callId === 't2')).toMatchObject({ start: 7000, end: 8500 })
+  })
+
+  it('aligns historical streams by tool identity when mirror step numbers shifted', () => {
+    const rows = log('kimi-cli')
+    for (const row of rows) {
+      const data = row.data as { step?: number; usage?: { inputTokens: number; outputTokens: number }; message?: { id?: string } }
+      if (data.message?.id === 'm1') data.usage = { inputTokens: 1, outputTokens: 1 }
+      if (data.step === 2) data.step = 9
+    }
+    const [turn] = reconstructSession(rows, undefined, undefined, {
+      streams: new Map([['1:2', [
+        { type: 'chunk', time: 7000, chunk: { type: 'block-start', index: 0, blockType: 'tool-call' } },
+        { type: 'chunk', time: 7100, chunk: { type: 'block-end', index: 0, block: { type: 'tool-call', id: 't2', name: 'ToolSearch', arguments: '' } } },
+      ]]]),
+      requestStarts: new Map([['1:2', 6000]]),
+      toolTimings: new Map([['t2', { startedAt: 7100, endedAt: 8500 }]]),
+    })
+    expect(turn!.requests[1]).toMatchObject({ startedAt: 6000, firstChunkAt: 7000, settledAt: 8500 })
+    expect(turn!.requests[1]?.blocks[0]).toMatchObject({ kind: 'tool-call', callId: 't2', start: 7000, end: 7100 })
+  })
+
+  it('projects a split stream once and keeps mirror-only annotations out of requests', () => {
+    const assistant = (step: number, content: unknown[], usage?: { inputTokens: number; outputTokens: number }): SessionLogRow[] => [
+      { type: 'step/start', time: step * 1000, data: { turn: 1, step } },
+      { type: 'assistant/message', time: step * 1000, data: { turn: 1, step, message: { id: `m${step}`, role: 'assistant', content }, ...usage === undefined ? {} : { usage } } },
+      { type: 'step/end', time: step * 1000, data: { turn: 1, step } },
+    ]
+    const rows: SessionLogRow[] = [
+      descriptor('kimi-cli'),
+      { type: 'turn/start', time: 0, data: { turn: 1 } },
+      ...assistant(1, [{ type: 'reasoning', text: 'think' }]),
+      ...assistant(2, [call('t1', 'Skill')], { inputTokens: 1, outputTokens: 1 }),
+      { type: 'tool/call', time: 2100, data: { turn: 1, step: 2, callId: 't1', name: 'Skill', arguments: '' } },
+      { type: 'tool/result', time: 2500, data: { turn: 1, step: 2, message: { id: 'r1', role: 'tool', toolCallId: 't1', content: [{ type: 'text', text: 'ok' }] } } },
+      ...assistant(3, [{ type: 'text', text: '[未支持的内容类型 image]' }]),
+      ...assistant(4, [{ type: 'text', text: 'done' }], { inputTokens: 1, outputTokens: 1 }),
+      { type: 'turn/end', time: 5000, data: { turn: 1, reason: { kind: 'completed' } } },
+    ]
+    const [turn] = reconstructSession(rows, undefined, undefined, {
+      streams: new Map([
+        ['1:1', [
+          { type: 'chunk', time: 1000, chunk: { type: 'block-start', index: 0, blockType: 'reasoning' } },
+          { type: 'chunk', time: 2000, chunk: { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'think' } } },
+          { type: 'chunk', time: 2000, chunk: { type: 'block-start', index: 1, blockType: 'tool-call' } },
+          { type: 'chunk', time: 2100, chunk: { type: 'block-end', index: 1, block: { type: 'tool-call', id: 't1', name: 'Skill', arguments: '' } } },
+        ]],
+        ['1:4', [
+          { type: 'chunk', time: 3500, chunk: { type: 'block-start', index: 0, blockType: 'text' } },
+          { type: 'chunk', time: 4000, chunk: { type: 'block-end', index: 0, block: { type: 'text', text: 'done' } } },
+        ]],
+      ]),
+      requestStarts: new Map([['1:1', 500], ['1:4', 3000]]),
+      toolTimings: new Map([['t1', { startedAt: 2100, endedAt: 2500 }]]),
+    })
+    expect(turn!.requests).toHaveLength(2)
+    expect(turn!.requests[0]).toMatchObject({ startedAt: 500, firstChunkAt: 1000, settledAt: 2500 })
+    expect(turn!.requests[0]?.blocks.map(block => block.kind)).toEqual(['reasoning', 'tool-call'])
+    expect(turn!.requests[1]).toMatchObject({ startedAt: 3000, firstChunkAt: 3500, settledAt: 4000 })
+  })
+
   it('uses a mirrored result\'s real execution interval and ignores invalid metadata', () => {
     const rows = log('kimi-cli')
     const result = rows.find(row => row.type === 'tool/result' && (row.data as { message?: { toolCallId?: string } }).message?.toolCallId === 't2')!

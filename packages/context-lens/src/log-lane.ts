@@ -27,7 +27,8 @@
 import { countToolCalls } from './tool-summary.ts'
 import type { RequestConfig, RequestUsage, ResponseSummary } from './types.ts'
 import type { CapturedResponse } from './types.ts'
-import { responseFromSpans, toolExecutionFromMeta, type BlockSpan, type StoredRequest } from './store.ts'
+import type { AssistantStreamRecord } from '@deepseek-ai/dsh-llm'
+import { responseFromSpans, toolExecutionFromMeta, type BlockSpan, type StoredRequest, type ToolExecutionInterval } from './store.ts'
 import { contentHash, splitRequest, type ScopeFingerprint } from './segmenter.ts'
 import type { ReplacementFact } from './changes.ts'
 import { AMBIENT_SOURCES, fromLogMessage, lastParagraph, messageKey, previewLine, serializeMessage, type CapturedMessage } from './messages.ts'
@@ -118,6 +119,12 @@ export interface SessionLogCursor {
   config: RequestConfig | undefined
   /** The latest request/header tool list, when the log carries any. */
   tools: { name: string; description: string; parameters: Record<string, unknown> }[] | undefined
+  /** Read-only historical model streams supplied by the member's original CLI records. */
+  modelStreams?: Map<string, readonly AssistantStreamRecord[]>
+  /** Read-only request dispatch times supplied by the member's original CLI records. */
+  requestStarts?: Map<string, number>
+  /** Read-only historical tool execution intervals supplied by the member's original CLI records. */
+  toolTimings?: Map<string, ToolExecutionInterval>
   /** tool/call times by callId. */
   callAt: Map<string, number>
   /** callId → tool name (tool-row labels). */
@@ -305,6 +312,16 @@ export function foldLogRows(
         if (cursor.deferred !== undefined && cursor.deferred.hostTurn !== hostTurn) flushDeferred(cursor, built, sink)
         const own = buildRequest(cursor, row, data, false)
         const message = fromLogMessage(data['message'])
+        if (cursor.external === true && own.usage === undefined && cursor.modelStreams !== undefined
+          && own.firstChunkAt === undefined && own.blocks.every(block => block.end === undefined)
+          && message !== undefined && message.content.every(block => block.type === 'text' || block.type === 'reasoning')) {
+          // A mirror-only content annotation has neither a native model stream
+          // nor usage. Keep it in history without minting a phantom request.
+          flushDeferred(cursor, built, sink)
+          message.sourceTurn = hostTurn
+          placeMessage(cursor, row, message)
+          break
+        }
         let request = own
         if (cursor.deferred !== undefined) {
           // The rest of the deferred call: it joins the request the call began.
@@ -430,7 +447,7 @@ export function foldLogRows(
         const callId = message?.toolCallId
           ?? (typeof data['toolCallId'] === 'string' ? data['toolCallId'] : undefined)
         if (callId !== undefined) {
-          const execution = toolExecutionFromMeta(data['meta'])
+          const execution = toolExecutionFromMeta(data['meta']) ?? cursor.toolTimings?.get(callId)
           const owner = cursor.callOwners.get(callId)
           const span = owner?.execs.find(exec => exec.callId === callId && exec.end === undefined)
           if (span !== undefined) {
@@ -620,9 +637,17 @@ function buildCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: Rec
  * carry it; a torn bracket falls back to the fold's open-turn state). Turns
  * never closed by a turn/end (a crash) come out with `endReasonKind` unset.
  */
-export function reconstructSession(rows: readonly SessionLogRow[], materialize?: (hostTurn: number | undefined, index: number) => boolean, onReplacement?: (fact: ReplacementFact) => void): LogTurn[] {
+export function reconstructSession(
+  rows: readonly SessionLogRow[],
+  materialize?: (hostTurn: number | undefined, index: number) => boolean,
+  onReplacement?: (fact: ReplacementFact) => void,
+  timing?: { streams?: Map<string, readonly AssistantStreamRecord[]>; requestStarts?: Map<string, number>; toolTimings?: Map<string, ToolExecutionInterval> },
+): LogTurn[] {
   const cursor = openCursor()
   if (materialize !== undefined) cursor.materialize = materialize
+  cursor.modelStreams = timing?.streams ?? new Map()
+  cursor.requestStarts = timing?.requestStarts ?? new Map()
+  cursor.toolTimings = timing?.toolTimings ?? new Map()
   const turns: LogTurn[] = []
   const byHostTurn = new Map<number, LogTurn>()
   // Children catalogued outside any turn (a room member run started by a
@@ -752,6 +777,54 @@ function configFromSource(raw: unknown): RequestConfig {
   }
 }
 
+/** Resolve a missing stream by native coordinate or an unambiguous content identity. */
+function historicalStream(
+  cursor: SessionLogCursor,
+  hostTurn: number | undefined,
+  step: unknown,
+  rawMessage: unknown,
+): { key: string; stream: readonly AssistantStreamRecord[] } | undefined {
+  const key = `${hostTurn}:${String(step)}`
+  const direct = cursor.modelStreams?.get(key)
+  const message = fromLogMessage(rawMessage)
+  if (message === undefined) return direct === undefined ? undefined : { key, stream: direct }
+  const callIds = message.content.flatMap(block => block.type === 'tool-call' && block.id !== undefined ? [block.id] : []).sort()
+  const wantedTexts = message.content.flatMap((block): [string, string][] => block.type === 'text' || block.type === 'reasoning' ? [[block.type, block.text ?? '']] : [])
+  const project = (stream: readonly AssistantStreamRecord[]): readonly AssistantStreamRecord[] | undefined => {
+    const ids: string[] = []
+    const texts: { index: number; value: [string, string] }[] = []
+    for (const record of stream) {
+      if (record.type !== 'chunk' || record.chunk.type !== 'block-end') continue
+      const block = record.chunk.block
+      if (block.type === 'tool-call') {
+        if (block.id !== undefined) ids.push(block.id)
+      } else if (block.type === 'text' || block.type === 'reasoning') texts.push({ index: record.chunk.index, value: [block.type, block.text ?? ''] })
+    }
+    if (callIds.length > 0 && ids.sort().join('\0') !== callIds.join('\0')) return undefined
+    const textStarts = wantedTexts.length === 0 ? [-1] : texts.flatMap((_, start) =>
+      wantedTexts.every((value, index) => texts[start + index]?.value[0] === value[0] && texts[start + index]?.value[1] === value[1]) ? [start] : [])
+    if (textStarts.length !== 1) return undefined
+    const textStart = textStarts[0]!
+    const selectedText = new Set(texts.slice(Math.max(0, textStart), Math.max(0, textStart) + wantedTexts.length).map(block => block.index))
+    const projected = stream.filter(record => record.type !== 'chunk'
+      || (callIds.length > 0 && (record.chunk.type === 'block-start' && record.chunk.blockType === 'tool-call'
+        || record.chunk.type === 'block-end' && record.chunk.block.type === 'tool-call'))
+      || ((record.chunk.type === 'block-start' || record.chunk.type === 'block-end') && selectedText.has(record.chunk.index)))
+    return projected.length === 0 ? undefined : projected
+  }
+  if (direct !== undefined) {
+    const stream = project(direct)
+    if (stream !== undefined) return { key, stream }
+  }
+  const matches: { key: string; stream: readonly AssistantStreamRecord[] }[] = []
+  for (const [candidateKey, original] of cursor.modelStreams ?? []) {
+    if (!candidateKey.startsWith(`${hostTurn}:`)) continue
+    const stream = project(original)
+    if (stream !== undefined) matches.push({ key: candidateKey, stream })
+  }
+  return matches.length === 1 ? matches[0] : undefined
+}
+
 /** One settled request out of its assistant event: stream timing, usage, and the segment split. */
 function buildRequest(
   cursor: SessionLogCursor,
@@ -762,12 +835,27 @@ function buildRequest(
   const written = cursor.stepStartAt ?? row.time ?? 0
   // Written with its answer: the step opened after the call was over.
   const late = cursor.external === true && row.time !== undefined && row.time - written < MIRROR_LAG_MS && cursor.stepPrevAt !== undefined
-  const startedAt = late ? cursor.stepPrevAt! : written
-  const settledAt = row.time ?? startedAt
-  const stream = Array.isArray(data['stream']) ? data['stream'] : []
-  const streamFacts = readStream(stream)
-  const usage = readUsage(data['usage'])
+  const inferredStartedAt = late ? cursor.stepPrevAt! : written
+  const mirroredSettledAt = row.time ?? inferredStartedAt
   const hostTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
+  const historyKey = `${hostTurn}:${String(data['step'])}`
+  const history = historicalStream(cursor, hostTurn, data['step'], data['message'])
+  let stream: readonly unknown[] = Array.isArray(data['stream']) ? data['stream'] : []
+  if (stream.length === 0) stream = history?.stream ?? []
+  const streamFacts = readStream(stream)
+  // A mirror writes the step after its model call, never at dispatch. Only
+  // original request records can replace the legacy previous-event estimate.
+  const requestStart = cursor.requestStarts?.get(history?.key ?? historyKey)
+  const startedAt = requestStart === undefined
+    ? inferredStartedAt
+    : Math.min(requestStart, streamFacts.firstChunkAt ?? requestStart)
+  const blockEnds = streamFacts.blocks.flatMap(block => block.end === undefined ? [] : [block.end])
+  const callsComplete = streamFacts.blocks.filter(block => block.kind === 'tool-call')
+    .every(block => block.callId !== undefined && typeof cursor.toolTimings?.get(block.callId)?.endedAt === 'number')
+  const settledAt = requestStart !== undefined && blockEnds.length > 0 && callsComplete
+    ? Math.max(requestStart, ...blockEnds, ...streamFacts.blocks.flatMap(block => block.callId === undefined ? [] : [cursor.toolTimings?.get(block.callId)?.endedAt ?? Number.NEGATIVE_INFINITY]))
+    : mirroredSettledAt
+  const usage = readUsage(data['usage'])
   const messages = cursor.messages.map(folded => folded.message)
   let segments: ReturnType<typeof splitRequest>
   // The request's position among this log's requests (a merged external call keeps its first step's).
@@ -889,6 +977,7 @@ function joinCall(request: BuiltLogRequest, step: BuiltLogRequest, blocks: Captu
   request.status = step.status
   if (step.error !== undefined) request.error = step.error
   if (step.usage !== undefined) request.usage = step.usage
+  if (step.firstChunkAt !== undefined) request.firstChunkAt = Math.min(request.firstChunkAt ?? step.firstChunkAt, step.firstChunkAt)
   if (step.settledAt !== undefined) request.settledAt = step.settledAt
   if (step.finishKind !== undefined) request.finishKind = step.finishKind
   request.blocks.push(...step.blocks)

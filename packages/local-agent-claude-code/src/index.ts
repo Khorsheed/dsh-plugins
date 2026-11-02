@@ -38,6 +38,7 @@ import { ClaudeModelCatalog } from './model-catalog.ts'
 import { ClaudeModelBroker, ClaudeScopedModelMemory } from './model-broker.ts'
 import { firstModelOf, readModelList, readModelListSync, writeModelList } from '@khorsheed/dsh-local-agent'
 import { listClaudeSessions, readClaudeTranscriptModel } from './records.ts'
+import { readClaudeModelTiming } from './timing.ts'
 import { provisionClaudeHome, readClaudeConfiguredModel } from './provision.ts'
 
 /** Stable Cordis plugin name; the bundle patch row id. */
@@ -328,6 +329,7 @@ export function apply(ctx: Context, config: Config): void {
       // and `/claude-code login` answers that there is no login flow — no
       // browser, no OAuth, nothing to authorize inside a container.
       records: { listSessions: homeDir => listClaudeSessions(homeDir) },
+      timing: { read: readClaudeModelTiming },
       // A NAMED scope's directory is provisioned through this hook when the
       // registry materializes it — the same eager creation and settings the
       // default scope gets from the apply above.

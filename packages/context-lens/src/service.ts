@@ -26,7 +26,7 @@ import type { SessionTrend } from './types.ts'
  * @module @khorsheed/dsh-context-lens/service
  */
 import type { Context } from '@deepseek-ai/cordis'
-import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { AssistantStreamRecord, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, TurnOverview, TurnTiming } from './types.ts'
@@ -56,6 +56,14 @@ declare module '@deepseek-ai/cordis' {
 
 /** Rebuilt request bodies held at once (a request and its baseline per read). */
 const HYDRATED_BODIES = 8
+
+interface MemberTimingReader {
+  memberModelTiming?(childSessionId: string): Promise<{
+    streams: Record<string, AssistantStreamRecord[]>
+    requestStarts?: Record<string, number>
+    toolTimings: Record<string, { startedAt: number; endedAt?: number }>
+  } | undefined>
+}
 
 
 /**
@@ -353,6 +361,36 @@ export class InspectorService {
     return job
   }
 
+  private readonly memberTimingCache = new Map<string, Promise<Awaited<ReturnType<NonNullable<MemberTimingReader['memberModelTiming']>>>>>()
+
+  private memberTiming(sessionId: string) {
+    let pending = this.memberTimingCache.get(sessionId)
+    if (pending === undefined) {
+      const localAgent = this.ctx.get('localAgent') as MemberTimingReader | undefined
+      pending = localAgent?.memberModelTiming?.(sessionId).catch(() => undefined)
+        ?? Promise.resolve(undefined)
+      this.memberTimingCache.set(sessionId, pending)
+    }
+    return pending
+  }
+
+  private async memberTimingMaps(sessionId: string) {
+    const timing = await this.memberTiming(sessionId)
+    return {
+      streams: new Map(Object.entries(timing?.streams ?? {})),
+      requestStarts: new Map(Object.entries(timing?.requestStarts ?? {})),
+      toolTimings: new Map(Object.entries(timing?.toolTimings ?? {})
+        .filter((entry): entry is [string, { startedAt: number; endedAt: number }] => typeof entry[1].endedAt === 'number')),
+    }
+  }
+
+  private async attachMemberTiming(cursor: SessionLogCursor, sessionId: string): Promise<void> {
+    const maps = await this.memberTimingMaps(sessionId)
+    cursor.modelStreams = maps.streams
+    cursor.requestStarts = maps.requestStarts
+    cursor.toolTimings = maps.toolTimings
+  }
+
   private async doRefreshChild(
     rootSessionId: string,
     childId: string,
@@ -369,6 +407,7 @@ export class InspectorService {
       cursor.materialize = () => false
       this.cursors.set(childId, cursor)
     }
+    await this.attachMemberTiming(cursor, childId)
     try {
       let handle = this.handles.get(childId)
       if (handle === undefined) {
@@ -400,6 +439,7 @@ export class InspectorService {
     for (const scopeId of turn.scopes.keys()) {
       if (scopeId === 'main') continue
       this.cursors.delete(scopeId)
+      this.memberTimingCache.delete(scopeId)
       const handle = this.handles.get(scopeId)
       if (handle !== undefined) {
         this.handles.delete(scopeId)
@@ -478,7 +518,8 @@ export class InspectorService {
         const keep = this.store.windowHosts(sessionId, hosts)
         // An external agent's own session keeps every request bodiless, as its
         // child scope does (its contexts are as large); bodies rebuild on read.
-        this.store.insertLogTurns(sessionId, reconstructSession(events, host => !external && (host === undefined || keep.has(host)), fact => this.store.noteReplacement(sessionId, fact)))
+        const timing = external ? await this.memberTimingMaps(sessionId) : undefined
+        this.store.insertLogTurns(sessionId, reconstructSession(events, host => !external && (host === undefined || keep.has(host)), fact => this.store.noteReplacement(sessionId, fact), timing))
         for (const fact of replacementFactsOf(events)) this.store.noteReplacement(sessionId, fact)
         const bySeq = new Map(events.filter(row => row.seq !== undefined).map(row => [row.seq as number, row]))
         for (const row of events) {
@@ -596,6 +637,7 @@ export class InspectorService {
         const wanted = new Set(plan.targets.map(target => target.logIndex))
         const cursor = openCursor()
         cursor.materialize = (_host, index) => wanted.has(index)
+        await this.attachMemberTiming(cursor, plan.logId)
         const built = foldLogRows(cursor, events).filter(request => request.bodiless !== true && request.logIndex !== undefined && wanted.has(request.logIndex))
         for (const target of plan.targets) {
           const body = built.find(request => request.logIndex === target.logIndex)

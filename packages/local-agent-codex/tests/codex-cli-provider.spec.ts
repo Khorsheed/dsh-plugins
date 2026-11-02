@@ -165,6 +165,32 @@ describe('codex json stream parsing', () => {
     expect(batch.lines[0]?.kind === 'tool' && batch.lines[0].timing).toBeUndefined()
   })
 
+  it('preserves incremental model block intervals and leaves them absent in batch parsing', () => {
+    const textStarted = JSON.stringify({ type: 'item.started', item: { id: 'm1', type: 'agent_message' } })
+    const textCompleted = JSON.stringify({ type: 'item.completed', item: { id: 'm1', type: 'agent_message', text: 'working' } })
+    const toolStarted = JSON.stringify({ type: 'item.started', item: { id: 'call-1', type: 'function_call', name: 'wait' } })
+    const toolCompleted = JSON.stringify({ type: 'item.completed', item: { id: 'call-1', type: 'function_call', name: 'wait' } })
+    const parser = new CodexStreamParser()
+    parser.push(textStarted + '\n', 200)
+    parser.push(textCompleted + '\n', 500)
+    parser.push(toolStarted + '\n', 1000)
+    parser.push(toolCompleted + '\n', 1100)
+    expect(parser.lines[0]).toMatchObject({ kind: 'text', generation: { startedAt: 200, endedAt: 500 } })
+    expect(parser.lines[1]).toMatchObject({ kind: 'tool', generation: { startedAt: 500, endedAt: 1000 } })
+
+    const child = Session.create(SessionId('child-codex-model-stream'))
+    child.append('turn/start', { turn: 1 })
+    appendCodexTranscriptLine(child, 1, 1, parser.lines[1]!, undefined)
+    expect(child.snapshotEvents().find(event => event.type === 'assistant/message')?.data.stream).toEqual([
+      { type: 'chunk', time: 500, chunk: { type: 'block-start', index: 0, blockType: 'tool-call' } },
+      { type: 'chunk', time: 1000, chunk: { type: 'block-end', index: 0, block: { type: 'tool-call', id: 'call-1', name: 'wait', arguments: '' } } },
+    ])
+    expectValidReleasedLog(child)
+
+    const batch = parseCodexJsonStream([textStarted, textCompleted, toolStarted, toolCompleted].join('\n'))
+    expect(batch.lines.every(line => line.generation === undefined)).toBe(true)
+  })
+
   it('parses an agent-message-only fixture without tool events', () => {
     const fixture = readFileSync(
       fileURLToPath(new URL('./fixtures/agent-message.sample.ndjson', import.meta.url)),

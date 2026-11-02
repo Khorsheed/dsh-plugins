@@ -12,6 +12,7 @@
     "src/env.ts",
     "src/types.ts",
     "src/tool-timing.ts",
+    "src/model-stream.ts",
     "src/gateway.ts",
     "src/member-channel.ts",
     "src/preset-tool-host.ts",

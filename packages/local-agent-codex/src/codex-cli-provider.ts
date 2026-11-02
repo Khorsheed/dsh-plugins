@@ -47,8 +47,8 @@ import {
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
-import { localAgentToolTimingMeta, MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
-import type { DelegationExecTarget, LocalAgentToolCalls, LocalAgentAppliedConfiguration, LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
+import { localAgentStreamRecords, localAgentToolTimingMeta, MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import type { DelegationExecTarget, LocalAgentModelBlock, LocalAgentToolCalls, LocalAgentAppliedConfiguration, LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { CodexLiveDriver } from './live-driver.ts'
 import { endpointAuthEnv, endpointConfigOverrides, hasEndpointCredential, type CodexEndpointAuth } from './endpoint-auth.ts'
@@ -783,6 +783,12 @@ export function textTask(prompt: readonly ContentBlock[]): string {
   return texts.join('\n')
 }
 
+/** A coarse model-content interval reconstructed from incremental CLI events. */
+export interface CodexGenerationTiming {
+  startedAt: number
+  endedAt: number
+}
+
 /** One ordered transcript line from a `codex exec --json` event stream. */
 export type CodexTranscriptLine =
   /**
@@ -790,8 +796,8 @@ export type CodexTranscriptLine =
    * line with its delta stream, so the completed item folds at the step its
    * snapshots reserved.
    */
-  | { kind: 'think'; text: string; itemId?: string }
-  | { kind: 'text'; text: string; itemId?: string }
+  | { kind: 'think'; text: string; itemId?: string; generation?: CodexGenerationTiming }
+  | { kind: 'text'; text: string; itemId?: string; generation?: CodexGenerationTiming }
   /**
    * Tool activity: one call with its (possibly absent) result. `id` is the
    * stream item's id when present, else a synthesized position-based id —
@@ -799,13 +805,17 @@ export type CodexTranscriptLine =
    * `tool/call`/`tool/result` events pair by it. Incremental paths carry
    * `timing` from item start/completion; post-hoc batch parsing leaves it absent.
    */
-  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; failed?: boolean; timing?: LocalAgentToolTiming }
+  | { kind: 'tool'; id: string; name: string; args?: string; result?: string; failed?: boolean; timing?: LocalAgentToolTiming; generation?: CodexGenerationTiming }
 
 /** Mutable fold state shared by the batch parse and the incremental parser. */
 interface CodexStreamFoldState {
   readonly lines: CodexTranscriptLine[]
+  /** Previous incremental event's arrival time, used as a coarse block boundary. */
+  lastEventAt: number | undefined
   /** Item id → its observed start; empty during post-hoc batch parsing. */
   readonly toolStarts: Map<string, number>
+  /** Item id → the event before its start, used as the tool-argument boundary. */
+  readonly toolArgStarts: Map<string, number>
   text: string | undefined
   usage: TokenUsage | undefined
   threadId: string | undefined
@@ -876,6 +886,8 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string, observedA
   } catch {
     return
   }
+  const previousAt = state.lastEventAt
+  if (observedAt !== undefined) state.lastEventAt = observedAt
   if (event.type === 'thread.started' && typeof event.thread_id === 'string') {
     state.threadId = event.thread_id
     if (typeof event.model === 'string' && event.model !== '') state.model = event.model
@@ -889,21 +901,32 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string, observedA
   }
   if (event.type === 'item.started') {
     const id = event.item?.id
-    if (observedAt !== undefined && typeof id === 'string') state.toolStarts.set(id, observedAt)
+    if (observedAt !== undefined && typeof id === 'string') {
+      state.toolStarts.set(id, observedAt)
+      if (previousAt !== undefined) state.toolArgStarts.set(id, previousAt)
+    }
     return
   }
   if (event.type !== 'item.completed' || event.item === undefined) return
   const item = event.item
   const itemId = typeof item.id === 'string' ? item.id : undefined
   const startedAt = itemId === undefined ? undefined : state.toolStarts.get(itemId)
-  if (itemId !== undefined) state.toolStarts.delete(itemId)
+  const argStartedAt = itemId === undefined ? undefined : state.toolArgStarts.get(itemId)
+  if (itemId !== undefined) {
+    state.toolStarts.delete(itemId)
+    state.toolArgStarts.delete(itemId)
+  }
   const pendingTiming = startedAt === undefined ? undefined : { startedAt, source: 'observed' as const }
   const timing = startedAt === undefined || observedAt === undefined
     ? undefined : { startedAt, endedAt: observedAt, source: 'observed' as const }
+  const generation = startedAt === undefined || observedAt === undefined
+    ? undefined : { startedAt, endedAt: observedAt }
+  const toolGeneration = startedAt === undefined
+    ? undefined : { startedAt: argStartedAt ?? startedAt, endedAt: startedAt }
   if (item.type === 'reasoning' && typeof item.text === 'string' && item.text.trim() !== '') {
-    state.lines.push({ kind: 'think', text: item.text })
+    state.lines.push({ kind: 'think', text: item.text, ...generation === undefined ? {} : { generation } })
   } else if (item.type === 'agent_message' && typeof item.text === 'string') {
-    state.lines.push({ kind: 'text', text: item.text })
+    state.lines.push({ kind: 'text', text: item.text, ...generation === undefined ? {} : { generation } })
     state.text = item.text
   } else if (item.type === 'command_execution') {
     // Counted before the fold's own "did it carry anything to show" filter: a
@@ -920,6 +943,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string, observedA
         ...outcome.result === undefined ? {} : { result: outcome.result },
         ...outcome.failed ? { failed: true } : {},
         ...timing === undefined ? {} : { timing },
+        ...toolGeneration === undefined ? {} : { generation: toolGeneration },
       })
     }
   } else if (item.type === 'web_search_call') {
@@ -929,6 +953,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string, observedA
       id: typeof item.id === 'string' ? item.id : `codex-tool-${state.lines.length}`,
       name: 'WebSearch',
       ...timing === undefined ? {} : { timing },
+      ...toolGeneration === undefined ? {} : { generation: toolGeneration },
     })
   } else if (item.type === 'file_change') {
     // A patch application ({changes: [{path, kind}]}): without this case
@@ -944,6 +969,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string, observedA
         name: 'ApplyPatch',
         args,
         ...timing === undefined ? {} : { timing },
+        ...toolGeneration === undefined ? {} : { generation: toolGeneration },
       })
     }
   } else if (item.type === 'function_call') {
@@ -956,6 +982,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string, observedA
       name: item.name ?? 'function',
       ...typeof item.arguments === 'string' && item.arguments !== '' ? { args: item.arguments } : {},
       ...pendingTiming === undefined ? {} : { timing: pendingTiming },
+      ...toolGeneration === undefined ? {} : { generation: toolGeneration },
     })
   } else if (item.type === 'function_call_output') {
     // A function/command result; attach to the previous tool line when one
@@ -983,6 +1010,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string, observedA
       name: item.name ?? 'custom',
       ...typeof item.input === 'string' && item.input !== '' ? { args: item.input } : {},
       ...pendingTiming === undefined ? {} : { timing: pendingTiming },
+      ...toolGeneration === undefined ? {} : { generation: toolGeneration },
     })
   } else if (item.type === 'custom_tool_call_output') {
     // {call_id, output: string | content blocks} — pair by recency, the same
@@ -1018,6 +1046,7 @@ function foldCodexStreamLine(state: CodexStreamFoldState, raw: string, observedA
 export class CodexStreamParser implements CodexStreamFoldState {
   private buffer = ''
   readonly lines: CodexTranscriptLine[] = []
+  lastEventAt: number | undefined
   text: string | undefined
   usage: TokenUsage | undefined
   threadId: string | undefined
@@ -1025,6 +1054,7 @@ export class CodexStreamParser implements CodexStreamFoldState {
   completed = false
   readonly toolCalls = new Map<string, number>()
   readonly toolStarts = new Map<string, number>()
+  readonly toolArgStarts = new Map<string, number>()
 
   /** Fold complete NDJSON lines at their arrival time; the tail stays buffered. */
   push(chunk: string, observedAt = Date.now()): void {
@@ -1059,7 +1089,7 @@ export function parseCodexJsonStream(stream: string): {
   model?: string
   toolCalls?: LocalAgentToolCalls
 } {
-  const state: CodexStreamFoldState = { lines: [], text: undefined, usage: undefined, threadId: undefined, model: undefined, completed: false, toolCalls: new Map(), toolStarts: new Map() }
+  const state: CodexStreamFoldState = { lines: [], lastEventAt: undefined, text: undefined, usage: undefined, threadId: undefined, model: undefined, completed: false, toolCalls: new Map(), toolStarts: new Map(), toolArgStarts: new Map() }
   for (const raw of stream.split('\n')) foldCodexStreamLine(state, raw)
   const toolCalls = toolCallsOf(state.toolCalls)
   return {
@@ -1389,6 +1419,18 @@ export function codexAssistantEvent(blocks: readonly ContentBlock[]) {
   })
 }
 
+/** Build one model call's coarse stream from incremental CLI event times. */
+export function codexStreamFromLines(lines: readonly CodexTranscriptLine[]) {
+  return localAgentStreamRecords(lines.flatMap((line, index): LocalAgentModelBlock[] => {
+    const generation = line.generation
+    if (generation === undefined) return []
+    const base = { index, startedAt: generation.startedAt, endedAt: generation.endedAt }
+    if (line.kind === 'think') return [{ ...base, kind: 'reasoning', text: line.text }]
+    if (line.kind === 'text') return [{ ...base, kind: 'text', text: line.text }]
+    return [{ ...base, kind: 'tool-call', call: { id: line.id as ToolCallBlockId, name: line.name, arguments: line.args ?? '' } }]
+  }))
+}
+
 /**
  * Fold one transcript line into the child session as one assistant step,
  * wrapped in the step/start–step/end boundary pair the live conversation
@@ -1425,7 +1467,7 @@ export function appendCodexTranscriptLine(
       turn,
       step,
       message: codexAssistantEvent([{ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: args }]),
-      stream: [],
+      stream: codexStreamFromLines([line]),
       ...usage === undefined ? {} : { usage },
     }, { surfaceOp: 'append' })
     const call = childSession.append('tool/call', {
@@ -1455,7 +1497,7 @@ export function appendCodexTranscriptLine(
     turn,
     step,
     message: codexAssistantEvent(blocks),
-    stream: [],
+    stream: codexStreamFromLines([line]),
     ...usage === undefined ? {} : { usage },
   }, { surfaceOp: 'append' })
   childSession.append('step/end', { turn, step })

@@ -463,6 +463,10 @@ describe('codex live driver rounds', () => {
     expect(result?.data.meta).toEqual({
       localAgentTiming: { version: 1, provider: 'codex-local', startedAt, endedAt, source: 'observed' },
     })
+    expect(child.snapshotEvents().find(e => e.type === 'assistant/message')?.data.stream).toEqual([
+      { type: 'chunk', time: startedAt, chunk: { type: 'block-start', index: 0, blockType: 'tool-call' } },
+      { type: 'chunk', time: startedAt, chunk: { type: 'block-end', index: 0, block: { type: 'tool-call', id: 't1', name: 'Bash', arguments: 'ls' } } },
+    ])
     expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })

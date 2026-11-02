@@ -13,9 +13,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
-import { localAgentToolTimingMeta, type LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
+import { localAgentStreamRecords, localAgentToolTimingMeta, type LocalAgentModelBlock, type LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
 import { persistChildSession } from '@khorsheed/dsh-local-agent'
-import { addTokenUsage, readKimiTranscript, sumUsageRecords, type KimiTranscriptLine } from './session-view.ts'
+import { addTokenUsage, readKimiTranscript, sumUsageRecords, type KimiStepTiming, type KimiTranscriptLine } from './session-view.ts'
 
 // The host renamed its tool-call id brand between lines (`CallId` on the npm
 // rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
@@ -222,6 +222,28 @@ export interface KimiMirrorOptions {
    * is over — the result will never arrive). Mid-round passes hold there.
    */
   settle?: boolean
+}
+
+/** Build one wire step's coarse model stream from the wire's own timing facts. */
+export function kimiStreamFromUnit(
+  unit: readonly KimiTranscriptLine[],
+  stepTimings: ReadonlyMap<string, KimiStepTiming>,
+) {
+  const head = unit[0]
+  if (head === undefined || head.kind === 'user' || head.wireStep === undefined) return []
+  const firstChunkAt = stepTimings.get(`${head.turn}:${head.wireStep}`)?.firstChunkAt
+  if (firstChunkAt === undefined) return []
+  const blocks: LocalAgentModelBlock[] = []
+  let cursor = firstChunkAt
+  for (const [index, line] of unit.entries()) {
+    if (line.at === undefined || line.at < cursor) return []
+    const base = { index, startedAt: cursor, endedAt: line.at }
+    if (line.kind === 'think') blocks.push({ ...base, kind: 'reasoning', text: line.text })
+    else if (line.kind === 'assistant') blocks.push({ ...base, kind: 'text', text: line.text })
+    else if (line.kind === 'tool') blocks.push({ ...base, kind: 'tool-call', call: { id: line.id as ToolCallBlockId, name: line.name, arguments: line.args ?? '' } })
+    cursor = line.at
+  }
+  return localAgentStreamRecords(blocks)
 }
 
 /**
@@ -591,7 +613,7 @@ export async function mirrorKimiSessionDelta(
       turn,
       step,
       message: assistantEvent(blocks, model),
-      stream: [],
+      stream: kimiStreamFromUnit(unit, transcript.stepTimings),
       ...usage === undefined ? {} : { usage },
     }, { surfaceOp: 'append' })
     // The native tool lifecycle inside the same step: the message advertises
