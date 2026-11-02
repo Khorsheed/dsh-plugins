@@ -31,7 +31,8 @@ import { coordinatorMember, memberId, pendingInstructions, previousCursor, repla
 import { envelopeLine, messageId, sendOrHold } from './messaging.ts'
 import { gateState, judgeReport, outstandingFor, type GateVerdict } from './report-gate.ts'
 import { decisionRecord } from './decisions.ts'
-import type { RoomHeldDispatch, RoomMember, RoomMemberCompactedEvent, RoomRelay, RoomState } from './types.ts'
+import type { LocalAgentCompactionEvent } from '@khorsheed/dsh-local-agent/types'
+import type { RoomHeldDispatch, RoomMember, RoomRelay, RoomState } from './types.ts'
 
 /**
  * The room producer's durable identity in its two historical forms: the
@@ -988,8 +989,8 @@ export class DispatchEngine {
     room: Session, member: RoomMember, runId: string, childSessionId: string, result: { readonly stopReason: string; readonly diagnostic?: string },
     startedAt: number | undefined,
   ): Promise<RunOutcome> {
-    const compaction = this.ctx.sessions.get(SessionId(childSessionId))?.snapshotEvents().findLast(event => (event.type as string) === 'local-agent/compaction')
-    const data = (compaction?.data ?? {}) as Partial<Omit<RoomMemberCompactedEvent, 'member' | 'memberId' | 'runId'>> & { readonly outcome?: RoomMemberCompactedEvent['outcome'] }
+    const compaction = this.ctx.sessions.get(SessionId(childSessionId))?.snapshotEvents().findLast(event => event.type === 'local-agent/compaction')
+    const data: Partial<LocalAgentCompactionEvent> = compaction?.type === 'local-agent/compaction' ? compaction.data : {}
     const outcome = data.outcome ?? (result.stopReason === 'completed' ? 'completed' : 'failed')
     const events = room.snapshotEvents()
     room.append('room/member-compacted', {

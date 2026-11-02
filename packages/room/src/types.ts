@@ -8,7 +8,7 @@
  */
 import type { RoomPlan } from './plan.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { LocalAgentMemberMessage, RoomMemberMessageReceipt as LocalAgentRoomMemberMessageReceipt } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentCompactionEvent, LocalAgentMemberMessage, RoomMemberMessageReceipt as LocalAgentRoomMemberMessageReceipt } from '@khorsheed/dsh-local-agent/types'
 
 /**
  * A JSON-safe value (mirrors the host's JsonValue shape without importing the
@@ -267,13 +267,15 @@ export interface RoomMemberCompactedEvent {
   readonly member: string
   readonly memberId: string
   readonly runId: string
-  readonly outcome: 'completed' | 'failed' | 'cancelled'
-  readonly beforeTokens?: number
-  readonly afterTokens?: number
-  readonly contextWindow?: number
-  readonly usage?: { readonly inputTokens: number; readonly outputTokens: number; readonly cacheReadTokens?: number; readonly cacheWriteTokens?: number }
-  readonly summary?: string
-  readonly error?: string
+  // The compaction facts are the core event's own fields, copied verbatim
+  // (the local-agent core's LocalAgentCompactionEvent is the single source).
+  readonly outcome: LocalAgentCompactionEvent['outcome']
+  readonly beforeTokens?: LocalAgentCompactionEvent['beforeTokens']
+  readonly afterTokens?: LocalAgentCompactionEvent['afterTokens']
+  readonly contextWindow?: LocalAgentCompactionEvent['contextWindow']
+  readonly usage?: LocalAgentCompactionEvent['usage']
+  readonly summary?: LocalAgentCompactionEvent['summary']
+  readonly error?: LocalAgentCompactionEvent['error']
   readonly durationMs?: number
 }
 
