@@ -1,7 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { LocalAgentMemberModelTiming } from '@khorsheed/dsh-local-agent/types'
-import { CodexStreamParser, codexStreamFromLines } from './codex-cli-provider.ts'
+import { mirrorStreamRecords } from '@khorsheed/dsh-local-agent'
+import { CodexStreamParser } from './codex-cli-provider.ts'
 import { codexAppServerItemToLine } from './live-driver.ts'
 
 async function findCodexRollout(homeDir: string, cliSessionId: string): Promise<string | undefined> {
@@ -96,7 +97,7 @@ export async function readCodexModelTiming(homeDir: string, cliSessionId: string
       : parser.lines.map(line => ({ line, requestStart: line.generation?.startedAt }))
     for (const [index, entry] of entries.entries()) {
       const key = `${turn}:${index + 1}`
-      const stream = codexStreamFromLines([entry.line])
+      const stream = mirrorStreamRecords([entry.line])
       if (stream.length > 0) streams[key] = stream
       if (entry.requestStart !== undefined) requestStarts[key] = entry.requestStart
       if (entry.line.kind === 'tool' && entry.line.timing !== undefined) toolTimings[entry.line.id] = entry.line.timing

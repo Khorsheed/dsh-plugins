@@ -16,7 +16,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { ContentBlock, ReasoningEffortId, TokenUsage } from '@deepseek-ai/dsh-llm'
-import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   NO_START_CAPABILITIES,
@@ -32,7 +32,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { Context } from '@deepseek-ai/cordis'
-import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import {
   assertResumeCwdUnchanged,
@@ -44,33 +44,21 @@ import {
   establishSubagentCatalogChild,
   persistChildSession,
   probeCliVersion,
+  appendMirrorStep,
+  appendRequestHeaderIfChanged,
+  closeMirrorTurn,
   resolveChildCwd,
   subagentDelegationLabel,
 } from '@khorsheed/dsh-local-agent'
-import { localAgentStreamRecords, localAgentToolTimingMeta, MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
-import type { DelegationExecTarget, LocalAgentModelBlock, LocalAgentToolCalls, LocalAgentAppliedConfiguration, LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
+import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
+import type { DelegationExecTarget, LocalAgentToolCalls, LocalAgentAppliedConfiguration, LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
 import type { CodexLiveDriver } from './live-driver.ts'
 import { endpointAuthEnv, endpointConfigOverrides, hasEndpointCredential, type CodexEndpointAuth } from './endpoint-auth.ts'
 import { readCodexBaseUrl } from './provision.ts'
 import { codexRolloutRoundFacts, usageFromCodex } from './records.ts'
 
-// The host renamed its tool-call id brand between lines (`CallId` on the npm
-// rc line, a new name on 0.1.2-alpha). A brand is compile-time-only and the
-// runtime value is a plain string, so instead of importing either brand
-// factory we extract the field types from the consuming APIs — the same
-// source then compiles against both lines.
-type ToolCallEventCallId = SessionEventMap['tool/call']['callId']
-type ToolResultCallId = Parameters<typeof createToolResultMessage>[0]['callId']
-type ToolCallBlockId = Extract<ContentBlock, { type: 'tool-call' }>['id']
 
-/**
- * The synthesized result for a call whose result the stream never recorded
- * (a killed run, or a result-less item type like web_search_call). The
- * released-log contract resolves every advertised call before its step
- * closes, so an interrupted call folds with this error result. Same text as
- * the kimi provider's placeholder, for family consistency.
- */
 /**
  * A finished command's result text and failure. Codex reports a command that
  * printed nothing with an empty aggregated output — a crash (exit 139) or a
@@ -94,8 +82,6 @@ export function commandOutcome(output: unknown, exitCode: unknown, status: unkno
   const result = text === undefined ? (exit === '' ? '（无输出）' : `${exit.slice(0, -1)}，无输出）`) : exit === '' ? text : `${text}\n${exit}`
   return { result, failed }
 }
-
-export const CODEX_INTERRUPTED_TOOL_RESULT = '（工具调用被中断，未能记录返回结果）'
 
 /** Quote one TOML basic string for the `-c` config override. */
 function tomlString(value: string): string {
@@ -1179,7 +1165,7 @@ export function startCodexCliRun(
   // spawns with is the authoritative source. The header contract requires a
   // model: an unconfigured round records nothing rather than inventing one.
   if (spec.model !== undefined && spec.childSession !== undefined) {
-    appendCodexRequestHeader(spec.childSession, {
+    appendRequestHeaderIfChanged(spec.childSession, {
       provider: 'codex-local',
       model: spec.model,
       ...spec.effort === undefined ? {} : { reasoningEffort: spec.effort as ReasoningEffortId },
@@ -1355,16 +1341,7 @@ export function startCodexCliRun(
       // non-zero exit 'error', and a locally cancelled run 'aborted'.
       if (spec.childSession !== undefined) {
         const settled = await result
-        if (settled.stopReason === 'completed') {
-          spec.childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-        } else if (settled.stopReason === 'aborted') {
-          spec.childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-        } else {
-          spec.childSession.append('turn/end', {
-            turn,
-            reason: { kind: 'error', error: { message: `codex exec exited with code ${String(exitCode)}`, code: 'UNKNOWN' } },
-          })
-        }
+        closeMirrorTurn(spec.childSession, turn, settled.stopReason, `codex exec exited with code ${String(exitCode)}`)
         if (spec.ctx !== undefined) {
           await persistChildSession(spec.ctx, spec.childSession).catch((error: unknown) => {
             spec.ctx?.logger.warn(`subagent-codex: turn/end persistence failed: ${thrown(error).message}`)
@@ -1390,65 +1367,17 @@ export function startCodexCliRun(
   }))
 }
 
-/**
- * Write the round's request/header when the config differs from the child
- * log's last one (the host logs changed snapshots, not per-call duplicates):
- * the first write is `initial`, a differing one `change`, an identical one
- * skipped. Context Lens reads the child log's config from these headers.
- */
-export function appendCodexRequestHeader(childSession: Session, config: { provider: string; model: string; reasoningEffort?: ReasoningEffortId }): void {
-  const serialized = JSON.stringify(config)
-  let last: string | undefined
-  for (const event of childSession.snapshotEvents()) {
-    if (event.type === 'request/header') {
-      last = JSON.stringify((event.data as { header?: { config?: unknown } }).header?.config)
-    }
-  }
-  if (last === serialized) return
-  childSession.append('request/header', {
-    header: { config },
-    reason: last === undefined ? 'initial' : 'change',
-  })
-}
-
-/** One assistant-role message event, attributed to the codex route. */
-export function codexAssistantEvent(blocks: readonly ContentBlock[]) {
-  return createAssistantMessage({
-    content: blocks as ContentBlock[],
-    source: { provider: 'codex-local', model: 'codex' },
-  })
-}
-
-/** Build one model call's coarse stream from incremental CLI event times. */
-export function codexStreamFromLines(lines: readonly CodexTranscriptLine[]) {
-  return localAgentStreamRecords(lines.flatMap((line, index): LocalAgentModelBlock[] => {
-    const generation = line.generation
-    if (generation === undefined) return []
-    const base = { index, startedAt: generation.startedAt, endedAt: generation.endedAt }
-    if (line.kind === 'think') return [{ ...base, kind: 'reasoning', text: line.text }]
-    if (line.kind === 'text') return [{ ...base, kind: 'text', text: line.text }]
-    return [{ ...base, kind: 'tool-call', call: { id: line.id as ToolCallBlockId, name: line.name, arguments: line.args ?? '' } }]
-  }))
-}
+/** The mirror source for every message the codex route writes. */
+export const CODEX_MIRROR_SOURCE = { provider: 'codex-local', model: 'codex' } as const
 
 /**
- * Fold one transcript line into the child session as one assistant step,
- * wrapped in the step/start–step/end boundary pair the live conversation
- * assembler requires: without a boundary the step never enters the location
- * index, the line's assistant message resolves to a turn-level location, and
- * the real-time view renders nothing (only a full rebuild, which mints step
- * drafts from the explicit coordinates, recovers it).
- *
- * A tool line folds the NATIVE lifecycle inside its one step: an assistant
- * message advertising the tool-call block, the `tool/call`, then its
- * `tool/result` — the released-log reader pairs call and result against the
- * advertisement and resolves every advertised call before the step closes.
- * Every fold sees a COMPLETED item (the exec live mirror holds the volatile
- * last line; the live driver folds at item/completed), so a result the
- * stream has not recorded by fold time will never arrive — the call folds
- * with the synthesized interrupted result instead of leaving the step
- * unresolvable.
- * @returns whether the line folded (false when the options skipped it).
+ * Fold one transcript line into the child session as one closed assistant
+ * step through the core writer. A tool line folds the native lifecycle inside
+ * its step (the advertising message, the call, its result). Every fold sees a
+ * COMPLETED item (the exec live mirror holds the volatile last line; the live
+ * driver folds at item/completed), so a result the stream has not recorded by
+ * fold time will never arrive — the call folds with the core's interrupted
+ * placeholder instead of leaving the step unresolvable.
  */
 export function appendCodexTranscriptLine(
   childSession: Session,
@@ -1456,64 +1385,8 @@ export function appendCodexTranscriptLine(
   step: number,
   line: CodexTranscriptLine,
   usage: TokenUsage | undefined,
-): boolean {
-  childSession.append('step/start', { turn, step })
-  if (line.kind === 'tool') {
-    // A tool-only call's usage rides the advertising assistant/message (the
-    // tool/call and tool/result events themselves have no usage slot).
-    const args = line.args ?? ''
-    const meta = line.timing === undefined ? undefined : localAgentToolTimingMeta('codex-local', line.timing)
-    childSession.append('assistant/message', {
-      turn,
-      step,
-      message: codexAssistantEvent([{ type: 'tool-call', id: line.id as ToolCallBlockId, name: line.name, arguments: args }]),
-      stream: codexStreamFromLines([line]),
-      ...usage === undefined ? {} : { usage },
-    }, { surfaceOp: 'append' })
-    const call = childSession.append('tool/call', {
-      turn,
-      step,
-      callId: line.id as ToolCallEventCallId,
-      name: line.name,
-      arguments: args,
-    })
-    childSession.append('tool/result', {
-      turn,
-      step,
-      message: createToolResultMessage({
-        callId: line.id as ToolResultCallId,
-        content: [{ type: 'text', text: line.result ?? CODEX_INTERRUPTED_TOOL_RESULT }],
-        isError: line.result === undefined || line.failed === true,
-      }),
-      ...meta === undefined ? {} : { meta },
-    }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
-    childSession.append('step/end', { turn, step })
-    return true
-  }
-  const blocks = line.kind === 'think'
-    ? [{ type: 'reasoning' as const, text: line.text }]
-    : [{ type: 'text' as const, text: line.text }]
-  childSession.append('assistant/message', {
-    turn,
-    step,
-    message: codexAssistantEvent(blocks),
-    stream: codexStreamFromLines([line]),
-    ...usage === undefined ? {} : { usage },
-  }, { surfaceOp: 'append' })
-  childSession.append('step/end', { turn, step })
-  return true
-}
-
-/** Fold one transcript line into the run's child session as one assistant step. */
-function appendCodexLine(
-  spec: CodexCliRunSpec,
-  turn: number,
-  step: number,
-  line: CodexTranscriptLine,
-  usage: TokenUsage | undefined,
 ): void {
-  if (spec.childSession === undefined) return
-  appendCodexTranscriptLine(spec.childSession, turn, step, line, usage)
+  appendMirrorStep(childSession, turn, step, { blocks: [line], ...usage === undefined ? {} : { usage } }, CODEX_MIRROR_SOURCE)
 }
 
 /** The delta-progress text for one transcript line. */
@@ -1603,7 +1476,7 @@ function createCodexLiveMirror(spec: CodexCliRunSpec, task: string, turn: number
             const line = parser.lines[index]
             if (line === undefined) continue
             const usage = index === carrier ? parser.usage : undefined
-            appendCodexLine(spec, turn, index + 1, line, usage)
+            appendCodexTranscriptLine(childSession, turn, index + 1, line, usage)
             mirrored = index + 1
             localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
           }
@@ -1662,7 +1535,7 @@ async function appendCodexResponse(
   }
   let step = fromLines + 1
   for (const line of parsed.lines.slice(fromLines)) {
-    appendCodexLine(spec, turn, step, line, step - 1 === usageIndex ? parsed.usage : undefined)
+    appendCodexTranscriptLine(childSession, turn, step, line, step - 1 === usageIndex ? parsed.usage : undefined)
     localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
     step += 1
   }
