@@ -27,7 +27,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the `agents` registry merge onto Context.
 import { createUserMessage, type ContextFormed, type MessageSource } from '@deepseek-ai/dsh-llm'
 import { probeLocalAgent, runOutputText } from './adapter.ts'
-import { coordinatorMember, memberId, pendingInstructions, previousCursor, replay, roomChangesSince } from './journal.ts'
+import { COMPACT_COMMAND, coordinatorMember, isCompactCommand, memberId, pendingInstructions, previousCursor, replay, roomChangesSince } from './journal.ts'
 import { envelopeLine, messageId, sendOrHold } from './messaging.ts'
 import { gateState, judgeReport, outstandingFor, type GateVerdict } from './report-gate.ts'
 import { decisionRecord } from './decisions.ts'
@@ -132,8 +132,7 @@ export function askOffsets(events: readonly SessionEvent[], runId: string, text:
 export const MOVED_ON_TEXT = '你发了新消息；被重启打断的这一轮按没做完处理'
 /** A message that queued behind a lost round and rode along with the move-on message. */
 export const MERGED_BACKLOG_TEXT = '已并入下一条消息一起送达'
-/** The member command that compacts its context instead of prompting it. */
-export const COMPACT_COMMAND = '/compact'
+export { COMPACT_COMMAND }
 /** A compaction's delivery outcome text (the report a sender would read). */
 export const COMPACTED_TEXT = '已压缩上下文'
 /** A `/compact` round whose member reported no compaction record (its provider does not report one). */
@@ -321,7 +320,7 @@ function notificationsSection(relays: readonly RoomRelay[]): string {
 export function isCompactDispatch(events: readonly SessionEvent[], dispatchSeq: number | undefined): boolean {
   if (dispatchSeq === undefined) return false
   const source = events.find(event => event.seq === dispatchSeq)
-  return source?.type === 'room/dispatch' && (source.data.origin ?? 'human') === 'human' && source.data.text.trim() === COMPACT_COMMAND
+  return source?.type === 'room/dispatch' && (source.data.origin ?? 'human') === 'human' && isCompactCommand(source.data.text)
 }
 
 /**
