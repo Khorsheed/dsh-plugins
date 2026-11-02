@@ -85,7 +85,7 @@ function modelDirectory(): RoomModelDirectory {
   return {
     store,
     load: vi.fn(async () => store.getSnapshot()),
-    select: vi.fn(async () => {}),
+    select: vi.fn(async () => ({ ok: true as const, value: undefined })),
   }
 }
 

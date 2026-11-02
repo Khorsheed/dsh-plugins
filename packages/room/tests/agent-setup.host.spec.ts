@@ -1,17 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-// Dual-name probe against a host that installs NEITHER name (a preset-less
-// host): both dynamic imports reject, the loader settles null, and the
-// derivation host stays `{}` — the established no-preset degrade (the resume
-// falls back to the deployment's default preset).
-const attempts = vi.hoisted(() => ({ registry: 0, presets: 0 }))
+// Preset-registry probe against a host that does not install the module (a
+// preset-less host): the dynamic import rejects, the loader settles null, and
+// the derivation host stays `{}` — the established no-preset degrade (the
+// resume falls back to the deployment's default preset).
+const attempts = vi.hoisted(() => ({ registry: 0 }))
 vi.mock('@deepseek-ai/dsh-agent-preset-registry', () => {
   attempts.registry += 1
-  throw new Error('Cannot find package (new name not installed)')
-})
-vi.mock('@deepseek-ai/dsh-agent-presets', () => {
-  attempts.presets += 1
-  throw new Error('Cannot find package (old name not installed)')
+  throw new Error('Cannot find package (not installed)')
 })
 
 import {
@@ -22,12 +18,12 @@ import {
   resetPresetRegistryProbeForTest,
 } from '../src/agent-setup.ts'
 
-describe('preset-registry dual-name probe with neither name installed', () => {
+describe('preset-registry probe with the module not installed', () => {
   afterEach(() => { resetPresetRegistryProbeForTest() })
 
-  it('resolves null instead of throwing when both names reject', async () => {
+  it('resolves null instead of throwing when the import rejects', async () => {
     await expect(loadPresetRegistry()).resolves.toBeNull()
-    expect(attempts).toEqual({ registry: 1, presets: 1 })
+    expect(attempts).toEqual({ registry: 1 })
   })
 
   it('preloads to the empty host, and the derivation degrades to no-preset', async () => {

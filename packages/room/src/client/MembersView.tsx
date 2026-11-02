@@ -137,8 +137,8 @@ export function MembersView({
         deferred = saved.deferred
       }
       if (values.mainSelection !== undefined && modelDirectory !== undefined) {
-        const result = await modelDirectory.select(values.mainSelection).catch((error: unknown) => ({ ok: false, error }))
-        if (typeof result === 'object' && result !== null && 'ok' in result && result.ok === false) return { ok: false as const, message: t('invite.error.generic') }
+        const result = await modelDirectory.select(values.mainSelection).catch((error: unknown) => ({ ok: false as const, error }))
+        if (!result.ok) return { ok: false as const, message: t('invite.error.generic') }
       }
       if (modelChanged && member.childSessionId !== undefined) {
         if (setMemberModel === undefined) return { ok: false as const, message: t('invite.error.generic') }

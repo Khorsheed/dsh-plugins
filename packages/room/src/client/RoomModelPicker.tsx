@@ -90,11 +90,9 @@ export function RoomModelPicker({ directory, onError, t }: RoomModelPickerProps)
     void directory.load().catch(() => {})
   }
 
-  const settle = (promise: Promise<unknown>): void => {
+  const settle = (promise: ReturnType<RoomModelDirectory['select']>): void => {
     void promise.then((result) => {
-      // alpha.2 resolves a RemoteResult whose `ok` carries the outcome;
-      // 0.1.5's void resolution (any non-Result value) reads as success.
-      if (typeof result === 'object' && result !== null && 'ok' in result && !result.ok) {
+      if (!result.ok) {
         onError(t('composer.model.failed'))
         return
       }

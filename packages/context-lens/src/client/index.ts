@@ -74,21 +74,18 @@ export type {
   InspectorUtilityInjected, InspectorUtilityProps,
 } from './contract.ts'
 
-/** The on-screen session across host lines: 0.1.6-alpha.2 dropped
- * `SessionListState.current` for per-row `retainedBy.mainView` counts (the
- * `mainView` reference source is declared by ui-session, outside this
- * package's type program — hence the duck shape), while 0.1.5 publishes only
- * `current`. One build reads both.
+/** The on-screen session: the row whose `retainedBy.mainView` count is
+ * positive (the `mainView` reference source is declared by ui-session,
+ * outside this package's type program — hence the duck shape).
  * @param list - sessions list snapshot.
  * @returns the main-view session id, or undefined when nothing is on screen.
  */
-type SessionListCurrent = SessionListState & {
-  current?: SessionId
+type SessionListRetained = SessionListState & {
   byId: Record<SessionId, { id: SessionId; retainedBy?: Readonly<Record<string, number>> }>
 }
 function mainSessionId(list: SessionListState): SessionId | undefined {
-  const view = list as SessionListCurrent
-  return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id ?? view.current
+  const view = list as SessionListRetained
+  return Object.values(view.byId).find(s => (s.retainedBy?.mainView ?? 0) > 0)?.id
 }
 
 /** Required services: slots, the remote channel, the locale, the session list (the visibility criterion), and the right-Sidebar faces. */

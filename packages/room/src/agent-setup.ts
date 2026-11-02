@@ -18,70 +18,58 @@ import type AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 
-/**
- * The slice of a session log the preset derivation reads. Structural rather
- * than the rc host's deleted `PresetBearingSession`: the 0.1.2 host removed
- * that type together with `resolveSessionPreset`.
- */
+/** The slice of a session log the preset derivation reads. */
 interface PersistedPresetSource {
   header: { agentPreset?: string | null }
   events: readonly { type: string; data?: unknown }[]
 }
 
 /**
- * The two preset-derivation surfaces a host may carry: the rc line exports
- * `resolveSessionPreset`; the 0.1.2 line replaced it with the
- * `agentPresetProjectionDefinition` unit. Probed per call, never from a
- * version string (mirrors ankh-guard's PresetDerivationSurface).
+ * The preset-derivation surface of the preset-registry module: the
+ * `agentPresetProjectionDefinition` unit. Probed structurally (mirrors
+ * ankh-guard's PresetDerivationSurface), so a host without preset
+ * composition reads as `{}`.
  */
 export interface PresetDerivationSurface {
   agentPresetProjectionDefinition?: {
     init(header: { agentPreset?: string | null }): string | null
     apply(state: string | null, event: { type: string; data?: unknown }): string | null
   }
-  resolveSessionPreset?: (session: PersistedPresetSource) => string | undefined
 }
 
 /**
- * Which preset a session actually runs, newest selection winning. The 0.1.2
- * host folds the header plus `agent-preset/selected` events through
- * `agentPresetProjectionDefinition`; the rc host's `resolveSessionPreset` is
- * the same fold. A host with neither yields undefined: the resume falls back
- * to the deployment's default preset, the same outcome a preset-less session
- * had before.
+ * Which preset a session actually runs, newest selection winning: the header
+ * plus `agent-preset/selected` events folded through
+ * `agentPresetProjectionDefinition`. A host without it yields undefined: the
+ * resume falls back to the deployment's default preset, the same outcome a
+ * preset-less session has.
  * @param host - the agent-presets module namespace, structurally probed.
  * @param session - the session's header and event log.
  * @returns the preset id, or `undefined` when the session names none.
  */
 export function deriveSessionPreset(host: PresetDerivationSurface, session: PersistedPresetSource): string | undefined {
-  if (host.agentPresetProjectionDefinition !== undefined) {
-    const projection = host.agentPresetProjectionDefinition
-    let state = projection.init(session.header)
-    for (const event of session.events) state = projection.apply(state, event)
-    return state ?? undefined
-  }
-  return host.resolveSessionPreset?.(session)
+  const projection = host.agentPresetProjectionDefinition
+  if (projection === undefined) return undefined
+  let state = projection.init(session.header)
+  for (const event of session.events) state = projection.apply(state, event)
+  return state ?? undefined
 }
 
 let presetRegistryProbe: Promise<unknown> | undefined
 let probedHost: PresetDerivationSurface = {}
 
 /**
- * Resolve the preset-registry module by name. The 0.1.7-rc.1 host renamed
- * `@deepseek-ai/dsh-agent-presets` to `@deepseek-ai/dsh-agent-preset-registry`
- * (the API carried over); 0.1.5/0.1.6 hosts install only the old name, and a
- * host without preset composition installs neither — `null`, and the
- * derivation host stays `{}`, the established no-preset degrade (the resume
- * falls back to the deployment's default preset). A STATIC import of either
- * name is a module-resolution failure at load on hosts installing only the
- * other — pack-dist strips `dependencies`, so the specifier resolves against
- * the host's install tree. Both specifiers stay static string literals so
- * tsdown externalizes them and tsc type-checks them.
- * @returns the module namespace, or null when neither name resolves.
+ * Resolve the preset-registry module. A host without preset composition does
+ * not install it — `null`, and the derivation host stays `{}`, the
+ * established no-preset degrade (the resume falls back to the deployment's
+ * default preset). A STATIC import would be a module-resolution failure at
+ * load on such a host — pack-dist strips `dependencies`, so the specifier
+ * resolves against the host's install tree. The specifier stays a static
+ * string literal so tsdown externalizes it and tsc type-checks it.
+ * @returns the module namespace, or null when it does not resolve.
  */
 export function loadPresetRegistry(): Promise<unknown> {
   presetRegistryProbe ??= import('@deepseek-ai/dsh-agent-preset-registry')
-    .catch((): unknown => import('@deepseek-ai/dsh-agent-presets'))
     .catch((): null => null)
   return presetRegistryProbe
 }
@@ -177,9 +165,8 @@ export function probeSessionPersistence(ctx: Context): SessionPersistenceProbe |
 
 /**
  * Read a cold session's log from persistence without attaching or resuming
- * anything (the read-only remotes' cold path). The 0.1.5 handle-based API
- * replaced the one-shot `inspect`: open a read handle (no write ownership),
- * read the full log, close.
+ * anything (the read-only remotes' cold path): open a read handle (no write
+ * ownership), read the full log, close.
  * @param ctx - host context.
  * @param sessionId - the persisted session.
  * @returns the inspection, or undefined when absent/unreadable.

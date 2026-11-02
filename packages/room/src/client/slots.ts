@@ -4,6 +4,7 @@
  */
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import type { ReactNode } from 'react'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-conversation's SlotMap merges ('conversation.composer',
@@ -61,7 +62,7 @@ export interface RoomInviteInjected {
   readonly listProviders: (sessionId?: SessionId) => Promise<RoomProviderList | undefined>
   /**
    * Pick a member-level working directory through the official picker call
-   * (`uiWorkspace.pickDirectory` on host 0.1.2 — the picker UI itself is not
+   * (`uiWorkspace.pickDirectory` — the picker UI itself is not
    * reusable: ui-workspace's flow holes adopt the pick as a workspace).
    * Resolves null on cancel or when the host serves no native
    * directory-picking capability.
@@ -155,12 +156,11 @@ export interface RoomModelDirectory {
   /** Ensure the shared advisory catalog is loaded (errors land on the store). */
   readonly load: () => Promise<unknown>
   /**
-   * Select the complete provider/model/reasoning selection. 0.1.5 rejects on
-   * a refused switch; alpha.2 never rejects and answers the RemoteResult
-   * instead — a settled object carrying `ok` reports the outcome there, any
-   * other resolution reads as success.
+   * Select the complete provider/model/reasoning selection; the settled
+   * RemoteResult's `ok` reports the outcome (a rejection — the directory
+   * gone unavailable — reads as a failure too).
    */
-  readonly select: (selection: RoomModelSelection) => Promise<unknown>
+  readonly select: (selection: RoomModelSelection) => Promise<RemoteResult<void>>
 }
 
 /**

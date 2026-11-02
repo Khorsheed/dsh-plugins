@@ -292,8 +292,8 @@ export class RoomService extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'room')
     // Resolve the preset-registry module before any resume/create path
-    // derives a session preset (the 0.1.7-rc.1 host renamed the package; the
-    // probe falls back to the old name, then to the no-preset degrade).
+    // derives a session preset (a host without the module degrades to no
+    // preset).
     ctx.effect(async () => {
       await preloadPresetDerivationHost()
       return () => {}

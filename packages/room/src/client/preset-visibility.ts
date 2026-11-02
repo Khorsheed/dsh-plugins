@@ -47,11 +47,10 @@ export interface RoomChromeVisibility {
   subscribe: (listener: () => void) => () => void
 }
 
-/** The current session's agent preset, the badge's dual read per host line. */
+/** The current session's agent preset: the row's `agentPreset` projection value. */
 function presetOf(row: unknown): string | undefined {
-  const value = (row as { projectionValues?: { agentPreset?: unknown }; agentPreset?: unknown } | undefined)
+  const value = (row as { projectionValues?: { agentPreset?: unknown } } | undefined)
     ?.projectionValues?.agentPreset
-    ?? (row as { agentPreset?: unknown } | undefined)?.agentPreset
   return typeof value === 'string' ? value : undefined
 }
 
