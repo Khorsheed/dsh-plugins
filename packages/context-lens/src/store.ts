@@ -55,7 +55,7 @@ import type { LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
 import { diffRequests, type FactLookup, type ReplacementFact } from './changes.ts'
 import { answersMatch, askView, isAskTool, type RoomQuestionRecord } from './ask.ts'
-import { HUMAN_MESSAGE_LOOKBACK, applyRoomEvent, emptyRoom, roomTurnSeq, runsOf, type RoomRun, type RoomState } from './room.ts'
+import { HUMAN_MESSAGE_LOOKBACK, applyRoomEvent, emptyRoom, isCompactCommand, roomTurnSeq, runsOf, type RoomRun, type RoomState } from './room.ts'
 
 /** Replacement facts kept per session; older facts only matter for requests long evicted. */
 const REPLACEMENT_CAP = 2048
@@ -1485,7 +1485,7 @@ export class InspectorStore {
     // A human's `/compact` is no round of its own: the compaction it ran shows
     // in the 压缩 tab of the member's previous round (its request belongs to
     // the child turn that closed last).
-    return room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at) && dispatch.text.trim() !== '/compact').map((dispatch): TurnRecord => {
+    return room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at) && !isCompactCommand(dispatch.text)).map((dispatch): TurnRecord => {
       const scopes = new Map<string, ScopeRecord>()
       const runs = runsOf(room, dispatch.seq)
       for (const run of runs) {
@@ -1566,7 +1566,7 @@ export class InspectorStore {
       .map(other => other.startedAt ?? room.dispatches.find(d => d.seq === other.dispatchSeq)?.at)
       .filter((at): at is number => at !== undefined)
     if (next.length > 0) return Math.min(...next)
-    const nextDispatch = room.dispatches.find(d => d.seq > run.dispatchSeq && d.at > dispatchAt)
+    const nextDispatch = room.dispatches.find(d => d.seq > (run.dispatchSeq ?? -1) && d.at > dispatchAt)
     return nextDispatch?.at ?? this.now() + 2000
   }
 

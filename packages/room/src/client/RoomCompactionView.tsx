@@ -2,7 +2,9 @@
  * Member compaction row ('room-compaction' keyed renderer): one dim line in
  * the boundary register — 「📦 尼尔盖曼 已压缩上下文 · 560K → 41K tok · 用量 21K」
  * — whose summary (when the CLI gave one: Kimi does, Codex does not) opens
- * below it on click. A failed compaction reads as such, with its reason.
+ * below it on click. A failed compaction reads as such, with its reason; a
+ * member that does not report compaction data (no record this round) says
+ * so instead of claiming a compaction with no numbers.
  */
 import { useState, type ReactNode } from 'react'
 import type { RoomCompactionViewProps } from './slots.ts'
@@ -15,7 +17,9 @@ export function RoomCompactionView({ node, t }: RoomCompactionViewProps): ReactN
   const usage = data.usage === undefined ? undefined
     : data.usage.inputTokens + (data.usage.cacheReadTokens ?? 0) + (data.usage.cacheWriteTokens ?? 0) + data.usage.outputTokens
   const parts = [
-    data.outcome === 'completed' ? t('compaction.done', { member: data.member }) : t('compaction.failed', { member: data.member }),
+    data.outcome !== 'completed' ? t('compaction.failed', { member: data.member })
+      : data.unreported === true ? t('compaction.unreported', { member: data.member })
+      : t('compaction.done', { member: data.member }),
     ...data.beforeTokens !== undefined && data.afterTokens !== undefined ? [`${formatTokens(data.beforeTokens)} → ${formatTokens(data.afterTokens)} tok`] : [],
     ...usage === undefined ? [] : [t('compaction.usage', { tokens: formatTokens(usage) })],
     ...data.outcome === 'completed' || data.error === undefined ? [] : [data.error],

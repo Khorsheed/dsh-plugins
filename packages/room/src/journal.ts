@@ -18,6 +18,20 @@ import type {
   RoomApproval, RoomAsk, RoomQuestion, RoomExecution, RoomJsonValue, RoomMember, RoomMemberRun, RoomRelay, RoomRunAttachment, RoomSettings, RoomState, RoomTask,
 } from './types.ts'
 
+/** The member command that compacts a member's context instead of prompting it (the core's COMPACT_COMMAND). */
+export const COMPACT_COMMAND = '/compact'
+
+/**
+ * Mirror of the local-agent core's `isCompactCommand` (types module), the
+ * single definition: room takes the core as an OPTIONAL peer and imports it
+ * type-only, so it cannot call the core at runtime. Pinned to the core by
+ * `tests/lens-contract.host.spec.ts` over a shared case table.
+ * @param text - one dispatch text.
+ * @returns whether it asks for a compaction.
+ */
+export function isCompactCommand(text: string): boolean {
+  return text.trim() === COMPACT_COMMAND
+}
 /**
  * The native DSH member's addressing name in new rooms. It starts as the
  * coordinator; bare messages follow the selected coordinator thereafter.
@@ -453,7 +467,7 @@ export function previousCursor(
     if (event.type !== 'room/dispatch' || event.seq >= beforeSeq) continue
     // A human's `/compact` runs a compaction round, never a prompt: what was
     // pending for the member (a handoff, room changes) still rides its next one.
-    if ((event.data.origin ?? 'human') === 'human' && event.data.text.trim() === '/compact') continue
+    if ((event.data.origin ?? 'human') === 'human' && isCompactCommand(event.data.text)) continue
     if (event.data.targets.includes(member)) cursor = event.seq
   }
   return cursor

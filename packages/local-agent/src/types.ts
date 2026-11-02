@@ -68,6 +68,23 @@ export interface LocalAgentStreamCheckpoint extends Omit<LocalAgentStreamItem, '
   append: boolean
 }
 
+/** The member command that compacts a member's context instead of prompting it. */
+export const COMPACT_COMMAND = '/compact'
+
+/**
+ * The single definition of "this member input is `/compact`": the command
+ * alone on the line (trailing text would be a prompt that merely starts
+ * with it). Room and Context Lens cannot import the core at runtime (room
+ * takes it as an optional peer, lens has no dependency at all), so each
+ * keeps a one-line mirror pinned to this function by a contract test (room
+ * `tests/lens-contract.host.spec.ts`, whose fixture lens replays).
+ * @param text - one member input.
+ * @returns whether it asks for a compaction.
+ */
+export function isCompactCommand(text: string): boolean {
+  return text.trim() === COMPACT_COMMAND
+}
+
 /**
  * One context compaction of a CLI member, in its own session: the CLI
  * replaced its history before `boundarySeq` with a summary. Display and

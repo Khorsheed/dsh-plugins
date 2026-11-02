@@ -52,7 +52,7 @@
  * textarea; the next send carries it as postMessage's `task` and clears it.
  * Removing the chip leaves the filing to dsh.
  */
-import { coordinatorMember } from '../journal.ts'
+import { coordinatorMember, isCompactCommand } from '../journal.ts'
 import {
   useEffect, useRef, useState, useSyncExternalStore, type ChangeEvent, type ClipboardEvent, type CSSProperties, type KeyboardEvent, type ReactNode,
 } from 'react'
@@ -469,7 +469,7 @@ export function RoomComposer({
       // `/compact` while the room's own agent coordinates is the host's own
       // command (a CLI coordinator or an @-picked member compacts through the
       // room, which runs the member's compaction round instead).
-      if (!external && picked.length === 0 && text === '/compact' && ids.length === 0 && runCommand !== undefined) {
+      if (!external && picked.length === 0 && isCompactCommand(text) && ids.length === 0 && runCommand !== undefined) {
         const failure = await runCommand(sessionId, text)
         if (failure !== null) {
           setError(failure)

@@ -17,6 +17,7 @@
  * @module @khorsheed/dsh-local-agent
  */
 
+import { COMPACT_COMMAND, isCompactCommand } from './types.ts'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, chmodSync, mkdirSync, readFileSync, statSync } from 'node:fs'
@@ -1017,15 +1018,8 @@ export function memberContextOf(events: readonly SessionEvent[]): Omit<LocalAgen
   return reading
 }
 
-/**
- * The member command that compacts instead of prompting: `/compact`, alone
- * on the line (trailing text would be a prompt that merely starts with it).
- * @param text - one queued member input.
- * @returns whether it asks for a compaction.
- */
-export function isCompactCommand(text: string): boolean {
-  return text.trim() === '/compact'
-}
+// The `/compact` recognizer lives in the types module (dependency-free, the single source).
+export { COMPACT_COMMAND, isCompactCommand } from './types.ts'
 
 /** A delegation record without its requested model. */
 function withoutModel(record: LocalAgentDelegationRecord): LocalAgentDelegationRecord {
@@ -2524,7 +2518,7 @@ export class LocalAgentRegistry {
    * @returns the compaction run.
    */
   async compact(parentSessionId: string, provider: string, childSessionId: string, options?: Omit<DelegationCallOptions, 'operation'>): Promise<SubagentRun> {
-    return this.resume(parentSessionId, provider, childSessionId, [{ type: 'text', text: '/compact' }], { ...options, operation: 'compact' })
+    return this.resume(parentSessionId, provider, childSessionId, [{ type: 'text', text: COMPACT_COMMAND }], { ...options, operation: 'compact' })
   }
 
   /**

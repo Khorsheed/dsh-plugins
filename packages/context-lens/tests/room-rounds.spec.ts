@@ -123,6 +123,37 @@ describe('room rounds', () => {
     expect(new Set(seqs).size).toBe(seqs.length)
   })
 
+  it('keeps a relay delivery\'s UUID run: it is no round, but its child turn and start are its own', () => {
+    // The first run is stuck at `running`; a confirmed relay then ran coco under a UUID run id.
+    const stuck = room.filter(row => row.seq !== 23)
+    const rows = [...turn1, ...stuck,
+      { type: 'room/run-state', seq: 40, time: 20_000, data: { runId: '0b6e4f62-5a2c-4c1e-9a53-2f4d1c7e8a90', member: 'coco', state: 'running', startedAt: 20_000 } },
+      { type: 'room/run-state', seq: 41, time: 24_000, data: { runId: '0b6e4f62-5a2c-4c1e-9a53-2f4d1c7e8a90', member: 'coco', state: 'done', startedAt: 20_000, elapsedMs: 4000, childSessionId: 'child-coco', childTurn: 7 } },
+    ] satisfies SessionLogRow[]
+    const state = emptyRoom()
+    for (const row of rows) if (row.type.startsWith('room/')) applyRoomEvent(state, row.type, row.data, row.seq, row.time)
+    const relayRun = state.runs.get('0b6e4f62-5a2c-4c1e-9a53-2f4d1c7e8a90')
+    expect(relayRun).toMatchObject({ memberId: 'm-coco', state: 'done', endedAt: 24_000, childTurn: 7 })
+    expect(relayRun?.dispatchSeq).toBeUndefined()
+    const store = new InspectorStore()
+    store.insertLogTurns('s', reconstructSession(rows))
+    for (const row of rows) if (row.type.startsWith('room/')) store.noteRoomEvent('s', row.type, row.data, row.seq, row.time)
+    store.appendLogRequest('s', 'child-coco', childRequest(6000, 1))
+    store.appendLogRequest('s', 'child-coco', childRequest(21_000, 7))
+    // Still two human rounds; the stuck run's window stops where the relay run began.
+    const [, first] = store.listTurns('s').turns
+    expect(store.listTurns('s').turns).toHaveLength(3)
+    expect(store.getTurn('s', first!.turnSeq)!.scopes[0]?.requests.map(r => r.startedAt)).toEqual([6000])
+  })
+
+  it('keeps a legacy run without a run id, keyed by its member and start', () => {
+    const state = emptyRoom()
+    applyRoomEvent(state, 'room/member-added', { id: 'm-coco', name: 'coco' }, 1, 1)
+    applyRoomEvent(state, 'room/run-state', { member: 'coco', state: 'running', startedAt: 100 }, 2, 100)
+    applyRoomEvent(state, 'room/run-state', { member: 'coco', state: 'failed', startedAt: 100, elapsedMs: 50 }, 3, 150)
+    expect([...state.runs.values()]).toEqual([{ runId: 'legacy:coco:100', memberId: 'm-coco', member: 'coco', state: 'failed', startedAt: 100, endedAt: 150 }])
+  })
+
   it('a cancelled run reads cancelled and ends where it was cancelled', () => {
     // The room records a stop without elapsedMs; the run must not stay open until the next dispatch.
     const rows = [...turn1, ...room.filter(row => row.seq !== 23),

@@ -165,7 +165,7 @@ export class PlanService {
       const run = state.runs.find(run => run.member === member?.name)
       if (run?.runId === deliveryId && ['running', 'failed'].includes(run.state)) {
         const childSessionId = runChildSessionId(room.id, member)
-        const childTurn = runChildTurn(childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
+        const childTurn = runChildTurn(events, run.runId, childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
         room.append('room/run-state', { member: run.member, runId: run.runId, startedAt: run.startedAt, state: attempt.status === 'submitted' ? 'done' : 'failed',
           ...childSessionId === undefined ? {} : { childSessionId },
           ...childTurn === undefined ? {} : { childTurn },
