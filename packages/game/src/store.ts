@@ -303,6 +303,12 @@ export class GameService {
       else elements.push({ id, name: e.name, what: 'fields', fields })
     }
     for (const [id, e] of base.elements) if (!elementsNow.has(id)) elements.push({ id, name: e.name, what: 'removed' })
+    // An element whose definition did not move but whose model or texture did
+    // (a character re-exported to `assets/ayuan.glb`) changed its look too.
+    const listed = new Set(elements.map(e => e.id))
+    for (const [id, e] of touchedElements(base.elements, elementsNow, [...changed, ...removed])) {
+      if (!listed.has(id)) elements.push({ id, name: e.name, what: 'look' })
+    }
     const manifest = await this.manifestOf(row.root)
     const params = (manifest?.params ?? []).filter(p => base.params[p.key] !== p.value)
       .map(p => ({ key: p.key, label: p.label, to: p.value, ...(base.params[p.key] === undefined ? {} : { from: base.params[p.key]! }) }))
@@ -311,8 +317,14 @@ export class GameService {
     const tests = changed.filter(p => p.startsWith('tests/'))
     const current = (await readJson<VersionRecord>(join(row.root, STATE_DIR, 'current.json')))?.version
     const candidate = (await readJson<VersionRecord>(join(row.root, STATE_DIR, 'candidate.json')))?.version
+    const deployed = current !== undefined && current !== base.current ? current : undefined
+    const placed = deployed === undefined ? undefined : await this.changedBy(row.root, deployed)
     const version = candidate !== undefined && candidate !== base.candidate ? { kind: 'candidate' as const, version: candidate }
-      : current !== undefined && current !== base.current ? { kind: 'deployed' as const, version: current } : null
+      : deployed !== undefined ? {
+          kind: 'deployed' as const, version: deployed,
+          ...(placed === undefined ? {} : { place: placed.target, ...(placed.names.length > 0 ? { names: placed.names } : {}) }),
+        }
+      : null
     const last = await readJson<CheckRecord>(join(row.root, STATE_DIR, 'checks.json'))
     const check = last !== undefined && new Date(last.at).getTime() >= base.at
       ? { ok: last.ok, fixes: last.attempt, gaveUp: last.gaveUp === true, passed: last.passed, failures: last.failures.length }

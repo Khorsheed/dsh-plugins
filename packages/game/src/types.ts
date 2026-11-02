@@ -457,8 +457,18 @@ export interface TurnReport {
   readonly projectId: string
   readonly title: string
   readonly at: string
-  /** A version that became live (or a candidate) during the turn. */
-  readonly version: { readonly kind: 'deployed' | 'candidate'; readonly version: number } | null
+  /**
+   * A version that became live (or a candidate) during the turn, with where
+   * its change is seen against the version before (the elements it touched,
+   * models included; else play) and those elements' names. A version can
+   * carry work done in earlier turns, so this is not the turn's own diff.
+   */
+  readonly version: {
+    readonly kind: 'deployed' | 'candidate'
+    readonly version: number
+    readonly place?: { readonly view: 'play' | 'elements' | 'design' | 'versions'; readonly elementId?: string }
+    readonly names?: readonly string[]
+  } | null
   /** The turn's end-of-turn check, when one ran. */
   readonly check: { readonly ok: boolean; readonly fixes: number; readonly gaveUp: boolean; readonly passed: number; readonly failures: number } | null
   readonly elements: readonly {
