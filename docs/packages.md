@@ -30,7 +30,7 @@
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/client-ui-content-preview` | 0.1.1 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-panel-kit` | `packages/client-ui-panel-kit` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-context-guard` | `packages/context-guard` | 0.2.7 | bundle | — | web | 0.1.2-rc.1 | eval |
-| `@khorsheed/dsh-context-lens` | `packages/context-lens` | 0.1.1 | bundle | — | web | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-context-lens` | `packages/context-lens` | 0.1.1 | bundle | — | web | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-dev-suite` | `packages/dev-suite` | 0.1.1 | bundle | — | — | 0.1.7-rc.1 | — |
 | `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
@@ -53,7 +53,7 @@
 | `@khorsheed/dsh-mobile` | `packages/mobile` | 0.2.1 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-quote` | `packages/quote` | 0.1.5 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-reader` | `packages/reader` | 0.3.2 | bundle | — | web | 0.1.5-rc.1 | — |
-| `@khorsheed/dsh-room` | `packages/room` | 0.2.5 | bundle | — | web | 0.1.5-rc.1 | — |
+| `@khorsheed/dsh-room` | `packages/room` | 0.2.5 | bundle | — | web | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-sidechat` | `packages/sidechat` | 0.2.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-taskpilot` | `packages/taskpilot` | 0.3.6 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-transcribe` | `packages/transcribe` | 0.1.0 | bundle | — | — | 0.1.5-rc.1 | — |

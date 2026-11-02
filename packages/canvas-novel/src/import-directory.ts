@@ -95,7 +95,12 @@ export async function readNovelImportDirectory(root: string): Promise<NovelDirec
         continue
       }
       if (!entry.isFile()) continue
-      if (!NOVEL_DOCUMENT_EXTENSIONS.includes(novelImportExtension(entry.name) ?? '')) {
+      const extension = novelImportExtension(entry.name)
+      if (extension === '.doc' || extension === '.docx') {
+        issues.push({ file: displayPath(canonical, absolute), reason: 'legacy-doc' })
+        continue
+      }
+      if (!NOVEL_DOCUMENT_EXTENSIONS.includes(extension ?? '')) {
         skipped += 1
         continue
       }

@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import JSZip from 'jszip'
 import { pickNovelImportDirectory, readNovelImportDirectory } from '../src/import-directory.ts'
 import { parseNovelBinaryDocuments } from '../src/client/import-documents.ts'
 
@@ -13,15 +12,6 @@ async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'novel-import-'))
   temporary.push(root)
   return root
-}
-
-async function docx(path: string, paragraphs: readonly string[]): Promise<void> {
-  const zip = new JSZip()
-  zip.file('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
-  zip.file('_rels/.rels', '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
-  const body = paragraphs.map(text => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`).join('')
-  zip.file('word/document.xml', `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr/></w:body></w:document>`)
-  await writeFile(path, await zip.generateAsync({ type: 'nodebuffer' }))
 }
 
 afterEach(async () => {
@@ -35,7 +25,7 @@ describe('novel directory import', () => {
     await mkdir(join(source, '01'), { recursive: true })
     await mkdir(join(source, '02'), { recursive: true })
     await mkdir(join(source, 'node_modules'), { recursive: true })
-    await docx(join(source, '01', '第一章.docx'), ['第一章 前', '甲。'])
+    await writeFile(join(source, '01', '第一章.md'), '第一章 前\n甲。')
     await writeFile(join(source, '01', '第二章.txt'), '第二章 后\n乙。')
     await writeFile(join(source, '02', '第三章.md'), '没有标题的正文。')
     await writeFile(join(source, '.hidden.txt'), '隐藏。')
@@ -48,7 +38,7 @@ describe('novel directory import', () => {
     expect(result.ok).toBe(true)
     expect(result.rootName).toBe('source')
     expect((await parseNovelBinaryDocuments(result.files)).drafts.map(draft => [draft.file, draft.title, draft.text])).toEqual([
-      ['01/第一章.docx', '第一章 前', '甲。'],
+      ['01/第一章.md', '第一章 前', '甲。'],
       ['01/第二章.txt', '第二章 后', '乙。'],
       ['02/第三章.md', '第三章', '没有标题的正文。'],
     ])
@@ -58,14 +48,16 @@ describe('novel directory import', () => {
     expect(basename(root)).toContain('novel-import-')
   })
 
-  it('reports damaged supported documents without discarding valid chapters', async () => {
+  it('reports Word conversion guidance without reading Word files or losing valid chapters', async () => {
     const root = await fixture()
-    await writeFile(join(root, 'broken.docx'), 'not a zip')
+    await writeFile(join(root, 'word.docx'), 'Word prose')
     await writeFile(join(root, 'valid.txt'), '第一章 好\n正文。')
     const result = await readNovelImportDirectory(root)
+    expect(result.files.map(file => file.file)).toEqual(['valid.txt'])
+    expect(result.issues).toEqual([{ file: 'word.docx', reason: 'legacy-doc' }])
     const parsed = await parseNovelBinaryDocuments(result.files)
     expect(parsed.drafts.map(draft => draft.title)).toEqual(['第一章 好'])
-    expect(parsed.issues).toEqual([{ file: 'broken.docx', reason: 'docx-invalid' }])
+    expect(parsed.issues).toEqual([])
   })
 
   it('supports native and official browse selection, cancellation and missing capabilities', async () => {

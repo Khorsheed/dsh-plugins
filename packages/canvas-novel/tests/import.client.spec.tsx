@@ -103,14 +103,15 @@ describe('ImportNovel', () => {
     expect(send).toHaveBeenCalledWith(SESSION, expect.stringContaining('第 5、6、7 章'))
   })
 
-  it('shows parsing failures without offering an empty import', async () => {
+  it('asks for Word documents as text without offering an empty import', async () => {
     const importOwnChapter = vi.fn()
     const remote = { importOwnChapter } as unknown as NovelRemote
     const { props } = fixture(remote)
     render(<ImportNovel {...props} />)
     const input = document.querySelector<HTMLInputElement>('input[type=file]')!
-    fireEvent.change(input, { target: { files: [new File(['not a zip'], 'broken.docx')] } })
-    await screen.findByText('broken.docx：无法读取这个 Word 文档，文件可能损坏或不是有效的 .docx')
+    expect(input.accept).toBe('.txt,.md,.markdown')
+    fireEvent.change(input, { target: { files: [new File(['Word prose'], 'chapter.docx')] } })
+    await screen.findByText('chapter.docx：Word（.doc/.docx）请先另存为 UTF-8 TXT 或 Markdown')
     expect(screen.getByText('没有可导入的章节。')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /导入 \d+ 章并对账/ })).toBeNull()
     expect(importOwnChapter).not.toHaveBeenCalled()

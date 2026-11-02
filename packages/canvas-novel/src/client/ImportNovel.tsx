@@ -142,7 +142,7 @@ export function ImportNovel(props: NovelSurfaceProps): ReactNode {
         className={css.fileInput}
         type="file"
         multiple
-        accept=".docx,.txt,.md,.markdown"
+        accept=".txt,.md,.markdown"
         aria-label={t('import.choose')}
         onChange={event => {
           void pick([...(event.target.files ?? [])])
