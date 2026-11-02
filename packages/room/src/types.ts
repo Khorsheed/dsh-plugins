@@ -8,6 +8,7 @@
  */
 import type { RoomPlan } from './plan.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { LocalAgentMemberMessage, RoomMemberMessageReceipt as LocalAgentRoomMemberMessageReceipt } from '@khorsheed/dsh-local-agent/types'
 
 /**
  * A JSON-safe value (mirrors the host's JsonValue shape without importing the
@@ -1054,32 +1055,17 @@ export type RoomFailure =
 /**
  * The family bridge's gate entry, verbatim-frozen contract
  * (`proposals/closed/2026-08-19-local-agent-member-channel.md`): the bridge
- * probes `ctx.get('room')` and duck-type-calls this method. Phase 1's gate is
- * always human confirmation, so the receipt is always 'pending-confirm';
- * 'sent'/'busy' belong to the phase-2 auto gate.
+ * probes `ctx.get('room')` and duck-type-calls `receiveMemberMessage`. The
+ * message and receipt types are the local-agent core's own (the single
+ * source; room only re-exports them): `RoomService implements
+ * RoomMemberMessageGate`, so a field change on either side fails to compile.
+ * `provenance` is the core's required `Record<string, string>` — its only
+ * caller (`member-channel.ts` handToGate) always sends the sender's
+ * delegation view as strings, and room resolves the sender by its
+ * `provider`. The receiver still guards a malformed call at runtime.
  */
-export interface RoomMemberMessage {
-  readonly from: string
-  readonly to: string
-  readonly content: string
-  readonly parentSessionId: SessionId
-  readonly provenance?: Record<string, RoomJsonValue>
-  /** `task` (default): the reply is reported back; `notify`: FYI only. */
-  readonly kind?: 'task' | 'notify'
-  /** `m<seq>` (or the bare seq) of the message being answered. */
-  readonly inReplyTo?: string
-  /** What the sender waits for before acting on the result. */
-  readonly note?: string
-  /** `new` or a task number (see RoomMessageRequest.task). */
-  readonly task?: string
-}
-
-/**
- * The gate receipt handed back to the sending member through the bridge,
- * quoted verbatim to the model: `sent #m<seq>…` or `pending-confirm …` with a
- * short explanation (the bare legacy words remain valid).
- */
-export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy' | `sent ${string}` | `pending-confirm ${string}`
+export type RoomMemberMessage = LocalAgentMemberMessage
+export type RoomMemberMessageReceipt = LocalAgentRoomMemberMessageReceipt
 
 /** isRoom probe: does this session carry the room marker? */
 /** pendingCards request: no arguments (every live room the host knows). */

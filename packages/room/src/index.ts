@@ -24,7 +24,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import type { LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome, RoomMemberMessageGate } from '@khorsheed/dsh-local-agent/types'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context (create/resume
 // are consumed through the registry, not the agent-loop package).
@@ -261,7 +261,7 @@ export function handoffText(_events: readonly SessionEvent[], state: RoomState, 
  * CREATED apart from a session — inviting an agent into any session promotes
  * it (see ensureRoom; the room-session-promotion proposal).
  */
-export class RoomService extends TypertRemoteService {
+export class RoomService extends TypertRemoteService implements RoomMemberMessageGate {
   static inject = ['sessions', 'agents']
 
   /** The dispatch engine executing this service's dispatch records. */
@@ -2252,9 +2252,10 @@ export class RoomService extends TypertRemoteService {
       || typeof request.content !== 'string' || typeof request.parentSessionId !== 'string') {
       throw new Error('room: malformed member message (from/to/content/parentSessionId must be strings)')
     }
-    const loaded = await this.ensureLive(request.parentSessionId)
+    const loaded = await this.ensureLive(SessionId(request.parentSessionId))
     if (!loaded.ok) throw new Error(`room: not a room session (${loaded.error.code})`)
-    const sender = loaded.state.members.find(member => member.childSessionId === request.from && member.provider === request.provenance?.provider)
+    // The core types provenance as required; a hand-rolled caller may still omit it.
+    const sender = loaded.state.members.find(member => member.childSessionId === request.from && member.provider === (request.provenance as RoomMemberMessage['provenance'] | undefined)?.provider)
     if (sender !== undefined) {
       const kind = request.kind === 'notify' ? 'notify' : 'task'
       const result = await this.messageMember({ sessionId: loaded.session.id, member: request.to, text: request.content, kind,
