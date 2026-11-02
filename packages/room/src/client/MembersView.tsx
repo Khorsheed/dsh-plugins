@@ -22,6 +22,7 @@ import type { RoomMember, RoomRemoval } from '../types.ts'
 import { RemoveMemberConfirm, removalImpact } from './RemoveMemberConfirm.tsx'
 import { MemberCard } from './MemberCard.tsx'
 import { InviteDialog, inviteRequest, type InviteDialogSubmit } from './InviteDialog.tsx'
+import { submitMemberEdit } from './MemberEditDialog.tsx'
 import type { MembersViewProps, RoomModelDirectory } from './slots.ts'
 import type { RoomProviderList } from '../types.ts'
 import css from './MembersView.module.css'
@@ -49,7 +50,7 @@ function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirect
 export function MembersView({
   sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, unlinkSession, updateMember, invite, listProviders, browseDirectory,
   modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator,
-  renderMemberModelPicker, readMemberSelection, saveMemberSelection, t,
+  renderMemberModelPicker, readMemberSelection, saveMemberSelection, memberTools, reloadMemberTools, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -114,56 +115,10 @@ export function MembersView({
   const submitDialog = async (values: InviteDialogSubmit) => {
     if (dialog === null) return { ok: false as const, message: '' }
     if (dialog.mode === 'edit') {
-      // Diff against the member record: only changed fields ride the patch;
-      // an emptied cwd/instructions CLEARS (null) back to the inherit/no-
-      // preset state.
-      const member = dialog.member
       const name = values.name.trim()
-      const cwd = values.cwd.trim()
-      const instructions = values.instructions.trim()
-      const role = values.role.trim()
-      const model = values.model.trim()
-      const effort = values.effort.trim()
-      const configurationOwned = member.childSessionId !== undefined && renderMemberConfiguration !== undefined
-      const modelChanged = model !== values.modelBaseline.trim() && !configurationOwned
-      const effortChanged = effort !== values.effortBaseline.trim() && !configurationOwned
-      // A started member's model and effort go through its control (queued
-      // behind a running round); the room's own agent switches the session model.
-      let deferred = false
-      if (values.memberPicker === true && member.childSessionId !== undefined && saveMemberSelection !== undefined
-        && (model !== values.modelBaseline.trim() || effort !== values.effortBaseline.trim())) {
-        const saved = await saveMemberSelection(member.childSessionId, { model, effort })
-        if (!saved.ok) return { ok: false as const, message: saved.error }
-        deferred = saved.deferred
-      }
-      if (values.mainSelection !== undefined && modelDirectory !== undefined) {
-        const result = await modelDirectory.select(values.mainSelection).catch((error: unknown) => ({ ok: false as const, error }))
-        if (!result.ok) return { ok: false as const, message: t('invite.error.generic') }
-      }
-      if (modelChanged && member.childSessionId !== undefined) {
-        if (setMemberModel === undefined) return { ok: false as const, message: t('invite.error.generic') }
-        // Compatibility entry also uses the core queue. No journaled model
-        // mutation for a started member: its durable owner is local-agent.
-        const result = await setMemberModel(member.childSessionId, model === '' ? undefined : model)
-        if (result === undefined) return { ok: false as const, message: t('invite.error.generic') }
-        if (!result.ok) return { ok: false as const, message: result.error }
-      }
-      const patch = {
-        ...name !== member.name ? { rename: name } : {},
-        ...cwd !== (member.cwd ?? '') ? { cwd: cwd === '' ? null : cwd } : {},
-        ...instructions !== (member.instructions ?? '')
-          ? { instructions: instructions === '' ? null : instructions }
-          : {},
-        ...role !== (member.role ?? '') ? { role: role === '' ? null : role } : {},
-        // The journaled intent: the first dispatch binds it for a never-
-        // started member (the broker call above is a no-op there — no
-        // delegation record — so this value alone carries the edit). Effort
-        // rides the same rule; a started member's effort belongs to the
-        // member-configuration card that replaces these fields outright.
-        ...modelChanged && member.childSessionId === undefined ? { model: model === '' ? null : model } : {},
-        ...effortChanged && member.childSessionId === undefined ? { effort: effort === '' ? null : effort } : {},
-      }
-      const outcome = Object.keys(patch).length === 0 ? { ok: true as const } : await updateMember(member.name, patch)
+      const { outcome, deferred } = await submitMemberEdit(
+        { saveMemberSelection, modelDirectory, setMemberModel, updateMember, renderMemberConfiguration }, dialog.member, values, t,
+      )
       if (outcome.ok && deferred) flash(t('invite.savedDeferred', { member: name }))
       return outcome
     }
@@ -222,6 +177,9 @@ export function MembersView({
       readMemberSelection={readMemberSelection}
       mainModelDirectory={modelDirectory}
       memberRunning={dialog.mode === 'edit' && (state?.runs.some(run => run.member === dialog.member.name && run.state === 'running') ?? false)}
+      memberRun={dialog.mode === 'edit' ? state?.runs.find(run => run.member === dialog.member.name) : undefined}
+      memberTools={memberTools}
+      reloadMemberTools={reloadMemberTools}
       onSubmit={submitDialog}
       onClose={() => { setDialog(null) }}
       t={t}

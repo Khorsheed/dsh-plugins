@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-02-member-mode-tools-never-silently-empty.md
-.agents/notes/implemented/bug-fix/2026-11-02-member-mode-tools-never-silently-empty.md: 8f119cdf399d0fa2bd9352aabafab5056df205e7
-.agents/notes/implemented/bug-fix/2026-11-02-member-mode-tools-never-silently-empty.zh.md: 9bdc97f01df464fee9f231b7f960a43e03be0715
+.agents/notes/implemented/bug-fix/2026-11-02-member-mode-tools-never-silently-empty.md: e688cfea90b0d1c551eb7c5e45c57a20892118ca
+.agents/notes/implemented/bug-fix/2026-11-02-member-mode-tools-never-silently-empty.zh.md: a9482ca910a2c301a467f98f5d8b49c826da06ca

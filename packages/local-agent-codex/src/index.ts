@@ -270,6 +270,8 @@ export function apply(ctx: Context, config: Config): void {
         await driver.prepare({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('codex', binding.scope), childSession,
           parentSessionId: binding.parentSessionId, configuration: configuration.resolved,  }, signal)
       },
+      // The room's 重新载入: a fresh process on the same CLI session, no prompt.
+      reloadMember: (childSessionId, hooks) => liveSwitch.resolve(childSessionId)?.reloadMember(childSessionId, hooks),
       name: 'codex',
       displayName: 'Codex',
       homeEnvVar: 'CODEX_HOME',

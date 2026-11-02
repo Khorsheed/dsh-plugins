@@ -1440,6 +1440,31 @@ describe('codex live driver member-aware model', () => {
     await third.dispose()
     expect(m.spawns).toHaveLength(2)
   })
+
+  it('reloads an idle member on request: a fresh app-server resumes the thread, no turn', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-reload'))
+    const first = new FakeAppServer({ turn: () => ({ items: [{ type: 'agentMessage', text: '一', phase: 'final_answer' }] }) })
+    m.queueChild(first)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await run.result
+    await run.dispose()
+    expect(m.driver.hasRuntime(String(child.id))).toBe(true)
+    // The round's queue entry settles right after its result.
+    await new Promise(resolve => setTimeout(resolve, 0))
+    const second = new FakeAppServer()
+    m.queueChild(second)
+    const onStart = vi.fn()
+    const reload = m.driver.reloadMember(String(child.id), { onStart })
+    expect(reload?.when).toBe('now')
+    await expect(reload!.done).resolves.toBe('respawned')
+    expect(onStart).toHaveBeenCalledOnce()
+    expect(m.spawns).toHaveLength(2)
+    expect(second.requests.map(r => r.method)).toContain('thread/resume')
+    expect(second.requests.some(r => r.method === 'turn/start')).toBe(false)
+    expect(m.driver.reloadMember('child-none', { onStart: () => {} })).toBeUndefined()
+    await m.driver.disposeAll()
+  })
 })
 
 

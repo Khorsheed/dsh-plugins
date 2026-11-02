@@ -67,6 +67,8 @@ export const ROOM_EVENT_TYPES = [
   'room/run-state',
   'room/run-moved',
   'room/member-compacted',
+  // A member's mode tools were reloaded at round start, or still missing after a reload.
+  'room/member-tools',
   'room/execution-metadata',
   'room/relay',
   'room/relay-resolved',

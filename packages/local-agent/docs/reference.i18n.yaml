@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/local-agent/docs/reference.en.md
-packages/local-agent/docs/reference.en.md: 64388f08fc18465d64d0f6b4fcf163c453db5e72
-packages/local-agent/docs/reference.md: 4d3a7af8038e89c0f391f9dab3922234394c9ae8
+packages/local-agent/docs/reference.en.md: 04f1747e1564fda89528dede5ecb11d2201370bd
+packages/local-agent/docs/reference.md: 6eb26a867d12de870d7aff7ec44afb6c5ba288a0

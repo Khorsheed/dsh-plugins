@@ -15,7 +15,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
 import type { RoomProviderList, RoomQuestionAnswer, RoomRemoval, RoomRunAttachment, RoomSettings } from '../types.ts'
-import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsStatus, LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import type { RoomChromeVisibility } from './preset-visibility.ts'
 import type { RoomStore } from './room-store.ts'
 
@@ -352,6 +352,14 @@ export interface RoomMembersInjected extends RoomInviteInjected {
    */
   readonly setMemberModel?: ((childSessionId: string, model?: string) => Promise<LocalAgentPromptResult | undefined>) | undefined
   /**
+   * What a CLI member's current process holds of its mode's tools (the
+   * localAgentGateway `memberTools` read, duck-typed): null = no mode,
+   * undefined = gateway absent or RPC failure. Absent = no 模式工具 line.
+   */
+  readonly memberTools?: ((childSessionId: string) => Promise<LocalAgentMemberToolsStatus | null | undefined>) | undefined
+  /** Reload a member's process so it lists its mode tools again (the localAgentGateway `reloadMemberTools` write). */
+  readonly reloadMemberTools?: ((childSessionId: string) => Promise<LocalAgentMemberToolsReload | undefined>) | undefined
+  /**
    * The room session's official model directory (the same instance
    * RoomModelPicker renders): the main-agent card's model hint. undefined =
    * host without ui-model-selection.
@@ -422,8 +430,17 @@ export type RoomRunViewProps =
   & PropsRenderSlots<'room.run.attachment'>
 
 /** Full props of the 'room-event' chat-node renderer. */
+/** Injected face of the boundary line (the mode-tools notice's mode name and 编辑成员). */
+export interface RoomEventInjected {
+  /** The room's mode display names by preset id; absent = the notice says "mode tools". */
+  readonly modeNames?: ((sessionId: SessionId) => Promise<ReadonlyMap<string, string>>) | undefined
+  /** The members face the notice's 「编辑成员」 opens the edit dialog with; absent = no link. */
+  readonly members?: RoomMembersInjected | undefined
+}
+
 export type RoomEventViewProps =
   PropsRuntime<'conversation.chat.node', 'room-event'>
+  & InjectFace<RoomEventInjected>
   & PropsLocale<'room'>
 
 /** Injected face of the relay (member notification) chat node. */

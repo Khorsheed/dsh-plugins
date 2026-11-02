@@ -253,6 +253,24 @@ export class PresetToolHost {
   }
 
   /**
+   * The names of the preset's plugin tools for a member, as a list would
+   * give them right now: the edit dialog's "what the mode has". Writes no
+   * diagnostics line and does not wait for a freshly mounted preset to
+   * settle (a read, not a served list).
+   * @param childSessionId - the member's child session.
+   * @param preset - the member's mode.
+   * @param cwd - the member's working directory.
+   * @returns the names, or undefined when the host lacks the capabilities or the member's session is not live.
+   */
+  async names(childSessionId: string, preset: string, cwd?: string): Promise<string[] | undefined> {
+    const tools = this.probe<ToolsLike>('tools')
+    if (tools === undefined) return undefined
+    const agent = await this.agentFor(childSessionId, preset, cwd)
+    if (agent === undefined) return undefined
+    return tools.schemas(agent).filter(schema => isPluginTool(tools.get(schema.name, agent))).map(schema => schema.name)
+  }
+
+  /**
    * Run one plugin tool for a member through the registry's execution
    * pipeline (policies, approvals, timeouts), as the member's preset agent.
    * @param childSessionId - the member's child session.

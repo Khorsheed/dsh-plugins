@@ -33,8 +33,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { LocalAgentRegistry } from './index.ts'
 import type { BridgedTool, BridgedToolResult, PresetToolHost } from './preset-tool-host.ts'
 import { harnessSkillsDir, installModeSkills } from './mode-skills.ts'
+import { MemberToolsTracker } from './member-tools.ts'
 import type {
   LocalAgentDelegationView,
+  LocalAgentMemberRun,
+  LocalAgentMemberToolsStatus,
   MemberRoomCommand,
   LocalAgentMemberMessage,
   MemberMessageOutcome,
@@ -91,7 +94,7 @@ export type MemberModeToolsOutcome =
  * bridge's placeholder (it could not ask).
  */
 export type ServedModeTools =
-  | { readonly served: 'complete'; readonly count: number; readonly at: number }
+  | { readonly served: 'complete'; readonly count: number; readonly names?: readonly string[]; readonly at: number }
   | { readonly served: 'placeholder'; readonly reason: string; readonly at: number }
 
 /** How long one bridged mode-tool call may run before it is cancelled. */
@@ -105,6 +108,8 @@ export class MemberChannel {
   private server: Server | undefined
   /** Per bridge token: what that member process was last served (see {@link ServedModeTools}). */
   private readonly served = new Map<string, ServedModeTools>()
+  /** Per member: reloads and what the room was told (the edit dialog's 模式工具 line). */
+  private readonly tools = new MemberToolsTracker()
 
   constructor(
     private readonly ctx: Context,
@@ -114,6 +119,16 @@ export class MemberChannel {
   ) {
     // The live drivers ask the registry before each round; the answer lives here.
     if (typeof registry.setMemberToolsCheck === 'function') registry.setMemberToolsCheck(token => this.staleModeTools(token))
+    if (typeof registry.setMemberToolsFace === 'function') {
+      registry.setMemberToolsFace({
+        status: childSessionId => this.memberToolsStatus(childSessionId),
+        autoReloaded: (childSessionId, oldToken) => { this.autoReloaded(childSessionId, oldToken) },
+        reloadPending: childSessionId => this.tools.reloadPending(childSessionId),
+        reloadAccepted: (childSessionId, when) => { this.tools.reloadAccepted(childSessionId, when) },
+        reloadStarted: (childSessionId) => { this.tools.reloadStarted(childSessionId) },
+        reloadDone: (childSessionId, outcome, oldToken) => { this.tools.reloadDone(childSessionId, outcome, oldToken) },
+      })
+    }
   }
 
   /** What the member process behind a token was last served, if it listed since spawn. */
@@ -121,12 +136,78 @@ export class MemberChannel {
     return this.served.get(token)
   }
 
-  /** Record a served list, dropping entries whose run is gone (tokens die with their process). */
-  private recordServed(token: string, state: ServedModeTools): void {
+  /**
+   * Record a served list, dropping entries whose run is gone (tokens die with
+   * their process). A reloaded process that still could not get its tools is
+   * told to the room.
+   */
+  private recordServed(token: string, state: ServedModeTools, probe = false): void {
     for (const known of [...this.served.keys()]) {
       if (this.registry.resolveMemberRun(known) === undefined) this.served.delete(known)
     }
     this.served.set(token, state)
+    // A probe is the bridge recovering behind a placeholder already reported.
+    if (probe) return
+    const run = this.registry.resolveMemberRun(token)
+    if (run === undefined) return
+    const verdict = this.tools.served(run.childSessionId, token, state.served)
+    if (verdict.unavailable !== undefined) void this.tellRoom(run, 'unavailable', verdict.unavailable.during)
+  }
+
+  /** One line in the member's room about its mode tools (best-effort; no room, no mode = nothing). */
+  private async tellRoom(run: LocalAgentMemberRun, kind: 'reloaded' | 'unavailable', during: 'round' | 'idle'): Promise<void> {
+    try {
+      const room = this.probeRoom()
+      if (room?.noteMemberTools === undefined) return
+      const mode = await room.memberMode?.(run)
+      if (mode === undefined) return
+      await room.noteMemberTools({ childSessionId: run.childSessionId, parentSessionId: run.parentSessionId, provider: run.provider }, { kind, preset: mode.preset, during })
+    } catch (error) {
+      this.ctx.logger.warn(`localAgent: the room notice about ${run.childSessionId}'s mode tools failed: ${String(error)}`)
+    }
+  }
+
+  /** A live driver replaced the member's process at round start (it lacked its tools): remember it and tell the room. */
+  private autoReloaded(childSessionId: string, oldToken: string | undefined): void {
+    this.tools.autoReloaded(childSessionId, oldToken)
+    const binding = this.registry.memberBinding(childSessionId)
+    if (binding === undefined) return
+    void this.tellRoom({ childSessionId, parentSessionId: binding.parentSessionId, provider: binding.provider }, 'reloaded', 'round')
+  }
+
+  /**
+   * The edit dialog's read: what the member's current process holds of its
+   * mode tools, against what its mode has now. Null = no mode (or no room,
+   * no tool host, an unknown member): the dialog shows no line.
+   * @param childSessionId - the member's child session.
+   * @returns the status, or null.
+   */
+  async memberToolsStatus(childSessionId: string): Promise<LocalAgentMemberToolsStatus | null> {
+    const binding = this.registry.memberBinding(childSessionId)
+    if (binding === undefined || this.modeTools === undefined) return null
+    const run: LocalAgentMemberRun = { childSessionId, parentSessionId: binding.parentSessionId, provider: binding.provider }
+    const mode = await this.probeRoom()?.memberMode?.(run)
+    if (mode === undefined) return null
+    const token = typeof this.registry.currentMemberToken === 'function' ? this.registry.currentMemberToken(childSessionId) : undefined
+    const state = token === undefined ? undefined : this.served.get(token)
+    const received = state?.served === 'complete' ? state.names ?? [] : []
+    const expected = await this.modeTools.names(childSessionId, mode.preset, mode.cwd).catch(() => undefined)
+      ?? (state?.served === 'complete' ? received : [])
+    const process: LocalAgentMemberToolsStatus['process'] = token === undefined ? 'none'
+      : state === undefined ? 'unreported'
+        : state.served === 'placeholder' ? 'placeholder'
+          : state.count === 0 && expected.length > 0 ? 'empty'
+            : 'full'
+    const harness = this.registry.harnessForProvider(binding.provider)
+    return {
+      preset: mode.preset,
+      expected,
+      process,
+      received,
+      ...state === undefined ? {} : { loadedAt: state.at },
+      ...this.tools.reloadState(childSessionId),
+      reloadable: harness?.reloadMember !== undefined && token !== undefined,
+    }
   }
 
   /**
@@ -196,6 +277,8 @@ export class MemberChannel {
     this.registry.setMemberBridgeAvailable(false)
     if (typeof this.registry.setMemberToolsCheck === 'function') this.registry.setMemberToolsCheck(undefined)
     this.served.clear()
+    this.tools.clear()
+    if (typeof this.registry.setMemberToolsFace === 'function') this.registry.setMemberToolsFace(undefined)
     if (server === undefined) return
     await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
     rmSync(this.socketPath, { force: true })
@@ -323,17 +406,17 @@ export class MemberChannel {
       const probe = request.modeTools.probe === true
       // A probe is the bridge recovering while its CLI still holds the
       // placeholder: whatever it finds, the CLI was not served it.
-      if (probe) this.recordServed(token, { served: 'placeholder', reason: 'the bridge recovered after serving the placeholder', at: Date.now() })
+      if (probe) this.recordServed(token, { served: 'placeholder', reason: 'the bridge recovered after serving the placeholder', at: Date.now() }, true)
       if (mode === undefined) {
         // Visible in the diagnostics: a member whose room gave it no mode.
         this.modeTools?.note({ childSessionId: run.childSessionId, provider: run.provider, mode: false })
-        if (!probe) this.recordServed(token, { served: 'complete', count: 0, at: Date.now() })
+        if (!probe) this.recordServed(token, { served: 'complete', count: 0, names: [], at: Date.now() })
         return { ok: true, tools: [] }
       }
       try {
         const tools = await this.modeTools!.list(run.childSessionId, mode.preset, mode.cwd, mode.desk)
         await this.installSkills(run, mode.preset)
-        if (!probe) this.recordServed(token, { served: 'complete', count: tools.length, at: Date.now() })
+        if (!probe) this.recordServed(token, { served: 'complete', count: tools.length, names: tools.map(tool => tool.name), at: Date.now() })
         return { ok: true, tools }
       } catch (error) {
         // Not "no mode": the member has one and the host failed to list it, so

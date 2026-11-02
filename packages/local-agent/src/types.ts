@@ -822,7 +822,64 @@ export interface RoomMemberMessageGate {
    * conversation and answers with the registry's approval outcome.
    */
   askMemberApproval?(member: LocalAgentMemberRun, request: { readonly toolName: string; readonly reason?: string; readonly signal?: AbortSignal }): Promise<'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'>
+  /**
+   * Something the human should know about a member's mode tools, as one line
+   * in the room's conversation: its process was replaced at round start
+   * because it lacked them (`reloaded`), or a replaced process still could
+   * not get them (`unavailable`). Fire-and-forget; an older room lacks it.
+   */
+  noteMemberTools?(member: LocalAgentMemberRun, notice: MemberToolsNotice): Promise<void>
 }
+
+/** One room-visible fact about a member's mode tools (see {@link RoomMemberMessageGate.noteMemberTools}). */
+export interface MemberToolsNotice {
+  readonly kind: 'reloaded' | 'unavailable'
+  /** The member's mode (host preset id) the tools belong to. */
+  readonly preset: string
+  /** `round`: it happened as a round started (the round goes on); `idle`: between rounds (a reload the human asked for). */
+  readonly during: 'round' | 'idle'
+}
+
+/**
+ * What one member's CURRENT process holds of its mode tools (the edit
+ * dialog's 模式工具 line). Only mode tools are counted: room tools are built
+ * into the bridge and the CLI's own tools are not ours to list.
+ * - `full`: it listed the host's mode tools (`received`);
+ * - `placeholder`: the bridge could not ask, the CLI holds none of them;
+ * - `empty`: it listed none, while its mode has tools now;
+ * - `unreported`: a live process that never listed (a bridge from before the
+ *   report, or a CLI that lists late);
+ * - `none`: no resident process; the next round's process lists afresh.
+ */
+export interface LocalAgentMemberToolsStatus {
+  /** The member's mode (host preset id). A member without a mode has no status at all. */
+  readonly preset: string
+  /** The mode's plugin tools as the host lists them now. */
+  readonly expected: readonly string[]
+  readonly process: 'full' | 'placeholder' | 'empty' | 'unreported' | 'none'
+  /** The mode tools the current process received (`full` only). */
+  readonly received: readonly string[]
+  /** When the current process got its list or its placeholder. */
+  readonly loadedAt?: number
+  /** A round-start reload replaced the process because it lacked its tools; kept until the next normal load. */
+  readonly autoReloadAt?: number
+  /** A reload in progress: waiting for the member's round to end, or replacing the process now. */
+  readonly reload?: { readonly state: 'scheduled' | 'reloading'; readonly since: number }
+  /**
+   * The last finished reload: the new process listed its tools (`loaded`),
+   * still could not get them (`missing`), has not listed yet (`pending`: its
+   * CLI lists at the next message), had no process to replace
+   * (`no-process`), or could not start (`failed`).
+   */
+  readonly lastReload?: { readonly at: number; readonly by: 'manual' | 'auto'; readonly outcome: 'loaded' | 'missing' | 'pending' | 'no-process' | 'failed' }
+  /** Whether a reload can be asked for (the member runs on a resident process of a harness that supports it). */
+  readonly reloadable: boolean
+}
+
+/** The answer to a reload request: `now` (the member was idle) or `after-round` (it is running; never interrupted). */
+export type LocalAgentMemberToolsReload =
+  | { readonly ok: true; readonly when: 'now' | 'after-round' }
+  | { readonly ok: false; readonly reason: 'unknown-member' | 'unsupported' | 'no-process' | 'busy' }
 
 /**
  * Outcome of one `member_message` delivery. Channel-level failures (unknown or

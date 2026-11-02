@@ -282,6 +282,8 @@ export function apply(ctx: Context, config: Config): void {
         await driver.prepare({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('claude-code', binding.scope), childSession,
           parentSessionId: binding.parentSessionId, configuration: configuration.resolved,  }, signal)
       },
+      // The room's 重新载入: a fresh process on the same CLI session, no prompt.
+      reloadMember: (childSessionId, hooks) => liveSwitch.resolve(childSessionId)?.reloadMember(childSessionId, hooks),
       name: 'claude-code',
       displayName: 'Claude Code',
       homeEnvVar: 'CLAUDE_CONFIG_DIR',

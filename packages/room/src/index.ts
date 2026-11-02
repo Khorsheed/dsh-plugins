@@ -24,7 +24,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import type { LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome, RoomMemberMessageGate } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome, MemberToolsNotice, RoomMemberMessageGate } from '@khorsheed/dsh-local-agent/types'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context (create/resume
 // are consumed through the registry, not the agent-loop package).
@@ -1965,6 +1965,29 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     const running = loaded.state.runs.find(run => run.member === member.name && run.state === 'running')?.runId
     const desk: RoomMemberDesk = { sessionId: actor.parentSessionId, role, member: member.name, ...running === undefined ? {} : { runId: running } }
     return { preset: member.preset, ...cwd === undefined ? {} : { cwd }, desk }
+  }
+
+  /**
+   * One dashed line in the room about a CLI member's mode tools (local-agent's
+   * member channel calls it): its process was reloaded at round start because
+   * it lacked them, or a reloaded process still could not get them. Host
+   * method for the member channel, never a Remote; a member this room does
+   * not seat writes nothing.
+   * @param actor - the member run the notice is about.
+   * @param notice - what happened.
+   */
+  async noteMemberTools(actor: LocalAgentMemberRun, notice: MemberToolsNotice): Promise<void> {
+    const loaded = await this.ensureLive(SessionId(actor.parentSessionId))
+    if (!loaded.ok) return
+    const member = loaded.state.members.find(entry => entry.kind === 'cli' && entry.childSessionId === actor.childSessionId)
+    if (member === undefined) return
+    loaded.session.append('room/member-tools', {
+      member: member.name,
+      memberId: memberId(loaded.session.snapshotEvents(), member),
+      kind: notice.kind === 'unavailable' ? 'unavailable' : 'reloaded',
+      preset: notice.preset,
+      during: notice.during === 'idle' ? 'idle' : 'round',
+    })
   }
 
   /** Pending member tool approvals this process can still answer: approval id → its waiting call. */

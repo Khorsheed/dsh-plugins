@@ -67,13 +67,15 @@ export interface RoomEventData {
   readonly seq: number
   /** Unix epoch ms from the event. */
   readonly time: number
-  readonly sub: 'member-added' | 'member-removed'
-  /** The joining/leaving member. */
+  readonly sub: 'member-added' | 'member-removed' | 'member-tools'
+  /** The joining/leaving member (member-tools: the member the line is about). */
   readonly member?: string
   /** The joining member's provider (member-added, cli members). */
   readonly provider?: string
   /** Who invited the joining member (member-added). */
   readonly invitedBy?: 'human' | 'agent'
+  /** member-tools: reloaded at round start, or still unavailable after a reload. */
+  readonly tools?: { readonly kind: 'reloaded' | 'unavailable'; readonly preset: string; readonly during: 'round' | 'idle' }
 }
 
 /** Chat node data of one member-to-member notification relay row. */
@@ -355,8 +357,8 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
 
 /**
  * The boundary Definition: one single-event Context per member-added (cli
- * members only — the auto-seated main agent is skipped) or member-removed
- * event. The human's `room/dispatch` stays unclaimed: the @-message renders
+ * members only — the auto-seated main agent is skipped), member-removed or
+ * member-tools (a member's mode tools reloaded or still missing) event. The human's `room/dispatch` stays unclaimed: the @-message renders
  * through the official user node (it is also appended as `user/message`).
  */
 export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
@@ -367,6 +369,7 @@ export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
       case 'room/member-added':
         return event.data.kind === 'main-agent' ? null : { id: String(event.seq), role: 'start' as const }
       case 'room/member-removed':
+      case 'room/member-tools':
         return { id: String(event.seq), role: 'start' as const }
       default:
         return null
@@ -386,6 +389,14 @@ export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
         }
       case 'room/member-removed':
         return { seq: event.seq, time: event.time, sub: 'member-removed', member: event.data.name }
+      case 'room/member-tools':
+        return {
+          seq: event.seq,
+          time: event.time,
+          sub: 'member-tools',
+          member: event.data.member,
+          tools: { kind: event.data.kind, preset: event.data.preset, during: event.data.during },
+        }
       default:
         throw new Error('room-event start requires a room boundary event')
     }

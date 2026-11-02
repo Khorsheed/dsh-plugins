@@ -283,6 +283,8 @@ export function apply(ctx: Context, config: Config): void {
         await driver.prepare({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('kimi', binding.scope), childSession,
           parentSessionId: binding.parentSessionId, configuration: configuration.resolved,  }, signal)
       },
+      // The room's 重新载入: a fresh `kimi acp` on the same kimi session, no prompt.
+      reloadMember: (childSessionId, hooks) => liveSwitch.resolve(childSessionId)?.reloadMember(childSessionId, hooks),
       name: 'kimi',
       displayName: 'Kimi Code',
       homeEnvVar: 'KIMI_CODE_HOME',

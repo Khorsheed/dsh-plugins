@@ -33,10 +33,12 @@ import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, 
 import type {
   MembersViewProps, RoomInviteOutcome, RoomInviteValues, RoomModelDirectory, RoomModelSelection, RoomMutationOutcome,
 } from './slots.ts'
-import type { RoomMember, RoomPresetInfo, RoomProviderInfo } from '../types.ts'
+import type { RoomMember, RoomMemberRun, RoomPresetInfo, RoomProviderInfo } from '../types.ts'
 import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
 import { MemberCard } from './MemberCard.tsx'
+import { MemberToolsLine } from './MemberToolsLine.tsx'
+import { modeShortName } from './member-tools-view.ts'
 import { rollName } from './name-pool.ts'
 import { ROOM_ROLE_MAX } from '../journal.ts'
 import css from './InviteDialog.module.css'
@@ -138,6 +140,16 @@ export interface InviteDialogProps {
   readonly mainModelDirectory?: RoomModelDirectory | undefined
   /** Edit mode: the member is running a round (model and effort wait for its end). */
   readonly memberRunning?: boolean | undefined
+  /**
+   * Edit mode: the member's latest run as the room knows it, so the head
+   * card's status chip tells the truth (running / failed / idle) instead of
+   * a fixed 空闲.
+   */
+  readonly memberRun?: RoomMemberRun | undefined
+  /** Edit mode, a CLI member with a mode: what its process holds of the mode's tools (local-agent's read); absent without the family. */
+  readonly memberTools?: MembersViewProps['memberTools']
+  /** Edit mode: reload that member's process so it lists its tools again. */
+  readonly reloadMemberTools?: MembersViewProps['reloadMemberTools']
   readonly onSubmit: (values: InviteDialogSubmit) => Promise<RoomMutationOutcome | RoomInviteOutcome>
   readonly onClose: () => void
   readonly t: MembersViewProps['t']
@@ -152,7 +164,7 @@ function validName(name: string): boolean {
 export function InviteDialog({
   mode, member, providers, presets, sessionPreset, localAgentAvailable, inheritedCwd, existingNames,
   browseDirectory, modelSurface, renderHarnessModelPicker, memberModel, memberConfiguration,
-  renderMemberModelPicker, readMemberSelection, mainModelDirectory, memberRunning = false, onSubmit, onClose, t,
+  renderMemberModelPicker, readMemberSelection, mainModelDirectory, memberRunning = false, memberRun, memberTools, reloadMemberTools, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const isMain = mode === 'edit' && member?.kind === 'main-agent'
   /** A started CLI member edited through the member-control form fields (saved on 保存). */
@@ -217,6 +229,15 @@ export function InviteDialog({
   // Invite keeps the advanced drawer folded; edit opens it — changing those
   // fields is what the edit dialog is for.
   const [advancedOpen, setAdvancedOpen] = useState(mode === 'edit')
+  // The head card's running chip carries an elapsed time: tick while the member runs.
+  const [now, setNow] = useState(() => Date.now())
+  const ticking = mode === 'edit' && memberRun?.state === 'running'
+  useEffect(() => {
+    if (!ticking) return undefined
+    setNow(Date.now())
+    const timer = setInterval(() => { setNow(Date.now()) }, 1000)
+    return () => { clearInterval(timer) }
+  }, [ticking])
 
   useEffect(() => {
     const onKey = (event: globalThis.KeyboardEvent): void => {
@@ -517,8 +538,8 @@ export function InviteDialog({
               <MemberCard
                 preview
                 member={previewMember}
-                run={undefined}
-                elapsedMs={undefined}
+                run={memberRun}
+                elapsedMs={memberRun?.state === 'running' ? Math.max(0, now - memberRun.startedAt) : undefined}
                 openSession={() => {}}
                 onEdit={() => {}}
                 onRemove={() => {}}
@@ -530,8 +551,20 @@ export function InviteDialog({
                 <div><dt>{t('invite.cliPreset')}</dt><dd>{member?.preset === undefined
                   ? t('invite.cliPresetNone')
                   : presets?.find(entry => entry.id === member?.preset)?.name ?? member?.preset}</dd></div>
-                <span className={css.lockedNote}>{t('invite.lockedNote')}</span>
               </dl>}
+              {/* What the member's current process holds of its mode's tools (no mode, no line). */}
+              {!isMain && member?.kind === 'cli' && member.preset !== undefined && member.childSessionId !== undefined
+                && memberTools !== undefined && reloadMemberTools !== undefined && (
+                <MemberToolsLine
+                  childSessionId={member.childSessionId}
+                  modeName={modeShortName(presets?.find(entry => entry.id === member.preset)?.name ?? member.preset)}
+                  provider={member.provider ?? ''}
+                  running={memberRunning}
+                  read={memberTools}
+                  reload={reloadMemberTools}
+                  t={t}
+                />
+              )}
             </div>}
             {isMain
               ? (mainModelDirectory !== undefined && mainSnapshot !== undefined && (
