@@ -630,7 +630,13 @@ export class GameService {
     return { projectId: row.id, target, label: label.slice(0, 120), where }
   }
 
-  /** Where a version's change is: the one element it changed, the grid for several, else play (code, assets, a first version). */
+  /**
+   * Where a version's change is seen. The elements it touched — their own
+   * definition, or a file their definition names (a model, a texture: a
+   * character re-modelled by editing `assets/ayuan.glb` is a change to 阿沅) —
+   * win: one element opens on it, several on the grid. With no element
+   * touched it is play (code, a first version).
+   */
   private async changedBy(root: string, version: number): Promise<{ target: GamePlace; names: string[] }> {
     const earlier = (await this.readVersions(root)).map(v => v.version).filter(v => v < version)
     const play = { target: { view: 'play' } as GamePlace, names: [] as string[] }
@@ -639,13 +645,13 @@ export class GameService {
     const dir = (v: number): string => join(root, STATE_DIR, 'versions', String(v))
     if (!await stat(dir(prev)).then(() => true, () => false)) return play
     const [before, after] = await Promise.all([this.elementIndex(dir(prev)), this.elementIndex(dir(version))])
-    const changed = [...after].filter(([id, e]) => before.get(id)?.json !== e.json)
     const others = async (v: number): Promise<Map<string, string>> => new Map((await walk(dir(v), p => !p.startsWith('elements/'))).map(f => [f.path, f.data.toString('base64')]))
     const [a, b] = await Promise.all([others(prev), others(version)])
-    const otherChanged = a.size !== b.size || [...b].some(([p, d]) => a.get(p) !== d)
-    const names = changed.map(([, e]) => e.name)
-    if (otherChanged || changed.length === 0) return { target: { view: 'play' }, names }
-    if (changed.length === 1) return { target: { view: 'elements', elementId: changed[0]![0] }, names }
+    const files = [...new Set([...a.keys(), ...b.keys()])].filter(path => a.get(path) !== b.get(path))
+    const touched = touchedElements(before, after, files)
+    const names = touched.map(([, e]) => e.name)
+    if (touched.length === 0) return { target: { view: 'play' }, names }
+    if (touched.length === 1) return { target: { view: 'elements', elementId: touched[0]![0] }, names }
     return { target: { view: 'elements' }, names }
   }
 
@@ -1417,4 +1423,19 @@ export class GameService {
     }
     return ['# 试玩记录', '', ...rows.map(r => `- ${local(r.at)} ${r.text}`), ''].join('\n')
   }
+}
+
+/**
+ * The elements a version touched, in the new version's order: those whose
+ * definition changed, then those whose definition names a changed file
+ * (`"assets/ayuan.glb"` — by its path relative to the game).
+ * @param before - the previous version's elements.
+ * @param after - this version's elements.
+ * @param files - the non-element files that changed between them.
+ */
+export function touchedElements<E extends { readonly name: string; readonly json: string }>(
+  before: ReadonlyMap<string, E>, after: ReadonlyMap<string, E>, files: readonly string[],
+): Array<[string, E]> {
+  return [...after].filter(([id, element]) => before.get(id)?.json !== element.json
+    || files.some(path => element.json.includes(JSON.stringify(path))))
 }

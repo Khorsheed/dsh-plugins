@@ -344,11 +344,16 @@ describe('publishing takes the user to the result', () => {
     expect(second).toContain('「元素」里的「九尾狐」')
     expect(readDestinations(second)[0]).toMatchObject({ params: { projectId: project.id, view: 'elements', elementId: 'fox' }, label: 'v2：改了九尾狐' })
 
-    // Code changed too: play. A note becomes the card's words; the place is still the version's.
+    // Two elements and some code: the elements it touched win — the grid. A note becomes the card's words.
     await put(join(project.root, 'elements/a.json'), JSON.stringify([{ id: 'fox', name: '九尾狐', type: '角色', hp: 4 }, { id: 'bi', name: '毕方', type: '角色', hp: 1 }]))
     await put(join(project.root, 'index.html'), '<p>v3</p>')
     const third = await publish({ note: '看看毕方的翅膀' })
-    expect(readDestinations(third)[0]).toMatchObject({ params: { view: 'play' }, label: '看看毕方的翅膀' })
+    expect(readDestinations(third)[0]).toMatchObject({ params: { view: 'elements' }, label: '看看毕方的翅膀' })
+    expect(readDestinations(third)[0]?.params).not.toHaveProperty('elementId')
+    // Code only: play.
+    await put(join(project.root, 'index.html'), '<p>v4</p>')
+    const fourth = await publish({})
+    expect(readDestinations(fourth)[0]).toMatchObject({ params: { view: 'play' } })
     // The place is no longer the agent's to pick: show is gone from the tool.
     const tool = gameToolDefinitions(store).find(d => d.name === 'game_publish')!
     expect(Object.keys((tool as unknown as { parameters: { properties: Record<string, unknown> } }).parameters.properties)).toEqual(['note'])
