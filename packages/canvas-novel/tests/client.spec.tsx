@@ -144,14 +144,16 @@ describe('ChapterBook · 继续写 and the queue', () => {
   it('接下来 puts the chapter waiting for 对账 first, then the chapter in hand, and defers the next chapter', async () => {
     const rows: Row[] = [{ chapter: chapter(1, '门'), phase: 'stale', body: '门。' }, { chapter: chapter(2, '叶', { phase: 'planning', plan: PLAN }), phase: 'planning' }]
     const send = vi.fn(() => 'sent' as const)
-    render(<ChapterBook {...props(fakeRemote({ items: [], rows }))} sendToConversation={send} />)
+    const draft = vi.fn(() => true)
+    render(<ChapterBook {...props(fakeRemote({ items: [], rows }))} sendToConversation={send} draftToConversation={draft} />)
     expect(await screen.findByText('第 1 章《门》待对账')).toBeTruthy()
     expect(screen.getByText('第 2 章《叶》计划已写好')).toBeTruthy()
     expect(screen.queryByText('第 3 章')).toBeNull()
     expect(screen.getByRole('button', { name: zh['next.reconcile'] }).className).toContain('primary')
     expect(screen.getByRole('button', { name: zh['next.seePlan'] }).className).toContain('outline')
     fireEvent.click(screen.getByRole('button', { name: zh['next.reconcile'] }))
-    expect(send).toHaveBeenCalledWith(SESSION, '对账第 1 章。')
+    expect(draft).toHaveBeenCalledWith(SESSION, '对账第 1 章。')
+    expect(send).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: zh['next.seePlan'] }))
     expect(await screen.findByRole('heading', { name: '叶' })).toBeTruthy()
   })

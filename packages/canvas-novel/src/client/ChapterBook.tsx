@@ -159,6 +159,8 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
   const nextN = Math.max(...rows.map(item => item.chapter.n)) + 1
   const send = (text: string): void => { if (sessionId !== undefined) rest.sendToConversation?.(sessionId, text) }
   const canSend = sessionId !== undefined && rest.sendToConversation !== undefined
+  const draft = (text: string): void => { if (sessionId !== undefined) rest.draftToConversation?.(sessionId, text) }
+  const canDraft = sessionId !== undefined && rest.draftToConversation !== undefined
   const lastGroup = groups.reduce((at, group, index) => group.rows.length > 0 ? index : at, groups.length - 1)
 
   // 接下来: what to do, in order; only the first actionable step is primary.
@@ -178,7 +180,7 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
         ? t('next.stale', { n: first.n, title: bareTitle(first.n, first.title) })
         : t('next.staleMany', { list: stale.map(item => item.chapter.n).join('、') }),
       sub: t('next.staleSub'),
-      acts: canSend ? primary => <Button size="sm" variant={primary ? 'primary' : 'outline'} onClick={() => { send(t('next.reconcileAsk', { list: stale.map(item => item.chapter.n).join('、') })) }}>{t('next.reconcile')}</Button> : null,
+      acts: canDraft ? primary => <Button size="sm" variant={primary ? 'primary' : 'outline'} onClick={() => { draft(t('next.reconcileAsk', { list: stale.map(item => item.chapter.n).join('、') })) }}>{t('next.reconcile')}</Button> : null,
     })
   }
   if (items.length > 0) {
