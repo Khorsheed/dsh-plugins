@@ -126,7 +126,8 @@ function useCardState(
   const [error, setError] = useState(false)
   const ready = snapshot.status === 'ready' && snapshot.writable
   const enabled = snapshot.value?.enabled ?? false
-  const live = snapshot.value?.live ?? false
+  // Unset means on: the provider resolves `live` as `vol(config.live) ?? true`.
+  const live = snapshot.value?.live ?? true
   // The model input is a DRAFT until saved: `null` means "showing whatever the
   // scope holds", so an external write (another tab, a YAML reload) still
   // reaches the field while the user is not typing in it.

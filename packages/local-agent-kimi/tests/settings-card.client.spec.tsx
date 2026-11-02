@@ -186,6 +186,14 @@ describe('KimiSettingsCard', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true')
   })
 
+  it('shows live on when the setting is unset, matching the provider default', async () => {
+    renderCard({ authenticated: true, value: { liveMirrorGranularity: 'token' } })
+    await openCard()
+
+    const toggle = screen.getByRole('switch', { name: zh['live.title'] })
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+  })
+
   it('shows the credential dot in the collapsed header, fed by the status bus', async () => {
     renderCard({ authenticated: true })
     // The dot probes on mount (no expand needed) and lands on authenticated.

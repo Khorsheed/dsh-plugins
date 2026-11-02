@@ -193,6 +193,13 @@ export interface RoomDispatchEvent {
    */
   readonly task?: string
   /**
+   * The human `user/message` this dispatch carries, when it carries one. Unlike
+   * `task`, which names the task root, this is the message itself, so a reader
+   * can anchor the dispatch without matching its text. Absent on older journals
+   * and on human dispatches with no message (a late question answer).
+   */
+  readonly messageId?: string
+  /**
    * The delivery during which the sender sent this (`<seq>:<memberId>`), so
    * a member's sub-delegations nest under its own work in the task tree.
    */

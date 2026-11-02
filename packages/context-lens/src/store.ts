@@ -186,7 +186,8 @@ export interface ScopeRecord {
   /** `compaction`: a room round's 压缩 tab — a member's CLI compactions (built on read, never stored). */
   kind: 'main' | 'subagent' | 'compaction'
   label?: string
-  status: 'running' | 'ok' | 'failed'
+  /** `cancelled`: a room member run the human or the room stopped. */
+  status: 'running' | 'ok' | 'failed' | 'cancelled'
   error?: string
   config: RequestConfig
   requests: StoredRequest[]
@@ -1510,7 +1511,7 @@ export class InspectorStore {
           kind: 'subagent',
           label: run.member ?? room.members.get(run.memberId) ?? child?.label ?? run.memberId,
           ...child?.provider === undefined ? {} : { provider: child.provider },
-          status: run.state === 'failed' ? 'failed' : run.state === 'done' ? 'ok' : 'running',
+          status: run.state === 'failed' ? 'failed' : run.state === 'done' ? 'ok' : run.state === 'cancelled' ? 'cancelled' : 'running',
           config: child?.config ?? {},
           requests,
           startedAt: run.startedAt ?? dispatch.at,

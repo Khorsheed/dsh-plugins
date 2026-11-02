@@ -853,7 +853,7 @@ export class RoomService extends TypertRemoteService {
     const filed = await this.fileHumanMessage(session, edit.data.id, text, task)
     const carry = this.moveOnFromLostRounds(session, targets)
     const dispatch = session.append('room/dispatch', {
-      id: requestId, targets, text: body, origin: 'human', task: filed.task,
+      id: requestId, targets, text: body, origin: 'human', task: filed.task, messageId: edit.data.id,
       targetIds: targets.map(name => memberId(session.snapshotEvents(), current.members.find(member => member.name === name)!)),
     })
     await this.ctx.sessions.flush(session)
@@ -1434,7 +1434,7 @@ export class RoomService extends TypertRemoteService {
     const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
     const carry = this.moveOnFromLostRounds(loaded.session, targets)
     const dispatch = loaded.session.append('room/dispatch', {
-      id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human', task: filed.task,
+      id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human', task: filed.task, messageId: String(human.id),
       ...admitted.records.length === 0 ? {} : { attachments: admitted.records },
       targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
     })
