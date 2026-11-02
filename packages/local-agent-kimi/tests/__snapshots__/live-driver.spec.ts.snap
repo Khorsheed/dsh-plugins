@@ -1,0 +1,224 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`kimi mirror snapshot (live) > a cancelled round: streamed think + text finalize from live text, an ACP-only tool folds as an orphan → the exact child-session event sequence 1`] = `
+[
+  {
+    "data": {
+      "turn": 1,
+    },
+    "seq": 0,
+    "time": 1767225600000,
+    "type": "turn/start",
+  },
+  {
+    "data": {
+      "content": [
+        {
+          "text": "建个文件",
+          "type": "text",
+        },
+      ],
+      "id": "<uuid>",
+      "role": "user",
+      "source": {
+        "kind": "user",
+      },
+    },
+    "seq": 1,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "user/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 2,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "interrupted": true,
+      "message": {
+        "content": [
+          {
+            "text": "先跑一下",
+            "type": "reasoning",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "unobserved",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 1,
+      "stream": [],
+      "turn": 1,
+    },
+    "seq": 3,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 4,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 5,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "arguments": "",
+            "id": "orphan_1",
+            "name": "Bash",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "unobserved",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 2,
+      "stream": [],
+      "turn": 1,
+    },
+    "seq": 6,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "",
+      "callId": "orphan_1",
+      "name": "Bash",
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 7,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "（工具调用被中断，未能记录返回结果）",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": true,
+        "role": "tool",
+        "source": {
+          "callId": "orphan_1",
+          "kind": "tool",
+        },
+        "toolCallId": "orphan_1",
+      },
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 8,
+    "sourceEventSeqs": [
+      7,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 9,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 10,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "interrupted": true,
+      "message": {
+        "content": [
+          {
+            "text": "写到一半",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "unobserved",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 3,
+      "stream": [],
+      "turn": 1,
+    },
+    "seq": 11,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 12,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "reason": {
+        "kind": "aborted",
+        "reason": {
+          "kind": "parent",
+        },
+      },
+      "turn": 1,
+    },
+    "seq": 13,
+    "time": 1767225600000,
+    "type": "turn/end",
+  },
+]
+`;

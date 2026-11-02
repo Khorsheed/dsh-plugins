@@ -47,9 +47,9 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import {
   settleRunResult,
@@ -60,7 +60,18 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, LIVE_FLUSH_INTERVAL_MS } from '@khorsheed/dsh-local-agent'
+import {
+  appendMirrorContent,
+  appendMirrorStep,
+  closeMirrorTurn,
+  delegationEnv,
+  persistChildSession,
+  recordContextOccupancy,
+  LiveStreamPublisher,
+  LiveFlush,
+  LIVE_FLUSH_INTERVAL_MS,
+  type MirrorBlock,
+} from '@khorsheed/dsh-local-agent'
 import { endpointAuthEnv, hasEndpointCredential, type KimiEndpointAuth } from './endpoint-auth.ts'
 import { ensureKimiEndpointProvider, KIMI_MANAGED_BASE_URL } from './provision.ts'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
@@ -70,7 +81,7 @@ import {
   mirrorKimiDelta,
   textTask,
 } from './kimi-cli-provider.ts'
-import { assistantEvent, KIMI_INTERRUPTED_TOOL_RESULT, nextKimiSessionStep, nextWrittenKimiStep } from './session-mirror.ts'
+import { kimiMirrorSource, nextKimiSessionStep, nextWrittenKimiStep } from './session-mirror.ts'
 import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './session-mirror.ts'
 import { addTokenUsage, findKimiSessionDir, wirePath } from './session-view.ts'
 import { readKimiCompaction } from './kimi-compaction.ts'
@@ -182,13 +193,6 @@ export interface KimiLiveRoundSpec {
 }
 
 type JsonObject = Record<string, unknown>
-
-// The host renamed its tool-call id brand between lines; the runtime value
-// is a plain string, so the field types come from the consuming APIs (the
-// session-mirror module's brand note applies here too).
-type ToolCallEventCallId = SessionEventMap['tool/call']['callId']
-type ToolResultCallId = Parameters<typeof createToolResultMessage>[0]['callId']
-type ToolCallBlockId = Extract<ContentBlock, { type: 'tool-call' }>['id']
 
 function thrown(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value))
@@ -484,7 +488,6 @@ export class KimiAcpLiveDriver {
     private readonly ctx: Context,
     private readonly config: {
       liveIdleMs?: number
-      liveMirrorGranularity?: KimiLiveMirrorGranularity
       /** Maximum batching wait for incremental streaming messages. */
       snapshotMinIntervalMs?: number
       /** @deprecated Character growth no longer gates live publication. */
@@ -561,9 +564,6 @@ export class KimiAcpLiveDriver {
   hasRuntime(key: string): boolean {
     return this.runtimes.has(key) || this.ensuring.has(key)
   }
-
-  /** @deprecated Compatibility no-op: live output is always incremental. */
-  setLiveMirrorGranularity(_granularity: KimiLiveMirrorGranularity): void {}
 
   /**
    * Drain for a settings-driven generation handoff: refuse new rounds (the
@@ -953,12 +953,7 @@ export class KimiAcpLiveDriver {
       }
     }
     if (context === undefined) return
-    const last = childSession.snapshotEvents().findLast(event => event.type === 'local-agent/context')?.data as SessionEventMap['local-agent/context'] | undefined
-    if (last?.usedTokens === context.used && last.contextWindow === context.size) return
-    childSession.append('local-agent/context', {
-      provider: 'kimi-cli', usedTokens: context.used,
-      ...context.size === undefined ? {} : { contextWindow: context.size },
-    })
+    recordContextOccupancy(childSession, { provider: 'kimi-cli', usedTokens: context.used, contextWindow: context.size })
   }
 
   /**
@@ -1286,9 +1281,9 @@ export class KimiAcpLiveDriver {
       pendingStreamArrival.delete(step)
       const reasoning = entries.filter(([, stream]) => stream.kind === 'think').map(([, stream]) => stream.text).join('')
       const text = entries.filter(([, stream]) => stream.kind === 'text').map(([, stream]) => stream.text).join('')
-      const blocks: ContentBlock[] = []
-      if (reasoning.trim() !== '') blocks.push({ type: 'reasoning', text: reasoning })
-      if (text.trim() !== '') blocks.push({ type: 'text', text })
+      const blocks: MirrorBlock[] = []
+      if (reasoning.trim() !== '') blocks.push({ kind: 'think', text: reasoning })
+      if (text.trim() !== '') blocks.push({ kind: 'text', text })
       if (blocks.length === 0) {
         // Nothing durable to write: release the coordinate instead of pinning
         // it forever — a later fold landing above would otherwise strand a
@@ -1312,14 +1307,13 @@ export class KimiAcpLiveDriver {
       // The reservation keyed the preview; the log takes the next step in write order.
       const durable = nextWrittenKimiStep(childSession, turn)
       childSession.append('step/start', { turn, step: durable })
-      childSession.append('assistant/message', {
-        turn,
-        step: durable,
-        message: assistantEvent(blocks, runtime?.modelConfiguration?.currentModel ?? roundModel),
+      // Written from live text: no wire timing, so no model stream.
+      appendMirrorContent(childSession, turn, durable, {
+        blocks,
         stream: [],
         ...withUsage && roundUsage !== undefined ? { usage: roundUsage } : {},
-        ...interrupted ? { interrupted: true } : {},
-      }, { surfaceOp: 'append' })
+        interrupted,
+      }, kimiMirrorSource(runtime?.modelConfiguration?.currentModel ?? roundModel))
       if (withUsage) roundUsage = undefined
       streamPublisher?.finish(step)
       childSession.append('step/end', { turn, step: durable })
@@ -1346,31 +1340,10 @@ export class KimiAcpLiveDriver {
       const name = entry.title ?? 'tool'
       // The reservation keyed the preview; the log takes the next step in write order.
       const step = nextWrittenKimiStep(childSession, turn)
-      childSession.append('step/start', { turn, step })
-      childSession.append('assistant/message', {
-        turn,
-        step,
-        message: assistantEvent([{ type: 'tool-call', id: id as ToolCallBlockId, name, arguments: '' }],
-          runtime?.modelConfiguration?.currentModel ?? roundModel),
+      appendMirrorStep(childSession, turn, step, {
+        blocks: [{ kind: 'tool', id, name, args: '' }],
         stream: [],
-      }, { surfaceOp: 'append' })
-      const call = childSession.append('tool/call', {
-        turn,
-        step,
-        callId: id as ToolCallEventCallId,
-        name,
-        arguments: '',
-      })
-      childSession.append('tool/result', {
-        turn,
-        step,
-        message: createToolResultMessage({
-          callId: id as ToolResultCallId,
-          content: [{ type: 'text', text: KIMI_INTERRUPTED_TOOL_RESULT }],
-          isError: true,
-        }),
-      }, { surfaceOp: 'append', sourceEventSeqs: [call.seq] })
-      childSession.append('step/end', { turn, step })
+      }, kimiMirrorSource(runtime?.modelConfiguration?.currentModel ?? roundModel))
     }
 
     /**
@@ -1814,16 +1787,7 @@ export class KimiAcpLiveDriver {
         toolSteps.clear()
         activeStream = undefined
         if (pending.length > 0) persist()
-        if (settled.stopReason === 'completed') {
-          childSession.append('turn/end', { turn, reason: { kind: 'completed' } })
-        } else if (settled.stopReason === 'aborted') {
-          childSession.append('turn/end', { turn, reason: { kind: 'aborted', reason: { kind: 'parent' } } })
-        } else {
-          childSession.append('turn/end', {
-            turn,
-            reason: { kind: 'error', error: { message: 'the live round did not complete', code: 'UNKNOWN' } },
-          })
-        }
+        closeMirrorTurn(childSession, turn, settled.stopReason, 'the live round did not complete')
         await this.recordRoundContext(childSession, roundContext, wireFrom, turnStartedAt)
       }
       streamPublisher?.dispose()

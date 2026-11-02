@@ -57,7 +57,7 @@ import type { Session, SessionEvent, SessionEventMap, SessionSeq } from '@deepse
 // Type-only: the 'todo/write' SessionEventMap merge (the passthrough mirror).
 import type {} from '@deepseek-ai/dsh-tool-todo'
 import type { LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
-import { persistChildSession } from '@khorsheed/dsh-local-agent'
+import { MIRROR_INTERRUPTED_TOOL_RESULT, persistChildSession } from '@khorsheed/dsh-local-agent'
 
 /** Decompress one zstd session log (Node ≥22.15 built-in; engines require ^22.19). */
 const decompressZstd = promisify(zstdDecompress)
@@ -360,9 +360,9 @@ function appendMirroredMessageEvent(childSession: Session, event: SessionEvent):
 /**
  * The placeholder text of the synthesized result for a tool call the sub-dsh
  * started but never resolved (its process died between `tool/call` and
- * `tool/result`). Shared verbatim with the kimi family's fold.
+ * `tool/result`): the family's one text, from the core's mirror writer.
  */
-export const DSH_INTERRUPTED_TOOL_RESULT = '（工具调用被中断，未能记录返回结果）'
+export const DSH_INTERRUPTED_TOOL_RESULT = MIRROR_INTERRUPTED_TOOL_RESULT
 
 /**
  * The released-log reader's exact repair text for a call that was advertised

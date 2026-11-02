@@ -11,7 +11,8 @@ import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeSessionPersistence } from './fake-persistence.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
-import { CODEX_INTERRUPTED_TOOL_RESULT, appendCodexTranscriptLine, CodexStreamParser, parseCodexJsonStream, CodexCliProvider, startCodexCliRun } from '../src/codex-cli-provider.ts'
+import { MIRROR_INTERRUPTED_TOOL_RESULT } from '@khorsheed/dsh-local-agent'
+import { appendCodexTranscriptLine, CodexStreamParser, parseCodexJsonStream, CodexCliProvider, startCodexCliRun } from '../src/codex-cli-provider.ts'
 
 /** The NDJSON event stream a real `codex exec --json` emits for one run. */
 const jsonStream = [
@@ -243,7 +244,7 @@ describe('codex transcript fold (released-log contract)', () => {
       role: 'tool',
       toolCallId: 'call-2',
       isError: true,
-      content: [{ type: 'text', text: CODEX_INTERRUPTED_TOOL_RESULT }],
+      content: [{ type: 'text', text: MIRROR_INTERRUPTED_TOOL_RESULT }],
     })
     expectValidReleasedLog(child)
   })
@@ -1051,7 +1052,7 @@ describe('codex-cli-provider abort path', () => {
       role: 'tool',
       toolCallId: 'item_1',
       isError: true,
-      content: [{ type: 'text', text: CODEX_INTERRUPTED_TOOL_RESULT }],
+      content: [{ type: 'text', text: MIRROR_INTERRUPTED_TOOL_RESULT }],
     })
     expectStepBoundaries(child)
     expectValidReleasedLog(child)

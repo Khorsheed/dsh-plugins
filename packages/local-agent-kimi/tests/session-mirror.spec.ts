@@ -6,7 +6,12 @@ import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
-import { mirrorKimiSession, mirrorKimiSessionDelta } from '../src/session-mirror.ts'
+import { mirrorKimiSessionDelta } from '../src/session-mirror.ts'
+
+/** The mirror's new transcript offset (the delta fold, for specs that only need the count). */
+async function mirrorKimiSession(...args: Parameters<typeof mirrorKimiSessionDelta>): Promise<number> {
+  return (await mirrorKimiSessionDelta(...args)).total
+}
 import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { fakeSessionPersistence } from './fake-persistence.ts'
 

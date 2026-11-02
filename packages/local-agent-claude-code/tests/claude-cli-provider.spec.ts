@@ -8,7 +8,8 @@ import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeSessionPersistence } from './fake-persistence.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
-import { appendClaudeTranscriptGroup, claudeVersionFromInit, CLAUDE_INTERRUPTED_TOOL_RESULT, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider, REDACTED_THINKING_TEXT } from '../src/claude-cli-provider.ts'
+import { MIRROR_INTERRUPTED_TOOL_RESULT } from '@khorsheed/dsh-local-agent'
+import { appendClaudeTranscriptGroup, claudeVersionFromInit, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider, REDACTED_THINKING_TEXT } from '../src/claude-cli-provider.ts'
 
 /** The stream a real `claude -p --verbose --output-format stream-json` emits. */
 const streamJson = [
@@ -1197,7 +1198,7 @@ describe('claude-cli-provider abort path', () => {
     expect(toolResults).toHaveLength(1)
     expect(toolResults[0]!.data.message).toMatchObject({
       toolCallId: calls[0]!.data.callId,
-      content: [{ type: 'text', text: CLAUDE_INTERRUPTED_TOOL_RESULT }],
+      content: [{ type: 'text', text: MIRROR_INTERRUPTED_TOOL_RESULT }],
       isError: true,
     })
     // The preserved partial work carries its step boundaries too, and the
