@@ -2,9 +2,9 @@
  * 设定, the novel's own face in the canvas's 卡板 seat (2026-11-01): the book
  * as a world, not a wall of cards. Five parts behind one row of pills:
  *
- * - 总览: the one-page outline (and the proposal waiting on the person), the
- *   four shelves at a glance, the settings still 待定, the 写作原则, and — on a
- *   book from before the shelves — the way to 整理设定;
+ * - 总览: the one-page outline (and the proposal waiting on the person), then
+ *   separate summary panels for people, the four world shelves, relations and
+ *   foreshadows, each with its own route; 写作原则 follows separately;
  * - 世界观: a tree on the left (体系 · 地点 · 势力 · 物种与道具, each entry
  *   under what it belongs to), the picked entry on the right with its links
  *   both ways and the chapters that used it;
@@ -95,7 +95,6 @@ function Overview(props: NovelSurfaceProps & { readonly data: NovelCodexResult; 
   const names = new Map(people.map(row => [row.cardId, row.name]))
   const relations = data.relations ?? []
   const foreshadows = data.foreshadows ?? []
-  const openReveal = foreshadows.filter(row => row.reveal === undefined && row.state !== '已揭晓').length
   return (
     <div className={css.stack}>
       {(data.unorganized ?? 0) > 0 && (
@@ -106,78 +105,95 @@ function Overview(props: NovelSurfaceProps & { readonly data: NovelCodexResult; 
           )}
         </div>
       )}
-      <OnePage {...props} />
-      {people.length > 0 && (
-        <section className={css.section}>
-          <h3 className={css.h3}>{t('codex.people')}<span className={css.h3Meta}>{people.length}</span><span className={css.grow} /><button type="button" className={css.link} onClick={() => { go('people') }}>{t('onepage.allPeople')}</button></h3>
-          <div className={css.index}>
-            {people.slice(0, PEOPLE_SHOWN).map(person => (
-              <button key={person.cardId} type="button" className={css.personRow} onClick={() => { go('people') }}>
-                <span className={css.personRowName}>{shortName(person.name)}</span>
-                <span className={css.personRowFac}>{person.factions[0] === undefined ? '—' : shortName(byId.get(person.factions[0])?.name ?? '')}</span>
-                <span className={css.personRowNow}>
-                  {person.intent !== undefined
-                    ? <><em>{t('card.intent')}</em>{person.intent}</>
-                    : <><em>{t('codex.now')}</em>{[person.where, person.state].filter(Boolean).join('；') || '—'}</>}
-                </span>
-              </button>
-            ))}
-          </div>
-          {people.length > PEOPLE_SHOWN && <button type="button" className={css.link} onClick={() => { go('people') }}>{t('onepage.morePeople', { count: people.length - PEOPLE_SHOWN })}</button>}
-          {(relations.length > 0 || foreshadows.length > 0) && (
-            <div className={css.glance}>
-              {relations.length > 0 && (
-                <button type="button" className={css.link} onClick={() => { go('relations') }}>
-                  {t('onepage.relations', { count: relations.length, first: relations[0]!.pair.map(id => names.get(id) ?? '').join(' ↔ ') })}
+      <div className={css.overviewHero}><OnePage {...props} /></div>
+      <div className={css.overviewGrid}>
+        {people.length > 0 && (
+          <section className={`${css.section} ${css.overviewCard}`} data-testid="overview-people">
+            <h3 className={css.h3}>{t('codex.people')}<span className={css.h3Meta}>{people.length}</span><span className={css.grow} /><button type="button" className={css.link} onClick={() => { go('people') }}>{t('onepage.allPeople')}</button></h3>
+            <div className={css.index}>
+              {people.slice(0, PEOPLE_SHOWN).map(person => (
+                <button key={person.cardId} type="button" className={css.personRow} onClick={() => { go('people') }}>
+                  <span className={css.personRowName}>{shortName(person.name)}</span>
+                  <span className={css.personRowFac}>{person.factions[0] === undefined ? '—' : shortName(byId.get(person.factions[0])?.name ?? '')}</span>
+                  <span className={css.personRowNow}>
+                    {person.intent !== undefined
+                      ? <><em>{t('card.intent')}</em>{person.intent}</>
+                      : <><em>{t('codex.now')}</em>{[person.where, person.state].filter(Boolean).join('；') || '—'}</>}
+                  </span>
                 </button>
-              )}
-              {foreshadows.length > 0 && (
-                <button type="button" className={css.link} onClick={() => { go('foreshadow') }}>
-                  {openReveal > 0 ? t('onepage.foreshadowsOpen', { count: foreshadows.length, open: openReveal }) : t('onepage.foreshadows', { count: foreshadows.length })}
-                </button>
-              )}
+              ))}
             </div>
-          )}
-        </section>
-      )}
-      <section className={css.section}>
-        <h3 className={css.h3}>
-          {t('codex.world')}<span className={css.h3Meta}>{t('onepage.settingCount', { count: settings.length })}</span><span className={css.grow} />
-          {unsettled.length > 0 && <button type="button" className={css.link} onClick={() => { go('world', undefined, true) }}><i className={css.dot} />{t('onepage.unsettled', { count: unsettled.length })}</button>}
-        </h3>
-        <div className={css.index}>
-          {SHELVES.map(sort => {
-            const rows = settings.filter(row => row.sort === sort)
-            const roots = rows.filter(row => !row.parents.some(id => rows.some(other => other.cardId === id)))
-            const ordered = [...roots, ...rows.filter(row => !roots.includes(row))]
-            return (
-              <div key={sort} className={css.shelfRow}>
-                <span className={css.shelfKey}>{t(`world.shelf.${sort}`)}<i>{rows.length}</i></span>
-                <span className={css.shelfNames}>
-                  {rows.length === 0 ? <span className={css.mutedInline}>{t('world.shelfEmpty')}</span> : ordered.slice(0, 8).map((row, index) => (
-                    <span key={row.cardId}>
-                      {index > 0 && <span className={css.sep}>·</span>}
-                      <button type="button" className={css.nameLink} onClick={() => { go('world', row.cardId) }}>{shortName(row.name)}</button>
-                    </span>
-                  ))}
-                </span>
-                {rows.length > 0 && <button type="button" className={css.link} onClick={() => { go('world', ordered[0]!.cardId) }}>{t('onepage.all')}</button>}
-              </div>
-            )
-          })}
-        </div>
-      </section>
-      {principles.length > 0 && (
-        <section className={css.section}>
-          <h3 className={css.h3}>{t('onepage.principles')}<span className={css.h3Meta}>{t('onepage.principlesHint')}</span></h3>
-          <ol className={css.rules}>
-            {principles.map(row => {
-              const [lead, rest] = splitLead(row.text)
-              return <li key={row.cardId}>{lead !== undefined && <b>{lead}</b>}<span className={css.clamp2}>{rest}</span></li>
+            {people.length > PEOPLE_SHOWN && <button type="button" className={css.link} onClick={() => { go('people') }}>{t('onepage.morePeople', { count: people.length - PEOPLE_SHOWN })}</button>}
+          </section>
+        )}
+        <section className={`${css.section} ${css.overviewCard}`} data-testid="overview-world">
+          <h3 className={css.h3}>
+            {t('codex.world')}<span className={css.h3Meta}>{t('onepage.settingCount', { count: settings.length })}</span><span className={css.grow} />
+            {unsettled.length > 0 && <button type="button" className={css.link} onClick={() => { go('world', undefined, true) }}><i className={css.dot} />{t('onepage.unsettled', { count: unsettled.length })}</button>}
+          </h3>
+          <div className={css.index}>
+            {SHELVES.map(sort => {
+              const rows = settings.filter(row => row.sort === sort)
+              const roots = rows.filter(row => !row.parents.some(id => rows.some(other => other.cardId === id)))
+              const ordered = [...roots, ...rows.filter(row => !roots.includes(row))]
+              return (
+                <div key={sort} className={css.shelfRow}>
+                  <span className={css.shelfKey}>{t(`world.shelf.${sort}`)}<i>{rows.length}</i></span>
+                  <span className={css.shelfNames}>
+                    {rows.length === 0 ? <span className={css.mutedInline}>{t('world.shelfEmpty')}</span> : ordered.slice(0, 8).map((row, index) => (
+                      <span key={row.cardId}>
+                        {index > 0 && <span className={css.sep}>·</span>}
+                        <button type="button" className={css.nameLink} onClick={() => { go('world', row.cardId) }}>{shortName(row.name)}</button>
+                      </span>
+                    ))}
+                  </span>
+                  {rows.length > 0 && <button type="button" className={css.link} onClick={() => { go('world', ordered[0]!.cardId) }}>{t('onepage.all')}</button>}
+                </div>
+              )
             })}
-          </ol>
+          </div>
         </section>
-      )}
+        {relations.length > 0 && (
+          <section className={`${css.section} ${css.overviewCard}`} data-testid="overview-relations">
+            <h3 className={css.h3}>{t('codex.relations')}<span className={css.h3Meta}>{relations.length}</span><span className={css.grow} /><button type="button" className={css.link} onClick={() => { go('relations') }}>{t('onepage.all')}</button></h3>
+            <div className={css.index}>
+              {relations.slice(0, 2).map(relation => (
+                <button key={relation.cardId} type="button" className={css.summaryRow} onClick={() => { go('relations') }}>
+                  <b>{relation.pair.map(id => names.get(id) ?? id).join(' ↔ ')}</b>
+                  <small>{relation.now ?? `${relation.type} · ${relation.stage}`}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+        {foreshadows.length > 0 && (
+          <section className={`${css.section} ${css.overviewCard}`} data-testid="overview-foreshadow">
+            <h3 className={css.h3}>
+              {t('codex.foreshadow')}<span className={css.h3Meta}>{foreshadows.length}</span><span className={css.grow} />
+              <button type="button" className={css.link} onClick={() => { go('foreshadow') }}>{t('onepage.all')}</button>
+            </h3>
+            <div className={css.index}>
+              {foreshadows.slice(0, 2).map(row => (
+                <button key={row.cardId} type="button" className={css.summaryRow} onClick={() => { go('foreshadow', row.cardId) }}>
+                  <b>{row.ref} {row.question}</b>
+                  <small>{row.state}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+        {principles.length > 0 && (
+          <section className={`${css.section} ${css.overviewCard} ${css.overviewWide}`} data-testid="overview-principles">
+            <h3 className={css.h3}>{t('onepage.principles')}<span className={css.h3Meta}>{t('onepage.principlesHint')}</span></h3>
+            <ol className={css.rules}>
+              {principles.map(row => {
+                const [lead, rest] = splitLead(row.text)
+                return <li key={row.cardId}>{lead !== undefined && <b>{lead}</b>}<span className={css.clamp2}>{rest}</span></li>
+              })}
+            </ol>
+          </section>
+        )}
+      </div>
     </div>
   )
 }

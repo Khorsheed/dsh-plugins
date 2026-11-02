@@ -6,6 +6,11 @@
 }
 /* The one-page outline on 总览 reads at the codex's size, a step below the old 规划 page. */
 .stack { display: grid; gap: 16px; align-content: start; }
+.overviewHero { min-width: 0; }
+.overviewGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.overviewCard { padding: 14px 16px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 10px; background: var(--dsw-alias-bg-base); }
+.overviewCard .h3 { color: var(--dsw-alias-label-primary); }
+.overviewWide { grid-column: 1 / -1; }
 .stack > *, .section > *, .onePage > * { min-width: 0; }
 .section { display: grid; gap: 10px; }
 .h3 { margin: 0; display: flex; gap: 8px; align-items: baseline; font: 600 var(--dsh-panel-text-meta, 13px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
@@ -122,7 +127,11 @@
 .personRowFac { font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-tertiary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .personRowNow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .personRowNow em { font-style: normal; margin-right: 6px; color: var(--dsw-alias-label-tertiary); }
-.glance { display: flex; gap: 16px; flex-wrap: wrap; }
+.summaryRow { display: grid; gap: 3px; width: 100%; padding: 8px 2px; border: 0; border-bottom: 1px solid var(--dsw-alias-border-l1); background: none; text-align: left; cursor: pointer; color: var(--dsw-alias-label-primary); }
+.summaryRow:last-child { border-bottom: 0; }
+.summaryRow b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 var(--dsh-panel-text-body, 13.5px)/1.55 var(--dsw-font-family); }
+.summaryRow small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--dsh-panel-text-meta, 12px)/1.55 var(--dsw-font-family); color: var(--dsw-alias-label-tertiary); }
+.summaryRow:hover b { color: var(--dsw-alias-brand-primary); }
 .shelfRow { grid-template-columns: 7em minmax(0, 1fr) auto; cursor: default; }
 .shelfKey { color: var(--dsw-alias-label-secondary); }
 .shelfKey i { font-style: normal; margin-left: 5px; color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; }
@@ -192,6 +201,10 @@
 .rungBody p { margin: 0; max-width: 60ch; font: var(--dsh-panel-text-body, 14px)/1.7 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
 .ladder li[data-kind="goal"] .rungBody p { color: var(--dsw-alias-label-tertiary); }
 .rungBody blockquote { margin: 0; padding-left: 10px; border-left: 2px solid var(--dsw-alias-border-l1); font: var(--dsh-panel-text-meta, 13px)/1.65 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
+
+@container dsh-panel (max-width: 900px) {
+  .overviewGrid { grid-template-columns: 1fr; }
+}
 
 @container dsh-panel (max-width: 560px) {
   .page { padding: 12px 14px 20px; }

@@ -13,7 +13,7 @@
  * graph, the delete note) read which cards the story uses.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { CardSection } from '../src/client/CardSection.tsx'
 import { ChapterBook } from '../src/client/ChapterBook.tsx'
@@ -141,23 +141,54 @@ describe('ChapterBook · 继续写 and the queue', () => {
     expect(remote.chapters).not.toHaveBeenCalled()
   })
 
-  it('接下来 puts the chapter waiting for 对账 first, then the chapter in hand, then the next chapter', async () => {
+  it('接下来 puts the chapter waiting for 对账 first, then the chapter in hand, and defers the next chapter', async () => {
     const rows: Row[] = [{ chapter: chapter(1, '门'), phase: 'stale', body: '门。' }, { chapter: chapter(2, '叶', { phase: 'planning', plan: PLAN }), phase: 'planning' }]
     const send = vi.fn(() => 'sent' as const)
     render(<ChapterBook {...props(fakeRemote({ items: [], rows }))} sendToConversation={send} />)
     expect(await screen.findByText('第 1 章《门》待对账')).toBeTruthy()
     expect(screen.getByText('第 2 章《叶》计划已写好')).toBeTruthy()
-    expect(screen.getByText('第 3 章')).toBeTruthy()
+    expect(screen.queryByText('第 3 章')).toBeNull()
+    expect(screen.getByRole('button', { name: zh['next.reconcile'] }).className).toContain('primary')
+    expect(screen.getByRole('button', { name: zh['next.seePlan'] }).className).toContain('outline')
     fireEvent.click(screen.getByRole('button', { name: zh['next.reconcile'] }))
     expect(send).toHaveBeenCalledWith(SESSION, '对账第 1 章。')
     fireEvent.click(screen.getByRole('button', { name: zh['next.seePlan'] }))
     expect(await screen.findByRole('heading', { name: '叶' })).toBeTruthy()
   })
 
+  it('接下来 keeps the earliest unwritten chapter before later plans and hides the next chapter until then', async () => {
+    const rows: Row[] = [
+      { chapter: chapter(1, '面包出炉以前'), phase: 'extracted', body: '一。' },
+      { chapter: chapter(2, '醒来的地方'), phase: 'stale', body: '二。' },
+      { chapter: chapter(3, '无名之地'), phase: 'extracted', body: '三。' },
+      { chapter: chapter(4, '神眷者'), phase: 'extracted', body: '四。' },
+      { chapter: chapter(5, '别替我起名', { phase: 'planning', plan: PLAN }), phase: 'planning' },
+      { chapter: chapter(6, '名字留下以后', { phase: 'planning', plan: PLAN }), phase: 'planning' },
+    ]
+    const remote = fakeRemote({ items: [], rows })
+    remote.outline = vi.fn(() => ok({ ok: true, outline: { ...emptyOutline(), volumes: [{ id: 'v1', title: '无名山海', chapters: 20, goal: '' }] }, chapters: [], cores: [] })) as never
+    const send = vi.fn(() => 'sent' as const)
+    render(<ChapterBook {...props(remote)} sendToConversation={send} />)
+    const next = (await screen.findByText(zh['next.heading'])).parentElement!
+    expect(next.textContent).toContain('第 2 章《醒来的地方》待对账')
+    expect(next.textContent).toContain('第 5 章《别替我起名》计划已写好')
+    expect(next.textContent).not.toContain('第 6 章《名字留下以后》计划已写好')
+    expect(next.textContent).not.toContain('第 7 章')
+    expect(screen.getByText('约 20 章 · 已对账 3')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['cand.plan'].replace('{n}', '7') }))
+    expect(send).toHaveBeenCalledWith(SESSION, zh['cand.planAsk'].replace('{n}', '7'))
+    fireEvent.click(screen.getByRole('button', { name: zh['next.seePlan'] }))
+    expect(await screen.findByText('5 / 6')).toBeTruthy()
+    expect(screen.getByText(PLAN.summary)).toBeTruthy()
+    expect(remote.chapter).toHaveBeenCalledWith({ canvasId: CANVAS_ID, n: 5 })
+  })
+
   it('a book with every chapter reconciled has only the next chapter to do', async () => {
     const rows = [1, 2, 3].map(n => ({ chapter: chapter(n, `章${n}`), phase: 'extracted' as const, body: `正文${n}` }))
-    render(<ChapterBook {...props(fakeRemote({ items: [], rows }))} />)
-    expect(await screen.findByText('第 4 章')).toBeTruthy()
+    const send = vi.fn(() => 'sent' as const)
+    render(<ChapterBook {...props(fakeRemote({ items: [], rows }))} sendToConversation={send} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['cand.plan'].replace('{n}', '4') }))
+    expect(send).toHaveBeenCalledWith(SESSION, zh['cand.planAsk'].replace('{n}', '4'))
     expect(screen.queryByRole('button', { name: zh['toc.continue'] })).toBeNull()
     expect(screen.queryByText(zh['toc.state.done'])).toBeNull()
   })
@@ -743,7 +774,8 @@ describe('the timeline, ideas, candidates and editing (2026-11-01)', () => {
     const own: Row = { chapter: chapter(9, '我自己的章节', { byUser: true }), phase: 'writing', body: '' }
     const remote = fakeRemote({ items: [], rows: [...FIVE, own] })
     render(<ChapterBook {...props(remote)} />)
-    fireEvent.click(await screen.findByRole('button', { name: /新建第 10 章，自己写/ }))
+    expect(await screen.findByText(zh['toc.newChapter'].replace('{n}', '10'))).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['toc.newOwnAction'] }))
     fireEvent.change(screen.getByRole('textbox', { name: zh['toc.newOwnTitle'] }), { target: { value: '我自己的章节' } })
     fireEvent.click(screen.getByRole('button', { name: zh['toc.newOwnGo'] }))
     expect(await screen.findByRole('textbox', { name: zh['edit.open'] })).toBeTruthy()
@@ -797,6 +829,35 @@ describe('设定 (2026-11-02 改版稿)', () => {
     expect(await screen.findByRole('button', { name: '待定 1' })).toBeTruthy()
     expect(screen.getByRole('heading', { name: '梦境规则' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: '监护所' })).toBeNull()
+  })
+
+  it('总览 gives relations and foreshadows their own summary panels and destinations', async () => {
+    const remote = fakeRemote({ items: [] })
+    remote.codex = vi.fn(() => ok({
+      ok: true, current: 2, settings: [],
+      characters: [
+        { cardId: 'c1', name: '赵启明', factions: [], homes: [], intent: '找到门缝', beliefs: [], secrets: [], chapters: [1] },
+        { cardId: 'c2', name: '艾文', factions: [], homes: [], beliefs: [], secrets: [], chapters: [1] },
+      ],
+      relations: [{ cardId: 'r1', pair: ['c1', 'c2'], type: '同盟', stage: '合作', steps: [] }],
+      foreshadows: [{ cardId: 'f1', ref: '#1', question: '门后是谁？', state: '未揭晓', starred: false, steps: [] }],
+      principles: [],
+    })) as never
+    render(<CodexView {...props(remote)} />)
+    const people = await screen.findByTestId('overview-people')
+    const relations = screen.getByTestId('overview-relations')
+    const foreshadow = screen.getByTestId('overview-foreshadow')
+    expect(people.textContent).not.toContain('赵启明 ↔ 艾文')
+    expect(people.textContent).not.toContain('门后是谁？')
+    expect(within(relations).getByText('赵启明 ↔ 艾文')).toBeTruthy()
+    expect(within(foreshadow).getByText('#1 门后是谁？')).toBeTruthy()
+    fireEvent.click(within(foreshadow).getByRole('button', { name: /#1 门后是谁？/ }))
+    expect(screen.queryByTestId('overview-foreshadow')).toBeNull()
+    cleanup()
+    render(<CodexView {...props(remote)} />)
+    const relationPanel = await screen.findByTestId('overview-relations')
+    fireEvent.click(within(relationPanel).getByRole('button', { name: '全部' }))
+    expect(screen.queryByTestId('overview-relations')).toBeNull()
   })
 
   it('删除… says what happens first, then deletes through the Remote', async () => {
