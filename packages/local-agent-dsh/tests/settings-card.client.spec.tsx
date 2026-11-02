@@ -107,7 +107,7 @@ function makeCardProps(options: CardOptions): { props: Record<string, unknown> }
     unset,
   }
   const state = {
-    ids: [SESSION], byId: {}, current: SESSION, phase: 'ready',
+    ids: [SESSION], byId: { [SESSION]: { id: SESSION, retainedBy: { mainView: 1 } } }, phase: 'ready',
   } as unknown as SessionListState
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
     return select(state)
