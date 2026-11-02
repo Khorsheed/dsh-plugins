@@ -665,7 +665,8 @@ describe('MembersView', () => {
     expect(locked.textContent).toContain('Provider')
     expect(locked.textContent).toContain('kimi')
     expect(locked.textContent).toContain('不带模式')
-    expect(locked.textContent).toContain('邀请时定下')
+    // The old "set at invite" sentence is gone (the 模式工具 line took its place).
+    expect(dialog.textContent).not.toContain('邀请时定下')
     expect(within(dialog).queryByRole('combobox', { name: '模式' })).toBeNull()
   })
 

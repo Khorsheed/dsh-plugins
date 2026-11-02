@@ -286,6 +286,23 @@ export interface RoomMemberCompactedEvent {
   readonly unreported?: true
 }
 
+/**
+ * One line about a CLI member's mode tools (local-agent's member channel tells
+ * the room through `noteMemberTools`): its process was replaced at round
+ * start because it lacked them (`reloaded`), or a replaced process still
+ * could not get them (`unavailable`). Nothing is written in the normal case.
+ */
+export interface RoomMemberToolsEvent {
+  /** The member's name when it happened. */
+  readonly member: string
+  readonly memberId?: string
+  readonly kind: 'reloaded' | 'unavailable'
+  /** The member's mode (host preset id) the tools belong to. */
+  readonly preset: string
+  /** `round`: as a round started (the round went on); `idle`: after a reload the human asked for. */
+  readonly during: 'round' | 'idle'
+}
+
 export interface RoomRunMovedEvent {
   readonly member: string
   readonly startedAt: number
@@ -815,6 +832,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     /** A running member's card re-anchors below a reply or human message that landed after it (presentation only). */
     'room/run-moved': RoomRunMovedEvent
     'room/member-compacted': RoomMemberCompactedEvent
+    /** A CLI member's mode tools were reloaded at round start, or still could not be loaded. */
+    'room/member-tools': RoomMemberToolsEvent
     /** Log-only observed metadata for a single execution. */
     'room/execution-metadata': RoomExecutionMetadataEvent
     /** Notification gate: a member-to-member relay arrived (pending). */

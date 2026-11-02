@@ -26,7 +26,7 @@ A prod incident on 2026-11-02: a Kimi member's process spawned at 22:36 (the fir
 
 **Respawn on "no report since spawn".** Rejected for the reasons above: it cannot tell a broken process from one that has not listed yet, and old bridges never report.
 
-**Ask the room for a notice event.** Deferred. `packages/room` is being edited concurrently, so this change surfaces the failure through the host log warn, the bridge's stderr, the `mode-tools.jsonl` line and the placeholder's tool error, which shows in the member's run card in the room. A room-side notice can reuse the channel's report once room has a generic member-notice event.
+**Ask the room for a notice event.** Deferred. `packages/room` is being edited concurrently, so this change surfaces the failure through the host log warn, the bridge's stderr, the `mode-tools.jsonl` line and the placeholder's tool error, which shows in the member's run card in the room. A room-side notice can reuse the channel's report once room has a generic member-notice event. It was built on 2026-11-03 as the `room/member-tools` event, together with a status line and reload in the edit dialog; see [the feature note](../feature/2026-11-03-member-mode-tools-status.md).
 
 ## Consequences
 

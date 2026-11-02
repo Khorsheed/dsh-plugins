@@ -13,3 +13,44 @@
   text-overflow: ellipsis;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
+
+/* A member's mode tools reloaded or still missing: one amber line between
+   dashed rules, wrapping on a narrow screen. */
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-warning, #a36b0c);
+}
+
+.notice::before,
+.notice::after {
+  content: '';
+  flex: 1;
+  min-width: 16px;
+  border-top: 1px dashed var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+}
+
+.noticeText {
+  flex: 0 1 auto;
+  text-align: center;
+}
+
+.noticeMember {
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+}
+
+.noticeLink {
+  font: inherit;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}

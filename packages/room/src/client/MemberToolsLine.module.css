@@ -1,0 +1,162 @@
+/* The edit dialog's 模式工具 line: the same quiet 12px register as the
+   Provider / 模式 facts above it; amber only when tools are missing. */
+
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-height: 24px;
+}
+
+.label {
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.count {
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+}
+
+.muted {
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.ok {
+  font-weight: 700;
+  color: var(--dsw-alias-state-success-primary, #1f9a55);
+}
+
+.warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-warning, #a36b0c);
+}
+
+.actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.link {
+  font: inherit;
+  padding: 1px 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  cursor: pointer;
+}
+
+.link:hover {
+  background: var(--dsw-alias-bg-layer-2, rgba(127, 127, 127, 0.08));
+}
+
+.button {
+  font: inherit;
+  font-weight: 600;
+  padding: 2px 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2, rgba(127, 127, 127, 0.1));
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.warnButton {
+  background: var(--dsw-alias-fill-warning-weak, rgba(192, 132, 25, 0.12));
+  color: var(--dsw-alias-label-warning, #a36b0c);
+}
+
+.hint {
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.warnHint {
+  color: var(--dsw-alias-label-warning, #a36b0c);
+}
+
+/* The expanded list: the mode's tools as chips, one footnote about the rest. */
+.chips {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 6px 0 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2, rgba(127, 127, 127, 0.08));
+}
+
+.group {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.groupName {
+  flex: none;
+  width: 72px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.chipList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.chip {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  padding: 0 7px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  overflow-wrap: anywhere;
+}
+
+.missingChip {
+  border-style: dashed;
+  border-color: var(--dsw-alias-label-warning, #a36b0c);
+  background: transparent;
+  color: var(--dsw-alias-label-warning, #a36b0c);
+}
+
+.foot {
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+/* A narrow dialog (phone): the group name sits above its chips. */
+@media (max-width: 560px) {
+  .group {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .groupName {
+    width: auto;
+  }
+
+  .groupName:empty {
+    display: none;
+  }
+}

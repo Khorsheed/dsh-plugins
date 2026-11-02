@@ -31,7 +31,7 @@ import roomRemote from '@khorsheed/dsh-room/remote'
 import { presetDisplayText } from '@deepseek-ai/dsh-agent-preset-registry/display'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
-import type { LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsStatus, LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import { RoomRequestIds } from './request-ids.ts'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import { en, zh } from './locales.ts'
@@ -57,7 +57,7 @@ import { RoomHelpReplyView, RoomHelpRequestView, RoomHelpView } from './RoomHelp
 import { sessionTitle, type RoomMenuMember, type SessionCandidate } from './at-menu.ts'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
-  RoomRelayInjected, RoomDispatchInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
+  RoomEventInjected, RoomRelayInjected, RoomDispatchInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
   RoomAttachmentsFace, RoomDraftAttachment, RoomModesService,
 } from './slots.ts'
 import { ROOM_RUN_CARD_SLOTS, ROOM_SPEECH_CARD_SLOTS } from './slots.ts'
@@ -397,6 +397,30 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       try {
         const carried = await (gateway['memberModel'] as
           (child: string) => Promise<{ readonly ok: true; readonly value: LocalAgentModelInfo | null } | { readonly ok: false }>)(childSessionId)
+        return carried.ok ? carried.value : undefined
+      } catch {
+        return undefined
+      }
+    },
+    // The 模式工具 line (same lazy probe): a composition without the family,
+    // or an older core without the read, shows no line.
+    memberTools: async (childSessionId) => {
+      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
+      if (gateway === undefined || typeof gateway['memberTools'] !== 'function') return undefined
+      try {
+        const carried = await (gateway['memberTools'] as
+          (child: string) => Promise<{ readonly ok: true; readonly value: LocalAgentMemberToolsStatus | null } | { readonly ok: false }>)(childSessionId)
+        return carried.ok ? carried.value : undefined
+      } catch {
+        return undefined
+      }
+    },
+    reloadMemberTools: async (childSessionId) => {
+      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
+      if (gateway === undefined || typeof gateway['reloadMemberTools'] !== 'function') return undefined
+      try {
+        const carried = await (gateway['reloadMemberTools'] as
+          (child: string) => Promise<{ readonly ok: true; readonly value: LocalAgentMemberToolsReload } | { readonly ok: false }>)(childSessionId)
         return carried.ok ? carried.value : undefined
       } catch {
         return undefined
@@ -795,8 +819,25 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     },
     RoomRunView,
   ))
+  // Mode display names for the mode-tools notice, one providers read per room.
+  const modeNameCache = new Map<SessionId, Promise<ReadonlyMap<string, string>>>()
+  const modeNames = (sessionId: SessionId): Promise<ReadonlyMap<string, string>> => {
+    let names = modeNameCache.get(sessionId)
+    if (names === undefined) {
+      names = inviteFace(sessionId).listProviders(sessionId)
+        .then(list => new Map((list?.presets ?? []).map(row => [row.id, row.name ?? row.id] as const)))
+      names.catch(() => { modeNameCache.delete(sessionId) })
+      modeNameCache.set(sessionId, names)
+    }
+    return names
+  }
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    { name: 'conversation.chat.node', key: 'room-event', locale: NS },
+    {
+      name: 'conversation.chat.node',
+      key: 'room-event',
+      locale: NS,
+      inject: (sessionId: SessionId): RoomEventInjected => ({ modeNames, members: membersFace(sessionId) }),
+    },
     RoomEventView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(

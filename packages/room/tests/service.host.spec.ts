@@ -576,6 +576,20 @@ describe('RoomService Remote surface (real composition)', () => {
     expect(await service.memberMode({ childSessionId: 'child-bill', parentSessionId: sessionId, provider: 'kimi' })).toBeUndefined()
   })
 
+  it('noteMemberTools writes one room line about the member\'s mode tools; a stranger writes nothing', async () => {
+    const { ctx, service, sessionId } = await bootRoom()
+    await service.invite({ sessionId, provider: 'kimi', name: 'gm', preset: 'dsh-gamedev' })
+    const session = ctx.sessions.get(sessionId)!
+    session.append('room/member-updated', { name: 'gm', childSessionId: SessionId('child-gm') })
+    const actor = { childSessionId: 'child-gm', parentSessionId: sessionId, provider: 'kimi' }
+    await service.noteMemberTools(actor, { kind: 'reloaded', preset: 'dsh-gamedev', during: 'round' })
+    await service.noteMemberTools({ ...actor, childSessionId: 'child-nobody' }, { kind: 'unavailable', preset: 'dsh-gamedev', during: 'idle' })
+    const notices = session.snapshotEvents().filter(event => event.type === 'room/member-tools')
+    expect(notices.map(event => event.data)).toEqual([
+      { member: 'gm', memberId: expect.any(String), kind: 'reloaded', preset: 'dsh-gamedev', during: 'round' },
+    ])
+  })
+
   it('memberMode names the member\'s desk role: the coordinator acts on the room, anyone else beside it', async () => {
     const { ctx, service, sessionId } = await bootRoom()
     await service.invite({ sessionId, provider: 'codex', name: 'bill', preset: 'dsh-writing' })
