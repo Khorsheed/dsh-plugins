@@ -1831,19 +1831,6 @@ async function appendClaudeResponse(
 }
 
 /**
- * Persist the child session's mirrored events. Thin wrapper over the core's
- * {@link persistChildSession}: a live session syncs through the core's cached
- * per-child write handle (host 0.1.5's live write-behind never checkpoints a
- * mirror session — it has no agent loop — so production child logs stayed
- * header-only until the explicit sync), a standalone one through a one-shot
- * handle flow. Kept under the historical name for the live driver. Root cause
- * and fix identical to codex's codex-cli-provider.ts persistIfStandalone.
- */
-export async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
-  await persistChildSession(ctx, childSession)
-}
-
-/**
  * Mirror the claude stream-json into the child session AFTER the CLI process
  * has exited, whatever its stop reason. A cancelled or failed round still
  * preserves the events the stream already emitted (thinking, tool calls with

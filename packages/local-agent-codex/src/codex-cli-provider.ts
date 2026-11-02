@@ -1405,18 +1405,6 @@ export function codexLineText(line: CodexTranscriptLine): string {
 }
 
 /**
- * Persist the child session's mirrored events. Thin wrapper over the core's
- * {@link persistChildSession}: a live session syncs through the core's cached
- * per-child write handle (host 0.1.5's live write-behind never checkpoints a
- * mirror session — it has no agent loop — so production child logs stayed
- * header-only until the explicit sync), a standalone one through a one-shot
- * handle flow. Kept under the historical name for the live driver.
- */
-export async function persistIfStandalone(ctx: Context, childSession: Session): Promise<void> {
-  await persistChildSession(ctx, childSession)
-}
-
-/**
  * Per-run live mirror: folds stdout chunks incrementally and mirrors newly
  * completed transcript lines into the child session as they arrive, so a
  * caller watching the child session sees progress instead of silence until

@@ -667,25 +667,3 @@ function userAlreadyAppended(childSession: Session, turn: number, text: string):
   }
   return false
 }
-
-/**
- * Mirror one kimi session's transcript into the dsh subagent session,
- * returning only the new total transcript-line count. Thin wrapper over
- * {@link mirrorKimiSessionDelta} for callers that do not report progress.
- * @param ctx - host context carrying the session persistence service.
- * @param childSession - the dsh subagent session created for this delegation.
- * @param homeDir - the `kimi` harness's scoped home.
- * @param kimiSessionId - the kimi session to mirror; omitted mirrors the most
- *   recent session.
- * @param fromLines - transcript lines already mirrored into the child session.
- * @returns the new total transcript-line count mirrored into the child session.
- */
-export async function mirrorKimiSession(
-  ctx: Context,
-  childSession: Session,
-  homeDir: string,
-  kimiSessionId?: string,
-  fromLines = 0,
-): Promise<number> {
-  return (await mirrorKimiSessionDelta(ctx, childSession, homeDir, kimiSessionId, fromLines)).total
-}

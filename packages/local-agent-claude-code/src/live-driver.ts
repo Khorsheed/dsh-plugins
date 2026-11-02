@@ -1378,8 +1378,7 @@ export class ClaudeLiveDriver {
         // channel (record merge + `settled` event) — the live drive's half of
         // the exec path's onRoundSettled: the init event's model and build,
         // the result event's usage, and the round's tool-call accounting, each
-        // absent when the stream never yielded it. Degrades silently on a
-        // core predating recordRoundSettled (the round still settles).
+        // absent when the stream never yielded it.
         if (turnOpened) {
           const toolCalls = toolCallsOf(parser.toolCalls)
           const round = {
@@ -1388,8 +1387,7 @@ export class ClaudeLiveDriver {
             ...parser.usage === undefined ? {} : { usage: parser.usage },
             ...toolCalls === undefined ? {} : { toolCalls },
           }
-          const registry = localAgent as unknown as { recordRoundSettled?: (id: string, r: typeof round) => void } | undefined
-          registry?.recordRoundSettled?.(childSession.id, round)
+          localAgent?.recordRoundSettled(childSession.id, round)
         }
         this.armIdleTimer(String(childSession.id))
       }
