@@ -12,9 +12,7 @@ import { bindCardSettingsScope, type SettingsScopeSnapshot } from '@khorsheed/ds
  * served namespace rather than any carrier bundle, and a composition without
  * the row shows no trace of it. The card carries the family core's shared
  * ProviderAuthBlock (dsh authenticates through the host credentials, so the
- * block renders status only), the DeepSeek delegation switch — migrated from
- * the core section's `local-agent.settings.row-action` seat, which this
- * plugin no longer contributes to — and the resident-mode block (live switch)
+ * block renders status only), the resident-mode block (live switch)
  * plus the default-model block (free-text input, the broker's effective-model
  * line and suggestion vocabulary), whose writes ride the bound settingsScope:
  * the host watcher hot-applies them, no reload. Every read degrades: an

@@ -24,8 +24,6 @@ const RECENT_MODEL_LIMIT = 5
 
 /** The `local-agent-dsh` settings namespace section the card edits. */
 export interface DshCardSettings {
-  /** Whether the dsh harness, provider, and delegation tool are registered. */
-  enabled?: boolean
   /** Resident (live) mode: one resident sub-dsh serve process per member. */
   live?: boolean
   /**
@@ -102,8 +100,8 @@ export type DshCardSectionProps =
   }
 
 /**
- * The staged card state both settings surfaces share: the delegation,
- * resident-mode, and model edits write through the bound settingsScope
+ * The staged card state both settings surfaces share: the resident-mode
+ * and model edits write through the bound settingsScope
  * immediately (revision-fenced), so a flip takes effect on the next
  * delegation round without a reload; the harness's model surface is fetched
  * while the surface is active (the 0.1.5 card opened, the alpha.2 page
@@ -125,7 +123,6 @@ function useCardState(
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState(false)
   const ready = snapshot.status === 'ready' && snapshot.writable
-  const enabled = snapshot.value?.enabled ?? false
   // Unset means on: the provider resolves `live` as `vol(config.live) ?? true`.
   const live = snapshot.value?.live ?? true
   // The model input is a DRAFT until saved: `null` means "showing whatever the
@@ -241,7 +238,7 @@ function useCardState(
         : t('model.menuDefault')
 
   return {
-    snapshot, saved, error, ready, enabled, live, storedModel, modelValue,
+    snapshot, saved, error, ready, live, storedModel, modelValue,
     modelSaved, modelError, choices, modelMenuOpen, modelMenuUp, modelFieldRef,
     modelPlaceholder, modelDefaultItem, saveModel, write, toggleModelMenu,
     setModelDraft, setModelMenuOpen,

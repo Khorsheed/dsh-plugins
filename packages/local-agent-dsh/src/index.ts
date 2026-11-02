@@ -1,19 +1,16 @@
 /**
- * dsh harness instantiation of the local-agent family, plus the DeepSeek
- * settings toggle that gates it. Registers the `local-agent-dsh` settings
- * namespace (default off); while ON, the controller registers the `dsh`
- * harness into the core registry (scoped home under the shared homes root,
- * `$DSH_HOME`), the `dsh-cli` delegation provider (sub-dsh headless runs with
- * the parent's selected API-key model route), and the family delegation tool for it.
- * While OFF — the default — nothing model-visible mounts, so the instance
- * keeps exactly the current behavior (official in-process subagent tools) and
- * the model never sees two overlapping delegation tools at once.
+ * dsh harness instantiation of the local-agent family. At startup the plugin
+ * registers the `dsh` harness into the core registry (scoped home under the
+ * shared homes root, `$DSH_HOME`) and the `dsh-cli` delegation provider
+ * (sub-dsh headless runs with the parent's selected API-key model route).
+ * The delegation tool is the package's `./tool` entry, granted per session by
+ * a preset, so installing the plugin alone adds nothing model-visible.
  *
- * The same namespace carries the resident-mode preferences (`live`,
- * `liveMirrorGranularity`): the YAML config is the composition base, the
- * settings card's writes are user-layer overrides, and a LiveDriverSwitch
- * inside each enabled generation hot-swaps driver generations on a change —
- * no reload, in-flight rounds never interrupted.
+ * The `local-agent-dsh` row carries the resident-mode preferences (`live`,
+ * `liveMirrorGranularity`) and the default model: the row config is the
+ * base, the settings card's writes are overrides on top, and a
+ * LiveDriverSwitch hot-swaps driver generations on a change — no reload,
+ * in-flight rounds never interrupted.
  *
  * The sub-dsh half lives in the sibling bundle
  * `@khorsheed/dsh-local-agent-dsh-headless`: a headless profile under the
@@ -45,7 +42,7 @@ import type { DshSubProfilePermissions } from './provision.ts'
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-dsh'
 
-/** Services required before the toggle controller can mount. */
+/** Services required before the controller can mount. */
 export const inject = ['localAgent', 'subagents', 'subprocess', 'credentials', 'settings']
 
 /** Plugin config: the sub-dsh profile and the credential it resolves. */
@@ -108,22 +105,17 @@ export interface LocalAgentDshConfig {
    * reload.
    */
   model?: string
-  /**
-   * The DeepSeek delegation toggle (settings field since the settings rewrite:
-   * the profile row can preset it — a semantic superset of the old
-   * settings-only key). OFF — the default — mounts nothing model-visible.
-   */
-  enabled?: boolean
   /** Model identifiers the settings card saved before (settings field). */
   recentModels?: readonly string[]
 }
 
 /**
  * Runtime schema so the Loader always passes an object, never undefined.
- * The settings fields (`enabled`, `live`, `liveMirrorGranularity`, `model`,
+ * The settings fields (`live`, `liveMirrorGranularity`, `model`,
  * `recentModels`) ride the same schema marked `.volatile()`: the
  * SettingsForms writes hot-track the running fiber's Volatile references
- * without a remount.
+ * without a remount. A row still carrying the retired `enabled` key loads
+ * unchanged (the object schema is not strict) and the key is ignored.
  *
  * Bare `z` annotation: `z<LocalAgentDshConfig>` fails schemastery 3.18.4's
  * variance under exactOptionalPropertyTypes (TS2375) and dropping the
@@ -142,7 +134,6 @@ export const Config: z = z.object({
   live: z.boolean().default(true).volatile(),
   liveIdleMs: z.number().default(DEFAULT_LIVE_IDLE_MS),
   liveMirrorGranularity: z.union([z.const('event'), z.const('token')]).default('token').volatile(),
-  enabled: z.boolean().default(false).volatile(),
   recentModels: z.array(z.string()).default([]).volatile(),
 })
 
@@ -154,8 +145,6 @@ const SETTINGS_NAMESPACE = 'local-agent-dsh'
 
 /** The resolved settings the controller and the live switch consume. */
 export interface DshSettings {
-  /** The DeepSeek delegation toggle. */
-  enabled: boolean
   /** Resident (live) mode. */
   live: boolean
   /** @deprecated Legacy granularity; live output is always incremental. */
@@ -167,8 +156,8 @@ export interface DshSettings {
 }
 
 /**
- * Mount the toggle controller: register the settings namespace, then mirror
- * its value into harness/provider/tool registrations, live.
+ * Mount the controller: resolve the settings face, then register the harness
+ * and provider with a live-driver switch that follows the settings.
  * @param ctx - plugin context carrying the family registry, subagents,
  *   subprocess, credentials, and settings services.
  * @param config - validated plugin config.
@@ -179,7 +168,6 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
     // on `settings/document-updated`, hot-applying the card's writes without
     // a reload.
     const readSettings = (): DshSettings => ({
-      enabled: vol(config.enabled) ?? false,
       live: vol(config.live) ?? true,
       liveMirrorGranularity: vol(config.liveMirrorGranularity) ?? 'token',
       model: vol(config.model),
@@ -355,54 +343,36 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
     }
     const homeDir = ctx.localAgent.homeDir('dsh')
 
-    let generation = 0
-    let currentEnabled: boolean | undefined
+    // Always on: installing the plugin is the intent; a preset still decides
+    // which sessions see `subagent_dsh` (this package's `./tool` entry,
+    // src/tool.ts — never mounted at the profile root).
     const disposers: Array<() => void> = []
-    const sync = (enabled: boolean): void => {
-      // The watch fires on ANY namespace field change; only an enabled flip
-      // re-registers — the live fields ride the LiveDriverSwitch instead.
-      if (enabled === currentEnabled) return
-      currentEnabled = enabled
-      generation += 1
-      for (const dispose of disposers.splice(0)) dispose()
-      if (!enabled) return
-      // Idempotent: heals a deleted or drifted sub-profile before each round.
-      provisionDshScope(homeDir, config, profileDirOption())
-      disposers.push(ctx.localAgent.register(harness))
-      // The live driver is settings-driven WITHIN this enabled generation:
-      // the card's toggle (user layer over the YAML composition base) swaps
-      // driver generations without a reload. Toggling live OFF drains the
-      // retiring generation — new rounds fall back to exec, in-flight rounds
-      // finish on their runtime, idle runtimes are reclaimed at once. A
-      // legacy granularity setting no longer changes live behavior. Toggling ENABLED off keeps the historical hard semantics:
-      // provider unregisters and the switch disposes (disposeAll).
-      const liveSwitch = new LiveDriverSwitch(ctx, face, config, {
-        modelFor: childSessionId => memberModelOverrides.get(childSessionId) ?? resolveModel(),
-      })
-      currentLiveSwitch = liveSwitch
-      disposers.push(ctx.subagents.registerProvider(
-        new DshCliProvider(ctx, config, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId)),
-      ))
-      // The switch's disposal runs after the provider unregisters, so no
-      // in-flight round can re-spawn a runtime the teardown already reclaimed.
-      disposers.push(() => {
-        if (currentLiveSwitch === liveSwitch) currentLiveSwitch = undefined
-        liveSwitch.dispose()
-      })
-      // The delegation tool is this package's `./tool` entry, granted per
-      // session by a preset (src/tool.ts) — never mounted at the profile root.
-    }
-    // Always on: installing the plugin is the intent (the card's 启用 switch
-    // is gone); a preset still decides which sessions see `subagent_dsh`.
-    sync(true)
-    const unwatch = (): void => {}
+    // Idempotent: heals a deleted or drifted sub-profile before each round.
+    provisionDshScope(homeDir, config, profileDirOption())
+    disposers.push(ctx.localAgent.register(harness))
+    // The live driver is settings-driven: the card's toggle (overrides on top
+    // of the row config) swaps driver generations without a reload. Toggling
+    // live OFF drains the retiring generation — new rounds fall back to exec,
+    // in-flight rounds finish on their runtime, idle runtimes are reclaimed at
+    // once. A legacy granularity setting no longer changes live behavior.
+    // Plugin unload keeps the hard semantics: the provider unregisters and
+    // the switch disposes (disposeAll).
+    const liveSwitch = new LiveDriverSwitch(ctx, face, config, {
+      modelFor: childSessionId => memberModelOverrides.get(childSessionId) ?? resolveModel(),
+    })
+    currentLiveSwitch = liveSwitch
+    disposers.push(ctx.subagents.registerProvider(
+      new DshCliProvider(ctx, config, liveSwitch.resolve, resolveModel, childSessionId => memberModelOverrides.get(childSessionId)),
+    ))
+    // The switch's disposal runs after the provider unregisters, so no
+    // in-flight round can re-spawn a runtime the teardown already reclaimed.
+    disposers.push(() => {
+      if (currentLiveSwitch === liveSwitch) currentLiveSwitch = undefined
+      liveSwitch.dispose()
+    })
     return () => {
       modelCatalog.dispose()
-      unwatch()
-      // Bump the generation so a tool mount still in flight disposes itself
-      // instead of being pushed onto a dead disposer list.
-      generation += 1
       for (const dispose of disposers.splice(0)) dispose()
     }
-  }, 'local-agent-dsh: toggle controller')
+  }, 'local-agent-dsh: controller')
 }
