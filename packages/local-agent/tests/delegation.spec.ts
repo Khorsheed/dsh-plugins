@@ -31,7 +31,7 @@ describe('LocalAgentRegistry delegation registry', () => {
 
     expect(registry.resolveDelegation('child-1', { provider: 'kimi-cli', parentSessionId: 'parent-1' }))
       .toEqual({ cliSessionId: 'session_42' })
-    expect(registry.listDelegations()).toHaveLength(1)
+    expect(registry.getDelegation('child-1')).toBeDefined()
   })
 
   it('rejects an unknown child session handle', async () => {
@@ -151,7 +151,7 @@ describe('LocalAgentRegistry delegation registry', () => {
 
     expect(registry.resolveDelegation('child-1', { provider: 'kimi-cli', parentSessionId: 'parent-1' }))
       .toEqual({ cliSessionId: 'session_99' })
-    expect(registry.listDelegations()).toHaveLength(1)
+    expect(registry.getDelegation('child-1')).toBeDefined()
   })
 
   describe('latestObservedModel', () => {

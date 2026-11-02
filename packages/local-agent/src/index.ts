@@ -621,29 +621,6 @@ export function assertResumeScopeUnchanged(
 }
 
 /**
- * Refuse a round that names its own model and would be served by a live
- * driver — the model twin of {@link assertScopeExecOnly}, and refused for the
- * same reason. A resident runtime (codex's `app-server`, claude's and kimi's
- * ACP servers, the sub-dsh `serve`) binds its model when the PROCESS starts
- * and then serves many rounds of one member, so a per-delegation model would
- * either be ignored or would silently change what every other round of that
- * runtime runs. Refused rather than quietly downgraded to exec: the caller
- * named a model, and a fallback would answer a different question than the
- * one asked. The evaluation pins `drive: exec` anyway (web-eval frozen
- * decision 2).
- * @param model - the round's requested model, or undefined for none.
- * @param provider - the provider name, for the error message.
- * @throws when a named model meets an active live driver.
- */
-export function assertModelExecOnly(model: string | undefined, provider: string): void {
-  if (model === undefined) return
-  throw new Error(
-    `${provider}: a delegation that names model ${model} is exec-only — a resident runtime binds its model at spawn `
-    + 'and serves many rounds; turn the live driver off for this delegation, or drop the model',
-  )
-}
-
-/**
  * The model one round starts its CLI with, resolved in the family's fixed
  * order: the DELEGATION's own model (the `model` call option on the fresh
  * round, re-requested by every resume round from the record) first, then the
@@ -668,27 +645,6 @@ export function resolveRoundModel(
   if (own !== undefined && own !== '') return { model: own }
   const fallback = configured?.()?.trim()
   return fallback === undefined || fallback === '' ? {} : { model: fallback }
-}
-
-/**
- * Refuse a scoped round that would be served by a live driver. The resident
- * runtimes (codex's `app-server`, claude's and kimi's ACP servers, the
- * sub-dsh `serve`) are started per member against the DEFAULT scoped home and
- * outlive a single round, so a scoped round taken by one would run under the
- * wrong credentials and write its records into the wrong directory. Refused
- * rather than silently downgraded to exec: the caller named a scope, and a
- * quiet fallback would answer a different question than the one asked. The
- * evaluation pins `drive: exec` anyway (web-eval frozen decision 2).
- * @param scope - the round's scope, or undefined for the default one.
- * @param provider - the provider name, for the error message.
- * @throws when a named scope meets an active live driver.
- */
-export function assertScopeExecOnly(scope: string | undefined, provider: string): void {
-  if (scope === undefined) return
-  throw new Error(
-    `${provider}: a delegation in scope ${scope} is exec-only — the live driver binds the harness's default scoped home; `
-    + 'turn the live driver off for this round, or drop the scope',
-  )
 }
 
 /** Poll interval for a manual-handoff login watch. */
@@ -1905,14 +1861,6 @@ export class LocalAgentRegistry {
     queue.splice(index, 1)
     if (queue.length === 0) this.delegationIntents.delete(key)
     return true
-  }
-
-  /**
-   * Every recorded delegation, in recording order.
-   * @returns the recorded delegations.
-   */
-  listDelegations(): readonly LocalAgentDelegationRecord[] {
-    return [...this.delegations.values()]
   }
 
   /**
