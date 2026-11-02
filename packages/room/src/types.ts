@@ -8,6 +8,7 @@
  */
 import type { RoomPlan } from './plan.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { LocalAgentCompactionEvent, LocalAgentMemberMessage, RoomMemberMessageReceipt as LocalAgentRoomMemberMessageReceipt } from '@khorsheed/dsh-local-agent/types'
 
 /**
  * A JSON-safe value (mirrors the host's JsonValue shape without importing the
@@ -266,14 +267,23 @@ export interface RoomMemberCompactedEvent {
   readonly member: string
   readonly memberId: string
   readonly runId: string
-  readonly outcome: 'completed' | 'failed' | 'cancelled'
-  readonly beforeTokens?: number
-  readonly afterTokens?: number
-  readonly contextWindow?: number
-  readonly usage?: { readonly inputTokens: number; readonly outputTokens: number; readonly cacheReadTokens?: number; readonly cacheWriteTokens?: number }
-  readonly summary?: string
-  readonly error?: string
+  // The compaction facts are the core event's own fields, copied verbatim
+  // (the local-agent core's LocalAgentCompactionEvent is the single source).
+  readonly outcome: LocalAgentCompactionEvent['outcome']
+  readonly beforeTokens?: LocalAgentCompactionEvent['beforeTokens']
+  readonly afterTokens?: LocalAgentCompactionEvent['afterTokens']
+  readonly contextWindow?: LocalAgentCompactionEvent['contextWindow']
+  readonly usage?: LocalAgentCompactionEvent['usage']
+  readonly summary?: LocalAgentCompactionEvent['summary']
+  readonly error?: LocalAgentCompactionEvent['error']
   readonly durationMs?: number
+  /**
+   * The member wrote no `local-agent/compaction` record during this run (its
+   * provider does not report compaction — Claude Code and DSH members
+   * today): the round ran, but there are no facts to show, and the row says
+   * so instead of claiming a compaction with no numbers.
+   */
+  readonly unreported?: true
 }
 
 export interface RoomRunMovedEvent {
@@ -285,8 +295,21 @@ export interface RoomRunStateEvent {
   /** `compact`: the human's `/compact` ran as a compaction round (no child turn, no reply). */
   readonly operation?: 'compact'
   readonly childSessionId?: SessionId
-  /** The child session's round this run reached (the last turn/start it wrote); terminal edges only, live sessions only. */
+  /**
+   * The child session's round this run reached: the last turn/start the
+   * child wrote inside this run's range (see `childFromSeq`), never an
+   * earlier run's. Terminal edges only, live sessions only; absent when the
+   * run started no round (it failed before its round, or it compacted).
+   */
   readonly childTurn?: number
+  /**
+   * Running edges only: the child session's events from this seq on belong
+   * to this run (the child's next seq at admission; 0 for a member whose
+   * session did not exist yet). Absent when the child was not loaded at
+   * admission: the run's child events are then the ones written since
+   * `startedAt`.
+   */
+  readonly childFromSeq?: number
   /** Observed round metadata, never a requested-model guess or session total. */
   readonly model?: string
   readonly effort?: string
@@ -1054,32 +1077,17 @@ export type RoomFailure =
 /**
  * The family bridge's gate entry, verbatim-frozen contract
  * (`proposals/closed/2026-08-19-local-agent-member-channel.md`): the bridge
- * probes `ctx.get('room')` and duck-type-calls this method. Phase 1's gate is
- * always human confirmation, so the receipt is always 'pending-confirm';
- * 'sent'/'busy' belong to the phase-2 auto gate.
+ * probes `ctx.get('room')` and duck-type-calls `receiveMemberMessage`. The
+ * message and receipt types are the local-agent core's own (the single
+ * source; room only re-exports them): `RoomService implements
+ * RoomMemberMessageGate`, so a field change on either side fails to compile.
+ * `provenance` is the core's required `Record<string, string>` — its only
+ * caller (`member-channel.ts` handToGate) always sends the sender's
+ * delegation view as strings, and room resolves the sender by its
+ * `provider`. The receiver still guards a malformed call at runtime.
  */
-export interface RoomMemberMessage {
-  readonly from: string
-  readonly to: string
-  readonly content: string
-  readonly parentSessionId: SessionId
-  readonly provenance?: Record<string, RoomJsonValue>
-  /** `task` (default): the reply is reported back; `notify`: FYI only. */
-  readonly kind?: 'task' | 'notify'
-  /** `m<seq>` (or the bare seq) of the message being answered. */
-  readonly inReplyTo?: string
-  /** What the sender waits for before acting on the result. */
-  readonly note?: string
-  /** `new` or a task number (see RoomMessageRequest.task). */
-  readonly task?: string
-}
-
-/**
- * The gate receipt handed back to the sending member through the bridge,
- * quoted verbatim to the model: `sent #m<seq>…` or `pending-confirm …` with a
- * short explanation (the bare legacy words remain valid).
- */
-export type RoomMemberMessageReceipt = 'sent' | 'pending-confirm' | 'busy' | `sent ${string}` | `pending-confirm ${string}`
+export type RoomMemberMessage = LocalAgentMemberMessage
+export type RoomMemberMessageReceipt = LocalAgentRoomMemberMessageReceipt
 
 /** isRoom probe: does this session carry the room marker? */
 /** pendingCards request: no arguments (every live room the host knows). */

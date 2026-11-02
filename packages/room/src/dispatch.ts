@@ -27,11 +27,12 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the `agents` registry merge onto Context.
 import { createUserMessage, type ContextFormed, type MessageSource } from '@deepseek-ai/dsh-llm'
 import { probeLocalAgent, runOutputText } from './adapter.ts'
-import { coordinatorMember, memberId, pendingInstructions, previousCursor, replay, roomChangesSince } from './journal.ts'
+import { COMPACT_COMMAND, coordinatorMember, isCompactCommand, memberId, pendingInstructions, previousCursor, replay, roomChangesSince } from './journal.ts'
 import { envelopeLine, messageId, sendOrHold } from './messaging.ts'
 import { gateState, judgeReport, outstandingFor, type GateVerdict } from './report-gate.ts'
 import { decisionRecord } from './decisions.ts'
-import type { RoomHeldDispatch, RoomMember, RoomMemberCompactedEvent, RoomRelay, RoomState } from './types.ts'
+import type { LocalAgentCompactionEvent } from '@khorsheed/dsh-local-agent/types'
+import type { RoomHeldDispatch, RoomMember, RoomRelay, RoomState } from './types.ts'
 
 /**
  * The room producer's durable identity in its two historical forms: the
@@ -131,10 +132,11 @@ export function askOffsets(events: readonly SessionEvent[], runId: string, text:
 export const MOVED_ON_TEXT = '你发了新消息；被重启打断的这一轮按没做完处理'
 /** A message that queued behind a lost round and rode along with the move-on message. */
 export const MERGED_BACKLOG_TEXT = '已并入下一条消息一起送达'
-/** The member command that compacts its context instead of prompting it. */
-export const COMPACT_COMMAND = '/compact'
+export { COMPACT_COMMAND }
 /** A compaction's delivery outcome text (the report a sender would read). */
 export const COMPACTED_TEXT = '已压缩上下文'
+/** A `/compact` round whose member reported no compaction record (its provider does not report one). */
+export const COMPACT_UNREPORTED_TEXT = '已发送压缩命令；该成员不报告压缩数据'
 /** `/compact` to a member that has never run: nothing to compact. */
 export const NOTHING_TO_COMPACT_TEXT = '还没有可压缩的上下文'
 /** A message that answered the question its recipient was waiting on: delivered as that answer, not as a round of its own. */
@@ -188,9 +190,44 @@ export function lastAssistantMessageId(session: Session | undefined, afterSeq = 
   return typeof id === 'string' ? id : undefined
 }
 
-export function runChildTurn(session: Session | undefined): number | undefined {
-  const last = session?.snapshotEvents().filter(event => event.type === 'turn/start').at(-1)
-  return (last?.data as { turn?: number } | undefined)?.turn
+export function runChildTurn(roomEvents: readonly SessionEvent[], runId: string | undefined, child: Session | undefined): number | undefined {
+  const last = runChildEvents(roomEvents, runId, child).filter(event => event.type === 'turn/start').at(-1)
+  return last?.type === 'turn/start' ? last.data.turn : undefined
+}
+
+/**
+ * Where a run's events start in its child session, recorded on the running
+ * edge at admission (see RoomRunStateEvent.childFromSeq): 0 for a member
+ * whose session does not exist yet, the child's next seq when it is loaded,
+ * undefined when it is not (the range then falls back to event times).
+ * @param childSessionId - the run's child session, when known.
+ * @param child - that session, when loaded.
+ * @returns the first seq that belongs to the run.
+ */
+export function childFromSeq(childSessionId: SessionId | undefined, child: Session | undefined): number | undefined {
+  if (childSessionId === undefined) return 0
+  if (child === undefined) return undefined
+  return (child.snapshotEvents().at(-1)?.seq ?? -1) + 1
+}
+
+/**
+ * The child session events one run wrote: from the seq its running edge
+ * recorded (else from its start time), so a run never claims an earlier
+ * run's round or compaction. A run with no running edge never got admitted
+ * and owns nothing; a legacy run without an id reads the whole log.
+ * @param roomEvents - the room log.
+ * @param runId - the run.
+ * @param child - the run's child session (the room itself for the main agent).
+ * @returns the run's child events, in log order.
+ */
+export function runChildEvents(roomEvents: readonly SessionEvent[], runId: string | undefined, child: Session | undefined): readonly SessionEvent[] {
+  if (child === undefined) return []
+  const events = child.snapshotEvents()
+  if (runId === undefined) return events
+  const running = roomEvents.find(event => event.type === 'room/run-state' && event.data.runId === runId && event.data.state === 'running')
+  if (running?.type !== 'room/run-state') return []
+  const from = running.data.childFromSeq
+  return from !== undefined ? events.filter(event => event.seq >= from) : events.filter(event => event.time >= running.data.startedAt)
 }
 
 /**
@@ -283,7 +320,7 @@ function notificationsSection(relays: readonly RoomRelay[]): string {
 export function isCompactDispatch(events: readonly SessionEvent[], dispatchSeq: number | undefined): boolean {
   if (dispatchSeq === undefined) return false
   const source = events.find(event => event.seq === dispatchSeq)
-  return source?.type === 'room/dispatch' && (source.data.origin ?? 'human') === 'human' && source.data.text.trim() === COMPACT_COMMAND
+  return source?.type === 'room/dispatch' && (source.data.origin ?? 'human') === 'human' && isCompactCommand(source.data.text)
 }
 
 /**
@@ -592,8 +629,12 @@ export class DispatchEngine {
       const current = replay(room.snapshotEvents()).members.find(entry => memberId(room.snapshotEvents(), entry) === identity)
       memberName = current?.name ?? memberName
       const childSessionId = runChildSessionId(room.id, current ?? member)
+      // Where this run's child events begin: settle reads the run's round
+      // (and a compaction its event) from there, never an earlier run's.
+      const fromSeq = childFromSeq(childSessionId, childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
       room.append('room/run-state', { member: memberName, state: 'running', startedAt, runId,
         ...childSessionId === undefined ? {} : { childSessionId },
+        ...fromSeq === undefined ? {} : { childFromSeq: fromSeq },
         ...compactRun ? { operation: 'compact' as const } : {},
       })
       await this.hooks.admitted?.(room, options.dispatchSeq)
@@ -980,18 +1021,21 @@ export class DispatchEngine {
 
   /**
    * The room's row for a member's compaction round: the facts the member
-   * session's `local-agent/compaction` event recorded (the room never
-   * re-derives them), and no speech — Kimi answers `/compact` with its
-   * summary, which is the row's, not a reply.
+   * session's `local-agent/compaction` event recorded during THIS run (the
+   * room never re-derives them, and never reads an earlier run's), and no
+   * speech — Kimi answers `/compact` with its summary, which is the row's,
+   * not a reply. A completed round that recorded no compaction (a provider
+   * that does not report one) is marked `unreported`, not "compacted".
    */
   private async recordCompaction(
     room: Session, member: RoomMember, runId: string, childSessionId: string, result: { readonly stopReason: string; readonly diagnostic?: string },
     startedAt: number | undefined,
   ): Promise<RunOutcome> {
-    const compaction = this.ctx.sessions.get(SessionId(childSessionId))?.snapshotEvents().findLast(event => (event.type as string) === 'local-agent/compaction')
-    const data = (compaction?.data ?? {}) as Partial<Omit<RoomMemberCompactedEvent, 'member' | 'memberId' | 'runId'>> & { readonly outcome?: RoomMemberCompactedEvent['outcome'] }
-    const outcome = data.outcome ?? (result.stopReason === 'completed' ? 'completed' : 'failed')
     const events = room.snapshotEvents()
+    const compaction = runChildEvents(events, runId, this.ctx.sessions.get(SessionId(childSessionId))).findLast(event => event.type === 'local-agent/compaction')
+    const data: Partial<LocalAgentCompactionEvent> = compaction?.type === 'local-agent/compaction' ? compaction.data : {}
+    const outcome = data.outcome ?? (result.stopReason === 'completed' ? 'completed' : 'failed')
+    const unreported = compaction === undefined && outcome === 'completed'
     room.append('room/member-compacted', {
       member: replay(events).members.find(entry => entry.id === member.id)?.name ?? member.name,
       memberId: memberId(events, member), runId, outcome,
@@ -1002,10 +1046,11 @@ export class DispatchEngine {
       ...data.summary === undefined ? {} : { summary: data.summary },
       ...outcome === 'completed' ? {} : { error: data.error ?? result.diagnostic ?? `compaction ${outcome}` },
       ...startedAt === undefined ? {} : { durationMs: Date.now() - startedAt },
+      ...unreported ? { unreported: true as const } : {},
     })
     await this.ctx.sessions.flush(room)
     return outcome === 'completed'
-      ? { state: 'done', text: COMPACTED_TEXT }
+      ? { state: 'done', text: unreported ? COMPACT_UNREPORTED_TEXT : COMPACTED_TEXT }
       : { state: 'failed', text: '', error: data.error ?? result.diagnostic ?? `compaction ${outcome}` }
   }
 
@@ -1022,7 +1067,7 @@ export class DispatchEngine {
     }
     const childSessionId = runChildSessionId(room.id, currentMember ?? member)
     const compactRun = events.some(event => event.type === 'room/run-state' && event.data.runId === runId && event.data.operation === 'compact')
-    const childTurn = compactRun ? undefined : runChildTurn(childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
+    const childTurn = compactRun ? undefined : runChildTurn(events, runId, childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
     room.append('room/run-state', {
       member: memberName, runId, state: outcome.state, startedAt, elapsedMs: Date.now() - startedAt,
       ...childSessionId === undefined ? {} : { childSessionId },

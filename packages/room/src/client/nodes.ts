@@ -203,6 +203,8 @@ export interface RoomCompactionData {
   readonly usage?: { readonly inputTokens: number; readonly outputTokens: number; readonly cacheReadTokens?: number; readonly cacheWriteTokens?: number }
   readonly summary?: string
   readonly error?: string
+  /** The member does not report compaction data (no record this round). */
+  readonly unreported?: true
 }
 
 /** Chat node data of the held-reports line for one member. */
@@ -561,6 +563,7 @@ export const roomCompactionDefinition: ConversationNodeDefinition<RoomCompaction
       ...data.usage === undefined ? {} : { usage: data.usage },
       ...data.summary === undefined ? {} : { summary: data.summary },
       ...data.error === undefined ? {} : { error: data.error },
+      ...data.unreported === true ? { unreported: true as const } : {},
     }
   },
   update: context => context.state,
