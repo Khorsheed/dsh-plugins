@@ -8,7 +8,7 @@ import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import { PlanService, readPlan } from '../src/plan-service.ts'
 import { changePlan, queuePlanAttempt, admitPlanAttempt } from '../src/plan.ts'
-import { ROOM_KIND, ROOM_PLUGIN, isRoomSource } from '../src/dispatch.ts'
+import { COMPACT_UNREPORTED_TEXT, ROOM_KIND, ROOM_PLUGIN, isRoomSource } from '../src/dispatch.ts'
 import type { LocalAgentFacade } from '../src/adapter.ts'
 
 /** A manually settled promise. */
@@ -236,6 +236,28 @@ describe('DispatchEngine (real composition)', () => {
     const row = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().findLast(event => event.type === 'room/member-compacted')
     expect(row?.data).toMatchObject({ member: 'ada', outcome: 'completed', summary: '用户在写《潜梦者》', beforeTokens: 560_000, afterTokens: 41_000,
       usage: { inputTokens: 1_103, outputTokens: 154, cacheReadTokens: 19_712 } })
+  })
+
+  it('/compact reads only the compaction written inside its own run; a member that reports none says so', async () => {
+    const bench = await bootRoom()
+    const child = bench.ctx.sessions.create(SessionId('child-1'), { meta: {} })
+    bench.facade.start.mockImplementation(async () => settledRun('child-1', '方案 A'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'claude-code', name: 'ada', firstTask: '出方案' })
+    await bench.service.engine.idle()
+    // An earlier run's compaction sits in the member log.
+    child.append('local-agent/compaction', {
+      source: 'auto', outcome: 'completed', provider: 'claude-code', beforeTokens: 900_000, afterTokens: 50_000, startedAt: 1, endedAt: 2, boundarySeq: 0,
+    })
+    // This /compact round writes no compaction record (the provider reports none).
+    bench.facade.resume.mockImplementation(async () => settledRun('child-1', ''))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada /compact' })
+    await bench.service.engine.idle()
+    const row = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().findLast(event => event.type === 'room/member-compacted')
+    expect(row?.data).toMatchObject({ member: 'ada', outcome: 'completed', unreported: true })
+    expect(row?.data).not.toHaveProperty('beforeTokens')
+    // The delivery's outcome (what a waiting sender's report reads) says so too.
+    const settled = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().findLast(event => event.type === 'room/delivery-state')
+    expect(settled?.data).toMatchObject({ state: 'done', text: COMPACT_UNREPORTED_TEXT })
   })
 
   it('/compact to a member that never ran starts nothing', async () => {

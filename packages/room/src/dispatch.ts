@@ -136,6 +136,8 @@ export const MERGED_BACKLOG_TEXT = '已并入下一条消息一起送达'
 export const COMPACT_COMMAND = '/compact'
 /** A compaction's delivery outcome text (the report a sender would read). */
 export const COMPACTED_TEXT = '已压缩上下文'
+/** A `/compact` round whose member reported no compaction record (its provider does not report one). */
+export const COMPACT_UNREPORTED_TEXT = '已发送压缩命令；该成员不报告压缩数据'
 /** `/compact` to a member that has never run: nothing to compact. */
 export const NOTHING_TO_COMPACT_TEXT = '还没有可压缩的上下文'
 /** A message that answered the question its recipient was waiting on: delivered as that answer, not as a round of its own. */
@@ -1020,18 +1022,21 @@ export class DispatchEngine {
 
   /**
    * The room's row for a member's compaction round: the facts the member
-   * session's `local-agent/compaction` event recorded (the room never
-   * re-derives them), and no speech — Kimi answers `/compact` with its
-   * summary, which is the row's, not a reply.
+   * session's `local-agent/compaction` event recorded during THIS run (the
+   * room never re-derives them, and never reads an earlier run's), and no
+   * speech — Kimi answers `/compact` with its summary, which is the row's,
+   * not a reply. A completed round that recorded no compaction (a provider
+   * that does not report one) is marked `unreported`, not "compacted".
    */
   private async recordCompaction(
     room: Session, member: RoomMember, runId: string, childSessionId: string, result: { readonly stopReason: string; readonly diagnostic?: string },
     startedAt: number | undefined,
   ): Promise<RunOutcome> {
-    const compaction = this.ctx.sessions.get(SessionId(childSessionId))?.snapshotEvents().findLast(event => event.type === 'local-agent/compaction')
+    const events = room.snapshotEvents()
+    const compaction = runChildEvents(events, runId, this.ctx.sessions.get(SessionId(childSessionId))).findLast(event => event.type === 'local-agent/compaction')
     const data: Partial<LocalAgentCompactionEvent> = compaction?.type === 'local-agent/compaction' ? compaction.data : {}
     const outcome = data.outcome ?? (result.stopReason === 'completed' ? 'completed' : 'failed')
-    const events = room.snapshotEvents()
+    const unreported = compaction === undefined && outcome === 'completed'
     room.append('room/member-compacted', {
       member: replay(events).members.find(entry => entry.id === member.id)?.name ?? member.name,
       memberId: memberId(events, member), runId, outcome,
@@ -1042,10 +1047,11 @@ export class DispatchEngine {
       ...data.summary === undefined ? {} : { summary: data.summary },
       ...outcome === 'completed' ? {} : { error: data.error ?? result.diagnostic ?? `compaction ${outcome}` },
       ...startedAt === undefined ? {} : { durationMs: Date.now() - startedAt },
+      ...unreported ? { unreported: true as const } : {},
     })
     await this.ctx.sessions.flush(room)
     return outcome === 'completed'
-      ? { state: 'done', text: COMPACTED_TEXT }
+      ? { state: 'done', text: unreported ? COMPACT_UNREPORTED_TEXT : COMPACTED_TEXT }
       : { state: 'failed', text: '', error: data.error ?? result.diagnostic ?? `compaction ${outcome}` }
   }
 
