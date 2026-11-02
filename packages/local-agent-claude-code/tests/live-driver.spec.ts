@@ -510,6 +510,34 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('respawns a member process whose mode tools went missing before its next round (resuming the session)', async () => {
+    const m = mount()
+    const stale = vi.fn(async (_token: string): Promise<string | undefined> => undefined)
+    Object.assign(m.ctx.localAgent, {
+      registerMemberRun: () => 'token-1',
+      unregisterMemberRun: () => {},
+      memberBridgeSocketPath: () => '/home/user/member.sock',
+      memberBridgeCommand: () => ({ command: 'node', args: ['member-bridge.js'] }),
+      memberToolsStale: stale,
+    })
+    const child = Session.create(SessionId('child-claude-tools'))
+    child.append('turn/start', { turn: 1 })
+    const first = new FakeClaude({ turn: () => ({ events: answerEvents('第一条') }) })
+    m.queueChild(first)
+    await (await m.driver.startRound(request() as never, roundSpec(m, child, { onSessionId: () => {} }))).result
+    await (await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 2 } }))).result
+    expect(stale).toHaveBeenCalledWith('token-1')
+    expect(m.spawns).toHaveLength(1)
+    stale.mockResolvedValue('it was served the mode-tools placeholder (socket refused)')
+    const second = new FakeClaude({ turn: () => ({ events: answerEvents('第三条') }) })
+    m.queueChild(second)
+    const run = await m.driver.startRound(request({ prompt: '发布' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'claude-session-1', turn: 3 } }))
+    expect((await run.result).stopReason).toBe('completed')
+    expect(m.spawns).toHaveLength(2)
+    expect(m.spawns[1]!.spec.argv).toContain('claude-session-1')
+    await m.driver.disposeAll()
+  })
+
   it('cancels via the interrupt control request — the process survives', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-4'))

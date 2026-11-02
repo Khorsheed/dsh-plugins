@@ -1689,6 +1689,60 @@ describe('kimi live driver member model', () => {
     expect(second.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/prompt'])
     await m.driver.disposeAll()
   })
+
+  it('respawns a member process whose mode tools went missing at its next round start, never mid-round', async () => {
+    const m = mount()
+    const tokens: string[] = []
+    const stale = vi.fn(async (_token: string): Promise<string | undefined> => undefined)
+    const released: string[] = []
+    const warn = vi.fn()
+    Object.assign(m.ctx.logger, { warn })
+    Object.assign(m.ctx.localAgent, {
+      registerMemberRun: () => { tokens.push(`token-${tokens.length + 1}`); return tokens.at(-1)! },
+      unregisterMemberRun: (token: string) => { released.push(token) },
+      memberBridgeSocketPath: () => '/home/user/member.sock',
+      memberBridgeCommand: () => ({ command: 'node', args: ['member-bridge.js'] }),
+      memberToolsStale: stale,
+    })
+    const child = Session.create(SessionId('child-kimi-tools'))
+    const first = new FakeAcpServer({ turn: (params) => {
+      const text = JSON.stringify(params['prompt'])
+      return text.includes('慢') ? { hang: true } : { chunks: ['ok'] }
+    } })
+    m.queueChild(first)
+    // The first round spawns: nothing to check yet.
+    await (await m.driver.startRound(request() as never, roundSpec(m, child))).result
+    expect(stale).not.toHaveBeenCalled()
+    // A healthy process is kept: one check, no respawn.
+    await (await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))).result
+    expect(stale).toHaveBeenCalledTimes(1)
+    expect(stale).toHaveBeenLastCalledWith('token-1')
+    expect(m.spawns).toHaveLength(1)
+
+    // A round in flight is never interrupted: the next round's check waits for it.
+    const slow = await m.driver.startRound(request({ prompt: '慢' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 3 } }))
+    await vi.waitFor(() => { expect(first.pendingPrompts).toHaveLength(1) })
+    stale.mockResolvedValue('it was served the mode-tools placeholder (socket refused)')
+    const second = new FakeAcpServer({ turn: () => ({ chunks: ['back'] }) })
+    m.queueChild(second)
+    const next = m.driver.startRound(request({ prompt: '发布' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 4 } }))
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(stale).toHaveBeenCalledTimes(2)
+    expect(first.terminated || first.stdinEnded).toBe(false)
+    first.resolvePrompt({ stopReason: 'end_turn' })
+    await (await slow).result
+
+    // Between rounds: the stale process is retired and the round runs on a fresh one.
+    expect((await (await next).result).stopReason).toBe('completed')
+    expect(stale).toHaveBeenCalledTimes(3)
+    expect(m.spawns).toHaveLength(2)
+    await vi.waitFor(() => { expect(first.stdinEnded || first.terminated).toBe(true) })
+    expect(second.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/prompt'])
+    expect(released).toContain('token-1')
+    expect(tokens).toEqual(['token-1', 'token-2'])
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/respawning member child-kimi-tools's kimi process before its round: it was served the mode-tools placeholder/))
+    await m.driver.disposeAll()
+  })
 })
 
 describe('kimi live driver transcript completeness', () => {

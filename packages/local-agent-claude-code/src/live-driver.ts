@@ -549,6 +549,25 @@ export class ClaudeLiveDriver {
   }
 
   /**
+   * Round-start self-heal: a resident process whose CLI lacks the member's
+   * mode tools (its bridge served the placeholder, or an empty list while the
+   * mode has tools) is retired here, between rounds, so this round respawns
+   * a fresh `claude -p` stream-json process that resumes the same CLI session and lists again.
+   * claude registers a `notifications/tools/list_changed` handler, but a placeholder it was served is still replaced here so the round never depends on the notification. The registry decides (`memberToolsStale`); an older core
+   * without it keeps the process.
+   */
+  private async retireIfToolsStale(key: string): Promise<void> {
+    const runtime = this.runtimes.get(key)
+    const token = runtime === undefined || runtime.dead ? undefined : runtimeTokens.get(runtime)
+    const registry = this.ctx.localAgent
+    if (token === undefined || typeof registry.memberToolsStale !== 'function') return
+    const reason = await registry.memberToolsStale(token).catch(() => undefined)
+    if (reason === undefined || this.runtimes.get(key) !== runtime) return
+    this.ctx.logger.warn(`local-agent-claude-code: respawning member ${key}'s claude process before its round: ${reason}`)
+    await this.retireRuntime(key)
+  }
+
+  /**
    * Retire the member's resident runtime so the next round respawns with its
    * new effective model (the model broker's switch path). The caller refuses
    * switches while a round is in flight, so the reclaim never kills a run;
@@ -634,6 +653,7 @@ export class ClaudeLiveDriver {
       this.clearIdleTimer(key)
       member?.release()
     }
+    if (member !== undefined) runtimeTokens.set(runtime, member.token)
     if (signal.aborted || this.disposeController.signal.aborted) {
       await runtime.reclaim()
       if (signal.aborted) throw new Error('subagent-claude: run cancelled locally')
@@ -1244,6 +1264,7 @@ export class ClaudeLiveDriver {
     }
 
     const accepted: Promise<void> = (async () => {
+      await this.retireIfToolsStale(String(childSession.id))
       const rt = await this.ensureRuntime(spec, request.signal)
       runtime = rt
       if (runAbort.signal.aborted) {
@@ -1418,3 +1439,6 @@ export class ClaudeLiveDriver {
     })
   }
 }
+
+/** Each resident runtime's member-bridge token (the round-start tool check asks by it). */
+const runtimeTokens = new WeakMap<ClaudeLiveRuntime, string>()

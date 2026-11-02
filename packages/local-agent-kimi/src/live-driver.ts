@@ -647,6 +647,26 @@ export class KimiAcpLiveDriver {
   }
 
   /**
+   * Round-start self-heal: a resident process whose CLI lacks the member's
+   * mode tools (its bridge served the placeholder, or an empty list while the
+   * mode has tools) is retired here, between rounds, so this round respawns
+   * a fresh `kimi acp` that session/loads the same CLI session and lists
+   * again. kimi ignores `notifications/tools/list_changed`, so a new process
+   * is the only way its tool list refreshes. The registry decides
+   * (`memberToolsStale`); an older core without it keeps the process.
+   */
+  private async retireIfToolsStale(key: string): Promise<void> {
+    const runtime = this.runtimes.get(key)
+    const token = runtime === undefined || runtime.dead ? undefined : runtimeMember.get(runtime)?.token
+    const registry = this.ctx.localAgent
+    if (token === undefined || typeof registry.memberToolsStale !== 'function') return
+    const reason = await registry.memberToolsStale(token).catch(() => undefined)
+    if (reason === undefined || this.runtimes.get(key) !== runtime) return
+    this.ctx.logger.warn(`local-agent-kimi: respawning member ${key}'s kimi process before its round: ${reason}`)
+    await this.retireRuntime(key)
+  }
+
+  /**
    * The model the member's live runtime is bound to, or undefined when the
    * member has no live runtime (or it bound none). The broker compares this
    * against the post-switch effective model to make a same-model set a no-op.
@@ -797,6 +817,8 @@ export class KimiAcpLiveDriver {
    */
   private registerMember(spec: KimiLiveRoundSpec): {
     mcpServers: JsonObject[]
+    /** The process's bridge token (the round-start tool check asks by it). */
+    token: string
     release(): void
   } | undefined {
     const registry = this.ctx.localAgent
@@ -813,6 +835,7 @@ export class KimiAcpLiveDriver {
     const bridge = registry.memberBridgeCommand()
     let released = false
     return {
+      token,
       mcpServers: [{
         name: 'dsh-member',
         command: bridge.command,
@@ -1603,6 +1626,7 @@ export class KimiAcpLiveDriver {
     }
 
     const accepted: Promise<void> = (async () => {
+      await this.retireIfToolsStale(String(childSession.id))
       const rt = await this.ensureRuntime(spec, request.signal)
       runtime = rt
       if (runAbort.signal.aborted) {
@@ -1863,5 +1887,6 @@ export class KimiAcpLiveDriver {
 /** The member handle each runtime carries (for its session declarations). */
 const runtimeMember = new WeakMap<KimiLiveRuntime, {
   mcpServers: JsonObject[]
+  token: string
   release(): void
 } | undefined>()

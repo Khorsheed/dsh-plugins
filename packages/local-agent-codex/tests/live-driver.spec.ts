@@ -1412,6 +1412,34 @@ describe('codex live driver member-aware model', () => {
     expect(m.spawns).toHaveLength(2)
     expect(m.spawns[1]!.spec.argv).toEqual(['codex', 'app-server', '-c', 'model="model-b"', '--stdio'])
   })
+
+  it('respawns a member process whose mode tools went missing before its next round', async () => {
+    const m = mount()
+    const stale = vi.fn(async (_token: string): Promise<string | undefined> => undefined)
+    Object.assign(m.ctx.localAgent, {
+      registerMemberRun: () => 'token-1',
+      unregisterMemberRun: () => {},
+      memberBridgeSocketPath: () => '/home/user/member.sock',
+      memberBridgeCommand: () => ({ command: 'node', args: ['member-bridge.js'] }),
+      memberToolsStale: stale,
+    })
+    const child = Session.create(SessionId('child-tools'))
+    for (const answer of ['一', '二', '三']) {
+      m.queueChild(new FakeAppServer({ turn: () => ({ items: [{ type: 'agentMessage', text: answer, phase: 'final_answer' }] }) }))
+    }
+    for (const round of [1, 2]) {
+      const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+      await run.result
+      await run.dispose()
+      if (round === 2) expect(m.spawns).toHaveLength(1)
+    }
+    expect(stale).toHaveBeenCalledWith('token-1')
+    stale.mockResolvedValue('it listed no mode tools, but mode dsh-gamedev has 4 now')
+    const third = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await third.result).stopReason).toBe('completed')
+    await third.dispose()
+    expect(m.spawns).toHaveLength(2)
+  })
 })
 
 

@@ -293,3 +293,15 @@ describe('MemberChannel delivery chain', () => {
     expect(h.requests).toHaveLength(1)
   })
 })
+
+describe('LocalAgentRegistry.memberToolsStale', () => {
+  it('asks the member channel about a member process, and answers nothing once the channel is gone', async () => {
+    const h = await mountChannel()
+    expect(await h.registry.memberToolsStale(h.tokenA)).toBeUndefined()
+    await h.channel.handleModeTools({ token: h.tokenA, modeTools: { report: { served: 'placeholder', reason: 'socket refused' } } })
+    expect(await h.registry.memberToolsStale(h.tokenA)).toMatch(/placeholder \(socket refused\)/)
+    await h.channel.dispose()
+    expect(await h.registry.memberToolsStale(h.tokenA)).toBeUndefined()
+  })
+})
+
