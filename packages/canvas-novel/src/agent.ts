@@ -28,6 +28,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
+import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type { NovelService } from './store.ts'
 import { NOVEL_SKILL_CONTENT, NOVEL_SKILL_DESCRIPTION, NOVEL_SKILL_NAME } from './skill.ts'
 import { NOVEL_BIND_TOOL, novelBindDefinition, novelToolDefinitions } from './tools.ts'
@@ -75,7 +77,7 @@ interface AgentsSlice {
 }
 
 /** The lifecycle and canvas events the grant listens to (cordis `on`, typed loosely). */
-type Listen = (name: string, listener: (...args: never[]) => unknown) => () => void
+type Listen = (name: string, listener: (...args: never[]) => unknown, options?: { prepend?: boolean }) => () => void
 
 /**
  * The pointer section's placement: after the deliverable-file references
@@ -237,6 +239,32 @@ export function apply(ctx: Context): void {
   const grant = new NovelToolGrant(store, novelToolDefinitions(store))
   ctx.effect(() => () => { grant.dispose() }, 'canvas-novel-agent: per-session novel tools')
   const listen = ctx.on.bind(ctx) as unknown as Listen
+  listen('agent/pre-step', async ({ agent, signal }: { agent: Agent; signal: AbortSignal }, next: () => Promise<PreStepDecision>): Promise<PreStepDecision> => {
+    const decision = await next()
+    if (decision.kind === 'reject' || signal.aborted || decision.messages.length === 0) return decision
+    const text = decision.messages.map(message => message.content.map(block => block.type === 'text' ? block.text : '').join('\n')).join('\n')
+    try {
+      await store.observeChapterFeedbackSubmission(agent.session, text)
+    } catch (error) {
+      ctx.logger.warn('canvas-novel: could not correlate a feedback submission', error)
+    }
+    return decision
+  }, { prepend: true })
+  listen('agent/turn-stopping', async ({ agent, turn, signal }: { agent: Agent; turn: number; signal: AbortSignal }) => {
+    if (signal.aborted) return
+    try {
+      await store.finishChapterFeedbackTurn(agent.session, turn, 'completed')
+    } catch (error) {
+      ctx.logger.warn('canvas-novel: could not finish a feedback batch', error)
+    }
+  })
+  listen('session/event', (session: Session, event: { type?: string; data?: { turn?: number; reason?: { kind?: string } } }) => {
+    const turn = event.data?.turn
+    if (event.type !== 'turn/end' || turn === undefined || event.data?.reason?.kind === 'completed') return
+    void store.finishChapterFeedbackTurn(session, turn, 'interrupted').catch((error: unknown) => {
+      ctx.logger.warn('canvas-novel: could not release an interrupted feedback batch', error)
+    })
+  })
   listen('agent/created', async ({ agent }: { agent: NovelAgent }) => { await grant.track(agent) })
   listen('agent/disposed', ({ agent }: { agent: NovelAgent }) => { grant.forget(agent) })
   // A room member's CLI reaches this mode through a model-less stand-in that

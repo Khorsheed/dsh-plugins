@@ -17,6 +17,10 @@ import type {
   LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelWorldMapResult, NovelTimelineResult, NovelCodexResult, NovelPinsRequest, NovelIdeasResult, NovelIdeaRequest, NovelDeleteRequest, NovelDeletePreviewResult, NovelAlignResult, NovelAlignAckRequest, NovelBodyEditRequest, NovelBodyEditResult, NovelOwnChapterRequest, NovelImportChapterRequest, NovelImportChapterResult, NovelDirectorySelection, NovelDirectoryImportResult, NovelPendingResult, NovelPlanEditRequest, NovelRecentResult, NovelPlanEditResult, NovelStarRequest, NovelStateRequest,
   NovelWorkRequest, StoryLogResult,
 } from '../types.ts'
+import type {
+  ChapterFeedbackAddRequest, ChapterFeedbackBatchRequest, ChapterFeedbackCandidateRequest, ChapterFeedbackDeleteRequest,
+  ChapterFeedbackMutationResult, ChapterFeedbackPrepareResult, ChapterFeedbackRestoreRequest, ChapterFeedbackResult,
+} from '../chapter-feedback.ts'
 import type {} from './locales.ts'
 
 /** The canvas's navigation face, as far as the genre uses it. */
@@ -92,6 +96,18 @@ export interface NovelRemote {
   deleteNode: (sessionId: SessionId, request: NovelDeleteRequest) => Promise<RemoteResult<NovelGestureResult>>
   align: (request: NovelWorkRequest) => Promise<RemoteResult<NovelAlignResult>>
   alignAck: (sessionId: SessionId, request: NovelAlignAckRequest) => Promise<RemoteResult<NovelGestureResult>>
+  chapterFeedback: (request: NovelChapterRequest) => Promise<RemoteResult<ChapterFeedbackResult>>
+  addChapterFeedback: (sessionId: SessionId, request: ChapterFeedbackAddRequest) => Promise<RemoteResult<ChapterFeedbackMutationResult>>
+  deleteChapterFeedback: (sessionId: SessionId, request: ChapterFeedbackDeleteRequest) => Promise<RemoteResult<ChapterFeedbackMutationResult>>
+  restoreChapterFeedback: (sessionId: SessionId, request: ChapterFeedbackRestoreRequest) => Promise<RemoteResult<ChapterFeedbackMutationResult>>
+  prepareChapterFeedback: (sessionId: SessionId, request: NovelChapterRequest) => Promise<RemoteResult<ChapterFeedbackPrepareResult>>
+  recallChapterFeedback: (sessionId: SessionId, request: ChapterFeedbackBatchRequest) => Promise<RemoteResult<ChapterFeedbackMutationResult>>
+  submitChapterFeedbackCandidate: (sessionId: SessionId, request: ChapterFeedbackCandidateRequest) => Promise<RemoteResult<ChapterFeedbackMutationResult>>
+}
+
+export interface ConversationDraftReceipt {
+  readonly before: string
+  readonly after: string
 }
 
 /** What every surface is injected with. */
@@ -106,6 +122,10 @@ export interface NovelFace {
    * when the composition has no conversation input.
    */
   readonly draftToConversation?: (sessionId: SessionId, text: string) => boolean
+  readonly fillConversation?: (sessionId: SessionId, text: string) => ConversationDraftReceipt | false
+  readonly restoreConversationDraft?: (sessionId: SessionId, receipt: ConversationDraftReceipt) => boolean
+  readonly watchChapterFeedback?: (sessionId: SessionId, canvasId: string, batchId: string) => (() => void) | undefined
+  readonly registerChapterComment?: (canvasId: string, n: number, sessionId: SessionId, open: () => void) => () => void
   /**
    * Send a line as the person's message when the input is empty; with a
    * draft in it, append instead and send nothing ('drafted'). False when the

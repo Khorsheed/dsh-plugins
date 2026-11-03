@@ -34,6 +34,10 @@ import {
   type NovelWorkRequest, type NovelWorldMapResult, type NovelCodexResult, type CodexSetting, type NovelTimelineResult, type TimelineEventView, type TimelineFutureView,
   type NovelPinsRequest, type NovelIdeasResult, type NovelIdeaRequest, type NovelDeleteRequest, type NovelDeletePreviewResult, type DeleteFixView, type NovelAlignResult, type NovelAlignAckRequest, type NovelBodyEditRequest, type NovelBodyEditResult, type NovelOwnChapterRequest, type NovelImportChapterRequest, type NovelImportChapterResult, type NovelDirectorySelection, type NovelDirectoryImportResult, type OutlineCore, type WorldNode, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
 } from './types.ts'
+import type {
+  ChapterFeedbackAddRequest, ChapterFeedbackBatchRequest, ChapterFeedbackCandidateRequest, ChapterFeedbackDeleteRequest,
+  ChapterFeedbackMutationResult, ChapterFeedbackPrepareResult, ChapterFeedbackRestoreRequest, ChapterFeedbackResult,
+} from './chapter-feedback.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -577,6 +581,57 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     const fixed = (outcome.impact?.auto ?? []).map(fix => fix.id)
     if (fixed.length > 0) await this.core.alignAck({ workId: request.canvasId, ids: fixed }, session)
     return { ok: true }
+  }
+
+  @Remote('chapterFeedback')
+  async chapterFeedback(request: NovelChapterRequest): Promise<ChapterFeedbackResult> {
+    return this.core.chapterFeedback({ workId: request.canvasId, n: request.n })
+  }
+
+  @Remote('addChapterFeedback')
+  async addChapterFeedback(sessionId: SessionId, request: ChapterFeedbackAddRequest): Promise<ChapterFeedbackMutationResult> {
+    return this.core.addChapterFeedback({
+      workId: request.canvasId,
+      idea: {
+        chapter: request.n,
+        text: request.text,
+        ...(request.quote === undefined ? {} : { quote: request.quote }),
+        ...(request.start === undefined ? {} : { start: request.start }),
+        ...(request.end === undefined ? {} : { end: request.end }),
+        ...(request.before === undefined ? {} : { before: request.before }),
+        ...(request.after === undefined ? {} : { after: request.after }),
+        baseBodyHash: request.baseBodyHash,
+      },
+    }, await panelSession(this.ctx, sessionId))
+  }
+
+  @Remote('deleteChapterFeedback')
+  async deleteChapterFeedback(sessionId: SessionId, request: ChapterFeedbackDeleteRequest): Promise<ChapterFeedbackMutationResult> {
+    const outcome = await this.core.deleteChapterFeedback({ workId: request.canvasId, n: request.n, id: request.id }, await panelSession(this.ctx, sessionId))
+    return outcome.ok ? { ok: true } : { ok: false, ...(outcome.error === undefined ? {} : { error: outcome.error }) }
+  }
+
+  @Remote('restoreChapterFeedback')
+  async restoreChapterFeedback(sessionId: SessionId, request: ChapterFeedbackRestoreRequest): Promise<ChapterFeedbackMutationResult> {
+    const outcome = await this.core.restoreChapterFeedback({ workId: request.canvasId, idea: request.idea }, await panelSession(this.ctx, sessionId))
+    return outcome.ok ? { ok: true } : { ok: false, ...(outcome.error === undefined ? {} : { error: outcome.error }) }
+  }
+
+  @Remote('prepareChapterFeedback')
+  async prepareChapterFeedback(sessionId: SessionId, request: NovelChapterRequest): Promise<ChapterFeedbackPrepareResult> {
+    return this.core.prepareChapterFeedback({ workId: request.canvasId, n: request.n }, await panelSession(this.ctx, sessionId))
+  }
+
+  @Remote('recallChapterFeedback')
+  async recallChapterFeedback(sessionId: SessionId, request: ChapterFeedbackBatchRequest): Promise<ChapterFeedbackMutationResult> {
+    const outcome = await this.core.recallChapterFeedback({ workId: request.canvasId, n: request.n, batchId: request.batchId }, await panelSession(this.ctx, sessionId))
+    return outcome.ok ? { ok: true } : { ok: false, ...(outcome.error === undefined ? {} : { error: outcome.error }) }
+  }
+
+  @Remote('submitChapterFeedbackCandidate')
+  async submitChapterFeedbackCandidate(sessionId: SessionId, request: ChapterFeedbackCandidateRequest): Promise<ChapterFeedbackMutationResult> {
+    const outcome = await this.core.submitChapterFeedbackCandidate({ workId: request.canvasId, batchId: request.batchId, text: request.text }, await panelSession(this.ctx, sessionId))
+    return outcome.ok ? { ok: true } : { ok: false, ...(outcome.error === undefined ? {} : { error: outcome.error }) }
   }
 
   /** One change to the ideas: add, delete, bind or unbind. */

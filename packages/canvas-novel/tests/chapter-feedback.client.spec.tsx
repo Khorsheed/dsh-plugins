@@ -1,0 +1,89 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { ChapterReader as ChapterBook } from '../src/client/ChapterReader.tsx'
+import type { NovelRemote, NovelSurfaceProps } from '../src/client/contract.ts'
+import { zh } from '../src/client/locales.ts'
+import { NOVEL_GENRE_ID, type ChapterFeedbackBatch, type ChapterFeedbackIdea } from '../src/index.ts'
+
+const SESSION = 's-feedback' as SessionId
+const t = ((key: keyof typeof zh, params?: Record<string, string | number>) => zh[key].replace(/\{(\w+)\}/g, (match, name) => String(params?.[name] ?? match))) as NovelSurfaceProps['t']
+const ok = <T,>(value: T) => Promise.resolve({ ok: true as const, value })
+const idea: ChapterFeedbackIdea = { id: 'f1', chapter: 1, quote: '他推开门。', start: 0, end: 5, baseBodyHash: '', text: '补一拍犹豫。', createdAt: 'now' }
+
+afterEach(cleanup)
+
+function fixture(feedback: { ideas?: ChapterFeedbackIdea[]; batches?: ChapterFeedbackBatch[] } = {}) {
+  const chapter = { n: 1, seq: 1, title: '门与假门', file: '第1章.md', phase: 'extracted' as const, sessionIds: [], createdAt: 'now', updatedAt: 'now' }
+  const remote = {
+    chapters: vi.fn(() => ok({ ok: true, chapters: [{ chapter, phase: 'extracted' }], pending: {} })),
+    chapter: vi.fn(({ n }: { n: number }) => ok(n === 1
+      ? { ok: true, chapter, phase: 'extracted' as const, body: '# 门\n他推开门。', pending: 0, names: {} }
+      : { ok: false, error: 'missing' as const, pending: 0, names: {} })),
+    pending: vi.fn(() => ok({ ok: true, items: [] })),
+    chapterFeedback: vi.fn(() => ok({ ok: true, ideas: feedback.ideas ?? [], batches: feedback.batches ?? [] })),
+    addChapterFeedback: vi.fn(() => ok({ ok: true })),
+    deleteChapterFeedback: vi.fn(() => ok({ ok: true })),
+    restoreChapterFeedback: vi.fn(() => ok({ ok: true })),
+    prepareChapterFeedback: vi.fn(() => ok({ ok: true, batchId: 'fb1', text: '原文：“他推开门。”\n想法：补一拍犹豫。' })),
+    recallChapterFeedback: vi.fn(() => ok({ ok: true })),
+    submitChapterFeedbackCandidate: vi.fn(() => ok({ ok: true })),
+  } as unknown as NovelRemote & Record<string, ReturnType<typeof vi.fn>>
+  const navigate = { openCard: vi.fn(), openPage: vi.fn(), openManuscripts: vi.fn(), refresh: vi.fn() }
+  const props = {
+    canvasId: 'canvas_novel', board: { id: 'canvas_novel', title: '潜梦者', genre: { id: NOVEL_GENRE_ID } },
+    rev: 0, navigate, sessionId: SESSION, remote: () => remote, t,
+    n: 1, onGo: vi.fn(), onToc: vi.fn(), editing: false, onEditingChange: vi.fn(),
+  }
+  return { remote, props }
+}
+
+describe('chapter feedback surface', () => {
+  it('records a whole-chapter comment without filling or sending a conversation', async () => {
+    const { remote, props } = fixture()
+    const fillConversation = vi.fn()
+    render(<ChapterBook {...props} fillConversation={fillConversation} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['feedback.addGeneral'] }))
+    fireEvent.change(screen.getByPlaceholderText(zh['feedback.commentPlaceholder']), { target: { value: '结尾再含蓄一点。' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['feedback.save'] }))
+    await waitFor(() => {
+      expect(remote.addChapterFeedback).toHaveBeenCalledWith(SESSION, expect.objectContaining({ canvasId: 'canvas_novel', n: 1, text: '结尾再含蓄一点。' }))
+    })
+    expect(fillConversation).not.toHaveBeenCalled()
+    expect(remote.submitChapterFeedbackCandidate).not.toHaveBeenCalled()
+  })
+
+  it('fills the host composer and watches the final draft without submitting', async () => {
+    const { remote, props } = fixture({ ideas: [idea] })
+    const fillConversation = vi.fn(() => ({ before: '已有内容', after: '已有内容\n\n完整请求' }))
+    const watchChapterFeedback = vi.fn(() => vi.fn())
+    render(<ChapterBook {...props} fillConversation={fillConversation} watchChapterFeedback={watchChapterFeedback} />)
+    fireEvent.click(await screen.findByRole('button', { name: '把 1 条想法填入对话' }))
+    await waitFor(() => {
+      expect(fillConversation).toHaveBeenCalledWith(SESSION, '原文：“他推开门。”\n想法：补一拍犹豫。')
+      expect(watchChapterFeedback).toHaveBeenCalledWith(SESSION, 'canvas_novel', 'fb1')
+    })
+    expect(remote.recallChapterFeedback).not.toHaveBeenCalled()
+    expect(remote.submitChapterFeedbackCandidate).not.toHaveBeenCalled()
+  })
+
+  it('rolls the batch back when this session has no composer', async () => {
+    const { remote, props } = fixture({ ideas: [idea] })
+    render(<ChapterBook {...props} fillConversation={() => false} />)
+    fireEvent.click(await screen.findByRole('button', { name: '把 1 条想法填入对话' }))
+    await waitFor(() => { expect(remote.recallChapterFeedback).toHaveBeenCalledWith(SESSION, { canvasId: 'canvas_novel', n: 1, batchId: 'fb1' }) })
+    expect(await screen.findByText(zh['feedback.noConversation'])).toBeTruthy()
+  })
+
+  it('keeps the archived original and actual submitted request available', async () => {
+    const batch: ChapterFeedbackBatch = {
+      id: 'fb1', sessionId: SESSION, canvasId: 'canvas_novel', chapter: 1, chapterTitle: '门与假门', ideas: [idea], baseBodyHash: '',
+      status: 'archived', createdAt: 'now', submittedText: '用户编辑后的完整请求', completedAt: '2026-11-03T01:00:00.000Z',
+    }
+    const { props } = fixture({ batches: [batch] })
+    render(<ChapterBook {...props} />)
+    expect((await screen.findAllByText(/他推开门。/)).length).toBeGreaterThan(0)
+    expect(screen.getByText('用户编辑后的完整请求')).toBeTruthy()
+  })
+})

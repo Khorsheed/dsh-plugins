@@ -39,6 +39,7 @@ export type { NovelRemoteConfig } from './remote.ts'
 export { renderWriteBrief, renderPlanBrief, renderExtractBrief, estimateTokens, BRIEF_BUDGETS } from './brief.ts'
 export type { BriefData } from './brief.ts'
 export * from './types.ts'
+export * from './chapter-feedback.ts'
 export { NOVEL_GENRE, NOVEL_ROLES, NOVEL_AGENT_ROW, canvasBoardOf } from './genre.ts'
 export type { CanvasBoardSlice, NovelBoardView, NovelCardView, NovelCategorySeed, NovelGenreDefinition } from './genre.ts'
 
