@@ -19,6 +19,8 @@ import type { NovelSurfaceProps } from './contract.ts'
 import { PendingList } from './PendingList.tsx'
 import { PlanBlock } from './PlanBlock.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
+import { chapterFeedbackBlocks, locateChapterFeedback } from '../chapter-feedback.ts'
+import { ChapterFeedback, type ChapterFeedbackMark } from './ChapterFeedback.tsx'
 import css from './novel.module.css'
 
 /** The plan fields an edit receipt may name (text-forms.ts's PLAN_FIELDS, host-side). */
@@ -185,7 +187,11 @@ export function ChapterReader(props: NovelSurfaceProps & {
             onContinue={() => { if (sessionId !== undefined) props.sendToConversation?.(sessionId, t('edit.continueAsk', { n })) }}
             t={t}
           >
-            {text => <Prose view={{ ...view, body: text }} phase={phase} t={t} />}
+            {text => (
+              <ChapterFeedback {...props} n={n} chapterTitle={bareTitle(n, chapter.title)} body={text} bodyHash={view.bodyHash} enabled={mode === 'preview'}>
+                {ideas => <Prose view={{ ...view, body: text }} phase={phase} t={t} ideas={ideas} source={`${board.title ?? ''} · ${t('reader.kicker', { n })}`} reference={`novel:${canvasId}:${n}`} />}
+              </ChapterFeedback>
+            )}
           </BodyEditor>
           <div className={css.end}>
             <span className={css.orn}>{t('reader.end')}</span>
@@ -389,21 +395,49 @@ function Progress({ n, phase, pending, writable, t }: {
 }
 
 /** The text as a reading column; markdown headings stay headings, the rest are paragraphs. */
-function Prose({ view, phase, t }: { readonly view: NovelChapterResult; readonly phase: EffectiveChapterPhase; readonly t: TranslateNS<'novel'> }): ReactNode {
+function Prose({ view, phase, t, ideas, source, reference }: {
+  readonly view: NovelChapterResult
+  readonly phase: EffectiveChapterPhase
+  readonly t: TranslateNS<'novel'>
+  readonly ideas: readonly ChapterFeedbackMark[]
+  readonly source: string
+  readonly reference: string
+}): ReactNode {
   const body = view.body ?? ''
   if (body.trim() === '') {
     return phase === 'fileMissing'
       ? <div className={css.warn}>{t('chapter.fileMissing', { file: view.file ?? '' })}</div>
       : <div className={css.noBody}>{t(view.chapter?.planConfirmedAt === undefined && view.chapter?.plan !== undefined ? 'chapter.noBodyConfirm' : 'chapter.noBody')}</div>
   }
-  const lines = body.split('\n').map(line => line.trim()).filter(line => line !== '')
-  // The first heading usually repeats the chapter title the page already shows.
-  const shown = lines[0]?.startsWith('#') ? lines.slice(1) : lines
+  const blocks = chapterFeedbackBlocks(body)
+  const shown = blocks[0]?.heading === true ? blocks.slice(1) : blocks
   return (
-    <article className={css.prose}>
-      {shown.map((line, index) => line.startsWith('#')
-        ? <h4 key={index} className={css.proseHeading}>{line.replace(/^#+\s*/, '')}</h4>
-        : <p key={index}>{line}</p>)}
+    <article className={css.prose} data-novel-prose="" data-quote-source={source} data-quote-ref={reference}>
+      {shown.map(block => {
+        const text = block.heading ? block.text.replace(/^#+\s*/, '') : block.text
+        const start = block.start + block.text.length - text.length
+        const content = highlightedText(body, start, start + text.length, ideas)
+        return block.heading
+          ? <h4 key={block.start} className={css.proseHeading} data-feedback-start={start} data-feedback-end={start + text.length}>{content}</h4>
+          : <p key={block.start} data-feedback-start={start} data-feedback-end={start + text.length}>{content}</p>
+      })}
     </article>
   )
+}
+
+function highlightedText(body: string, start: number, end: number, ideas: readonly ChapterFeedbackMark[]): ReactNode {
+  const ranges = ideas.flatMap(idea => {
+    const found = locateChapterFeedback(idea, body)
+    return found === undefined || found.end <= start || found.start >= end ? [] : [{ idea, start: Math.max(start, found.start), end: Math.min(end, found.end) }]
+  })
+  if (ranges.length === 0) return body.slice(start, end)
+  const boundaries = [...new Set([start, end, ...ranges.flatMap(range => [range.start, range.end])])].sort((a, b) => a - b)
+  return boundaries.slice(1).map((boundary, index) => {
+    const from = boundaries[index]!
+    const range = ranges.find(row => row.start <= from && row.end >= boundary)
+    const text = body.slice(from, boundary)
+    return range === undefined
+      ? <span key={from}>{text}</span>
+      : <mark key={from} data-idea-id={range.idea.id} className={range.idea.archived === true ? css.feedbackMarkArchived : css.feedbackMark}>{text}</mark>
+  })
 }

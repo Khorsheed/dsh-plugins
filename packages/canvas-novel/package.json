@@ -155,10 +155,12 @@
     },
     "compat": {
       "minHost": "0.2.0-rc.2",
-      "verifiedHost": "0.2.1-rc.5"
+      "verifiedHost": "0.2.1-rc.5",
+      "notes": "Chapter comments use the optional quote plugin's selection menu when present; without it the chapter provides its own recording entry. Batches archive only after the actual request is sent, the same chapter is written, and the turn ends normally."
     },
     "references": [
-      "@khorsheed/dsh-canvas"
+      "@khorsheed/dsh-canvas",
+      "@khorsheed/dsh-quote"
     ]
   }
 }

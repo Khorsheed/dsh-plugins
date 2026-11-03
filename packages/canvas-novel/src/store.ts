@@ -70,6 +70,11 @@ import {
 import { changedPlanFields, type PlanField } from './text-forms.ts'
 import { buildGraph, deleteImpact, type BookGraph, type DeleteImpact, type GraphInput } from './graph.ts'
 import { ackNodes, alignChanges, ALIGN_VERSION, baselineOf, fingerprint, normalizeAlign, type AlignAuto, type AlignDoc, type AlignItem, type NodeNow } from './align.ts'
+import {
+  activeChapterFeedback, chapterFeedbackBatches, emptyChapterFeedback, formatChapterFeedbackRequest, normalizeChapterFeedback,
+  MAX_FEEDBACK_QUOTE, MAX_FEEDBACK_TEXT,
+  type ChapterFeedbackBatch, type ChapterFeedbackDoc, type ChapterFeedbackIdea, type ChapterFeedbackPrepareResult, type ChapterFeedbackResult,
+} from './chapter-feedback.ts'
 
 /** The package's npm name, stamped on store errors. */
 const PACKAGE_NAME = '@khorsheed/dsh-canvas-novel'
@@ -92,6 +97,7 @@ export const WORK_FILES = {
   ideas: 'ideas.json',
   minds: 'minds.jsonl',
   align: 'align.json',
+  chapterFeedback: 'chapter-feedback.json',
 } as const
 
 /**
@@ -412,6 +418,18 @@ export class NovelService {
 
   /** Set by {@link dispose} (explicit, or the borrowed Context's teardown); every public verb refuses afterwards. */
   private disposed = false
+
+  private readonly feedbackCandidates = new Map<string, string>()
+  private readonly feedbackTurnTexts = new Map<string, string>()
+  private readonly feedbackTurnOutcomes = new Map<string, 'completed' | 'interrupted'>()
+
+  private rememberFeedbackTurn<T>(map: Map<string, T>, key: string, value: T): void {
+    map.delete(key)
+    map.set(key, value)
+    if (map.size <= 100) return
+    const oldest = map.keys().next().value
+    if (oldest !== undefined) map.delete(oldest)
+  }
 
   /**
    * @param ctx - host context carrying the mounted filesystem.
@@ -1385,6 +1403,16 @@ export class NovelService {
       }
     }
 
+    let feedbackBefore = ''
+    let feedbackTurn: number | undefined
+    if (content !== undefined && request.n !== undefined && request.byPerson !== true) {
+      const row = (await this.readChapters(workId)).find(candidate => candidate.n === request.n)
+      if (row !== undefined) feedbackBefore = await this.readChapterBody(meta, row)
+      feedbackTurn = this.feedbackTurn(session)
+      const guard = await this.guardChapterFeedbackWrite(workId, request.n, session, feedbackBefore)
+      if (!guard.ok) return { ok: false, ...(guard.error === undefined ? {} : { error: guard.error }) }
+    }
+
     // The body lands before the registration (F1-2): a write that the fence
     // refuses means NO chapter row — the 空槽登记 bug class is closed by
     // construction.
@@ -1487,7 +1515,260 @@ export class NovelService {
       },
     )
     if (!outcome.ok || chapter === undefined) return { ok: false, error: outcome.ok ? 'io' : outcome.error }
+    if (content !== undefined && request.n !== undefined && feedbackTurn !== undefined) {
+      try {
+        await this.recordChapterFeedbackWrite(workId, request.n, session, feedbackTurn, feedbackBefore, content)
+      } catch (error) {
+        this.ctx.logger.warn('canvas-novel: could not record the chapter feedback write', error)
+      }
+    }
     return { ok: true, chapter, ...(attachedWorkspace === undefined ? {} : { attachedWorkspace }) }
+  }
+
+  /* ------------------------------------------------------ chapter feedback */
+
+  private async readFeedback(workId: string): Promise<ChapterFeedbackDoc> {
+    const read = await this.readJson(await this.fileTarget(workId, WORK_FILES.chapterFeedback), normalizeChapterFeedback)
+    return typeof read === 'object' ? read.data : emptyChapterFeedback()
+  }
+
+  private async mutateFeedback(
+    workId: string,
+    session: Session | undefined,
+    change: (doc: ChapterFeedbackDoc, now: string) => ChapterFeedbackDoc | NovelError,
+  ): Promise<Mutation<ChapterFeedbackDoc>> {
+    return this.mutateJson(await this.fileTarget(workId, WORK_FILES.chapterFeedback), session, normalizeChapterFeedback, emptyChapterFeedback, change)
+  }
+
+  async chapterFeedback(request: { readonly workId: string; readonly n: number }): Promise<ChapterFeedbackResult> {
+    this.assertAlive('chapterFeedback')
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'invalid-name', ideas: [], batches: [] }
+    const doc = await this.readFeedback(workId)
+    return {
+      ok: true,
+      ideas: activeChapterFeedback(doc, request.n),
+      batches: chapterFeedbackBatches(doc, request.n).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    }
+  }
+
+  async addChapterFeedback(
+    request: { readonly workId: string; readonly idea: Omit<ChapterFeedbackIdea, 'id' | 'createdAt'> },
+    session: Session | undefined,
+  ): Promise<{ readonly ok: boolean; readonly error?: string; readonly idea?: ChapterFeedbackIdea }> {
+    this.assertAlive('addChapterFeedback')
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined || request.idea.text.trim() === '' || request.idea.text.length > MAX_FEEDBACK_TEXT || (request.idea.quote?.length ?? 0) > MAX_FEEDBACK_QUOTE) return { ok: false, error: 'invalid-name' }
+    let added: ChapterFeedbackIdea | undefined
+    const outcome = await this.mutateFeedback(workId, session, (doc, now) => {
+      added = { ...request.idea, id: `f${doc.nextIdea}`, createdAt: now }
+      return { ...doc, ideas: [...doc.ideas, added], nextIdea: doc.nextIdea + 1 }
+    })
+    return outcome.ok ? { ok: true, ...(added === undefined ? {} : { idea: added }) } : { ok: false, error: outcome.error }
+  }
+
+  async restoreChapterFeedback(request: { readonly workId: string; readonly idea: ChapterFeedbackIdea }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: string }> {
+    this.assertAlive('restoreChapterFeedback')
+    const workId = normalizeWorkId(request.workId)
+    const idea = normalizeChapterFeedback({ version: 1, ideas: [request.idea], batches: [], nextIdea: 1, nextBatch: 1 })?.ideas[0]
+    if (workId === undefined || idea === undefined) return { ok: false, error: 'invalid-name' }
+    const outcome = await this.mutateFeedback(workId, session, doc => {
+      if (doc.ideas.some(row => row.id === idea.id) || doc.batches.some(batch => batch.ideas.some(row => row.id === idea.id))) return 'invalid-name'
+      return { ...doc, ideas: [...doc.ideas, idea] }
+    })
+    return outcome.ok ? { ok: true } : { ok: false, error: outcome.error }
+  }
+
+  async deleteChapterFeedback(request: { readonly workId: string; readonly n: number; readonly id: string }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: string }> {
+    this.assertAlive('deleteChapterFeedback')
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    const outcome = await this.mutateFeedback(workId, session, doc => {
+      if (!activeChapterFeedback(doc, request.n).some(idea => idea.id === request.id)) return 'missing'
+      return { ...doc, ideas: doc.ideas.filter(idea => idea.id !== request.id) }
+    })
+    return outcome.ok ? { ok: true } : { ok: false, error: outcome.error }
+  }
+
+  async prepareChapterFeedback(request: { readonly workId: string; readonly n: number }, session: Session | undefined): Promise<ChapterFeedbackPrepareResult> {
+    this.assertAlive('prepareChapterFeedback')
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined || session === undefined) return { ok: false, error: 'invalid-name' }
+    const [read, meta] = await Promise.all([this.readChapter({ workId, n: request.n }), this.readWorkMeta(workId)])
+    if (!read.ok || read.chapter === undefined || meta === undefined) return { ok: false, error: read.error ?? 'missing' }
+    const baseBodyHash = bodyFingerprint(read.body ?? '') ?? ''
+    let prepared: ChapterFeedbackBatch | undefined
+    let failure: string | undefined
+    const outcome = await this.mutateFeedback(workId, session, (doc, now) => {
+      if (doc.batches.some(batch => batch.sessionId === String(session.id) && batch.chapter === request.n && batch.status !== 'archived')) {
+        failure = 'batch-open'
+        return 'invalid-name'
+      }
+      const ideas = activeChapterFeedback(doc, request.n)
+      if (ideas.length === 0) {
+        failure = 'empty'
+        return 'invalid-name'
+      }
+      prepared = {
+        id: `fb${doc.nextBatch}`,
+        sessionId: String(session.id),
+        canvasId: workId,
+        chapter: request.n,
+        chapterTitle: read.chapter!.title.replace(new RegExp(`^第\\s*${request.n}\\s*章[\\s·:：]*`), '').trim() || read.chapter!.title,
+        ideas,
+        baseBodyHash,
+        status: 'drafted',
+        createdAt: now,
+      }
+      return { ...doc, batches: [...doc.batches, prepared], nextBatch: doc.nextBatch + 1 }
+    })
+    if (!outcome.ok || prepared === undefined) return { ok: false, error: failure ?? (outcome.ok ? 'io' : outcome.error) }
+    return { ok: true, batchId: prepared.id, text: formatChapterFeedbackRequest(meta.title, prepared.chapterTitle, request.n, prepared.ideas) }
+  }
+
+  async recallChapterFeedback(request: { readonly workId: string; readonly n: number; readonly batchId: string }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: string }> {
+    this.assertAlive('recallChapterFeedback')
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined || session === undefined) return { ok: false, error: 'invalid-name' }
+    let failure: string | undefined
+    const outcome = await this.mutateFeedback(workId, session, doc => {
+      const batch = doc.batches.find(row => row.id === request.batchId && row.sessionId === String(session.id) && row.chapter === request.n && row.status !== 'archived')
+      if (batch === undefined) {
+        failure = 'missing'
+        return 'missing'
+      }
+      if (batch.write !== undefined && batch.status !== 'drafted') {
+        failure = 'already-written'
+        return 'invalid-name'
+      }
+      this.feedbackCandidates.delete(batch.id)
+      return { ...doc, batches: doc.batches.filter(row => row.id !== batch.id) }
+    })
+    return outcome.ok ? { ok: true } : { ok: false, error: failure ?? outcome.error }
+  }
+
+  private feedbackTurn(session: unknown): number | undefined {
+    try {
+      const events = (session as { snapshotEvents?: () => readonly { type: string; turn?: unknown; data?: { turn?: unknown } }[] } | undefined)?.snapshotEvents?.()
+      if (events === undefined) return undefined
+      for (let index = events.length - 1; index >= 0; index -= 1) {
+        const event = events[index]!
+        if (event.type !== 'turn/start') continue
+        const turn = event.data?.turn ?? event.turn
+        if (typeof turn === 'number' && Number.isInteger(turn) && turn > 0) return turn
+      }
+    } catch { /* A session without an event log cannot correlate a batch. */ }
+    return undefined
+  }
+
+  private async matchChapterFeedback(workId: string, session: Session): Promise<void> {
+    const turn = this.feedbackTurn(session)
+    if (turn === undefined) return
+    const key = `${String(session.id)}:${turn}`
+    const turnText = this.feedbackTurnTexts.get(key)
+    if (turnText === undefined) return
+    const doc = await this.readFeedback(workId)
+    const candidates = doc.batches.filter(batch => batch.sessionId === String(session.id) && batch.status === 'drafted' && this.feedbackCandidates.get(batch.id)?.trim() === turnText.trim())
+    for (const batch of candidates) {
+      const submittedText = this.feedbackCandidates.get(batch.id)!
+      await this.mutateFeedback(workId, session, (current, now) => ({
+        ...current,
+        batches: current.batches.map(row => {
+          if (row.id !== batch.id || row.status !== 'drafted') return row
+          const next = { ...row, status: row.write?.turn === turn ? 'written' as const : 'sent' as const, turn, submittedText, submittedAt: now }
+          delete next.notice
+          return next
+        }),
+      }))
+    }
+    const outcome = this.feedbackTurnOutcomes.get(key)
+    if (candidates.length > 0 && outcome !== undefined) await this.finishChapterFeedbackTurn(session, turn, outcome)
+  }
+
+  async observeChapterFeedbackSubmission(session: Session, text: string): Promise<void> {
+    const turn = this.feedbackTurn(session)
+    if (turn === undefined || text.trim() === '') return
+    this.rememberFeedbackTurn(this.feedbackTurnTexts, `${String(session.id)}:${turn}`, text)
+    const work = await this.boundWork(String(session.id))
+    if (work !== undefined) await this.matchChapterFeedback(work.id, session)
+  }
+
+  async submitChapterFeedbackCandidate(request: { readonly workId: string; readonly batchId: string; readonly text: string }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: string }> {
+    this.assertAlive('submitChapterFeedbackCandidate')
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined || session === undefined || request.text.trim() === '') return { ok: false, error: 'invalid-name' }
+    const doc = await this.readFeedback(workId)
+    const batch = doc.batches.find(row => row.id === request.batchId && row.sessionId === String(session.id) && row.status === 'drafted')
+    if (batch === undefined) return { ok: false, error: 'missing' }
+    this.feedbackCandidates.set(batch.id, request.text)
+    await this.matchChapterFeedback(workId, session)
+    return { ok: true }
+  }
+
+  private async guardChapterFeedbackWrite(workId: string, n: number, session: Session | undefined, before: string): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    if (session === undefined) return { ok: true }
+    const turn = this.feedbackTurn(session)
+    if (turn === undefined) return { ok: true }
+    await this.matchChapterFeedback(workId, session)
+    const doc = await this.readFeedback(workId)
+    const batch = doc.batches.find(row => row.sessionId === String(session.id) && row.chapter === n && (row.status === 'sent' || row.status === 'written') && row.turn === turn)
+    if (batch === undefined) return { ok: true }
+    const expected = batch.write?.bodyHash ?? batch.baseBodyHash
+    if ((bodyFingerprint(before) ?? '') === expected) return { ok: true }
+    await this.mutateFeedback(workId, session, current => ({
+      ...current,
+      batches: current.batches.map(row => row.id === batch.id ? { ...row, notice: 'stale' as const } : row),
+    }))
+    return { ok: false, error: 'stale' }
+  }
+
+  private async recordChapterFeedbackWrite(workId: string, n: number, session: Session | undefined, turn: number, before: string, content: string): Promise<void> {
+    if (session === undefined || before === content) return
+    const doc = await this.readFeedback(workId)
+    const bodyHash = bodyFingerprint(content) ?? ''
+    for (const batch of doc.batches.filter(row => row.sessionId === String(session.id) && row.chapter === n && row.status !== 'archived')) {
+      if (batch.status !== 'drafted' && batch.turn !== turn) continue
+      await this.mutateFeedback(workId, session, (current, now) => ({
+        ...current,
+        batches: current.batches.map(row => {
+          if (row.id !== batch.id || row.status === 'archived') return row
+          const next = {
+            ...row,
+            status: row.status === 'drafted' ? 'drafted' as const : 'written' as const,
+            write: { turn, at: now, bodyHash, words: content.replace(/\s+/g, '').length },
+          }
+          delete next.notice
+          return next
+        }),
+      }))
+    }
+  }
+
+  async finishChapterFeedbackTurn(session: Session, turn: number, outcome: 'completed' | 'interrupted'): Promise<void> {
+    this.rememberFeedbackTurn(this.feedbackTurnOutcomes, `${String(session.id)}:${turn}`, outcome)
+    const work = await this.boundWork(String(session.id))
+    if (work === undefined) return
+    const workId = normalizeWorkId(work.id)
+    if (workId === undefined) return
+    const doc = await this.readFeedback(workId)
+    const touched = doc.batches.filter(batch => batch.sessionId === String(session.id) && batch.turn === turn && batch.status !== 'archived')
+    if (touched.length === 0) return
+    await this.mutateFeedback(workId, session, (current, now) => ({
+      ...current,
+      batches: current.batches.map(batch => {
+        if (!touched.some(row => row.id === batch.id)) return batch
+        this.feedbackCandidates.delete(batch.id)
+        if (outcome === 'completed' && batch.status === 'written' && batch.write?.turn === turn) {
+          const next = { ...batch, status: 'archived' as const, completedAt: now }
+          delete next.notice
+          return next
+        }
+        if (outcome === 'completed') return batch.notice === 'stale' ? batch : { ...batch, notice: 'no-write' as const }
+        const next = { ...batch, status: 'sent' as const, notice: 'interrupted' as const }
+        delete next.write
+        return next
+      }),
+    }))
   }
 
   /* -------------------------------------------------------------- outline */

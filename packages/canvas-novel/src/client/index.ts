@@ -104,7 +104,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
    * lazily for the same reason).
    */
   type InputFacade = {
-    state?: { getSnapshot(): { draft: string } }
+    state?: { getSnapshot(): { draft: string }; subscribe?: (listener: () => void) => () => void }
     setDraft?: (value: string) => void
     focus?: () => void
     submit?: (mode?: unknown, source?: 'click' | 'enter') => void
@@ -137,24 +137,60 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return false
     }
   }
-  const draftToConversation = (sessionId: SessionId, text: string): boolean => {
+  const fillConversation = (sessionId: SessionId, text: string): { before: string; after: string } | false => {
     try {
-      const scope = (ctx.get.bind(ctx) as (name: string) => unknown)('sessions') as { scope(id: SessionId): { get(name: string): unknown } } | undefined
-      const session = scope?.scope(sessionId)
-      const input = (session?.get('conversation') as { input?: { for(actx: unknown): unknown } } | undefined)?.input?.for(session) as {
-        state?: { getSnapshot(): { draft: string } }
-        setDraft?: (value: string) => void
-        focus?: () => void
-      } | undefined
+      const input = inputOf(sessionId)
       if (typeof input?.setDraft !== 'function' || typeof input.state?.getSnapshot !== 'function') return false
-      const draft = input.state.getSnapshot().draft.trimEnd()
-      input.setDraft(draft === '' ? text : `${draft}\n\n${text}`)
+      const before = input.state.getSnapshot().draft
+      const kept = before.trimEnd()
+      const after = kept === '' ? text : `${kept}\n\n${text}`
+      input.setDraft(after)
       if (typeof input.focus === 'function') input.focus()
+      return { before, after }
+    } catch {
+      return false
+    }
+  }
+  const draftToConversation = (sessionId: SessionId, text: string): boolean => fillConversation(sessionId, text) !== false
+  const restoreConversationDraft = (sessionId: SessionId, receipt: { before: string; after: string }): boolean => {
+    try {
+      const input = inputOf(sessionId)
+      if (input?.state?.getSnapshot().draft !== receipt.after || typeof input.setDraft !== 'function') return false
+      input.setDraft(receipt.before)
+      input.focus?.()
       return true
     } catch {
       return false
     }
   }
+  const feedbackWatchers = new Map<string, () => void>()
+  const watchChapterFeedback = (sessionId: SessionId, canvasId: string, batchId: string): (() => void) | undefined => {
+    feedbackWatchers.get(String(sessionId))?.()
+    const input = inputOf(sessionId)
+    if (input?.state?.subscribe === undefined || input.state.getSnapshot === undefined) return undefined
+    let latest = input.state.getSnapshot().draft
+    let candidate = latest
+    const stop = input.state.subscribe(() => {
+      latest = input.state!.getSnapshot().draft
+      if (latest.trim() !== '') candidate = latest
+      if (latest.trim() !== '' || candidate.trim() === '') return
+      const text = candidate
+      candidate = ''
+      void remoteOf()?.submitChapterFeedbackCandidate(sessionId, { canvasId, batchId, text }).then(result => {
+        if (result.ok && result.value.ok) notifyWritten({ kind: 'canvas', params: { canvasId } })
+      }).catch(() => {})
+    })
+    const dispose = (): void => {
+      stop()
+      if (feedbackWatchers.get(String(sessionId)) === dispose) feedbackWatchers.delete(String(sessionId))
+    }
+    feedbackWatchers.set(String(sessionId), dispose)
+    return dispose
+  }
+  disposers.push(async () => {
+    for (const dispose of feedbackWatchers.values()) dispose()
+    feedbackWatchers.clear()
+  })
   const t = ctx.locale.bind(NS)
   /**
    * The Remote, with the gestures that change what a conversation card says
@@ -211,7 +247,38 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
     return directoryComponent
   }
-  const face: NovelFace = { remote: remoteOf, draftToConversation, sendToConversation, directoryFlow }
+  let chapterComment: { canvasId: string; n: number; sessionId: SessionId; open: () => void } | undefined
+  const registerChapterComment = (canvasId: string, n: number, sessionId: SessionId, open: () => void): (() => void) => {
+    const current = { canvasId, n, sessionId, open }
+    chapterComment = current
+    return () => { if (chapterComment === current) chapterComment = undefined }
+  }
+  const quoteActions = ctx.get('quoteActions') as {
+    registerAction(action: {
+      id: string
+      label: () => string
+      available?: (target: { ref?: string; sessionId?: SessionId }) => boolean
+      run: (target: { ref?: string; sessionId?: SessionId }) => void
+    }): () => void
+  } | undefined
+  if (quoteActions !== undefined) {
+    ctx.effect(() => quoteActions.registerAction({
+      id: 'canvas-novel.comment',
+      label: () => t('feedback.record'),
+      available: target => chapterComment !== undefined && target.ref === `novel:${chapterComment.canvasId}:${chapterComment.n}` && target.sessionId === chapterComment.sessionId,
+      run: () => { chapterComment?.open() },
+    }), 'canvas-novel: record a chapter comment')
+  }
+  const face: NovelFace = {
+    remote: remoteOf,
+    draftToConversation,
+    sendToConversation,
+    directoryFlow,
+    fillConversation,
+    restoreConversationDraft,
+    watchChapterFeedback,
+    ...(quoteActions === undefined ? {} : { registerChapterComment }),
+  }
   // The seats are declared by @khorsheed/dsh-canvas, outside this type graph.
   const seats = ctx.slots as unknown as {
     inject: (key: string, callback: () => () => void) => () => void
