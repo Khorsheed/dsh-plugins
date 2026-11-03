@@ -66,6 +66,8 @@ export function ChapterReader(props: NovelSurfaceProps & {
   const pending = useNovelRead(api, r => r.pending({ canvasId }), `pending:${canvasId}`, rev)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [feedbackCount, setFeedbackCount] = useState(0)
   const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => {
     // A new chapter starts at its top, whichever pane scrolls.
@@ -73,12 +75,16 @@ export function ChapterReader(props: NovelSurfaceProps & {
     if (node !== null) node.scrollTop = 0
     node?.scrollIntoView?.({ block: 'start' })
   }, [n])
+  useEffect(() => { setFeedbackOpen(false) }, [canvasId, n])
   if (api === undefined) return null
   const total = chapters.state === 'ready' ? chapters.value.chapters.length : 0
   const items = pending.state === 'ready' ? pending.value.items.filter(item => item.chapter === n) : []
   const canEdit = sessionId !== undefined && read.state === 'ready' && read.value.ok && read.value.chapter !== undefined
   const mode: 'preview' | 'edit' = canEdit && props.editing === true ? 'edit' : 'preview'
   const modeId = `chapter-body-${canvasId}-${n}`
+  const feedbackId = `chapter-feedback-${canvasId}-${n}`
+  const canViewFeedback = mode === 'preview' && read.state === 'ready' && read.value.ok && read.value.chapter !== undefined
+  const toggleFeedback = (open: boolean): void => { setFeedbackOpen(open && mode === 'preview') }
 
   const gesture = async (call: 'confirmPlan'): Promise<void> => {
     if (sessionId === undefined) return
@@ -188,7 +194,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
             t={t}
           >
             {text => (
-              <ChapterFeedback {...props} n={n} chapterTitle={bareTitle(n, chapter.title)} body={text} bodyHash={view.bodyHash} enabled={mode === 'preview'}>
+              <ChapterFeedback {...props} n={n} chapterTitle={bareTitle(n, chapter.title)} body={text} bodyHash={view.bodyHash} enabled={mode === 'preview'} open={feedbackOpen && mode === 'preview'} onOpenChange={toggleFeedback} onCountChange={setFeedbackCount}>
                 {ideas => <Prose view={{ ...view, body: text }} phase={phase} t={t} ideas={ideas} source={`${board.title ?? ''} · ${t('reader.kicker', { n })}`} reference={`novel:${canvasId}:${n}`} />}
               </ChapterFeedback>
             )}
@@ -211,6 +217,11 @@ export function ChapterReader(props: NovelSurfaceProps & {
           {t('reader.toc')}
         </Button>
         <span className={css.readerWork}>{board.title ?? ''}</span>
+        {canViewFeedback && (
+          <Button size="sm" variant="ghost" className={css.feedbackToggle} aria-label={t('feedback.show')} title={t('feedback.title')} aria-expanded={feedbackOpen} aria-controls={feedbackId} onClick={() => { setFeedbackOpen(value => !value) }}>
+            {t('feedback.show')}{feedbackCount > 0 && <span className={css.feedbackToggleCount}>{feedbackCount}</span>}
+          </Button>
+        )}
         {canEdit && (
           <SegmentedControl
             id={modeId}
@@ -218,7 +229,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
             label={t('edit.modeLabel')}
             value={mode}
             options={[{ value: 'preview', label: t('edit.preview') }, { value: 'edit', label: t('edit.mode') }]}
-            onChange={next => { props.onEditingChange(next === 'edit') }}
+            onChange={next => { toggleFeedback(false); props.onEditingChange(next === 'edit') }}
           />
         )}
         {total > 0 && <span className={css.readerWhere}>{n} / {total}</span>}

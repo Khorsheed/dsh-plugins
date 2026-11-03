@@ -125,7 +125,7 @@ export interface NovelFace {
   readonly fillConversation?: (sessionId: SessionId, text: string) => ConversationDraftReceipt | false
   readonly restoreConversationDraft?: (sessionId: SessionId, receipt: ConversationDraftReceipt) => boolean
   readonly watchChapterFeedback?: (sessionId: SessionId, canvasId: string, batchId: string) => (() => void) | undefined
-  readonly registerChapterComment?: (canvasId: string, n: number, sessionId: SessionId, open: () => void) => () => void
+  readonly registerChapterComment?: (canvasId: string, n: number, open: (sessionId: SessionId) => void) => () => void
   /**
    * Send a line as the person's message when the input is empty; with a
    * draft in it, append instead and send nothing ('drafted'). False when the

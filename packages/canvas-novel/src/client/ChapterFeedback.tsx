@@ -15,6 +15,7 @@ export interface ChapterFeedbackMark extends ChapterFeedbackIdea {
 }
 
 interface CommentState {
+  readonly sessionId: NonNullable<NovelSurfaceProps['sessionId']>
   readonly selection: ChapterSelection | null
   readonly rect: DOMRect
 }
@@ -25,6 +26,9 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
   readonly body: string
   readonly bodyHash?: string | undefined
   readonly enabled: boolean
+  readonly open: boolean
+  readonly onOpenChange: (open: boolean) => void
+  readonly onCountChange: (count: number) => void
   readonly children: (ideas: readonly ChapterFeedbackMark[]) => ReactNode
 }): ReactNode {
   const { canvasId, n, body, sessionId, remote, rev, navigate, t } = props
@@ -48,23 +52,31 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
     ...batches.flatMap(batch => batch.ideas.map(idea => ({ ...idea, ...(batch.status === 'archived' ? { archived: true as const } : {}) }))),
   ]
 
-  const openSelection = (): void => {
-    if (!props.enabled || sessionId === undefined) return
+  const openSelection = (requestedSession: CommentState['sessionId']): void => {
+    if (!props.enabled) return
     const root = workspace.current?.querySelector<HTMLElement>('[data-novel-prose]')
     const selection = window.getSelection()
     if (root == null || selection === null || selection.rangeCount === 0 || selection.isCollapsed) return
     const found = chapterSelectionFromRange(body, root, selection.getRangeAt(0))
     if (found === undefined) return
-    if (found.quote.length > MAX_FEEDBACK_QUOTE) { setNotice(t('feedback.selectionTooLong')); return }
+    if (found.quote.length > MAX_FEEDBACK_QUOTE) {
+      setNotice(t('feedback.selectionTooLong'))
+      props.onOpenChange(true)
+      return
+    }
     setNotice(null)
     setCommentText('')
-    setComment({ selection: found, rect: found.rect })
+    setComment({ sessionId: requestedSession, selection: found, rect: found.rect })
   }
 
   useEffect(() => {
     if (!props.enabled || sessionId === undefined || props.registerChapterComment === undefined) return
-    return props.registerChapterComment(canvasId, n, sessionId, openSelection)
+    return props.registerChapterComment(canvasId, n, openSelection)
   })
+
+  useEffect(() => {
+    props.onCountChange(active.length + (open?.ideas.length ?? 0))
+  }, [active.length, open?.ideas.length, props.onCountChange])
 
   useEffect(() => {
     if (open?.status !== 'drafted' || sessionId === undefined || props.watchChapterFeedback === undefined) return
@@ -76,12 +88,12 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
   if (api === undefined) return <div className={css.feedbackLayout}><div className={css.feedbackReading}>{props.children([])}</div></div>
 
   const saveComment = async (): Promise<void> => {
-    if (sessionId === undefined || comment === null || commentText.trim() === '') return
+    if (comment === null || commentText.trim() === '') return
     setBusy(true)
     setNotice(null)
     try {
       const selected = comment.selection
-      const result = await api.addChapterFeedback(sessionId, {
+      const result = await api.addChapterFeedback(comment.sessionId, {
         canvasId, n,
         text: commentText.trim(),
         baseBodyHash: bodyHash,
@@ -180,58 +192,66 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
   })()
 
   return (
-    <div className={css.feedbackLayout} ref={workspace} onMouseUp={props.enabled && props.registerChapterComment === undefined ? () => { window.setTimeout(openSelection, 0) } : undefined}>
-      <div className={css.feedbackReading}>{props.children(marks)}</div>
-      <section className={css.chapterFeedback} aria-label={t('feedback.title')}>
-        <div className={css.feedbackHead}>
-          <h3>{t('feedback.title')}<span>{active.length}</span></h3>
-          {sessionId !== undefined && <button type="button" disabled={busy} onClick={(event: MouseEvent<HTMLButtonElement>) => { setCommentText(''); setComment({ selection: null, rect: event.currentTarget.getBoundingClientRect() }) }}>{t('feedback.addGeneral')}</button>}
-        </div>
-        {active.length > 0 && <Button size="sm" variant="primary" disabled={busy || open !== undefined} onClick={() => { void fill() }}>{t('feedback.fill', { count: active.length })}</Button>}
-        {active.length === 0 && open === undefined && <p className={css.feedbackEmpty}>{t('feedback.empty')}</p>}
-        {open !== undefined && (
-          <div className={css.feedbackStatus}>
-            {open.notice !== undefined
-              ? <p>{t(`feedback.${open.notice}`)}</p>
-              : open.status === 'drafted'
-                ? <p>{t('feedback.drafted')}</p>
-                : <p>{t('feedback.sending', { count: open.ideas.length, n })}</p>}
-            {open.write === undefined && <button type="button" disabled={busy} onClick={() => { void recall(open) }}>{t('feedback.recall')}</button>}
-          </div>
-        )}
-        <div className={css.feedbackList}>
-          {active.map(idea => (
-            <article key={idea.id} className={css.feedbackIdea}>
-              {idea.quote !== undefined && <button type="button" className={css.feedbackQuote} onClick={() => { jumpTo(idea) }}>“{idea.quote}”</button>}
-              <p>{idea.text}</p>
-              <footer><span>{t('feedback.pending')}</span><button type="button" onClick={() => { void remove(idea) }}>{t('feedback.delete')}</button></footer>
-            </article>
-          ))}
-        </div>
-        {deleted !== null && <div className={css.feedbackUndo}><span>{t('feedback.deleted')}</span><button type="button" onClick={() => { void undo() }}>{t('feedback.undo')}</button></div>}
-        {notice !== null && <p className={css.feedbackNotice}>{notice}</p>}
-        <details className={css.feedbackArchive}>
-          <summary>{t('feedback.archive')}<span>{archived.length}</span></summary>
-          {archived.map(batch => (
-            <section key={batch.id} className={css.feedbackArchivedBatch}>
-              <h4>{t('feedback.batchDone', { count: batch.ideas.length })}</h4>
-              <p>{t('feedback.completedAt', { time: formatTime(batch.completedAt) })}</p>
-              {batch.submittedText !== undefined && <details className={css.feedbackRequest}><summary>{t('feedback.request')}</summary><pre>{batch.submittedText}</pre></details>}
-              {batch.ideas.map(idea => (
-                <div key={idea.id} className={css.feedbackArchivedIdea}>
-                  {idea.quote !== undefined && <blockquote>“{idea.quote}”</blockquote>}
+    <div className={css.feedbackLayout} ref={workspace}>
+      {props.open && (
+        <div className={css.feedbackDock}>
+          <section id={`chapter-feedback-${canvasId}-${n}`} className={css.chapterFeedback} role="region" aria-label={t('feedback.title')} onKeyDown={event => { if (event.key === 'Escape') props.onOpenChange(false) }}>
+            <div className={css.feedbackHead}>
+              <h3>{t('feedback.title')}<span>{active.length + (open?.ideas.length ?? 0)}</span></h3>
+              <div className={css.feedbackHeadActions}>
+                {sessionId !== undefined && <button type="button" disabled={busy} onClick={(event: MouseEvent<HTMLButtonElement>) => { setNotice(null); setCommentText(''); setComment({ sessionId, selection: null, rect: event.currentTarget.getBoundingClientRect() }) }}>{t('feedback.addGeneral')}</button>}
+                <button type="button" aria-label={t('feedback.close')} onClick={() => { props.onOpenChange(false) }}>{t('feedback.close')}</button>
+              </div>
+            </div>
+            {active.length > 0 && <Button size="sm" variant="primary" disabled={busy || open !== undefined} onClick={() => { void fill() }}>{t('feedback.fill', { count: active.length })}</Button>}
+            {active.length === 0 && open === undefined && <p className={css.feedbackEmpty}>{t('feedback.empty')}</p>}
+            {open !== undefined && (
+              <div className={css.feedbackStatus}>
+                {open.notice !== undefined
+                  ? <p>{t(`feedback.${open.notice}`)}</p>
+                  : open.status === 'drafted'
+                    ? <p>{t('feedback.drafted')}</p>
+                    : <p>{t('feedback.sending', { count: open.ideas.length, n })}</p>}
+                {open.write === undefined && <button type="button" disabled={busy} onClick={() => { void recall(open) }}>{t('feedback.recall')}</button>}
+              </div>
+            )}
+            <div className={css.feedbackList}>
+              {active.map(idea => (
+                <article key={idea.id} className={css.feedbackIdea}>
+                  {idea.quote !== undefined && <button type="button" className={css.feedbackQuote} onClick={() => { jumpTo(idea) }}>“{idea.quote}”</button>}
                   <p>{idea.text}</p>
-                </div>
+                  <footer><span>{t('feedback.pending')}</span><button type="button" onClick={() => { void remove(idea) }}>{t('feedback.delete')}</button></footer>
+                </article>
               ))}
-            </section>
-          ))}
-        </details>
-      </section>
+            </div>
+            {deleted !== null && <div className={css.feedbackUndo}><span>{t('feedback.deleted')}</span><button type="button" onClick={() => { void undo() }}>{t('feedback.undo')}</button></div>}
+            {notice !== null && comment === null && <p className={css.feedbackNotice}>{notice}</p>}
+            <details className={css.feedbackArchive}>
+              <summary>{t('feedback.archive')}<span>{archived.length}</span></summary>
+              {archived.map(batch => (
+                <section key={batch.id} className={css.feedbackArchivedBatch}>
+                  <h4>{t('feedback.batchDone', { count: batch.ideas.length })}</h4>
+                  <p>{t('feedback.completedAt', { time: formatTime(batch.completedAt) })}</p>
+                  {batch.submittedText !== undefined && <details className={css.feedbackRequest}><summary>{t('feedback.request')}</summary><pre>{batch.submittedText}</pre></details>}
+                  {batch.ideas.map(idea => (
+                    <div key={idea.id} className={css.feedbackArchivedIdea}>
+                      {idea.quote !== undefined && <blockquote>“{idea.quote}”</blockquote>}
+                      <p>{idea.text}</p>
+                    </div>
+                  ))}
+                </section>
+              ))}
+            </details>
+          </section>
+        </div>
+      )}
+      <div className={css.feedbackReading}>{props.children(marks)}</div>
       {comment !== null && position !== undefined && (
         <section className={css.feedbackPopover} style={position} role="dialog" aria-label={comment.selection === null ? t('feedback.recordGeneral') : t('feedback.record')}>
           <h3>{comment.selection === null ? t('feedback.recordGeneral') : t('feedback.record')}</h3>
           {comment.selection !== null && <blockquote>{comment.selection.quote}</blockquote>}
           <textarea autoFocus maxLength={MAX_FEEDBACK_TEXT} value={commentText} onChange={event => { setCommentText(event.target.value) }} placeholder={t('feedback.commentPlaceholder')} aria-label={t('feedback.commentPlaceholder')} />
+          {notice !== null && <p className={css.feedbackNotice}>{notice}</p>}
           <div className={css.feedbackPopoverActions}>
             <button type="button" disabled={busy} onClick={() => { setComment(null) }}>{t('feedback.cancel')}</button>
             <Button size="sm" variant="primary" disabled={busy || commentText.trim() === ''} onClick={() => { void saveComment() }}>{t('feedback.save')}</Button>

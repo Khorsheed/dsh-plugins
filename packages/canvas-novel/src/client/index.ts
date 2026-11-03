@@ -247,28 +247,39 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }
     return directoryComponent
   }
-  let chapterComment: { canvasId: string; n: number; sessionId: SessionId; open: () => void } | undefined
-  const registerChapterComment = (canvasId: string, n: number, sessionId: SessionId, open: () => void): (() => void) => {
-    const current = { canvasId, n, sessionId, open }
+  let chapterComment: { canvasId: string; n: number; open: (sessionId: SessionId) => void } | undefined
+  const registerChapterComment = (canvasId: string, n: number, open: (sessionId: SessionId) => void): (() => void) => {
+    const current = { canvasId, n, open }
     chapterComment = current
     return () => { if (chapterComment === current) chapterComment = undefined }
   }
-  const quoteActions = ctx.get('quoteActions') as {
+  type QuoteActionsRegistry = {
     registerAction(action: {
       id: string
       label: () => string
       available?: (target: { ref?: string; sessionId?: SessionId }) => boolean
       run: (target: { ref?: string; sessionId?: SessionId }) => void
     }): () => void
-  } | undefined
-  if (quoteActions !== undefined) {
-    ctx.effect(() => quoteActions.registerAction({
+  }
+  let quoteActions: QuoteActionsRegistry | undefined
+  let disposeQuoteAction: (() => unknown) | undefined
+  const syncQuoteActions = (): void => {
+    const next = ctx.get('quoteActions') as QuoteActionsRegistry | undefined
+    if (quoteActions === next) return
+    quoteActions = next
+    disposeQuoteAction?.()
+    disposeQuoteAction = undefined
+    if (typeof next?.registerAction !== 'function') return
+    disposeQuoteAction = ctx.effect(() => next.registerAction({
       id: 'canvas-novel.comment',
       label: () => t('feedback.record'),
-      available: target => chapterComment !== undefined && target.ref === `novel:${chapterComment.canvasId}:${chapterComment.n}` && target.sessionId === chapterComment.sessionId,
-      run: () => { chapterComment?.open() },
+      available: target => chapterComment !== undefined && target.sessionId !== undefined && target.ref === `novel:${chapterComment.canvasId}:${chapterComment.n}`,
+      run: target => { if (target.sessionId !== undefined) chapterComment?.open(target.sessionId) },
     }), 'canvas-novel: record a chapter comment')
   }
+  syncQuoteActions()
+  ctx.on('internal/service', name => { if (name === 'quoteActions') syncQuoteActions() })
+  disposers.push(async () => { await disposeQuoteAction?.() })
   const face: NovelFace = {
     remote: remoteOf,
     draftToConversation,
@@ -277,7 +288,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     fillConversation,
     restoreConversationDraft,
     watchChapterFeedback,
-    ...(quoteActions === undefined ? {} : { registerChapterComment }),
+    registerChapterComment,
   }
   // The seats are declared by @khorsheed/dsh-canvas, outside this type graph.
   const seats = ctx.slots as unknown as {
