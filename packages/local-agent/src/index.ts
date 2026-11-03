@@ -417,6 +417,23 @@ export interface MemberToolsFace {
   reloadAccepted(childSessionId: string, when: 'now' | 'after-round'): void
   reloadStarted(childSessionId: string): void
   reloadDone(childSessionId: string, outcome: 'respawned' | 'no-process' | 'failed', oldToken: string | undefined): void
+  /** Whether the member still sits in a room with a mode (a removed member is never started). */
+  seated(childSessionId: string): Promise<boolean>
+}
+
+/**
+ * Start a member's resident process now, without a round (see
+ * {@link LocalAgentHarness.startMember}): everything a round's spawn needs,
+ * derived from durable state — the member's binding (provider, cwd, scope,
+ * recorded model), its live child session, the recorded CLI session to
+ * resume, the next turn number, and the admitted configuration when the
+ * harness has a configuration broker.
+ */
+export interface LocalAgentMemberStart {
+  readonly binding: LocalAgentMemberBinding
+  readonly childSession: Session
+  readonly resume: { readonly cliSessionId: string; readonly turn: number }
+  readonly configuration?: LocalAgentAppliedConfiguration
 }
 
 /**
@@ -444,6 +461,21 @@ export interface LocalAgentHarness {
    * `onStart` fires when the replacement actually begins.
    */
   reloadMember?: (childSessionId: string, hooks: { readonly onStart: () => void }) => LocalAgentMemberReload | undefined
+  /**
+   * Whether {@link startMember} can start this member's resident process
+   * right now: the live driver is on for it and holds no process, spawn or
+   * round for it. Required alongside `startMember`.
+   */
+  canStartMember?: (childSessionId: string) => boolean
+  /**
+   * Start a member's resident CLI process WITHOUT a round (no prompt, no
+   * model call), resuming its recorded CLI session, so the process lists its
+   * tools now — the room's 立即载入 for a member with no process (after a
+   * host restart, or an idle reclaim). Chained on the member's round queue;
+   * `no-process` when nothing was started (a process or round appeared
+   * meanwhile, the driver went away), `failed` when the spawn failed.
+   */
+  startMember?: (request: LocalAgentMemberStart) => Promise<'respawned' | 'no-process' | 'failed'>
   /** Command prefix and scoped-home directory name (lowercase, dashed). */
   name: string
   /** Human display name, used in command replies and UI labels. */
@@ -2203,14 +2235,17 @@ export class LocalAgentRegistry {
    * @param childSessionId - the member's child session.
    * @returns when it happens, or why it cannot.
    */
-  reloadMemberTools(childSessionId: string): LocalAgentMemberToolsReload {
+  async reloadMemberTools(childSessionId: string): Promise<LocalAgentMemberToolsReload> {
     const face = this.memberToolsFace
     const binding = this.memberBinding(childSessionId)
     if (face === undefined || binding === undefined) return { ok: false, reason: 'unknown-member' }
     const harness = this.harnessForProvider(binding.provider)
-    if (harness?.reloadMember === undefined) return { ok: false, reason: 'unsupported' }
     if (face.reloadPending(childSessionId)) return { ok: false, reason: 'busy' }
     const oldToken = this.currentMemberToken(childSessionId)
+    // No process at all (a host restart, an idle reclaim): start one now
+    // where the harness can (立即载入), instead of waiting for a message.
+    if (oldToken === undefined && harness?.startMember !== undefined) return await this.startMemberProcess(childSessionId, binding, harness, face)
+    if (harness?.reloadMember === undefined) return { ok: false, reason: 'unsupported' }
     let accepted = false
     let startedEarly = false
     const handle = harness.reloadMember(childSessionId, {
@@ -2228,6 +2263,61 @@ export class LocalAgentRegistry {
       () => { face.reloadDone(childSessionId, 'failed', oldToken) },
     )
     return { ok: true, when: handle.when }
+  }
+
+  /**
+   * Whether 立即载入 can start the member's process now: it has none, its
+   * delegation recorded a CLI session to resume, no round is starting or
+   * running (no resume lock, nothing queued), and its harness can start one.
+   * @param childSessionId - the member's child session.
+   * @returns whether a start would be accepted.
+   */
+  canStartMemberProcess(childSessionId: string): boolean {
+    const binding = this.memberBinding(childSessionId)
+    if (binding === undefined || this.currentMemberToken(childSessionId) !== undefined) return false
+    const record = this.getDelegation(childSessionId)
+    if (record === undefined || record.cliSessionId === '' || record.provider !== binding.provider) return false
+    if (this.isResumeLocked(childSessionId) || this.memberControls.queuedCount(childSessionId) > 0) return false
+    const harness = this.harnessForProvider(binding.provider)
+    if (harness?.startMember === undefined || harness.canStartMember === undefined) return false
+    try { return harness.canStartMember(childSessionId) } catch { return false }
+  }
+
+  /**
+   * 立即载入: start the member's resident process without a round, resuming
+   * its recorded CLI session, so its tools list now. Admitted through the
+   * member's configuration queue like a round (a round asked for meanwhile
+   * waits for it), but nothing reaches a model.
+   */
+  private async startMemberProcess(childSessionId: string, binding: LocalAgentMemberBinding, harness: LocalAgentHarness, face: MemberToolsFace): Promise<LocalAgentMemberToolsReload> {
+    if (!this.canStartMemberProcess(childSessionId)) {
+      return { ok: false, reason: this.isResumeLocked(childSessionId) || this.memberControls.queuedCount(childSessionId) > 0 ? 'busy' : 'no-process' }
+    }
+    if (!await face.seated(childSessionId).catch(() => false)) return { ok: false, reason: 'unknown-member' }
+    // Re-check after the await: a round may have started meanwhile.
+    if (!this.canStartMemberProcess(childSessionId) || face.reloadPending(childSessionId)) return { ok: false, reason: 'busy' }
+    const record = this.getDelegation(childSessionId)!
+    const start = harness.startMember!
+    face.reloadAccepted(childSessionId, 'now')
+    face.reloadStarted(childSessionId)
+    const run = async (configuration?: LocalAgentAppliedConfiguration): Promise<'respawned' | 'no-process' | 'failed'> => {
+      await this.reattachChildSession(childSessionId)
+      const childSession = this.ctx.get('sessions')?.get(SessionId(childSessionId))
+      if (childSession === undefined) return 'no-process'
+      const turn = childSession.snapshotEvents().filter(event => event.type === 'turn/start').length + 1
+      return await start({ binding, childSession, resume: { cliSessionId: record.cliSessionId, turn }, ...configuration === undefined ? {} : { configuration } })
+    }
+    const done = this.supportsMemberConfiguration(binding.provider)
+      ? this.memberControls.withAdmission(binding, configuration => run(configuration))
+      : run()
+    void done.then(
+      (outcome) => { face.reloadDone(childSessionId, outcome, undefined) },
+      (error: unknown) => {
+        this.ctx.logger.warn(`localAgent: starting member ${childSessionId}'s process failed: ${error instanceof Error ? error.message : String(error)}`)
+        face.reloadDone(childSessionId, 'failed', undefined)
+      },
+    )
+    return { ok: true, when: 'now' }
   }
 
   /**

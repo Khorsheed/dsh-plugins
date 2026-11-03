@@ -560,6 +560,23 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('立即载入: a member with no process gets one that resumes its recorded session, no prompt', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-claude-start'))
+    expect(m.driver.canStartMember('child-claude-start')).toBe(true)
+    const server = new FakeClaude({ turn: () => ({ events: answerEvents('第二条') }) })
+    m.queueChild(server)
+    await expect(m.driver.startMember(roundSpec(m, child, { resume: { cliSessionId: 'claude-session-9', turn: 3 } }))).resolves.toBe('respawned')
+    expect(m.spawns).toHaveLength(1)
+    expect(m.spawns[0]!.spec.argv).toContain('--resume')
+    expect(m.spawns[0]!.spec.argv).toContain('claude-session-9')
+    expect(server.userMessages).toHaveLength(0)
+    expect(m.driver.canStartMember('child-claude-start')).toBe(false)
+    await expect(m.driver.startMember(roundSpec(m, child, { resume: { cliSessionId: 'claude-session-9', turn: 3 } }))).resolves.toBe('no-process')
+    expect(m.spawns).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
   it('cancels via the interrupt control request — the process survives', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-claude-4'))

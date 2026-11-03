@@ -2,8 +2,9 @@
  * Manual UI fixture for the edit dialog's 模式工具 line and the room's
  * mode-tools notice (the real components, with a scripted local-agent read):
  *   pnpm exec vite packages/room/tests/preview --config packages/room/tests/preview/vite.config.ts --host 127.0.0.1
- * then open /member-tools.html?state=<ok|okOpen|missing|queued|reloaded|running|scheduled|healed|unknown|nomode|feed|members>[&lang=en][&dark=1]
- * (`members` = the members page: a long name, a running member, an idle and a failed one.)
+ * then open /member-tools.html?state=<ok|okOpen|missing|queued|reloaded|running|scheduled|healed|unknown|nomode|start|starting|started|startMissing|feed|members>[&lang=en][&dark=1]
+ * (`members` = the members page: a long name, a running member, an idle and a failed one.
+ * `start*` = no process after a host restart: 立即载入, 载入中…, the result, a start that still lacks the tools.)
  */
 import React, { useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -36,6 +37,14 @@ const STATUS: Record<string, LocalAgentMemberToolsStatus | null> = {
   unknown: { ...base, process: 'unreported', received: [] },
   stillMissing: { ...missing, lastReload: { at: at(22, 40), by: 'manual', outcome: 'missing' } },
   nomode: null,
+  // After a host restart: no process, the member's session not loaded yet (the mode's size unknown).
+  start: { ...base, process: 'none', received: [], expected: [], expectedUnknown: true, loadedAt: undefined as never, startable: true },
+}
+/** What 立即载入 turns into, per preview state. */
+const STARTED: Record<string, LocalAgentMemberToolsStatus> = {
+  starting: { ...STATUS['start']!, startable: false, reload: { state: 'reloading', since: Date.now() } },
+  started: { ...base, loadedAt: Date.now(), lastReload: { at: Date.now() + 60_000, by: 'manual', outcome: 'loaded' } },
+  startMissing: { ...missing, loadedAt: Date.now(), lastReload: { at: Date.now() + 60_000, by: 'manual', outcome: 'missing' } },
 }
 
 const member: RoomMember = {
@@ -61,11 +70,12 @@ function Dialog() {
     }
     if (state === 'okOpen') click(dictionary['tools.view']!)
     if (state === 'reloaded') click(dictionary['tools.reload']!)
+    if (STARTED[state] !== undefined) click(dictionary['tools.start']!)
   }, [])
-  let current = state === 'reloaded' ? missing : STATUS[state] ?? null
+  let current = state === 'reloaded' ? missing : STARTED[state] !== undefined ? STATUS['start']! : STATUS[state] ?? null
   const read = async () => current
   const reload = async (): Promise<LocalAgentMemberToolsReload> => {
-    current = STATUS['reloaded']!
+    current = STARTED[state] ?? STATUS['reloaded']!
     return { ok: true, when: 'now' }
   }
   return (

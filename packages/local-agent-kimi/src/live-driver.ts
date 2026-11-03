@@ -716,6 +716,40 @@ export class KimiAcpLiveDriver {
   }
 
   /**
+   * Whether {@link startMember} would start the member's process now: the
+   * driver is live and holds no process, spawn or round for the member.
+   */
+  canStartMember(key: string): boolean {
+    return !this.disposed && !this.draining && !this.disabled && !this.hasRuntime(key) && (this.roundsInFlight.get(key) ?? 0) === 0
+  }
+
+  /**
+   * Start a member's resident process with no round: the room's 立即载入
+   * for a member that has none (after a host restart, or an idle reclaim).
+   * `prepare` runs on a resume spec the core built from durable state, so
+   * `kimi acp` session/loads the recorded session and lists the bridge's tools there (kimi 2.4.1), with no prompt and no model call.
+   * Chained on the member's round queue; `no-process` when a process or a
+   * round appeared meanwhile.
+   */
+  startMember(spec: KimiLiveRoundSpec): Promise<'respawned' | 'no-process' | 'failed'> {
+    const key = String(spec.childSession.id)
+    if (!this.canStartMember(key)) return Promise.resolve('no-process')
+    const previous = this.roundChains.get(key) ?? Promise.resolve()
+    const done = previous.catch(() => {}).then(async (): Promise<'respawned' | 'no-process' | 'failed'> => {
+      if (!this.canStartMember(key)) return 'no-process'
+      try {
+        await this.prepare(spec, AbortSignal.timeout(RELOAD_TIMEOUT_MS))
+        return 'respawned'
+      } catch (error) {
+        this.ctx.logger.warn(`local-agent-kimi: starting member ${key}'s kimi process failed: ${thrown(error).message}`)
+        return 'failed'
+      }
+    })
+    this.roundChains.set(key, done.catch(() => ({})))
+    return done
+  }
+
+  /**
    * The model the member's live runtime is bound to, or undefined when the
    * member has no live runtime (or it bound none). The broker compares this
    * against the post-switch effective model to make a same-model set a no-op.

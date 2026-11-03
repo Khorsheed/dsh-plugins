@@ -284,6 +284,18 @@ export function apply(ctx: Context, config: Config): void {
       },
       // The room's 重新载入: a fresh process on the same CLI session, no prompt.
       reloadMember: (childSessionId, hooks) => liveSwitch.resolve(childSessionId)?.reloadMember(childSessionId, hooks),
+      // The room's 立即载入 (no process yet): a fresh `claude -p` with
+      // --resume on the recorded session, no input — it lists the bridge at
+      // startup. The spec a resume round would build, from the durable record.
+      canStartMember: childSessionId => liveSwitch.resolve(childSessionId)?.canStartMember(childSessionId) ?? false,
+      startMember: async ({ binding, childSession, resume, configuration }) => {
+        const driver = liveSwitch.resolve(binding.childSessionId)
+        if (driver === undefined || driver.disabled) return 'no-process'
+        return await driver.startMember({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('claude-code', binding.scope), childSession,
+          parentSessionId: binding.parentSessionId, resume,
+          ...binding.model === undefined ? {} : { model: binding.model },
+          ...configuration === undefined ? {} : { configuration: configuration.resolved } })
+      },
       name: 'claude-code',
       displayName: 'Claude Code',
       homeEnvVar: 'CLAUDE_CONFIG_DIR',

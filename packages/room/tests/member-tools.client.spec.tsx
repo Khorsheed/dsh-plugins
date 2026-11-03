@@ -143,6 +143,64 @@ describe('MemberToolsLine', () => {
     expect(screen.queryByText('重新载入')).toBeNull()
   })
 
+  it('立即载入: no process but one can start — the button, then 载入中…, then the result in place', async () => {
+    let current = status({ process: 'none', received: [], startable: true })
+    const reads = vi.fn(async () => current)
+    let finish!: () => void
+    const reload = vi.fn(async () => {
+      current = status({ process: 'none', received: [], reload: { state: 'reloading', since: Date.now() } })
+      finish = () => { current = status({ loadedAt: Date.now(), lastReload: { at: Date.now() + 1, by: 'manual', outcome: 'loaded' } }) }
+      return { ok: true as const, when: 'now' as const }
+    })
+    render(<MemberToolsLine childSessionId="child-gm" modeName="游戏开发" provider="codex-local" running={false} read={reads} reload={reload} t={makeTranslate(zh)} />)
+    await screen.findByText(/下一条消息时载入/)
+    expect(screen.getByText('启动这个成员的进程并载入工具，对话照常接续')).toBeTruthy()
+    fireEvent.click(screen.getByText('立即载入'))
+    await screen.findByText('载入中…')
+    expect((screen.getByText('立即载入') as HTMLButtonElement).disabled).toBe(true)
+    expect(reload).toHaveBeenCalledWith('child-gm')
+    finish()
+    await screen.findByText('刚刚载入完成', {}, { timeout: 3_000 })
+    expect(screen.getByText('游戏开发 5')).toBeTruthy()
+  })
+
+  it('立即载入 that still cannot get the tools, or could not start, says so', async () => {
+    let current = status({ process: 'none', received: [], startable: true })
+    const reads = vi.fn(async () => current)
+    const reload = vi.fn(async () => {
+      current = status({ process: 'placeholder', received: [], lastReload: { at: AT, by: 'manual', outcome: 'missing' } })
+      return { ok: true as const, when: 'now' as const }
+    })
+    render(<MemberToolsLine childSessionId="child-gm" modeName="游戏开发" provider="codex-local" running={false} read={reads} reload={reload} t={makeTranslate(zh)} />)
+    fireEvent.click(await screen.findByText('立即载入'))
+    await screen.findByText(/^载入后仍取不到：22:36/)
+    cleanup()
+    expect(memberToolsLine(status({ process: 'none', received: [], startable: true, lastReload: { at: AT + 5, by: 'manual', outcome: 'failed' } }), AT))
+      .toMatchObject({ kind: 'unknown', hint: 'no-process', startable: true, startFailed: true })
+  })
+
+  it('no process and nothing to start: text only, as before', async () => {
+    line(status({ process: 'none', received: [] }))
+    await screen.findByText(/下一条消息时载入/)
+    expect(screen.queryByText('立即载入')).toBeNull()
+  })
+
+  it('an unknown mode size reads 「—」, never 0', async () => {
+    expect(memberToolsLine(status({ process: 'none', expected: [], expectedUnknown: true, received: [] }))).toMatchObject({ kind: 'unknown', total: undefined })
+    line(status({ process: 'none', expected: [], expectedUnknown: true, received: [], startable: true }))
+    await screen.findByText(/^游戏开发 —/)
+    expect(screen.queryByText(/游戏开发 0/)).toBeNull()
+    cleanup()
+    line(status({ process: 'placeholder', expected: [], expectedUnknown: true, received: [] }))
+    await screen.findByText('游戏开发 0/—')
+  })
+
+  it('the English 立即载入', async () => {
+    line(status({ process: 'none', received: [], startable: true }), { locale: en })
+    await screen.findByText('Load now')
+    expect(screen.getByText('Starts this member’s process and loads its tools; the conversation carries on')).toBeTruthy()
+  })
+
   it('a member without a mode has no line at all', async () => {
     const { reads, view } = line(null)
     await waitFor(() => { expect(reads).toHaveBeenCalled() })

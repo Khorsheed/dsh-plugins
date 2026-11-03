@@ -1465,6 +1465,22 @@ describe('codex live driver member-aware model', () => {
     expect(m.driver.reloadMember('child-none', { onStart: () => {} })).toBeUndefined()
     await m.driver.disposeAll()
   })
+  it('立即载入: a member with no process gets an app-server that resumes its recorded thread, no turn', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-start'))
+    expect(m.driver.canStartMember('child-start')).toBe(true)
+    const server = new FakeAppServer()
+    m.queueChild(server)
+    await expect(m.driver.startMember(roundSpec(m, child, { resume: { cliSessionId: 'thread-9', turn: 3 } }))).resolves.toBe('respawned')
+    expect(m.spawns).toHaveLength(1)
+    const resume = server.requests.find(r => r.method === 'thread/resume')
+    expect(resume?.params).toMatchObject({ threadId: 'thread-9' })
+    expect(server.requests.some(r => r.method === 'turn/start')).toBe(false)
+    expect(m.driver.canStartMember('child-start')).toBe(false)
+    await expect(m.driver.startMember(roundSpec(m, child, { resume: { cliSessionId: 'thread-9', turn: 3 } }))).resolves.toBe('no-process')
+    expect(m.spawns).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
 })
 
 

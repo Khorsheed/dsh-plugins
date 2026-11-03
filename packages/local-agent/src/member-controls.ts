@@ -112,6 +112,31 @@ export class MemberControls {
     return receipt
   }
 
+  /**
+   * Hold one admission through `body` in the member's round queue, for work
+   * that is not a round (starting its resident process for 立即载入): rounds
+   * asked for meanwhile wait for it, it waits for the rounds before it, and
+   * a failure in `body` is not a configuration failure (nothing changed).
+   * Not counted in {@link queuedCount}.
+   */
+  async withAdmission<T>(binding: LocalAgentMemberBinding, body: (configuration: LocalAgentAppliedConfiguration) => Promise<T>): Promise<T> {
+    const control = this.get(binding)
+    const key = binding.childSessionId
+    const previous = this.tails.get(key) ?? Promise.resolve()
+    const task = previous.catch(() => {}).then(async () => {
+      const lease = await control.admit(randomUUID())
+      try {
+        return await body(lease.configuration)
+      } finally {
+        try { lease.release() } catch (error) { this.onError(error) }
+      }
+    })
+    const tail = task.then(() => {}, () => {})
+    this.tails.set(key, tail)
+    void tail.finally(() => { if (this.tails.get(key) === tail) this.tails.delete(key) })
+    return await task
+  }
+
   private async runNow(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void | Promise<void>): Promise<SubagentRun> {
     const control = this.get(binding)
     const lease = await control.admit(randomUUID())
