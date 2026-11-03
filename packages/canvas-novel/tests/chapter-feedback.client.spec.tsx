@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ChapterReader as ChapterBook } from '../src/client/ChapterReader.tsx'
 import type { NovelRemote, NovelSurfaceProps } from '../src/client/contract.ts'
@@ -39,12 +39,74 @@ function fixture(feedback: { ideas?: ChapterFeedbackIdea[]; batches?: ChapterFee
   return { remote, props }
 }
 
+async function openFeedback(): Promise<void> {
+  fireEvent.click(await screen.findByRole('button', { name: zh['feedback.show'] }))
+  await screen.findByRole('region', { name: zh['feedback.title'] })
+}
+
+function selectParagraph(paragraph: HTMLElement): void {
+  const range = document.createRange()
+  range.selectNodeContents(paragraph)
+  Object.defineProperty(range, 'getBoundingClientRect', { value: () => new DOMRect() })
+  const selection = window.getSelection()!
+  selection.removeAllRanges()
+  selection.addRange(range)
+}
+
 describe('chapter feedback surface', () => {
+  it('keeps the idea panel hidden until requested and never opens a private selection popup', async () => {
+    const { props } = fixture()
+    render(<ChapterBook {...props} />)
+    const toggle = await screen.findByRole('button', { name: zh['feedback.show'] })
+    expect(screen.queryByRole('region', { name: zh['feedback.title'] })).toBeNull()
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    const paragraph = await screen.findByText('他推开门。')
+    selectParagraph(paragraph)
+    fireEvent.mouseUp(paragraph)
+    await act(async () => { await new Promise(resolve => { setTimeout(resolve, 0) }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(toggle)
+    expect(await screen.findByRole('region', { name: zh['feedback.title'] })).toBeTruthy()
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(screen.getByRole('button', { name: zh['feedback.close'] }))
+    expect(screen.queryByRole('region', { name: zh['feedback.title'] })).toBeNull()
+  })
+
+  it('does not register selection comments for a read-only canvas', async () => {
+    const registerChapterComment = vi.fn()
+    const { props } = fixture()
+    render(<ChapterBook {...props} sessionId={undefined} registerChapterComment={registerChapterComment} />)
+    expect(await screen.findByText('他推开门。')).toBeTruthy()
+    expect(registerChapterComment).not.toHaveBeenCalled()
+  })
+
+  it('opens a selection comment only through the quote action and uses its session', async () => {
+    const hostSession = 's-from-quote' as SessionId
+    let openComment: ((sessionId: SessionId) => void) | undefined
+    const registerChapterComment = vi.fn((_canvasId: string, _n: number, open: (sessionId: SessionId) => void) => {
+      openComment = open
+      return () => {}
+    })
+    const { remote, props } = fixture()
+    render(<ChapterBook {...props} registerChapterComment={registerChapterComment} />)
+    const paragraph = await screen.findByText('他推开门。')
+    await waitFor(() => { expect(openComment).toBeDefined() })
+    selectParagraph(paragraph)
+    act(() => { openComment!(hostSession) })
+    expect(await screen.findByRole('dialog', { name: zh['feedback.record'] })).toBeTruthy()
+    fireEvent.change(screen.getByPlaceholderText(zh['feedback.commentPlaceholder']), { target: { value: '动作再慢一点。' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['feedback.save'] }))
+    await waitFor(() => {
+      expect(remote.addChapterFeedback).toHaveBeenCalledWith(hostSession, expect.objectContaining({ quote: '他推开门。', text: '动作再慢一点。' }))
+    })
+  })
+
   it('records a whole-chapter comment without filling or sending a conversation', async () => {
     const { remote, props } = fixture()
     const fillConversation = vi.fn()
     render(<ChapterBook {...props} fillConversation={fillConversation} />)
-    fireEvent.click(await screen.findByRole('button', { name: zh['feedback.addGeneral'] }))
+    await openFeedback()
+    fireEvent.click(screen.getByRole('button', { name: zh['feedback.addGeneral'] }))
     fireEvent.change(screen.getByPlaceholderText(zh['feedback.commentPlaceholder']), { target: { value: '结尾再含蓄一点。' } })
     fireEvent.click(screen.getByRole('button', { name: zh['feedback.save'] }))
     await waitFor(() => {
@@ -59,6 +121,9 @@ describe('chapter feedback surface', () => {
     const fillConversation = vi.fn(() => ({ before: '已有内容', after: '已有内容\n\n完整请求' }))
     const watchChapterFeedback = vi.fn(() => vi.fn())
     render(<ChapterBook {...props} fillConversation={fillConversation} watchChapterFeedback={watchChapterFeedback} />)
+    const toggle = await screen.findByRole('button', { name: zh['feedback.show'] })
+    await waitFor(() => { expect(toggle.textContent).toContain('1') })
+    fireEvent.click(toggle)
     fireEvent.click(await screen.findByRole('button', { name: '把 1 条想法填入对话' }))
     await waitFor(() => {
       expect(fillConversation).toHaveBeenCalledWith(SESSION, '原文：“他推开门。”\n想法：补一拍犹豫。')
@@ -71,7 +136,8 @@ describe('chapter feedback surface', () => {
   it('rolls the batch back when this session has no composer', async () => {
     const { remote, props } = fixture({ ideas: [idea] })
     render(<ChapterBook {...props} fillConversation={() => false} />)
-    fireEvent.click(await screen.findByRole('button', { name: '把 1 条想法填入对话' }))
+    await openFeedback()
+    fireEvent.click(screen.getByRole('button', { name: '把 1 条想法填入对话' }))
     await waitFor(() => { expect(remote.recallChapterFeedback).toHaveBeenCalledWith(SESSION, { canvasId: 'canvas_novel', n: 1, batchId: 'fb1' }) })
     expect(await screen.findByText(zh['feedback.noConversation'])).toBeTruthy()
   })
@@ -84,6 +150,8 @@ describe('chapter feedback surface', () => {
     const { props } = fixture({ batches: [batch] })
     render(<ChapterBook {...props} />)
     expect((await screen.findAllByText(/他推开门。/)).length).toBeGreaterThan(0)
+    expect(screen.queryByText('用户编辑后的完整请求')).toBeNull()
+    await openFeedback()
     expect(screen.getByText('用户编辑后的完整请求')).toBeTruthy()
   })
 })

@@ -1827,13 +1827,17 @@
 .beliefHow { font: var(--dsh-panel-text-meta, 12px)/1.6 var(--dsw-font-family); text-align: center; border-radius: 4px; height: fit-content; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); }
 .beliefHow[data-how="推测"] { color: var(--dsw-alias-state-warn-primary); }
 
-.feedbackLayout { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) minmax(210px, 260px); gap: 20px; align-items: start; }
+.feedbackLayout { position: relative; }
 .feedbackReading { min-width: 0; }
-.chapterFeedback { min-width: 0; padding: 12px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 9px; background: var(--dsw-alias-bg-module-platform, transparent); }
+.feedbackToggle { flex: none; }
+.feedbackToggleCount { min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); text-align: center; }
+.feedbackDock { position: sticky; top: 44px; z-index: 60; height: 0; }
+.chapterFeedback { position: absolute; top: 8px; right: 0; box-sizing: border-box; width: min(320px, 100%); max-height: min(50vh, 560px); overflow-y: auto; min-width: 0; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-2); box-shadow: var(--dsw-elevation-prominent); }
 .feedbackHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .feedbackHead h3 { display: flex; align-items: center; gap: 7px; margin: 0; font: 600 var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
 .feedbackHead h3 span { padding: 0 6px; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); font-size: 10px; }
-.feedbackHead > button, .feedbackStatus button, .feedbackUndo button { padding: 0; border: 0; background: none; color: var(--dsw-alias-label-secondary); cursor: pointer; font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family); }
+.feedbackHeadActions { display: flex; align-items: center; gap: 10px; }
+.feedbackHeadActions button, .feedbackStatus button, .feedbackUndo button { padding: 0; border: 0; background: none; color: var(--dsw-alias-label-secondary); cursor: pointer; font: var(--dsh-panel-text-meta, 11px)/1.5 var(--dsw-font-family); white-space: nowrap; }
 .chapterFeedback > button { width: 100%; }
 .feedbackEmpty { margin: 0; color: var(--dsw-alias-label-tertiary); font: var(--dsh-panel-text-meta, 11px)/1.7 var(--dsw-font-family); }
 .feedbackList { display: grid; }
@@ -1866,7 +1870,3 @@
 .feedbackPopoverActions > button:first-child { padding: 5px 9px; border: 0; background: none; color: var(--dsw-alias-label-secondary); cursor: pointer; }
 .feedbackMark { padding: 0; border-bottom: 1px solid var(--dsw-alias-state-warn-primary); background: var(--dsw-alias-state-warn-bg, #3c3323); color: var(--dsw-alias-state-warn-primary); }
 .feedbackMarkArchived { padding: 0; border-bottom: 1px solid var(--dsw-alias-border-l2); background: transparent; color: inherit; }
-@container dsh-panel (max-width: 560px) {
-  .feedbackLayout { grid-template-columns: minmax(0, 1fr); }
-  .chapterFeedback { margin-top: 8px; }
-}
