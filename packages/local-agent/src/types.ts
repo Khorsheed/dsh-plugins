@@ -856,6 +856,12 @@ export interface LocalAgentMemberToolsStatus {
   readonly preset: string
   /** The mode's plugin tools as the host lists them now. */
   readonly expected: readonly string[]
+  /**
+   * The host could not tell what the mode has right now (the member's
+   * session is not loaded yet, e.g. right after a host restart): `expected`
+   * is empty and must read as unknown (「—」), never as 0.
+   */
+  readonly expectedUnknown?: true
   readonly process: 'full' | 'placeholder' | 'empty' | 'unreported' | 'none'
   /** The mode tools the current process received (`full` only). */
   readonly received: readonly string[]
@@ -874,6 +880,13 @@ export interface LocalAgentMemberToolsStatus {
   readonly lastReload?: { readonly at: number; readonly by: 'manual' | 'auto'; readonly outcome: 'loaded' | 'missing' | 'pending' | 'no-process' | 'failed' }
   /** Whether a reload can be asked for (the member runs on a resident process of a harness that supports it). */
   readonly reloadable: boolean
+  /**
+   * No process, and one can be started right now without a round (立即载入):
+   * the harness resumes the member's recorded CLI session on a fresh
+   * resident process, which lists its tools. False while a round is starting
+   * or running, and for a harness that cannot.
+   */
+  readonly startable?: boolean
 }
 
 /** The answer to a reload request: `now` (the member was idle) or `after-round` (it is running; never interrupted). */

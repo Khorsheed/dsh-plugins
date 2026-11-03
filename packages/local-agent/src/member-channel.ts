@@ -126,7 +126,13 @@ export class MemberChannel {
         reloadPending: childSessionId => this.tools.reloadPending(childSessionId),
         reloadAccepted: (childSessionId, when) => { this.tools.reloadAccepted(childSessionId, when) },
         reloadStarted: (childSessionId) => { this.tools.reloadStarted(childSessionId) },
-        reloadDone: (childSessionId, outcome, oldToken) => { this.tools.reloadDone(childSessionId, outcome, oldToken) },
+        reloadDone: (childSessionId, outcome, oldToken) => { this.reloadDone(childSessionId, outcome, oldToken) },
+        seated: async (childSessionId) => {
+          const binding = this.registry.memberBinding(childSessionId)
+          if (binding === undefined) return false
+          const run: LocalAgentMemberRun = { childSessionId, parentSessionId: binding.parentSessionId, provider: binding.provider }
+          return await this.probeRoom()?.memberMode?.(run) !== undefined
+        },
       })
     }
   }
@@ -167,6 +173,22 @@ export class MemberChannel {
     }
   }
 
+  /**
+   * A requested reload (or start) ran. The fresh process usually lists while
+   * it is being prepared, before this point: settle the reload on that list
+   * now instead of waiting for one that already came.
+   */
+  private reloadDone(childSessionId: string, outcome: 'respawned' | 'no-process' | 'failed', oldToken: string | undefined): void {
+    this.tools.reloadDone(childSessionId, outcome, oldToken)
+    if (outcome !== 'respawned' || typeof this.registry.currentMemberToken !== 'function') return
+    const token = this.registry.currentMemberToken(childSessionId)
+    const state = token === undefined || token === oldToken ? undefined : this.served.get(token)
+    if (token === undefined || state === undefined) return
+    const verdict = this.tools.served(childSessionId, token, state.served)
+    const run = this.registry.resolveMemberRun(token)
+    if (verdict.unavailable !== undefined && run !== undefined) void this.tellRoom(run, 'unavailable', verdict.unavailable.during)
+  }
+
   /** A live driver replaced the member's process at round start (it lacked its tools): remember it and tell the room. */
   private autoReloaded(childSessionId: string, oldToken: string | undefined): void {
     this.tools.autoReloaded(childSessionId, oldToken)
@@ -191,22 +213,27 @@ export class MemberChannel {
     const token = typeof this.registry.currentMemberToken === 'function' ? this.registry.currentMemberToken(childSessionId) : undefined
     const state = token === undefined ? undefined : this.served.get(token)
     const received = state?.served === 'complete' ? state.names ?? [] : []
-    const expected = await this.modeTools.names(childSessionId, mode.preset, mode.cwd).catch(() => undefined)
-      ?? (state?.served === 'complete' ? received : [])
+    const listed = await this.modeTools.names(childSessionId, mode.preset, mode.cwd).catch(() => undefined)
+    // What the mode has, when the host can tell; else what a full process
+    // got. Neither = unknown (「—」 in the dialog, never 0).
+    const expected = listed ?? (state?.served === 'complete' ? received : undefined)
     const process: LocalAgentMemberToolsStatus['process'] = token === undefined ? 'none'
       : state === undefined ? 'unreported'
         : state.served === 'placeholder' ? 'placeholder'
-          : state.count === 0 && expected.length > 0 ? 'empty'
+          : state.count === 0 && (expected?.length ?? 0) > 0 ? 'empty'
             : 'full'
     const harness = this.registry.harnessForProvider(binding.provider)
+    const startable = token === undefined && typeof this.registry.canStartMemberProcess === 'function' && this.registry.canStartMemberProcess(childSessionId)
     return {
       preset: mode.preset,
-      expected,
+      expected: expected ?? [],
+      ...expected === undefined ? { expectedUnknown: true as const } : {},
       process,
       received,
       ...state === undefined ? {} : { loadedAt: state.at },
       ...this.tools.reloadState(childSessionId),
       reloadable: harness?.reloadMember !== undefined && token !== undefined,
+      ...startable ? { startable } : {},
     }
   }
 

@@ -133,8 +133,16 @@ function mcpContent(blocks: readonly { readonly type: string; readonly text?: st
 }
 
 /** The per-member preset agents and the list/call operations the bridge forwards. */
+/** One member's stand-in: its preset, the scoped agent, and the wait for a fresh mount's tools to settle. */
+interface HostEntry {
+  readonly preset: string
+  readonly agent: Promise<{ readonly agent: AgentLike; dispose(): Promise<void> }>
+  /** Set by the first reader after the mount; every later reader shares it. */
+  settled?: Promise<void>
+}
+
 export class PresetToolHost {
-  private readonly hosts = new Map<string, { readonly preset: string; readonly agent: Promise<{ readonly agent: AgentLike; dispose(): Promise<void> }> }>()
+  private readonly hosts = new Map<string, HostEntry>()
   /** Stand-in → the member's child session, for routing approvals its calls raise. */
   private readonly standIns = new WeakMap<object, string>()
 
@@ -221,24 +229,13 @@ export class PresetToolHost {
    */
   async list(childSessionId: string, preset: string, cwd?: string, desk?: DeskInfo): Promise<BridgedTool[]> {
     const tools = this.probe<ToolsLike>('tools')
-    const fresh = this.hosts.get(childSessionId)?.preset !== preset
     const agent = await this.agentFor(childSessionId, preset, cwd)
     if (tools === undefined || agent === undefined) {
       this.note({ childSessionId, preset, tools: tools !== undefined, agent: agent !== undefined })
       return []
     }
     this.markDesk(agent, desk)
-    // A preset mounted for the first time registers some rows' tools a
-    // moment later (deferred injects): wait until the scope stops growing.
-    let schemas = tools.schemas(agent)
-    if (fresh) {
-      for (let waited = 0; waited < SETTLE_MS; waited += SETTLE_STEP_MS) {
-        await new Promise(resolve => setTimeout(resolve, SETTLE_STEP_MS))
-        const next = tools.schemas(agent)
-        if (next.length === schemas.length && waited >= SETTLE_STEP_MS * 3) break
-        schemas = next
-      }
-    }
+    const schemas = await this.settledSchemas(childSessionId, agent, tools)
     const listed = schemas.filter(schema => isPluginTool(tools.get(schema.name, agent)))
     this.note({ childSessionId, preset, agent: agent.id, scope: schemas.map(schema => {
       const origin = (tools.get(schema.name, agent) as { [ORIGIN]?: { channel?: unknown; owner?: unknown } } | undefined)?.[ORIGIN]
@@ -254,9 +251,10 @@ export class PresetToolHost {
 
   /**
    * The names of the preset's plugin tools for a member, as a list would
-   * give them right now: the edit dialog's "what the mode has". Writes no
-   * diagnostics line and does not wait for a freshly mounted preset to
-   * settle (a read, not a served list).
+   * give them: the edit dialog's "what the mode has". Writes no diagnostics
+   * line. Waits for a freshly mounted preset to settle exactly as a list
+   * does (after a host restart the first read mounts the scope, and its
+   * deferred registrations would otherwise read as 0).
    * @param childSessionId - the member's child session.
    * @param preset - the member's mode.
    * @param cwd - the member's working directory.
@@ -267,7 +265,31 @@ export class PresetToolHost {
     if (tools === undefined) return undefined
     const agent = await this.agentFor(childSessionId, preset, cwd)
     if (agent === undefined) return undefined
-    return tools.schemas(agent).filter(schema => isPluginTool(tools.get(schema.name, agent))).map(schema => schema.name)
+    return (await this.settledSchemas(childSessionId, agent, tools)).filter(schema => isPluginTool(tools.get(schema.name, agent))).map(schema => schema.name)
+  }
+
+  /**
+   * The stand-in's scoped tool schemas once its preset finished registering.
+   * A preset mounted for the first time registers some rows' tools a moment
+   * later (deferred injects): the first reader after a mount waits until the
+   * scope stops growing, and every concurrent or later reader (a list, the
+   * dialog's names) shares that one wait.
+   */
+  private async settledSchemas(childSessionId: string, agent: AgentLike, tools: ToolsLike): Promise<ReturnType<ToolsLike['schemas']>> {
+    const entry = this.hosts.get(childSessionId)
+    if (entry !== undefined && (await entry.agent).agent === agent) {
+      entry.settled ??= (async () => {
+        let count = tools.schemas(agent).length
+        for (let waited = 0; waited < SETTLE_MS; waited += SETTLE_STEP_MS) {
+          await new Promise(resolve => setTimeout(resolve, SETTLE_STEP_MS))
+          const next = tools.schemas(agent).length
+          if (next === count && waited >= SETTLE_STEP_MS * 3) break
+          count = next
+        }
+      })()
+      await entry.settled
+    }
+    return tools.schemas(agent)
   }
 
   /**

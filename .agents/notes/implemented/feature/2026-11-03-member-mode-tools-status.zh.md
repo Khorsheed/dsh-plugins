@@ -58,3 +58,15 @@ Status: implemented
 - `packages/local-agent-claude-code/tests/live-driver.spec.ts` 与 `packages/local-agent-codex/tests/live-driver.spec.ts`：空闲时重新载入，用 `--resume` / `thread/resume` 重启，不发提示、不开 turn。
 - `packages/room/tests/member-tools.client.spec.tsx`：这一行的每个状态（中英文），两种语言的词典里都没有内部用词，点击后结果原地显示，提示行带和不带「编辑成员」两种情况。`service.host.spec.ts`：`noteMemberTools` 为名册上的成员写一条事件，陌生成员不写。`persistence.host.spec.ts`：新类型能完整读写回来。
 - 每个状态都在桌面宽度和 390px 下截图，与交互稿逐一对照；截图不提交。
+
+## 补记（2026-11-03）：宿主重启后的计数，以及立即载入
+
+宿主刚重启时，一个写作模式的 codex 成员显示 `写作 0 · 下一条消息时载入`，而且没有按钮。
+
+- **错误的 0。** `PresetToolHost.names` 立刻读 scope，`list` 却会等新挂载的预设把延迟注册的工具注册完。重启后每个 scope 都是新挂载的，所以窗口第一次读到的是 0。现在两者都走同一个 `settledSchemas`：挂载后第一个读的一方负责等待，其余读取共用这次等待。宿主说不出模式有哪些工具时（成员会话还没加载），状态带 `expectedUnknown: true`，这一行显示「—」，不显示 0。进程是 full 时仍以它收到的为准。
+- **立即载入。** 没有进程的成员现在可以不跑一轮就启动。`reloadMemberTools`（改为 async）在成员没有当前 token、且其 harness 有新的可选钩子 `canStartMember` / `startMember` 时启动一个进程。状态用 `startable` 标明这一点。核心只用持久状态构造请求：binding（provider、cwd、scope、记录的模型）；子会话（重启后没加载的会重新挂上）；委派记录里的 `cliSessionId` 作为 `resume`，并带上下一个 turn 编号；harness 有配置 broker 时，再加上经成员轮次队列放行的配置（`MemberControls.withAdmission`：期间请求的轮次排在它后面）。以下成员都不会启动：已有进程、持有 resume 锁、有排队轮次、已离开房间（`face.seated`），或 driver 关闭。各 live driver 的 `startMember` 挂在自己的轮次队列上，用这个 resume spec 调现有的 `prepare`。结果分别是 Kimi `session/load`、Codex `thread/resume`（带 provider 的 `sandboxFor` 和起始模型）、Claude `--resume`（带记录的模型），都不发提示。这一行沿用重新载入的原地状态，文案换成 立即载入 → 载入中… → 刚刚载入完成，或 载入后仍取不到；启动失败显示 没能启动…。
+- **Claude 实测。** `claude -p --input-format stream-json` 2.1.317 用空配置目录启动后，stdin 不给任何输入，它也在启动时连上了打日志的 MCP 服务并调用了 `tools/list`。所以三家都能在几秒内出结果。
+- **新进程在 `prepare` 期间就上报清单的重新载入。** 这份清单在 `reloadDone` 之前就到了，重新载入因此一直停在「重新载入中」，直到 20 秒窗口过去。现在 channel 在 `reloadDone` 时直接按这份清单收尾。现有的 Kimi、Codex 重新载入也一并修好了。
+- **DSH 成员。** 这一行不按 provider 区分。带模式邀请的 `dsh-cli` 成员也会有这一行：它不能启动、也不能重新载入，所以只显示文字。它的 sub-dsh 同样会连到 bridge。这部分没有改动。
+
+测试：`member-tools-status.spec.ts`（新 scope 晚一拍才长全、共用一次等待、未知显示「—」、启动／进行中／失败／各种拒绝、prepare 期间上报即收尾）；三个 `live-driver.spec.ts`（启动走 resume、不发提示、不重复启动、轮次进行中不启动）；`member-tools.client.spec.tsx`（按钮、载入中…、结果、「—」、英文）。

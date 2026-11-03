@@ -39,7 +39,14 @@ function deferred<T>() {
  * bridge serves itself), a room gate, and a harness whose reload the test
  * drives by hand.
  */
-async function mount(options: { reload?: LocalAgentHarness['reloadMember'] | false; mode?: string | undefined } = {}) {
+async function mount(options: {
+  reload?: LocalAgentHarness['reloadMember'] | false
+  mode?: string | undefined
+  /** A harness that can start a member's process without a round (立即载入). */
+  start?: { can?: () => boolean; start: NonNullable<LocalAgentHarness['startMember']> }
+  /** Whether the member's child session is loaded (false: right after a host restart). */
+  live?: boolean
+} = {}) {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
@@ -72,14 +79,15 @@ async function mount(options: { reload?: LocalAgentHarness['reloadMember'] | fal
         return undefined
       }),
     },
+    ...options.start === undefined ? {} : { canStartMember: options.start.can ?? (() => true), startMember: options.start.start },
   })
   registry.recordDelegation({ childSessionId: CHILD, provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-a', cwd: '/home/user/game' })
-  const session = ctx.sessions.create(SessionId(CHILD))
+  const session = options.live === false ? undefined : ctx.sessions.create(SessionId(CHILD))
   const definitions = new Map<string, object>([
     ...GAME.map(name => [name, { name, [ORIGIN]: { channel: 'plugin', owner: '@khorsheed/dsh-gamedev' } }] as const),
     ['room_read', { name: 'room_read', [ORIGIN]: { channel: 'plugin', owner: '@khorsheed/dsh-room' } }],
   ])
-  const inScope = (scope?: object) => (scope as { session?: unknown } | undefined)?.session === session
+  const inScope = (scope?: object) => session !== undefined && (scope as { session?: unknown } | undefined)?.session === session
   ctx.provide('agentPresets' as never, { resolve: async (id?: string) => ({ id: id ?? 'default' }), mount: async () => {} } as never)
   ctx.provide('tools' as never, {
     schemas: (scope?: object) => inScope(scope) ? [...definitions.keys()].map(name => ({ name, description: name, parameters: { type: 'object', properties: {} } })) : [],
@@ -151,11 +159,11 @@ describe('reloading a member\'s tools', () => {
     })
     old = h.spawn()
     await h.placeholder(old)
-    expect(h.registry.reloadMemberTools(CHILD)).toEqual({ ok: true, when: 'now' })
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: true, when: 'now' })
     await Promise.resolve()
     expect(await h.registry.memberToolsStatus(CHILD)).toMatchObject({ reload: { state: 'reloading' } })
     // A second click while it runs is refused, not stacked.
-    expect(h.registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'busy' })
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'busy' })
     // The driver retires the old process and spawns the new one (no round).
     h.registry.unregisterMemberRun(old)
     const fresh = h.spawn()
@@ -182,7 +190,7 @@ describe('reloading a member\'s tools', () => {
     })
     const old = h.spawn()
     await h.placeholder(old)
-    expect(h.registry.reloadMemberTools(CHILD)).toEqual({ ok: true, when: 'after-round' })
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: true, when: 'after-round' })
     expect(await h.registry.memberToolsStatus(CHILD)).toMatchObject({ process: 'placeholder', reload: { state: 'scheduled' } })
     // The round ends; the driver begins the reload.
     start!()
@@ -200,7 +208,7 @@ describe('reloading a member\'s tools', () => {
     const h = await mount({ reload: () => ({ when: 'now', done: done.promise }) })
     const old = h.spawn()
     await h.placeholder(old)
-    h.registry.reloadMemberTools(CHILD)
+    await h.registry.reloadMemberTools(CHILD)
     h.registry.unregisterMemberRun(old)
     const fresh = h.spawn()
     done.resolve('respawned')
@@ -225,7 +233,7 @@ describe('reloading a member\'s tools', () => {
     await h.list(old)
     const now = Date.now()
     const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
-    h.registry.reloadMemberTools(CHILD)
+    await h.registry.reloadMemberTools(CHILD)
     h.registry.unregisterMemberRun(old)
     h.spawn()
     done.resolve('respawned')
@@ -238,11 +246,11 @@ describe('reloading a member\'s tools', () => {
   })
 
   it('refuses what it cannot reload', async () => {
-    expect((await mount({ reload: false })).registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'unsupported' })
+    expect(await (await mount({ reload: false })).registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'unsupported' })
     // The harness hosts no resident process for the member (exec path, live off).
     const h = await mount()
-    expect(h.registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'no-process' })
-    expect(h.registry.reloadMemberTools('nobody')).toEqual({ ok: false, reason: 'unknown-member' })
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'no-process' })
+    expect(await h.registry.reloadMemberTools('nobody')).toEqual({ ok: false, reason: 'unknown-member' })
   })
 })
 
@@ -299,5 +307,148 @@ describe('MemberToolsTracker', () => {
     tracker.reloadAccepted('m', 'now')
     tracker.reloadDone('m', 'failed', undefined)
     expect(tracker.reloadState('m')).toEqual({ lastReload: { at: 1, by: 'manual', outcome: 'failed' } })
+  })
+})
+
+describe('what the mode has, right after a host restart', () => {
+  it('waits for a freshly mounted preset to finish registering, as a list does', async () => {
+    const h = await mount()
+    // The preset scope is fresh: two rows registered at mount, three a tick later.
+    const late = GAME.slice(2)
+    for (const name of late) h.definitions.delete(name)
+    setTimeout(() => {
+      for (const name of late) h.definitions.set(name, { name, [ORIGIN]: { channel: 'plugin', owner: '@khorsheed/dsh-gamedev' } })
+    }, 20)
+    expect(await h.registry.memberToolsStatus(CHILD)).toMatchObject({ process: 'none', expected: GAME })
+  })
+
+  it('a list and the dialog read share one settle wait on a fresh scope', async () => {
+    const h = await mount()
+    const late = GAME.slice(1)
+    for (const name of late) h.definitions.delete(name)
+    setTimeout(() => {
+      for (const name of late) h.definitions.set(name, { name, [ORIGIN]: { channel: 'plugin', owner: '@khorsheed/dsh-gamedev' } })
+    }, 20)
+    const host = new PresetToolHost(h.ctx)
+    const [names, listed] = await Promise.all([host.names(CHILD, 'gamedev'), host.list(CHILD, 'gamedev')])
+    expect(names).toEqual(GAME)
+    expect(listed.map(tool => tool.name)).toEqual(GAME)
+    // Settled once: a later read answers at once with the same set.
+    const started = Date.now()
+    expect(await host.names(CHILD, 'gamedev')).toEqual(GAME)
+    expect(Date.now() - started).toBeLessThan(100)
+    await host.dispose()
+  })
+
+  it('reads as unknown, never 0, when the host cannot tell', async () => {
+    // The member's session is not loaded yet: no scope to ask.
+    const h = await mount({ live: false })
+    const status = await h.registry.memberToolsStatus(CHILD)
+    expect(status).toMatchObject({ process: 'none', expected: [], expectedUnknown: true })
+    // Known (even when it is empty) carries no unknown mark.
+    const known = await mount()
+    for (const name of GAME) known.definitions.delete(name)
+    const empty = await known.registry.memberToolsStatus(CHILD)
+    expect(empty?.expected).toEqual([])
+    expect(empty?.expectedUnknown).toBeUndefined()
+  })
+})
+
+describe('立即载入: starting a member that has no process', () => {
+  it('starts the process with no round, resuming the recorded CLI session, and settles on its list', async () => {
+    const calls: Parameters<NonNullable<LocalAgentHarness['startMember']>>[0][] = []
+    let h!: Awaited<ReturnType<typeof mount>>
+    h = await mount({
+      start: {
+        start: async (request) => {
+          calls.push(request)
+          // The fresh process lists while it is being prepared, before the start returns.
+          await h.list(h.spawn())
+          return 'respawned'
+        },
+      },
+    })
+    expect(await h.registry.memberToolsStatus(CHILD)).toMatchObject({ process: 'none', startable: true, reloadable: false })
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: true, when: 'now' })
+    await vi.waitFor(async () => {
+      expect(await h.registry.memberToolsStatus(CHILD)).toMatchObject({ process: 'full', received: GAME, lastReload: { by: 'manual', outcome: 'loaded' } })
+    })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      binding: { childSessionId: CHILD, provider: PROVIDER, parentSessionId: PARENT, cwd: '/home/user/game' },
+      resume: { cliSessionId: 'cli-a', turn: 1 },
+    })
+    expect(String(calls[0]!.childSession.id)).toBe(CHILD)
+    const after = await h.registry.memberToolsStatus(CHILD)
+    expect(after?.reload).toBeUndefined()
+    expect(after?.startable).toBeUndefined()
+  })
+
+  it('shows 载入中 while the process starts, and refuses a second click', async () => {
+    const done = deferred<'respawned'>()
+    const h = await mount({ start: { start: () => done.promise } })
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: true, when: 'now' })
+    expect(await h.registry.memberToolsStatus(CHILD)).toMatchObject({ process: 'none', reload: { state: 'reloading' } })
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'busy' })
+    done.resolve('respawned')
+    await done.promise
+  })
+
+  it('a start that fails reads as failed, with the member still startable', async () => {
+    const h = await mount({ start: { start: async () => 'failed' } })
+    await h.registry.reloadMemberTools(CHILD)
+    await vi.waitFor(async () => {
+      expect(await h.registry.memberToolsStatus(CHILD)).toMatchObject({ process: 'none', startable: true, lastReload: { by: 'manual', outcome: 'failed' } })
+    })
+  })
+
+  it('never starts a member mid-round, removed, or on a harness that cannot', async () => {
+    const start = vi.fn(async () => 'respawned' as const)
+    // A round is starting: the provider holds the member's resume lock.
+    const locked = await mount({ start: { start } })
+    locked.registry.acquireResumeLock(CHILD)
+    expect(await locked.registry.memberToolsStatus(CHILD)).not.toHaveProperty('startable')
+    expect(await locked.registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'busy' })
+    // A process is running: that is 重新载入's job.
+    const running = await mount({ start: { start } })
+    running.spawn()
+    expect(await running.registry.memberToolsStatus(CHILD)).not.toHaveProperty('startable')
+    // The member left the room (no mode any more).
+    const removed = await mount({ mode: undefined, start: { start } })
+    expect(await removed.registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'unknown-member' })
+    // The driver is off for it (exec path, live off).
+    const off = await mount({ start: { start, can: () => false } })
+    expect(await off.registry.memberToolsStatus(CHILD)).not.toHaveProperty('startable')
+    expect(await off.registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'no-process' })
+    // A harness without the hook keeps the text-only line.
+    const plain = await mount()
+    expect(await plain.registry.memberToolsStatus(CHILD)).not.toHaveProperty('startable')
+    expect(start).not.toHaveBeenCalled()
+  })
+})
+
+describe('a reload whose new process listed while it was being prepared', () => {
+  it('settles as loaded at once, not pending', async () => {
+    let h!: Awaited<ReturnType<typeof mount>>
+    let old = ''
+    h = await mount({
+      reload: (_child, hooks) => {
+        hooks.onStart()
+        const done = (async () => {
+          h.registry.unregisterMemberRun(old)
+          await h.list(h.spawn())
+          return 'respawned' as const
+        })()
+        return { when: 'now', done }
+      },
+    })
+    old = h.spawn()
+    await h.placeholder(old)
+    await h.registry.reloadMemberTools(CHILD)
+    await vi.waitFor(async () => {
+      const status = await h.registry.memberToolsStatus(CHILD)
+      expect(status).toMatchObject({ process: 'full', lastReload: { by: 'manual', outcome: 'loaded' } })
+      expect(status?.reload).toBeUndefined()
+    })
   })
 })

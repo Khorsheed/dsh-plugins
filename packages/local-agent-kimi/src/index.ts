@@ -285,6 +285,17 @@ export function apply(ctx: Context, config: Config): void {
       },
       // The room's 重新载入: a fresh `kimi acp` on the same kimi session, no prompt.
       reloadMember: (childSessionId, hooks) => liveSwitch.resolve(childSessionId)?.reloadMember(childSessionId, hooks),
+      // The room's 立即载入 (no process yet): a fresh `kimi acp` that
+      // session/loads the recorded session, no prompt — the spec a resume
+      // round would build, from the member's durable record.
+      canStartMember: childSessionId => liveSwitch.resolve(childSessionId)?.canStartMember(childSessionId) ?? false,
+      startMember: async ({ binding, childSession, resume, configuration }) => {
+        const driver = liveSwitch.resolve(binding.childSessionId)
+        if (driver === undefined || driver.disabled) return 'no-process'
+        if (binding.model !== undefined) broker.noteStartModel(binding.childSessionId, binding.model)
+        return await driver.startMember({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('kimi', binding.scope), childSession,
+          parentSessionId: binding.parentSessionId, resume, ...configuration === undefined ? {} : { configuration: configuration.resolved } })
+      },
       name: 'kimi',
       displayName: 'Kimi Code',
       homeEnvVar: 'KIMI_CODE_HOME',

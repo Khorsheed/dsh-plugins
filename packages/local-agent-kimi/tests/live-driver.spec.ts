@@ -1804,6 +1804,38 @@ describe('kimi live driver member reload (the room\'s 重新载入)', () => {
     await m.driver.disposeAll()
   })
 
+  it('立即载入: a member with no process gets one that session/loads its recorded session, with no prompt', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-start'))
+    expect(m.driver.canStartMember('child-kimi-start')).toBe(true)
+    const server = new FakeAcpServer({ turn: () => ({ chunks: ['back'] }) })
+    m.queueChild(server)
+    // The spec the core builds from the durable record after a host restart.
+    await expect(m.driver.startMember(roundSpec(m, child, { resume: { cliSessionId: 'acp-session-9', turn: 3 } }))).resolves.toBe('respawned')
+    expect(server.requests.map(r => r.method)).toEqual(['initialize', 'session/load'])
+    expect(server.requests[1]!.params).toMatchObject({ sessionId: 'session_acp-session-9' })
+    // It holds a process now: no second start, and the next round reuses it.
+    expect(m.driver.canStartMember('child-kimi-start')).toBe(false)
+    await expect(m.driver.startMember(roundSpec(m, child, { resume: { cliSessionId: 'acp-session-9', turn: 3 } }))).resolves.toBe('no-process')
+    await (await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-9', turn: 3 } }))).result
+    expect(m.spawns).toHaveLength(1)
+    expect(server.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/prompt'])
+    await m.driver.disposeAll()
+  })
+
+  it('立即载入 never starts a member that is running a round', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-start-run'))
+    const server = new FakeAcpServer({ turn: () => ({ hang: true }) })
+    m.queueChild(server)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect(m.driver.canStartMember('child-kimi-start-run')).toBe(false)
+    await expect(m.driver.startMember(roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 2 } }))).resolves.toBe('no-process')
+    expect(m.spawns).toHaveLength(1)
+    void run.result.catch(() => {})
+    await m.driver.disposeAll()
+  })
+
   it('a round-start respawn is reported to the core with the replaced process\'s token', async () => {
     const m = mount()
     const tokens: string[] = []

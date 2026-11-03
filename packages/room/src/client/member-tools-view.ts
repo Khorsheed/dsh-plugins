@@ -7,7 +7,10 @@
  */
 import type { LocalAgentMemberToolsStatus } from '@khorsheed/dsh-local-agent/types'
 
-/** What the line shows. */
+/**
+ * What the line shows. `total` is how many tools the mode has, undefined
+ * when the host cannot tell yet (shown as 「—」, never as 0).
+ */
 export type MemberToolsLineState =
   | { readonly kind: 'hidden' }
   /** Every mode tool reached the process. `note`: a reload just finished, or one ran at round start. */
@@ -20,21 +23,29 @@ export type MemberToolsLineState =
     readonly kind: 'missing'
     readonly received: readonly string[]
     readonly missing: readonly string[]
-    readonly total: number
+    readonly total: number | undefined
     readonly at?: number
     readonly cause: 'failed' | 'empty' | 'partial'
     readonly afterReload: boolean
   }
   /** A reload is replacing the process now. */
-  | { readonly kind: 'reloading'; readonly total: number }
+  | { readonly kind: 'reloading'; readonly total: number | undefined }
   /** A reload waits for the running round to end. */
-  | { readonly kind: 'scheduled'; readonly received: number; readonly total: number }
+  | { readonly kind: 'scheduled'; readonly received: number; readonly total: number | undefined }
   /**
    * Nothing known about the current process: it never reported (`old`: it
    * started before reports existed), a reload's new process has not listed
-   * yet (`next-message`), or there is no process (`no-process`).
+   * yet (`next-message`), or there is no process (`no-process`). With no
+   * process, `startable` says one can be started now (立即载入), and
+   * `startFailed` that the start this dialog asked for did not come up.
    */
-  | { readonly kind: 'unknown'; readonly total: number; readonly hint: 'old' | 'next-message' | 'no-process' }
+  | {
+    readonly kind: 'unknown'
+    readonly total: number | undefined
+    readonly hint: 'old' | 'next-message' | 'no-process'
+    readonly startable?: boolean
+    readonly startFailed?: boolean
+  }
 
 /**
  * Fold the status into the line's state.
@@ -44,7 +55,7 @@ export type MemberToolsLineState =
  */
 export function memberToolsLine(status: LocalAgentMemberToolsStatus | null | undefined, clickedAt?: number): MemberToolsLineState {
   if (status === null || status === undefined) return { kind: 'hidden' }
-  const total = status.expected.length
+  const total = status.expectedUnknown === true ? undefined : status.expected.length
   if (status.reload?.state === 'scheduled') return { kind: 'scheduled', received: status.process === 'full' ? status.received.length : 0, total }
   if (status.reload?.state === 'reloading') return { kind: 'reloading', total }
   const afterReload = status.lastReload?.outcome === 'missing'
@@ -87,7 +98,19 @@ export function memberToolsLine(status: LocalAgentMemberToolsStatus | null | und
   if (status.process === 'unreported') {
     return { kind: 'unknown', total, hint: status.lastReload?.outcome === 'pending' ? 'next-message' : 'old' }
   }
-  return { kind: 'unknown', total, hint: 'no-process' }
+  const failed = clickedAt !== undefined && status.lastReload?.by === 'manual' && status.lastReload.outcome === 'failed' && status.lastReload.at >= clickedAt
+  return {
+    kind: 'unknown',
+    total,
+    hint: 'no-process',
+    ...status.startable === true ? { startable: true } : {},
+    ...failed ? { startFailed: true } : {},
+  }
+}
+
+/** A tool count for the line: the number, or 「—」 when the host cannot tell yet. */
+export function count(total: number | undefined): string {
+  return total === undefined ? '—' : String(total)
 }
 
 /**
