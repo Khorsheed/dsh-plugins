@@ -68,6 +68,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
   const [failure, setFailure] = useState<string | null>(null)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedbackCount, setFeedbackCount] = useState(0)
+  const [feedbackAnchor, setFeedbackAnchor] = useState<HTMLDivElement | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => {
     // A new chapter starts at its top, whichever pane scrolls.
@@ -194,7 +195,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
             t={t}
           >
             {text => (
-              <ChapterFeedback {...props} n={n} chapterTitle={bareTitle(n, chapter.title)} body={text} bodyHash={view.bodyHash} enabled={mode === 'preview'} open={feedbackOpen && mode === 'preview'} onOpenChange={toggleFeedback} onCountChange={setFeedbackCount}>
+              <ChapterFeedback {...props} n={n} chapterTitle={bareTitle(n, chapter.title)} body={text} bodyHash={view.bodyHash} enabled={mode === 'preview'} open={feedbackOpen && mode === 'preview'} onOpenChange={toggleFeedback} onCountChange={setFeedbackCount} panelAnchor={feedbackAnchor}>
                 {ideas => <Prose view={{ ...view, body: text }} phase={phase} t={t} ideas={ideas} source={`${board.title ?? ''} · ${t('reader.kicker', { n })}`} reference={`novel:${canvasId}:${n}`} />}
               </ChapterFeedback>
             )}
@@ -218,9 +219,11 @@ export function ChapterReader(props: NovelSurfaceProps & {
         </Button>
         <span className={css.readerWork}>{board.title ?? ''}</span>
         {canViewFeedback && (
-          <Button size="sm" variant="ghost" className={css.feedbackToggle} aria-label={t('feedback.show')} title={t('feedback.title')} aria-expanded={feedbackOpen} aria-controls={feedbackId} onClick={() => { setFeedbackOpen(value => !value) }}>
-            {t('feedback.show')}{feedbackCount > 0 && <span className={css.feedbackToggleCount}>{feedbackCount}</span>}
-          </Button>
+          <div className={css.feedbackControl} ref={setFeedbackAnchor}>
+            <Button size="sm" variant="ghost" className={css.feedbackToggle} aria-label={t('feedback.show')} title={t('feedback.title')} aria-expanded={feedbackOpen} aria-controls={feedbackId} onClick={() => { setFeedbackOpen(value => !value) }}>
+              {t('feedback.show')}{feedbackCount > 0 && <span className={css.feedbackToggleCount}>{feedbackCount}</span>}
+            </Button>
+          </div>
         )}
         {canEdit && (
           <SegmentedControl
