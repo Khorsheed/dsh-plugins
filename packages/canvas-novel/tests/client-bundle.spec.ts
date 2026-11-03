@@ -45,7 +45,7 @@ describe('canvas-novel browser artifact', () => {
     const stub = new Proxy({}, { get: (_target, key) => key === '__esModule' ? true : vi.fn() })
     const exported = factory((id) => {
       requested.push(id)
-      if (id === 'react' || id.startsWith('react/') || id.startsWith('react-dom/') || id.startsWith('@deepseek-ai/') || id.startsWith('@khorsheed/')) return stub
+      if (id === 'react' || id === 'react-dom' || id.startsWith('react/') || id.startsWith('react-dom/') || id.startsWith('@deepseek-ai/') || id.startsWith('@khorsheed/')) return stub
       throw new Error(`Unexpected external browser module: ${id}`)
     })
     expect(exported.apply).toBeTypeOf('function')

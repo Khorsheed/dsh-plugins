@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/canvas-novel/README.en.md
-packages/canvas-novel/README.en.md: a192be5624c75cca04a9dfdc1563282d1bef4a56
-packages/canvas-novel/README.md: 77253e3fe61ee10387fe800f1e0b5644888db698
+packages/canvas-novel/README.en.md: 889b9b4886151bbe403f07924c875d293f202e16
+packages/canvas-novel/README.md: 6c29831bd68a2440f6d837f115fde140d495121b

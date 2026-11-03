@@ -117,6 +117,7 @@
     "@khorsheed/dsh-client-ui-panel-kit": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.1",
     "jsdom": "^30.0.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

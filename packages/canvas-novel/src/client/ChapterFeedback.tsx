@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bodyFingerprint } from '../types.ts'
 import {
@@ -29,6 +30,7 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
   readonly open: boolean
   readonly onOpenChange: (open: boolean) => void
   readonly onCountChange: (count: number) => void
+  readonly panelAnchor: HTMLElement | null
   readonly children: (ideas: readonly ChapterFeedbackMark[]) => ReactNode
 }): ReactNode {
   const { canvasId, n, body, sessionId, remote, rev, navigate, t } = props
@@ -193,13 +195,12 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
 
   return (
     <div className={css.feedbackLayout} ref={workspace}>
-      {props.open && (
-        <div className={css.feedbackDock}>
+      {props.open && props.panelAnchor !== null && createPortal(
           <section id={`chapter-feedback-${canvasId}-${n}`} className={css.chapterFeedback} role="region" aria-label={t('feedback.title')} onKeyDown={event => { if (event.key === 'Escape') props.onOpenChange(false) }}>
             <div className={css.feedbackHead}>
               <h3>{t('feedback.title')}<span>{active.length + (open?.ideas.length ?? 0)}</span></h3>
               <div className={css.feedbackHeadActions}>
-                {sessionId !== undefined && <button type="button" disabled={busy} onClick={(event: MouseEvent<HTMLButtonElement>) => { setNotice(null); setCommentText(''); setComment({ sessionId, selection: null, rect: event.currentTarget.getBoundingClientRect() }) }}>{t('feedback.addGeneral')}</button>}
+                {sessionId !== undefined && <button type="button" disabled={busy} onClick={(event: MouseEvent<HTMLButtonElement>) => { props.onOpenChange(false); setNotice(null); setCommentText(''); setComment({ sessionId, selection: null, rect: event.currentTarget.getBoundingClientRect() }) }}>{t('feedback.addGeneral')}</button>}
                 <button type="button" aria-label={t('feedback.close')} onClick={() => { props.onOpenChange(false) }}>{t('feedback.close')}</button>
               </div>
             </div>
@@ -242,22 +243,25 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
                 </section>
               ))}
             </details>
-          </section>
-        </div>
-      )}
+          </section>,
+          props.panelAnchor,
+        )}
       <div className={css.feedbackReading}>{props.children(marks)}</div>
-      {comment !== null && position !== undefined && (
-        <section className={css.feedbackPopover} style={position} role="dialog" aria-label={comment.selection === null ? t('feedback.recordGeneral') : t('feedback.record')}>
-          <h3>{comment.selection === null ? t('feedback.recordGeneral') : t('feedback.record')}</h3>
-          {comment.selection !== null && <blockquote>{comment.selection.quote}</blockquote>}
-          <textarea autoFocus maxLength={MAX_FEEDBACK_TEXT} value={commentText} onChange={event => { setCommentText(event.target.value) }} placeholder={t('feedback.commentPlaceholder')} aria-label={t('feedback.commentPlaceholder')} />
-          {notice !== null && <p className={css.feedbackNotice}>{notice}</p>}
-          <div className={css.feedbackPopoverActions}>
-            <button type="button" disabled={busy} onClick={() => { setComment(null) }}>{t('feedback.cancel')}</button>
-            <Button size="sm" variant="primary" disabled={busy || commentText.trim() === ''} onClick={() => { void saveComment() }}>{t('feedback.save')}</Button>
-          </div>
-        </section>
-      )}
+      {comment !== null && position !== undefined && (() => {
+        const dialog = (
+          <section className={`${css.feedbackPopover} ${comment.selection === null ? css.feedbackAnchoredPopover : ''}`} style={comment.selection === null ? undefined : position} role="dialog" aria-label={comment.selection === null ? t('feedback.recordGeneral') : t('feedback.record')}>
+            <h3>{comment.selection === null ? t('feedback.recordGeneral') : t('feedback.record')}</h3>
+            {comment.selection !== null && <blockquote>{comment.selection.quote}</blockquote>}
+            <textarea autoFocus maxLength={MAX_FEEDBACK_TEXT} value={commentText} onChange={event => { setCommentText(event.target.value) }} placeholder={t('feedback.commentPlaceholder')} aria-label={t('feedback.commentPlaceholder')} />
+            {notice !== null && <p className={css.feedbackNotice}>{notice}</p>}
+            <div className={css.feedbackPopoverActions}>
+              <button type="button" disabled={busy} onClick={() => { setComment(null) }}>{t('feedback.cancel')}</button>
+              <Button size="sm" variant="primary" disabled={busy || commentText.trim() === ''} onClick={() => { void saveComment() }}>{t('feedback.save')}</Button>
+            </div>
+          </section>
+        )
+        return comment.selection === null && props.panelAnchor !== null ? createPortal(dialog, props.panelAnchor) : dialog
+      })()}
     </div>
   )
 }
