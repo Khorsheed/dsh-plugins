@@ -308,6 +308,21 @@ describe('content data', () => {
   })
 })
 
+describe('content schema', () => {
+  it('checks references against design/schema.json when the project declares one', async () => {
+    const project = await created()
+    await put(join(project.root, 'index.html'), '<p>v1</p>')
+    await put(join(project.root, 'design/rooms.json'), JSON.stringify({ rooms: [{ id: 'hall', links: ['cellar'] }] }))
+    await put(join(project.root, 'design/schema.json'), JSON.stringify({
+      schema: 1, ids: { room: { from: 'design/rooms.json#rooms[].id' } }, refs: { 'design/rooms.json#rooms[].links[]': 'room' },
+    }))
+    const failed = await store.checkTurn(session(), 0, 2)
+    expect(failed.kind === 'fail' && failed.record.failures).toEqual([{ where: 'design/rooms.json › rooms[0].links[0]', message: '「cellar」不是已有的 room' }])
+    await put(join(project.root, 'design/rooms.json'), JSON.stringify({ rooms: [{ id: 'hall', links: ['cellar'] }, { id: 'cellar', links: [] }] }))
+    expect((await store.checkTurn(session(), 0, 2)).kind).toBe('pass')
+  })
+})
+
 describe('model looks', () => {
   it('fails the check when a glTF look points at a file the project does not have', async () => {
     const result = await store.create({ title: 'Models', pitch: 'p', elementTypes: '角色', artStyle: 'ink', runtime: '3d' }, session())

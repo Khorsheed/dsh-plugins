@@ -8,6 +8,7 @@
   "files": [
     "src/agent.ts",
     "src/checks.ts",
+    "src/content-schema.ts",
     "src/desk.ts",
     "src/nav-line.ts",
     "src/hooks.ts",
