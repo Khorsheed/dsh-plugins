@@ -34,11 +34,11 @@ file-preview 使用官方 `dsh-fs-patch` 解析器和纯文本补丁应用函数
 
 开发依赖图和工作流钉版前移到 rc1，包的发布版本不变。DSH 子 profile 的地板高于 local-agent 家族其它包。file-preview 保留原最低宿主，没有可选解析器时回退为仅使用元数据。Session 生命周期与历史控制器变化在相关测试中显式处理，不用类型断言掩盖。
 
-全仓干净门禁和 3080 部署仍待完成。quote 的组合浏览器实测和移动端浏览器/Quick Tunnel 实测已通过；真机蜂窝、切网、相机权限和完整触控检查仍待验。本记录不代表 npm 发布或 push。只有实际验收覆盖 rc1 的包才前移 `verifiedHost`。`gen-typert` 在普通复制回退前清理自己 overlay 里被中断克隆的残留条目，Node 24 下不跳过任何包。目录符号链接改用 `unlinkSync` 删除链接本身，因为 Node 24 拒绝对目录链接执行 `rmSync(..., { force: true })`；不做递归删除。Room 的崩溃测试桩在模拟进程退出时抑制结算，避免正常 dispose 凭空制造 cancelled 结果。最终验收使用经官方校验和的 Node 24.9.0，而不是默认且不受支持的 Node 22。
+全仓干净门禁已通过，3080 的受控部署已完成，preflight 和 canary 均通过；生产交互验收仍未收口。quote 的组合浏览器实测和移动端浏览器/Quick Tunnel 实测已通过；真机蜂窝、切网、相机权限和完整触控检查仍待验。本记录不代表 npm 发布或 push。只有实际验收覆盖 rc1 的包才前移 `verifiedHost`。`gen-typert` 在普通复制回退前清理自己 overlay 里被中断克隆的残留条目，Node 24 下不跳过任何包。目录符号链接改用 `unlinkSync` 删除链接本身，因为 Node 24 拒绝对目录链接执行 `rmSync(..., { force: true })`；不做递归删除。Room 的崩溃测试桩在模拟进程退出时抑制结算，避免正常 dispose 凭空制造 cancelled 结果。最终验收使用经官方校验和的 Node 24.9.0，而不是默认且不受支持的 Node 22。
 
 ## Testing
 
-聚焦测试已通过：headless 56 个、local-agent 519 个、local-agent-dsh 246 个、file-preview 228 个、context-lens 311 个、mobile 168 个、canvas-novel 272 个、quote 95 个、content-preview 81 个、room 500 个、构建脚本 389 个。覆盖真实 native/PTC 调用、`apply_patch` 的新增/更新/删除/移动、直读面板与 Remote 一致性、新的历史控制器、冷恢复发布生命周期、克隆中断后的回退，以及不影响原目录的符号链接替换。file-preview、mobile、quote、room、canvas-novel、local-agent-dsh 和 headless 的最终构建也通过。全仓干净门禁和生产验收仍待完成。
+聚焦测试已通过：headless 56 个、local-agent 519 个、local-agent-dsh 246 个、file-preview 228 个、context-lens 311 个、mobile 168 个、canvas-novel 272 个、quote 95 个、content-preview 81 个、room 500 个、构建脚本 389 个。覆盖真实 native/PTC 调用、`apply_patch` 的新增/更新/删除/移动、直读面板与 Remote 一致性、新的历史控制器、冷恢复发布生命周期、克隆中断后的回退，以及不影响原目录的符号链接替换。file-preview、mobile、quote、room、canvas-novel、local-agent-dsh 和 headless 的最终构建也通过。全仓干净门禁已通过，生产交互验收仍待完成。
 
 ## Related
 
