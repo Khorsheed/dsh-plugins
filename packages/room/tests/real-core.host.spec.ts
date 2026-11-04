@@ -47,7 +47,7 @@ afterEach(async () => {
 })
 
 /** Mount the local-agent core (again, after a "crash") on a context that already carries the host and room. */
-const current: { registry?: LocalAgentRegistry; rounds: Round[] } = { rounds: [] }
+const current: { registry?: LocalAgentRegistry; rounds: Round[]; suppressSettlement: boolean } = { rounds: [], suppressSettlement: false }
 
 async function mountCore(ctx: Context, homes: string, rounds: Round[]): Promise<{ registry: LocalAgentRegistry; dispose: () => Promise<void> }> {
   const fiber = ctx.plugin(localAgent, { homesRoot: homes })
@@ -65,6 +65,7 @@ async function mountCore(ctx: Context, homes: string, rounds: Round[]): Promise<
   // on whichever core is mounted now.
   current.registry = registry
   current.rounds = rounds
+  current.suppressSettlement = false
   if (ctx.get('subagents') === undefined) {
     ctx.provide('subagents', {
       getProvider: (name: string) => name === PROVIDER ? { name } : undefined,
@@ -96,7 +97,7 @@ async function providerStart(registry: LocalAgentRegistry, ctx: Context, request
     const result = new Promise<SubagentResult>((resolve) => { settle = resolve })
     let done = false
     const release = (stop: SubagentResult['stopReason'] = 'completed'): void => {
-      if (done) return
+      if (current.suppressSettlement || done) return
       done = true
       appendMirrorStep(child, turn, 1, { blocks: [{ kind: 'text', text: `answer to ${prompt.slice(-12)}` }], usage: { inputTokens: 10, outputTokens: 2 } as TokenUsage }, { provider: PROVIDER, model: 'm' })
       closeMirrorTurn(child, turn, stop, 'stopped')
@@ -271,6 +272,8 @@ describe('room on the real local-agent core', () => {
     const dir = join(bench.homes, '.member-inbox')
     const file = join(dir, readdirSync(dir).find(name => name.endsWith('.json'))!)
     const crashed = readFileSync(file, 'utf8')
+    // Simulate process loss, not a graceful stop that settles the old round as cancelled.
+    current.suppressSettlement = true
     await bench.core.dispose()
     writeFileSync(file, crashed)
     const rounds: Round[] = []

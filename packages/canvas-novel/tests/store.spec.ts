@@ -9,6 +9,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { describe, expect, it } from 'vitest'
+import { join } from 'node:path'
 import { manuscriptParagraphs, NovelService, resolveNovelStateRoot, sleepCounter } from '../src/store.ts'
 import { bodyFingerprint, chapterFileName, chapterNumberOfFile, deriveForeshadowState, effectiveChapterPhase, isOverdue, type ChapterRecord } from '../src/types.ts'
 import { FakeCanvas, provideCanvas } from './fake-canvas.ts'
@@ -57,7 +58,7 @@ describe('the novel store', () => {
     expect(resolveNovelStateRoot(undefined)).toBe('/dsh-home/state/novel')
     if (home === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = home
-    expect(resolveNovelStateRoot('')).toContain('.dsh-novel')
+    expect(resolveNovelStateRoot('')).toBe(home === undefined ? join(process.cwd(), '.dsh-novel') : join(home, 'state', 'novel'))
   })
 
   it('a work is a novel canvas; a session writes into the canvas it is bound to', async () => {

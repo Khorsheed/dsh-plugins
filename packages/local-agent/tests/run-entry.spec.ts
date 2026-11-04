@@ -143,8 +143,8 @@ async function mount(homes = mkdtempSync(join(tmpdir(), 'run-entry-homes-')), st
 }
 
 /** Wait until the provider holds `count` rounds. */
-async function roundsReach(h: { rounds: Round[] }, count: number): Promise<void> {
-  await vi.waitFor(() => expect(h.rounds).toHaveLength(count))
+async function roundsReach(h: { rounds: Round[] }, count: number, stage?: string): Promise<void> {
+  await vi.waitFor(() => expect(h.rounds.map(round => round.kind), stage).toHaveLength(count))
 }
 
 const text = (value: string) => [{ type: 'text' as const, text: value }]
@@ -246,7 +246,7 @@ describe('run(): the single execution entry', () => {
     await running.settled
     // A second round is in flight when the host goes away.
     const second = await before.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('interrupted'), caller: 'room', key: 'delivery-10' })
-    await roundsReach(before, 2)
+    await roundsReach(before, 2, 'the interrupted second round')
     // A queued room row (no stored input) is dropped on restart; its caller resubmits it.
     await before.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('later'), caller: 'room', key: 'delivery-11' })
     // Simulate the crash: the ledger file stays as written (running), the process is gone.
@@ -270,7 +270,7 @@ describe('run(): the single execution entry', () => {
     // The key of the reconciled execution now reads as settled, not as new work.
     expect(await (await after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('x'), caller: 'room', key: 'delivery-10' })).settled).toMatchObject({ outcome: 'done' })
     const next = await after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('after reconcile'), caller: 'room', key: 'delivery-11' })
-    await roundsReach(after, 1)
+    await roundsReach(after, 1, 'the post-reconcile round')
     expect(after.rounds[0]).toMatchObject({ kind: 'resume', prompt: 'after reconcile' })
     after.rounds[0]!.release()
     expect(await next.settled).toMatchObject({ outcome: 'done' })
