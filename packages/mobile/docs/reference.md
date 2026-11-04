@@ -83,7 +83,7 @@ message-tools、TaskPilot、Room 与 Local Agent 家族独立安装；移动端�
 
 ## Compatibility
 
-- 宿主 0.2.x（`@deepseek-ai/dsh@0.2.0-rc.2` 起）：⚠️ 可用，带已声明的降级——`dsh.compat.minHost` 为 `0.2.0-rc.2`，**不再支持 0.1.x 宿主**（0.1.x 请停留在本插件 0.1.4）。对 0.2.1-rc.1 树全量构建+测试通过，但真机/网络验收矩阵完成前不声明 `verifiedHost`；移动布局与 iOS 壳仍在验收中；**不提供设备配对与推送**。
+- 宿主 0.2.x（`@deepseek-ai/dsh@0.2.0-rc.2` 起）：⚠️ 可用，带已声明的降级——`dsh.compat.minHost` 为 `0.2.0-rc.2`，**不再支持 0.1.x 宿主**（0.1.x 请停留在本插件 0.1.4）。对 0.2.2-rc.1 树全量构建+测试通过，但真机/网络验收矩阵完成前不声明 `verifiedHost`；移动布局与 iOS 壳仍在验收中；**不提供设备配对与推送**。
 - 一键公网入口：需要本机 cloudflared；缺少时「连接手机」回退静态配置指引，不影响其余功能。iOS/Android 浏览器扫码后可「添加到主屏幕」：移动布局激活时注入免凭据 manifest 与 Apple meta（无 service worker，不声明离线）。
 
 会话首页使用可选的官方 sessions/workspaces/uiWorkspace 服务，过滤已归档会话和子代理行、保留普通分叉会话；缺少服务时回退基础官方侧栏。启用布局前检查公开 frame/slot DOM 锚点；未知结构保留官方页面——结构变化可能降低移动可用性，但不改变 Host 执行。原生桥接版本变化需要判断 App 兼容性；兼容的 Web 更新不自动要求重发 IPA。无需修改官方或兄弟插件源码。

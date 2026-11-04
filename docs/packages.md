@@ -45,8 +45,8 @@
 | `@khorsheed/dsh-local-agent` | `packages/local-agent` | 0.2.2 | bundle | — | web | 0.2.0-rc.1 | eval |
 | `@khorsheed/dsh-local-agent-claude-code` | `packages/local-agent-claude-code` | 0.2.2 | bundle | — | web | 0.2.0-rc.1 | eval |
 | `@khorsheed/dsh-local-agent-codex` | `packages/local-agent-codex` | 0.2.2 | bundle | — | web | 0.2.0-rc.1 | eval |
-| `@khorsheed/dsh-local-agent-dsh` | `packages/local-agent-dsh` | 0.2.2 | bundle | — | web | 0.2.0-rc.1 | eval |
-| `@khorsheed/dsh-local-agent-dsh-headless` | `packages/local-agent-dsh-headless` | 0.2.2 | composition | sub-profile-patch | — | 0.2.0-rc.1 | — |
+| `@khorsheed/dsh-local-agent-dsh` | `packages/local-agent-dsh` | 0.2.2 | bundle | — | web | 0.2.2-rc.1 | eval |
+| `@khorsheed/dsh-local-agent-dsh-headless` | `packages/local-agent-dsh-headless` | 0.2.2 | composition | sub-profile-patch | — | 0.2.2-rc.1 | — |
 | `@khorsheed/dsh-local-agent-kimi` | `packages/local-agent-kimi` | 0.2.2 | bundle | — | web | 0.2.0-rc.1 | eval |
 | `@khorsheed/dsh-local-files` | `packages/local-files` | 0.1.4 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-message-timeline` | `packages/message-timeline` | 0.2.8 | bundle | — | web | 0.1.2-rc.1 | eval |

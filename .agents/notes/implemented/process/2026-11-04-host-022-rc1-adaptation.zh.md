@@ -18,7 +18,7 @@ provider、model 和 reasoning effort 移入 `agentOptions`。测试组合挂载
 
 file-preview 使用官方 `dsh-fs-patch` 解析器和纯文本补丁应用函数，按需可选加载，旧宿主不会在模块求值时失败。成功结果中的 Add 恢复正文，Update/Delete 保留真实结果 diff。移动目标若未出现在元数据中，则在官方应用函数能证明结果时从源文件文本推导；新建目标没有旧文本，删除行数为 0。绝对元数据路径只在后缀唯一时映射回补丁路径。停止或失败的提交不凭空新增文件。Remote 与直读面板共用同一 fold 和可选解析器。
 
-移动端现有公开 Session 和展示接口已通过首轮 rc1 构建与测试，无需修改源码。真机和完整浏览器检查与这一机械结果分开记录。Quote 保持现有交互，由用户在 Chat 中比较官方与社区设计后再决定。Forge、Stats、Team、Speech 等官方能力整合留到 3080 的 rc1 验收之后。
+移动端现有公开 Session 和展示接口已通过首轮 rc1 构建与测试，无需修改源码。真机和完整浏览器检查与这一机械结果分开记录。在官方独立 rc1 实例和全插件组合的 Chat 中比较后，用户决定所有区域都保留社区 quote 交互。以 `key: 'quote'`、`priority: -1` 注册 keyed 槽位，仅遮蔽官方基础 Chat 按钮，与插件顺序无关；社区选区菜单、chip、来源预览、侧边对话、复制和扩展动作不变，官方输入机继续使用。引用块的独立删除动作留到后续单独立项，不属于本波。Forge、Stats、Team、Speech 等官方能力整合留到 3080 的 rc1 验收之后。
 
 ## Alternatives considered
 
@@ -34,11 +34,11 @@ file-preview 使用官方 `dsh-fs-patch` 解析器和纯文本补丁应用函数
 
 开发依赖图和工作流钉版前移到 rc1，包的发布版本不变。DSH 子 profile 的地板高于 local-agent 家族其它包。file-preview 保留原最低宿主，没有可选解析器时回退为仅使用元数据。Session 生命周期与历史控制器变化在相关测试中显式处理，不用类型断言掩盖。
 
-全仓干净门禁、quote 浏览器对比、移动端浏览器/真机矩阵和 3080 部署仍待完成。本记录不代表 npm 发布或 push。只有实际验收覆盖 rc1 的包才前移 `verifiedHost`；移动端未验证的设备路径继续明示。
+全仓干净门禁和 3080 部署仍待完成。quote 的组合浏览器实测和移动端浏览器/Quick Tunnel 实测已通过；真机蜂窝、切网、相机权限和完整触控检查仍待验。本记录不代表 npm 发布或 push。只有实际验收覆盖 rc1 的包才前移 `verifiedHost`。`gen-typert` 在普通复制回退前清理自己 overlay 里被中断克隆的残留条目，Node 24 下不跳过任何包。目录符号链接改用 `unlinkSync` 删除链接本身，因为 Node 24 拒绝对目录链接执行 `rmSync(..., { force: true })`；不做递归删除。Room 的崩溃测试桩在模拟进程退出时抑制结算，避免正常 dispose 凭空制造 cancelled 结果。最终验收使用经官方校验和的 Node 24.9.0，而不是默认且不受支持的 Node 22。
 
 ## Testing
 
-聚焦测试已通过：headless 56 个、local-agent 496 个、file-preview 228 个、context-lens 311 个、mobile 168 个。覆盖真实 native/PTC 调用、`apply_patch` 的新增/更新/删除/移动、直读面板与 Remote 一致性，以及新的历史控制器。file-preview、mobile 和 headless 的最终构建也通过。全仓干净门禁和生产验收仍待完成。
+聚焦测试已通过：headless 56 个、local-agent 519 个、local-agent-dsh 246 个、file-preview 228 个、context-lens 311 个、mobile 168 个、canvas-novel 272 个、quote 95 个、content-preview 81 个、room 500 个、构建脚本 388 个。覆盖真实 native/PTC 调用、`apply_patch` 的新增/更新/删除/移动、直读面板与 Remote 一致性、新的历史控制器、冷恢复发布生命周期、克隆中断后的回退，以及不影响原目录的符号链接替换。file-preview、mobile、quote、room、canvas-novel、local-agent-dsh 和 headless 的最终构建也通过。全仓干净门禁和生产验收仍待完成。
 
 ## Related
 
