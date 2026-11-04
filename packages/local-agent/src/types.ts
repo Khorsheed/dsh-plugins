@@ -159,11 +159,15 @@ export interface LocalAgentCompactionEvent {
   /** The delegation provider (`kimi-cli`, `codex-local`, …). */
   provider: string
   model?: string
-  /** Context occupancy before and after, as the CLI reported it. */
+  /**
+   * Context occupancy before and after, as the CLI reported it. A SIZE of the
+   * context, never spend: readers must not add these to, or show them as,
+   * usage — the compaction call's spend is `usage` alone.
+   */
   beforeTokens?: number
   afterTokens?: number
   contextWindow?: number
-  /** The compaction call's own spend (never a round's). */
+  /** The compaction call's own spend (never a round's); the only place it is recorded. */
   usage?: TokenUsage
   /** The CLI's summary text, when it gives one (Kimi does, Codex does not). */
   summary?: string
@@ -176,7 +180,24 @@ export interface LocalAgentCompactionEvent {
   endedAt: number
   /** Every message before this seq is replaced by the summary in later requests. */
   boundarySeq: number
+  /**
+   * What the source does not report about this compaction, marked when it is
+   * written (never inferred later from an absent field):
+   * - `usage`: the compaction call's spend;
+   * - `before-after`: the context sizes before and after;
+   * - `summary`: the summary text.
+   *
+   * The core writes the event itself, with all three, for a `/compact`
+   * execution whose provider wrote none (Claude Code, DSH): the command ran,
+   * nothing more is known, and `outcome` is the execution's. Codex's own
+   * automatic compaction carries `['usage']`. Absent = the source reported
+   * every field it has (a missing field is then just not applicable).
+   */
+  unrecorded?: LocalAgentCompactionUnrecorded[]
 }
+
+/** One thing a compaction's source does not report (see {@link LocalAgentCompactionEvent.unrecorded}). */
+export type LocalAgentCompactionUnrecorded = 'usage' | 'before-after' | 'summary'
 
 /**
  * A CLI member's context occupancy as the CLI last reported it (Kimi's ACP

@@ -1890,8 +1890,8 @@ export class CodexLiveDriver {
 
 /**
  * After a round: each compaction codex ran on its own (one
- * `local-agent/compaction`, source `auto`; codex states no summary and no
- * after-count), and the thread's occupancy (one `local-agent/context`, when
+ * `local-agent/compaction`, source `auto`, marked `unrecorded: ['usage']` —
+ * codex states no spend for it, and no summary and no after-count), and the thread's occupancy (one `local-agent/context`, when
  * it moved).
  */
 function recordRoundContext(
@@ -1906,6 +1906,9 @@ function recordRoundContext(
       ...compaction.beforeTokens === undefined ? {} : { beforeTokens: compaction.beforeTokens },
       ...rt.contextWindow === undefined ? {} : { contextWindow: rt.contextWindow },
       startedAt: compaction.at, endedAt: compaction.at, boundarySeq: childSession.snapshotEvents().at(-1)?.seq ?? -1,
+      // Codex states no spend for a compaction it runs on its own: marked
+      // here, when written, so a reader never mistakes it for a missing field.
+      unrecorded: ['usage'],
     })
   }
   if (rt.contextTokens === undefined) return

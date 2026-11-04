@@ -154,6 +154,7 @@ export type {
   LocalAgentSessionRecord,
   LocalAgentStatus,
   LocalAgentCompactionEvent,
+  LocalAgentCompactionUnrecorded,
   LocalAgentContextEvent,
   LocalAgentMemberContext,
   LocalAgentExecutionCaller,
@@ -1222,6 +1223,7 @@ export class LocalAgentRegistry {
       childSessionId: binding.childSessionId,
       parentSessionId: binding.parentSessionId,
       operation: execution?.operation ?? 'prompt',
+      provider: binding.provider,
       execution,
       unrecorded: this.harnessForProvider(binding.provider)?.unrecorded,
     })
