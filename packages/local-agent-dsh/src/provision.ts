@@ -61,7 +61,7 @@
  */
 
 import { createRequire } from 'node:module'
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import yaml from 'js-yaml'
 
@@ -374,7 +374,7 @@ function ensureSymlink(link: string, target: string): void {
     throw new Error(`provision-dsh: ${link} is a real directory, not the expected symlink; remove it manually`)
   }
   if (readlinkSync(link) === target) return
-  rmSync(link, { force: true })
+  unlinkSync(link)
   symlinkSync(target, link)
 }
 
@@ -432,7 +432,7 @@ function ensureBundleCopy(target: string, source: string): void {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
-  if (stat?.isSymbolicLink() === true) rmSync(target, { force: true })
+  if (stat?.isSymbolicLink() === true) unlinkSync(target)
   else if (stat !== undefined && presetTreesEqual(source, target)) return
   if (presetTreeFiles(source) === undefined) {
     throw new Error(`provision-dsh: headless bundle ${source} is missing or not a plain tree of files`)
