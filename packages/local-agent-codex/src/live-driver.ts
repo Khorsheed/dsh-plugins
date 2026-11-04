@@ -1428,7 +1428,7 @@ export class CodexLiveDriver {
      * preview identity) and its call. A different item's deltas force one
      * freshness snapshot of the current stream.
      */
-    const reserveStream = (itemId: string, kind: 'think' | 'text'): void => {
+    const reserveStream = (itemId: string, kind: 'think' | 'text', observedAt: number): void => {
       if (activeStream !== undefined && activeStream !== itemId) {
         const previous = streams.get(activeStream)
         // A freshness snapshot on the item switch, skipped when the text has
@@ -1444,7 +1444,7 @@ export class CodexLiveDriver {
         // Streaming means started: the call waits for its completion.
         if (!call.completed.has(itemId)) call.pending.add(itemId)
         streamKeys += 1
-        stream = { itemId, kind, step: streamKeys, call, text: '', startedAt: Date.now(), lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
+        stream = { itemId, kind, step: streamKeys, call, text: '', startedAt: observedAt, lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
         streams.set(itemId, stream)
       }
       activeStream = itemId
@@ -1611,7 +1611,7 @@ export class CodexLiveDriver {
         const itemId = typeof params['itemId'] === 'string'
           ? params['itemId']
           : `codex-stream-${reasoning ? 'think' : 'text'}-${turn}`
-        reserveStream(itemId, reasoning ? 'think' : 'text')
+        reserveStream(itemId, reasoning ? 'think' : 'text', observedAt)
         const stream = activeStream === undefined ? undefined : streams.get(activeStream)
         if (stream !== undefined) {
           stream.text += text
