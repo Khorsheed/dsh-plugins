@@ -28,10 +28,10 @@ import type { SessionTrend } from './types.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AssistantStreamRecord, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, TurnOverview, TurnTiming } from './types.ts'
 import { InspectorStore, scopeAuthorized, toolExecutionFromMeta, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
-import { recordAssembly } from './segmenter.ts'
+import { recordAssembly, type CapturedAssembly } from './segmenter.ts'
 import { HUMAN_MESSAGE_LOOKBACK, applyRoomEvent, emptyRoom } from './room.ts'
 import { fromRequestMessage, serializeMessage } from './messages.ts'
 import { messageOfRow, meterOf, replacementFact, replacementFactsOf, type PendingMeter, type ReplacementRow } from './changes.ts'
@@ -210,7 +210,7 @@ export class InspectorService {
    * value passes through unchanged — this listener observes, it never rewrites
    * a prompt.
    */
-  private async onAssemble(next: () => Promise<PromptAssembly>): Promise<PromptAssembly> {
+  private async onAssemble<T extends CapturedAssembly>(next: () => Promise<T>): Promise<T> {
     const result = await next()
     try {
       recordAssembly(this.store.assemblyRing, result, this.now())
