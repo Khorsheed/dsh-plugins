@@ -7,6 +7,7 @@ import RoomService from '../src/index.ts'
 import { roomInviteTool, roomMessageTool, roomReadTool } from '../src/tool-definition.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
+import { withRunEntry } from './run-entry-shim.ts'
 
 /** The REAL composition; tools come from the factories (registration moved to the `./tool` row). */
 async function boot() {
@@ -25,7 +26,7 @@ async function boot() {
     ],
     statusOf: vi.fn(async (name: string) => ({ authenticated: true, delegationProvider: `${name}-cli` })),
   }
-  ctx.provide('localAgent', localAgent as never)
+  ctx.provide('localAgent', withRunEntry(localAgent, ctx) as never)
   const tools = { register: vi.fn((_tool: ToolDefinition) => () => {}) }
   ctx.provide('tools', tools as never)
   await ctx.plugin(SessionStore)

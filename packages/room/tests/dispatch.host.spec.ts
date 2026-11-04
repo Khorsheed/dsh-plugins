@@ -8,8 +8,10 @@ import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import { PlanService, readPlan } from '../src/plan-service.ts'
 import { changePlan, queuePlanAttempt, admitPlanAttempt } from '../src/plan.ts'
-import { COMPACTED_TEXT, COMPACT_UNREPORTED_TEXT, ROOM_KIND, ROOM_PLUGIN, compactionUnreported, isRoomSource } from '../src/dispatch.ts'
+import { COMPACTED_TEXT, COMPACT_UNREPORTED_TEXT, DispatchEngine, MEMBER_UNRECONCILED_TEXT, ROOM_KIND, ROOM_PLUGIN, compactionUnreported, executionFacts, isRoomSource } from '../src/dispatch.ts'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { LocalAgentFacade } from '../src/adapter.ts'
+import { withRunEntry } from './run-entry-shim.ts'
 
 /** A manually settled promise. */
 function deferred<T>() {
@@ -65,13 +67,22 @@ async function bootRoom(options: { liveAgent?: boolean } = {}): Promise<Bench> {
     resume: vi.fn(),
     cancel: vi.fn(() => false),
   }
-  const localAgentStub: Record<string, unknown> = { ...facade }
+  const localAgentStub: Record<string, unknown> = withRunEntry({ ...facade }, ctx)
   ctx.provide('localAgent', localAgentStub as never)
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
   const sessionId = await createRoom(ctx, service)
   return { ctx, service, sessionId, facade: facade as Bench['facade'], localAgentStub, agent }
+}
+
+/** Seat `ada` with a child of its own (a continuing member). */
+async function preparedMemberOf(bench: Bench) {
+  await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
+  bench.ctx.sessions.get(bench.sessionId)!.append('room/member-updated', { name: 'ada', childSessionId: SessionId('child-ada') })
+  const state = await bench.service.getState({ sessionId: bench.sessionId })
+  if (!state.ok) throw new Error('room unavailable')
+  return state.value.members.find(member => member.name === 'ada')!
 }
 
 /** A settled run handle. */
@@ -165,8 +176,14 @@ describe('DispatchEngine (real composition)', () => {
     await bench.service.engine.idle()
     const edges = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().filter(event => event.type === 'room/run-state')
     expect(edges.map(event => event.data.state)).toEqual(['running', 'done', 'running', 'failed', 'running', 'done'])
-    // Each running edge records where its run's child events begin.
-    expect(edges.filter(event => event.data.state === 'running').map(event => event.data.childFromSeq)).toEqual([0, 1, 1])
+    // Each running edge records where its run's child events begin (the
+    // core's admission says; its execution records sit in the child too) and
+    // which execution it is.
+    expect(edges.filter(event => event.data.state === 'running').map(event => event.data.childFromSeq)).toEqual([0, 2, 3])
+    const executions = edges.filter(event => event.data.state === 'running').map(event => event.data.executionId)
+    expect(new Set(executions).size).toBe(3)
+    expect(edges.filter(event => event.data.state !== 'running').map(event => event.data.executionId)).toEqual(executions)
+    // The terminal edge's round is the execution's recorded turns.
     expect(edges.filter(event => event.data.state !== 'running').map(event => event.data.childTurn)).toEqual([1, undefined, 2])
   })
 
@@ -460,6 +477,155 @@ describe('DispatchEngine (real composition)', () => {
     expect(speech).toMatchObject({ data: { member: 'bill', reportedTo: 'ada' } })
   })
 
+  it('every member round goes through run() with its cause, task, delivery key and run id', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async (_parent: string, provider: string) => settledRun(provider === 'kimi' ? 'child-ada' : 'child-bill', 'ready'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '准备' })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', firstTask: '准备' })
+    await bench.service.engine.idle()
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) => settledRun(child, child === 'child-bill' ? '测完了' : '收到'))
+    await bench.service.receiveMemberMessage({ from: 'child-ada', to: 'bill', content: '写测试', parentSessionId: bench.sessionId, provenance: { provider: 'kimi' } })
+    await bench.service.engine.idle()
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 看一下' })
+    await bench.service.engine.idle()
+
+    const events = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    const ada = state.value.members.find(member => member.name === 'ada')!.id!
+    const bill = state.value.members.find(member => member.name === 'bill')!.id!
+    const dispatches = events.filter(event => event.type === 'room/dispatch')
+    const run = bench.localAgentStub['run'] as ReturnType<typeof vi.fn>
+    const requests = run.mock.calls.map(call => call[0] as Record<string, unknown> & { member: { childSessionId: string } })
+    expect(requests).toHaveLength(5)
+    for (const request of requests) {
+      expect(request).toMatchObject({ parentSessionId: bench.sessionId, caller: 'room', operation: 'prompt' })
+      // The delivery id (`<dispatch seq>:<member id>`) is both the key and the run id.
+      expect(request['key']).toBe(request['callerRef'])
+    }
+    const [inviteAda, inviteBill, toBill, report, human] = requests
+    const seqOf = (request: Record<string, unknown>): number => Number(String(request['key']).split(':')[0])
+    const dispatchOf = (request: Record<string, unknown>) => dispatches.find(event => event.seq === seqOf(request))!
+    // An invite's first task: the human asked, in this room.
+    expect(inviteAda).toMatchObject({ member: { childSessionId: ada }, cause: { kind: 'human', sessionId: bench.sessionId, via: 'room', dispatchSeq: seqOf(inviteAda!) } })
+    expect(inviteAda!['task']).toEqual({ sessionId: bench.sessionId, id: (dispatchOf(inviteAda!).data as { task: string }).task })
+    expect(inviteBill).toMatchObject({ member: { childSessionId: bill }, key: `${seqOf(inviteBill!)}:${bill}` })
+    // A member's message: from that member, by the dispatch it rides.
+    expect(toBill).toMatchObject({ member: { childSessionId: 'child-bill' }, cause: { kind: 'member', sessionId: bench.sessionId, fromMemberId: ada, dispatchSeq: seqOf(toBill!) } })
+    expect(toBill!['member']).not.toHaveProperty('create')
+    // bill's report to ada: caused by bill's execution, named by its run-state edge.
+    const billRun = events.find(event => event.type === 'room/run-state' && event.data.runId === toBill!['key'] && event.data.state === 'running')
+    expect(billRun?.type === 'room/run-state' && billRun.data.executionId).toBeTruthy()
+    expect(report).toMatchObject({ member: { childSessionId: 'child-ada' }, cause: { kind: 'execution', executionId: billRun?.type === 'room/run-state' ? billRun.data.executionId : '' } })
+    // A human message names the message it carries.
+    const message = dispatchOf(human!).data as { messageId?: string; task?: string }
+    expect(message.messageId).toBeDefined()
+    expect(human).toMatchObject({ cause: { kind: 'human', messageId: message.messageId, via: 'room' }, task: { sessionId: bench.sessionId, id: message.task } })
+  })
+
+  it('names the cause of help, help replies, release rounds and legacy relays from the room facts', () => {
+    const room = 'room-1'
+    let seq = 0
+    const event = (type: string, data: Record<string, unknown>) => ({ type, seq: seq++, time: 0, data }) as unknown as SessionEvent
+    const events: SessionEvent[] = [
+      event('room/member-added', { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }),
+      event('room/dispatch', { origin: 'help', help: { id: 'h1', room: 'room-0', roomTitle: '别的房间', from: 'zed' }, targets: ['ada'], text: '帮个忙', task: 't1' }),
+      event('room/help', { id: 'h2', from: 'm-ada', fromName: 'ada', target: { sessionId: 'helper-1', title: '帮手' }, text: '问一下' }),
+      event('room/dispatch', { origin: 'report', reportFor: 'help:h2', targets: ['ada'], text: '答复' }),
+      event('room/decision', { id: 'd1', scenario: 'report-timing', outcome: 'later', about: { from: 'bill', to: 'ada' } }),
+      event('room/dispatch', { origin: 'report', releases: [1], releaseReason: 'timeout', targets: ['ada'], text: '等着交给你', task: 't1' }),
+      event('room/dispatch', { origin: 'report', releases: [1], releaseReason: 'restart', targets: ['ada'], text: '等着交给你' }),
+      event('room/dispatch', { origin: 'report', releases: [1], releaseReason: 'manual', targets: ['ada'], text: '等着交给你' }),
+      event('room/dispatch', { origin: 'report', reportFor: '1:m-bill', targets: ['ada'], text: '旧回报' }),
+      event('room/relay', { id: 'r1', from: 'ada', to: 'bill', content: '通知', state: 'pending' }),
+    ]
+    expect(executionFacts(events, room, 1)).toEqual({ cause: { kind: 'help', sessionId: room, helpId: 'h1', fromRoom: 'room-0' }, task: { sessionId: room, id: 't1' } })
+    expect(executionFacts(events, room, 3)).toEqual({ cause: { kind: 'help', sessionId: room, helpId: 'h2', fromRoom: 'helper-1' } })
+    expect(executionFacts(events, room, 5)).toEqual({ cause: { kind: 'decision', sessionId: room, decisionId: 'd1' }, task: { sessionId: room, id: 't1' } })
+    expect(executionFacts(events, room, 6)).toEqual({ cause: { kind: 'restart', sessionId: room } })
+    expect(executionFacts(events, room, 7)).toEqual({ cause: { kind: 'human', sessionId: room, dispatchSeq: 7, via: 'room' } })
+    // A report of a run with no execution id (the room's own agent, a run from before S5): from the reporting member.
+    expect(executionFacts(events, room, 8)).toEqual({ cause: { kind: 'member', sessionId: room, fromMemberId: 'm-bill', dispatchSeq: 8 } })
+    expect(executionFacts(events, room, undefined, ['r1'])).toEqual({ cause: { kind: 'member', sessionId: room, fromMemberId: 'm-ada', dispatchSeq: 9 } })
+  })
+
+  it('a member with an unreconciled execution: the round is not sent and the room points to 待对账', async () => {
+    const bench = await bootRoom()
+    const member = await preparedMemberOf(bench)
+    bench.localAgentStub['run'] = vi.fn(async () => { throw new Error('A member input has an uncertain outcome; reconcile before continuing') })
+    bench.localAgentStub['readMemberInbox'] = (id: string) => ({ paused: false, messages: id === member.childSessionId ? [{ status: 'uncertain' }] : [] })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 继续' })
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    expect(state).toMatchObject({ ok: true, value: {
+      deliveries: [{ status: 'failed', error: MEMBER_UNRECONCILED_TEXT }],
+      runs: [{ member: 'ada', state: 'failed', error: MEMBER_UNRECONCILED_TEXT }],
+    } })
+    expect(MEMBER_UNRECONCILED_TEXT).toContain('待对账')
+  })
+
+  it('a delivery replayed while the core holds it is admitted once', async () => {
+    const bench = await bootRoom()
+    await preparedMemberOf(bench)
+    bench.localAgentStub.supportsMemberConfiguration = () => true
+    const admit = deferred<void>()
+    bench.facade.resume.mockImplementation(async (_parent, _provider, _child, _prompt, options) => {
+      await admit.promise
+      await options.onAdmitted()
+      return settledRun('child-ada', 'done once')
+    })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 只做一次' })
+    await tick()
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    // A second engine over the same room (a recovery pass that does not know
+    // this process's in-flight work) submits the same, still queued delivery.
+    const replayed = new DispatchEngine(bench.ctx)
+    const dispatch = room.snapshotEvents().find(event => event.type === 'room/dispatch')!
+    replayed.dispatch(room, 'ada', '只做一次', { dispatchSeq: dispatch.seq })
+    await tick()
+    admit.resolve()
+    await bench.service.engine.idle()
+    await replayed.idle()
+    const run = bench.localAgentStub['run'] as ReturnType<typeof vi.fn>
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(new Set(run.mock.calls.map(call => (call[0] as { key: string }).key)).size).toBe(1)
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    const edges = room.snapshotEvents().filter(event => event.type === 'room/delivery-state').map(event => event.data.state)
+    expect(edges).toEqual(['running', 'done'])
+  })
+
+  it('a round another caller starts on a room member shows in the room: busy card, reply, terminal edge', async () => {
+    const bench = await bootRoom()
+    await preparedMemberOf(bench)
+    const child = bench.ctx.sessions.create(SessionId('child-ada'))
+    // The room's own agent continues ada with the host `subagent` tool: the
+    // core records the execution in ada's session (user decision ④).
+    child.append('local-agent/execution', { phase: 'start', executionId: 'exec-tool', caller: 'tool', callerRef: 'call-1', operation: 'prompt',
+      cause: { kind: 'tool-call', sessionId: bench.sessionId, callId: 'call-1' }, parentSessionId: bench.sessionId, admittedAt: Date.now() } as never)
+    await tick()
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const running = room.snapshotEvents().filter(event => event.type === 'room/run-state')
+    expect(running.map(event => event.data)).toMatchObject([{ member: 'ada', state: 'running', runId: 'execution:exec-tool', executionId: 'exec-tool', childSessionId: 'child-ada' }])
+    // Busy while it runs (the recovery projection keeps it running), and the stop button reaches it.
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { runs: [{ member: 'ada', state: 'running' }] } })
+    child.append('turn/start', { turn: 1 } as never)
+    child.append('assistant/message', { turn: 1, step: 1, message: { role: 'assistant', id: 'msg-1', content: [{ type: 'text', text: '按主 agent 说的改好了' }] } } as never, { surfaceOp: 'append' } as never)
+    child.append('local-agent/execution', { phase: 'end', executionId: 'exec-tool', outcome: 'done', turns: [1], endedAt: Date.now() } as never)
+    await tick()
+    const rows = room.snapshotEvents()
+    expect(rows.filter(event => event.type === 'room/speech').map(event => event.data)).toMatchObject([{ member: 'ada', text: '按主 agent 说的改好了', runId: 'execution:exec-tool', messageId: 'msg-1' }])
+    expect(rows.filter(event => event.type === 'room/run-state').at(-1)?.data).toMatchObject({ state: 'done', childTurn: 1, executionId: 'exec-tool' })
+    // It is that caller's work: no room delivery, and nothing went through the room's own entry.
+    expect(rows.some(event => event.type === 'room/delivery-state' || event.type === 'room/dispatch')).toBe(false)
+    expect(bench.localAgentStub['run']).not.toHaveBeenCalled()
+    // The room's own rounds and replayed history are not outside rounds.
+    child.append('local-agent/execution', { phase: 'start', executionId: 'exec-room', caller: 'room', operation: 'prompt', parentSessionId: bench.sessionId, admittedAt: Date.now() } as never)
+    child.append('local-agent/execution', { phase: 'start', executionId: 'exec-old', caller: 'tool', operation: 'prompt', parentSessionId: bench.sessionId, admittedAt: Date.now() - 3_600_000 } as never)
+    await tick()
+    expect(room.snapshotEvents().filter(event => event.type === 'room/run-state')).toHaveLength(2)
+  })
+
   it('a notify is delivered once and never reported back', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async (_parent: string, provider: string) => settledRun(provider === 'kimi' ? 'child-ada' : 'child-bill', 'ok'))
@@ -572,6 +738,7 @@ describe('DispatchEngine (real composition)', () => {
     if (!second.ok) throw new Error('narrowing')
     const relay2 = second.value.relays[1]!
     // The facade vanishes: the confirm's dispatch fails before delivery.
+    const runEntry = bench.localAgentStub['run']
     for (const key of Object.keys(bench.localAgentStub)) delete bench.localAgentStub[key]
     await bench.service.confirmRelay({ sessionId: bench.sessionId, relayId: relay2.id })
     await bench.service.engine.idle()
@@ -579,7 +746,7 @@ describe('DispatchEngine (real composition)', () => {
     expect(stuck).toMatchObject({ ok: true, value: { relays: [{ state: 'sent' }, { state: 'confirmed' }] } })
 
     // The facade returns; a human @bill dispatch carries the stuck relay.
-    Object.assign(bench.localAgentStub, bench.facade)
+    Object.assign(bench.localAgentStub, bench.facade, { run: runEntry })
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@bill 继续' })
     await bench.service.engine.idle()
     const carriedPrompt = textOf(bench.facade.resume.mock.calls[1]![3] as ContentBlock[])
@@ -1162,8 +1329,11 @@ describe('coordinator routing and durable deliveries', () => {
     await tick()
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada second input' })
     await tick()
-    // The old room chain held the second facade call until the entire first turn settled.
-    expect(bench.facade.resume).toHaveBeenCalledTimes(2)
+    // Both reach the core's execution entry at once (the old room chain held
+    // the second until the entire first turn settled); the member's ledger
+    // runs them one at a time.
+    expect(bench.localAgentStub['run']).toHaveBeenCalledTimes(2)
+    expect(bench.facade.resume).toHaveBeenCalledTimes(1)
     first.resolve({ output: [{ type: 'text', text: 'first own output' }], stopReason: 'completed' })
     await olderFlushEntered.promise
     await tick()
@@ -1192,7 +1362,7 @@ describe('coordinator routing and durable deliveries', () => {
     flush.mockRestore()
   })
 
-  it('holds fresh-member submissions only until their first stable handle is persisted', async () => {
+  it('names a fresh member by its stable id: a second round queues in the core at once and continues the first', async () => {
     const bench = await bootRoom()
     bench.localAgentStub.supportsMemberConfiguration = () => true
     const publish = deferred<void>()
@@ -1203,22 +1373,35 @@ describe('coordinator routing and durable deliveries', () => {
       return { ...settledRun('fresh-child', ''), result: result.promise }
     })
     bench.facade.resume.mockImplementation(async (_parent, _provider, _child, _prompt, options) => {
-      await result.promise
       await options.onAdmitted()
       return settledRun('fresh-child', 'second output')
     })
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: 'first input' })
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada second input' })
     await tick()
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    const ada = state.value.members.find(member => member.name === 'ada')!
+    // No room-side hold for the first handle: both rounds reach the core
+    // under the member's own id, and only the first carries a creation identity.
+    const run = bench.localAgentStub['run'] as ReturnType<typeof vi.fn>
+    expect(run).toHaveBeenCalledTimes(2)
+    const requests = run.mock.calls.map(call => call[0] as { member: { childSessionId: string; create?: unknown }; caller: string; key: string; callerRef: string })
+    expect(requests.map(request => request.member.childSessionId)).toEqual([ada.id, ada.id])
+    expect(requests[0]!.member.create).toEqual({ label: 'ada' })
+    expect(requests.map(request => request.caller)).toEqual(['room', 'room'])
+    // The delivery id is the key and the run id: one delivery, one execution.
+    expect(requests.every(request => request.key === request.callerRef && request.key.endsWith(`:${ada.id!}`))).toBe(true)
     expect(bench.facade.start).toHaveBeenCalledOnce()
-    expect(bench.facade.resume).not.toHaveBeenCalled()
     publish.resolve()
     await tick()
-    expect(bench.facade.resume).toHaveBeenCalledOnce()
-    expect(bench.facade.resume.mock.calls[0]![2]).toBe('fresh-child')
+    // The member's ledger runs one round at a time.
+    expect(bench.facade.resume).not.toHaveBeenCalled()
     result.resolve({ output: [{ type: 'text', text: 'first output' }], stopReason: 'completed' })
     await bench.service.engine.idle()
     expect(bench.facade.start).toHaveBeenCalledOnce()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    expect(bench.facade.resume.mock.calls[0]![2]).toBe('fresh-child')
     expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { deliveries: [{ status: 'done' }, { status: 'done' }] } })
   })
 

@@ -11,6 +11,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import RoomService from '../src/index.ts'
 import { createRoom } from './promote.ts'
+import { withRunEntry } from './run-entry-shim.ts'
 
 /** A live agent whose turn "answers" with a scripted assistant text. */
 function scriptedAgent(id: SessionId, reply: () => string) {
@@ -59,7 +60,7 @@ async function boot() {
     mount: async (_ctx: Context, id?: string) => { mounted.push(id ?? 'standard'); return { id: id ?? 'standard' } },
     list: async () => [{ id: 'standard', name: '标准模式' }, { id: 'review', name: '审查模式', description: '只读' }],
   } as never)
-  ctx.provide('localAgent', { start: vi.fn(), resume: vi.fn(), cancel: vi.fn(() => false) } as never)
+  ctx.provide('localAgent', withRunEntry({ start: vi.fn(), resume: vi.fn(), cancel: vi.fn(() => false) }, ctx) as never)
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
