@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore from '@deepseek-ai/dsh-session'
 import * as localAgent from '@khorsheed/dsh-local-agent'
@@ -34,6 +35,7 @@ async function mountRegistry(homesRoot: string): Promise<Mounted> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(CommandRuntime)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(localAgent, { homesRoot })
   return { ctx, registry: ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry }

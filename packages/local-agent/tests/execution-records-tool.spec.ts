@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
@@ -25,6 +26,7 @@ import SubagentRuntime, { NO_START_CAPABILITIES, subprocessRunHandle } from '@de
 import type { SubagentProvider, SubagentResult } from '@deepseek-ai/dsh-subagent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import type { ToolExecutionInput } from '@deepseek-ai/dsh-tools'
 import * as localAgent from '../src/index.ts'
 import { LOCAL_AGENT_SERVICE } from '../src/index.ts'
@@ -74,7 +76,9 @@ async function mount() {
   await ctx.plugin(CommandRuntime)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   ctx.provide('workingDirectory', { ensure: async () => '/home/user/work' } as never)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SubagentRuntime)
   const store = ctx.plugin(JsonlSessionPersistence, { root: mkdtempSync(join(tmpdir(), 'exec-tool-store-')), compression: 'none' })
@@ -135,7 +139,12 @@ async function mount() {
     parentSession.append('step/start', { turn, step: 1 } as never)
     parentSession.append('assistant/message', { turn, step: 1, message: { role: 'assistant', content: [{ type: 'tool-call', id: callId, name: TOOL, arguments: JSON.stringify(args) }] }, stream: [] } as never, { surfaceOp: 'append' } as never)
     parentSession.append('tool/call', { turn, step: 1, callId, name: TOOL, arguments: JSON.stringify(args) } as never)
-    return ctx.tools.execute({ signal: new AbortController().signal, callId: callId as ToolExecutionInput['callId'], name: TOOL, arguments: args, agent })
+    const batch = await ctx.tools.execute({
+      calls: [{ type: 'tool-call', id: callId as ToolExecutionInput['callId'], name: TOOL, arguments: JSON.stringify(args) }],
+      signal: new AbortController().signal,
+      agent,
+    })
+    return batch.results[0]!.result
   }
   const stored = async (childSessionId: string) => {
     const reader = await ctx.sessionPersistence.open(SessionId(childSessionId), 'read')
@@ -222,6 +231,7 @@ describe('plugin unload while an end waits for its settle report', () => {
     // A round whose provider never reports its settle: the end parks.
     const child = Session.create(SessionId('parked-child'))
     h.ctx.sessions.enter(child)
+    h.ctx.sessions.announce(child)
     const parked = (h.registry as unknown as { executions: ExecutionRecorder }).executions
     const open = parked.admit({ childSessionId: 'parked-child', parentSessionId: PARENT, operation: 'prompt' })
     openMirrorTurn(child, 1, 'exec')

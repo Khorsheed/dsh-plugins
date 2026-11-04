@@ -8,6 +8,7 @@ import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { AssistantStreamFrame, Agent, AgentHandle, CreateAgentOptions, Inbox, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
 import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
@@ -64,6 +65,7 @@ async function bench(script: Script): Promise<ServeBench> {
   const ctx = new Context()
   const trace: ServeBench['trace'] = { creates: [], resumes: [], cancels: [], disposed: [] }
   await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentDefaultModelConfig, { provider: 'test-provider', model: 'test-model' })
   ctx.agents.setFactory({
@@ -153,7 +155,7 @@ async function makeHandle(
     inject: () => {},
     whenIdle: () => idle,
   } satisfies Partial<Agent>)
-  await options.setup?.(agentCtx)
+  await options.setup?.(agentCtx, agent)
   ctx.agents.register(agent)
   return { agent, dispose: () => { trace.disposed.push(sessionId); return Promise.resolve() } }
 }
@@ -273,7 +275,8 @@ describe('headless serve mode', () => {
   it('fails the turn/start request when the resume target does not exist', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(SessionProjectionRegistry)
+  await ctx.plugin(AgentRegistry)
     await ctx.plugin(AgentDefaultModelConfig, { provider: 'p', model: 'm' })
     ctx.agents.setFactory({
       createAgent: () => Promise.reject(new Error('not used')),

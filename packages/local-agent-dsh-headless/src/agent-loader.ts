@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
-import type { AgentHandle, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import type { AgentHandle, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -136,13 +136,15 @@ export async function loadSubDshAgent(
   // host plane and the agent reads them from the global layer. A deployment
   // that DOES configure one has to join it here first
   // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
-  const agentOptions = { provider: selection.provider, model: selection.model }
+  const agentOptions = {
+    provider: selection.provider,
+    model: selection.model,
+    ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
+  }
   const setup = async (agentCtx: Context): Promise<void> => {
-    const selected: ModelSelectionRef = { current: selection, assembled: undefined }
-    // The released installModelSelection registers the two scoped waterfall
-    // listeners and returns their disposer; the run owns the whole process
-    // lifetime, so the disposer is deliberately dropped.
-    installModelSelection(agentCtx, selected)
+    // The run owns the whole process lifetime, so the listener disposer is
+    // deliberately dropped. Route, model and effort live in agentOptions.
+    installModelSelection(agentCtx)
     // The preset join happens INSIDE setup, before the agent is published:
     // the roster parents this agent's scope key to the preset's standing
     // mount, so the preset's tools and prompt sections exist before the first

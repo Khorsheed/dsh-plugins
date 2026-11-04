@@ -7,6 +7,7 @@ import type { Agent, AgentHandle, CreateAgentOptions, Inbox, ResumeAgentOptions 
 import AgentDefaultModelConfig from '@deepseek-ai/dsh-agent-default-model'
 import { createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import { apply, Config, internals } from '../src/index.ts'
 
@@ -78,6 +79,7 @@ async function bench(script: Script): Promise<{
   const ctx = new Context()
   const trace: FactoryTrace = { creates: [], resumes: [] }
   await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentDefaultModelConfig, { provider: 'test-provider', model: 'test-model' })
   ctx.agents.setFactory({
@@ -140,7 +142,7 @@ async function makeHandle(
     inject: () => {},
     whenIdle: () => idle,
   } satisfies Partial<Agent>)
-  await options.setup?.(agentCtx)
+  await options.setup?.(agentCtx, agent)
   script.before?.(session)
   ctx.agents.register(agent)
   return { agent, dispose: () => Promise.resolve() }

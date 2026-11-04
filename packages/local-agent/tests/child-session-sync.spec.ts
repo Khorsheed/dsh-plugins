@@ -2,7 +2,13 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
+import { pathToFileURL } from 'node:url'
+
+const harness = process.env.DSH_HARNESS ?? join(process.env.HOME ?? '', 'code', 'deepseek-harness')
+const [{ HistoryController }, { WebController }] = await Promise.all([
+  import(pathToFileURL(join(harness, 'packages/api/session-controller/src/history/controller.ts')).href),
+  import(pathToFileURL(join(harness, 'packages/api/session-controller/src/web/controller.ts')).href),
+])
 import { Context } from '@deepseek-ai/cordis'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { Session, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
@@ -206,9 +212,10 @@ describe('LocalAgentRegistry.syncChildSession', () => {
       events, cursor: events.at(-1)!.seq, source: 'stored',
       header: { ...cold.header, cwd: '/home/user/project' },
       inheritedEventCount: 0,
+      projections: { asOfSeq: events.at(-1)!.seq, values: {} },
       [Symbol.dispose]() {},
     }) } as never)
-    const history = new SessionHistoryController(ctx, () => { throw new Error('must not activate a host agent') })
+    const history = new WebController(ctx, new HistoryController(ctx), () => { throw new Error('must not activate a host agent') })
     const abort = new AbortController()
     const stream = history.follow({ address: { kind: 'session', sessionId: cold.id } }, abort.signal)[Symbol.asyncIterator]()
     try {

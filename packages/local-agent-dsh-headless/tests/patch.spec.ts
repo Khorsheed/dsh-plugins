@@ -77,4 +77,18 @@ describe('dsh-local-agent-dsh-headless bundle patch', () => {
     const ptcRuntime = inserted.find(entry => entry.id === 'ptc-runtime')
     expect(ptcRuntime?.name).toBe('@deepseek-ai/dsh-ptc-runtime-node')
   })
+
+  it('selects exactly one new executor, with native as the default and no unknown-mode fallback', () => {
+    const rows = loadPatch()
+    expect(rows.find(row => row.id === 'tools')?.config).toBeUndefined()
+    const native = rows.find(row => row.id === 'tool-executor-native')?.disabled as { __jsExpr: string }
+    const ptc = rows.find(row => row.id === 'tool-executor-ptc')?.disabled as { __jsExpr: string }
+    const disabled = (expression: { __jsExpr: string }, mode?: string): unknown =>
+      Function('process', `return (${expression.__jsExpr})`)({ env: { DSH_TOOLS_MODE: mode } })
+    for (const mode of [undefined, 'native', 'ptc', 'future']) {
+      expect([disabled(native, mode), disabled(ptc, mode)]).toEqual(
+        mode === 'ptc' ? [true, false] : mode === 'future' ? [true, true] : [false, true],
+      )
+    }
+  })
 })

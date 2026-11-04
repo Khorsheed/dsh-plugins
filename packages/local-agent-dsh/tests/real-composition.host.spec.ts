@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -48,6 +49,7 @@ async function boot(rowConfig: Record<string, unknown>): Promise<{
   ctx.provide('workingDirectory', {
     ensure: async () => { throw new Error('no working directory') },
   } as never)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(localAgentCore, { homesRoot: mkdtempSync(join(tmpdir(), 'dsh-realcomp-')) })

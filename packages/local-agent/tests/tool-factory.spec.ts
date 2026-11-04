@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import type { ToolExecutionInput } from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
@@ -61,9 +63,11 @@ async function setup(
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  await ctx.plugin(NativeToolExecutor)
   ctx.provide('workingDirectory', { ensure: async () => '/tmp' } as never)
-  await ctx.plugin(AgentRegistry)
-  await ctx.plugin(SubagentRuntime)
+  await ctx.plugin(SessionProjectionRegistry)
+  await ctx.plugin(AgentRegistry).await()
+  await ctx.plugin(SubagentRuntime).await()
   const started: Array<{ label?: string; task: string }> = []
   const taken: Array<{ kind: string; childSessionId?: string; cliSessionId?: string }> = []
   mountScriptedProvider(ctx, {
@@ -97,16 +101,18 @@ async function setup(
 }
 
 let callCounter = 0
-function callTool(ctx: Context, args: unknown, agent: Agent) {
+async function callTool(ctx: Context, args: unknown, agent: Agent) {
   // The activation manager requires the exact live parent agent object.
   if (ctx.agents.get(agent.id) !== agent) ctx.agents.enter(agent, undefined)
-  return ctx.tools.execute({
+  const batch = await ctx.tools.execute({
+    calls: [{
+      type: 'tool-call', id: `call-${++callCounter}` as ToolExecutionInput['callId'],
+      name: 'subagent_test', arguments: JSON.stringify(args),
+    }],
     signal: testToolSignal,
-    callId: `call-${++callCounter}` as ToolExecutionInput['callId'],
-    name: 'subagent_test',
-    arguments: args,
     agent,
   })
+  return batch.results[0]!.result
 }
 
 function text(result: { content: { type: string; text?: string }[] }): string {
@@ -317,9 +323,11 @@ describe('dsh-local-agent tool-factory', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(NativeToolExecutor)
     // Host 0.2.1: the runtime's static inject requires workingDirectory.
     ctx.provide('workingDirectory', { ensure: async () => '/tmp' } as never)
-    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SubagentRuntime).await()
     const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
     ctx.provide(LOCAL_AGENT_SERVICE, registry)
     ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
@@ -336,10 +344,12 @@ describe('dsh-local-agent tool-factory', () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(NativeToolExecutor)
     // Host 0.2.1: the runtime's static inject requires workingDirectory.
     ctx.provide('workingDirectory', { ensure: async () => '/tmp' } as never)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(AgentRegistry).await()
+    await ctx.plugin(SubagentRuntime).await()
     const started: Array<{ label?: string; task: string }> = []
     const taken: Array<{ kind: string; childSessionId?: string; cliSessionId?: string }> = []
     const disposer = mountScriptedProvider(ctx, { name: 'mock', started, taken })
