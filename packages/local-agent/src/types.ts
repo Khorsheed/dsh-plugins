@@ -131,6 +131,113 @@ export interface LocalAgentContextEvent {
   contextWindow?: number
 }
 
+/** Who asked the core for an execution. */
+export type LocalAgentExecutionCaller = 'tool' | 'composer' | 'room' | 'api'
+
+/** What one execution was for: a prompt round, or a `/compact`. */
+export type LocalAgentExecutionOperation = 'prompt' | 'compact'
+
+/** How an execution ended. */
+export type LocalAgentExecutionOutcome = 'done' | 'failed' | 'cancelled' | 'uncertain'
+
+/**
+ * The task an execution worked for, by reference: room writes its
+ * `room/dispatch` task id; the host tool path writes `turn:<n>` of the
+ * calling session. Spend summed per task adds every execution whose `task`
+ * is equal.
+ */
+export interface LocalAgentTaskRef {
+  sessionId: string
+  id: string
+}
+
+/**
+ * Why an execution ran, as the caller recorded it. Room assembles it from
+ * its own facts; the core stores it and never interprets it.
+ */
+export type LocalAgentExecutionCause =
+  /** A human asked: a room message, the member composer, or the compact button. */
+  | { kind: 'human'; sessionId: string; messageId?: string; dispatchSeq?: number; via?: 'room' | 'member-composer' | 'compact-button' }
+  /** The coordinator or another member sent it (including the old relay). */
+  | { kind: 'member'; sessionId: string; fromMemberId: string; dispatchSeq: number }
+  /** A help request from another room. */
+  | { kind: 'help'; sessionId: string; helpId: string; fromRoom: string; fromTask?: LocalAgentTaskRef }
+  /** A release round the report gate let through. */
+  | { kind: 'decision'; sessionId: string; decisionId: string }
+  /** A round a previous execution's report triggered. */
+  | { kind: 'execution'; executionId: string }
+  /** A host session's `subagent` tool call (including a room's main agent continuing a member directly). */
+  | { kind: 'tool-call'; sessionId: string; callId: string }
+  /** The hand-off of held work after a restart. */
+  | { kind: 'restart'; sessionId: string }
+
+/**
+ * A fact the source never reports, declared statically per harness (exec and
+ * live separately) and copied onto the execution's end record — never
+ * guessed from a run's outcome.
+ */
+export type LocalAgentUnrecorded =
+  /** Model calls the CLI makes internally that never reach its stream. */
+  | 'internal-calls'
+  /** Call boundaries cannot be told apart (codex exec). */
+  | 'call-boundaries'
+  /** Only a whole-round usage exists (codex exec): the step carrying it reads as a round total. */
+  | 'per-call-usage'
+  /** `/compact` ran, but the CLI reports no compaction facts (Claude Code, dsh). */
+  | 'compaction'
+
+/**
+ * `local-agent/execution`, phase `start`: written in the member's child
+ * session at the admission point (for a first round, before its first
+ * `turn/start`; written once per `executionId`).
+ */
+export interface LocalAgentExecutionStartEvent {
+  phase: 'start'
+  executionId: string
+  caller: LocalAgentExecutionCaller
+  /** The caller's own handle for this execution (room run id, tool call id, …). */
+  callerRef?: string
+  operation: LocalAgentExecutionOperation
+  cause: LocalAgentExecutionCause
+  task?: LocalAgentTaskRef
+  /** The session that owns the member (a room, or the host session that delegated). */
+  parentSessionId: string
+  admittedAt: number
+}
+
+/**
+ * `local-agent/execution`, phase `end`: written by the core when the run
+ * settles — after the execution's last `turn/end`. It carries no turn/step
+ * relationship, so the host's released-log check places no constraint on it.
+ */
+export interface LocalAgentExecutionEndEvent {
+  phase: 'end'
+  executionId: string
+  outcome: LocalAgentExecutionOutcome
+  /**
+   * The `turn/start` turns this execution wrote after its start record: the
+   * explicit range, never inferred from time. Empty for a compaction or a run
+   * that failed before its first turn.
+   */
+  turns: number[]
+  endedAt: number
+  /** The harness's static "not recorded" declarations, copied verbatim. */
+  unrecorded?: LocalAgentUnrecorded[]
+  /**
+   * The CLI's own whole-round total, as it reported it (user decision
+   * 2026-11-03 ②): an independent fact to check against the sum of the
+   * per-call `assistant/message.usage` in `turns`, never a copy of it and
+   * never added to it.
+   */
+  providerReportedUsage?: TokenUsage
+}
+
+/**
+ * One `local-agent/execution` record: a member execution's cause and task at
+ * its start, its outcome and turn range at its end. Paired by `executionId`.
+ */
+export type LocalAgentExecutionEvent = LocalAgentExecutionStartEvent | LocalAgentExecutionEndEvent
+
 /** A member's context occupancy, as the `memberContext` Remote answers it. */
 export interface LocalAgentMemberContext {
   provider: string
@@ -151,6 +258,12 @@ declare module '@deepseek-ai/dsh-session/types' {
     'local-agent/stream': LocalAgentStreamCheckpoint
     /** A CLI member's context compaction (display + accounting). */
     'local-agent/compaction': LocalAgentCompactionEvent
+    /**
+     * A member execution's start and end (cause, task, turn range). Never
+     * unregister once any build writes it: the stored reader refuses a log
+     * with an unregistered type, so the member's history would not open.
+     */
+    'local-agent/execution': LocalAgentExecutionEvent
   }
 }
 

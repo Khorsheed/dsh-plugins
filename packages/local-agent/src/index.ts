@@ -45,6 +45,8 @@ for (const catalog of streamCatalogs) {
   (catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
   ;(catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/compaction')
   ;(catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/context')
+  // Registered before any build writes it (batch 5 S0); never remove it.
+  ;(catalog?.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/execution')
 }
 
 // The host's released-log check, the exact relationship rules every stored
@@ -141,6 +143,15 @@ export type {
   LocalAgentCompactionEvent,
   LocalAgentContextEvent,
   LocalAgentMemberContext,
+  LocalAgentExecutionCaller,
+  LocalAgentExecutionCause,
+  LocalAgentExecutionEndEvent,
+  LocalAgentExecutionEvent,
+  LocalAgentExecutionOperation,
+  LocalAgentExecutionOutcome,
+  LocalAgentExecutionStartEvent,
+  LocalAgentTaskRef,
+  LocalAgentUnrecorded,
 } from './types.ts'
 
 export type {
@@ -3762,6 +3773,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/stream')
         ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/compaction')
         ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/context')
+        ;(catalog.KNOWN_SESSION_EVENT_TYPES as Set<string> | undefined)?.add('local-agent/execution')
       } catch { /* Optional source export or loader capability; root registration remains. */ }
     }
   }
