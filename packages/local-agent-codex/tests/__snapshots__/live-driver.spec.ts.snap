@@ -101,49 +101,15 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
             "text": "先列目录",
             "type": "reasoning",
           },
-        ],
-        "id": "<uuid>",
-        "role": "assistant",
-        "source": {
-          "kind": "model",
-          "model": "gpt-5.4",
-          "provider": "codex-local",
-        },
-      },
-      "step": 1,
-      "stream": [],
-      "turn": 1,
-    },
-    "seq": 6,
-    "surfaceOp": "append",
-    "time": 1767225600400,
-    "type": "assistant/message",
-  },
-  {
-    "data": {
-      "step": 1,
-      "turn": 1,
-    },
-    "seq": 7,
-    "time": 1767225600400,
-    "type": "step/end",
-  },
-  {
-    "data": {
-      "step": 2,
-      "turn": 1,
-    },
-    "seq": 8,
-    "time": 1767225600400,
-    "type": "step/start",
-  },
-  {
-    "data": {
-      "message": {
-        "content": [
           {
             "arguments": "ls",
             "id": "c1",
+            "name": "Bash",
+            "type": "tool-call",
+          },
+          {
+            "arguments": "false",
+            "id": "c2",
             "name": "Bash",
             "type": "tool-call",
           },
@@ -156,12 +122,33 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
           "provider": "codex-local",
         },
       },
-      "step": 2,
+      "step": 1,
       "stream": [
         {
           "chunk": {
-            "blockType": "tool-call",
+            "blockType": "reasoning",
             "index": 0,
+            "type": "block-start",
+          },
+          "time": 1767225600010,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "先列目录",
+              "type": "reasoning",
+            },
+            "index": 0,
+            "type": "block-end",
+          },
+          "time": 1767225600100,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "blockType": "tool-call",
+            "index": 1,
             "type": "block-start",
           },
           "time": 1767225600100,
@@ -175,7 +162,7 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
               "name": "Bash",
               "type": "tool-call",
             },
-            "index": 0,
+            "index": 1,
             "type": "block-end",
           },
           "time": 1767225600150,
@@ -183,8 +170,13 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
         },
       ],
       "turn": 1,
+      "usage": {
+        "cacheReadTokens": 6,
+        "inputTokens": 4,
+        "outputTokens": 3,
+      },
     },
-    "seq": 9,
+    "seq": 6,
     "surfaceOp": "append",
     "time": 1767225600400,
     "type": "assistant/message",
@@ -194,10 +186,10 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
       "arguments": "ls",
       "callId": "c1",
       "name": "Bash",
-      "step": 2,
+      "step": 1,
       "turn": 1,
     },
-    "seq": 10,
+    "seq": 7,
     "time": 1767225600400,
     "type": "tool/call",
   },
@@ -228,12 +220,12 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
           "version": 1,
         },
       },
-      "step": 2,
+      "step": 1,
       "turn": 1,
     },
-    "seq": 11,
+    "seq": 8,
     "sourceEventSeqs": [
-      10,
+      7,
     ],
     "surfaceOp": "append",
     "time": 1767225600400,
@@ -241,65 +233,14 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
   },
   {
     "data": {
-      "step": 2,
-      "turn": 1,
-    },
-    "seq": 12,
-    "time": 1767225600400,
-    "type": "step/end",
-  },
-  {
-    "data": {
-      "step": 3,
-      "turn": 1,
-    },
-    "seq": 13,
-    "time": 1767225600600,
-    "type": "step/start",
-  },
-  {
-    "data": {
-      "message": {
-        "content": [
-          {
-            "arguments": "false",
-            "id": "c2",
-            "name": "Bash",
-            "type": "tool-call",
-          },
-        ],
-        "id": "<uuid>",
-        "role": "assistant",
-        "source": {
-          "kind": "model",
-          "model": "gpt-5.4",
-          "provider": "codex-local",
-        },
-      },
-      "step": 3,
-      "stream": [],
-      "turn": 1,
-      "usage": {
-        "cacheReadTokens": 6,
-        "inputTokens": 4,
-        "outputTokens": 3,
-      },
-    },
-    "seq": 14,
-    "surfaceOp": "append",
-    "time": 1767225600600,
-    "type": "assistant/message",
-  },
-  {
-    "data": {
       "arguments": "false",
       "callId": "c2",
       "name": "Bash",
-      "step": 3,
+      "step": 1,
       "turn": 1,
     },
-    "seq": 15,
-    "time": 1767225600600,
+    "seq": 9,
+    "time": 1767225600400,
     "type": "tool/call",
   },
   {
@@ -321,34 +262,50 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
         },
         "toolCallId": "c2",
       },
-      "step": 3,
+      "step": 1,
       "turn": 1,
     },
-    "seq": 16,
+    "seq": 10,
     "sourceEventSeqs": [
-      15,
+      9,
     ],
     "surfaceOp": "append",
-    "time": 1767225600600,
+    "time": 1767225600400,
     "type": "tool/result",
   },
   {
     "data": {
-      "step": 3,
+      "step": 1,
       "turn": 1,
     },
-    "seq": 17,
-    "time": 1767225600600,
+    "seq": 11,
+    "time": 1767225600400,
     "type": "step/end",
   },
   {
     "data": {
-      "step": 4,
+      "step": 2,
       "turn": 1,
     },
-    "seq": 18,
-    "time": 1767225600700,
+    "seq": 12,
+    "time": 1767225600500,
     "type": "step/start",
+  },
+  {
+    "data": {
+      "append": false,
+      "id": "1:2",
+      "kind": "text",
+      "opening": true,
+      "receivedAt": 1767225600500,
+      "sessionId": "child-codex-live-snapshot",
+      "step": 2,
+      "text": "完成",
+      "turn": 1,
+    },
+    "seq": 13,
+    "time": 1767225600500,
+    "type": "local-agent/stream",
   },
   {
     "data": {
@@ -367,8 +324,30 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
           "provider": "codex-local",
         },
       },
-      "step": 4,
-      "stream": [],
+      "step": 2,
+      "stream": [
+        {
+          "chunk": {
+            "blockType": "text",
+            "index": 0,
+            "type": "block-start",
+          },
+          "time": 1767225600500,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "完成了。",
+              "type": "text",
+            },
+            "index": 0,
+            "type": "block-end",
+          },
+          "time": 1767225600600,
+          "type": "chunk",
+        },
+      ],
       "turn": 1,
       "usage": {
         "cacheReadTokens": 10,
@@ -376,18 +355,18 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
         "outputTokens": 4,
       },
     },
-    "seq": 19,
+    "seq": 14,
     "surfaceOp": "append",
-    "time": 1767225600700,
+    "time": 1767225600600,
     "type": "assistant/message",
   },
   {
     "data": {
-      "step": 4,
+      "step": 2,
       "turn": 1,
     },
-    "seq": 20,
-    "time": 1767225600700,
+    "seq": 15,
+    "time": 1767225600600,
     "type": "step/end",
   },
   {
@@ -397,7 +376,7 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
       },
       "turn": 1,
     },
-    "seq": 21,
+    "seq": 16,
     "time": 1767225600700,
     "type": "turn/end",
   },
@@ -407,7 +386,7 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
       "provider": "codex-local",
       "usedTokens": 20,
     },
-    "seq": 22,
+    "seq": 17,
     "time": 1767225600700,
     "type": "local-agent/context",
   },
@@ -424,7 +403,7 @@ exports[`codex mirror snapshot (live) > a completed round with streamed items, t
         "internal-calls",
       ],
     },
-    "seq": 23,
+    "seq": 18,
     "time": 1767225600700,
     "type": "local-agent/execution",
   },
@@ -498,94 +477,6 @@ exports[`codex mirror snapshot (live) > a round cancelled mid-stream → the exa
       "message": {
         "content": [
           {
-            "arguments": "ls",
-            "id": "c1",
-            "name": "Bash",
-            "type": "tool-call",
-          },
-        ],
-        "id": "<uuid>",
-        "role": "assistant",
-        "source": {
-          "kind": "model",
-          "model": "codex",
-          "provider": "codex-local",
-        },
-      },
-      "step": 1,
-      "stream": [],
-      "turn": 1,
-    },
-    "seq": 4,
-    "surfaceOp": "append",
-    "time": 1767225600000,
-    "type": "assistant/message",
-  },
-  {
-    "data": {
-      "arguments": "ls",
-      "callId": "c1",
-      "name": "Bash",
-      "step": 1,
-      "turn": 1,
-    },
-    "seq": 5,
-    "time": 1767225600000,
-    "type": "tool/call",
-  },
-  {
-    "data": {
-      "message": {
-        "content": [
-          {
-            "text": "a.txt",
-            "type": "text",
-          },
-        ],
-        "id": "<uuid>",
-        "isError": false,
-        "role": "tool",
-        "source": {
-          "callId": "c1",
-          "kind": "tool",
-        },
-        "toolCallId": "c1",
-      },
-      "step": 1,
-      "turn": 1,
-    },
-    "seq": 6,
-    "sourceEventSeqs": [
-      5,
-    ],
-    "surfaceOp": "append",
-    "time": 1767225600000,
-    "type": "tool/result",
-  },
-  {
-    "data": {
-      "step": 1,
-      "turn": 1,
-    },
-    "seq": 7,
-    "time": 1767225600000,
-    "type": "step/end",
-  },
-  {
-    "data": {
-      "step": 2,
-      "turn": 1,
-    },
-    "seq": 8,
-    "time": 1767225600000,
-    "type": "step/start",
-  },
-  {
-    "data": {
-      "interrupted": true,
-      "message": {
-        "content": [
-          {
             "text": "写到一半",
             "type": "text",
           },
@@ -598,7 +489,7 @@ exports[`codex mirror snapshot (live) > a round cancelled mid-stream → the exa
           "provider": "codex-local",
         },
       },
-      "step": 2,
+      "step": 1,
       "stream": [
         {
           "chunk": {
@@ -624,17 +515,113 @@ exports[`codex mirror snapshot (live) > a round cancelled mid-stream → the exa
       ],
       "turn": 1,
     },
-    "seq": 9,
+    "seq": 4,
     "surfaceOp": "append",
     "time": 1767225600000,
     "type": "assistant/message",
   },
   {
     "data": {
-      "step": 2,
+      "interrupted": true,
+      "message": {
+        "content": [
+          {
+            "arguments": "ls",
+            "id": "c1",
+            "name": "Bash",
+            "type": "tool-call",
+          },
+          {
+            "text": "写到一半",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "codex",
+          "provider": "codex-local",
+        },
+      },
+      "step": 1,
+      "stream": [
+        {
+          "chunk": {
+            "blockType": "text",
+            "index": 1,
+            "type": "block-start",
+          },
+          "time": 1767225600000,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "写到一半",
+              "type": "text",
+            },
+            "index": 1,
+            "type": "block-end",
+          },
+          "time": 1767225600000,
+          "type": "chunk",
+        },
+      ],
       "turn": 1,
     },
-    "seq": 10,
+    "seq": 5,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "ls",
+      "callId": "c1",
+      "name": "Bash",
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 6,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "a.txt",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": false,
+        "role": "tool",
+        "source": {
+          "callId": "c1",
+          "kind": "tool",
+        },
+        "toolCallId": "c1",
+      },
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 7,
+    "sourceEventSeqs": [
+      6,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 8,
     "time": 1767225600000,
     "type": "step/end",
   },
@@ -648,7 +635,7 @@ exports[`codex mirror snapshot (live) > a round cancelled mid-stream → the exa
       },
       "turn": 1,
     },
-    "seq": 11,
+    "seq": 9,
     "time": 1767225600000,
     "type": "turn/end",
   },
@@ -665,7 +652,7 @@ exports[`codex mirror snapshot (live) > a round cancelled mid-stream → the exa
         "internal-calls",
       ],
     },
-    "seq": 12,
+    "seq": 10,
     "time": 1767225600000,
     "type": "local-agent/execution",
   },
