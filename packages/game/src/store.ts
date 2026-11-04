@@ -27,6 +27,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-fs'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Session } from '@deepseek-ai/dsh-session'
+import { checkContent, gltfClips, SCHEMA_FILE, type ContentDoc } from './content-schema.ts'
 import { ChromeChecker, type BrowserChecker } from './checks.ts'
 import { kitOf, withKitRuntime, type RuntimeKit } from './kits/index.ts'
 import { systemTrash, type TrashMover } from './trash.ts'
@@ -808,12 +809,28 @@ export class GameService {
       kit,
     )
     failures.push(...validated.failures)
-    // Content data (design/**/*.json) must at least parse; its meaning is the game's to check.
+    // Content data (design/**/*.json) must at least parse; with a design/schema.json the
+    // references in it are checked against the project's own declaration.
+    const docs: ContentDoc[] = []
     for (const f of build) {
-      if (!f.path.startsWith('design/')) continue
-      try { JSON.parse(f.data.toString('utf8')) } catch (error) {
+      if (!f.path.startsWith('design/') || f.path === SCHEMA_FILE) continue
+      try { docs.push({ file: f.path, value: JSON.parse(f.data.toString('utf8')) as unknown }) } catch (error) {
         failures.push({ where: f.path, message: `不是合法的 JSON：${(error as Error).message}` })
       }
+    }
+    const schemaFile = build.find(f => f.path === SCHEMA_FILE)
+    if (schemaFile !== undefined) {
+      const byPath = new Map(build.map(f => [f.path, f.data]))
+      const elements = elementFiles.flatMap(f => {
+        try {
+          const raw = JSON.parse(f.data.toString('utf8')) as unknown
+          return (Array.isArray(raw) ? raw : [raw]).filter((e): e is Record<string, unknown> => e !== null && typeof e === 'object').map(element => ({ file: f.path, element }))
+        } catch { return [] }
+      })
+      failures.push(...checkContent(schemaFile.data.toString('utf8'), {
+        docs, elements,
+        clipsOf: path => { const data = byPath.get(path.replace(/^\.\//, '')); return data === undefined ? undefined : gltfClips(data) },
+      }))
     }
     // A model look must point at a file the build carries.
     const shipped = new Set(build.map(f => f.path))

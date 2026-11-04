@@ -12,7 +12,8 @@
  * Test scripts are `tests/*.test.js` the agent writes beside the code. Each
  * file runs on a fresh load of the build, as the body of an async function
  * receiving `test`, `assert`, `game` (= `window.dshGame`), `step`, `press`
- * and `drag` (calls the game's optional `look(dx, dy)`); `test(name, fn)`
+ * `drag` (calls the game's optional `look(dx, dy)`) and `importModule(path)`
+ * (a project module, e.g. the game's own content interpreter); `test(name, fn)`
  * registers a case and every case runs in order.
  * @module @khorsheed/dsh-game
  */
@@ -145,8 +146,9 @@ function testExpression(body: string): string {
   const step = (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) game.step(dt); };
   const press = (key, frames = 1) => { game.input(key, true); step(frames); game.input(key, false); };
   const drag = (dx, dy, frames = 1) => { if (typeof game.look !== 'function') fail('window.dshGame.look 不是函数，没法模拟鼠标拖动'); game.look(dx, dy); step(frames); };
+  const importModule = (path) => { const url = window.__dshFileUrl && window.__dshFileUrl(String(path)); if (!url) fail('项目里没有 ' + path); return import(url); };
   try {
-    await (async (test, assert, game, step, press, drag) => {\n${body}\n})(test, assert, game, step, press, drag);
+    await (async (test, assert, game, step, press, drag, importModule) => {\n${body}\n})(test, assert, game, step, press, drag, importModule);
   } catch (e) { return { load: String(e && e.message || e), results: [] }; }
   const results = [];
   for (const c of cases) {

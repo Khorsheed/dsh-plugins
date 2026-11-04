@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-04-kimi-stale-session-lock.md
+.agents/notes/implemented/bug-fix/2026-11-04-kimi-stale-session-lock.md: 2fba066522c86d698430cebf6af1e952af64562f
+.agents/notes/implemented/bug-fix/2026-11-04-kimi-stale-session-lock.zh.md: f92fad14fb1855a4e3580dc40e5c91c0970ca9c5
