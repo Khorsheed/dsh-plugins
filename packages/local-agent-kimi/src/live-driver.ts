@@ -43,7 +43,7 @@ import { kimiNativeConfiguration, type KimiNativeConfiguration } from './model-c
 import { StringDecoder } from 'node:string_decoder'
 import { appendFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -87,6 +87,13 @@ import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './se
 import { addTokenUsage, findKimiSessionDir, wirePath } from './session-view.ts'
 import { readKimiCompaction } from './kimi-compaction.ts'
 import { writeKimiDefaultModel } from './provision.ts'
+import {
+  inspectKimiSessionLock,
+  isKimiSessionOccupied,
+  setAsideKimiSessionLock,
+  type KimiSessionLockProbes,
+  type KimiSessionLockState,
+} from './session-lock.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 /** The host's todo item (`@deepseek-ai/dsh-tool-todo`'s TodoItem). */
@@ -167,6 +174,8 @@ const SETTLE_MIRROR_FOLD_WAIT_MS = 10_000
 /** A compaction round polls the wire for its end this often, for at most this long. */
 const COMPACTION_POLL_MS = 500
 const COMPACTION_TIMEOUT_MS = 10 * 60_000
+/** How long a load waits for this driver's own retiring process to release the session. */
+const OWN_EXIT_WAIT_MS = 5_000
 /** How long a requested reload may take to spawn the fresh process and load the session. */
 const RELOAD_TIMEOUT_MS = 30_000
 
@@ -245,6 +254,68 @@ export function acpStopReasonToHarness(reason: string): SubagentStopReason {
       return 'aborted'
     default:
       return 'error'
+  }
+}
+
+/**
+ * The readable reason inside a JSON-RPC error's `data`: kimi wraps its own
+ * sentence as `data.details` under a generic "Internal error" message.
+ */
+function acpErrorDetails(data: unknown): string | undefined {
+  if (typeof data === 'string') return data.trim() === '' ? undefined : data.trim()
+  if (data === null || typeof data !== 'object') return undefined
+  for (const field of ['details', 'message']) {
+    const value = (data as Record<string, unknown>)[field]
+    if (typeof value === 'string' && value.trim() !== '') return value.trim()
+  }
+  return undefined
+}
+
+/**
+ * A JSON-RPC error response. The message carries the server's own reason
+ * (`data.details`) when it gave one — kimi answers "Internal error" with the
+ * real sentence in `data` — so the room shows why, not just that.
+ */
+export class AcpRequestError extends Error {
+  readonly code: number | undefined
+  /** The server's reason from `data`, when it gave one. */
+  readonly details: string | undefined
+  constructor(wire: { code?: unknown; message?: string; data?: unknown }) {
+    const details = acpErrorDetails(wire.data)
+    const generic = wire.message ?? 'wire error'
+    super(`subagent-kimi live: ${details ?? generic}`)
+    this.name = 'AcpRequestError'
+    this.code = typeof wire.code === 'number' ? wire.code : undefined
+    this.details = details
+  }
+}
+
+/**
+ * kimi refused session/load because another process holds the session's
+ * lock, and the lock is not provably stale (the holder runs, lives on
+ * another machine, or its lock file is unreadable). Thrown before any prompt
+ * went out: nothing was sent to the model.
+ */
+export class KimiSessionOccupiedError extends Error {
+  /** Always true: the failure happened while loading, before a prompt. */
+  readonly beforePrompt = true
+  constructor(message: string, readonly holder: KimiSessionLockState['kind']) {
+    super(message)
+    this.name = 'KimiSessionOccupiedError'
+  }
+}
+
+/** Who holds a session kimi refused to load, appended to kimi's own sentence. */
+function occupiedHolderNote(state: KimiSessionLockState): string {
+  switch (state.kind) {
+    case 'alive':
+      return ` (process ${state.holder.pid} on this machine still holds it)`
+    case 'foreign-host':
+      return ` (held from another machine: ${state.holder.hostname})`
+    case 'unreadable':
+      return ' (its lock file could not be read)'
+    default:
+      return ''
   }
 }
 
@@ -357,9 +428,9 @@ class AcpWirePeer {
         if (request === undefined) return
         this.pending.delete(String(message.id))
         if (request.timer !== undefined) clearTimeout(request.timer)
-        const wireError = message.error as { message?: string } | undefined
+        const wireError = message.error as { code?: unknown; message?: string; data?: unknown } | undefined
         if (wireError !== undefined && wireError !== null) {
-          request.reject(new Error(`subagent-kimi live: ${wireError.message ?? 'wire error'}`))
+          request.reject(new AcpRequestError(wireError))
         } else {
           request.resolve(message.result)
         }
@@ -399,6 +470,12 @@ class KimiLiveRuntime {
   /** The active round's notification sink; installed per round, cleared at settle. */
   onSessionUpdate: ((update: JsonObject) => void) | undefined
   onDead: (() => void) | undefined
+  /**
+   * Runs after a reclaim had to terminate the process: a signalled kimi
+   * skips its exit handler and leaves its session lock behind (probed against
+   * kimi 2.4.1 — stdin EOF releases the lock, SIGTERM does not).
+   */
+  onForcedExit: (() => Promise<void>) | undefined
   private stderrTail = ''
   private readonly stderrDecoder = new StringDecoder('utf8')
 
@@ -436,6 +513,11 @@ class KimiLiveRuntime {
     return this.stderrTail.trim()
   }
 
+  /** Reclaim started and the process has not exited yet (it may still hold its session lock). */
+  get retiring(): boolean {
+    return this.reclaimed && !this.dead
+  }
+
   private markDead(): void {
     if (this.dead) return
     this.dead = true
@@ -452,14 +534,20 @@ class KimiLiveRuntime {
       this.child.stdin?.end()
       await Promise.race([this.child.done.catch(() => {}), delay(RECLAIM_EOF_GRACE_MS)])
     }
+    // stdin EOF is the exit that releases kimi's session lock (its exit
+    // handler runs); the terminate ladder below is the fallback for a process
+    // that did not leave on EOF, and a signalled kimi leaves the lock behind.
+    let forced = false
     if (!this.dead) {
       // Host 0.1.5 hides the child pid; terminate() is an idempotent no-op
       // once the managed range is gone.
+      forced = true
       this.child.terminate()
       await this.child.waitForExit()
     }
     await this.child.done.catch(() => {})
     this.markDead()
+    if (forced) await this.onForcedExit?.().catch(() => undefined)
   }
 }
 
@@ -469,6 +557,8 @@ class KimiLiveRuntime {
  */
 export class KimiAcpLiveDriver {
   private readonly runtimes = new Map<string, KimiLiveRuntime>()
+  /** Every runtime this driver spawned whose process has not exited (retiring ones included). */
+  private readonly owned = new Set<KimiLiveRuntime>()
   private readonly ensuring = new Map<string, Promise<KimiLiveRuntime>>()
   /** The model each in-flight spawn is binding (a stale-model spawn never serves a switched member). */
   private readonly ensuringModel = new Map<string, string | undefined>()
@@ -516,6 +606,8 @@ export class KimiAcpLiveDriver {
        * process env; the baseUrl is pinned by the pre-spawn surgery).
        */
       endpoint?: (scopeHome: string) => Promise<KimiEndpointAuth>
+      /** Host probes for the session-lock check (tests inject them). */
+      sessionLock?: KimiSessionLockProbes
     } = {},
     private readonly timeouts: KimiLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
@@ -827,7 +919,14 @@ export class KimiAcpLiveDriver {
       message => { this.ctx.logger.warn(message) },
       this.timeouts.requestMs,
     )
+    this.owned.add(runtime)
+    // A runtime we had to terminate leaves its session lock behind: clear it
+    // (its pid is gone by now) so the next load starts clean.
+    runtime.onForcedExit = async () => {
+      if (runtime.sessionId !== undefined) await this.recoverStaleLock(spec.homeDir, runtime.sessionId, runtime)
+    }
     runtime.onDead = () => {
+      this.owned.delete(runtime)
       // Delete only OUR registration (crash-then-respawn interleave safety).
       if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)
       this.clearIdleTimer(key)
@@ -998,11 +1097,19 @@ export class KimiAcpLiveDriver {
         // prefix (legacy live records); the wire always wants the
         // ACP-native form.
         rt.sessionId = acpKimiSessionId(spec.resume.cliSessionId)
-        const response = await rt.peer.request('session/load', {
-          sessionId: rt.sessionId,
-          cwd: spec.cwd,
-          mcpServers: member?.mcpServers ?? [],
-        })
+        let response: unknown
+        try {
+          response = await this.loadSession(rt, spec.homeDir, {
+            sessionId: rt.sessionId,
+            cwd: spec.cwd,
+            mcpServers: member?.mcpServers ?? [],
+          })
+        } catch (error) {
+          // A runtime whose load failed holds no session: never let a later
+          // ensure skip the load and prompt an unloaded session.
+          rt.sessionId = undefined
+          throw error
+        }
         rt.modelConfiguration = kimiNativeConfiguration(response)
       }
     }
@@ -1011,6 +1118,64 @@ export class KimiAcpLiveDriver {
         (method, params) => rt.peer.request(method, params))
     }
     if (spec.resume === undefined && rt.sessionId !== undefined) spec.onCliSessionId?.(bareKimiSessionId(rt.sessionId))
+  }
+
+  /**
+   * `session/load` with stale-lock recovery. kimi refuses a session whose
+   * lock file names a holder it judges alive; a lock left by a process that
+   * died by signal (a host restart mid-round) is cleared here when it is
+   * provably stale — this machine's hostname, pid gone, and no runtime of
+   * ours holds the session — before the load, and again on kimi's "in use"
+   * refusal followed by ONE retry. Any other holder is left alone and the
+   * load fails with kimi's own sentence plus who holds the session.
+   */
+  private async loadSession(rt: KimiLiveRuntime, homeDir: string, params: JsonObject & { sessionId: string }): Promise<unknown> {
+    const sessionId = params.sessionId
+    await this.recoverStaleLock(homeDir, sessionId, rt)
+    try {
+      return await rt.peer.request('session/load', params)
+    } catch (error) {
+      if (!(error instanceof AcpRequestError) || !isKimiSessionOccupied(error.details)) throw error
+      // One of our own processes on this session (a reclaim still exiting):
+      // wait for it to leave, then load again.
+      const own = this.ownedHolder(sessionId, rt)
+      if (own !== undefined) {
+        if (own.retiring) await Promise.race([own.child.done.catch(() => {}), delay(OWN_EXIT_WAIT_MS)])
+        if (!own.dead) {
+          throw new KimiSessionOccupiedError(`${error.message} (this member's previous Kimi process is still running)`, 'alive')
+        }
+        await this.recoverStaleLock(homeDir, sessionId, rt)
+        return await rt.peer.request('session/load', params)
+      }
+      const { state, cleared } = await this.recoverStaleLock(homeDir, sessionId, rt)
+      // A lock cleared just now, or one its holder released meanwhile: retry once.
+      if (cleared || state.kind === 'absent') return await rt.peer.request('session/load', params)
+      throw new KimiSessionOccupiedError(`${error.message}${occupiedHolderNote(state)}`, state.kind)
+    }
+  }
+
+  /** A live runtime of this driver (other than `except`) on this ACP session. */
+  private ownedHolder(acpSessionId: string, except: KimiLiveRuntime | undefined): KimiLiveRuntime | undefined {
+    for (const runtime of this.owned) {
+      if (runtime !== except && !runtime.dead && runtime.sessionId === acpSessionId) return runtime
+    }
+    return undefined
+  }
+
+  /**
+   * Move the session's lock aside when it is provably stale (see
+   * session-lock.ts) and no runtime of ours holds the session. Best-effort:
+   * an inspection failure reads as an unreadable lock, never as stale.
+   */
+  private async recoverStaleLock(homeDir: string, acpSessionId: string, loading: KimiLiveRuntime | undefined): Promise<{ state: KimiSessionLockState; cleared: boolean }> {
+    const state = await inspectKimiSessionLock(homeDir, acpSessionId, this.config.sessionLock)
+      .catch((): KimiSessionLockState => ({ kind: 'unreadable', path: '' }))
+    if (state.kind !== 'stale' || this.ownedHolder(acpSessionId, loading) !== undefined) return { state, cleared: false }
+    const aside = await setAsideKimiSessionLock(state)
+    if (aside === undefined) return { state, cleared: false }
+    this.ctx.logger.warn(`local-agent-kimi: cleared a stale kimi session lock for ${acpSessionId}: `
+      + `its holder (process ${state.holder.pid} on this machine) is gone; the lock was moved to ${basename(aside)}`)
+    return { state, cleared: true }
   }
 
   async startRound(request: SubagentStartRequest, spec: KimiLiveRoundSpec): Promise<SubagentRun> {

@@ -8,8 +8,9 @@
  * exec path's offset bookkeeping, and the provider's exec fallback.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
@@ -18,7 +19,7 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
 import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
-import { acpStopReasonToHarness, DEFAULT_TIMEOUTS, KimiAcpLiveDriver } from '../src/live-driver.ts'
+import { AcpRequestError, acpStopReasonToHarness, DEFAULT_TIMEOUTS, KimiAcpLiveDriver, KimiSessionOccupiedError } from '../src/live-driver.ts'
 import { readKimiDefaultModel } from '../src/provision.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { mirrorSnapshot, snapshotExecution, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
@@ -41,6 +42,10 @@ interface FakeAcpScript {
   crashAfterPrompt?: boolean
   /** Fail session/new with an error response. */
   failSessionNew?: string
+  /** Answer session/load with this JSON-RPC error when it returns one (kimi's lock refusal, say). */
+  failSessionLoad?: (params: Record<string, unknown>) => Record<string, unknown> | undefined
+  /** Keep running after stdin EOF (only terminate() ends it). */
+  ignoreEof?: boolean
   /** Omit the loadSession capability (breaker-path test). */
   noLoadSession?: boolean
   configOptions?: unknown[]
@@ -82,7 +87,7 @@ class FakeAcpServer {
     })
     this.stdin.on('end', () => {
       this.stdinEnded = true
-      this.resolveDone({ exitCode: 0, signal: null })
+      if (this.script.ignoreEof !== true) this.resolveDone({ exitCode: 0, signal: null })
     })
     this.handle = {
       pid: 8242,
@@ -165,7 +170,13 @@ class FakeAcpServer {
         // Real kimi ACP session ids are directory names (`session_<uuid>`).
         respond({ sessionId: `session_acp-session-${this.sessionSeq}`, ...this.script.configOptions === undefined ? {} : { configOptions: this.script.configOptions } })
         return
-      case 'session/load':
+      case 'session/load': {
+        const refusal = this.script.failSessionLoad?.(params)
+        if (refusal !== undefined) {
+          this.send({ jsonrpc: '2.0', id: message.id, error: refusal })
+          return
+        }
+      }
         for (const text of this.script.loadChunks ?? []) this.update(String(params['sessionId']), { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } })
         respond({ ...this.script.configOptions === undefined ? {} : { configOptions: this.script.configOptions } })
         return
@@ -1985,5 +1996,151 @@ describe('kimi mirror snapshot (live)', () => {
       await m.driver.disposeAll()
       vi.useRealTimers()
     }
+  })
+})
+
+describe('kimi session lock left by a dead process', () => {
+  const OCCUPIED = 'This session is in use by another Kimi Code CLI instance. Stop the session in that instance or exit it, then try again.'
+  const SESSION = 'session_acp-session-7'
+  const RESUME = { cliSessionId: 'acp-session-7', turn: 2 }
+
+  function lockDir(m: Mount): string {
+    return join(m.homeDir, 'locks', 'sessions')
+  }
+
+  function writeLock(m: Mount, body: string): string {
+    mkdirSync(lockDir(m), { recursive: true })
+    const path = join(lockDir(m), `${SESSION}.lock`)
+    writeFileSync(path, body)
+    return path
+  }
+
+  function lockBody(pid: number, host: string): string {
+    return JSON.stringify({ version: 1, token: `${pid}:test-token`, pid, hostname: host, startedAt: 1, clientIdentity: 'kimi_code_cli', clientDisplayName: 'Kimi Code CLI' })
+  }
+
+  /** kimi's refusal while the lock file exists (the fake judges every holder alive). */
+  function kimiLockGate(m: Mount): FakeAcpScript['failSessionLoad'] {
+    return params => existsSync(join(lockDir(m), `${String(params['sessionId'])}.lock`))
+      ? { code: -32603, message: 'Internal error', data: { details: OCCUPIED } }
+      : undefined
+  }
+
+  it('a lock whose process is gone on this machine is moved aside and the load succeeds', async () => {
+    // A real dead pid: a child that already exited.
+    const dead = spawnSync(process.execPath, ['-e', '']).pid as number
+    const m = mount()
+    const warns: string[] = []
+    Object.assign(m.ctx.logger, { warn: (message: string) => { warns.push(message) } })
+    const path = writeLock(m, lockBody(dead, hostname()))
+    const server = new FakeAcpServer({ failSessionLoad: kimiLockGate(m), turn: () => ({ chunks: ['回来了'] }) })
+    m.queueChild(server)
+    const child = Session.create(SessionId('child-kimi-stale-lock'))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child, { resume: RESUME }))
+    expect((await run.result).stopReason).toBe('completed')
+    expect(existsSync(path)).toBe(false)
+    const aside = readdirSync(lockDir(m)).filter(name => name.startsWith(`${SESSION}.lock.stale-`))
+    expect(aside).toHaveLength(1)
+    expect(readFileSync(join(lockDir(m), aside[0]!), 'utf8')).toBe(lockBody(dead, hostname()))
+    expect(warns.some(warn => warn.includes('cleared a stale kimi session lock') && warn.includes(String(dead)))).toBe(true)
+    expect(server.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/prompt'])
+    await m.driver.disposeAll()
+  })
+
+  it('kimi\'s "in use" refusal re-checks the lock: a holder that died meanwhile is cleared and the load retried once', async () => {
+    const m = mount({ config: { sessionLock: { hostname: () => 'this-host', pidAlive: vi.fn().mockReturnValueOnce(true).mockReturnValue(false) } } })
+    writeLock(m, lockBody(4242, 'this-host'))
+    const server = new FakeAcpServer({ failSessionLoad: kimiLockGate(m) })
+    m.queueChild(server)
+    await m.driver.prepare(roundSpec(m, Session.create(SessionId('child-kimi-lock-race')), { resume: RESUME }), new AbortController().signal)
+    expect(server.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/load'])
+    expect(existsSync(join(lockDir(m), `${SESSION}.lock`))).toBe(false)
+    await m.driver.disposeAll()
+  })
+
+  it('a lock whose process still runs is never touched; the error carries kimi\'s sentence and the holder', async () => {
+    const m = mount()
+    // This test process: alive, on this machine.
+    const path = writeLock(m, lockBody(process.pid, hostname()))
+    m.queueChild(new FakeAcpServer({ failSessionLoad: kimiLockGate(m) }))
+    const child = Session.create(SessionId('child-kimi-live-lock'))
+    const failure = await m.driver.startRound(request() as never, roundSpec(m, child, { resume: RESUME })).catch((error: unknown) => error as Error)
+    expect(failure).toBeInstanceOf(KimiSessionOccupiedError)
+    expect(failure.message).toContain(OCCUPIED)
+    expect(failure.message).toContain(`process ${process.pid} on this machine still holds it`)
+    expect(failure.message).not.toContain('Internal error')
+    expect(readFileSync(path, 'utf8')).toBe(lockBody(process.pid, hostname()))
+    expect(readdirSync(lockDir(m))).toEqual([`${SESSION}.lock`])
+    // The failed runtime is gone: nothing reuses a process whose load failed.
+    expect(m.driver.liveCount).toBe(0)
+    await m.driver.disposeAll()
+  })
+
+  it('a lock from another machine is never touched', async () => {
+    const m = mount({ config: { sessionLock: { hostname: () => 'this-host', pidAlive: () => false } } })
+    const path = writeLock(m, lockBody(4242, 'other-host'))
+    m.queueChild(new FakeAcpServer({ failSessionLoad: kimiLockGate(m) }))
+    const failure = await m.driver.prepare(roundSpec(m, Session.create(SessionId('child-kimi-foreign-lock')), { resume: RESUME }), new AbortController().signal)
+      .catch((error: unknown) => error as Error)
+    expect(failure.message).toContain(OCCUPIED)
+    expect(failure.message).toContain('another machine: other-host')
+    expect(readFileSync(path, 'utf8')).toBe(lockBody(4242, 'other-host'))
+    await m.driver.disposeAll()
+  })
+
+  it('an unreadable lock is never touched', async () => {
+    const m = mount({ config: { sessionLock: { hostname: () => 'this-host', pidAlive: () => false } } })
+    const path = writeLock(m, '{not json')
+    m.queueChild(new FakeAcpServer({ failSessionLoad: kimiLockGate(m) }))
+    const failure = await m.driver.prepare(roundSpec(m, Session.create(SessionId('child-kimi-garbled-lock')), { resume: RESUME }), new AbortController().signal)
+      .catch((error: unknown) => error as Error)
+    expect(failure.message).toContain(OCCUPIED)
+    expect(failure.message).toContain('lock file could not be read')
+    expect(readFileSync(path, 'utf8')).toBe('{not json')
+    expect(readdirSync(lockDir(m))).toEqual([`${SESSION}.lock`])
+    await m.driver.disposeAll()
+  })
+
+  it('any ACP error surfaces its data.details instead of the bare "Internal error"', async () => {
+    const m = mount()
+    m.queueChild(new FakeAcpServer({ failSessionLoad: () => ({ code: -32603, message: 'Internal error', data: { details: 'Session session_acp-session-7 was not found.' } }) }))
+    const failure = await m.driver.prepare(roundSpec(m, Session.create(SessionId('child-kimi-details')), { resume: RESUME }), new AbortController().signal)
+      .catch((error: unknown) => error as Error)
+    expect(failure).toBeInstanceOf(AcpRequestError)
+    expect(failure.message).toBe('subagent-kimi live: Session session_acp-session-7 was not found.')
+    expect((failure as AcpRequestError).code).toBe(-32603)
+    await m.driver.disposeAll()
+  })
+
+  it('a failed load does not poison the next attempt: it spawns afresh and loads again', async () => {
+    const m = mount()
+    const path = writeLock(m, lockBody(process.pid, hostname()))
+    m.queueChild(new FakeAcpServer({ failSessionLoad: kimiLockGate(m) }))
+    const child = Session.create(SessionId('child-kimi-after-failure'))
+    await expect(m.driver.startRound(request() as never, roundSpec(m, child, { resume: RESUME }))).rejects.toBeInstanceOf(KimiSessionOccupiedError)
+    expect(m.driver.disabled).toBe(false)
+    expect(m.driver.canStartMember('child-kimi-after-failure')).toBe(true)
+    // The holder exits and releases its lock; the next round goes through.
+    rmSync(path)
+    const second = new FakeAcpServer({ failSessionLoad: kimiLockGate(m), turn: () => ({ chunks: ['好了'] }) })
+    m.queueChild(second)
+    const run = await m.driver.startRound(request({ prompt: '再试' }) as never, roundSpec(m, child, { resume: RESUME }))
+    expect((await run.result).stopReason).toBe('completed')
+    expect(m.spawns).toHaveLength(2)
+    expect(second.requests.map(r => r.method)).toEqual(['initialize', 'session/load', 'session/prompt'])
+    await m.driver.disposeAll()
+  })
+
+  it('a process that ignores stdin EOF is terminated and the lock it left is cleared', async () => {
+    const m = mount({ config: { sessionLock: { hostname: () => 'this-host', pidAlive: () => false } } })
+    const server = new FakeAcpServer({ ignoreEof: true })
+    m.queueChild(server)
+    await m.driver.prepare(roundSpec(m, Session.create(SessionId('child-kimi-forced')), { resume: RESUME }), new AbortController().signal)
+    // The signalled process skipped its exit handler: its lock stays behind.
+    const path = writeLock(m, lockBody(4242, 'this-host'))
+    await m.driver.disposeAll()
+    expect(server.stdinEnded).toBe(true)
+    expect(server.terminated).toBe(true)
+    expect(existsSync(path)).toBe(false)
   })
 })
