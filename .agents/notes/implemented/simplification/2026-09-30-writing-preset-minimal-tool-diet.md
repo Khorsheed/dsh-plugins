@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-09-30-writing-preset-minimal-tool-diet.zh.md)
 
+> The complete delegation exclusion is partially superseded by [native subagents for novel reconciliation](../bug-fix/2026-11-05-writing-novel-native-subagent.md): the preset now grants the official spawn tool and its basic control row. Fork, list-agents, model selection, workflows and jobs remain out; the rest of this note stands.
+
 ## Problem
 
 After the prompt retune ([writing-preset prompt hygiene](../feature/2026-09-29-writing-preset-prompt-hygiene.md)), `dsh-writing` still mounted nearly the full standard composition. In the maintainer's A/B use the official `minimal` preset (one persistent shell, one persona line, no skills/plan/compaction) produced *better* writing than the full composition — every extra tool and section is prompt surface the writing scene never drives, and some actively mislead (plan mode's section speaks of implementation and `exit_plan_mode`; delegation and workflows are coding apparatus).

@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-09-30-writing-preset-minimal-tool-diet.md) | 中文
 
+> 「全部排除委派」这一点已被[长篇对账恢复原生子 Agent](../bug-fix/2026-11-05-writing-novel-native-subagent.md)部分取代：preset 现在授予官方 spawn 工具和基础 control 行。fork、list-agents、模型选择、workflow 和 jobs 仍然排除；本说明的其余结论不变。
+
 ## 问题
 
 提示词重调（[写作 preset 提示词卫生](../feature/2026-09-29-writing-preset-prompt-hygiene.md)）之后，`dsh-writing` 仍挂着接近全量的 standard 组合。维护者的 A/B 实测里，官方 `minimal` preset（一个持久 shell、一行 persona、无 skills/plan/compaction）的写作效果**优于**全量组合——每多一个工具和段落都是写作场景从不驱动的提示词面，有些还会误导（plan mode 段满口 implementation 和 `exit_plan_mode`；delegation/workflow 是编码装置）。
