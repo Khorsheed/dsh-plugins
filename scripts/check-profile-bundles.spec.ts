@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -272,5 +272,22 @@ describe('the real tree', () => {
     // from the installing profile, so membership is not judged here — the
     // subpath-export and retired-name rules are.
     expect(scanPackagePatches(repoRoot)).toEqual([])
+  })
+})
+
+describe('the legacy list-agents entry', () => {
+  it('stays enabled only while the official package exports the standalone entry', () => {
+    const evaluate = (source: string, exports: Record<string, unknown>): boolean => {
+      const process = { getBuiltinModule: () => ({ createRequire: () => () => ({ exports }) }) }
+      return new Function('process', 'baseUrl', `return ${source}`)(process, 'unused') as boolean
+    }
+    for (const dir of ['dev-suite', 'eval-suite', 'gamedev-suite', 'video-suite']) {
+      const patch = readFileSync(join(repoRoot, 'packages', dir, 'cordis.patch.yml'), 'utf8')
+      const row = /- id: tool-subagent-list-agents\s+name: '@deepseek-ai\/dsh-tool-subagent-control\/list-agents'\s+disabled: !!js ([^\n]+)/.exec(patch)
+      expect(row, `${dir} must probe the official export`).not.toBeNull()
+      expect(evaluate(row![1]!, { './list-agents': './lib/types/list-agents.js' })).toBe(false)
+      expect(evaluate(row![1]!, {})).toBe(true)
+      expect(patch).toContain("name: '@deepseek-ai/dsh-tool-subagent-control'")
+    }
   })
 })
