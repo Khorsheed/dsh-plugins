@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { IconChevronDownOutlineMedium, IconChevronUpOutlineMedium, IconQueueOutlineMedium, IconTrashOutlineMedium } from './icons.tsx'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { LocalAgentMemberInbox, LocalAgentPromptResult } from '../types.ts'
+import type { LocalAgentMemberInbox, LocalAgentMemberInput, LocalAgentPromptResult } from '../types.ts'
 import type { NS } from './locales.ts'
 import css from './MemberInboxView.module.css'
 
@@ -26,7 +26,11 @@ export function MemberInboxView({ face, t }: { face: MemberInboxFace } & PropsLo
   }, [face])
   if (state === undefined) return null
   const queued = state.messages.filter(row => row.status === 'queued')
-  const recovery = state.messages.filter(row => row.status === 'uncertain' || row.status === 'failed').slice(-8)
+  // The ledger holds every caller's executions (batch 5 S4): an uncertain
+  // one blocks the member whoever sent it, so it is reconciled here too
+  // (user decision 2026-11-03 ③); a failure is shown for composer input only.
+  const recovery = state.messages.filter(row => row.status === 'uncertain' || (row.status === 'failed' && (row.caller ?? 'composer') === 'composer')).slice(-8)
+  const preview = (row: LocalAgentMemberInput): string => row.text ?? t(`inbox.caller.${row.caller ?? 'api'}` as 'inbox.caller.api')
   if (queued.length === 0 && recovery.length === 0 && !state.paused && error === undefined && state.error === undefined) return null
   const control = (action: 'pause' | 'resume' | 'cancel' | 'reconcile', requestId?: string, outcome?: 'done' | 'cancelled'): void => {
     setError(undefined)
@@ -49,7 +53,7 @@ export function MemberInboxView({ face, t }: { face: MemberInboxFace } & PropsLo
       {(queued.length === 1 || expanded) && queued.length > 0 && <ul className={css.list} id={listId}>
         {queued.map(row => <li key={row.id} className={css.row}>
           <span className={css.lead} aria-label={t('inbox.status.queued')}><IconQueueOutlineMedium /></span>
-          <span className={css.preview} title={row.text}>{row.text}</span>
+          <span className={css.preview} title={preview(row)}>{preview(row)}</span>
           {queued.length === 1 && pause}
           <button className={css.iconAction} type="button" aria-label={t('inbox.cancel')} title={t('inbox.cancel')} onClick={() => control('cancel', row.id)}><IconTrashOutlineMedium /></button>
         </li>)}
@@ -57,7 +61,7 @@ export function MemberInboxView({ face, t }: { face: MemberInboxFace } & PropsLo
       {state.paused && <div className={css.notice}><span>{t('inbox.paused')}</span>{queued.length === 0 && pause}</div>}
       {(error ?? state.error) !== undefined && <p className={css.notice} role="alert">{error ?? state.error}</p>}
       {recovery.map(row => <div key={row.id} className={css.recovery}>
-        <span>{t(`inbox.status.${row.status}` as 'inbox.status.uncertain')} · {row.text.slice(0, 160)}</span>
+        <span>{t(`inbox.status.${row.status}` as 'inbox.status.uncertain')} · {preview(row).slice(0, 160)}</span>
         {row.error !== undefined && <p>{row.error}</p>}
         {row.status === 'uncertain' && <div className={css.reconcile}>
           <input value={evidence} aria-label={t('inbox.evidence')} placeholder={t('inbox.evidence')} onChange={event => setEvidence(event.target.value)} />
