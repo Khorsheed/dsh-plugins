@@ -62,6 +62,13 @@ export function beforeMirrorTurn(session: Session, transport: MirrorTransport): 
   turnHooks().get(String(session.id))?.(session, transport)
 }
 
+/** What a provider's settle report observed about the round. */
+export interface ExecutionObservation {
+  readonly observedModel?: string
+  readonly observedEffort?: string
+  readonly cliVersion?: string
+}
+
 /** What the core knows at the admission point. */
 export interface ExecutionAdmission {
   readonly childSessionId: string
@@ -103,7 +110,7 @@ export function executionOutcome(result: SubagentResult): LocalAgentExecutionOut
 
 /** One admitted execution, from admission to its end record. */
 export class OpenExecution {
-  readonly executionId = randomUUID()
+  readonly executionId: string
   readonly start: LocalAgentExecutionStartEvent
   /** The child log's last seq at admission: turns after it are this execution's. */
   private readonly watermark: number
@@ -112,6 +119,9 @@ export class OpenExecution {
   /** The provider's settle report arrived (with or without a total). */
   reported = false
   private reportedUsage: TokenUsage | undefined
+  /** The settle report's observations (model, effort, CLI version), for the execution's settlement. */
+  observed: ExecutionObservation | undefined
+  private reportWaiters: Array<() => void> = []
   /** Set once the run settled; the end record carries it. */
   private outcome: LocalAgentExecutionOutcome | undefined
   /** Pending while the end waits for an owed settle report. */
@@ -119,6 +129,7 @@ export class OpenExecution {
   private ended = false
 
   constructor(private readonly recorder: ExecutionRecorder, private readonly admission: ExecutionAdmission) {
+    this.executionId = admission.execution?.executionId ?? randomUUID()
     this.start = {
       phase: 'start',
       executionId: this.executionId,
@@ -168,10 +179,33 @@ export class OpenExecution {
   }
 
   /** The provider's settle report for this execution. */
-  noteReport(usage: TokenUsage | undefined): void {
+  noteReport(usage: TokenUsage | undefined, observed?: ExecutionObservation): void {
     this.reported = true
     if (usage !== undefined) this.reportedUsage = structuredClone(usage)
+    if (observed !== undefined) this.observed = { ...observed }
+    for (const wake of this.reportWaiters.splice(0)) wake()
     if (this.timer !== undefined) this.end()
+  }
+
+  /**
+   * Resolve once the provider's settle report arrived, or after `ms` — at
+   * once when none is owed (a compaction, a turnless round, a report that
+   * already came). For the settlement's observations.
+   */
+  reportOrTimeout(ms: number): Promise<void> {
+    if (this.reported || this.admission.operation !== 'prompt' || !this.openedTurn()) return Promise.resolve()
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, ms)
+      timer.unref?.()
+      this.reportWaiters.push(() => { clearTimeout(timer); resolve() })
+    })
+  }
+
+  /** The execution's turn range: fixed at settle, read live before it. */
+  turnRange(): number[] {
+    if (this.turns !== undefined) return [...this.turns]
+    const session = this.recorder.lookup(this.childSessionId)
+    return session === undefined ? [] : this.turnsOf(session)
   }
 
   /**
@@ -288,9 +322,9 @@ export class ExecutionRecorder {
    * (rounds settle in admission order). A report no open execution claims is
    * ignored.
    */
-  noteReport(childSessionId: string, usage: TokenUsage | undefined): void {
+  noteReport(childSessionId: string, usage: TokenUsage | undefined, observed?: ExecutionObservation): void {
     const owner = this.open.get(childSessionId)?.find(execution => !execution.reported && execution.openedTurn())
-    owner?.noteReport(usage)
+    owner?.noteReport(usage, observed)
   }
 
   closed(execution: OpenExecution): void {

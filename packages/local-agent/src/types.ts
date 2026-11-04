@@ -6,7 +6,8 @@
  * @module @khorsheed/dsh-local-agent/types
  */
 
-import type { AssistantStreamRecord, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { AssistantStreamRecord, ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type { LocalAgentToolTiming } from './tool-timing.ts'
 
 export { localAgentToolTimingMeta } from './tool-timing.ts'
@@ -256,6 +257,8 @@ export interface LocalAgentUnrecordedDeclaration {
  * and — only when the caller recorded them — cause and task.
  */
 export interface LocalAgentExecutionIntent {
+  /** The ledger row's execution id, reused by the records; absent = the recorder mints one. */
+  readonly executionId?: string
   readonly caller: LocalAgentExecutionCaller
   /** Set by the core from the round's operation; absent = `prompt`. */
   readonly operation?: LocalAgentExecutionOperation
@@ -651,12 +654,26 @@ export interface LocalAgentDelegationView {
  * structured errors for the composer to render inline, never as raw exceptions
  * over the wire.
  */
+/**
+ * One row of a member's execution ledger (batch 5 S4; the member composer's
+ * inbox grew into it). Every member execution has one, whoever asked.
+ */
 export interface LocalAgentMemberInput {
+  /** The execution id (the `local-agent/execution` records' `executionId`); a pre-ledger inbox row keeps its request id. */
   id: string
-  text: string
+  /** Who submitted it. Pre-ledger inbox rows read as `composer`. */
+  caller: LocalAgentExecutionCaller
+  /** The caller's idempotency key (composer: its request id; room: its delivery id). */
+  key?: string
+  /** The input text: composer rows only (their only source; they replay after a restart). */
+  text?: string
+  /** `compact` for a compaction execution; absent = a prompt. */
+  operation?: 'compact'
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'uncertain'
   createdAt: number
   updatedAt: number
+  admittedAt?: number
+  settledAt?: number
   error?: string
 }
 export interface LocalAgentMemberInbox {
@@ -1381,6 +1398,102 @@ export interface DelegationCallOptions {
    * takes.
    */
   readonly model?: string
+}
+
+/**
+ * The fixed creation identity of a member's FIRST execution
+ * ({@link LocalAgentExecutionRequest.member}); ignored once the member has a
+ * delegation record — a continuing execution takes scope, cwd and model from
+ * the record.
+ */
+export interface LocalAgentMemberCreate {
+  readonly model?: string
+  readonly effort?: string
+  readonly cwd?: string
+  readonly scope?: string
+  readonly exec?: DelegationExecTarget
+  readonly configurationLock?: string
+  readonly label?: string
+}
+
+/** What one execution's admission looked like (`run`'s `on.admitted`). */
+export interface LocalAgentExecutionAdmitted {
+  readonly executionId: string
+  readonly admittedAt: number
+  /** The first child-log seq that can belong to this execution (0 for a child that did not exist yet). */
+  readonly childFromSeq: number
+}
+
+/** How one execution ended (`run`'s `settled`). */
+export interface LocalAgentExecutionSettlement {
+  readonly executionId: string
+  readonly outcome: 'done' | 'failed' | 'cancelled'
+  /** The published run; absent when the execution failed or was cancelled before admission. */
+  readonly run?: SubagentRun
+  /** The `turn/start` turns this execution wrote in the child (its end record's range). */
+  readonly turns: readonly number[]
+  /** Observations the provider's settle report carried, when it arrived by settlement; absent = not recorded. */
+  readonly observedModel?: string
+  readonly observedEffort?: string
+  readonly cliVersion?: string
+  /** Why it failed or was cancelled, when it did. */
+  readonly error?: string
+}
+
+/**
+ * One member execution request — the single entry every caller uses (the
+ * host `subagent` tool, the member composer, room, plugin facade calls). The
+ * core decides whether it is the member's first round or a continuation (it
+ * has a delegation record → continuation), queues it in the member's ledger,
+ * admits it, and records it.
+ */
+export interface LocalAgentExecutionRequest {
+  readonly parentSessionId: string
+  readonly provider: string
+  readonly member: {
+    /** The member's stable dsh child session id (a first round creates it under this id). */
+    readonly childSessionId: string
+    /** First round only: its creation identity. */
+    readonly create?: LocalAgentMemberCreate
+  }
+  /** The input, or a function evaluated when the execution reaches the head of the member's queue. */
+  readonly input: readonly ContentBlock[] | (() => Promise<readonly ContentBlock[]>)
+  readonly operation?: LocalAgentExecutionOperation
+  /** Who asks; absent = `api`. */
+  readonly caller?: LocalAgentExecutionCaller
+  /** Why it runs, recorded verbatim on the execution's start record. */
+  readonly cause?: LocalAgentExecutionCause
+  readonly task?: LocalAgentTaskRef
+  /**
+   * The caller's idempotency key (room: its delivery id; the composer: its
+   * input id). A key the member's ledger already holds is never run twice:
+   * a queued or running one returns the same execution, a finished one its
+   * settlement, an uncertain one an error.
+   */
+  readonly key?: string
+  /** The caller's own handle (room run id, tool call id), recorded verbatim. */
+  readonly callerRef?: string
+  /** Display label of this round's activation; absent = `member.create.label`, then the harness name. */
+  readonly label?: string
+  /** Cancels the execution while queued and while running. */
+  readonly signal?: AbortSignal
+  readonly on?: {
+    admitted?(execution: LocalAgentExecutionAdmitted): void | Promise<void>
+    progress?(event: LocalAgentRunProgress): void
+    settled?(settlement: LocalAgentExecutionSettlement): void
+  }
+}
+
+/** What `run` returns once the execution is durably queued. */
+export interface LocalAgentExecutionHandle {
+  readonly executionId: string
+  /** Resolves when the execution ends (never rejects). */
+  readonly settled: Promise<LocalAgentExecutionSettlement>
+  /**
+   * Resolves with the published run once admitted and started; rejects when
+   * it ended before that (the start/resume/compact wrappers return it).
+   */
+  readonly started: Promise<SubagentRun>
 }
 
 /** One settings-card value (JSON scalars and string lists — what the cards write). See card-settings.ts. */

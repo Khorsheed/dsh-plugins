@@ -105,8 +105,18 @@ import type {
   LocalAgentMemberToolsStatus,
   LocalAgentExecutionIntent,
   LocalAgentUnrecordedDeclaration,
+  LocalAgentExecutionAdmitted,
+  LocalAgentExecutionCaller,
+  LocalAgentExecutionCause,
+  LocalAgentExecutionHandle,
+  LocalAgentExecutionOperation,
+  LocalAgentExecutionRequest,
+  LocalAgentExecutionSettlement,
+  LocalAgentMemberCreate,
+  LocalAgentMemberInput,
+  LocalAgentTaskRef,
 } from './types.ts'
-import { ExecutionRecorder, executionOutcome } from './execution-records.ts'
+import { ExecutionRecorder, executionOutcome, type OpenExecution } from './execution-records.ts'
 import LocalAgentGateway from './gateway.ts'
 import { guardChildLog, type QuarantineEntry } from './child-log-guard.ts'
 import { MemberChannel } from './member-channel.ts'
@@ -157,9 +167,16 @@ export type {
   LocalAgentUnrecorded,
   LocalAgentExecutionIntent,
   LocalAgentUnrecordedDeclaration,
+  LocalAgentExecutionAdmitted,
+  LocalAgentExecutionHandle,
+  LocalAgentExecutionRequest,
+  LocalAgentExecutionSettlement,
+  LocalAgentMemberCreate,
+  LocalAgentMemberInput,
 } from './types.ts'
+export { MemberInbox, MemberLedger } from './member-inbox.ts'
 export { beforeMirrorTurn, executionOutcome, ExecutionRecorder, OpenExecution } from './execution-records.ts'
-export type { ExecutionAdmission, ExecutionRecorderOptions, MirrorTransport } from './execution-records.ts'
+export type { ExecutionAdmission, ExecutionObservation, ExecutionRecorderOptions, MirrorTransport } from './execution-records.ts'
 
 export type {
   LocalAgentMemberMessage,
@@ -1117,17 +1134,50 @@ export function memberContextOf(events: readonly SessionEvent[]): Omit<LocalAgen
 export { COMPACT_COMMAND, isCompactCommand } from './types.ts'
 
 /**
- * The execution facts a facade call stages for its round: who asked (absent =
- * `api`) and, only when the caller recorded them, its handle, cause and task.
+ * How long an execution's settlement waits, after its run ended, for the
+ * provider's settle report (its observed model, effort and CLI version). A
+ * report that comes later is not on the settlement: absent = not recorded.
  */
-function executionFacts(options: DelegationCallOptions | undefined): LocalAgentExecutionIntent {
+export const SETTLEMENT_REPORT_WAIT_MS = 2_000
+
+/** One queued execution as the core runs it: `run`'s request, or a start/resume/compact wrapper call. */
+interface ExecutionPlan {
+  readonly parentSessionId: string
+  readonly provider: string
+  readonly childSessionId: string
+  /** `auto`: the core decides first round vs continuation; `start`/`resume`: a wrapper's explicit choice. */
+  readonly mode: 'auto' | 'start' | 'resume'
+  readonly create?: LocalAgentMemberCreate | undefined
+  /** A wrapper's options, passed through to the round verbatim (its cwd, scope, exec, onAdmitted, …). */
+  readonly options?: DelegationCallOptions | undefined
+  readonly input: LocalAgentExecutionRequest['input']
+  readonly operation: LocalAgentExecutionOperation
+  readonly caller: LocalAgentExecutionCaller
+  readonly cause?: LocalAgentExecutionCause | undefined
+  readonly task?: LocalAgentTaskRef | undefined
+  readonly key?: string | undefined
+  readonly callerRef?: string | undefined
+  readonly label?: string | undefined
+  readonly signal?: AbortSignal | undefined
+  /** Composer rows only: the text the ledger keeps for replay. */
+  readonly text?: string | undefined
+  readonly on?: LocalAgentExecutionRequest['on']
+}
+
+/** A start/resume/compact wrapper call as an execution plan: the options' facts, verbatim. */
+function legacyPlan(mode: 'start' | 'resume', parentSessionId: string, provider: string, childSessionId: string, prompt: ContentBlock[], options: DelegationCallOptions | undefined): ExecutionPlan {
   return {
+    parentSessionId, provider, childSessionId, mode, options, input: prompt,
+    operation: options?.operation ?? 'prompt',
     caller: options?.caller ?? 'api',
-    ...options?.operation === undefined ? {} : { operation: options.operation },
-    ...options?.callerRef === undefined ? {} : { callerRef: options.callerRef },
-    ...options?.cause === undefined ? {} : { cause: options.cause },
-    ...options?.task === undefined ? {} : { task: options.task },
+    cause: options?.cause, task: options?.task, callerRef: options?.callerRef,
+    label: options?.label, signal: options?.signal,
   }
+}
+
+/** A ledger row's terminal status as an execution outcome. */
+function rowOutcome(status: LocalAgentMemberInput['status']): LocalAgentExecutionSettlement['outcome'] {
+  return status === 'done' ? 'done' : status === 'cancelled' ? 'cancelled' : 'failed'
 }
 
 /** A delegation record without its requested model. */
@@ -1173,6 +1223,9 @@ export class LocalAgentRegistry {
       execution,
       unrecorded: this.harnessForProvider(binding.provider)?.unrecorded,
     })
+    // A ledger execution reads its turn range and observations back at settlement.
+    const ledgered = execution?.executionId !== undefined ? this.ledgerExecutions.get(execution.executionId) : undefined
+    if (ledgered !== undefined) ledgered.open = open
     let run: SubagentRun
     try {
       run = await start()
@@ -1207,7 +1260,10 @@ export class LocalAgentRegistry {
   enqueueMemberInput(childSessionId: string, text: string, requestId: string): string {
     const record = this.requireInboxMember(childSessionId)
     this.requireLiveParent(record.parentSessionId)
-    return this.memberInbox.enqueue(childSessionId, text, requestId).id
+    // The members-page composer goes through the same entry as every other
+    // caller; its request id is the execution's key.
+    this.memberInbox.enqueue(childSessionId, text, requestId, row => { this.submitExecution(this.composerPlan(childSessionId, row.text, row.key)) })
+    return requestId
   }
   resumeMemberInbox(childSessionId: string): void {
     const record = this.requireInboxMember(childSessionId)
@@ -1222,7 +1278,12 @@ export class LocalAgentRegistry {
     return this.memberInbox.read(childSessionId)
   }
 
-  queuedMemberRounds(childSessionId: string): number { return this.memberControls.queuedCount(childSessionId) }
+  /** Rounds of the member waiting for admission: queued ledger rows, or provider starts waiting outside the ledger. */
+  queuedMemberRounds(childSessionId: string): number {
+    let ledger = 0
+    try { ledger = this.memberInbox.read(childSessionId).messages.filter(row => row.status === 'queued').length } catch { /* an unreadable ledger blocks admission on its own */ }
+    return Math.max(ledger, this.memberControls.queuedCount(childSessionId))
+  }
 
   /** The admitted snapshot belongs to this exact run object, including after settle. */
   runConfiguration(run: object): LocalAgentAppliedConfiguration | undefined { return this.memberControls.configurationOf(run) }
@@ -1455,18 +1516,10 @@ export class LocalAgentRegistry {
     private readonly loginPromptTimeoutMs: number,
   ) {
     this.preparedMembers = new PreparedMembers(join(homesRoot, '.prepared-members'))
-    this.memberInbox = new MemberInbox(join(homesRoot, '.member-inbox'), async (childSessionId, text, signal, onAdmitted, inputId) => {
-      const record = this.requireInboxMember(childSessionId)
-      // `/compact` typed to a member compacts it: the entry keeps its place
-      // in the inbox, then runs as the compaction round instead of a prompt.
-      const compact = isCompactCommand(text)
-      return this.resume(record.parentSessionId, record.provider, childSessionId, [{ type: 'text', text }], {
-        signal, onAdmitted, ...record.scope === undefined ? {} : { scope: record.scope }, ...record.cwd === undefined ? {} : { cwd: record.cwd },
-        ...compact ? { operation: 'compact' as const } : {},
-        // The execution record names the composer and its input row; the
-        // cause (a human, via the member composer) is S4's to record.
-        caller: 'composer', callerRef: inputId,
-      })
+    // The member execution ledger. A composer row replayed after a restart
+    // (its in-memory dispatcher is gone) runs from its stored text here.
+    this.memberInbox = new MemberInbox(join(homesRoot, '.member-inbox'), async (childSessionId, row, signal, admitted) => {
+      return await this.dispatchExecution(this.composerPlan(childSessionId, row.text ?? '', row.key), row.id, signal, admitted)
     }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`))
     this.memberControls = new MemberControls(new FileMemberControlStorage(join(homesRoot, '.member-controls')), binding => {
       const adapter = this.harnessForProvider(binding.provider)?.modelBroker?.configurationAdapter?.(binding)
@@ -2137,7 +2190,11 @@ export class LocalAgentRegistry {
       readonly toolCalls?: LocalAgentToolCalls
     },
   ): void {
-    this.executions.noteReport(childSessionId, round.providerReportedUsage)
+    this.executions.noteReport(childSessionId, round.providerReportedUsage, {
+      ...round.observedModel === undefined ? {} : { observedModel: round.observedModel },
+      ...round.observedEffort === undefined ? {} : { observedEffort: round.observedEffort },
+      ...round.cliVersion === undefined ? {} : { cliVersion: round.cliVersion },
+    })
     if (round.observedModel !== undefined || round.cliVersion !== undefined) {
       const record = this.delegations.get(childSessionId)
       if (record !== undefined) {
@@ -2370,7 +2427,7 @@ export class LocalAgentRegistry {
     if (binding === undefined || this.currentMemberToken(childSessionId) !== undefined) return false
     const record = this.getDelegation(childSessionId)
     if (record === undefined || record.cliSessionId === '' || record.provider !== binding.provider) return false
-    if (this.isResumeLocked(childSessionId) || this.memberControls.queuedCount(childSessionId) > 0) return false
+    if (this.isResumeLocked(childSessionId) || this.queuedMemberRounds(childSessionId) > 0) return false
     const harness = this.harnessForProvider(binding.provider)
     if (harness?.startMember === undefined || harness.canStartMember === undefined) return false
     try { return harness.canStartMember(childSessionId) } catch { return false }
@@ -2384,7 +2441,7 @@ export class LocalAgentRegistry {
    */
   private async startMemberProcess(childSessionId: string, binding: LocalAgentMemberBinding, harness: LocalAgentHarness, face: MemberToolsFace): Promise<LocalAgentMemberToolsReload> {
     if (!this.canStartMemberProcess(childSessionId)) {
-      return { ok: false, reason: this.isResumeLocked(childSessionId) || this.memberControls.queuedCount(childSessionId) > 0 ? 'busy' : 'no-process' }
+      return { ok: false, reason: this.isResumeLocked(childSessionId) || this.queuedMemberRounds(childSessionId) > 0 ? 'busy' : 'no-process' }
     }
     if (!await face.seated(childSessionId).catch(() => false)) return { ok: false, reason: 'unknown-member' }
     // Re-check after the await: a round may have started meanwhile.
@@ -2545,6 +2602,30 @@ export class LocalAgentRegistry {
     prompt: ContentBlock[],
     options?: DelegationCallOptions,
   ): Promise<SubagentRun> {
+    // A thin wrapper over the execution entry (batch 5 S4): the same checks
+    // fail before anything is queued, then the round goes through the
+    // member's ledger like every other execution.
+    const prepared = options?.preparedMemberId === undefined ? undefined : this.preparedMembers.read(options.preparedMemberId)
+    if (options?.preparedMemberId !== undefined) {
+      if (prepared?.phase !== 'ready' || prepared.binding.parentSessionId !== parentSessionId || prepared.binding.provider !== provider) throw new Error('Prepared member is unavailable or belongs to another parent/provider')
+      if (options.model !== undefined || options.effort !== undefined || options.cwd !== undefined || options.scope !== undefined || options.exec !== undefined || options.configurationLock !== undefined) throw new Error('Prepared member start inherits its fixed creation identity')
+      if (this.preparations.has(prepared.binding.childSessionId)) throw new Error('Member preparation is still in progress')
+    }
+    this.requireProvider(this.requireSubagents(), provider)
+    this.requireLiveParent(parentSessionId)
+    const minted = prepared?.binding.childSessionId ?? randomUUID()
+    return await this.submitExecution(legacyPlan('start', parentSessionId, provider, minted, prompt, options)).started
+  }
+
+  /** The first-round body behind {@link start} and {@link run}: stage the fresh intent and start the provider. */
+  private async startRound(
+    parentSessionId: string,
+    provider: string,
+    prompt: ContentBlock[],
+    options: DelegationCallOptions | undefined,
+    minted: string,
+    execution: LocalAgentExecutionIntent,
+  ): Promise<SubagentRun> {
     const prepared = options?.preparedMemberId === undefined ? undefined : this.preparedMembers.read(options.preparedMemberId)
     if (options?.preparedMemberId !== undefined) {
       if (prepared?.phase !== 'ready' || prepared.binding.parentSessionId !== parentSessionId || prepared.binding.provider !== provider) throw new Error('Prepared member is unavailable or belongs to another parent/provider')
@@ -2564,7 +2645,7 @@ export class LocalAgentRegistry {
     // it as DUPLICATE_CHILD), so the provider's returned run carries a
     // per-execution id and the child session id rides the staged intent — the
     // same channel the prepared-member path already used for it.
-    const childSessionId = prepared?.binding.childSessionId ?? randomUUID()
+    const childSessionId = prepared?.binding.childSessionId ?? minted
     // The cwd override rides the staged intent, not the host seam (the
     // SubagentStartRequest contract's cwd is the manager-resolved directory,
     // not the family's resolveChildCwd override): the provider consumes it as
@@ -2572,7 +2653,7 @@ export class LocalAgentRegistry {
     const intent: LocalAgentDelegationIntent = {
       kind: 'fresh',
       ...options?.onAdmitted === undefined ? {} : { onAdmitted: options.onAdmitted },
-      execution: executionFacts(options),
+      execution,
       ...options?.preparedMemberId === undefined ? {} : { preparedMemberId: options.preparedMemberId },
       ...prepared === undefined ? { childSessionId } : {},
       ...options?.cwd === undefined ? {} : { cwd: options.cwd },
@@ -2705,6 +2786,33 @@ export class LocalAgentRegistry {
     prompt: ContentBlock[],
     options?: DelegationCallOptions,
   ): Promise<SubagentRun> {
+    // A thin wrapper over the execution entry (batch 5 S4): the documented
+    // checks fail before anything is queued; the round itself runs from the
+    // member's ledger.
+    this.checkResume(parentSessionId, provider, childSessionId, options, true)
+    this.requireLiveParent(parentSessionId)
+    return await this.submitExecution(legacyPlan('resume', parentSessionId, provider, childSessionId, prompt, options)).started
+  }
+
+  /** The continuation body behind {@link resume} and {@link run}: reattach, stage the resume intent, start the provider. */
+  private async resumeRound(
+    parentSessionId: string,
+    provider: string,
+    childSessionId: string,
+    prompt: ContentBlock[],
+    options: DelegationCallOptions | undefined,
+    execution: LocalAgentExecutionIntent,
+  ): Promise<SubagentRun> {
+    // The ledger dispatches a member's rounds one at a time, so the resume
+    // lock probe is the wrapper's alone.
+    const { cliSessionId } = this.checkResume(parentSessionId, provider, childSessionId, options, false)
+    const subagents = this.requireSubagents()
+    const parent = this.requireLiveParent(parentSessionId)
+    return this.resumeStaged(subagents, parent, parentSessionId, provider, childSessionId, cliSessionId, prompt, options, execution)
+  }
+
+  /** {@link resume}'s checks that need no I/O (steps 1–3). */
+  private checkResume(parentSessionId: string, provider: string, childSessionId: string, options: DelegationCallOptions | undefined, probeLock: boolean): { cliSessionId: string } {
     const subagents = this.requireSubagents()
     this.requireProvider(subagents, provider)
     const { cliSessionId } = this.resolveDelegation(childSessionId, { provider, parentSessionId })
@@ -2728,10 +2836,24 @@ export class LocalAgentRegistry {
         + 'round recorded; start a new delegation to run another model',
       )
     }
-    if (this.isResumeLocked(childSessionId) && !this.supportsMemberConfiguration(provider)) {
+    if (probeLock && this.isResumeLocked(childSessionId) && !this.supportsMemberConfiguration(provider)) {
       throw new Error(`localAgent: child session ${childSessionId} already has an in-flight resume`)
     }
-    const parent = this.requireLiveParent(parentSessionId)
+    return { cliSessionId }
+  }
+
+  /** {@link resume} steps 5–8: reattach, stage, start, track. */
+  private async resumeStaged(
+    subagents: SubagentRuntime,
+    parent: Agent,
+    parentSessionId: string,
+    provider: string,
+    childSessionId: string,
+    cliSessionId: string,
+    prompt: ContentBlock[],
+    options: DelegationCallOptions | undefined,
+    execution: LocalAgentExecutionIntent,
+  ): Promise<SubagentRun> {
     if (options?.reattach === false) {
       // Explicit opt-out: the pre-facade behavior — fail loud on a child that
       // is not live instead of restoring it from persistence.
@@ -2747,7 +2869,7 @@ export class LocalAgentRegistry {
     const intent: LocalAgentDelegationIntent = {
       kind: 'resume',
       ...options?.onAdmitted === undefined ? {} : { onAdmitted: options.onAdmitted },
-      execution: executionFacts(options),
+      execution,
       childSessionId,
       cliSessionId,
       ...options?.cwd === undefined ? {} : { cwd: options.cwd },
@@ -2856,6 +2978,253 @@ export class LocalAgentRegistry {
    */
   async compact(parentSessionId: string, provider: string, childSessionId: string, options?: Omit<DelegationCallOptions, 'operation'>): Promise<SubagentRun> {
     return this.resume(parentSessionId, provider, childSessionId, [{ type: 'text', text: COMPACT_COMMAND }], { ...options, operation: 'compact' })
+  }
+
+  /** In-flight ledger executions, by execution id: the round's open record once admitted. */
+  private readonly ledgerExecutions = new Map<string, {
+    open?: OpenExecution
+    readonly settled: Promise<LocalAgentExecutionSettlement>
+    readonly started: Promise<SubagentRun>
+  }>()
+
+  /**
+   * The single execution entry (batch 5 S4). Every member execution — the
+   * host `subagent` tool, the member composer, room, a plugin — is queued in
+   * the member's ledger (durably, before this resolves), runs when it
+   * reaches the head of that queue, is admitted at the one admission point
+   * (`MemberControls`), and is recorded as one `local-agent/execution`.
+   *
+   * The core decides first round vs continuation: a member with a
+   * delegation record continues (scope and cwd come from the record), a
+   * prepared member starts its prepared identity, anything else starts fresh
+   * under `member.childSessionId` with `member.create`.
+   *
+   * A `key` the member's ledger already holds never runs twice (see
+   * {@link LocalAgentExecutionRequest.key}).
+   * @param request - the execution request.
+   * @returns the execution id and its settlement (and the published run).
+   * @throws when the provider is not registered, the member has an uncertain
+   *   execution or a paused queue, or the key names an uncertain execution.
+   */
+  async run(request: LocalAgentExecutionRequest): Promise<LocalAgentExecutionHandle> {
+    this.requireProvider(this.requireSubagents(), request.provider)
+    return this.submitExecution({
+      parentSessionId: request.parentSessionId,
+      provider: request.provider,
+      childSessionId: request.member.childSessionId,
+      mode: 'auto',
+      create: request.member.create,
+      input: request.input,
+      operation: request.operation ?? 'prompt',
+      caller: request.caller ?? 'api',
+      cause: request.cause,
+      task: request.task,
+      key: request.key,
+      callerRef: request.callerRef,
+      label: request.label ?? request.member.create?.label,
+      signal: request.signal,
+      on: request.on,
+    })
+  }
+
+  /** Queue one plan in its member's ledger; see {@link run}. */
+  private submitExecution(plan: ExecutionPlan): LocalAgentExecutionHandle {
+    const ledger = this.memberInbox
+    const memberId = plan.childSessionId
+    if (plan.key !== undefined) {
+      const existing = ledger.read(memberId).messages.find(row => row.key === plan.key)
+      if (existing !== undefined) return this.existingExecution(existing)
+    }
+    plan.signal?.throwIfAborted()
+    // Composer input may wait behind a paused or unreconciled queue (the
+    // members page shows it); every other caller is refused at once.
+    if (plan.caller !== 'composer') ledger.assertAdmission(memberId)
+    const executionId = randomUUID()
+    let resolveSettled!: (settlement: LocalAgentExecutionSettlement) => void
+    let resolveStarted!: (run: SubagentRun) => void
+    let rejectStarted!: (error: unknown) => void
+    const settled = new Promise<LocalAgentExecutionSettlement>((resolve) => { resolveSettled = resolve })
+    const started = new Promise<SubagentRun>((resolve, reject) => { resolveStarted = resolve; rejectStarted = reject })
+    void started.catch(() => {})
+    const entry: { open?: OpenExecution; settled: Promise<LocalAgentExecutionSettlement>; started: Promise<SubagentRun> } = { settled, started }
+    this.ledgerExecutions.set(executionId, entry)
+    const onAbort = (): void => {
+      // A queued execution leaves the queue; a running one is stopped by the
+      // same signal, fused into its round.
+      try { if (ledger.find(memberId, executionId)?.status === 'queued') ledger.cancel(memberId, executionId) } catch (error) { this.ctx.logger.warn(`localAgent: cancelling queued execution ${executionId} failed: ${String(error)}`) }
+    }
+    const final = (row: LocalAgentMemberInput, run: SubagentRun | undefined, error: unknown): void => {
+      plan.signal?.removeEventListener('abort', onAbort)
+      if (run === undefined) rejectStarted(error ?? new Error(`localAgent: execution ${executionId} ended ${row.status} before it started`))
+      void this.settlementOf(executionId, row, run, error, entry).then((settlement) => {
+        this.ledgerExecutions.delete(executionId)
+        try { plan.on?.settled?.(settlement) } catch (failure) { this.ctx.logger.warn(`localAgent: execution settled callback failed: ${String(failure)}`) }
+        resolveSettled(settlement)
+      })
+    }
+    try {
+      ledger.submit(memberId, {
+        id: executionId, caller: plan.caller,
+        ...plan.key === undefined ? {} : { key: plan.key },
+        ...plan.text === undefined ? {} : { text: plan.text },
+        ...plan.operation === 'compact' ? { operation: 'compact' as const } : {},
+      }, {
+        dispatch: (signal, admitted) => this.dispatchExecution(plan, executionId, signal, admitted).then((run) => { resolveStarted(run); return run }),
+        final,
+      })
+    } catch (error) {
+      this.ledgerExecutions.delete(executionId)
+      throw error
+    }
+    plan.signal?.addEventListener('abort', onAbort, { once: true })
+    return { executionId, settled, started }
+  }
+
+  /** A key the ledger already holds: the same execution, its settlement, or an error. */
+  private existingExecution(row: LocalAgentMemberInput): LocalAgentExecutionHandle {
+    const live = this.ledgerExecutions.get(row.id)
+    if (live !== undefined) return { executionId: row.id, settled: live.settled, started: live.started }
+    if (row.status === 'uncertain') throw new Error(`localAgent: execution ${row.id} (key ${row.key ?? ''}) has an uncertain outcome; reconcile it before continuing`)
+    if (row.status === 'queued' || row.status === 'running') throw new Error(`localAgent: execution ${row.id} (key ${row.key ?? ''}) is already ${row.status}`)
+    const settlement: LocalAgentExecutionSettlement = {
+      executionId: row.id, outcome: rowOutcome(row.status), turns: [],
+      ...row.error === undefined ? {} : { error: row.error },
+    }
+    const started = Promise.reject(new Error(`localAgent: execution ${row.id} already ended ${row.status}`))
+    void started.catch(() => {})
+    return { executionId: row.id, settled: Promise.resolve(settlement), started }
+  }
+
+  /** The settlement of an ended ledger row, with the observations a prompt-round report brings within {@link SETTLEMENT_REPORT_WAIT_MS}. */
+  private async settlementOf(executionId: string, row: LocalAgentMemberInput, run: SubagentRun | undefined, error: unknown, entry: { open?: OpenExecution }): Promise<LocalAgentExecutionSettlement> {
+    const open = entry.open
+    if (open !== undefined && run !== undefined) await open.reportOrTimeout(SETTLEMENT_REPORT_WAIT_MS)
+    const reason = row.error ?? (error === undefined ? undefined : error instanceof Error ? error.message : String(error))
+    return {
+      executionId,
+      outcome: rowOutcome(row.status),
+      ...run === undefined ? {} : { run },
+      turns: open?.turnRange() ?? [],
+      ...open?.observed?.observedModel === undefined ? {} : { observedModel: open.observed.observedModel },
+      ...open?.observed?.observedEffort === undefined ? {} : { observedEffort: open.observed.observedEffort },
+      ...open?.observed?.cliVersion === undefined ? {} : { cliVersion: open.observed.cliVersion },
+      ...reason === undefined || row.status === 'done' ? {} : { error: reason },
+    }
+  }
+
+  /**
+   * Run one plan at the head of its member's queue: evaluate the input,
+   * choose first round vs continuation, and start the round with the
+   * execution's facts. `admitted` marks the ledger row running at the
+   * admission point.
+   */
+  private async dispatchExecution(plan: ExecutionPlan, executionId: string, ledgerSignal: AbortSignal, admitted: () => void): Promise<SubagentRun> {
+    const signal = plan.signal === undefined ? ledgerSignal : AbortSignal.any([ledgerSignal, plan.signal])
+    signal.throwIfAborted()
+    const prompt = (typeof plan.input === 'function' ? [...await plan.input()] : plan.input) as ContentBlock[]
+    signal.throwIfAborted()
+    const childSessionId = plan.childSessionId
+    const execution: LocalAgentExecutionIntent = {
+      executionId,
+      caller: plan.caller,
+      ...plan.operation === 'compact' ? { operation: 'compact' as const } : {},
+      ...plan.callerRef === undefined ? {} : { callerRef: plan.callerRef },
+      ...plan.cause === undefined ? {} : { cause: plan.cause },
+      ...plan.task === undefined ? {} : { task: plan.task },
+    }
+    const onAdmitted = async (): Promise<void> => {
+      admitted()
+      await plan.options?.onAdmitted?.()
+      if (plan.on?.admitted === undefined) return
+      const last = this.ctx.get('sessions')?.get(SessionId(childSessionId))?.snapshotEvents().at(-1)
+      const admission: LocalAgentExecutionAdmitted = { executionId, admittedAt: Date.now(), childFromSeq: last === undefined ? 0 : Number(last.seq) + 1 }
+      await plan.on.admitted(admission)
+    }
+    const progressTargets = [plan.options?.onProgress, plan.on?.progress].filter(target => target !== undefined)
+    const { onProgress: _onProgress, onAdmitted: _onAdmitted, signal: _signal, ...passed } = plan.options ?? {}
+    const round: DelegationCallOptions = {
+      ...passed,
+      signal,
+      onAdmitted,
+      ...progressTargets.length === 0 ? {} : { onProgress: (event: LocalAgentRunProgress) => { for (const target of progressTargets) target(event) } },
+      ...plan.label === undefined ? {} : { label: plan.label },
+      ...plan.operation === 'compact' ? { operation: 'compact' as const } : {},
+    }
+    let mode = plan.mode
+    let options = round
+    if (mode === 'auto') {
+      const record = this.getDelegation(childSessionId)
+      if (record !== undefined) {
+        // A continuation runs where and as its first round did: scope and
+        // cwd come from the record, never from the caller.
+        mode = 'resume'
+        options = { ...round, ...record.scope === undefined ? {} : { scope: record.scope }, ...record.cwd === undefined ? {} : { cwd: record.cwd } }
+      } else {
+        if (plan.operation === 'compact') throw new Error(`localAgent: member ${childSessionId} has no conversation to compact yet`)
+        mode = 'start'
+        const prepared = this.preparedMembers.read(childSessionId)
+        const create = plan.create
+        options = prepared?.phase === 'ready'
+          ? { ...round, preparedMemberId: childSessionId }
+          : {
+            ...round,
+            ...create?.model === undefined ? {} : { model: create.model },
+            ...create?.effort === undefined ? {} : { effort: create.effort },
+            ...create?.cwd === undefined ? {} : { cwd: create.cwd },
+            ...create?.scope === undefined ? {} : { scope: create.scope },
+            ...create?.exec === undefined ? {} : { exec: create.exec },
+            ...create?.configurationLock === undefined ? {} : { configurationLock: create.configurationLock },
+          }
+      }
+    }
+    return mode === 'start'
+      ? this.startRound(plan.parentSessionId, plan.provider, prompt, options, childSessionId, execution)
+      : this.resumeRound(plan.parentSessionId, plan.provider, childSessionId, prompt, options, execution)
+  }
+
+  /** A composer row as an execution plan (a fresh submission, or a row replayed after a restart). */
+  private composerPlan(childSessionId: string, text: string, key: string | undefined): ExecutionPlan {
+    const record = this.requireInboxMember(childSessionId)
+    return {
+      parentSessionId: record.parentSessionId,
+      provider: record.provider,
+      childSessionId,
+      mode: 'auto',
+      input: [{ type: 'text', text }],
+      // `/compact` typed to a member compacts it: the entry keeps its place
+      // in the queue, then runs as the compaction round instead of a prompt.
+      operation: isCompactCommand(text) ? 'compact' : 'prompt',
+      caller: 'composer',
+      cause: { kind: 'human', sessionId: record.parentSessionId, via: 'member-composer' },
+      text,
+      ...key === undefined ? {} : { key, callerRef: key },
+    }
+  }
+
+  /**
+   * Cancel one execution of a member: a queued one leaves the queue, a
+   * running one is stopped like {@link cancel}.
+   * @returns whether something was cancelled.
+   */
+  cancelExecution(childSessionId: string, executionId: string): boolean {
+    const row = this.memberInbox.find(childSessionId, executionId)
+    if (row?.status === 'queued') {
+      this.memberInbox.cancel(childSessionId, row.id)
+      return true
+    }
+    return row?.status === 'running' ? this.cancel(childSessionId) : false
+  }
+
+  /**
+   * The one reconciliation action (user decision 2026-11-03 ③): settle an
+   * execution a restart left uncertain, with the operator's evidence. Every
+   * surface that shows the uncertain execution (the members page, room)
+   * reconciles through here, so reconciling in one place clears it in all.
+   * @param outcome - what the evidence shows.
+   * @param evidence - non-empty operator evidence, kept on the ledger row.
+   */
+  reconcileExecution(childSessionId: string, executionId: string, outcome: 'done' | 'failed' | 'cancelled', evidence: string): void {
+    this.memberInbox.reconcile(childSessionId, executionId, outcome, evidence)
   }
 
   /**

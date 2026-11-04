@@ -47,7 +47,13 @@ export function mountScriptedProvider(ctx: Context, config: ScriptedProviderConf
         takeDelegationIntent(parentSessionId: string, provider: string): { kind: string; childSessionId?: string; cliSessionId?: string } | undefined
       } | undefined
       const intent = registry?.takeDelegationIntent(request.parent.session.id, config.name)
-      if (intent !== undefined) config.taken.push(intent)
+      // The ledger's execution id and admission edge ride every intent since
+      // batch 5 S4; the pairing assertions compare the rest.
+      if (intent !== undefined) {
+        const { onAdmitted: _admitted, execution, ...rest } = intent as typeof intent & { onAdmitted?: unknown; execution?: { executionId?: string } }
+        const { executionId: _id, ...facts } = execution ?? {}
+        config.taken.push(execution === undefined ? rest : { ...rest, execution: facts } as typeof intent)
+      }
       const result: Promise<SubagentResult> = config.deferred === undefined
         ? settleRunResult({
           attempt: async () => ({ output: [{ type: 'text', text: `done: ${task}` }], stopReason: 'completed' }),

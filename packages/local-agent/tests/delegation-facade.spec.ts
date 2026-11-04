@@ -96,7 +96,14 @@ async function mountFacade(): Promise<FacadeHarness> {
       ctx.agents.enter(agent, undefined)
     },
     consumeIntent(request) {
-      harness.consumed.push(harness.registry.takeDelegationIntent(request.parent.session.id, PROVIDER))
+      // Every round now runs from the member's ledger (batch 5 S4): its
+      // intent carries the ledger's execution id and admission edge, which
+      // these pairing assertions do not compare.
+      const intent = harness.registry.takeDelegationIntent(request.parent.session.id, PROVIDER)
+      if (intent === undefined) { harness.consumed.push(undefined); return }
+      const { onAdmitted: _admitted, execution, ...rest } = intent
+      const { executionId: _id, ...facts } = execution ?? { caller: 'api' as const }
+      harness.consumed.push({ ...rest, execution: facts } as LocalAgentDelegationIntent)
     },
   }
   // The default handler consumes exactly one intent per start, like the real

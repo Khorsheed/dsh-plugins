@@ -284,7 +284,7 @@ describe('local-agent/execution records (batch 5 S1)', () => {
     expect(records(events)[1]).toMatchObject({ outcome: 'done', providerReportedUsage: TOTAL })
   })
 
-  it('the member composer is the caller of its rounds, with the input row as its handle', async () => {
+  it('the member composer is the caller of its rounds, with the input row as its handle and a human cause', async () => {
     const h = await mount()
     h.next({ round: promptRound('exec'), report: 'before' })
     const first = await h.registry.start(PARENT, PROVIDER, [{ type: 'text', text: 'go' }])
@@ -295,7 +295,10 @@ describe('local-agent/execution records (batch 5 S1)', () => {
     const inputId = h.registry.enqueueMemberInput(child, 'hello', 'req-1')
     const events = await storedLog(h, child, 2)
     expect(records(events)[2]).toMatchObject({ phase: 'start', caller: 'composer', callerRef: inputId })
-    expect((records(events)[2] as LocalAgentExecutionStartEvent).cause).toBeUndefined()
+    // S4: the composer goes through run(); its cause is the human at the members page.
+    expect((records(events)[2] as LocalAgentExecutionStartEvent).cause).toEqual({ kind: 'human', sessionId: PARENT, via: 'member-composer' })
+    // The record and the ledger row share the execution id.
+    expect(h.registry.readMemberInbox(child).messages.at(-1)?.id).toBe((records(events)[2] as LocalAgentExecutionStartEvent).executionId)
   })
 })
 
