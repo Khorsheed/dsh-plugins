@@ -126,7 +126,7 @@ export class MemberChannel {
         reloadPending: childSessionId => this.tools.reloadPending(childSessionId),
         reloadAccepted: (childSessionId, when) => { this.tools.reloadAccepted(childSessionId, when) },
         reloadStarted: (childSessionId) => { this.tools.reloadStarted(childSessionId) },
-        reloadDone: (childSessionId, outcome, oldToken) => { this.reloadDone(childSessionId, outcome, oldToken) },
+        reloadDone: (childSessionId, outcome, oldToken, error) => { this.reloadDone(childSessionId, outcome, oldToken, error) },
         seated: async (childSessionId) => {
           const binding = this.registry.memberBinding(childSessionId)
           if (binding === undefined) return false
@@ -178,8 +178,8 @@ export class MemberChannel {
    * it is being prepared, before this point: settle the reload on that list
    * now instead of waiting for one that already came.
    */
-  private reloadDone(childSessionId: string, outcome: 'respawned' | 'no-process' | 'failed', oldToken: string | undefined): void {
-    this.tools.reloadDone(childSessionId, outcome, oldToken)
+  private reloadDone(childSessionId: string, outcome: 'respawned' | 'no-process' | 'failed', oldToken: string | undefined, error?: string): void {
+    this.tools.reloadDone(childSessionId, outcome, oldToken, error)
     if (outcome !== 'respawned' || typeof this.registry.currentMemberToken !== 'function') return
     const token = this.registry.currentMemberToken(childSessionId)
     const state = token === undefined || token === oldToken ? undefined : this.served.get(token)

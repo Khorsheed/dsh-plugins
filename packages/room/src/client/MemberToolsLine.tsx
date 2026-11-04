@@ -33,15 +33,25 @@ export interface MemberToolsLineProps {
   readonly running: boolean
   readonly read: (childSessionId: string) => Promise<LocalAgentMemberToolsStatus | null | undefined>
   readonly reload: (childSessionId: string) => Promise<LocalAgentMemberToolsReload | undefined>
+  /**
+   * Before 立即载入 / 重新载入: recover a member whose last start failed
+   * (对账并重试 first). Resolves undefined to go on, or the new reason when
+   * the retry failed again (the load is then not asked for).
+   */
+  readonly recover?: (() => Promise<string | undefined>) | undefined
+  /** After a load this line asked for (the recovery block re-reads). */
+  readonly onLoad?: (() => void) | undefined
   readonly t: MembersViewProps['t']
 }
 
 /** The 模式工具 line. Renders nothing for a member without a mode (or without the family). */
-export function MemberToolsLine({ childSessionId, modeName, provider, running, read, reload, t }: MemberToolsLineProps): ReactNode {
+export function MemberToolsLine({ childSessionId, modeName, provider, running, read, reload, recover, onLoad, t }: MemberToolsLineProps): ReactNode {
   const [status, setStatus] = useState<LocalAgentMemberToolsStatus | null | undefined>(undefined)
   const [open, setOpen] = useState(false)
   const [clickedAt, setClickedAt] = useState<number | undefined>(undefined)
   const [refusal, setRefusal] = useState<'no-process' | 'unsupported' | 'busy' | undefined>(undefined)
+  // The load's own recovery failed again: its new reason (shown in place).
+  const [startError, setStartError] = useState<string | undefined>(undefined)
   // What the last click asked for: replace the process (重新载入) or start
   // one where there was none (立即载入); the in-place states word it.
   const [action, setAction] = useState<'reload' | 'start'>('reload')
@@ -67,11 +77,26 @@ export function MemberToolsLine({ childSessionId, modeName, provider, running, r
     setClickedAt(Date.now())
     setAction(kind)
     setRefusal(undefined)
+    setStartError(undefined)
+    // A member whose last start failed is recovered first (the host does
+    // the same; this also covers a core that does not).
+    const stuck = await recover?.().catch(() => undefined)
+    if (!alive.current) return
+    if (stuck !== undefined) {
+      setStartError(stuck)
+      setClickedAt(undefined)
+      onLoad?.()
+      return
+    }
     // 立即载入 goes through the same request: with no process, the host
     // starts one instead of replacing it.
     const answer = await reload(childSessionId).catch(() => undefined)
     if (!alive.current) return
-    if (answer !== undefined && !answer.ok && (answer.reason === 'no-process' || answer.reason === 'unsupported' || answer.reason === 'busy')) setRefusal(answer.reason)
+    if (answer !== undefined && !answer.ok) {
+      if (answer.reason === 'start-failed') { setStartError(answer.error); setClickedAt(undefined) }
+      else if (answer.reason === 'no-process' || answer.reason === 'unsupported' || answer.reason === 'busy') setRefusal(answer.reason)
+    }
+    onLoad?.()
     await refresh()
   }
   const starting = action === 'start'
@@ -96,7 +121,9 @@ export function MemberToolsLine({ childSessionId, modeName, provider, running, r
       </div>
     </div>
   )
-  const refused = refusal === undefined ? null : <div className={css.hint}>{t(refusal === 'no-process' ? 'tools.refused.noProcess' : refusal === 'busy' ? 'tools.refused.busy' : 'tools.refused.unsupported')}</div>
+  const refused = startError !== undefined
+    ? <div className={`${css.hint} ${css.warnHint}`} role="alert">{t('tools.startFailedReason', { reason: startError })}</div>
+    : refusal === undefined ? null : <div className={css.hint}>{t(refusal === 'no-process' ? 'tools.refused.noProcess' : refusal === 'busy' ? 'tools.refused.busy' : 'tools.refused.unsupported')}</div>
 
   let row: ReactNode
   let below: ReactNode = null
@@ -159,7 +186,8 @@ export function MemberToolsLine({ childSessionId, modeName, provider, running, r
         </>
         // Only a member whose process can be started now gets the button;
         // the others load with the next message, as the line says.
-        if (state.startFailed === true) below = <div className={`${css.hint} ${css.warnHint}`}>{t('tools.startFailed')}</div>
+        if (startError !== undefined) below = null
+        else if (state.startFailed === true) below = <div className={`${css.hint} ${css.warnHint}`}>{state.startError === undefined ? t('tools.startFailed') : t('tools.startFailedReason', { reason: state.startError })}</div>
         else if (state.startable === true) below = <div className={css.hint}>{t('tools.startHint')}</div>
         break
       }

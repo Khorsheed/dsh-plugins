@@ -4,7 +4,8 @@
  *   pnpm exec vite packages/room/tests/preview --config packages/room/tests/preview/vite.config.ts --host 127.0.0.1
  * then open /member-tools.html?state=<ok|okOpen|missing|queued|reloaded|running|scheduled|healed|unknown|nomode|start|starting|started|startMissing|feed|members>[&lang=en][&dark=1]
  * (`members` = the members page: a long name, a running member, an idle and a failed one.
- * `start*` = no process after a host restart: 立即载入, 载入中…, the result, a start that still lacks the tools.)
+ * `start*` = no process after a host restart: 立即载入, 载入中…, the result, a start that still lacks the tools.
+ * `recoveryFailed` = the last start failed (对账并重试 beside 立即载入); `recoveryUncertain` = a round a restart interrupted (待对账).)
  */
 import React, { useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -12,6 +13,7 @@ import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsStatus } from '@
 import { InviteDialog } from '../../src/client/InviteDialog.tsx'
 import { MembersView } from '../../src/client/MembersView.tsx'
 import { RoomEventView } from '../../src/client/RoomEventView.tsx'
+import type { MemberRecoveryRead } from '../../src/client/member-recovery-view.ts'
 import { en, zh } from '../../src/client/locales.ts'
 import type { RoomMember, RoomState } from '../../src/types.ts'
 
@@ -38,6 +40,8 @@ const STATUS: Record<string, LocalAgentMemberToolsStatus | null> = {
   stillMissing: { ...missing, lastReload: { at: at(22, 40), by: 'manual', outcome: 'missing' } },
   nomode: null,
   // After a host restart: no process, the member's session not loaded yet (the mode's size unknown).
+  recoveryFailed: { ...base, process: 'none', received: [], expected: [], expectedUnknown: true, loadedAt: undefined as never, startable: true },
+  recoveryUncertain: { ...base, process: 'none', received: [], expected: [], expectedUnknown: true, loadedAt: undefined as never },
   start: { ...base, process: 'none', received: [], expected: [], expectedUnknown: true, loadedAt: undefined as never, startable: true },
 }
 /** What 立即载入 turns into, per preview state. */
@@ -45,6 +49,16 @@ const STARTED: Record<string, LocalAgentMemberToolsStatus> = {
   starting: { ...STATUS['start']!, startable: false, reload: { state: 'reloading', since: Date.now() } },
   started: { ...base, loadedAt: Date.now(), lastReload: { at: Date.now() + 60_000, by: 'manual', outcome: 'loaded' } },
   startMissing: { ...missing, loadedAt: Date.now(), lastReload: { at: Date.now() + 60_000, by: 'manual', outcome: 'missing' } },
+}
+
+/** The recovery block's reads (local-agent's member configuration and ledger), per preview state. */
+const control = { memberId: 'child-gm', revision: 4, current: { revision: 3, selection: { model: { mode: 'inherit' }, effort: { mode: 'inherit' } }, resolved: { model: 'kimi-code/k3' } } } as const
+const RECOVERY: Record<string, MemberRecoveryRead> = {
+  recoveryFailed: { configuration: { ...control, status: 'failed', error: params.get('lang') === 'en' ? 'Another copy of this member is still running; it was probably left over from the last restart.' : '这个成员的上一个进程还没退出，多半是上次重启时留下的。' } as never },
+  recoveryUncertain: {
+    configuration: { ...control, status: 'idle' } as never,
+    inbox: { memberId: 'child-gm', paused: true, messages: [{ id: 'exec-1', caller: 'room', key: 'd1', status: 'uncertain', createdAt: 1, updatedAt: 2 }] },
+  },
 }
 
 const member: RoomMember = {
@@ -90,6 +104,11 @@ function Dialog() {
       memberRun={state === 'running' || state === 'scheduled' ? { member: member.name, runId: 'r1', state: 'running', startedAt: Date.now() - 65_000 } as never : undefined}
       memberTools={read}
       reloadMemberTools={reload}
+      {...RECOVERY[state] === undefined ? {} : {
+        memberRecovery: async () => RECOVERY[state],
+        retryMemberStart: async () => ({ ok: true as const }),
+        reconcileMemberExecution: async () => ({ ok: true as const }),
+      }}
       onSubmit={async () => ({ ok: true })}
       onClose={() => {}}
       t={t}

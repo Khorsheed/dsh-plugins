@@ -30,7 +30,7 @@ interface MemberTrack {
    * from a token other than `oldToken` decides its outcome.
    */
   awaiting?: { readonly by: ReloadBy; readonly at: number; readonly oldToken: string | undefined; readonly during: 'round' | 'idle' }
-  lastReload?: { at: number; by: ReloadBy; outcome: ReloadOutcome }
+  lastReload?: { at: number; by: ReloadBy; outcome: ReloadOutcome; error?: string }
 }
 
 /** What a served list means for the room: a reloaded process still lacks its tools. */
@@ -98,12 +98,12 @@ export class MemberToolsTracker {
   }
 
   /** The accepted reload ran; `oldToken` is the replaced process's token. */
-  reloadDone(childSessionId: string, outcome: 'respawned' | 'no-process' | 'failed', oldToken: string | undefined): void {
+  reloadDone(childSessionId: string, outcome: 'respawned' | 'no-process' | 'failed', oldToken: string | undefined, error?: string): void {
     const track = this.track(childSessionId)
     delete track.pending
     const at = this.now()
     if (outcome === 'respawned') track.awaiting = { by: 'manual', at, oldToken, during: 'idle' }
-    else track.lastReload = { at, by: 'manual', outcome }
+    else track.lastReload = { at, by: 'manual', outcome, ...outcome === 'failed' && error !== undefined ? { error } : {} }
   }
 
   /** The reload fields of a member's status (`awaiting` past its window reads as `pending`). */

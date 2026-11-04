@@ -175,6 +175,7 @@ export type {
   LocalAgentMemberInput,
 } from './types.ts'
 export { MemberInbox, MemberLedger } from './member-inbox.ts'
+export { BEFORE_PROMPT_FAILURE, LocalAgentRetryableStartError, RETRYABLE_START_FAILURE, isRetryableStartFailure } from './types.ts'
 export { beforeMirrorTurn, executionOutcome, ExecutionRecorder, OpenExecution } from './execution-records.ts'
 export type { ExecutionAdmission, ExecutionObservation, ExecutionRecorderOptions, MirrorTransport } from './execution-records.ts'
 
@@ -452,7 +453,8 @@ export interface MemberToolsFace {
   reloadPending(childSessionId: string): boolean
   reloadAccepted(childSessionId: string, when: 'now' | 'after-round'): void
   reloadStarted(childSessionId: string): void
-  reloadDone(childSessionId: string, outcome: 'respawned' | 'no-process' | 'failed', oldToken: string | undefined): void
+  /** `error`: why a `failed` start did not come up, in the provider's words (shown after 「上次启动没有成功：」). */
+  reloadDone(childSessionId: string, outcome: 'respawned' | 'no-process' | 'failed', oldToken: string | undefined, error?: string): void
   /** Whether the member still sits in a room with a mode (a removed member is never started). */
   seated(childSessionId: string): Promise<boolean>
 }
@@ -2391,6 +2393,12 @@ export class LocalAgentRegistry {
     if (face === undefined || binding === undefined) return { ok: false, reason: 'unknown-member' }
     const harness = this.harnessForProvider(binding.provider)
     if (face.reloadPending(childSessionId)) return { ok: false, reason: 'busy' }
+    // An explicit load recovers a failed native start first (11-04: a Kimi
+    // member whose start failed after a host restart kept failing in 0 ms,
+    // and 对账并重试 lived only in its own session). A selection that did
+    // not apply still waits for the user's own retry or cancel.
+    const recovery = await this.recoverFailedStart(binding)
+    if (recovery !== undefined) return recovery
     const oldToken = this.currentMemberToken(childSessionId)
     // No process at all (a host restart, an idle reclaim): start one now
     // where the harness can (立即载入), instead of waiting for a message.
@@ -2410,9 +2418,30 @@ export class LocalAgentRegistry {
     if (startedEarly) face.reloadStarted(childSessionId)
     void handle.done.then(
       (outcome) => { face.reloadDone(childSessionId, outcome, oldToken) },
-      () => { face.reloadDone(childSessionId, 'failed', oldToken) },
+      (error: unknown) => { face.reloadDone(childSessionId, 'failed', oldToken, error instanceof Error ? error.message : String(error)) },
     )
     return { ok: true, when: handle.when }
+  }
+
+  /**
+   * 立即载入 / 重新载入's first step: a member whose configuration failed on
+   * a native start (no selection waiting) is reconciled and retried before
+   * the load. Nothing reaches a model here.
+   * @param binding - the member's execution identity.
+   * @returns undefined to go on, or the refusal carrying the new reason.
+   */
+  private async recoverFailedStart(binding: LocalAgentMemberBinding): Promise<LocalAgentMemberToolsReload | undefined> {
+    if (!this.supportsMemberConfiguration(binding.provider)) return undefined
+    let control: MemberConfigurationController
+    try { control = this.memberControls.get(binding) } catch { return undefined }
+    if (!control.startFailed()) return undefined
+    try {
+      await control.retry(control.read().revision)
+      return undefined
+    } catch (error) {
+      const state = control.read()
+      return { ok: false, reason: 'start-failed', error: state.error ?? (error instanceof Error ? error.message : String(error)) }
+    }
   }
 
   /**
@@ -2463,8 +2492,9 @@ export class LocalAgentRegistry {
     void done.then(
       (outcome) => { face.reloadDone(childSessionId, outcome, undefined) },
       (error: unknown) => {
-        this.ctx.logger.warn(`localAgent: starting member ${childSessionId}'s process failed: ${error instanceof Error ? error.message : String(error)}`)
-        face.reloadDone(childSessionId, 'failed', undefined)
+        const message = error instanceof Error ? error.message : String(error)
+        this.ctx.logger.warn(`localAgent: starting member ${childSessionId}'s process failed: ${message}`)
+        face.reloadDone(childSessionId, 'failed', undefined, message)
       },
     )
     return { ok: true, when: 'now' }

@@ -31,7 +31,7 @@ import roomRemote from '@khorsheed/dsh-room/remote'
 import { presetDisplayText } from '@deepseek-ai/dsh-agent-preset-registry/display'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
-import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsStatus, LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentMemberControlState, LocalAgentMemberInbox, LocalAgentMemberToolsReload, LocalAgentMemberToolsStatus, LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import { RoomRequestIds } from './request-ids.ts'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import { en, zh } from './locales.ts'
@@ -424,6 +424,49 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
         return carried.ok ? carried.value : undefined
       } catch {
         return undefined
+      }
+    },
+    // The edit dialog's recovery block (same lazy probe): each read answers
+    // undefined on its own when the family or the method is absent.
+    memberRecovery: async (childSessionId) => {
+      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
+      if (gateway === undefined) return undefined
+      const call = async <V,>(method: string): Promise<V | undefined> => {
+        if (typeof gateway[method] !== 'function') return undefined
+        try {
+          const carried = await (gateway[method] as (child: string) => Promise<{ readonly ok: true; readonly value: V } | { readonly ok: false }>)(childSessionId)
+          return carried.ok ? carried.value : undefined
+        } catch {
+          return undefined
+        }
+      }
+      const [configuration, inbox] = await Promise.all([
+        call<LocalAgentMemberControlState>('memberConfiguration'),
+        call<LocalAgentMemberInbox>('memberInbox'),
+      ])
+      return configuration === undefined && inbox === undefined ? undefined : { configuration, inbox }
+    },
+    retryMemberStart: async (childSessionId, revision) => {
+      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
+      if (gateway === undefined || typeof gateway['retryMemberConfiguration'] !== 'function') return { ok: false, message: t('recovery.member.error') }
+      try {
+        const carried = await (gateway['retryMemberConfiguration'] as
+          (child: string, expected: number) => Promise<{ readonly ok: true } | { readonly ok: false }>)(childSessionId, revision)
+        return carried.ok ? { ok: true } : { ok: false, message: t('recovery.member.error') }
+      } catch {
+        return { ok: false, message: t('recovery.member.error') }
+      }
+    },
+    reconcileMemberExecution: async (childSessionId, executionId, outcome, evidence) => {
+      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
+      if (gateway === undefined || typeof gateway['controlMemberInbox'] !== 'function') return { ok: false, message: t('recovery.member.error') }
+      try {
+        const carried = await (gateway['controlMemberInbox'] as
+          (child: string, action: 'reconcile', id: string, verdict: 'done' | 'cancelled', proof: string) => Promise<{ readonly ok: true; readonly value: LocalAgentPromptResult } | { readonly ok: false }>)(childSessionId, 'reconcile', executionId, outcome, evidence)
+        if (!carried.ok) return { ok: false, message: t('recovery.member.error') }
+        return carried.value.ok ? { ok: true } : { ok: false, message: t('recovery.member.error') }
+      } catch {
+        return { ok: false, message: t('recovery.member.error') }
       }
     },
     setMemberModel: async (childSessionId, model) => {

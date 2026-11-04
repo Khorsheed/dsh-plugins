@@ -50,7 +50,8 @@ function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirect
 export function MembersView({
   sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, unlinkSession, updateMember, invite, listProviders, browseDirectory,
   modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator,
-  renderMemberModelPicker, readMemberSelection, saveMemberSelection, memberTools, reloadMemberTools, t,
+  renderMemberModelPicker, readMemberSelection, saveMemberSelection, memberTools, reloadMemberTools,
+  memberRecovery, retryMemberStart, reconcileMemberExecution, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -180,6 +181,9 @@ export function MembersView({
       memberRun={dialog.mode === 'edit' ? state?.runs.find(run => run.member === dialog.member.name) : undefined}
       memberTools={memberTools}
       reloadMemberTools={reloadMemberTools}
+      memberRecovery={memberRecovery}
+      retryMemberStart={retryMemberStart}
+      reconcileMemberExecution={reconcileMemberExecution}
       onSubmit={submitDialog}
       onClose={() => { setDialog(null) }}
       t={t}

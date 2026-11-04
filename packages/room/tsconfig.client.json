@@ -29,6 +29,8 @@
     "src/client/MembersView.tsx",
     "src/client/MemberToolsLine.tsx",
     "src/client/member-tools-view.ts",
+    "src/client/MemberRecoveryLine.tsx",
+    "src/client/member-recovery-view.ts",
     "src/client/MemberEditDialog.tsx",
     "src/client/RoomComposer.tsx",
     "src/client/RoomEventView.tsx",

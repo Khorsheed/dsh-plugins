@@ -119,6 +119,9 @@ export function MemberEditDialog({ sessionId, memberName, face, onClose, t }: Me
       memberRun={state?.runs.find(run => run.member === member.name)}
       memberTools={face.memberTools}
       reloadMemberTools={face.reloadMemberTools}
+      memberRecovery={face.memberRecovery}
+      retryMemberStart={face.retryMemberStart}
+      reconcileMemberExecution={face.reconcileMemberExecution}
       onSubmit={async (values) => {
         const { outcome } = await submitMemberEdit(face, member, values, t)
         if (outcome.ok) void face.roomStore.refresh(sessionId)

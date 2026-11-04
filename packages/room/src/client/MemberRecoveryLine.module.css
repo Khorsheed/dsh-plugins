@@ -1,0 +1,55 @@
+/* The edit dialog's recovery block: the 模式工具 line's quiet 12px register
+   (MemberToolsLine.module.css supplies the row, label, warn and button
+   classes); these add the reason, the interrupted rounds and the evidence
+   field. Shown only while the member needs the user. */
+
+.reason {
+  color: var(--dsw-alias-label-warning, #a36b0c);
+  overflow-wrap: anywhere;
+}
+
+.entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2, rgba(127, 127, 127, 0.08));
+}
+
+.preview {
+  color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+  overflow-wrap: anywhere;
+}
+
+.reconcile {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.evidence {
+  flex: 1 1 200px;
+  min-width: 0;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 8px;
+  padding: 3px 8px;
+  font: inherit;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  outline: none;
+}
+
+.evidence:focus {
+  border-color: var(--dsw-alias-border-l4, rgba(127, 127, 127, 0.4));
+}
+
+/* A narrow dialog (phone): the evidence field takes the whole row, the
+   two verdicts share the next one. */
+@media (max-width: 560px) {
+  .evidence {
+    flex-basis: 100%;
+  }
+}
