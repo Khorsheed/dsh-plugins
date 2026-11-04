@@ -204,7 +204,7 @@ describe('DispatchEngine (real composition)', () => {
     expect(bench.facade.start.mock.calls[1]![3].effort).toBeUndefined()
   })
 
-  it('records late observed usage on its own completed execution', async () => {
+  it('records the late observed model on its own completed execution, and no usage copy (S6)', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async () => settledRun('child-usage', 'done'))
     await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: 'Check output' })
@@ -215,9 +215,35 @@ describe('DispatchEngine (real composition)', () => {
     // Disjoint counts: the billed total includes the cached input buckets.
     progress({ kind: 'settled', observedModel: 'observed-model', observedEffort: 'high', usage: { inputTokens: 30, outputTokens: 12, cacheReadTokens: 1_000, cacheWriteTokens: 8 } })
     expect(session.snapshotEvents().filter(event => event.type === 'room/run-state')).toHaveLength(lifecycleCount)
+    const metadata = session.snapshotEvents().findLast(event => event.type === 'room/execution-metadata')
+    expect(metadata?.data).toEqual({ runId: expect.any(String), model: 'observed-model', effort: 'high' })
+    // A settle report with usage only (no observation) writes nothing at all.
+    progress({ kind: 'settled', usage: { inputTokens: 1, outputTokens: 1 } })
+    expect(session.snapshotEvents().filter(event => event.type === 'room/execution-metadata')).toHaveLength(1)
+    // A core without readExecution: the run shows no reading and no usage, nothing breaks.
     const result = await bench.service.getState({ sessionId: bench.sessionId })
-    expect(result).toMatchObject({ ok: true, value: { executions: [{ state: 'done', model: 'observed-model', effort: 'high', tokens: 1_050, childSessionId: 'child-usage',
-      usage: { inputTokens: 30, outputTokens: 12, cacheReadTokens: 1_000, cacheWriteTokens: 8 } }] } })
+    expect(result).toMatchObject({ ok: true, value: { executions: [{ state: 'done', model: 'observed-model', effort: 'high', childSessionId: 'child-usage' }] } })
+    if (!result.ok) throw new Error('room unavailable')
+    expect(result.value.executions?.[0]).not.toHaveProperty('tokens')
+    expect(result.value.executions?.[0]).not.toHaveProperty('reading')
+  })
+
+  it('getState attaches the core\'s reading per execution; a failing or empty read keeps the run as replayed', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async () => settledRun('child-usage', 'done'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: 'Check output' })
+    await bench.service.engine.idle()
+    const reading = { executionId: 'x', operation: 'prompt', outcome: 'done', turns: [1], calls: 2, callUsage: { inputTokens: 40, outputTokens: 4 }, unrecorded: [], compactions: [] }
+    const readExecution = vi.fn(async (_child: string, executionId: string) => ({ ...reading, executionId }))
+    bench.localAgentStub['readExecution'] = readExecution
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    const run = state.value.executions![0]!
+    expect(readExecution).toHaveBeenCalledWith('child-usage', run.executionId)
+    expect(run.reading).toMatchObject({ executionId: run.executionId, callUsage: { inputTokens: 40, outputTokens: 4 } })
+    bench.localAgentStub['readExecution'] = vi.fn(async () => { throw new Error('unreadable') })
+    const failed = await bench.service.getState({ sessionId: bench.sessionId })
+    expect(failed.ok && failed.value.executions![0]).not.toHaveProperty('reading')
   })
 
   it('/compact to a member runs its compaction round: one compaction row, no reply', async () => {
@@ -251,8 +277,10 @@ describe('DispatchEngine (real composition)', () => {
     expect(edges.map(event => (event.data as { state: string }).state)).toEqual(['running', 'done'])
     expect((edges[1]!.data as { childTurn?: number }).childTurn).toBeUndefined()
     const row = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().findLast(event => event.type === 'room/member-compacted')
-    expect(row?.data).toMatchObject({ member: 'ada', outcome: 'completed', summary: '用户在写《潜梦者》', beforeTokens: 560_000, afterTokens: 41_000,
-      usage: { inputTokens: 1_103, outputTokens: 154, cacheReadTokens: 19_712 } })
+    // The row keeps outcome and summary; the sizes and spend stay on the
+    // member log's fact and are read at display time (S6), never copied.
+    expect(row?.data).toMatchObject({ member: 'ada', outcome: 'completed', summary: '用户在写《潜梦者》' })
+    for (const copied of ['beforeTokens', 'afterTokens', 'contextWindow', 'usage']) expect(row?.data).not.toHaveProperty(copied)
   })
 
   it('/compact reads only the compaction written inside its own run; the core\'s unrecorded fact says the member reports none', async () => {

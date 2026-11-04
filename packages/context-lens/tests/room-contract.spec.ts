@@ -90,7 +90,10 @@ describe('room → Context Lens contract (fixture from room\'s writers)', () => 
   it('a compaction run claims no child turn, and the lens /compact mirror judges every case as the core', () => {
     const compactRun = runStates.find(row => data(row)['operation'] === 'compact' && data(row)['state'] === 'done')!
     expect(data(compactRun)['childTurn']).toBeUndefined()
-    expect(rows.some(row => row.type === 'room/member-compacted' && data(row)['beforeTokens'] === 500_000)).toBe(true)
+    // Batch 5 S6: room no longer copies the compaction's numbers; they stay on
+    // the member log's `local-agent/compaction` fact (the one lens reads).
+    expect(rows.some(row => row.type === 'room/member-compacted')).toBe(true)
+    expect(rows.some(row => row.type === 'room/member-compacted' && 'beforeTokens' in data(row))).toBe(false)
     expect(fixture.compactCases.length).toBeGreaterThan(0)
     for (const { text, compact } of fixture.compactCases) expect([text, isCompactCommand(text)]).toEqual([text, compact])
   })

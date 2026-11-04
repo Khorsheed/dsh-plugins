@@ -17,6 +17,7 @@
  * @module @khorsheed/dsh-room/client/team
  */
 import { coordinatorMember } from '../journal.ts'
+import { roundUsage } from './round-usage.ts'
 import type { RoomDelivery, RoomHelp, RoomMember, RoomState } from '../types.ts'
 
 /** The human, as a tree root. */
@@ -163,7 +164,7 @@ export function teamOf(state: RoomState): Team {
       status: run?.state === 'running' ? 'running' : run?.state === 'failed' ? 'failed' : 'idle',
       ...current === undefined ? {} : { current },
       ...model === undefined ? {} : { model },
-      tokens: executions.reduce((sum, row) => sum + (row.tokens ?? 0), 0),
+      tokens: executions.reduce((sum, row) => sum + (roundUsage(row)?.tokens ?? 0), 0),
       elapsedMs: executions.reduce((sum, row) => sum + (row.elapsedMs ?? 0), 0),
       rounds: executions.length,
       deliveries: (received.get(id) ?? []).slice().reverse(),

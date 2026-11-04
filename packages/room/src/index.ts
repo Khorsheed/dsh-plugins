@@ -73,7 +73,7 @@ import type {
   RoomInviteRequest, RoomInviteResult,
   RoomIsRoomRequest,
   RoomListProvidersRequest,
-  RoomMember, RoomMemberMessage, RoomMemberMessageReceipt,
+  RoomExecution, RoomMember, RoomMemberMessage, RoomMemberMessageReceipt,
   RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomSetTaskHintRequest, RoomStopJobRequest, RoomStopJobResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
   RoomPostMessageRequest, RoomPostMessageResult, RoomAttachmentInput, RoomDispatchAttachment, RoomPendingCard, RoomPendingCardsRequest,
   RoomMemberDesk, RoomPresetInfo, RoomProviderInfo, RoomProviderList,
@@ -1017,7 +1017,34 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     if (this.ctx.sessions.get(request.sessionId) === undefined && (loaded.state.deliveries ?? []).some(row => row.status === 'held')) {
       void this.ensureLive(request.sessionId).catch((error: unknown) => { this.ctx.logger.warn(`room: reviving held reports failed: ${String(error)}`) })
     }
-    return { ok: true, value: { ...this.engine.view(request.sessionId, loaded.state), ...loaded.state.plan === undefined ? {} : { plan: this.plans.view(request.sessionId, loaded.state.plan) } } }
+    const view = this.engine.view(request.sessionId, loaded.state)
+    const executions = await this.readExecutions(view.executions)
+    return { ok: true, value: { ...view, ...executions === undefined ? {} : { executions }, ...loaded.state.plan === undefined ? {} : { plan: this.plans.view(request.sessionId, loaded.state.plan) } } }
+  }
+
+  /**
+   * Attach the core's reading to every run that is a local-agent execution
+   * (batch 5 S6, usage in one place): the run's per-call usage sum, the
+   * CLI's own round total and its compaction facts, read from the member's
+   * log through `readExecution` — computed per read, never journaled. A
+   * core without the read (or without local-agent at all), a log that cannot
+   * be read, or a run without an `executionId` (from before S5) keeps the
+   * run as replayed: legacy runs show their stored numbers, the rest none.
+   * @param executions - the replayed runs.
+   * @returns the runs with readings, or undefined when nothing could be read.
+   */
+  private async readExecutions(executions: readonly RoomExecution[] | undefined): Promise<RoomExecution[] | undefined> {
+    const facade = probeLocalAgent(this.ctx)
+    if (executions === undefined || typeof facade?.readExecution !== 'function') return undefined
+    return Promise.all(executions.map(async (execution) => {
+      if (execution.executionId === undefined || execution.childSessionId === undefined) return execution
+      try {
+        const reading = await facade.readExecution!(String(execution.childSessionId), execution.executionId)
+        return reading === undefined ? execution : { ...execution, reading }
+      } catch {
+        return execution
+      }
+    }))
   }
 
   /**

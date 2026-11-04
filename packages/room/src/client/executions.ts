@@ -1,4 +1,5 @@
 import type { RoomExecution, RoomState } from '../types.ts'
+import { roundUsage } from './round-usage.ts'
 
 export interface ExecutionRow {
   sessionTotal?: boolean
@@ -15,6 +16,12 @@ export interface ExecutionRow {
   elapsedMs?: number
   error?: string
   execution?: RoomExecution
+}
+
+/** A row's tokens: what the round's usage line shows; none when it shows none (never a stale stored copy beside a reading). */
+function tokensOf(execution: RoomExecution | undefined): { tokens?: number } {
+  const tokens = roundUsage(execution)?.tokens
+  return tokens === undefined ? {} : { tokens }
 }
 
 /** One row per delivery/attempt, not one row per persistent member session. */
@@ -40,6 +47,8 @@ export function executionRows(state: RoomState): ExecutionRow[] {
       ...execution,
       // Execution identity is immutable; delivery/review state is authoritative.
       id: delivery.id, status, member: member?.name ?? execution?.member ?? delivery.memberId,
+      // The round's usage as its reply shows it (core reading, else a legacy stored copy).
+      ...tokensOf(execution),
       ...execution === undefined ? {} : { execution },
       ...execution?.childSessionId !== undefined || member?.childSessionId === undefined ? {} : { childSessionId: member.childSessionId },
       ...delivery.error === undefined ? {} : { error: delivery.error },
@@ -48,7 +57,7 @@ export function executionRows(state: RoomState): ExecutionRow[] {
   for (const execution of history.values()) {
     const member = state.members.find(member => member.id === execution.memberId || (execution.memberId === undefined && member.name === execution.member))
     if (coordinator !== undefined && member === coordinator) continue
-    rows.push({ ...execution, execution, title: execution.member,
+    rows.push({ ...execution, execution, title: execution.member, ...tokensOf(execution),
       status: execution.state, member: member?.name ?? execution.member,
       ...execution.childSessionId !== undefined || member?.childSessionId === undefined ? {} : { childSessionId: member.childSessionId },
     })

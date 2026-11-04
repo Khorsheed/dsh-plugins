@@ -77,6 +77,8 @@ dsh plugin --profile web remove @khorsheed/dsh-room
 
 **家族耦合。** 与 local-agent 家族唯一的耦合是探测式门面——`ctx.get('localAgent')` 加方法存在性鸭子类型判断，类型仅作 type-only 导入、编译期漂移检查。门面缺席时 CLI 成员降级（邀请返回结构化 `local-agent-unavailable`，派发落 `failed` 运行记录），绝不影响 boot。通知闸门的 `receiveMemberMessage` 由家族桥鸭子调用，跨无类型包边界做运行时校验。
 
+**用量不在房间里存（批 5 S6）。** 房间不再把成员一轮的用量抄进 `room/execution-metadata`（新写入只带观测到的 `model`/`effort`），`room/member-compacted` 也不再抄压缩前后大小与压缩用量。`getState` 对带 `executionId` 的运行调用核心的只读 `readExecution`，把结果作为 `reading` 挂在该运行上（每次读时计算，从不写日志）。回复下的用量：CLI 自报了整轮合计（claude-code、codex）就显示它，逐次调用之和与它相差超过 1%（至少 50 tok）时在该轮旁加一句轻提示，如「逐次合计比 CLI 报告少 1.2K，可能有未记录的内部调用」；没有 CLI 合计（kimi、dsh）就显示逐次之和。压缩行的数字读该运行的压缩事实。成员统计、任务行与团队页按每轮显示的同一个数相加。S6 之前的运行与压缩行照旧显示当时存下的数，新旧不混算。没有 local-agent 或核心不带 `readExecution` 时静默降级：新运行不显示用量。决策模型调用的用量仍只在 `room/decision` 上。
+
 **模型体验。** 成员收到的第一条消息以一段房间简报开头——它的名字和公开职责、它自己的指令、房间目标、其他成员（只列公开职责）以及工具约定（`member_message` / `room_message`、`room_read`）；之后的消息只带此后的变化（指令改动、一行行房间变动），不再重发名册和目标，任何成员都看不到别人的指令。刻意不做黑板折叠——成员提示词从不消费房间的运行日志（speech/dispatch 事件只为 UI 投影与回放落日志）。面向模型的工具随会话 preset 授予到达，由本包的 `./tool` 行打标。
 
 **身份同名。** cordis 行 id `room`（`cordis.patch.yml`）= `clientBundle('@khorsheed/dsh-room')`（`tsdown.config.ts`）。导出：`.` 宿主服务、`/client`（插件 `apply`/`inject` 与 `RoomRemote` 类型）、`/tool` 按会话授予的模型工具行、`/types`、`/typert`、`/remote`。
