@@ -87,6 +87,66 @@ export function isCompactCommand(text: string): boolean {
 }
 
 /**
+ * The brand property of a retryable native-start failure (see
+ * {@link LocalAgentRetryableStartError}). A plain property, not a class
+ * check, so a provider bundled against another copy of the core (or one that
+ * cannot import it) can still set it.
+ */
+export const RETRYABLE_START_FAILURE = 'localAgentRetryableStart'
+
+/**
+ * A provider's native start failed BEFORE any prompt left for the model, for
+ * a reason that clears on its own (a stale lock left by a killed process, a
+ * resume that raced a shutdown). Thrown from the provider's round start (the
+ * function {@link LocalAgentHarness} hands the core, before it returns the
+ * run) or from `prepareMember`.
+ *
+ * Contract: the core then treats the failure like a refused admission — the
+ * member's configuration shows failed with this message, and the member's
+ * NEXT admission (its next message, a room dispatch, 立即载入) reconciles and
+ * retries the start once, instead of waiting for the user's 对账并重试. The
+ * failed round itself is never re-run. Throw it ONLY when nothing paid can
+ * have started: a failure after the prompt was sent, or one whose effect is
+ * unknown, must stay a plain `Error` (it waits for the user). A failure
+ * thrown after the run was returned (from `run.result`) is never retried.
+ * `message` is shown to the user after 「上次启动没有成功：」, so write it
+ * as plain language, without protocol words.
+ */
+export class LocalAgentRetryableStartError extends Error {
+  readonly localAgentRetryableStart = true as const
+  constructor(message: string, options?: { readonly cause?: unknown }) {
+    super(message, options)
+    this.name = 'LocalAgentRetryableStartError'
+  }
+}
+
+/**
+ * The second accepted mark: a provider error that states the failure
+ * happened before any prompt went out (`beforePrompt === true`, e.g. Kimi's
+ * `KimiSessionOccupiedError`). Nothing paid can have started, so retrying it
+ * at the next admission is safe whether or not the cause has cleared.
+ */
+export const BEFORE_PROMPT_FAILURE = 'beforePrompt'
+
+/**
+ * Whether a native-start failure is marked safe to retry: the error itself or
+ * one in its `cause` chain (a core wrapper keeps the provider's verdict)
+ * carries {@link RETRYABLE_START_FAILURE} `=== true` or
+ * {@link BEFORE_PROMPT_FAILURE} `=== true`.
+ * @param error - what the start threw.
+ * @returns whether the next admission may retry it automatically.
+ */
+export function isRetryableStartFailure(error: unknown): boolean {
+  let current: unknown = error
+  for (let depth = 0; depth < 5 && typeof current === 'object' && current !== null; depth++) {
+    const marks = current as Record<string, unknown>
+    if (marks[RETRYABLE_START_FAILURE] === true || marks[BEFORE_PROMPT_FAILURE] === true) return true
+    current = (current as { cause?: unknown }).cause
+  }
+  return false
+}
+
+/**
  * One context compaction of a CLI member, in its own session: the CLI
  * replaced its history before `boundarySeq` with a summary. Display and
  * accounting only — never the host's own `compaction/*` events, whose
@@ -1039,7 +1099,13 @@ export interface LocalAgentMemberToolsStatus {
    * CLI lists at the next message), had no process to replace
    * (`no-process`), or could not start (`failed`).
    */
-  readonly lastReload?: { readonly at: number; readonly by: 'manual' | 'auto'; readonly outcome: 'loaded' | 'missing' | 'pending' | 'no-process' | 'failed' }
+  readonly lastReload?: {
+    readonly at: number
+    readonly by: 'manual' | 'auto'
+    readonly outcome: 'loaded' | 'missing' | 'pending' | 'no-process' | 'failed'
+    /** Why a `failed` start did not come up (the provider's words), when it said. */
+    readonly error?: string
+  }
   /** Whether a reload can be asked for (the member runs on a resident process of a harness that supports it). */
   readonly reloadable: boolean
   /**
@@ -1051,10 +1117,17 @@ export interface LocalAgentMemberToolsStatus {
   readonly startable?: boolean
 }
 
-/** The answer to a reload request: `now` (the member was idle) or `after-round` (it is running; never interrupted). */
+/**
+ * The answer to a reload request: `now` (the member was idle) or
+ * `after-round` (it is running; never interrupted). `start-failed`: the
+ * member's last native start had failed, the load retried it first, and it
+ * failed again — `error` is the new reason (the member's configuration
+ * control shows the same).
+ */
 export type LocalAgentMemberToolsReload =
   | { readonly ok: true; readonly when: 'now' | 'after-round' }
   | { readonly ok: false; readonly reason: 'unknown-member' | 'unsupported' | 'no-process' | 'busy' }
+  | { readonly ok: false; readonly reason: 'start-failed'; readonly error: string }
 
 /**
  * Outcome of one `member_message` delivery. Channel-level failures (unknown or

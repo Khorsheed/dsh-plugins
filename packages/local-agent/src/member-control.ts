@@ -18,6 +18,7 @@ export interface MemberControlStorage {
 
 export type { MemberConfigurationAdapter } from './types.ts'
 import type { MemberConfigurationAdapter } from './types.ts'
+import { isRetryableStartFailure } from './types.ts'
 
 function normalize(selection: LocalAgentMemberConfiguration): LocalAgentMemberConfiguration {
   const choice = (value: LocalAgentMemberConfiguration['model']): LocalAgentMemberConfiguration['model'] => {
@@ -67,10 +68,13 @@ export class MemberConfigurationController {
 
   /**
    * A failed pre-prompt native binding requires reconciliation before another
-   * admission. `recheck` marks a refusal by the admission's own configuration
-   * check (nothing native started), which the next admission rechecks.
+   * admission. `recheck` marks a failure the next admission may retry on its
+   * own: a refusal by the admission's own configuration check (nothing native
+   * started), or a native start the provider marked retryable
+   * ({@link isRetryableStartFailure}: it failed before any prompt left, for a
+   * reason that clears on its own). Anything else waits for the user.
    */
-  rejectAdmission(error: unknown, recheck = false): void {
+  rejectAdmission(error: unknown, recheck = isRetryableStartFailure(error)): void {
     this.recovering = true
     if (this.storageFailure !== undefined || this.record.state.status === 'failed') return
     this.change(record => {
@@ -166,6 +170,15 @@ export class MemberConfigurationController {
     })
     this.kick()
     return structuredClone(this.record.requests[requestId]!.receipt)
+  }
+
+  /**
+   * Whether the failure is a native start's (or a refused admission's) and
+   * not a selection that did not apply: no selection waits in place. An
+   * explicit load (立即载入 / 重新载入) retries this kind before starting.
+   */
+  startFailed(): boolean {
+    return this.storageFailure === undefined && this.record.state.status === 'failed' && this.record.state.pending === undefined
   }
 
   /** Failed intent stays in place. Retry first reconciles the uncertain operation. */
@@ -281,8 +294,10 @@ export class MemberConfigurationController {
       // and owes nothing: the next admission reconciles and rechecks it (the
       // 对账并重试 path) instead of failing on the stale verdict — a member
       // refused by an old rule (5d4f, 10-28) kept failing in 0 ms after the
-      // fix shipped. A failed native start or a selection that did not apply
-      // still waits for the user.
+      // fix shipped. So does a native start the provider marked retryable
+      // (a stale lock a killed process left, 11-04: it failed before any
+      // prompt). Any other failed native start, or a selection that did not
+      // apply, still waits for the user. The failed round itself never re-runs.
       if (this.record.admissionFailed === true && this.record.state.status === 'failed' && this.storageFailure === undefined) {
         await this.retry(this.record.state.revision)
       }
