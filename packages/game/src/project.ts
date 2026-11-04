@@ -423,11 +423,15 @@ const NON_BUILD_DIRS = new Set([STATE_DIR, 'design', 'tests', 'node_modules', '.
 
 /**
  * Whether a project-relative path belongs in a playable build: everything
- * except the plugin's state, the design doc, the tests and dot-files.
+ * except the plugin's state, the tests, dot-files and the design doc's prose.
+ * The design folder's JSON files ARE built: they hold the game's content data
+ * (scenes, quests…) the game fetches at run time, so a change to one is a
+ * code change — it goes through the checks and becomes a candidate.
  */
 export function isBuildFile(path: string): boolean {
   const segments = path.split('/')
   if (segments.some(s => s.startsWith('.') && s !== '.')) return false
+  if (segments[0] === 'design' && segments.length > 1) return path.endsWith('.json')
   return !NON_BUILD_DIRS.has(segments[0] ?? '')
 }
 

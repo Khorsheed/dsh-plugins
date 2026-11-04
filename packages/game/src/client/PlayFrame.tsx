@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import type { BundleFile } from '../types.ts'
-import { shellHtml, type FrameMessage, type PickRef } from '../vfs.ts'
+import { shellHtml, type FrameMessage, type PickRef, type PreviewState } from '../vfs.ts'
 import css from './GameTab.module.css'
 
 /** localStorage key for one project's saves. */
@@ -78,10 +78,16 @@ export interface PlayFrameProps {
   readonly onErrors: (errors: readonly string[]) => void
   readonly onReport: (report: PlayReport) => void
   readonly label: string
+  /** The preview state this run enters once the game is ready (null = a normal run). */
+  readonly previewTo?: { readonly scene: string; readonly state: string } | null
+  /** The game's preview states, asked on every run (empty when it offers none). */
+  readonly onPreviews?: (list: readonly PreviewState[]) => void
+  /** How entering {@link previewTo} went. */
+  readonly onPreviewed?: (ok: boolean, supported: boolean) => void
 }
 
 /** The sandboxed frame with a pick overlay. */
-export function PlayFrame({ projectId, version, files, run, params, picking, onPicked, hoverLabel, highlight, onErrors, onReport, label }: PlayFrameProps): ReactNode {
+export function PlayFrame({ projectId, version, files, run, params, picking, onPicked, hoverLabel, highlight, onErrors, onReport, label, previewTo = null, onPreviews, onPreviewed }: PlayFrameProps): ReactNode {
   const frame = useRef<HTMLIFrameElement>(null)
   const shell = useMemo(() => shellHtml(), [])
   const report = useRef(onReport)
@@ -92,6 +98,12 @@ export function PlayFrame({ projectId, version, files, run, params, picking, onP
   pickedCb.current = onPicked
   const paramsRef = useRef(params)
   paramsRef.current = params
+  const previewRef = useRef(previewTo)
+  previewRef.current = previewTo
+  const previewsCb = useRef(onPreviews)
+  previewsCb.current = onPreviews
+  const previewedCb = useRef(onPreviewed)
+  previewedCb.current = onPreviewed
   const [booted, setBooted] = useState(false)
   const [hover, setHover] = useState<{ text: string; x: number; y: number } | null>(null)
   const hoverLabelRef = useRef(hoverLabel)
@@ -117,6 +129,10 @@ export function PlayFrame({ projectId, version, files, run, params, picking, onP
         const ref: PickRef | null = data.ref ?? (data.id === null ? null : { id: data.id })
         if (data.hover) setHover(ref === null ? null : { text: hoverLabelRef.current(ref), ...pointer.current })
         else pickedCb.current({ ref, supported: data.supported, shift: shiftRef.current })
+      } else if (data?.gamedev === 'previews') {
+        previewsCb.current?.(data.supported ? data.list : [])
+      } else if (data?.gamedev === 'previewed') {
+        previewedCb.current?.(data.ok, data.supported)
       }
     }
     window.addEventListener('message', onMessage)
@@ -138,6 +154,9 @@ export function PlayFrame({ projectId, version, files, run, params, picking, onP
   const boot = (): void => {
     if (booted) return
     post({ gamedev: 'files', files, saves: readSaves(projectId), params: paramsRef.current })
+    post({ gamedev: 'previews' })
+    const to = previewRef.current
+    if (to !== null) post({ gamedev: 'enter-preview', scene: to.scene, state: to.state })
     setBooted(true)
   }
 

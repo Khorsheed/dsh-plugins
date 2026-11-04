@@ -51,6 +51,38 @@ describe.skipIf(chrome === undefined)('headless checks', () => {
     expect(result.passed).toBe(1)
   }, 60_000)
 
+  it('lets the game fetch its design data, and enters a preview state once the game is ready', async () => {
+    const result = await checker.run({
+      ...files,
+      'design/scenes/a.json': { type: 'application/json', text: JSON.stringify({ id: 'a', states: { dry: { water: 0 }, wet: { water: 1 } } }) },
+      'src/main.js': text(`${GAME}
+const scene = await (await fetch('design/scenes/a.json')).json()
+const at = { water: scene.states.dry.water, entered: null }
+const base = window.dshGame
+window.dshGame = { ...base, ready: false }
+setTimeout(() => {
+  window.dshGame = {
+    ...base,
+    ready: true,
+    state: () => ({ ...base.state(), ...at }),
+    previews: Object.keys(scene.states).map(state => ({ scene: scene.id, state })),
+    preview({ scene: id, state }) { if (id !== scene.id || !scene.states[state]) return false; at.water = scene.states[state].water; at.entered = state },
+  }
+}, 300)`),
+    }, {
+      'tests/preview.test.js': `test('预览进入 wet', async () => {
+        assert.equal(game.state().water, 0)
+        assert.equal(game.previews.length, 2)
+        window.postMessage({ gamedev: 'enter-preview', scene: 'a', state: 'wet' }, '*')
+        await new Promise(r => setTimeout(r, 400))
+        assert.equal(window.dshGame.state().entered, 'wet')
+        assert.equal(window.dshGame.state().water, 1)
+      })`,
+    })
+    expect(result.failures).toEqual([])
+    expect(result.passed).toBe(1)
+  }, 60_000)
+
   it('passes a working build and runs its tests', async () => {
     const result = await checker.run(files, {
       'tests/move.test.js': `test('按右 3 秒走 180', () => { game.input('ArrowRight', true); step(180); assert.near(game.state().x, 180, 1) })`,
