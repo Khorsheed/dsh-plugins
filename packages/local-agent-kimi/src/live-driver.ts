@@ -309,9 +309,7 @@ export class KimiSessionOccupiedError extends Error {
 function occupiedHolderNote(state: KimiSessionLockState): string {
   switch (state.kind) {
     case 'alive':
-      return ` (process ${state.holder.pid} on this machine still holds it)`
-    case 'foreign-host':
-      return ` (held from another machine: ${state.holder.hostname})`
+      return ` (Kimi process ${state.holder.pid} is still running and holds it${state.holder.hostname === '' ? '' : `; lock written on host ${state.holder.hostname}`})`
     case 'unreadable':
       return ' (its lock file could not be read)'
     default:
@@ -1122,10 +1120,12 @@ export class KimiAcpLiveDriver {
 
   /**
    * `session/load` with stale-lock recovery. kimi refuses a session whose
-   * lock file names a holder it judges alive; a lock left by a process that
+   * lock file names a holder it judges alive (a different hostname counts as
+   * alive forever, and macOS hostnames drift); a lock left by a process that
    * died by signal (a host restart mid-round) is cleared here when it is
-   * provably stale — this machine's hostname, pid gone, and no runtime of
-   * ours holds the session — before the load, and again on kimi's "in use"
+   * provably stale — pid gone or no longer a kimi process, and no runtime of
+   * ours holds the session; the hostname is not a criterion, the member's
+   * scoped home being local to this host by construction — before the load, and again on kimi's "in use"
    * refusal followed by ONE retry. Any other holder is left alone and the
    * load fails with kimi's own sentence plus who holds the session.
    */
@@ -1173,8 +1173,10 @@ export class KimiAcpLiveDriver {
     if (state.kind !== 'stale' || this.ownedHolder(acpSessionId, loading) !== undefined) return { state, cleared: false }
     const aside = await setAsideKimiSessionLock(state)
     if (aside === undefined) return { state, cleared: false }
+    const why = state.reason === 'dead' ? 'is gone' : 'now runs something other than kimi (pid reused)'
     this.ctx.logger.warn(`local-agent-kimi: cleared a stale kimi session lock for ${acpSessionId}: `
-      + `its holder (process ${state.holder.pid} on this machine) is gone; the lock was moved to ${basename(aside)}`)
+      + `its holder process ${state.holder.pid}${state.holder.hostname === '' ? '' : ` (host ${state.holder.hostname})`} ${why}; `
+      + `the lock was moved to ${basename(aside)}`)
     return { state, cleared: true }
   }
 

@@ -16,7 +16,7 @@ A probe against kimi 2.4.1 on this machine established the CLI's lock behavior:
 - SIGTERM and SIGKILL leave it behind, because the exit handler that removes it does not run on signal death.
 - kimi reclaims a lock itself when its hostname matches and its pid is dead. It refuses when the hostname differs, when the pid is alive (EPERM counts as alive), or when the holder started after the last boot and still runs.
 
-So a refusal means kimi judged the holder alive at that moment, or the lock named another hostname.
+So a refusal means kimi judged the holder alive at that moment, or the lock named another hostname. The prod incident was the latter: its lock read `"hostname":"Macmini"` while `os.hostname()` read `<name>.local`. macOS hostnames drift with network state, so kimi saw "another host" and refused forever.
 
 ## Decision
 
@@ -24,19 +24,20 @@ So a refusal means kimi judged the holder alive at that moment, or the lock name
 
 - `absent`
 - `unreadable`: cannot be read or parsed, or the pid is not a positive integer
-- `foreign-host`
-- `alive`: `kill(pid, 0)` succeeds or fails with anything other than ESRCH
-- `stale`: this machine's hostname and a pid that is gone
+- `alive`: the pid runs (`kill(pid, 0)` succeeds or fails with anything other than ESRCH) and its command line (`ps -o command=`) reads as kimi, or cannot be read
+- `stale`: the pid is gone (`dead`), or runs something that is not kimi (`not-kimi`, pid reuse)
+
+The hostname is not a criterion. It appears only in diagnostics. The check runs only on the member's scoped kimi home, which this dsh host creates under its own home and never shares across machines, so a lock there is local by construction.
 
 `setAsideKimiSessionLock` renames a stale lock to `<name>.stale-<timestamp>` in the same directory. Afterwards it re-reads the moved file and puts the lock back (link, never overwrite) if the token changed in between.
 
 The live driver's `loadSession` wraps every `session/load`: round start, compaction, prepare, 立即载入 and reload all go through it.
 
-1. Before the load, a provably stale lock is moved aside, unless a runtime this driver owns, other than the one loading, holds that session. A host warn names the session, the dead pid and the aside file.
+1. Before the load, a provably stale lock is moved aside, unless a runtime this driver owns, other than the one loading, holds that session. A host warn names the session, the holder pid, its hostname, why it is stale and the aside file.
 2. On kimi's "in use" refusal, matched on `data.details`:
    - If one of this driver's own runtimes holds the session and is retiring, the load waits up to 5 s for it to exit, then retries.
    - Otherwise the lock is re-inspected. If it is now stale (and gets cleared) or absent, the load is retried once.
-   - Otherwise the load fails with `KimiSessionOccupiedError`: kimi's sentence plus who holds the session ("process N on this machine still holds it", "held from another machine: H", "its lock file could not be read"). The error carries `beforePrompt: true`.
+   - Otherwise the load fails with `KimiSessionOccupiedError`: kimi's sentence plus who holds the session ("Kimi process N is still running and holds it; lock written on host H", or "its lock file could not be read"). The error carries `beforePrompt: true`, the marker the core's retryable native-start contract is to read.
 
 Every JSON-RPC error response becomes an `AcpRequestError` with `code` and `details`. Its message is `subagent-kimi live: <data.details | data.message | data | message>`, so kimi's own sentence reaches the room.
 
@@ -48,12 +49,13 @@ Shutdown hygiene: reclaim already closes stdin first, the exit that releases the
 
 - **Delete the stale lock.** Rejected: a rename is just as atomic. kimi only ever reads the exact `<id>.lock` path, so the aside copy is inert. The aside file also keeps the evidence of which process held the session. The cost is a few small files in `locks/sessions/`.
 - **Clear any lock kimi refuses on, including a live pid (assume pid reuse).** Rejected: a live holder may be a real orphaned `kimi acp` still writing the session. Taking over would interleave two writers on one wire, which kimi's own UI warns "may mix up the history". The user decides that.
-- **Treat a hostname mismatch as stale.** Rejected for the same reason. A shared home across machines is legitimate, and kimi itself treats it as alive.
+- **Treat a different hostname as a live holder (kimi's own rule).** Rejected: it is exactly the rule that failed in prod, where the hostname drifted on the same machine. The scoped home is never shared across machines, so the hostname adds no safety, only a permanent lockout.
 - **Fix the ms-fast retries in the driver.** Not possible: the stored failure lives in the core's member control (S4 territory). Recovering inside the native start keeps a stale lock from ever reaching it. A genuine occupied failure still lands there, now with a readable reason and the `beforePrompt` marker the core can use to classify it as auto-retryable.
 
 ## Consequences
 
-- A lock left by a dead member process on this machine no longer blocks the member, whether or not kimi's own stale check would have caught it.
+- A lock left by a dead member process no longer blocks the member, including when its hostname drifted and kimi's own check would refuse forever.
+- A pid reused by a non-kimi process no longer blocks the member either. The command-line test is deliberately loose (any word or path segment starting with `kimi`): a false "kimi" only leaves a lock alone.
 - A truly held session fails with a sentence the user can act on, instead of "Internal error".
 - The core still persists a failed native start; until it reads `beforePrompt` or the error class, a member refused by a live holder needs the user's retry after the holder exits.
 - `.stale-*` files accumulate in the kimi home's `locks/sessions/` directory, one per recovery.
@@ -64,8 +66,10 @@ Shutdown hygiene: reclaim already closes stdin first, the exit that releases the
 
 - A real dead pid with this hostname: the lock is moved aside, the load succeeds, and the warn is logged.
 - Kimi's refusal is re-checked: a holder that died in between is cleared and the load is retried once.
-- A live pid (the test process): the lock is untouched, and the error carries kimi's sentence and the holder. No runtime is left behind.
-- Another hostname: untouched.
+- A live kimi pid: the lock is untouched, and the error carries kimi's sentence and the holder. No runtime is left behind.
+- Another hostname with a dead pid: cleared (the prod incident).
+- Another hostname with a live kimi pid: untouched.
+- A live pid that is not kimi (the test process, probed with the real `ps`): cleared.
 - An unparsable lock: untouched.
 - `data.details` propagates for a non-lock ACP error.
 - After a failure, the next round spawns afresh and loads.

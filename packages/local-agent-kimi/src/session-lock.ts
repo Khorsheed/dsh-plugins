@@ -10,10 +10,16 @@
  * whenever the CLI judges the holder alive.
  *
  * This module only answers "is this lock provably stale?" and, when it is,
- * moves it aside. Provably stale means: the lock parses, names THIS machine's
- * hostname, and its pid is gone (`kill(pid, 0)` → ESRCH). A live pid, another
- * hostname, or a file we cannot parse is never touched — the caller fails
- * with a clear message instead.
+ * moves it aside. It is used ONLY on the member's scoped kimi home, which
+ * this dsh host creates under its own home and never shares across
+ * machines: a lock there is local by construction. The lock's `hostname` is
+ * therefore diagnostic text, not a criterion — macOS hostnames drift with
+ * network state (a prod lock read `Macmini` while `os.hostname()` was
+ * `<name>.local`), and kimi itself treats a different hostname as a live
+ * holder forever. Provably stale means the lock parses and its pid is gone
+ * (`kill(pid, 0)` → ESRCH) or runs something that is not kimi (pid reuse).
+ * A live kimi process, or a file we cannot parse, is never touched — the
+ * caller fails with a clear message instead.
  *
  * The lock is renamed to `<name>.stale-<timestamp>` in the same directory
  * rather than deleted: the rename is atomic, the CLI only ever reads the exact
@@ -22,8 +28,8 @@
  * @module @khorsheed/dsh-local-agent-kimi/session-lock
  */
 
+import { execFile } from 'node:child_process'
 import { link, readFile, rename, unlink } from 'node:fs/promises'
-import { hostname as osHostname } from 'node:os'
 import { join } from 'node:path'
 
 /** The fields of a kimi session lock this module reads. */
@@ -39,14 +45,19 @@ export interface KimiSessionLockHolder {
 export type KimiSessionLockState =
   | { readonly kind: 'absent' }
   | { readonly kind: 'unreadable'; readonly path: string }
-  | { readonly kind: 'foreign-host'; readonly path: string; readonly holder: KimiSessionLockHolder }
+  /** The holder pid runs a kimi process: never touched. */
   | { readonly kind: 'alive'; readonly path: string; readonly holder: KimiSessionLockHolder }
-  | { readonly kind: 'stale'; readonly path: string; readonly holder: KimiSessionLockHolder }
+  /** The holder pid is gone (`dead`) or runs something other than kimi (`not-kimi`, pid reuse). */
+  | { readonly kind: 'stale'; readonly path: string; readonly holder: KimiSessionLockHolder; readonly reason: 'dead' | 'not-kimi' }
 
 /** Host probes; tests inject them. */
 export interface KimiSessionLockProbes {
-  readonly hostname?: () => string
   readonly pidAlive?: (pid: number) => boolean
+  /**
+   * The command a live pid runs (`ps -o command= -p <pid>`), or undefined
+   * when it cannot be read — which counts as a kimi process (never cleared).
+   */
+  readonly processCommand?: (pid: number) => Promise<string | undefined>
 }
 
 /** The lock file kimi writes for one ACP session id (`session_<uuid>`). */
@@ -80,14 +91,32 @@ function parseHolder(raw: string): KimiSessionLockHolder | undefined {
   const host = record['hostname']
   // pid 0 / negatives address process groups under kill(2): never probe them.
   if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return undefined
-  if (typeof host !== 'string' || host === '') return undefined
   return {
     pid,
-    hostname: host,
+    hostname: typeof host === 'string' ? host : '',
     token: typeof record['token'] === 'string' ? record['token'] : '',
     ...typeof record['startedAt'] === 'number' ? { startedAt: record['startedAt'] } : {},
     ...typeof record['clientDisplayName'] === 'string' ? { clientDisplayName: record['clientDisplayName'] } : {},
   }
+}
+
+/** `ps -o command= -p <pid>`: the full command line, or undefined when unreadable. */
+export function processCommand(pid: number): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    execFile('ps', ['-o', 'command=', '-p', String(pid)], { timeout: 2_000 }, (error, stdout) => {
+      const text = String(stdout ?? '').trim()
+      resolve(error !== null || text === '' ? undefined : text)
+    })
+  })
+}
+
+/**
+ * Whether a command line may be a kimi process: any word or path segment in
+ * it starts with `kimi`. Deliberately loose — a false "kimi" only leaves a
+ * lock alone, while a false "not kimi" would take a live session over.
+ */
+export function isKimiCommand(command: string): boolean {
+  return /(?:^|[\s/])kimi/iu.test(command)
 }
 
 /** Read and classify one session's lock file. */
@@ -105,8 +134,13 @@ export async function inspectKimiSessionLock(
   }
   const holder = parseHolder(raw)
   if (holder === undefined) return { kind: 'unreadable', path }
-  if (holder.hostname !== (probes.hostname ?? osHostname)()) return { kind: 'foreign-host', path, holder }
-  return (probes.pidAlive ?? pidAlive)(holder.pid) ? { kind: 'alive', path, holder } : { kind: 'stale', path, holder }
+  const alive = probes.pidAlive ?? pidAlive
+  if (!alive(holder.pid)) return { kind: 'stale', path, holder, reason: 'dead' }
+  const command = await (probes.processCommand ?? processCommand)(holder.pid).catch(() => undefined)
+  // The process left between the two probes: gone.
+  if (command === undefined && !alive(holder.pid)) return { kind: 'stale', path, holder, reason: 'dead' }
+  if (command !== undefined && !isKimiCommand(command)) return { kind: 'stale', path, holder, reason: 'not-kimi' }
+  return { kind: 'alive', path, holder }
 }
 
 /**
