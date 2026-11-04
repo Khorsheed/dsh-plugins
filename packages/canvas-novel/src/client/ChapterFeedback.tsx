@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { bodyFingerprint } from '../types.ts'
@@ -17,7 +17,7 @@ export interface ChapterFeedbackMark extends ChapterFeedbackIdea {
 
 interface CommentState {
   readonly sessionId: NonNullable<NovelSurfaceProps['sessionId']>
-  readonly selection: ChapterSelection | null
+  readonly selection: ChapterSelection
   readonly rect: DOMRect
 }
 
@@ -47,8 +47,9 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
   const bodyHash = props.bodyHash ?? bodyFingerprint(body) ?? ''
   const active = read.state === 'ready' && read.value.ok ? read.value.ideas : []
   const batches = read.state === 'ready' && read.value.ok ? read.value.batches : []
-  const open = batches.find(batch => batch.status !== 'archived')
+  const openBatches = batches.filter(batch => batch.status !== 'archived')
   const archived = batches.filter(batch => batch.status === 'archived')
+  const openCount = openBatches.reduce((count, batch) => count + batch.ideas.length, 0)
   const marks: ChapterFeedbackMark[] = [
     ...active,
     ...batches.flatMap(batch => batch.ideas.map(idea => ({ ...idea, ...(batch.status === 'archived' ? { archived: true as const } : {}) }))),
@@ -77,13 +78,29 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
   })
 
   useEffect(() => {
-    props.onCountChange(active.length + (open?.ideas.length ?? 0))
-  }, [active.length, open?.ideas.length, props.onCountChange])
+    props.onCountChange(active.length + openCount)
+  }, [active.length, openCount, props.onCountChange])
+
+  const watchKey = openBatches.filter(batch => batch.status === 'drafted').map(batch => batch.id).join(':')
+  useEffect(() => {
+    if (sessionId === undefined || props.watchChapterFeedback === undefined) return
+    const stops = openBatches.filter(batch => batch.status === 'drafted').map(batch => props.watchChapterFeedback!(sessionId, canvasId, batch.id))
+    return () => { for (const stop of stops) stop?.() }
+  }, [watchKey, sessionId, canvasId, props.watchChapterFeedback])
 
   useEffect(() => {
-    if (open?.status !== 'drafted' || sessionId === undefined || props.watchChapterFeedback === undefined) return
-    return props.watchChapterFeedback(sessionId, canvasId, open.id)
-  }, [open?.id, open?.status, sessionId, canvasId, props.watchChapterFeedback])
+    if (!props.open || props.panelAnchor === null) return
+    const closeOutside = (event: PointerEvent): void => {
+      if (event.target instanceof Node && !props.panelAnchor?.contains(event.target)) props.onOpenChange(false)
+    }
+    const closeEscape = (event: KeyboardEvent): void => { if (event.key === 'Escape') props.onOpenChange(false) }
+    document.addEventListener('pointerdown', closeOutside)
+    document.addEventListener('keydown', closeEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', closeEscape)
+    }
+  }, [props.open, props.panelAnchor, props.onOpenChange])
 
   useEffect(() => () => { if (undoTimer.current !== undefined) window.clearTimeout(undoTimer.current) }, [])
 
@@ -99,13 +116,11 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
         canvasId, n,
         text: commentText.trim(),
         baseBodyHash: bodyHash,
-        ...(selected === null ? {} : {
-          quote: selected.quote,
-          start: selected.start,
-          end: selected.end,
-          before: selected.before,
-          after: selected.after,
-        }),
+        quote: selected.quote,
+        start: selected.start,
+        end: selected.end,
+        before: selected.before,
+        after: selected.after,
       })
       if (!result.ok || !result.value.ok) { setNotice(t('error.generic', { message: result.ok ? result.value.error ?? '' : result.error.message })); return }
       setComment(null)
@@ -118,7 +133,7 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
   }
 
   const fill = async (): Promise<void> => {
-    if (sessionId === undefined || open !== undefined || active.length === 0) return
+    if (sessionId === undefined || active.length === 0) return
     setBusy(true)
     setNotice(null)
     try {
@@ -198,24 +213,23 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
       {props.open && props.panelAnchor !== null && createPortal(
           <section id={`chapter-feedback-${canvasId}-${n}`} className={css.chapterFeedback} role="region" aria-label={t('feedback.title')} onKeyDown={event => { if (event.key === 'Escape') props.onOpenChange(false) }}>
             <div className={css.feedbackHead}>
-              <h3>{t('feedback.title')}<span>{active.length + (open?.ideas.length ?? 0)}</span></h3>
+              <h3>{t('feedback.title')}<span>{active.length + openCount}</span></h3>
               <div className={css.feedbackHeadActions}>
-                {sessionId !== undefined && <button type="button" disabled={busy} onClick={(event: MouseEvent<HTMLButtonElement>) => { props.onOpenChange(false); setNotice(null); setCommentText(''); setComment({ sessionId, selection: null, rect: event.currentTarget.getBoundingClientRect() }) }}>{t('feedback.addGeneral')}</button>}
                 <button type="button" aria-label={t('feedback.close')} onClick={() => { props.onOpenChange(false) }}>{t('feedback.close')}</button>
               </div>
             </div>
-            {active.length > 0 && <Button size="sm" variant="primary" disabled={busy || open !== undefined} onClick={() => { void fill() }}>{t('feedback.fill', { count: active.length })}</Button>}
-            {active.length === 0 && open === undefined && <p className={css.feedbackEmpty}>{t('feedback.empty')}</p>}
-            {open !== undefined && (
-              <div className={css.feedbackStatus}>
-                {open.notice !== undefined
-                  ? <p>{t(`feedback.${open.notice}`)}</p>
-                  : open.status === 'drafted'
-                    ? <p>{t('feedback.drafted')}</p>
-                    : <p>{t('feedback.sending', { count: open.ideas.length, n })}</p>}
-                {open.write === undefined && <button type="button" disabled={busy} onClick={() => { void recall(open) }}>{t('feedback.recall')}</button>}
+            {active.length > 0 && <Button size="sm" variant="primary" disabled={busy} onClick={() => { void fill() }}>{t('feedback.fill', { count: active.length })}</Button>}
+            {active.length === 0 && openBatches.length === 0 && <p className={css.feedbackEmpty}>{t('feedback.empty')}</p>}
+            {openBatches.map(batch => (
+              <div key={batch.id} className={css.feedbackStatus}>
+                {batch.notice !== undefined
+                  ? <p>{t(`feedback.${batch.notice}`)}</p>
+                  : batch.status === 'drafted'
+                    ? <p>{t('feedback.drafted', { count: batch.ideas.length })}</p>
+                    : <p>{t('feedback.sending', { count: batch.ideas.length, n })}</p>}
+                {batch.write === undefined && <button type="button" aria-label={t('feedback.recallBatch', { count: batch.ideas.length })} disabled={busy} onClick={() => { void recall(batch) }}>{t('feedback.recall')}</button>}
               </div>
-            )}
+            ))}
             <div className={css.feedbackList}>
               {active.map(idea => (
                 <article key={idea.id} className={css.feedbackIdea}>
@@ -247,21 +261,18 @@ export function ChapterFeedback(props: NovelSurfaceProps & {
           props.panelAnchor,
         )}
       <div className={css.feedbackReading}>{props.children(marks)}</div>
-      {comment !== null && position !== undefined && (() => {
-        const dialog = (
-          <section className={`${css.feedbackPopover} ${comment.selection === null ? css.feedbackAnchoredPopover : ''}`} style={comment.selection === null ? undefined : position} role="dialog" aria-label={comment.selection === null ? t('feedback.recordGeneral') : t('feedback.record')}>
-            <h3>{comment.selection === null ? t('feedback.recordGeneral') : t('feedback.record')}</h3>
-            {comment.selection !== null && <blockquote>{comment.selection.quote}</blockquote>}
-            <textarea autoFocus maxLength={MAX_FEEDBACK_TEXT} value={commentText} onChange={event => { setCommentText(event.target.value) }} placeholder={t('feedback.commentPlaceholder')} aria-label={t('feedback.commentPlaceholder')} />
-            {notice !== null && <p className={css.feedbackNotice}>{notice}</p>}
-            <div className={css.feedbackPopoverActions}>
-              <button type="button" disabled={busy} onClick={() => { setComment(null) }}>{t('feedback.cancel')}</button>
-              <Button size="sm" variant="primary" disabled={busy || commentText.trim() === ''} onClick={() => { void saveComment() }}>{t('feedback.save')}</Button>
-            </div>
-          </section>
-        )
-        return comment.selection === null && props.panelAnchor !== null ? createPortal(dialog, props.panelAnchor) : dialog
-      })()}
+      {comment !== null && position !== undefined && (
+        <section className={css.feedbackPopover} style={position} role="dialog" aria-label={t('feedback.record')}>
+          <h3>{t('feedback.record')}</h3>
+          <blockquote>{comment.selection.quote}</blockquote>
+          <textarea autoFocus maxLength={MAX_FEEDBACK_TEXT} value={commentText} onChange={event => { setCommentText(event.target.value) }} placeholder={t('feedback.commentPlaceholder')} aria-label={t('feedback.commentPlaceholder')} />
+          {notice !== null && <p className={css.feedbackNotice}>{notice}</p>}
+          <div className={css.feedbackPopoverActions}>
+            <button type="button" disabled={busy} onClick={() => { setComment(null) }}>{t('feedback.cancel')}</button>
+            <Button size="sm" variant="primary" disabled={busy || commentText.trim() === ''} onClick={() => { void saveComment() }}>{t('feedback.save')}</Button>
+          </div>
+        </section>
+      )}
     </div>
   )
 }

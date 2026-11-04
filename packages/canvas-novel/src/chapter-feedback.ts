@@ -219,6 +219,61 @@ export function formatChapterFeedbackRequest(workTitle: string, chapterTitle: st
   return `请阅读《${workTitle}》第 ${n} 章《${chapterTitle}》，结合整章节奏，看看下面这些想法是否值得采纳并修改。引用只是帮助理解，不要求只修改对应选区：\n\n${lines.join('\n\n')}`
 }
 
+export function chapterFeedbackSubmissionMatches(turnText: string, candidate: string): boolean {
+  const actual = turnText.trim()
+  const submitted = candidate.trim()
+  return submitted !== '' && (actual === submitted || actual.endsWith(`\n${submitted}`))
+}
+
+interface ChapterFeedbackToolEvent {
+  readonly type: string
+  readonly data?: {
+    readonly turn?: unknown
+    readonly name?: unknown
+    readonly arguments?: unknown
+    readonly callId?: unknown
+    readonly error?: unknown
+    readonly message?: {
+      readonly isError?: unknown
+      readonly source?: { readonly callId?: unknown }
+    }
+  }
+}
+
+const DIRECT_WRITE_TOOLS = new Set(['write', 'edit', 'write_file', 'edit_file', 'fs_write', 'fs_edit', 'str_replace', 'str_replace_editor', 'apply_patch'])
+const WRITE_COMMAND = /write_text|writeFile(?:Sync)?|str_replace|apply_patch|sed\s+-i|\bopen\s*\([^)]*['"](?:w|a)['"]/i
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function bashTargetsWrite(command: string, paths: readonly string[]): boolean {
+  if (WRITE_COMMAND.test(command)) return true
+  return paths.some(path => {
+    const escaped = escapeRegExp(path)
+    const suffix = String.raw`(?:['"]?)(?:\s|$)`
+    return new RegExp(String.raw`>>?\s*${escaped}${suffix}`).test(command)
+      || new RegExp(String.raw`\btee\s+${escaped}${suffix}`).test(command)
+  })
+}
+
+export function hasChapterFeedbackDirectWrite(events: readonly ChapterFeedbackToolEvent[], turn: number, paths: readonly string[]): boolean {
+  const succeeded = new Set(events.flatMap(event => {
+    if (event.type !== 'tool/result' || event.data?.error !== undefined || event.data?.message?.isError === true) return []
+    const callId = event.data?.message?.source?.callId
+    return callId === undefined ? [] : [String(callId)]
+  }))
+  return events.some(event => {
+    if (event.type !== 'tool/call' || event.data?.turn !== turn) return false
+    const callId = event.data.callId
+    if (callId === undefined || !succeeded.has(String(callId))) return false
+    const name = String(event.data.name ?? '')
+    const command = typeof event.data.arguments === 'string' ? event.data.arguments : JSON.stringify(event.data.arguments ?? {})
+    if (!paths.some(path => command.includes(path))) return false
+    return DIRECT_WRITE_TOOLS.has(name) || (name === 'bash' && bashTargetsWrite(command, paths))
+  })
+}
+
 export function locateChapterFeedback(idea: ChapterFeedbackIdea, body: string): { readonly start: number; readonly end: number } | undefined {
   if (idea.quote === undefined || idea.quote === '') return undefined
   if (idea.start !== undefined && idea.end !== undefined && body.slice(idea.start, idea.end) === idea.quote) {

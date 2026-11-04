@@ -1833,7 +1833,6 @@
 .feedbackToggle { flex: none; }
 .feedbackToggleCount { min-width: 16px; padding: 0 4px; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); text-align: center; }
 .chapterFeedback { position: absolute; z-index: 60; top: calc(100% + 8px); right: 0; box-sizing: border-box; width: min(320px, calc(100vw - 24px)); max-height: min(50vh, 560px); overflow-y: auto; min-width: 0; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-2); box-shadow: var(--dsw-elevation-prominent); }
-.feedbackAnchoredPopover { top: calc(100% + 8px); right: 0; left: auto; width: min(380px, calc(100vw - 24px)); max-width: calc(100vw - 24px); }
 .feedbackHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 .feedbackHead h3 { display: flex; align-items: center; gap: 7px; margin: 0; font: 600 var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
 .feedbackHead h3 span { padding: 0 6px; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); font-size: 10px; }
@@ -1873,7 +1872,5 @@
 .feedbackMarkArchived { padding: 0; border-bottom: 1px solid var(--dsw-alias-border-l2); background: transparent; color: inherit; }
 @container dsh-panel (max-width: 560px) {
   .feedbackControl { position: static; }
-  .chapterFeedback, .feedbackAnchoredPopover { right: 16px; max-width: calc(100% - 32px); }
-  .chapterFeedback { width: min(320px, calc(100% - 32px)); }
-  .feedbackAnchoredPopover { width: min(380px, calc(100% - 32px)); }
+  .chapterFeedback { right: 16px; width: min(320px, calc(100% - 32px)); max-width: calc(100% - 32px); }
 }

@@ -168,4 +168,38 @@ describe('chapter feedback lifecycle', () => {
     await store.finishChapterFeedbackTurn(session, 1, 'completed')
     expect((await store.chapterFeedback({ workId: DREAM.workId, n: 1 })).batches[0]?.status).toBe('archived')
   })
+
+  it('archives a host-prefixed request after a verified direct chapter write', async () => {
+    const { fs, store, session } = bench()
+    const events = [
+      { type: 'turn/start', data: { turn: 1 } },
+      { type: 'tool/call', data: { turn: 1, name: 'bash', callId: 'c-direct', arguments: JSON.stringify({ command: "python3 - <<'PY'\np=Path('梦境监护者/第1章.md')\np.write_text(p.read_text().replace('旧句', '新句'))\nPY" }) } },
+      { type: 'tool/result', data: { message: { source: { callId: 'c-direct' } } } },
+    ]
+    Object.assign(session, { snapshotEvents: () => events })
+    const draft = await prepared(store, session)
+    await store.submitChapterFeedbackCandidate({ workId: DREAM.workId, batchId: draft.batchId!, text: draft.text! }, session)
+    await store.observeChapterFeedbackSubmission(session, `你现在是本房间的协调者。\n【协调者交接】\n\n${draft.text!}`)
+    expect((await store.chapterFeedback({ workId: DREAM.workId, n: 1 })).batches[0]?.status).toBe('sent')
+    fs.seed(`${DREAM.workspace}/${DREAM.title}/第1章.md`, 'Bash 直接修改后的正文。')
+    await store.finishChapterFeedbackTurn(session, 1, 'completed')
+    expect((await store.chapterFeedback({ workId: DREAM.workId, n: 1 })).batches[0]).toMatchObject({ status: 'archived', submittedText: draft.text })
+  })
+
+  it('prepares the next batch while the earlier one is still open', async () => {
+    const { store, session } = bench()
+    const first = await prepared(store, session)
+    await store.submitChapterFeedbackCandidate({ workId: DREAM.workId, batchId: first.batchId!, text: first.text! }, session)
+    await store.observeChapterFeedbackSubmission(session, first.text!)
+    await idea(store, '上批还没结束，这一条进入下一批。')
+    const second = await store.prepareChapterFeedback({ workId: DREAM.workId, n: 1 }, session)
+    expect(second.ok).toBe(true)
+    expect(second.batchId).not.toBe(first.batchId)
+    const view = await store.chapterFeedback({ workId: DREAM.workId, n: 1 })
+    expect(view.batches).toHaveLength(2)
+    expect(view.batches.find(batch => batch.id === first.batchId)?.status).toBe('sent')
+    const next = view.batches.find(batch => batch.id === second.batchId)
+    expect(next?.status).toBe('drafted')
+    expect(next?.ideas.map(row => row.text)).toEqual(['上批还没结束，这一条进入下一批。'])
+  })
 })

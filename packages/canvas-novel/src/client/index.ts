@@ -165,7 +165,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
   const feedbackWatchers = new Map<string, () => void>()
   const watchChapterFeedback = (sessionId: SessionId, canvasId: string, batchId: string): (() => void) | undefined => {
-    feedbackWatchers.get(String(sessionId))?.()
+    const key = `${String(sessionId)}:${batchId}`
+    feedbackWatchers.get(key)?.()
     const input = inputOf(sessionId)
     if (input?.state?.subscribe === undefined || input.state.getSnapshot === undefined) return undefined
     let latest = input.state.getSnapshot().draft
@@ -182,9 +183,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     })
     const dispose = (): void => {
       stop()
-      if (feedbackWatchers.get(String(sessionId)) === dispose) feedbackWatchers.delete(String(sessionId))
+      if (feedbackWatchers.get(key) === dispose) feedbackWatchers.delete(key)
     }
-    feedbackWatchers.set(String(sessionId), dispose)
+    feedbackWatchers.set(key, dispose)
     return dispose
   }
   disposers.push(async () => {

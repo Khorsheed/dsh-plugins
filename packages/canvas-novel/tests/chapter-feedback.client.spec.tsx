@@ -72,6 +72,16 @@ describe('chapter feedback surface', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     fireEvent.click(screen.getByRole('button', { name: zh['feedback.close'] }))
     expect(screen.queryByRole('region', { name: zh['feedback.title'] })).toBeNull()
+    fireEvent.click(toggle)
+    const reopened = await screen.findByRole('region', { name: zh['feedback.title'] })
+    fireEvent.pointerDown(reopened)
+    expect(screen.getByRole('region', { name: zh['feedback.title'] })).toBeTruthy()
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('region', { name: zh['feedback.title'] })).toBeNull()
+    fireEvent.click(toggle)
+    await screen.findByRole('region', { name: zh['feedback.title'] })
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('region', { name: zh['feedback.title'] })).toBeNull()
   })
 
   it('does not register selection comments for a read-only canvas', async () => {
@@ -103,22 +113,25 @@ describe('chapter feedback surface', () => {
     })
   })
 
-  it('records a whole-chapter comment without filling or sending a conversation', async () => {
-    const { remote, props } = fixture()
-    const fillConversation = vi.fn()
-    render(<ChapterBook {...props} fillConversation={fillConversation} />)
+  it('fills a later batch while an earlier one is still open', async () => {
+    const previous: ChapterFeedbackBatch = {
+      id: 'fb-old', sessionId: SESSION, canvasId: 'canvas_novel', chapter: 1, chapterTitle: '门与假门',
+      ideas: [{ ...idea, id: 'previous' }], baseBodyHash: '', status: 'drafted', createdAt: 'now',
+    }
+    const { remote, props } = fixture({ ideas: [idea], batches: [previous] })
+    const fillConversation = vi.fn(() => ({ before: '', after: '下一批完整请求' }))
+    const watchChapterFeedback = vi.fn(() => vi.fn())
+    render(<ChapterBook {...props} fillConversation={fillConversation} watchChapterFeedback={watchChapterFeedback} />)
     await openFeedback()
-    fireEvent.click(screen.getByRole('button', { name: zh['feedback.addGeneral'] }))
-    const dialog = screen.getByRole('dialog', { name: zh['feedback.recordGeneral'] })
-    expect(dialog.parentElement).toBe(screen.getByRole('button', { name: zh['feedback.show'] }).parentElement)
-    expect(screen.queryByRole('region', { name: zh['feedback.title'] })).toBeNull()
-    fireEvent.change(screen.getByPlaceholderText(zh['feedback.commentPlaceholder']), { target: { value: '结尾再含蓄一点。' } })
-    fireEvent.click(screen.getByRole('button', { name: zh['feedback.save'] }))
+    const fill = screen.getByRole('button', { name: '把 1 条想法填入对话' }) as HTMLButtonElement
+    expect(fill.disabled).toBe(false)
+    fireEvent.click(fill)
     await waitFor(() => {
-      expect(remote.addChapterFeedback).toHaveBeenCalledWith(SESSION, expect.objectContaining({ canvasId: 'canvas_novel', n: 1, text: '结尾再含蓄一点。' }))
+      expect(remote.prepareChapterFeedback).toHaveBeenCalledWith(SESSION, { canvasId: 'canvas_novel', n: 1 })
+      expect(fillConversation).toHaveBeenCalledWith(SESSION, '原文：“他推开门。”\n想法：补一拍犹豫。')
+      expect(watchChapterFeedback).toHaveBeenCalledWith(SESSION, 'canvas_novel', 'fb1')
     })
-    expect(fillConversation).not.toHaveBeenCalled()
-    expect(remote.submitChapterFeedbackCandidate).not.toHaveBeenCalled()
+    expect(remote.recallChapterFeedback).not.toHaveBeenCalled()
   })
 
   it('fills the host composer and watches the final draft without submitting', async () => {
