@@ -57,5 +57,7 @@ Status: implemented
 - `packages/room/tests/jobs.host.spec.ts`：一个任务的两轮都写着这个任务，起因分别是 `human` 和 `member`。
 - `packages/room/tests/lens-contract.host.spec.ts`：契约流程里每条 running 边都带互不相同的 `executionId`，每个 prompt 轮的终态边都有 `childTurn`。夹具 `packages/context-lens/tests/fixtures/room-contract.json` 已用 `UPDATE_ROOM_CONTRACT=1` 重生成：多了 `executionId`，子会话 seq 因执行记录后移。Context Lens 源码未改，测试全绿（311）。
 - `packages/room/tests/service.host.spec.ts`：`memberMode` 用成员 id 认出首轮的提问者，两个首轮同时进行时也一样。
-- room 490 → 496，全绿。local-agent 518、claude-code 281、codex 278、kimi 325、dsh 246、bundle-local-agent 5、context-lens 311 都没变，全绿。`pnpm check:plugins` 无发现。
-- 未验证：room 与真实 local-agent 核心放在同一组合里跑（spec 用替身，核心一侧由 local-agent 自己的 `run-entry.spec.ts` 覆盖）、真实 CLI 一轮、3080 上的实例。别处发起的轮次卡片没在浏览器里看过。
+- `packages/room/tests/real-core.host.spec.ts` 让 room 跑在真实的 local-agent 核心上：真实的注册表及其 `run()`、账本、`MemberControls` 准入和执行记录，持久化用临时目录里的 JSONL。只有一个假的家族 provider，它把每一轮挂起（不跑 CLI，不调模型）。覆盖四种情况。一次人类派活是一个执行：start 记录带 `caller: 'room'`，起因为 `human`/`via: 'room'`/`dispatchSeq`，带 `callerRef` 和账本 key `<seq>:<成员 id>`，run-state 边带 `executionId` 和取自 settlement 的 `childTurn`。第二个引擎把同一投递再提交一次，仍是一个执行、一轮 provider、一对 running/done。同一成员上的 `tool` 轮和排队中的房间轮严格先后执行：房间把 tool 轮显示成它自己的卡片和终态边，排队的房间轮随后续聊。核心重启后留下一轮 `uncertain` 的 tool 轮，核心拒绝下一轮房间派活，房间记下 `MEMBER_UNRECONCILED_TEXT`。它存下的每份子会话日志都通过 `assertReleasedV4Relationships`，没有被隔离的。
+- room 490 → 500，全绿。local-agent 518、claude-code 281、codex 278、kimi 325、dsh 246、bundle-local-agent 5、context-lens 311 都没变，全绿。`pnpm check:plugins` 无发现。
+- 真实核心的测试没有发现缺陷。它顺带暴露一点，早在 S5 之前就存在：准入前被拒的房间轮只有一条 failed 的 run-state 边，没有 running 边。房间的 `runs` 投影里仍保留该成员的上一轮，所以被拒的这一轮表现为时间轴上的失败行和失败的投递。
+- 未验证：真实 CLI 一轮、3080 上的实例。别处发起的轮次卡片没在浏览器里看过。真实核心测试里的 tool 轮是按工具的方式以 `caller: 'tool'` 直接调 `run()`，没有经过宿主的工具运行时。
