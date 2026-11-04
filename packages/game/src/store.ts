@@ -808,6 +808,13 @@ export class GameService {
       kit,
     )
     failures.push(...validated.failures)
+    // Content data (design/**/*.json) must at least parse; its meaning is the game's to check.
+    for (const f of build) {
+      if (!f.path.startsWith('design/')) continue
+      try { JSON.parse(f.data.toString('utf8')) } catch (error) {
+        failures.push({ where: f.path, message: `不是合法的 JSON：${(error as Error).message}` })
+      }
+    }
     // A model look must point at a file the build carries.
     const shipped = new Set(build.map(f => f.path))
     for (const e of validated.elements) {

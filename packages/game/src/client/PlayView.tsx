@@ -11,7 +11,7 @@ import { failureOf, type ViewProps } from './contract.ts'
 import { LookCanvas } from './looks.tsx'
 import { clearSaves, PlayFrame, type HighlightList, type PickAnswer, type PlayReport } from './PlayFrame.tsx'
 import { pickChip } from './refs.ts'
-import type { PickRef } from '../vfs.ts'
+import type { PickRef, PreviewState } from '../vfs.ts'
 import { markInteraction, updateCards } from '@khorsheed/dsh-client-ui-agent-nav/src/client/index.ts'
 import css from './GameTab.module.css'
 
@@ -50,6 +50,9 @@ export function PlayView(props: PlayViewProps): ReactNode {
   const [diffOn, setDiffOn] = useState(true)
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
+  // Preview states the running game offers; choosing one restarts the run and enters it.
+  const [previews, setPreviews] = useState<readonly PreviewState[]>([])
+  const [previewTo, setPreviewTo] = useState<PreviewState | null>(null)
   const record = which === 'candidate' ? project.candidate : project.current
   const version = record?.version
   const loaded = useRef('')
@@ -67,7 +70,17 @@ export function PlayView(props: PlayViewProps): ReactNode {
     return () => { clearInterval(timer) }
   }, [playing])
   const [poster, setPoster] = useState<string | null>(null)
-  useEffect(() => { setPlaying(false); setPicking(false); setPicked(null) }, [version, which])
+  useEffect(() => { setPlaying(false); setPicking(false); setPicked(null); setPreviews([]); setPreviewTo(null) }, [version, which])
+  const previewLabel = (p: PreviewState): string => p.label !== '' ? p.label : `${p.scene} · ${p.state}`
+  const previewKey = (p: PreviewState): string => `${p.scene}\u0000${p.state}`
+  const enterPreview = (key: string): void => {
+    const to = previews.find(p => previewKey(p) === key) ?? null
+    setPreviewTo(to); setPicking(false); setPicked(null); setRun(n => n + 1)
+  }
+  const onPreviewed = (ok: boolean, supported: boolean): void => {
+    if (previewTo === null) return
+    toast(ok ? t('play.previewEntered', { label: previewLabel(previewTo) }) : supported ? t('play.previewRefused', { label: previewLabel(previewTo) }) : t('play.previewUnsupported'))
+  }
   useEffect(() => {
     let live = true
     // The poster of the version on screen (a version without its own shows none, never another build's).
@@ -154,8 +167,13 @@ export function PlayView(props: PlayViewProps): ReactNode {
         {playing && bundle !== null && which === 'candidate' && diffCount > 0 && <button type="button" className={css.stageBtn} aria-pressed={diffOn}
           title={t('play.diffHint')} onClick={() => { setDiffOn(on => !on) }}>{t('play.diff')}</button>}
         {playing && bundle !== null && <button type="button" className={css.stageBtn} aria-pressed={picking} onClick={() => { setPicking(p => !p); setPicked(null) }}>{t('play.pick')}</button>}
-        {playing && bundle !== null && <button type="button" className={css.stageBtn} onClick={() => { setRun(n => n + 1) }}>{t('play.restart')}</button>}
-        {playing && <button type="button" className={css.stageBtn} onClick={() => { setPlaying(false); setPicking(false); setPicked(null) }}>{t('play.stop')}</button>}
+        {playing && bundle !== null && previews.length > 0 && <select className={css.stageBtn} aria-label={t('play.preview')} title={t('play.previewHint')}
+          value={previewTo === null ? '' : previewKey(previewTo)} onChange={e => { if (e.target.value !== '') enterPreview(e.target.value) }}>
+          <option value="">{t('play.preview')}</option>
+          {previews.map(p => <option key={previewKey(p)} value={previewKey(p)}>{previewLabel(p)}</option>)}
+        </select>}
+        {playing && bundle !== null && <button type="button" className={css.stageBtn} onClick={() => { setPreviewTo(null); setRun(n => n + 1) }}>{t('play.restart')}</button>}
+        {playing && <button type="button" className={css.stageBtn} onClick={() => { setPlaying(false); setPicking(false); setPicked(null); setPreviewTo(null) }}>{t('play.stop')}</button>}
       </div>
       <div className={css.screen}>
         {error !== null && <p className={css.screenNote}>{t('play.loadFailed', { error })}</p>}
@@ -171,7 +189,8 @@ export function PlayView(props: PlayViewProps): ReactNode {
               </button>
           : bundle !== null && <PlayFrame projectId={project.id} version={bundle.version} files={bundle.files} run={run}
               params={values} picking={picking} label={`${project.title} v${bundle.version}`}
-              onPicked={onPicked} hoverLabel={ref => chipOf(ref).label} highlight={highlight} onErrors={setErrors} onReport={report} />}
+              onPicked={onPicked} hoverLabel={ref => chipOf(ref).label} highlight={highlight} onErrors={setErrors} onReport={report}
+              previewTo={previewTo} onPreviews={setPreviews} onPreviewed={onPreviewed} />}
       </div>
       {project.candidate !== null && <div className={css.candBar} data-tone="warn">
         <div className={css.bannerText}>

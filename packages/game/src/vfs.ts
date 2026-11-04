@@ -73,6 +73,31 @@ const BRIDGE = `(function(){
       // A string id (2D games) or a structured reference (dsh3d: id, inst, name, state, point, region).
       post({ gamedev: 'picked', id: id, ref: ref, hover: !!d.hover, supported: !!(g && typeof g.pick === 'function'), x: d.x, y: d.y });
     }
+    // Preview states (optional on the game side): the panel asks which ones the game offers
+    // (dshGame.previews: [{ scene, state, label }], or a function returning that), then asks
+    // a fresh run to enter one once it is ready (dshGame.preview({ scene, state }) → false = refused).
+    if (d.gamedev === 'previews') {
+      var listTries = 0, listTimer = setInterval(function () {
+        var game = window.dshGame;
+        if (!game && ++listTries <= 150) return;
+        clearInterval(listTimer);
+        var raw = [];
+        try { raw = game ? (typeof game.previews === 'function' ? game.previews() : game.previews) : [] } catch (err) { report('error', 'previews: ' + err.message) }
+        var list = (Array.isArray(raw) ? raw : []).filter(function (p) { return p && typeof p.scene === 'string' && typeof p.state === 'string' }).slice(0, 50)
+          .map(function (p) { return { scene: p.scene, state: p.state, label: typeof p.label === 'string' ? p.label : '' } });
+        post({ gamedev: 'previews', list: list, supported: !!(game && typeof game.preview === 'function') });
+      }, 100);
+    }
+    if (d.gamedev === 'enter-preview') {
+      var enterTries = 0, enterTimer = setInterval(function () {
+        var game = window.dshGame;
+        if (!(game && game.ready) && ++enterTries <= 200) return;
+        clearInterval(enterTimer);
+        var ok = false, supported = !!(game && typeof game.preview === 'function');
+        if (supported) { try { ok = game.preview({ scene: d.scene, state: d.state }) !== false } catch (err) { report('error', 'preview: ' + err.message) } }
+        post({ gamedev: 'previewed', ok: ok, supported: supported, scene: d.scene, state: d.state });
+      }, 100);
+    }
     // The panel's pick mode freezes the game; a candidate's changes get ringed. Both optional on the game side.
     // The panel sends them as soon as the files are posted, often before the game's modules ran: the latest
     // of each is kept and applied once window.dshGame appears (polled briefly; installs share one record).
@@ -222,6 +247,16 @@ export type FrameMessage =
   | { readonly gamedev: 'preview'; readonly png: string }
   | { readonly gamedev: 'preview-clips'; readonly names: readonly string[]; readonly parts: ModelParts | null }
   | { readonly gamedev: 'preview-turned' }
+  | { readonly gamedev: 'previews'; readonly list: readonly PreviewState[]; readonly supported: boolean }
+  | { readonly gamedev: 'previewed'; readonly ok: boolean; readonly supported: boolean; readonly scene: string; readonly state: string }
+
+/** One state a game offers for preview (`dshGame.previews`): the panel's 预览 menu enters it on a fresh run. */
+export interface PreviewState {
+  readonly scene: string
+  readonly state: string
+  /** The menu's text ('' = `scene · state`). */
+  readonly label: string
+}
 
 /** What a loaded glTF model can be tuned by (the preview reports it once loaded). */
 export interface ModelParts {

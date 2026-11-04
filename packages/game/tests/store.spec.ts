@@ -293,6 +293,21 @@ describe('working changes and who published', () => {
   })
 })
 
+describe('content data', () => {
+  it('ships design JSON in the build, keeps design prose out, and fails the check on broken JSON', async () => {
+    const project = await created()
+    await put(join(project.root, 'index.html'), '<p>v1</p>')
+    await put(join(project.root, 'design/scenes/a.json'), '{ "id": "a",')
+    await put(join(project.root, 'design/levels.md'), '# 关卡')
+    const failed = await store.checkTurn(session(), 0, 2)
+    expect(failed.kind === 'fail' && failed.record.failures).toEqual([{ where: 'design/scenes/a.json', message: expect.stringContaining('不是合法的 JSON') }])
+    await put(join(project.root, 'design/scenes/a.json'), '{ "id": "a" }')
+    expect((await store.checkTurn(session(), 0, 2)).kind).toBe('pass')
+    expect(await store.workingFile(project.id, 'design/scenes/a.json')).toMatchObject({ ok: true })
+    expect(await store.workingFile(project.id, 'design/levels.md')).toMatchObject({ ok: false })
+  })
+})
+
 describe('model looks', () => {
   it('fails the check when a glTF look points at a file the project does not have', async () => {
     const result = await store.create({ title: 'Models', pitch: 'p', elementTypes: '角色', artStyle: 'ink', runtime: '3d' }, session())
