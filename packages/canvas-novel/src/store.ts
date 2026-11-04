@@ -71,7 +71,7 @@ import { changedPlanFields, type PlanField } from './text-forms.ts'
 import { buildGraph, deleteImpact, type BookGraph, type DeleteImpact, type GraphInput } from './graph.ts'
 import { ackNodes, alignChanges, ALIGN_VERSION, baselineOf, fingerprint, normalizeAlign, type AlignAuto, type AlignDoc, type AlignItem, type NodeNow } from './align.ts'
 import {
-  activeChapterFeedback, chapterFeedbackBatches, emptyChapterFeedback, formatChapterFeedbackRequest, normalizeChapterFeedback,
+  activeChapterFeedback, chapterFeedbackBatches, chapterFeedbackSubmissionMatches, emptyChapterFeedback, formatChapterFeedbackRequest, hasChapterFeedbackDirectWrite, normalizeChapterFeedback,
   MAX_FEEDBACK_QUOTE, MAX_FEEDBACK_TEXT,
   type ChapterFeedbackBatch, type ChapterFeedbackDoc, type ChapterFeedbackIdea, type ChapterFeedbackPrepareResult, type ChapterFeedbackResult,
 } from './chapter-feedback.ts'
@@ -1600,10 +1600,6 @@ export class NovelService {
     let prepared: ChapterFeedbackBatch | undefined
     let failure: string | undefined
     const outcome = await this.mutateFeedback(workId, session, (doc, now) => {
-      if (doc.batches.some(batch => batch.sessionId === String(session.id) && batch.chapter === request.n && batch.status !== 'archived')) {
-        failure = 'batch-open'
-        return 'invalid-name'
-      }
       const ideas = activeChapterFeedback(doc, request.n)
       if (ideas.length === 0) {
         failure = 'empty'
@@ -1668,7 +1664,7 @@ export class NovelService {
     const turnText = this.feedbackTurnTexts.get(key)
     if (turnText === undefined) return
     const doc = await this.readFeedback(workId)
-    const candidates = doc.batches.filter(batch => batch.sessionId === String(session.id) && batch.status === 'drafted' && this.feedbackCandidates.get(batch.id)?.trim() === turnText.trim())
+    const candidates = doc.batches.filter(batch => batch.sessionId === String(session.id) && batch.status === 'drafted' && chapterFeedbackSubmissionMatches(turnText, this.feedbackCandidates.get(batch.id) ?? ''))
     for (const batch of candidates) {
       const submittedText = this.feedbackCandidates.get(batch.id)!
       await this.mutateFeedback(workId, session, (current, now) => ({
@@ -1722,11 +1718,11 @@ export class NovelService {
     return { ok: false, error: 'stale' }
   }
 
-  private async recordChapterFeedbackWrite(workId: string, n: number, session: Session | undefined, turn: number, before: string, content: string): Promise<void> {
+  private async recordChapterFeedbackWrite(workId: string, n: number, session: Session | undefined, turn: number, before: string, content: string, batchId?: string): Promise<void> {
     if (session === undefined || before === content) return
     const doc = await this.readFeedback(workId)
     const bodyHash = bodyFingerprint(content) ?? ''
-    for (const batch of doc.batches.filter(row => row.sessionId === String(session.id) && row.chapter === n && row.status !== 'archived')) {
+    for (const batch of doc.batches.filter(row => row.sessionId === String(session.id) && row.chapter === n && row.status !== 'archived' && (batchId === undefined || row.id === batchId))) {
       if (batch.status !== 'drafted' && batch.turn !== turn) continue
       await this.mutateFeedback(workId, session, (current, now) => ({
         ...current,
@@ -1744,6 +1740,21 @@ export class NovelService {
     }
   }
 
+  private async captureDirectChapterFeedbackWrite(workId: string, batch: ChapterFeedbackBatch, session: Session, turn: number): Promise<void> {
+    if (batch.write !== undefined) return
+    const meta = await this.readWorkMeta(workId)
+    if (meta?.workspace === undefined) return
+    const chapter = (await this.readChapters(workId)).find(row => row.n === batch.chapter)
+    if (chapter === undefined) return
+    const content = await this.readChapterBody(meta, chapter)
+    if ((bodyFingerprint(content) ?? '') === batch.baseBodyHash) return
+    const file = chapterFileName(batch.chapter)
+    const paths = [`${meta.title}/${file}`, join(meta.workspace, meta.title, file)]
+    const events = session.snapshotEvents() as unknown as Parameters<typeof hasChapterFeedbackDirectWrite>[0]
+    if (!hasChapterFeedbackDirectWrite(events, turn, paths)) return
+    await this.recordChapterFeedbackWrite(workId, batch.chapter, session, turn, batch.baseBodyHash, content, batch.id)
+  }
+
   async finishChapterFeedbackTurn(session: Session, turn: number, outcome: 'completed' | 'interrupted'): Promise<void> {
     this.rememberFeedbackTurn(this.feedbackTurnOutcomes, `${String(session.id)}:${turn}`, outcome)
     const work = await this.boundWork(String(session.id))
@@ -1753,6 +1764,15 @@ export class NovelService {
     const doc = await this.readFeedback(workId)
     const touched = doc.batches.filter(batch => batch.sessionId === String(session.id) && batch.turn === turn && batch.status !== 'archived')
     if (touched.length === 0) return
+    if (outcome === 'completed') {
+      for (const batch of touched) {
+        try {
+          await this.captureDirectChapterFeedbackWrite(workId, batch, session, turn)
+        } catch (error) {
+          this.ctx.logger.warn('canvas-novel: could not capture a direct chapter write', error)
+        }
+      }
+    }
     await this.mutateFeedback(workId, session, (current, now) => ({
       ...current,
       batches: current.batches.map(batch => {

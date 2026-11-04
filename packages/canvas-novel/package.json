@@ -157,7 +157,7 @@
     "compat": {
       "minHost": "0.2.0-rc.2",
       "verifiedHost": "0.2.1-rc.5",
-      "notes": "Selection comments open only from the optional quote plugin's menu; whole-chapter ideas remain available without it. The idea list is hidden behind the chapter's Ideas button and never narrows the text. Batches archive only after the actual request is sent, the same chapter is written, and the turn ends normally."
+      "notes": "Selection comments open only from the optional quote plugin's menu. The idea list stays anchored below the chapter's Ideas button and closes on outside click or Escape. Multiple open batches are independent. Batches archive only after the actual request is sent, a verified chapter write lands, and the turn ends normally."
     },
     "references": [
       "@khorsheed/dsh-canvas",
