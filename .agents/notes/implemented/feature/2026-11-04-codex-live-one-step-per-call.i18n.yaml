@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-04-codex-live-one-step-per-call.md
+.agents/notes/implemented/feature/2026-11-04-codex-live-one-step-per-call.md: 11cab1c932c7e14771bdb6857225038399bda796
+.agents/notes/implemented/feature/2026-11-04-codex-live-one-step-per-call.zh.md: 5601430f7de96b66964b14180e77686208ba02f0
