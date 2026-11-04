@@ -110,6 +110,7 @@ import type {
   LocalAgentExecutionCause,
   LocalAgentExecutionHandle,
   LocalAgentExecutionOperation,
+  LocalAgentExecutionReading,
   LocalAgentExecutionRequest,
   LocalAgentExecutionSettlement,
   LocalAgentMemberCreate,
@@ -117,6 +118,7 @@ import type {
   LocalAgentTaskRef,
 } from './types.ts'
 import { ExecutionRecorder, executionOutcome, type OpenExecution } from './execution-records.ts'
+import { executionReadingsOf } from './execution-read.ts'
 import LocalAgentGateway from './gateway.ts'
 import { guardChildLog, type QuarantineEntry } from './child-log-guard.ts'
 import { MemberChannel } from './member-channel.ts'
@@ -163,6 +165,7 @@ export type {
   LocalAgentExecutionEvent,
   LocalAgentExecutionOperation,
   LocalAgentExecutionOutcome,
+  LocalAgentExecutionReading,
   LocalAgentExecutionStartEvent,
   LocalAgentTaskRef,
   LocalAgentUnrecorded,
@@ -178,6 +181,7 @@ export type {
 export { MemberInbox, MemberLedger } from './member-inbox.ts'
 export { BEFORE_PROMPT_FAILURE, LocalAgentRetryableStartError, RETRYABLE_START_FAILURE, isRetryableStartFailure } from './types.ts'
 export { beforeMirrorTurn, executionOutcome, ExecutionRecorder, OpenExecution } from './execution-records.ts'
+export { addUsage, executionReadingsOf } from './execution-read.ts'
 export type { ExecutionAdmission, ExecutionObservation, ExecutionRecorderOptions, MirrorTransport } from './execution-records.ts'
 
 export type {
@@ -2992,6 +2996,63 @@ export class LocalAgentRegistry {
       }
     } catch {
       this.coldContexts.delete(childSessionId)
+      return undefined
+    }
+  }
+
+  /** Each member's execution readings, keyed by the log's last seq they were read at (live). */
+  private readonly executionReadings = new Map<string, { readonly seq: number; readonly readings: Map<string, LocalAgentExecutionReading> }>()
+  /** A cold member log's execution readings, read once from storage (it cannot move until a round revives it). */
+  private readonly coldExecutionReadings = new Map<string, Promise<Map<string, LocalAgentExecutionReading> | undefined>>()
+
+  /**
+   * Read one execution back from the member's log (batch 5 S6): the sum of
+   * the per-call `assistant/message.usage` in its turns, the CLI's own round
+   * total from its end record, its "not recorded" declarations, and the
+   * compaction facts in its range. Computed, never stored: a live log is
+   * re-read when it moved, a cold one is read once from storage.
+   * @param childSessionId - the member's dsh child session.
+   * @param executionId - the execution (room's run-state `executionId`).
+   * @returns the reading, or undefined when the log holds no record of it or cannot be read.
+   */
+  async readExecution(childSessionId: string, executionId: string): Promise<LocalAgentExecutionReading | undefined> {
+    const live = this.ctx.get('sessions')?.get(SessionId(childSessionId))
+    if (live !== undefined) {
+      this.coldExecutionReadings.delete(childSessionId)
+      const events = live.snapshotEvents()
+      const last = events.at(-1)
+      const seq = last === undefined ? -1 : Number(last.seq)
+      let cached = this.executionReadings.get(childSessionId)
+      if (cached?.seq !== seq) {
+        cached = { seq, readings: executionReadingsOf(events) }
+        this.executionReadings.set(childSessionId, cached)
+      }
+      const reading = cached.readings.get(executionId)
+      return reading === undefined ? undefined : structuredClone(reading)
+    }
+    this.executionReadings.delete(childSessionId)
+    let cold = this.coldExecutionReadings.get(childSessionId)
+    if (cold === undefined) {
+      cold = this.readStoredExecutions(childSessionId)
+      this.coldExecutionReadings.set(childSessionId, cold)
+    }
+    const reading = (await cold)?.get(executionId)
+    return reading === undefined ? undefined : structuredClone(reading)
+  }
+
+  /** {@link readExecution}'s cold read; undefined (and not kept) when the log is unreadable. */
+  private async readStoredExecutions(childSessionId: string): Promise<Map<string, LocalAgentExecutionReading> | undefined> {
+    const persistence = this.ctx.get('sessionPersistence')
+    try {
+      if (persistence === undefined) throw new Error('no session persistence')
+      const reader = await persistence.open(SessionId(childSessionId), 'read')
+      try {
+        return executionReadingsOf((await reader.read(0)).events)
+      } finally {
+        await reader.close()
+      }
+    } catch {
+      this.coldExecutionReadings.delete(childSessionId)
       return undefined
     }
   }
