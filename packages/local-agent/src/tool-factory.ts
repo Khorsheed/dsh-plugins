@@ -42,10 +42,12 @@ import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SubagentActivation, SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 // Type-only: this package's own `Context.localAgent` service augmentation.
 import type {} from './index.ts'
+import type { LocalAgentExecutionIntent } from './types.ts'
 
 /**
  * Tag the model-visible tool with its origin (AGENTS.md § Tool origin tagging;
@@ -232,6 +234,30 @@ function familyWording(): { description: string; promptDescription: string; resu
  * @param owner - the calling package's own name, stamped as the tool-origin
  * owner (never hardcoded here — this factory serves every family provider).
  */
+/**
+ * A family tool call's execution facts: caller `tool`, the call id as the
+ * caller's handle, cause `tool-call` (this also covers a room's main agent
+ * continuing a member directly — user decision 2026-11-03 ④), and the task
+ * `turn:<n>` of the calling session when its `tool/call` event names the turn.
+ * @param session - the calling (parent) session.
+ * @param callId - the model-visible call id (the root of a PTC dispatch).
+ */
+export function toolCallExecution(session: Session, callId: string): LocalAgentExecutionIntent {
+  const sessionId = String(session.id)
+  let turn: number | undefined
+  try {
+    const call = session.snapshotEvents().findLast(event => event.type === 'tool/call' && String((event.data as { callId?: unknown }).callId) === callId)
+    const value = (call?.data as { turn?: unknown } | undefined)?.turn
+    if (typeof value === 'number' && Number.isFinite(value)) turn = value
+  } catch { /* A session without a readable log records no task. */ }
+  return {
+    caller: 'tool',
+    callerRef: callId,
+    cause: { kind: 'tool-call', sessionId, callId },
+    ...turn === undefined ? {} : { task: { sessionId, id: `turn:${turn}` } },
+  }
+}
+
 export function mountSubagentDelegationTool(ctx: Context, config: SubagentToolConfig, owner: string): void {
   const toolName = config.toolName ?? 'subagent'
   const wording = familyWording()
@@ -299,8 +325,12 @@ export function mountSubagentDelegationTool(ctx: Context, config: SubagentToolCo
         // so the provider publishes a per-execution id and this id rides the
         // staged intent instead).
         const childSessionId = resumeHandle ?? randomUUID()
+        // The execution record's facts (batch 5 S1): this tool call caused
+        // the round, and the task is the calling session's turn that made the
+        // call (read from the call's own `tool/call` event, never guessed).
+        const execution = toolCallExecution(parent.session, String(exec.rootCallId ?? exec.callId))
         if (resumeHandle === undefined) {
-          ctx.localAgent.stageDelegationIntent(parentSessionId, config.provider, { kind: 'fresh', childSessionId })
+          ctx.localAgent.stageDelegationIntent(parentSessionId, config.provider, { kind: 'fresh', childSessionId, execution })
         } else if (resume !== undefined) {
           // A host restart evicts the child session from the live store, and
           // the tool starts runs directly (no facade) — reattach it here or
@@ -310,6 +340,7 @@ export function mountSubagentDelegationTool(ctx: Context, config: SubagentToolCo
             kind: 'resume',
             childSessionId: resumeHandle,
             cliSessionId: resume.cliSessionId,
+            execution,
           })
         }
 

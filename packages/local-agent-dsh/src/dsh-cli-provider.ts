@@ -44,6 +44,7 @@ import {
   probeCliVersion,
   resolveChildCwd,
   subagentDelegationLabel,
+  openMirrorTurn,
 } from '@khorsheed/dsh-local-agent'
 import type { DelegationExecTarget, LocalAgentAppliedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
@@ -229,7 +230,7 @@ export class DshCliProvider implements SubagentProvider {
         ...record?.model === undefined ? {} : { model: record.model },
         ...record?.effort === undefined ? {} : { effort: record.effort },
         ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
-      }, configuration => this.startDshResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted)
+      }, configuration => this.startDshResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted, intent?.execution)
     }
     const childSessionId = SessionId(intent?.preparedMemberId ?? intent?.childSessionId ?? randomUUID())
     if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
@@ -242,7 +243,7 @@ export class DshCliProvider implements SubagentProvider {
       ...intent?.model === undefined ? {} : { model: intent.model },
       ...intent?.effort === undefined ? {} : { effort: intent.effort },
       ...intent?.configurationLock === undefined ? {} : { configurationLock: intent.configurationLock },
-    }, configuration => this.startDshFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration), request.signal, intent?.onAdmitted)
+    }, configuration => this.startDshFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration), request.signal, intent?.onAdmitted, intent?.execution)
   }
 
   /** Fresh round: record the child session and delegation, spawn the sub-dsh create. */
@@ -660,7 +661,7 @@ export async function startDshCliRun(
   const turn = spec.resume?.turn ?? 1
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime.
-  spec.childSession?.append('turn/start', { turn })
+  if (spec.childSession !== undefined) openMirrorTurn(spec.childSession, turn, 'exec')
 
   // The default launch replicates THIS process (node + argv[1]), which only
   // exists on the host. A container target therefore expects the caller to

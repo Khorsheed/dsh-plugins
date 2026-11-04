@@ -14,6 +14,7 @@ import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type { SubagentStopReason } from '@deepseek-ai/dsh-subagent'
 import { localAgentStreamRecords, type LocalAgentModelBlock } from './model-stream.ts'
 import { localAgentToolTimingMeta, type LocalAgentToolTiming } from './tool-timing.ts'
+import { beforeMirrorTurn, type MirrorTransport } from './execution-records.ts'
 
 // The id brands are compile-time only; take the field types from the
 // consuming APIs instead of importing a brand factory.
@@ -166,6 +167,20 @@ export function appendRequestHeaderIfChanged(session: Session, config: MirrorReq
     header: { config },
     reason: last === undefined ? 'initial' : 'change',
   })
+}
+
+/**
+ * Open a mirrored round's turn: the member's open execution writes its
+ * `local-agent/execution` start record first when it is still pending (a
+ * first round, whose child session the provider just created) and notes how
+ * the round runs, then the `turn/start` lands. Every provider opens its turns
+ * through this, so a first round's start record precedes its first turn.
+ * @param transport - `exec` (one-shot CLI) or `live` (resident process): picks
+ *   the harness's matching `unrecorded` declaration for the end record.
+ */
+export function openMirrorTurn(session: Session, turn: number, transport: MirrorTransport): void {
+  beforeMirrorTurn(session, transport)
+  session.append('turn/start', { turn })
 }
 
 /**

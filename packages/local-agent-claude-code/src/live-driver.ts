@@ -83,6 +83,7 @@ import {
   appendMirrorContent,
   appendRequestHeaderIfChanged,
   closeMirrorTurn,
+  openMirrorTurn,
   delegationEnv,
   persistChildSession,
   recordContextOccupancy,
@@ -1363,7 +1364,7 @@ export class ClaudeLiveDriver {
       }
       // The turn boundary opens before the message goes out (exec parity: the
       // exec path opens at spawn).
-      childSession.append('turn/start', { turn })
+      openMirrorTurn(childSession, turn, 'live')
       // The provider's own launch facts are the child log's request config —
       // claude's wire never carries effort, so the env the provider sets is
       // the authoritative source. The header contract requires a model: an
@@ -1496,6 +1497,8 @@ export class ClaudeLiveDriver {
             ...roundModel === undefined ? {} : { observedModel: roundModel },
             ...roundCliVersion === undefined ? {} : { cliVersion: roundCliVersion },
             ...parser.usage === undefined ? {} : { usage: parser.usage },
+            // The `result` event's usage: claude's own round total (batch 5 S1).
+            ...parser.usage === undefined ? {} : { providerReportedUsage: parser.usage },
             ...toolCalls === undefined ? {} : { toolCalls },
           }
           localAgent?.recordRoundSettled(childSession.id, round)

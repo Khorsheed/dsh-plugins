@@ -47,6 +47,7 @@ import {
   appendMirrorStep,
   appendRequestHeaderIfChanged,
   closeMirrorTurn,
+  openMirrorTurn,
   type MirrorSource,
   resolveChildCwd,
   subagentDelegationLabel,
@@ -340,7 +341,7 @@ export class CodexCliProvider implements SubagentProvider {
         ...record?.model === undefined ? {} : { model: record.model },
         ...record?.effort === undefined ? {} : { effort: record.effort },
         ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
-      }, configuration => this.startCodexResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted)
+      }, configuration => this.startCodexResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted, intent?.execution)
     }
     const childSessionId = SessionId(intent?.preparedMemberId ?? intent?.childSessionId ?? randomUUID())
     if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
@@ -353,7 +354,7 @@ export class CodexCliProvider implements SubagentProvider {
       ...intent?.model === undefined ? {} : { model: intent.model },
       ...intent?.effort === undefined ? {} : { effort: intent.effort },
       ...intent?.configurationLock === undefined ? {} : { configurationLock: intent.configurationLock },
-    }, configuration => this.startCodexFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration), request.signal, intent?.onAdmitted)
+    }, configuration => this.startCodexFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration), request.signal, intent?.onAdmitted, intent?.execution)
   }
 
   /** Fresh round: record the child session, spawn `codex exec`, append after settle. */
@@ -739,6 +740,8 @@ export interface CodexCliRunSpec {
   readonly onRoundSettled?: ((round: {
     readonly observedModel?: string
     readonly usage?: TokenUsage
+    /** The CLI's own whole-round total, when its stream reported one (never a fallback or a sum). */
+    readonly providerReportedUsage?: TokenUsage
     readonly toolCalls?: LocalAgentToolCalls
   }) => void) | undefined
 }
@@ -1160,7 +1163,7 @@ export function startCodexCliRun(
 
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc append time.
-  spec.childSession?.append('turn/start', { turn })
+  if (spec.childSession !== undefined) openMirrorTurn(spec.childSession, turn, 'exec')
   // The provider's own launch facts are the child log's request config —
   // codex's stream never carries model/effort, so the argv the provider
   // spawns with is the authoritative source. The header contract requires a
@@ -1604,6 +1607,10 @@ async function mirrorCodexAfterExit(
     // stronger answer than a later `--version` probe of the executable: it is
     // what actually ran.
     let usage = parsed.usage
+    // `turn.completed`'s usage is codex's own turn total; the rollout
+    // fallback below is the last call's usage, never a round total, so it
+    // does not count as the CLI's report (batch 5 S1).
+    const providerReportedUsage = parsed.usage
     let observedModel = parsed.model
     let cliVersion: string | undefined
     const homeDir = spec.env['CODEX_HOME']
@@ -1627,6 +1634,7 @@ async function mirrorCodexAfterExit(
       ...observedModel === undefined ? {} : { observedModel },
       ...cliVersion === undefined ? {} : { cliVersion },
       ...usage === undefined ? {} : { usage },
+      ...providerReportedUsage === undefined ? {} : { providerReportedUsage },
       ...parsed.toolCalls === undefined ? {} : { toolCalls: parsed.toolCalls },
     })
     // Nothing streamed at all (e.g. the CLI died before the first item): keep

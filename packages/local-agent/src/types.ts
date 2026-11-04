@@ -198,7 +198,13 @@ export interface LocalAgentExecutionStartEvent {
   /** The caller's own handle for this execution (room run id, tool call id, …). */
   callerRef?: string
   operation: LocalAgentExecutionOperation
-  cause: LocalAgentExecutionCause
+  /**
+   * Why it ran, as the caller recorded it. Absent = the caller recorded no
+   * cause (a facade caller that passed none; S1 takes causes only from
+   * {@link DelegationCallOptions.cause} and the family tool): read it as
+   * "not recorded", never infer one.
+   */
+  cause?: LocalAgentExecutionCause
   task?: LocalAgentTaskRef
   /** The session that owns the member (a room, or the host session that delegated). */
   parentSessionId: string
@@ -230,6 +236,32 @@ export interface LocalAgentExecutionEndEvent {
    * never added to it.
    */
   providerReportedUsage?: TokenUsage
+}
+
+/**
+ * A harness's static "not recorded" declarations (`LocalAgentHarness.unrecorded`),
+ * by how the execution ran: a prompt round on the one-shot CLI (`exec`) or on
+ * the resident process (`live`), and a `/compact` execution (`compact`). The
+ * core copies the matching list onto the execution's end record verbatim.
+ */
+export interface LocalAgentUnrecordedDeclaration {
+  readonly exec?: readonly LocalAgentUnrecorded[]
+  readonly live?: readonly LocalAgentUnrecorded[]
+  readonly compact?: readonly LocalAgentUnrecorded[]
+}
+
+/**
+ * The execution facts a caller hands the core with a round (staged on the
+ * delegation intent, read at the admission point): who asked, its own handle,
+ * and — only when the caller recorded them — cause and task.
+ */
+export interface LocalAgentExecutionIntent {
+  readonly caller: LocalAgentExecutionCaller
+  /** Set by the core from the round's operation; absent = `prompt`. */
+  readonly operation?: LocalAgentExecutionOperation
+  readonly callerRef?: string
+  readonly cause?: LocalAgentExecutionCause
+  readonly task?: LocalAgentTaskRef
 }
 
 /**
@@ -1052,6 +1084,8 @@ export type LocalAgentDelegationIntent =
   | {
     readonly kind: 'fresh'
     readonly onAdmitted?: () => void | Promise<void>
+    /** The execution facts the core records at admission (see {@link LocalAgentExecutionIntent}). */
+    readonly execution?: LocalAgentExecutionIntent
     readonly preparedMemberId?: string
     /**
      * The dsh child session id the caller minted for this round (facade/tool
@@ -1093,6 +1127,8 @@ export type LocalAgentDelegationIntent =
   | {
     readonly kind: 'resume'
     readonly onAdmitted?: () => void | Promise<void>
+    /** The execution facts the core records at admission (see {@link LocalAgentExecutionIntent}). */
+    readonly execution?: LocalAgentExecutionIntent
     /** The dsh child session id to continue (the resume handle). */
     readonly childSessionId: string
     /** The CLI session id the resume command continues. */
@@ -1240,6 +1276,20 @@ export interface DelegationExecTarget {
 export interface DelegationCallOptions {
   /** Resume only: compact the member's context instead of prompting it (see the resume intent). */
   readonly operation?: 'compact'
+  /**
+   * Who is asking, written on the execution's `local-agent/execution` start
+   * record. Absent = `api` (a plugin calling the facade).
+   */
+  readonly caller?: LocalAgentExecutionCaller
+  /** The caller's own handle for this execution (a room run id, …), recorded verbatim. */
+  readonly callerRef?: string
+  /**
+   * Why this execution runs, recorded verbatim on its start record; the core
+   * never interprets or guesses it. Absent records no cause.
+   */
+  readonly cause?: LocalAgentExecutionCause
+  /** The task this execution works for, recorded verbatim on its start record. */
+  readonly task?: LocalAgentTaskRef
   /** Host-only durable input edge, executed at the provider admission boundary. */
   readonly onAdmitted?: () => void | Promise<void>
   /** Reserved identity returned by prepareMember; never a caller-selected resume override. */

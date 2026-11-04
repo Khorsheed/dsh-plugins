@@ -12,7 +12,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { startClaudeCliRun } from '../src/claude-cli-provider.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { fakeSessionPersistence } from './fake-persistence.ts'
-import { mirrorSnapshot, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
+import { mirrorSnapshot, snapshotExecution, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
+import { CLAUDE_CODE_UNRECORDED } from '../src/index.ts'
 
 const at = (ms: number): string => new Date(Date.parse('2026-08-16T00:00:00.000Z') + ms).toISOString()
 const usage1 = { input_tokens: 3, output_tokens: 40, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 }
@@ -59,6 +60,7 @@ describe('claude mirror snapshot (exec)', () => {
     vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
     try {
       const child = Session.create(SessionId('child-claude-snapshot'))
+      const execution = snapshotExecution(child, CLAUDE_CODE_UNRECORDED)
       const ctx = new Context()
       ctx.provide('sessionPersistence', fakeSessionPersistence())
       const handle = fixtureChild()
@@ -79,8 +81,10 @@ describe('claude mirror snapshot (exec)', () => {
         childSession: child,
         ctx,
       })
-      expect((await run.result).stopReason).toBe('completed')
+      const result = await run.result
+      expect(result.stopReason).toBe('completed')
       await until(() => child.snapshotEvents().at(-1)?.type === 'turn/end')
+      execution.settle(result)
       expectValidReleasedLog(child)
       expect(mirrorSnapshot(child)).toMatchSnapshot()
     } finally {

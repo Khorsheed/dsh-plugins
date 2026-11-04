@@ -21,7 +21,8 @@ import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
 import { acpStopReasonToHarness, DEFAULT_TIMEOUTS, KimiAcpLiveDriver } from '../src/live-driver.ts'
 import { readKimiDefaultModel } from '../src/provision.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
-import { mirrorSnapshot, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
+import { mirrorSnapshot, snapshotExecution, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
+import { KIMI_UNRECORDED } from '../src/index.ts'
 
 /** One scripted turn: streamed chunks, the terminal stop reason, or a hang. */
 interface FakeTurn {
@@ -1962,6 +1963,7 @@ describe('kimi mirror snapshot (live)', () => {
     const m = mount({ config: {} })
     try {
       const child = Session.create(SessionId('child-kimi-live-snapshot'))
+      const execution = snapshotExecution(child, KIMI_UNRECORDED)
       m.queueChild(new FakeAcpServer({ turn: () => ({ hang: true }) }))
       const controller = new AbortController()
       const run = await m.driver.startRound(request({ signal: controller.signal }) as never, roundSpec(m, child))
@@ -1972,9 +1974,11 @@ describe('kimi mirror snapshot (live)', () => {
       fake.update(session, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '写到一半' } })
       await until(() => m.reports.some(report => report.progress.text === '写到一半'))
       controller.abort()
-      expect((await run.result).stopReason).toBe('aborted')
+      const result = await run.result
+      expect(result.stopReason).toBe('aborted')
       fake.resolvePrompt({ stopReason: 'cancelled' })
       await until(() => child.snapshotEvents().some(event => event.type === 'turn/end'))
+      execution.settle(result)
       expectValidReleasedLog(child)
       expect(mirrorSnapshot(child)).toMatchSnapshot()
     } finally {

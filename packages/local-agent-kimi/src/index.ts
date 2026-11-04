@@ -18,6 +18,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import type {} from '@deepseek-ai/dsh-settings'
 import { firstModelOf, readModelList, readModelListSync, settingsFace, vol, writeModelList } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
+import type { LocalAgentUnrecordedDeclaration } from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { KimiCliProvider, kimiCliVersion } from './kimi-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
@@ -51,6 +52,20 @@ import {
   type KimiEndpointAuth,
 } from './endpoint-auth.ts'
 import { findKimiSessionDir, readKimiTranscript, renderTranscript } from './session-view.ts'
+
+/**
+ * What kimi's records leave out (batch 5 S1), copied onto every execution's
+ * `local-agent/execution` end record:
+ * - exec: the wire fold skips session-scoped `usage.record`s (a compaction
+ *   call's spend, session-view.ts) because the compaction event carries them
+ *   — but only the live driver writes that event (`readKimiCompaction`), so
+ *   on `kimi -p` an auto-compaction's summary call is `internal-calls`.
+ * - live and compact: compactions are read from the wire with their usage
+ *   (live-driver.ts `recordRoundContext` / `compactLocked`) — nothing declared.
+ */
+export const KIMI_UNRECORDED: LocalAgentUnrecordedDeclaration = {
+  exec: ['internal-calls'],
+}
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-kimi'
@@ -299,6 +314,7 @@ export function apply(ctx: Context, config: Config): void {
       name: 'kimi',
       displayName: 'Kimi Code',
       homeEnvVar: 'KIMI_CODE_HOME',
+      unrecorded: KIMI_UNRECORDED,
       delegationProvider: 'kimi-cli',
       // No `login` declaration: the harness authenticates by endpoint key
       // (endpoint-auth.ts), so the core reports the harness as not loginable

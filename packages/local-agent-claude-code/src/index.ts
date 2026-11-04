@@ -18,6 +18,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import type {} from '@deepseek-ai/dsh-settings'
 import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
+import type { LocalAgentUnrecordedDeclaration } from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { ClaudeCliProvider, claudeCliVersion } from './claude-cli-provider.ts'
 import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
@@ -40,6 +41,25 @@ import { firstModelOf, readModelList, readModelListSync, writeModelList } from '
 import { listClaudeSessions, readClaudeTranscriptModel } from './records.ts'
 import { readClaudeModelTiming } from './timing.ts'
 import { provisionClaudeHome, readClaudeConfiguredModel } from './provision.ts'
+
+/**
+ * What claude's stream-json never reports (batch 5 S1), copied onto every
+ * execution's `local-agent/execution` end record:
+ * - `internal-calls`: the CLI's own side calls never reach the stream as
+ *   assistant events. In the recorded sample
+ *   (tests/fixtures/stream-json.sample.jsonl) the result's `modelUsage`
+ *   counts 735 input / 148 output tokens, `result.usage` 4 / 129, and no
+ *   streamed call accounts for the rest. An auto-compaction's summary call
+ *   is such a call too (the stream parser has no `compact_boundary` case).
+ * - `compaction` (compact): a `/compact` round runs as a plain prompt — the
+ *   provider ignores the intent's `operation` — and no
+ *   `local-agent/compaction` is written.
+ */
+export const CLAUDE_CODE_UNRECORDED: LocalAgentUnrecordedDeclaration = {
+  exec: ['internal-calls'],
+  live: ['internal-calls'],
+  compact: ['internal-calls', 'compaction'],
+}
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-claude-code'
@@ -299,6 +319,7 @@ export function apply(ctx: Context, config: Config): void {
       name: 'claude-code',
       displayName: 'Claude Code',
       homeEnvVar: 'CLAUDE_CONFIG_DIR',
+      unrecorded: CLAUDE_CODE_UNRECORDED,
       delegationProvider: 'claude-local',
       // No `login` declaration: the harness authenticates by endpoint key
       // (endpoint-auth.ts), so the core reports the harness as not loginable

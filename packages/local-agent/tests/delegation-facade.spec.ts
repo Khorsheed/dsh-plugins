@@ -16,6 +16,8 @@ import type { LocalAgentDelegationIntent, LocalAgentRunProgress } from '@khorshe
 const PROVIDER = 'fake-cli'
 const PARENT = 'parent-1'
 const PROMPT: ContentBlock[] = [{ type: 'text', text: 'do the thing' }]
+/** The execution facts every facade call stages (batch 5 S1): the facade is the caller. */
+const API = { caller: 'api' }
 
 /** A controllable fake run: settle() resolves run.result; dispose settles it aborted. */
 function makeRun(id: string, signal?: AbortSignal): { run: SubagentRun; settle(result: SubagentResult): void } {
@@ -172,7 +174,7 @@ describe('LocalAgentRegistry delegation facade', () => {
     expect(minted).toBeDefined()
     expect(run.id).toBe(SessionId(minted!))
     // The staged fresh intent was consumed by exactly this start, FIFO-paired.
-    expect(h.consumed).toEqual([{ kind: 'fresh', childSessionId: minted }])
+    expect(h.consumed).toEqual([{ kind: 'fresh', execution: API, childSessionId: minted }])
     expectNothingStaged(h.registry)
     // The request carried the label, prompt, live parent, and a usable signal.
     expect(h.requests[0]?.label).toBe('scout')
@@ -205,7 +207,7 @@ describe('LocalAgentRegistry delegation facade', () => {
     expect(h.prepared).toEqual(['child-1'])
     expect(h.ctx.sessions.get(SessionId('child-1'))).toBeDefined()
     // The provider consumed the resume intent carrying the CLI session id.
-    expect(h.consumed).toEqual([{ kind: 'resume', childSessionId: 'child-1', cliSessionId: 'cli-42' }])
+    expect(h.consumed).toEqual([{ kind: 'resume', execution: API, childSessionId: 'child-1', cliSessionId: 'cli-42' }])
     expect(run.id).toBeDefined()
   })
 
@@ -252,7 +254,7 @@ describe('LocalAgentRegistry delegation facade', () => {
     await h.registry.resume(PARENT, PROVIDER, 'child-1', PROMPT)
 
     expect(h.prepared).toEqual([])
-    expect(h.consumed).toEqual([{ kind: 'resume', childSessionId: 'child-1', cliSessionId: 'cli-42' }])
+    expect(h.consumed).toEqual([{ kind: 'resume', execution: API, childSessionId: 'child-1', cliSessionId: 'cli-42' }])
   })
 
   it('releases the reattached child session when the plugin disposes', async () => {
@@ -437,7 +439,7 @@ describe('LocalAgentRegistry delegation facade', () => {
         return makeRun('child-2', request.signal).run
       })
       await h.registry.start(PARENT, PROVIDER, PROMPT)
-      expect(h.consumed).toEqual([{ kind: 'fresh', childSessionId: expect.any(String) }])
+      expect(h.consumed).toEqual([{ kind: 'fresh', execution: API, childSessionId: expect.any(String) }])
     })
 
     it('is a no-op when start throws after the provider consumed the intent', async () => {
@@ -453,7 +455,7 @@ describe('LocalAgentRegistry delegation facade', () => {
 
       // The provider consumed the intent, so the rollback found nothing to
       // remove — and the queue holds no orphan either way.
-      expect(h.consumed).toEqual([{ kind: 'fresh', childSessionId: expect.any(String) }])
+      expect(h.consumed).toEqual([{ kind: 'fresh', execution: API, childSessionId: expect.any(String) }])
       expectNothingStaged(h.registry)
     })
   })
@@ -695,7 +697,7 @@ describe('LocalAgentRegistry delegation facade', () => {
       await h.registry.resume(PARENT, PROVIDER, 'child-1', PROMPT, { reattach: false })
 
       expect(h.prepared).toEqual([])
-      expect(h.consumed).toEqual([{ kind: 'resume', childSessionId: 'child-1', cliSessionId: 'cli-42' }])
+      expect(h.consumed).toEqual([{ kind: 'resume', execution: API, childSessionId: 'child-1', cliSessionId: 'cli-42' }])
     })
   })
 
@@ -769,14 +771,14 @@ describe('delegation cwd option and observation read side', () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a' })
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String), cwd: '/cell-a' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', execution: API, childSessionId: expect.any(String), cwd: '/cell-a' })
 
     h.registry.recordDelegation({
       childSessionId: 'child-cwd', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-1', cwd: '/cell-a',
     })
     await h.registry.resume(PARENT, PROVIDER, 'child-cwd', PROMPT, { cwd: '/cell-a' })
     expect(h.consumed[1]).toEqual({
-      kind: 'resume', childSessionId: 'child-cwd', cliSessionId: 'cli-1', cwd: '/cell-a',
+      kind: 'resume', execution: API, childSessionId: 'child-cwd', cliSessionId: 'cli-1', cwd: '/cell-a',
     })
   })
 
@@ -784,14 +786,14 @@ describe('delegation cwd option and observation read side', () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a', scope: 'eval-b' })
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String), cwd: '/cell-a', scope: 'eval-b' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', execution: API, childSessionId: expect.any(String), cwd: '/cell-a', scope: 'eval-b' })
 
     h.registry.recordDelegation({
       childSessionId: 'child-scope', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-3', cwd: '/cell-a', scope: 'eval-b',
     })
     await h.registry.resume(PARENT, PROVIDER, 'child-scope', PROMPT, { cwd: '/cell-a', scope: 'eval-b' })
     expect(h.consumed[1]).toEqual({
-      kind: 'resume', childSessionId: 'child-scope', cliSessionId: 'cli-3', cwd: '/cell-a', scope: 'eval-b',
+      kind: 'resume', execution: API, childSessionId: 'child-scope', cliSessionId: 'cli-3', cwd: '/cell-a', scope: 'eval-b',
     })
 
     // Another scope — or none — would continue the CLI session under another
@@ -808,7 +810,7 @@ describe('delegation cwd option and observation read side', () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a', model: 'model-a' })
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String), cwd: '/cell-a', model: 'model-a' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', execution: API, childSessionId: expect.any(String), cwd: '/cell-a', model: 'model-a' })
 
     // A resume re-requests what the record holds; naming one here would
     // switch a live conversation's model mid-way, so it is refused BEFORE
@@ -826,7 +828,7 @@ describe('delegation cwd option and observation read side', () => {
     // Without one, the resume stages the ordinary intent and the provider
     // reads the model back off the record.
     await h.registry.resume(PARENT, PROVIDER, 'child-model', PROMPT, { cwd: '/cell-a' })
-    expect(h.consumed[1]).toEqual({ kind: 'resume', childSessionId: 'child-model', cliSessionId: 'cli-4', cwd: '/cell-a' })
+    expect(h.consumed[1]).toEqual({ kind: 'resume', execution: API, childSessionId: 'child-model', cliSessionId: 'cli-4', cwd: '/cell-a' })
     expect(h.registry.getDelegation('child-model')).toMatchObject({ model: 'model-a' })
   })
 
@@ -834,14 +836,14 @@ describe('delegation cwd option and observation read side', () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT, {})
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String) })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', execution: API, childSessionId: expect.any(String) })
   })
 
   it('stages no cwd when the option is absent — the default intent is unchanged', async () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT)
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String) })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', execution: API, childSessionId: expect.any(String) })
     expectNothingStaged(h.registry)
   })
 
@@ -850,7 +852,7 @@ describe('delegation cwd option and observation read side', () => {
     h.enterParent(PARENT)
     const exec = { container: 'dsh-lab-abc', workdir: '/workspace', env: { CODEX_HOME: '/creds/codex' } }
     await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a', exec })
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String), cwd: '/cell-a', exec })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', execution: API, childSessionId: expect.any(String), cwd: '/cell-a', exec })
 
     h.registry.recordDelegation({
       childSessionId: 'child-exec', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-2', cwd: '/cell-a',
@@ -858,7 +860,7 @@ describe('delegation cwd option and observation read side', () => {
     // The caller repeats the target on resume, exactly as it repeats the cwd.
     await h.registry.resume(PARENT, PROVIDER, 'child-exec', PROMPT, { cwd: '/cell-a', exec })
     expect(h.consumed[1]).toEqual({
-      kind: 'resume', childSessionId: 'child-exec', cliSessionId: 'cli-2', cwd: '/cell-a', exec,
+      kind: 'resume', execution: API, childSessionId: 'child-exec', cliSessionId: 'cli-2', cwd: '/cell-a', exec,
     })
   })
 
@@ -866,7 +868,7 @@ describe('delegation cwd option and observation read side', () => {
     const h = await mountFacade()
     h.enterParent(PARENT)
     await h.registry.start(PARENT, PROVIDER, PROMPT, { cwd: '/cell-a' })
-    expect(h.consumed[0]).toEqual({ kind: 'fresh', childSessionId: expect.any(String), cwd: '/cell-a' })
+    expect(h.consumed[0]).toEqual({ kind: 'fresh', execution: API, childSessionId: expect.any(String), cwd: '/cell-a' })
     expectNothingStaged(h.registry)
   })
 

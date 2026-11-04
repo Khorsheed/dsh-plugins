@@ -103,7 +103,10 @@ import type {
   LocalAgentMemberContext,
   LocalAgentMemberToolsReload,
   LocalAgentMemberToolsStatus,
+  LocalAgentExecutionIntent,
+  LocalAgentUnrecordedDeclaration,
 } from './types.ts'
+import { ExecutionRecorder, executionOutcome } from './execution-records.ts'
 import LocalAgentGateway from './gateway.ts'
 import { guardChildLog, type QuarantineEntry } from './child-log-guard.ts'
 import { MemberChannel } from './member-channel.ts'
@@ -152,7 +155,11 @@ export type {
   LocalAgentExecutionStartEvent,
   LocalAgentTaskRef,
   LocalAgentUnrecorded,
+  LocalAgentExecutionIntent,
+  LocalAgentUnrecordedDeclaration,
 } from './types.ts'
+export { beforeMirrorTurn, executionOutcome, ExecutionRecorder, OpenExecution } from './execution-records.ts'
+export type { ExecutionAdmission, ExecutionRecorderOptions, MirrorTransport } from './execution-records.ts'
 
 export type {
   LocalAgentMemberMessage,
@@ -177,6 +184,7 @@ export {
   appendMirrorStep,
   appendRequestHeaderIfChanged,
   closeMirrorTurn,
+  openMirrorTurn,
   mirrorAssistantMessage,
   mirrorStreamRecords,
   recordContextOccupancy,
@@ -461,6 +469,13 @@ export interface LocalAgentMemberReload {
 }
 
 export interface LocalAgentHarness {
+  /**
+   * What this harness's CLI never reports, declared statically per way of
+   * running (exec, live, compact) and copied verbatim onto every execution's
+   * `local-agent/execution` end record — never guessed from a run. Absent
+   * declares nothing.
+   */
+  unrecorded?: LocalAgentUnrecordedDeclaration
   /** Native handshake/configuration only; no prompt, turn, or side-effecting task. */
   prepareMember?: (request: LocalAgentPreparation) => Promise<void>
   /**
@@ -1101,6 +1116,20 @@ export function memberContextOf(events: readonly SessionEvent[]): Omit<LocalAgen
 // The `/compact` recognizer lives in the types module (dependency-free, the single source).
 export { COMPACT_COMMAND, isCompactCommand } from './types.ts'
 
+/**
+ * The execution facts a facade call stages for its round: who asked (absent =
+ * `api`) and, only when the caller recorded them, its handle, cause and task.
+ */
+function executionFacts(options: DelegationCallOptions | undefined): LocalAgentExecutionIntent {
+  return {
+    caller: options?.caller ?? 'api',
+    ...options?.operation === undefined ? {} : { operation: options.operation },
+    ...options?.callerRef === undefined ? {} : { callerRef: options.callerRef },
+    ...options?.cause === undefined ? {} : { cause: options.cause },
+    ...options?.task === undefined ? {} : { task: options.task },
+  }
+}
+
 /** A delegation record without its requested model. */
 function withoutModel(record: LocalAgentDelegationRecord): LocalAgentDelegationRecord {
   const { model: _model, ...rest } = record
@@ -1122,11 +1151,50 @@ export class LocalAgentRegistry {
   private readonly preparations = new Map<string, { signature: string; promise: Promise<string> }>()
   readonly memberInbox: MemberInbox
   private readonly memberControls: MemberControls
-  /** All provider starts, including direct tool starts, acquire the same whole-turn lease. */
-  withMemberConfigurationRound(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void | Promise<void>): Promise<SubagentRun> {
+  /**
+   * All provider starts, including direct tool starts, acquire the same
+   * whole-turn lease — and every admitted round is one recorded execution: its
+   * `local-agent/execution` start is written at the admission point (the
+   * wrapped `start` runs exactly there, after `onAdmitted`), its end when the
+   * run settles. `execution` is the staged intent's execution facts.
+   */
+  withMemberConfigurationRound(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void | Promise<void>, execution?: LocalAgentExecutionIntent): Promise<SubagentRun> {
     this.memberInbox.assertAdmission(binding.childSessionId)
-    return this.memberControls.run(binding, start, signal, () => { this.memberInbox.assertAdmission(binding.childSessionId); return onAdmitted?.() })
+    return this.memberControls.run(binding, configuration => this.recordedExecution(binding, execution, signal, () => start(configuration)),
+      signal, () => { this.memberInbox.assertAdmission(binding.childSessionId); return onAdmitted?.() })
   }
+
+  /** Open one execution around an admitted provider start (see {@link withMemberConfigurationRound}). */
+  private async recordedExecution(binding: LocalAgentMemberBinding, execution: LocalAgentExecutionIntent | undefined, signal: AbortSignal | undefined, start: () => Promise<SubagentRun>): Promise<SubagentRun> {
+    const open = this.executions.admit({
+      childSessionId: binding.childSessionId,
+      parentSessionId: binding.parentSessionId,
+      operation: execution?.operation ?? 'prompt',
+      execution,
+      unrecorded: this.harnessForProvider(binding.provider)?.unrecorded,
+    })
+    let run: SubagentRun
+    try {
+      run = await start()
+    } catch (error) {
+      open.settle(signal?.aborted === true ? 'cancelled' : 'failed')
+      throw error
+    }
+    open.started()
+    void run.result.then(result => open.settle(executionOutcome(result)), () => open.settle('failed'))
+    return run
+  }
+
+  /** Every admitted execution's start/end records (execution-records.ts). */
+  private readonly executions: ExecutionRecorder = new ExecutionRecorder({
+    session: childSessionId => this.ctx.get('sessions')?.get(SessionId(childSessionId)),
+    persist: (session) => {
+      if (this.ctx.get('sessionPersistence') === undefined) return
+      void this.syncChildSession(session)
+    },
+    settleWaitMs: RUN_PROGRESS_SETTLE_GRACE_MS,
+    onError: error => { this.ctx.logger.warn(`localAgent: execution record write failed: ${String(error)}`) },
+  })
 
   private requireInboxMember(childSessionId: string): LocalAgentDelegationRecord {
     const record = this.getDelegation(childSessionId)
@@ -1387,7 +1455,7 @@ export class LocalAgentRegistry {
     private readonly loginPromptTimeoutMs: number,
   ) {
     this.preparedMembers = new PreparedMembers(join(homesRoot, '.prepared-members'))
-    this.memberInbox = new MemberInbox(join(homesRoot, '.member-inbox'), async (childSessionId, text, signal, onAdmitted) => {
+    this.memberInbox = new MemberInbox(join(homesRoot, '.member-inbox'), async (childSessionId, text, signal, onAdmitted, inputId) => {
       const record = this.requireInboxMember(childSessionId)
       // `/compact` typed to a member compacts it: the entry keeps its place
       // in the inbox, then runs as the compaction round instead of a prompt.
@@ -1395,6 +1463,9 @@ export class LocalAgentRegistry {
       return this.resume(record.parentSessionId, record.provider, childSessionId, [{ type: 'text', text }], {
         signal, onAdmitted, ...record.scope === undefined ? {} : { scope: record.scope }, ...record.cwd === undefined ? {} : { cwd: record.cwd },
         ...compact ? { operation: 'compact' as const } : {},
+        // The execution record names the composer and its input row; the
+        // cause (a human, via the member composer) is S4's to record.
+        caller: 'composer', callerRef: inputId,
       })
     }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`))
     this.memberControls = new MemberControls(new FileMemberControlStorage(join(homesRoot, '.member-controls')), binding => {
@@ -1406,6 +1477,9 @@ export class LocalAgentRegistry {
     // heartbeats stop, and every cached child-session write handle closes,
     // when the plugin unloads.
     ctx.effect(() => () => {
+      // Ends still waiting for a settle report are written now, before the
+      // write handles close.
+      this.executions.flush()
       this.memberInbox.dispose()
       this.liveStreams.dispose()
       for (const entry of this.runs.values()) {
@@ -2053,9 +2127,17 @@ export class LocalAgentRegistry {
       readonly observedModel?: string
       readonly cliVersion?: string
       readonly usage?: TokenUsage
+      /**
+       * The CLI's OWN whole-round total, only when the CLI reports one
+       * (claude's `result.usage`, codex's turn total) — never a sum the
+       * provider computed from the per-call usage it mirrored. It lands on the
+       * execution's end record as `providerReportedUsage`.
+       */
+      readonly providerReportedUsage?: TokenUsage
       readonly toolCalls?: LocalAgentToolCalls
     },
   ): void {
+    this.executions.noteReport(childSessionId, round.providerReportedUsage)
     if (round.observedModel !== undefined || round.cliVersion !== undefined) {
       const record = this.delegations.get(childSessionId)
       if (record !== undefined) {
@@ -2490,6 +2572,7 @@ export class LocalAgentRegistry {
     const intent: LocalAgentDelegationIntent = {
       kind: 'fresh',
       ...options?.onAdmitted === undefined ? {} : { onAdmitted: options.onAdmitted },
+      execution: executionFacts(options),
       ...options?.preparedMemberId === undefined ? {} : { preparedMemberId: options.preparedMemberId },
       ...prepared === undefined ? { childSessionId } : {},
       ...options?.cwd === undefined ? {} : { cwd: options.cwd },
@@ -2664,6 +2747,7 @@ export class LocalAgentRegistry {
     const intent: LocalAgentDelegationIntent = {
       kind: 'resume',
       ...options?.onAdmitted === undefined ? {} : { onAdmitted: options.onAdmitted },
+      execution: executionFacts(options),
       childSessionId,
       cliSessionId,
       ...options?.cwd === undefined ? {} : { cwd: options.cwd },

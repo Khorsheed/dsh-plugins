@@ -113,6 +113,16 @@ function text(result: { content: { type: string; text?: string }[] }): string {
   return result.content.filter(b => b.type === 'text').map(b => b.text).join('')
 }
 
+/**
+ * The execution facts the tool stages (batch 5 S1): caller tool, the call id,
+ * cause tool-call. The fake agent's session has no event log, so no task.
+ */
+const TOOL_EXECUTION = {
+  caller: 'tool',
+  callerRef: expect.any(String),
+  cause: { kind: 'tool-call', sessionId: expect.any(String), callId: expect.any(String) },
+}
+
 describe('dsh-local-agent tool-factory', () => {
   it('registers the tool with the official subset plus an optional resume parameter', async () => {
     const { ctx } = await setup({ provider: 'mock', toolName: 'subagent_test' })
@@ -135,7 +145,7 @@ describe('dsh-local-agent tool-factory', () => {
     // The provider consumed the staged fresh intent, carrying the child
     // session id the TOOL minted (host 0.2.1: the provider's run id is a
     // per-execution identity, so the durable handle rides the intent).
-    expect(taken).toEqual([{ kind: 'fresh', childSessionId: expect.any(String) }])
+    expect(taken).toEqual([{ kind: 'fresh', childSessionId: expect.any(String), execution: TOOL_EXECUTION }])
     // The fresh delegation result carries the resume handle (the dsh child
     // session id), so the model can continue later.
     const minted = (taken[0] as { childSessionId?: string }).childSessionId
@@ -180,6 +190,7 @@ describe('dsh-local-agent tool-factory', () => {
       kind: 'resume',
       childSessionId: 'child-1',
       cliSessionId: 'session_42',
+      execution: TOOL_EXECUTION,
     }])
   })
 
@@ -224,6 +235,7 @@ describe('dsh-local-agent tool-factory', () => {
       kind: 'resume',
       childSessionId: 'child-1',
       cliSessionId: 'session_42',
+      execution: TOOL_EXECUTION,
     }])
   })
 

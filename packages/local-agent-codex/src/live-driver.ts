@@ -42,6 +42,7 @@ import {
   appendMirrorContent,
   appendRequestHeaderIfChanged,
   closeMirrorTurn,
+  openMirrorTurn,
   delegationEnv,
   persistChildSession,
   recordContextOccupancy,
@@ -1465,7 +1466,7 @@ export class CodexLiveDriver {
     const openTurn = (): void => {
       // The boundary opens after the accept ack (a definitive reject leaves no
       // dangling turn/start); the prompt and any early items flush inside it.
-      childSession.append('turn/start', { turn })
+      openMirrorTurn(childSession, turn, 'live')
       // The provider's own launch facts are the child log's request config —
       // codex's notifications never carry model/effort, so the turn/start
       // request parameters the provider sends are the authoritative source.
@@ -1797,6 +1798,10 @@ export class CodexLiveDriver {
             ...facts.model === undefined ? {} : { observedModel: facts.model },
             ...facts.cliVersion === undefined ? {} : { cliVersion: facts.cliVersion },
             ...settledUsage === undefined ? {} : { usage: settledUsage },
+            // Only the wire's own thread total diffed to this round is the
+            // CLI's report; the per-call `last` and the rollout read are not
+            // round totals (batch 5 S1).
+            ...totalUsage === undefined ? {} : { providerReportedUsage: totalUsage },
           }
           localAgent?.recordRoundSettled(childSession.id, round)
         }
