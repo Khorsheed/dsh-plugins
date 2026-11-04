@@ -12,7 +12,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { mirrorKimiSessionDelta } from '../src/session-mirror.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { fakeSessionPersistence } from './fake-persistence.ts'
-import { mirrorSnapshot, SNAPSHOT_NOW } from './mirror-snapshot.ts'
+import { mirrorSnapshot, snapshotExecution, SNAPSHOT_NOW } from './mirror-snapshot.ts'
+import { KIMI_UNRECORDED } from '../src/index.ts'
+import { openMirrorTurn } from '@khorsheed/dsh-local-agent'
 
 const loop = (time: number, event: Record<string, unknown>) => ({ type: 'context.append_loop_event', time, event })
 
@@ -44,10 +46,12 @@ describe('kimi mirror snapshot (wire fold)', () => {
       mkdirSync(dir, { recursive: true })
       writeFileSync(join(dir, 'wire.jsonl'), wire.map(line => JSON.stringify(line)).join('\n') + '\n')
       const child = Session.create(SessionId('child-kimi-snapshot'))
+      const execution = snapshotExecution(child, KIMI_UNRECORDED)
       const ctx = new Context()
       ctx.provide('sessionPersistence', fakeSessionPersistence())
-      child.append('turn/start', { turn: 1 })
+      openMirrorTurn(child, 1, 'exec')
       await mirrorKimiSessionDelta(ctx, child, home, 'snap', 0, { settle: true })
+      execution.settle({ stopReason: 'completed', output: [] })
       expectValidReleasedLog(child)
       expect(mirrorSnapshot(child)).toMatchSnapshot()
     } finally {

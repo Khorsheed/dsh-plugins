@@ -19,7 +19,8 @@ import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { CodexCliProvider } from '../src/codex-cli-provider.ts'
 import { CodexLiveDriver, codexAppServerItemToLine } from '../src/live-driver.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
-import { mirrorSnapshot, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
+import { mirrorSnapshot, snapshotExecution, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
+import { CODEX_UNRECORDED } from '../src/index.ts'
 
 /** One scripted turn: items to complete, optional deltas, terminal status. */
 interface FakeTurn {
@@ -1510,6 +1511,7 @@ describe('codex mirror snapshot (live)', () => {
     try {
       Object.assign(m.ctx.localAgent, { liveStreams })
       const child = Session.create(SessionId('child-codex-live-snapshot'))
+      const execution = snapshotExecution(child, CODEX_UNRECORDED)
       const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
       m.queueChild(fake)
       const run = await m.driver.startRound(request() as never, { ...roundSpec(m, child), configuration: { model: 'gpt-5.4', effort: 'high' } })
@@ -1538,7 +1540,9 @@ describe('codex mirror snapshot (live)', () => {
       fake.notify('thread/tokenUsage/updated', { ...turn, tokenUsage: { last: usage(20, 10, 4), total: usage(30, 16, 7), modelContextWindow: 258_000 } })
       await tick(700)
       fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
-      expect((await run.result).stopReason).toBe('completed')
+      const result = await run.result
+      expect(result.stopReason).toBe('completed')
+      execution.settle(result)
       expectValidReleasedLog(child)
       expect(mirrorSnapshot(child)).toMatchSnapshot()
     } finally {
@@ -1553,6 +1557,7 @@ describe('codex mirror snapshot (live)', () => {
     const m = mount({ config: { sandbox: 'workspace-write', snapshotMinIntervalMs: 0 } })
     try {
       const child = Session.create(SessionId('child-codex-live-abort-snapshot'))
+      const execution = snapshotExecution(child, CODEX_UNRECORDED)
       const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
       m.queueChild(fake)
       const controller = new AbortController()
@@ -1562,7 +1567,9 @@ describe('codex mirror snapshot (live)', () => {
       fake.notify('item/agentMessage/delta', { ...turn, itemId: 'a1', delta: '写到一半' })
       await until(() => m.reports.some(report => report.progress.text === '写到一半'))
       controller.abort()
-      expect((await run.result).stopReason).toBe('aborted')
+      const result = await run.result
+      expect(result.stopReason).toBe('aborted')
+      execution.settle(result)
       expectValidReleasedLog(child)
       expect(mirrorSnapshot(child)).toMatchSnapshot()
     } finally {

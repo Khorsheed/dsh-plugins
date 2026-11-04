@@ -21,7 +21,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 import { ClaudeLiveDriver } from '../src/live-driver.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
-import { mirrorSnapshot, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
+import { mirrorSnapshot, snapshotExecution, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
+import { CLAUDE_CODE_UNRECORDED } from '../src/index.ts'
 
 /** One scripted turn: assistant events, the terminal result, or a hang. */
 interface FakeTurn {
@@ -1383,6 +1384,7 @@ describe('claude mirror snapshot (live)', () => {
     try {
       Object.assign(m.ctx.localAgent, { liveStreams })
       const child = Session.create(SessionId('child-claude-live-snapshot'))
+      const execution = snapshotExecution(child, CLAUDE_CODE_UNRECORDED)
       const fake = new FakeClaude({ init: { model: 'claude-opus-5-5' }, nativeModels: [{ value: 'opus', displayName: 'Opus', supportedEffortLevels: ['high'] }], turn: () => ({ hang: true }) })
       m.queueChild(fake)
       const run = await m.driver.startRound(request() as never, { ...roundSpec(m, child), configuration: { model: 'opus', effort: 'high' } })
@@ -1404,7 +1406,9 @@ describe('claude mirror snapshot (live)', () => {
       partial(fake, { type: 'message_stop' })
       fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 7, output_tokens: 48 },
         modelUsage: { 'claude-opus-5-5': { contextWindow: 1_000_000 } } })
-      expect((await run.result).stopReason).toBe('completed')
+      const result = await run.result
+      expect(result.stopReason).toBe('completed')
+      execution.settle(result)
       expectValidReleasedLog(child)
       expect(mirrorSnapshot(child)).toMatchSnapshot()
     } finally {
@@ -1419,6 +1423,7 @@ describe('claude mirror snapshot (live)', () => {
     const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
     try {
       const child = Session.create(SessionId('child-claude-live-abort-snapshot'))
+      const execution = snapshotExecution(child, CLAUDE_CODE_UNRECORDED)
       const fake = new FakeClaude({ turn: () => ({ hang: true }) })
       m.queueChild(fake)
       const controller = new AbortController()
@@ -1429,7 +1434,9 @@ describe('claude mirror snapshot (live)', () => {
       partial(fake, { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: '写到一半' } })
       await until(() => m.reports.some(report => report.progress.text === '写到一半'))
       controller.abort()
-      expect((await run.result).stopReason).toBe('aborted')
+      const result = await run.result
+      expect(result.stopReason).toBe('aborted')
+      execution.settle(result)
       expectValidReleasedLog(child)
       expect(mirrorSnapshot(child)).toMatchSnapshot()
     } finally {

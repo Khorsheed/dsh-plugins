@@ -12,7 +12,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { startCodexCliRun } from '../src/codex-cli-provider.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { fakeSessionPersistence } from './fake-persistence.ts'
-import { mirrorSnapshot, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
+import { mirrorSnapshot, snapshotExecution, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
+import { CODEX_UNRECORDED } from '../src/index.ts'
 
 /** Every shape the exec mirror writes: reasoning, a tool, a failed tool, a reply, an unfinished tool at settle. */
 const fixture = [
@@ -53,6 +54,7 @@ describe('codex mirror snapshot (exec)', () => {
     vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
     try {
       const child = Session.create(SessionId('child-codex-snapshot'))
+      const execution = snapshotExecution(child, CODEX_UNRECORDED)
       const ctx = new Context()
       ctx.provide('sessionPersistence', fakeSessionPersistence())
       const handle = fixtureChild()
@@ -72,8 +74,10 @@ describe('codex mirror snapshot (exec)', () => {
         childSession: child,
         ctx,
       })
-      expect((await run.result).stopReason).toBe('completed')
+      const result = await run.result
+      expect(result.stopReason).toBe('completed')
       await until(() => child.snapshotEvents().at(-1)?.type === 'turn/end')
+      execution.settle(result)
       expectValidReleasedLog(child)
       expect(mirrorSnapshot(child)).toMatchSnapshot()
     } finally {
