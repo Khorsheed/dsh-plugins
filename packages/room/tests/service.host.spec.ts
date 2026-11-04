@@ -9,6 +9,7 @@ import { coordinatorMember } from '../src/journal.ts'
 import type { LocalAgentFacade } from '../src/adapter.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
+import { withRunEntry } from './run-entry-shim.ts'
 
 interface BenchOptions {
   /** false: no localAgent service at all (facade probe misses). */
@@ -42,7 +43,7 @@ async function boot(options: BenchOptions = {}) {
     cancel: vi.fn(() => false),
   }
   const localAgent = options.localAgent ?? (options.facade === false ? undefined : facade)
-  if (localAgent !== undefined) ctx.provide('localAgent', localAgent as never)
+  if (localAgent !== undefined) ctx.provide('localAgent', withRunEntry(localAgent, ctx) as never)
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   return { ctx, service: ctx.get('room') as RoomService, facade, agents }
@@ -627,15 +628,13 @@ describe('RoomService Remote surface (real composition)', () => {
     const state = await service.getState({ sessionId })
     if (!state.ok) throw new Error('narrowing')
     const [cut, cut2] = state.value.members.filter(member => member.kind === 'cli').map(member => member.id ?? member.name)
-    const actor = { childSessionId: 'child-new', parentSessionId: sessionId, provider: 'claude' }
-    const starting = vi.spyOn(service.engine, 'startingMembers')
-    starting.mockReturnValue([])
-    expect(await service.memberMode(actor)).toBeUndefined()
-    starting.mockReturnValue([cut!])
-    expect(await service.memberMode(actor)).toMatchObject({ preset: 'dsh-video' })
-    // Two first starts of one provider at once: ambiguous, no mode.
-    starting.mockReturnValue([cut!, cut2!])
-    expect(await service.memberMode(actor)).toBeUndefined()
+    // A first round creates the child under the member's own id (batch 5
+    // S5), so the asker is named exactly, even with two first starts at once.
+    expect(await service.memberMode({ childSessionId: 'child-new', parentSessionId: sessionId, provider: 'claude' })).toBeUndefined()
+    expect(await service.memberMode({ childSessionId: cut!, parentSessionId: sessionId, provider: 'claude' }))
+      .toMatchObject({ preset: 'dsh-video', desk: { member: 'cut' } })
+    expect(await service.memberMode({ childSessionId: cut2!, parentSessionId: sessionId, provider: 'claude' }))
+      .toMatchObject({ preset: 'dsh-video', desk: { member: 'cut2' } })
   })
 
   it('the automatic-decision settings validate their ranges and fold into the settings', async () => {

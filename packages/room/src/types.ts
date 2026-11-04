@@ -188,6 +188,12 @@ export interface RoomDispatchEvent {
   /** A release round: wakes the recipient for the reports it holds (these dispatch seqs). */
   readonly releases?: readonly number[]
   /**
+   * Why a release round woke the recipient: its hold timed out, the human
+   * handed the reports over, or a restart lost the wake timer. Recorded so
+   * the execution's cause is a fact (batch 5 S5); absent on older journals.
+   */
+  readonly releaseReason?: 'timeout' | 'manual' | 'restart'
+  /**
    * The task (job) this message belongs to: the id of the human message that
    * started it (its `user/message` id), or this dispatch's own `id` for a
    * human dispatch that has no message (an invite's first task).
@@ -330,6 +336,16 @@ export interface RoomRunStateEvent {
    * `startedAt`.
    */
   readonly childFromSeq?: number
+  /**
+   * The local-agent execution this run is (batch 5 S5): the id the core's
+   * `run()` entry admitted it under, naming its ledger row and the child's
+   * `local-agent/execution` start/end records. Written on the running edge
+   * and repeated on the engine's terminal edge. Absent for the room's own
+   * agent, for runs from before S5, and for a run the core refused before
+   * admission. A run that carries it takes `childTurn` from the execution's
+   * recorded turns, never from `childFromSeq`.
+   */
+  readonly executionId?: string
   /** Observed round metadata, never a requested-model guess or session total. */
   readonly model?: string
   readonly effort?: string
@@ -955,6 +971,8 @@ export interface RoomExecution extends RoomMemberRun {
   readonly childSessionId?: SessionId
   /** The child session round the run reached, as recorded by its terminal run-state edge. */
   readonly childTurn?: number
+  /** The local-agent execution id (see RoomRunStateEvent.executionId). */
+  readonly executionId?: string
   readonly provider?: string
   readonly model?: string
   readonly effort?: string

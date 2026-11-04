@@ -8,6 +8,7 @@ import { Context } from '@deepseek-ai/cordis'
 import SessionStore from '@deepseek-ai/dsh-session'
 import RoomService, { withAttachmentPaths } from '../src/index.ts'
 import { createRoom } from './promote.ts'
+import { withRunEntry } from './run-entry-shim.ts'
 
 async function boot() {
   const ctx = new Context()
@@ -19,7 +20,7 @@ async function boot() {
       return { agent: { id: session.id, session }, dispose: async () => {} }
     }),
   } as never)
-  ctx.provide('localAgent', { start: vi.fn(), resume: vi.fn(), cancel: vi.fn() } as never)
+  ctx.provide('localAgent', withRunEntry({ start: vi.fn(), resume: vi.fn(), cancel: vi.fn() }, ctx) as never)
   const committed = vi.fn()
   const fileRef = { attachmentId: 'f1', name: 'brief.pdf', bytes: 10 }
   ctx.provide('fileUploads', {

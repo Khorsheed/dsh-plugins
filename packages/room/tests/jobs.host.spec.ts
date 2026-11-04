@@ -10,6 +10,7 @@ import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import { resolveTaskRef } from '../src/jobs.ts'
 import { createRoom } from './promote.ts'
+import { withRunEntry } from './run-entry-shim.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -52,7 +53,7 @@ async function boot(taskAnswer?: { answer: string; probability: number }) {
       return true
     }),
   }
-  ctx.provide('localAgent', facade as never)
+  ctx.provide('localAgent', withRunEntry(facade, ctx) as never)
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
@@ -80,6 +81,17 @@ describe('tasks', () => {
     expect(job).toMatchObject({ number: 1, title: '实现登录接口', status: 'running' })
     expect(job!.deliveries).toHaveLength(2)
     expect(job!.members).toHaveLength(2)
+    // Both member rounds name that task to the core (batch 5 S5): the human
+    // message's round and the delegation the room agent sent while answering it.
+    const run = (bench.facade as unknown as { run: ReturnType<typeof vi.fn> }).run
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(2))
+    const requests = run.mock.calls.map(call => call[0] as { task?: { sessionId: string; id: string }; cause?: { kind: string } })
+    const root = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().find(event => event.type === 'room/dispatch' && event.data.origin === 'human')
+    expect(requests.map(request => request.task)).toEqual([
+      { sessionId: bench.sessionId, id: root?.type === 'room/dispatch' ? root.data.task : '' },
+      { sessionId: bench.sessionId, id: root?.type === 'room/dispatch' ? root.data.task : '' },
+    ])
+    expect(requests.map(request => request.cause?.kind)).toEqual(['human', 'member'])
   })
 
   it('a follow-up while a task is open is filed by the decision model; the coordinator can re-file it as new', async () => {

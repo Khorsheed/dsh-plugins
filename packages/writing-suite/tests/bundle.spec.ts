@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { parseTopLevelPatchRows, type PatchRow } from '../../scripts/check-plugin-independence.ts'
+import { parsePresetGrantRows, parseTopLevelPatchRows, type PatchRow } from '../../scripts/check-plugin-independence.ts'
 import { FAMILY_MEMBERS, MODE } from '../src/index.ts'
 
 const root = join(import.meta.dirname, '..')
@@ -64,6 +64,16 @@ describe('cordis.patch.yml', () => {
     // The grants: the mode preset names the same entries in its composition.
     expect(patch).toContain("name: '@khorsheed/dsh-canvas/agent'")
     expect(patch).toContain("name: '@khorsheed/dsh-canvas-novel/agent'")
+  })
+
+  it('grants the native subagent and follow-up controls required by novel reconciliation', () => {
+    const grants = parsePresetGrantRows(patch, `preset-${MODE}`)
+    expect(grants).toEqual(expect.arrayContaining([
+      { id: 'tool-subagent-control', name: '@deepseek-ai/dsh-tool-subagent-control' },
+      { id: 'tool-subagent', name: '@deepseek-ai/dsh-tool-subagent' },
+    ]))
+    expect(grants.some(row => row.id === 'tool-subagent-list-agents' || row.id === 'tool-subagent-fork')).toBe(false)
+    expect(patch).toMatch(/- id: tool-subagent\n\s+name: '@deepseek-ai\/dsh-tool-subagent'\n\s+config:\n\s+provider: spawn\n\s+toolName: subagent/)
   })
 
   it('quotes every name: value (@ is YAML-reserved)', () => {

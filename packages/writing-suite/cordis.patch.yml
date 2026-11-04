@@ -217,13 +217,29 @@
           # preset (2026-09-29 writing-scene tuning). The host-plane goal service is
           # untouched; the dsh-dev and dsh-eval presets keep their rows.
 
-          # ── plan mode / delegation / jobs / present: NOT here ───────────────────────
+          # ── plan mode / workflows / jobs / present: NOT here ────────────────────────
 
           # 2026-09-30 diet: plan mode's section is implementation-shaped (exit_plan_mode,
-          # "do not edit"), delegation and workflows are coding apparatus, and with no
-          # subagent or workflow producer left there is nothing for `tool-jobs` to
-          # collect. `present` delivered files to the deliverables view — the writing
-          # deliverable is the text itself or the canvas.
+          # "do not edit"), and workflows are coding apparatus. `present` delivered files
+          # to the deliverables view — the writing deliverable is the text itself or the
+          # canvas. The two native delegation rows below are the deliberate exception:
+          # canvas-novel reconciliation requires a fresh subagent and follow-up repair.
+          # `tool-jobs`, list-agents, fork, model selection and workflow rows stay out.
+
+          # ── native delegation ───────────────────────────────────────────────────────
+
+          # The host base owns the subagent registry and its in-process spawn backend.
+          # These rows only grant this preset's model the basic controls and one named
+          # delegation tool. The extract pack is self-contained, so the child needs no
+          # parent transcript; send_message returns failed evidence to the same child.
+          - id: tool-subagent-control
+            name: '@deepseek-ai/dsh-tool-subagent-control'
+
+          - id: tool-subagent
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: spawn
+              toolName: subagent
 
           # ── compaction ──────────────────────────────────────────────────────────────
 

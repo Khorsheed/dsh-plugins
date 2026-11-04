@@ -10,6 +10,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import RoomService from '../src/index.ts'
 import { mentionedSessions, readHelpSource, turnAnswer } from '../src/help.ts'
 import { createRoom } from './promote.ts'
+import { withRunEntry } from './run-entry-shim.ts'
 
 /** A `dsh-session:` mention the way the host composer writes one. */
 const mention = (title: string, id: string): string => `@[${title}](dsh-session:${Buffer.from(JSON.stringify(id)).toString('base64url')})`
@@ -28,7 +29,7 @@ async function boot(options: { busy?: boolean } = {}) {
       return { agent: { id: session.id, session }, dispose: async () => {} }
     }),
   } as never)
-  ctx.provide('localAgent', { start: vi.fn(), resume: vi.fn(), cancel: vi.fn() } as never)
+  ctx.provide('localAgent', withRunEntry({ start: vi.fn(), resume: vi.fn(), cancel: vi.fn() }, ctx) as never)
 
   // The helper: its own session log, queue and agent-local tool registry.
   const rows: Row[] = []
@@ -247,7 +248,7 @@ describe('asking another room', () => {
       flights.push({ provider, resolve })
       return { id: SessionId(`child-${provider}`), localAgent: undefined, result, dispose: async () => {} }
     }
-    ctx.provide('localAgent', { start: vi.fn(run), resume: vi.fn(run), cancel: vi.fn(() => true) } as never)
+    ctx.provide('localAgent', withRunEntry({ start: vi.fn(run), resume: vi.fn(run), cancel: vi.fn(() => true) }, ctx) as never)
     await ctx.plugin(SessionStore)
     await ctx.plugin(RoomService)
     const service = ctx.get('room') as RoomService

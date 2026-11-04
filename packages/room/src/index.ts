@@ -55,7 +55,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn } from './dispatch.ts'
+import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn, runExecutionId } from './dispatch.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
 import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
@@ -120,6 +120,12 @@ function validName(name: string): boolean {
  */
 /** How long a member's question card waits for the human before its call gives up. */
 const QUESTION_TIMEOUT_MS = 30 * 60_000
+
+/**
+ * How recent an execution's admission must be for the room to show it as a
+ * live outside round: an older start record is a log replayed on load.
+ */
+const OUTSIDE_ROUND_WINDOW_MS = 60_000
 
 /**
  * Validate a member's `ask_user_question` questions: an array, or that array
@@ -273,13 +279,15 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
    * The terminal run-state fields Context Lens correlates on: the child
    * identity plus the round the run reached (live sessions only).
    */
-  private terminalRunStateFields(session: Session, state: RoomState, memberName: string, runId: string | undefined): { childSessionId?: SessionId; childTurn?: number } {
+  private terminalRunStateFields(session: Session, state: RoomState, memberName: string, runId: string | undefined): { childSessionId?: SessionId; childTurn?: number; executionId?: string } {
     const member = state.members.find(entry => entry.name === memberName)
     const childSessionId = runChildSessionId(session.id, member)
     const childTurn = runChildTurn(session.snapshotEvents(), runId, childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
+    const executionId = runExecutionId(session.snapshotEvents(), runId)
     return {
       ...childSessionId === undefined ? {} : { childSessionId },
       ...childTurn === undefined ? {} : { childTurn },
+      ...executionId === undefined ? {} : { executionId },
     }
   }
 
@@ -402,7 +410,10 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     // The session list's status (the host shows a session running only while
     // its own agent runs): a room is running while any member runs, and its
     // waiting question/approval cards are tracked for the browser.
-    ctx.on('session/event', (session, event) => { this.observeActivity(session, event) })
+    ctx.on('session/event', (session, event) => {
+      this.observeActivity(session, event)
+      this.observeMemberExecution(session, event)
+    })
     ctx.on('agent/status', ({ agent, status }) => {
       // The room's own agent settling must not hide members still at work.
       if (status !== 'running' && (this.activeRuns.get(String(agent.id))?.size ?? 0) > 0) this.emitStatus(String(agent.id), true)
@@ -519,6 +530,71 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
   private readonly activeRuns = new Map<string, Set<string>>()
   /** Question/approval cards waiting for the human, per room. */
   private readonly waitingCards = new Map<string, Map<string, { readonly kind: 'question' | 'approval'; readonly member: string }>>()
+  /** Rounds of a room member the room did not start, by execution id: where their card is. */
+  private readonly outsideRounds = new Map<string, { readonly room: Session; readonly memberId: string; readonly member: string; readonly runId: string; readonly startedAt: number; readonly fromSeq: number; readonly operation: 'prompt' | 'compact' }>()
+
+  /**
+   * A round of a room member that another caller started through the core's
+   * execution entry — the room's own agent continuing the member with the
+   * host `subagent` tool, or the members-page composer (user decision
+   * 2026-11-03 ④: allowed, same queue as room work). The core records it in
+   * the member's session (`local-agent/execution`); the room shows it like
+   * its own rounds: a running card (the member reads busy, the stop button
+   * reaches it), then the reply and the terminal edge, all naming the
+   * execution. Its delivery belongs to that caller, so no room delivery,
+   * report or task is written.
+   * @param child - the session the event landed in.
+   * @param event - the journaled event.
+   */
+  private observeMemberExecution(child: Session, event: SessionEvent): void {
+    if (event.type !== 'local-agent/execution') return
+    const data = event.data
+    if (data.phase === 'start') {
+      // Only live rounds: a log replayed on load is history, not work.
+      if (data.caller === 'room' || Date.now() - data.admittedAt > OUTSIDE_ROUND_WINDOW_MS) return
+      const room = this.ctx.sessions.get(SessionId(data.parentSessionId))
+      if (room === undefined) return
+      const events = room.snapshotEvents()
+      if (!isRoomLog(events)) return
+      const member = replay(events).members.find(entry => entry.kind === 'cli' && (entry.childSessionId ?? memberId(events, entry)) === String(child.id))
+      if (member === undefined || events.some(row => row.type === 'room/run-state' && row.data.executionId === data.executionId)) return
+      const round = { room, memberId: memberId(events, member), member: member.name, runId: `execution:${data.executionId}`, startedAt: data.admittedAt, fromSeq: event.seq, operation: data.operation }
+      this.outsideRounds.set(data.executionId, round)
+      this.engine.holdRun(room.id, round.runId)
+      queueMicrotask(() => {
+        room.append('room/run-state', { member: round.member, state: 'running', startedAt: round.startedAt, runId: round.runId,
+          childSessionId: child.id, childFromSeq: round.fromSeq, executionId: data.executionId, ...round.operation === 'compact' ? { operation: 'compact' as const } : {} })
+        void this.ctx.sessions.flush(room).catch((error: unknown) => { this.ctx.logger.warn(`room: outside round edge flush failed: ${String(error)}`) })
+      })
+      return
+    }
+    const round = this.outsideRounds.get(data.executionId)
+    if (round === undefined) return
+    this.outsideRounds.delete(data.executionId)
+    const range = child.snapshotEvents().filter(row => row.seq > round.fromSeq)
+    const reply = range.findLast(row => row.type === 'assistant/message')
+    const text = reply?.type === 'assistant/message' ? reply.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n') : ''
+    const messageId = (reply?.data as { message?: { id?: unknown } } | undefined)?.message?.id
+    const state = data.outcome === 'done' ? 'done' as const : data.outcome === 'cancelled' ? 'cancelled' as const : 'failed' as const
+    queueMicrotask(() => {
+      const { room } = round
+      const events = room.snapshotEvents()
+      const name = replay(events).members.find(entry => memberId(events, entry) === round.memberId)?.name ?? round.member
+      if (round.operation === 'prompt' && (text !== '' || state === 'done')) {
+        room.append('room/speech', { member: name, text, childSessionId: child.id, runId: round.runId,
+          ...typeof messageId === 'string' ? { messageId } : {}, durationMs: Math.max(0, data.endedAt - round.startedAt),
+          ...state === 'done' ? {} : { interrupted: state } })
+        floatRunningCards(room, name)
+      }
+      const turn = data.turns.at(-1)
+      room.append('room/run-state', { member: name, runId: round.runId, state, startedAt: round.startedAt, elapsedMs: Math.max(0, data.endedAt - round.startedAt),
+        childSessionId: child.id, executionId: data.executionId, ...turn === undefined ? {} : { childTurn: turn },
+        ...round.operation === 'compact' ? { operation: 'compact' as const } : {},
+        ...state === 'failed' ? { error: data.outcome === 'uncertain' ? 'Execution outcome is unknown after restart; reconcile before retrying' : 'the member round failed' } : {} })
+      this.engine.releaseRun(room.id, round.runId)
+      void this.ctx.sessions.flush(room).catch((error: unknown) => { this.ctx.logger.warn(`room: outside round edge flush failed: ${String(error)}`) })
+    })
+  }
 
   /**
    * Follow a room's run and card edges as they are journaled: a room turns
@@ -1952,12 +2028,9 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     if (!loaded.ok) return undefined
     const cli = loaded.state.members.filter(entry => entry.kind === 'cli' && entry.provider === actor.provider)
     // A member's first round asks before the journal knows its child session
-    // (claude lists MCP tools at spawn): the one first start in flight for
-    // this provider is the asker. Two at once stay ambiguous — no mode.
-    const starting = this.engine.startingMembers(actor.parentSessionId)
-    const fresh = cli.filter(entry => entry.childSessionId === undefined && starting.includes(memberId(loaded.session.snapshotEvents(), entry)))
-    const member = cli.find(entry => entry.childSessionId === actor.childSessionId)
-      ?? (fresh.length === 1 ? fresh[0] : undefined)
+    // (claude lists MCP tools at spawn): the first round creates the child
+    // under the member's own id (batch 5 S5), so that id names the asker.
+    const member = cli.find(entry => (entry.childSessionId ?? memberId(loaded.session.snapshotEvents(), entry)) === actor.childSessionId)
     if (member?.preset === undefined) return undefined
     const cwd = member.cwd ?? loaded.session.header.cwd
     const events = loaded.session.snapshotEvents()
@@ -2537,8 +2610,9 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     // The room's own agent stops in this process; a CLI member through the family facade.
     const own = expected !== undefined && member.kind === 'main-agent' ? this.ctx.agents.get(loaded.session.id) : undefined
     if (own !== undefined) own.cancel({ kind: 'user' })
-    const hit = own !== undefined || (facade !== undefined && member.childSessionId !== undefined
-      ? facade.cancel(member.childSessionId)
+    // A first round runs under the member's own id before the roster learns it.
+    const hit = own !== undefined || (facade !== undefined && member.kind === 'cli'
+      ? facade.cancel(member.childSessionId ?? memberId(loaded.session.snapshotEvents(), member))
       : false)
     if (hit) {
       const running = loaded.state.runs.find(entry => entry.member === request.name && entry.state === 'running')

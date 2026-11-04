@@ -13,6 +13,7 @@ import RoomService from '../src/index.ts'
 import { judgeReport } from '../src/report-gate.ts'
 import { pendingHolds } from '../src/dispatch.ts'
 import { createRoom } from './promote.ts'
+import { withRunEntry } from './run-entry-shim.ts'
 
 function textOf(blocks: readonly ContentBlock[]): string {
   return blocks.flatMap(block => (block.type === 'text' ? [block.text] : [])).join('\n')
@@ -75,7 +76,7 @@ async function boot(answer: number) {
     }),
     resume: vi.fn(), cancel: vi.fn(() => false),
   }
-  ctx.provide('localAgent', facade as never)
+  ctx.provide('localAgent', withRunEntry(facade, ctx) as never)
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
