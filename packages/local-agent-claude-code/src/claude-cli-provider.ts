@@ -49,6 +49,7 @@ import {
   appendMirrorStep,
   appendRequestHeaderIfChanged,
   closeMirrorTurn,
+  openMirrorTurn,
   type MirrorSource,
   resolveChildCwd,
   subagentDelegationLabel,
@@ -284,7 +285,7 @@ export class ClaudeCliProvider implements SubagentProvider {
         ...record?.model === undefined ? {} : { model: record.model },
         ...record?.effort === undefined ? {} : { effort: record.effort },
         ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
-      }, configuration => this.startClaudeResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted)
+      }, configuration => this.startClaudeResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted, intent?.execution)
     }
     const childSessionId = SessionId(intent?.preparedMemberId ?? intent?.childSessionId ?? randomUUID())
     if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
@@ -297,7 +298,7 @@ export class ClaudeCliProvider implements SubagentProvider {
       ...intent?.model === undefined ? {} : { model: intent.model },
       ...intent?.effort === undefined ? {} : { effort: intent.effort },
       ...intent?.configurationLock === undefined ? {} : { configurationLock: intent.configurationLock },
-    }, configuration => this.startClaudeFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration), request.signal, intent?.onAdmitted)
+    }, configuration => this.startClaudeFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration), request.signal, intent?.onAdmitted, intent?.execution)
   }
 
   /** Fresh round: record the child session, spawn `claude -p`, append after settle. */
@@ -685,6 +686,8 @@ export interface ClaudeCliRunSpec {
   readonly onRoundSettled?: ((round: {
     readonly observedModel?: string
     readonly usage?: TokenUsage
+    /** The CLI's own whole-round total, when its stream reported one (never a fallback or a sum). */
+    readonly providerReportedUsage?: TokenUsage
     readonly toolCalls?: LocalAgentToolCalls
   }) => void) | undefined
 }
@@ -1417,7 +1420,7 @@ export async function startClaudeCliRun(
   })
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc append time.
-  spec.childSession?.append('turn/start', { turn })
+  if (spec.childSession !== undefined) openMirrorTurn(spec.childSession, turn, 'exec')
   // Live mirror: fold the stream-json as chunks arrive so the child session
   // shows the run's progress before settle; the settle mirror below resumes
   // from the live counters and stays a no-op when live mirroring kept up.
@@ -1873,6 +1876,9 @@ async function mirrorClaudeAfterExit(
       ...parsed.model === undefined ? {} : { observedModel: parsed.model },
       ...cliVersion === undefined ? {} : { cliVersion },
       ...parsed.usage === undefined ? {} : { usage: parsed.usage },
+      // The `result` event's usage is claude's own round total: the
+      // execution record keeps it as an independent fact (batch 5 S1).
+      ...parsed.usage === undefined ? {} : { providerReportedUsage: parsed.usage },
       ...parsed.toolCalls === undefined ? {} : { toolCalls: parsed.toolCalls },
     })
     // Nothing streamed at all (e.g. the CLI died before the first event):

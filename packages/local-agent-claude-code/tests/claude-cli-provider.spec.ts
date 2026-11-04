@@ -1300,6 +1300,7 @@ describe('claude-cli-provider observed model and cwd', () => {
     expect(settled).toHaveBeenCalledWith(expect.any(String), {
       observedModel: 'claude-opus-5[1m]',
       usage: { inputTokens: 2, outputTokens: 5 },
+      providerReportedUsage: { inputTokens: 2, outputTokens: 5 },
     })
   })
 
@@ -1325,6 +1326,7 @@ describe('claude-cli-provider observed model and cwd', () => {
       observedModel: 'claude-opus-5[1m]',
       cliVersion: '2.1.263',
       usage: { inputTokens: 2, outputTokens: 5 },
+      providerReportedUsage: { inputTokens: 2, outputTokens: 5 },
     })
   })
 
@@ -1333,7 +1335,7 @@ describe('claude-cli-provider observed model and cwd', () => {
     const run = await provider.start(OBS_REQUEST)
     await run.result
     await vi.waitFor(() => { expect(settled).toHaveBeenCalledTimes(1) })
-    expect(settled).toHaveBeenCalledWith(expect.any(String), { usage: { inputTokens: 2, outputTokens: 5 } })
+    expect(settled).toHaveBeenCalledWith(expect.any(String), { usage: { inputTokens: 2, outputTokens: 5 }, providerReportedUsage: { inputTokens: 2, outputTokens: 5 } })
   })
 
   it('spawns the fresh round in the staged cwd override and records it', async () => {

@@ -41,6 +41,7 @@ import {
   resolveChildCwd,
   subagentDelegationLabel,
   closeMirrorTurn,
+  openMirrorTurn,
 } from '@khorsheed/dsh-local-agent'
 import type { DelegationExecTarget, LocalAgentToolCalls, LocalAgentAppliedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
@@ -257,7 +258,7 @@ export class KimiCliProvider implements SubagentProvider {
         ...record?.model === undefined ? {} : { model: record.model },
         ...record?.effort === undefined ? {} : { effort: record.effort },
         ...record?.configurationLock === undefined ? {} : { configurationLock: record.configurationLock },
-      }, configuration => this.startKimiResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted)
+      }, configuration => this.startKimiResume(request, intent, cwd, homeDir, exec, scope, record?.model, configuration), request.signal, intent?.onAdmitted, intent?.execution)
     }
     const childSessionId = SessionId(intent?.preparedMemberId ?? intent?.childSessionId ?? randomUUID())
     if (typeof this.ctx.localAgent.withMemberConfigurationRound !== 'function') {
@@ -270,7 +271,7 @@ export class KimiCliProvider implements SubagentProvider {
       ...intent?.model === undefined ? {} : { model: intent.model },
       ...intent?.effort === undefined ? {} : { effort: intent.effort },
       ...intent?.configurationLock === undefined ? {} : { configurationLock: intent.configurationLock },
-    }, configuration => this.startKimiFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration), request.signal, intent?.onAdmitted)
+    }, configuration => this.startKimiFresh(request, cwd, homeDir, exec, scope, intent?.model, childSessionId, configuration), request.signal, intent?.onAdmitted, intent?.execution)
   }
 
   /** Fresh round: record the child session, spawn `kimi -p`, mirror after settle. */
@@ -818,7 +819,7 @@ export async function startKimiCliRun(
   const turn = spec.resume?.turn ?? 1
   // The turn opens at the real spawn moment so the timing projection
   // measures actual CLI runtime, not the post-hoc mirror time.
-  spec.childSession?.append('turn/start', { turn })
+  if (spec.childSession !== undefined) openMirrorTurn(spec.childSession, turn, 'exec')
 
   // -S must precede -p: after -p, kimi parses the id as a command. The
   // recorded id may already carry the ACP directory prefix (a record

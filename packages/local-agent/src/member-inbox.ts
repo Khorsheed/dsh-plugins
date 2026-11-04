@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type { LocalAgentMemberInbox, LocalAgentMemberInput } from './types.ts'
 
-type Execute = (memberId: string, text: string, signal: AbortSignal, admitted: () => void) => Promise<SubagentRun>
+type Execute = (memberId: string, text: string, signal: AbortSignal, admitted: () => void, inputId: string) => Promise<SubagentRun>
 
 /** Durable human input; the provider FIFO remains the sole execution order. */
 export class MemberInbox {
@@ -139,7 +139,7 @@ export class MemberInbox {
             controller.signal.throwIfAborted()
             this.assertAdmission(memberId)
             this.update(memberId, row.id, input => { if (input.status !== 'queued') throw new Error('Input is no longer queued'); input.status = 'running' })
-          })
+          }, row.id)
           const result = await run.result
           if (!this.closed) this.update(memberId, row.id, input => { input.status = result.stopReason === 'aborted' ? 'cancelled' : result.stopReason === 'completed' ? 'done' : 'failed' })
         } catch (error) {

@@ -17,6 +17,7 @@ import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands
 import type {} from '@deepseek-ai/dsh-settings'
 import { firstModelOf, readModelList, readModelListSync, settingsFace, vol, writeModelList } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
+import type { LocalAgentUnrecordedDeclaration } from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import { CodexCliProvider, codexCliVersion } from './codex-cli-provider.ts'
 import {
@@ -38,6 +39,27 @@ import { CodexModelCatalog } from './model-catalog.ts'
 import { listCodexSessions } from './records.ts'
 import { readCodexModelTiming } from './timing.ts'
 import { provisionCodexConfig, readCodexBaseUrl, readCodexModel, readCodexReasoningEffort } from './provision.ts'
+
+/**
+ * What codex never reports (batch 5 S1), copied onto every execution's
+ * `local-agent/execution` end record:
+ * - exec: `codex exec --json` marks no call boundary and carries usage only
+ *   on `turn.completed`, which the mirror hangs on the round's last non-tool
+ *   line (codex-cli-provider.ts `appendCodexResponse`) — `call-boundaries`
+ *   and `per-call-usage`; its item types (`parseCodexJsonStream`) include no
+ *   compaction item, so an auto-compaction's summary call is an
+ *   `internal-calls`.
+ * - live: an auto-compaction inside a round arrives as a `contextCompaction`
+ *   item with no usage of its own (live-driver.ts `recordRoundContext`), so
+ *   its summary call is `internal-calls`. Call boundaries ARE on the wire
+ *   (`thread/tokenUsage/updated`).
+ * - compact: `thread/compact/start` writes a `local-agent/compaction` with
+ *   the call's usage — nothing declared.
+ */
+export const CODEX_UNRECORDED: LocalAgentUnrecordedDeclaration = {
+  exec: ['call-boundaries', 'per-call-usage', 'internal-calls'],
+  live: ['internal-calls'],
+}
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-codex'
@@ -287,6 +309,7 @@ export function apply(ctx: Context, config: Config): void {
       name: 'codex',
       displayName: 'Codex',
       homeEnvVar: 'CODEX_HOME',
+      unrecorded: CODEX_UNRECORDED,
       delegationProvider: 'codex-local',
       modelBroker,
       // The settings card's curated model list (the default scope's

@@ -36,7 +36,7 @@ import {
   type SubagentStopReason,
 } from '@deepseek-ai/dsh-subagent'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, persistChildSession, LiveStreamPublisher, LiveFlush, openMirrorTurn } from '@khorsheed/dsh-local-agent'
 import {
   LIVE_SERVER_NAME,
   LIVE_WIRE_PROTOCOL_VERSION,
@@ -761,7 +761,7 @@ export class DshLiveDriver {
       // The boundary opens after the accept ack (a definitive reject leaves no
       // dangling turn/start); events that arrived in the ack's chunk were
       // buffered and flush now, in wire order, inside the boundary.
-      childSession.append('turn/start', { turn })
+      openMirrorTurn(childSession, turn, 'live')
       turnOpened = true
       for (const entry of bufferedEvents.splice(0)) {
         if (entry.kind === 'event') mirrorOne(entry.event)

@@ -64,6 +64,7 @@ import {
   appendMirrorContent,
   appendMirrorStep,
   closeMirrorTurn,
+  openMirrorTurn,
   delegationEnv,
   persistChildSession,
   recordContextOccupancy,
@@ -1747,7 +1748,7 @@ export class KimiAcpLiveDriver {
       // (codex/claude live parity): immediately visible instead of waiting
       // for the wire flush + mirror pass — which would render the streamed
       // think/text ABOVE the question. The fold skips it (turn+text dedupe).
-      childSession.append('turn/start', { turn })
+      openMirrorTurn(childSession, turn, 'live')
       childSession.append('user/message', createUserMessage({
         content: [{ type: 'text', text: task }],
         source: { kind: 'user' },

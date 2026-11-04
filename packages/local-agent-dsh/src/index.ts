@@ -29,6 +29,7 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { settingsFace, vol } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentHarness } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
+import type { LocalAgentUnrecordedDeclaration } from '@khorsheed/dsh-local-agent'
 import { CONTAINER_NODE_OPTIONS, DshCliProvider, dshCliVersion } from './dsh-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
@@ -38,6 +39,21 @@ import { DshModelBroker } from './model-broker.ts'
 import { listDshSessions } from './records.ts'
 import { DEFAULT_SUB_PROFILE_NAME, provisionDshScope } from './provision.ts'
 import type { DshSubProfilePermissions } from './provision.ts'
+
+/**
+ * What the sub-dsh mirror leaves out (batch 5 S1), copied onto every
+ * execution's `local-agent/execution` end record: the mirror copies only
+ * user/assistant/tool/step events (session-mirror.ts), so the sub-dsh's own
+ * `compaction/start|summary|end` and its summary call never cross —
+ * `internal-calls` on every path; and a `/compact` round runs as a plain
+ * prompt (the provider ignores the intent's `operation`) with no
+ * `local-agent/compaction` written — `compaction`.
+ */
+export const DSH_UNRECORDED: LocalAgentUnrecordedDeclaration = {
+  exec: ['internal-calls'],
+  live: ['internal-calls'],
+  compact: ['internal-calls', 'compaction'],
+}
 
 /** Stable Cordis plugin name; the bundle patch row id. */
 export const name = 'local-agent-dsh'
@@ -267,6 +283,7 @@ export function apply(ctx: Context, config: LocalAgentDshConfig): void {
       name: 'dsh',
       displayName: 'dsh',
       homeEnvVar: 'DSH_HOME',
+      unrecorded: DSH_UNRECORDED,
       delegationProvider: 'dsh-cli',
       modelBroker,
       records: { listSessions: homeDir => listDshSessions(homeDir) },
