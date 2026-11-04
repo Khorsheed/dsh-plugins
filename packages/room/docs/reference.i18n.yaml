@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/room/docs/reference.en.md
-packages/room/docs/reference.en.md: c3ebc0de2ff99ff8671e3f632f531c262191bcce
-packages/room/docs/reference.md: 66dddadafd4687879a70eb3c0fbde9af30c84a46
+packages/room/docs/reference.en.md: 1902e4b3165ea778ab31899c0bc9da03a8ab05fd
+packages/room/docs/reference.md: 5de820375b1fe3d5e20269ecf916bd4f8314bd61

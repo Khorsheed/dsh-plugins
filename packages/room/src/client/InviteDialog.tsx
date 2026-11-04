@@ -38,6 +38,8 @@ import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
 import { MemberCard } from './MemberCard.tsx'
 import { MemberToolsLine } from './MemberToolsLine.tsx'
+import { MemberRecoveryLine } from './MemberRecoveryLine.tsx'
+import { memberRecovery as foldRecovery } from './member-recovery-view.ts'
 import { modeShortName } from './member-tools-view.ts'
 import { rollName } from './name-pool.ts'
 import { ROOM_ROLE_MAX } from '../journal.ts'
@@ -150,6 +152,12 @@ export interface InviteDialogProps {
   readonly memberTools?: MembersViewProps['memberTools']
   /** Edit mode: reload that member's process so it lists its tools again. */
   readonly reloadMemberTools?: MembersViewProps['reloadMemberTools']
+  /** Edit mode, a started CLI member: a failed start or interrupted rounds (local-agent's reads); absent without the family. */
+  readonly memberRecovery?: MembersViewProps['memberRecovery']
+  /** Edit mode: 对账并重试 for a member whose start failed. */
+  readonly retryMemberStart?: MembersViewProps['retryMemberStart']
+  /** Edit mode: the human's verdict on a round a restart interrupted. */
+  readonly reconcileMemberExecution?: MembersViewProps['reconcileMemberExecution']
   readonly onSubmit: (values: InviteDialogSubmit) => Promise<RoomMutationOutcome | RoomInviteOutcome>
   readonly onClose: () => void
   readonly t: MembersViewProps['t']
@@ -164,7 +172,8 @@ function validName(name: string): boolean {
 export function InviteDialog({
   mode, member, providers, presets, sessionPreset, localAgentAvailable, inheritedCwd, existingNames,
   browseDirectory, modelSurface, renderHarnessModelPicker, memberModel, memberConfiguration,
-  renderMemberModelPicker, readMemberSelection, mainModelDirectory, memberRunning = false, memberRun, memberTools, reloadMemberTools, onSubmit, onClose, t,
+  renderMemberModelPicker, readMemberSelection, mainModelDirectory, memberRunning = false, memberRun, memberTools, reloadMemberTools,
+  memberRecovery, retryMemberStart, reconcileMemberExecution, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const isMain = mode === 'edit' && member?.kind === 'main-agent'
   /** A started CLI member edited through the member-control form fields (saved on 保存). */
@@ -225,6 +234,23 @@ export function InviteDialog({
   const modelFieldRef = useRef<HTMLDivElement | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Bumped after a 立即载入 / 重新载入 so the recovery block re-reads at once.
+  const [recoveryKey, setRecoveryKey] = useState(0)
+  const recoveryChild = mode === 'edit' && member?.kind === 'cli' && memberRecovery !== undefined && retryMemberStart !== undefined
+    ? member.childSessionId : undefined
+  /**
+   * 立即载入 / 重新载入's first step: a member whose last start failed is
+   * retried (对账并重试) before the load; a selection that did not apply is
+   * left to the block's own button. Resolves the new reason when it fails again.
+   */
+  const recoverBeforeLoad = recoveryChild === undefined ? undefined : async (): Promise<string | undefined> => {
+    const before = foldRecovery(await memberRecovery!(recoveryChild))
+    if (before?.failed?.cause !== 'start') return undefined
+    const outcome = await retryMemberStart!(recoveryChild, before.failed.revision)
+    const after = foldRecovery(await memberRecovery!(recoveryChild))
+    if (after?.failed !== undefined) return after.failed.reason === '' ? t('recovery.member.error') : after.failed.reason
+    return outcome.ok ? undefined : outcome.message
+  }
   const [browsing, setBrowsing] = useState(false)
   // Invite keeps the advanced drawer folded; edit opens it — changing those
   // fields is what the edit dialog is for.
@@ -562,6 +588,19 @@ export function InviteDialog({
                   running={memberRunning}
                   read={memberTools}
                   reload={reloadMemberTools}
+                  recover={recoverBeforeLoad}
+                  onLoad={() => { setRecoveryKey(key => key + 1) }}
+                  t={t}
+                />
+              )}
+              {/* A member that cannot take work until the user acts: recovered here, without leaving the room. */}
+              {!isMain && recoveryChild !== undefined && (
+                <MemberRecoveryLine
+                  childSessionId={recoveryChild}
+                  read={memberRecovery!}
+                  retry={retryMemberStart!}
+                  reconcile={reconcileMemberExecution}
+                  refreshKey={recoveryKey}
                   t={t}
                 />
               )}
