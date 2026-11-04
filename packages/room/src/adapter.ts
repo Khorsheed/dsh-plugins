@@ -13,20 +13,26 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
 
-/** The delegation-facade slice room consumes (the family's public M1 API). */
-export type LocalAgentFacade = Pick<LocalAgentRegistry, 'start' | 'resume' | 'cancel'> & Partial<Pick<LocalAgentRegistry, 'prepareMember' | 'isPreparedMember' | 'supportsMemberConfiguration'>>
+/**
+ * The delegation-facade slice room consumes: the single execution entry
+ * `run` (batch 5 S4) every member round goes through, plus cancellation and
+ * the optional member reads. `start`/`resume` stay in the probe's method set
+ * (the M1 facade a composition must carry to seat CLI members at all).
+ */
+export type LocalAgentFacade = Pick<LocalAgentRegistry, 'run' | 'start' | 'resume' | 'cancel'> & Partial<Pick<LocalAgentRegistry, 'prepareMember' | 'isPreparedMember' | 'readMemberInbox'>>
 
 /** The roster slice of the registry (older than the M1 facade). */
 export type LocalAgentRosterSlice = Pick<LocalAgentRegistry, 'roster' | 'statusOf'>
 
 /** The methods a service must carry to quack like the facade. */
-const FACADE_METHODS = ['start', 'resume', 'cancel'] as const
+const FACADE_METHODS = ['run', 'start', 'resume', 'cancel'] as const
 
 /**
  * Probe the local-agent facade.
  * @param ctx - host context.
- * @returns the facade when `localAgent` is present and carries the full M1
- * method set, undefined otherwise (absent core, or a pre-facade version).
+ * @returns the facade when `localAgent` is present and carries the
+ * execution entry and the M1 method set, undefined otherwise (absent core,
+ * or a core older than the execution entry: CLI members read unavailable).
  */
 export function probeLocalAgent(ctx: Context): LocalAgentFacade | undefined {
   const service = ctx.get('localAgent') as Record<string, unknown> | undefined

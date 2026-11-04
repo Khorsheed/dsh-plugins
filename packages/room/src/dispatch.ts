@@ -1,8 +1,13 @@
 /**
  * Dispatch engine: turns `room/dispatch` journal records and confirmed
- * notification relays into member runs. Same-member dispatches serialize on
- * a submission chain until a stable native identity exists, then enter the
- * family's whole-turn FIFO; different members run in parallel. Every lifecycle
+ * notification relays into member runs. A CLI member's every round goes
+ * through local-agent's single execution entry `run()` (batch 5 S5): room
+ * passes the member's stable child session id, the round's cause, task, its
+ * delivery id as the idempotency key and its run id, and assembles the prompt
+ * only when the core reaches that execution. Same-member dispatches serialize
+ * on the room's submission chain until the core's ledger durably queued the
+ * previous one; the ledger orders them from there. Different members run in
+ * parallel. Every lifecycle
  * edge lands in the journal (`room/run-state` running → done/cancelled/
  * failed, plus `room/speech` for a CLI member's reply), so a reload replays
  * the exact dispatch history — but speech/dispatch events are UI projection
@@ -25,13 +30,13 @@ import type { Context } from '@deepseek-ai/cordis'
 import { SessionId, type Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the `agents` registry merge onto Context.
-import { createUserMessage, type ContextFormed, type MessageSource } from '@deepseek-ai/dsh-llm'
-import { probeLocalAgent, runOutputText } from './adapter.ts'
+import { createUserMessage, type ContentBlock, type ContextFormed, type MessageSource } from '@deepseek-ai/dsh-llm'
+import { probeLocalAgent, runOutputText, type LocalAgentFacade } from './adapter.ts'
 import { COMPACT_COMMAND, coordinatorMember, isCompactCommand, memberId, pendingInstructions, previousCursor, replay, roomChangesSince } from './journal.ts'
 import { envelopeLine, messageId, sendOrHold } from './messaging.ts'
 import { gateState, judgeReport, outstandingFor, type GateVerdict } from './report-gate.ts'
 import { decisionRecord } from './decisions.ts'
-import type { LocalAgentCompactionEvent } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentCompactionEvent, LocalAgentExecutionAdmitted, LocalAgentExecutionCause, LocalAgentExecutionHandle, LocalAgentRunProgress, LocalAgentTaskRef } from '@khorsheed/dsh-local-agent/types'
 import type { RoomHeldDispatch, RoomMember, RoomRelay, RoomState } from './types.ts'
 
 /**
@@ -137,6 +142,15 @@ export { COMPACT_COMMAND }
 export const COMPACTED_TEXT = '已压缩上下文'
 /** A `/compact` round whose member reported no compaction record (its provider does not report one). */
 export const COMPACT_UNREPORTED_TEXT = '已发送压缩命令；该成员不报告压缩数据'
+/**
+ * A round the core refused because the member has an execution a restart
+ * left with an unknown outcome: it was not sent, and the place to clear it is
+ * the member edit dialog's 待对账 (the same reconciliation the members page
+ * offers — reconciling in either clears both).
+ */
+export const MEMBER_UNRECONCILED_TEXT = '没有发出：该成员有一轮被重启打断、结果不确定。请在成员编辑弹窗的「待对账」里核对并填写结果，再重新发送这条消息'
+/** A round the core refused because the member's input queue is paused after a restart (typed input still waits there). */
+export const MEMBER_PAUSED_TEXT = '没有发出：该成员的输入队列在重启后暂停了。请在成员会话里继续或取消排队的输入，再重新发送这条消息'
 /** `/compact` to a member that has never run: nothing to compact. */
 export const NOTHING_TO_COMPACT_TEXT = '还没有可压缩的上下文'
 /** A message that answered the question its recipient was waiting on: delivered as that answer, not as a round of its own. */
@@ -191,8 +205,126 @@ export function lastAssistantMessageId(session: Session | undefined, afterSeq = 
 }
 
 export function runChildTurn(roomEvents: readonly SessionEvent[], runId: string | undefined, child: Session | undefined): number | undefined {
+  const executionId = runExecutionId(roomEvents, runId)
+  // A run the core recorded: its turns are the execution's own records (the
+  // end record, or the turns after its start record while it is open). No
+  // record in a loaded child → no turn, never a seq or time range guess.
+  if (executionId !== undefined) return executionTurns(child, executionId)?.at(-1)
   const last = runChildEvents(roomEvents, runId, child).filter(event => event.type === 'turn/start').at(-1)
   return last?.type === 'turn/start' ? last.data.turn : undefined
+}
+
+/**
+ * The local-agent execution a run is, from its running edge.
+ * @param roomEvents - the room log.
+ * @param runId - the run.
+ * @returns the execution id, or undefined for a run from before S5 (or the room's own agent).
+ */
+export function runExecutionId(roomEvents: readonly SessionEvent[], runId: string | undefined): string | undefined {
+  if (runId === undefined) return undefined
+  for (const event of roomEvents) {
+    if (event.type === 'room/run-state' && event.data.runId === runId && event.data.executionId !== undefined) return event.data.executionId
+  }
+  return undefined
+}
+
+/**
+ * The turns one execution wrote, from its `local-agent/execution` records in
+ * the member's session: the end record's turns once it ended; while it is
+ * still open (a stop journals its terminal edge before the core ends the
+ * execution), the `turn/start`s written after its own start record — the
+ * same explicit range the end record will carry.
+ * @param child - the member's session (live).
+ * @param executionId - the execution.
+ * @returns the turns, or undefined when the session is not loaded or holds no record of it.
+ */
+export function executionTurns(child: Session | undefined, executionId: string): readonly number[] | undefined {
+  const events = child?.snapshotEvents() ?? []
+  const end = events.find(event => event.type === 'local-agent/execution' && event.data.phase === 'end' && event.data.executionId === executionId)
+  if (end?.type === 'local-agent/execution' && end.data.phase === 'end') return end.data.turns
+  const start = events.findIndex(event => event.type === 'local-agent/execution' && event.data.phase === 'start' && event.data.executionId === executionId)
+  if (start < 0) return undefined
+  const turns: number[] = []
+  for (const event of events.slice(start + 1)) {
+    if (event.type === 'local-agent/execution') break
+    if (event.type === 'turn/start') turns.push(event.data.turn)
+  }
+  return turns
+}
+
+/** What room tells the core about one member round: why it runs and the task it works for. */
+export interface RoomExecutionFacts {
+  readonly cause?: LocalAgentExecutionCause
+  readonly task?: LocalAgentTaskRef
+}
+
+/**
+ * The cause and task of one member round, from the room's own facts (the
+ * design's room-origin → cause table). The core stores them verbatim.
+ *
+ * | dispatch | cause |
+ * |---|---|
+ * | `human` (and `/compact`) | `human` via `room`, with the message id and dispatch seq |
+ * | `coordinator` / `member` / `relay` | `member`: the sender's id and the dispatch seq |
+ * | `help` | `help`: the thread id and the asking room |
+ * | `report` of a delivery | `execution`: the source run's execution id; a source without one (the room's own agent, a pre-S5 run) → `member` from the reporting member |
+ * | `report` of a help thread (`help:<id>`) | `help`: the thread and the helper session |
+ * | release round, `restart` | `restart` |
+ * | release round, `manual` (the human's 现在交给) | `human` via `room` |
+ * | release round, `timeout` or unrecorded | `decision`: the latest report-timing decision that held reports for the recipient; none recorded → no cause |
+ * | legacy confirmed relay (no dispatch) | `member`: the relay sender, the relay's own seq |
+ *
+ * The task is the dispatch's `task` (the task root's message id) in this room.
+ * @param events - the room log.
+ * @param roomId - the room session id.
+ * @param dispatchSeq - the dispatch the round delivers, when journaled.
+ * @param relayIds - the legacy relays a non-journaled round delivers.
+ * @returns the cause and task (each absent when the room has no fact for it).
+ */
+export function executionFacts(events: readonly SessionEvent[], roomId: string, dispatchSeq: number | undefined, relayIds: readonly string[] = []): RoomExecutionFacts {
+  const sessionId = String(roomId)
+  if (dispatchSeq === undefined) {
+    const relay = events.find(event => event.type === 'room/relay' && relayIds.includes(event.data.id))
+    if (relay?.type !== 'room/relay') return {}
+    const state = replay(events)
+    const sender = state.members.find(member => member.name === relay.data.from)
+    return { cause: { kind: 'member', sessionId, fromMemberId: sender === undefined ? relay.data.from : memberId(events, sender), dispatchSeq: relay.seq } }
+  }
+  const source = events.find(event => event.seq === dispatchSeq)
+  if (source?.type !== 'room/dispatch') return {}
+  const data = source.data
+  const task: LocalAgentTaskRef | undefined = data.task === undefined ? undefined : { sessionId, id: data.task }
+  const withTask = (cause: LocalAgentExecutionCause | undefined): RoomExecutionFacts => ({ ...cause === undefined ? {} : { cause }, ...task === undefined ? {} : { task } })
+  const human = (): LocalAgentExecutionCause => ({ kind: 'human', sessionId, dispatchSeq, via: 'room', ...data.messageId === undefined ? {} : { messageId: data.messageId } })
+  switch (data.origin ?? 'human') {
+    case 'human': return withTask(human())
+    case 'coordinator':
+    case 'member':
+    case 'relay': return withTask({ kind: 'member', sessionId, fromMemberId: data.from ?? '', dispatchSeq })
+    case 'help': return withTask(data.help === undefined ? undefined : { kind: 'help', sessionId, helpId: data.help.id, fromRoom: data.help.room })
+    case 'report': {
+      if (data.releases !== undefined) {
+        if (data.releaseReason === 'restart') return withTask({ kind: 'restart', sessionId })
+        if (data.releaseReason === 'manual') return withTask(human())
+        const recipient = data.targets[0]
+        const decision = events.findLast(event => event.seq < dispatchSeq && event.type === 'room/decision' && event.data.scenario === 'report-timing'
+          && event.data.outcome === 'later' && event.data.about?.to === recipient)
+        return withTask(decision?.type === 'room/decision' ? { kind: 'decision', sessionId, decisionId: decision.data.id } : undefined)
+      }
+      const reportFor = data.reportFor
+      if (reportFor === undefined) return withTask(undefined)
+      if (reportFor.startsWith('help:')) {
+        const helpId = reportFor.slice('help:'.length)
+        const help = events.find(event => event.type === 'room/help' && event.data.id === helpId)
+        return withTask({ kind: 'help', sessionId, helpId, fromRoom: help?.type === 'room/help' ? help.data.target.sessionId : '' })
+      }
+      const executionId = runExecutionId(events, reportFor)
+      if (executionId !== undefined) return withTask({ kind: 'execution', executionId })
+      const separator = reportFor.indexOf(':')
+      return withTask({ kind: 'member', sessionId, fromMemberId: separator < 0 ? '' : reportFor.slice(separator + 1), dispatchSeq })
+    }
+    default: return withTask(undefined)
+  }
 }
 
 /**
@@ -432,7 +564,19 @@ export interface RunOutcome {
   readonly state: 'done' | 'cancelled' | 'failed'
   readonly text?: string
   readonly error?: string
+  /** The member execution's recorded turns (its settlement), when the core ran it. */
+  readonly turns?: readonly number[]
 }
+
+/** A room run that journals nothing: the core never reached it for this delivery, or another room run owns its execution. */
+const DROPPED = Symbol('dropped')
+
+/**
+ * Executions a room run of this process is following. A second room run the
+ * core's key dedup hands the same execution back to (one delivery submitted
+ * twice, from any engine) journals nothing: the first one owns its edges.
+ */
+const claimed = new Set<string>()
 
 export interface DispatchHooks {
   allows?(room: Session, dispatchSeq?: number): boolean
@@ -460,17 +604,6 @@ export class DispatchEngine {
   private readonly inFlight = new Map<Promise<void>, string>()
   /** room + recipient → the wake-anyway timer for its held reports. */
   private readonly holdTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  /**
-   * room id → member ids whose FIRST start is in flight: the member has no
-   * child session id in the journal yet, but its process may already be
-   * asking the host for its mode tools (claude lists MCP tools at spawn).
-   */
-  private readonly freshStarts = new Map<string, Set<string>>()
-
-  /** Members of this room whose first start is in flight (see {@link freshStarts}). */
-  startingMembers(roomId: string): readonly string[] {
-    return [...this.freshStarts.get(roomId) ?? []]
-  }
 
   /**
    * @param ctx - host context carrying the session store and agents registry.
@@ -523,6 +656,15 @@ export class DispatchEngine {
     this.queues.set(key, submission)
     void submission.then(() => { if (this.queues.get(key) === submission) this.queues.delete(key) })
   }
+
+  /**
+   * A run this process follows outside the dispatch queue (a member round
+   * another caller started): the recovery projection keeps it running.
+   */
+  holdRun(roomId: string, runId: string): void { this.scheduled.add(`${roomId}:${runId}`) }
+
+  /** The followed run ended (see {@link holdRun}). */
+  releaseRun(roomId: string, runId: string): void { this.scheduled.delete(`${roomId}:${runId}`) }
 
   /** Drain includes reports queued by the runs being drained. */
   async idle(): Promise<void> {
@@ -633,21 +775,24 @@ export class DispatchEngine {
     const compactRun = member.kind !== 'main-agent' && isCompactDispatch(room.snapshotEvents(), options.dispatchSeq)
     const cursor = previousCursor(room.snapshotEvents(), memberName, options.dispatchSeq ?? Number.MAX_SAFE_INTEGER)
     let startedAt: number | undefined
-    const admitted = async (): Promise<number> => {
+    let executionId: string | undefined
+    const admitted = async (execution?: LocalAgentExecutionAdmitted): Promise<number> => {
       if (startedAt !== undefined) throw new Error('Room delivery was admitted twice')
-      startedAt = Date.now()
+      startedAt = execution?.admittedAt ?? Date.now()
+      executionId = execution?.executionId
       if (deliveryId !== undefined) room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: 'running' })
       // Re-read the roster: the captured member snapshot predates the child
       // handle's publication (member-updated lands between admission and settle).
       const current = replay(room.snapshotEvents()).members.find(entry => memberId(room.snapshotEvents(), entry) === identity)
       memberName = current?.name ?? memberName
       const childSessionId = runChildSessionId(room.id, current ?? member)
-      // Where this run's child events begin: settle reads the run's round
-      // (and a compaction its event) from there, never an earlier run's.
-      const fromSeq = childFromSeq(childSessionId, childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
+      // Where this run's child events begin (the core's admission says, for
+      // an execution): kept for readers of runs without an execution id.
+      const fromSeq = execution?.childFromSeq ?? childFromSeq(childSessionId, childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
       room.append('room/run-state', { member: memberName, state: 'running', startedAt, runId,
         ...childSessionId === undefined ? {} : { childSessionId },
         ...fromSeq === undefined ? {} : { childFromSeq: fromSeq },
+        ...execution === undefined ? {} : { executionId: execution.executionId },
         ...compactRun ? { operation: 'compact' as const } : {},
       })
       await this.hooks.admitted?.(room, options.dispatchSeq)
@@ -656,14 +801,17 @@ export class DispatchEngine {
     }
     let outcome: RunOutcome
     try {
-      outcome = member.kind === 'main-agent'
+      const reached = member.kind === 'main-agent'
         ? await this.runMainAgent(room, member, cursor, text, await admitted(), options.relayIds ?? [], options.dispatchSeq, options.direct)
-        : await this.runCliMember(room, member, cursor, text, admitted, options.relayIds ?? [], submitted, runId, options.dispatchSeq)
+        : await this.runCliMember(room, member, text, admitted, options.relayIds ?? [], submitted, runId, deliveryId, options.dispatchSeq)
+      // Settled elsewhere before the core reached it, or another room run owns it.
+      if (reached === DROPPED) return
+      outcome = reached
     } catch (error: unknown) {
       this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
       outcome = { state: 'failed', error: faultMessage(error) }
     }
-    outcome = await this.settle(room, member, runId, startedAt ?? Date.now(), outcome)
+    outcome = await this.settle(room, member, runId, startedAt ?? Date.now(), outcome, executionId)
     await this.hooks.settled?.(room, options.dispatchSeq, outcome)
     if (deliveryId !== undefined) {
       room.append('room/delivery-state', { id: deliveryId, dispatchSeq: options.dispatchSeq!, memberId: identity, state: outcome.state,
@@ -831,7 +979,7 @@ export class DispatchEngine {
    * A no-op when nothing is held any more.
    * @returns whether a release round was dispatched.
    */
-  async releaseHeld(room: Session, recipientId: string, reason: string): Promise<boolean> {
+  async releaseHeld(room: Session, recipientId: string, reason: 'timeout' | 'manual' | 'restart'): Promise<boolean> {
     this.clearHoldTimer(room.id, recipientId)
     const events = room.snapshotEvents()
     const open = pendingHolds(events, recipientId)
@@ -840,7 +988,7 @@ export class DispatchEngine {
     const ids = open.map(seq => `#${messageId(seq)}`).join('、')
     const text = `（以上 ${open.length} 条回报一直等着交给你：${ids}${reason === 'timeout' ? '，已经等了一段时间' : ''}。用户也已在房间里看到，不要复述。）`
     const releaseTask = replay(events).deliveries?.find(row => row.dispatchSeq === open[0] && row.memberId === recipientId)?.task
-    const release = room.append('room/dispatch', { id: randomUUID(), origin: 'report', targets: [recipient.name], targetIds: [recipientId], text, releases: open, hop: 1,
+    const release = room.append('room/dispatch', { id: randomUUID(), origin: 'report', targets: [recipient.name], targetIds: [recipientId], text, releases: open, releaseReason: reason, hop: 1,
       ...releaseTask === undefined ? {} : { task: releaseTask } })
     await this.ctx.sessions.flush(room)
     this.dispatch(room, recipient.name, text, { dispatchSeq: release.seq, targetId: recipientId })
@@ -897,11 +1045,19 @@ export class DispatchEngine {
     return { state: 'done', ...output === '' ? {} : { text: output } }
   }
 
-  /** CLI member turn: facade start (first round) or resume, then the speech mirror. */
+  /**
+   * CLI member turn through local-agent's execution entry `run()`, then the
+   * speech mirror. The core decides first round vs continuation from its own
+   * records (scope, cwd and model of a continuation come from there), queues
+   * the round in the member's ledger under this delivery's key, evaluates the
+   * prompt when the round reaches the head of that queue, and calls back at
+   * admission — where room writes its running edges. The room's submission
+   * chain is released once the core durably queued the round.
+   */
   private async runCliMember(
-    room: Session, member: RoomMember, cursor: number | undefined,
-    text: string, admitted: () => Promise<number>, relayIds: readonly string[], submitted: () => void, runId: string, dispatchSeq: number | undefined,
-  ): Promise<RunOutcome> {
+    room: Session, member: RoomMember, text: string, admitted: (execution?: LocalAgentExecutionAdmitted) => Promise<number>,
+    relayIds: readonly string[], submitted: () => void, runId: string, deliveryId: string | undefined, dispatchSeq: number | undefined,
+  ): Promise<RunOutcome | typeof DROPPED> {
     const facade = probeLocalAgent(this.ctx)
     if (facade === undefined) {
       this.ctx.logger.warn(`room: cannot dispatch to "${member.name}": local-agent facade unavailable`)
@@ -909,80 +1065,157 @@ export class DispatchEngine {
     }
     // Roster invariant: cli members always carry a provider (invite enforces).
     const provider = member.provider ?? ''
-    // Modern providers call this only after the whole-turn FIFO and model
-    // configuration admit the request. Persistence must finish before native work.
+    const identity = memberId(room.snapshotEvents(), member)
+    // The member's stable child identity: the roster's, else its room id —
+    // the same id a prepared member is reserved under, so the first round
+    // creates the child there and every later round names it before its
+    // handle reaches the journal.
+    const childSessionId = member.childSessionId ?? identity
     let startedAt: number | undefined
-    const controlled = facade.supportsMemberConfiguration?.(provider) === true
-    const admission = {
-      ...controlled ? { onAdmitted: async (): Promise<void> => { startedAt = await admitted() } } : {},
-      onProgress: (event: import('@khorsheed/dsh-local-agent/types').LocalAgentRunProgress): void => {
-        if (event.kind !== 'settled') return
-        const previous = room.snapshotEvents().filter(row => row.type === 'room/run-state' && row.data.runId === runId).at(-1)
-        if (previous?.type !== 'room/run-state') return
-        // TokenUsage counts are disjoint: the billed total is the sum of the
-        // buckets, cache reads and writes included. A provider's own
-        // totalTokens may leave the cache out (claude reports input+output),
-        // so the buckets win whenever they are there.
-        const total = event.usage === undefined ? undefined
-          : event.usage.inputTokens + (event.usage.cacheReadTokens ?? 0) + (event.usage.cacheWriteTokens ?? 0) + event.usage.outputTokens
-        room.append('room/execution-metadata', { runId,
-          ...event.observedModel === undefined ? {} : { model: event.observedModel },
-          ...event.observedEffort === undefined ? {} : { effort: event.observedEffort },
-          ...total === undefined || !Number.isFinite(total) || total < 0 ? {} : { tokens: total },
-          ...event.usage === undefined ? {} : { usage: {
-            inputTokens: event.usage.inputTokens, outputTokens: event.usage.outputTokens,
-            ...event.usage.cacheReadTokens === undefined ? {} : { cacheReadTokens: event.usage.cacheReadTokens },
-            ...event.usage.cacheWriteTokens === undefined ? {} : { cacheWriteTokens: event.usage.cacheWriteTokens },
-            ...event.usage.reasoningTokens === undefined ? {} : { reasoningTokens: event.usage.reasoningTokens },
-          } },
-        })
-        void this.ctx.sessions.flush(room).catch(error => this.ctx.logger.warn(`room: execution metadata flush failed: ${String(error)}`))
-      },
-    }
     // The human's `/compact` (alone, to this member) compacts its context
     // instead of prompting it: a compaction round (local-agent queues it like
     // any round), one transcript row, no reply.
     const compacting = isCompactDispatch(room.snapshotEvents(), dispatchSeq)
-    if (compacting && (member.childSessionId === undefined || facade.isPreparedMember?.(member.childSessionId) === true)) {
+    const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
+    if (compacting && (member.childSessionId === undefined || prepared)) {
+      submitted()
       startedAt = await admitted()
       return { state: 'done', text: NOTHING_TO_COMPACT_TEXT }
     }
-    if (!controlled) startedAt = await admitted()
-    const { prompt, carried, heldCarried } = assemblePrompt(room, member, cursor, text, relayIds, dispatchSeq)
-    const prepared = member.childSessionId !== undefined && facade.isPreparedMember?.(member.childSessionId) === true
-    const pendingRun = prepared
-      ? facade.start(room.id, provider, [{ type: 'text', text: prompt }], { preparedMemberId: member.childSessionId!, label: member.name, ...admission })
-      : member.childSessionId === undefined
-      // The invite-time model lands as the delegation's own model: the facade
-      // records it with the first start and every later resume re-requests it
-      // (providers bind it at spawn for exec and live alike). The invite-time
-      // effort rides the same channel.
-      ? facade.start(room.id, provider, [{ type: 'text' as const, text: prompt }],
-          // The member's name labels its child session in the host's subagent list.
-          { ...admission, label: member.name, ...member.model === undefined ? {} : { model: member.model }, ...member.effort === undefined ? {} : { effort: member.effort }, ...member.cwd === undefined ? {} : { cwd: member.cwd } })
-      : facade.resume(room.id, provider, member.childSessionId, [{ type: 'text' as const, text: compacting ? COMPACT_COMMAND : prompt }], { ...admission, ...member.cwd === undefined ? {} : { cwd: member.cwd }, ...compacting ? { operation: 'compact' as const } : {} })
-    // Existing members can enter core's queue immediately. A fresh/prepared
-    // identity must publish its first handle before the next submission resumes it.
-    if (controlled && member.childSessionId !== undefined && !prepared) submitted()
-    const fresh = !prepared && member.childSessionId === undefined
-    const freshId = memberId(room.snapshotEvents(), member)
-    if (fresh) {
-      const starting = this.freshStarts.get(room.id) ?? new Set<string>()
-      this.freshStarts.set(room.id, starting.add(freshId))
+    const current = (): RoomMember | undefined => replay(room.snapshotEvents()).members.find(entry => memberId(room.snapshotEvents(), entry) === identity)
+    let carried: readonly RoomRelay[] = []
+    let heldCarried: readonly number[] = []
+    let dropped = false
+    const stop = new AbortController()
+    // Evaluated when the core reaches this round: the prompt carries what the
+    // member has not seen by then. A delivery settled while it waited (a
+    // removal, a move-on) or a removed member never reaches the member.
+    const input = async (): Promise<readonly ContentBlock[]> => {
+      const now = current()
+      const settledMeanwhile = deliveryId !== undefined && replay(room.snapshotEvents()).deliveries?.some(row => row.id === deliveryId && row.status !== 'queued') === true
+      if (now === undefined || settledMeanwhile) {
+        dropped = true
+        stop.abort()
+        throw new Error('room delivery settled before the member reached it')
+      }
+      if (compacting) return [{ type: 'text', text: COMPACT_COMMAND }]
+      const cursor = previousCursor(room.snapshotEvents(), now.name, dispatchSeq ?? Number.MAX_SAFE_INTEGER)
+      const assembled = assemblePrompt(room, now, cursor, text, relayIds, dispatchSeq)
+      carried = assembled.carried
+      heldCarried = assembled.heldCarried
+      return [{ type: 'text', text: assembled.prompt }]
     }
-    const run = await pendingRun.finally(() => {
-      if (!fresh) return
-      const starting = this.freshStarts.get(room.id)
-      starting?.delete(freshId)
-      if (starting?.size === 0) this.freshStarts.delete(room.id)
-    })
-    if (startedAt === undefined) {
-      await run.dispose()
-      throw new Error('Provider published a room run without admission')
+    const { cause, task } = executionFacts(room.snapshotEvents(), room.id, dispatchSeq, relayIds)
+    // The creation identity matters to a first round only; the core ignores it
+    // for a continuation. A prepared member keeps its prepared identity and
+    // takes only the label.
+    const create = member.childSessionId === undefined
+      ? { label: member.name, ...member.model === undefined ? {} : { model: member.model }, ...member.effort === undefined ? {} : { effort: member.effort }, ...member.cwd === undefined ? {} : { cwd: member.cwd } }
+      : prepared ? { label: member.name } : undefined
+    const progress = (event: LocalAgentRunProgress): void => {
+      if (event.kind !== 'settled') return
+      const previous = room.snapshotEvents().filter(row => row.type === 'room/run-state' && row.data.runId === runId).at(-1)
+      if (previous?.type !== 'room/run-state') return
+      // TokenUsage counts are disjoint: the billed total is the sum of the
+      // buckets, cache reads and writes included. A provider's own
+      // totalTokens may leave the cache out (claude reports input+output),
+      // so the buckets win whenever they are there.
+      const total = event.usage === undefined ? undefined
+        : event.usage.inputTokens + (event.usage.cacheReadTokens ?? 0) + (event.usage.cacheWriteTokens ?? 0) + event.usage.outputTokens
+      room.append('room/execution-metadata', { runId,
+        ...event.observedModel === undefined ? {} : { model: event.observedModel },
+        ...event.observedEffort === undefined ? {} : { effort: event.observedEffort },
+        ...total === undefined || !Number.isFinite(total) || total < 0 ? {} : { tokens: total },
+        ...event.usage === undefined ? {} : { usage: {
+          inputTokens: event.usage.inputTokens, outputTokens: event.usage.outputTokens,
+          ...event.usage.cacheReadTokens === undefined ? {} : { cacheReadTokens: event.usage.cacheReadTokens },
+          ...event.usage.cacheWriteTokens === undefined ? {} : { cacheWriteTokens: event.usage.cacheWriteTokens },
+          ...event.usage.reasoningTokens === undefined ? {} : { reasoningTokens: event.usage.reasoningTokens },
+        } },
+      })
+      void this.ctx.sessions.flush(room).catch(error => this.ctx.logger.warn(`room: execution metadata flush failed: ${String(error)}`))
     }
+    let handle: LocalAgentExecutionHandle
+    try {
+      handle = await facade.run({
+        parentSessionId: room.id,
+        provider,
+        member: { childSessionId, ...create === undefined ? {} : { create } },
+        input,
+        operation: compacting ? 'compact' : 'prompt',
+        caller: 'room',
+        ...cause === undefined ? {} : { cause },
+        ...task === undefined ? {} : { task },
+        // One delivery is one execution: a retry or a recovery replay of the
+        // same delivery is never admitted twice.
+        key: deliveryId ?? (relayIds.length > 0 ? `relay:${relayIds.join(',')}` : runId),
+        callerRef: runId,
+        signal: stop.signal,
+        on: { admitted: async (execution) => { startedAt = await admitted(execution) }, progress },
+      })
+    } catch (error) {
+      submitted()
+      // The core refuses every round of a member with an unknown-outcome
+      // execution or a paused queue: say where to clear it instead of a bare failure.
+      const refused = this.refusal(facade, childSessionId, error)
+      throw refused === undefined ? error : new Error(refused)
+    }
+    submitted()
+    if (claimed.has(handle.executionId)) return DROPPED
+    claimed.add(handle.executionId)
+    try {
+      return await this.followCliRound(room, member, handle, {
+        startedAt: () => startedAt, admitted, assembled: () => ({ carried, heldCarried, dropped }),
+        relayIds, runId, dispatchSeq, compacting, childSessionId, facade,
+      })
+    } finally {
+      claimed.delete(handle.executionId)
+    }
+  }
+
+  /**
+   * Why the core refused a member round, in the room's words, when it was
+   * the member's own state: an unreconciled execution, or a queue paused
+   * after a restart. Undefined for any other failure.
+   */
+  private refusal(facade: LocalAgentFacade, childSessionId: string, error: unknown): string | undefined {
+    let ledger: ReturnType<NonNullable<LocalAgentFacade['readMemberInbox']>> | undefined
+    try { ledger = facade.readMemberInbox?.(childSessionId) } catch { /* not a member the core knows yet: read the message */ }
+    const message = faultMessage(error)
+    if (ledger?.messages.some(row => row.status === 'uncertain') === true || /uncertain outcome/.test(message)) return MEMBER_UNRECONCILED_TEXT
+    if (/inbox is paused/.test(message)) return MEMBER_PAUSED_TEXT
+    return undefined
+  }
+
+  /** The rest of a CLI round once the core queued it: publish, mirror, settle. */
+  private async followCliRound(room: Session, member: RoomMember, handle: LocalAgentExecutionHandle, round: {
+    readonly startedAt: () => number | undefined
+    readonly admitted: (execution?: LocalAgentExecutionAdmitted) => Promise<number>
+    readonly assembled: () => { readonly carried: readonly RoomRelay[]; readonly heldCarried: readonly number[]; readonly dropped: boolean }
+    readonly relayIds: readonly string[]
+    readonly runId: string
+    readonly dispatchSeq: number | undefined
+    readonly compacting: boolean
+    readonly childSessionId: string
+    readonly facade: LocalAgentFacade
+  }): Promise<RunOutcome | typeof DROPPED> {
+    const { relayIds, runId, dispatchSeq } = round
+    const run = await handle.started.catch(() => undefined)
+    if (run === undefined) {
+      const settlement = await handle.settled
+      if (round.assembled().dropped) return DROPPED
+      const refused = settlement.outcome === 'done' ? undefined : this.refusal(round.facade, round.childSessionId, settlement.error ?? '')
+      if (refused !== undefined) return { state: 'failed', error: refused }
+      // Ended before it started (a refused admission, a cancelled queue row),
+      // or a replayed key whose execution already ended: nothing to mirror.
+      return { state: settlement.outcome, ...settlement.error === undefined ? {} : { error: settlement.error }, turns: settlement.turns }
+    }
+    // A provider that never reported its admission: the run published, so it was admitted.
+    if (round.startedAt() === undefined) await round.admitted({ executionId: handle.executionId, admittedAt: Date.now(), childFromSeq: 0 })
+    const { carried, heldCarried } = round.assembled()
     try {
       if (member.childSessionId === undefined) {
-        // Persist identity before releasing fresh-member submissions.
+        // The journal learns the member's child identity once it exists.
         room.append('room/member-updated', { name: replay(room.snapshotEvents()).members.find(entry => entry.id === member.id)?.name ?? member.name, childSessionId: run.id })
       }
       await this.markSent(room, [
@@ -994,12 +1227,16 @@ export class DispatchEngine {
     } catch (error) {
       // Native work already exists. Never claim a terminal room outcome while
       // that work is still active merely because publishing its handle failed.
-      await run.result.catch(() => {})
+      await handle.settled
       throw error
     }
-    if (controlled) submitted()
     const result = await run.result
-    if (compacting) return this.recordCompaction(room, member, runId, run.id, result, startedAt)
+    const startedAt = round.startedAt() ?? Date.now()
+    if (round.compacting) {
+      // The core's compaction fact is in place once the execution settled.
+      const settlement = await handle.settled
+      return { ...await this.recordCompaction(room, member, runId, run.id, result, startedAt), turns: settlement.turns }
+    }
     const output = runOutputText(result.output)
     const interrupted = result.stopReason === 'completed' ? undefined
       : result.stopReason === 'aborted' ? 'cancelled' as const : 'failed' as const
@@ -1022,13 +1259,16 @@ export class DispatchEngine {
       floatRunningCards(room, speech.data.member)
       await this.ctx.sessions.flush(room)
     }
+    // The execution's recorded turns arrive with its settlement (the speech
+    // above never waits for it).
+    const { turns } = await handle.settled
     if (result.stopReason === 'completed') {
       await this.ctx.sessions.flush(room)
-      return { state: 'done', text: runOutputText(result.output) }
+      return { state: 'done', text: runOutputText(result.output), turns }
     } else if (result.stopReason === 'aborted') {
-      return { state: 'cancelled', text: output }
+      return { state: 'cancelled', text: output, turns }
     } else {
-      return { state: 'failed', text: output, error: `the member run ended with stopReason "${result.stopReason}"` }
+      return { state: 'failed', text: output, error: `the member run ended with stopReason "${result.stopReason}"`, turns }
     }
   }
 
@@ -1073,7 +1313,7 @@ export class DispatchEngine {
 
   /** Settle only this execution, preserving newer runs. */
   private async settle(
-    room: Session, member: RoomMember, runId: string, startedAt: number, outcome: RunOutcome,
+    room: Session, member: RoomMember, runId: string, startedAt: number, outcome: RunOutcome, executionId: string | undefined,
   ): Promise<RunOutcome> {
     const events = room.snapshotEvents()
     const currentMember = replay(events).members.find(entry => memberId(events, entry) === memberId(events, member))
@@ -1084,11 +1324,16 @@ export class DispatchEngine {
     }
     const childSessionId = runChildSessionId(room.id, currentMember ?? member)
     const compactRun = events.some(event => event.type === 'room/run-state' && event.data.runId === runId && event.data.operation === 'compact')
-    const childTurn = compactRun ? undefined : runChildTurn(events, runId, childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
+    // An execution's round is its recorded turns (the settlement); a run
+    // without one (the room's own agent) reads its range from childFromSeq.
+    const childTurn = compactRun ? undefined
+      : executionId !== undefined ? outcome.turns?.at(-1)
+      : runChildTurn(events, runId, childSessionId === undefined ? undefined : this.ctx.sessions.get(childSessionId))
     room.append('room/run-state', {
       member: memberName, runId, state: outcome.state, startedAt, elapsedMs: Date.now() - startedAt,
       ...childSessionId === undefined ? {} : { childSessionId },
       ...childTurn === undefined ? {} : { childTurn },
+      ...executionId === undefined ? {} : { executionId },
       ...compactRun ? { operation: 'compact' as const } : {},
       ...outcome.error === undefined ? {} : { error: outcome.error },
     })

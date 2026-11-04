@@ -68,7 +68,8 @@
         "state": "running",
         "startedAt": 1800000000070,
         "runId": "3:00000000-0000-4000-8000-000000000001",
-        "childFromSeq": 0
+        "childFromSeq": 0,
+        "executionId": "00000000-0000-4000-8000-000000000003"
       }
     },
     {
@@ -83,33 +84,34 @@
     {
       "type": "room/speech",
       "seq": 7,
-      "time": 1800000000130,
+      "time": 1800000000150,
       "data": {
         "member": "ada",
         "text": "骨架已搭",
         "childSessionId": "child-ada",
         "runId": "3:00000000-0000-4000-8000-000000000001",
-        "durationMs": 50
+        "durationMs": 70
       }
     },
     {
       "type": "room/run-state",
       "seq": 8,
-      "time": 1800000000150,
+      "time": 1800000000170,
       "data": {
         "member": "ada",
         "runId": "3:00000000-0000-4000-8000-000000000001",
         "state": "done",
         "startedAt": 1800000000070,
-        "elapsedMs": 70,
+        "elapsedMs": 90,
         "childSessionId": "child-ada",
-        "childTurn": 1
+        "childTurn": 1,
+        "executionId": "00000000-0000-4000-8000-000000000003"
       }
     },
     {
       "type": "room/delivery-state",
       "seq": 9,
-      "time": 1800000000160,
+      "time": 1800000000180,
       "data": {
         "id": "3:00000000-0000-4000-8000-000000000001",
         "dispatchSeq": 3,
@@ -121,7 +123,7 @@
     {
       "type": "user/message",
       "seq": 10,
-      "time": 1800000000170,
+      "time": 1800000000190,
       "data": {
         "content": [
           {
@@ -133,23 +135,23 @@
           "kind": "user"
         },
         "role": "user",
-        "id": "00000000-0000-4000-8000-000000000003"
+        "id": "00000000-0000-4000-8000-000000000004"
       }
     },
     {
       "type": "room/dispatch",
       "seq": 11,
-      "time": 1800000000180,
+      "time": 1800000000200,
       "data": {
-        "id": "00000000-0000-4000-8000-000000000004",
+        "id": "00000000-0000-4000-8000-000000000005",
         "requestSignature": "d44d47f953085ba0c219fa8591f819267133b3a3811a36e2988f39e7d7917d00",
         "targets": [
           "ada"
         ],
         "text": "第二轮",
         "origin": "human",
-        "task": "00000000-0000-4000-8000-000000000003",
-        "messageId": "00000000-0000-4000-8000-000000000003",
+        "task": "00000000-0000-4000-8000-000000000004",
+        "messageId": "00000000-0000-4000-8000-000000000004",
         "targetIds": [
           "00000000-0000-4000-8000-000000000001"
         ]
@@ -158,7 +160,7 @@
     {
       "type": "room/delivery-state",
       "seq": 12,
-      "time": 1800000000200,
+      "time": 1800000000230,
       "data": {
         "id": "11:00000000-0000-4000-8000-000000000001",
         "dispatchSeq": 11,
@@ -169,46 +171,48 @@
     {
       "type": "room/run-state",
       "seq": 13,
-      "time": 1800000000210,
+      "time": 1800000000240,
       "data": {
         "member": "ada",
         "state": "running",
-        "startedAt": 1800000000190,
+        "startedAt": 1800000000210,
         "runId": "11:00000000-0000-4000-8000-000000000001",
         "childSessionId": "child-ada",
-        "childFromSeq": 1
+        "childFromSeq": 2,
+        "executionId": "00000000-0000-4000-8000-000000000006"
       }
     },
     {
       "type": "room/speech",
       "seq": 14,
-      "time": 1800000000240,
+      "time": 1800000000290,
       "data": {
         "member": "ada",
         "text": "第二块好了",
         "childSessionId": "child-ada",
         "runId": "11:00000000-0000-4000-8000-000000000001",
-        "durationMs": 40
+        "durationMs": 70
       }
     },
     {
       "type": "room/run-state",
       "seq": 15,
-      "time": 1800000000260,
+      "time": 1800000000310,
       "data": {
         "member": "ada",
         "runId": "11:00000000-0000-4000-8000-000000000001",
         "state": "done",
-        "startedAt": 1800000000190,
-        "elapsedMs": 60,
+        "startedAt": 1800000000210,
+        "elapsedMs": 90,
         "childSessionId": "child-ada",
-        "childTurn": 2
+        "childTurn": 2,
+        "executionId": "00000000-0000-4000-8000-000000000006"
       }
     },
     {
       "type": "room/delivery-state",
       "seq": 16,
-      "time": 1800000000270,
+      "time": 1800000000320,
       "data": {
         "id": "11:00000000-0000-4000-8000-000000000001",
         "dispatchSeq": 11,
@@ -220,7 +224,7 @@
     {
       "type": "room/member-updated",
       "seq": 17,
-      "time": 1800000000280,
+      "time": 1800000000330,
       "data": {
         "name": "ada",
         "rename": "bea"
@@ -229,7 +233,7 @@
     {
       "type": "user/message",
       "seq": 18,
-      "time": 1800000000290,
+      "time": 1800000000340,
       "data": {
         "content": [
           {
@@ -241,23 +245,23 @@
           "kind": "user"
         },
         "role": "user",
-        "id": "00000000-0000-4000-8000-000000000005"
+        "id": "00000000-0000-4000-8000-000000000007"
       }
     },
     {
       "type": "room/dispatch",
       "seq": 19,
-      "time": 1800000000300,
+      "time": 1800000000350,
       "data": {
-        "id": "00000000-0000-4000-8000-000000000006",
+        "id": "00000000-0000-4000-8000-000000000008",
         "requestSignature": "14432de31708d06c7769f985b954fecab1158d35ecea9cbb1d5a1d9d467cba4e",
         "targets": [
           "bea"
         ],
         "text": "长任务",
         "origin": "human",
-        "task": "00000000-0000-4000-8000-000000000005",
-        "messageId": "00000000-0000-4000-8000-000000000005",
+        "task": "00000000-0000-4000-8000-000000000007",
+        "messageId": "00000000-0000-4000-8000-000000000007",
         "targetIds": [
           "00000000-0000-4000-8000-000000000001"
         ]
@@ -266,7 +270,7 @@
     {
       "type": "room/delivery-state",
       "seq": 20,
-      "time": 1800000000320,
+      "time": 1800000000380,
       "data": {
         "id": "19:00000000-0000-4000-8000-000000000001",
         "dispatchSeq": 19,
@@ -277,34 +281,36 @@
     {
       "type": "room/run-state",
       "seq": 21,
-      "time": 1800000000330,
+      "time": 1800000000390,
       "data": {
         "member": "bea",
         "state": "running",
-        "startedAt": 1800000000310,
+        "startedAt": 1800000000360,
         "runId": "19:00000000-0000-4000-8000-000000000001",
         "childSessionId": "child-ada",
-        "childFromSeq": 2
+        "childFromSeq": 5,
+        "executionId": "00000000-0000-4000-8000-000000000009"
       }
     },
     {
       "type": "room/run-state",
       "seq": 22,
-      "time": 1800000000360,
+      "time": 1800000000420,
       "data": {
         "member": "bea",
         "state": "cancelled",
-        "startedAt": 1800000000310,
-        "elapsedMs": 40,
+        "startedAt": 1800000000360,
+        "elapsedMs": 50,
         "runId": "19:00000000-0000-4000-8000-000000000001",
         "childSessionId": "child-ada",
-        "childTurn": 3
+        "childTurn": 3,
+        "executionId": "00000000-0000-4000-8000-000000000009"
       }
     },
     {
       "type": "room/delivery-state",
       "seq": 23,
-      "time": 1800000000370,
+      "time": 1800000000450,
       "data": {
         "id": "19:00000000-0000-4000-8000-000000000001",
         "dispatchSeq": 19,
@@ -316,80 +322,82 @@
     {
       "type": "room/relay",
       "seq": 24,
-      "time": 1800000000380,
+      "time": 1800000000460,
       "data": {
-        "id": "00000000-0000-4000-8000-000000000007",
+        "id": "00000000-0000-4000-8000-000000000010",
         "from": "child-outsider",
         "to": "bea",
         "content": "看一下",
         "provenance": {
           "childSessionId": "child-outsider",
           "provider": "codex-local",
-          "parentSessionId": "session-00000000-0000-4000-8000-000000000008"
+          "parentSessionId": "session-00000000-0000-4000-8000-000000000011"
         }
       }
     },
     {
       "type": "room/relay-resolved",
       "seq": 25,
-      "time": 1800000000390,
+      "time": 1800000000470,
       "data": {
-        "id": "00000000-0000-4000-8000-000000000007",
+        "id": "00000000-0000-4000-8000-000000000010",
         "state": "confirmed"
       }
     },
     {
       "type": "room/run-state",
       "seq": 26,
-      "time": 1800000000410,
+      "time": 1800000000500,
       "data": {
         "member": "bea",
         "state": "running",
-        "startedAt": 1800000000400,
-        "runId": "00000000-0000-4000-8000-000000000009",
+        "startedAt": 1800000000480,
+        "runId": "00000000-0000-4000-8000-000000000012",
         "childSessionId": "child-ada",
-        "childFromSeq": 3
+        "childFromSeq": 8,
+        "executionId": "00000000-0000-4000-8000-000000000013"
       }
     },
     {
       "type": "room/relay-resolved",
       "seq": 27,
-      "time": 1800000000430,
+      "time": 1800000000520,
       "data": {
-        "id": "00000000-0000-4000-8000-000000000007",
+        "id": "00000000-0000-4000-8000-000000000010",
         "state": "sent"
       }
     },
     {
       "type": "room/speech",
       "seq": 28,
-      "time": 1800000000450,
+      "time": 1800000000560,
       "data": {
         "member": "bea",
         "text": "看过了",
         "childSessionId": "child-ada",
-        "runId": "00000000-0000-4000-8000-000000000009",
-        "durationMs": 40
+        "runId": "00000000-0000-4000-8000-000000000012",
+        "durationMs": 70
       }
     },
     {
       "type": "room/run-state",
       "seq": 29,
-      "time": 1800000000470,
+      "time": 1800000000580,
       "data": {
         "member": "bea",
-        "runId": "00000000-0000-4000-8000-000000000009",
+        "runId": "00000000-0000-4000-8000-000000000012",
         "state": "done",
-        "startedAt": 1800000000400,
-        "elapsedMs": 60,
+        "startedAt": 1800000000480,
+        "elapsedMs": 90,
         "childSessionId": "child-ada",
-        "childTurn": 4
+        "childTurn": 4,
+        "executionId": "00000000-0000-4000-8000-000000000013"
       }
     },
     {
       "type": "user/message",
       "seq": 30,
-      "time": 1800000000480,
+      "time": 1800000000590,
       "data": {
         "content": [
           {
@@ -401,23 +409,23 @@
           "kind": "user"
         },
         "role": "user",
-        "id": "00000000-0000-4000-8000-000000000010"
+        "id": "00000000-0000-4000-8000-000000000014"
       }
     },
     {
       "type": "room/dispatch",
       "seq": 31,
-      "time": 1800000000490,
+      "time": 1800000000600,
       "data": {
-        "id": "00000000-0000-4000-8000-000000000011",
+        "id": "00000000-0000-4000-8000-000000000015",
         "requestSignature": "0dae06ce3571a78598677e83030fe7a10801d0d734288144d1c3efb764f2c251",
         "targets": [
           "bea"
         ],
         "text": "/compact",
         "origin": "human",
-        "task": "00000000-0000-4000-8000-000000000010",
-        "messageId": "00000000-0000-4000-8000-000000000010",
+        "task": "00000000-0000-4000-8000-000000000014",
+        "messageId": "00000000-0000-4000-8000-000000000014",
         "targetIds": [
           "00000000-0000-4000-8000-000000000001"
         ]
@@ -426,7 +434,7 @@
     {
       "type": "room/delivery-state",
       "seq": 32,
-      "time": 1800000000510,
+      "time": 1800000000630,
       "data": {
         "id": "31:00000000-0000-4000-8000-000000000001",
         "dispatchSeq": 31,
@@ -437,21 +445,22 @@
     {
       "type": "room/run-state",
       "seq": 33,
-      "time": 1800000000520,
+      "time": 1800000000640,
       "data": {
         "member": "bea",
         "state": "running",
-        "startedAt": 1800000000500,
+        "startedAt": 1800000000610,
         "runId": "31:00000000-0000-4000-8000-000000000001",
         "childSessionId": "child-ada",
-        "childFromSeq": 4,
+        "childFromSeq": 11,
+        "executionId": "00000000-0000-4000-8000-000000000016",
         "operation": "compact"
       }
     },
     {
       "type": "room/member-compacted",
       "seq": 34,
-      "time": 1800000000570,
+      "time": 1800000000710,
       "data": {
         "member": "bea",
         "memberId": "00000000-0000-4000-8000-000000000001",
@@ -459,27 +468,28 @@
         "outcome": "completed",
         "beforeTokens": 500000,
         "afterTokens": 40000,
-        "durationMs": 60
+        "durationMs": 90
       }
     },
     {
       "type": "room/run-state",
       "seq": 35,
-      "time": 1800000000590,
+      "time": 1800000000730,
       "data": {
         "member": "bea",
         "runId": "31:00000000-0000-4000-8000-000000000001",
         "state": "done",
-        "startedAt": 1800000000500,
-        "elapsedMs": 80,
+        "startedAt": 1800000000610,
+        "elapsedMs": 110,
         "childSessionId": "child-ada",
+        "executionId": "00000000-0000-4000-8000-000000000016",
         "operation": "compact"
       }
     },
     {
       "type": "room/delivery-state",
       "seq": 36,
-      "time": 1800000000600,
+      "time": 1800000000740,
       "data": {
         "id": "31:00000000-0000-4000-8000-000000000001",
         "dispatchSeq": 31,
@@ -491,7 +501,7 @@
     {
       "type": "user/message",
       "seq": 37,
-      "time": 1800000000610,
+      "time": 1800000000750,
       "data": {
         "content": [
           {
@@ -503,23 +513,23 @@
           "kind": "user"
         },
         "role": "user",
-        "id": "00000000-0000-4000-8000-000000000012"
+        "id": "00000000-0000-4000-8000-000000000017"
       }
     },
     {
       "type": "room/dispatch",
       "seq": 38,
-      "time": 1800000000620,
+      "time": 1800000000760,
       "data": {
-        "id": "00000000-0000-4000-8000-000000000013",
+        "id": "00000000-0000-4000-8000-000000000018",
         "requestSignature": "0dae06ce3571a78598677e83030fe7a10801d0d734288144d1c3efb764f2c251",
         "targets": [
           "bea"
         ],
         "text": "/compact",
         "origin": "human",
-        "task": "00000000-0000-4000-8000-000000000012",
-        "messageId": "00000000-0000-4000-8000-000000000012",
+        "task": "00000000-0000-4000-8000-000000000017",
+        "messageId": "00000000-0000-4000-8000-000000000017",
         "targetIds": [
           "00000000-0000-4000-8000-000000000001"
         ]
@@ -528,7 +538,7 @@
     {
       "type": "room/delivery-state",
       "seq": 39,
-      "time": 1800000000640,
+      "time": 1800000000790,
       "data": {
         "id": "38:00000000-0000-4000-8000-000000000001",
         "dispatchSeq": 38,
@@ -539,48 +549,50 @@
     {
       "type": "room/run-state",
       "seq": 40,
-      "time": 1800000000650,
+      "time": 1800000000800,
       "data": {
         "member": "bea",
         "state": "running",
-        "startedAt": 1800000000630,
+        "startedAt": 1800000000770,
         "runId": "38:00000000-0000-4000-8000-000000000001",
         "childSessionId": "child-ada",
-        "childFromSeq": 5,
+        "childFromSeq": 14,
+        "executionId": "00000000-0000-4000-8000-000000000019",
         "operation": "compact"
       }
     },
     {
       "type": "room/member-compacted",
       "seq": 41,
-      "time": 1800000000700,
+      "time": 1800000000870,
       "data": {
         "member": "bea",
         "memberId": "00000000-0000-4000-8000-000000000001",
         "runId": "38:00000000-0000-4000-8000-000000000001",
         "outcome": "completed",
-        "durationMs": 60,
+        "durationMs": 90,
         "unreported": true
       }
     },
     {
       "type": "room/run-state",
       "seq": 42,
-      "time": 1800000000720,
+      "time": 1800000000890,
       "data": {
         "member": "bea",
         "runId": "38:00000000-0000-4000-8000-000000000001",
         "state": "done",
-        "startedAt": 1800000000630,
-        "elapsedMs": 80,
+        "startedAt": 1800000000770,
+        "elapsedMs": 110,
         "childSessionId": "child-ada",
+        "executionId": "00000000-0000-4000-8000-000000000019",
         "operation": "compact"
       }
     },
     {
       "type": "room/delivery-state",
       "seq": 43,
-      "time": 1800000000730,
+      "time": 1800000000900,
       "data": {
         "id": "38:00000000-0000-4000-8000-000000000001",
         "dispatchSeq": 38,

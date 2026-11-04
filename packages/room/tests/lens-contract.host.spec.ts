@@ -21,6 +21,7 @@ import { isCompactCommand as coreIsCompactCommand } from '@khorsheed/dsh-local-a
 import RoomService from '../src/index.ts'
 import { isCompactCommand } from '../src/journal.ts'
 import { createRoom } from './promote.ts'
+import { withRunEntry } from './run-entry-shim.ts'
 
 const FIXTURE = fileURLToPath(new URL('../../context-lens/tests/fixtures/room-contract.json', import.meta.url))
 
@@ -59,7 +60,7 @@ async function produce(): Promise<unknown> {
     }),
   } as never)
   const facade = { start: vi.fn(), resume: vi.fn(), cancel: vi.fn(() => true) }
-  ctx.provide('localAgent', { ...facade } as never)
+  ctx.provide('localAgent', withRunEntry({ ...facade }, ctx) as never)
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
@@ -139,6 +140,21 @@ describe('room → Context Lens contract fixture', () => {
     const checkedIn: unknown = JSON.parse(readFileSync(FIXTURE, 'utf8'))
     // Stale: regenerate with UPDATE_ROOM_CONTRACT=1 and rerun the context-lens suite.
     expect(checkedIn).toEqual(produced)
+  })
+
+  it('every member run names its local-agent execution, and its terminal round is that execution\'s', async () => {
+    const produced = await produce() as { roomRows: { type: string; data: { state?: string; runId?: string; executionId?: string; childTurn?: number; operation?: string } }[] }
+    const edges = produced.roomRows.filter(row => row.type === 'room/run-state')
+    const running = edges.filter(row => row.data.state === 'running')
+    expect(running.length).toBeGreaterThan(0)
+    // Batch 5 S5: every CLI member round went through run(); its running edge carries the execution id.
+    for (const edge of running) expect(edge.data.executionId).toEqual(expect.any(String))
+    expect(new Set(running.map(edge => edge.data.executionId)).size).toBe(running.length)
+    // A prompt round's terminal edge reports a round; a compaction's none.
+    for (const edge of edges.filter(row => row.data.state !== 'running')) {
+      if (edge.data.operation === 'compact') expect(edge.data.childTurn).toBeUndefined()
+      else expect(edge.data.childTurn).toEqual(expect.any(Number))
+    }
   })
 
   it('the room /compact mirror judges every case exactly as the core', () => {
