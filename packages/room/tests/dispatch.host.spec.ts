@@ -8,7 +8,7 @@ import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import { PlanService, readPlan } from '../src/plan-service.ts'
 import { changePlan, queuePlanAttempt, admitPlanAttempt } from '../src/plan.ts'
-import { COMPACT_UNREPORTED_TEXT, ROOM_KIND, ROOM_PLUGIN, isRoomSource } from '../src/dispatch.ts'
+import { COMPACTED_TEXT, COMPACT_UNREPORTED_TEXT, ROOM_KIND, ROOM_PLUGIN, compactionUnreported, isRoomSource } from '../src/dispatch.ts'
 import type { LocalAgentFacade } from '../src/adapter.ts'
 
 /** A manually settled promise. */
@@ -238,7 +238,7 @@ describe('DispatchEngine (real composition)', () => {
       usage: { inputTokens: 1_103, outputTokens: 154, cacheReadTokens: 19_712 } })
   })
 
-  it('/compact reads only the compaction written inside its own run; a member that reports none says so', async () => {
+  it('/compact reads only the compaction written inside its own run; the core\'s unrecorded fact says the member reports none', async () => {
     const bench = await bootRoom()
     const child = bench.ctx.sessions.create(SessionId('child-1'), { meta: {} })
     bench.facade.start.mockImplementation(async () => settledRun('child-1', '方案 A'))
@@ -248,8 +248,15 @@ describe('DispatchEngine (real composition)', () => {
     child.append('local-agent/compaction', {
       source: 'auto', outcome: 'completed', provider: 'claude-code', beforeTokens: 900_000, afterTokens: 50_000, startedAt: 1, endedAt: 2, boundarySeq: 0,
     })
-    // This /compact round writes no compaction record (the provider reports none).
-    bench.facade.resume.mockImplementation(async () => settledRun('child-1', ''))
+    // The provider reports no compaction: the core writes the fact itself,
+    // marked unrecorded, inside this execution (local-agent execution-records).
+    bench.facade.resume.mockImplementation(async () => {
+      child.append('local-agent/compaction', {
+        source: 'manual', outcome: 'completed', provider: 'claude-code', startedAt: 3, endedAt: 4, boundarySeq: 1,
+        unrecorded: ['usage', 'before-after', 'summary'],
+      })
+      return settledRun('child-1', '')
+    })
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada /compact' })
     await bench.service.engine.idle()
     const row = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().findLast(event => event.type === 'room/member-compacted')
@@ -258,6 +265,29 @@ describe('DispatchEngine (real composition)', () => {
     // The delivery's outcome (what a waiting sender's report reads) says so too.
     const settled = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().findLast(event => event.type === 'room/delivery-state')
     expect(settled?.data).toMatchObject({ state: 'done', text: COMPACT_UNREPORTED_TEXT })
+  })
+
+  it('/compact whose run holds no compaction fact is not guessed to be unreported', async () => {
+    const bench = await bootRoom()
+    bench.ctx.sessions.create(SessionId('child-1'), { meta: {} })
+    bench.facade.start.mockImplementation(async () => settledRun('child-1', '方案 A'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'claude-code', name: 'ada', firstTask: '出方案' })
+    await bench.service.engine.idle()
+    // A core from before batch 5 S2 writes no fact: room no longer infers one.
+    bench.facade.resume.mockImplementation(async () => settledRun('child-1', ''))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada /compact' })
+    await bench.service.engine.idle()
+    const row = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().findLast(event => event.type === 'room/member-compacted')
+    expect(row?.data).toMatchObject({ member: 'ada', outcome: 'completed' })
+    expect(row?.data).not.toHaveProperty('unreported')
+    const settled = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().findLast(event => event.type === 'room/delivery-state')
+    expect(settled?.data).toMatchObject({ state: 'done', text: COMPACTED_TEXT })
+  })
+
+  it('a codex automatic compaction marked unrecorded for usage only still shows its numbers', () => {
+    expect(compactionUnreported({ unrecorded: ['usage'] })).toBe(false)
+    expect(compactionUnreported({})).toBe(false)
+    expect(compactionUnreported({ unrecorded: ['usage', 'before-after', 'summary'] })).toBe(true)
   })
 
   it('/compact to a member that never ran starts nothing', async () => {

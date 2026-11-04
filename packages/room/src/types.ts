@@ -278,10 +278,13 @@ export interface RoomMemberCompactedEvent {
   readonly error?: LocalAgentCompactionEvent['error']
   readonly durationMs?: number
   /**
-   * The member wrote no `local-agent/compaction` record during this run (its
-   * provider does not report compaction — Claude Code and DSH members
-   * today): the round ran, but there are no facts to show, and the row says
-   * so instead of claiming a compaction with no numbers.
+   * The run's `local-agent/compaction` fact is marked as carrying no numbers
+   * (`unrecorded` sizes and spend — the core writes that fact for a provider
+   * that does not report compaction: Claude Code and DSH members today): the
+   * round ran, but there are no facts to show, and the row says so instead
+   * of claiming a compaction with no numbers. Copied from the core fact's
+   * write-time mark since batch 5 S2; rows written before it carry room's
+   * own earlier judgment (no fact in the run) and stay readable as written.
    */
   readonly unreported?: true
 }
