@@ -71,7 +71,8 @@ if (registry !== undefined) {
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——`shell.overlay` 座位（ui-layout 帧）与会话输入机（`conversation.input.for`）在该线均在，`minHost` 钉在 0.1.5-rc.1。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化。
-- **座位探测降级**：唯一表面走 `ctx.slots.inject` 注册——宿主不声明 overlay 座位时浮层整体静默缺席，不影响启动；headless profile 没有浏览器消费者，本插件在那里不贡献任何东西（宿主半边照常提供 Remote，verb 按探测结果拒绝或受理）。
+- **座位探测降级**：可见表面走 `ctx.slots.inject` 注册——宿主不声明 overlay 座位时浮层整体静默缺席，不影响启动；headless profile 没有浏览器消费者，本插件在那里不贡献任何东西（宿主半边照常提供 Remote，verb 按探测结果拒绝或受理）。
+- **Chat 只保留社区引用入口**：0.2.2-rc.1 的官方 `conversation.chat.text-interaction` keyed 槽位支持公开 `priority` 覆盖。本包以 `key: 'quote'`、`priority: -1` 注册空渲染，让社区选区菜单和 chip 成为唯一交互，不依赖插件加载顺序，也不禁用官方包或替换官方输入机。官方的用户文本规则仍保留；旧宿主没有该槽位时适配器不挂载，行为与之前一致。引用块的独立删除按钮留待后续单独立项。
 - **选区读取是 last-resort DOM anchor**：只读 `window.getSelection()` 的纯文本与矩形；读取本身抛错时按「安静消失」兜底，绝不拖垮启动。
 - **side-chat 是声明式可选协作**：`dsh.references` 声明 `@khorsheed/dsh-sidechat`（数据引用，非依赖）；side-chat 缺席时对应菜单项隐藏，其余照常。
 - **引用 chip 是探测降级**：`ctx.inputTriggers` 服务缺席（codec 无载体）或插入被宿主拒绝（旧宿主无监听、草稿修订号竞争、相位锁定）→ 自动回退纯文本 `> 引用块`，行为与旧版一致；`minHost` 不动。

@@ -62,6 +62,7 @@ import type { RemoteResult, TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-ty
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import quoteRemote from '@khorsheed/dsh-quote/remote'
 import { mergedQuoteDraft, type QuoteAddRefOutcome, type QuoteAddRefRequest } from '../types.ts'
+import { registerQuoteChatInteraction } from './chat-interaction.ts'
 import type { QuoteMenuInjected } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
 import { createQuotePreviewStore, createQuoteTriggerSource, insertQuoteChip, type QuoteBailScope, type QuoteInputSnapshot, type QuoteInputTriggersMirror } from './reference.ts'
@@ -118,6 +119,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     ctx.logger.error(error)
   }
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'quote: dictionaries')
+  registerQuoteChatInteraction(ctx)
 
   // The quote chip codec rides a headless trigger source on the input-trigger
   // service: the submit-time serializer resolves codecs by source name, so the
