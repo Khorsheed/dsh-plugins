@@ -61,6 +61,38 @@ ${THREE_3D.skillSection}
 - 不要再在 \`src/\` 里抄一份同样的数据，直接 \`fetch\` 读 \`design/\` 下的文件；改这些文件和改代码一样，要发版、过检查。
 - 「任务能不能完成、区域能不能走到」写成 \`tests/*.test.js\`。
 
+**声明词汇：design/schema.json（可选，建议内容一多就加）。** 写了它，每轮检查就会按它核对所有引用：编号不存在、条件或效果没声明、参数缺了或拼错、模型里没有那个动画，都会报出文件和位置。插件不规定词汇，全部由你声明：
+\`\`\`json
+{
+  "schema": 1,
+  "ids": {
+    "room":   { "from": "design/rooms/*.json#rooms[].id" },
+    "spot":   { "from": "design/rooms/*.json#spots.@" },
+    "step":   { "list": ["start", "open", "done"] },
+    "actor":  { "map": { "player": "hero" } }
+  },
+  "refs": {
+    "design/rooms/*.json#rooms[].links[]": "room",
+    "elements#interactions[].animations.*": "clip(@)"
+  },
+  "conditions": { "step": "step", "hasItem": "element", "near": { "spot": "spot", "within": "number?" } },
+  "effects": {
+    "setStep": { "step": "step" },
+    "play":    { "target": "actor|element", "name": "clip(target)" }
+  },
+  "slots": {
+    "design/quests/*.json#actions.*.when": "condition",
+    "design/quests/*.json#actions.*.do[]": "effect",
+    "elements#interactions[].do[]": "effect"
+  }
+}
+\`\`\`
+- 来源写成「文件#路径」，\`elements\` 表示所有元素；路径里 \`名字[]\` 是数组的每一项，\`*\` 是映射的每个值，\`@\` 是映射的每个键。
+- \`ids\`：每类编号从哪来——\`from\`（数据里的位置，或 \`"elements"\`）、\`list\`（固定列表，比如阶段名）、\`map\`（别名 → 元素 ID，比如 player 指主角）。\`element\` 是内置的。
+- 类型：\`string / number / boolean / any\`、上面声明的编号名、\`a|b\`、\`map<T>\`、\`list<T>\`、末尾 \`?\` 表示可选；\`clip(参数名)\` 表示该参数所指元素（或别名）的 glb 里必须有这个动画，\`clip(@)\` 指映射的键。
+- \`refs\`：哪些位置的值必须是哪类编号。\`slots\`：哪些位置放的是条件、哪些是效果。条件写成 \`{ 名字: 参数 }\`，可用内置的 \`all / any / not\` 组合；效果写成 \`{ "type": 名字, …参数 }\`，没声明的参数算错。
+- 以 \`$\` 开头的值（\`"$id"\`）是运行时参数，不核对。
+
 ## window.dshGame 约定（必须）
 入口加载完后在 window 上挂：
 \`\`\`js
@@ -85,6 +117,7 @@ window.dshGame = {
 - \`test(名称, async () => {...})\` 登记用例
 - \`assert(条件, 说明)\`、\`assert.equal(实际, 期望, 说明)\`、\`assert.near(实际, 期望, 误差, 说明)\`
 - \`game\`（= window.dshGame）、\`step(帧数, dt=1/60)\`、\`press(key, 帧数)\`
+- \`await importModule('src/content.js')\`：引入项目里的模块（比如单独测内容解释器）
 \`\`\`js
 test('按住右键 3 秒能走出起点', () => {
   game.input('ArrowRight', true); step(180); game.input('ArrowRight', false)
