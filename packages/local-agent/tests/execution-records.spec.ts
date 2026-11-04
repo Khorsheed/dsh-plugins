@@ -241,6 +241,48 @@ describe('local-agent/execution records (batch 5 S1)', () => {
     expect(start).toMatchObject({ operation: 'compact', cause: { kind: 'human', via: 'compact-button' } })
     expect(end).toMatchObject({ outcome: 'done', turns: [], unrecorded: ['compaction'] })
     expect(end.providerReportedUsage).toBeUndefined()
+    // S2: the provider wrote its own fact, so the core added none.
+    expect(events.filter(event => event.type === 'local-agent/compaction')).toHaveLength(1)
+    expect(events.find(event => event.type === 'local-agent/compaction')?.data).not.toHaveProperty('unrecorded')
+  })
+
+  it('a compaction whose provider writes no fact: the core writes one, marked unrecorded, inside the execution (S2)', async () => {
+    const h = await mount()
+    h.next({ round: promptRound('exec'), report: 'before' })
+    const first = await h.registry.start(PARENT, PROVIDER, [{ type: 'text', text: 'go' }])
+    await first.result
+    const child = String(first.id)
+    h.registry.recordDelegation({ childSessionId: child, provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'native', cwd: '/home/user/work' })
+    // An earlier compaction (before this execution's admission) does not count as this execution's.
+    h.ctx.sessions.get(SessionId(child))!.append('local-agent/compaction', { source: 'auto', outcome: 'completed', provider: PROVIDER, beforeTokens: 9, startedAt: 1, endedAt: 2, boundarySeq: -1 } as never)
+    h.next({ round: () => ({ stopReason: 'completed', output: [] }), report: 'never' })
+    const compaction = await h.registry.compact(PARENT, PROVIDER, child)
+    await compaction.result
+    const events = await storedLog(h, child, 2)
+    expect(types(events).slice(-3)).toEqual([TYPE, 'local-agent/compaction', TYPE])
+    const facts = events.filter(event => event.type === 'local-agent/compaction').map(event => event.data as localAgent.LocalAgentCompactionEvent)
+    expect(facts).toHaveLength(2)
+    const [start] = records(events).slice(2) as [LocalAgentExecutionStartEvent]
+    const fact = facts[1]!
+    expect(fact).toMatchObject({ source: 'manual', outcome: 'completed', provider: PROVIDER, startedAt: start.admittedAt, unrecorded: ['usage', 'before-after', 'summary'] })
+    // No numbers and no summary: the mark says why, the fields stay absent.
+    for (const key of ['beforeTokens', 'afterTokens', 'contextWindow', 'usage', 'summary']) expect(fact).not.toHaveProperty(key)
+    expect(fact.endedAt).toBeGreaterThanOrEqual(fact.startedAt)
+  })
+
+  it('a failed compaction the provider reports nothing about is recorded failed', async () => {
+    const h = await mount()
+    h.next({ round: promptRound('exec'), report: 'before' })
+    const first = await h.registry.start(PARENT, PROVIDER, [{ type: 'text', text: 'go' }])
+    await first.result
+    const child = String(first.id)
+    h.registry.recordDelegation({ childSessionId: child, provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'native', cwd: '/home/user/work' })
+    h.next({ round: () => ({ stopReason: 'error', output: [], diagnostic: 'boom' }), report: 'never' })
+    const compaction = await h.registry.compact(PARENT, PROVIDER, child)
+    await compaction.result
+    const events = await storedLog(h, child, 2)
+    const facts = events.filter(event => event.type === 'local-agent/compaction').map(event => event.data as localAgent.LocalAgentCompactionEvent)
+    expect(facts).toMatchObject([{ outcome: 'failed', unrecorded: ['usage', 'before-after', 'summary'] }])
   })
 
   it('a cancelled round ends cancelled; an error round and a failed spawn end failed', async () => {
@@ -331,6 +373,17 @@ describe('execution recorder', () => {
     expect(kinds.slice(kinds.indexOf('turn/start'))).toEqual(['turn/start', 'turn/end', TYPE, TYPE])
     // No transport known (the opener never ran): both paths' declarations stand.
     expect(records(late.snapshotEvents())[1]).toMatchObject({ phase: 'end', turns: [1], unrecorded: ['call-boundaries', 'per-call-usage', 'internal-calls'] })
+  })
+
+  it('a compaction execution: one fact for done/failed/cancelled, none for a prompt round or an uncertain end', () => {
+    const child = Session.create(SessionId('compact-child'))
+    const recorder = new ExecutionRecorder({ session: () => child, persist: () => {}, settleWaitMs: 0, onError: (error) => { throw error } })
+    const facts = (): localAgent.LocalAgentCompactionEvent[] => child.snapshotEvents()
+      .filter(event => event.type === 'local-agent/compaction').map(event => event.data as localAgent.LocalAgentCompactionEvent)
+    recorder.admit({ childSessionId: 'compact-child', parentSessionId: PARENT, operation: 'compact', provider: 'claude-code' }).settle('cancelled')
+    recorder.admit({ childSessionId: 'compact-child', parentSessionId: PARENT, operation: 'compact', provider: 'claude-code' }).settle('uncertain')
+    recorder.admit({ childSessionId: 'compact-child', parentSessionId: PARENT, operation: 'prompt', provider: 'claude-code' }).settle('done')
+    expect(facts()).toMatchObject([{ outcome: 'cancelled', provider: 'claude-code', unrecorded: ['usage', 'before-after', 'summary'] }])
   })
 
   it('a provider that fails before any child exists leaves no record', () => {

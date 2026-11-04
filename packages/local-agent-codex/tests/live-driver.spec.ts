@@ -634,10 +634,13 @@ describe('codex live driver rounds', () => {
     }) }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
+    // Written before the round's result settles, so inside the core's
+    // execution range; codex states no spend for it, marked at write time.
     const events = child.snapshotEvents()
     expect(events.filter(event => event.type === 'local-agent/compaction').map(event => event.data)).toEqual([expect.objectContaining({
-      source: 'auto', outcome: 'completed', provider: 'codex-local',
+      source: 'auto', outcome: 'completed', provider: 'codex-local', unrecorded: ['usage'],
     })])
+    expect(events.find(event => event.type === 'local-agent/compaction')?.data).not.toHaveProperty('usage')
     expect(events.filter(event => event.type === 'local-agent/context').map(event => event.data)).toEqual([
       { provider: 'codex-local', usedTokens: 42_000, contextWindow: 400_000 },
     ])

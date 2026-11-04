@@ -30,6 +30,8 @@ import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
 import type {
+  LocalAgentCompactionEvent,
+  LocalAgentCompactionUnrecorded,
   LocalAgentExecutionEndEvent,
   LocalAgentExecutionIntent,
   LocalAgentExecutionOperation,
@@ -74,6 +76,8 @@ export interface ExecutionAdmission {
   readonly childSessionId: string
   readonly parentSessionId: string
   readonly operation: LocalAgentExecutionOperation
+  /** The member's delegation provider (`kimi-cli`, `codex-local`, …), for a compaction fact the core writes itself. */
+  readonly provider?: string | undefined
   /** The caller's facts; absent for a provider start nothing staged them for (recorded as `api`, no cause). */
   readonly execution?: LocalAgentExecutionIntent | undefined
   /** The member harness's static declaration. */
@@ -93,6 +97,14 @@ export interface ExecutionRecorderOptions {
 function lastSeq(session: Session): number {
   const last = session.snapshotEvents().at(-1)
   return last === undefined ? -1 : Number(last.seq)
+}
+
+/** Everything a compaction the core records on the provider's behalf does not know. */
+const UNREPORTED_COMPACTION: readonly LocalAgentCompactionUnrecorded[] = ['usage', 'before-after', 'summary']
+
+/** The compaction outcome an execution outcome means (`uncertain` has none: nothing is known). */
+const COMPACTION_OUTCOME: Partial<Record<LocalAgentExecutionOutcome, LocalAgentCompactionEvent['outcome']>> = {
+  done: 'completed', failed: 'failed', cancelled: 'cancelled',
 }
 
 function hasStart(session: Session, executionId: string): boolean {
@@ -260,6 +272,35 @@ export class OpenExecution {
     return [...new Set([...declared.exec ?? [], ...declared.live ?? []])]
   }
 
+  /**
+   * A `/compact` execution always leaves one `local-agent/compaction` fact in
+   * its range (batch 5 S2): when the provider wrote none after the admission
+   * watermark (Claude Code and DSH report no compaction), the core writes one
+   * marked {@link UNREPORTED_COMPACTION} — the command ran, nothing more is
+   * known. A provider's own event (Kimi, Codex) is left alone, so one
+   * execution never carries two. Written before the end record, inside the
+   * execution's range; an `uncertain` end writes none.
+   */
+  private writeCompactionFact(session: Session, outcome: LocalAgentExecutionOutcome): void {
+    if (this.admission.operation !== 'compact') return
+    const compactionOutcome = COMPACTION_OUTCOME[outcome]
+    if (compactionOutcome === undefined) return
+    const events = session.snapshotEvents()
+    if (events.some(event => event.type === 'local-agent/compaction' && Number(event.seq) > this.watermark)) return
+    const fact: LocalAgentCompactionEvent = {
+      source: 'manual',
+      outcome: compactionOutcome,
+      provider: this.admission.provider ?? 'unknown',
+      startedAt: this.start.admittedAt,
+      endedAt: Date.now(),
+      boundarySeq: lastSeq(session),
+      unrecorded: [...UNREPORTED_COMPACTION],
+    }
+    try {
+      session.append('local-agent/compaction', fact)
+    } catch (error) { this.recorder.onError(error) }
+  }
+
   private writeEnd(outcome: LocalAgentExecutionOutcome): void {
     this.recorder.closed(this)
     const session = this.recorder.lookup(this.childSessionId)
@@ -268,6 +309,7 @@ export class OpenExecution {
     // into the child" case.
     if (session === undefined) return
     this.writeStart(session)
+    this.writeCompactionFact(session, outcome)
     const unrecorded = this.unrecorded()
     const end: LocalAgentExecutionEndEvent = {
       phase: 'end',
