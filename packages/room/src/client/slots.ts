@@ -360,6 +360,17 @@ export interface RoomMembersInjected extends RoomInviteInjected {
   /** Reload a member's process so it lists its mode tools again (the localAgentGateway `reloadMemberTools` write). */
   readonly reloadMemberTools?: ((childSessionId: string) => Promise<LocalAgentMemberToolsReload | undefined>) | undefined
   /**
+   * What the edit dialog's recovery block needs about a CLI member (the
+   * localAgentGateway `memberConfiguration` and `memberInbox` reads,
+   * duck-typed): a failed start, rounds a restart interrupted. undefined =
+   * gateway absent or RPC failure (no block).
+   */
+  readonly memberRecovery?: ((childSessionId: string) => Promise<import('./member-recovery-view.ts').MemberRecoveryRead | undefined>) | undefined
+  /** 对账并重试: the member-configuration retry (the localAgentGateway `retryMemberConfiguration` write). */
+  readonly retryMemberStart?: ((childSessionId: string, revision: number) => Promise<RoomMutationOutcome>) | undefined
+  /** Record the human's verdict on an interrupted execution (the localAgentGateway `controlMemberInbox` reconcile). */
+  readonly reconcileMemberExecution?: ((childSessionId: string, executionId: string, outcome: 'done' | 'cancelled', evidence: string) => Promise<RoomMutationOutcome>) | undefined
+  /**
    * The room session's official model directory (the same instance
    * RoomModelPicker renders): the main-agent card's model hint. undefined =
    * host without ui-model-selection.

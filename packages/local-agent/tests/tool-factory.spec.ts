@@ -1,3 +1,6 @@
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -76,7 +79,7 @@ async function setup(
     taken,
     ...over.deferred === undefined ? {} : { deferred: over.deferred },
   })
-  const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
+  const registry = new LocalAgentRegistry(ctx, mkdtempSync(join(tmpdir(), 'tool-factory-homes-')), 10_000)
   ctx.provide(LOCAL_AGENT_SERVICE, registry)
   // Recorded children read as live only when a test lists them: the manager
   // probes `sessions.get(run.id)` for availability, and the scripted
@@ -328,7 +331,7 @@ describe('dsh-local-agent tool-factory', () => {
     ctx.provide('workingDirectory', { ensure: async () => '/tmp' } as never)
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SubagentRuntime).await()
-    const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
+    const registry = new LocalAgentRegistry(ctx, mkdtempSync(join(tmpdir(), 'tool-factory-homes-')), 10_000)
     ctx.provide(LOCAL_AGENT_SERVICE, registry)
     ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
     await ctx.plugin(toolPlugin({ provider: 'mock', toolName: 'subagent_test' }))
@@ -353,7 +356,7 @@ describe('dsh-local-agent tool-factory', () => {
     const started: Array<{ label?: string; task: string }> = []
     const taken: Array<{ kind: string; childSessionId?: string; cliSessionId?: string }> = []
     const disposer = mountScriptedProvider(ctx, { name: 'mock', started, taken })
-    const registry = new LocalAgentRegistry(ctx, '/tmp/homes', 10_000)
+    const registry = new LocalAgentRegistry(ctx, mkdtempSync(join(tmpdir(), 'tool-factory-homes-')), 10_000)
     ctx.provide(LOCAL_AGENT_SERVICE, registry)
     ctx.provide('logger', { warn: () => {}, info: () => {} } as never)
     await ctx.plugin(toolPlugin({ provider: 'mock', toolName: 'subagent_test' }))

@@ -30,6 +30,8 @@ import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
 import type {
+  LocalAgentCompactionEvent,
+  LocalAgentCompactionUnrecorded,
   LocalAgentExecutionEndEvent,
   LocalAgentExecutionIntent,
   LocalAgentExecutionOperation,
@@ -62,11 +64,20 @@ export function beforeMirrorTurn(session: Session, transport: MirrorTransport): 
   turnHooks().get(String(session.id))?.(session, transport)
 }
 
+/** What a provider's settle report observed about the round. */
+export interface ExecutionObservation {
+  readonly observedModel?: string
+  readonly observedEffort?: string
+  readonly cliVersion?: string
+}
+
 /** What the core knows at the admission point. */
 export interface ExecutionAdmission {
   readonly childSessionId: string
   readonly parentSessionId: string
   readonly operation: LocalAgentExecutionOperation
+  /** The member's delegation provider (`kimi-cli`, `codex-local`, …), for a compaction fact the core writes itself. */
+  readonly provider?: string | undefined
   /** The caller's facts; absent for a provider start nothing staged them for (recorded as `api`, no cause). */
   readonly execution?: LocalAgentExecutionIntent | undefined
   /** The member harness's static declaration. */
@@ -88,6 +99,14 @@ function lastSeq(session: Session): number {
   return last === undefined ? -1 : Number(last.seq)
 }
 
+/** Everything a compaction the core records on the provider's behalf does not know. */
+const UNREPORTED_COMPACTION: readonly LocalAgentCompactionUnrecorded[] = ['usage', 'before-after', 'summary']
+
+/** The compaction outcome an execution outcome means (`uncertain` has none: nothing is known). */
+const COMPACTION_OUTCOME: Partial<Record<LocalAgentExecutionOutcome, LocalAgentCompactionEvent['outcome']>> = {
+  done: 'completed', failed: 'failed', cancelled: 'cancelled',
+}
+
 function hasStart(session: Session, executionId: string): boolean {
   return session.snapshotEvents().some(event => event.type === 'local-agent/execution'
     && (event.data as LocalAgentExecutionStartEvent).phase === 'start'
@@ -103,7 +122,7 @@ export function executionOutcome(result: SubagentResult): LocalAgentExecutionOut
 
 /** One admitted execution, from admission to its end record. */
 export class OpenExecution {
-  readonly executionId = randomUUID()
+  readonly executionId: string
   readonly start: LocalAgentExecutionStartEvent
   /** The child log's last seq at admission: turns after it are this execution's. */
   private readonly watermark: number
@@ -112,6 +131,9 @@ export class OpenExecution {
   /** The provider's settle report arrived (with or without a total). */
   reported = false
   private reportedUsage: TokenUsage | undefined
+  /** The settle report's observations (model, effort, CLI version), for the execution's settlement. */
+  observed: ExecutionObservation | undefined
+  private reportWaiters: Array<() => void> = []
   /** Set once the run settled; the end record carries it. */
   private outcome: LocalAgentExecutionOutcome | undefined
   /** Pending while the end waits for an owed settle report. */
@@ -119,6 +141,7 @@ export class OpenExecution {
   private ended = false
 
   constructor(private readonly recorder: ExecutionRecorder, private readonly admission: ExecutionAdmission) {
+    this.executionId = admission.execution?.executionId ?? randomUUID()
     this.start = {
       phase: 'start',
       executionId: this.executionId,
@@ -168,10 +191,33 @@ export class OpenExecution {
   }
 
   /** The provider's settle report for this execution. */
-  noteReport(usage: TokenUsage | undefined): void {
+  noteReport(usage: TokenUsage | undefined, observed?: ExecutionObservation): void {
     this.reported = true
     if (usage !== undefined) this.reportedUsage = structuredClone(usage)
+    if (observed !== undefined) this.observed = { ...observed }
+    for (const wake of this.reportWaiters.splice(0)) wake()
     if (this.timer !== undefined) this.end()
+  }
+
+  /**
+   * Resolve once the provider's settle report arrived, or after `ms` — at
+   * once when none is owed (a compaction, a turnless round, a report that
+   * already came). For the settlement's observations.
+   */
+  reportOrTimeout(ms: number): Promise<void> {
+    if (this.reported || this.admission.operation !== 'prompt' || !this.openedTurn()) return Promise.resolve()
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, ms)
+      timer.unref?.()
+      this.reportWaiters.push(() => { clearTimeout(timer); resolve() })
+    })
+  }
+
+  /** The execution's turn range: fixed at settle, read live before it. */
+  turnRange(): number[] {
+    if (this.turns !== undefined) return [...this.turns]
+    const session = this.recorder.lookup(this.childSessionId)
+    return session === undefined ? [] : this.turnsOf(session)
   }
 
   /**
@@ -226,6 +272,35 @@ export class OpenExecution {
     return [...new Set([...declared.exec ?? [], ...declared.live ?? []])]
   }
 
+  /**
+   * A `/compact` execution always leaves one `local-agent/compaction` fact in
+   * its range (batch 5 S2): when the provider wrote none after the admission
+   * watermark (Claude Code and DSH report no compaction), the core writes one
+   * marked {@link UNREPORTED_COMPACTION} — the command ran, nothing more is
+   * known. A provider's own event (Kimi, Codex) is left alone, so one
+   * execution never carries two. Written before the end record, inside the
+   * execution's range; an `uncertain` end writes none.
+   */
+  private writeCompactionFact(session: Session, outcome: LocalAgentExecutionOutcome): void {
+    if (this.admission.operation !== 'compact') return
+    const compactionOutcome = COMPACTION_OUTCOME[outcome]
+    if (compactionOutcome === undefined) return
+    const events = session.snapshotEvents()
+    if (events.some(event => event.type === 'local-agent/compaction' && Number(event.seq) > this.watermark)) return
+    const fact: LocalAgentCompactionEvent = {
+      source: 'manual',
+      outcome: compactionOutcome,
+      provider: this.admission.provider ?? 'unknown',
+      startedAt: this.start.admittedAt,
+      endedAt: Date.now(),
+      boundarySeq: lastSeq(session),
+      unrecorded: [...UNREPORTED_COMPACTION],
+    }
+    try {
+      session.append('local-agent/compaction', fact)
+    } catch (error) { this.recorder.onError(error) }
+  }
+
   private writeEnd(outcome: LocalAgentExecutionOutcome): void {
     this.recorder.closed(this)
     const session = this.recorder.lookup(this.childSessionId)
@@ -234,6 +309,7 @@ export class OpenExecution {
     // into the child" case.
     if (session === undefined) return
     this.writeStart(session)
+    this.writeCompactionFact(session, outcome)
     const unrecorded = this.unrecorded()
     const end: LocalAgentExecutionEndEvent = {
       phase: 'end',
@@ -288,9 +364,9 @@ export class ExecutionRecorder {
    * (rounds settle in admission order). A report no open execution claims is
    * ignored.
    */
-  noteReport(childSessionId: string, usage: TokenUsage | undefined): void {
+  noteReport(childSessionId: string, usage: TokenUsage | undefined, observed?: ExecutionObservation): void {
     const owner = this.open.get(childSessionId)?.find(execution => !execution.reported && execution.openedTurn())
-    owner?.noteReport(usage)
+    owner?.noteReport(usage, observed)
   }
 
   closed(execution: OpenExecution): void {

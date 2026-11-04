@@ -49,11 +49,11 @@ import {
   LiveStreamPublisher,
   LiveFlush,
   LIVE_FLUSH_INTERVAL_MS,
+  type MirrorBlock,
 } from '@khorsheed/dsh-local-agent'
 import type { Config } from './index.ts'
 import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
 import {
-  appendCodexTranscriptLine,
   codexMirrorSource,
   codexLineText,
   commandOutcome,
@@ -95,21 +95,47 @@ export const DEFAULT_SNAPSHOT_MIN_CHARS = 0
  * exec one-shot; any other error is a real round failure.
  */
 
+/**
+ * One model call of a live round: the items first seen between two
+ * `thread/tokenUsage/updated` boundaries (see the round's step ledger). It is
+ * written as ONE step — one assistant/message with every block, the call's
+ * usage once, then each tool's call/result pair.
+ */
+interface CodexCall {
+  /** Item ids in first-seen order (start, first delta, or completion): the call's block order. */
+  readonly items: string[]
+  /** Items started (or streaming) whose completion has not arrived yet. */
+  readonly pending: Set<string>
+  /** Items whose completion arrived (with or without a transcript line). */
+  readonly completed: Set<string>
+  /** Completed transcript lines by item id. */
+  readonly lines: Map<string, CodexTranscriptLine>
+  /** Its token-usage boundary arrived: no later item joins it. */
+  ended: boolean
+  /** The call's own usage (the boundary's `tokenUsage.last`). */
+  usage?: TokenUsage
+  /** The log step it holds open while its items stream. */
+  step?: number
+  folded: boolean
+}
+
 /** One streaming item of a round (see the round's step ledger). */
 interface CodexStream {
   readonly itemId: string
   readonly kind: 'think' | 'text'
   /** Provisional key for the live flush and the preview — never a log step. */
   readonly step: number
-  /** Lines completed before the item's first delta: it sorts before every later one. */
-  readonly after: number
+  /** The model call the item belongs to; its blocks share the call's step. */
+  readonly call: CodexCall
   text: string
   /** Arrival time of the item's first delta. */
   startedAt: number
   lastSnapshotAt: number
   lastSnapshotLen: number
-  /** step/start written for this item. */
+  /** It streams under its call's step (opened by it, or joined). */
   opened: boolean
+  /** It joined a step an earlier block of its call opened (a sub-item of that step). */
+  joined?: boolean
   /** The log step it occupies, once opened. */
   durable?: number
 }
@@ -199,8 +225,9 @@ function delay(ms: number): Promise<void> {
  * Map one app-server `item/completed` ThreadItem onto the shared transcript
  * line shape — the live transport's entry into the SAME fold the exec NDJSON
  * parser owns (`foldCodexStreamLine`); both produce `CodexTranscriptLine`s
- * and append through `appendCodexTranscriptLine`, so the two drivers' final
- * child transcripts cannot drift.
+ * and write them through the core mirror writer, so the two drivers' blocks
+ * cannot drift (the live driver groups them per model call, the exec path —
+ * whose stream names no call boundary — one step per line).
  */
 export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine | undefined {
   // The app-server ThreadItem carries its own id; the fold falls back to a
@@ -316,6 +343,15 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
     default:
       return undefined
   }
+}
+
+/**
+ * Whether a ThreadItem is output of a model call: the turn's echoed user
+ * prompt and codex's own context compaction are not, so they never open or
+ * hold a call.
+ */
+function modelItem(item: JsonObject | undefined): boolean {
+  return item !== undefined && item['type'] !== 'userMessage' && item['type'] !== 'contextCompaction'
 }
 
 /**
@@ -500,6 +536,12 @@ class CodexLiveRuntime {
   /** The thread's context occupancy and window, as its last request reported them. */
   contextTokens: number | undefined
   contextWindow: number | undefined
+  /**
+   * The last `thread/tokenUsage/updated` reading's identity (its thread
+   * total): codex re-emits an unchanged reading, and a repeat — even one
+   * carried over from the previous round — is no new model call.
+   */
+  lastUsageReading: string | undefined
   onDead: (() => void) | undefined
   private stderrTail = ''
   private readonly stderrDecoder = new StringDecoder('utf8')
@@ -1183,8 +1225,7 @@ export class CodexLiveDriver {
     /** Compactions codex ran on its own inside this turn (a `contextCompaction` item), with the occupancy before each. */
     const autoCompactions: { at: number; beforeTokens?: number }[] = []
     let lastUnphasedAnswer: string | undefined
-    /** The round's folded transcript (the exec fold's line shape). */
-    const lines: CodexTranscriptLine[] = []
+    /** Transcript lines written to the log (the settle's progress report). */
     let mirrored = 0
     let usage: TokenUsage | undefined
     /**
@@ -1196,28 +1237,29 @@ export class CodexLiveDriver {
     let totalUsage: TokenUsage | undefined
     let threadTotalBefore: JsonObject | undefined
     /**
-     * Per-call usage by transcript line: each `thread/tokenUsage/updated`
-     * notification closes one API call (its items have all completed), and
-     * the call's LAST line carries its `tokenUsage.last`. The map is
-     * authoritative per line, independent of the flush's withUsage flag.
+     * The round's model calls, oldest first. One `thread/tokenUsage/updated`
+     * notification closes one call: codex emits a call's token count after
+     * its last item — tool outputs included, the next request needs them —
+     * so every item first seen since the previous boundary belongs to the
+     * call the next boundary closes, and that boundary's `tokenUsage.last` is
+     * the call's own usage.
      */
-    const usageByLine = new Map<number, TokenUsage>()
-    /** Whether a folded line already carries usage (per-call, or the round's fallback — no backfill event exists). */
-    let usageCarried = false
+    const calls: CodexCall[] = []
+    /** Item id → the call it was first seen in. */
+    const callOfItem = new Map<string, CodexCall>()
+    /** Synthetic ids for items the wire sent without one. */
+    let anonymousItems = 0
     /**
      * The streaming items seen this round by item id: deltas accumulate into
-     * throttled snapshots at the item's step once it may open in the log
+     * throttled snapshots at their call's step once it may open in the log
      * (previewed live before that) — the host folds repeated settles at one
-     * coordinate into one live-updating chat node. The item's completion
-     * folds at the same step and finalizes it; an entry whose completion
-     * never arrives is force-finalized at settle. A tool that completes
-     * mid-stream folds after the stream, keeping the round's chronology.
+     * coordinate into one live-updating chat node. The call's fold writes
+     * the final text and finishes them; a stream whose completion never
+     * arrives lands from its live text when its call folds.
      */
     const streams = new Map<string, CodexStream>()
     /** Provisional stream keys (live flush and preview identity), never log steps. */
     let streamKeys = 0
-    /** Line indexes already written (a line may fold ahead of an earlier one it chronologically precedes). */
-    const folded = new Set<number>()
     /** The item deltas currently accumulate into (items stream sequentially). */
     let activeStream: string | undefined
     /** Tool item id → its notification time, paired with item/completed. */
@@ -1262,13 +1304,6 @@ export class CodexLiveDriver {
       return selected === undefined || selected.trim() === '' ? [] : [{ type: 'text', text: selected }]
     }
 
-    /**
-     * Append one snapshot of a streaming item at its reserved (turn, step).
-     * Throttled per item by interval and growth unless `force`; the forced
-     * final snapshot carries `interrupted` (a cancelled turn reads 已停止
-     * legitimately) and, when `withUsage` and no folded line carried it, the
-     * round's usage.
-     */
     const streamPublisher = localAgent?.liveStreams === undefined ? undefined
       : new LiveStreamPublisher(localAgent.liveStreams, childSession, turn, persist,
         error => this.ctx.logger.warn(`live checkpoint failed: ${String(error)}`))
@@ -1278,79 +1313,104 @@ export class CodexLiveDriver {
     )
 
     // The step ledger. The log admits steps strictly in sequence — one open
-    // at a time, numbered when it is WRITTEN (`lastStep`) — while the round's
-    // chronology is kept by start order: a stream sorts before every line
-    // that completed after its first delta (`after` = lines completed before
-    // it began). A stream's step opens in the log only once it is the oldest
-    // unfinished stream and everything before it is written; until then the
-    // browser previews it (`preview`), and its fold writes the text anyway.
+    // at a time, numbered when it is WRITTEN (`lastStep`) — and one model
+    // call is ONE step (the claude paths' grouping): its reasoning, text and
+    // tool blocks land in one assistant/message carrying the call's usage
+    // once, then each tool's call/result pair, then step/end. Calls write in
+    // order. A call's step opens in the log once its first stream may
+    // snapshot (every earlier call written; until then the browser previews
+    // it) and the call's later streams join that open step; a call that
+    // never streamed opens its step at its fold.
     let lastStep = 0
     let openStep: number | undefined
-    const openStreamStep = (stream: CodexStream): void => {
-      lastStep += 1
-      childSession.append('step/start', { turn, step: lastStep })
-      stream.durable = lastStep
-      stream.opened = true
-      openStep = lastStep
-      // From here it streams under its durable step: the preview goes
-      // (a core predating dropPreview keeps it until the item finishes).
-      streamPublisher?.dropPreview?.(stream.step, stream.itemId)
-    }
+    const mirrorSource = () => codexMirrorSource(spec.configuration?.model ?? runtime?.boundModel)
     const closeOpenStep = (): void => {
       if (openStep === undefined) return
       childSession.append('step/end', { turn, step: openStep })
       openStep = undefined
     }
-    const canOpenStream = (stream: CodexStream): boolean =>
-      openStep === undefined && mirrored >= stream.after && streams.keys().next().value === stream.itemId
+    /** Take the step a call writes at: its open step, else a fresh one. */
+    const takeStep = (call: CodexCall): number => {
+      if (call.step !== undefined && call.step === openStep) return call.step
+      closeOpenStep()
+      lastStep += 1
+      childSession.append('step/start', { turn, step: lastStep })
+      openStep = lastStep
+      call.step = lastStep
+      return lastStep
+    }
+    const openStreamStep = (stream: CodexStream): void => {
+      const joined = stream.call.step !== undefined && stream.call.step === openStep
+      if (joined) stream.joined = true
+      stream.durable = takeStep(stream.call)
+      stream.opened = true
+      // From here it streams under its durable step: the preview goes
+      // (a core predating dropPreview keeps it until the item finishes).
+      streamPublisher?.dropPreview?.(stream.step, stream.itemId)
+    }
+    const canOpenStream = (stream: CodexStream): boolean => stream.call.step !== undefined
+      ? stream.call.step === openStep
+      : openStep === undefined && calls.slice(0, calls.indexOf(stream.call)).every(call => call.folded)
+    const streamBlock = (stream: CodexStream, now: number): MirrorBlock =>
+      ({ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } })
+
+    /**
+     * The call an item belongs to: the one it was first seen in, else the
+     * round's open call (a fresh one after a boundary). An item of a call
+     * already written (a completion that outlived its call) joins the open
+     * call instead.
+     */
+    const callFor = (itemId: string): CodexCall => {
+      const known = callOfItem.get(itemId)
+      if (known !== undefined && !known.folded) return known
+      let call = calls.at(-1)
+      if (call === undefined || call.ended || call.folded) {
+        call = { items: [], pending: new Set(), completed: new Set(), lines: new Map(), ended: false, folded: false }
+        calls.push(call)
+      }
+      call.items.push(itemId)
+      callOfItem.set(itemId, call)
+      return call
+    }
 
     const pendingStreamArrival = new Map<number, number>()
-    const appendStreamSnapshot = (
-      stream: CodexStream,
-      force: boolean,
-      interrupted: boolean,
-      withUsage = false,
-      final = false,
-    ): void => {
+    /**
+     * Append one live snapshot of a stream at its call's step. Throttled per
+     * item by interval and growth unless `force`. With live streams the text
+     * goes to the publisher (a joined block as a sub-item of the call's
+     * step); without them the snapshot is a durable assistant/message at the
+     * step carrying every opened block of the call so far. The call's fold
+     * writes the final message.
+     */
+    const appendStreamSnapshot = (stream: CodexStream, force: boolean): void => {
       if (stream.text.trim() === '') return
       const now = Date.now()
       if (!force) {
         if (!pendingStreamArrival.has(stream.step)) pendingStreamArrival.set(stream.step, now)
-        liveFlush.schedule(stream.step, () => appendStreamSnapshot(stream, true, interrupted, withUsage))
+        liveFlush.schedule(stream.step, () => appendStreamSnapshot(stream, true))
         return
       }
       liveFlush.cancel(stream.step)
       const receivedAt = pendingStreamArrival.get(stream.step) ?? now
       pendingStreamArrival.delete(stream.step)
       if (!stream.opened) {
-        if (canOpenStream(stream)) openStreamStep(stream)
-        else if (!final) {
-          // Not its turn in the log yet: show it live, write it later.
+        if (!canOpenStream(stream)) {
+          // Not its turn in the log yet: show it live, write it at its fold.
           streamPublisher?.preview(stream.step, stream.kind, stream.text, { itemId: stream.itemId, receivedAt })
           return
-        } else {
-          // Settle: every line has folded; take the next step.
-          closeOpenStep()
-          openStreamStep(stream)
         }
+        openStreamStep(stream)
       }
-      if (streamPublisher !== undefined && !final) {
-        streamPublisher.update(stream.durable!, stream.kind, stream.text, { receivedAt })
-        stream.lastSnapshotAt = now
-        stream.lastSnapshotLen = stream.text.length
-        return
-      }
-      // Per-call folds carry the accounting; a final snapshot only falls back
-      // to the last-call read when the wire named no per-call usage at all.
-      const attachUsage = withUsage && !usageCarried && usageByLine.size === 0 && usage !== undefined
-      appendMirrorContent(childSession, turn, stream.durable!, {
-        blocks: [{ kind: stream.kind, text: stream.text, generation: { startedAt: stream.startedAt, endedAt: now } }],
-        ...attachUsage && usage !== undefined ? { usage } : {},
-        interrupted,
-      }, codexMirrorSource(spec.configuration?.model ?? runtime?.boundModel))
-      if (attachUsage) usageCarried = true
       stream.lastSnapshotAt = now
       stream.lastSnapshotLen = stream.text.length
+      if (streamPublisher !== undefined) {
+        streamPublisher.update(stream.durable!, stream.kind, stream.text, { receivedAt, ...stream.joined === true ? { itemId: stream.itemId } : {} })
+        return
+      }
+      const blocks = [...streams.values()]
+        .filter(candidate => candidate.call === stream.call && candidate.opened && candidate.text.trim() !== '')
+        .map(candidate => streamBlock(candidate, now))
+      appendMirrorContent(childSession, turn, stream.durable!, { blocks }, mirrorSource())
       persist()
     }
 
@@ -1365,99 +1425,91 @@ export class CodexLiveDriver {
 
     /**
      * Track one new streaming item: its provisional key (live flush and
-     * preview identity) and how many lines had completed when it began. A
-     * different item's deltas force one freshness snapshot of the current
-     * stream.
+     * preview identity) and its call. A different item's deltas force one
+     * freshness snapshot of the current stream.
      */
-    const reserveStream = (itemId: string, kind: 'think' | 'text'): void => {
+    const reserveStream = (itemId: string, kind: 'think' | 'text', observedAt: number): void => {
       if (activeStream !== undefined && activeStream !== itemId) {
         const previous = streams.get(activeStream)
         // A freshness snapshot on the item switch, skipped when the text has
         // not grown since the last one (the settle force always lands).
         if (previous !== undefined && previous.text.length !== previous.lastSnapshotLen) {
-          appendStreamSnapshot(previous, true, false)
+          appendStreamSnapshot(previous, true)
         }
         activeStream = undefined
       }
       let stream = streams.get(itemId)
       if (stream === undefined) {
+        const call = callFor(itemId)
+        // Streaming means started: the call waits for its completion.
+        if (!call.completed.has(itemId)) call.pending.add(itemId)
         streamKeys += 1
-        stream = { itemId, kind, step: streamKeys, after: lines.length, text: '', startedAt: Date.now(), lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
+        stream = { itemId, kind, step: streamKeys, call, text: '', startedAt: observedAt, lastSnapshotAt: 0, lastSnapshotLen: 0, opened: false }
         streams.set(itemId, stream)
       }
       activeStream = itemId
     }
 
-    /** The stream a completed line finalizes, if it was streamed. */
-    const streamOfLine = (line: CodexTranscriptLine | undefined): CodexStream | undefined =>
-      line === undefined || line.kind === 'tool' ? undefined : streams.get(line.itemId ?? '')
-
-    /** Write lines[index] at the next step(s). */
-    const foldLine = (index: number, lineUsage: TokenUsage | undefined): void => {
-      const line = lines[index]!
-      const stream = streamOfLine(line)
-      if (stream !== undefined) {
-        // A streamed item finalizes its own step (opening it now if no
-        // snapshot ever could) and closes it.
-        if (!stream.opened) { closeOpenStep(); openStreamStep(stream) }
-        appendMirrorContent(childSession, turn, stream.durable!, {
-          blocks: [{ kind: stream.kind, text: line.kind === 'tool' ? '' : line.text, ...line.generation === undefined ? {} : { generation: line.generation } }],
-          ...lineUsage === undefined ? {} : { usage: lineUsage },
-        }, codexMirrorSource(spec.configuration?.model ?? runtime?.boundModel))
-        finishStream(stream)
-        closeOpenStep()
-      } else {
-        closeOpenStep()
-        lastStep += 1
-        appendCodexTranscriptLine(childSession, turn, lastStep, line, lineUsage, spec.configuration?.model ?? runtime?.boundModel)
+    /**
+     * Write one call at its step: one assistant/message with the call's
+     * blocks in first-seen order (a block whose item never completed rides
+     * from its live text), the call's usage once, each tool's call/result
+     * pair, step/end. `interrupted` marks the message of a call cut off
+     * mid-block on a non-completed round.
+     */
+    const foldCall = (call: CodexCall, interrupted: boolean): void => {
+      const now = Date.now()
+      const owned = [...streams.values()].filter(stream => stream.call === call)
+      const written: CodexTranscriptLine[] = []
+      const blocks: MirrorBlock[] = []
+      let partial = false
+      for (const itemId of call.items) {
+        const line = call.lines.get(itemId)
+        if (line !== undefined) {
+          blocks.push(line)
+          written.push(line)
+          continue
+        }
+        const stream = streams.get(itemId)
+        if (stream === undefined || stream.call !== call || stream.text.trim() === '') continue
+        // A delta stream with no item id never pairs with its completion:
+        // the completed line of its kind already carries the text.
+        if (stream.itemId.startsWith('codex-stream-') && [...call.lines.values()].some(entry => entry.kind === stream.kind)) continue
+        blocks.push(streamBlock(stream, now))
+        if (!call.completed.has(itemId)) partial = true
       }
-      folded.add(index)
-      localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
+      if (blocks.length > 0) {
+        const step = takeStep(call)
+        appendMirrorContent(childSession, turn, step, {
+          blocks,
+          ...call.usage === undefined ? {} : { usage: call.usage },
+          interrupted: interrupted && partial,
+        }, mirrorSource())
+      }
+      for (const stream of owned) finishStream(stream)
+      if (call.step !== undefined && call.step === openStep) closeOpenStep()
+      call.folded = true
+      mirrored += written.length
+      for (const line of written) localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text: codexLineText(line) })
     }
 
     /**
-     * Mirror the completed lines before `upto` in chronological order; the
-     * last line is held back until completion. A line waits behind every
-     * stream that began before it completed: that stream's line folds first,
-     * or — while it is still streaming — the mirror stops until it lands.
+     * Write the round's calls in order while the oldest unwritten one is
+     * done: its boundary arrived and every item it started completed (the
+     * released-log reader resolves every advertised tool before step/end; a
+     * later call meanwhile previews live). The settle (`settle: true` —
+     * turn/completed, or the final flush after a cancel/failure) writes
+     * everything left, call by call.
      */
-    const mirrorUpTo = (upto: number, withUsage: boolean): void => {
-      // Per-call usage rides the line its notification stamped, whenever that
-      // line folds. The fallback (a wire that never named per-call usage)
-      // rides the last NON-tool line once — tool/call and tool/result events
-      // carry no usage slot, and a kill mid-command ends the transcript with
-      // a tool line. A carrier mirrored in an earlier flush (before the usage
-      // was knowable) loses the accounting — host 0.1.5 has no usage-backfill
-      // event.
-      let usageIndex = -1
-      if (withUsage && usageByLine.size === 0) {
-        for (let index = 0; index < lines.length; index += 1) {
-          if (lines[index]?.kind !== 'tool') usageIndex = index
-        }
+    const foldCalls = (settle: boolean, interrupted = false): void => {
+      let wrote = false
+      for (const call of calls) {
+        if (call.folded) continue
+        if (!settle && !(call.ended && call.pending.size === 0)) break
+        foldCall(call, interrupted)
+        wrote = true
       }
-      const usageFor = (index: number): TokenUsage | undefined => {
-        const own = usageByLine.get(index)
-        if (own !== undefined) { usageCarried = true; return own }
-        const lineUsage = withUsage && index === usageIndex ? usage : undefined
-        if (lineUsage !== undefined) usageCarried = true
-        return lineUsage
-      }
-      outer: for (let index = mirrored; index < upto; index += 1) {
-        if (folded.has(index)) continue
-        const own = streamOfLine(lines[index])
-        // Streams order among themselves by start; a plain line follows every
-        // stream that began before it completed.
-        const all = [...streams.values()]
-        const before = own === undefined ? all.filter(stream => stream.after <= index) : all.slice(0, all.indexOf(own))
-        for (const earlier of before) {
-          const at = lines.findIndex((line, position) => position > index && position < upto && !folded.has(position) && streamOfLine(line) === earlier)
-          if (at < 0) break outer
-          foldLine(at, usageFor(at))
-        }
-        foldLine(index, usageFor(index))
-      }
-      while (folded.has(mirrored)) mirrored += 1
-      if (upto > 0) persist()
+      if (wrote) persist()
     }
 
     let resolveCompletion!: (outcome: { status: string; error?: JsonObject }) => void
@@ -1500,6 +1552,8 @@ export class CodexLiveDriver {
         if (typeof id === 'string') {
           toolStarts.set(id, observedAt)
           if (previousAt !== undefined) toolArgStarts.set(id, previousAt)
+          // The item joins the open call and holds it until it completes.
+          if (modelItem(item)) callFor(id).pending.add(id)
         }
         return
       }
@@ -1516,6 +1570,10 @@ export class CodexLiveDriver {
           toolStarts.delete(itemId)
           toolArgStarts.delete(itemId)
         }
+        const trackId = itemId ?? `codex-item-${(anonymousItems += 1)}`
+        const call = modelItem(item) ? callFor(trackId) : undefined
+        call?.pending.delete(trackId)
+        call?.completed.add(trackId)
         const line = codexAppServerItemToLine(item)
         if (item['type'] === 'agentMessage' && typeof item['text'] === 'string') {
           const phase = item['phase']
@@ -1523,20 +1581,23 @@ export class CodexLiveDriver {
           else if (phase === null || phase === undefined) lastUnphasedAnswer = item['text']
           lastText = item['text']
         }
-        if (line === undefined) return
-        if (startedAt !== undefined) {
-          line.generation = line.kind === 'tool'
-            ? { startedAt: argStartedAt ?? startedAt, endedAt: startedAt }
-            : { startedAt, endedAt: observedAt }
+        if (line !== undefined && call !== undefined) {
+          // A streamed item without an item/started still has a generation
+          // window: its first delta to its completion.
+          const generationStart = startedAt ?? (line.kind === 'tool' ? undefined : streams.get(trackId)?.startedAt)
+          if (generationStart !== undefined) {
+            line.generation = line.kind === 'tool'
+              ? { startedAt: argStartedAt ?? generationStart, endedAt: generationStart }
+              : { startedAt: generationStart, endedAt: observedAt }
+          }
+          if (line.kind === 'tool' && startedAt !== undefined) {
+            line.timing = { startedAt, endedAt: observedAt, source: 'observed' }
+          }
+          call.lines.set(trackId, line)
         }
-        if (line.kind === 'tool' && startedAt !== undefined) {
-          line.timing = { startedAt, endedAt: observedAt, source: 'observed' }
-        }
-        lines.push(line)
-        // Hold back the volatile last line (a tool result may still merge
-        // into it) — per-call usage arrives on thread/tokenUsage/updated and
-        // folds with the line whenever it lands.
-        mirrorUpTo(lines.length - 1, false)
+        // The call writes once its boundary arrived and its items completed —
+        // this completion may be the last one it waited for.
+        if (call !== undefined) foldCalls(false)
         return
       }
       if (method === 'item/agentMessage/delta' || method === 'item/reasoning/textDelta') {
@@ -1544,17 +1605,17 @@ export class CodexLiveDriver {
         const text = params['delta']
         if (text === '') return
         const reasoning = method === 'item/reasoning/textDelta'
-        // The item id pairs the stream with its completion (the fold then
-        // lands at the reserved step); a delta without one shares a
-        // per-kind stream, matching the pre-item-id behavior.
+        // The item id pairs the stream with its completion (the call's fold
+        // writes the completed text in the stream's place); a delta without
+        // one shares a per-kind stream, matching the pre-item-id behavior.
         const itemId = typeof params['itemId'] === 'string'
           ? params['itemId']
           : `codex-stream-${reasoning ? 'think' : 'text'}-${turn}`
-        reserveStream(itemId, reasoning ? 'think' : 'text')
+        reserveStream(itemId, reasoning ? 'think' : 'text', observedAt)
         const stream = activeStream === undefined ? undefined : streams.get(activeStream)
         if (stream !== undefined) {
           stream.text += text
-          appendStreamSnapshot(stream, false, false)
+          appendStreamSnapshot(stream, false)
         }
         localAgent?.reportRunProgress(childSession.id, { kind: 'delta', text })
         return
@@ -1569,23 +1630,31 @@ export class CodexLiveDriver {
         const tokenUsage = params['tokenUsage'] as JsonObject | undefined
         const last = tokenUsage?.['last'] as JsonObject | undefined
         const total = tokenUsage?.['total'] as JsonObject | undefined
-        // A total with no numbers is "not reported" (never override the
-        // per-call read with an empty object).
-        if (total !== undefined && (Number.isFinite(Number(total['inputTokens'])) || Number.isFinite(Number(total['outputTokens'])))) {
-          threadTotalBefore ??= last === undefined ? {} : breakdownMinus(total, last)
+        // Codex re-emits an unchanged reading (a rate-limit refresh carries
+        // the last token info again — seen mid-call in real rollouts, and at
+        // a turn's start carried over from the previous round). The thread
+        // total only grows with a new request, so an identical one is no
+        // new call. A total with no numbers is "not reported" (never
+        // override the per-call read with an empty object, never dedupe on it).
+        const totalReported = total !== undefined && (Number.isFinite(Number(total['inputTokens'])) || Number.isFinite(Number(total['outputTokens'])))
+        const reading = totalReported ? JSON.stringify(total) : undefined
+        const repeated = reading !== undefined && runtime?.lastUsageReading === reading
+        if (runtime !== undefined && reading !== undefined) runtime.lastUsageReading = reading
+        if (total !== undefined && totalReported) {
+          threadTotalBefore ??= repeated || last === undefined ? total : breakdownMinus(total, last)
           totalUsage = usageFromAppServer(breakdownMinus(total, threadTotalBefore))
         }
-        if (last !== undefined) {
-          usage = usageFromAppServer(last)
-          // One notification closes one API call (the rollout's token_count
-          // position: right after the call's last item). Stamp the call's own
-          // usage on its last line and flush the completed prefix with it;
-          // the volatile last line keeps its hold (a tool result may still
-          // merge into it) and folds with its mapped usage whenever it lands.
-          if (lines.length > 0) {
-            usageByLine.set(lines.length - 1, usage)
-            mirrorUpTo(lines.length - 1, true)
-          }
+        if (repeated) return
+        if (last !== undefined) usage = usageFromAppServer(last)
+        // One fresh reading closes one model call — codex emits it right
+        // after the call's last item (the rollout's token_count position) —
+        // and its `last` is that call's own usage, written once on the
+        // call's message.
+        const open = calls.at(-1)
+        if (open !== undefined && !open.ended && !open.folded) {
+          open.ended = true
+          if (last !== undefined) open.usage = usageFromAppServer(last)
+          foldCalls(false)
         }
         return
       }
@@ -1593,7 +1662,7 @@ export class CodexLiveDriver {
         const turnData = params['turn'] as JsonObject
         // A fold failure must never skip the completion: the round settles
         // with its mirrored prefix instead of hanging forever.
-        try { mirrorUpTo(lines.length, true) } finally {
+        try { foldCalls(true) } finally {
           resolveCompletion({
             status: String(turnData['status']),
             ...(turnData['error'] === null || turnData['error'] === undefined
@@ -1722,34 +1791,15 @@ export class CodexLiveDriver {
       roundSettled = true
       liveFlush.dispose()
       if (turnOpened) {
-        // An aborted or failed turn never sees turn/completed, so its
-        // hold-back line (and the usage already observed) would be lost —
-        // flush it now (the exec settle-mirror's partial-work contract).
-        if (mirrored < lines.length) mirrorUpTo(lines.length, true)
-        // A line still waiting behind a stream whose completion never came:
-        // finalize that stream from its last snapshot, then keep folding.
-        while (mirrored < lines.length && streams.size > 0) {
-          const oldest = streams.values().next().value!
-          appendStreamSnapshot(oldest, true, settled.stopReason !== 'completed', false, true)
-          finishStream(oldest)
-          closeOpenStep()
-          mirrorUpTo(lines.length, true)
-        }
-        // Streams whose item/completed never arrived (abort, or the server
-        // ended the turn mid-item) still finalize INSIDE the turn window:
-        // one forced snapshot each — interrupted on a non-completed round,
-        // the LAST one carrying the usage when no folded line did — then
-        // step/end.
-        if (streams.size > 0) {
-          const remaining = [...streams.values()]
-          for (const [position, stream] of remaining.entries()) {
-            appendStreamSnapshot(stream, true, settled.stopReason !== 'completed', position === remaining.length - 1, true)
-            finishStream(stream)
-            closeOpenStep()
-          }
-          streams.clear()
-          activeStream = undefined
-        }
+        // An aborted or failed turn never sees turn/completed: its unwritten
+        // calls (and the usage their boundaries named) still land INSIDE the
+        // turn window, call by call (the exec settle-mirror's partial-work
+        // contract) — a stream whose completion never came rides from its
+        // live text, marked interrupted on a non-completed round.
+        foldCalls(true, settled.stopReason !== 'completed')
+        closeOpenStep()
+        streams.clear()
+        activeStream = undefined
         closeMirrorTurn(childSession, turn, settled.stopReason, 'the live round did not complete')
         if (runtime !== undefined) recordRoundContext(childSession, runtime, autoCompactions)
       }
@@ -1840,8 +1890,8 @@ export class CodexLiveDriver {
 
 /**
  * After a round: each compaction codex ran on its own (one
- * `local-agent/compaction`, source `auto`; codex states no summary and no
- * after-count), and the thread's occupancy (one `local-agent/context`, when
+ * `local-agent/compaction`, source `auto`, marked `unrecorded: ['usage']` —
+ * codex states no spend for it, and no summary and no after-count), and the thread's occupancy (one `local-agent/context`, when
  * it moved).
  */
 function recordRoundContext(
@@ -1856,6 +1906,9 @@ function recordRoundContext(
       ...compaction.beforeTokens === undefined ? {} : { beforeTokens: compaction.beforeTokens },
       ...rt.contextWindow === undefined ? {} : { contextWindow: rt.contextWindow },
       startedAt: compaction.at, endedAt: compaction.at, boundarySeq: childSession.snapshotEvents().at(-1)?.seq ?? -1,
+      // Codex states no spend for a compaction it runs on its own: marked
+      // here, when written, so a reader never mistakes it for a missing field.
+      unrecorded: ['usage'],
     })
   }
   if (rt.contextTokens === undefined) return

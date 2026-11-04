@@ -6,7 +6,8 @@
  * @module @khorsheed/dsh-local-agent/types
  */
 
-import type { AssistantStreamRecord, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { AssistantStreamRecord, ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
+import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type { LocalAgentToolTiming } from './tool-timing.ts'
 
 export { localAgentToolTimingMeta } from './tool-timing.ts'
@@ -86,6 +87,66 @@ export function isCompactCommand(text: string): boolean {
 }
 
 /**
+ * The brand property of a retryable native-start failure (see
+ * {@link LocalAgentRetryableStartError}). A plain property, not a class
+ * check, so a provider bundled against another copy of the core (or one that
+ * cannot import it) can still set it.
+ */
+export const RETRYABLE_START_FAILURE = 'localAgentRetryableStart'
+
+/**
+ * A provider's native start failed BEFORE any prompt left for the model, for
+ * a reason that clears on its own (a stale lock left by a killed process, a
+ * resume that raced a shutdown). Thrown from the provider's round start (the
+ * function {@link LocalAgentHarness} hands the core, before it returns the
+ * run) or from `prepareMember`.
+ *
+ * Contract: the core then treats the failure like a refused admission — the
+ * member's configuration shows failed with this message, and the member's
+ * NEXT admission (its next message, a room dispatch, 立即载入) reconciles and
+ * retries the start once, instead of waiting for the user's 对账并重试. The
+ * failed round itself is never re-run. Throw it ONLY when nothing paid can
+ * have started: a failure after the prompt was sent, or one whose effect is
+ * unknown, must stay a plain `Error` (it waits for the user). A failure
+ * thrown after the run was returned (from `run.result`) is never retried.
+ * `message` is shown to the user after 「上次启动没有成功：」, so write it
+ * as plain language, without protocol words.
+ */
+export class LocalAgentRetryableStartError extends Error {
+  readonly localAgentRetryableStart = true as const
+  constructor(message: string, options?: { readonly cause?: unknown }) {
+    super(message, options)
+    this.name = 'LocalAgentRetryableStartError'
+  }
+}
+
+/**
+ * The second accepted mark: a provider error that states the failure
+ * happened before any prompt went out (`beforePrompt === true`, e.g. Kimi's
+ * `KimiSessionOccupiedError`). Nothing paid can have started, so retrying it
+ * at the next admission is safe whether or not the cause has cleared.
+ */
+export const BEFORE_PROMPT_FAILURE = 'beforePrompt'
+
+/**
+ * Whether a native-start failure is marked safe to retry: the error itself or
+ * one in its `cause` chain (a core wrapper keeps the provider's verdict)
+ * carries {@link RETRYABLE_START_FAILURE} `=== true` or
+ * {@link BEFORE_PROMPT_FAILURE} `=== true`.
+ * @param error - what the start threw.
+ * @returns whether the next admission may retry it automatically.
+ */
+export function isRetryableStartFailure(error: unknown): boolean {
+  let current: unknown = error
+  for (let depth = 0; depth < 5 && typeof current === 'object' && current !== null; depth++) {
+    const marks = current as Record<string, unknown>
+    if (marks[RETRYABLE_START_FAILURE] === true || marks[BEFORE_PROMPT_FAILURE] === true) return true
+    current = (current as { cause?: unknown }).cause
+  }
+  return false
+}
+
+/**
  * One context compaction of a CLI member, in its own session: the CLI
  * replaced its history before `boundarySeq` with a summary. Display and
  * accounting only — never the host's own `compaction/*` events, whose
@@ -98,11 +159,15 @@ export interface LocalAgentCompactionEvent {
   /** The delegation provider (`kimi-cli`, `codex-local`, …). */
   provider: string
   model?: string
-  /** Context occupancy before and after, as the CLI reported it. */
+  /**
+   * Context occupancy before and after, as the CLI reported it. A SIZE of the
+   * context, never spend: readers must not add these to, or show them as,
+   * usage — the compaction call's spend is `usage` alone.
+   */
   beforeTokens?: number
   afterTokens?: number
   contextWindow?: number
-  /** The compaction call's own spend (never a round's). */
+  /** The compaction call's own spend (never a round's); the only place it is recorded. */
   usage?: TokenUsage
   /** The CLI's summary text, when it gives one (Kimi does, Codex does not). */
   summary?: string
@@ -115,7 +180,24 @@ export interface LocalAgentCompactionEvent {
   endedAt: number
   /** Every message before this seq is replaced by the summary in later requests. */
   boundarySeq: number
+  /**
+   * What the source does not report about this compaction, marked when it is
+   * written (never inferred later from an absent field):
+   * - `usage`: the compaction call's spend;
+   * - `before-after`: the context sizes before and after;
+   * - `summary`: the summary text.
+   *
+   * The core writes the event itself, with all three, for a `/compact`
+   * execution whose provider wrote none (Claude Code, DSH): the command ran,
+   * nothing more is known, and `outcome` is the execution's. Codex's own
+   * automatic compaction carries `['usage']`. Absent = the source reported
+   * every field it has (a missing field is then just not applicable).
+   */
+  unrecorded?: LocalAgentCompactionUnrecorded[]
 }
+
+/** One thing a compaction's source does not report (see {@link LocalAgentCompactionEvent.unrecorded}). */
+export type LocalAgentCompactionUnrecorded = 'usage' | 'before-after' | 'summary'
 
 /**
  * A CLI member's context occupancy as the CLI last reported it (Kimi's ACP
@@ -256,6 +338,8 @@ export interface LocalAgentUnrecordedDeclaration {
  * and — only when the caller recorded them — cause and task.
  */
 export interface LocalAgentExecutionIntent {
+  /** The ledger row's execution id, reused by the records; absent = the recorder mints one. */
+  readonly executionId?: string
   readonly caller: LocalAgentExecutionCaller
   /** Set by the core from the round's operation; absent = `prompt`. */
   readonly operation?: LocalAgentExecutionOperation
@@ -651,12 +735,26 @@ export interface LocalAgentDelegationView {
  * structured errors for the composer to render inline, never as raw exceptions
  * over the wire.
  */
+/**
+ * One row of a member's execution ledger (batch 5 S4; the member composer's
+ * inbox grew into it). Every member execution has one, whoever asked.
+ */
 export interface LocalAgentMemberInput {
+  /** The execution id (the `local-agent/execution` records' `executionId`); a pre-ledger inbox row keeps its request id. */
   id: string
-  text: string
+  /** Who submitted it. Pre-ledger inbox rows read as `composer`. */
+  caller: LocalAgentExecutionCaller
+  /** The caller's idempotency key (composer: its request id; room: its delivery id). */
+  key?: string
+  /** The input text: composer rows only (their only source; they replay after a restart). */
+  text?: string
+  /** `compact` for a compaction execution; absent = a prompt. */
+  operation?: 'compact'
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'uncertain'
   createdAt: number
   updatedAt: number
+  admittedAt?: number
+  settledAt?: number
   error?: string
 }
 export interface LocalAgentMemberInbox {
@@ -1022,7 +1120,13 @@ export interface LocalAgentMemberToolsStatus {
    * CLI lists at the next message), had no process to replace
    * (`no-process`), or could not start (`failed`).
    */
-  readonly lastReload?: { readonly at: number; readonly by: 'manual' | 'auto'; readonly outcome: 'loaded' | 'missing' | 'pending' | 'no-process' | 'failed' }
+  readonly lastReload?: {
+    readonly at: number
+    readonly by: 'manual' | 'auto'
+    readonly outcome: 'loaded' | 'missing' | 'pending' | 'no-process' | 'failed'
+    /** Why a `failed` start did not come up (the provider's words), when it said. */
+    readonly error?: string
+  }
   /** Whether a reload can be asked for (the member runs on a resident process of a harness that supports it). */
   readonly reloadable: boolean
   /**
@@ -1034,10 +1138,17 @@ export interface LocalAgentMemberToolsStatus {
   readonly startable?: boolean
 }
 
-/** The answer to a reload request: `now` (the member was idle) or `after-round` (it is running; never interrupted). */
+/**
+ * The answer to a reload request: `now` (the member was idle) or
+ * `after-round` (it is running; never interrupted). `start-failed`: the
+ * member's last native start had failed, the load retried it first, and it
+ * failed again — `error` is the new reason (the member's configuration
+ * control shows the same).
+ */
 export type LocalAgentMemberToolsReload =
   | { readonly ok: true; readonly when: 'now' | 'after-round' }
   | { readonly ok: false; readonly reason: 'unknown-member' | 'unsupported' | 'no-process' | 'busy' }
+  | { readonly ok: false; readonly reason: 'start-failed'; readonly error: string }
 
 /**
  * Outcome of one `member_message` delivery. Channel-level failures (unknown or
@@ -1381,6 +1492,102 @@ export interface DelegationCallOptions {
    * takes.
    */
   readonly model?: string
+}
+
+/**
+ * The fixed creation identity of a member's FIRST execution
+ * ({@link LocalAgentExecutionRequest.member}); ignored once the member has a
+ * delegation record — a continuing execution takes scope, cwd and model from
+ * the record.
+ */
+export interface LocalAgentMemberCreate {
+  readonly model?: string
+  readonly effort?: string
+  readonly cwd?: string
+  readonly scope?: string
+  readonly exec?: DelegationExecTarget
+  readonly configurationLock?: string
+  readonly label?: string
+}
+
+/** What one execution's admission looked like (`run`'s `on.admitted`). */
+export interface LocalAgentExecutionAdmitted {
+  readonly executionId: string
+  readonly admittedAt: number
+  /** The first child-log seq that can belong to this execution (0 for a child that did not exist yet). */
+  readonly childFromSeq: number
+}
+
+/** How one execution ended (`run`'s `settled`). */
+export interface LocalAgentExecutionSettlement {
+  readonly executionId: string
+  readonly outcome: 'done' | 'failed' | 'cancelled'
+  /** The published run; absent when the execution failed or was cancelled before admission. */
+  readonly run?: SubagentRun
+  /** The `turn/start` turns this execution wrote in the child (its end record's range). */
+  readonly turns: readonly number[]
+  /** Observations the provider's settle report carried, when it arrived by settlement; absent = not recorded. */
+  readonly observedModel?: string
+  readonly observedEffort?: string
+  readonly cliVersion?: string
+  /** Why it failed or was cancelled, when it did. */
+  readonly error?: string
+}
+
+/**
+ * One member execution request — the single entry every caller uses (the
+ * host `subagent` tool, the member composer, room, plugin facade calls). The
+ * core decides whether it is the member's first round or a continuation (it
+ * has a delegation record → continuation), queues it in the member's ledger,
+ * admits it, and records it.
+ */
+export interface LocalAgentExecutionRequest {
+  readonly parentSessionId: string
+  readonly provider: string
+  readonly member: {
+    /** The member's stable dsh child session id (a first round creates it under this id). */
+    readonly childSessionId: string
+    /** First round only: its creation identity. */
+    readonly create?: LocalAgentMemberCreate
+  }
+  /** The input, or a function evaluated when the execution reaches the head of the member's queue. */
+  readonly input: readonly ContentBlock[] | (() => Promise<readonly ContentBlock[]>)
+  readonly operation?: LocalAgentExecutionOperation
+  /** Who asks; absent = `api`. */
+  readonly caller?: LocalAgentExecutionCaller
+  /** Why it runs, recorded verbatim on the execution's start record. */
+  readonly cause?: LocalAgentExecutionCause
+  readonly task?: LocalAgentTaskRef
+  /**
+   * The caller's idempotency key (room: its delivery id; the composer: its
+   * input id). A key the member's ledger already holds is never run twice:
+   * a queued or running one returns the same execution, a finished one its
+   * settlement, an uncertain one an error.
+   */
+  readonly key?: string
+  /** The caller's own handle (room run id, tool call id), recorded verbatim. */
+  readonly callerRef?: string
+  /** Display label of this round's activation; absent = `member.create.label`, then the harness name. */
+  readonly label?: string
+  /** Cancels the execution while queued and while running. */
+  readonly signal?: AbortSignal
+  readonly on?: {
+    admitted?(execution: LocalAgentExecutionAdmitted): void | Promise<void>
+    progress?(event: LocalAgentRunProgress): void
+    settled?(settlement: LocalAgentExecutionSettlement): void
+  }
+}
+
+/** What `run` returns once the execution is durably queued. */
+export interface LocalAgentExecutionHandle {
+  readonly executionId: string
+  /** Resolves when the execution ends (never rejects). */
+  readonly settled: Promise<LocalAgentExecutionSettlement>
+  /**
+   * Resolves with the published run once admitted and started; rejects when
+   * it ended before that (the start/resume/compact wrappers return it).
+   */
+  readonly started: Promise<SubagentRun>
 }
 
 /** One settings-card value (JSON scalars and string lists — what the cards write). See card-settings.ts. */

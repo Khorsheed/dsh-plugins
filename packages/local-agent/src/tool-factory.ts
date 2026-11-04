@@ -14,15 +14,15 @@
  * The tool instead carries the handle as a first-class `resume` parameter and
  * resolves it through the localAgent service, which rejects any handle that
  * does not name a delegation recorded for THIS parent session and provider.
- * Continuation rounds still go through `ctx.subagents.startActivation()` with
- * caller delivery, so lifecycle events (`subagent/start`/`subagent/end`) and
- * the standard 子代理 surface are unchanged.
  *
- * Host 0.2.1 note: `startActivation` rejects a provider run id that names a
- * live Session (DUPLICATE_CHILD) — and every family provider's child session
- * IS live. Providers therefore publish per-execution run ids, and the durable
- * dsh child session id is minted HERE (the tool), staged on the delegation
- * intent, and re-attached to the run adapter the rest of the family tracks.
+ * Every call runs through the core's single execution entry,
+ * `ctx.localAgent.run()` (batch 5 S4): it queues in the member's execution
+ * ledger with every other caller's rounds, then starts through
+ * `ctx.subagents.startActivation()` with caller delivery, so lifecycle events
+ * (`subagent/start`/`subagent/end`) and the standard 子代理 surface are
+ * unchanged. The durable dsh child session id is minted HERE for a fresh
+ * call (host 0.2.1 forbids a provider run id naming a live Session, so the
+ * activation never surfaces it).
  *
  * This module used to ship as the standalone companion package
  * `@khorsheed/dsh-local-agent-tool-subagent` (0.1.x); the family fold moved it
@@ -41,10 +41,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
-import type { SubagentActivation, SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
+import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 // Type-only: this package's own `Context.localAgent` service augmentation.
 import type {} from './index.ts'
 import type { LocalAgentExecutionIntent } from './types.ts'
@@ -125,18 +124,6 @@ function stopReasonError(result: SubagentResult): string | undefined {
     default:
       return `subagent run ended abnormally (${String(result.stopReason)})`
   }
-}
-
-/**
- * Fuse a caller-owned controller with the tool execution's signal so EITHER
- * abort cancels the run — the same shape the facade's tracked controller
- * uses. The fused signal reaches `startActivation`'s `spec.signal`, which
- * owns cancellation only until publication (host 0.2.1); the published
- * activation's `dispose()` is the post-publication channel, wired below in
- * the exec body and in the registry's stop lever.
- */
-function fusedSignal(controller: AbortController, caller: AbortSignal | undefined): AbortSignal {
-  return caller === undefined ? controller.signal : AbortSignal.any([controller.signal, caller])
 }
 
 /**
@@ -329,65 +316,28 @@ export function mountSubagentDelegationTool(ctx: Context, config: SubagentToolCo
         // the round, and the task is the calling session's turn that made the
         // call (read from the call's own `tool/call` event, never guessed).
         const execution = toolCallExecution(parent.session, String(exec.rootCallId ?? exec.callId))
-        if (resumeHandle === undefined) {
-          ctx.localAgent.stageDelegationIntent(parentSessionId, config.provider, { kind: 'fresh', childSessionId, execution })
-        } else if (resume !== undefined) {
-          // A host restart evicts the child session from the live store, and
-          // the tool starts runs directly (no facade) — reattach it here or
-          // the provider refuses the resume as "not live".
-          await ctx.localAgent.ensureChildLive(resumeHandle)
-          ctx.localAgent.stageDelegationIntent(parentSessionId, config.provider, {
-            kind: 'resume',
-            childSessionId: resumeHandle,
-            cliSessionId: resume.cliSessionId,
-            execution,
-          })
-        }
-
-        // The run's own cancel lever: a controller fused with the tool
-        // execution signal, so the active-delegation registry's stop can
-        // abort it without touching the execution's own signal. The fused
-        // signal cancels only up to publication (host 0.2.1); after that the
-        // activation's dispose() is the cancel channel, wired below.
-        const controller = new AbortController()
-        // Caller delivery: the tool awaits and reports the result itself; the
-        // parent agent gets no completion notice doubling the tool result.
-        const activation: SubagentActivation = await ctx.subagents.startActivation({
+        // The single execution entry (batch 5 S4): the round queues in the
+        // member's ledger behind any other execution of the same member — a
+        // composer input, a room dispatch, another tool call — so a member
+        // never runs two rounds at once (user decision 2026-11-03 ④: a room's
+        // main agent may continue a member this way). The core decides
+        // first round vs continuation (the handle has a delegation record),
+        // reattaches an evicted child, tracks the run for `/local-agent stop`,
+        // and writes the execution's records. The tool's own signal cancels
+        // it while queued and while running.
+        const handle = await ctx.localAgent.run({
+          parentSessionId,
           provider: config.provider,
+          member: { childSessionId },
+          input: [{ type: 'text', text: args.prompt }] as ContentBlock[],
+          caller: execution.caller,
+          ...execution.cause === undefined ? {} : { cause: execution.cause },
+          ...execution.task === undefined ? {} : { task: execution.task },
+          ...execution.callerRef === undefined ? {} : { callerRef: execution.callerRef },
           label: args.description,
-          request: {
-            prompt: [{ type: 'text', text: args.prompt }] as ContentBlock[],
-            parent,
-          },
-          signal: fusedSignal(controller, exec.signal),
-          delivery: 'caller',
+          signal: exec.signal,
         })
-        const dispose = (): Promise<void> => activation.dispose()
-        const onExecAbort = (): void => {
-          void dispose().catch((error: unknown) => {
-            ctx.logger.warn(`subagent tool: execution-signal disposal of ${childSessionId} failed: ${String(error)}`)
-          })
-        }
-        exec.signal.addEventListener('abort', onExecAbort, { once: true })
-        void activation.result.then(
-          () => exec.signal.removeEventListener('abort', onExecAbort),
-          () => exec.signal.removeEventListener('abort', onExecAbort),
-        )
-        // The run the family tracks: keyed by the dsh child session id (the
-        // resume handle the model sees), not the activation's per-execution id.
-        const run: SubagentRun = { id: SessionId(childSessionId), result: activation.result, dispose }
-        // Register the in-flight run with the family's active-delegation
-        // registry (keyed by child session id) so `/local-agent stop
-        // <childSessionId>` — and the taskpilot stop button that dispatches
-        // it — can cancel a tool-started delegation. The tool starts runs
-        // directly (not through the facade), so without this registration the
-        // stop command would miss them.
-        ctx.localAgent.trackDelegationRun(childSessionId, run, () => {
-          controller.abort()
-          void dispose().catch((error: unknown) => {
-            ctx.logger.warn(`subagent tool: stop disposal of ${childSessionId} failed: ${String(error)}`)
-          })
-        })
+        const run: SubagentRun = await handle.started
         const settled = await settleForegroundRun(run)
         if (resume === undefined) {
           // Fresh delegation: self-describe the resume handle (the dsh child

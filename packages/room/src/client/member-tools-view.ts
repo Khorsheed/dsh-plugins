@@ -45,6 +45,8 @@ export type MemberToolsLineState =
     readonly hint: 'old' | 'next-message' | 'no-process'
     readonly startable?: boolean
     readonly startFailed?: boolean
+    /** Why that start did not come up, in the provider's words, when it said. */
+    readonly startError?: string
   }
 
 /**
@@ -105,6 +107,7 @@ export function memberToolsLine(status: LocalAgentMemberToolsStatus | null | und
     hint: 'no-process',
     ...status.startable === true ? { startable: true } : {},
     ...failed ? { startFailed: true } : {},
+    ...failed && status.lastReload?.error !== undefined ? { startError: status.lastReload.error } : {},
   }
 }
 

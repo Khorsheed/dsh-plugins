@@ -19,6 +19,10 @@ export const zh = {
   'inbox.status.failed': '失败',
   'inbox.status.done': '已完成',
   'inbox.status.cancelled': '已取消',
+  'inbox.caller.tool': '宿主会话的子代理调用',
+  'inbox.caller.room': '协作间派活',
+  'inbox.caller.api': '插件调用',
+  'inbox.caller.composer': '成员页输入',
 
   "configuration.title": "模型与推理配置",
   "configuration.choose": "选择模型",
@@ -166,6 +170,10 @@ export const en: Record<LocalAgentKey, string> = {
   'inbox.status.failed': 'Failed',
   'inbox.status.done': 'Done',
   'inbox.status.cancelled': 'Cancelled',
+  'inbox.caller.tool': 'Subagent call from a host session',
+  'inbox.caller.room': 'Room dispatch',
+  'inbox.caller.api': 'Plugin call',
+  'inbox.caller.composer': 'Members page input',
 
   "configuration.title": "Model and reasoning configuration",
   "configuration.choose": "Choose model",

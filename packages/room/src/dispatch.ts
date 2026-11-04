@@ -211,6 +211,19 @@ export function childFromSeq(childSessionId: SessionId | undefined, child: Sessi
 }
 
 /**
+ * Whether a compaction fact states it carries no numbers to show: its source
+ * did not report the context sizes nor the call's spend (the core's own fact
+ * for a provider that reports no compaction). Read from the fact's write-time
+ * mark, never from absent fields.
+ * @param data - the member's `local-agent/compaction` fact.
+ * @returns whether the room row says the member does not report compaction data.
+ */
+export function compactionUnreported(data: Partial<LocalAgentCompactionEvent>): boolean {
+  const unrecorded = data.unrecorded ?? []
+  return unrecorded.includes('before-after') && unrecorded.includes('usage')
+}
+
+/**
  * The child session events one run wrote: from the seq its running edge
  * recorded (else from its start time), so a run never claims an earlier
  * run's round or compaction. A run with no running edge never got admitted
@@ -1024,8 +1037,12 @@ export class DispatchEngine {
    * session's `local-agent/compaction` event recorded during THIS run (the
    * room never re-derives them, and never reads an earlier run's), and no
    * speech — Kimi answers `/compact` with its summary, which is the row's,
-   * not a reply. A completed round that recorded no compaction (a provider
-   * that does not report one) is marked `unreported`, not "compacted".
+   * not a reply. Whether the member reports compaction numbers is the core
+   * fact's own mark (batch 5 S2: local-agent writes the fact for every
+   * `/compact` execution, `unrecorded` when the provider reported none), never
+   * room's guess: a fact marked unrecorded for its sizes and spend makes the
+   * row `unreported`. A run whose range holds no fact (a core from before S2)
+   * shows what it has — no numbers — and is not inferred to be unreported.
    */
   private async recordCompaction(
     room: Session, member: RoomMember, runId: string, childSessionId: string, result: { readonly stopReason: string; readonly diagnostic?: string },
@@ -1035,7 +1052,7 @@ export class DispatchEngine {
     const compaction = runChildEvents(events, runId, this.ctx.sessions.get(SessionId(childSessionId))).findLast(event => event.type === 'local-agent/compaction')
     const data: Partial<LocalAgentCompactionEvent> = compaction?.type === 'local-agent/compaction' ? compaction.data : {}
     const outcome = data.outcome ?? (result.stopReason === 'completed' ? 'completed' : 'failed')
-    const unreported = compaction === undefined && outcome === 'completed'
+    const unreported = outcome === 'completed' && compactionUnreported(data)
     room.append('room/member-compacted', {
       member: replay(events).members.find(entry => entry.id === member.id)?.name ?? member.name,
       memberId: memberId(events, member), runId, outcome,

@@ -487,6 +487,107 @@
         "state": "done",
         "text": "已压缩上下文"
       }
+    },
+    {
+      "type": "user/message",
+      "seq": 37,
+      "time": 1800000000610,
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "@bea /compact"
+          }
+        ],
+        "source": {
+          "kind": "user"
+        },
+        "role": "user",
+        "id": "00000000-0000-4000-8000-000000000012"
+      }
+    },
+    {
+      "type": "room/dispatch",
+      "seq": 38,
+      "time": 1800000000620,
+      "data": {
+        "id": "00000000-0000-4000-8000-000000000013",
+        "requestSignature": "0dae06ce3571a78598677e83030fe7a10801d0d734288144d1c3efb764f2c251",
+        "targets": [
+          "bea"
+        ],
+        "text": "/compact",
+        "origin": "human",
+        "task": "00000000-0000-4000-8000-000000000012",
+        "messageId": "00000000-0000-4000-8000-000000000012",
+        "targetIds": [
+          "00000000-0000-4000-8000-000000000001"
+        ]
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 39,
+      "time": 1800000000640,
+      "data": {
+        "id": "38:00000000-0000-4000-8000-000000000001",
+        "dispatchSeq": 38,
+        "memberId": "00000000-0000-4000-8000-000000000001",
+        "state": "running"
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 40,
+      "time": 1800000000650,
+      "data": {
+        "member": "bea",
+        "state": "running",
+        "startedAt": 1800000000630,
+        "runId": "38:00000000-0000-4000-8000-000000000001",
+        "childSessionId": "child-ada",
+        "childFromSeq": 5,
+        "operation": "compact"
+      }
+    },
+    {
+      "type": "room/member-compacted",
+      "seq": 41,
+      "time": 1800000000700,
+      "data": {
+        "member": "bea",
+        "memberId": "00000000-0000-4000-8000-000000000001",
+        "runId": "38:00000000-0000-4000-8000-000000000001",
+        "outcome": "completed",
+        "durationMs": 60,
+        "unreported": true
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 42,
+      "time": 1800000000720,
+      "data": {
+        "member": "bea",
+        "runId": "38:00000000-0000-4000-8000-000000000001",
+        "state": "done",
+        "startedAt": 1800000000630,
+        "elapsedMs": 80,
+        "childSessionId": "child-ada",
+        "operation": "compact"
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 43,
+      "time": 1800000000730,
+      "data": {
+        "id": "38:00000000-0000-4000-8000-000000000001",
+        "dispatchSeq": 38,
+        "memberId": "00000000-0000-4000-8000-000000000001",
+        "state": "done",
+        "text": "已发送压缩命令；该成员不报告压缩数据"
+      }
     }
   ],
   "compactCases": [

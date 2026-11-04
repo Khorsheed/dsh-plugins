@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-04-core-owned-compaction-facts.md
+.agents/notes/implemented/feature/2026-11-04-core-owned-compaction-facts.md: b51cc410dd5578b7457450ccc51aaa0efde16234
+.agents/notes/implemented/feature/2026-11-04-core-owned-compaction-facts.zh.md: d3ccfc02d321e15acc3f9008291288f9c8563b50

@@ -518,7 +518,7 @@ export default class LocalAgentGateway extends TypertRemoteService {
       if (action === 'pause') inbox.pause(childSessionId)
       else if (action === 'resume') this.ctx.localAgent.resumeMemberInbox(childSessionId)
       else if (action === 'cancel' && requestId !== undefined) inbox.cancel(childSessionId, requestId)
-      else if (action === 'reconcile' && requestId !== undefined && outcome !== undefined && evidence !== undefined) inbox.reconcile(childSessionId, requestId, outcome, evidence)
+      else if (action === 'reconcile' && requestId !== undefined && outcome !== undefined && evidence !== undefined) this.ctx.localAgent.reconcileExecution(childSessionId, requestId, outcome, evidence)
       else throw new Error('Invalid member inbox control')
       return { ok: true }
     } catch (error) { return { ok: false, error: String(error) } }

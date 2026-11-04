@@ -18,6 +18,7 @@ import { LOCAL_AGENT_SERVICE, type LocalAgentHarness, type LocalAgentMemberReloa
 import { MemberChannel } from '../src/member-channel.ts'
 import { PresetToolHost } from '../src/preset-tool-host.ts'
 import { MemberToolsTracker, RELOAD_LIST_WINDOW_MS } from '../src/member-tools.ts'
+import type { MemberConfigurationAdapter } from '../src/member-control.ts'
 
 const PROVIDER = 'fake-cli'
 const PARENT = 'room-1'
@@ -47,6 +48,8 @@ async function mount(options: {
   start?: { can?: () => boolean; start: NonNullable<LocalAgentHarness['startMember']> }
   /** Whether the member's child session is loaded (false: right after a host restart). */
   live?: boolean
+  /** A configuration broker: the member's rounds and 立即载入 admit through its control. */
+  configuration?: MemberConfigurationAdapter
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -82,7 +85,8 @@ async function mount(options: {
       }),
     },
     ...options.start === undefined ? {} : { canStartMember: options.start.can ?? (() => true), startMember: options.start.start },
-  })
+    ...options.configuration === undefined ? {} : { modelBroker: { modelInfo: () => ({ choices: [], switchable: true }), configurationAdapter: () => options.configuration! } },
+  } as never)
   registry.recordDelegation({ childSessionId: CHILD, provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-a', cwd: '/home/user/game' })
   const session = options.live === false ? undefined : ctx.sessions.create(SessionId(CHILD))
   const definitions = new Map<string, object>([
@@ -426,6 +430,71 @@ describe('立即载入: starting a member that has no process', () => {
     const plain = await mount()
     expect(await plain.registry.memberToolsStatus(CHILD)).not.toHaveProperty('startable')
     expect(start).not.toHaveBeenCalled()
+  })
+})
+
+describe('立即载入 / 重新载入 recover a failed start first', () => {
+  const binding = { childSessionId: CHILD, provider: PROVIDER, parentSessionId: PARENT, cwd: '/home/user/game' }
+  const adapter = (reconcile: MemberConfigurationAdapter['reconcile'] = async () => ({ active: false, matches: 'current', resolved: { model: 'm' } })): MemberConfigurationAdapter => ({
+    validate: async () => {}, prepare: async () => ({ model: 'm' }), apply: async () => ({ model: 'm' }), reconcile,
+  })
+  /** The 11-04 state: a native start failed (not retryable), the member then failed in 0 ms. */
+  async function failStart(h: Awaited<ReturnType<typeof mount>>): Promise<void> {
+    await expect(h.registry.withMemberConfigurationRound(binding, async () => { throw new Error('session busy elsewhere') })).rejects.toThrow('busy elsewhere')
+    expect(h.registry.memberConfiguration(CHILD)).toMatchObject({ status: 'failed', error: 'session busy elsewhere' })
+  }
+
+  it('立即载入 retries the failed start, then starts the process', async () => {
+    let h!: Awaited<ReturnType<typeof mount>>
+    const start = vi.fn(async () => { await h.list(h.spawn()); return 'respawned' as const })
+    h = await mount({ start: { start }, configuration: adapter() })
+    await failStart(h)
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: true, when: 'now' })
+    await vi.waitFor(async () => {
+      expect(await h.registry.memberToolsStatus(CHILD)).toMatchObject({ process: 'full', lastReload: { outcome: 'loaded' } })
+    })
+    expect(start).toHaveBeenCalledOnce()
+    expect(h.registry.memberConfiguration(CHILD).status).not.toBe('failed')
+  })
+
+  it('a retry that fails again answers with the new reason and starts nothing', async () => {
+    const start = vi.fn(async () => 'respawned' as const)
+    let reconcileFails = false
+    const h = await mount({ start: { start }, configuration: adapter(async () => {
+      if (reconcileFails) throw new Error('still busy elsewhere')
+      return { active: false, matches: 'current', resolved: { model: 'm' } }
+    }) })
+    await failStart(h)
+    reconcileFails = true
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'start-failed', error: 'still busy elsewhere' })
+    expect(start).not.toHaveBeenCalled()
+    expect(h.registry.memberConfiguration(CHILD)).toMatchObject({ status: 'failed', error: 'still busy elsewhere' })
+  })
+
+  it('a start that fails after the recovery carries its reason to the dialog', async () => {
+    const h = await mount({ start: { start: async () => { throw new Error('the CLI exited at once') } }, configuration: adapter() })
+    await h.registry.reloadMemberTools(CHILD)
+    await vi.waitFor(async () => {
+      expect(await h.registry.memberToolsStatus(CHILD)).toMatchObject({ lastReload: { outcome: 'failed', error: 'the CLI exited at once' } })
+    })
+  })
+
+  it('重新载入 also recovers first; a selection that did not apply is left for the user', async () => {
+    const reload = vi.fn(() => undefined)
+    const h = await mount({ reload, configuration: adapter() })
+    h.spawn()
+    await failStart(h)
+    await h.registry.reloadMemberTools(CHILD)
+    expect(h.registry.memberConfiguration(CHILD).status).not.toBe('failed')
+    expect(reload).toHaveBeenCalledOnce()
+    // A selection that did not apply is not a failed start: no retry.
+    const pick = await mount({ reload, configuration: { ...adapter(), apply: async () => { throw new Error('model refused') } } })
+    pick.spawn()
+    const state = pick.registry.memberConfiguration(CHILD)
+    await pick.registry.selectMemberConfiguration(CHILD, 'pick-1', state.revision, { model: { mode: 'value', value: 'other' }, effort: { mode: 'inherit' } })
+    await vi.waitFor(() => expect(pick.registry.memberConfiguration(CHILD).status).toBe('failed'))
+    await pick.registry.reloadMemberTools(CHILD)
+    expect(pick.registry.memberConfiguration(CHILD)).toMatchObject({ status: 'failed', error: 'model refused' })
   })
 })
 

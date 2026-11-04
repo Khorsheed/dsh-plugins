@@ -412,16 +412,17 @@ describe('codex live driver rounds', () => {
     expect(spawn.fake!.requests[1]?.params).toMatchObject({
       cwd: '/tmp', ephemeral: false, approvalPolicy: 'never', sandbox: 'workspace-write',
     })
-    // Mirroring: the prompt plus the items, with the round's usage on the
-    // final assistant line (the hold-back rule); the commandExecution item
-    // mirrors as the native lifecycle — an assistant/message advertising the
-    // tool-call block, then the tool/call + tool/result pair.
+    // Mirroring: the prompt plus the items. The turn's three items precede
+    // one usage boundary — one model call — so they land as ONE step: one
+    // assistant/message advertising every block with the call's usage once,
+    // then the commandExecution item's tool/call + tool/result pair.
     expect(child.snapshotEvents().filter(e => e.type === 'user/message')).toHaveLength(1)
     const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
-    expect(assistant).toHaveLength(3)
-    expect(assistant[0]?.data).toMatchObject({ message: { content: [{ type: 'reasoning' }] } })
-    expect(assistant[1]?.data).toMatchObject({ message: { content: [{ type: 'tool-call', name: 'Bash', arguments: 'ls' }] } })
-    expect(assistant[2]?.data).toMatchObject({ usage: { inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 } })
+    expect(assistant).toHaveLength(1)
+    expect(assistant[0]?.data).toMatchObject({
+      message: { content: [{ type: 'reasoning' }, { type: 'tool-call', name: 'Bash', arguments: 'ls' }, { type: 'text', text: '第一条回复' }] },
+      usage: { inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 },
+    })
     const calls = child.snapshotEvents().filter(e => e.type === 'tool/call')
     expect(calls).toHaveLength(1)
     expect(calls[0]?.data).toMatchObject({ name: 'Bash', arguments: 'ls' })
@@ -473,7 +474,7 @@ describe('codex live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
-  it('stamps each API call\'s own usage on its last line, and the cumulative total on the settled report', async () => {
+  it('writes each API call as one step carrying its own usage once, and the cumulative total on the settled report', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-codex-percall'))
     const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
@@ -500,16 +501,62 @@ describe('codex live driver rounds', () => {
     })
     fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
     expect((await run.result).stopReason).toBe('completed')
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(3) }, { timeout: 5_000 })
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(2) }, { timeout: 5_000 })
     const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
-    // The intermediate text carries nothing (its call's usage rides the call's
-    // LAST line — the tool line's advertising message); no double counting.
-    expect((assistant[0]!.data as { usage?: unknown }).usage).toBeUndefined()
-    expect(assistant[1]!.data).toMatchObject({ usage: { inputTokens: 4, outputTokens: 3, cacheReadTokens: 6 } })
-    expect(assistant[2]!.data).toMatchObject({ usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 10 } })
+    // Call 1 is one step: the intermediate text and the tool call in one
+    // message with the call's usage once (no double counting); call 2 is the
+    // next step with its own.
+    expect(assistant[0]!.data).toMatchObject({
+      step: 1,
+      message: { content: [{ type: 'text', text: '先看工具' }, { type: 'tool-call', name: 'Bash' }] },
+      usage: { inputTokens: 4, outputTokens: 3, cacheReadTokens: 6 },
+    })
+    expect(assistant[1]!.data).toMatchObject({ step: 2, usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 10 } })
+    expect(child.snapshotEvents().find(e => e.type === 'tool/call')?.data).toMatchObject({ step: 1 })
     await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
     // The settled report carries the round total (30 - 16 uncached input).
     expect(m.settles[0]?.round).toMatchObject({ usage: { inputTokens: 14, outputTokens: 7, cacheReadTokens: 16 } })
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
+  it('a repeated usage reading (same thread total) is no call boundary — mid-call or carried over from the previous round', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-codex-repeat-reading'))
+    const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const breakdown = (input: number, output: number) => ({ inputTokens: input, cachedInputTokens: 0, outputTokens: output, reasoningOutputTokens: 0, totalTokens: input + output })
+    const reading = (turnId: string, last: ReturnType<typeof breakdown>, total: ReturnType<typeof breakdown>) =>
+      fake.notify('thread/tokenUsage/updated', { threadId: 'thread-1', turnId, tokenUsage: { last, total } })
+    const first = await m.driver.startRound(request() as never, roundSpec(m, child))
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'a1', type: 'agentMessage', text: '第一轮', phase: 'final_answer' } })
+    reading('turn-1', breakdown(10, 2), breakdown(10, 2))
+    fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
+    expect((await first.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'thread-1', turn: 2 } }))
+    // Round 2's one call: a reasoning item, the previous round's reading
+    // re-emitted (codex's rate-limit refresh carries the last token info
+    // again), then a tool — closed by the call's own fresh reading.
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-2', item: { id: 'r2', type: 'reasoning', summary: ['再看看'] } })
+    reading('turn-2', breakdown(10, 2), breakdown(10, 2))
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-2', item: { id: 't2', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a', status: 'completed' } })
+    reading('turn-2', breakdown(20, 3), breakdown(30, 5))
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-2', item: { id: 'a2', type: 'agentMessage', text: '好了', phase: 'final_answer' } })
+    reading('turn-2', breakdown(10, 1), breakdown(40, 6))
+    fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-2', status: 'completed' } })
+    expect((await second.result).stopReason).toBe('completed')
+    const round2 = child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn: number }).turn === 2)
+    expect(round2).toHaveLength(2)
+    expect(round2[1]?.data).toMatchObject({ step: 2, usage: { inputTokens: 10, outputTokens: 1 } })
+    expect(round2[0]?.data).toMatchObject({
+      step: 1,
+      message: { content: [{ type: 'reasoning', text: '再看看' }, { type: 'tool-call', id: 't2' }] },
+      usage: { inputTokens: 20, outputTokens: 3 },
+    })
+    // The round's own total ignores the carried-over reading.
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(2) })
+    expect(m.settles[1]?.round).toMatchObject({ providerReportedUsage: { inputTokens: 30, outputTokens: 4 } })
     expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
@@ -587,10 +634,13 @@ describe('codex live driver rounds', () => {
     }) }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
+    // Written before the round's result settles, so inside the core's
+    // execution range; codex states no spend for it, marked at write time.
     const events = child.snapshotEvents()
     expect(events.filter(event => event.type === 'local-agent/compaction').map(event => event.data)).toEqual([expect.objectContaining({
-      source: 'auto', outcome: 'completed', provider: 'codex-local',
+      source: 'auto', outcome: 'completed', provider: 'codex-local', unrecorded: ['usage'],
     })])
+    expect(events.find(event => event.type === 'local-agent/compaction')?.data).not.toHaveProperty('usage')
     expect(events.filter(event => event.type === 'local-agent/context').map(event => event.data)).toEqual([
       { provider: 'codex-local', usedTokens: 42_000, contextWindow: 400_000 },
     ])
@@ -859,15 +909,17 @@ describe('codex live driver rounds', () => {
     }))
     const onRun = await on.driver.startRound(request() as never, roundSpec(on, onChild))
     await onRun.result
-    // The stream reserved step 1 (deltas arrived before any item): snapshots
-    // grew the message live, and the completion fold landed last at the same
-    // (turn, step) — the host's repeated-settle merge keeps the newest.
+    // The stream opened its call's step 1 (deltas arrived before any item):
+    // snapshots grew the message live, and the call's fold landed last at
+    // the same (turn, step) with every block of the call — the host's
+    // repeated-settle merge keeps the newest.
     const atStep = onChild.snapshotEvents().filter(e => (e.data as { turn?: number; step?: number }).turn === 1
       && (e.data as { turn?: number; step?: number }).step === 1)
-    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'assistant/message', 'step/end'])
+    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'assistant/message', 'tool/call', 'tool/result', 'step/end'])
     const texts = atStep.filter(e => e.type === 'assistant/message')
       .map(e => (e.data as { message: { content: { text: string }[] } }).message.content[0]?.text)
     expect(texts).toEqual(['hel', 'hello', 'hello'])
+    expect(onChild.snapshotEvents().filter(e => e.type === 'step/start')).toHaveLength(1)
     // The delta still rides the run-progress channel.
     const progress = on.reports.filter(r => r.progress.kind === 'delta').map(r => r.progress.text)
     expect(progress).toContain('hel')
@@ -876,7 +928,7 @@ describe('codex live driver rounds', () => {
     await on.driver.disposeAll()
   })
 
-  it('token granularity: each streamed item finalizes at its own reserved step (no duplicate fold)', async () => {
+  it('token granularity: a call\'s streamed items share its step and finalize once (no duplicate fold)', async () => {
     const m = mount({ config: { sandbox: 'workspace-write', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const child = Session.create(SessionId('child-codex-token-final'))
     m.queueChild(new FakeAppServer({
@@ -895,26 +947,27 @@ describe('codex live driver rounds', () => {
     await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThanOrEqual(2) }, { timeout: 5_000 })
     const events = child.snapshotEvents()
     const assistant = events.filter(e => e.type === 'assistant/message')
-    // The reasoning stream finalizes at its reserved step 1 (one snapshot on
-    // the item switch + the completion fold; no duplicated content).
-    const atThink = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
-      && (e.data as { turn?: number; step?: number }).step === 1)
-    expect(atThink.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'assistant/message', 'step/end'])
-    // The answer stream finalizes at its reserved step 2, the fold carrying
-    // the usage and no dangling interrupted badge — inside the turn window.
+    // One call, one step: the reasoning stream opened step 1, the answer
+    // stream joined it, and each durable snapshot carried every opened block
+    // of the call so far; the call's fold lands last with both blocks.
+    expect(events.filter(e => e.type === 'step/start')).toHaveLength(1)
     const final = assistant.at(-1)!
-    expect(final.data).toMatchObject({ turn: 1, step: 2, usage: { inputTokens: 10, outputTokens: 4 } })
+    expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 10, outputTokens: 4 } })
     expect((final.data as { interrupted?: boolean }).interrupted).toBeUndefined()
     expect((final.data as { message: { content: unknown[] } }).message.content).toEqual([
+      { type: 'reasoning', text: '想一下' },
       { type: 'text', text: '文件建好了' },
     ])
+    // The call's usage rides its final message only.
+    expect(assistant.filter(e => (e.data as { usage?: unknown }).usage !== undefined)).toEqual([final])
     const turnEnd = events.find(e => e.type === 'turn/end')!
     expect(final.seq).toBeLessThan(turnEnd.seq)
-    const atStep = events.filter(e => (e.data as { turn?: number; step?: number }).turn === 1
-      && (e.data as { turn?: number; step?: number }).step === 2)
-    // The answer streamed while the reasoning step was still open, so its
-    // snapshots stayed live-only (one open step at a time); its fold writes it.
-    expect(atStep.map(e => e.type)).toEqual(['step/start', 'assistant/message', 'step/end'])
+    // The fold's stream records span the whole call: the reasoning's first
+    // delta to the answer's completion.
+    const stream = (final.data as { stream: { time: number; chunk: { type: string; index: number } }[] }).stream
+    expect(stream.map(record => [record.chunk.type, record.chunk.index])).toEqual([
+      ['block-start', 0], ['block-end', 0], ['block-start', 1], ['block-end', 1],
+    ])
     expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
@@ -940,7 +993,7 @@ describe('codex live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
-  it('token granularity: a tool-first round renders the answer after its tool cards (lazy stream step)', async () => {
+  it('token granularity: a tool-first call writes its tool cards and answer in one step, in arrival order', async () => {
     const m = mount({ config: { sandbox: 'workspace-write' } })
     const child = Session.create(SessionId('child-codex-token-toolfirst'))
     const fake = new FakeAppServer({ turn: () => ({ hang: true }) })
@@ -960,21 +1013,21 @@ describe('codex live driver rounds', () => {
     })
     fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
     expect((await run.result).stopReason).toBe('completed')
-    // Each tool fold now includes its advertising assistant message: the three
-    // tool cards plus the streamed answer make four assistant messages.
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(4) }, { timeout: 5_000 })
-
-    // Chronological steps: t1=1, t2=2, the stream=3, the late tool shifts to 4.
+    // Everything before the one usage boundary is one call: one step whose
+    // message lists the blocks in arrival order (t1, t2, the answer that
+    // began streaming before t3 completed, t3) with the call's usage.
     const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
-    expect(toolSteps).toEqual([1, 2, 4])
+    expect(toolSteps).toEqual([1, 1, 1])
+    expect(child.snapshotEvents().filter(e => e.type === 'step/start')).toHaveLength(1)
     expectValidReleasedLog(child)
-    const final = child.snapshotEvents().find(e => e.type === 'assistant/message'
-      && (e.data as { step?: number }).step === 3)!
-    expect(final.data).toMatchObject({ turn: 1, step: 3, usage: { inputTokens: 5, outputTokens: 2 } })
+    const final = child.snapshotEvents().findLast(e => e.type === 'assistant/message')!
+    expect(final.data).toMatchObject({ turn: 1, step: 1, usage: { inputTokens: 5, outputTokens: 2 } })
+    expect((final.data as { message: { content: { type: string; id?: string; text?: string }[] } }).message.content
+      .map(block => block.type === 'tool-call' ? block.id : block.text)).toEqual(['t1', 't2', '结论', 't3'])
     await m.driver.disposeAll()
   })
 
-  it('a later answer streaming before the earlier steps folded waits its turn in the log (text → tool → text)', async () => {
+  it('a later call streaming before the earlier call is written waits its turn in the log (text → tool | text)', async () => {
     const m = mount({ config: { sandbox: 'workspace-write', snapshotMinIntervalMs: 0, snapshotMinChars: 0 } })
     const liveStreams = new LocalAgentStreams()
     const published = vi.spyOn(liveStreams, 'publish')
@@ -984,24 +1037,32 @@ describe('codex live driver rounds', () => {
     m.queueChild(fake)
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     await vi.waitFor(() => { expect(fake.requests.some(r => r.method === 'turn/start')).toBe(true) })
-    // The commentary streams and completes (held back as the last line)…
+    const usage = (input: number, output: number) => ({ inputTokens: input, cachedInputTokens: 0, outputTokens: output, reasoningOutputTokens: 0, totalTokens: input + output })
+    // Call 1: the commentary streams and completes, a tool starts…
     fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-1', itemId: 'm1', delta: '我会查看工具列表' })
     fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'm1', type: 'agentMessage', text: '我会查看工具列表', phase: 'commentary' } })
-    // …a tool completes (folding m1, holding itself back), and the answer
-    // starts streaming while that tool's step is not in the log yet.
-    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't1', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a', status: 'completed' } })
+    fake.notify('item/started', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't1', type: 'commandExecution', command: 'ls', status: 'inProgress' } })
+    // …and its boundary arrives while the tool still runs (the call is not
+    // written until it completes); call 2's answer starts streaming meanwhile.
+    fake.notify('thread/tokenUsage/updated', { threadId: 'thread-1', turnId: 'turn-1', tokenUsage: { last: usage(10, 2), total: usage(10, 2) } })
     fake.notify('item/agentMessage/delta', { threadId: 'thread-1', turnId: 'turn-1', itemId: 'm2', delta: '当前可调用的工具' })
     await vi.waitFor(() => {
       expect(published.mock.calls.some(([, item]) => item.text.includes('当前可调用的工具'))).toBe(true)
     }, { timeout: 1_000, interval: 10 })
-    // Shown live, but no step of it in the log before the tool's step.
-    expect(child.snapshotEvents().some(e => e.type === 'step/start' && (e.data as { step: number }).step === 3)).toBe(false)
+    // Shown live, but no step of it in the log while call 1's step is open.
+    expect(child.snapshotEvents().some(e => e.type === 'step/start' && (e.data as { step: number }).step === 2)).toBe(false)
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't1', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a', status: 'completed' } })
     fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 'm2', type: 'agentMessage', text: '当前可调用的工具：video_read', phase: 'final_answer' } })
+    fake.notify('thread/tokenUsage/updated', { threadId: 'thread-1', turnId: 'turn-1', tokenUsage: { last: usage(20, 3), total: usage(30, 5) } })
     fake.notify('turn/completed', { threadId: 'thread-1', turn: { id: 'turn-1', status: 'completed' } })
     expect((await run.result).stopReason).toBe('completed')
     expectValidReleasedLog(child)
     const steps = child.snapshotEvents().filter(e => e.type === 'step/start').map(e => (e.data as { step: number }).step)
-    expect(steps).toEqual([1, 2, 3])
+    expect(steps).toEqual([1, 2])
+    const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+    expect(assistant.map(e => (e.data as { message: { content: { type: string }[] } }).message.content.map(block => block.type)))
+      .toEqual([['text', 'tool-call'], ['text']])
+    expect(child.snapshotEvents().find(e => e.type === 'tool/call')?.data).toMatchObject({ step: 1 })
     await m.driver.disposeAll()
     liveStreams.dispose()
   })
@@ -1013,17 +1074,14 @@ describe('codex live driver rounds', () => {
     m.queueChild(new FakeAppServer({ turn: () => ({ items: answerItems('静默答案') }) }))
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
-    // reasoning at step 1, the tool card's advertisement at step 2, the answer
-    // at step 3.
-    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(3) }, { timeout: 5_000 })
-
-    // Faithful per-item fold: reasoning at step 1, the tool card at step 2,
-    // the answer at step 3 — nothing withheld for a combined message.
+    // No usage boundary ever arrived: the turn's items are one call, written
+    // at turn/completed as one step (reasoning, tool card, answer).
+    await vi.waitFor(() => { expect(child.snapshotEvents().filter(e => e.type === 'assistant/message')).toHaveLength(1) }, { timeout: 5_000 })
     const toolSteps = child.snapshotEvents().filter(e => e.type === 'tool/call').map(e => (e.data as { step: number }).step)
-    expect(toolSteps).toEqual([2])
+    expect(toolSteps).toEqual([1])
     const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
-    expect(assistant.map(e => (e.data as { step: number }).step)).toEqual([1, 2, 3])
-    expect((assistant[2]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '静默答案' }])
+    expect((assistant[0]!.data as { message: { content: { type: string }[] } }).message.content.map(block => block.type))
+      .toEqual(['reasoning', 'tool-call', 'text'])
     expectValidReleasedLog(child)
     await m.driver.disposeAll()
   })
@@ -1124,7 +1182,7 @@ describe('codex live driver review fixes', () => {
     await m.driver.disposeAll()
   })
 
-  it('an aborted round still mirrors the held-back lines and observed usage (partial-work contract)', async () => {
+  it('an aborted round still mirrors its unwritten call and the observed usage (partial-work contract)', async () => {
     const m = mount()
     const child = Session.create(SessionId('child-codex-fix2'))
     // Items stream, usage lands, but turn/completed never comes (cancelled).
@@ -1139,16 +1197,22 @@ describe('codex live driver review fixes', () => {
       threadId: 'thread-1', turnId: 'turn-1',
       tokenUsage: { last: { inputTokens: 8, cachedInputTokens: 2, outputTokens: 3, reasoningOutputTokens: 0, totalTokens: 0 }, total: {} },
     })
+    // The next call's tool completes, but its boundary never comes.
+    fake.notify('item/completed', { threadId: 'thread-1', turnId: 'turn-1', item: { id: 't3', type: 'commandExecution', command: 'ls', aggregatedOutput: 'a', status: 'completed' } })
     await new Promise(resolve => setTimeout(resolve, 20))
     controller.abort()
     expect((await run.result).stopReason).toBe('aborted')
-    // The volatile last line survived settlement, with the observed usage.
+    // The ended call landed with its observed usage; the unwritten call
+    // survived settlement as its own step (no usage was ever named for it).
     const assistant = child.snapshotEvents().filter(e => e.type === 'assistant/message')
     expect(assistant).toHaveLength(2)
-    expect(assistant[1]?.data).toMatchObject({
-      message: { content: [{ type: 'text', text: '半截回复' }] },
+    expect(assistant[0]?.data).toMatchObject({
+      step: 1,
+      message: { content: [{ type: 'reasoning', text: '在想了' }, { type: 'text', text: '半截回复' }] },
       usage: { inputTokens: 6, outputTokens: 3, cacheReadTokens: 2 },
     })
+    expect(assistant[1]?.data).toMatchObject({ step: 2, message: { content: [{ type: 'tool-call', id: 't3' }] } })
+    expect((assistant[1]?.data as { usage?: unknown }).usage).toBeUndefined()
     // The partial work sits inside the closed turn — a valid log on cold read.
     expectValidReleasedLog(child)
     await m.driver.disposeAll()
@@ -1255,11 +1319,10 @@ describe('codex live driver drain (settings handoff)', () => {
     expect(child.snapshotEvents().filter(e => e.type === 'assistant/message').length).toBeGreaterThan(0)
     const second = await m.driver.startRound(request({ prompt: '继续' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'thread-1', turn: 2 } }))
     await second.result
-    // Token granularity additionally streams the in-flight item: the round
-    // folds every item AND carries the stream's snapshot — never one
-    // combined message.
+    // The resumed round streams the in-flight item too and writes its call —
+    // every completed item plus the stream — inside turn 2.
     await vi.waitFor(() => {
-      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2).length).toBeGreaterThanOrEqual(2)
+      expect(child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2).length).toBeGreaterThanOrEqual(1)
     }, { timeout: 5_000 })
     const round2 = child.snapshotEvents().filter(e => e.type === 'assistant/message' && (e.data as { turn?: number }).turn === 2)
     expect(round2.some(e => JSON.stringify((e.data as { message: { content: unknown } }).message.content).includes('想一下'))).toBe(true)
