@@ -11,7 +11,8 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import z from '@deepseek-ai/schemastery'
 import { BashWriteCollector } from './bash-writes.ts'
 import { panelSession } from './panel-session.ts'
-import { foldFilePreviewByTurn, type TurnFilesByTurn } from './fold.ts'
+import { foldFilePreviewByTurn, type TurnFilesByTurn, type FilePreviewPatchParser } from './fold.ts'
+import { loadFilePreviewPatchParser } from './patch.ts'
 import { openExternalNative, macAppName } from './open-external.ts'
 import {
   IMAGE_MIME, eventsWatermark, isImagePath, listFilePreview, readErrorMessage, readFilePreview, turnFilesFilePreview,
@@ -71,6 +72,8 @@ export class FilePreviewService extends TypertRemoteService {
   private readonly openExternalNative: (path: string, app: string, signal: AbortSignal) => Promise<void>
   /** Bash-write collector (S2 seam), or undefined when disabled in config. */
   private readonly collector: BashWriteCollector | undefined
+  /** Optional rc1 patch parser; older hosts resolve undefined without failing boot. */
+  private readonly patchParser: Promise<FilePreviewPatchParser | undefined> = loadFilePreviewPatchParser()
   /** Per-session by-turn fold cache, invalidated by the log watermark. */
   private readonly turnCache = new Map<string, { asOfSeq: number; byTurn: TurnFilesByTurn }>()
 
@@ -236,7 +239,7 @@ export class FilePreviewService extends TypertRemoteService {
     return listFilePreview(
       // The header read stays lazy-tolerant: the pre-core code only touched
       // the cwd inside the existence probe, which an empty fold never reached.
-      { fs: this.fs, cwd: session.header?.cwd, maxFiles: this.resolved.maxFiles },
+      { fs: this.fs, cwd: session.header?.cwd, maxFiles: this.resolved.maxFiles, parsePatch: await this.patchParser },
       session.snapshotEvents(),
       this.collector?.captured(sessionId),
     )
@@ -265,7 +268,7 @@ export class FilePreviewService extends TypertRemoteService {
     const cached = this.turnCache.get(session.id)
     let byTurn: TurnFilesByTurn
     if (cached === undefined || cached.asOfSeq !== asOfSeq) {
-      byTurn = foldFilePreviewByTurn(events)
+      byTurn = foldFilePreviewByTurn(events, await this.patchParser)
       this.turnCache.set(session.id, { asOfSeq, byTurn })
     } else {
       byTurn = cached.byTurn

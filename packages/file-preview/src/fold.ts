@@ -2,8 +2,11 @@
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the SessionEventMap merge for 'tool/ptc-dispatch'.
-import type {} from '@deepseek-ai/dsh-tools/types'
+import type {} from '@deepseek-ai/dsh-tool-executor-ptc/types'
 import type { FilePreviewDiff, FilePreviewEntry, FilePreviewList, FilePreviewOp } from './types.ts'
+import { mergePatchDiffs, patchOperationsFromArguments, patchOperationsFromToolCall, patchStopped, type FilePreviewPatchParser } from './patch.ts'
+
+export type { FilePreviewPatchParser } from './patch.ts'
 
 /** Tool names whose calls record a touched file path. */
 const FILE_TOOL_NAMES: ReadonlySet<string> = new Set(['read', 'write', 'edit'])
@@ -123,12 +126,14 @@ function createdContentFromPtcDispatch(meta: unknown, args: unknown): string | u
  * @param events - the session's events in ascending seq order.
  * @param maxFiles - cap on returned entries; excess files are dropped in
  *   first-seen order after the cap is reached.
+ * @param parsePatch - optional rc1 parser used to recover successful Add operations.
  * @returns the capped list plus the last scanned seq and the truncation flag.
  */
-export function foldFilePreview(events: readonly SessionEvent[], maxFiles: number): FilePreviewList {
+export function foldFilePreview(events: readonly SessionEvent[], maxFiles: number, parsePatch?: FilePreviewPatchParser): FilePreviewList {
   const entries = new Map<string, FilePreviewEntry>()
   /** Root tool/call locations, so nested dispatches borrow their turn/step. */
   const callSites = new Map<string, { turn: number; step: number }>()
+  const patchCalls = new Map<string, ReturnType<typeof patchOperationsFromToolCall>>()
   let asOfSeq = -1
   /** Upsert one touched path, refreshing a repeat in place and keeping its diffs. */
   const record = (target: FilePreviewCallTarget, seq: number, turn: number, step: number): void => {
@@ -139,12 +144,12 @@ export function foldFilePreview(events: readonly SessionEvent[], maxFiles: numbe
   }
   /** Append one settled call's presentation diffs with the call's own or borrowed location. */
   const appendDiffs = (
-    diffs: readonly FilePreviewResultDiff[], seq: number, turn: number, step: number,
+    diffs: readonly FilePreviewResultDiff[], seq: number, turn: number, step: number, patch = false,
   ): void => {
     for (const diff of diffs) {
       // The render-intent vocabulary: a diff registers its path even when no
       // write/edit call recorded it (for example follow-along locations).
-      if (!entries.has(diff.path)) record({ op: 'edit', path: diff.path }, seq, turn, step)
+      if (!entries.has(diff.path)) record({ op: patch && diff.oldText === null ? 'write' : 'edit', path: diff.path }, seq, turn, step)
       const entry = entries.get(diff.path)
       if (entry === undefined) continue
       const change: FilePreviewDiff = { seq, turn, step, oldText: diff.oldText, newText: diff.newText }
@@ -155,6 +160,11 @@ export function foldFilePreview(events: readonly SessionEvent[], maxFiles: numbe
     asOfSeq = event.seq
     if (event.type === 'tool/call') {
       callSites.set(String(event.data.callId), { turn: event.data.turn, step: event.data.step })
+      if (event.data.name === 'apply_patch') {
+        const operations = patchOperationsFromToolCall(event.data.name, event.data.arguments, parsePatch)
+        if (operations !== undefined) patchCalls.set(String(event.data.callId), operations)
+        continue
+      }
       const target = pathFromToolCall(event.data.name, event.data.arguments)
       if (target === undefined) continue
       record(target, event.seq, event.data.turn, event.data.step)
@@ -167,11 +177,19 @@ export function foldFilePreview(events: readonly SessionEvent[], maxFiles: numbe
       const site = callSites.get(String(event.data.rootCallId)) ?? { turn: 0, step: 0 }
       const target = targetFromArguments(event.data.name, event.data.arguments)
       if (target !== undefined) record(target, event.seq, site.turn, site.step)
-      appendDiffs(diffsFromPtcDispatch(event.data.meta, target) ?? [], event.seq, site.turn, site.step)
+      const operations = patchOperationsFromArguments(event.data.name, event.data.arguments, parsePatch)
+      const metadata = diffsFromPtcDispatch(event.data.meta, target)
+      const diffs = operations === undefined ? metadata : mergePatchDiffs(operations, metadata ?? [], patchStopped(event.data.meta), parsePatch?.applyHunks)
+      appendDiffs(diffs ?? [], event.seq, site.turn, site.step, operations !== undefined && !patchStopped(event.data.meta))
       continue
     }
     if (event.type === 'tool/result') {
-      appendDiffs(diffsFromResultMeta(event.data.meta) ?? [], event.seq, event.data.turn, event.data.step)
+      const call = resultCallFacts(event.data.message)
+      const operations = call === undefined || call.isError ? undefined : patchCalls.get(call.callId)
+      if (call !== undefined) patchCalls.delete(call.callId)
+      const metadata = diffsFromResultMeta(event.data.meta)
+      const diffs = operations === undefined ? metadata : mergePatchDiffs(operations, metadata ?? [], patchStopped(event.data.meta), parsePatch?.applyHunks)
+      appendDiffs(diffs ?? [], event.seq, event.data.turn, event.data.step, operations !== undefined && !patchStopped(event.data.meta))
     }
   }
   return {
@@ -264,14 +282,16 @@ function resultCallFacts(
  * whose side reports no prior content, poisons that field to undefined rather
  * than reporting a misleading partial.
  * @param events - the session's events in ascending seq order.
+ * @param parsePatch - optional rc1 parser used to recover successful Add operations.
  * @returns turn → path → facts, in event order per turn.
  */
-export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFilesByTurn {
+export function foldFilePreviewByTurn(events: readonly SessionEvent[], parsePatch?: FilePreviewPatchParser): TurnFilesByTurn {
   const byTurn = new Map<number, Map<string, TurnFileFact>>()
   /** Root tool/call locations, so nested dispatches borrow their turn/step. */
   const callSites = new Map<string, { turn: number; step: number }>()
   /** Write-tool calls keyed by callId (create fallback; see {@link WriteCallFacts}). */
   const writeCalls = new Map<string, WriteCallFacts>()
+  const patchCalls = new Map<string, ReturnType<typeof patchOperationsFromToolCall>>()
   /** Every path the session log has written/edited or diff-reported so far
    *  (create discrimination: a first-touch write is a create). */
   const sessionSeen = new Set<string>()
@@ -334,6 +354,11 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
   for (const event of events) {
     if (event.type === 'tool/call') {
       callSites.set(String(event.data.callId), { turn: event.data.turn, step: event.data.step })
+      if (event.data.name === 'apply_patch') {
+        const operations = patchOperationsFromToolCall(event.data.name, event.data.arguments, parsePatch)
+        if (operations !== undefined) patchCalls.set(String(event.data.callId), operations)
+        continue
+      }
       const target = pathFromToolCall(event.data.name, event.data.arguments)
       if (target === undefined) continue
       // The card's vocabulary is mutations only: a read call registers
@@ -358,7 +383,9 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
       if (event.data.isError) continue
       const site = callSites.get(String(event.data.rootCallId)) ?? { turn: 0, step: 0 }
       const target = targetFromArguments(event.data.name, event.data.arguments)
-      const diffs = diffsFromPtcDispatch(event.data.meta, target)
+      const operations = patchOperationsFromArguments(event.data.name, event.data.arguments, parsePatch)
+      const metadata = diffsFromPtcDispatch(event.data.meta, target)
+      const diffs = operations === undefined ? metadata : mergePatchDiffs(operations, metadata ?? [], patchStopped(event.data.meta), parsePatch?.applyHunks)
       if (target !== undefined && target.op !== 'read') {
         sessionSeen.add(target.path)
         if (diffs !== undefined) {
@@ -378,13 +405,16 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
           recordContribution(target.path, site.turn, event.seq, site.step, undefined, undefined, true)
         }
       }
+      const creations = new Set(operations?.flatMap(operation =>
+        operation.kind === 'add' ? [operation.path]
+          : operation.kind === 'update' && operation.moveTo !== undefined ? [operation.moveTo] : []))
       if (diffs !== undefined) {
         for (const diff of diffs) {
           sessionSeen.add(diff.path)
           recordContribution(
             diff.path, site.turn, event.seq, site.step,
             lineCount(diff.newText),
-            diff.oldText === null ? undefined : lineCount(diff.oldText),
+            diff.oldText === null ? creations.has(diff.path) ? 0 : undefined : lineCount(diff.oldText),
             false,
           )
         }
@@ -392,14 +422,21 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
       continue
     }
     if (event.type === 'tool/result') {
-      const diffs = diffsFromResultMeta(event.data.meta)
+      const call = resultCallFacts(event.data.message)
+      const operations = call === undefined || call.isError ? undefined : patchCalls.get(call.callId)
+      if (call !== undefined) patchCalls.delete(call.callId)
+      const metadata = diffsFromResultMeta(event.data.meta)
+      const diffs = operations === undefined ? metadata : mergePatchDiffs(operations, metadata ?? [], patchStopped(event.data.meta), parsePatch?.applyHunks)
+      const creations = new Set(operations?.flatMap(operation =>
+        operation.kind === 'add' ? [operation.path]
+          : operation.kind === 'update' && operation.moveTo !== undefined ? [operation.moveTo] : []))
       if (diffs !== undefined) {
         for (const diff of diffs) {
           sessionSeen.add(diff.path)
           recordContribution(
             diff.path, event.data.turn, event.seq, event.data.step,
             lineCount(diff.newText),
-            diff.oldText === null ? undefined : lineCount(diff.oldText),
+            diff.oldText === null ? creations.has(diff.path) ? 0 : undefined : lineCount(diff.oldText),
             false,
           )
         }
@@ -411,7 +448,6 @@ export function foldFilePreviewByTurn(events: readonly SessionEvent[]): TurnFile
       // added-line count and a create removes 0. A later empty-meta write to
       // the same path (an overwrite whose prior content was not diffable)
       // contributes nothing rather than double-counting.
-      const call = resultCallFacts(event.data.message)
       const write = call === undefined ? undefined : writeCalls.get(call.callId)
       if (write === undefined || !write.firstTouch || call?.isError === true) continue
       recordContribution(write.path, event.data.turn, event.seq, event.data.step, lineCount(write.content), 0, false)
