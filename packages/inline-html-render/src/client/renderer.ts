@@ -5,8 +5,8 @@
  *
  * React owns the markdown tree, so this plugin NEVER removes a node React
  * created — that would make React's reconciliation fight the DOM and could
- * throw or resurrect the block. Instead it inserts the iframe as a SIBLING
- * right after the block and hides the block (`display:none`, a style React
+ * throw or resurrect the block. Instead it inserts a container carrying the
+ * iframe as a SIBLING right after the block and hides the block (`display:none`, a style React
  * does not manage), then re-applies on any mutation. Because React replaces
  * nodes (it does not reuse them across a re-render of changed content), each
  * replacement is detected fresh and re-hidden; the data marker on the *block*
@@ -24,11 +24,14 @@
 
 import { buildCardSrcDoc, CARD_CSP } from './srcdoc.ts'
 import { attachBridge, type BridgeCapabilities } from './bridge.ts'
+import { attachFrameLoading } from './loading.ts'
 
 /** Info string that marks a fence as an inline card. */
 export const CARD_INFO_STRING = 'dsh-card'
 /** Marker set on the block once it has been swapped, making a pass idempotent. */
 const PROCESSED_ATTR = 'data-dsh-card-processed'
+/** The renderer-owned frame container, paired with the processed block. */
+const CONTAINER_CLASS = 'dsh-inline-card-container'
 /** The injected iframe's class, for cleanup. */
 const FRAME_CLASS = 'dsh-inline-card-frame'
 /** Attribute used to find the bridge-ready frame and its disposer. */
@@ -52,6 +55,7 @@ function isCardDocument(body: string): boolean {
 /** A mounted card: the block it replaced and the disposer of its bridge. */
 interface MountedCard {
   readonly block: HTMLElement
+  readonly container: HTMLElement
   readonly frame: HTMLIFrameElement
   /** Hides the block and guards duplicate disposal. */
   dispose: () => void
@@ -99,8 +103,8 @@ function readCardHtml(block: HTMLElement): string {
 }
 
 /**
- * Render one card block: read the HTML, build a sandboxed srcDoc, insert the
- * iframe after the block, hide the block, and attach the capability bridge.
+ * Render one card block: read the HTML, build a sandboxed srcDoc, insert its
+ * container after the block, hide the block, and attach the capability bridge.
  * @param block - the rendered `dsh-card` block.
  * @param capabilities - wired host capabilities handed to the bridge.
  * @returns a {@link MountedCard} or null when the block had no content.
@@ -108,22 +112,23 @@ function readCardHtml(block: HTMLElement): string {
 function mountCard(block: HTMLElement, capabilities: BridgeCapabilities): MountedCard | null {
   const html = readCardHtml(block)
   if (html.trim() === '') return null
+  const srcdoc = buildCardSrcDoc(html)
+  const container = document.createElement('div')
+  container.className = CONTAINER_CLASS
+  container.style.cssText = 'position:relative;width:100%'
   const frame = document.createElement('iframe')
   frame.className = FRAME_CLASS
   frame.setAttribute('sandbox', 'allow-scripts')
   frame.setAttribute('title', 'inline card')
-  // A fresh container each mount: the frame is opaque-origin so nothing can
-  // spoof it, and setting srcDoc after insertion is fine (load fires async).
-  frame.srcdoc = buildCardSrcDoc(html)
   frame.style.display = 'block'
   frame.style.width = '100%'
-  // A small default so an unloaded frame is not collapsed; the bridge inside
-  // the frame posts the real content height on load/resize (see srcdoc.ts),
-  // because the parent cannot read contentDocument on an opaque-origin frame.
-  frame.style.height = 'auto'
+  frame.style.height = '150px'
   frame.style.border = 'none'
+  container.appendChild(frame)
+  const disposeLoading = attachFrameLoading(frame, container, srcdoc)
+  frame.srcdoc = srcdoc
 
-  block.parentNode?.insertBefore(frame, block.nextSibling)
+  block.parentNode?.insertBefore(container, block.nextSibling)
   // Hide the block with a style React does not reconcile (React only manages
   // the class/style it rendered; this element's `style` is set once by us).
   block.style.display = 'none'
@@ -131,44 +136,50 @@ function mountCard(block: HTMLElement, capabilities: BridgeCapabilities): Mounte
 
   const disposeBridge = attachBridge(frame, capabilities)
   frame.setAttribute(BRIDGE_ATTR, '')
+  let disposed = false
   const dispose = (): void => {
+    if (disposed) return
+    disposed = true
+    disposeLoading()
     disposeBridge()
-    frame.remove()
+    container.remove()
     block.removeAttribute(PROCESSED_ATTR)
     // Do NOT clear block.style.display — React may not have re-rendered; a
     // cleared style would flash the code block back. Cleaning up the frame is
     // enough; the block node itself belongs to React.
   }
-  return { block, frame, dispose }
+  return { block, container, frame, dispose }
 }
 
 /**
  * Drop frames whose owning block is gone. React may replace a processed block
  * with a fresh node (a re-render of the settled markdown); the old block's
- * frame then has no matching block before it and would sit orphaned. A frame
- * is owned by the immediately-preceding `.md-code-block` carrying the
- * processed marker that paired with it — so a frame not preceded by exactly
- * that is stale. Reactive re-scanning keeps the two in lockstep.
+ * container then has no matching block before it and would sit orphaned.
  */
 function collectCardFrames(root: ParentNode): HTMLIFrameElement[] {
   return [...root.querySelectorAll<HTMLIFrameElement>(`.${FRAME_CLASS}`)]
 }
 
-/** Remove every card frame whose predecessor block is no longer its partner. */
+/** Remove every card container whose predecessor block is no longer its partner. */
 function dropOrphanFrames(root: ParentNode, mounted: Set<MountedCard>): void {
+  for (const card of mounted) {
+    if (card.block.isConnected && card.frame.isConnected) continue
+    card.dispose()
+    mounted.delete(card)
+  }
   for (const frame of collectCardFrames(root)) {
-    const prev = frame.previousElementSibling
+    const parent = frame.parentElement
+    const container = parent?.classList.contains(CONTAINER_CLASS) === true ? parent : frame
+    const prev = container.previousElementSibling
     const owned = prev instanceof HTMLElement && prev.classList.contains('md-code-block')
       && prev.hasAttribute(PROCESSED_ATTR)
     if (owned) continue
-    frame.remove()
-    // Best-effort detach from the mounted registry (the handle holds the same
-    // node, so a later dispose of the registry still finds it already gone).
-    for (const card of mounted) {
-      if (card.frame === frame) {
-        mounted.delete(card)
-        break
-      }
+    const card = [...mounted].find(candidate => candidate.frame === frame)
+    if (card !== undefined) {
+      card.dispose()
+      mounted.delete(card)
+    } else {
+      container.remove()
     }
   }
 }

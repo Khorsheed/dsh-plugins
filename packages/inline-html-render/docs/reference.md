@@ -77,11 +77,12 @@ host 半边注册的 `inline-html-card` 与 `3d-artifact` 两个 skill 同属一
 
 | 模块 | 职责 |
 | --- | --- |
-| `src/client/renderer.ts` | `MutationObserver` 监控 DOM;对每个 info string 为 `dsh-card` 的 `.md-code-block`(显式 `.infostring` 或 banner 前导文本)读取 `<pre>` 文本(原始 HTML),在块旁插入 iframe、隐藏原块;流式未结束(`data-streaming` 祖先存在)时不挂载,落定后重扫;React 重建块后回收孤儿 iframe 并重挂。 |
-| `src/client/srcdoc.ts` | 把卡片 HTML 包成带严格 CSP + `dshBridge` 的完整 srcdoc 文档:片段自动补 `<html>/<head>`,完整文档在其 `<head>` 后注入;卡片已自带 CSP 时不重复注入。sandbox 永不带 `allow-same-origin`。 |
+| `src/client/renderer.ts` | `MutationObserver` 监控 DOM;对每个 info string 为 `dsh-card` 的 `.md-code-block`(显式 `.infostring` 或 banner 前导文本)读取 `<pre>` 文本(原始 HTML),在块旁插入含 iframe 与加载状态的容器、隐藏原块;srcdoc 桥脚本上报 `ready` 后才显示画面,停滞 10 秒可重试;流式未结束(`data-streaming` 祖先存在)时不挂载,落定后重扫;React 重建块后回收孤儿容器并重挂。 |
+| `src/client/loading.ts` | 父页加载状态:立即覆盖首绘空白;只接受当前 iframe 的 `ready` 消息,忽略初始空文档的 load;10 秒停滞后显示错误与重试,dispose 清理计时器和消息监听。 |
+| `src/client/srcdoc.ts` | 把卡片 HTML 包成带严格 CSP + `dshBridge` 的完整 srcdoc 文档:片段自动补 `<html>/<head>`;作者自带的 CSP meta 统一移入 `<head>`,未声明时才补默认策略,不重复注入。sandbox 永不带 `allow-same-origin`。 |
 | `src/client/bridge.ts` | 宿主侧逐条校验 iframe 消息(`event.source` 必须是受控 iframe 的 window、fn 白名单、按函数校验参数形状),响应 `openLink/copy/download` 与高度上报;未知或畸形调用回错误,绝不在宿主抛异常。 |
 
-**为什么插兄弟节点而不是替换**:React 拥有 markdown 树,直接 `removeChild` 会让 React 的 reconciliation 与 DOM 打架(可能抛错或让原块复活)。所以本插件**从不删 React 的节点**——iframe 作为兄弟节点插在块之后,再把块 `style.display='none'`(React 不管的样式),并用 MutationObserver 在每次变更后重扫;React 替换节点时新块同样被捕获、再次隐藏。
+**为什么插兄弟节点而不是替换**:React 拥有 markdown 树,直接 `removeChild` 会让 React 的 reconciliation 与 DOM 打架(可能抛错或让原块复活)。所以本插件**从不删 React 的节点**——含 iframe 与加载状态的容器作为兄弟节点插在块之后,再把块 `style.display='none'`(React 不管的样式),并用 MutationObserver 在每次变更后重扫;React 替换节点时新块同样被捕获、再次隐藏。
 
 **流式对齐**:回合运行时 `AssistantMarkdown` 在根上置 `data-streaming`,块内容是部分且会被重渲染;插件只在无 `data-streaming` 祖先时挂载,杜绝在半截内容上渲染。回合结束 React 重渲染、移除该属性并重建块,observer 此时才真正替换。
 

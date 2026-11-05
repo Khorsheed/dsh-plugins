@@ -30,7 +30,7 @@ Inline Cards come with the Basic Essentials suite. Once installed, tell the agen
 ## Known limits
 
 - Cards can't go online; for something that loads web resources, open it in the file preview instead.
-- When the conversation re-renders, cards reload, so anything typed into a card and its scroll position are lost.
+- When the conversation re-renders, cards reload with a loading state and a retry option if they stall; anything typed into a card and its scroll position are lost.
 - A card grows with its content, up to about 20000 pixels tall.
 
 ## Compatibility
