@@ -29,7 +29,7 @@ import {
 /** A character's memory as the brief carries it: what they intend now, and what they came to believe. */
 export interface CharacterMind {
   readonly intent?: string
-  readonly beliefs: readonly { readonly text: string; readonly source?: string; readonly from?: string; readonly chapter: number }[]
+  readonly beliefs: readonly { readonly text: string; readonly source?: string; readonly from?: string; readonly chapter: number; readonly origin?: 'manual' }[]
 }
 
 /** Everything one brief renders (assembled by the store's `gatherBrief`; kept cards only). */

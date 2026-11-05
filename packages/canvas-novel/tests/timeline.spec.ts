@@ -152,6 +152,20 @@ describe('the timeline in the store', () => {
     expect(minds.map(row => row.kind)).toEqual(['belief', 'intent'])
   })
 
+  it('manual mind corrections reach the brief and survive automatic reconciliation', async () => {
+    const { store } = bench()
+    expect((await store.correctMind({ workId: DREAM.workId, cardId: CARD.zhao, kind: 'intent', text: '先核实再推门' }, SESSION)).ok).toBe(true)
+    expect((await store.correctMind({ workId: DREAM.workId, cardId: CARD.zhao, kind: 'belief', text: '不能只听门后的声音', source: '推测' }, SESSION)).ok).toBe(true)
+    const write = await store.gatherBrief({ workId: DREAM.workId, chapter: 5, for: 'write' })
+    expect(write.data?.inScene.find(row => row.character.cardId === CARD.zhao)?.mind).toMatchObject({ intent: '先核实再推门', beliefs: [{ text: '不能只听门后的声音', origin: 'manual' }] })
+    const payload = { intents: [{ character_id: '赵启明', intent: '立即推门', evidence_in_text: '门缝后的敲击声变成了明确的三下' }] }
+    await store.extractImport({ workId: DREAM.workId, n: 5, payload }, SESSION)
+    await store.extractImport({ workId: DREAM.workId, n: 5, payload }, SESSION)
+    const minds = await store.listMinds({ workId: DREAM.workId, characterId: CARD.zhao })
+    expect(minds.filter(row => row.origin === 'manual')).toHaveLength(2)
+    expect(minds.filter(row => row.kind === 'intent').map(row => row.text)).toEqual(['先核实再推门', '立即推门'])
+  })
+
   it('the write brief expands the events the plan advances, with the ideas bound to them, and carries the minds', async () => {
     const { store } = bench()
     await store.writeEvent({ workId: DREAM.workId, title: '赵启明推开门', who: ['赵启明'] }, SESSION)

@@ -64,6 +64,7 @@ function CardSectionBody(props: NovelSurfaceProps<NovelCardOwnerProps>): ReactNo
   const view = read.value
   return (
     <section className={css.cardSection}>
+      {sessionId === undefined && <span className={css.readOnlyTag}>{t('chapter.gate.readOnly')}</span>}
       {view.role === 'foreshadow' && (
         <StarRow
           view={view}
@@ -80,6 +81,7 @@ function CardSectionBody(props: NovelSurfaceProps<NovelCardOwnerProps>): ReactNo
           readOnly={sessionId === undefined}
           onOpenLog={() => { navigate.openPage(STORY_LOG_PAGE, t('log.heading'), card.id) }}
           onSave={state => gesture(r => r.setCurrentState(sessionId!, { canvasId, cardId: card.id, state }))}
+          onCorrect={(kind, text, source, from) => gesture(r => r.correctMind(sessionId!, { canvasId, cardId: card.id, kind, text, ...(source === undefined ? {} : { source }), ...(from === undefined ? {} : { from }) }))}
           t={t}
         />
       )}
@@ -156,13 +158,18 @@ function StarRow({ view, busy, readOnly, onToggle, t }: {
   )
 }
 
+type MindKind = 'belief' | 'intent'
+type MindSource = '亲历' | '听说' | '推测'
+type CorrectMind = (kind: MindKind, text: string, source?: MindSource, from?: string) => Promise<boolean>
+
 /** A character's 在故事里: 此刻, 出场 and 关系 under one head, parts split by a rule. */
-function StoryBlock({ view, busy, readOnly, onOpenLog, onSave, t }: {
+function StoryBlock({ view, busy, readOnly, onOpenLog, onSave, onCorrect, t }: {
   readonly view: NovelCardResult
   readonly busy: boolean
   readonly readOnly: boolean
   readonly onOpenLog: () => void
   readonly onSave: (state: CurrentState) => Promise<boolean>
+  readonly onCorrect: CorrectMind
   readonly t: NovelSurfaceProps['t']
 }): ReactNode {
   const lines = view.relations ?? []
@@ -178,23 +185,22 @@ function StoryBlock({ view, busy, readOnly, onOpenLog, onSave, t }: {
           <hr className={css.storyRule} />
           <div className={css.storyPart}>
             <div className={css.storyPartHead}>{t('card.intent')}</div>
-            <div className={css.mindLine}>{view.mind.intent ?? t('card.intentNone')}</div>
+            <MindRow kind="intent" text={view.mind.intent ?? ''} readOnly={readOnly} busy={busy} onCorrect={onCorrect} t={t} />
           </div>
           <hr className={css.storyRule} />
           <div className={css.storyPart}>
             <div className={css.storyPartHead}>{t('card.beliefs')}</div>
-            {view.mind.beliefs.length === 0
-              ? <div className={css.muted}>{t('card.beliefsNone')}</div>
-              : (
-                <ul className={css.beliefs}>
-                  {view.mind.beliefs.map((row, index) => (
-                    <li key={index}>
-                      <span className={css.beliefHow} data-how={row.source ?? '亲历'}>{row.source ?? '亲历'}</span>
-                      <span>{row.text}{row.from === undefined ? '' : t('card.heardFrom', { who: row.from })}<span className={css.muted}> {t('card.inChapter', { n: row.chapter })}</span></span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+            {view.mind.beliefs.length > 0 && (
+              <ul className={css.beliefs}>
+                {view.mind.beliefs.map((row, index) => (
+                  <li key={index}>
+                    <MindRow kind="belief" text={row.text} {...(row.source === undefined ? {} : { source: row.source })} {...(row.from === undefined ? {} : { from: row.from })} {...(row.origin === undefined ? {} : { origin: row.origin })} chapter={row.chapter} readOnly={readOnly} busy={busy} onCorrect={onCorrect} t={t} />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {view.mind.beliefs.length === 0 && <MindRow kind="belief" text="" readOnly={readOnly} busy={busy} onCorrect={onCorrect} t={t} />}
+            <p className={css.storyHelp}>{t('card.manualHelp')}</p>
           </div>
         </>
       )}
@@ -210,6 +216,49 @@ function StoryBlock({ view, busy, readOnly, onOpenLog, onSave, t }: {
           ? <div className={css.storyUnset}>{t('card.relationsNone')}</div>
           : <ul className={css.relationList}>{lines.map(line => <li key={line}>{line}</li>)}</ul>}
       </div>
+    </div>
+  )
+}
+
+function MindRow({ kind, text, source, from, origin, chapter, readOnly, busy, onCorrect, t }: {
+  readonly kind: MindKind
+  readonly text: string
+  readonly source?: string
+  readonly from?: string
+  readonly origin?: 'manual'
+  readonly chapter?: number
+  readonly readOnly: boolean
+  readonly busy: boolean
+  readonly onCorrect: CorrectMind
+  readonly t: NovelSurfaceProps['t']
+}): ReactNode {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(text)
+  if (editing) {
+    return (
+      <form className={css.mindEditor} onSubmit={event => {
+        event.preventDefault()
+        if (draft.trim() === '') return
+        void onCorrect(kind, draft.trim(), source as MindSource | undefined, from).then(saved => { if (saved) setEditing(false) })
+      }}>
+        <textarea value={draft} maxLength={300} onChange={event => { setDraft(event.target.value) }} />
+        <div className={css.cardSectionActions}>
+          <button type="submit" className={css.buttonPrimary} disabled={busy || draft.trim() === ''}>{t('card.save')}</button>
+          <button type="button" className={css.button} disabled={busy} onClick={() => { setEditing(false); setDraft(text) }}>{t('card.cancel')}</button>
+        </div>
+      </form>
+    )
+  }
+  return (
+    <div className={css.mindRow}>
+      {kind === 'belief' && <span className={css.beliefHow} data-how={source ?? '亲历'}>{source ?? '亲历'}</span>}
+      <span className={css.mindValue}>
+        {text === '' ? t(kind === 'intent' ? 'card.intentNone' : 'card.beliefsNone') : text}
+        {from !== undefined && t('card.heardFrom', { who: from })}
+        {origin === 'manual' && <span className={css.manualTag}>{t('card.manual')}</span>}
+        {chapter !== undefined && <span className={css.muted}> {t('card.inChapter', { n: chapter })}</span>}
+      </span>
+      {!readOnly && <button type="button" className={css.editDoor} onClick={() => { setDraft(text); setEditing(true) }}>{t('card.correct')}</button>}
     </div>
   )
 }
@@ -273,7 +322,7 @@ function StateRow({ state, busy, readOnly, onSave, t }: {
       <div className={css.storyPart}>
         <div className={css.storyPartHead}>
           {t('card.now')}
-          {!readOnly && <button type="button" className={css.storyLink} onClick={() => { setDraft(state) }}>{t('card.edit')}</button>}
+          {!readOnly && <button type="button" className={css.editDoor} onClick={() => { setDraft(state) }}>{t('card.edit')}</button>}
         </div>
         {set.length === 0
           ? <div className={css.storyUnset}><b>{t('card.nowUnset')}</b>{t(readOnly ? 'card.nowUnsetHelpReadOnly' : 'card.nowUnsetHelp')}</div>

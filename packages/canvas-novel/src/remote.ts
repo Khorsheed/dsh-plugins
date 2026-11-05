@@ -32,7 +32,7 @@ import {
   type CardLinkGroup, type CharacterView, type LedgerResult, type NovelCardRequest, type NovelCardResult, type NovelChapterRequest, type NovelChapterResult, type NovelChaptersResult,
   type NovelDecideRequest, type NovelGestureResult, type NovelOutlineDecideRequest, type NovelOutlineResult, type NovelPendingResult, type NovelPlanEditRequest, type NovelRecentResult, type NovelPlanEditResult, type NovelStarRequest, type NovelStateRequest,
   type NovelWorkRequest, type NovelWorldMapResult, type NovelCodexResult, type CodexSetting, type NovelTimelineResult, type TimelineEventView, type TimelineFutureView,
-  type NovelPinsRequest, type NovelIdeasResult, type NovelIdeaRequest, type NovelDeleteRequest, type NovelDeletePreviewResult, type DeleteFixView, type NovelAlignResult, type NovelAlignAckRequest, type NovelBodyEditRequest, type NovelBodyEditResult, type NovelOwnChapterRequest, type NovelImportChapterRequest, type NovelImportChapterResult, type NovelDirectorySelection, type NovelDirectoryImportResult, type OutlineCore, type WorldNode, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult,
+  type NovelPinsRequest, type NovelIdeasResult, type NovelIdeaRequest, type NovelDeleteRequest, type NovelDeletePreviewResult, type DeleteFixView, type NovelAlignResult, type NovelAlignAckRequest, type NovelBodyEditRequest, type NovelBodyEditResult, type NovelOwnChapterRequest, type NovelImportChapterRequest, type NovelImportChapterResult, type NovelDirectorySelection, type NovelDirectoryImportResult, type OutlineCore, type WorldNode, type OutlineHero, type PendingItem, type PendingView, type StoryLogResult, type NovelMindCorrectRequest,
 } from './types.ts'
 import type {
   ChapterFeedbackAddRequest, ChapterFeedbackBatchRequest, ChapterFeedbackCandidateRequest, ChapterFeedbackDeleteRequest,
@@ -267,6 +267,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     const intent = minds.filter(row => row.kind === 'intent').at(-1)?.text
     const beliefs = minds.filter(row => row.kind === 'belief').slice(-8).map(row => ({
       text: row.text, chapter: row.chapter, ...(row.source === undefined ? {} : { source: row.source }),
+      ...(row.origin === undefined ? {} : { origin: row.origin }),
       ...(row.from === undefined ? {} : { from: entries.characters.find(view => view.cardId === row.from)?.name ?? row.from }),
     }))
     return {
@@ -378,7 +379,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
         ...(view.currentState?.where === undefined ? {} : { where: view.currentState.where }),
         ...(view.currentState?.state === undefined ? {} : { state: view.currentState.state }),
         ...(intent === undefined ? {} : { intent }),
-        beliefs: own.filter(row => row.kind === 'belief').slice(-4).map(row => ({ text: row.text, chapter: row.chapter, ...(row.source === undefined ? {} : { source: row.source }) })),
+        beliefs: own.filter(row => row.kind === 'belief').slice(-4).map(row => ({ text: row.text, chapter: row.chapter, ...(row.source === undefined ? {} : { source: row.source }), ...(row.origin === undefined ? {} : { origin: row.origin }) })),
         secrets: view.secrets,
         chapters: appear.filter(row => !row.planned).map(row => row.chapter),
       }
@@ -688,6 +689,12 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
   @Remote('setCurrentState')
   async setCurrentState(sessionId: SessionId, request: NovelStateRequest): Promise<NovelGestureResult> {
     return setCurrentStateGesture(this.core, await panelSession(this.ctx, sessionId), request)
+  }
+
+  /** A manual correction appended to a character's beliefs or current intent. */
+  @Remote('correctMind')
+  async correctMind(sessionId: SessionId, request: NovelMindCorrectRequest): Promise<NovelGestureResult> {
+    return this.core.correctMind({ ...request, workId: request.canvasId }, await panelSession(this.ctx, sessionId))
   }
 }
 

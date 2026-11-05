@@ -15,7 +15,7 @@ import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   NovelCardRequest, NovelCardResult, NovelChapterRequest, NovelChapterResult, NovelChaptersResult, NovelDecideRequest,
   LedgerResult, NovelGestureResult, NovelOutlineDecideRequest, NovelOutlineResult, NovelWorldMapResult, NovelTimelineResult, NovelCodexResult, NovelPinsRequest, NovelIdeasResult, NovelIdeaRequest, NovelDeleteRequest, NovelDeletePreviewResult, NovelAlignResult, NovelAlignAckRequest, NovelBodyEditRequest, NovelBodyEditResult, NovelOwnChapterRequest, NovelImportChapterRequest, NovelImportChapterResult, NovelDirectorySelection, NovelDirectoryImportResult, NovelPendingResult, NovelPlanEditRequest, NovelRecentResult, NovelPlanEditResult, NovelStarRequest, NovelStateRequest,
-  NovelWorkRequest, StoryLogResult,
+  NovelWorkRequest, StoryLogResult, NovelMindCorrectRequest,
 } from '../types.ts'
 import type {
   ChapterFeedbackAddRequest, ChapterFeedbackBatchRequest, ChapterFeedbackCandidateRequest, ChapterFeedbackDeleteRequest,
@@ -79,6 +79,7 @@ export interface NovelRemote {
   card: (request: NovelCardRequest) => Promise<RemoteResult<NovelCardResult>>
   starForeshadow: (sessionId: SessionId, request: NovelStarRequest) => Promise<RemoteResult<NovelGestureResult>>
   setCurrentState: (sessionId: SessionId, request: NovelStateRequest) => Promise<RemoteResult<NovelGestureResult>>
+  correctMind: (sessionId: SessionId, request: NovelMindCorrectRequest) => Promise<RemoteResult<NovelGestureResult>>
   outline: (request: NovelWorkRequest) => Promise<RemoteResult<NovelOutlineResult>>
   worldMap: (request: NovelWorkRequest) => Promise<RemoteResult<NovelWorldMapResult>>
   timeline: (request: NovelWorkRequest) => Promise<RemoteResult<NovelTimelineResult>>

@@ -68,6 +68,8 @@ export interface MindEntry {
   readonly kind: 'belief' | 'intent'
   readonly text: string
   readonly source?: BeliefSource
+  /** A correction appended by the person rather than extracted from this chapter. */
+  readonly origin?: 'manual'
   /** Who they heard it from (a card id or a name). */
   readonly from?: string
   readonly evidence?: string
@@ -88,6 +90,7 @@ export function normalizeMindEntry(raw: unknown): MindEntry | undefined {
   const evidence = typeof r['evidence'] === 'string' && r['evidence'] !== '' ? r['evidence'].slice(0, 200) : undefined
   return {
     characterId, chapter, kind, text, createdAt: typeof r['createdAt'] === 'string' ? r['createdAt'] : '',
+    ...(r['origin'] === 'manual' ? { origin: 'manual' as const } : {}),
     ...(source === undefined ? {} : { source }), ...(from === undefined ? {} : { from }), ...(evidence === undefined ? {} : { evidence }),
   }
 }

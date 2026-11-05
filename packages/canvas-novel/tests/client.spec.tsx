@@ -415,6 +415,23 @@ describe('CardSection', () => {
     expect(p.navigate.openPage).toHaveBeenCalledWith(STORY_LOG_PAGE, zh['log.heading'], 'c_r')
   })
 
+  it('appends a manual intent correction and hides write actions in a read-only seat', async () => {
+    const p = renderCard('character', { currentState: {}, mind: { intent: '旧打算', beliefs: [{ text: '旧判断', chapter: 2, source: '推测' }] } })
+    const remote = p.remote()!
+    remote.correctMind = vi.fn(() => ok({ ok: true }))
+    const buttons = await screen.findAllByRole('button', { name: zh['card.correct'] })
+    fireEvent.click(buttons[0]!)
+    fireEvent.change(document.querySelector('textarea')!, { target: { value: '先核实再行动' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['card.save'] }))
+    await waitFor(() => {
+      expect(remote.correctMind).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, cardId: 'c_r', kind: 'intent', text: '先核实再行动' })
+    })
+    cleanup()
+    render(<CardSection {...p} sessionId={undefined} card={{ id: 'c_r' }} category={{ id: 'cat_character', role: 'character' }} />)
+    await screen.findByText(zh['chapter.gate.readOnly'])
+    expect(screen.queryByRole('button', { name: zh['card.correct'] })).toBeNull()
+  })
+
   it('a worked 此刻 lists only the parts it has', async () => {
     renderCard('character', { currentState: { where: '第七工作站' } })
     await screen.findByText('第七工作站')
@@ -888,6 +905,7 @@ describe('设定 (2026-11-02 改版稿)', () => {
     const p = props(remote)
     render(<CodexView {...p} />)
     fireEvent.click(await screen.findByRole('button', { name: /世界观/ }))
+    fireEvent.click(await screen.findByRole('button', { name: zh['action.more'] }))
     fireEvent.click(await screen.findByRole('button', { name: zh['del.button'] }))
     expect(await screen.findByText('「赵启明」的常在地点清空')).toBeTruthy()
     expect(screen.getByText(/第 1 章正文写到过它/)).toBeTruthy()

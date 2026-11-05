@@ -61,7 +61,7 @@ import {
   refGroupOf, refOf, relationEventOf, relationMove, typeChangeOf, relationProgress, relationTypeOf, stageNameOf, RELATION_TYPES,
   isOptionalPending, type Annotations, type NovelRecentResult, type RecentNote, type CardNote, type ChapterPlan, type ChapterRecord, type ChapterRow, type ChapterTable, type CharacterView, type Confidence,
   type CurrentState, type EffectiveChapterPhase, type HistoryChange, type HistoryEntry, type HistorySource, type EntryRole, type ExperienceEntry, type ExtractPayload,
-  type ForeshadowView, type ImportDrop, type ImportReport, type LedgerResult, type MentionEntry, type NovelError,
+  type ForeshadowView, type ImportDrop, type ImportReport, type LedgerResult, type MentionEntry, type NovelError, type NovelMindCorrectRequest,
   type PendingItem, type PendingKind, type PendingPayload, type PendingTable, type RefGroup, type RelationEntry, type RelationEvent,
   type RelationType, type RelationView, type RuleView, type StoryAppearance, type StoryCard, type StoryCharacter, type StoryForeshadow,
   type StoryLogResult, type StoryRelation, type WorkMeta, type WriteChapterRequest,
@@ -1965,7 +1965,7 @@ export class NovelService {
       minds.push({ characterId, chapter: n, kind: 'intent', text, evidence, createdAt: now })
       result.intents += 1
     }
-    await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.minds), session, minds, record => record['chapter'] === n)
+    await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.minds), session, minds, record => record['chapter'] === n && record['origin'] !== 'manual')
     if (realized.length > 0) {
       await this.mutateJson(await this.fileTarget(workId, WORK_FILES.ideas), session, raw => normalizeIdeas(raw), undefined, doc => ({
         ...doc, ideas: doc.ideas.map(idea => idea.eventId !== undefined && realized.includes(idea.eventId) && idea.writtenIn === undefined ? { ...idea, writtenIn: n } : idea),
@@ -2391,6 +2391,26 @@ export class NovelService {
     if (id === undefined) return []
     const lines = await this.readJsonl(await this.fileTarget(id, WORK_FILES.minds), raw => normalizeMindEntry(raw))
     return lines.filter(line => request.characterId === undefined || line.characterId === request.characterId)
+  }
+
+  /** Append the person's correction to a character's memory; re-reconciliation never replaces it. */
+  async correctMind(request: NovelMindCorrectRequest & { readonly workId: string }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    this.assertAlive('correctMind')
+    const workId = normalizeWorkId(request.workId)
+    const entries = workId === undefined ? undefined : await this.readEntries(workId)
+    const text = cleanText(request.text, 300)
+    if (workId === undefined || entries === undefined) return { ok: false, error: 'missing' }
+    if (entries.roleOf.get(request.cardId) !== 'character' || text === undefined) return { ok: false, error: 'invalid-name' }
+    const source = BELIEF_SOURCES.find(candidate => candidate === request.source)
+    const from = cleanText(request.from, 80)
+    const chapter = Math.max(1, entries.currentChapter)
+    const appended = await this.appendJsonl(await this.fileTarget(workId, WORK_FILES.minds), session, [{
+      characterId: request.cardId, chapter, kind: request.kind, text, origin: 'manual',
+      ...(request.kind === 'belief' && source !== undefined ? { source } : {}),
+      ...(request.kind === 'belief' && from !== undefined ? { from } : {}),
+      createdAt: new Date().toISOString(),
+    }])
+    return appended.ok ? { ok: true } : { ok: false, error: appended.error ?? 'io' }
   }
 
   /**
@@ -3113,9 +3133,9 @@ export class NovelService {
     // The memory half (2026-11-01): the in-scene characters' minds and the timeline.
     const minds = await this.listMinds({ workId: meta.id })
     const mindOf = (characterId: string): CharacterMind | undefined => {
-      const own = minds.filter(row => row.characterId === characterId && row.chapter < target.n + (target.phase === 'planning' ? 0 : 1))
+      const own = minds.filter(row => row.characterId === characterId && (row.origin === 'manual' || row.chapter < target.n + (target.phase === 'planning' ? 0 : 1)))
       const intent = own.filter(row => row.kind === 'intent').at(-1)?.text
-      const beliefs = own.filter(row => row.kind === 'belief').slice(-5).map(row => ({ text: row.text, chapter: row.chapter, ...(row.source === undefined ? {} : { source: row.source }), ...(row.from === undefined ? {} : { from: entries.characters.find(view => view.cardId === row.from)?.name ?? row.from }) }))
+      const beliefs = own.filter(row => row.kind === 'belief').slice(-5).map(row => ({ text: row.text, chapter: row.chapter, ...(row.source === undefined ? {} : { source: row.source }), ...(row.origin === undefined ? {} : { origin: row.origin }), ...(row.from === undefined ? {} : { from: entries.characters.find(view => view.cardId === row.from)?.name ?? row.from }) }))
       return intent === undefined && beliefs.length === 0 ? undefined : { ...(intent === undefined ? {} : { intent }), beliefs }
     }
     const { events, doc } = await this.allEvents(meta.id)

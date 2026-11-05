@@ -1770,7 +1770,7 @@ export interface CodexRelation {
   readonly now?: string
   /** The chapter the pair's journal starts at. */
   readonly since?: number
-  readonly steps: readonly { readonly chapter: number; readonly label: string; readonly evidence?: string }[]
+  readonly steps: readonly CodexRelationStep[]
 }
 
 export interface CodexForeshadow {
@@ -2030,7 +2030,7 @@ export interface NovelCardResult {
    */
   readonly links?: readonly CardLinkGroup[]
   /** Characters: what they intend now, and what they came to believe (newest last). */
-  readonly mind?: { readonly intent?: string; readonly beliefs: readonly { readonly text: string; readonly source?: string; readonly from?: string; readonly chapter: number }[] }
+  readonly mind?: { readonly intent?: string; readonly beliefs: readonly { readonly text: string; readonly source?: string; readonly from?: string; readonly chapter: number; readonly origin?: 'manual' }[] }
 }
 
 /** One setting on the 总览 world map, with what sits under it on the same shelf. */
@@ -2066,6 +2066,14 @@ export interface NovelStarRequest extends NovelCardRequest {
 /** The person's edit of a character's 此刻 (the whole state; empty parts clear). */
 export interface NovelStateRequest extends NovelCardRequest {
   readonly state: CurrentState
+}
+
+/** A manual correction appended to a character's memory, without fabricated chapter evidence. */
+export interface NovelMindCorrectRequest extends NovelCardRequest {
+  readonly kind: 'belief' | 'intent'
+  readonly text: string
+  readonly source?: '亲历' | '听说' | '推测'
+  readonly from?: string
 }
 
 /* --------------------------------------------------------------- outline (规划) */

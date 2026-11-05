@@ -1835,10 +1835,18 @@
 
 /* A character's memory: what they intend, what they believe and where it came from. */
 .mindLine { font: var(--dsh-panel-text-body, 13px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
-.beliefs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font: var(--dsh-panel-text-body, 13px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
-.beliefs li { display: grid; grid-template-columns: 3em minmax(0, 1fr); gap: 8px; }
-.beliefHow { font: var(--dsh-panel-text-meta, 12px)/1.6 var(--dsw-font-family); text-align: center; border-radius: 4px; height: fit-content; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); }
+.beliefs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font: var(--dsh-panel-text-body, 13px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-primary); }
+.beliefs li { display: block; }
+.beliefHow { flex: none; width: 3em; font: var(--dsh-panel-text-meta, 12px)/1.6 var(--dsw-font-family); text-align: center; border-radius: 4px; height: fit-content; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); }
 .beliefHow[data-how="推测"] { color: var(--dsw-alias-state-warn-primary); }
+.mindRow { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.mindValue { flex: 1; min-width: 0; }
+.manualTag { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 4px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-brand-primary); font: var(--dsh-panel-text-meta, 11px)/1.6 var(--dsw-font-family); }
+.readOnlyTag { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); font: var(--dsh-panel-text-meta, 11px)/1.6 var(--dsw-font-family); }
+.editDoor { flex: none; border: 0; border-radius: 4px; background: none; padding: 0 4px; cursor: pointer; color: var(--dsw-alias-brand-primary); font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); opacity: 0.65; }
+.mindRow:hover .editDoor, .storyPartHead:hover .editDoor, .editDoor:focus-visible { opacity: 1; }
+.mindEditor { display: grid; gap: 8px; }
+.mindEditor textarea { min-height: 74px; resize: vertical; padding: 7px 9px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: var(--dsh-panel-text-body, 13px)/1.6 var(--dsw-font-family); }
 
 .feedbackLayout { position: relative; }
 .feedbackReading { min-width: 0; }
