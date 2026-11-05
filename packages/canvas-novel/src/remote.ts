@@ -390,7 +390,11 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
       return {
         cardId: view.cardId, pair: view.pair, type: view.type, stage: view.stage, ...(view.now === undefined ? {} : { now: view.now }),
         ...(since === undefined ? {} : { since }),
-        steps: own.map(row => ({ chapter: row.chapter, label: row.kind === 'points' ? `${row.delta > 0 ? '+' : ''}${row.delta}` : row.stage, ...(row.evidence === undefined ? {} : { evidence: row.evidence }) })),
+        steps: own.map(row => ({
+          chapter: row.chapter, kind: row.kind, label: row.kind === 'points' ? `${row.delta > 0 ? '+' : ''}${row.delta}` : row.stage,
+          ...(row.kind === 'points' ? { delta: row.delta } : { event: row.event, stage: row.stage, ...(row.level === undefined ? {} : { level: row.level }), ...(row.fromType === undefined ? {} : { fromType: row.fromType }), ...(row.toType === undefined ? {} : { toType: row.toType }) }),
+          ...(row.evidence === undefined ? {} : { evidence: row.evidence }),
+        })),
       }
     })
     const mentions = await this.core.listMentions({ workId })

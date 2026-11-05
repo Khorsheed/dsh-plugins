@@ -1744,9 +1744,22 @@ export interface CodexCharacter {
   readonly where?: string
   readonly state?: string
   readonly intent?: string
-  readonly beliefs: readonly { readonly text: string; readonly source?: string; readonly chapter: number }[]
+  readonly beliefs: readonly { readonly text: string; readonly source?: string; readonly chapter: number; readonly origin?: 'manual' }[]
   readonly secrets: readonly string[]
   readonly chapters: readonly number[]
+}
+
+export interface CodexRelationStep {
+  readonly chapter: number
+  readonly label: string
+  readonly evidence?: string
+  readonly kind: 'points' | 'stage'
+  readonly delta?: number
+  readonly event?: RelationEvent
+  readonly stage?: string
+  readonly level?: number
+  readonly fromType?: RelationType
+  readonly toType?: RelationType
 }
 
 export interface CodexRelation {

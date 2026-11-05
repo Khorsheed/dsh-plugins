@@ -9,7 +9,7 @@
  *   under what it belongs to), the picked entry on the right with its links
  *   both ways and the chapters that used it;
  * - 人物: grouped by faction, each with 此刻 / 打算 / 相信的事;
- * - 关系: the pairs as a graph, scrubbed by chapter;
+ * - 关系: chapter replay around a person, graph or list, with the pair's history;
  * - 伏笔: the questions by when they are revealed, each a ladder of what the
  *   reader knows chapter by chapter, topped by the answer.
  *
@@ -23,6 +23,8 @@ import type { NovelSurfaceProps } from './contract.ts'
 import { AlignBadge } from './AlignPage.tsx'
 import { DeleteNode } from './DeleteNode.tsx'
 import { OnePage } from './OnePage.tsx'
+import { RelationsView } from './RelationsView.tsx'
+import { NodeActions } from './NodeActions.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './codex.module.css'
 
@@ -72,12 +74,14 @@ function Codex(props: NovelSurfaceProps): ReactNode {
             {label}{count === undefined ? null : <span className={css.count}>{count}</span>}
           </button>
         ))}
-        <span className={css.grow} /><AlignBadge {...props} />
+        <span className={css.grow} />
+        {props.sessionId === undefined && <span className={css.readOnlyTag}>{t('chapter.gate.readOnly')}</span>}
+        <AlignBadge {...props} />
       </nav>
       {part === 'overview' && <Overview {...props} data={data} go={go} />}
       {part === 'world' && <World data={data} picked={picked} onPick={setPicked} onlyOpen={onlyOpen} setOnlyOpen={setOnlyOpen} del={del} openCard={props.navigate.openCard} openChapter={n => { props.navigate.openManuscripts(String(n)) }} t={t} />}
       {part === 'people' && <People data={data} del={del} openCard={props.navigate.openCard} t={t} />}
-      {part === 'relations' && <Relations data={data} del={del} openCard={props.navigate.openCard} t={t} />}
+      {part === 'relations' && <RelationsView data={data} del={del} openCard={props.navigate.openCard} canvasId={props.canvasId} t={t} />}
       {part === 'foreshadow' && <Foreshadows data={data} picked={picked} onPick={setPicked} del={del} openCard={props.navigate.openCard} openChapter={n => { props.navigate.openManuscripts(String(n)) }} send={props.sessionId !== undefined && props.sendToConversation !== undefined ? text => { props.sendToConversation?.(props.sessionId!, text) } : undefined} t={t} />}
     </div>
   )
@@ -311,7 +315,7 @@ function SettingDetail({ setting, data, byId, onPick, del, openCard, openChapter
     <article className={css.detail}>
       <header className={css.dHead}>
         <div className={css.crumbs}>{[t(`world.shelf.${setting.sort}`), ...chain.map(row => shortName(row.name))].join(' › ')}</div>
-        <span className={css.headActs}><button type="button" className={css.ghost} onClick={() => { openCard(setting.cardId, shortName(setting.name)) }}>{t('codex.edit')}</button>{del(setting.cardId)}</span>
+        <span className={css.headActs}><NodeActions node={setting.cardId} name={shortName(setting.name)} openCard={openCard} del={del} t={t} /></span>
         <h2>{shortName(setting.name)}</h2>
         <div className={css.dMeta}>
           {setting.unsettled && <span className={css.pillWarn}>{t('world.unsettled')}</span>}
@@ -365,7 +369,8 @@ function People({ data, del, openCard, t }: { readonly data: NovelCodexResult; r
                 <header className={css.personHead}>
                   <button type="button" className={css.personName} onClick={() => { openCard(person.cardId, person.name) }}>{person.name}</button>
                   {person.identity !== undefined && <span className={css.muted}>{person.identity}</span>}
-                  <span className={css.grow} />{del(person.cardId)}
+                  <button type="button" className={css.personDoor} onClick={() => { openCard(person.cardId, person.name) }}>{t('codex.details')} →</button>
+                  <span className={css.grow} /><NodeActions node={person.cardId} name={person.name} openCard={openCard} del={del} t={t} />
                 </header>
                 <dl className={css.personRows}>
                   <dt>{t('codex.now')}</dt>
@@ -388,69 +393,6 @@ function People({ data, del, openCard, t }: { readonly data: NovelCodexResult; r
         </section>
       ))}
       <p className={css.muted}>{t('codex.peopleHint')}</p>
-    </div>
-  )
-}
-
-/* ------------------------------------------------------------------ 关系 */
-
-function Relations({ data, del, openCard, t }: { readonly data: NovelCodexResult; readonly del: Del; readonly openCard: (cardId: string, heading: string) => void; readonly t: T }): ReactNode {
-  const relations = data.relations ?? []
-  const current = Math.max(1, data.current ?? 1)
-  const [at, setAt] = useState(current)
-  const names = new Map((data.characters ?? []).map(row => [row.cardId, row.name]))
-  if (relations.length === 0) return <p className={css.empty}>{t('codex.noRelations')}</p>
-  const live = relations.filter(row => (row.since ?? 0) <= at)
-  const ids = [...new Set(relations.flatMap(row => row.pair))]
-  const W = 560, H = 320, R = 120
-  const place = new Map(ids.map((id, index) => {
-    const angle = (index / Math.max(1, ids.length)) * Math.PI * 2 + Math.PI
-    return [id, { x: W / 2 + R * Math.cos(angle) * 1.5, y: H / 2 + R * Math.sin(angle) }]
-  }))
-  const shown = new Set(live.flatMap(row => row.pair))
-  return (
-    <div className={css.relBox}>
-      <div className={css.stack}>
-        <label className={css.slider}>
-          <span>{t('codex.upTo')}</span>
-          <input type="range" min={1} max={current} value={at} onChange={event => { setAt(Number(event.target.value)) }} />
-          <b>{t('card.inChapter', { n: at })}</b>
-        </label>
-        <svg className={css.graph} viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('codex.relations')}>
-          {live.map(row => {
-            const [a, b] = row.pair
-            const p = place.get(a ?? ''), q = place.get(b ?? '')
-            if (p === undefined || q === undefined) return null
-            return (
-              <g key={row.cardId}>
-                <line x1={p.x} y1={p.y} x2={q.x} y2={q.y} className={css.edge} data-type={row.type} />
-                <text x={(p.x + q.x) / 2} y={(p.y + q.y) / 2 - 10} textAnchor="middle" className={css.edgeLabel}>{`${row.type} · ${row.stage}`}</text>
-              </g>
-            )
-          })}
-          {ids.map(id => {
-            const p = place.get(id)!
-            return (
-              <g key={id} className={css.node} data-ghost={!shown.has(id) || undefined} onClick={() => { openCard(id, names.get(id) ?? id) }}>
-                <circle cx={p.x} cy={p.y} r={28} />
-                <text x={p.x} y={p.y + 5} textAnchor="middle">{(names.get(id) ?? id).slice(0, 4)}</text>
-              </g>
-            )
-          })}
-        </svg>
-      </div>
-      <div className={css.relList}>
-        {relations.map(row => (
-          <div key={row.cardId} className={css.relItem} data-later={(row.since ?? 0) > at || undefined}>
-            <span className={css.relHead}><b>{row.pair.map(id => names.get(id) ?? id).join(' × ')}</b>{del(row.cardId)}</span>
-            <span className={css.muted}>{row.type} · {row.stage}{row.since === undefined ? '' : ` · ${t('codex.since', { n: row.since })}`}</span>
-            {row.now !== undefined && <span>{row.now}</span>}
-            {row.steps.filter(step => step.chapter <= at).slice(-2).map((step, index) => (
-              <span key={index} className={css.quote}>{t('card.inChapter', { n: step.chapter })} {step.label}{step.evidence === undefined ? '' : `「${step.evidence}」`}</span>
-            ))}
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
@@ -512,7 +454,7 @@ function Foreshadows({ data, picked, onPick, del, openCard, openChapter, send, t
       <article className={css.detail}>
         <header className={css.dHead}>
           <div className={css.crumbs}>{t('codex.foreshadow')}</div>
-          <span className={css.headActs}><button type="button" className={css.ghost} onClick={() => { openCard(current.cardId, current.question) }}>{t('codex.edit')}</button>{del(current.cardId)}</span>
+          <span className={css.headActs}><NodeActions node={current.cardId} name={current.question} openCard={openCard} del={del} t={t} /></span>
           <h2>{current.starred ? '★ ' : ''}{current.question}</h2>
           <div className={css.dMeta}>
             {planted !== undefined && <span>{t('onepage.planted', { n: planted })}</span>}
