@@ -157,7 +157,7 @@ describe('session-mirror', () => {
     const pairedTurns: number[] = []
     await mirrorKimiSessionDelta(ctx, child, home, 'injected-round', first.total, {
       turn: 2, settle: true,
-      streams: { reservedSteps: () => [], completeStreams: (turn) => { pairedTurns.push(turn); return undefined } },
+      streams: { completeStreams: (turn) => { pairedTurns.push(turn) } },
     })
     child.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
     const round2 = child.snapshotEvents().filter(event => (event.data as { turn?: number }).turn === 2 || event.type === 'user/message')
@@ -224,30 +224,26 @@ describe('session-mirror', () => {
     expect(usages).toEqual([171920, 1006])
   })
 
-  it('an empty stream reservation never strands a step gap (dense, strictly sequential log)', async () => {
-    const { home } = wireHome('empty-reservation', fullWire)
-    const child = Session.create(SessionId('empty-reservation'))
+  it('folds in write order and vacates each written step for the live previews (dense, strictly sequential log)', async () => {
+    const { home } = wireHome('vacate-order', fullWire)
+    const child = Session.create(SessionId('vacate-order'))
     const ctx = new Context()
     ctx.provide('sessionPersistence', fakeSessionPersistence())
     child.append('turn/start', { turn: 1 })
-    // A stream reserved step 2 with NO content (a wire step that carried only
-    // reasoning + a tool call): the driver's finalizeBefore releases it
-    // without writing. The fold must then take the freed coordinate — writing
-    // above it would strand a permanent gap (the prod lens corruption).
-    const reserved: number[] = [2]
-    await mirrorKimiSessionDelta(ctx, child, home, 'empty-reservation', 0, {
+    // Live previews never decide a durable coordinate and are never written
+    // by a fold: each fold takes the next step in write order and first tells
+    // the driver, which moves any preview keyed there above it.
+    const vacated: number[] = []
+    await mirrorKimiSessionDelta(ctx, child, home, 'vacate-order', 0, {
       streams: {
-        reservedSteps: () => reserved,
-        completeStreams: () => undefined,
-        finalizeBefore: (_turn, step) => {
-          // The driver's below-the-fold-step filter, with the empty release.
-          if (step > 2) reserved.length = 0
-        },
+        completeStreams: () => {},
+        vacate: (_turn, step) => { vacated.push(step) },
       },
     })
     const steps = child.snapshotEvents().filter(event => event.type === 'step/start')
       .map(event => (event.data as { step: number }).step)
     expect(steps.length).toBeGreaterThan(1)
+    expect(vacated).toEqual(steps)
     expect(steps).toEqual(Array.from({ length: steps.length }, (_, index) => index + 1))
     expectValidReleasedLog(child)
   })
