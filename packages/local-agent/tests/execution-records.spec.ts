@@ -388,6 +388,36 @@ describe('execution recorder', () => {
     expect(facts()).toMatchObject([{ outcome: 'cancelled', provider: 'claude-code', unrecorded: ['usage', 'before-after', 'summary'] }])
   })
 
+  it('an execution a restart left open closes with the operator\'s finding once reconciled (batch 5 S7)', () => {
+    const child = Session.create(SessionId('reconciled-child'))
+    const findings = new Map<string, { outcome: 'done' | 'failed' | 'cancelled'; at: number }>()
+    const recorder = new ExecutionRecorder({ session: () => child, persist: () => {}, settleWaitMs: 0, onError: (error) => { throw error },
+      reconciled: (_child, executionId) => findings.get(executionId) })
+    // The previous process admitted two executions and opened a turn each; neither ended.
+    child.append(TYPE, { phase: 'start', executionId: 'lost-1', caller: 'room', operation: 'prompt', parentSessionId: PARENT, admittedAt: 1 } as never)
+    child.append('turn/start', { turn: 1 } as never)
+    child.append('turn/end', { turn: 1, reason: { kind: 'interrupted' } } as never)
+    child.append(TYPE, { phase: 'start', executionId: 'lost-2', caller: 'tool', operation: 'prompt', parentSessionId: PARENT, admittedAt: 2 } as never)
+    child.append('turn/start', { turn: 2 } as never)
+    child.append('turn/end', { turn: 2, reason: { kind: 'interrupted' } } as never)
+    // Not reconciled yet: nothing is closed.
+    recorder.closeReconciled(child)
+    expect(records(child.snapshotEvents()).map(record => record.phase)).toEqual(['start', 'start'])
+    findings.set('lost-2', { outcome: 'cancelled', at: 50 })
+    recorder.closeReconciled(child)
+    recorder.closeReconciled(child)
+    expect(records(child.snapshotEvents()).slice(2)).toEqual([{ phase: 'end', executionId: 'lost-2', outcome: 'cancelled', turns: [2], endedAt: 50, reconciled: true }])
+    // The next admission closes what was reconciled meanwhile, before its own start.
+    findings.set('lost-1', { outcome: 'done', at: 60 })
+    const open = recorder.admit({ childSessionId: 'reconciled-child', parentSessionId: PARENT, operation: 'prompt' })
+    expect(records(child.snapshotEvents()).slice(3).map(record => [record.phase, record.executionId])).toEqual([['end', 'lost-1'], ['start', open.executionId]])
+    expect(records(child.snapshotEvents())[3]).toMatchObject({ outcome: 'done', turns: [1], reconciled: true })
+    // An execution open in this process is never closed from the ledger.
+    findings.set(open.executionId, { outcome: 'done', at: 70 })
+    recorder.closeReconciled(child)
+    expect(records(child.snapshotEvents())).toHaveLength(5)
+  })
+
   it('a provider that fails before any child exists leaves no record', () => {
     const recorder = new ExecutionRecorder({ session: () => undefined, persist: () => { throw new Error('nothing to persist') }, settleWaitMs: 0, onError: (error) => { throw error } })
     const open = recorder.admit({ childSessionId: 'never', parentSessionId: PARENT, operation: 'prompt' })

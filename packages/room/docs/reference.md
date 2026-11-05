@@ -79,6 +79,8 @@ dsh plugin --profile web remove @khorsheed/dsh-room
 
 **用量不在房间里存（批 5 S6）。** 房间不再把成员一轮的用量抄进 `room/execution-metadata`（新写入只带观测到的 `model`/`effort`），`room/member-compacted` 也不再抄压缩前后大小与压缩用量。`getState` 对带 `executionId` 的运行调用核心的只读 `readExecution`，把结果作为 `reading` 挂在该运行上（每次读时计算，从不写日志）。回复下的用量：CLI 自报了整轮合计（claude-code、codex）就显示它，逐次调用之和与它相差超过 1%（至少 50 tok）时在该轮旁加一句轻提示，如「逐次合计比 CLI 报告少 1.2K，可能有未记录的内部调用」；没有 CLI 合计（kimi、dsh）就显示逐次之和。压缩行的数字读该运行的压缩事实。成员统计、任务行与团队页按每轮显示的同一个数相加。S6 之前的运行与压缩行照旧显示当时存下的数，新旧不混算。没有 local-agent 或核心不带 `readExecution` 时静默降级：新运行不显示用量。决策模型调用的用量仍只在 `room/decision` 上。
 
+**排队与重启恢复交给 local-agent（批 5 S7）。** CLI 成员的派活直接交给核心的执行账本排队，房间不再自己排。重启后房间按核心的记录写结果：核心说某一轮结果不确定，房间里这一轮显示「待对账」（不再显示运行失败）；核心已结束或已对账的，照核心的结论记下；排着没跑的派活按原 key 重新提交，核心保证同一条不会跑两次。在房间、成员页或编辑弹窗里任一处对账，三处一起解除；给成员发新消息「按没做完处理」时，核心里那一轮也一起记为取消。成员有一轮来自房间外（成员页输入、主 agent 的工具调用）结果不确定时，发给它的消息不会失败，而是显示「待对账，这条消息还没发出」，对账后自动发出。部署前就在跑、没有 `executionId` 的投递仍按旧办法判为结果不确定（兼容代码保留一个版本）。
+
 **模型体验。** 成员收到的第一条消息以一段房间简报开头——它的名字和公开职责、它自己的指令、房间目标、其他成员（只列公开职责）以及工具约定（`member_message` / `room_message`、`room_read`）；之后的消息只带此后的变化（指令改动、一行行房间变动），不再重发名册和目标，任何成员都看不到别人的指令。刻意不做黑板折叠——成员提示词从不消费房间的运行日志（speech/dispatch 事件只为 UI 投影与回放落日志）。面向模型的工具随会话 preset 授予到达，由本包的 `./tool` 行打标。
 
 **身份同名。** cordis 行 id `room`（`cordis.patch.yml`）= `clientBundle('@khorsheed/dsh-room')`（`tsdown.config.ts`）。导出：`.` 宿主服务、`/client`（插件 `apply`/`inject` 与 `RoomRemote` 类型）、`/tool` 按会话授予的模型工具行、`/types`、`/typert`、`/remote`。

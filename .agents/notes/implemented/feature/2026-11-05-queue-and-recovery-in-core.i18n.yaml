@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-05-queue-and-recovery-in-core.md
+.agents/notes/implemented/feature/2026-11-05-queue-and-recovery-in-core.md: a87d029049e4c98aee33a006e7ba42f53ad5bccc
+.agents/notes/implemented/feature/2026-11-05-queue-and-recovery-in-core.zh.md: 168e33b2c2d50af1c0fb76db6d33ec020cd1c5b5

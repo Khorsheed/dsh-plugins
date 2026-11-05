@@ -967,7 +967,20 @@ export interface RoomMemberRun {
   /** Stable execution identity; legacy journals use startedAt. */
   readonly runId?: string
   readonly member: string
-  readonly state: 'running' | 'done' | 'cancelled' | 'failed'
+  /**
+   * `uncertain` is a projection only (`getState`, batch 5 S7), never a
+   * journaled edge: the core's ledger says a restart cut this CLI round off
+   * and nobody has reconciled it yet, or the round waits for its member's
+   * 待对账. The journal closes such a run `failed`.
+   */
+  readonly state: 'running' | 'done' | 'cancelled' | 'failed' | 'uncertain'
+  /**
+   * Projection only (batch 5 S7), with `state: 'uncertain'`: this is the row
+   * of a delivery the core refused while its member waited for 待对账 — the
+   * delivery has not gone out yet and will once that is reconciled. Absent:
+   * the round itself is the one with the unknown outcome.
+   */
+  readonly waiting?: 'reconcile'
   readonly startedAt: number
   readonly elapsedMs?: number
   /** Why the run failed (failed edges only), when the edge carried one. */
@@ -1086,6 +1099,8 @@ export type RoomFailure =
   | { readonly code: 'not-coordinator' }
   | { readonly code: 'delivery-not-uncertain' }
   | { readonly code: 'plan-reconciliation-required' }
+  /** The local-agent core refused the reconciliation (batch 5 S7: the room reconciles through it). */
+  | { readonly code: 'reconcile-failed'; readonly message: string }
   | { readonly code: 'coordinator-busy' }
   | { readonly code: 'coordinator-not-ready'; readonly message: string }
   | { readonly code: 'coordinator-conflict' }
@@ -1625,6 +1640,13 @@ export interface RoomDelivery {
   readonly queuedAt: number
   readonly startedAt?: number
   readonly endedAt?: number
+  /**
+   * Projection only (`getState`, batch 5 S7): a queued delivery whose member
+   * has a round with an unknown outcome in the core's ledger. The core admits
+   * nothing else of that member until it is reconciled (待对账); the delivery
+   * then goes out on its own.
+   */
+  readonly waiting?: 'reconcile'
   /** Epoch ms the report gate held this report, and released it. */
   readonly heldAt?: number
   readonly releasedAt?: number

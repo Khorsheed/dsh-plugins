@@ -9,6 +9,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import { resolveTaskRef } from '../src/jobs.ts'
+import { MOVED_ON_TEXT } from '../src/dispatch.ts'
 import { createRoom } from './promote.ts'
 import { withRunEntry } from './run-entry-shim.ts'
 
@@ -53,7 +54,8 @@ async function boot(taskAnswer?: { answer: string; probability: number }) {
       return true
     }),
   }
-  ctx.provide('localAgent', withRunEntry(facade, ctx) as never)
+  const stub = withRunEntry(facade, ctx)
+  ctx.provide('localAgent', stub as never)
   await ctx.plugin(SessionStore)
   await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
@@ -65,7 +67,7 @@ async function boot(taskAnswer?: { answer: string; probability: number }) {
     if (!result.ok) throw new Error('room unavailable')
     return result.value
   }
-  return { ctx, service, sessionId, flights, facade, state }
+  return { ctx, service, sessionId, flights, facade, state, stub }
 }
 
 describe('tasks', () => {
@@ -176,11 +178,14 @@ describe('tasks', () => {
     const room = bench.ctx.sessions.get(bench.sessionId)!
     const kimi = (await bench.state()).members.find(member => member.name === 'kimi')!
     const bill = (await bench.state()).members.find(member => member.name === 'bill')!
-    // Rounds the previous process started and never settled.
+    // Rounds the previous process started and never settled — uncertain in
+    // the core's ledger too (batch 5 S7: the room journals what the core says).
     const lost = (member: typeof kimi, id: string) => {
       const dispatch = room.append('room/dispatch', { id, targets: [member.name], targetIds: [member.id!], text: `旧活 ${member.name}`, origin: 'human', task: id })
       room.append('room/delivery-state', { id: `${dispatch.seq}:${member.id}`, dispatchSeq: dispatch.seq, memberId: member.id!, state: 'uncertain', error: 'Host restarted before a durable settlement; reconcile before retrying' })
+      bench.stub.seedLedgerRow(member.id!, { id: `exec-${id}`, key: `${dispatch.seq}:${member.id}`, caller: 'room', status: 'uncertain' })
     }
+    const coreRow = (member: typeof kimi, id: string) => (bench.stub['readMemberInbox'] as (child: string) => { messages: Array<{ id: string; status: string; error?: string }> })(member.id!).messages.find(row => row.id === `exec-${id}`)
     lost(kimi, 'lost-kimi')
     lost(bill, 'lost-bill')
     // The unknown outcome needs the human, even once its task was stopped.
@@ -191,9 +196,13 @@ describe('tasks', () => {
     await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledOnce())
     expect((await bench.state()).deliveries!.filter(row => row.memberId === kimi.id).map(row => [row.text, row.status]))
       .toEqual([['旧活 kimi', 'cancelled'], ['新活', 'running']])
+    // Moving on closed the lost round in the core as well (or the core would have refused the new message).
+    expect(coreRow(kimi, 'lost-kimi')).toMatchObject({ status: 'cancelled', error: MOVED_ON_TEXT })
+    expect(coreRow(bill, 'lost-bill')).toMatchObject({ status: 'uncertain' })
 
     expect(await bench.service.stopJob({ sessionId: bench.sessionId, task: 'lost-bill' })).toEqual({ ok: true, value: { stopped: 1 } })
     expect((await bench.state()).jobs!.find(job => job.id === 'lost-bill')!.status).toBe('stopped')
+    expect(coreRow(bill, 'lost-bill')).toMatchObject({ status: 'cancelled' })
   })
 
   it('messages that queued behind a lost round ride along with the move-on message; a backlog an older move-on left behind closes on recovery', async () => {

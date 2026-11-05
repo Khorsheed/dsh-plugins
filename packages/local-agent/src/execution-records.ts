@@ -92,6 +92,11 @@ export interface ExecutionRecorderOptions {
   /** How long a settled prompt round's end waits for the provider's settle report. */
   settleWaitMs: number
   onError(error: unknown): void
+  /**
+   * An operator's finding for an execution a restart left open (batch 5 S7):
+   * its ledger row was reconciled. Undefined for anything else.
+   */
+  reconciled?(childSessionId: string, executionId: string): { readonly outcome: 'done' | 'failed' | 'cancelled'; readonly at: number } | undefined
 }
 
 function lastSeq(session: Session): number {
@@ -154,6 +159,9 @@ export class OpenExecution {
       admittedAt: Date.now(),
     }
     const session = recorder.lookup(admission.childSessionId)
+    // An execution a restart cut off and an operator reconciled while the
+    // child was cold closes before this one opens.
+    if (session !== undefined) recorder.closeReconciled(session)
     this.watermark = session === undefined ? -1 : lastSeq(session)
     if (session !== undefined) this.writeStart(session)
     turnHooks().set(admission.childSessionId, (hooked, transport) => {
@@ -375,6 +383,49 @@ export class ExecutionRecorder {
     const next = list.filter(entry => entry !== execution)
     if (next.length === 0) this.open.delete(execution.childSessionId)
     else this.open.set(execution.childSessionId, next)
+  }
+
+  /**
+   * Close every execution in this child's log that a restart left without an
+   * end record and an operator has since reconciled (batch 5 S7): an end with
+   * the operator's outcome, `reconciled: true`, and the turns its range holds
+   * (the `turn/start`s after its start record, up to the next execution's
+   * start). Executions open in this process are never touched; an execution
+   * not reconciled (still `uncertain`) keeps its open start. Idempotent.
+   */
+  closeReconciled(session: Session): void {
+    const reconciled = this.options.reconciled
+    if (reconciled === undefined) return
+    const events = session.snapshotEvents()
+    const ended = new Set<string>()
+    for (const event of events) {
+      if (event.type !== 'local-agent/execution') continue
+      const data = event.data as LocalAgentExecutionStartEvent | LocalAgentExecutionEndEvent
+      if (data.phase === 'end') ended.add(data.executionId)
+    }
+    const childSessionId = String(session.id)
+    const open = new Set((this.open.get(childSessionId) ?? []).map(execution => execution.executionId))
+    let wrote = false
+    events.forEach((event, index) => {
+      if (event.type !== 'local-agent/execution') return
+      const data = event.data as LocalAgentExecutionStartEvent | LocalAgentExecutionEndEvent
+      if (data.phase !== 'start' || ended.has(data.executionId) || open.has(data.executionId)) return
+      const finding = reconciled(childSessionId, data.executionId)
+      if (finding === undefined) return
+      const turns: number[] = []
+      for (const later of events.slice(index + 1)) {
+        if (later.type === 'local-agent/execution' && (later.data as LocalAgentExecutionStartEvent).phase === 'start') break
+        const turn = later.type === 'turn/start' ? Number((later.data as { turn?: unknown }).turn) : Number.NaN
+        if (Number.isFinite(turn)) turns.push(turn)
+      }
+      const end: LocalAgentExecutionEndEvent = { phase: 'end', executionId: data.executionId, outcome: finding.outcome, turns, endedAt: finding.at, reconciled: true }
+      try {
+        session.append('local-agent/execution', end)
+        ended.add(data.executionId)
+        wrote = true
+      } catch (error) { this.onError(error) }
+    })
+    if (wrote) this.persist(session)
   }
 
   /** Write every parked end now (plugin dispose): an owed report is not waited for. */

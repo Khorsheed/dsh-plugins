@@ -210,7 +210,7 @@ export class MemberInbox {
     const state = this.read(memberId)
     const row = state.messages.find(row => row.id === idOrKey) ?? state.messages.find(row => row.key === idOrKey)
     if (row?.status !== 'uncertain' || evidence.trim() === '') throw new Error('Reconciliation requires an uncertain input and evidence')
-    row.status = outcome; row.error = evidence.trim(); row.updatedAt = Date.now(); row.settledAt = row.updatedAt
+    row.status = outcome; row.error = evidence.trim(); row.updatedAt = Date.now(); row.settledAt = row.updatedAt; row.reconciledAt = row.updatedAt
     this.save(state)
     this.pump(memberId)
   }

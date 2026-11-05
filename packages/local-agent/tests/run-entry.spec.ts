@@ -275,6 +275,13 @@ describe('run(): the single execution entry', () => {
     expect(after.rounds[0]).toMatchObject({ kind: 'resume', prompt: 'after reconcile' })
     after.rounds[0]!.release()
     expect(await next.settled).toMatchObject({ outcome: 'done' })
+    // This harness's "crash" is a graceful dispose (only the ledger file is
+    // restored), which already wrote an end for the interrupted round: the
+    // reconciliation closer never writes a second one (a real crash leaves
+    // the start open; see the recorder case in execution-records.spec.ts).
+    const closed = records(after.childEvents('member-r'))
+    expect(closed.filter(record => record.phase === 'end' && record.executionId === second.executionId)).toHaveLength(1)
+    expect(after.registry.readMemberInbox('member-r').messages[1]).toMatchObject({ reconciledAt: expect.any(Number) })
   })
 
   it('the host subagent tool and the members-page composer share one queue: no concurrent rounds, each recorded with its cause', async () => {
