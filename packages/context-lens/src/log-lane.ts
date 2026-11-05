@@ -342,18 +342,16 @@ export function foldLogRows(
       case 'assistant/message': {
         const hostTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
         if (cursor.deferred !== undefined && cursor.deferred.hostTurn !== hostTurn) flushDeferred(cursor, built, sink)
-        const own = buildRequest(cursor, row, data, false)
         const message = fromLogMessage(data['message'])
-        if (cursor.external === true && own.usage === undefined && cursor.modelStreams !== undefined
-          && own.firstChunkAt === undefined && own.blocks.every(block => block.end === undefined)
-          && message !== undefined && message.content.every(block => block.type === 'text' || block.type === 'reasoning')) {
-          // A mirror-only content annotation has neither a native model stream
-          // nor usage. Keep it in history without minting a phantom request.
-          flushDeferred(cursor, built, sink)
+        if (message !== undefined && isMirrorAnnotation(cursor, data, message)) {
+          // History, not a request: judged before buildRequest, so it neither
+          // takes a request number nor moves the next request's diff baseline,
+          // and it never ends or joins a waiting legacy call.
           message.sourceTurn = hostTurn
           placeMessage(cursor, row, message)
           break
         }
+        const own = buildRequest(cursor, row, data, false)
         let request = own
         if (cursor.deferred !== undefined) {
           // The rest of the deferred call: it joins the request the call began.
@@ -1028,6 +1026,24 @@ function flushDeferred(cursor: SessionLogCursor, built: BuiltLogRequest[], sink:
   built.push(deferred.request)
   cursor.requests.push(deferred.request)
   sink.request?.(deferred.hostTurn, deferred.request)
+}
+
+/**
+ * A mirror annotation: an external agent's `assistant/message` carrying only
+ * reasoning/text, with no usage and an empty LOGGED model stream (judged on
+ * the row itself, before any read-time `harness.timing` enrichment). No
+ * provider writes a real model call that way — every mirrored call carries
+ * its usage or its stream — but mirrors did write such steps for content they
+ * had only from a live preview (kimi live's gap fill sealed a later call's
+ * streamed reasoning as its own step until 2026-11-06; a non-text chunk's
+ * placeholder). Structural, in recorded and unrecorded logs alike; usage, a
+ * logged stream, or an `interrupted` mark (a stopped round's cut-off partial,
+ * written from live text) always makes it a request.
+ */
+function isMirrorAnnotation(cursor: SessionLogCursor, data: Record<string, unknown>, message: CapturedMessage): boolean {
+  if (cursor.external !== true || readUsage(data['usage']) !== undefined || data['interrupted'] === true) return false
+  if (Array.isArray(data['stream']) && data['stream'].length > 0) return false
+  return message.content.length > 0 && message.content.every(block => block.type === 'text' || block.type === 'reasoning')
 }
 
 /** Fold one more step of a call into the request the call began (its input stays the first step's). */

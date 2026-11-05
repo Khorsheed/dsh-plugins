@@ -139,8 +139,11 @@ describe('external agent calls', () => {
       toolTimings: new Map([['t1', { startedAt: 2100, endedAt: 2500 }]]),
     })
     expect(turn!.requests).toHaveLength(2)
-    expect(turn!.requests[0]).toMatchObject({ startedAt: 500, firstChunkAt: 1000, settledAt: 2500 })
-    expect(turn!.requests[0]?.blocks.map(block => block.kind)).toEqual(['reasoning', 'tool-call'])
+    // Step 1 logged no stream and no usage: an annotation even though the
+    // historical stream covers its text — judged on the log, not the
+    // enrichment. Step 2 takes the call's dispatch by its tool identity.
+    expect(turn!.requests[0]).toMatchObject({ startedAt: 500, firstChunkAt: 2000, settledAt: 2500 })
+    expect(turn!.requests[0]?.blocks.map(block => block.kind)).toEqual(['tool-call'])
     expect(turn!.requests[1]).toMatchObject({ startedAt: 3000, firstChunkAt: 3500, settledAt: 4000 })
   })
 
