@@ -16,7 +16,7 @@ function navigation(address: SubagentAddress | undefined, overrides: Partial<Sub
 }
 
 describe('openSubagent', () => {
-  it.each(['one-shot', 'continuable', 'unknown'] as const)('opens the %s address in the right sidebar', (mode) => {
+  it.each(['one-shot', 'continuable', 'unknown'] as const)('opens the %s address as a tab in the active sidebar pane', (mode) => {
     const nav = navigation({ parentSessionId: PARENT, childSessionId: CHILD, mode })
 
     openSubagent(nav, CHILD)
@@ -24,7 +24,7 @@ describe('openSubagent', () => {
     expect(nav.subagentAddress).toHaveBeenCalledWith(CHILD)
     expect(nav.openResource).toHaveBeenCalledWith(
       `dsh-resource://subagentchat/session/child-1?parent=parent-1&mode=${mode}`,
-      { kind: 'subagentchat', preferNewPane: true },
+      { kind: 'subagentchat' },
     )
     expect(nav.openSession).not.toHaveBeenCalled()
   })

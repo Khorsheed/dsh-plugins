@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-05-taskpilot-subagent-sidebar-navigation.md
-.agents/notes/implemented/feature/2026-11-05-taskpilot-subagent-sidebar-navigation.md: 53a7e035e89366100cab65dae9103764157b3b25
-.agents/notes/implemented/feature/2026-11-05-taskpilot-subagent-sidebar-navigation.zh.md: 897bbff3cc1947deddd3e8181e1fd851687eba4d
+.agents/notes/implemented/feature/2026-11-05-taskpilot-subagent-sidebar-navigation.md: 8e882653007c5b53cf78335e5c8a1cabac0796db
+.agents/notes/implemented/feature/2026-11-05-taskpilot-subagent-sidebar-navigation.zh.md: edbeb07702765e8a897995abc0a61bfb98efa2af

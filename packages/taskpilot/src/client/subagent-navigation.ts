@@ -4,16 +4,13 @@ import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 /** Product navigation verbs used by the subagent dock row. */
 export interface SubagentNavigation {
   subagentAddress: (id: SessionId) => SubagentAddress | undefined
-  openResource: (address: string, options: {
-    kind: 'subagentchat'
-    preferNewPane: true
-  }) => void
+  openResource: (address: string, options: { kind: 'subagentchat' }) => void
   openSession: (id: SessionId) => void
 }
 
 /**
- * Open a subagent in the host's right sidebar, falling back to its conversation
- * page when the host does not provide the Sidebar chat resource.
+ * Open a subagent as a tab in the active right-Sidebar pane, falling back to
+ * its conversation page when the host does not provide the Sidebar chat resource.
  * @param navigation - address resolver and product navigation verbs.
  * @param childId - selected subagent session.
  */
@@ -21,10 +18,7 @@ export function openSubagent(navigation: SubagentNavigation, childId: SessionId)
   const address = navigation.subagentAddress(childId)
   if (address !== undefined) {
     try {
-      navigation.openResource(subagentChatAddress(address), {
-        kind: 'subagentchat',
-        preferNewPane: true,
-      })
+      navigation.openResource(subagentChatAddress(address), { kind: 'subagentchat' })
       return
     } catch {
       // Older hosts and custom compositions without ui-subagent keep the old route.

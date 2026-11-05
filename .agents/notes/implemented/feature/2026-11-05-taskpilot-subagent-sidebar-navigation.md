@@ -29,3 +29,7 @@ The helper owns a small copy of the documented resource-address encoding rather 
 ## Testing
 
 `tests/subagent-navigation.spec.ts` verifies that Sidebar opens do not navigate the main conversation, that parent and mode parameters reach the resource address, and that missing addresses or rejected resource claims use the conversation-page fallback. `tests/taskpilot-dock.spec.tsx` verifies that a deep descendant row invokes the same injected navigation action.
+
+## Related
+
+- [TaskPilot subagent rows open as tabs in the active Sidebar pane](2026-11-05-taskpilot-subagent-active-sidebar-tab.md) — supersedes this note's `preferNewPane` placement while retaining the Sidebar-first navigation and compatibility fallback decided here.

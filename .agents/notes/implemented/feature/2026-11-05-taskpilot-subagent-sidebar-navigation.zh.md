@@ -29,3 +29,7 @@ TaskPilot 的子 agent 行调用 `uiWorkspace.openSession`，查看子 agent 时
 ## 测试
 
 `tests/subagent-navigation.spec.ts` 验证侧边栏打开不会跳转主会话、父会话与模式参数会进入资源地址，以及地址缺失或资源认领失败时使用会话页回退。`tests/taskpilot-dock.spec.tsx` 验证深层后代行也调用同一个注入导航动作。
+
+## 相关
+
+- [TaskPilot 子 agent 行在当前右侧栏分栏中新增 tab](2026-11-05-taskpilot-subagent-active-sidebar-tab.md) —— 仅取代本文的 `preferNewPane` 落位选择，保留本文决定的侧边栏优先导航与兼容回退。
