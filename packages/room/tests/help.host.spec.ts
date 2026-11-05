@@ -272,6 +272,10 @@ describe('asking another room', () => {
     expect(sent).toMatch(/Sent to 游戏大师 in the room "游戏开发"/)
     expect(bench.thread()[0]!.data).toMatchObject({ target: { sessionId: bench.asked, room: true, member: '游戏大师' } })
     expect(bench.inbound()).toMatchObject([{ member: '游戏大师', from: 'dsh', text: '头一直转圈', op: 'request' }])
+    // S9: the thread names the asker's task; the asked room's help dispatch carries it as the asking room's task.
+    expect(bench.thread()[0]!.data).toMatchObject({ task: 'h1' })
+    const helpDispatch = bench.ctx.sessions.get(bench.asked)!.snapshotEvents().find(event => event.type === 'room/dispatch' && event.data.origin === 'help')
+    expect(helpDispatch?.data).toMatchObject({ help: { room: bench.asking, task: 'h1' } })
     await vi.waitFor(() => expect(bench.flights).toHaveLength(1))
     bench.flights[0]!.resolve(finish('修好了，v10 已发布'))
     await vi.waitFor(() => expect(bench.thread().at(-1)!.data).toMatchObject({ state: 'replied' }))

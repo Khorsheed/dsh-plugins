@@ -281,12 +281,12 @@ export interface RoomExecutionFacts {
  * |---|---|
  * | `human` (and `/compact`) | `human` via `room`, with the message id and dispatch seq |
  * | `coordinator` / `member` / `relay` | `member`: the sender's id and the dispatch seq |
- * | `help` | `help`: the thread id and the asking room |
+ * | `help` | `help`: the thread id and the asking room, plus `fromTask` when the request carried the asker's task |
  * | `report` of a delivery | `execution`: the source run's execution id; a source without one (the room's own agent, a pre-S5 run) → `member` from the reporting member |
- * | `report` of a help thread (`help:<id>`) | `help`: the thread and the helper session |
+ * | `report` of a help thread (`help:<id>`) | `help`: the thread and the helper session; the task is the thread's own (`room/help.task`) when the dispatch has none |
  * | release round, `restart` | `restart` |
  * | release round, `manual` (the human's 现在交给) | `human` via `room` |
- * | release round, `timeout` or unrecorded | `decision`: the latest report-timing decision that held reports for the recipient; none recorded → no cause |
+ * | release round, `timeout` or unrecorded | `decision`: the dispatch's `releaseDecision`; a journal from before it (batch 5 S9) → the latest report-timing decision that held reports for the recipient; none recorded → no cause |
  * | legacy confirmed relay (no dispatch) | `member`: the relay sender, the relay's own seq |
  *
  * The task is the dispatch's `task` (the task root's message id) in this room.
@@ -316,11 +316,16 @@ export function executionFacts(events: readonly SessionEvent[], roomId: string, 
     case 'coordinator':
     case 'member':
     case 'relay': return withTask({ kind: 'member', sessionId, fromMemberId: data.from ?? '', dispatchSeq })
-    case 'help': return withTask(data.help === undefined ? undefined : { kind: 'help', sessionId, helpId: data.help.id, fromRoom: data.help.room })
+    case 'help': return withTask(data.help === undefined ? undefined : {
+      kind: 'help', sessionId, helpId: data.help.id, fromRoom: data.help.room,
+      ...data.help.task === undefined ? {} : { fromTask: { sessionId: data.help.room, id: data.help.task } },
+    })
     case 'report': {
       if (data.releases !== undefined) {
         if (data.releaseReason === 'restart') return withTask({ kind: 'restart', sessionId })
         if (data.releaseReason === 'manual') return withTask(human())
+        if (data.releaseDecision !== undefined) return withTask({ kind: 'decision', sessionId, decisionId: data.releaseDecision })
+        // A release journaled before S9 names no decision: the older reading stays.
         const recipient = data.targets[0]
         const decision = events.findLast(event => event.seq < dispatchSeq && event.type === 'room/decision' && event.data.scenario === 'report-timing'
           && event.data.outcome === 'later' && event.data.about?.to === recipient)
@@ -331,7 +336,8 @@ export function executionFacts(events: readonly SessionEvent[], roomId: string, 
       if (reportFor.startsWith('help:')) {
         const helpId = reportFor.slice('help:'.length)
         const help = events.find(event => event.type === 'room/help' && event.data.id === helpId)
-        return withTask({ kind: 'help', sessionId, helpId, fromRoom: help?.type === 'room/help' ? help.data.target.sessionId : '' })
+        const threadTask = task === undefined && help?.type === 'room/help' && help.data.task !== undefined ? { task: { sessionId, id: help.data.task } } : {}
+        return { ...threadTask, ...withTask({ kind: 'help', sessionId, helpId, fromRoom: help?.type === 'room/help' ? help.data.target.sessionId : '' }) }
       }
       const executionId = runExecutionId(events, reportFor)
       if (executionId !== undefined) return withTask({ kind: 'execution', executionId })
@@ -536,6 +542,25 @@ export function pendingHolds(events: readonly SessionEvent[], recipientId: strin
     else if (event.data.verdict === 'release') open.delete(event.data.dispatchSeq)
   }
   return [...open.keys()]
+}
+
+/**
+ * The report-timing decision that held one report: the `later` decision
+ * recorded for the held dispatch's run (`room/decision.runId` = its
+ * `reportFor`). A hold is only ever the decision model's `later`, and that
+ * decision is always journaled before the hold, so every hold written since
+ * batch 5 S9 has one; older journals record no run on the decision → none.
+ * @param events - the room log.
+ * @param heldSeq - the held report dispatch.
+ * @returns the decision id, or undefined when none is recorded.
+ */
+export function holdDecision(events: readonly SessionEvent[], heldSeq: number): string | undefined {
+  const held = events.find(event => event.seq === heldSeq)
+  const runId = held?.type === 'room/dispatch' ? held.data.reportFor : undefined
+  if (runId === undefined) return undefined
+  const decision = events.findLast(event => event.seq < heldSeq && event.type === 'room/decision' && event.data.scenario === 'report-timing'
+    && event.data.outcome === 'later' && event.data.runId === runId)
+  return decision?.type === 'room/decision' ? decision.data.id : undefined
 }
 
 /**
@@ -1148,12 +1173,17 @@ export class DispatchEngine {
     // Every timing decision the room weighed is recorded (the timeline row,
     // Context Lens); the each-setting and plan cadence decide nothing.
     if (verdict.reason !== 'setting' && verdict.reason !== 'plan') {
+      const gatedExecution = runExecutionId(events, deliveryId)
       room.append('room/decision', decisionRecord('report-timing', {
         outcome: verdict.hold ? 'later' : 'now',
         ...verdict.reason === 'model' ? {} : { rule: verdict.reason },
         ...verdict.probability === undefined ? {} : { probability: verdict.probability },
         ...verdict.call === undefined ? {} : { call: verdict.call },
         about: { from: senderName ?? fromId, to: recipient.name },
+        // What it decided for (batch 5 S9): the gated run and its task.
+        ...sourceTask === undefined ? {} : { task: sourceTask },
+        runId: deliveryId,
+        ...gatedExecution === undefined ? {} : { executionId: gatedExecution },
       }))
     }
     if (verdict.hold) {
@@ -1248,8 +1278,9 @@ export class DispatchEngine {
     const ids = open.map(seq => `#${messageId(seq)}`).join('、')
     const text = `（以上 ${open.length} 条回报一直等着交给你：${ids}${reason === 'timeout' ? '，已经等了一段时间' : ''}。用户也已在房间里看到，不要复述。）`
     const releaseTask = replay(events).deliveries?.find(row => row.dispatchSeq === open[0] && row.memberId === recipientId)?.task
+    const releaseDecision = holdDecision(events, open[0]!)
     const release = room.append('room/dispatch', { id: randomUUID(), origin: 'report', targets: [recipient.name], targetIds: [recipientId], text, releases: open, releaseReason: reason, hop: 1,
-      ...releaseTask === undefined ? {} : { task: releaseTask } })
+      ...releaseTask === undefined ? {} : { task: releaseTask }, ...releaseDecision === undefined ? {} : { releaseDecision } })
     await this.ctx.sessions.flush(room)
     this.dispatch(room, recipient.name, text, { dispatchSeq: release.seq, targetId: recipientId })
     return true

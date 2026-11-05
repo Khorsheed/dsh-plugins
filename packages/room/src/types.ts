@@ -194,6 +194,13 @@ export interface RoomDispatchEvent {
    */
   readonly releaseReason?: 'timeout' | 'manual' | 'restart'
   /**
+   * The report-timing decision (`room/decision.id`) that held the oldest
+   * report this release round hands over — the hold whose wait the round
+   * ends. Absent when no recorded decision names that report's run (journals
+   * from before batch 5 S9). Absent on every other dispatch.
+   */
+  readonly releaseDecision?: string
+  /**
    * The task (job) this message belongs to: the id of the human message that
    * started it (its `user/message` id), or this dispatch's own `id` for a
    * human dispatch that has no message (an invite's first task).
@@ -500,6 +507,17 @@ export interface RoomDecisionEvent {
     readonly from?: string
     readonly to?: string
   }
+  /**
+   * The task (job) the decision was made for, as its root message id:
+   * task-filing → the task the message was filed under (its own id = a new
+   * task); report-timing → the task of the delivery whose report was gated.
+   * Absent on journals from before batch 5 S9 and for a delivery with no task.
+   */
+  readonly task?: string
+  /** report-timing: the delivery (run) whose report was gated. */
+  readonly runId?: string
+  /** report-timing: that run's local-agent execution, when it went through the core's run entry. */
+  readonly executionId?: string
 }
 
 /**
@@ -750,6 +768,12 @@ export interface RoomHelpEvent {
   readonly target: { readonly sessionId: string; readonly title: string; readonly room?: true; readonly member?: string }
   /** The request as the helper reads it. */
   readonly text: string
+  /**
+   * The task (job) of this room the asker was working on when it asked (its
+   * root message id). Absent when the asker was outside any task, and on
+   * journals from before batch 5 S9.
+   */
+  readonly task?: string
 }
 
 /** An outside session kept on this room's member list (「加入房间成员」): a shortcut for asking it. */
@@ -781,6 +805,8 @@ export interface RoomHelpOrigin {
   readonly roomTitle: string
   /** The asking member's name. */
   readonly from: string
+  /** The asking room's task the request belongs to (RoomHelpEvent.task), when it has one. */
+  readonly task?: string
 }
 
 /** Another room asked this room for help (shown on this room's timeline). */
