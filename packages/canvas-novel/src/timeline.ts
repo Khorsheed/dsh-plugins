@@ -282,3 +282,23 @@ export function orderAfter(events: readonly StoryEvent[], afterId: string | unde
   const next = sorted[index + 1]
   return next === undefined ? sorted[index]!.order + 1 : (sorted[index]!.order + next.order) / 2
 }
+
+/** A position before another event, or before the whole timeline when `beforeId` is undefined. */
+export function orderBefore(events: readonly StoryEvent[], beforeId: string | undefined): number {
+  const sorted = [...events].sort((a, b) => a.order - b.order)
+  if (sorted.length === 0) return 1
+  if (beforeId === undefined) return sorted[0]!.order - 1
+  const index = sorted.findIndex(event => event.id === beforeId)
+  if (index === -1) return sorted[0]!.order - 1
+  const previous = sorted[index - 1]
+  return previous === undefined ? sorted[index]!.order - 1 : (previous.order + sorted[index]!.order) / 2
+}
+
+/** The default story-time position of a backstory: after the known backstories, before the opening scene. */
+export function orderBackstory(events: readonly StoryEvent[]): number {
+  const sorted = [...events].sort((a, b) => a.order - b.order)
+  const past = sorted.filter(event => event.status === 'happened' || event.status === 'failed')
+  const previous = past.filter(event => event.backstory === true).at(-1)
+  if (previous !== undefined) return orderAfter(events, previous.id)
+  return orderBefore(events, past.find(event => event.backstory !== true)?.id)
+}

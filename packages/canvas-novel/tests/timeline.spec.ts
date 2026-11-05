@@ -80,6 +80,44 @@ describe('the timeline in the store', () => {
     expect((await store.writeEvent({ workId: DREAM.workId, id: 'e2', delete: true }, SESSION)).ok).toBe(true)
   })
 
+  it('keeps current events in chapter order and appends unanchored backstories to the backstory group', async () => {
+    const { store } = bench()
+    await store.writeEvent({ workId: DREAM.workId, title: '开场', status: 'happened', chapters: [1] }, SESSION)
+    const evidence = '门缝后的敲击声变成了明确的三下'
+    const report = await store.extractImport({
+      workId: DREAM.workId, n: 5, payload: {
+        events: [
+          { title: '当前甲', evidence_in_text: evidence },
+          { title: '往事甲', backstory: true, evidence_in_text: evidence },
+          { title: '当前乙', evidence_in_text: evidence },
+          { title: '往事乙', backstory: true, evidence_in_text: evidence },
+          { title: '锚点不存在', after: 'e404', evidence_in_text: evidence },
+        ],
+      },
+    }, SESSION)
+    expect(report.memory).toMatchObject({ events: 4 })
+    expect(report.dropped).toContainEqual({ kind: 'event', reason: 'id-not-in-ledger', ref: '锚点不存在（after=e404）' })
+    let { events } = await store.allEvents(DREAM.workId)
+    const happened = () => events.filter(event => event.status === 'happened' && event.foreshadowId === undefined).sort((a, b) => a.order - b.order).map(event => event.title)
+    expect(happened()).toEqual(['往事甲', '往事乙', '开场', '当前甲', '当前乙'])
+    const current = events.find(event => event.title === '当前甲')!
+    await store.writeEvent({ workId: DREAM.workId, title: '定点往事', status: 'happened', backstory: true, after: current.id }, SESSION)
+    events = (await store.allEvents(DREAM.workId)).events
+    expect(happened()).toEqual(['往事甲', '往事乙', '开场', '当前甲', '定点往事', '当前乙'])
+  })
+
+  it('moves an existing event before another or to the opening and rejects bad positions', async () => {
+    const { store } = bench()
+    for (const title of ['甲', '乙', '丙']) await store.writeEvent({ workId: DREAM.workId, title, status: 'happened' }, SESSION)
+    expect((await store.writeEvent({ workId: DREAM.workId, id: 'e3', before: 'e1' }, SESSION)).ok).toBe(true)
+    expect((await store.writeEvent({ workId: DREAM.workId, id: 'e2', before: 'first' }, SESSION)).ok).toBe(true)
+    const { events } = await store.allEvents(DREAM.workId)
+    expect(events.filter(event => event.foreshadowId === undefined).sort((a, b) => a.order - b.order).map(event => event.title)).toEqual(['乙', '丙', '甲'])
+    expect((await store.writeEvent({ workId: DREAM.workId, id: 'e1', before: 'e404' }, SESSION)).ok).toBe(false)
+    expect((await store.writeEvent({ workId: DREAM.workId, id: 'e1', after: 'e404' }, SESSION)).ok).toBe(false)
+    expect((await store.writeEvent({ workId: DREAM.workId, id: 'e1', after: 'e2', before: 'e3' }, SESSION)).ok).toBe(false)
+  })
+
   it('applies the person\'s pins only to the chapter they were set for, and the plan brief lists the candidates', async () => {
     const { store } = bench()
     await store.writeEvent({ workId: DREAM.workId, title: '赵启明推开门', who: ['赵启明'] }, SESSION)

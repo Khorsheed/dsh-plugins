@@ -258,9 +258,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         type: 'object', additionalProperties: true,
         description: 'event: {id? (to change one), title, when (story time as a label), status (happened|preset|planned|hidden|failed; default preset = to come), '
           + 'source (预设|打算|后果|承诺 — a future event\'s origin), who (character refs or names), places (setting refs or names), value (0–1, how much the story needs it), valueWhy, '
-          + 'window (卷一末 / 第8章前), windowChapter (that window as a chapter number), pre (["the preconditions"]), causes (event ids it follows from), after (event id it comes right after in story time), '
+          + 'window (卷一末 / 第8章前), windowChapter (that window as a chapter number), pre (["the preconditions"]), causes (event ids it follows from), '
+          + 'after (event id it comes right after in story time), before (event id it comes right before, or "first"; mutually exclusive with after), '
           + 'chapters ([N] — for a happened event: the chapters whose text tells it, flashbacks included), evidence (≤50 chars copied verbatim from that chapter), '
-          + 'backstory (true: it happened before the story\'s opening scene, whichever chapter tells it), delete (true)}. '
+          + 'backstory (true: it happened before the story\'s opening scene, whichever chapter tells it; without after/before it joins the backstory group in the order given), delete (true)}. '
           + 'Keep the chapter and the quote out of valueWhy and when: chapters and evidence carry them. '
           + 'idea: the event id to bind the idea to (null unbinds).',
       },
@@ -387,6 +388,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           ...(raw['pre'] === undefined ? {} : { pre: raw['pre'] }),
           ...(raw['causes'] === undefined ? {} : { causes: raw['causes'] }),
           ...(typeof raw['after'] === 'string' ? { after: raw['after'] } : {}),
+          ...(typeof raw['before'] === 'string' ? { before: raw['before'] } : {}),
           ...(raw['chapters'] === undefined ? {} : { chapters: raw['chapters'] }),
           ...(typeof raw['evidence'] === 'string' ? { evidence: raw['evidence'] } : {}),
           ...(raw['backstory'] === undefined ? {} : { backstory: raw['backstory'] }),
@@ -395,7 +397,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         if (!outcome.ok) {
           if (outcome.unknown !== undefined) return `失败：这些对不上画布上的卡：${outcome.unknown.join('、')}（人物和设定填编号或准确名字；要的卡还没有就先建）。`
           if (outcome.error === 'missing') return '失败：没有这个事件（novel_read(what=events) 看编号）。'
-          return `失败：${outcome.error === 'invalid-name' ? '新事件至少要有 title' : outcome.error ?? 'io'}。`
+          return `失败：${outcome.error === 'invalid-name' ? 'title、after 或 before 无效；after 与 before 只能给一个，锚点要是已有事件编号' : outcome.error ?? 'io'}。`
         }
         await store.alignAck({ workId, ids: [outcome.id!] }, resolved.session)
         if (raw['delete'] === true) return `已删除事件 ${outcome.id}。`

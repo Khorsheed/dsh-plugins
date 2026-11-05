@@ -43,7 +43,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { planWords, renderExtractBrief, workingRulesOf, type BriefData, type CharacterMind } from './brief.ts'
 import { BELIEF_SOURCES, emptyIdeas, normalizeIdeas, normalizeMindEntry, type Idea, type IdeasDoc, type MindEntry } from './ideas.ts'
 import {
-  emptyTimeline, FUTURE_SOURCES, isFuture, normalizeEvent, normalizeTimeline, orderAfter, recall, tierReason,
+  emptyTimeline, FUTURE_SOURCES, isFuture, normalizeEvent, normalizeTimeline, orderAfter, orderBackstory, orderBefore, recall, tierReason,
   type Candidate, type EventPrecondition, type RecallPins, type StoryEvent, type TimelineDoc,
 } from './timeline.ts'
 import { normalizeOrganizePlan, organizeTargetOf, renderOrganizePlan, type OrganizeCreate, type OrganizeMove, type OrganizePlan } from './organize.ts'
@@ -1900,11 +1900,17 @@ export class NovelService {
         if (title === undefined) continue
         if (evidence === undefined) { dropped.push({ kind: 'event', reason: evidenceMiss(raw.evidence_in_text), ref: title.slice(0, 30) }); continue }
         const after = cleanText(raw.after, 40)
-        const sameChapter = events.filter(event => event.chapters?.includes(n) && event.status === 'happened')
-        const anchorId = after !== undefined && events.some(event => event.id === after) ? after : sameChapter.at(-1)?.id
-          ?? [...events].filter(event => event.status === 'happened' && (event.chapters?.[0] ?? 0) < n).sort((a, b) => a.order - b.order).at(-1)?.id
+        if (after !== undefined && !events.some(event => event.id === after)) {
+          dropped.push({ kind: 'event', reason: 'id-not-in-ledger', ref: `${title.slice(0, 30)}（after=${after}）` })
+          continue
+        }
+        const backstory = raw.backstory === true
+        const sameChapter = events.filter(event => event.chapters?.includes(n) && event.status === 'happened' && event.backstory !== true)
+        const anchorId = sameChapter.at(-1)?.id
+          ?? [...events].filter(event => event.status === 'happened' && event.backstory !== true && (event.chapters?.[0] ?? 0) < n).sort((a, b) => a.order - b.order).at(-1)?.id
+        const order = after !== undefined ? orderAfter(events, after) : backstory ? orderBackstory(events) : orderAfter(events, anchorId)
         const event = normalizeEvent({
-          id: `e${next}`, title, status: 'happened', order: orderAfter(events, anchorId), chapters: [n], evidence, backstory: raw.backstory === true,
+          id: `e${next}`, title, status: 'happened', order, chapters: [n], evidence, backstory,
           when: cleanText(raw.when, 60), who: cardsOf(raw.people, 'character'), places: cardsOf(raw.places, 'world'), since: n, createdAt: now,
         })
         if (event === undefined) continue
@@ -2015,16 +2021,16 @@ export class NovelService {
 
   /**
    * The agent's (or the person's) event write: a new event, or changes to one.
-   * Characters and settings resolve by ref or name; `after` places it right
-   * after another event in story time. A happened event without chapters is
-   * backstory. `delete` removes a stored event.
+   * Characters and settings resolve by ref or name; `after` / `before` place it
+   * in story time (`before: "first"` moves it to the opening). A new backstory
+   * without an explicit position joins the backstory group. `delete` removes a stored event.
    * @returns the event's id, or the failure code (`unknown` names handles no card answers).
    */
   async writeEvent(
     request: {
       readonly workId: string; readonly id?: string; readonly title?: string; readonly when?: string; readonly status?: string
       readonly source?: string; readonly who?: unknown; readonly places?: unknown; readonly value?: unknown; readonly valueWhy?: string
-      readonly window?: string; readonly windowChapter?: unknown; readonly pre?: unknown; readonly causes?: unknown; readonly after?: string
+      readonly window?: string; readonly windowChapter?: unknown; readonly pre?: unknown; readonly causes?: unknown; readonly after?: string; readonly before?: string
       readonly chapters?: unknown; readonly evidence?: string; readonly backstory?: unknown; readonly delete?: boolean
     },
     session: Session | undefined,
@@ -2070,12 +2076,20 @@ export class NovelService {
       if (title === undefined) return 'invalid-name'
       const id = was?.id ?? `e${doc.next}`
       const backstory = request.backstory === true || request.backstory === 'true' ? true : request.backstory === false || request.backstory === 'false' ? undefined : was?.backstory
+      const others = doc.events.filter(event => event.id !== id)
+      if (request.after !== undefined && request.before !== undefined) return 'invalid-name'
+      if (request.after !== undefined && !others.some(event => event.id === request.after)) return 'invalid-name'
+      if (request.before !== undefined && request.before !== 'first' && !others.some(event => event.id === request.before)) return 'invalid-name'
+      const nextStatus = status ?? was?.status ?? 'preset'
+      const order = request.after !== undefined ? orderAfter(others, request.after)
+        : request.before !== undefined ? orderBefore(others, request.before === 'first' ? undefined : request.before)
+          : was?.order ?? (backstory === true && (nextStatus === 'happened' || nextStatus === 'failed') ? orderBackstory(others) : orderAfter(others, undefined))
       const merged = normalizeEvent({
         ...was,
         backstory,
         id, title,
-        status: status ?? was?.status ?? 'preset',
-        order: request.after !== undefined ? orderAfter(doc.events.filter(event => event.id !== id), request.after) : was?.order ?? orderAfter(doc.events, undefined),
+        status: nextStatus,
+        order,
         ...(cleanText(request.when, 60) === undefined ? {} : { when: cleanText(request.when, 60) }),
         ...(source === undefined ? {} : { source }),
         ...(who === undefined ? {} : { who }),
