@@ -8,9 +8,9 @@
  *
  * - a bare fragment (no `<html>`/`<head>`) is wrapped into a full document
  *   whose head carries the CSP and the capability bridge;
- * - a full document keeps its own structure and gets the CSP meta injected
- *   right after its `<head …>` tag (skipped when it already declares one,
- *   e.g. a skill-compliant output that embeds the same policy).
+ * - a full document keeps its own structure. Authored CSP metas are moved into
+ *   its `<head …>` wherever they appeared; the strict default is added only
+ *   when the card declares no policy of its own.
  *
  * The sandbox is `allow-scripts`, NEVER `allow-same-origin` — the opaque
  * origin is what keeps the frame's scripts from touching the host, and the
@@ -25,11 +25,11 @@ export const CARD_CSP = 'default-src \'none\'; script-src \'unsafe-inline\'; sty
 
 /** The capability bridge client, injected into the document. Exposes a tiny
  * `window.dshBridge` (openLink / copy / download) backed by postMessage; the
- * host validates every call. It also reports the document's content height on
- * load (and on resize) so the parent can size the cross-origin iframe — the
- * parent cannot read `contentDocument` on an opaque-origin frame, so the height
- * must be posted from inside. No network and no host access exist outside
- * these messages. */
+ * host validates every call. It reports readiness on load and content height
+ * on load/resize so the parent can reveal and size the cross-origin iframe —
+ * the parent cannot read `contentDocument` on an opaque-origin frame, so both
+ * signals must be posted from inside. No network and no host access exist
+ * outside these messages. */
 const BRIDGE_SCRIPT = `<script id="dsh-inline-bridge">
 (function () {
   var seq = 0
@@ -62,8 +62,12 @@ const BRIDGE_SCRIPT = `<script id="dsh-inline-bridge">
     if (h <= 0 && document.documentElement) h = document.documentElement.scrollHeight || 0
     if (h > 0) parent.postMessage({ fn: 'resize', args: [h] }, '*')
   }
-  if (document.readyState === 'complete') report()
-  else addEventListener('load', report)
+  function ready () {
+    report()
+    parent.postMessage({ fn: 'ready', args: [] }, '*')
+  }
+  if (document.readyState === 'complete') ready()
+  else addEventListener('load', ready)
   addEventListener('resize', report)
 })()
 <\/script>`
@@ -72,7 +76,18 @@ const BRIDGE_SCRIPT = `<script id="dsh-inline-bridge">
 const CSP_META = `<meta http-equiv="Content-Security-Policy" content="${CARD_CSP}">`
 
 const HEAD_OPEN = /<head[^>]*>/i
-const HAS_CSP = /http-equiv=["']Content-Security-Policy/i
+const HAS_CSP = /\bhttp-equiv\s*=\s*(?:"Content-Security-Policy"|'Content-Security-Policy'|Content-Security-Policy(?=[\s/>]))/i
+const META_OR_RAW_TEXT = /<!--[\s\S]*?-->|<(script|style|textarea|title)\b[^>]*>[\s\S]*?<\/\1\s*>|<meta\b[^>]*>/gi
+
+function hoistCspMetas(source: string): { content: string; csp: string } {
+  const authored: string[] = []
+  const content = source.replace(META_OR_RAW_TEXT, tag => {
+    if (!tag.toLowerCase().startsWith('<meta') || !HAS_CSP.test(tag)) return tag
+    authored.push(tag)
+    return ''
+  })
+  return { content, csp: authored.length === 0 ? CSP_META : authored.join('') }
+}
 
 /**
  * Wrap or annotate an untrusted HTML document so it runs inside the sandbox CSP.
@@ -80,14 +95,12 @@ const HAS_CSP = /http-equiv=["']Content-Security-Policy/i
  * @returns a complete document carrying the strict CSP and the bridge.
  */
 export function buildCardSrcDoc(content: string): string {
-  const headExtras = BRIDGE_SCRIPT
-  const head = HEAD_OPEN.exec(content)
+  const normalized = hoistCspMetas(content)
+  const headExtras = normalized.csp + BRIDGE_SCRIPT
+  const head = HEAD_OPEN.exec(normalized.content)
   if (head === null) {
     // Fragment: we own the whole document.
-    return `<!doctype html><html lang="zh"><head><meta charset="utf-8">${CSP_META}${headExtras}</head><body>${content}</body></html>`
+    return `<!doctype html><html lang="zh"><head><meta charset="utf-8">${headExtras}</head><body>${normalized.content}</body></html>`
   }
-  // Full document: inject into its own head (no duplicated CSP when it
-  // already declares one — skill-compliant outputs embed the same policy).
-  const headInjection = (HAS_CSP.test(content) ? '' : CSP_META) + headExtras
-  return content.slice(0, head.index + head[0].length) + headInjection + content.slice(head.index + head[0].length)
+  return normalized.content.slice(0, head.index + head[0].length) + headExtras + normalized.content.slice(head.index + head[0].length)
 }

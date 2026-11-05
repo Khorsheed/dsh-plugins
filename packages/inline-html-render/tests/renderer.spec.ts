@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-// Renderer DOM logic: finds a rendered `dsh-card` block, inserts a sandboxed
-// iframe sibling, hides the block; ignores blocks whose info string is not
+// Renderer DOM logic: finds a rendered `dsh-card` block, inserts a container
+// carrying the sandboxed iframe, hides the block; ignores blocks whose info string is not
 // `dsh-card`, ignores already-processed blocks, and never mounts while the
 // message is streaming (`data-streaming`).
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { installCardRenderer, reconcile } from '../src/client/renderer.ts'
 
 /**
@@ -46,16 +46,27 @@ function load(html: string): void {
   document.body.innerHTML = html
 }
 
+function ready(frame: HTMLIFrameElement): void {
+  window.dispatchEvent(new MessageEvent('message', {
+    data: { fn: 'ready', args: [] },
+    source: frame.contentWindow,
+  }))
+}
+
 let cleanup: Array<() => void> = []
 
 afterEach(() => {
   for (const fn of cleanup) fn()
+  for (const frame of document.querySelectorAll('iframe')) ready(frame)
   cleanup = []
   document.body.innerHTML = ''
+  document.documentElement.lang = ''
+  vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe('reconcile', () => {
-  it('swaps a settled dsh-card block: iframe inserted, block hidden', () => {
+  it('swaps a settled dsh-card block: iframe container inserted, block hidden', () => {
     load('')
     const block = codeBlock('dsh-card', '<div>hello</div>')
     document.body.appendChild(block)
@@ -68,8 +79,9 @@ describe('reconcile', () => {
     expect(frame?.srcdoc).toContain('window.dshBridge')
     expect(block.style.display).toBe('none')
     expect(block.hasAttribute('data-dsh-card-processed')).toBe(true)
-    // The frame is a sibling placed after the block.
-    expect(block.nextElementSibling).toBe(frame)
+    const container = block.nextElementSibling
+    expect(container?.classList.contains('dsh-inline-card-container')).toBe(true)
+    expect(container?.contains(frame)).toBe(true)
   })
 
   it('ignores a non-dsh-card block', () => {
@@ -88,8 +100,9 @@ describe('reconcile', () => {
     document.body.appendChild(b)
     const mounted = reconcile(document.body)
     expect(mounted).toHaveLength(1)
-    // Only the unprocessed block got a frame, sitting right after it.
-    expect(b.nextElementSibling?.tagName).toBe('IFRAME')
+    const sibling = b.nextElementSibling
+    expect(sibling?.classList.contains('dsh-inline-card-container')).toBe(true)
+    expect(sibling?.querySelector('iframe')).not.toBeNull()
     expect(document.querySelectorAll('iframe')).toHaveLength(1)
   })
 
@@ -198,6 +211,70 @@ describe('reconcile — generic-label toolbar shape (0.1.7-rc.1 CodeToolbar)', (
   })
 })
 
+describe('frame loading fallback', () => {
+  beforeEach(() => {
+    load('')
+    document.documentElement.lang = 'zh-CN'
+  })
+
+  function mountOne(): { frame: HTMLIFrameElement; container: HTMLElement; status: HTMLElement; dispose: () => void } {
+    document.body.appendChild(codeBlock('dsh-card', '<div>card</div>'))
+    const mounted = reconcile(document.body)
+    const dispose = (): void => { for (const card of mounted) card.dispose() }
+    cleanup.push(dispose)
+    const frame = document.querySelector('iframe') as HTMLIFrameElement
+    const container = frame.parentElement as HTMLElement
+    const status = container.querySelector('.dsh-inline-card-status') as HTMLElement
+    return { frame, container, status, dispose }
+  }
+
+  it('ignores the initial frame load and waits for the srcdoc ready message', () => {
+    const { frame, container, status } = mountOne()
+    expect(status.textContent).toContain('卡片加载中')
+    expect(container.getAttribute('aria-busy')).toBe('true')
+    expect(frame.style.visibility).toBe('hidden')
+
+    frame.dispatchEvent(new Event('load'))
+    expect(frame.style.visibility).toBe('hidden')
+    expect(status.style.display).toBe('flex')
+
+    ready(frame)
+    expect(status.style.display).toBe('none')
+    expect(frame.style.visibility).toBe('visible')
+    expect(container.getAttribute('aria-busy')).toBe('false')
+  })
+
+  it('offers retry after a stall and returns to loading before succeeding', () => {
+    vi.useFakeTimers()
+    const { frame, container, status } = mountOne()
+    const srcdoc = frame.srcdoc
+    const reload = vi.spyOn(frame, 'srcdoc', 'set')
+    vi.advanceTimersByTime(10_000)
+    const retry = status.querySelector('.dsh-inline-card-retry') as HTMLButtonElement
+    expect(status.textContent).toContain('卡片加载失败')
+    expect(retry.hidden).toBe(false)
+
+    retry.click()
+    expect(reload).toHaveBeenCalledWith(srcdoc)
+    expect(status.textContent).toContain('卡片加载中')
+    expect(retry.hidden).toBe(true)
+    expect(container.getAttribute('aria-busy')).toBe('true')
+
+    ready(frame)
+    expect(status.style.display).toBe('none')
+    expect(frame.style.visibility).toBe('visible')
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('clears the stall timer when disposed', () => {
+    vi.useFakeTimers()
+    const { dispose } = mountOne()
+    expect(vi.getTimerCount()).toBe(1)
+    dispose()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
 describe('installCardRenderer', () => {
   beforeEach(() => {
     load('')
@@ -219,7 +296,27 @@ describe('installCardRenderer', () => {
     // The block is React-owned; its processed marker is cleared on dispose.
     const block = document.querySelector('.md-code-block') as HTMLElement
     expect(block.hasAttribute('data-dsh-card-processed')).toBe(false)
-    // The frame node itself is gone (frameEl detached).
-    expect(frameEl.parentNode).toBeNull()
+    // The whole owned container is detached with the frame.
+    expect(frameEl.isConnected).toBe(false)
+    expect(frameEl.parentElement?.isConnected).toBe(false)
+  })
+
+  it('disposes the old container when React replaces its code block', () => {
+    const renderer = installCardRenderer()
+    cleanup.push(() => renderer.dispose())
+    const oldBlock = codeBlock('dsh-card', '<div>old</div>')
+    document.body.appendChild(oldBlock)
+    renderer.run()
+    const oldContainer = document.querySelector('.dsh-inline-card-container') as HTMLElement
+
+    oldBlock.remove()
+    const newBlock = codeBlock('dsh-card', '<div>new</div>')
+    document.body.insertBefore(newBlock, oldContainer)
+    renderer.run()
+
+    expect(oldContainer.isConnected).toBe(false)
+    expect(document.querySelectorAll('iframe')).toHaveLength(1)
+    expect(newBlock.nextElementSibling?.classList.contains('dsh-inline-card-container')).toBe(true)
+    expect(document.querySelector('iframe')?.srcdoc).toContain('<div>new</div>')
   })
 })
