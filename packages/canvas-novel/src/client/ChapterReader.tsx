@@ -19,8 +19,8 @@ import type { NovelSurfaceProps } from './contract.ts'
 import { PendingList } from './PendingList.tsx'
 import { PlanBlock } from './PlanBlock.tsx'
 import { errorKey, useNovelRead } from './use-novel.ts'
-import { chapterFeedbackBlocks, locateChapterFeedback } from '../chapter-feedback.ts'
 import { ChapterFeedback, type ChapterFeedbackMark } from './ChapterFeedback.tsx'
+import { ChapterMarkdown } from './ChapterMarkdown.tsx'
 import css from './novel.module.css'
 
 /** The plan fields an edit receipt may name (text-forms.ts's PLAN_FIELDS, host-side). */
@@ -408,7 +408,7 @@ function Progress({ n, phase, pending, writable, t }: {
   )
 }
 
-/** The text as a reading column; markdown headings stay headings, the rest are paragraphs. */
+/** The text as a reading column; Markdown rendering keeps raw offsets for selection and feedback. */
 function Prose({ view, phase, t, ideas, source, reference }: {
   readonly view: NovelChapterResult
   readonly phase: EffectiveChapterPhase
@@ -423,35 +423,9 @@ function Prose({ view, phase, t, ideas, source, reference }: {
       ? <div className={css.warn}>{t('chapter.fileMissing', { file: view.file ?? '' })}</div>
       : <div className={css.noBody}>{t(view.chapter?.planConfirmedAt === undefined && view.chapter?.plan !== undefined ? 'chapter.noBodyConfirm' : 'chapter.noBody')}</div>
   }
-  const blocks = chapterFeedbackBlocks(body)
-  const shown = blocks[0]?.heading === true ? blocks.slice(1) : blocks
   return (
     <article className={css.prose} data-novel-prose="" data-quote-source={source} data-quote-ref={reference}>
-      {shown.map(block => {
-        const text = block.heading ? block.text.replace(/^#+\s*/, '') : block.text
-        const start = block.start + block.text.length - text.length
-        const content = highlightedText(body, start, start + text.length, ideas)
-        return block.heading
-          ? <h4 key={block.start} className={css.proseHeading} data-feedback-start={start} data-feedback-end={start + text.length}>{content}</h4>
-          : <p key={block.start} data-feedback-start={start} data-feedback-end={start + text.length}>{content}</p>
-      })}
+      <ChapterMarkdown body={body} ideas={ideas} />
     </article>
   )
-}
-
-function highlightedText(body: string, start: number, end: number, ideas: readonly ChapterFeedbackMark[]): ReactNode {
-  const ranges = ideas.flatMap(idea => {
-    const found = locateChapterFeedback(idea, body)
-    return found === undefined || found.end <= start || found.start >= end ? [] : [{ idea, start: Math.max(start, found.start), end: Math.min(end, found.end) }]
-  })
-  if (ranges.length === 0) return body.slice(start, end)
-  const boundaries = [...new Set([start, end, ...ranges.flatMap(range => [range.start, range.end])])].sort((a, b) => a - b)
-  return boundaries.slice(1).map((boundary, index) => {
-    const from = boundaries[index]!
-    const range = ranges.find(row => row.start <= from && row.end >= boundary)
-    const text = body.slice(from, boundary)
-    return range === undefined
-      ? <span key={from}>{text}</span>
-      : <mark key={from} data-idea-id={range.idea.id} className={range.idea.archived === true ? css.feedbackMarkArchived : css.feedbackMark}>{text}</mark>
-  })
 }

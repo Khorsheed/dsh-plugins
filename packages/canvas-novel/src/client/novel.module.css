@@ -1431,6 +1431,19 @@
   text-indent: 2em;
 }
 
+.prose blockquote {
+  margin: 0 0 0.85em;
+  padding-left: 14px;
+  border-left: 2px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.prose blockquote p { text-indent: 0; }
+.prose ul, .prose ol { margin: 0 0 0.85em; padding-left: 1.6em; }
+.prose li { padding-left: 0.2em; }
+.prose code { padding: 0.08em 0.3em; border-radius: 4px; background: var(--dsw-alias-interactive-bg-hover); font-family: var(--dsw-font-family-mono, monospace); font-size: 0.9em; }
+.prose hr { margin: 1.4em 0; border: 0; border-top: 1px solid var(--dsw-alias-border-l1); }
+
 .proseHeading {
   margin: 1.4em 0 0.9em;
   font-size: calc(var(--dsh-panel-text-reading, 14px) + 3px);
