@@ -28,6 +28,7 @@ import { askCardData, type RoomSpeechData } from './nodes.ts'
 import { formatClock, formatDurationMs } from './format.ts'
 import { revealRoomRow, speechCause } from './speech-cause.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
+import { roundUsage, type RoundUsage } from './round-usage.ts'
 import { attachmentsByOwner, type RoomQuestionViewProps, type RoomSpeechViewProps } from './slots.ts'
 import type { RoomAsk, RoomExecution } from '../types.ts'
 import css from './RoomSpeechView.module.css'
@@ -124,14 +125,11 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
   const child = data.childSessionId
   // What started this round (a member's 派活/告知, or reports): its line tops the card.
   const cause = speechCause(data.runId, state)
-  // The run's billed tokens, as the host's 用量 chip shows them (recorded
-  // when the run settles; absent for runs the producer reported none for).
+  // The run's usage, as the host's 用量 chip shows it: read from the
+  // member's log through the core (the CLI's round total, else the per-call
+  // sum — batch 5 S6), or a pre-S6 run's stored numbers. Never stored here.
   const execution = data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === data.runId)
-  // The billed total is the sum of the disjoint buckets when they were
-  // recorded (an older record's total may leave the cache out).
-  const usage = execution?.usage
-  const tokens = usage === undefined ? execution?.tokens
-    : usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0) + usage.outputTokens
+  const usage = roundUsage(execution)
   // The newest speech keeps its action row shown; older rows reveal on hover
   // (the host's turn-tail rule). A speech newer than the cached state's is the newest.
   const newestSpeech = data.seq >= (state?.latestSpeechSeq ?? data.seq)
@@ -257,10 +255,16 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
             </button>
           </Tooltip>
         )}
-        {tokens !== undefined && tokens > 0
-          ? <UsageChip tokens={tokens} execution={execution} provider={member?.kind === 'cli' ? member.provider : undefined} durationMs={data.durationMs} t={t} />
+        {usage !== undefined
+          ? <UsageChip usage={usage} execution={execution} provider={member?.kind === 'cli' ? member.provider : undefined} durationMs={data.durationMs} t={t} />
           : data.durationMs !== undefined && <span className={css.meta}>{formatDurationMs(data.durationMs)}</span>}
         <span className={css.meta}>{formatClock(data.time)}</span>
+        {/* Last in the row: on a narrow reply it wraps to a line of its own. */}
+        {usage?.gap !== undefined && (
+          <span className={css.usageGap} data-testid="usage-gap">
+            {t(usage.gap < 0 ? 'usage.gapLess' : 'usage.gapMore', { tokens: formatTokens(Math.abs(usage.gap)) })}
+          </span>
+        )}
       </div>
       </div>
     </div>
@@ -270,17 +274,19 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
 /**
  * 用量 with its breakdown on hover or focus — the host's turn usage panel:
  * total, provider / model, cache hit, the disjoint input buckets, output, and
- * this round's run time. Rows the harness did not report are left out.
+ * this round's run time. Rows the harness did not report are left out. When
+ * the headline is the CLI's own total, the per-call sum is listed beside it.
  */
-function UsageChip({ tokens, execution, provider, durationMs, t }: {
-  readonly tokens: number
+function UsageChip({ usage: line, execution, provider, durationMs, t }: {
+  readonly usage: RoundUsage
   readonly execution: RoomExecution | undefined
   readonly provider: string | undefined
   readonly durationMs: number | undefined
   readonly t: RoomSpeechViewProps['t']
 }): ReactNode {
   const [open, setOpen] = useState(false)
-  const usage = execution?.usage
+  const tokens = line.tokens
+  const usage = line.breakdown
   const billed = usage === undefined ? 0 : usage.inputTokens + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0)
   const exact = (n: number): string => n.toLocaleString('en-US')
   const route = [provider, execution?.model].filter(Boolean).join('/')
@@ -293,6 +299,7 @@ function UsageChip({ tokens, execution, provider, durationMs, t }: {
       ...usage.cacheWriteTokens === undefined ? [] : [[t('usage.cacheWrite'), `${exact(usage.cacheWriteTokens)} tok`]],
       [t('usage.output'), `${exact(usage.outputTokens)} tok`],
     ] as [string, string][],
+    ...line.source === 'cli' ? [[t('usage.callSum'), `${exact(line.callTokens ?? 0)} tok`] as [string, string]] : [],
     ...durationMs === undefined ? [] : [[t('usage.duration'), formatDurationMs(durationMs)] as [string, string]],
   ]
   return (
@@ -302,8 +309,9 @@ function UsageChip({ tokens, execution, provider, durationMs, t }: {
       </button>
       {open && (
         <span className={css.usagePanel} role="tooltip">
-          <span className={css.usageHead}><span>{t('usage.title')}</span><span>{exact(tokens)} tok</span></span>
+          <span className={css.usageHead}><span>{t(line.source === 'cli' ? 'usage.titleCli' : line.source === 'calls' ? 'usage.titleCalls' : 'usage.title')}</span><span>{exact(tokens)} tok</span></span>
           {rows.map(([label, value]) => <span key={label} className={css.usageRow}><span>{label}</span><span>{value}</span></span>)}
+          {line.gap !== undefined && <span className={css.usageNote}>{t(line.gap < 0 ? 'usage.gapLess' : 'usage.gapMore', { tokens: formatTokens(Math.abs(line.gap)) })}</span>}
         </span>
       )}
     </span>

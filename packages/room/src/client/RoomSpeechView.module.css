@@ -154,9 +154,10 @@
    data-time-hover-root. */
 .actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  height: 28px;
+  gap: 0 8px;
+  min-height: 28px;
   margin-top: 6px;
   transition: opacity 120ms ease;
 }
@@ -254,6 +255,17 @@
   color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
 }
 
+/* The gap hint again, in full, under the breakdown (the row's own copy truncates on a phone). */
+.usageNote {
+  max-width: 260px;
+  padding-top: 6px;
+  margin-top: 4px;
+  border-top: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.2));
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  line-height: 18px;
+  white-space: normal;
+}
+
 .action {
   display: inline-flex;
   align-items: center;
@@ -283,6 +295,20 @@
 
 .reported {
   color: var(--dsw-alias-state-success, #1f9a55);
+}
+
+/*
+ * The quiet hint beside a round whose per-call sum and the CLI's own total
+ * differ (batch 5 S6): the meta register, last in the action row, wrapping
+ * onto a line of its own when the reply is narrow (a phone has no hover).
+ */
+.usageGap {
+  flex: 1 1 240px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  padding: 3px 0;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
 
 /* Mouse clicks never raise a focus ring; keyboard navigation keeps the

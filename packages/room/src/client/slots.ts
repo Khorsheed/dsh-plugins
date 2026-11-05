@@ -557,7 +557,14 @@ export type RoomDispatchViewProps =
 /** Full props of the 'room-compaction' chat-node renderer. */
 export type RoomCompactionViewProps =
   PropsRuntime<'conversation.chat.node', 'room-compaction'>
+  & InjectFace<RoomCompactionInjected>
   & PropsLocale<'room'>
+
+/** Injected face of the compaction row: the room state carries the run's core reading. */
+export interface RoomCompactionInjected {
+  /** The client-side room state store; absent = the row shows its own stored fields only. */
+  readonly roomStore?: RoomStore
+}
 
 /** Full props of the 'room-inbox' chat-node renderer. */
 export type RoomInboxViewProps =

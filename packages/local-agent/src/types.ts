@@ -354,6 +354,42 @@ export interface LocalAgentExecutionIntent {
  */
 export type LocalAgentExecutionEvent = LocalAgentExecutionStartEvent | LocalAgentExecutionEndEvent
 
+/**
+ * One execution read back from the member's log (batch 5 S6,
+ * `LocalAgentRegistry.readExecution`): computed from the records on every
+ * read, never stored anywhere. Usage has exactly one written home per kind —
+ * a call's on its `assistant/message.usage`, the CLI's round total on the end
+ * record, a compaction call's on its `local-agent/compaction` — and this
+ * reading only adds and passes them through.
+ */
+export interface LocalAgentExecutionReading {
+  executionId: string
+  operation: LocalAgentExecutionOperation
+  /** Absent while the execution is open (no end record yet). */
+  outcome?: LocalAgentExecutionOutcome
+  /** The execution's turns: the end record's, or (open) the `turn/start`s after its start record. */
+  turns: number[]
+  /**
+   * The sum of every `assistant/message.usage` in `turns` (the per-call
+   * usage). Absent when no call in the range carried usage. Never includes a
+   * compaction's spend or context sizes.
+   */
+  callUsage?: TokenUsage
+  /** How many `assistant/message` events with usage the sum adds. */
+  calls: number
+  /** The CLI's own round total from the end record, verbatim (claude-code, codex report one; kimi, dsh do not). */
+  providerReportedUsage?: TokenUsage
+  /** The end record's "not recorded" declarations, verbatim (empty while open). */
+  unrecorded: LocalAgentUnrecorded[]
+  /**
+   * The `local-agent/compaction` facts inside the execution's range, in
+   * order. Their `beforeTokens`/`afterTokens` are context SIZES, never usage;
+   * their `usage` is the compaction call's own spend and is never part of
+   * {@link callUsage}.
+   */
+  compactions: LocalAgentCompactionEvent[]
+}
+
 /** A member's context occupancy, as the `memberContext` Remote answers it. */
 export interface LocalAgentMemberContext {
   provider: string

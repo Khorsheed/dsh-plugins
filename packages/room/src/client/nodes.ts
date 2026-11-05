@@ -199,7 +199,10 @@ export interface RoomCompactionData {
   readonly seq: number
   readonly time: number
   readonly member: string
+  /** The compaction run: its core fact (sizes, spend) is read through the run's reading (batch 5 S6). */
+  readonly runId?: string
   readonly outcome: 'completed' | 'failed' | 'cancelled'
+  /** Legacy copies (rows from before batch 5 S6). */
   readonly beforeTokens?: number
   readonly afterTokens?: number
   readonly usage?: { readonly inputTokens: number; readonly outputTokens: number; readonly cacheReadTokens?: number; readonly cacheWriteTokens?: number }
@@ -569,6 +572,7 @@ export const roomCompactionDefinition: ConversationNodeDefinition<RoomCompaction
     const data = event.data
     return {
       seq: event.seq, time: event.time, member: data.member, outcome: data.outcome,
+      ...data.runId === undefined ? {} : { runId: data.runId },
       ...data.beforeTokens === undefined ? {} : { beforeTokens: data.beforeTokens },
       ...data.afterTokens === undefined ? {} : { afterTokens: data.afterTokens },
       ...data.usage === undefined ? {} : { usage: data.usage },

@@ -25,6 +25,7 @@ import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type { RoomComposerInjected, RoomComposerProps } from './slots.ts'
 import type { RoomState } from '../types.ts'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
+import { roundUsage } from './round-usage.ts'
 import css from './RoomStatsLine.module.css'
 
 /**
@@ -125,13 +126,16 @@ export function memberUsage(state: RoomState | undefined): readonly MemberUsage[
     const key = run.memberId ?? run.member
     const row = rows.get(key) ?? { member: current?.name ?? run.member, rounds: 0, tokens: 0, elapsedMs: 0 }
     row.rounds += 1
-    row.tokens += run.tokens ?? 0
+    // Each round counts what its own usage line shows (round-usage.ts): the
+    // core's reading for an execution, a pre-S6 run's stored numbers.
+    const usage = roundUsage(run)
+    row.tokens += usage?.tokens ?? 0
     row.elapsedMs += run.elapsedMs ?? 0
-    if (run.usage !== undefined) {
-      const cacheRead = run.usage.cacheReadTokens ?? 0
-      row.input = (row.input ?? 0) + run.usage.inputTokens + cacheRead + (run.usage.cacheWriteTokens ?? 0)
+    if (usage?.breakdown !== undefined) {
+      const cacheRead = usage.breakdown.cacheReadTokens ?? 0
+      row.input = (row.input ?? 0) + usage.breakdown.inputTokens + cacheRead + (usage.breakdown.cacheWriteTokens ?? 0)
       row.cacheRead = (row.cacheRead ?? 0) + cacheRead
-      row.output = (row.output ?? 0) + run.usage.outputTokens
+      row.output = (row.output ?? 0) + usage.breakdown.outputTokens
     }
     if (run.model !== undefined) row.model = run.model
     rows.set(key, row)

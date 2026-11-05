@@ -57,7 +57,7 @@ import { RoomHelpReplyView, RoomHelpRequestView, RoomHelpView } from './RoomHelp
 import { sessionTitle, type RoomMenuMember, type SessionCandidate } from './at-menu.ts'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
-  RoomEventInjected, RoomRelayInjected, RoomDispatchInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
+  RoomEventInjected, RoomRelayInjected, RoomDispatchInjected, RoomCompactionInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
   RoomAttachmentsFace, RoomDraftAttachment, RoomModesService,
 } from './slots.ts'
 import { ROOM_RUN_CARD_SLOTS, ROOM_SPEECH_CARD_SLOTS } from './slots.ts'
@@ -902,7 +902,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     RoomDispatchView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    { name: 'conversation.chat.node', key: 'room-compaction', locale: NS },
+    { name: 'conversation.chat.node', key: 'room-compaction', locale: NS, inject: (): RoomCompactionInjected => ({ roomStore }) },
     RoomCompactionView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
