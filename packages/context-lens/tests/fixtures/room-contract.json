@@ -466,8 +466,6 @@
         "memberId": "00000000-0000-4000-8000-000000000001",
         "runId": "31:00000000-0000-4000-8000-000000000001",
         "outcome": "completed",
-        "beforeTokens": 500000,
-        "afterTokens": 40000,
         "durationMs": 90
       }
     },

@@ -22,3 +22,7 @@ A passage quoted from a file preview arrived as `—— 引用自「<session tit
 ## Consequences
 
 - Other content surfaces (canvas cards, library books, datasets, transcripts, the reader's original link) still need to set the two attributes; until they do, their quotes fall to the sourceless form.
+
+## Related
+
+- [Chat quote attribution and draft deletion](./2026-11-05-quote-draft-source-and-delete.md) supersedes the sourceless no-attribution decision above when a current session title exists. Explicit source labels and locators remain unchanged.

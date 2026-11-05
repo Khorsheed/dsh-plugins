@@ -65,7 +65,10 @@ import { mergedQuoteDraft, type QuoteAddRefOutcome, type QuoteAddRefRequest } fr
 import { registerQuoteChatInteraction } from './chat-interaction.ts'
 import type { QuoteMenuInjected } from './contract.ts'
 import { en, NS, zh } from './locales.ts'
-import { createQuotePreviewStore, createQuoteTriggerSource, insertQuoteChip, type QuoteBailScope, type QuoteInputSnapshot, type QuoteInputTriggersMirror } from './reference.ts'
+import {
+  createQuotePreviewStore, createQuoteTriggerSource, insertQuoteChip, removeQuoteChip,
+  type QuoteBailScope, type QuoteDeleteScope, type QuoteInputSnapshot, type QuoteInputTriggersMirror,
+} from './reference.ts'
 import { arrivedBlocks, restoreQuoteChips } from './restore.ts'
 import { QuoteActionRegistryRuntime } from './registry.ts'
 import { createSelectionSource } from './selection.ts'
@@ -136,6 +139,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // position (openReference carries no coordinates, so the card floats beside
   // the click via this capture-phase record).
   const previewStore = createQuotePreviewStore()
+  const removeQuote = (sessionId: SessionId, ref: string): boolean => {
+    const scope = ctx.get('sessions')?.scope(sessionId)
+    if (scope === undefined) return false
+    const input = scope.get('conversation')?.input.for(scope)
+    if (input === undefined) return false
+    const removed = removeQuoteChip(scope as unknown as QuoteDeleteScope, input, ref)
+    if (removed) input.focus()
+    return removed
+  }
   let lastPointer: { readonly x: number; readonly y: number } | undefined
   const onPointerDown = (event: PointerEvent): void => {
     lastPointer = { x: event.clientX, y: event.clientY }
@@ -148,7 +160,9 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       try {
         const service = lctx.get('inputTriggers') as QuoteInputTriggersMirror | undefined
         if (service === undefined) return () => {}
-        const disposeSource = service.registerSource(createQuoteTriggerSource(data => previewStore.show(data, lastPointer)))
+        const disposeSource = service.registerSource(createQuoteTriggerSource((data, session, reference) => {
+          previewStore.show(data, lastPointer, () => removeQuote(session.sessionId, reference.ref))
+        }))
         codecMounted = true
         return () => {
           codecMounted = false

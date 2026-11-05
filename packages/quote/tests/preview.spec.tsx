@@ -3,7 +3,7 @@
  * The chip-click preview card: renders the quote body plus the label title,
  * and dismisses on the close button, Escape, and an outside mousedown.
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { zh } from '../src/client/locales.ts'
 import { QuotePreview, type QuotePreviewProps } from '../src/client/QuotePreview.tsx'
@@ -66,6 +66,31 @@ describe('QuotePreview', () => {
     // A mousedown INSIDE the card does not close it.
     act(() => preview.show({ title: 'T', body: 'B' }))
     fireEvent.mouseDown(screen.getByRole('dialog'))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('keeps closing distinct from deleting, and removes only after the explicit action succeeds', () => {
+    const preview = bench()
+    const remove = vi.fn(() => true)
+    act(() => preview.show({ title: 'T', body: 'B' }, undefined, remove))
+    fireEvent.click(screen.getByRole('button', { name: zh['preview.close'] }))
+    expect(remove).not.toHaveBeenCalled()
+
+    act(() => preview.show({ title: 'T', body: 'B' }, undefined, remove))
+    fireEvent.click(screen.getByRole('button', { name: zh['preview.delete'] }))
+    expect(remove).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('dialog')).toBeNull()
+
+    act(() => preview.show({ title: 'T', body: 'B' }))
+    expect(screen.queryByRole('button', { name: zh['preview.delete'] })).toBeNull()
+  })
+
+  it('keeps the preview open when the draft refuses deletion', () => {
+    const preview = bench()
+    const remove = vi.fn(() => false)
+    act(() => preview.show({ title: 'T', body: 'B' }, undefined, remove))
+    fireEvent.click(screen.getByRole('button', { name: zh['preview.delete'] }))
+    expect(remove).toHaveBeenCalledOnce()
     expect(screen.getByRole('dialog')).toBeTruthy()
   })
 

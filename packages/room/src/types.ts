@@ -8,7 +8,7 @@
  */
 import type { RoomPlan } from './plan.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { LocalAgentCompactionEvent, LocalAgentMemberMessage, RoomMemberMessageReceipt as LocalAgentRoomMemberMessageReceipt } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentCompactionEvent, LocalAgentExecutionReading, LocalAgentMemberMessage, RoomMemberMessageReceipt as LocalAgentRoomMemberMessageReceipt } from '@khorsheed/dsh-local-agent/types'
 
 /**
  * A JSON-safe value (mirrors the host's JsonValue shape without importing the
@@ -247,8 +247,14 @@ export interface RoomExecutionMetadataEvent {
   readonly runId: string
   readonly model?: string
   readonly effort?: string
+  /**
+   * Legacy copy (rows written before batch 5 S6): the round's total as the
+   * harness reported it. Shown for those runs as written; new rows carry
+   * only `model`/`effort` — a run's usage is read from the member's log
+   * through the core's `readExecution` (usage in one place).
+   */
   readonly tokens?: number
-  /** The round's billing breakdown as the harness reported it (disjoint counts, the host's TokenUsage). */
+  /** Legacy copy (before batch 5 S6): the round's billing breakdown (disjoint counts, the host's TokenUsage). */
   readonly usage?: RoomRunUsage
 }
 
@@ -273,9 +279,13 @@ export interface RoomMemberCompactedEvent {
   readonly member: string
   readonly memberId: string
   readonly runId: string
-  // The compaction facts are the core event's own fields, copied verbatim
-  // (the local-agent core's LocalAgentCompactionEvent is the single source).
   readonly outcome: LocalAgentCompactionEvent['outcome']
+  /**
+   * Legacy copies (rows written before batch 5 S6): the compaction's context
+   * sizes and spend, copied from the core fact. Still shown for those rows
+   * as written; new rows never carry them — the timeline reads the run's
+   * core fact through `readExecution` (usage in one place).
+   */
   readonly beforeTokens?: LocalAgentCompactionEvent['beforeTokens']
   readonly afterTokens?: LocalAgentCompactionEvent['afterTokens']
   readonly contextWindow?: LocalAgentCompactionEvent['contextWindow']
@@ -976,8 +986,19 @@ export interface RoomExecution extends RoomMemberRun {
   readonly provider?: string
   readonly model?: string
   readonly effort?: string
+  /** Legacy stored total (runs from before batch 5 S6); see RoomExecutionMetadataEvent. */
   readonly tokens?: number
+  /** Legacy stored breakdown (runs from before batch 5 S6). */
   readonly usage?: RoomRunUsage
+  /**
+   * The core's reading of this run's execution (batch 5 S6), attached by
+   * `getState` for a run with an `executionId` when the local-agent core
+   * can read the member's log: the per-call usage sum, the CLI's own round
+   * total, the not-recorded declarations and the compaction facts. Computed
+   * on every read, never journaled; absent without the core (the run then
+   * shows its legacy stored numbers, if any).
+   */
+  readonly reading?: LocalAgentExecutionReading
   /**
    * What the run opened on the room's desk: another plugin's
    * `<plugin>/desk-opened` events naming this run (proposal

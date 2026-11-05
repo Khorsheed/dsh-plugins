@@ -135,6 +135,8 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 
 **每轮的 settle 观测。** provider 在一轮的输出流解析完之后调用 `recordRoundSettled`，家族把它转成一条 `settled` 进度事件：本轮的 `observedModel`、`cliVersion`、`usage`，以及本轮的 `toolCalls`（`{ count, byName }`）。每个字段取不到就缺位，绝不猜、绝不补零。
 
+**用量只写一处，读回靠 `readExecution`（批 5 S6）。** 一次调用的用量只在成员日志的 `assistant/message.usage` 上；CLI 自报的整轮合计只在该执行的 `local-agent/execution` end 记录的 `providerReportedUsage` 上（claude-code、codex 报，kimi、dsh 不报）；压缩调用的用量与前后上下文大小只在 `local-agent/compaction` 上（前后大小是上下文大小，不是用量）。`registry.readExecution(childSessionId, executionId)` 只读不写：返回该执行 `turns` 内各次调用用量之和（`callUsage`/`calls`）、原样的 `providerReportedUsage`、end 记录的 `unrecorded` 声明、以及执行区间内的压缩事实（`compactions`，从不并入 `callUsage`）。执行未结束时区间是 start 记录之后到下一条执行记录之前。活会话在日志变化后重算，冷会话从存储读一次；结果不落盘。两个数不一致时由读者显示差额，核心不调和。
+
 `toolCalls` 只从 provider **已经解析过**的转录事件里数出来——不新开解析路径、不再走一遍流。`byName` 的键是各家 CLI 自己的工具词汇（codex 的 `command_execution`、claude 的 `Bash`/`Read`、kimi 与 dsh 各自事件里的工具名），原样保留、**不跨家归一**：因此横比只比 `count`，`byName` 是给人读的。归一化会凭空造出一份 CLI 之间从未约定过的等价关系。
 
 `observedModel` 与 `cliVersion` 会并进委派记录（记录讲的是这次委派的最新状态），`toolCalls` **只走事件**：它属于某一轮，合并进记录等于用最新一轮悄悄盖掉上一轮的计数。settle 先于记录到达（记录点在各 provider 自己手里：live 轮在 session/new 时记录，exec 轮在 settle 后解析输出时记录）也不丢观测——家族先暂存，`recordDelegation` 落地时并入；exec 与 live 两条驱动路径都会上报。

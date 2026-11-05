@@ -126,7 +126,7 @@ describe('SelectionQuoteMenu visibility (the degrade matrix)', () => {
     const { emit, mocks } = menuBench({ current: 's-1', mainView: true, title: '主会话' })
     emit(SNAPSHOT)
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
-    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用', '引用「两行 文本」')
+    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「主会话」', '引用「主会话」')
   })
 
   it('hides again when the selection collapses', () => {
@@ -138,11 +138,11 @@ describe('SelectionQuoteMenu visibility (the degrade matrix)', () => {
 })
 
 describe('SelectionQuoteMenu routes', () => {
-  it('引用到当前会话 inserts a sourceless selection as a bare quote under an excerpt chip, and closes', () => {
+  it('引用到当前会话 names a sourceless selection with the current session title, and closes', () => {
     const { emit, mocks } = menuBench({ current: 's-1', title: '主会话' })
     emit(SNAPSHOT)
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
-    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用', '引用「两行 文本」')
+    expect(mocks.insertQuote).toHaveBeenCalledWith('s-1', '> 两行\n> 文本\n> —— 引用自「主会话」', '引用「主会话」')
     expect(screen.queryByRole('toolbar')).toBeNull()
   })
 
@@ -164,8 +164,8 @@ describe('SelectionQuoteMenu routes', () => {
     expect(mocks.addSideChatRef).toHaveBeenCalledWith('s-1', { label: 'README.md', text: '两行\n文本\n\n位置：/home/user/repo/README.md' }, '主会话')
   })
 
-  it('cuts a long sourceless chip excerpt to one short line', () => {
-    const { emit, mocks } = menuBench({ current: 's-1' })
+  it('cuts a long sourceless chip excerpt to one short line when no session title exists', () => {
+    const { emit, mocks } = menuBench({ current: 's-1', noTitle: true })
     emit({ ...SNAPSHOT, text: 'ined bundle. The base experience and the local-agent family are included.' })
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))
     expect(mocks.insertQuote.mock.calls[0]?.[2]).toBe('引用「ined bundle. The…」')
@@ -176,7 +176,7 @@ describe('SelectionQuoteMenu routes', () => {
     emit(SNAPSHOT)
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToSideChat'] }))
     expect(screen.queryByRole('toolbar')).toBeNull()
-    expect(mocks.addSideChatRef).toHaveBeenCalledWith('s-1', { label: '两行 文本', text: '两行\n文本' }, '主会话')
+    expect(mocks.addSideChatRef).toHaveBeenCalledWith('s-1', { label: '主会话', text: '两行\n文本' }, '主会话')
     await waitFor(() => expect(mocks.openSideChat).toHaveBeenCalledWith('s-1'))
   })
 
@@ -198,7 +198,7 @@ describe('SelectionQuoteMenu routes', () => {
     expect(screen.queryByRole('toolbar')).toBeNull()
   })
 
-  it('a sourceless quote never names the session, titled or not', () => {
+  it('a sourceless quote falls back to an excerpt and bare attribution without a session title', () => {
     const { emit, mocks } = menuBench({ current: 's-1', noTitle: true })
     emit(SNAPSHOT)
     fireEvent.click(screen.getByRole('button', { name: zh['menu.quoteToConversation'] }))

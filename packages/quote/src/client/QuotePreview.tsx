@@ -114,6 +114,17 @@ export function QuotePreview({ preview, t }: QuotePreviewProps): ReactNode {
           <span className={css.locationValue}>{state.location}</span>
         </div>
       )}
+      {state.remove !== undefined && (
+        <div className={css.footer}>
+          <button
+            type="button"
+            className={css.delete}
+            onClick={() => { if (state.remove!()) preview.clear() }}
+          >
+            {t('preview.delete')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

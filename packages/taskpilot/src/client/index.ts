@@ -46,6 +46,7 @@ import { createHistoryLoader } from './history-loader.ts'
 import { createAnnouncedBashLoader } from './announced-jobs.ts'
 import { pollActiveDelegations } from './active-delegations.ts'
 import { JobsChannel, type JobsServiceLike } from './jobs-channel.ts'
+import { openSubagent } from './subagent-navigation.ts'
 import { renderTaskPilotCommand } from '../types.ts'
 
 /** Required services: slots, the session runtime, the command remote, the wire, copy, and the right-sidebar faces. */
@@ -116,13 +117,19 @@ export function apply(ctx: Context): void {
       // The dock lives in the mounted session's conversation, so the
       // controller's mounted-seat aim and the pill's session coincide.
       openJob: (jobId) => { ctx.sidebarRight.openTab(TASKPILOT_KIND, { params: { jobId } }) },
-      openSession: (id) => {
-        try {
-          (ctx.get('uiWorkspace') as UiWorkspaceNav | undefined)?.openSession(id)
-        } catch {
-          // alpha.2 throws synchronously on an unknown target; the dock row
-          // stays put and the entry can be retried.
-        }
+      openSubagent: (id) => {
+        openSubagent({
+          subagentAddress: childId => ctx.sessions.subagentAddress?.(childId),
+          openResource: (address, options) => { ctx.sidebarRight.openResource(address, options) },
+          openSession: (childId) => {
+            try {
+              (ctx.get('uiWorkspace') as UiWorkspaceNav | undefined)?.openSession(childId)
+            } catch {
+              // alpha.2 throws synchronously on an unknown target; the dock row
+              // stays put and the entry can be retried.
+            }
+          },
+        }, id)
       },
       // Duck-typed read of the local-agent family gateway: resolves [] on an
       // absent channel or call error, so the dock's second running source is

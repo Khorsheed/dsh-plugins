@@ -112,9 +112,10 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
   if (snapshot === null) return null
   // The content's own label wins: quoting an article names the article, a
   // file preview names the file (and hands over its path). Text without a
-  // declared source — the conversation itself — names nothing: its chip shows
-  // an excerpt of the quote, and the model gets a bare quote.
-  const { source, ref } = snapshot
+  // declared source — the conversation itself — falls back to the current
+  // session title, then to an excerpt only when that title is unavailable.
+  const { source: declaredSource, ref } = snapshot
+  const source = declaredSource ?? currentTitle
   const excerpt = excerptOf(snapshot.text)
   const chipLabel = t('chip.label', { label: source ?? excerpt })
   const attribution = source === undefined ? t('quote.attributionBare')
@@ -167,7 +168,7 @@ export function SelectionQuoteMenu(props: QuoteMenuProps): ReactNode {
   // built-ins annotate, each row's own gate, the generic icon as fallback.
   const target: QuoteActionTarget = {
     text: snapshot.text,
-    label: source ?? currentTitle ?? excerpt,
+    label: source ?? excerpt,
     sessionId: current,
     ...ref === undefined ? {} : { ref },
   }

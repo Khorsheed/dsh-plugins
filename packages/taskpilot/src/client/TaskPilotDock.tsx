@@ -8,8 +8,8 @@
  * subagent-only descendant lineage from
  * session summaries (the same index the header tree counts), so counts and
  * rows stay consistent with the title by construction. Jobs tick once per
- * second while a popover is open; each row carries its stop/interrupt verb,
- * the detail tab entry, and the session jump target. A subagent row's
+ * second while a popover is open; each row carries its stop/interrupt verb
+ * and opens either the job detail tab or the subagent's Sidebar chat. A subagent row's
  * running state is dual-source: the official summary flag, or membership in
  * the polled local-agent delegation set (one-shot external CLI rows, which
  * never carry a live agent). The delegation poll runs every 1.5s while
@@ -140,7 +140,7 @@ export interface TaskPilotDockInjected {
   /** Interrupt one subagent; a deep descendant needs its direct parent for authorization. */
   interruptSubagent: (childId: SessionId, parentId?: SessionId) => Promise<unknown>
   openJob: (jobId: JobView['id']) => void
-  openSession: (sessionId: SessionId) => void
+  openSubagent: (sessionId: SessionId) => void
   /**
    * Poll the local-agent family's in-flight delegation child session ids.
    * Fail-soft contract: resolves an empty list when the family is not
@@ -272,7 +272,7 @@ export function collectDescendants(
 
 export function TaskPilotDock(props: TaskPilotDockProps): React.ReactElement | null {
   const {
-    sessionId, useSessions, useJobs, stopJob, interruptSubagent, openJob, openSession, t,
+    sessionId, useSessions, useJobs, stopJob, interruptSubagent, openJob, openSubagent, t,
     pollActiveDelegations, watchRows, refreshCatalog, loadAnnouncedBashJobs,
   } = props
   // Dual-channel roster: rc.1 serves it through the jobs channel (undefined
@@ -508,7 +508,7 @@ export function TaskPilotDock(props: TaskPilotDockProps): React.ReactElement | n
                   <button
                     type="button"
                     className={css.rowMain}
-                    onClick={() => openSession(child.id)}
+                    onClick={() => openSubagent(child.id)}
                     title={child.id}
                     aria-label={t('dock.aria.open', { childId: child.id })}
                   >

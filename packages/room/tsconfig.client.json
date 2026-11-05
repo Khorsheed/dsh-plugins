@@ -25,6 +25,7 @@
     "src/client/RoomHelpView.tsx",
     "src/client/at-menu.ts",
     "src/client/team.ts",
+    "src/client/round-usage.ts",
     "src/client/TeamView.tsx",
     "src/client/MembersView.tsx",
     "src/client/MemberToolsLine.tsx",

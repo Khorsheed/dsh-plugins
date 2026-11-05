@@ -14,6 +14,7 @@ export const zh = {
   'chip.label': '引用「{label}」',
   'card.source': '引用自「{label}」',
   'preview.close': '关闭',
+  'preview.delete': '删除引用',
   'preview.location': '位置',
 }
 
@@ -31,6 +32,7 @@ export const en: Record<keyof typeof zh, string> = {
   'chip.label': 'Quote “{label}”',
   'card.source': 'Quoted from “{label}”',
   'preview.close': 'Close',
+  'preview.delete': 'Delete quote',
   'preview.location': 'Location',
 }
 

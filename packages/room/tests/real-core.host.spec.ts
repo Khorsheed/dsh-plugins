@@ -23,6 +23,7 @@ import * as localAgent from '@khorsheed/dsh-local-agent'
 import type { LocalAgentDelegationIntent, LocalAgentExecutionEndEvent, LocalAgentExecutionStartEvent, LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
 import { appendMirrorStep, closeMirrorTurn, openMirrorTurn } from '../../local-agent/src/mirror-step.ts'
 import RoomService from '../src/index.ts'
+import { executionRows } from '../src/client/executions.ts'
 import { MEMBER_UNRECONCILED_TEXT } from '../src/dispatch.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
@@ -44,10 +45,11 @@ interface Round {
 const mounted: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const dispose of mounted.splice(0).reverse()) await dispose()
+  delete current.reportedTotal
 })
 
 /** Mount the local-agent core (again, after a "crash") on a context that already carries the host and room. */
-const current: { registry?: LocalAgentRegistry; rounds: Round[]; suppressSettlement: boolean } = { rounds: [], suppressSettlement: false }
+const current: { registry?: LocalAgentRegistry; rounds: Round[]; suppressSettlement: boolean; reportedTotal?: TokenUsage } = { rounds: [], suppressSettlement: false }
 
 async function mountCore(ctx: Context, homes: string, rounds: Round[]): Promise<{ registry: LocalAgentRegistry; dispose: () => Promise<void> }> {
   const fiber = ctx.plugin(localAgent, { homesRoot: homes })
@@ -103,7 +105,7 @@ async function providerStart(registry: LocalAgentRegistry, ctx: Context, request
       closeMirrorTurn(child, turn, stop, 'stopped')
       if (intent.kind === 'fresh') registry.recordDelegation({ childSessionId, provider: PROVIDER, parentSessionId, cliSessionId: 'native', cwd: '/home/user/work' })
       void registry.syncChildSession(child).then(() => {
-        registry.recordRoundSettled(childSessionId, { observedModel: 'm' })
+        registry.recordRoundSettled(childSessionId, { observedModel: 'm', ...current.reportedTotal === undefined ? {} : { providerReportedUsage: current.reportedTotal } })
         settle({ stopReason: stop, output: [{ type: 'text', text: `answer to ${prompt.slice(-12)}` }] })
       })
     }
@@ -288,8 +290,37 @@ describe('room on the real local-agent core', () => {
     if (!state.ok) throw new Error('room unavailable')
     expect(state.value.deliveries?.at(-1)).toMatchObject({ status: 'failed', error: MEMBER_UNRECONCILED_TEXT })
     // The timeline's failed row (a run-state edge; it never had a running edge, so no execution id).
-    const refused = runStates(bench).at(-1)
+    // The interrupted tool round's own card (`execution:<id>`) settles on its
+    // own schedule once the old core is gone; it may land after this row
+    // (more likely now that getState awaits the core's reads), so pick the
+    // room delivery's edge explicitly.
+    const refused = runStates(bench).filter(edge => edge.runId?.startsWith('execution:') !== true).at(-1)
     expect(refused).toMatchObject({ member: 'ada', state: 'failed', error: MEMBER_UNRECONCILED_TEXT })
     expect(refused?.executionId).toBeUndefined()
+  })
+
+  it('usage in one place (S6): the room stores no copy; getState attaches the core\'s reading (per-call sum and the CLI total)', async () => {
+    const bench = await mount()
+    const ada = await invite(bench)
+    current.reportedTotal = { inputTokens: 1_300, outputTokens: 2 } as TokenUsage
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 搭骨架' })
+    await roundsReach(bench, 1)
+    bench.rounds[0]!.release()
+    await bench.service.engine.idle()
+    await releasedLog(bench, ada, 1)
+    // No usage copy in any room event: metadata carries the observed model only.
+    const roomEvents = bench.room().snapshotEvents()
+    const metadata = roomEvents.filter(event => event.type === 'room/execution-metadata').map(event => event.data)
+    expect(metadata).toEqual([{ runId: expect.any(String), model: 'm' }])
+    expect(roomEvents.some(event => typeof event.data === 'object' && event.data !== null && ('tokens' in event.data || 'usage' in event.data))).toBe(false)
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    const run = state.value.executions?.find(row => row.memberId === ada)
+    expect(run).toMatchObject({ executionId: expect.any(String), reading: {
+      outcome: 'done', turns: [1], calls: 1, callUsage: { inputTokens: 10, outputTokens: 2 }, providerReportedUsage: { inputTokens: 1_300, outputTokens: 2 },
+    } })
+    expect(run).not.toHaveProperty('tokens')
+    expect(run?.runId).toEqual(expect.any(String))
+    expect(executionRows(state.value).find(row => row.id === run!.runId)).toMatchObject({ tokens: 1_302, execution: { executionId: run!.executionId } })
   })
 })

@@ -57,7 +57,8 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.2.1-rc.5"
+      "verifiedHost": "0.2.1-rc.5",
+      "notes": "Subagent rows open the host's subagentchat right-Sidebar resource when the composition provides it. Older hosts and compositions without that resource fall back to uiWorkspace.openSession, preserving the conversation-page route."
     }
   },
   "peerDependencies": {

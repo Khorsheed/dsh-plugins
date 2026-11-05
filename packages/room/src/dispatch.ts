@@ -1116,22 +1116,15 @@ export class DispatchEngine {
       if (event.kind !== 'settled') return
       const previous = room.snapshotEvents().filter(row => row.type === 'room/run-state' && row.data.runId === runId).at(-1)
       if (previous?.type !== 'room/run-state') return
-      // TokenUsage counts are disjoint: the billed total is the sum of the
-      // buckets, cache reads and writes included. A provider's own
-      // totalTokens may leave the cache out (claude reports input+output),
-      // so the buckets win whenever they are there.
-      const total = event.usage === undefined ? undefined
-        : event.usage.inputTokens + (event.usage.cacheReadTokens ?? 0) + (event.usage.cacheWriteTokens ?? 0) + event.usage.outputTokens
+      // Usage in one place (batch 5 S6): the round's spend is never copied
+      // here. Calls carry theirs on the member log's assistant messages, the
+      // CLI's own round total sits on the execution's end record, and the
+      // timeline reads both through the core's readExecution. Only the
+      // observed model and effort are the room's to note.
+      if (event.observedModel === undefined && event.observedEffort === undefined) return
       room.append('room/execution-metadata', { runId,
         ...event.observedModel === undefined ? {} : { model: event.observedModel },
         ...event.observedEffort === undefined ? {} : { effort: event.observedEffort },
-        ...total === undefined || !Number.isFinite(total) || total < 0 ? {} : { tokens: total },
-        ...event.usage === undefined ? {} : { usage: {
-          inputTokens: event.usage.inputTokens, outputTokens: event.usage.outputTokens,
-          ...event.usage.cacheReadTokens === undefined ? {} : { cacheReadTokens: event.usage.cacheReadTokens },
-          ...event.usage.cacheWriteTokens === undefined ? {} : { cacheWriteTokens: event.usage.cacheWriteTokens },
-          ...event.usage.reasoningTokens === undefined ? {} : { reasoningTokens: event.usage.reasoningTokens },
-        } },
       })
       void this.ctx.sessions.flush(room).catch(error => this.ctx.logger.warn(`room: execution metadata flush failed: ${String(error)}`))
     }
@@ -1273,9 +1266,11 @@ export class DispatchEngine {
   }
 
   /**
-   * The room's row for a member's compaction round: the facts the member
-   * session's `local-agent/compaction` event recorded during THIS run (the
-   * room never re-derives them, and never reads an earlier run's), and no
+   * The room's row for a member's compaction round: its outcome and summary
+   * from the member session's `local-agent/compaction` event recorded during
+   * THIS run (the room never re-derives them, and never reads an earlier
+   * run's) — its sizes and spend are read from that fact at display time,
+   * never copied (batch 5 S6) — and no
    * speech — Kimi answers `/compact` with its summary, which is the row's,
    * not a reply. Whether the member reports compaction numbers is the core
    * fact's own mark (batch 5 S2: local-agent writes the fact for every
@@ -1295,11 +1290,9 @@ export class DispatchEngine {
     const unreported = outcome === 'completed' && compactionUnreported(data)
     room.append('room/member-compacted', {
       member: replay(events).members.find(entry => entry.id === member.id)?.name ?? member.name,
+      // The fact's sizes and spend stay on the member log's compaction fact
+      // (batch 5 S6): the row reads them through readExecution, never a copy.
       memberId: memberId(events, member), runId, outcome,
-      ...data.beforeTokens === undefined ? {} : { beforeTokens: data.beforeTokens },
-      ...data.afterTokens === undefined ? {} : { afterTokens: data.afterTokens },
-      ...data.contextWindow === undefined ? {} : { contextWindow: data.contextWindow },
-      ...data.usage === undefined ? {} : { usage: data.usage },
       ...data.summary === undefined ? {} : { summary: data.summary },
       ...outcome === 'completed' ? {} : { error: data.error ?? result.diagnostic ?? `compaction ${outcome}` },
       ...startedAt === undefined ? {} : { durationMs: Date.now() - startedAt },

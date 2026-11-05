@@ -5,23 +5,34 @@
  * below it on click. A failed compaction reads as such, with its reason; a
  * member that does not report compaction data (no record this round) says
  * so instead of claiming a compaction with no numbers.
+ *
+ * The numbers are the run's core compaction fact, read through the room
+ * state's execution reading (batch 5 S6: never copied into the room); a row
+ * from before S6 shows the copies it stored. The sizes are the context's
+ * before and after — never usage; only 用量 is the compaction call's spend.
  */
-import { useState, type ReactNode } from 'react'
+import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { RoomCompactionViewProps } from './slots.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
+import { compactionNumbers } from './round-usage.ts'
 import css from './RoomCompactionView.module.css'
 
-export function RoomCompactionView({ node, t }: RoomCompactionViewProps): ReactNode {
+const NO_STATE = (): undefined => undefined
+const NO_SUBSCRIBE = (): (() => void) => () => {}
+
+export function RoomCompactionView({ node, sessionId, roomStore, t }: RoomCompactionViewProps): ReactNode {
   const data = node.data
   const [open, setOpen] = useState(false)
-  const usage = data.usage === undefined ? undefined
-    : data.usage.inputTokens + (data.usage.cacheReadTokens ?? 0) + (data.usage.cacheWriteTokens ?? 0) + data.usage.outputTokens
+  const state = useSyncExternalStore(roomStore?.subscribe ?? NO_SUBSCRIBE, roomStore === undefined ? NO_STATE : () => roomStore.getCached(sessionId))
+  const execution = data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === data.runId)
+  const numbers = compactionNumbers(data, execution)
+  const unreported = data.unreported === true || numbers.unreported === true
   const parts = [
     data.outcome !== 'completed' ? t('compaction.failed', { member: data.member })
-      : data.unreported === true ? t('compaction.unreported', { member: data.member })
+      : unreported ? t('compaction.unreported', { member: data.member })
       : t('compaction.done', { member: data.member }),
-    ...data.beforeTokens !== undefined && data.afterTokens !== undefined ? [`${formatTokens(data.beforeTokens)} → ${formatTokens(data.afterTokens)} tok`] : [],
-    ...usage === undefined ? [] : [t('compaction.usage', { tokens: formatTokens(usage) })],
+    ...numbers.beforeTokens !== undefined && numbers.afterTokens !== undefined ? [`${formatTokens(numbers.beforeTokens)} → ${formatTokens(numbers.afterTokens)} tok`] : [],
+    ...numbers.usage === undefined ? [] : [t('compaction.usage', { tokens: formatTokens(numbers.usage) })],
     ...data.outcome === 'completed' || data.error === undefined ? [] : [data.error],
   ]
   const summary = data.summary
