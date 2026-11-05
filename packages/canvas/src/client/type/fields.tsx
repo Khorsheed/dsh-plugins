@@ -362,17 +362,21 @@ export function FieldForm({ t, definition, values, candidates, selfId, focus, on
         value={text}
         placeholder={field.type === 'tags' ? t('field.tagsHint') : field.hint}
         onChange={event => { set(field.key, event.target.value) }}
-        onKeyDown={event => {
-          if (event.nativeEvent.isComposing) return
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) save()
-          if (event.key === 'Escape') onCancel()
-        }}
       />
     )
   }
 
   return (
-    <div className={css.form}>
+    <div className={css.form} onKeyDown={event => {
+      if (event.nativeEvent.isComposing) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onCancel()
+      } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        save()
+      }
+    }}>
       {definition.fields.map(field => (
         <div key={field.key} className={css.formRow}>
           <label htmlFor={`field-${field.key}`} title={field.hint}>
@@ -386,6 +390,7 @@ export function FieldForm({ t, definition, values, candidates, selfId, focus, on
         {missing.length > 0 && (
           <span className={css.missing} role="alert">{t('field.missing', { list: missing.join('、') })}</span>
         )}
+        <span className={css.shortcutHint}>{t('card.editHint')}</span>
         <span className={css.spacer} />
         <Button size="sm" onClick={onCancel}>{t('field.cancel')}</Button>
         <Button size="sm" variant="primary" onClick={save}>{t('field.save')}</Button>

@@ -643,12 +643,20 @@ describe('CanvasTab — the detail openings (stage ⑧)', () => {
     expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_page', '大模型心理学')
   })
 
-  it('opens an archived card from the well too, instead of swallowing the click', async () => {
+  it('opens an archived card and keeps restore / delete in its unified menu', async () => {
     const { mocks, props } = makeHarness({
       boards: [board(CANVAS_ID, [card('c_old', { status: 'archived', text: '归档掉的旧卡' })])],
     })
     render(<CanvasTab {...props} />)
     fireEvent.click(await screen.findByRole('button', { name: /已归档的卡/ }))
+    expect(screen.queryByRole('button', { name: '删除' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '恢复' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '更多' }))
+    expect(screen.getByRole('menuitem', { name: '删除' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: '恢复' }))
+    await waitFor(() => {
+      expect(mocks.patchCard).toHaveBeenCalledWith('s1', { canvasId: CANVAS_ID, cardId: 'c_old', status: 'kept' })
+    })
     fireEvent.click(screen.getByText('归档掉的旧卡'))
     expect(mocks.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_old', '归档掉的旧卡')
   })

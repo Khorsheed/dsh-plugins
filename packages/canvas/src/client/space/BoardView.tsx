@@ -366,15 +366,19 @@ function CardItem({ t, board, card, definition, nameOf, kindLabel, kindColor, re
           </button>
         </div>
       ) : archivedWell ? (
-        <div className={css.ghostActions}>
-          <button type="button" onClick={() => { actions.setCardStatus(card.id, 'kept') }}>
-            <IconRefreshOutlineMedium size={12} />
-            {t('card.restore')}
-          </button>
-          <button type="button" onClick={event => { event.stopPropagation(); actions.deleteCard(card.id) }}>
-            <IconTrashOutlineMedium size={12} />
-            {t('action.delete')}
-          </button>
+        <div className={css.cardActions}>
+          <MoreMenu
+            label={t('action.more')}
+            className={css.iconButton}
+            items={[
+              { id: 'restore', label: t('card.restore'), icon: <IconRefreshOutlineMedium size={13} /> },
+              { id: 'delete', label: t('action.delete'), icon: <IconTrashOutlineMedium size={13} />, danger: true },
+            ]}
+            onSelect={id => {
+              if (id === 'restore') actions.setCardStatus(card.id, 'kept')
+              else actions.deleteCard(card.id)
+            }}
+          />
         </div>
       ) : (
         <div className={css.cardActions}>

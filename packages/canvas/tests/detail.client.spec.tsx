@@ -759,6 +759,27 @@ describe('the card pad (§11.4)', () => {
     await screen.findByText('AGENT 提议 · 待你确认')
     expect(screen.queryByRole('button', { name: '铅笔' })).toBeNull()
   })
+
+  it('makes a genuinely session-less kept card read-only across menus, fields, body and comments', async () => {
+    const { view, props, current, mocks } = makeHarness([card('c_1', { fields: { name: '林澈' } })])
+    current.board.categories[0] = {
+      ...current.board.categories[0]!,
+      definition: { version: 2, layout: 'profile', fields: [{ key: 'name', label: '姓名', type: 'line', required: true }], example: { name: '林澈' } },
+    }
+    view.select('c_1')
+    render(<CanvasDetailView {...props} sessionId={undefined} />)
+    await screen.findByText('卡片 c_1 的正文')
+    expect(screen.getByText('林澈')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: zh['action.more'] })).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['field.edit'] })).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['detail.edit'] })).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['detail.source'] })).toBeNull()
+    expect(screen.queryByRole('button', { name: '铅笔' })).toBeNull()
+    expect(screen.queryByPlaceholderText(zh['comment.placeholder'])).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(mocks.patchCard).not.toHaveBeenCalled()
+    expect(mocks.addComment).not.toHaveBeenCalled()
+  })
 })
 
 describe('a markdown card as a flow', () => {

@@ -144,6 +144,15 @@ describe('FieldForm', () => {
     expect(onSave).toHaveBeenCalledWith({ mood: '低落', name: '林澈', role: '主角', traits: ['倔', '心软', '话少'], age: 17 })
   })
 
+  it('shows and honors ⌘⏎ save and Esc cancel from any field', () => {
+    const { onSave, onCancel } = mount({ name: '林澈', role: '主角' })
+    expect(screen.getByText(zh['card.editHint'])).toBeTruthy()
+    fireEvent.keyDown(field('姓名'), { key: 'Enter', metaKey: true })
+    expect(onSave).toHaveBeenCalledWith({ name: '林澈', role: '主角' })
+    fireEvent.keyDown(field('身份'), { key: 'Escape' })
+    expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the form open while a required field is empty', () => {
     const { onSave } = mount({})
     save()

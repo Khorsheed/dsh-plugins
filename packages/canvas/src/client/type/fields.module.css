@@ -328,6 +328,11 @@ button.refChip:disabled {
   flex-wrap: wrap;
 }
 
+.shortcutHint {
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
+  color: var(--dsw-alias-label-secondary);
+}
+
 .missing {
   font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
   color: var(--dsw-alias-state-error-primary);
