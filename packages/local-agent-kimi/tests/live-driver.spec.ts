@@ -2060,6 +2060,54 @@ describe('kimi mirror snapshot (live)', () => {
     }
   })
 
+  it('a completed round whose next call streams its reasoning before the previous call folds → the exact child-session event sequence', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const m = mount({ config: {}, timeouts: { ...DEFAULT_TIMEOUTS, mirrorThrottleMs: 0, settleFoldWaitMs: 5_000 } })
+    try {
+      const child = Session.create(SessionId('child-kimi-live-split-snapshot'))
+      const execution = snapshotExecution(child, KIMI_UNRECORDED)
+      const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+      mkdirSync(wireDir, { recursive: true })
+      const loop = (event: Record<string, unknown>) => JSON.stringify({ type: 'context.append_loop_event', event: { turnId: 0, ...event } })
+      const usage = (input: number, output: number) => JSON.stringify({ type: 'usage.record', usage: { inputOther: input, output } })
+      const call = (id: string, name: string, step: number) => loop({ type: 'tool.call', step, toolCallId: id, toolCall: { name, args: { id } } })
+      const result = (id: string) => loop({ type: 'tool.result', toolCallId: id, result: { output: `ok ${id}` } })
+      const lines: string[] = [JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '修过滤' }], origin: { kind: 'user' } })]
+      const flush = (...more: string[]): void => { lines.push(...more); writeFileSync(join(wireDir, 'wire.jsonl'), lines.join('\n') + '\n') }
+      m.queueChild(new FakeAcpServer({ turn: () => { flush(); return { hang: true } } }))
+      const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+      const fake = m.spawns[0]!.fake!
+      const session = 'session_acp-session-1'
+      const logged = (id: string) => () => child.snapshotEvents().some(event => event.type === 'tool/call' && (event.data as { callId?: string }).callId === id)
+      // Call A: reasoning + Read.
+      fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '先读文件' } })
+      flush(loop({ type: 'step.begin', step: 1 }), usage(1, 1), loop({ type: 'content.part', step: 1, part: { type: 'think', think: '先读文件' } }), call('a', 'Read', 1), result('a'), loop({ type: 'step.end', step: 1 }))
+      fake.update(session, { sessionUpdate: 'tool_call', toolCallId: 'a', title: 'Read', status: 'in_progress' })
+      await until(logged('a'))
+      // Call C's reasoning streams before call B (a lone Edit) folds.
+      fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '再跑测试' } })
+      // (A thought chunk reports nothing to wait on: give the update its turn.)
+      await new Promise(resolve => setTimeout(resolve, 100))
+      flush(loop({ type: 'step.begin', step: 2 }), usage(2, 2), call('b', 'Edit', 2), result('b'), loop({ type: 'step.end', step: 2 }), loop({ type: 'step.begin', step: 3 }))
+      fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '' } }) // an empty chunk: only a mirror pass
+      await until(logged('b'))
+      // Call C lands; then the answer.
+      fake.update(session, { sessionUpdate: 'tool_call', toolCallId: 'c', title: 'Bash', status: 'in_progress' })
+      flush(usage(3, 3), loop({ type: 'content.part', step: 3, part: { type: 'think', think: '再跑测试' } }), call('c', 'Bash', 3), result('c'), loop({ type: 'step.end', step: 3 }))
+      await until(logged('c'))
+      fake.update(session, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '修好了' } })
+      flush(loop({ type: 'step.begin', step: 4 }), usage(4, 4), loop({ type: 'content.part', step: 4, part: { type: 'text', text: '修好了' } }), loop({ type: 'step.end', step: 4 }))
+      fake.resolvePrompt({ stopReason: 'end_turn' })
+      const settled = await run.result
+      expect(settled.stopReason).toBe('completed')
+      execution.settle(settled)
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('kimi session lock left by a dead process', () => {

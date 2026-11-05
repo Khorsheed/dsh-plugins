@@ -260,3 +260,432 @@ exports[`kimi mirror snapshot (live) > a cancelled round: streamed think + text 
   },
 ]
 `;
+
+exports[`kimi mirror snapshot (live) > a completed round whose next call streams its reasoning before the previous call folds → the exact child-session event sequence 1`] = `
+[
+  {
+    "data": {
+      "admittedAt": 1767225600000,
+      "caller": "room",
+      "callerRef": "run-1",
+      "cause": {
+        "kind": "human",
+        "messageId": "msg-1",
+        "sessionId": "room-snapshot",
+        "via": "room",
+      },
+      "executionId": "<uuid>",
+      "operation": "prompt",
+      "parentSessionId": "room-snapshot",
+      "phase": "start",
+      "task": {
+        "id": "task-1",
+        "sessionId": "room-snapshot",
+      },
+    },
+    "seq": 0,
+    "time": 1767225600000,
+    "type": "local-agent/execution",
+  },
+  {
+    "data": {
+      "turn": 1,
+    },
+    "seq": 1,
+    "time": 1767225600000,
+    "type": "turn/start",
+  },
+  {
+    "data": {
+      "content": [
+        {
+          "text": "建个文件",
+          "type": "text",
+        },
+      ],
+      "id": "<uuid>",
+      "role": "user",
+      "source": {
+        "kind": "user",
+      },
+    },
+    "seq": 2,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "user/message",
+  },
+  {
+    "data": {
+      "content": [
+        {
+          "text": "修过滤",
+          "type": "text",
+        },
+      ],
+      "id": "<uuid>",
+      "role": "user",
+      "source": {
+        "kind": "user",
+      },
+    },
+    "seq": 3,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "user/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 4,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "先读文件",
+            "type": "reasoning",
+          },
+          {
+            "arguments": "id=a",
+            "id": "a",
+            "name": "Read",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "unobserved",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 1,
+      "stream": [],
+      "turn": 1,
+      "usage": {
+        "inputTokens": 1,
+        "outputTokens": 1,
+      },
+    },
+    "seq": 5,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "id=a",
+      "callId": "a",
+      "name": "Read",
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 6,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "ok a",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": false,
+        "role": "tool",
+        "source": {
+          "callId": "a",
+          "kind": "tool",
+        },
+        "toolCallId": "a",
+      },
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 7,
+    "sourceEventSeqs": [
+      6,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 8,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 9,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "arguments": "id=b",
+            "id": "b",
+            "name": "Edit",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "unobserved",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 2,
+      "stream": [],
+      "turn": 1,
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 2,
+      },
+    },
+    "seq": 10,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "id=b",
+      "callId": "b",
+      "name": "Edit",
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 11,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "ok b",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": false,
+        "role": "tool",
+        "source": {
+          "callId": "b",
+          "kind": "tool",
+        },
+        "toolCallId": "b",
+      },
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 12,
+    "sourceEventSeqs": [
+      11,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 13,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 14,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "再跑测试",
+            "type": "reasoning",
+          },
+          {
+            "arguments": "id=c",
+            "id": "c",
+            "name": "Bash",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "unobserved",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 3,
+      "stream": [],
+      "turn": 1,
+      "usage": {
+        "inputTokens": 3,
+        "outputTokens": 3,
+      },
+    },
+    "seq": 15,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "id=c",
+      "callId": "c",
+      "name": "Bash",
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 16,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "ok c",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": false,
+        "role": "tool",
+        "source": {
+          "callId": "c",
+          "kind": "tool",
+        },
+        "toolCallId": "c",
+      },
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 17,
+    "sourceEventSeqs": [
+      16,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 3,
+      "turn": 1,
+    },
+    "seq": 18,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 4,
+      "turn": 1,
+    },
+    "seq": 19,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "修好了",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "unobserved",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 4,
+      "stream": [],
+      "turn": 1,
+      "usage": {
+        "inputTokens": 4,
+        "outputTokens": 4,
+      },
+    },
+    "seq": 20,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 4,
+      "turn": 1,
+    },
+    "seq": 21,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "reason": {
+        "kind": "completed",
+      },
+      "turn": 1,
+    },
+    "seq": 22,
+    "time": 1767225600000,
+    "type": "turn/end",
+  },
+  {
+    "data": {
+      "endedAt": 1767225600000,
+      "executionId": "<uuid>",
+      "outcome": "done",
+      "phase": "end",
+      "turns": [
+        1,
+      ],
+    },
+    "seq": 23,
+    "time": 1767225600000,
+    "type": "local-agent/execution",
+  },
+]
+`;
