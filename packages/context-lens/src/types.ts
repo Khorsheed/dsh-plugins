@@ -560,6 +560,8 @@ export interface RoomDecisionRow {
   task?: string
   /** report-timing: the run whose report was gated, when room recorded it. */
   runId?: string
+  /** report-timing: that run's local-agent execution, when room recorded it. */
+  executionId?: string
 }
 
 export interface TurnOverview {

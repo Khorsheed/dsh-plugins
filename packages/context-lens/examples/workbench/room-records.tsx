@@ -5,7 +5,7 @@
  * `tests/fixtures/local-agent-contract.json`, a `/compact` and a decision
  * no record ties to a round. Run
  *   pnpm exec tsx packages/context-lens/examples/workbench/serve.mts
- * then open /room-records.html?turn=<old|new|group>[&none=1][&narrow=1][&dark=1][&lang=en]
+ * then open /room-records.html?turn=<old|new|compact|group>[&none=1][&narrow=1][&dark=1][&lang=en]
  * (`none=1`: a room whose rounds all lack records — the notice at the top).
  */
 import { createRoot } from 'react-dom/client'
@@ -49,14 +49,22 @@ const room: SessionLogRow[] = [
 const store = new InspectorStore()
 store.insertLogTurns('room-1', reconstructSession(room))
 for (const row of room) if (row.type.startsWith('room/')) store.noteRoomEvent('room-1', row.type, row.data, row.seq, row.time)
-const rows = fixture.rows as SessionLogRow[]
+// A later round the member's own page started (no room round claims it), with the CLI's own compaction inside.
+const pageRound: SessionLogRow[] = [
+  { type: 'local-agent/execution', seq: 100, time: T0 + 900, data: { phase: 'start', executionId: 'e-page', caller: 'composer', operation: 'prompt', parentSessionId: 'room-1', admittedAt: T0 + 900 } },
+  { type: 'turn/start', seq: 101, time: T0 + 910, data: { turn: 3 } },
+  { type: 'local-agent/compaction', seq: 102, time: T0 + 980, data: { source: 'auto', outcome: 'completed', provider: 'codex-local', beforeTokens: 240_000, startedAt: T0 + 950, endedAt: T0 + 975, boundarySeq: 101, unrecorded: ['usage'] } },
+  { type: 'turn/end', seq: 103, time: T0 + 990, data: { turn: 3, reason: { kind: 'completed' } } },
+  { type: 'local-agent/execution', seq: 104, time: T0 + 995, data: { phase: 'end', executionId: 'e-page', outcome: 'done', turns: [3], endedAt: T0 + 995 } },
+]
+const rows = [...fixture.rows as SessionLogRow[], ...none ? [] : pageRound]
 for (const request of foldLogRows(openCursor(), none ? rows.filter(row => row.type !== 'local-agent/execution') : rows, { execution: record => store.noteExecution(child, record) })) {
   store.appendLogRequest('room-1', child, request)
 }
 
 const success = <T,>(value: T) => Promise.resolve({ ok: true as const, value })
 const turn = params.get('turn') ?? 'new'
-const turnSeq = turn === 'old' ? roomTurnSeq(3) : turn === 'group' ? ROOM_UNATTRIBUTED_TURN : roomTurnSeq(10)
+const turnSeq = turn === 'old' ? roomTurnSeq(3) : turn === 'group' ? ROOM_UNATTRIBUTED_TURN : turn === 'compact' ? roomTurnSeq(13) : roomTurnSeq(10)
 const props = {
   sessionId: 'room-1',
   useTabInfo: () => ({ sidebar: { expanded: true, fullscreen: false }, panel: { id: 'p' }, tab: { navigation: { address: 'dsh-page://context-lens', params: { turnSeq }, revision: 1 }, signal: new AbortController().signal } }),

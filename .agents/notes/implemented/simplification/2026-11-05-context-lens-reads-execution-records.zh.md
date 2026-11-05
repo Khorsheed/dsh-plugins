@@ -22,7 +22,8 @@ Lens 改为读记录。按房间的每一轮、按数据判断，不按日期或
 
 - **有记录的轮。** run 带 `executionId` 或 `childTurn` 就算有记录。它的请求就是子会话记录点名的那些：被该执行 start/end 记录夹住的请求（`StoredRequest.executionId`，fold 时标上），加上 end 记录列出的轮次里的请求；还没读到子会话记录（尚未读取，或是批 4 的 run）时，用 room 写下的 `childTurn`。run 只用 `childSessionId` 找子会话，没有就近匹配。成员视图带上执行自己记下的事实（`AgentScopeOverview.execution`：起因类别、结局、`unrecorded`）。
 - **没有记录的轮**（`TurnListItem.room.unrecorded`）：不给成员视图。`TurnOverview.roomFallback` 列出每个 run 的成员、会话和时间段；面板显示「暂无房间维度的请求视图」，每个成员一个「在成员会话里查看」，打开成员自己的透镜并选中包含该 run 开始时刻的那一轮（新的页签导航 `locateTime`、`openMemberSessionAt`）。整个会话一轮都没有记录时（`ListTurnsResult.roomRecords: 'none'`），这句话只在顶部说一次，每轮只留入口。
-- **「未归轮」分组**（`ROOM_UNATTRIBUTED_TURN`、`TurnListItem.roomUnattributed`）：没有记录能归到某一轮的决策模型调用，以及没有被有记录的轮认领的成员压缩（`/compact` 自己那次执行、没有记录的轮里的压缩）。列在最后，不编号，也不会是默认落点（`isHollowTurn`）。
+- **「未归轮」分组**（`ROOM_UNATTRIBUTED_TURN`、`TurnListItem.roomUnattributed`）：没有记录能归到某一轮的决策模型调用，以及没有被有记录的轮认领的成员压缩（不在任何执行里的、所在执行不是任何房间轮的——比如成员页发起的一轮里 CLI 的自动压缩——以及没有记录的轮里的压缩）。列在最后，不编号，也不会是默认落点（`isHollowTurn`）。
+- **`/compact` 也是一轮。** 它的 run 对应的执行在成员日志里夹住了压缩事实（provider 写的或核心写的），所以这一轮在自己的「压缩」页签显示它，没有自己的模型请求视图（还没读到压缩事实时才显示成员视图占位）。点名 `executionId` 的决策落到 run 为该执行的那一轮。
 - **决策。** 归属依次取：它点名的 run（`runId` → 该 run 的轮）、它归档的人类消息（`about.message` → 以该消息为锚的轮）、写入时正在进行的主对话轮、它点名的任务（`task` → 开启该任务的轮），都没有就进未归轮。
 - **带记录的成员日志**（`SessionLogCursor.recorded`，读到第一条 `local-agent/execution` 时置上）：一条 `assistant/message` 就是一次请求，不拼接；没有原始发出时刻的请求，开始时间取其流的第一个片段，没有就取该步的写入时间，并标 `startUnrecorded`；声明了 `per-call-usage` 的执行，带用量的那一步标 `roundTotal`（整轮合计）。没有记录的旧日志仍走旧的 fold，成员自己的透镜看旧历史和以前一样。
 - **压缩。** 两轮之间的 CLI 压缩没有轮次（不再归到最后关闭的那一轮），带上记录夹住它的执行。它的 `unrecorded` 标记原样传下去，显示为「未记录：用量、前后大小、摘要」。
@@ -36,21 +37,22 @@ Lens 仍然零依赖：`local-agent/execution` 和 room 的新字段都按结构
 - **按会话、或按宿主/插件版本判断。** 用户的补充否决了：按每一轮的数据判断，一条规则同时覆盖新旧混杂的会话、旧版插件的社区用户和从不写记录的第三方 provider。
 - **把标了调用边界未记录的执行的各步合成一次请求。** 否决：那就是重新拼接。每步仍是一行，成员视图写明「调用边界未记录」，用量那行标「整轮合计」。
 - **旧日志也去掉拼接。** 否决：用户决定 1 要求成员自己的透镜不受影响，旧的 codex 日志会散成逐 item 的行。
-- **把 `/compact` 的压缩放进该成员的上一轮。** 否决：没有记录说它属于那里；它的执行不属于任何轮，所以进未归轮。
+- **把 `/compact` 的压缩放进该成员的上一轮。** 否决：没有记录说它属于那里；记录说它属于 `/compact` 这一轮自己的执行。
+- **`/compact` 不算轮、压缩进未归轮**（本步初版的做法）。评审否决：执行本身就是指向这一轮的记录。
 
 ## 影响
 
-- 用户可见，只在房间的 Context Lens：旧轮次显示兜底和进入成员透镜的入口；没有记录归属的决策和压缩挪到「未归轮」（一些以前按时间落在某轮的决策现在在这里）；`/compact` 不再出现在上一轮的「压缩」页签；成员视图显示起因和来源不记录的项目；压缩关系行改为「{name} 执行了 /compact」，并加上未记录项。
+- 用户可见，只在房间的 Context Lens：旧轮次显示兜底和进入成员透镜的入口；没有记录归属的决策和压缩挪到「未归轮」（一些以前按时间落在某轮的决策现在在这里）；`/compact` 自成一轮（和其他轮一起编号），在自己的「压缩」页签显示压缩，不再出现在上一轮；成员视图显示起因和来源不记录的项目；压缩关系行改为「{name} 执行了 /compact」，并加上未记录项。
 - 带记录的成员日志：codex exec 的一轮每步一行，最后一步标「整轮合计」。在成员自己的透镜里，没有原始流、也没有用量的纯文本步仍算历史（原有的镜像注释规则，没变）。
 - 不变：每条回复下的「请求明细」、成员自己透镜里的旧日志、用量数字。
 - 本步没动：`attachedTurn` 对主会话压缩伪轮次的放置，以及主会话的 `insideMainTurn` 判断（都不在设计稿 D 节）。
 
 ## 测试
 
-- `tests/room-rounds.spec.ts`（重写）：逐轮判断（同一会话里有旧轮兜底、批 4 `childTurn` 轮、批 5 执行轮）；一轮都没记录时顶部只提示一次；执行不按时间段认领请求；未结束的执行持有记录夹住的请求；`/compact` 和无记录轮的压缩进未归轮；决策按 `runId` / `about.message` / 主对话轮包含 / `task` / 未归轮归属；对话锚点不按文本找。
+- `tests/room-rounds.spec.ts`（重写）：逐轮判断（同一会话里有旧轮兜底、批 4 `childTurn` 轮、批 5 执行轮）；一轮都没记录时顶部只提示一次；执行不按时间段认领请求；未结束的执行持有记录夹住的请求；`/compact` 轮的压缩在它自己的「压缩」页签；未被认领的执行里的自动压缩、无记录轮的压缩进未归轮；决策按 `runId` / `executionId` / `about.message` / 主对话轮包含 / `task` / 未归轮归属；对话锚点不按文本找。
 - `tests/room-contract.spec.ts`：回放 room 真实写入端的产物，新增 `childRows`（shim 写的执行记录）、带 `runId`/`task`/`executionId` 的汇报时机决策和求助线程（夹具由扩展了 S9 的 `packages/room/tests/lens-contract.host.spec.ts` 重生成）。
 - `tests/local-agent-contract.spec.ts`（新增）：回放 `tests/fixtures/local-agent-contract.json`，它由新增的 `packages/local-agent/tests/lens-contract.spec.ts` 用真实核心生成（一轮 live、一轮声明 `call-boundaries`/`per-call-usage` 的 codex exec 形状、一条核心写的未记录压缩）；同时验证去掉记录的同一份日志仍按旧方式 fold。
 - `tests/cli-compaction.spec.ts`、`client-panel.spec.tsx`、`client-member-jump.spec.ts`、`client-aggregate.spec.ts`：压缩的执行与标记、兜底卡片和入口、顶部提示、执行说明、未归轮、`locateTime`。
-- context-lens 311 → 333，room 530 → 531，local-agent 528 → 530，bundle-local-agent 5；`pnpm check:plugins` 无问题。
+- context-lens 311 → 335，room 530 → 531，local-agent 528 → 530，bundle-local-agent 5；`pnpm check:plugins` 无问题。
 - 截图（1280 与 390）取自 `examples/workbench/room-records.html`，用真实 store 加 local-agent 夹具；未提交。
 - 未验证：3080 上的真实房间、真实宿主里入口切换会话、真实的 codex exec 日志。

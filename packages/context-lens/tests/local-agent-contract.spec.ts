@@ -100,7 +100,7 @@ describe('local-agent → Context Lens contract (fixture from the core\'s writer
     expect(turns.filter(turn => turn.purpose === 'compaction')).toHaveLength(2)
   })
 
-  it('in a room: the round shows its execution\'s requests and compaction; the /compact goes to 未归轮', () => {
+  it('in a room: each round shows what its execution brackets — the prompt round its requests and auto compaction, the /compact round the core\'s fact', () => {
     const store = new InspectorStore()
     const room: SessionLogRow[] = [
       { type: 'room/member-added', seq: 1, time: 1, data: { id: 'm-ada', name: 'ada' } },
@@ -121,9 +121,11 @@ describe('local-agent → Context Lens contract (fixture from the core\'s writer
     expect(scopes.map(scope => [scope.kind, scope.requests.length])).toEqual([['subagent', 2], ['compaction', 1]])
     expect(scopes[0]!.execution).toEqual({ executionId: live!.executionId, cause: 'human', outcome: 'done', unrecorded: ['internal-calls'] })
     expect(scopes[0]!.requests.every(request => request.startUnrecorded === true)).toBe(true)
-    const group = store.getTurn('s', ROOM_UNATTRIBUTED_TURN)!.scopes
-    expect(group.map(scope => [scope.scopeId, scope.requests.length, scope.compaction?.member?.unrecorded])).toEqual([
-      [`compaction:unattributed:${child}`, 1, ['usage', 'before-after', 'summary']],
+    const compactRound = list.turns.find(turn => turn.query === '/compact')!
+    expect(store.getTurn('s', compactRound.turnSeq)!.scopes.map(scope => [scope.scopeId, scope.requests.length, scope.compaction?.member?.unrecorded])).toEqual([
+      [`compaction:${child}`, 1, ['usage', 'before-after', 'summary']],
     ])
+    // The codex-exec execution no room round claims holds no compaction, so nothing is unattributed.
+    expect(store.getTurn('s', ROOM_UNATTRIBUTED_TURN)).toBeUndefined()
   })
 })

@@ -164,7 +164,7 @@ describe('room rounds', () => {
     expect(scope.execution).toEqual({ executionId: 'e3' })
   })
 
-  it('a /compact is no round: its compaction belongs to its own execution and shows in the 未归轮 group', () => {
+  it('a /compact is a round: the compaction its execution brackets shows in that round\'s 压缩 tab', () => {
     const rows = [...all,
       { type: 'room/dispatch', seq: 50, time: 90_000, data: { origin: 'human', text: '/compact', targets: ['coco'], targetIds: ['m-coco'] } },
       { type: 'room/run-state', seq: 51, time: 90_050, data: { runId: '50:m-coco', member: 'coco', state: 'done', operation: 'compact', startedAt: 90_050, elapsedMs: 900, childSessionId: 'child-coco', executionId: 'e4' } },
@@ -176,16 +176,41 @@ describe('room rounds', () => {
       s.noteExecution('child-coco', execution({ phase: 'end', executionId: 'e4', outcome: 'done', turns: [], unrecorded: ['compaction'] }))
     })
     const list = store.listTurns('s')
-    expect(list.turns.map(t => t.query).filter(q => q !== '')).toEqual(['邀请 Kimi', '你好', '列出工具', '写测试'])
+    expect(list.turns.map(t => t.query)).toEqual(['邀请 Kimi', '你好', '列出工具', '写测试', '/compact'])
+    // Its own round, numbered with the others; nothing is left unattributed.
+    const compactRound = list.turns.at(-1)!
+    expect([compactRound.ordinal, compactRound.roomUnattributed]).toEqual([5, undefined])
+    const scopes = store.getTurn('s', compactRound.turnSeq)!.scopes
+    expect(scopes.map(s => [s.scopeId, s.kind, s.requests.map(r => r.startedAt)])).toEqual([['compaction:child-coco', 'compaction', [90_100]]])
+    expect(scopes[0]!.compaction?.member).toMatchObject({ name: 'coco', source: 'manual', unrecorded: ['usage', 'before-after', 'summary'] })
+    expect(store.getTurn('s', ROOM_UNATTRIBUTED_TURN)).toBeUndefined()
+    // The round before it does not claim it.
+    const round = list.turns.find(t => t.query === '写测试')!
+    expect(store.getTurn('s', round.turnSeq)!.scopes.flatMap(s => s.requests.map(r => r.startedAt))).toEqual([71_000, 72_000])
+  })
+
+  it('a compaction inside an execution no round claims (a member-page round) goes to 未归轮', () => {
+    const store = load(all, s => {
+      memberLog(s)
+      s.noteExecution('child-coco', execution({ phase: 'start', executionId: 'e-page', caller: 'composer', operation: 'prompt' }))
+      s.appendLogRequest('s', 'child-coco', childRequest(95_000, 5, 'e-page'))
+      s.appendLogRequest('s', 'child-coco', compaction(95_500, 5, 'e-page', { unrecorded: ['usage'] }))
+      s.noteExecution('child-coco', execution({ phase: 'end', executionId: 'e-page', outcome: 'done', turns: [5], unrecorded: [] }))
+    })
+    const list = store.listTurns('s')
     // Listed last, unnumbered, never a landing turn.
     const group = list.turns.at(-1)!
     expect([group.roomUnattributed, group.turnSeq, group.ordinal]).toEqual([true, ROOM_UNATTRIBUTED_TURN, undefined])
     const scopes = store.getTurn('s', ROOM_UNATTRIBUTED_TURN)!.scopes
-    expect(scopes.map(s => [s.scopeId, s.kind, s.requests.map(r => r.startedAt)])).toEqual([['compaction:unattributed:child-coco', 'compaction', [90_100]]])
-    expect(scopes[0]!.compaction?.member).toMatchObject({ name: 'coco', source: 'manual', unrecorded: ['usage', 'before-after', 'summary'] })
-    // The round before it does not claim it.
-    const round = list.turns.find(t => t.query === '写测试')!
-    expect(store.getTurn('s', round.turnSeq)!.scopes.flatMap(s => s.requests.map(r => r.startedAt))).toEqual([71_000, 72_000])
+    expect(scopes.map(s => [s.scopeId, s.requests.map(r => r.startedAt)])).toEqual([['compaction:unattributed:child-coco', [95_500]]])
+    expect(scopes[0]!.compaction?.member).toMatchObject({ source: 'auto', unrecorded: ['usage'] })
+  })
+
+  it('a decision naming an execution lands on the round whose run is that execution', () => {
+    const store = load(all, memberLog)
+    store.noteRoomEvent('s', 'room/decision', { id: 'd-exec', scenario: 'report-timing', outcome: 'now', about: {}, executionId: 'e3',
+      call: { model: 'jev-latest', request: { state: {}, questions: [] } } }, 60, 20)
+    expect(store.listTurns('s').turns.find(t => t.query === '写测试')!.roomDecisionIds).toEqual(['d-exec'])
   })
 
   it('a compaction of an unrecorded round is not hidden either', () => {

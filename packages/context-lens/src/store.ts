@@ -1504,10 +1504,14 @@ export class InspectorStore {
     for (const decision of decisions) {
       const run = decision.runId === undefined ? undefined : room.runs.get(decision.runId)
       const ofRun = run?.dispatchSeq === undefined || !rounds.has(roomTurnSeq(run.dispatchSeq)) ? undefined : roomTurnSeq(run.dispatchSeq)
+      // The execution it names, when a round's run is that execution.
+      const byExecution = decision.executionId === undefined ? undefined
+        : [...room.runs.values()].find(candidate => candidate.executionId === decision.executionId && candidate.dispatchSeq !== undefined && rounds.has(roomTurnSeq(candidate.dispatchSeq)))
+      const ofExecution = byExecution?.dispatchSeq === undefined ? undefined : roomTurnSeq(byExecution.dispatchSeq)
       const ofMessage = decision.about.message === undefined ? undefined : byMessage.get(decision.about.message)
       const inside = mainTurns.find(turn => turn.startedAt <= decision.at && (turn.endedAt ?? Number.POSITIVE_INFINITY) >= decision.at)?.turnSeq
       const ofTask = decision.task === undefined ? undefined : byMessage.get(decision.task)
-      const owner = ofRun ?? ofMessage ?? inside ?? ofTask ?? ROOM_UNATTRIBUTED_TURN
+      const owner = ofRun ?? ofExecution ?? ofMessage ?? inside ?? ofTask ?? ROOM_UNATTRIBUTED_TURN
       const rows = byTurn.get(owner) ?? []
       rows.push(decision)
       byTurn.set(owner, rows)
@@ -1571,9 +1575,11 @@ export class InspectorStore {
   private roomTurns(session: SessionRecord, filter?: ScopeFilter): TurnRecord[] {
     const room = session.room
     if (room === undefined) return []
-    // A human's `/compact` is no round of its own: its compaction belongs to
-    // its own execution, which no round holds (the 未归轮 group shows it).
-    return room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at) && !isCompactCommand(dispatch.text)).map((dispatch): TurnRecord => {
+    // A human's `/compact` is a round too: its run's execution brackets the
+    // compaction fact in the member log, so the round shows it in its 压缩 tab
+    // (and no model-request view of its own).
+    return room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at)).map((dispatch): TurnRecord => {
+      const compactRound = isCompactCommand(dispatch.text)
       const scopes = new Map<string, ScopeRecord>()
       const runs = runsOf(room, dispatch.seq)
       const recorded = runs.some(runRecorded)
@@ -1597,7 +1603,9 @@ export class InspectorStore {
         const requests = matched.filter(request => request.purpose !== 'compaction')
         const compactions = matched.filter(request => request.purpose === 'compaction')
         const execution = child === undefined || run.executionId === undefined ? undefined : this.executionFacts(child.scopeId, run.executionId)
-        scopes.set(scopeId, {
+        // A /compact run's work is its compaction: the member view only stands in while that fact is not read.
+        const compactRun = compactRound || run.operation === 'compact'
+        if (!compactRun || compactions.length === 0) scopes.set(scopeId, {
           scopeId,
           scopeSeq: child?.scopeSeq ?? 0,
           kind: 'subagent',

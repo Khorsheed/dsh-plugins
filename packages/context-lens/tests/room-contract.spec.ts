@@ -63,11 +63,13 @@ function loaded(): InspectorStore {
 const roundOf = (store: InspectorStore, query: string) => store.listTurns('s').turns.find(turn => turn.query.startsWith(query))!
 
 describe('room → Context Lens contract (fixture from room\'s writers)', () => {
-  it('each human dispatch outside a main turn is a round anchored on the human\'s own message; /compact and relay deliveries are not rounds', () => {
+  it('each human dispatch outside a main turn is a round anchored on the human\'s own message, /compact included; relay deliveries are not rounds', () => {
     const list = loaded().listTurns('s')
     const rounds = list.turns.filter(turn => turn.room !== undefined)
-    expect(rounds.map(turn => turn.query.slice(0, 3))).toEqual(['搭骨架', '第二轮', '长任务', '第三轮'])
-    expect(rounds.map(turn => turn.room?.messageId)).toEqual([undefined, userMessageId('@ada 第二轮'), userMessageId('@bea 长任务'), userMessageId('@bea 第三轮')])
+    expect(rounds.map(turn => turn.query.slice(0, 3))).toEqual(['搭骨架', '第二轮', '长任务', '/co', '/co', '第三轮'])
+    expect(rounds.map(turn => turn.room?.messageId)).toEqual([
+      undefined, userMessageId('@ada 第二轮'), userMessageId('@bea 长任务'), expect.anything(), expect.anything(), userMessageId('@bea 第三轮'),
+    ])
   })
 
   it('every round room\'s run entry wrote is recorded: no fallback anywhere', () => {
@@ -105,7 +107,7 @@ describe('room → Context Lens contract (fixture from room\'s writers)', () => 
     expect(run?.dispatchSeq).toBeUndefined()
   })
 
-  it('a compaction run claims no child turn; its compaction belongs to its own execution and shows in the 未归轮 group', () => {
+  it('a compaction run claims no child turn; its compaction is the one its execution brackets, in its own round\'s 压缩 tab', () => {
     const compactRun = runStates.find(row => data(row)['operation'] === 'compact' && data(row)['state'] === 'done')!
     expect(data(compactRun)['childTurn']).toBeUndefined()
     // Batch 5 S6: room no longer copies the compaction's numbers; they stay on
@@ -113,12 +115,16 @@ describe('room → Context Lens contract (fixture from room\'s writers)', () => 
     expect(rows.some(row => row.type === 'room/member-compacted')).toBe(true)
     expect(rows.some(row => row.type === 'room/member-compacted' && 'beforeTokens' in data(row))).toBe(false)
     const store = loaded()
-    expect(store.listTurns('s').turns.at(-1)?.roomUnattributed).toBe(true)
-    const group = store.getTurn('s', ROOM_UNATTRIBUTED_TURN)!.scopes
-    expect(group.map(scope => [scope.scopeId, scope.requests.length])).toEqual([['compaction:unattributed:child-ada', 2]])
+    const compactRounds = store.listTurns('s').turns.filter(turn => turn.query.startsWith('/compact'))
+    const views = compactRounds.map(turn => store.getTurn('s', turn.turnSeq)!.scopes)
+    expect(views.map(scopes => scopes.map(scope => [scope.scopeId, scope.requests.length]))).toEqual([
+      [['compaction:child-ada', 1]], [['compaction:child-ada', 1]],
+    ])
     // The provider's fact with numbers, then the core's fact that the CLI reported nothing.
-    expect(group[0]!.requests.map(request => request.usage === undefined)).toEqual([true, true])
-    expect(group[0]!.compaction?.member).toMatchObject({ source: 'manual' })
+    expect(views[0]![0]!.compaction?.member).toMatchObject({ source: 'manual', beforeTokens: 500_000, afterTokens: 40_000 })
+    expect(views[1]![0]!.compaction?.member).toMatchObject({ source: 'manual', unrecorded: ['usage', 'before-after', 'summary'] })
+    // Nothing is left unattributed: every compaction sits in an execution a round claims.
+    expect(store.getTurn('s', ROOM_UNATTRIBUTED_TURN)).toBeUndefined()
     expect(fixture.compactCases.length).toBeGreaterThan(0)
     for (const { text, compact } of fixture.compactCases) expect([text, isCompactCommand(text)]).toEqual([text, compact])
   })

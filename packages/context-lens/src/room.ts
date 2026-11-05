@@ -175,6 +175,7 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
         ...typeof failure?.reason === 'string' ? { failure: { reason: failure.reason, ...typeof failure.detail === 'string' ? { detail: failure.detail } : {} } } : {},
         ...str(d['task']) === undefined ? {} : { task: str(d['task'])! },
         ...str(d['runId']) === undefined ? {} : { runId: str(d['runId'])! },
+        ...str(d['executionId']) === undefined ? {} : { executionId: str(d['executionId'])! },
       })
       return true
     }
