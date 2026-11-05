@@ -11,7 +11,7 @@ agent 跑起后台任务、或者派出一串子 agent 之后，原来得翻标�
 ## 功能
 
 - **任务胶囊** — 当前会话全部后台任务，每秒计时，运行中可停止，点击打开右栏详情 tab；与标题旁列表同源。
-- **子 agent 胶囊** — 完整子 agent 谱系（含深层后代），展示时长与 token 消耗，运行中可中断，点击跳转该子 agent 会话；local-agent 家族的一次性外部 CLI 委派（无 live agent）通过其只读委派通道识别，委派在飞期间同样可一键中止。
+- **子 agent 胶囊** — 完整子 agent 谱系（含深层后代），展示时长与 token 消耗，运行中可中断；点击默认在右侧栏打开该子 agent 对话，不离开当前会话，旧宿主则回退到子 agent 会话页。local-agent 家族的一次性外部 CLI 委派（无 live agent）通过其只读委派通道识别，委派在飞期间同样可一键中止。
 - **详情 tab** — 官方右栏的 page-type tab，展示命令/类型/状态/起止/耗时，附从会话日志回放的执行轨迹，默认折叠。换看另一个任务会在同一个 tab 内重新导航；宽度、全屏、停靠等几何全部交给右栏，插件不再自带浮层与推开布局代码。
 - **会话级显隐** — 切换会话即切换数据；每个胶囊只在自己的数据非空时出现。
 - **零产品改动** — 只走产品扩展点（插槽、commands、镜像、日志），不新增 RPC，不改产品文件。
@@ -34,6 +34,7 @@ dsh plugin --profile web remove @khorsheed/dsh-taskpilot
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——详情抽屉迁移至官方右栏 tab 面（page-type 注册进 `ctx.sidebarRightTabs`，body 进 keyed `sidebar.right.pane.tab` 槽位），全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
 - 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.5）——host-021 波对 0.2.1-rc.5 树全量 build+test 绿：jobs augmentation 改为直引 `@deepseek-ai/dsh-jobs` 包根。
+- 子 agent 打开位置：组合提供 `subagentchat` 右栏页面时默认在右栏打开；旧宿主或没有该页面的组合回退到 `uiWorkspace.openSession` 会话页。
 
 **版本线对照**：0.2.0 之后的首个发布起支持宿主 `0.1.5-rc.1` 及以后；宿主 `0.1.2-rc.1` 请停留在 `0.2.0`，宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 请停留在 0.1.x 发布线（末版 `0.1.0`）。
 

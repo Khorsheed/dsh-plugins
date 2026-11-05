@@ -150,7 +150,7 @@ describe('TaskPilotDock', () => {
 
   it('flattens the whole descendant lineage with duration, tokens and per-parent interrupt', async () => {
     const interruptSubagent = vi.fn(async () => undefined)
-    const openSession = vi.fn()
+    const openSubagent = vi.fn()
     const byId = {
       'child-1': subSummary('child-1', SESSION, {
         displayTitle: '分析代码', running: true,
@@ -165,7 +165,7 @@ describe('TaskPilotDock', () => {
     }
     render(<TaskPilotDock {...dockProps({
       interruptSubagent,
-      openSession,
+      openSubagent,
       useSessions: (selector) => selector({ jobsBySession: {}, byId }),
     })} />)
     await flushPoll()
@@ -183,9 +183,9 @@ describe('TaskPilotDock', () => {
     // The deep descendant passes its direct parent (child-1), not the session.
     fireEvent.click(screen.getByRole('button', { name: 'Interrupt subagent child-3' }))
     expect(interruptSubagent).toHaveBeenCalledWith('child-3', 'child-1')
-    // Rows open the session directly (works for any depth without an address mode).
+    // The deep descendant uses the same Sidebar-first navigation as a direct child.
     fireEvent.click(screen.getByRole('button', { name: 'Open subagent child-3' }))
-    expect(openSession).toHaveBeenCalledWith('child-3')
+    expect(openSubagent).toHaveBeenCalledWith('child-3')
   })
 
   it('prefers the catalog descriptor label for direct children over the lagging displayTitle', async () => {

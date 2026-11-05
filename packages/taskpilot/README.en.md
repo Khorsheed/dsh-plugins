@@ -11,7 +11,7 @@ Once the agent starts background jobs or fans out a tree of subagents, you used 
 ## Features
 
 - **Jobs capsule** — all background jobs of the current session, ticking once per second, a stop verb on running rows, click-through to the detail tab; same source as the header list.
-- **Subagents capsule** — the whole subagent lineage (deep descendants included), with live duration and token spend, an interrupt verb on running rows, click-through to the subagent conversation. One-shot external-CLI rows delegated to the local-agent family (which have no live agent) are recognized through the family's read-only delegation poll and carry the interrupt verb while their run is in flight.
+- **Subagents capsule** — the whole subagent lineage (deep descendants included), with live duration and token spend, an interrupt verb on running rows. Clicking a row opens the subagent chat in the right sidebar without leaving the current conversation; older hosts fall back to the subagent conversation page. One-shot external-CLI rows delegated to the local-agent family (which have no live agent) are recognized through the family's read-only delegation poll and carry the interrupt verb while their run is in flight.
 - **Detail tab** — a page-type tab in the official right sidebar with command/kind/status/start-end/duration plus an execution trail folded from the session log, collapsed by default. Opening another job re-navigates the same tab; the sidebar owns all geometry (width, fullscreen, docking), so the plugin ships no overlay or push-layout code of its own.
 - **Session-scoped visibility** — switching sessions switches data; each capsule renders only when its own data is non-empty.
 - **Zero intrusion** — product extension points only (slots, commands, mirrors, session log); no new RPC, no product files touched.
@@ -34,6 +34,7 @@ Restart the host afterwards; re-running add is safe (deduped by package name).
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — the detail drawer migrated to the official right-sidebar tab surface (a page type registered into `ctx.sidebarRightTabs`, its body in the keyed `sidebar.right.pane.tab` seat), full build+test green; minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line.
 - source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.5) — host-021 wave: full build+test green against the 0.2.1-rc.5 tree; the jobs augmentation is now imported directly from the `@deepseek-ai/dsh-jobs` package root.
+- Subagent destination: compositions providing the `subagentchat` right-Sidebar page open rows there by default; older hosts and compositions without it fall back to the `uiWorkspace.openSession` conversation page.
 
 **Version line mapping**: the first release after `0.2.0` supports host `0.1.5-rc.1` and later; hosts on `0.1.2-rc.1` stay on `0.2.0`, hosts on `0.1.0-rc.6` ~ `0.1.1-rc.2` stay on the 0.1.x release line (last release `0.1.0`).
 
