@@ -213,7 +213,7 @@ export default class LocalAgentGateway extends TypertRemoteService {
   async sessions(name: string, sessionId?: string): Promise<readonly LocalAgentSessionRecord[]> {
     const records = await this.ctx.localAgent.sessionsOf(name)
     if (sessionId === undefined) return records
-    const cwd = this.ctx.sessions.get(SessionId(sessionId))?.header.cwd
+    const cwd = this.ctx.get('sessions')?.get(SessionId(sessionId))?.header.cwd
     if (cwd === undefined) return records
     return records.filter(record => record.workDir === cwd)
   }

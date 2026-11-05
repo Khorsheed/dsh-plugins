@@ -22,6 +22,8 @@ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-j
 import type { SubagentActivationSpec, SubagentResult, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ToolExecutionInput } from '@deepseek-ai/dsh-tools'
 import * as localAgent from '../src/index.ts'
 import { LOCAL_AGENT_SERVICE } from '../src/index.ts'
@@ -58,7 +60,9 @@ async function mount(homes = mkdtempSync(join(tmpdir(), 'run-entry-homes-')), st
   await ctx.plugin(CommandRuntime)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
-  await ctx.plugin(AgentRegistry)
+  await ctx.plugin(NativeToolExecutor)
+  await ctx.plugin(SessionProjectionRegistry)
+  await ctx.plugin(AgentRegistry).await()
   const persistence = ctx.plugin(JsonlSessionPersistence, { root: store, compression: 'none' })
   await persistence.await()
   const rounds: Round[] = []
@@ -120,12 +124,17 @@ async function mount(homes = mkdtempSync(join(tmpdir(), 'run-entry-homes-')), st
   }
 
   /** One host-model tool call at `turn` in the parent session. */
-  const call = (turn: number, callId: string, args: Record<string, string>, signal = new AbortController().signal) => {
+  const call = async (turn: number, callId: string, args: Record<string, string>, signal = new AbortController().signal) => {
     parentSession.append('turn/start', { turn } as never)
     parentSession.append('step/start', { turn, step: 1 } as never)
     parentSession.append('assistant/message', { turn, step: 1, message: { role: 'assistant', content: [{ type: 'tool-call', id: callId, name: TOOL, arguments: JSON.stringify(args) }] }, stream: [] } as never, { surfaceOp: 'append' } as never)
     parentSession.append('tool/call', { turn, step: 1, callId, name: TOOL, arguments: JSON.stringify(args) } as never)
-    return ctx.tools.execute({ signal, callId: callId as ToolExecutionInput['callId'], name: TOOL, arguments: args, agent })
+    const batch = await ctx.tools.execute({
+      calls: [{ type: 'tool-call', id: callId as ToolExecutionInput['callId'], name: TOOL, arguments: JSON.stringify(args) }],
+      signal,
+      agent,
+    })
+    return batch.results[0]!.result
   }
   const childEvents = (childSessionId: string): readonly SessionEvent[] => ctx.sessions.get(SessionId(childSessionId))?.snapshotEvents() ?? []
   const dispose = async (): Promise<void> => { await fiber.dispose(); await persistence.dispose() }
@@ -134,8 +143,8 @@ async function mount(homes = mkdtempSync(join(tmpdir(), 'run-entry-homes-')), st
 }
 
 /** Wait until the provider holds `count` rounds. */
-async function roundsReach(h: { rounds: Round[] }, count: number): Promise<void> {
-  await vi.waitFor(() => expect(h.rounds).toHaveLength(count))
+async function roundsReach(h: { rounds: Round[] }, count: number, stage?: string): Promise<void> {
+  await vi.waitFor(() => expect(h.rounds.map(round => round.kind), stage).toHaveLength(count))
 }
 
 const text = (value: string) => [{ type: 'text' as const, text: value }]
@@ -237,7 +246,7 @@ describe('run(): the single execution entry', () => {
     await running.settled
     // A second round is in flight when the host goes away.
     const second = await before.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('interrupted'), caller: 'room', key: 'delivery-10' })
-    await roundsReach(before, 2)
+    await roundsReach(before, 2, 'the interrupted second round')
     // A queued room row (no stored input) is dropped on restart; its caller resubmits it.
     await before.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('later'), caller: 'room', key: 'delivery-11' })
     // Simulate the crash: the ledger file stays as written (running), the process is gone.
@@ -261,7 +270,8 @@ describe('run(): the single execution entry', () => {
     // The key of the reconciled execution now reads as settled, not as new work.
     expect(await (await after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('x'), caller: 'room', key: 'delivery-10' })).settled).toMatchObject({ outcome: 'done' })
     const next = await after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('after reconcile'), caller: 'room', key: 'delivery-11' })
-    await roundsReach(after, 1)
+    await next.started
+    await roundsReach(after, 1, 'the post-reconcile round')
     expect(after.rounds[0]).toMatchObject({ kind: 'resume', prompt: 'after reconcile' })
     after.rounds[0]!.release()
     expect(await next.settled).toMatchObject({ outcome: 'done' })

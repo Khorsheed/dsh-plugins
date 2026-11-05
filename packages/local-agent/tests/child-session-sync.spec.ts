@@ -1,8 +1,14 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
+import { describe, expect, it, vi } from 'vitest'
+import { pathToFileURL } from 'node:url'
+
+const harness = process.env.DSH_HARNESS ?? join(process.env.HOME ?? '', 'code', 'deepseek-harness')
+const [{ HistoryController }, { WebController }] = await Promise.all([
+  import(pathToFileURL(join(harness, 'packages/api/session-controller/src/history/controller.ts')).href),
+  import(pathToFileURL(join(harness, 'packages/api/session-controller/src/web/controller.ts')).href),
+])
 import { Context } from '@deepseek-ai/cordis'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { Session, SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
@@ -15,7 +21,7 @@ import { LOCAL_AGENT_SERVICE } from '@khorsheed/dsh-local-agent'
  * write handle for the same id is open rejects SessionAlreadyOwnedError, the
  * collision the registry's handle cache exists to prevent.
  */
-function fakePersistence(): {
+function fakePersistence(options: { beforeFlush?: () => Promise<void>; onClose?: () => void } = {}): {
   /** Stored events per session id. */
   stored: Map<string, unknown[]>
   /** Every accepted append batch, in order. */
@@ -51,8 +57,9 @@ function fakePersistence(): {
       stored.set(id, [...(stored.get(id) ?? []), ...events])
       appended.push([...events])
     },
-    flush: async () => { flushed.push(id) },
+    flush: async () => { await options.beforeFlush?.(); flushed.push(id) },
     close: async () => {
+      options.onClose?.()
       if (!own) return
       const count = (writeHandles.get(id) ?? 1) - 1
       if (count <= 0) writeHandles.delete(id)
@@ -92,6 +99,7 @@ interface Mounted {
   ctx: Context
   registry: localAgent.LocalAgentRegistry
   warns: string[]
+  dispose(): Promise<void>
 }
 
 /** Mount the registry stack over a fake persistence and a capturing logger. */
@@ -108,8 +116,9 @@ async function mount(persistence: ReturnType<typeof fakePersistence>): Promise<M
     },
   })
   ctx.provide('sessionPersistence', persistence as never)
-  await ctx.plugin(localAgent, { homesRoot: mkdtempSync(join(tmpdir(), 'sync-homes-')) })
-  return { ctx, registry: ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry, warns }
+  const fiber = ctx.plugin(localAgent, { homesRoot: mkdtempSync(join(tmpdir(), 'sync-homes-')) })
+  await fiber.await()
+  return { ctx, registry: ctx.get(LOCAL_AGENT_SERVICE) as localAgent.LocalAgentRegistry, warns, dispose: () => fiber.dispose() }
 }
 
 describe('LocalAgentRegistry.syncChildSession', () => {
@@ -150,6 +159,37 @@ describe('LocalAgentRegistry.syncChildSession', () => {
     await registry.syncChildSession(child)
     expect(persistence.appended).toHaveLength(2)
     expect(persistence.appended[1]).toHaveLength(1)
+    expect(persistence.stored.get('child-1')).toHaveLength(child.snapshotEvents().length)
+  })
+
+  it('waits for an in-flight sync before detaching and closing its write handle on dispose', async () => {
+    const events: string[] = []
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const persistence = fakePersistence({
+      beforeFlush: async () => { events.push('flush:start'); await gate; events.push('flush:end') },
+      onClose: () => { events.push('close') },
+    })
+    const cold = Session.create(SessionId('child-1'))
+    cold.append('turn/start', { turn: 1 })
+    cold.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    persistence.stored.set('child-1', [...cold.snapshotEvents()])
+    const { ctx, registry, dispose } = await mount(persistence)
+    await registry.ensureChildLive('child-1')
+    const child = ctx.sessions.get(SessionId('child-1'))!
+    child.append('turn/start', { turn: 2 })
+    const syncing = registry.syncChildSession(child)
+    await vi.waitFor(() => expect(events).toContain('flush:start'))
+
+    const disposal = dispose()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(events).not.toContain('close')
+    expect(ctx.sessions.get(SessionId('child-1'))).toBe(child)
+    release()
+    await Promise.all([syncing, disposal])
+
+    expect(events).toEqual(['flush:start', 'flush:end', 'close'])
+    expect(ctx.sessions.get(SessionId('child-1'))).toBeUndefined()
     expect(persistence.stored.get('child-1')).toHaveLength(child.snapshotEvents().length)
   })
 
@@ -206,9 +246,10 @@ describe('LocalAgentRegistry.syncChildSession', () => {
       events, cursor: events.at(-1)!.seq, source: 'stored',
       header: { ...cold.header, cwd: '/home/user/project' },
       inheritedEventCount: 0,
+      projections: { asOfSeq: events.at(-1)!.seq, values: {} },
       [Symbol.dispose]() {},
     }) } as never)
-    const history = new SessionHistoryController(ctx, () => { throw new Error('must not activate a host agent') })
+    const history = new WebController(ctx, new HistoryController(ctx), () => { throw new Error('must not activate a host agent') })
     const abort = new AbortController()
     const stream = history.follow({ address: { kind: 'session', sessionId: cold.id } }, abort.signal)[Symbol.asyncIterator]()
     try {

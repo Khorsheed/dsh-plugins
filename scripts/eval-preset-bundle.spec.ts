@@ -58,8 +58,11 @@ const BUNDLE_DIR = join(PROFILE, 'presets')
  * settings store) rewrote the three-line `subagent_dsh` note inside the block —
  * the dsh settings toggle is gone and the tool is the package's `./tool` entry,
  * which this preset does not name. Same composition.
+ * host-022-rc.1: list_agents moved into the root tool-subagent-control entry.
+ * The legacy row is enabled only when its standalone export exists, preserving
+ * older hosts without duplicate registration. The digest changes on purpose.
  */
-const DIRECTORY_COMPOSITION_SHA = '0d19b749045f42930af0a70bf454b2e174c78437ad672f7b569626c2d0eb373f'
+const DIRECTORY_COMPOSITION_SHA = '2a63705851c97a12053ca04e99ea364cfed692e562f0ec87380f13ad8c7f820a'
 
 /**
  * The preset-eval row's `plugins:` block, de-indented back to the directory

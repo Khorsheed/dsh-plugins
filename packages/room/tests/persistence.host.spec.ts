@@ -208,6 +208,7 @@ describe('room journal persistence', () => {
           const unstored = session.snapshotEvents().slice(cold.events.length)
           if (unstored.length > 0) await handle.append(unstored)
           ctxB.sessions.enter(session)
+          ctxB.sessions.announce(session)
           return { agent: { id: resumeSessionId, session }, dispose: async () => { await handle.close() } }
         },
       })

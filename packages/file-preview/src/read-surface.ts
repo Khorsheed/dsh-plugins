@@ -22,7 +22,8 @@
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { BashWriteCollector, type CapturedWrite } from './bash-writes.ts'
-import { foldFilePreview, foldFilePreviewByTurn, type TurnFilesByTurn } from './fold.ts'
+import { foldFilePreview, foldFilePreviewByTurn, type TurnFilesByTurn, type FilePreviewPatchParser } from './fold.ts'
+import { loadFilePreviewPatchParser } from './patch.ts'
 import type { FilePreviewEntry, FilePreviewList, FilePreviewRead, FilePreviewTurnFile, FilePreviewTurnMap } from './types.ts'
 
 /** Extensions treated as binary without reading (their text decode is meaningless). */
@@ -127,6 +128,8 @@ export interface FilePreviewFoldCore {
   readonly cwd: string | undefined
   /** Cap on returned entries (`list` only). */
   readonly maxFiles: number
+  /** Optional rc1 patch parser used to recover Add operations omitted from result diffs. */
+  readonly parsePatch?: FilePreviewPatchParser | undefined
 }
 
 /** Shared inputs of the read core: the fold core plus the per-kind read caps. */
@@ -203,7 +206,7 @@ export async function listFilePreview(
   events: readonly SessionEvent[],
   captured: ReadonlyMap<string, CapturedWrite> | undefined,
 ): Promise<FilePreviewList> {
-  const folded = foldFilePreview(events, core.maxFiles)
+  const folded = foldFilePreview(events, core.maxFiles, core.parsePatch)
   let entries: readonly FilePreviewEntry[] = folded.entries
   if (captured !== undefined && captured.size > 0) {
     const seen = new Set(entries.map(entry => entry.path))
@@ -493,6 +496,8 @@ export interface FilePreviewReadSource {
    * collected from the same session events and merged into `list`/`turnFiles`
    * (default true, as the service). */
   readonly captureBashWrites?: boolean
+  /** Test/host override for the rc1 parser; absent loads the optional official package. */
+  readonly parsePatch?: FilePreviewPatchParser | undefined
 }
 
 /**
@@ -545,6 +550,9 @@ export function createFilePreviewReadSurface(source: FilePreviewReadSource): Fil
     maxFiles: source.maxFiles ?? 500,
   }
   const cwd = source.cwd
+  const patchParser: Promise<FilePreviewPatchParser | undefined> = source.parsePatch === undefined
+    ? loadFilePreviewPatchParser()
+    : Promise.resolve(source.parsePatch)
   const collector = source.captureBashWrites === false
     ? undefined
     : new BashWriteCollector({ fs: source.fs, maxFiles: resolved.maxFiles })
@@ -565,7 +573,7 @@ export function createFilePreviewReadSurface(source: FilePreviewReadSource): Fil
     list: async () => {
       const events = source.events()
       const captured = await capturedAt(events, eventsWatermark(events))
-      return listFilePreview({ fs: source.fs, cwd, maxFiles: resolved.maxFiles }, events, captured)
+      return listFilePreview({ fs: source.fs, cwd, maxFiles: resolved.maxFiles, parsePatch: await patchParser }, events, captured)
     },
     turnFiles: async () => {
       const events = source.events()
@@ -574,7 +582,7 @@ export function createFilePreviewReadSurface(source: FilePreviewReadSource): Fil
       if (turnCache !== undefined && turnCache.asOfSeq === asOfSeq) {
         byTurn = turnCache.byTurn
       } else {
-        byTurn = foldFilePreviewByTurn(events)
+        byTurn = foldFilePreviewByTurn(events, await patchParser)
         turnCache = { asOfSeq, byTurn }
       }
       const captured = await capturedAt(events, asOfSeq)

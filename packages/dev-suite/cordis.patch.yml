@@ -162,8 +162,10 @@
             config:
               - id: tool-subagent-control
                 name: '@deepseek-ai/dsh-tool-subagent-control'
+              # rc1 folds list_agents into tool-subagent-control; only the older export gets its own row.
               - id: tool-subagent-list-agents
                 name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+                disabled: !!js process.getBuiltinModule('node:module').createRequire(baseUrl)('@deepseek-ai/dsh-tool-subagent-control/package.json').exports?.['./list-agents'] === undefined
               - id: tool-subagent
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:

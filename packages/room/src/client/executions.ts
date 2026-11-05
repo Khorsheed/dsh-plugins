@@ -27,7 +27,7 @@ function tokensOf(execution: RoomExecution | undefined): { tokens?: number } {
 /** One row per delivery/attempt, not one row per persistent member session. */
 export function executionRows(state: RoomState): ExecutionRow[] {
   const coordinator = state.members.find(member => state.coordinator === undefined ? member.kind === 'main-agent' : member.id === state.coordinator.memberId)
-  const history = new Map<string, RoomExecution>((state.executions ?? state.runs.map(run => ({ ...run, id: run.runId ?? `${run.member}:${run.startedAt}` }))).map(run => [run.id, run]))
+  const history = new Map<string, RoomExecution>((state.executions ?? state.runs.map(run => ({ ...run, id: run.runId ?? `${run.member}:${run.startedAt}` }))).map(run => [run.runId ?? run.id, run]))
   const rows: ExecutionRow[] = []
   for (const delivery of state.deliveries ?? []) {
     const execution = history.get(delivery.id)

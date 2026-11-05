@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: deepseek-ai/deepseek-harness
-          ref: dsh-v0.2.1-rc.5
+          ref: dsh-v0.2.2-rc.1
           path: deepseek-harness
           fetch-depth: 1
 

@@ -66,6 +66,7 @@ beforeEach(() => {
   registry = new Map()
   vi.stubGlobal('Highlight', FakeHighlight)
   vi.stubGlobal('CSS', {
+    supports: () => false,
     highlights: {
       set: (name: string, highlight: FakeHighlight) => { registry.set(name, highlight) },
       delete: (name: string) => { registry.delete(name) },

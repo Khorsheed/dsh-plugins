@@ -17,7 +17,7 @@ const ORIGIN = Symbol.for('dsh.tool.origin')
 const tagged = (name: string, owner: string, channel = 'plugin') => ({ name, [ORIGIN]: { channel, owner } })
 
 /** Fake host services: the member's live session, one preset whose scope sees a plugin tool, a room tool, a family tool, a built-in and an untagged one. */
-function host(others: Record<string, unknown> = {}) {
+function host(others: Record<string, unknown> = {}, options: { batched?: boolean } = {}) {
   const ctx = new Context()
   const appended: { type: string; data: unknown }[] = []
   const session = {
@@ -35,12 +35,15 @@ function host(others: Record<string, unknown> = {}) {
     ['plain', { name: 'plain' }],
   ])
   const inScope = (scope?: object) => (scope as { session?: unknown } | undefined)?.session === session
-  const execute = vi.fn(async (_exec: { name: string; agent: { id: string; session: unknown } }) => ({ isError: false, content: [{ type: 'text', text: 'project: 第3期' }] }))
+  const outcome = { isError: false, content: [{ type: 'text', text: 'project: 第3期' }] }
+  const execute = vi.fn(async (_exec: { name: string; agent: { id: string; session: unknown } }) =>
+    options.batched === true ? { results: [{ result: outcome }] } : outcome)
   ctx.provide('sessions' as never, { get: (id: string) => id === 'child-codex' ? session : others[id] } as never)
   ctx.provide('agentPresets' as never, { resolve: async (id?: string) => ({ id: id ?? 'default' }), mount } as never)
   ctx.provide('tools' as never, {
     schemas: (scope?: object) => inScope(scope) ? [...definitions.keys()].map(name => ({ name, description: `${name} tool`, parameters: { type: 'object', properties: {} } })) : [],
     get: (name: string, scope?: object) => inScope(scope) ? definitions.get(name) : undefined,
+    ...options.batched === true ? { executable: () => undefined } : {},
     execute,
   } as never)
   return { ctx, session, appended, mount, execute, definitions }
@@ -74,6 +77,16 @@ describe('PresetToolHost', () => {
     expect(tools.memberOf({ id: 'child-codex', session: h.session })).toBeUndefined()
     expect(await tools.call('child-codex', 'dsh-video', 'bash', {}, signal)).toMatchObject({ isError: true })
     expect(h.execute).toHaveBeenCalledOnce()
+  })
+
+  it('uses the batch API when the host exposes scoped executors', async () => {
+    const h = host({}, { batched: true })
+    const result = await new PresetToolHost(h.ctx).call('child-codex', 'dsh-video', 'video_read', { project: 'p' }, new AbortController().signal)
+    expect(result).toEqual({ content: [{ type: 'text', text: 'project: 第3期' }], isError: false })
+    expect(h.execute).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      calls: [expect.objectContaining({ name: 'video_read', arguments: '{"project":"p"}' })],
+    }))
+    expect(h.execute.mock.calls[0]![0]).not.toHaveProperty('arguments')
   })
 
   it('announces each stand-in it composes and disposes, so per-agent grants can reach it', async () => {

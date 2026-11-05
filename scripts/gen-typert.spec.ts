@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { acquireTypertLock, copyTypertPackageSources, copyTypertSiblingTypes, dualShapeCodecs, harnessGitState, isTypertCacheFresh, releaseTypertLock, selectTypertPackages, typertFileHash, typertInputHash, typertSiblingTypePaths, TYPERT_PACKAGES, writeTypertCache } from './gen-typert.mts'
+import { acquireTypertLock, copyHarnessEntry, copyTypertPackageSources, copyTypertSiblingTypes, dualShapeCodecs, harnessGitState, isTypertCacheFresh, releaseTypertLock, selectTypertPackages, typertFileHash, typertInputHash, typertSiblingTypePaths, TYPERT_PACKAGES, writeTypertCache } from './gen-typert.mts'
 
 const temporaryRoots: string[] = []
 
@@ -186,6 +186,26 @@ describe('typert freshness cache', () => {
     const notGit = mkdtempSync(join(tmpdir(), 'dsh-typert-harness-'))
     temporaryRoots.push(notGit)
     expect(harnessGitState(notGit)).toBeNull()
+  })
+})
+
+describe('harness entry copies', () => {
+  it('removes an interrupted clone before the plain-copy fallback', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-typert-clone-fallback-'))
+    temporaryRoots.push(root)
+    const source = join(root, 'source')
+    const target = join(root, 'target')
+    mkdirSync(source, { recursive: true })
+    writeFileSync(join(source, 'package.json'), '{"name":"fixture"}\n')
+
+    copyHarnessEntry(source, target, () => {
+      mkdirSync(join(target, '.pnpm', 'lie@3.3.0', 'node_modules'), { recursive: true })
+      writeFileSync(join(target, '.pnpm', 'lie@3.3.0', 'node_modules', 'partial'), 'interrupted')
+      throw new Error('clonefile failed')
+    })
+
+    expect(readFileSync(join(target, 'package.json'), 'utf8')).toBe('{"name":"fixture"}\n')
+    expect(existsSync(join(target, '.pnpm'))).toBe(false)
   })
 })
 

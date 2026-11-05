@@ -12,6 +12,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { bindScopeParent, createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import * as NativeToolExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import { afterEach, describe, expect, it } from 'vitest'
 import { apply as agentApply } from '../src/agent.ts'
 import { apply as coreApply } from '../src/index.ts'
@@ -42,6 +43,7 @@ async function bootRoot(): Promise<{ root: Context; skills: ReturnType<typeof fa
   const root = new Context()
   await root.plugin(SystemPrompt)
   await root.plugin(ToolRuntime)
+  await root.plugin(NativeToolExecutor)
   const skills = fakeSkills()
   root.provide('skills', skills)
   const fs = new FakeFs()

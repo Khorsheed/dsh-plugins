@@ -31,7 +31,7 @@ The design's migration row S6 says room should stop storing numbers and read the
 - **Views.**
   - `RoomSpeechView`'s usage chip uses `roundUsage`. The panel title says which figure it is: 「本轮用量（CLI 报告）」 or 「本轮用量（逐次合计）」, and a legacy row keeps 「本轮用量」. A gap adds a quiet meta-styled hint next to the round: 「逐次合计比 CLI 报告少 {n}，可能有未记录的内部调用」 / "Calls sum to {n} less than the CLI total; possibly unrecorded internal calls", plus a "more" variant. It sits last in the action row and wraps onto its own line on a narrow reply; the breakdown panel repeats it in full.
   - `RoomCompactionView` now gets `roomStore` injected and reads through `compactionNumbers`.
-  - `memberUsage` (stats chip), `executionRows` (tasks) and `team.ts` (team page) add the same per-round figure.
+  - `memberUsage` (stats chip), `executionRows` (tasks) and `team.ts` (team page) add the same per-round figure. A delivery row joins its execution by `runId`, never by an independently rendered execution id; the delivery's own identity and state remain authoritative.
 - **Decision-model usage** is untouched and stays only on `room/decision`.
 
 ## Alternatives considered

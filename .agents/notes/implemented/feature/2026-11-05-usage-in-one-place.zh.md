@@ -31,7 +31,7 @@ Status: implemented
 - **界面。**
   - `RoomSpeechView` 的用量 chip 改用 `roundUsage`。面板标题注明数字来源：「本轮用量（CLI 报告）」或「本轮用量（逐次合计）」，旧行仍是「本轮用量」。有差额时在该轮旁加一句 meta 样式的轻提示：「逐次合计比 CLI 报告少 {n}，可能有未记录的内部调用」/ "Calls sum to {n} less than the CLI total; possibly unrecorded internal calls"，另有「多」的版本。提示放在操作行最后，回复较窄时单独折到下一行；用量明细面板里也完整重复一遍。
   - `RoomCompactionView` 新注入 `roomStore`，经 `compactionNumbers` 读数。
-  - `memberUsage`（统计 chip）、`executionRows`（任务页）、`team.ts`（团队页）累加的都是每轮显示的同一个数。
+  - `memberUsage`（统计 chip）、`executionRows`（任务页）、`team.ts`（团队页）累加的都是每轮显示的同一个数。投递行按 `runId` 关联执行，不按另一个展示用的执行 id；投递自身的身份和状态仍然优先。
 - **决策模型调用的用量**不动，仍只在 `room/decision` 上。
 
 ## Alternatives considered

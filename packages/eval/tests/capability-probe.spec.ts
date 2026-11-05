@@ -27,12 +27,14 @@ const SNAPSHOT_SHA = 'b'.repeat(64)
 function generatedPatch(preset: string): string {
   return `- id: system-prompt
   config:
-    persona: >-
+    personaPrefix: >-
       You are a coding agent powered by the {{model}} model.
 
-- id: tools
-  config:
-    mode: !!js process.env.DSH_TOOLS_MODE
+- id: tool-executor-native
+  disabled: !!js "!['native', undefined].includes(process.env.DSH_TOOLS_MODE)"
+
+- id: tool-executor-ptc
+  disabled: !!js process.env.DSH_TOOLS_MODE !== 'ptc'
 
 - insert:
     - id: ptc-runtime

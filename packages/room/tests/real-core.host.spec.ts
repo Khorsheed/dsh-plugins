@@ -23,6 +23,7 @@ import * as localAgent from '@khorsheed/dsh-local-agent'
 import type { LocalAgentDelegationIntent, LocalAgentExecutionEndEvent, LocalAgentExecutionStartEvent, LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
 import { appendMirrorStep, closeMirrorTurn, openMirrorTurn } from '../../local-agent/src/mirror-step.ts'
 import RoomService from '../src/index.ts'
+import { executionRows } from '../src/client/executions.ts'
 import { MEMBER_UNRECONCILED_TEXT } from '../src/dispatch.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
@@ -48,7 +49,7 @@ afterEach(async () => {
 })
 
 /** Mount the local-agent core (again, after a "crash") on a context that already carries the host and room. */
-const current: { registry?: LocalAgentRegistry; rounds: Round[]; reportedTotal?: TokenUsage } = { rounds: [] }
+const current: { registry?: LocalAgentRegistry; rounds: Round[]; suppressSettlement: boolean; reportedTotal?: TokenUsage } = { rounds: [], suppressSettlement: false }
 
 async function mountCore(ctx: Context, homes: string, rounds: Round[]): Promise<{ registry: LocalAgentRegistry; dispose: () => Promise<void> }> {
   const fiber = ctx.plugin(localAgent, { homesRoot: homes })
@@ -66,6 +67,7 @@ async function mountCore(ctx: Context, homes: string, rounds: Round[]): Promise<
   // on whichever core is mounted now.
   current.registry = registry
   current.rounds = rounds
+  current.suppressSettlement = false
   if (ctx.get('subagents') === undefined) {
     ctx.provide('subagents', {
       getProvider: (name: string) => name === PROVIDER ? { name } : undefined,
@@ -97,7 +99,7 @@ async function providerStart(registry: LocalAgentRegistry, ctx: Context, request
     const result = new Promise<SubagentResult>((resolve) => { settle = resolve })
     let done = false
     const release = (stop: SubagentResult['stopReason'] = 'completed'): void => {
-      if (done) return
+      if (current.suppressSettlement || done) return
       done = true
       appendMirrorStep(child, turn, 1, { blocks: [{ kind: 'text', text: `answer to ${prompt.slice(-12)}` }], usage: { inputTokens: 10, outputTokens: 2 } as TokenUsage }, { provider: PROVIDER, model: 'm' })
       closeMirrorTurn(child, turn, stop, 'stopped')
@@ -272,6 +274,8 @@ describe('room on the real local-agent core', () => {
     const dir = join(bench.homes, '.member-inbox')
     const file = join(dir, readdirSync(dir).find(name => name.endsWith('.json'))!)
     const crashed = readFileSync(file, 'utf8')
+    // Simulate process loss, not a graceful stop that settles the old round as cancelled.
+    current.suppressSettlement = true
     await bench.core.dispose()
     writeFileSync(file, crashed)
     const rounds: Round[] = []
@@ -316,5 +320,7 @@ describe('room on the real local-agent core', () => {
       outcome: 'done', turns: [1], calls: 1, callUsage: { inputTokens: 10, outputTokens: 2 }, providerReportedUsage: { inputTokens: 1_300, outputTokens: 2 },
     } })
     expect(run).not.toHaveProperty('tokens')
+    expect(run?.runId).toEqual(expect.any(String))
+    expect(executionRows(state.value).find(row => row.id === run!.runId)).toMatchObject({ tokens: 1_302, execution: { executionId: run!.executionId } })
   })
 })

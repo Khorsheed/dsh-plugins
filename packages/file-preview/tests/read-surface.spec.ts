@@ -344,4 +344,17 @@ describe('createFilePreviewReadSurface — lifecycle and source discipline', () 
     const list = await surface.list()
     expect(list.entries.map(entry => entry.path)).toEqual(['notes.md', 'src/a.ts'])
   })
+
+  it('uses the optional patch parser identically through Remote and the direct surface', async () => {
+    const events = [
+      toolCall(1, 'apply_patch', { input: '*** Begin Patch\n*** Add File: added.md\n+created\n*** End Patch' }, 1, 1),
+      toolResult(2, 1, { diffs: [], stopped: false }, 1, 2, false, 1),
+    ]
+    const { fs } = makeContainedFs({ '/work/added.md': 'created\n' })
+    const { service } = await makeServiceSide(fs, events)
+    const surface = createFilePreviewReadSurface({ events: () => events, cwd: '/work', fs })
+    expect(await surface.list()).toEqual(await service.list('s1'))
+    expect(await surface.turnFiles()).toEqual(await service.turnFiles('s1'))
+    expect((await surface.list()).entries[0]).toMatchObject({ path: 'added.md', lastDiff: { oldText: null, newText: 'created\n' } })
+  })
 })

@@ -16,6 +16,7 @@ import type { LocalAgentExecutionReading } from '@khorsheed/dsh-local-agent/type
 import { RoomSpeechView } from '../src/client/RoomSpeechView.tsx'
 import { RoomCompactionView } from '../src/client/RoomCompactionView.tsx'
 import { memberUsage } from '../src/client/RoomStatsLine.tsx'
+import { executionRows } from '../src/client/executions.ts'
 import { roundUsage, usageGapTolerance } from '../src/client/round-usage.ts'
 import { RoomStore, type RoomGateway } from '../src/client/room-store.ts'
 import { en, zh } from '../src/client/locales.ts'
@@ -153,5 +154,19 @@ describe('member totals read the same line', () => {
       run({ id: 'c', executionId: undefined, tokens: 500 }),
     ] }
     expect(memberUsage(state)).toEqual([expect.objectContaining({ member: 'ada', rounds: 3, tokens: 12_400 + 1_100 + 500 })])
+  })
+})
+
+describe('delivery rows fed by the reading', () => {
+  it('joins a delivery to its execution by runId, retaining the delivery identity and state', () => {
+    const rows = executionRows({ ...STATE,
+      executions: [
+        run({ id: 'execution:e1', runId: '7:m-ada', reading: reading({ callUsage: { inputTokens: 300, outputTokens: 50 } }) }),
+        run({ id: 'execution:e2', runId: '8:m-ada', executionId: 'e2', reading: reading({ executionId: 'e2', callUsage: { inputTokens: 1_000, outputTokens: 100 } }) }),
+      ],
+      deliveries: [{ id: '7:m-ada', dispatchSeq: 7, memberId: 'm-ada', status: 'done', origin: 'human', text: 'First task', queuedAt: 1 }],
+    })
+    expect(rows.find(row => row.id === '7:m-ada')).toMatchObject({ status: 'done', tokens: 350, execution: { executionId: 'e1' } })
+    expect(rows).toHaveLength(2)
   })
 })

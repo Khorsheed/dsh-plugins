@@ -324,6 +324,18 @@ export function typertSiblingTypePaths(
   return paths
 }
 
+/** Copy one harness entry without letting an interrupted clone poison the plain-copy fallback. */
+export function copyHarnessEntry(source: string, target: string, clone: () => void = () => {
+  execFileSync('cp', ['-c', '-R', source, target])
+}): void {
+  try {
+    clone()
+  } catch {
+    rmSync(target, { recursive: true, force: true })
+    cpSync(source, target, { recursive: true, verbatimSymlinks: true })
+  }
+}
+
 /** Rebuild the overlay from the harness checkout, selected plugin packages overlaid. */
 async function buildOverlay(packages: readonly TypertPackage[]): Promise<void> {
   const ts = await import(pathToFileURL(join(harness, 'node_modules/typescript/lib/typescript.js')).href) as JsoncParser
@@ -332,12 +344,7 @@ async function buildOverlay(packages: readonly TypertPackage[]): Promise<void> {
   for (const entry of HARNESS_ENTRIES) {
     const source = join(harness, entry)
     if (!existsSync(source)) throw new Error(`gen-typert: harness entry ${source} not found — build a current checkout or set DSH_HARNESS`)
-    // APFS clonefile keeps the copy cheap; fall back to a plain copy elsewhere.
-    try {
-      execFileSync('cp', ['-c', '-R', source, join(overlay, entry)])
-    } catch {
-      cpSync(source, join(overlay, entry), { recursive: true, verbatimSymlinks: true })
-    }
+    copyHarnessEntry(source, join(overlay, entry))
   }
   copyTypertPackageSources(packages, repoRoot, overlay)
   copyTypertSiblingTypes(packages, repoRoot, overlay)

@@ -83,10 +83,27 @@ interface AgentLike {
   ctx?: Context
   [DESK]?: { readonly session: SessionLike; readonly role: 'coordinator' | 'member'; readonly member: string; readonly runId?: string }
 }
+interface ToolOutcome {
+  readonly isError: boolean
+  readonly content: readonly { readonly type: string; readonly text?: string; readonly data?: string; readonly mediaType?: string; readonly mimeType?: string }[]
+}
+interface LegacyToolExecution {
+  callId: never
+  name: string
+  arguments: unknown
+  agent: AgentLike
+  signal: AbortSignal
+}
+interface BatchedToolExecution {
+  calls: { type: 'tool-call'; id: never; name: string; arguments: string }[]
+  agent: AgentLike
+  signal: AbortSignal
+}
 interface ToolsLike {
   schemas(scope?: object): readonly { readonly name: string; readonly description?: string; readonly parameters?: unknown }[]
   get(name: string, scope?: object): object | undefined
-  execute(exec: { callId: never; name: string; arguments: unknown; agent: AgentLike; signal: AbortSignal }): Promise<{ readonly isError: boolean; readonly content: readonly { readonly type: string; readonly text?: string; readonly data?: string; readonly mediaType?: string; readonly mimeType?: string }[] }>
+  executable?: unknown
+  execute(exec: LegacyToolExecution | BatchedToolExecution): Promise<ToolOutcome | { results: { result: ToolOutcome }[] }>
 }
 interface PresetsLike {
   resolve(id?: string): Promise<{ readonly id: string }>
@@ -310,8 +327,14 @@ export class PresetToolHost {
     if (tools === undefined || agent === undefined) return { content: [{ type: 'text', text: 'Mode tools are unavailable on this host' }], isError: true }
     this.markDesk(agent, desk)
     if (!isPluginTool(tools.get(name, agent))) return { content: [{ type: 'text', text: `Unknown tool ${name} in mode ${preset}` }], isError: true }
-    const result = await tools.execute({ callId: `bridge-${randomUUID()}` as never, name, arguments: args, agent, signal })
-    return { content: mcpContent(result.content), isError: result.isError }
+    const execution: LegacyToolExecution = { callId: `bridge-${randomUUID()}` as never, name, arguments: args, agent, signal }
+    // rc1 dispatches a batch through the selected scoped executor; older hosts
+    // accept one call. `executable` is the public capability added with batching.
+    const result = await tools.execute(tools.executable === undefined ? execution : {
+      calls: [{ type: 'tool-call', id: execution.callId, name, arguments: JSON.stringify(args) }], agent, signal,
+    })
+    const settled = 'results' in result ? result.results[0]!.result : result
+    return { content: mcpContent(settled.content), isError: settled.isError }
   }
 
   /**

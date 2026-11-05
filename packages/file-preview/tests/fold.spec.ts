@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { parsePatch } from '@deepseek-ai/dsh-fs-patch'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -18,7 +19,7 @@ function toolCall(seq: number, name: string, args: unknown, turn = 1, step = 1):
 }
 
 /** Build one write/edit tool result carrying a presentation diff. */
-function toolResult(seq: number, diffs: JsonValue, turn = 1, step = 2): SessionEvent<'tool/result'> {
+function toolResult(seq: number, diffs: JsonValue, turn = 1, step = 2, isError = false, callSeq = seq): SessionEvent<'tool/result'> {
   return {
     seq,
     time: seq,
@@ -26,7 +27,7 @@ function toolResult(seq: number, diffs: JsonValue, turn = 1, step = 2): SessionE
     data: {
       turn,
       step,
-      message: createToolResultMessage({ callId: `call-${seq}` as ToolCallId, content: [{ type: 'text', text: 'ok' }], isError: false }),
+      message: createToolResultMessage({ callId: `call-${callSeq}` as ToolCallId, content: [{ type: 'text', text: 'ok' }], isError }),
       meta: diffs,
     },
   }
@@ -511,5 +512,77 @@ describe('foldFilePreviewByTurn', () => {
     const result = foldFilePreview(events, 500)
     expect(result.entries[0]).toMatchObject({ path: 'render.html', op: 'edit' })
     expect(result.entries[0]?.diffs).toHaveLength(1)
+  })
+})
+
+describe('apply_patch folds', () => {
+  const patch = `*** Begin Patch
+*** Add File: added.md
++one
++two
+*** Update File: updated.md
+@@
+-old
++new
+*** Delete File: deleted.md
+*** Update File: moved-from.md
+*** Move to: moved-to.md
+@@
+-from
++to
+*** End Patch`
+  const metadata = [
+    { path: 'updated.md', oldText: 'old\n', newText: 'new\n' },
+    { path: 'deleted.md', oldText: 'gone\n', newText: '' },
+    { path: 'moved-from.md', oldText: 'from\n', newText: '' },
+    { path: 'moved-to.md', oldText: 'from\n', newText: 'to\n' },
+  ]
+  const nativeEvents = (stopped = false, failed = false): SessionEvent[] => [
+    toolCall(0, 'apply_patch', { input: patch }, 4, 2),
+    toolResult(1, { diffs: metadata, stopped }, 4, 3, failed, 0),
+  ]
+
+  it('folds a successful native Add/Update/Delete/Move in patch order', () => {
+    const entries = foldFilePreview(nativeEvents(), 500, parsePatch).entries
+    expect(entries.map(entry => entry.path)).toEqual(['added.md', 'updated.md', 'deleted.md', 'moved-from.md', 'moved-to.md'])
+    expect(entries[0]).toMatchObject({ op: 'write', lastDiff: { oldText: null, newText: 'one\ntwo\n' } })
+    expect(entries[2]?.lastDiff).toEqual({ oldText: 'gone\n', newText: '' })
+    expect(entries[3]?.lastDiff).toEqual({ oldText: 'from\n', newText: '' })
+    expect(entries[4]?.lastDiff).toEqual({ oldText: 'from\n', newText: 'to\n' })
+    expect(Object.fromEntries(foldFilePreviewByTurn(nativeEvents(), parsePatch).get(4)!)).toMatchObject({
+      'added.md': { added: 2, removed: 0 },
+      'updated.md': { added: 1, removed: 1 },
+      'deleted.md': { added: 0, removed: 1 },
+      'moved-from.md': { added: 0, removed: 1 },
+      'moved-to.md': { added: 1, removed: 1 },
+    })
+  })
+
+  it('folds a successful PTC patch with the root call location', () => {
+    const events = [
+      toolCall(0, 'run_code', { code: '…' }, 4, 2),
+      ptcDispatch(1, 'apply_patch', { input: patch }, 0, false, { diffs: metadata }),
+    ]
+    expect(foldFilePreview(events, 500, parsePatch).entries[0]).toMatchObject({
+      path: 'added.md', op: 'write', turn: 4, step: 2,
+      lastDiff: { oldText: null, newText: 'one\ntwo\n' },
+    })
+    expect(foldFilePreviewByTurn(events, parsePatch).get(4)?.get('added.md')).toMatchObject({ added: 2, removed: 0 })
+  })
+
+  it('keeps only proven metadata for stopped or failed calls and never invents a creation', () => {
+    for (const events of [nativeEvents(true), nativeEvents(false, true)]) {
+      const entries = foldFilePreview(events, 500, parsePatch).entries
+      expect(entries.map(entry => entry.path)).toEqual(['updated.md', 'deleted.md', 'moved-from.md', 'moved-to.md'])
+      expect(foldFilePreviewByTurn(events, parsePatch).get(4)?.has('added.md')).toBe(false)
+    }
+    const failed = [toolCall(0, 'run_code', {}, 4, 1), ptcDispatch(1, 'apply_patch', { input: patch }, 0, true, { diffs: metadata })]
+    expect(foldFilePreview(failed, 500, parsePatch).entries).toEqual([])
+  })
+
+  it('retains the metadata-only fallback when the optional parser is absent', () => {
+    expect(foldFilePreview(nativeEvents(), 500).entries.map(entry => entry.path))
+      .toEqual(['updated.md', 'deleted.md', 'moved-from.md', 'moved-to.md'])
+    expect(foldFilePreviewByTurn(nativeEvents()).get(4)?.has('added.md')).toBe(false)
   })
 })

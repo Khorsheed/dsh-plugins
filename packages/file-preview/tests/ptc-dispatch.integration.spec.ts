@@ -8,6 +8,7 @@ import type { PtcRunRequest, PtcRunResult, PtcRunSpec } from '@deepseek-ai/dsh-p
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
+import * as PtcToolExecutor from '@deepseek-ai/dsh-tool-executor-ptc'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -41,19 +42,22 @@ describe('official PTC dispatch integration', () => {
     try {
       provideWorkingDirectoryFixture(ctx, dir)
       await ctx.plugin(SystemPrompt)
-      await ctx.plugin(ToolRuntime, { mode: 'ptc' })
+      await ctx.plugin(ToolRuntime)
       await ctx.plugin(LocalFileSystem, { cwd: dir })
       await ctx.plugin(ToolFs)
       await ctx.plugin(WriteEditRuntime)
+      await ctx.plugin(PtcToolExecutor)
       const session = Session.create(SessionId('file-preview-ptc'))
       const agent = { ctx, session } as Agent
       const callId = ToolCallId('file-preview-ptc-run')
       const args = { code: 'create then edit new.md', description: 'Exercise real PTC file tools' }
       session.append('tool/call', { turn: 3, step: 2, callId, name: 'run_code', arguments: JSON.stringify(args) })
-      const result = await ctx.tools.execute({
-        signal: new AbortController().signal, callId, name: 'run_code', arguments: args, agent,
+      const batch = await ctx.tools.execute({
+        calls: [{ type: 'tool-call', id: callId, name: 'run_code', arguments: JSON.stringify(args) }],
+        signal: new AbortController().signal,
+        agent,
       })
-      expect(result.isError).toBe(false)
+      expect(batch.results[0]?.result.isError).toBe(false)
       expect(await readFile(join(dir, 'new.md'), 'utf8')).toBe('a\nb\nc\n')
 
       const events = session.snapshotEvents()

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/quote/docs/reference.en.md
-packages/quote/docs/reference.en.md: 2c6e0b391823c44146cb5511c23eb77baa15ff8a
-packages/quote/docs/reference.md: d9a3bd8056ba585130b516621c5a249d57928995
+packages/quote/docs/reference.en.md: 18de86874315d9c5e9f34f0b90fff5976b115c7c
+packages/quote/docs/reference.md: c37a6ae0ec6f756f1b7464718dc5fd379c54da9c
