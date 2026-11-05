@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import {
-  KEPT_PLACE_MS, MEMBER_JUMP_TIMEOUT_MS, foreignLocate, forgetSelection, openInMemberSession, rememberSelection, sameSession, takeSelection, type MemberJumpDeps,
+  KEPT_PLACE_MS, MEMBER_JUMP_TIMEOUT_MS, foreignLocate, forgetSelection, openInMemberSession, openMemberSessionAt, rememberSelection, sameSession, takeSelection, type MemberJumpDeps,
 } from '../src/client/member-jump.ts'
 
 /** A manual clock: `tick` runs the scheduled attempt after advancing time. */
@@ -92,6 +92,18 @@ describe('kept panel place', () => {
     expect(foreignLocate(params, 'session-443e7c65')).toBe(false)
     expect(foreignLocate({ locateCall: { callId: 'tool_x' } }, 'room')).toBe(false)
     expect(takeSelection('room', 4, foreignLocate(params, 'room'))).toEqual(place)
+    // A moment handed to a member's lens is another session's navigation too.
+    expect(foreignLocate({ locateTime: { at: 5_050, session: '443e7c65' } }, 'room')).toBe(true)
+    expect(foreignLocate({ locateTime: { at: 5_050, session: '443e7c65' } }, '443e7c65')).toBe(false)
+  })
+
+  it('an unrecorded round hands the member\'s lens a moment, once its session is on screen', () => {
+    const c = clock()
+    let current = 'room'
+    const openTab = vi.fn(() => true)
+    expect(openMemberSessionAt({ openSession: () => { current = 'session-m1' }, currentSession: () => current, openTab, schedule: c.schedule, now: c.now }, 'm1', 5_050)).toBe(true)
+    expect(openTab).toHaveBeenCalledWith({ locateTime: { session: 'm1', at: 5_050 } })
+    expect(openMemberSessionAt({ currentSession: () => current, openTab }, 'm1', 1)).toBe(false)
   })
 
   it('expires', () => {

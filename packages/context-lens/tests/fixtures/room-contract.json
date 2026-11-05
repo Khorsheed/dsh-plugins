@@ -598,6 +598,1032 @@
         "state": "done",
         "text": "已发送压缩命令；该成员不报告压缩数据"
       }
+    },
+    {
+      "type": "user/message",
+      "seq": 44,
+      "time": 1800000000910,
+      "data": {
+        "content": [
+          {
+            "type": "text",
+            "text": "@bea 第三轮，卡住了就问 @[开发剪辑插件](dsh-session:ImhlbHBlci0xIg)"
+          }
+        ],
+        "source": {
+          "kind": "user"
+        },
+        "role": "user",
+        "id": "00000000-0000-4000-8000-000000000020"
+      }
+    },
+    {
+      "type": "room/dispatch",
+      "seq": 45,
+      "time": 1800000000920,
+      "data": {
+        "id": "00000000-0000-4000-8000-000000000021",
+        "requestSignature": "3210200d3b1e05f1bae7547d7bc189e4a05db6839fd5ad351fb0ab8294c1eea8",
+        "targets": [
+          "bea"
+        ],
+        "text": "第三轮，卡住了就问 @[开发剪辑插件](dsh-session:ImhlbHBlci0xIg)",
+        "origin": "human",
+        "task": "00000000-0000-4000-8000-000000000020",
+        "messageId": "00000000-0000-4000-8000-000000000020",
+        "targetIds": [
+          "00000000-0000-4000-8000-000000000001"
+        ]
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 46,
+      "time": 1800000000950,
+      "data": {
+        "id": "45:00000000-0000-4000-8000-000000000001",
+        "dispatchSeq": 45,
+        "memberId": "00000000-0000-4000-8000-000000000001",
+        "state": "running"
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 47,
+      "time": 1800000000960,
+      "data": {
+        "member": "bea",
+        "state": "running",
+        "startedAt": 1800000000930,
+        "runId": "45:00000000-0000-4000-8000-000000000001",
+        "childSessionId": "child-ada",
+        "childFromSeq": 17,
+        "executionId": "00000000-0000-4000-8000-000000000022"
+      }
+    },
+    {
+      "type": "room/speech",
+      "seq": 48,
+      "time": 1800000001010,
+      "data": {
+        "member": "bea",
+        "text": "第三块好了",
+        "childSessionId": "child-ada",
+        "runId": "45:00000000-0000-4000-8000-000000000001",
+        "durationMs": 70
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 49,
+      "time": 1800000001030,
+      "data": {
+        "member": "bea",
+        "runId": "45:00000000-0000-4000-8000-000000000001",
+        "state": "done",
+        "startedAt": 1800000000930,
+        "elapsedMs": 90,
+        "childSessionId": "child-ada",
+        "childTurn": 5,
+        "executionId": "00000000-0000-4000-8000-000000000022"
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 50,
+      "time": 1800000001040,
+      "data": {
+        "id": "45:00000000-0000-4000-8000-000000000001",
+        "dispatchSeq": 45,
+        "memberId": "00000000-0000-4000-8000-000000000001",
+        "state": "done",
+        "text": "第三块好了"
+      }
+    },
+    {
+      "type": "room/dispatch",
+      "seq": 51,
+      "time": 1800000001050,
+      "data": {
+        "id": "00000000-0000-4000-8000-000000000023",
+        "origin": "coordinator",
+        "task": "00000000-0000-4000-8000-000000000020",
+        "targets": [
+          "bea"
+        ],
+        "targetIds": [
+          "00000000-0000-4000-8000-000000000001"
+        ],
+        "text": "做甲",
+        "hop": 1,
+        "from": "legacy:1",
+        "kind": "task",
+        "replyTo": "legacy:1"
+      }
+    },
+    {
+      "type": "room/dispatch",
+      "seq": 52,
+      "time": 1800000001060,
+      "data": {
+        "id": "00000000-0000-4000-8000-000000000024",
+        "origin": "coordinator",
+        "task": "00000000-0000-4000-8000-000000000020",
+        "targets": [
+          "bea"
+        ],
+        "targetIds": [
+          "00000000-0000-4000-8000-000000000001"
+        ],
+        "text": "做乙",
+        "hop": 1,
+        "from": "legacy:1",
+        "kind": "task",
+        "replyTo": "legacy:1"
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 53,
+      "time": 1800000001090,
+      "data": {
+        "id": "51:00000000-0000-4000-8000-000000000001",
+        "dispatchSeq": 51,
+        "memberId": "00000000-0000-4000-8000-000000000001",
+        "state": "running"
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 54,
+      "time": 1800000001100,
+      "data": {
+        "member": "bea",
+        "state": "running",
+        "startedAt": 1800000001070,
+        "runId": "51:00000000-0000-4000-8000-000000000001",
+        "childSessionId": "child-ada",
+        "childFromSeq": 20,
+        "executionId": "00000000-0000-4000-8000-000000000025"
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 55,
+      "time": 1800000001160,
+      "data": {
+        "id": "52:00000000-0000-4000-8000-000000000001",
+        "dispatchSeq": 52,
+        "memberId": "00000000-0000-4000-8000-000000000001",
+        "state": "running"
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 56,
+      "time": 1800000001170,
+      "data": {
+        "member": "bea",
+        "state": "running",
+        "startedAt": 1800000001140,
+        "runId": "52:00000000-0000-4000-8000-000000000001",
+        "childSessionId": "child-ada",
+        "childFromSeq": 23,
+        "executionId": "00000000-0000-4000-8000-000000000026"
+      }
+    },
+    {
+      "type": "room/speech",
+      "seq": 57,
+      "time": 1800000001190,
+      "data": {
+        "member": "bea",
+        "text": "甲做完了",
+        "childSessionId": "child-ada",
+        "runId": "51:00000000-0000-4000-8000-000000000001",
+        "durationMs": 110,
+        "reportedTo": "dsh"
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 58,
+      "time": 1800000001220,
+      "data": {
+        "member": "bea",
+        "runId": "51:00000000-0000-4000-8000-000000000001",
+        "state": "done",
+        "startedAt": 1800000001070,
+        "elapsedMs": 140,
+        "childSessionId": "child-ada",
+        "childTurn": 6,
+        "executionId": "00000000-0000-4000-8000-000000000025"
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 59,
+      "time": 1800000001250,
+      "data": {
+        "id": "51:00000000-0000-4000-8000-000000000001",
+        "dispatchSeq": 51,
+        "memberId": "00000000-0000-4000-8000-000000000001",
+        "state": "done",
+        "text": "甲做完了"
+      }
+    },
+    {
+      "type": "room/speech",
+      "seq": 60,
+      "time": 1800000001270,
+      "data": {
+        "member": "bea",
+        "text": "乙做完了",
+        "childSessionId": "child-ada",
+        "runId": "52:00000000-0000-4000-8000-000000000001",
+        "durationMs": 120,
+        "reportedTo": "dsh"
+      }
+    },
+    {
+      "type": "room/decision",
+      "seq": 61,
+      "time": 1800000001310,
+      "data": {
+        "id": "00000000-0000-4000-8000-000000000027",
+        "scenario": "report-timing",
+        "outcome": "now",
+        "probability": 0.9,
+        "call": {
+          "model": "typesafe",
+          "latencyMs": 10,
+          "request": {
+            "state": {
+              "userRequest": "@bea 第三轮，卡住了就问 @[开发剪辑插件](dsh-session:ImhlbHBlci0xIg)",
+              "coordinatorNotes": [],
+              "userWaitingSeconds": 0,
+              "progress": {
+                "done": 1,
+                "total": 2,
+                "running": [
+                  {
+                    "member": "bea",
+                    "task": "做乙",
+                    "seconds": 0
+                  }
+                ]
+              },
+              "arrived": [
+                {
+                  "from": "bea",
+                  "outcome": "done",
+                  "text": "甲做完了"
+                }
+              ]
+            },
+            "questions": [
+              {
+                "id": "deliver_now",
+                "type": "noul",
+                "instructions": "A coordinating agent delegated work to other agents and their results arrive one by one. The human can already read every result in the room. Should the results that have arrived be handed to the coordinator now? Answer yes when they let it move the work forward (start the next step, answer the human, react to a problem) or when the human has been waiting long enough that an update helps. Answer no when the coordinator said it is waiting for the remaining results and those are still running normally."
+              }
+            ]
+          },
+          "response": [
+            {
+              "id": "deliver_now",
+              "answer": 0.9
+            }
+          ]
+        },
+        "about": {
+          "from": "bea",
+          "to": "dsh"
+        },
+        "task": "00000000-0000-4000-8000-000000000020",
+        "runId": "51:00000000-0000-4000-8000-000000000001",
+        "executionId": "00000000-0000-4000-8000-000000000025"
+      }
+    },
+    {
+      "type": "room/dispatch",
+      "seq": 62,
+      "time": 1800000001320,
+      "data": {
+        "id": "00000000-0000-4000-8000-000000000028",
+        "origin": "report",
+        "task": "00000000-0000-4000-8000-000000000020",
+        "targets": [
+          "dsh"
+        ],
+        "targetIds": [
+          "legacy:1"
+        ],
+        "text": "甲做完了",
+        "hop": 2,
+        "reportFor": "51:00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "type": "room/report-gate",
+      "seq": 63,
+      "time": 1800000001330,
+      "data": {
+        "dispatchSeq": 62,
+        "memberId": "legacy:1",
+        "member": "dsh",
+        "verdict": "deliver",
+        "reason": "model",
+        "probability": 0.9
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 64,
+      "time": 1800000001350,
+      "data": {
+        "member": "bea",
+        "runId": "52:00000000-0000-4000-8000-000000000001",
+        "state": "done",
+        "startedAt": 1800000001140,
+        "elapsedMs": 200,
+        "childSessionId": "child-ada",
+        "childTurn": 7,
+        "executionId": "00000000-0000-4000-8000-000000000026"
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 65,
+      "time": 1800000001370,
+      "data": {
+        "id": "62:legacy:1",
+        "dispatchSeq": 62,
+        "memberId": "legacy:1",
+        "state": "running"
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 66,
+      "time": 1800000001380,
+      "data": {
+        "member": "dsh",
+        "state": "running",
+        "startedAt": 1800000001360,
+        "runId": "62:legacy:1",
+        "childSessionId": "session-00000000-0000-4000-8000-000000000011",
+        "childFromSeq": 66
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 67,
+      "time": 1800000001390,
+      "data": {
+        "id": "52:00000000-0000-4000-8000-000000000001",
+        "dispatchSeq": 52,
+        "memberId": "00000000-0000-4000-8000-000000000001",
+        "state": "done",
+        "text": "乙做完了"
+      }
+    },
+    {
+      "type": "room/decision",
+      "seq": 68,
+      "time": 1800000001400,
+      "data": {
+        "id": "00000000-0000-4000-8000-000000000029",
+        "scenario": "report-timing",
+        "outcome": "now",
+        "rule": "last",
+        "about": {
+          "from": "bea",
+          "to": "dsh"
+        },
+        "task": "00000000-0000-4000-8000-000000000020",
+        "runId": "52:00000000-0000-4000-8000-000000000001",
+        "executionId": "00000000-0000-4000-8000-000000000026"
+      }
+    },
+    {
+      "type": "room/dispatch",
+      "seq": 69,
+      "time": 1800000001410,
+      "data": {
+        "id": "00000000-0000-4000-8000-000000000030",
+        "origin": "report",
+        "task": "00000000-0000-4000-8000-000000000020",
+        "targets": [
+          "dsh"
+        ],
+        "targetIds": [
+          "legacy:1"
+        ],
+        "text": "乙做完了",
+        "hop": 2,
+        "reportFor": "52:00000000-0000-4000-8000-000000000001"
+      }
+    },
+    {
+      "type": "room/report-gate",
+      "seq": 70,
+      "time": 1800000001420,
+      "data": {
+        "dispatchSeq": 69,
+        "memberId": "legacy:1",
+        "member": "dsh",
+        "verdict": "deliver",
+        "reason": "last"
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 71,
+      "time": 1800000001440,
+      "data": {
+        "member": "dsh",
+        "runId": "62:legacy:1",
+        "state": "done",
+        "startedAt": 1800000001360,
+        "elapsedMs": 70,
+        "childSessionId": "session-00000000-0000-4000-8000-000000000011"
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 72,
+      "time": 1800000001460,
+      "data": {
+        "id": "69:legacy:1",
+        "dispatchSeq": 69,
+        "memberId": "legacy:1",
+        "state": "running"
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 73,
+      "time": 1800000001470,
+      "data": {
+        "member": "dsh",
+        "state": "running",
+        "startedAt": 1800000001450,
+        "runId": "69:legacy:1",
+        "childSessionId": "session-00000000-0000-4000-8000-000000000011",
+        "childFromSeq": 73
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 74,
+      "time": 1800000001480,
+      "data": {
+        "id": "62:legacy:1",
+        "dispatchSeq": 62,
+        "memberId": "legacy:1",
+        "state": "done"
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 75,
+      "time": 1800000001500,
+      "data": {
+        "member": "dsh",
+        "runId": "69:legacy:1",
+        "state": "done",
+        "startedAt": 1800000001450,
+        "elapsedMs": 40,
+        "childSessionId": "session-00000000-0000-4000-8000-000000000011"
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 76,
+      "time": 1800000001510,
+      "data": {
+        "id": "69:legacy:1",
+        "dispatchSeq": 69,
+        "memberId": "legacy:1",
+        "state": "done"
+      }
+    },
+    {
+      "type": "room/help",
+      "seq": 77,
+      "time": 1800000001520,
+      "data": {
+        "id": "help0001",
+        "from": "legacy:1",
+        "fromName": "dsh",
+        "target": {
+          "sessionId": "helper-1",
+          "title": "开发剪辑插件"
+        },
+        "text": "第三轮卡住了",
+        "task": "00000000-0000-4000-8000-000000000020"
+      }
+    },
+    {
+      "type": "room/help-state",
+      "seq": 78,
+      "time": 1800000001530,
+      "data": {
+        "help": "help0001",
+        "state": "queued"
+      }
+    },
+    {
+      "type": "room/help-message",
+      "seq": 79,
+      "time": 1800000001550,
+      "data": {
+        "help": "help0001",
+        "kind": "reply",
+        "text": "换个参数就好",
+        "handoff": "无"
+      }
+    },
+    {
+      "type": "room/help-state",
+      "seq": 80,
+      "time": 1800000001560,
+      "data": {
+        "help": "help0001",
+        "state": "replied"
+      }
+    },
+    {
+      "type": "room/dispatch",
+      "seq": 81,
+      "time": 1800000001570,
+      "data": {
+        "id": "00000000-0000-4000-8000-000000000031",
+        "origin": "report",
+        "reportFor": "help:help0001",
+        "targets": [
+          "dsh"
+        ],
+        "targetIds": [
+          "legacy:1"
+        ],
+        "text": "[Help reply from \"开发剪辑插件\" · help help0001]\n换个参数就好\n\nHandoff: 无\n\nCarry on with this in the room. To ask them more, call room_help again with this help id."
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 82,
+      "time": 1800000001590,
+      "data": {
+        "id": "81:legacy:1",
+        "dispatchSeq": 81,
+        "memberId": "legacy:1",
+        "state": "running"
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 83,
+      "time": 1800000001600,
+      "data": {
+        "member": "dsh",
+        "state": "running",
+        "startedAt": 1800000001580,
+        "runId": "81:legacy:1",
+        "childSessionId": "session-00000000-0000-4000-8000-000000000011",
+        "childFromSeq": 83
+      }
+    },
+    {
+      "type": "room/run-state",
+      "seq": 84,
+      "time": 1800000001620,
+      "data": {
+        "member": "dsh",
+        "runId": "81:legacy:1",
+        "state": "done",
+        "startedAt": 1800000001580,
+        "elapsedMs": 30,
+        "childSessionId": "session-00000000-0000-4000-8000-000000000011"
+      }
+    },
+    {
+      "type": "room/delivery-state",
+      "seq": 85,
+      "time": 1800000001630,
+      "data": {
+        "id": "81:legacy:1",
+        "dispatchSeq": 81,
+        "memberId": "legacy:1",
+        "state": "done"
+      }
+    }
+  ],
+  "childRows": [
+    {
+      "type": "turn/start",
+      "seq": 0,
+      "time": 1800000000100,
+      "data": {
+        "turn": 1
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 1,
+      "time": 1800000000130,
+      "data": {
+        "phase": "end",
+        "executionId": "00000000-0000-4000-8000-000000000003",
+        "outcome": "done",
+        "turns": [
+          1
+        ],
+        "endedAt": 1800000000120
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 2,
+      "time": 1800000000220,
+      "data": {
+        "phase": "start",
+        "executionId": "00000000-0000-4000-8000-000000000006",
+        "caller": "room",
+        "operation": "prompt",
+        "parentSessionId": "session-00000000-0000-4000-8000-000000000011",
+        "admittedAt": 1800000000210,
+        "callerRef": "11:00000000-0000-4000-8000-000000000001",
+        "cause": {
+          "kind": "human",
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "dispatchSeq": 11,
+          "via": "room",
+          "messageId": "00000000-0000-4000-8000-000000000004"
+        },
+        "task": {
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "id": "00000000-0000-4000-8000-000000000004"
+        }
+      }
+    },
+    {
+      "type": "turn/start",
+      "seq": 3,
+      "time": 1800000000250,
+      "data": {
+        "turn": 2
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 4,
+      "time": 1800000000270,
+      "data": {
+        "phase": "end",
+        "executionId": "00000000-0000-4000-8000-000000000006",
+        "outcome": "done",
+        "turns": [
+          2
+        ],
+        "endedAt": 1800000000260
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 5,
+      "time": 1800000000370,
+      "data": {
+        "phase": "start",
+        "executionId": "00000000-0000-4000-8000-000000000009",
+        "caller": "room",
+        "operation": "prompt",
+        "parentSessionId": "session-00000000-0000-4000-8000-000000000011",
+        "admittedAt": 1800000000360,
+        "callerRef": "19:00000000-0000-4000-8000-000000000001",
+        "cause": {
+          "kind": "human",
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "dispatchSeq": 19,
+          "via": "room",
+          "messageId": "00000000-0000-4000-8000-000000000007"
+        },
+        "task": {
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "id": "00000000-0000-4000-8000-000000000007"
+        }
+      }
+    },
+    {
+      "type": "turn/start",
+      "seq": 6,
+      "time": 1800000000400,
+      "data": {
+        "turn": 3
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 7,
+      "time": 1800000000440,
+      "data": {
+        "phase": "end",
+        "executionId": "00000000-0000-4000-8000-000000000009",
+        "outcome": "cancelled",
+        "turns": [
+          3
+        ],
+        "endedAt": 1800000000430
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 8,
+      "time": 1800000000490,
+      "data": {
+        "phase": "start",
+        "executionId": "00000000-0000-4000-8000-000000000013",
+        "caller": "room",
+        "operation": "prompt",
+        "parentSessionId": "session-00000000-0000-4000-8000-000000000011",
+        "admittedAt": 1800000000480,
+        "callerRef": "00000000-0000-4000-8000-000000000012",
+        "cause": {
+          "kind": "member",
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "fromMemberId": "child-outsider",
+          "dispatchSeq": 24
+        }
+      }
+    },
+    {
+      "type": "turn/start",
+      "seq": 9,
+      "time": 1800000000510,
+      "data": {
+        "turn": 4
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 10,
+      "time": 1800000000540,
+      "data": {
+        "phase": "end",
+        "executionId": "00000000-0000-4000-8000-000000000013",
+        "outcome": "done",
+        "turns": [
+          4
+        ],
+        "endedAt": 1800000000530
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 11,
+      "time": 1800000000620,
+      "data": {
+        "phase": "start",
+        "executionId": "00000000-0000-4000-8000-000000000016",
+        "caller": "room",
+        "operation": "compact",
+        "parentSessionId": "session-00000000-0000-4000-8000-000000000011",
+        "admittedAt": 1800000000610,
+        "callerRef": "31:00000000-0000-4000-8000-000000000001",
+        "cause": {
+          "kind": "human",
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "dispatchSeq": 31,
+          "via": "room",
+          "messageId": "00000000-0000-4000-8000-000000000014"
+        },
+        "task": {
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "id": "00000000-0000-4000-8000-000000000014"
+        }
+      }
+    },
+    {
+      "type": "local-agent/compaction",
+      "seq": 12,
+      "time": 1800000000670,
+      "data": {
+        "source": "manual",
+        "outcome": "completed",
+        "provider": "kimi-cli",
+        "beforeTokens": 500000,
+        "afterTokens": 40000,
+        "startedAt": 1800000000650,
+        "endedAt": 1800000000660,
+        "boundarySeq": 12
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 13,
+      "time": 1800000000690,
+      "data": {
+        "phase": "end",
+        "executionId": "00000000-0000-4000-8000-000000000016",
+        "outcome": "done",
+        "turns": [],
+        "endedAt": 1800000000680
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 14,
+      "time": 1800000000780,
+      "data": {
+        "phase": "start",
+        "executionId": "00000000-0000-4000-8000-000000000019",
+        "caller": "room",
+        "operation": "compact",
+        "parentSessionId": "session-00000000-0000-4000-8000-000000000011",
+        "admittedAt": 1800000000770,
+        "callerRef": "38:00000000-0000-4000-8000-000000000001",
+        "cause": {
+          "kind": "human",
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "dispatchSeq": 38,
+          "via": "room",
+          "messageId": "00000000-0000-4000-8000-000000000017"
+        },
+        "task": {
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "id": "00000000-0000-4000-8000-000000000017"
+        }
+      }
+    },
+    {
+      "type": "local-agent/compaction",
+      "seq": 15,
+      "time": 1800000000830,
+      "data": {
+        "source": "manual",
+        "outcome": "completed",
+        "provider": "kimi-cli",
+        "startedAt": 1800000000810,
+        "endedAt": 1800000000820,
+        "boundarySeq": 15,
+        "unrecorded": [
+          "usage",
+          "before-after",
+          "summary"
+        ]
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 16,
+      "time": 1800000000850,
+      "data": {
+        "phase": "end",
+        "executionId": "00000000-0000-4000-8000-000000000019",
+        "outcome": "done",
+        "turns": [],
+        "endedAt": 1800000000840
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 17,
+      "time": 1800000000940,
+      "data": {
+        "phase": "start",
+        "executionId": "00000000-0000-4000-8000-000000000022",
+        "caller": "room",
+        "operation": "prompt",
+        "parentSessionId": "session-00000000-0000-4000-8000-000000000011",
+        "admittedAt": 1800000000930,
+        "callerRef": "45:00000000-0000-4000-8000-000000000001",
+        "cause": {
+          "kind": "human",
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "dispatchSeq": 45,
+          "via": "room",
+          "messageId": "00000000-0000-4000-8000-000000000020"
+        },
+        "task": {
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "id": "00000000-0000-4000-8000-000000000020"
+        }
+      }
+    },
+    {
+      "type": "turn/start",
+      "seq": 18,
+      "time": 1800000000970,
+      "data": {
+        "turn": 5
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 19,
+      "time": 1800000000990,
+      "data": {
+        "phase": "end",
+        "executionId": "00000000-0000-4000-8000-000000000022",
+        "outcome": "done",
+        "turns": [
+          5
+        ],
+        "endedAt": 1800000000980
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 20,
+      "time": 1800000001080,
+      "data": {
+        "phase": "start",
+        "executionId": "00000000-0000-4000-8000-000000000025",
+        "caller": "room",
+        "operation": "prompt",
+        "parentSessionId": "session-00000000-0000-4000-8000-000000000011",
+        "admittedAt": 1800000001070,
+        "callerRef": "51:00000000-0000-4000-8000-000000000001",
+        "cause": {
+          "kind": "member",
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "fromMemberId": "legacy:1",
+          "dispatchSeq": 51
+        },
+        "task": {
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "id": "00000000-0000-4000-8000-000000000020"
+        }
+      }
+    },
+    {
+      "type": "turn/start",
+      "seq": 21,
+      "time": 1800000001110,
+      "data": {
+        "turn": 6
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 22,
+      "time": 1800000001130,
+      "data": {
+        "phase": "end",
+        "executionId": "00000000-0000-4000-8000-000000000025",
+        "outcome": "done",
+        "turns": [
+          6
+        ],
+        "endedAt": 1800000001120
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 23,
+      "time": 1800000001150,
+      "data": {
+        "phase": "start",
+        "executionId": "00000000-0000-4000-8000-000000000026",
+        "caller": "room",
+        "operation": "prompt",
+        "parentSessionId": "session-00000000-0000-4000-8000-000000000011",
+        "admittedAt": 1800000001140,
+        "callerRef": "52:00000000-0000-4000-8000-000000000001",
+        "cause": {
+          "kind": "member",
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "fromMemberId": "legacy:1",
+          "dispatchSeq": 52
+        },
+        "task": {
+          "sessionId": "session-00000000-0000-4000-8000-000000000011",
+          "id": "00000000-0000-4000-8000-000000000020"
+        }
+      }
+    },
+    {
+      "type": "turn/start",
+      "seq": 24,
+      "time": 1800000001200,
+      "data": {
+        "turn": 7
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 25,
+      "time": 1800000001240,
+      "data": {
+        "phase": "end",
+        "executionId": "00000000-0000-4000-8000-000000000026",
+        "outcome": "done",
+        "turns": [
+          7
+        ],
+        "endedAt": 1800000001230
+      }
     }
   ],
   "compactCases": [

@@ -1,0 +1,86 @@
+/* Room rounds without records, the 未归轮 note, and a recorded run's execution facts. */
+.notice {
+  margin: 6px 0 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--ri-fill-1, var(--dsw-alias-bg-layer-2));
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 4px;
+  padding: 10px 13px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--ri-fill-1, var(--dsw-alias-bg-layer-2));
+}
+
+.title {
+  font-size: var(--dsh-panel-text-body, 13px);
+  color: var(--dsw-alias-label-primary);
+}
+
+.body {
+  margin: 0;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.doors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.door {
+  display: inline-flex;
+  align-items: center;
+  font-family: inherit;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1, transparent);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.door:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.muted {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 6px 4px 2px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.warn {
+  flex-basis: 100%;
+  color: var(--dsw-alias-state-warning-primary, var(--dsw-alias-label-secondary));
+}
+
+@container dsh-panel (max-width: 560px) {
+  .card {
+    margin: 6px 0;
+    padding: 9px 10px;
+  }
+  .door {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+}

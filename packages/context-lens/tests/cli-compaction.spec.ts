@@ -12,14 +12,16 @@ const turn = (n: number, at: number): SessionLogRow[] => [
 ]
 
 describe('CLI member compactions', () => {
-  it('a /compact between turns belongs to the turn that closed last; a CLI\'s own one to the turn it ran in', () => {
+  it('a /compact between turns has no turn, only the execution its records bracket; a CLI\'s own one belongs to the turn it ran in', () => {
     const rows: SessionLogRow[] = [
       ...turn(1, 100),
+      { type: 'local-agent/execution', seq: 150, time: 205, data: { phase: 'start', executionId: 'e-compact', caller: 'room', operation: 'compact', parentSessionId: 'room', admittedAt: 205 } },
       { type: 'local-agent/compaction', seq: 200, time: 300, data: {
         source: 'manual', outcome: 'completed', provider: 'kimi-cli', model: 'k3.1-pro', summary: '前情提要',
         beforeTokens: 288_536, afterTokens: 44_671, usage: { inputTokens: 266_149, outputTokens: 2_819, cacheReadTokens: 18_944 },
         startedAt: 210, endedAt: 290, boundarySeq: 199,
       } },
+      { type: 'local-agent/execution', seq: 201, time: 310, data: { phase: 'end', executionId: 'e-compact', outcome: 'done', turns: [], endedAt: 310 } },
       { type: 'turn/start', seq: 400, time: 400, data: { turn: 2 } },
       { type: 'local-agent/compaction', seq: 401, time: 450, data: { source: 'auto', outcome: 'failed', provider: 'codex-local', error: 'boom', startedAt: 440, endedAt: 450, boundarySeq: 400 } },
       { type: 'turn/end', seq: 402, time: 500, data: { turn: 2, reason: { kind: 'completed' } } },
@@ -27,17 +29,32 @@ describe('CLI member compactions', () => {
     const built = foldLogRows(openCursor(), rows).filter(request => request.purpose === 'compaction')
     expect(built).toHaveLength(2)
     expect(built[0]).toMatchObject({
-      hostTurn: 1, status: 'ok', startedAt: 210, settledAt: 290, responseSummary: { kind: 'compaction' },
+      executionId: 'e-compact', status: 'ok', startedAt: 210, settledAt: 290, responseSummary: { kind: 'compaction' },
       config: { provider: 'kimi-cli', model: 'k3.1-pro' },
       usage: { inputTokens: 266_149, outputTokens: 2_819, cacheReadTokens: 18_944 },
-      compaction: { applied: true, inputPartial: true, hostTurn: 1, betweenTurns: true, source: 'manual', beforeTokens: 288_536, afterTokens: 44_671 },
+      compaction: { applied: true, inputPartial: true, betweenTurns: true, source: 'manual', beforeTokens: 288_536, afterTokens: 44_671 },
     })
+    // Never filed under the turn that closed last: no record says it belongs there.
+    expect(built[0]!.hostTurn).toBeUndefined()
+    expect(built[0]!.compaction!.hostTurn).toBeUndefined()
     expect(JSON.stringify(built[0]!.response)).toContain('前情提要')
     // No request number of its own: its index sits between the requests around it.
     expect(built[0]!.logIndex).toBe(-0.5)
     expect(built[0]!.requestNumber).toBeUndefined()
     expect(built[1]).toMatchObject({ hostTurn: 2, status: 'failed', error: 'boom', compaction: { source: 'auto', applied: false } })
     expect(built[1]!.compaction!.betweenTurns).toBeUndefined()
+    expect(built[1]!.executionId).toBeUndefined()
+  })
+
+  it('carries what the source did not report, as written', () => {
+    const rows: SessionLogRow[] = [
+      ...turn(1, 100),
+      { type: 'local-agent/compaction', seq: 200, time: 300, data: { source: 'manual', outcome: 'completed', provider: 'claude-code', startedAt: 210, endedAt: 290, boundarySeq: 199, unrecorded: ['usage', 'before-after', 'summary'] } },
+    ]
+    const [request] = foldLogRows(openCursor(), rows).filter(row => row.purpose === 'compaction')
+    expect(request).toMatchObject({ status: 'ok', compaction: { source: 'manual', unrecorded: ['usage', 'before-after', 'summary'] } })
+    expect(request!.usage).toBeUndefined()
+    expect(request!.compaction!.beforeTokens).toBeUndefined()
   })
 
   it('its input is the member\'s folded context at that moment; a bodiless log rebuilds it by its own index', () => {

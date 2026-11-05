@@ -35,6 +35,7 @@
     "src/client/TimingView.tsx",
     "src/client/TokenView.tsx",
     "src/client/RoomDecisionsView.tsx",
+    "src/client/RoomRecords.tsx",
     "src/client/TurnAction.tsx",
     "src/client/TurnMenu.tsx",
     "src/client/wire.ts",

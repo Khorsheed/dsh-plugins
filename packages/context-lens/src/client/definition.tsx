@@ -51,6 +51,16 @@ export interface RequestInspectorTabParams {
     /** The reader's filter and open row on that request: applied to the same request here. */
     readonly view?: import('./member-jump.ts').ReadingView
   }
+  /**
+   * Select the turn holding one moment (a room round with no records handed
+   * over its member run's start): this session's lens shows that time span.
+   */
+  readonly locateTime?: {
+    /** The moment (ms). */
+    readonly at: number
+    /** The session this is for; another session's lens ignores the navigation. */
+    readonly session?: string
+  }
 }
 
 declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {

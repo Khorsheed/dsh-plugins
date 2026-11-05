@@ -19,7 +19,9 @@ function RequestCard({ request: r, selected, onSelect, t }: {
     <span className={css.reqHit} data-low={pct === 0}>{pct === null ? '—' : `${pct.toFixed(1)}%`}</span>
     {/* No usage on a settled ok row is a mirror fold (e.g. a pure-thinking segment), not a failure — only an actual failed status earns the label. */}
     <span className={css.reqIo}>{r.usage ? `${fmtK(inputTotal(r.usage))} → ${fmtK(r.usage.outputTokens)}` : r.status === 'streaming' ? t('req.streaming') : r.status === 'failed' ? t('req.failed') : '—'}</span>
-    <span className={css.reqTime}>{r.totalMs === undefined ? '—' : fmtSpan(r.totalMs)}</span>
+    <span className={css.reqTime} title={r.startUnrecorded === true ? t('req.startUnrecorded') : undefined}>{r.totalMs === undefined ? '—' : fmtSpan(r.totalMs)}</span>
+    {/* Only a whole-round usage exists (codex exec): it is not this call's. */}
+    {r.roundTotal === true && <span className={css.reqFlag}>{t('req.roundTotal')}</span>}
     {(r.toolErrors ?? 0) > 0 && <span className={css.reqFlag}>{t('tool.failures')} {r.toolErrors}</span>}
     {r.status === 'failed' && <span className={css.reqFlag}>{t('req.failed')}</span>}
   </button>

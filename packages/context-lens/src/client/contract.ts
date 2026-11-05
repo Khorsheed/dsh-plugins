@@ -61,6 +61,12 @@ export interface InspectorTabInjected {
    * `uiWorkspace.openSession`; never throws.
    */
   openInMemberSession?: (memberSession: string, target: LocateCallTarget) => void
+  /**
+   * Switch to a room member's own session and open the lens there on the
+   * turn holding `at` (an unrecorded round's 在成员会话里查看). Absent on a
+   * host without `uiWorkspace.openSession`; never throws.
+   */
+  openMemberAt?: (memberSession: string, at: number) => void
 }
 
 /** Full props of the right-Sidebar tab body entry. */

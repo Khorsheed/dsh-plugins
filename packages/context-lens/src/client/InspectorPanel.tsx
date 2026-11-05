@@ -2,6 +2,7 @@ import type { SessionTrend } from '../types.ts'
 import { Trend } from './Trend.tsx'
 import { AgentTabs, ParentLine, ROOM_TAB } from './AgentTabs.tsx'
 import { RoomDecisionsView } from './RoomDecisionsView.tsx'
+import { ExecutionNote, RoomFallbackCard, RoomRecordsNotice, UnattributedNote } from './RoomRecords.tsx'
 /** Session/turn/scope navigation; request detail owns its JSON toggle. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
@@ -46,12 +47,12 @@ function FailureCard({ scope, t }: { readonly scope: AgentScopeOverview; readonl
 
 /** The tab body. */
 /** The list's window facts the panel keeps beside its turns. */
-const listMetaOf = ({ range, unloaded, total }: ListTurnsResult): Pick<ListTurnsResult, 'range' | 'unloaded' | 'total'> =>
-  ({ ...range === undefined ? {} : { range }, ...unloaded === undefined ? {} : { unloaded }, ...total === undefined ? {} : { total } })
+const listMetaOf = ({ range, unloaded, total, roomRecords }: ListTurnsResult): Pick<ListTurnsResult, 'range' | 'unloaded' | 'total' | 'roomRecords'> =>
+  ({ ...range === undefined ? {} : { range }, ...unloaded === undefined ? {} : { unloaded }, ...total === undefined ? {} : { total }, ...roomRecords === undefined ? {} : { roomRecords } })
 
 export function InspectorPanel({
   sessionId: ownSessionId, useTabInfo, t,
-  listTurns, loadTurns, loadThrough, getTurn, getRequest, getTurnTiming, getSessionTrend, openInMemberSession,
+  listTurns, loadTurns, loadThrough, getTurn, getRequest, getTurnTiming, getSessionTrend, openInMemberSession, openMemberAt,
 }: InspectorTabProps): ReactNode {
   const { tab } = useTabInfo()
   // The place this panel kept when it sent the reader to a member's session
@@ -66,6 +67,8 @@ export function InspectorPanel({
   const pendingMessage = useRef<string | undefined>(undefined)
   /** The room decision whose turn the next turn list should select (from a navigation). */
   const pendingDecision = useRef<string | undefined>(undefined)
+  /** The moment whose turn the next turn list should select (a room round handed over its member run's start). */
+  const pendingTime = useRef<number | undefined>(undefined)
   /** The selected room decision on the 房间 tab. */
   const [decisionId, setDecisionId] = useState<string | null>(null)
   const [trend, setTrend] = useState<SessionTrend | null>(null)
@@ -82,7 +85,7 @@ export function InspectorPanel({
   const [turns, setTurns] = useState<readonly TurnListItem[] | null>(null)
   const [backfill, setBackfill] = useState<BackfillInfo | null>(null)
   const [parent, setParent] = useState<ListTurnsResult['parent'] | null>(null)
-  const [listMeta, setListMeta] = useState<Pick<ListTurnsResult, 'range' | 'unloaded' | 'total'>>({})
+  const [listMeta, setListMeta] = useState<Pick<ListTurnsResult, 'range' | 'unloaded' | 'total' | 'roomRecords'>>({})
   const range = listMeta.range
   const [turnSeq, setTurnSeq] = useState<number | null>(restored?.turnSeq ?? null)
   const [overview, setOverview] = useState<TurnOverview | null>(null)
@@ -180,6 +183,14 @@ export function InspectorPanel({
       setScopeId(ROOM_TAB)
       setDecisionId(navParams.roomDecision)
     }
+    pendingTime.current = navParams?.locateTime?.at
+    if (navParams?.locateTime !== undefined) {
+      setTurnSeq(null)
+      setScopeId('main')
+      setSelectedSeq(null)
+      setFilterCat(null)
+      setMainTab('token')
+    }
     if (navParams?.messageId !== undefined) {
       setTurnSeq(null)
       setScopeId('main')
@@ -221,7 +232,11 @@ export function InspectorPanel({
       const located = turnOfLocate(result.value.turns, locate)
       pendingRequest.current = locate?.request
       if (locate !== undefined) setLocateRequest(locate)
-      const asked = decided ?? located ?? (pendingMessage.current === undefined ? undefined : resolveTurnSeq(result.value.turns, pendingMessage.current))
+      const at = pendingTime.current
+      pendingTime.current = undefined
+      const timed = at === undefined ? undefined : turnOfLocate(result.value.turns, { request: { startedAt: at } })
+      if (timed !== undefined) syncScrollToTurn(timed, result.value.turns)
+      const asked = decided ?? located ?? timed ?? (pendingMessage.current === undefined ? undefined : resolveTurnSeq(result.value.turns, pendingMessage.current))
       pendingMessage.current = undefined
       setTurnSeq(previous => asked !== undefined
         ? asked
@@ -584,10 +599,25 @@ export function InspectorPanel({
     body = <div className={css.stateNote} role="status">{t('state.turnMissing')}</div>
   } else if (overview === null) {
     body = <div className={css.stateNote} role="status">{t('state.loading')}</div>
-  } else if (scopeId === ROOM_TAB && (overview.roomDecisions?.length ?? 0) > 0) {
+  } else if ((scopeId === ROOM_TAB || (effectiveScope === undefined && turn?.roomUnattributed === true)) && (overview.roomDecisions?.length ?? 0) > 0) {
     body = (
       <div className={css.bodyFill}>
         <RoomDecisionsView decisions={overview.roomDecisions!} selectedId={decisionId} onSelect={setDecisionId} t={t} />
+      </div>
+    )
+  } else if (overview.roomFallback !== undefined && effectiveScope === undefined) {
+    // A round with no records: no room-dimension view, a door into each member's own lens at that time.
+    body = (
+      <div className={css.scrollBody}>
+        <RoomFallbackCard
+          members={overview.roomFallback.members}
+          repeatTitle={listMeta.roomRecords !== 'none'}
+          onOpen={openMemberAt === undefined ? undefined : member => {
+            rememberSelection(ownSessionId, { revision, viewed, turnSeq, scopeId, selectedSeq, mainTab, view: readingView() })
+            openMemberAt(member.sessionId!, member.startedAt)
+          }}
+          t={t}
+        />
       </div>
     )
   } else if (effectiveScope === undefined) {
@@ -685,6 +715,10 @@ export function InspectorPanel({
           {turn.query === '' && turn.trigger !== undefined && <code className={css.querySource}>{turn.trigger.source}</code>}
           <b title={turn.query !== '' ? turn.query : turn.trigger?.text}>{turn.hostTurn === undefined && turn.query === 'compaction' ? t('compaction.title') : turn.query !== '' ? turn.query : turn.trigger!.text}</b>
         </div>}
+        {turn?.roomUnattributed === true && <div className={css.query}><b>{t('room.unattributed')}</b></div>}
+        {turn?.roomUnattributed === true && <UnattributedNote t={t} />}
+        {/* No round of this room has records: said once, here, not on every round. */}
+        {listMeta.roomRecords === 'none' && turn?.room !== undefined && <RoomRecordsNotice t={t} />}
         {/* Below it, the selected turn's participants: nothing that did not take part. */}
         {(scopes.length > 0 || (overview?.roomDecisions?.length ?? 0) > 0) && (
           <AgentTabs
@@ -696,6 +730,8 @@ export function InspectorPanel({
             t={t}
           />
         )}
+        {/* A recorded room run: what its execution recorded about itself. */}
+        {scopeId !== ROOM_TAB && effectiveScope?.execution !== undefined && <ExecutionNote execution={effectiveScope.execution} t={t} />}
       </div>
       <div className={css.body} ref={bodyRef}>{body}</div>
     </PanelRoot>

@@ -14,9 +14,11 @@
  *   for a journaled dispatch's delivery, a bare UUID for one that is not (a
  *   confirmed relay's delivery), absent on legacy journals (keyed by member
  *   and start then) — its time span, its child session, and — when the
- *   producer records it — the child turn the run became (`childTurn`). Only
- *   runs with a dispatch seq belong to a round; the rest still bound the
- *   member's earlier open runs and keep their child turns to themselves.
+ *   producer records it — the child turn the run became (`childTurn`) and the
+ *   member execution it is (`executionId`, batch 5). Only runs with a
+ *   dispatch seq belong to a round.
+ * - `room/decision` with a call: the decision-model call, and the run and
+ *   task it was made for (`runId`, `task`, batch 5 S9) when recorded.
  * - `room/coordinator`: coordinator handoffs, drawn on the session map.
  *
  * @module @khorsheed/dsh-context-lens/room
@@ -39,7 +41,18 @@ export interface RoomRun {
   childSessionId?: string
   /** The child session turn this run became, when the producer records it. */
   childTurn?: number
+  /** The member's local-agent execution this run is (batch 5 S5): its records in the child name the run's requests. */
+  executionId?: string
+  /** `compact` for a `/compact` run. */
+  operation?: string
 }
+
+/**
+ * Whether a run carries a write-side record that names its requests: an
+ * execution id (the child's `local-agent/execution` records) or a child turn
+ * the producer wrote. A run with neither has no room-dimension view.
+ */
+export const runRecorded = (run: RoomRun): boolean => run.executionId !== undefined || run.childTurn !== undefined
 
 /** One human message to the room. */
 export interface RoomDispatch {
@@ -136,6 +149,9 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
       else if (terminal && at !== undefined) run.endedAt ??= at
       if (child !== undefined) run.childSessionId = child
       if (childTurn !== undefined) run.childTurn = childTurn
+      const executionId = str(d['executionId']), operation = str(d['operation'])
+      if (executionId !== undefined) run.executionId = executionId
+      if (operation !== undefined) run.operation = operation
       room.runs.set(runId, run)
       return true
     }
@@ -157,6 +173,8 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
         ...num(call['outputTokens']) === undefined ? {} : { outputTokens: num(call['outputTokens'])! },
         ...call['response'] === undefined ? {} : { response: call['response'] as LensJsonValue },
         ...typeof failure?.reason === 'string' ? { failure: { reason: failure.reason, ...typeof failure.detail === 'string' ? { detail: failure.detail } : {} } } : {},
+        ...str(d['task']) === undefined ? {} : { task: str(d['task'])! },
+        ...str(d['runId']) === undefined ? {} : { runId: str(d['runId'])! },
       })
       return true
     }
@@ -213,3 +231,6 @@ export const HUMAN_MESSAGE_LOOKBACK = 12
 /** A synthetic, stable panel address for a room round (far below any purpose bucket). */
 export const ROOM_TURN_BASE = -1_000_000
 export const roomTurnSeq = (dispatchSeq: number): number => ROOM_TURN_BASE - dispatchSeq
+
+/** The room's 未归轮 group's panel address (no dispatch has seq 0: that is the log header). */
+export const ROOM_UNATTRIBUTED_TURN = ROOM_TURN_BASE

@@ -39,6 +39,15 @@ export interface ReadingView {
   readonly detailScroll?: number
 }
 
+/**
+ * Where a member session's lens lands: one call (`locateCall`), or the turn
+ * holding one moment (`locateTime`: a room round with no records hands over
+ * its run's start, so the member's lens shows that time span).
+ */
+export type MemberNavigation =
+  | { readonly locateCall: LocateCallTarget & { readonly session: string } }
+  | { readonly locateTime: { readonly session: string; readonly at: number } }
+
 /** The pieces the jump needs, all probed by the caller. */
 export interface MemberJumpDeps {
   /** `uiWorkspace.openSession`; absent means the jump cannot run. */
@@ -46,7 +55,7 @@ export interface MemberJumpDeps {
   /** The session the conversation shows now. */
   readonly currentSession: () => string | undefined
   /** Open the lens tab in the current session's Sidebar; false when it cannot (yet). */
-  readonly openTab: (params: { locateCall: LocateCallTarget & { readonly session: string } }) => boolean
+  readonly openTab: (params: MemberNavigation) => boolean
   /** Timer seam (tests). */
   readonly schedule?: (callback: () => void, ms: number) => void
   readonly now?: () => number
@@ -68,6 +77,22 @@ export const sameSession = (a: string | undefined, b: string | undefined): boole
  * @returns whether the switch started (false: no way to open sessions, or it threw).
  */
 export function openInMemberSession(deps: MemberJumpDeps, memberSession: string, target: LocateCallTarget): boolean {
+  return openMemberNavigation(deps, memberSession, { locateCall: { ...target, session: memberSession } })
+}
+
+/**
+ * Switch the conversation to a member's session and open the lens there on
+ * the turn holding one moment (an unrecorded room round's 在成员会话里查看).
+ * @param deps - the probed services.
+ * @param memberSession - the member's own session id.
+ * @param at - the moment (the run's start).
+ * @returns whether the switch started.
+ */
+export function openMemberSessionAt(deps: MemberJumpDeps, memberSession: string, at: number): boolean {
+  return openMemberNavigation(deps, memberSession, { locateTime: { session: memberSession, at } })
+}
+
+function openMemberNavigation(deps: MemberJumpDeps, memberSession: string, navigation: MemberNavigation): boolean {
   if (deps.openSession === undefined) return false
   try {
     deps.openSession(memberSession)
@@ -80,7 +105,7 @@ export function openInMemberSession(deps: MemberJumpDeps, memberSession: string,
   // The tab may only open once the member session is on screen (its Sidebar
   // is the one that gets the tab) and the lens kind is registered for it.
   const attempt = (): void => {
-    if (sameSession(deps.currentSession(), memberSession) && deps.openTab({ locateCall: { ...target, session: memberSession } })) return
+    if (sameSession(deps.currentSession(), memberSession) && deps.openTab(navigation)) return
     if (now() >= deadline) return
     schedule(attempt, MEMBER_JUMP_POLL_MS)
   }
@@ -141,7 +166,7 @@ export function takeSelection(sessionId: string, revision: number, foreign = fal
  * Whether a navigation is a call handed to ANOTHER session's lens (it names
  * that session): this lens leaves it alone and keeps the reader's place.
  */
-export function foreignLocate(params: { readonly locateCall?: { readonly session?: string } } | undefined, ownSession: string): boolean {
-  const target = params?.locateCall?.session
+export function foreignLocate(params: { readonly locateCall?: { readonly session?: string }; readonly locateTime?: { readonly session?: string } } | undefined, ownSession: string): boolean {
+  const target = params?.locateCall?.session ?? params?.locateTime?.session
   return target !== undefined && !sameSession(target, ownSession)
 }

@@ -61,6 +61,12 @@ export interface CompactionInfo {
   source?: 'manual' | 'auto'
   beforeTokens?: number
   afterTokens?: number
+  /**
+   * What the compaction's source does not report, as local-agent marked it
+   * when it wrote the fact (`local-agent/compaction.unrecorded`): `usage`,
+   * `before-after`, `summary`. Shown as 未记录, never filled in.
+   */
+  unrecorded?: string[]
 }
 
 /** One message row inside a request's four-segment breakdown. */
@@ -390,7 +396,22 @@ export interface TurnListItem {
   /** The turn's number in one session-wide sequence (main turns and room rounds, by time). */
   ordinal?: number
   /** A room round: a human message to the room made outside any main turn, and who it went to. */
-  room?: { targets: string[]; /** The human's message in the chat (the round's scroll anchor). */ messageId?: string }
+  room?: {
+    targets: string[]
+    /** The human's message in the chat (the round's scroll anchor). */
+    messageId?: string
+    /**
+     * No write-side record ties this round's member runs to their requests
+     * (no `room/run-state.executionId`, no `childTurn`): the round shows no
+     * room-dimension request view, only a way into each member's own lens.
+     */
+    unrecorded?: true
+  }
+  /**
+   * The room's 未归轮 group: decision-model calls and member compactions no
+   * record ties to a round. Listed last, never numbered, never a landing turn.
+   */
+  roomUnattributed?: true
   startedAt: number
   endedAt?: number
   requestCount: number
@@ -493,6 +514,13 @@ export interface ListTurnsResult {
   /** Room coordinator handoffs, for the session map. */
   handoffs?: { at: number; name: string }[]
   /**
+   * Whether the room rounds' member runs carry write-side records: `none`
+   * when the session has rounds with member runs and not one of them is
+   * recorded (the panel then says so once, at the top); `some` otherwise.
+   * Absent without room rounds.
+   */
+  roomRecords?: 'none' | 'some'
+  /**
    * Present exactly when the query carried a {@link ScopeFilter}: the
    * authorized scopes that exist in the session. An empty array is the
    * explicit zero-authorized-content signal — distinct from the field's
@@ -528,6 +556,10 @@ export interface RoomDecisionRow {
   response?: LensJsonValue
   failure?: { reason: string; detail?: string }
   about: { message?: string; task?: { number: number; title: string }; from?: string; to?: string }
+  /** The task the decision was made for (its root message id), when room recorded it (batch 5 S9). */
+  task?: string
+  /** report-timing: the run whose report was gated, when room recorded it. */
+  runId?: string
 }
 
 export interface TurnOverview {
@@ -535,6 +567,11 @@ export interface TurnOverview {
   scopes: AgentScopeOverview[]
   /** The room's decision-model calls made during this turn (the 房间 tab); absent when none. */
   roomDecisions?: RoomDecisionRow[]
+  /**
+   * A room round with no write-side records (see `TurnListItem.room.unrecorded`):
+   * each member run's own session and time span, for 在成员会话里查看.
+   */
+  roomFallback?: { members: RoomFallbackMember[] }
   /** The answering instance's epoch — see {@link ListTurnsResult.generation}. */
   generation?: string
   /**
@@ -562,11 +599,13 @@ export interface AgentScopeOverview {
   compaction?: {
     replacedCount?: number; after?: RequestLink; betweenTurns?: true
     /** An external CLI member's compaction (`/compact`, after this round), or the CLI's own (`auto`, inside it). */
-    member?: { name?: string; source: 'manual' | 'auto'; beforeTokens?: number; afterTokens?: number }
+    member?: { name?: string; source: 'manual' | 'auto'; beforeTokens?: number; afterTokens?: number; /** What the source did not report (`usage`, `before-after`, `summary`). */ unrecorded?: string[] }
   }
   /** `cancelled`: a room member run the human or the room stopped. */
   status: 'running' | 'ok' | 'failed' | 'cancelled'
   error?: string
+  /** A room round's member run: what its execution recorded (cause, not-recorded declarations). */
+  execution?: ExecutionFacts
   config: RequestConfig
   startedAt: number
   endedAt?: number
@@ -577,6 +616,34 @@ export interface AgentScopeOverview {
    */
   origin?: CaptureOrigin
   requests: RequestListItem[]
+}
+
+/** One member run of an unrecorded room round: where its own lens shows it. */
+export interface RoomFallbackMember {
+  name: string
+  /** The member's own session; absent when the run never named one. */
+  sessionId?: string
+  /** The run's start (the member lens selects the turn holding it). */
+  startedAt: number
+  endedAt?: number
+}
+
+/**
+ * What a member execution recorded about itself (`local-agent/execution`),
+ * shown on a room round's member view: why it ran and what its source does
+ * not report.
+ */
+export interface ExecutionFacts {
+  executionId: string
+  /** The recorded cause kind (`human`, `member`, `help`, `decision`, `execution`, `tool-call`, `restart`); absent = not recorded. */
+  cause?: string
+  /** `member` cause: the sending member's roster id. */
+  fromMember?: string
+  /** `help` cause: the asking room. */
+  fromRoom?: string
+  outcome?: string
+  /** The harness's static not-recorded declarations (`internal-calls`, `call-boundaries`, `per-call-usage`, `compaction`). */
+  unrecorded?: string[]
 }
 
 /** `getTurn` request row — everything the left list card shows. */
@@ -593,6 +660,10 @@ export interface RequestListItem {
   totalMs?: number
   /** Logged compaction bracket, not an exact provider-call duration. */
   timingApproximate?: boolean
+  /** The usage is the whole round's total (its execution declared `per-call-usage`), not this call's. */
+  roundTotal?: true
+  /** No dispatch time was recorded for this call: `startedAt` is when its step was written. */
+  startUnrecorded?: true
   /** 请求体总字符数（明细头右上）。 */
   totalChars: number
   toolErrors?: number

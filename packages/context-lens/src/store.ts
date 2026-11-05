@@ -27,7 +27,9 @@
 import { countToolCalls } from './tool-summary.ts'
 import type {
   AgentScopeOverview,
+  ExecutionFacts,
   RoomDecisionRow,
+  RoomFallbackMember,
   BackfillInfo,
   CaptureOrigin,
   CapturedRequest,
@@ -51,11 +53,38 @@ import type {
 } from './types.ts'
 import { splitRequest, rebaseSegments, type CapturedToolSchema, type ScopeFingerprint, type AssemblyRecord } from './segmenter.ts'
 import { AMBIENT_SOURCES, lastParagraph, previewLine, type CapturedMessage } from './messages.ts'
-import type { LogTurn } from './log-lane.ts'
+import type { ExecutionRecord, LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
 import { diffRequests, type FactLookup, type ReplacementFact } from './changes.ts'
 import { answersMatch, askView, isAskTool, type RoomQuestionRecord } from './ask.ts'
-import { HUMAN_MESSAGE_LOOKBACK, applyRoomEvent, emptyRoom, isCompactCommand, roomTurnSeq, runsOf, type RoomRun, type RoomState } from './room.ts'
+import {
+  HUMAN_MESSAGE_LOOKBACK, ROOM_UNATTRIBUTED_TURN, applyRoomEvent, emptyRoom, isCompactCommand, roomTurnSeq, runRecorded, runsOf,
+  type RoomRun, type RoomState,
+} from './room.ts'
+
+/** One member execution's records in its child log (either may be missing: a log cut short, a writer's fallback). */
+interface ChildExecution {
+  start?: Extract<ExecutionRecord, { phase: 'start' }>
+  end?: Extract<ExecutionRecord, { phase: 'end' }>
+}
+
+/** A room view's compaction tab over a member's compaction requests. */
+function compactionScope(scopeId: string, child: ScopeRecord | undefined, label: string, compactions: StoredRequest[]): ScopeRecord {
+  return {
+    scopeId,
+    scopeSeq: child?.scopeSeq ?? 0,
+    kind: 'compaction',
+    label,
+    ...child?.provider === undefined ? {} : { provider: child.provider },
+    status: compactions.some(request => request.status === 'failed') ? 'failed' : 'ok',
+    config: compactions.at(-1)!.config,
+    requests: compactions,
+    startedAt: compactions[0]!.startedAt,
+    endedAt: Math.max(...compactions.map(request => request.settledAt ?? request.startedAt)),
+    live: false,
+    logFilled: true,
+  }
+}
 
 /** Replacement facts kept per session; older facts only matter for requests long evicted. */
 const REPLACEMENT_CAP = 2048
@@ -133,6 +162,12 @@ export interface StoredRequest {
   requestNumber?: number
   /** The request's own session turn (log lane): a member child's run is one of these. */
   hostTurn?: number
+  /** The local-agent execution whose start/end records bracket this request in its log, when the log records them. */
+  executionId?: string
+  /** No dispatch time was recorded: `startedAt` is when the step was written (a recorded external log). */
+  startUnrecorded?: true
+  /** Its usage is the whole execution's total: the execution declared `per-call-usage` (codex exec). */
+  roundTotal?: true
   seq: number
   sessionId: string
   scopeId: string
@@ -203,6 +238,8 @@ export interface ScopeRecord {
   callId?: string
   /** The child's `subagent/descriptor` provider (`dsh-cli`, `codex-local`, …), once seen. */
   provider?: string
+  /** A room round's member run: what its execution recorded (built on read). */
+  execution?: ExecutionFacts
 }
 
 /** One turn row's internal record (exported for the eviction hook's signature). */
@@ -224,8 +261,8 @@ export interface TurnRecord {
   /** Capture observed the turn opening, so this turn’s live request order is complete. */
   liveStartObserved?: boolean
   query: string
-  /** A room round: the dispatch's targets (see room.ts). */
-  room?: { targets: string[] }
+  /** A room round: the dispatch's targets, its chat anchor, and, without records, its fallback (see roomTurns). */
+  room?: { targets: string[]; messageId?: string; unrecorded?: true; fallback?: RoomFallbackMember[] }
   /** First non-human message of the turn (see LogTurn.trigger). */
   trigger?: { source: string; text: string }
   /** The `turn/start` event's log seq. */
@@ -327,6 +364,8 @@ function scopeOrigin(scope: ScopeRecord): CaptureOrigin | undefined {
 export class InspectorStore {
   private readonly sessions = new Map<string, SessionRecord>()
   private readonly childToParent = new Map<string, string>()
+  /** Member child logs' `local-agent/execution` records: child session id → execution id → its records. */
+  private readonly childExecutions = new Map<string, Map<string, ChildExecution>>()
   /** A session opened on its own that its log header names as a child (`parentSession`). */
   private readonly parents = new Map<string, NonNullable<ListTurnsResult['parent']>>()
   /** The parent room's questions and runs, read with the parent link (a live parent record wins). */
@@ -1327,9 +1366,15 @@ export class InspectorStore {
       }
     if (session === undefined) return { turns: [], backfill, generation: this.generation, ...this.parents.has(sessionId) ? { parent: this.parents.get(sessionId)! } : {} }
     const ordinals = this.ordinals(session)
-    const listed = [...session.turns, ...this.roomTurns(session, filter)]
+    const rounds = this.roomTurns(session, filter)
+    const unattributed = this.roomUnattributed(session, filter)
+    const listed = [...session.turns, ...rounds]
       .filter(turn => turn.purpose !== 'room-members' && this.attachedTurn(session, turn) === undefined)
       .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
+    // The 未归轮 group belongs to no point in time: it is listed last.
+    if (unattributed !== undefined) listed.push(unattributed)
+    const withRuns = rounds.filter(round => round.room?.unrecorded === true || [...round.scopes.values()].some(scope => scope.kind === 'subagent'))
+    const roomRecords = withRuns.length === 0 ? undefined : withRuns.every(round => round.room?.unrecorded === true) ? 'none' as const : 'some' as const
     const handoffs = (session.room?.handoffs ?? []).map(h => ({ at: h.at, name: session.room!.members.get(h.memberId) ?? h.memberId }))
     const decisions = scopeAuthorized('main', filter) ? this.decisionsByTurn(session, filter) : new Map<number, RoomDecisionRow[]>()
     return {
@@ -1343,6 +1388,7 @@ export class InspectorStore {
       total: ordinals.size,
       unloaded: this.unloadedRuns(session, ordinals),
       ...handoffs.length === 0 ? {} : { handoffs },
+      ...roomRecords === undefined ? {} : { roomRecords },
       generation: this.generation,
       ...this.parents.has(sessionId) ? { parent: this.parents.get(sessionId)! } : {},
       ...session.logRange === undefined ? {} : { range: session.logRange },
@@ -1388,7 +1434,12 @@ export class InspectorStore {
       ...turn.hostTurn === undefined ? {} : { hostTurn: turn.hostTurn },
       query: turn.query,
       ...turn.query === '' && turn.trigger !== undefined ? { trigger: turn.trigger } : {},
-      ...turn.room === undefined ? {} : { room: turn.room },
+      ...turn.room === undefined ? {} : { room: {
+        targets: turn.room.targets,
+        ...turn.room.messageId === undefined ? {} : { messageId: turn.room.messageId },
+        ...turn.room.unrecorded === true ? { unrecorded: true as const } : {},
+      } },
+      ...turn.purpose === 'room-unattributed' ? { roomUnattributed: true as const } : {},
       ...turn.startSeq === undefined ? {} : { startSeq: turn.startSeq },
       startedAt: turn.startedAt,
       ...turn.endedAt === undefined ? {} : { endedAt: turn.endedAt },
@@ -1420,33 +1471,46 @@ export class InspectorStore {
       }
     }
     const roomDecisions = scopeAuthorized('main', filter) ? this.decisionsByTurn(session, filter).get(turn.turnSeq) : undefined
+    const fallback = turn.room?.fallback
     return {
       turn: item,
       scopes,
       ...roomDecisions === undefined ? {} : { roomDecisions },
+      ...fallback === undefined ? {} : { roomFallback: { members: fallback } },
       generation: this.generation,
       ...filter?.scopes === undefined ? {} : { authorizedScopes: scopes.map(scope => scope.scopeId) },
     }
   }
 
   /**
-   * The room's decision-model calls by the turn they happened in: each goes to
-   * the latest listed turn (main turn or room round) that started at or
-   * before it.
+   * The room's decision-model calls by the turn their records name, never by
+   * time proximity: the run it gated (`runId` → that run's round), the human
+   * message it filed (`about.message` → the round anchored on it), a main
+   * turn it was written inside, else the task it was made for (`task` → the
+   * round that started the task). The rest go to the 未归轮 group
+   * ({@link ROOM_UNATTRIBUTED_TURN}).
    */
   private decisionsByTurn(session: SessionRecord, filter?: ScopeFilter): Map<number, RoomDecisionRow[]> {
     const byTurn = new Map<number, RoomDecisionRow[]>()
-    const decisions = session.room?.decisions ?? []
-    if (decisions.length === 0) return byTurn
-    const listed = [...session.turns, ...this.roomTurns(session, filter)]
-      .filter(turn => turn.purpose !== 'room-members' && this.attachedTurn(session, turn) === undefined)
-      .sort((a, b) => a.startedAt - b.startedAt || a.turnSeq - b.turnSeq)
+    const room = session.room
+    const decisions = room?.decisions ?? []
+    if (room === undefined || decisions.length === 0) return byTurn
+    const rounds = new Set(this.roomTurns(session, filter).map(round => round.turnSeq))
+    const byMessage = new Map<string, number>()
+    for (const dispatch of room.dispatches) {
+      if (dispatch.messageId !== undefined && rounds.has(roomTurnSeq(dispatch.seq))) byMessage.set(dispatch.messageId, roomTurnSeq(dispatch.seq))
+    }
+    const mainTurns = session.turns.filter(turn => turn.hostTurn !== undefined)
     for (const decision of decisions) {
-      const owner = listed.findLast(turn => turn.startedAt <= decision.at)
-      if (owner === undefined) continue
-      const rows = byTurn.get(owner.turnSeq) ?? []
+      const run = decision.runId === undefined ? undefined : room.runs.get(decision.runId)
+      const ofRun = run?.dispatchSeq === undefined || !rounds.has(roomTurnSeq(run.dispatchSeq)) ? undefined : roomTurnSeq(run.dispatchSeq)
+      const ofMessage = decision.about.message === undefined ? undefined : byMessage.get(decision.about.message)
+      const inside = mainTurns.find(turn => turn.startedAt <= decision.at && (turn.endedAt ?? Number.POSITIVE_INFINITY) >= decision.at)?.turnSeq
+      const ofTask = decision.task === undefined ? undefined : byMessage.get(decision.task)
+      const owner = ofRun ?? ofMessage ?? inside ?? ofTask ?? ROOM_UNATTRIBUTED_TURN
+      const rows = byTurn.get(owner) ?? []
       rows.push(decision)
-      byTurn.set(owner.turnSeq, rows)
+      byTurn.set(owner, rows)
     }
     return byTurn
   }
@@ -1459,10 +1523,32 @@ export class InspectorStore {
     applyRoomEvent(session.room, type, data, seq, at)
   }
 
-  /** A listed turn or a room round, by its panel address. */
+  /**
+   * Record one `local-agent/execution` record of a member's child log. A
+   * `per-call-usage` end marks the request carrying the usage as the round's
+   * total (the requests may have been stored in an earlier read).
+   */
+  noteExecution(childId: string, record: ExecutionRecord): void {
+    const byId = this.childExecutions.get(childId) ?? new Map<string, ChildExecution>()
+    this.childExecutions.set(childId, byId)
+    const entry = byId.get(record.executionId) ?? {}
+    if (record.phase === 'start') entry.start = record
+    else entry.end = record
+    byId.set(record.executionId, entry)
+    if (record.phase !== 'end' || !record.unrecorded.includes('per-call-usage')) return
+    const root = this.childToParent.get(childId)
+    const session = root === undefined ? undefined : this.sessions.get(root)
+    const scope = session === undefined ? undefined : this.findScope(session, childId)?.scope
+    for (const request of scope?.requests ?? []) {
+      if (request.executionId === record.executionId && request.usage !== undefined) request.roundTotal = true
+    }
+  }
+
+  /** A listed turn, a room round, or the room's 未归轮 group, by its panel address. */
   private findTurn(session: SessionRecord, turnSeq: number, filter?: ScopeFilter): TurnRecord | undefined {
+    if (turnSeq === ROOM_UNATTRIBUTED_TURN) return this.roomUnattributed(session, filter)
     return session.turns.find(candidate => candidate.turnSeq === turnSeq)
-      ?? (turnSeq < -999_999 ? this.roomTurns(session, filter).find(candidate => candidate.turnSeq === turnSeq) : undefined)
+      ?? (turnSeq < ROOM_UNATTRIBUTED_TURN ? this.roomTurns(session, filter).find(candidate => candidate.turnSeq === turnSeq) : undefined)
   }
 
   /** Whether a moment falls inside some main turn (loaded or not). */
@@ -1475,43 +1561,50 @@ export class InspectorStore {
 
   /**
    * Every human room dispatch made outside a main turn, as a round: the
-   * dispatch's message, and per member run the child session's requests of
-   * that run (its recorded child turn, else the run's time span). Built on
-   * read from the room state and the children's scopes; nothing is stored.
+   * dispatch's message and its member runs. Decided per round by data, never
+   * by date or version: a round whose runs carry write-side records (an
+   * execution id, or a child turn the producer wrote) shows each run's
+   * requests as those records name them; a round with none shows no
+   * room-dimension view, only each member's session and time span
+   * (`room.unrecorded`, `room.fallback`). Built on read; nothing is stored.
    */
   private roomTurns(session: SessionRecord, filter?: ScopeFilter): TurnRecord[] {
     const room = session.room
     if (room === undefined) return []
-    // A human's `/compact` is no round of its own: the compaction it ran shows
-    // in the 压缩 tab of the member's previous round (its request belongs to
-    // the child turn that closed last).
+    // A human's `/compact` is no round of its own: its compaction belongs to
+    // its own execution, which no round holds (the 未归轮 group shows it).
     return room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at) && !isCompactCommand(dispatch.text)).map((dispatch): TurnRecord => {
       const scopes = new Map<string, ScopeRecord>()
       const runs = runsOf(room, dispatch.seq)
+      const recorded = runs.some(runRecorded)
+      const fallback: RoomFallbackMember[] = []
       for (const run of runs) {
-        const child = this.childOfRun(session, run)
+        const child = run.childSessionId === undefined ? undefined : this.findScope(session, run.childSessionId)?.scope
+        const label = run.member ?? room.members.get(run.memberId) ?? child?.label ?? run.memberId
+        if (!recorded) {
+          fallback.push({
+            name: label,
+            ...run.childSessionId === undefined ? {} : { sessionId: run.childSessionId },
+            startedAt: run.startedAt ?? dispatch.at,
+            ...run.endedAt === undefined ? {} : { endedAt: run.endedAt },
+          })
+          continue
+        }
         if (child !== undefined && !scopeAuthorized(child.scopeId, filter)) continue
         // The child's own scope id: its requests open by that id from any view.
         const scopeId = child?.scopeId ?? `room:${dispatch.seq}:${run.memberId}`
-        const from = (run.startedAt ?? dispatch.at) - 2000
-        // A run that never recorded its end (interrupted by a restart, its
-        // final run-state lost) must not claim every later request: its
-        // window stops where the member's next run began.
-        const to = run.endedAt !== undefined ? run.endedAt + 2000 : this.openRunEnd(room, run, dispatch.at)
-        const claimedLater = run.childTurn !== undefined ? undefined : this.laterChildTurns(room, run, dispatch.at)
-        const matched = (child?.requests ?? []).filter(request => run.childTurn !== undefined && request.hostTurn !== undefined
-          ? request.hostTurn === run.childTurn
-          : request.startedAt >= from && request.startedAt <= to
-            && !(request.hostTurn !== undefined && claimedLater?.has(request.hostTurn) === true))
+        const matched = child === undefined ? [] : this.runRequests(run, child)
         const requests = matched.filter(request => request.purpose !== 'compaction')
         const compactions = matched.filter(request => request.purpose === 'compaction')
+        const execution = child === undefined || run.executionId === undefined ? undefined : this.executionFacts(child.scopeId, run.executionId)
         scopes.set(scopeId, {
           scopeId,
           scopeSeq: child?.scopeSeq ?? 0,
           kind: 'subagent',
-          label: run.member ?? room.members.get(run.memberId) ?? child?.label ?? run.memberId,
+          label,
           ...child?.provider === undefined ? {} : { provider: child.provider },
           status: run.state === 'failed' ? 'failed' : run.state === 'done' ? 'ok' : run.state === 'cancelled' ? 'cancelled' : 'running',
+          ...execution === undefined ? {} : { execution },
           config: child?.config ?? {},
           requests,
           startedAt: run.startedAt ?? dispatch.at,
@@ -1519,29 +1612,18 @@ export class InspectorStore {
           live: false,
           logFilled: true,
         })
-        if (compactions.length > 0) {
-          scopes.set(`compaction:${scopeId}`, {
-            scopeId: `compaction:${scopeId}`,
-            scopeSeq: child?.scopeSeq ?? 0,
-            kind: 'compaction',
-            label: run.member ?? room.members.get(run.memberId) ?? child?.label ?? run.memberId,
-            ...child?.provider === undefined ? {} : { provider: child.provider },
-            status: compactions.some(request => request.status === 'failed') ? 'failed' : 'ok',
-            config: compactions.at(-1)!.config,
-            requests: compactions,
-            startedAt: compactions[0]!.startedAt,
-            endedAt: Math.max(...compactions.map(request => request.settledAt ?? request.startedAt)),
-            live: false,
-            logFilled: true,
-          })
-        }
+        if (compactions.length > 0) scopes.set(`compaction:${scopeId}`, compactionScope(`compaction:${scopeId}`, child, label, compactions))
       }
       const ends = runs.map(run => run.endedAt).filter((end): end is number => end !== undefined)
       return {
         turnSeq: roomTurnSeq(dispatch.seq),
         purpose: 'room',
         query: dispatch.text,
-        room: { targets: dispatch.targets, ...dispatch.messageId === undefined ? {} : { messageId: dispatch.messageId } },
+        room: {
+          targets: dispatch.targets,
+          ...dispatch.messageId === undefined ? {} : { messageId: dispatch.messageId },
+          ...recorded || runs.length === 0 ? {} : { unrecorded: true as const, fallback },
+        },
         // Where the chat pages history back to before landing on the human's
         // message: it sits at most the lookback before the dispatch.
         ...dispatch.messageId === undefined ? {} : { startSeq: Math.max(0, dispatch.seq - HUMAN_MESSAGE_LOOKBACK) },
@@ -1553,41 +1635,76 @@ export class InspectorStore {
     })
   }
 
-  /** The same member's runs that started after this one (its later dispatches). */
-  private laterRuns(room: RoomState, run: RoomRun, dispatchAt: number): RoomRun[] {
-    const start = run.startedAt ?? dispatchAt
-    return [...room.runs.values()].filter(other => other !== run && other.memberId === run.memberId
-      && (other.startedAt ?? room.dispatches.find(d => d.seq === other.dispatchSeq)?.at ?? Number.NEGATIVE_INFINITY) > start)
-  }
-
-  /** Where an unended run's window stops: the member's next run start, else the next dispatch, else now. */
-  private openRunEnd(room: RoomState, run: RoomRun, dispatchAt: number): number {
-    const next = this.laterRuns(room, run, dispatchAt)
-      .map(other => other.startedAt ?? room.dispatches.find(d => d.seq === other.dispatchSeq)?.at)
-      .filter((at): at is number => at !== undefined)
-    if (next.length > 0) return Math.min(...next)
-    const nextDispatch = room.dispatches.find(d => d.seq > (run.dispatchSeq ?? -1) && d.at > dispatchAt)
-    return nextDispatch?.at ?? this.now() + 2000
-  }
-
-  /** Child turns the member's later runs recorded: their requests are theirs, never an earlier open window's. */
-  private laterChildTurns(room: RoomState, run: RoomRun, dispatchAt: number): Set<number> {
-    return new Set(this.laterRuns(room, run, dispatchAt).map(other => other.childTurn).filter((n): n is number => n !== undefined))
-  }
-
-  /** The child session a run went to: named by the run, else the child catalogued closest to the run's start. */
-  private childOfRun(session: SessionRecord, run: RoomRun): ScopeRecord | undefined {
-    if (run.childSessionId !== undefined) {
-      const named = this.findScope(session, run.childSessionId)?.scope
-      if (named !== undefined) return named
+  /**
+   * The requests a recorded run's records name in its child's log: the
+   * requests its execution's records bracket plus those of the turns its end
+   * record lists; without the child's records (not read yet, or a batch-4
+   * run) the child turn the run recorded.
+   */
+  private runRequests(run: RoomRun, child: ScopeRecord): StoredRequest[] {
+    const execution = run.executionId === undefined ? undefined : this.childExecutions.get(child.scopeId)?.get(run.executionId)
+    if (execution !== undefined) {
+      const turns = execution.end?.turns
+      return child.requests.filter(request => request.executionId === run.executionId
+        || (turns !== undefined && request.hostTurn !== undefined && turns.includes(request.hostTurn)))
     }
-    if (run.startedAt === undefined) return undefined
-    let best: ScopeRecord | undefined
-    for (const turn of session.turns) for (const scope of turn.scopes.values()) {
-      if (scope.kind !== 'subagent' || Math.abs(scope.startedAt - run.startedAt) > 10_000) continue
-      if (best === undefined || Math.abs(scope.startedAt - run.startedAt) < Math.abs(best.startedAt - run.startedAt)) best = scope
+    if (run.childTurn !== undefined) return child.requests.filter(request => request.hostTurn === run.childTurn)
+    return []
+  }
+
+  /** What one execution recorded about itself, for the member view. */
+  private executionFacts(childId: string, executionId: string): ExecutionFacts | undefined {
+    const execution = this.childExecutions.get(childId)?.get(executionId)
+    if (execution === undefined) return undefined
+    const cause = execution.start?.cause
+    const kind = typeof cause?.['kind'] === 'string' ? cause['kind'] : undefined
+    const unrecorded = execution.end?.unrecorded ?? []
+    return {
+      executionId,
+      ...kind === undefined ? {} : { cause: kind },
+      ...kind === 'member' && typeof cause?.['fromMemberId'] === 'string' ? { fromMember: cause['fromMemberId'] } : {},
+      ...kind === 'help' && typeof cause?.['fromRoom'] === 'string' ? { fromRoom: cause['fromRoom'] } : {},
+      ...execution.end?.outcome === undefined ? {} : { outcome: execution.end.outcome },
+      ...unrecorded.length === 0 ? {} : { unrecorded },
     }
-    return best
+  }
+
+  /**
+   * The room's 未归轮 group: decision-model calls no record ties to a turn,
+   * and member compactions no recorded round claims (a `/compact`'s own
+   * execution, a compaction of an unrecorded round). Nothing is hidden;
+   * nothing is attributed by time. Absent when it would be empty.
+   */
+  private roomUnattributed(session: SessionRecord, filter?: ScopeFilter): TurnRecord | undefined {
+    const room = session.room
+    if (room === undefined) return undefined
+    const claimed = new Set<StoredRequest>()
+    for (const round of this.roomTurns(session, filter)) {
+      for (const scope of round.scopes.values()) for (const request of scope.requests) claimed.add(request)
+    }
+    const scopes = new Map<string, ScopeRecord>()
+    const children = new Map<string, string>()
+    for (const run of room.runs.values()) {
+      if (run.childSessionId !== undefined) children.set(run.childSessionId, run.member ?? room.members.get(run.memberId) ?? run.memberId)
+    }
+    for (const [childId, name] of children) {
+      const child = this.findScope(session, childId)?.scope
+      if (child === undefined || !scopeAuthorized(child.scopeId, filter)) continue
+      const loose = child.requests.filter(request => request.purpose === 'compaction' && !claimed.has(request))
+      if (loose.length > 0) scopes.set(`compaction:unattributed:${childId}`, compactionScope(`compaction:unattributed:${childId}`, child, name, loose))
+    }
+    const decisions = scopeAuthorized('main', filter) ? this.decisionsByTurn(session, filter).get(ROOM_UNATTRIBUTED_TURN) ?? [] : []
+    if (scopes.size === 0 && decisions.length === 0) return undefined
+    const times = [...decisions.map(decision => decision.at), ...[...scopes.values()].map(scope => scope.startedAt)]
+    return {
+      turnSeq: ROOM_UNATTRIBUTED_TURN,
+      purpose: 'room-unattributed',
+      query: '',
+      startedAt: Math.min(...times),
+      endedAt: Math.max(...times),
+      liveContent: false,
+      scopes,
+    }
   }
 
   /**
@@ -1668,10 +1785,12 @@ export class InspectorStore {
           source: compaction.betweenTurns === true ? 'manual' : compaction.source,
           ...compaction.beforeTokens === undefined ? {} : { beforeTokens: compaction.beforeTokens },
           ...compaction.afterTokens === undefined ? {} : { afterTokens: compaction.afterTokens },
+          ...compaction.unrecorded === undefined ? {} : { unrecorded: compaction.unrecorded },
         } },
       } },
       status: scope.status,
       ...scope.error === undefined ? {} : { error: scope.error },
+      ...scope.execution === undefined ? {} : { execution: scope.execution },
       config: scope.config,
       startedAt: scope.startedAt,
       ...scope.endedAt === undefined ? {} : { endedAt: scope.endedAt },
@@ -1687,6 +1806,8 @@ export class InspectorStore {
         ...request.usage === undefined ? {} : { usage: request.usage },
         ...request.settledAt === undefined ? {} : { totalMs: request.settledAt - request.startedAt },
         ...request.compaction?.inputPartial ? { timingApproximate: true } : {},
+        ...request.roundTotal === true ? { roundTotal: true as const } : {},
+        ...request.startUnrecorded === true ? { startUnrecorded: true as const } : {},
         totalChars: request.totalChars,
         toolErrors: request.execs.filter(exec => exec.isError).length,
       })),

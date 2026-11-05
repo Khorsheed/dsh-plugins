@@ -47,7 +47,7 @@ import {
   InspectorTabVisibility, RegistrationToggle, type InspectorPluginInventorySnapshot,
 } from './preset-visibility.ts'
 import { TurnInspectAction } from './TurnAction.tsx'
-import { openInMemberSession, type LocateCallTarget } from './member-jump.ts'
+import { openInMemberSession, openMemberSessionAt, type LocateCallTarget, type MemberJumpDeps } from './member-jump.ts'
 
 export { InspectorPanel } from './InspectorPanel.tsx'
 export { TokenView } from './TokenView.tsx'
@@ -133,6 +133,22 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       return undefined
     }
   }
+  const memberJumpDeps = (): MemberJumpDeps => ({
+    openSession: workspaceOpen(),
+    // The session openTab acts on is the Sidebar's own on-screen one
+    // (`mounted`); the session list can move first, and a tab opened in
+    // that gap lands in the room's Sidebar instead.
+    currentSession: () => sidebarSession() ?? mainSessionId(ctx.sessions.list.getSnapshot()),
+    openTab: params => {
+      try {
+        ctx.sidebarRight.openTab(REQUEST_INSPECTOR_KIND, { params })
+        return true
+      } catch {
+        // The kind is not registered for the new session yet (its criterion re-evaluates): retry.
+        return false
+      }
+    },
+  })
   const tabFace = (): InspectorTabInjected => ({
     ...wire(),
     loadThrough: async (sessionId, seq) => {
@@ -141,22 +157,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     ...workspaceOpen() === undefined ? {} : {
       openInMemberSession: (memberSession: string, target: LocateCallTarget) => {
-        openInMemberSession({
-          openSession: workspaceOpen(),
-          // The session openTab acts on is the Sidebar's own on-screen one
-          // (`mounted`); the session list can move first, and a tab opened in
-          // that gap lands in the room's Sidebar instead.
-          currentSession: () => sidebarSession() ?? mainSessionId(ctx.sessions.list.getSnapshot()),
-          openTab: params => {
-            try {
-              ctx.sidebarRight.openTab(REQUEST_INSPECTOR_KIND, { params })
-              return true
-            } catch {
-              // The kind is not registered for the new session yet (its criterion re-evaluates): retry.
-              return false
-            }
-          },
-        }, memberSession, target)
+        openInMemberSession(memberJumpDeps(), memberSession, target)
+      },
+      openMemberAt: (memberSession: string, at: number) => {
+        openMemberSessionAt(memberJumpDeps(), memberSession, at)
       },
     },
   })

@@ -23,7 +23,7 @@ type T = InspectorTabProps['t']
 export function turnTitle(turn: TurnListItem, t: T): string {
   const n = turnNumber(turn)
   return turn.hostTurn === undefined && turn.room === undefined
-    ? turn.query === 'compaction' ? t('compaction.title') : turn.query
+    ? turn.roomUnattributed === true ? t('room.unattributed') : turn.query === 'compaction' ? t('compaction.title') : turn.query
     : `${t('turn.label', { seq: String(n ?? '·') })} · ${turn.room !== undefined ? `[${t('query.room')}] ` : ''}${turn.query !== '' ? turn.query : turn.trigger !== undefined ? `[${turn.trigger.source}] ${turn.trigger.text}` : ''}`
 }
 
@@ -92,7 +92,7 @@ export function TurnMenu({ turns, turnSeq, onSelect, gaps = [], lastTurn, onLoad
           aria-label={t('turn.switch')}
           onClick={() => { setOpen(value => !value) }}
         >
-          <span className={css.triggerLabel}>{current === undefined ? t('turn.switch') : `${turnNumber(current) ?? (current.query === 'compaction' ? t('compaction.title') : current.query)} / ${lastTurn ?? turns.at(-1)?.hostTurn ?? turns.length}`}</span>
+          <span className={css.triggerLabel}>{current === undefined ? t('turn.switch') : `${turnNumber(current) ?? (current.roomUnattributed === true ? t('room.unattributed') : current.query === 'compaction' ? t('compaction.title') : current.query)} / ${lastTurn ?? turns.at(-1)?.hostTurn ?? turns.length}`}</span>
           <IconChevronDownOutlineMedium />
         </button>
       )}
