@@ -14,6 +14,7 @@
  *
  * @module @khorsheed/dsh-quote/client
  */
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { decodeQuoteRef, encodeQuoteRef, QUOTE_REFERENCE_SOURCE } from '../types.ts'
 import { quotePreviewFromRef, type QuotePreviewData } from './usertext.ts'
 
@@ -43,11 +44,27 @@ export interface QuoteBailScope {
   bail(self: unknown, event: string, payload: QuoteInsertReferenceRequest): unknown
 }
 
+/** The `slash/input-insert-text` payload, mirrored (empty text deletes the guarded span). */
+export interface QuoteInsertTextRequest {
+  readonly text: string
+  readonly span: QuoteTokenSpan
+}
+
+/** The scoped bail channel the chip deletion rides. */
+export interface QuoteDeleteScope {
+  bail(self: unknown, event: string, payload: QuoteInsertTextRequest): unknown
+}
+
 /** The input-machine state slice the chip math needs (occurrences absent on old hosts). */
 export interface QuoteInputSnapshot {
   readonly draft: string
   readonly draftRev: number
-  readonly occurrences?: readonly { readonly offset?: number; readonly length: number }[]
+  readonly occurrences?: readonly {
+    readonly source?: string
+    readonly ref?: string
+    readonly offset?: number
+    readonly length: number
+  }[]
 }
 
 /** The session input face the chip path reads. */
@@ -70,17 +87,26 @@ export const quoteReferenceCodec = {
   },
 }
 
+/** The preview card's state: the quote view plus its optional draft deletion action. */
+export interface QuotePreviewState extends QuotePreviewData {
+  readonly remove?: () => boolean
+}
+
 /** The chip-click preview's store: what the overlay card renders (null = closed). */
 export interface QuotePreviewStore {
   readonly subscribe: (listener: () => void) => () => void
-  readonly getSnapshot: () => QuotePreviewData | null
-  readonly show: (data: QuotePreviewData, anchor?: { readonly x: number; readonly y: number }) => void
+  readonly getSnapshot: () => QuotePreviewState | null
+  readonly show: (
+    data: QuotePreviewData,
+    anchor?: { readonly x: number; readonly y: number },
+    remove?: () => boolean,
+  ) => void
   readonly clear: () => void
 }
 
 /** Create the preview store (a dozen lines, no dependency). */
 export function createQuotePreviewStore(): QuotePreviewStore {
-  let state: QuotePreviewData | null = null
+  let state: QuotePreviewState | null = null
   const listeners = new Set<() => void>()
   return {
     subscribe: (listener) => {
@@ -88,8 +114,8 @@ export function createQuotePreviewStore(): QuotePreviewStore {
       return () => { listeners.delete(listener) }
     },
     getSnapshot: () => state,
-    show: (data, anchor) => {
-      state = { ...data, ...anchor === undefined ? {} : { anchor } }
+    show: (data, anchor, remove) => {
+      state = { ...data, ...anchor === undefined ? {} : { anchor }, ...remove === undefined ? {} : { remove } }
       for (const listener of listeners) listener()
     },
     clear: () => {
@@ -106,6 +132,11 @@ export interface QuoteOpenReferencePayload {
   readonly appearance?: string
 }
 
+/** The stable session projection `openReference` receives from the host. */
+export interface QuoteSessionContext {
+  readonly sessionId: SessionId
+}
+
 /** The trigger source shape this plugin registers (headless + chip-click preview). */
 export interface QuoteTriggerSource {
   readonly trigger: '@'
@@ -113,7 +144,7 @@ export interface QuoteTriggerSource {
   candidates(): Promise<readonly never[]>
   onPick(): undefined
   readonly codec: typeof quoteReferenceCodec
-  openReference(session: unknown, reference: QuoteOpenReferencePayload): boolean
+  openReference(session: QuoteSessionContext, reference: QuoteOpenReferencePayload): boolean
 }
 
 /**
@@ -126,17 +157,19 @@ export interface QuoteTriggerSource {
  * quote's full text on the overlay card; a corrupt ref declines (false), so
  * the editor keeps its ordinary chip handling.
  */
-export function createQuoteTriggerSource(show: (data: QuotePreviewData) => void): QuoteTriggerSource {
+export function createQuoteTriggerSource(
+  show: (data: QuotePreviewData, session: QuoteSessionContext, reference: QuoteOpenReferencePayload) => void,
+): QuoteTriggerSource {
   return {
     trigger: '@',
     name: QUOTE_REFERENCE_SOURCE,
     candidates: async (): Promise<readonly never[]> => [],
     onPick: (): undefined => undefined,
     codec: quoteReferenceCodec,
-    openReference: (_session, reference) => {
+    openReference: (session, reference) => {
       const decoded = decodeQuoteRef(reference.ref)
       if (decoded === undefined) return false
-      show(quotePreviewFromRef(decoded))
+      show(quotePreviewFromRef(decoded), session, reference)
       return true
     },
   }
@@ -181,6 +214,40 @@ export function insertQuoteChip(scope: QuoteBailScope, input: QuoteChipInput, bl
         clipboardText,
       },
       span: { start: detectEnd, end: detectEnd, draftRev: snapshot.draftRev },
+    }) === true
+    if (applied) return true
+  }
+  return false
+}
+
+/**
+ * Delete one quote chip without flattening any other reference. Occurrences
+ * use clipboard coordinates; the deletion span uses detect coordinates, where
+ * the target occupies one character and every earlier chip folds to one too.
+ * The host's openReference gesture carries a ref but no occurrenceId, so an
+ * ambiguous duplicate refuses rather than risking the wrong draft span.
+ *
+ * @param scope - the session scope (the bail channel).
+ * @param input - the session's input machine face.
+ * @param ref - the clicked quote chip's opaque reference.
+ * @returns whether the host applied the deletion.
+ */
+export function removeQuoteChip(scope: QuoteDeleteScope, input: QuoteChipInput, ref: string): boolean {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const snapshot = input.state.getSnapshot()
+    const occurrences = snapshot.occurrences ?? []
+    const matches = occurrences.filter(occurrence =>
+      occurrence.source === QUOTE_REFERENCE_SOURCE && occurrence.ref === ref)
+    if (matches.length !== 1) return false
+    const target = matches[0]!
+    if (target.offset === undefined) return false
+    const folded = occurrences
+      .filter(occurrence => occurrence.offset !== undefined && occurrence.offset < target.offset!)
+      .reduce((extra, occurrence) => extra + occurrence.length - 1, 0)
+    const start = target.offset - folded
+    const applied = scope.bail(scope, 'slash/input-insert-text', {
+      text: '',
+      span: { start, end: start + 1, draftRev: snapshot.draftRev },
     }) === true
     if (applied) return true
   }

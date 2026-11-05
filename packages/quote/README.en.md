@@ -11,9 +11,9 @@ To follow up on a passage from an assistant reply or a file preview, you used to
 ## What it does
 
 - **Select and quote**: in assistant replies, file previews and reader articles, selecting text brings up the menu; selecting inside the composer leaves you alone.
-- **The source comes along**: a quote from a file carries the file name, a quote from an article carries its title, so the agent knows exactly which passage you mean.
+- **The source comes along**: a quote from an assistant reply carries the current chat title, while a file or article quote carries its own name or title, so the agent knows exactly which passage you mean.
 - **Your half-written message stays intact**: if the composer already has text, the quote goes after it as a new paragraph, never over it; the quote ends with a line break, so whatever you type next is your question.
-- **Check what you quoted**: in the composer the quote is a small tag — click it to see the full text.
+- **Check or remove what you quoted**: in the composer the quote is a small tag — click it to see the full text, then “Delete quote” to remove the whole tag without touching anything else you wrote.
 - **Easy to spot once sent**: in the sent message the quote shows as a card with its source.
 - **Or just copy**: "Copy" takes the original text to the clipboard.
 - **Other plugins add their own options**: with the canvas installed the menu gains "Save as canvas card"; with the reader installed, articles gain "Take a note".

@@ -6,11 +6,14 @@
  * silent downgrade).
  */
 import { describe, expect, it } from 'vitest'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { decodeQuoteRef, encodeQuoteRef, QUOTE_REFERENCE_SOURCE } from '../src/types.ts'
 import {
-  createQuoteTriggerSource, insertQuoteChip, quoteReferenceCodec, type QuoteBailScope, type QuoteChipInput,
-  type QuoteInputSnapshot,
+  createQuoteTriggerSource, insertQuoteChip, quoteReferenceCodec, removeQuoteChip,
+  type QuoteBailScope, type QuoteChipInput, type QuoteDeleteScope, type QuoteInputSnapshot, type QuoteInsertTextRequest,
 } from '../src/client/reference.ts'
+
+const SESSION = { sessionId: 's-1' as SessionId }
 
 /** A fake session scope whose bail answer is scripted. */
 function scopeWith(answers: readonly boolean[]): QuoteBailScope & { calls: { reference: { source: string; ref: string; label: string; clipboardText: string }; span: { start: number; end: number; draftRev: number } }[] } {
@@ -21,6 +24,21 @@ function scopeWith(answers: readonly boolean[]): QuoteBailScope & { calls: { ref
     bail(self, event, payload) {
       expect(self).toBe(this)
       expect(event).toBe('slash/input-insert-reference')
+      calls.push(payload)
+      return answers[Math.min(index++, answers.length - 1)]
+    },
+  }
+}
+
+/** A fake deletion scope whose bail answers are scripted. */
+function deleteScopeWith(answers: readonly boolean[]): QuoteDeleteScope & { calls: QuoteInsertTextRequest[] } {
+  let index = 0
+  const calls: QuoteInsertTextRequest[] = []
+  return {
+    calls,
+    bail(self, event, payload) {
+      expect(self).toBe(this)
+      expect(event).toBe('slash/input-insert-text')
       calls.push(payload)
       return answers[Math.min(index++, answers.length - 1)]
     },
@@ -79,6 +97,57 @@ describe('insertQuoteChip', () => {
   })
 })
 
+describe('removeQuoteChip', () => {
+  const ref = encodeQuoteRef('> 对话一句\n> —— 引用自「主会话」\n', '引用「主会话」')
+
+  it('deletes only the matching chip span, folding earlier chips into detect coordinates', () => {
+    const scope = deleteScopeWith([true])
+    const input = inputWith({
+      draft: 'ab_____QUOTE\nquestion',
+      draftRev: 8,
+      occurrences: [
+        { source: 'file', ref: 'other', offset: 2, length: 5 },
+        { source: QUOTE_REFERENCE_SOURCE, ref, offset: 7, length: 5 },
+        { source: 'file', ref: 'later', offset: 13, length: 4 },
+      ],
+    })
+    expect(removeQuoteChip(scope, input, ref)).toBe(true)
+    expect(scope.calls).toEqual([{ text: '', span: { start: 3, end: 4, draftRev: 8 } }])
+  })
+
+  it('retries a declined revision once, then reports refusal', () => {
+    const input = inputWith({
+      draft: 'QUOTE', draftRev: 4,
+      occurrences: [{ source: QUOTE_REFERENCE_SOURCE, ref, offset: 0, length: 5 }],
+    })
+    const scope = deleteScopeWith([false, true])
+    expect(removeQuoteChip(scope, input, ref)).toBe(true)
+    expect(scope.calls).toHaveLength(2)
+    const declined = deleteScopeWith([false, false])
+    expect(removeQuoteChip(declined, input, ref)).toBe(false)
+    expect(declined.calls).toHaveLength(2)
+  })
+
+  it('refuses missing, ambiguous, foreign, and old-host occurrences without an edit', () => {
+    const snapshots: QuoteInputSnapshot[] = [
+      { draft: '', draftRev: 0 },
+      { draft: '', draftRev: 0, occurrences: [] },
+      { draft: 'QUOTE', draftRev: 0, occurrences: [{ source: 'file', ref, offset: 0, length: 5 }] },
+      {
+        draft: 'QUOTEQUOTE', draftRev: 0,
+        occurrences: [
+          { source: QUOTE_REFERENCE_SOURCE, ref, offset: 0, length: 5 },
+          { source: QUOTE_REFERENCE_SOURCE, ref, offset: 5, length: 5 },
+        ],
+      },
+      { draft: 'QUOTE', draftRev: 0, occurrences: [{ source: QUOTE_REFERENCE_SOURCE, ref, length: 5 }] },
+    ]
+    const scope = deleteScopeWith([])
+    for (const snapshot of snapshots) expect(removeQuoteChip(scope, inputWith(snapshot), ref)).toBe(false)
+    expect(scope.calls).toHaveLength(0)
+  })
+})
+
 describe('quoteReferenceCodec', () => {
   it('projects and serializes to exactly the chip clipboard text', async () => {
     const scope = scopeWith([true])
@@ -107,15 +176,15 @@ describe('quoteTriggerSource (the headless codec carrier + click preview)', () =
     const scope = scopeWith([true])
     insertQuoteChip(scope, inputWith({ draft: '已有', draftRev: 0, occurrences: [] }), '> 引用块\n> 第二行\n> —— 引用自「A」', '引用「A」')
     const ref = scope.calls[0]!.reference.ref
-    expect(source.openReference(undefined, { ref })).toBe(true)
+    expect(source.openReference(SESSION, { ref })).toBe(true)
     expect(shown).toEqual([{ title: '引用「A」', body: '引用块\n第二行' }])
   })
 
   it('openReference surfaces a located quote\'s locator (what the model receives) and drops a bare attribution', () => {
     const shown: { title?: string; body: string; location?: string }[] = []
     const source = createQuoteTriggerSource(data => shown.push(data))
-    source.openReference(undefined, { ref: encodeQuoteRef('> 正文\n> —— 引用自「README.md」（/home/user/r/README.md）', '引用「README.md」') })
-    source.openReference(undefined, { ref: encodeQuoteRef('\n\n> 对话一句\n> —— 引用', '引用「对话一句」') })
+    source.openReference(SESSION, { ref: encodeQuoteRef('> 正文\n> —— 引用自「README.md」（/home/user/r/README.md）', '引用「README.md」') })
+    source.openReference(SESSION, { ref: encodeQuoteRef('\n\n> 对话一句\n> —— 引用', '引用「对话一句」') })
     expect(shown).toEqual([
       { title: '引用「README.md」', body: '正文', location: '/home/user/r/README.md' },
       { title: '引用「对话一句」', body: '对话一句' },
@@ -124,14 +193,14 @@ describe('quoteTriggerSource (the headless codec carrier + click preview)', () =
 
   it('openReference declines a corrupt ref (the editor keeps its ordinary handling)', () => {
     const source = createQuoteTriggerSource(() => {})
-    expect(source.openReference(undefined, { ref: 'garbage' })).toBe(false)
+    expect(source.openReference(SESSION, { ref: 'garbage' })).toBe(false)
   })
 
   it('openReference on a pre-label payload still previews the body, untitled', () => {
     const shown: { title?: string; body: string }[] = []
     const source = createQuoteTriggerSource(data => shown.push(data))
     const legacy = JSON.stringify({ v: 1, text: '> 旧引用\n> —— 引用自「旧」' })
-    expect(source.openReference(undefined, { ref: legacy })).toBe(true)
+    expect(source.openReference(SESSION, { ref: legacy })).toBe(true)
     expect(shown).toEqual([{ body: '旧引用' }])
   })
 })
