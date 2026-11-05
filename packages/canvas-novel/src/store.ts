@@ -47,7 +47,7 @@ import {
   type Candidate, type EventPrecondition, type RecallPins, type StoryEvent, type TimelineDoc,
 } from './timeline.ts'
 import { normalizeOrganizePlan, organizeTargetOf, renderOrganizePlan, type OrganizeCreate, type OrganizeMove, type OrganizePlan } from './organize.ts'
-import { suspectedSettingDuplicate } from './settings.ts'
+import { settingNameKey, suspectedSettingDuplicate } from './settings.ts'
 import {
   canvasBoardOf, fieldDefsOf, LEGACY_WORLD_SEED, NOVEL_GENRE, NOVEL_ROLES, SETTING_SORT_KEYS, SETTING_SORTS, settingSortOf, sortOfWorldKind, WORLD_KINDS,
   type SettingSort,
@@ -271,7 +271,7 @@ export function namesake(entries: WorkEntries, role: EntryRole, name: string | u
   // An unnamed world card (one from before names) goes by its opening words.
   const opens = (view: { readonly name?: string; readonly text?: string }): boolean =>
     role === 'world' && view.name === '' && view.text !== undefined && squashText(name) !== '' && squashText(view.text).startsWith(squashText(name))
-  const found = views.find(view => view.status !== 'archived' && (view.name === name || opens(view)))
+  const found = views.find(view => view.status !== 'archived' && (view.name === name || (role === 'world' && settingNameKey(name) !== '' && settingNameKey(view.name ?? '') === settingNameKey(name)) || opens(view)))
   return found === undefined ? undefined : { cardId: found.cardId, ref: found.ref }
 }
 
@@ -3344,12 +3344,19 @@ export class NovelService {
     // A name a live card or an earlier row of this payload already holds is a duplicate, never a second card.
     const seenNames = new Set<string>()
     const duplicateOf = (role: EntryRole, name: string): string | undefined => {
-      const key = `${role}:${name}`
+      const key = `${role}:${role === 'world' ? settingNameKey(name) : name}`
       if (seenNames.has(key)) return '本次已提过'
       seenNames.add(key)
       const existing = namesake(entries, role, name)
       return existing === undefined ? undefined : `已有 ${existing.ref}`
     }
+    const settingRules = (): RuleView[] => [
+      ...entries.rules,
+      ...cardWrites.flatMap((write, index): RuleView[] => write.role !== 'world' ? [] : [{
+        cardId: `batch:${index}`, ref: write.ref, role: 'world', name: String(write.fields['name']),
+        text: String(write.fields[MAIN_FIELD.world]), status: 'kept', ...(write.sort === undefined ? {} : { sort: write.sort }),
+      }]),
+    ]
 
     // World rules and principles: evidence first (gate 1), then a live card quoting its line.
     for (const raw of payload.memories ?? []) {
@@ -3394,11 +3401,15 @@ export class NovelService {
           continue
         }
         const kind = cleanText(raw.world_kind, 10)
-        const suspected = suspectedSettingDuplicate(entries.rules, name)
+        const suspected = suspectedSettingDuplicate(settingRules(), name)
         if (suspected !== undefined) {
           pend({
-            kind: 'duplicate', chapter: chapter.n, reason: `疑似重复「${name}」：${suspected.reason}。合并会追加差异，另建会保留为独立设定`,
-            payload: { ...(suspected.rule === undefined ? {} : { cardId: suspected.rule.cardId }), content, name, ...(kind === undefined ? {} : { worldKind: kind }) }, evidenceInText: evidence!,
+            kind: 'duplicate', chapter: chapter.n, reason: `疑似重复「${name}」：${suspected.reason}。选择一张卡合并会追加差异，另建会保留为独立设定`,
+            payload: {
+              ...(suspected.rule === undefined ? {} : { cardId: suspected.rule.cardId }),
+              ...(suspected.candidates.length === 0 ? {} : { candidateIds: suspected.candidates.map(rule => rule.cardId), candidateNames: suspected.candidates.map(rule => rule.name ?? rule.ref) }),
+              content, name, ...(kind === undefined ? {} : { worldKind: kind }),
+            }, evidenceInText: evidence!,
           })
           continue
         }
@@ -3533,8 +3544,9 @@ export class NovelService {
     const notes = new Map<string, CardNote>()
     const written = new Map<string, CardWrite>()
     const newCards: { cardId: string; role: EntryRole; text: string }[] = []
+    const batchCardIds = new Map<string, string>()
     let board = entries.board
-    for (const write of cardWrites) {
+    for (const [index, write] of cardWrites.entries()) {
       const category = categoryOf(board, write.role, write.sort)
       const mutation = category === undefined
         ? undefined
@@ -3545,6 +3557,7 @@ export class NovelService {
       }
       board = mutation.board
       const cardId = board.cards[board.cards.length - 1]!.id
+      batchCardIds.set(`batch:${index}`, cardId)
       notes.set(cardId, write.note)
       written.set(cardId, { source: 'model', chapter: chapter.n, ...(write.note.evidenceInText === undefined ? {} : { evidence: write.note.evidenceInText }) })
       if (write.role === 'character') {
@@ -3834,7 +3847,22 @@ export class NovelService {
       if (failed === undefined) applied.push({ kind: item.kind, line: item.reason })
       else dropped.push({ kind: item.kind, reason: 'apply-failed', ref: item.reason.slice(0, 40) })
     }
-    const duplicates = toPending.filter(item => item.kind === 'duplicate')
+    const resolveBatchCard = (cardId: string): string | undefined => batchCardIds.get(cardId) ?? (cardId.startsWith('batch:') ? undefined : cardId)
+    const duplicates = toPending.filter(item => item.kind === 'duplicate').map(item => {
+      const { cardId, candidateIds, candidateNames, ...payload } = item.payload
+      const candidates = (candidateIds ?? []).flatMap((candidateId, index) => {
+        const resolved = resolveBatchCard(candidateId)
+        return resolved === undefined ? [] : [{ cardId: resolved, name: candidateNames?.[index] ?? resolved }]
+      })
+      const target = (cardId === undefined ? undefined : resolveBatchCard(cardId)) ?? candidates[0]?.cardId
+      return {
+        ...item,
+        payload: {
+          ...payload, ...(target === undefined ? {} : { cardId: target }),
+          ...(candidates.length === 0 ? {} : { candidateIds: candidates.map(candidate => candidate.cardId), candidateNames: candidates.map(candidate => candidate.name) }),
+        },
+      }
+    })
     if (duplicates.length > 0) {
       const saved = await this.mutateJson(
         await this.fileTarget(id, WORK_FILES.pending), session,
@@ -3873,12 +3901,12 @@ export class NovelService {
    * plan-missed has nothing to materialize: the answer IS the resolution);
    * discard just settles the item, except a duplicate, whose discard confirms
    * a separate card. Settled items stay in the table (the queue is a snapshot).
-   * @param request - work id, item id, the action.
+   * @param request - work id, item id, the action, and optionally the duplicate's chosen merge target.
    * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns the receipt, or the failure code.
    */
   async decidePending(
-    request: { readonly workId: string; readonly id: string; readonly action: 'accept' | 'discard' },
+    request: { readonly workId: string; readonly id: string; readonly action: 'accept' | 'discard'; readonly cardId?: string },
     session: Session | undefined,
   ): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
     this.assertAlive('decidePending')
@@ -3888,10 +3916,12 @@ export class NovelService {
     const item = items.find(candidate => candidate.id === request.id)
     if (item === undefined) return { ok: false, error: 'missing' }
     if (item.status !== 'pending') return { ok: false, error: 'invalid-name' }
+    if (request.cardId !== undefined && (item.kind !== 'duplicate' || !(item.payload.candidateIds ?? []).includes(request.cardId))) return { ok: false, error: 'invalid-name' }
+    const chosen = request.cardId === undefined ? item : { ...item, payload: { ...item.payload, cardId: request.cardId } }
     if (request.action === 'accept' || item.kind === 'duplicate') {
       const applied = request.action === 'discard'
-        ? await this.createSeparateSetting(workId, item, session)
-        : await this.materializePending(workId, item, session)
+        ? await this.createSeparateSetting(workId, chosen, session)
+        : await this.materializePending(workId, chosen, session)
       if (applied !== undefined) return { ok: false, error: applied }
     }
     const settled = await this.mutateJson(

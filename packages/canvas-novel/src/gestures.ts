@@ -42,7 +42,7 @@ function gestureReceipt(result: { readonly ok: boolean; readonly error?: NovelEr
 
 /** Accept or discard one pending item. */
 export function decidePendingGesture(core: NovelService, session: Session | undefined, request: NovelDecideRequest): Promise<NovelGestureResult> {
-  return core.decidePending({ workId: request.canvasId, id: request.id, action: request.action }, session)
+  return core.decidePending({ workId: request.canvasId, id: request.id, action: request.action, ...(request.cardId === undefined ? {} : { cardId: request.cardId }) }, session)
 }
 
 /** The person's ✓ 审过: closes an extracted chapter. */

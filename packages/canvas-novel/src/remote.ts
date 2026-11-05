@@ -449,7 +449,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
       return undefined
     }
     const viewOf = (event: StoryEvent): TimelineEventView => ({
-      id: event.id, title: event.title, status: event.status,
+      id: event.id, title: event.title, status: event.status, order: event.order,
       ...(laneOf(event.places) === undefined ? {} : { lane: laneOf(event.places)! }),
       ...(event.when === undefined ? {} : { when: event.when }),
       ...(event.source === undefined ? {} : { source: event.source }),

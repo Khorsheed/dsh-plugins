@@ -125,6 +125,25 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+.duplicateTarget {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font: var(--dsh-panel-text-body, 13px)/1.5 var(--dsw-font-family);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.duplicateTarget select {
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-primary);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-primary);
+  color: var(--dsw-alias-label-primary);
+}
+
 .pendingActions {
   display: flex;
   justify-content: flex-end;

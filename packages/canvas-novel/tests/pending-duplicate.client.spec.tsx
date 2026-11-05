@@ -33,4 +33,19 @@ describe('suspected duplicate review', () => {
     expect(screen.queryByRole('button', { name: zh['pending.duplicate.accept'] })).toBeNull()
     expect(screen.getByRole('button', { name: zh['pending.duplicate.discard'] })).toBeTruthy()
   })
+
+  it('lets the person choose which combined-name target receives the supplement', async () => {
+    const remote = { decidePending: vi.fn(() => Promise.resolve({ ok: true, value: { ok: true } })) } as unknown as NovelRemote
+    const combined = {
+      ...item,
+      payload: {
+        ...item.payload,
+        candidateIds: ['w_micro', 'w_utopia'], candidateNames: ['微系', '乌托邦'],
+      },
+    }
+    render(<PendingList canvasId="canvas" items={[combined]} navigate={{ openCard: vi.fn(), openPage: vi.fn(), openManuscripts: vi.fn(), refresh: vi.fn() }} sessionId={SESSION} remote={remote} t={t} />)
+    fireEvent.change(screen.getByRole('combobox', { name: zh['pending.duplicate.target'] }), { target: { value: 'w_utopia' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['pending.duplicate.accept'] }))
+    expect(remote.decidePending).toHaveBeenCalledWith(SESSION, { canvasId: 'canvas', id: 'p1', action: 'accept', cardId: 'w_utopia' })
+  })
 })

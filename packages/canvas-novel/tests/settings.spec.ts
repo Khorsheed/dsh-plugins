@@ -23,10 +23,21 @@ describe('setting search and duplicate suspicion', () => {
   })
 
   it('flags containment and combined names, but does not invent a fuzzy company match', () => {
-    expect(suspectedSettingDuplicate(RULES, '微系与乌托邦')).toMatchObject({ rule: { cardId: '1' } })
+    expect(suspectedSettingDuplicate(RULES, '微系与乌托邦')).toMatchObject({ rule: { cardId: '1' }, candidates: [{ cardId: '1' }, { cardId: '2' }] })
     expect(suspectedSettingDuplicate(RULES, '微系联盟')).toMatchObject({ rule: { cardId: '1' } })
     expect(suspectedSettingDuplicate(RULES, '于心的创业公司')).toBeUndefined()
     expect(suspectedSettingDuplicate(RULES, '甲与乙')?.rule).toBeUndefined()
     expect(suspectedSettingDuplicate(RULES, '甲与乙')?.reason).toContain('独立实体')
+  })
+
+  it.each(['微系（工作稿）', '微系(暂定)', ' 微 系 ', '微系。', '微系！'])('does not exclude the normalized equivalent %s', incoming => {
+    expect(suspectedSettingDuplicate(RULES, incoming)).toMatchObject({ rule: { cardId: '1' } })
+    expect(suspectedSettingDuplicate(RULES, incoming)?.reason).toContain('规范化')
+  })
+
+  it('treats ASCII case and punctuation as equivalent without inferring aliases', () => {
+    const rules = [rule('6', 'Micro-Soft（草稿）')]
+    expect(suspectedSettingDuplicate(rules, 'micro soft')).toMatchObject({ rule: { cardId: '6' } })
+    expect(suspectedSettingDuplicate(rules, '微软')).toBeUndefined()
   })
 })

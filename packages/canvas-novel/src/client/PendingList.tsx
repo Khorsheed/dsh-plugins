@@ -40,12 +40,14 @@ export function PendingList({ canvasId, items, navigate, sessionId, remote, t }:
 }): ReactNode {
   const [busy, setBusy] = useState<string | null>(null)
   const [failure, setFailure] = useState<{ id: string; text: string } | null>(null)
+  const [targets, setTargets] = useState<Readonly<Record<string, string>>>({})
   const decide = async (item: PendingView, action: 'accept' | 'discard'): Promise<void> => {
     if (sessionId === undefined) return
     setBusy(item.id)
     setFailure(null)
     try {
-      const result = await remote.decidePending(sessionId, { canvasId, id: item.id, action })
+      const cardId = item.kind === 'duplicate' && (item.payload.candidateIds?.length ?? 0) > 1 ? targets[item.id] ?? item.payload.cardId : undefined
+      const result = await remote.decidePending(sessionId, { canvasId, id: item.id, action, ...(cardId === undefined ? {} : { cardId }) })
       if (!result.ok) setFailure({ id: item.id, text: t('error.generic', { message: result.error.message }) })
       else if (!result.value.ok) setFailure({ id: item.id, text: t(errorKey(result.value.error)) })
       navigate.refresh()
@@ -79,6 +81,18 @@ export function PendingList({ canvasId, items, navigate, sessionId, remote, t }:
             )}
           </div>
           <div className={css.pendingReason}>{pendingText(item)}</div>
+          {sessionId !== undefined && item.kind === 'duplicate' && (item.payload.candidateIds?.length ?? 0) > 1 && (
+            <label className={css.duplicateTarget}>
+              <span>{t('pending.duplicate.target')}</span>
+              <select
+                aria-label={t('pending.duplicate.target')}
+                value={targets[item.id] ?? item.payload.cardId}
+                onChange={event => { setTargets(current => ({ ...current, [item.id]: event.target.value })) }}
+              >
+                {item.payload.candidateIds!.map((cardId, index) => <option key={cardId} value={cardId}>{item.payload.candidateNames?.[index] ?? cardId}</option>)}
+              </select>
+            </label>
+          )}
           {item.evidenceInText !== undefined && item.evidenceInText !== '' && (
             <blockquote className={css.evidence}>{item.evidenceInText}</blockquote>
           )}

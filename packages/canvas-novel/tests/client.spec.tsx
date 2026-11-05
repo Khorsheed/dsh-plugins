@@ -415,14 +415,20 @@ describe('CardSection', () => {
     expect(p.navigate.openPage).toHaveBeenCalledWith(STORY_LOG_PAGE, zh['log.heading'], 'c_r')
   })
 
-  it('appends a manual intent correction and hides write actions in a read-only seat', async () => {
+  it('appends a manual intent correction with ⌘⏎, cancels with Esc and hides writes in a read-only seat', async () => {
     const p = renderCard('character', { currentState: {}, mind: { intent: '旧打算', beliefs: [{ text: '旧判断', chapter: 2, source: '推测' }] } })
     const remote = p.remote()!
     remote.correctMind = vi.fn(() => ok({ ok: true }))
     const buttons = await screen.findAllByRole('button', { name: zh['card.correct'] })
     fireEvent.click(buttons[0]!)
+    expect(screen.getByText(zh['card.editHint'])).toBeTruthy()
+    fireEvent.change(document.querySelector('textarea')!, { target: { value: '不会保存' } })
+    fireEvent.keyDown(document.querySelector('textarea')!, { key: 'Escape' })
+    expect(document.querySelector('textarea')).toBeNull()
+    expect(remote.correctMind).not.toHaveBeenCalled()
+    fireEvent.click((await screen.findAllByRole('button', { name: zh['card.correct'] }))[0]!)
     fireEvent.change(document.querySelector('textarea')!, { target: { value: '先核实再行动' } })
-    fireEvent.click(screen.getByRole('button', { name: zh['card.save'] }))
+    fireEvent.keyDown(document.querySelector('textarea')!, { key: 'Enter', metaKey: true })
     await waitFor(() => {
       expect(remote.correctMind).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, cardId: 'c_r', kind: 'intent', text: '先核实再行动' })
     })
@@ -432,12 +438,26 @@ describe('CardSection', () => {
     expect(screen.queryByRole('button', { name: zh['card.correct'] })).toBeNull()
   })
 
-  it('a worked 此刻 lists only the parts it has', async () => {
-    renderCard('character', { currentState: { where: '第七工作站' } })
+  it('edits 此刻 with the same save / cancel shortcuts and keeps its writing-reference help', async () => {
+    const p = renderCard('character', { currentState: { where: '第七工作站' } })
+    const remote = p.remote()!
+    remote.setCurrentState = vi.fn(() => ok({ ok: true }))
     await screen.findByText('第七工作站')
     expect(screen.getByText(zh['card.state.where'])).toBeTruthy()
     expect(screen.queryByText(zh['card.state.concern'])).toBeNull()
     expect(screen.getByText(zh['card.appearNone'])).toBeTruthy()
+    expect(screen.getByText(zh['card.nowHelp'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['card.edit'] }))
+    expect(screen.getByText(zh['card.editHint'])).toBeTruthy()
+    fireEvent.change(screen.getByDisplayValue('第七工作站'), { target: { value: '不会保存' } })
+    fireEvent.keyDown(screen.getByDisplayValue('不会保存'), { key: 'Escape' })
+    expect(remote.setCurrentState).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: zh['card.edit'] }))
+    fireEvent.change(screen.getByDisplayValue('第七工作站'), { target: { value: '门后走廊' } })
+    fireEvent.keyDown(screen.getByDisplayValue('门后走廊'), { key: 'Enter', metaKey: true })
+    await waitFor(() => {
+      expect(remote.setCurrentState).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, cardId: 'c_r', state: { where: '门后走廊' } })
+    })
   })
 })
 
@@ -743,6 +763,30 @@ describe('the timeline, ideas, candidates and editing (2026-11-01)', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['tl.byChapter'] }))
     expect(await screen.findByText(zh['tl.flagBackstory'])).toBeTruthy()
     expect(screen.getByRole('button', { name: /值夜/ })).toBeTruthy()
+  })
+
+  it('renders an explicitly positioned backstory in 正文 while keeping its backstory label', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    remote.timeline.mockImplementation(() => ok({
+      ...TIMELINE,
+      past: [
+        { id: 'e7', title: '普通往事', status: 'happened', order: 0, backstory: true, chapters: [1], ideas: 0 },
+        { id: 'e8', title: '开场', status: 'happened', order: 1, chapters: [1], ideas: 0 },
+        { id: 'e9', title: '当前甲', status: 'happened', order: 2, chapters: [1], ideas: 0 },
+        { id: 'e10', title: '定点往事', status: 'happened', order: 2.5, backstory: true, chapters: [1], ideas: 0 },
+        { id: 'e11', title: '当前乙', status: 'happened', order: 3, chapters: [1], ideas: 0 },
+      ],
+    }))
+    render(<TimelineView {...props(remote)} />)
+    expect(await screen.findByText('定点往事')).toBeTruthy()
+    const before = screen.getByText(zh['tl.era.before']).parentElement?.parentElement
+    const body = screen.getByText(zh['tl.era.body']).parentElement?.parentElement
+    expect(before?.textContent).toContain('普通往事')
+    expect(before?.textContent).not.toContain('定点往事')
+    expect(body?.textContent).toContain('当前甲')
+    expect(body?.textContent).toContain('定点往事')
+    expect(body?.textContent).toContain('当前乙')
+    expect(body?.textContent).toContain(zh['tl.flagBackstory'])
   })
 
   it("lists the next chapter's candidates in 章节 and saves 优先推进 / 本章屏蔽 as pins", async () => {

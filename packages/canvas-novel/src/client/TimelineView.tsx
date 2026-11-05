@@ -134,6 +134,12 @@ function ByChapter(props: NovelSurfaceProps): ReactNode {
   )
 }
 
+function beforeOpening(event: TimelineEventView, past: readonly TimelineEventView[]): boolean {
+  if (event.backstory !== true) return false
+  const openings = past.filter(candidate => candidate.backstory !== true && typeof candidate.order === 'number').map(candidate => candidate.order!)
+  return openings.length === 0 || (event.order ?? Number.NEGATIVE_INFINITY) < Math.min(...openings)
+}
+
 function StoryTime(props: NovelSurfaceProps): ReactNode {
   const { canvasId, rev, remote, t, sessionId } = props
   const api = remote()
@@ -156,16 +162,16 @@ function StoryTime(props: NovelSurfaceProps): ReactNode {
   }
   const max = Math.max(0.0001, ...future.map(event => event.tension))
   const row = (event: TimelineEventView): ReactNode => (
-    <EventRow key={event.id} event={event} data={data} lane={laneIx(event)} late={late.has(event.id)} max={max} picked={picked === event.id} onPick={() => { setPicked(picked === event.id ? null : event.id) }} t={t} />
+    <EventRow key={event.id} event={event} data={data} lane={laneIx(event)} late={late.has(event.id)} flag={event.backstory === true ? t('tl.flagBackstory') : undefined} max={max} picked={picked === event.id} onPick={() => { setPicked(picked === event.id ? null : event.id) }} t={t} />
   )
-  // 故事开始前 is what the event says it is (backstory), not a missing
-  // chapter; an event no chapter tells and no story time places waits in
-  // 时间待定. 正文 is in story order, so a flashback shows where it happened,
-  // marked with the later chapter that tells it.
+  // An unpositioned backstory sits before the opening. An explicit after /
+  // before wins its display group too: a backstory moved among current events
+  // keeps its fact label but renders in 正文 at the same story-time position.
   const told = (event: TimelineEventView): boolean => (event.chapters ?? []).length > 0
-  const before = past.filter(event => event.backstory === true)
-  const body = past.filter(event => event.backstory !== true && (told(event) || event.when !== undefined))
-  const undated = past.filter(event => event.backstory !== true && !told(event) && event.when === undefined)
+  const before = past.filter(event => beforeOpening(event, past))
+  const positioned = past.filter(event => !beforeOpening(event, past))
+  const body = positioned.filter(event => told(event) || event.when !== undefined)
+  const undated = positioned.filter(event => !told(event) && event.when === undefined)
   const late = lateTold(past)
   const backfill = data.backfill ?? []
   return (

@@ -23,6 +23,7 @@ export const zh = {
   'card.manualHelp': '手动修正会追加一条“手动”来源的记录，进入后续写作参考；重新对账不会删掉它。',
   'card.save': '保存',
   'card.cancel': '取消',
+  'card.editHint': '⌘⏎ 保存 · Esc 取消',
   'card.state.where': '在哪',
   'card.state.state': '状态',
   'card.state.concern': '牵挂',
@@ -71,6 +72,7 @@ export const zh = {
   'pending.setting.discard': '保留卡上的',
   'pending.duplicate.accept': '合并到已有卡',
   'pending.duplicate.discard': '确认另建',
+  'pending.duplicate.target': '合并目标',
   'pending.readOnly': '这张画布是只读的，打开对话里的画布再处理',
   'pending.openCard': '打开卡片',
 
@@ -806,6 +808,7 @@ export const en: Record<keyof typeof zh, string> = {
   'card.manualHelp': 'A manual correction is appended with a Manual source and used in later writing briefs; reconciliation never removes it.',
   'card.save': 'Save',
   'card.cancel': 'Cancel',
+  'card.editHint': '⌘⏎ save · Esc cancel',
   'card.state.where': 'Where',
   'card.state.state': 'State',
   'card.state.concern': 'On their mind',
@@ -854,6 +857,7 @@ export const en: Record<keyof typeof zh, string> = {
   'pending.setting.discard': 'Keep the card',
   'pending.duplicate.accept': 'Merge into existing',
   'pending.duplicate.discard': 'Create separate',
+  'pending.duplicate.target': 'Merge target',
   'pending.readOnly': 'This canvas is read-only here; handle it from the canvas in a conversation',
   'pending.openCard': 'Open card',
 

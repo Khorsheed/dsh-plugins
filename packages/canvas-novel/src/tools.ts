@@ -68,7 +68,9 @@ function dropReason(drop: ImportDrop): string {
 
 /** One pending item as the model reads it (one line, evidence attached). */
 function pendingLine(item: PendingItem): string {
-  return `- [${item.id}] ${item.kind}${item.confidence === undefined ? '' : `（${item.confidence}）`}${item.reason}${item.evidenceInText === undefined ? '' : `\n  原文：「${item.evidenceInText}」`}`
+  const candidates = item.kind !== 'duplicate' || (item.payload.candidateIds?.length ?? 0) < 2 ? ''
+    : `\n  可选合并目标：${item.payload.candidateIds!.map((id, index) => `${item.payload.candidateNames?.[index] ?? id}（cardId=${id}）`).join('、')}；accept 时用 cardId 选择`
+  return `- [${item.id}] ${item.kind}${item.confidence === undefined ? '' : `（${item.confidence}）`}${item.reason}${candidates}${item.evidenceInText === undefined ? '' : `\n  原文：「${item.evidenceInText}」`}`
 }
 
 /**
@@ -235,6 +237,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
     parameters: {
       what: { type: 'string', enum: ['chapter', 'confirm', 'outline', 'organize', 'event', 'idea', 'review', 'delete', 'aligned'], required: true, description: 'What to write. confirm: record the user\'s confirmation of a chapter plan (chapter=N) — only when their latest message says so. delete: remove a setting, person, relation, foreshadow (card id), event (e3) or idea (i2) by id, with the same fixes the person\'s 删除 makes (children move up, references cleared, a person\'s relations go too); the answer lists the written chapters that still carry it.' },
       id: { type: 'string', description: 'review: the pending item id. delete: the card / event / idea id. aligned: the 待对齐 item\'s node id done, or "all".' },
+      cardId: { type: 'string', description: 'review accept: the duplicate candidate to merge into; use one of the pending item\'s candidateIds.' },
       title: { type: 'string', description: 'chapter: the title.' },
       content: {
         type: 'string',
@@ -513,7 +516,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       if (args.what === 'review') {
         if (args.id === undefined || args.action === undefined) return '失败：what=review 要给 id（待审项）和 action（accept|discard）。'
         const pending = (await store.listPending({ workId })).find(item => item.id === args.id)
-        const outcome = await store.decidePending({ workId, id: args.id, action: args.action }, resolved.session)
+        const outcome = await store.decidePending({ workId, id: args.id, action: args.action, ...(args.cardId === undefined ? {} : { cardId: args.cardId }) }, resolved.session)
         if (!outcome.ok) return outcome.error === 'missing' ? `失败：没有待审项 ${args.id}。` : `失败：${outcome.error ?? 'io'}`
         if (pending?.kind === 'duplicate') return args.action === 'accept' ? `已合并到已有设定：${args.id}。` : `已确认另建独立设定：${args.id}。`
         return args.action === 'accept' ? `已采纳并落库：${args.id}。` : `已丢弃：${args.id}。`
@@ -691,6 +694,7 @@ export function novelBindDefinition(store: NovelService, granted: (agent: Agent)
 interface WriteArgs {
   what: string
   id?: string
+  cardId?: string
   title?: string
   content?: string
   chapter?: number

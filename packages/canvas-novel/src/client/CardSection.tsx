@@ -15,7 +15,7 @@
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
-import { useState, type ReactNode } from 'react'
+import { useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
   NOVEL_GENRE_ID, PTS_PER_LEVEL, RELATION_LADDERS, STAR_SOFT_LIMIT,
   type CardLinkGroup, type CurrentState, type NovelCardResult, type RelationView, type StoryAppearance,
@@ -220,6 +220,17 @@ function StoryBlock({ view, busy, readOnly, onOpenLog, onSave, onCorrect, t }: {
   )
 }
 
+function editorKeys(event: ReactKeyboardEvent<HTMLElement>, save: () => void, cancel: () => void): void {
+  if (event.nativeEvent.isComposing) return
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    cancel()
+  } else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault()
+    save()
+  }
+}
+
 function MindRow({ kind, text, source, from, origin, chapter, readOnly, busy, onCorrect, t }: {
   readonly kind: MindKind
   readonly text: string
@@ -234,17 +245,19 @@ function MindRow({ kind, text, source, from, origin, chapter, readOnly, busy, on
 }): ReactNode {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(text)
+  const cancel = (): void => { setEditing(false); setDraft(text) }
+  const save = (): void => {
+    if (draft.trim() === '') return
+    void onCorrect(kind, draft.trim(), source as MindSource | undefined, from).then(saved => { if (saved) setEditing(false) })
+  }
   if (editing) {
     return (
-      <form className={css.mindEditor} onSubmit={event => {
-        event.preventDefault()
-        if (draft.trim() === '') return
-        void onCorrect(kind, draft.trim(), source as MindSource | undefined, from).then(saved => { if (saved) setEditing(false) })
-      }}>
+      <form className={css.mindEditor} onSubmit={event => { event.preventDefault(); save() }} onKeyDown={event => { editorKeys(event, save, cancel) }}>
         <textarea value={draft} maxLength={300} onChange={event => { setDraft(event.target.value) }} />
         <div className={css.cardSectionActions}>
+          <span className={css.storyHelp}>{t('card.editHint')}</span>
           <button type="submit" className={css.buttonPrimary} disabled={busy || draft.trim() === ''}>{t('card.save')}</button>
-          <button type="button" className={css.button} disabled={busy} onClick={() => { setEditing(false); setDraft(text) }}>{t('card.cancel')}</button>
+          <button type="button" className={css.button} disabled={busy} onClick={cancel}>{t('card.cancel')}</button>
         </div>
       </form>
     )
@@ -316,6 +329,11 @@ function StateRow({ state, busy, readOnly, onSave, t }: {
 }): ReactNode {
   const [draft, setDraft] = useState<CurrentState | null>(null)
   const label = (part: typeof STATE_PARTS[number]): string => t(`card.state.${part}`)
+  const cancel = (): void => { setDraft(null) }
+  const save = (): void => {
+    if (draft === null) return
+    void onSave(draft).then(saved => { if (saved) setDraft(null) })
+  }
   if (draft === null) {
     const set = STATE_PARTS.filter(part => state[part] !== undefined && state[part] !== '')
     return (
@@ -343,10 +361,8 @@ function StateRow({ state, busy, readOnly, onSave, t }: {
   return (
     <form
       className={css.storyPart}
-      onSubmit={(event) => {
-        event.preventDefault()
-        void onSave(draft).then(saved => { if (saved) setDraft(null) })
-      }}
+      onSubmit={event => { event.preventDefault(); save() }}
+      onKeyDown={event => { editorKeys(event, save, cancel) }}
     >
       <div className={css.storyPartHead}>{t('card.now')}</div>
       <dl className={css.kv}>
@@ -365,8 +381,9 @@ function StateRow({ state, busy, readOnly, onSave, t }: {
         ))}
       </dl>
       <div className={css.cardSectionActions}>
+        <span className={css.storyHelp}>{t('card.editHint')}</span>
         <button type="submit" className={css.buttonPrimary} disabled={busy}>{t('card.save')}</button>
-        <button type="button" className={css.button} disabled={busy} onClick={() => { setDraft(null) }}>{t('card.cancel')}</button>
+        <button type="button" className={css.button} disabled={busy} onClick={cancel}>{t('card.cancel')}</button>
       </div>
     </form>
   )

@@ -1221,7 +1221,7 @@ export type PendingKind = 'mention' | 'experience' | 'plan-missed' | 'info-gap' 
 const PENDING_KINDS: readonly PendingKind[] = ['mention', 'experience', 'plan-missed', 'info-gap', 'relation', 'setting', 'duplicate']
 
 /**
- * A pending item's proposed record, flattened to JSON-safe scalars (the wire
+ * A pending item's proposed record, flattened to JSON-safe values (the wire
  * carries it, so no nested unknowns). Which keys matter follows `kind`.
  */
 export interface PendingPayload {
@@ -1249,6 +1249,9 @@ export interface PendingPayload {
   /** setting / duplicate: the existing world card to supplement, and the chapter's content. */
   readonly cardId?: string
   readonly content?: string
+  /** duplicate: every selectable merge target, with display names aligned by index. */
+  readonly candidateIds?: readonly string[]
+  readonly candidateNames?: readonly string[]
   /** duplicate: the incoming name and shelf to use only when the person confirms a separate card. */
   readonly name?: string
   readonly worldKind?: string
@@ -1286,7 +1289,7 @@ export interface PendingTable {
   readonly items: PendingItem[]
 }
 
-/** Tolerant read of one pending payload: only the known scalar keys survive. */
+/** Tolerant read of one pending payload: only the known JSON-safe values survive. */
 function normalizePendingPayload(raw: unknown): PendingPayload {
   if (typeof raw !== 'object' || raw === null) return {}
   const record = raw as Record<string, unknown>
@@ -1294,6 +1297,10 @@ function normalizePendingPayload(raw: unknown): PendingPayload {
   for (const key of ['foreshadowId', 'kind', 'note', 'answer', 'question', 'characterId', 'fact', 'entry', 'op', 'id', 'relationId', 'event', 'stage', 'toType', 'cardId', 'content', 'name', 'worldKind'] as const) {
     const value = cleanText(record[key], key === 'content' ? 2000 : 500)
     if (value !== undefined) out[key] = value
+  }
+  for (const key of ['candidateIds', 'candidateNames'] as const) {
+    const values = (Array.isArray(record[key]) ? record[key] : []).map(value => cleanText(value, 500)).filter((value): value is string => value !== undefined).slice(0, 20)
+    if (values.length > 0) out[key] = values
   }
   return out
 }
@@ -1575,6 +1582,8 @@ export interface NovelChapterRequest extends NovelWorkRequest {
 export interface NovelDecideRequest extends NovelWorkRequest {
   readonly id: string
   readonly action: 'accept' | 'discard'
+  /** A duplicate's chosen merge target; it must be one of its candidateIds. */
+  readonly cardId?: string
 }
 
 /** A pending item as the board's strip shows it: the queue row plus what it is about. */
@@ -1813,6 +1822,8 @@ export interface TimelineEventView {
   readonly title: string
   readonly when?: string
   readonly status: 'happened' | 'planned' | 'preset' | 'hidden' | 'failed'
+  /** Stored story-time position; derived chapter recaps have none. */
+  readonly order?: number
   readonly source?: string
   readonly who?: readonly string[]
   readonly places?: readonly string[]

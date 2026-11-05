@@ -81,7 +81,7 @@ describe('the timeline in the store', () => {
   })
 
   it('keeps current events in chapter order and appends unanchored backstories to the backstory group', async () => {
-    const { store } = bench()
+    const { store, fs } = bench()
     await store.writeEvent({ workId: DREAM.workId, title: '开场', status: 'happened', chapters: [1] }, SESSION)
     const evidence = '门缝后的敲击声变成了明确的三下'
     const report = await store.extractImport({
@@ -104,6 +104,35 @@ describe('the timeline in the store', () => {
     await store.writeEvent({ workId: DREAM.workId, title: '定点往事', status: 'happened', backstory: true, after: current.id }, SESSION)
     events = (await store.allEvents(DREAM.workId)).events
     expect(happened()).toEqual(['往事甲', '往事乙', '开场', '当前甲', '定点往事', '当前乙'])
+    fs.seed(`${DREAM.workspace}/${DREAM.title}/第4章.md`, `${fs.read(`${DREAM.workspace}/${DREAM.title}/第4章.md`)}\n后续往事被补记。\n`)
+    const followup = await store.extractImport({
+      workId: DREAM.workId, n: 4, payload: {
+        events: [{ title: '无锚后续往事', backstory: true, evidence_in_text: '后续往事被补记' }],
+      },
+    }, SESSION)
+    expect(followup.memory).toMatchObject({ events: 1 })
+    events = (await store.allEvents(DREAM.workId)).events
+    expect(happened()).toEqual(['往事甲', '往事乙', '无锚后续往事', '开场', '当前甲', '定点往事', '当前乙'])
+  })
+
+  it('keeps chapter 1 current events and interleaved backstories in their respective story-time groups', async () => {
+    const { store, fs } = bench()
+    fs.seed(`${DREAM.workspace}/${DREAM.title}/第1章.md`, '开场钟声响起。\n\n当前甲发生。\n\n往事甲被讲起。\n\n当前乙发生。\n\n往事乙被讲起。\n')
+    const report = await store.extractImport({
+      workId: DREAM.workId, n: 1, payload: {
+        events: [
+          { title: '开场', evidence_in_text: '开场钟声响起' },
+          { title: '当前甲', evidence_in_text: '当前甲发生' },
+          { title: '往事甲', backstory: true, evidence_in_text: '往事甲被讲起' },
+          { title: '当前乙', evidence_in_text: '当前乙发生' },
+          { title: '往事乙', backstory: true, evidence_in_text: '往事乙被讲起' },
+        ],
+      },
+    }, SESSION)
+    expect(report.memory).toMatchObject({ events: 5 })
+    const { events } = await store.allEvents(DREAM.workId)
+    expect(events.filter(event => event.status === 'happened' && event.foreshadowId === undefined).sort((a, b) => a.order - b.order).map(event => event.title))
+      .toEqual(['往事甲', '往事乙', '开场', '当前甲', '当前乙'])
   })
 
   it('moves an existing event before another or to the opening and rejects bad positions', async () => {
