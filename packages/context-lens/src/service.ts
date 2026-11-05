@@ -32,7 +32,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, TurnOverview, TurnTiming } from './types.ts'
 import { InspectorStore, scopeAuthorized, toolExecutionFromMeta, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
 import { recordAssembly, type CapturedAssembly } from './segmenter.ts'
-import { HUMAN_MESSAGE_LOOKBACK, applyRoomEvent, emptyRoom } from './room.ts'
+import { applyRoomEvent, emptyRoom } from './room.ts'
 import { fromRequestMessage, serializeMessage } from './messages.ts'
 import { messageOfRow, meterOf, replacementFact, replacementFactsOf, type PendingMeter, type ReplacementRow } from './changes.ts'
 import {
@@ -65,30 +65,6 @@ interface MemberTimingReader {
   } | undefined>
 }
 
-
-/**
- * The human's user/message a room post appended next to its `room/dispatch`
- * (RoomService.postMessage). The chat renders it as the round's row, so a map
- * click on the round scrolls there (rounds have no host turn). A dispatch that
- * names its message (`messageId`) is taken at its word; an older journal falls
- * back to the nearest earlier user-sourced message, the same text preferred.
- */
-export function humanMessageBefore(at: (seq: number) => SessionLogRow | undefined, dispatchSeq: number, data: unknown): string | undefined {
-  const dispatch = (data ?? {}) as { origin?: unknown; text?: unknown; messageId?: unknown }
-  if (dispatch.origin !== 'human') return undefined
-  if (typeof dispatch.messageId === 'string' && dispatch.messageId.length > 0) return dispatch.messageId
-  let nearest: string | undefined
-  for (let seq = dispatchSeq - 1; seq >= Math.max(0, dispatchSeq - HUMAN_MESSAGE_LOOKBACK); seq -= 1) {
-    const row = at(seq)
-    if (row?.type !== 'user/message') continue
-    const message = (row.data ?? {}) as { id?: unknown; source?: { kind?: unknown }; content?: { type?: unknown; text?: unknown }[] }
-    if (message.source?.kind !== 'user' || typeof message.id !== 'string') continue
-    const text = (message.content ?? []).map(part => part.type === 'text' && typeof part.text === 'string' ? part.text : '').join('')
-    if (text === dispatch.text) return message.id
-    nearest ??= message.id
-  }
-  return nearest
-}
 
 /** The parent room's events a member opened alone keeps (its question cards' reconciliation). */
 const PARENT_ROOM_EVENTS = new Set(['room/member-added', 'room/run-state', 'room/question', 'room/question-resolved'])
@@ -238,10 +214,9 @@ export class InspectorService {
     this.store.noteLogActivity(sessionId)
     if (eventType.startsWith('compaction/')) this.store.noteCompaction(sessionId, eventType, event.data as unknown as Record<string, unknown>)
     if (eventType.startsWith('room/')) {
-      const messageId = eventType === 'room/dispatch'
-        ? humanMessageBefore(seq => session.eventAt(seq as typeof event.seq) as unknown as SessionLogRow | undefined, event.seq, event.data)
-        : undefined
-      this.store.noteRoomEvent(sessionId, eventType, messageId === undefined ? event.data : { ...event.data as object, messageId }, event.seq, at)
+      // A round's chat anchor is the `messageId` its dispatch recorded; a
+      // dispatch without one has none (no lookup by text).
+      this.store.noteRoomEvent(sessionId, eventType, event.data, event.seq, at)
       return
     }
     if (event.type === 'tool/result' && event.surfaceOp !== 'append') {
@@ -420,7 +395,11 @@ export class InspectorService {
       const provider = (descriptor?.data as Record<string, unknown> | undefined)?.['provider']
       if (typeof provider === 'string') this.store.noteChildProvider(childId, provider)
       // A CLI member's compaction implies a surface replacement: recorded for the change list.
-      for (const request of foldLogRows(cursor, events, { replacement: fact => this.store.noteReplacement(rootSessionId, fact) })) {
+      // Its execution records name each room run's requests (store.roomTurns).
+      for (const request of foldLogRows(cursor, events, {
+        replacement: fact => this.store.noteReplacement(rootSessionId, fact),
+        execution: record => this.store.noteExecution(childId, record),
+      })) {
         this.store.appendLogRequest(rootSessionId, childId, request)
       }
       this.store.refreshExecutionResults(rootSessionId, childId)
@@ -522,11 +501,8 @@ export class InspectorService {
         const timing = external ? await this.memberTimingMaps(sessionId) : undefined
         this.store.insertLogTurns(sessionId, reconstructSession(events, host => !external && (host === undefined || keep.has(host)), fact => this.store.noteReplacement(sessionId, fact), timing))
         for (const fact of replacementFactsOf(events)) this.store.noteReplacement(sessionId, fact)
-        const bySeq = new Map(events.filter(row => row.seq !== undefined).map(row => [row.seq as number, row]))
         for (const row of events) {
-          if (!row.type.startsWith('room/')) continue
-          const messageId = row.type === 'room/dispatch' && row.seq !== undefined ? humanMessageBefore(seq => bySeq.get(seq), row.seq, row.data) : undefined
-          this.store.noteRoomEvent(sessionId, row.type, messageId === undefined ? row.data : { ...row.data as object, messageId }, row.seq, row.time)
+          if (row.type.startsWith('room/')) this.store.noteRoomEvent(sessionId, row.type, row.data, row.seq, row.time)
         }
         await this.resolveParent(sessionId, events, reader)
       } finally {

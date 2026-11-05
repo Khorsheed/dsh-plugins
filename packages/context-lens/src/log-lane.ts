@@ -93,26 +93,26 @@ export interface SessionLogCursor {
   /** Model-visible messages folded so far, in log order. */
   messages: FoldedMessage[]
   compactions: Map<string, { startedAt: number; hostTurn?: number; request?: BuiltLogRequest }>
-  /** The last turn that closed (a CLI compaction between turns belongs to it). */
-  lastTurnHost?: number
-  /** The latest step/start time — the next request's dispatch proxy. */
+  /** The latest step/start time — when the step was written. */
   stepStartAt: number | undefined
-  /**
-   * The log mirrors an external agent (its descriptor names a provider that
-   * runs in its own process). A mirror that writes a step only once its call
-   * is over writes step/start and the answer together; such a request
-   * starts when the log's previous event happened (`stepPrevAt`).
-   */
+  /** The log mirrors an external agent (its descriptor names a provider that runs in its own process). */
   external?: boolean
-  /** The latest event time that marks progress (not a live-stream checkpoint). */
+  /**
+   * The log carries local-agent execution records (`local-agent/execution`):
+   * from the first one on, one `assistant/message` is one request, and a
+   * request's start is what the log recorded, never guessed.
+   */
+  recorded?: boolean
+  /** The execution whose start record is open (no end yet): every request read meanwhile is its. */
+  openExecution?: string
+  /** Legacy logs only: the latest event time that marks progress (not a live-stream checkpoint). */
   lastEventAt?: number
-  /** The progress event before the latest step/start. */
+  /** Legacy logs only: the progress event before the latest step/start. */
   stepPrevAt?: number
   /**
-   * An external agent's step that reported no usage: a mirror writes one
-   * model call as several steps (one per item or content block) with the
-   * call's usage on its last, so the step waits to join the steps after it
-   * as one request. Its blocks accumulate in `deferredBlocks`.
+   * Legacy logs only (no execution records): an external agent's step that
+   * reported no usage waits to join the steps after it as one request (an
+   * old mirror wrote one call as several steps with the usage on its last).
    */
   deferred?: { request: BuiltLogRequest; hostTurn: number | undefined; blocks: CapturedMessage['content'] }
   /** The latest request/header config, when the log carries any. */
@@ -178,6 +178,39 @@ export interface FoldSink {
   delegation?(delegation: LogDelegation): void
   /** A surface replacement the log implies without a replace op (a CLI member's compaction). */
   replacement?(fact: ReplacementFact): void
+  /** One `local-agent/execution` record (a member execution's start or end). */
+  execution?(record: ExecutionRecord): void
+}
+
+/** One `local-agent/execution` record, read structurally (lens keeps no dependency on local-agent). */
+export type ExecutionRecord =
+  | { phase: 'start'; executionId: string; operation: 'prompt' | 'compact'; caller?: string; cause?: Record<string, unknown>; task?: { sessionId: string; id: string }; at?: number }
+  | { phase: 'end'; executionId: string; outcome?: string; turns: number[]; unrecorded: string[]; at?: number }
+
+/** Structural read of a `local-agent/execution` payload; undefined when malformed. */
+export function readExecutionRecord(data: Record<string, unknown>, at: number | undefined): ExecutionRecord | undefined {
+  const executionId = data['executionId']
+  if (typeof executionId !== 'string' || executionId === '') return undefined
+  if (data['phase'] === 'start') {
+    const cause = typeof data['cause'] === 'object' && data['cause'] !== null ? data['cause'] as Record<string, unknown> : undefined
+    const task = data['task'] as { sessionId?: unknown; id?: unknown } | undefined
+    return {
+      phase: 'start', executionId,
+      operation: data['operation'] === 'compact' ? 'compact' : 'prompt',
+      ...typeof data['caller'] === 'string' ? { caller: data['caller'] } : {},
+      ...cause === undefined ? {} : { cause },
+      ...typeof task?.sessionId === 'string' && typeof task.id === 'string' ? { task: { sessionId: task.sessionId, id: task.id } } : {},
+      ...at === undefined ? {} : { at },
+    }
+  }
+  if (data['phase'] !== 'end') return undefined
+  return {
+    phase: 'end', executionId,
+    ...typeof data['outcome'] === 'string' ? { outcome: data['outcome'] } : {},
+    turns: Array.isArray(data['turns']) ? data['turns'].filter((turn): turn is number => typeof turn === 'number') : [],
+    unrecorded: Array.isArray(data['unrecorded']) ? data['unrecorded'].filter((item): item is string => typeof item === 'string') : [],
+    ...at === undefined ? {} : { at },
+  }
 }
 
 /**
@@ -188,7 +221,7 @@ export interface FoldSink {
  */
 export const IN_PROCESS_PROVIDERS: ReadonlySet<string> = new Set(['spawn', 'fork'])
 
-/** A step/start this close to its answer was written after the call, not when it began. */
+/** Legacy logs only: a step/start this close to its answer was written after the call, not when it began. */
 const MIRROR_LAG_MS = 50
 
 /** A fresh cursor for one log. */
@@ -248,7 +281,6 @@ export function foldLogRows(
           ? data['reason'] as { kind: string; error?: { message?: string } }
           : { kind: 'unknown' }
         if (hostTurn !== undefined) sink.turnEnd?.(hostTurn, reason, row.time)
-        if (hostTurn !== undefined) cursor.lastTurnHost = hostTurn
         cursor.turnHost = undefined
         break
       }
@@ -330,7 +362,7 @@ export function foldLogRows(
           cursor.deferred.blocks = blocks
           joinCall(request, own, blocks)
         }
-        if (cursor.external === true && own.usage === undefined && own.status !== 'failed') {
+        if (cursor.external === true && cursor.recorded !== true && own.usage === undefined && own.status !== 'failed') {
           cursor.deferred ??= { request, hostTurn, blocks: [...message?.content ?? []] }
         } else {
           delete cursor.deferred
@@ -427,6 +459,25 @@ export function foldLogRows(
         }
         break
       }
+      case 'local-agent/execution': {
+        const record = readExecutionRecord(data, row.time)
+        if (record === undefined) break
+        if (cursor.recorded !== true) {
+          // From here on the log records its executions: a legacy call still waiting to join closes as it is.
+          flushDeferred(cursor, built, sink)
+          cursor.recorded = true
+        }
+        if (record.phase === 'start') cursor.openExecution = record.executionId
+        else {
+          if (cursor.openExecution === record.executionId) delete cursor.openExecution
+          // Only a whole-round usage exists: the step carrying it reads as the round's total.
+          if (record.unrecorded.includes('per-call-usage')) {
+            for (const request of cursor.requests) if (request.executionId === record.executionId && request.usage !== undefined) request.roundTotal = true
+          }
+        }
+        sink.execution?.(record)
+        break
+      }
       case 'local-agent/compaction': {
         const request = buildCliCompaction(cursor, row, data)
         if (request) { built.push(request); sink.request?.(request.compaction!.hostTurn, request) }
@@ -506,15 +557,16 @@ function placeMessage(cursor: SessionLogCursor, row: SessionLogRow, message: Cap
  * read structurally): one compaction request with the call's usage and the
  * CLI's summary as its output. The CLI's input is not in the log, so the
  * request carries none (inputPartial). It belongs to the turn it ran in (the
- * CLI's own, mid-turn) or, run between turns (`/compact`), to the turn that
- * closed last — the room round that turn served shows it in its 压缩 tab.
+ * CLI's own, mid-turn); run between turns (`/compact`) it has no turn, only
+ * the execution whose records bracket it (`executionId`). What the source
+ * does not report (`unrecorded`) is carried as written.
  */
 function buildCliCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: Record<string, unknown>): BuiltLogRequest | undefined {
   const outcome = data['outcome']
   if (outcome !== 'completed' && outcome !== 'failed' && outcome !== 'cancelled') return undefined
   const num = (value: unknown): number | undefined => typeof value === 'number' && Number.isFinite(value) ? value : undefined
   const between = cursor.turnHost === undefined
-  const hostTurn = cursor.turnHost ?? cursor.lastTurnHost
+  const hostTurn = cursor.turnHost
   // The call's input is the member's whole context at that moment — the
   // history this log already folded, under the same system prompt and tools
   // (kimi's llm.request kind:compaction: messageCount = the history,
@@ -545,9 +597,11 @@ function buildCliCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: 
     usage: data['usage'],
   }, outcome !== 'completed')
   const before = num(data['beforeTokens']), after = num(data['afterTokens'])
+  const unrecorded = Array.isArray(data['unrecorded']) ? data['unrecorded'].filter((item): item is string => typeof item === 'string') : []
   return {
     ...result,
     logIndex,
+    ...cursor.openExecution === undefined ? {} : { executionId: cursor.openExecution },
     ...outcome === 'completed' ? {} : { status: 'failed' as const, error: typeof data['error'] === 'string' ? data['error'] : `compaction ${outcome}` },
     responseSummary: { kind: 'compaction' }, purpose: 'compaction',
     compaction: {
@@ -557,6 +611,7 @@ function buildCliCompaction(cursor: SessionLogCursor, row: SessionLogRow, data: 
       source: data['source'] === 'auto' ? 'auto' : 'manual',
       ...before === undefined ? {} : { beforeTokens: before },
       ...after === undefined ? {} : { afterTokens: after },
+      ...unrecorded.length === 0 ? {} : { unrecorded },
     },
   }
 }
@@ -833,8 +888,10 @@ function buildRequest(
   failed: boolean,
 ): BuiltLogRequest {
   const written = cursor.stepStartAt ?? row.time ?? 0
-  // Written with its answer: the step opened after the call was over.
-  const late = cursor.external === true && row.time !== undefined && row.time - written < MIRROR_LAG_MS && cursor.stepPrevAt !== undefined
+  // Legacy logs only: written with its answer, the step opened after the call
+  // was over, so the call is taken to start at the previous event. A log with
+  // execution records keeps what it recorded (below).
+  const late = cursor.recorded !== true && cursor.external === true && row.time !== undefined && row.time - written < MIRROR_LAG_MS && cursor.stepPrevAt !== undefined
   const inferredStartedAt = late ? cursor.stepPrevAt! : written
   const mirroredSettledAt = row.time ?? inferredStartedAt
   const hostTurn = typeof data['turn'] === 'number' ? data['turn'] : cursor.turnHost
@@ -846,9 +903,12 @@ function buildRequest(
   // A mirror writes the step after its model call, never at dispatch. Only
   // original request records can replace the legacy previous-event estimate.
   const requestStart = cursor.requestStarts?.get(history?.key ?? historyKey)
-  const startedAt = requestStart === undefined
-    ? inferredStartedAt
-    : Math.min(requestStart, streamFacts.firstChunkAt ?? requestStart)
+  // A recorded external log with no original dispatch time: the stream's own
+  // first chunk when it has one, else the step's write time, marked as such.
+  const recordedOnly = cursor.recorded === true && cursor.external === true && requestStart === undefined
+  const startedAt = requestStart !== undefined
+    ? Math.min(requestStart, streamFacts.firstChunkAt ?? requestStart)
+    : recordedOnly ? streamFacts.firstChunkAt ?? written : inferredStartedAt
   const blockEnds = streamFacts.blocks.flatMap(block => block.end === undefined ? [] : [block.end])
   const callsComplete = streamFacts.blocks.filter(block => block.kind === 'tool-call')
     .every(block => block.callId !== undefined && typeof cursor.toolTimings?.get(block.callId)?.endedAt === 'number')
@@ -903,6 +963,8 @@ function buildRequest(
   return {
     ...cursor.numberedFromStart ? { requestNumber: cursor.requests.length + 1 } : {},
     logIndex,
+    ...cursor.openExecution === undefined ? {} : { executionId: cursor.openExecution },
+    ...recordedOnly && streamFacts.firstChunkAt === undefined ? { startUnrecorded: true as const } : {},
     ...bodiless ? { bodiless: true as const } : {},
     ...hostTurn === undefined ? {} : { hostTurn },
     startedAt,

@@ -50,9 +50,11 @@ export function resolveTurnSeq(turns: readonly TurnListItem[], messageId: string
  * A turn with nothing to look at: no request, no human message, no room
  * round, no reply — e.g. a plugin's followup the host refused before the
  * first model call (a restart notice woken into a room behind an external
- * coordinator). It stays listed, but never becomes the panel's default.
+ * coordinator). It stays listed, but never becomes the panel's default. Nor
+ * does the room's 未归轮 group: it belongs to no point in the conversation.
  */
 export function isHollowTurn(turn: TurnListItem): boolean {
+  if (turn.roomUnattributed === true) return true
   return turn.requestCount === 0 && turn.query === '' && turn.room === undefined && turn.closingMessageId === undefined
 }
 

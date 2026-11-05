@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentScopeOverview, ListTurnsResult, RequestLink } from '../types.ts'
 import { requestNumberText } from './aggregate.ts'
+import { unrecordedText } from './RoomRecords.tsx'
 import type { InspectorTabProps } from './contract.ts'
 import css from './AgentTabs.module.css'
 type T = InspectorTabProps['t']
@@ -95,8 +96,12 @@ function Relation({ scope, onOpenRequest, t }: { readonly scope: AgentScopeOverv
     // An external CLI member's: who started it, and the occupancy it left.
     if (c?.member !== undefined) {
       const m = c.member
-      parts.push(<span key="m">{t(m.source === 'auto' ? 'rel.memberAuto' : 'rel.memberManual', { name: m.name ?? '' })}</span>)
+      // In the 未归轮 group the compaction belongs to no round: never say "this round".
+      const loose = scope.scopeId.startsWith('compaction:unattributed:')
+      parts.push(<span key="m">{t(m.source === 'auto' ? loose ? 'rel.memberAutoLoose' : 'rel.memberAuto' : 'rel.memberManual', { name: m.name ?? '' })}</span>)
       if (m.beforeTokens !== undefined && m.afterTokens !== undefined) parts.push(<span key="t">{t('rel.memberTokens', { before: compactTokens(m.beforeTokens), after: compactTokens(m.afterTokens) })}</span>)
+      // What the source does not report, as local-agent marked it: never filled in.
+      if (m.unrecorded !== undefined && m.unrecorded.length > 0) parts.push(<span key="u">{t('rel.memberUnrecorded', { items: unrecordedText(m.unrecorded, t) })}</span>)
     } else if (c?.betweenTurns) parts.push(<span key="w">{t('rel.betweenTurns')}</span>)
     else if (c?.after) parts.push(<span key="w">{t('rel.after', { seq: requestNumberText(c.after) })}</span>, <span key="b">{back(c.after)}</span>)
   } else if (scope.delegatedBy) {

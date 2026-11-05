@@ -51,6 +51,10 @@ describe('resolveTurnSeq', () => {
     expect(latestTurnSeq([...turns, hollow])).toBe(3)
     expect(resolveTurnSeq([...turns, hollow], 'm-unknown')).toBe(3)
     expect(latestTurnSeq([hollow])).toBe(4)
+    // The room's 未归轮 group (listed last) holds requests, but is no point to land on.
+    const group = turn({ turnSeq: -1_000_000, query: '', requestCount: 2, roomUnattributed: true })
+    expect(isHollowTurn(group)).toBe(true)
+    expect(latestTurnSeq([...turns, group])).toBe(3)
   })
 
   it('returns undefined for a session with no captured turns', () => {

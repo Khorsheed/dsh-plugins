@@ -158,6 +158,9 @@ const TIMING2: TurnTiming = {
 }
 
 interface BenchOptions {
+  /** listTurns' room-records flag (batch 5 S8). */
+  readonly roomRecords?: 'none' | 'some' | undefined
+  readonly openMemberAt?: ((memberSession: string, at: number) => void) | undefined
   readonly turns?: TurnListItem[] | undefined
   readonly backfill?: BackfillInfo | undefined
   readonly listError?: boolean | undefined
@@ -195,7 +198,7 @@ function bench(opts: BenchOptions = {}) {
       if (opts.listError === true || (opts.listFailFirst !== undefined && attempt === 0)) {
         return { ok: false, error: { code: 'x', message: 'boom' } }
       }
-      return { ok: true, value: { turns: opts.turns ?? TURNS, backfill: opts.backfill ?? { state: 'complete' }, ...opts.range === undefined ? {} : { range: opts.range } } }
+      return { ok: true, value: { turns: opts.turns ?? TURNS, backfill: opts.backfill ?? { state: 'complete' }, ...opts.range === undefined ? {} : { range: opts.range }, ...opts.roomRecords === undefined ? {} : { roomRecords: opts.roomRecords } } }
     }),
     loadThrough: vi.fn(async (_sessionId: string, _seq: number): Promise<void> => { opts.onLoadThrough?.() }),
     loadTurns: vi.fn(async (): Promise<Result<ListTurnsResult>> => ({ ok: true, value: { turns: opts.turns ?? TURNS, backfill: { state: 'complete' }, ...opts.range === undefined ? {} : { range: opts.range } } })),
@@ -216,6 +219,7 @@ function bench(opts: BenchOptions = {}) {
   const props = {
     sessionId: opts.sessionId ?? 's1',
     ...opts.openInMemberSession === undefined ? {} : { openInMemberSession: opts.openInMemberSession },
+    ...opts.openMemberAt === undefined ? {} : { openMemberAt: opts.openMemberAt },
     useTabInfo: () => ({
       sidebar: { expanded: true, fullscreen: false },
       panel: { id: 'p1' },
@@ -963,5 +967,64 @@ describe('compression provenance navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: '← 返回来源请求' }))
     await screen.findByRole('button', { name: '查看压缩调用及原历史 ↗' })
     expect(screen.getByRole('button', { name: '#101 · read:a.ts' }).getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
+describe('Context Lens room rounds without records (batch 5 S8)', () => {
+  const OLD: TurnListItem = { ...TURNS[0]!, turnSeq: -1_000_020, hostTurn: undefined, ordinal: 1, query: '你好', room: { targets: ['coco'], unrecorded: true }, closingMessageId: undefined, requestCount: 0, scopeCount: 0 }
+  const NEW: TurnListItem = { ...TURNS[1]!, turnSeq: -1_000_040, hostTurn: undefined, ordinal: 2, query: '写测试', room: { targets: ['coco'] }, closingMessageId: undefined }
+  const GROUP: TurnListItem = { ...TURNS[0]!, turnSeq: -1_000_000, hostTurn: undefined, query: '', roomUnattributed: true, closingMessageId: undefined, requestCount: 1 }
+  const fallback = { turn: OLD, scopes: [], roomFallback: { members: [{ name: 'coco', sessionId: 'child-coco', startedAt: 5_050, endedAt: 8_050 }, { name: 'ada', startedAt: 5_060 }] } }
+  const member = { ...OVERVIEW2.scopes[1]!, scopeId: 'child-coco', kind: 'subagent' as const, label: 'coco',
+    execution: { executionId: 'e3', cause: 'member', fromMember: 'kimi', unrecorded: ['call-boundaries', 'per-call-usage'] } }
+  const overview = (seq: number): TurnOverview | undefined => seq === OLD.turnSeq ? fallback as never
+    : seq === NEW.turnSeq ? { ...OVERVIEW2, turn: NEW, scopes: [member] } as never
+      : seq === GROUP.turnSeq ? { turn: GROUP, scopes: [{ ...OVERVIEW2.scopes[1]!, scopeId: 'compaction:unattributed:child-coco', kind: 'compaction', label: 'coco',
+        compaction: { member: { name: 'coco', source: 'auto', unrecorded: ['usage', 'before-after', 'summary'] } } }] } as never
+        : undefined
+
+  it('an old round in a mixed room says so on the round and opens the member\'s own lens at that time', async () => {
+    const open = vi.fn()
+    // Its own session: the door keeps this panel's place, which must not leak into the other cases.
+    bench({ turns: [OLD, NEW, GROUP], roomRecords: 'some', overview, openMemberAt: open, params: { turnSeq: OLD.turnSeq }, revision: 1, sessionId: 'room-fallback' })
+    expect(await screen.findByText(zh['room.fallbackTitle'])).toBeTruthy()
+    // Mixed: no session-wide notice.
+    expect(screen.queryByText(zh['room.fallbackSession'])).toBeNull()
+    // A run whose session was never recorded has no door.
+    expect(screen.getByText('ada（未记录成员会话）')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: `${zh['room.fallbackOpen']} · coco` }))
+    expect(open).toHaveBeenCalledWith('child-coco', 5_050)
+  })
+
+  it('a room with no recorded round says it once at the top; each round keeps only its doors', async () => {
+    bench({ turns: [OLD], roomRecords: 'none', overview, openMemberAt: vi.fn() })
+    expect(await screen.findByText(zh['room.fallbackSession'])).toBeTruthy()
+    expect(screen.queryByText(zh['room.fallbackTitle'])).toBeNull()
+    expect(screen.getByRole('button', { name: `${zh['room.fallbackOpen']} · coco` })).toBeTruthy()
+  })
+
+  it('a recorded round\'s member view says why it ran and what its source does not report', async () => {
+    bench({ turns: [OLD, NEW, GROUP], roomRecords: 'some', overview, params: { turnSeq: NEW.turnSeq }, revision: 1 })
+    expect(await screen.findByText('起因：成员 kimi 发来')).toBeTruthy()
+    expect(screen.getByText('来源不记录：调用边界、逐次用量')).toBeTruthy()
+    expect(screen.getByText(zh['exec.callBoundaries'])).toBeTruthy()
+  })
+
+  it('the 未归轮 group is never the landing turn, and shows unreported compaction facts as 未记录', async () => {
+    bench({ turns: [OLD, NEW, GROUP], roomRecords: 'some', overview })
+    // Lands on the latest round, not the group.
+    expect(await screen.findByText('起因：成员 kimi 发来')).toBeTruthy()
+    cleanup()
+    bench({ turns: [OLD, NEW, GROUP], roomRecords: 'some', overview, params: { turnSeq: GROUP.turnSeq }, revision: 1 })
+    expect(await screen.findByText(zh['room.unattributedNote'])).toBeTruthy()
+    expect(screen.getByText('未记录：用量、前后大小、摘要')).toBeTruthy()
+    // It belongs to no round: no 「在本轮中」.
+    expect(screen.getByText('coco 的 CLI 自动压缩了上下文')).toBeTruthy()
+    expect(screen.queryByText(/在本轮中/)).toBeNull()
+  })
+
+  it('a locateTime navigation selects the turn holding that moment', async () => {
+    bench({ params: { locateTime: { at: 3_500 } }, revision: 1 })
+    await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
   })
 })
