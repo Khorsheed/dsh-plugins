@@ -53,6 +53,7 @@ export const zh = {
   'pending.kind.info-gap': '信息差',
   'pending.kind.relation': '关系',
   'pending.kind.setting': '设定',
+  'pending.kind.duplicate': '疑似重复',
   'pending.confidence.medium': '中置信',
   'pending.confidence.low': '低置信',
   'pending.chapter': '第{n}章',
@@ -65,6 +66,8 @@ export const zh = {
   'pending.ack': '知道了',
   'pending.setting.accept': '以这章为准',
   'pending.setting.discard': '保留卡上的',
+  'pending.duplicate.accept': '合并到已有卡',
+  'pending.duplicate.discard': '确认另建',
   'pending.readOnly': '这张画布是只读的，打开对话里的画布再处理',
   'pending.openCard': '打开卡片',
 
@@ -813,6 +816,7 @@ export const en: Record<keyof typeof zh, string> = {
   'pending.kind.info-gap': 'Info gap',
   'pending.kind.relation': 'Relation',
   'pending.kind.setting': 'Setting',
+  'pending.kind.duplicate': 'Possible duplicate',
   'pending.confidence.medium': 'Medium confidence',
   'pending.confidence.low': 'Low confidence',
   'pending.chapter': 'Ch. {n}',
@@ -825,6 +829,8 @@ export const en: Record<keyof typeof zh, string> = {
   'pending.ack': 'Got it',
   'pending.setting.accept': 'Use this chapter',
   'pending.setting.discard': 'Keep the card',
+  'pending.duplicate.accept': 'Merge into existing',
+  'pending.duplicate.discard': 'Create separate',
   'pending.readOnly': 'This canvas is read-only here; handle it from the canvas in a conversation',
   'pending.openCard': 'Open card',
 

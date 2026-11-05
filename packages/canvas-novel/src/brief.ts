@@ -19,6 +19,7 @@
  */
 export { capacityOf, targetWordsOf, WORDS_PER_BEAT } from './types.ts'
 import { TIER_LABELS, type StoryEvent } from './timeline.ts'
+import { settingKindOf } from './settings.ts'
 import {
   capacityOf, coreSuspenseNudge, isOverdue, targetWordsOf, WORDS_PER_BEAT, nextMilestoneOf, RELATION_POINT_SCALE, relationStanding, revealText, revealVolume, volumeNumeral, volumePosition,
   type ChapterPlan, type ChapterRecord, type CharacterView, type ExperienceEntry, type ForeshadowOp, type ForeshadowView, type OutlineDoc,
@@ -596,11 +597,20 @@ function renderPlanWithin(data: BriefData, limits: RenderLimits, budget: number,
   return text
 }
 
+const EXTRACT_SETTING_ROSTER_MAX = 100
+
+/** The bounded setting roster for reconciliation: chapter matches, recent use, then board order. */
+function extractSettingRoster(data: BriefData, body: string): { readonly rows: readonly RuleView[]; readonly omitted: number } {
+  const ordered = [...workingRulesOf(data.canonRules, data.target.plan?.uses, body), ...(data.workingRules ?? []), ...data.canonRules]
+  const rows = ordered.filter((rule, index) => ordered.findIndex(candidate => candidate.cardId === rule.cardId) === index)
+  return { rows: rows.slice(0, EXTRACT_SETTING_ROSTER_MAX), omitted: Math.max(0, rows.length - EXTRACT_SETTING_ROSTER_MAX) }
+}
+
 /** The extract pack's output schema (the subagent's strict JSON contract; the import gate reads these keys). */
 export const EXTRACT_OUTPUT_SCHEMA = `{
   "beats_delivered": [{ "beat": 走向的序号（从 1 起）, "evidence_in_text": "≤50字原文" }],
   "info_gaps_closed": [{ "gap": 信息差的序号（从 1 起）, "evidence_in_text": "≤50字原文" }],
-  "memories": [{ "kind": "世界|原则", "name": "仅世界：这条设定叫什么（地点、势力、物品或规则的名字）", "world_kind": "仅世界：体系|地点|势力|物种与道具", "content": "具体的设定或写作原则，能复述", "evidence_in_text": "≤50字原文" }],
+  "memories": [{ "kind": "世界|原则", "ref": "仅世界：补充已有设定时给名册里的 w 编号", "name": "仅世界：这条设定叫什么（地点、势力、物品或规则的名字）", "world_kind": "仅世界：体系|地点|势力|物种与道具", "content": "具体的设定或写作原则，能复述", "evidence_in_text": "≤50字原文" }],
   "foreshadow_mentions": [{ "foreshadow_id": "#12", "kind": "planted|advanced|hinted|resolved", "answer": "仅 resolved 给", "note": "…", "confidence": "high|medium|low", "evidence_in_text": "≤50字原文" }],
   "new_foreshadows": [{ "question": "…", "evidence_in_text": "≤50字原文" }],
   "new_characters": [{ "name": "…", "identity": "一句身份", "evidence_in_text": "≤50字原文" }],
@@ -631,6 +641,7 @@ export const EXTRACT_OUTPUT_SCHEMA = `{
  * @returns the material pack, ready to hand to the subagent as a one-shot task.
  */
 export function renderExtractBrief(data: BriefData, body: string): string {
+  const settings = extractSettingRoster(data, body)
   return [
     `你是长篇小说的记忆对账员。输入是第${data.target.n}章正文、本章计划、活跃伏笔榜、角色花名册、关系榜。`,
     '输出严格 JSON（schema 在最后）。规则：',
@@ -638,7 +649,8 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     '2. 伏笔/角色只按 id 引用榜单与名册中的对象；不认识的对象放 new_*，不硬靠；',
     '   new_foreshadows 只收读者会一直惦记、后文必须回收的问题（一章至多 2 条），一闪而过的好奇不算；',
     '   本章新登场的角色写进 new_characters，他们的经历和现状照样写，character_id 填名字；',
-    '   世界设定给 name（设定的名字）和具体内容，同一个设定只写一条；',
+    '   世界设定给 name 和具体内容，同一个设定只写一条；补充名册里的已有设定时给 ref，不另建合并名卡；',
+    '   名册只列相关设定，不全；主 agent 可用 novel_read(what=settings, query, kind) 搜索，或用 refs 读详情；',
     '3. confidence 只用在伏笔提及、角色经历与现状上：有原文依据但拿不准的给 medium（照样记下），基本是猜的给 low（不记）；',
     '   伏笔提及的 kind：hinted（暗示）= 读者能察觉、但剧情没动；advanced（推进）= 出现了新信息或新行动；',
     '4. 本章计划的走向逐条核对：正文写到了的那一拍写进 beats_delivered（带 evidence），没写到的不报；',
@@ -670,6 +682,10 @@ export function renderExtractBrief(data: BriefData, body: string): string {
     '',
     '【角色花名册】',
     ...(data.roster.length === 0 ? ['（还没有角色卡。）'] : data.roster.map(character => `- [${character.ref}] ${character.name}${identityOf(character)}`)),
+    '',
+    `【已有设定名册】（只列本章相关与近期使用，最多 ${EXTRACT_SETTING_ROSTER_MAX} 条；补充已有设定给 ref）`,
+    ...(settings.rows.length === 0 ? ['（还没有相关设定卡。）'] : settings.rows.map(rule => `- [${rule.ref}] ${rule.name ?? rule.text.slice(0, 40)}（${settingKindOf(rule)}）`)),
+    ...(settings.omitted === 0 ? [] : [`（另有 ${settings.omitted} 条未列；需要时由主 agent 搜索。）`]),
     '',
     '【关系榜】',
     ...(data.relations.length === 0 ? ['（还没有关系卡。）'] : data.relations.map(relationLinePlan)),

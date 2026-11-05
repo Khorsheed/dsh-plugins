@@ -18,6 +18,7 @@
     "src/remote.ts",
     "src/panel-session.ts",
     "src/skill.ts",
+    "src/settings.ts",
     "src/store.ts",
     "src/tools.ts",
     "src/desk.ts",

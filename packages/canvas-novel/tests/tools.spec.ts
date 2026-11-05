@@ -122,6 +122,13 @@ describe('the novel tools', () => {
     expect(await call(read, { what: 'brief' })).toContain('梦境监护者')
   })
 
+  it('searches settings by keyword and kind, and reads a requested ref in full', async () => {
+    const { read } = await bench({ bound: true })
+    expect(await call(read, { what: 'settings', query: '真名', kind: '规则' })).toContain('[w1]')
+    expect(await call(read, { what: 'settings', refs: ['w2'] })).toContain('蓝色叶子是梦主意识碎片的载体')
+    expect(await call(read, { what: 'settings', query: '不存在的名字' })).toContain('没有匹配的设定')
+  })
+
   it('refuses a chapter body on a canvas without a workspace, and says how to fix it', async () => {
     const { write, canvas } = await bench()
     canvas.addBoard({ id: 'canvas_bare00001', title: '无处' }).bind('s-tools', 'canvas_bare00001')

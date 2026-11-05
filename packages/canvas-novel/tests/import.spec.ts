@@ -352,6 +352,46 @@ describe('re-reconciling a changed chapter, and what a failed import leaves', ()
     expect(chapter.settings).toEqual([CARD.leafCarrier, CARD.trueName])
   })
 
+  it('an explicit memory ref supplements the existing setting without relying on its descriptive name', async () => {
+    const { store, canvas } = seededStore()
+    const created = await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { name: '三板斧信息科技有限公司', rule: '由于心创立。' } }, SESSION)
+    const report = await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
+      memories: [{ kind: '世界', ref: created.ref, name: '于心的创业公司', content: '公司专注于企业协作工具。', evidence_in_text: '门后不回答问题' }],
+    } }, SESSION)
+    expect(report.newCards).toEqual([])
+    expect(canvas.card(DREAM.workId, created.cardId!)!.fields!['rule']).toContain('（第5章）公司专注于企业协作工具。')
+    expect(cardsWith(canvas, '于心的创业公司')).toEqual([])
+  })
+
+  it('a combined name waits for a merge decision and appends only after the person accepts', async () => {
+    const { store, canvas } = seededStore()
+    const micro = await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { name: '微系', rule: '微系生态。' } }, SESSION)
+    await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { name: '乌托邦', rule: '乌托邦社区。' } }, SESSION)
+    await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
+      memories: [{ kind: '世界', name: '微系与乌托邦', content: '两个平台实现账号互通。', evidence_in_text: '门后不回答问题' }],
+    } }, SESSION)
+    expect(cardsWith(canvas, '微系与乌托邦')).toEqual([])
+    const [pending] = await store.listPending({ workId: DREAM.workId })
+    expect(pending).toMatchObject({ kind: 'duplicate', payload: { cardId: micro.cardId, name: '微系与乌托邦' } })
+    expect((await store.decidePending({ workId: DREAM.workId, id: pending!.id, action: 'accept' }, SESSION)).ok).toBe(true)
+    expect(canvas.card(DREAM.workId, micro.cardId!)!.fields!['rule']).toContain('（第5章）两个平台实现账号互通。')
+    expect(cardsWith(canvas, '微系与乌托邦')).toEqual([])
+  })
+
+  it('a suspected duplicate becomes a separate card only when the person confirms it', async () => {
+    const { store } = seededStore()
+    const micro = await store.writeCard({ workId: DREAM.workId, role: 'world', fields: { name: '微系', rule: '微系生态。' } }, SESSION)
+    await store.extractImport({ workId: DREAM.workId, n: 5, payload: {
+      memories: [{ kind: '世界', name: '微系联盟', content: '微系联盟是一种跨平台合作。', evidence_in_text: '门后不回答问题' }],
+    } }, SESSION)
+    const [pending] = await store.listPending({ workId: DREAM.workId })
+    expect(pending).toMatchObject({ kind: 'duplicate', payload: { cardId: micro.cardId, name: '微系联盟' } })
+    expect((await store.decidePending({ workId: DREAM.workId, id: pending!.id, action: 'discard' }, SESSION)).ok).toBe(true)
+    const entries = (await store.readEntries(DREAM.workId))!
+    expect(entries.rules.find(rule => rule.name === '微系联盟')?.text).toContain('微系联盟是一种跨平台合作。')
+    expect(entries.rules.find(rule => rule.cardId === micro.cardId)?.text).not.toContain('跨平台合作')
+  })
+
   it('a new character named with an aside is the registered one, not a second card', async () => {
     const { store, canvas } = seededStore()
     const report = await store.extractImport({ workId: DREAM.workId, n: 5, payload: {

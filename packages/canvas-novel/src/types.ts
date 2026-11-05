@@ -1216,9 +1216,9 @@ export function laterForeshadowState(a: ForeshadowState, b: ForeshadowState): Fo
  * person. A relation's level-up, rift, repair or new type is one too: the
  * text earned it, but the person decides the pair moved.
  */
-export type PendingKind = 'mention' | 'experience' | 'plan-missed' | 'info-gap' | 'relation' | 'setting'
+export type PendingKind = 'mention' | 'experience' | 'plan-missed' | 'info-gap' | 'relation' | 'setting' | 'duplicate'
 
-const PENDING_KINDS: readonly PendingKind[] = ['mention', 'experience', 'plan-missed', 'info-gap', 'relation', 'setting']
+const PENDING_KINDS: readonly PendingKind[] = ['mention', 'experience', 'plan-missed', 'info-gap', 'relation', 'setting', 'duplicate']
 
 /**
  * A pending item's proposed record, flattened to JSON-safe scalars (the wire
@@ -1246,9 +1246,12 @@ export interface PendingPayload {
   readonly event?: string
   readonly stage?: string
   readonly toType?: string
-  /** setting: the world card the chapter contradicts, and what the chapter says instead (adopting rewrites the card's 设定). */
+  /** setting / duplicate: the existing world card to supplement, and the chapter's content. */
   readonly cardId?: string
   readonly content?: string
+  /** duplicate: the incoming name and shelf to use only when the person confirms a separate card. */
+  readonly name?: string
+  readonly worldKind?: string
 }
 
 /** One row of `pending.json` (the review queue's snapshot — a derived cache that can be rebuilt). */
@@ -1288,7 +1291,7 @@ function normalizePendingPayload(raw: unknown): PendingPayload {
   if (typeof raw !== 'object' || raw === null) return {}
   const record = raw as Record<string, unknown>
   const out: { -readonly [K in keyof PendingPayload]?: PendingPayload[K] } = {}
-  for (const key of ['foreshadowId', 'kind', 'note', 'answer', 'question', 'characterId', 'fact', 'entry', 'op', 'id', 'relationId', 'event', 'stage', 'toType', 'cardId', 'content'] as const) {
+  for (const key of ['foreshadowId', 'kind', 'note', 'answer', 'question', 'characterId', 'fact', 'entry', 'op', 'id', 'relationId', 'event', 'stage', 'toType', 'cardId', 'content', 'name', 'worldKind'] as const) {
     const value = cleanText(record[key], key === 'content' ? 2000 : 500)
     if (value !== undefined) out[key] = value
   }
@@ -1368,6 +1371,8 @@ export interface WriteChapterRequest {
 /** The subagent's world-rule row (strict JSON, tolerant reads): 世界 by default, 原则 for a writing principle. */
 export interface ExtractMemoryInput {
   readonly kind?: string
+  /** 世界 only: an existing setting to supplement without creating a duplicate. */
+  readonly ref?: string
   /** 世界 only: the setting's title — a place, an item, a rule's name. */
   readonly name?: string
   /** 世界 only: 地点|势力|道具|规则|历史|其他. */
@@ -1510,6 +1515,8 @@ export interface ImportReport {
   readonly missed: number
   /** Plan beats the manuscript carried, and the beats it did not (a reminder, never pending). */
   readonly beats: { readonly delivered: number; readonly missed: number }
+  /** Suspected duplicate settings left for the person, never applied automatically. */
+  readonly pending: number
   readonly dropped: readonly ImportDrop[]
   /**
    * What used to wait in 待审 and is applied at once now (2026-10-09): 信息差,

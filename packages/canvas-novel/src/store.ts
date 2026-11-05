@@ -47,6 +47,7 @@ import {
   type Candidate, type EventPrecondition, type RecallPins, type StoryEvent, type TimelineDoc,
 } from './timeline.ts'
 import { normalizeOrganizePlan, organizeTargetOf, renderOrganizePlan, type OrganizeCreate, type OrganizeMove, type OrganizePlan } from './organize.ts'
+import { suspectedSettingDuplicate } from './settings.ts'
 import {
   canvasBoardOf, fieldDefsOf, LEGACY_WORLD_SEED, NOVEL_GENRE, NOVEL_ROLES, SETTING_SORT_KEYS, SETTING_SORTS, settingSortOf, sortOfWorldKind, WORLD_KINDS,
   type SettingSort,
@@ -3344,18 +3345,24 @@ export class NovelService {
       let sort: SettingSort | undefined
       if (role === 'world') {
         const name = bareName(cleanText(raw.name, 80)) ?? settingNameOf(content)
-        // A setting the board already has is this chapter USING it: linked to
-        // the chapter, and checked — a chapter that words it otherwise adds
-        // its line to the card (never replacing it) and the answer says so.
-        const existing = namesake(entries, role, name)
+        const ref = cleanText(raw.ref, 40)
+        const handle = ref === undefined ? undefined : this.resolveCard(entries, ref, 'world')
+        if (ref !== undefined && handle?.role !== 'world') {
+          dropped.push({ kind: 'memory', reason: 'id-not-in-ledger', ref })
+          continue
+        }
+        const named = handle === undefined ? undefined : entries.rules.find(rule => rule.cardId === handle.cardId)
+        // An explicit ref wins over the chapter's descriptive name. Otherwise
+        // exact names still link and append; only new differences are written.
+        const existing = handle === undefined ? namesake(entries, role, name) : { cardId: handle.cardId, ref: named?.ref ?? ref! }
         if (existing !== undefined) {
           if (!settings.includes(existing.cardId)) settings.push(existing.cardId)
           const card = entries.board.cards.find(candidate => candidate.id === existing.cardId)
           const rule = squashText(card === undefined ? '' : mainTextOf(card, 'world'))
           const said = squashText(content)
-          if (rule !== '' && !rule.includes(said) && !said.includes(rule)) {
+          if ((rule === '' || !rule.includes(said)) && (rule === '' || !said.includes(rule))) {
             pend({
-              kind: 'setting', chapter: chapter.n, reason: `补进设定 ${existing.ref}「${name}」：这章写的是「${content}」，和卡上原来的说法不完全一样，已补在卡上`,
+              kind: 'setting', chapter: chapter.n, reason: `补进设定 ${existing.ref}「${named?.name ?? name}」：这章写的是「${content}」，和卡上原来的说法不完全一样，已补在卡上`,
               payload: { cardId: existing.cardId, content }, evidenceInText: evidence!,
             })
           }
@@ -3366,8 +3373,16 @@ export class NovelService {
           dropped.push({ kind: 'memory', reason: 'duplicate', ref: `${name}（${duplicate}）` })
           continue
         }
-        fields['name'] = name
         const kind = cleanText(raw.world_kind, 10)
+        const suspected = suspectedSettingDuplicate(entries.rules, name)
+        if (suspected !== undefined) {
+          pend({
+            kind: 'duplicate', chapter: chapter.n, reason: `疑似重复「${name}」：${suspected.reason}。合并会追加差异，另建会保留为独立设定`,
+            payload: { ...(suspected.rule === undefined ? {} : { cardId: suspected.rule.cardId }), content, name, ...(kind === undefined ? {} : { worldKind: kind }) }, evidenceInText: evidence!,
+          })
+          continue
+        }
+        fields['name'] = name
         sort = settingSortOf(kind)
         // Only the old 世界 category has a 类型 field; a board on shelves files the card by shelf.
         if (kind !== undefined && WORLD_KINDS.includes(kind) && !board0HasShelves) fields['kind'] = kind
@@ -3794,12 +3809,25 @@ export class NovelService {
       )
       if (!cleared.ok) return { ok: false, error: cleared.error, ...empty, dropped }
     }
-    for (const item of toPending) {
+    for (const item of toPending.filter(item => item.kind !== 'duplicate')) {
       const failed = await this.materializePending(id, { ...item, id: 'auto', status: 'pending', createdAt: now }, session, 'model')
       if (failed === undefined) applied.push({ kind: item.kind, line: item.reason })
       else dropped.push({ kind: item.kind, reason: 'apply-failed', ref: item.reason.slice(0, 40) })
     }
-    return { ok: true, settled: true, linked: settings.length - newCards.filter(card => card.role === 'world').length, ...report, dropped, applied, planMisses, newCards: landed, memory }
+    const duplicates = toPending.filter(item => item.kind === 'duplicate')
+    if (duplicates.length > 0) {
+      const saved = await this.mutateJson(
+        await this.fileTarget(id, WORK_FILES.pending), session,
+        raw => normalizePendingTable(raw), (): PendingTable => ({ version: 1, items: [] }),
+        (table, timestamp) => {
+          let next = Math.max(0, ...table.items.map(item => Number(/^p(\d+)$/.exec(item.id)?.[1] ?? 0))) + 1
+          const items = duplicates.map(item => ({ ...item, id: `p${next++}`, status: 'pending' as const, createdAt: timestamp }))
+          return { version: 1 as const, items: [...table.items, ...items] }
+        },
+      )
+      if (!saved.ok) return { ok: false, error: saved.error, ...empty, dropped }
+    }
+    return { ok: true, settled: true, linked: settings.length - newCards.filter(card => card.role === 'world').length, ...report, pending: duplicates.length, dropped, applied, planMisses, newCards: landed, memory }
   }
 
   /* -------------------------------------------------------------- pending */
@@ -3823,8 +3851,8 @@ export class NovelService {
    * The person's answer to one pending item. accept materializes the payload
    * (a mention journal line plus its card's status, an experience line —
    * plan-missed has nothing to materialize: the answer IS the resolution);
-   * discard just settles the item. Settled items stay in the table (the queue
-   * is a snapshot, and the trail matters).
+   * discard just settles the item, except a duplicate, whose discard confirms
+   * a separate card. Settled items stay in the table (the queue is a snapshot).
    * @param request - work id, item id, the action.
    * @param session - the session that owns the gesture, when one carried it; supplies the fence.
    * @returns the receipt, or the failure code.
@@ -3840,8 +3868,10 @@ export class NovelService {
     const item = items.find(candidate => candidate.id === request.id)
     if (item === undefined) return { ok: false, error: 'missing' }
     if (item.status !== 'pending') return { ok: false, error: 'invalid-name' }
-    if (request.action === 'accept') {
-      const applied = await this.materializePending(workId, item, session)
+    if (request.action === 'accept' || item.kind === 'duplicate') {
+      const applied = request.action === 'discard'
+        ? await this.createSeparateSetting(workId, item, session)
+        : await this.materializePending(workId, item, session)
       if (applied !== undefined) return { ok: false, error: applied }
     }
     const settled = await this.mutateJson(
@@ -3858,6 +3888,30 @@ export class NovelService {
       },
     )
     return settled.ok ? { ok: true } : { ok: false, error: settled.error }
+  }
+
+  /** Create the separate setting a person confirmed on a suspected-duplicate row. */
+  private async createSeparateSetting(workId: string, item: PendingItem, session: Session | undefined): Promise<NovelError | undefined> {
+    const canvas = this.canvas
+    const entries = await this.readEntries(workId)
+    const { name, content, worldKind } = item.payload
+    if (canvas === undefined || entries === undefined || item.chapter === undefined || name === undefined || content === undefined) return 'invalid-name'
+    if (namesake(entries, 'world', name) !== undefined) return 'duplicate'
+    const shelves = entries.board.categories.some(category => (SETTING_SORT_KEYS as string[]).includes(category.role ?? ''))
+    const fields: Record<string, NovelFieldValue> = { name, rule: content }
+    if (worldKind !== undefined && WORLD_KINDS.includes(worldKind) && !shelves) fields['kind'] = worldKind
+    const category = categoryOf(entries.board, 'world', settingSortOf(worldKind))
+    if (category === undefined) return 'invalid-name'
+    const mutation = await canvas.proposeCard({
+      canvasId: workId, kind: category, text: '', fields, live: true,
+      comment: `第${item.chapter}章确认另建：「${item.evidenceInText ?? ''}」`,
+    }, session)
+    if (!mutation.ok) return canvasErrorOf(mutation.error)
+    const cardId = mutation.board.cards[mutation.board.cards.length - 1]!.id
+    const logged = await this.ensureRefs(workId, session, mutation.board,
+      new Map([[cardId, { ...(item.evidenceInText === undefined ? {} : { evidenceInText: item.evidenceInText }) }]]),
+      new Map([[cardId, { source: 'accept', chapter: item.chapter, fields: ['name', 'rule'] }]]))
+    return logged.ok ? undefined : logged.error ?? 'io'
   }
 
   /**
@@ -3941,8 +3995,9 @@ export class NovelService {
       })])
       return appended.ok ? undefined : appended.error
     }
-    if (item.kind === 'setting') {
-      // The chapter words a setting otherwise: its line joins the card's 设定
+    if (item.kind === 'setting' || item.kind === 'duplicate') {
+      // An accepted duplicate merges here too: the chapter's line joins the
+      // existing card, never replacing what the card already said.
       // (marked with the chapter), never replacing what the card already said.
       const canvas = this.canvas
       const { cardId, content } = item.payload

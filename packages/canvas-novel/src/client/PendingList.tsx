@@ -91,11 +91,13 @@ export function PendingList({ canvasId, items, navigate, sessionId, remote, t }:
                 </button>
               ) : (
                 <>
-                  <button type="button" className={css.buttonPrimary} disabled={busy !== null} onClick={() => { void decide(item, 'accept') }}>
-                    {t(item.kind === 'setting' ? 'pending.setting.accept' : 'pending.accept')}
-                  </button>
+                  {(item.kind !== 'duplicate' || item.payload.cardId !== undefined) && (
+                    <button type="button" className={css.buttonPrimary} disabled={busy !== null} onClick={() => { void decide(item, 'accept') }}>
+                      {t(item.kind === 'setting' ? 'pending.setting.accept' : item.kind === 'duplicate' ? 'pending.duplicate.accept' : 'pending.accept')}
+                    </button>
+                  )}
                   <button type="button" className={css.button} disabled={busy !== null} onClick={() => { void decide(item, 'discard') }}>
-                    {t(item.kind === 'setting' ? 'pending.setting.discard' : 'pending.discard')}
+                    {t(item.kind === 'setting' ? 'pending.setting.discard' : item.kind === 'duplicate' ? 'pending.duplicate.discard' : 'pending.discard')}
                   </button>
                 </>
               )}
@@ -115,6 +117,6 @@ function isMentionKind(kind: string | undefined): kind is (typeof MENTION_KINDS)
 
 /** What the item says: the experience line or the note, then the reviewer's reason. */
 function pendingText(item: PendingView): string {
-  const said = item.payload.entry ?? item.payload.note ?? item.payload.question ?? (item.kind === 'setting' ? item.payload.content : undefined)
+  const said = item.payload.entry ?? item.payload.note ?? item.payload.question ?? (item.kind === 'setting' || item.kind === 'duplicate' ? item.payload.content : undefined)
   return said === undefined || said === item.reason ? item.reason : `${said} — ${item.reason}`
 }

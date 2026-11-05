@@ -29,6 +29,7 @@ import { PHASE_NAMES, ROLE_NAMES, foreshadowFacts, relationFacts } from './genre
 import type { NovelService } from './store.ts'
 import { volumeNumeral, volumePosition, type ChapterPlan, type ExtractPayload, type ImportDrop, type PendingItem, type ReviewAction } from './types.ts'
 import { isFuture, TIER_LABELS, tensionOf, tierReason, type StoryEvent } from './timeline.ts'
+import { searchSettings, settingKindOf } from './settings.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
 function tagOrigin<T extends object>(definition: T): T {
@@ -56,7 +57,7 @@ function dropReason(drop: ImportDrop): string {
     case 'evidence-spliced': return '引用里有省略号，把两处原文拼成了一条——只摘一段连续原文'
     case 'evidence-too-long': return '引用超过 50 字，截断后对不上正文——摘一段 50 字以内的连续原文'
     case 'evidence-not-found': return '这段引用正文里没有——要逐字照抄，不改字、不转述'
-    case 'id-not-in-ledger': return drop.kind === 'relation' ? '关系不在关系榜' : '伏笔 id 不在活跃榜单'
+    case 'id-not-in-ledger': return drop.kind === 'relation' ? '关系不在关系榜' : drop.kind === 'memory' ? '设定 ref 不在已有设定名册' : drop.kind === 'event' ? '事件锚点不在时间轴' : '伏笔 id 不在活跃榜单'
     case 'card-refused': return '画布拒绝了这张卡'
     case 'duplicate': return '画布上已有这张卡'
     case 'stage-mismatch': return '这对关系现在的阶段走不了这一步（没到可升、不在裂痕里、或没经过裂痕就转对手）'
@@ -100,17 +101,21 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       'Read the bound novel canvas. what=brief renders a material pack (for=write/plan/extract); '
       + 'outline reads the one-page outline, volumes and core suspenses; '
       + 'chapters/ledger/pending/chapter read the work (cards: canvas_read); events reads the timeline (ids: those events in full); '
+      + 'settings searches world settings by query/kind, or reads refs in full; '
       + 'ideas reads the person\'s 灵感; changes reads 待对齐 — what changed since the book was last aligned, each with the written chapters it touches and only the passages to check. Load the novel skill for the workflow.',
     parameters: {
       what: {
         type: 'string',
-        enum: ['brief', 'outline', 'chapters', 'ledger', 'pending', 'chapter', 'events', 'ideas', 'changes'],
+        enum: ['brief', 'outline', 'chapters', 'ledger', 'pending', 'chapter', 'events', 'settings', 'ideas', 'changes'],
         required: true,
         description: 'What to read.',
       },
       for: { type: 'string', enum: ['write', 'plan', 'extract'], description: 'brief: the variant (default write).' },
       chapter: { type: 'number', description: 'brief/chapter: the chapter number (default: the one being planned).' },
       ids: { type: 'array', items: { type: 'string' }, description: 'events: the event ids to read in full (causes, the people\'s minds, the settings, bound ideas); omit for the whole timeline, one line each.' },
+      query: { type: 'string', description: 'settings: keywords matched against names and content.' },
+      kind: { type: 'string', description: 'settings: 体系|地点|势力|物种与道具.' },
+      refs: { type: 'array', items: { type: 'string' }, description: 'settings: refs to read in full (w3 or a card id).' },
     },
     output: {
       schema: { type: 'string' },
@@ -122,10 +127,24 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       for?: 'write' | 'plan' | 'extract'
       chapter?: number
       ids?: string[]
+      query?: string
+      kind?: string
+      refs?: string[]
     }, exec: { agent?: Agent }): Promise<string> => {
       const resolved = await target(exec)
       if ('message' in resolved) return resolved.message
       const { workId } = resolved
+      if (args.what === 'settings') {
+        const entries = await store.readEntries(workId)
+        const hits = searchSettings(entries?.rules ?? [], {
+          ...(args.query === undefined ? {} : { query: args.query }),
+          ...(args.kind === undefined ? {} : { kind: args.kind }),
+          ...(args.refs === undefined ? {} : { refs: args.refs }),
+        })
+        if (hits.length === 0) return '没有匹配的设定。可换关键字或类型；新设定会在对账导入时再做全量防重。'
+        const detailed = (args.refs?.length ?? 0) > 0
+        return hits.map(({ rule, match }) => `- [${rule.ref}] ${rule.name ?? rule.text.slice(0, 40)}（${settingKindOf(rule)}；${match === 'exact' ? '名称完全匹配' : match === 'name' ? '名称匹配' : '正文匹配'}）${detailed ? `\n  ${rule.text}` : ''}`).join('\n')
+      }
       if (args.what === 'events') return renderEvents(store, workId, args.ids)
       if (args.what === 'changes') return renderChanges(store, workId)
       if (args.what === 'ideas') {
@@ -201,7 +220,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           ? `第 ${args.chapter} 章《${outcome.chapter!.title}》（${PHASE_NAMES[outcome.phase!] ?? outcome.phase}）：正文为空。`
           : `第 ${args.chapter} 章《${outcome.chapter!.title}》（${PHASE_NAMES[outcome.phase!] ?? outcome.phase}）：\n\n${outcome.body}`
       }
-      return '失败：what 只能是 brief/outline/chapters/ledger/pending/chapter；卡片用 canvas_read。'
+      return '失败：what 只能是 brief/outline/chapters/ledger/pending/chapter/events/settings/ideas/changes；卡片用 canvas_read。'
     },
   })
 
@@ -493,8 +512,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       }
       if (args.what === 'review') {
         if (args.id === undefined || args.action === undefined) return '失败：what=review 要给 id（待审项）和 action（accept|discard）。'
+        const pending = (await store.listPending({ workId })).find(item => item.id === args.id)
         const outcome = await store.decidePending({ workId, id: args.id, action: args.action }, resolved.session)
         if (!outcome.ok) return outcome.error === 'missing' ? `失败：没有待审项 ${args.id}。` : `失败：${outcome.error ?? 'io'}`
+        if (pending?.kind === 'duplicate') return args.action === 'accept' ? `已合并到已有设定：${args.id}。` : `已确认另建独立设定：${args.id}。`
         return args.action === 'accept' ? `已采纳并落库：${args.id}。` : `已丢弃：${args.id}。`
       }
       return '失败：what 只能是 chapter/outline/review；卡片用 canvas_write。'
