@@ -980,7 +980,7 @@ describe('Context Lens room rounds without records (batch 5 S8)', () => {
   const overview = (seq: number): TurnOverview | undefined => seq === OLD.turnSeq ? fallback as never
     : seq === NEW.turnSeq ? { ...OVERVIEW2, turn: NEW, scopes: [member] } as never
       : seq === GROUP.turnSeq ? { turn: GROUP, scopes: [{ ...OVERVIEW2.scopes[1]!, scopeId: 'compaction:unattributed:child-coco', kind: 'compaction', label: 'coco',
-        compaction: { member: { name: 'coco', source: 'manual', unrecorded: ['usage', 'before-after', 'summary'] } } }] } as never
+        compaction: { member: { name: 'coco', source: 'auto', unrecorded: ['usage', 'before-after', 'summary'] } } }] } as never
         : undefined
 
   it('an old round in a mixed room says so on the round and opens the member\'s own lens at that time', async () => {
@@ -1018,6 +1018,9 @@ describe('Context Lens room rounds without records (batch 5 S8)', () => {
     bench({ turns: [OLD, NEW, GROUP], roomRecords: 'some', overview, params: { turnSeq: GROUP.turnSeq }, revision: 1 })
     expect(await screen.findByText(zh['room.unattributedNote'])).toBeTruthy()
     expect(screen.getByText('未记录：用量、前后大小、摘要')).toBeTruthy()
+    // It belongs to no round: no 「在本轮中」.
+    expect(screen.getByText('coco 的 CLI 自动压缩了上下文')).toBeTruthy()
+    expect(screen.queryByText(/在本轮中/)).toBeNull()
   })
 
   it('a locateTime navigation selects the turn holding that moment', async () => {
