@@ -32,12 +32,10 @@ export function kimiMirrorSource(model?: string): MirrorSource {
 }
 
 /**
- * The step the next fold pass would assign in one turn: the smallest step
- * nothing holds (never written, never reserved at call time — callers skip
- * their own reservations on top). Filling the smallest free step keeps the
- * stored log dense: the released-log reader admits only dense, strictly
- * sequential steps, and a reservation released mid-round (its content rode an
- * earlier fold) leaves a gap only the next first-free write fills.
+ * The smallest step of a turn no event holds (callers skip their own
+ * reservations on top): the live driver's provisional preview key for a
+ * stream or tool notification — never a durable coordinate (see
+ * {@link nextWrittenKimiStep}).
  * @param childSession - the run's child session.
  * @param turn - the round's turn number.
  * @returns the smallest free step in the turn.
@@ -141,25 +139,19 @@ export interface KimiMirrorDelta {
  *
  * The durable contract this enforces: the released-log reader admits only
  * dense, strictly sequential steps (one open at a time) — so the fold writes
- * every step as one atomic step/start→…→step/end triple, and a fold landing
- * at a reserved step first finalizes every stream reservation below it.
+ * every step as one atomic step/start→…→step/end triple, numbered in write
+ * order ({@link nextWrittenKimiStep}). Live streams are browser previews
+ * only: a call's streamed reasoning and text land durably through its wire
+ * step's fold, never as a step of their own (the settle writes from live text
+ * only what the wire never logged).
  */
 export interface KimiMirrorStreams {
   /**
-   * Steps in-flight streams reserved for this turn (their live updates ride
-   * `local-agent/stream` events there). Sequential folds skip them, so a
-   * tool card folded mid-stream lands ABOVE the stream's step and the
-   * projection renders the round's chronological order.
+   * A durable write is about to take `step`: every live stream previewed at
+   * or below it moves above it, so the browser never shows a later call's
+   * stream at a coordinate the log just gave an earlier call.
    */
-  reservedSteps(turn: number): readonly number[]
-  /**
-   * Finalize every in-flight stream reserved below `step`, in ascending
-   * order, writing each one's atomic step triple with its accumulated text.
-   * Called before any fold writes at `step`. Stream reservations only: an
-   * unresulted tool line HOLDS the pass instead, so a tool reservation
-   * never sits inside the gap.
-   */
-  finalizeBefore?(turn: number, step: number): void
+  vacate?(turn: number, step: number): void
   /**
    * Release the ACP tool notification's chronological reservation for this
    * wire line WITHOUT writing: the line's fold carries the whole native
@@ -169,19 +161,11 @@ export interface KimiMirrorStreams {
    */
   releaseTool?(line: KimiTranscriptLine & { kind: 'tool' }): void
   /**
-   * Consume the round's in-flight content streams of the given kinds, pairing
-   * them with one fold: `step` is the fold coordinate (the earliest consumed
-   * reservation still needing one — absent when every consumed kind was
-   * already sealed, so the fold goes sequential), and `sealed` lists the
-   * kinds already durable (a gap fill wrote their triples — the fold must
-   * EXCLUDE their content). Reservations whose content rides this fold are
-   * released, so a later sequential fold may take their steps. Undefined when
-   * no stream pairs — the fold goes sequential.
+   * Consume the round's in-flight content streams of the given kinds: the
+   * fold carries their content (from the wire), so their previews end and
+   * their reservations free.
    */
-  completeStreams(
-    turn: number,
-    kinds: readonly ('think' | 'text')[],
-  ): { readonly step?: number; readonly sealed: readonly ('think' | 'text')[] } | undefined
+  completeStreams(turn: number, kinds: readonly ('think' | 'text')[]): void
 }
 
 /** Mirror behavior switches shared by the exec and live paths. */
@@ -253,10 +237,9 @@ export function kimiStreamFromUnit(
  * strictly sequential steps (one open at a time — a second `step/start`
  * while another step is open fails the session's reload validation), and the
  * live conversation assembler needs the boundary to materialize the step at
- * all. A fold paired with in-flight streams lands at the earliest consumed
- * reservation (see {@link KimiMirrorStreams}), after `finalizeBefore` has
- * closed every stream reservation below it; a sequential fold never takes a
- * step a stream reserved. Mid-round, a wire step the wire has not CLOSED yet
+ * all. Each fold takes the next step in write order; live streams the fold
+ * pairs with only end their previews (see {@link KimiMirrorStreams}) — a
+ * call's streamed reasoning never becomes a step of its own. Mid-round, a wire step the wire has not CLOSED yet
  * (no `step.end`) holds the pass — its parts may still arrive — and so does
  * an unresulted tool call (the reader resolves every advertised call before
  * the step closes; the result merges into the call's line in place, so the
@@ -451,37 +434,6 @@ export async function mirrorKimiSessionDelta(
   const windowRecords = usageRecords.filter(inWindow)
   const deltaUsage = sumUsageRecords(windowRecords)
   for (const record of windowRecords) seen.add(record.line)
-  // The steps a fold may NOT take: every step already written (the session's
-  // own event ledger), consulted per turn. A round mirrored across several
-  // live polls keeps its earlier writes, so later polls never reuse them.
-  const takenSteps = new Map<number, Set<number>>()
-  for (const event of childSession.snapshotEvents()) {
-    const data = event.data as { turn?: number; step?: number }
-    if (typeof data.turn === 'number' && typeof data.step === 'number') {
-      const taken = takenSteps.get(data.turn) ?? new Set<number>()
-      taken.add(data.step)
-      takenSteps.set(data.turn, taken)
-    }
-  }
-  /**
-   * The fold's coordinate: the smallest step of the turn that nothing holds
-   * — neither written nor currently reserved. Filling the smallest free step
-   * keeps the stored log dense even when a stream reservation below was
-   * released mid-round (its content rode an earlier fold's step).
-   */
-  const nextFoldStep = (turn: number): number => {
-    const taken = new Set(takenSteps.get(turn))
-    for (const reserved of options?.streams?.reservedSteps(turn) ?? []) taken.add(reserved)
-    let step = 1
-    while (taken.has(step)) step += 1
-    return step
-  }
-  /** Record a fold's coordinate chosen by a stream pairing. */
-  const markTaken = (turn: number, step: number): void => {
-    const written = takenSteps.get(turn) ?? new Set<number>()
-    written.add(step)
-    takenSteps.set(turn, written)
-  }
   // Turns the log has already closed take no more writes: the released-log
   // reader admits events only inside the open turn. A backlog the offset never
   // covered (a fold that failed for rounds, then an offset lost on restart)
@@ -541,15 +493,13 @@ export async function mirrorKimiSessionDelta(
       ...reasoning.trim() === '' ? [] : ['think' as const],
       ...text.trim() === '' ? [] : ['text' as const],
     ]
-    // Pair the fold with the round's in-flight streams, consuming the kinds
-    // present: the fold lands at the earliest consumed reservation, and a
-    // kind already gap-sealed keeps its durable triple — its content stays
-    // out of this message.
-    const pairing = kinds.length === 0 ? undefined : options?.streams?.completeStreams(turn, kinds)
-    const sealed = new Set(pairing?.sealed ?? [])
+    // The wire step is the model call: its reasoning, text and tool calls
+    // ride ONE message. The live streams that previewed this call's content
+    // end here — the wire carries the same content, with its timing.
+    if (kinds.length > 0) options?.streams?.completeStreams(turn, kinds)
     const blocks: MirrorBlock[] = []
-    if (reasoning.trim() !== '' && !sealed.has('think')) blocks.push({ kind: 'think', text: reasoning })
-    if (text.trim() !== '' && !sealed.has('text')) blocks.push({ kind: 'text', text })
+    if (reasoning.trim() !== '') blocks.push({ kind: 'think', text: reasoning })
+    if (text.trim() !== '') blocks.push({ kind: 'text', text })
     for (const line of toolLines) {
       blocks.push({
         kind: 'tool',
@@ -562,30 +512,17 @@ export async function mirrorKimiSessionDelta(
     }
     for (const line of unit) texts.push(kimiLineProgressText(line))
     if (blocks.length === 0) {
-      // Every content kind already durable via a gap fill and no tool
-      // lifecycle to fold: the unit drops; its usage rides the next fold.
+      // Nothing to write (whitespace-only content): its usage rides the next fold.
       carryUsage = usage
       continue
     }
     // A tool reservation only pins chronological order — the fold's step
     // carries the whole lifecycle, so the reserved coordinate frees.
     for (const line of toolLines) options?.streams?.releaseTool?.(line)
-    let step = pairing?.step ?? nextFoldStep(turn)
-    // Close every stream reservation below the fold step first: stored steps
-    // must land dense and strictly sequential.
-    options?.streams?.finalizeBefore?.(turn, step)
-    // Finalization may have WRITTEN a reservation below the provisional
-    // coordinate — or RELEASED an empty one without a write. Either way the
-    // fold must take the smallest step still free afterwards: writing above
-    // a released-but-never-written reservation strands a permanent gap the
-    // released-log reader rejects as corruption.
-    let sequential = nextKimiSessionStep(childSession, turn)
-    const reservedAfter = options?.streams?.reservedSteps(turn) ?? []
-    while (reservedAfter.includes(sequential)) sequential += 1
-    step = Math.min(step, sequential)
-    markTaken(turn, step)
-    // The durable coordinate is decided now, in write order (see nextWrittenKimiStep).
-    step = nextWrittenKimiStep(childSession, turn)
+    // The durable coordinate is decided now, in write order (see
+    // nextWrittenKimiStep); a later call previewed at it moves above it.
+    const step = nextWrittenKimiStep(childSession, turn)
+    options?.streams?.vacate?.(turn, step)
     // The wire's own request config rides a request/header ahead of the fold
     // (the host session's own shape) — Context Lens reads the child log's
     // config from it instead of showing 未记录. Only a change is logged.

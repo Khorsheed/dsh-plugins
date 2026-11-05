@@ -1204,17 +1204,16 @@ describe('kimi live driver rounds', () => {
     const run = await m.driver.startRound(request() as never, roundSpec(m, child))
     expect((await run.result).stopReason).toBe('completed')
 
-    // Faithful per-item fold: exactly one durable message per content item,
-    // nothing duplicated. The think item never streamed a delta, so the text
-    // stream's reservation came first and the fold keeps that live arrival
-    // order (answer at 1, reasoning at 2, the tool's lifecycle at 3); the
-    // sealed stream's completing wire line drops instead of duplicating.
+    // Faithful per-item fold (an untagged wire: one step per line): exactly
+    // one durable message per content item, nothing duplicated, in the
+    // wire's order. The streamed answer is never written from its live text
+    // ahead of the lines before it — its wire line carries it.
     const events = child.snapshotEvents()
     const assistant = events.filter(e => e.type === 'assistant/message')
     expect(assistant.map(e => (e.data as { message: { content: { type: string }[] } }).message.content[0]?.type))
-      .toEqual(['text', 'reasoning', 'tool-call'])
-    expect((assistant[0]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '静默答案' }])
-    expect((assistant[1]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'reasoning', text: '想一下' }])
+      .toEqual(['reasoning', 'tool-call', 'text'])
+    expect((assistant[0]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'reasoning', text: '想一下' }])
+    expect((assistant[2]!.data as { message: { content: unknown[] } }).message.content).toEqual([{ type: 'text', text: '静默答案' }])
     expect(events.filter(e => e.type === 'tool/call')).toHaveLength(1)
     expectStepBoundaries(child)
     expectValidReleasedLog(child)
@@ -1293,6 +1292,69 @@ describe('kimi live driver final-step usage (room 75844e33 turn 12)', () => {
     expect(existsSync(join(m.homeDir, 'usage-diag.jsonl'))).toBe(false)
     expectValidReleasedLog(child)
     await m.driver.disposeAll()
+  }, 20_000)
+
+  it('a call\'s reasoning that streams before the previous call folds rides its own call\'s step (one step per model call)', async () => {
+    // In the wild (member c937f309, turn 6 steps 166/167): call B was a lone
+    // Edit; call C's reasoning streamed before B's wire step folded, and B's
+    // fold sealed that reasoning as its own usage-less step ahead of B's —
+    // Context Lens then read it as a request of its own.
+    const m = mount({ config: { snapshotMinIntervalMs: 0 }, timeouts: { ...DEFAULT_TIMEOUTS, mirrorThrottleMs: 0, settleFoldWaitMs: 10_000 } })
+    const liveStreams = new LocalAgentStreams()
+    const published = vi.spyOn(liveStreams, 'publish')
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-kimi-split-call'))
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    const loop = (event: Record<string, unknown>) => JSON.stringify({ type: 'context.append_loop_event', event: { turnId: 0, ...event } })
+    const usage = (input: number, output: number) => JSON.stringify({ type: 'usage.record', usage: { inputOther: input, output } })
+    const call = (id: string, name: string, step: number) => loop({ type: 'tool.call', step, toolCallId: id, toolCall: { name, args: { id } } })
+    const result = (id: string) => loop({ type: 'tool.result', toolCallId: id, result: { output: `ok ${id}` } })
+    const lines: string[] = [JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '修过滤' }], origin: { kind: 'user' } })]
+    const flush = (...more: string[]): void => { lines.push(...more); writeFileSync(join(wireDir, 'wire.jsonl'), lines.join('\n') + '\n') }
+    const fake = new FakeAcpServer({ turn: () => { flush(); return { hang: true } } })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const session = 'session_acp-session-1'
+    const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+    // Call A: reasoning + Read, folded.
+    fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '先读文件' } })
+    flush(loop({ type: 'step.begin', step: 1 }), usage(1, 1), loop({ type: 'content.part', step: 1, part: { type: 'think', think: '先读文件' } }), call('a', 'Read', 1))
+    fake.update(session, { sessionUpdate: 'tool_call', toolCallId: 'a', title: 'Read', status: 'in_progress' })
+    flush(result('a'), loop({ type: 'step.end', step: 1 }))
+    fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '' } }) // an empty chunk: only a mirror pass
+    await pause(150)
+    // Call C's reasoning streams first (B's notification raced behind the
+    // wire), then call B — a lone Edit — lands on the wire and folds.
+    fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '再跑' } })
+    await pause(100)
+    flush(loop({ type: 'step.begin', step: 2 }), usage(2, 2), call('b', 'Edit', 2), result('b'), loop({ type: 'step.end', step: 2 }), loop({ type: 'step.begin', step: 3 }))
+    fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '测试' } })
+    await pause(150)
+    const afterB = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+    expect(afterB.map(e => (e.data as { message: { content: { type: string }[] } }).message.content.map(block => block.type)))
+      .toEqual([['reasoning', 'tool-call'], ['tool-call']])
+    // C's preview moved off the step the log gave B, and kept streaming.
+    const bStep = (afterB[1]!.data as { step: number }).step
+    const cPreview = published.mock.calls.map(([, item]) => item).filter(item => item.kind === 'think' && item.text.startsWith('再跑'))
+    expect(cPreview.at(-1)).toMatchObject({ text: '再跑测试' })
+    expect(cPreview.at(-1)!.step).toBeGreaterThan(bStep)
+    // Call C: its reasoning and Bash in one step; then the answer.
+    fake.update(session, { sessionUpdate: 'tool_call', toolCallId: 'c', title: 'Bash', status: 'in_progress' })
+    flush(usage(3, 3), loop({ type: 'content.part', step: 3, part: { type: 'think', think: '再跑测试' } }), call('c', 'Bash', 3), result('c'), loop({ type: 'step.end', step: 3 }))
+    fake.update(session, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '修好了' } })
+    flush(loop({ type: 'step.begin', step: 4 }), usage(4, 4), loop({ type: 'content.part', step: 4, part: { type: 'text', text: '修好了' } }), loop({ type: 'step.end', step: 4 }))
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await run.result).stopReason).toBe('completed')
+    const messages = child.snapshotEvents().filter(e => e.type === 'assistant/message')
+    expect(messages.map(e => (e.data as { message: { content: { type: string }[] } }).message.content.map(block => block.type)))
+      .toEqual([['reasoning', 'tool-call'], ['tool-call'], ['reasoning', 'tool-call'], ['text']])
+    expect(messages.map(e => (e.data as { usage?: { inputTokens: number } }).usage?.inputTokens)).toEqual([1, 2, 3, 4])
+    // Nothing was written from live text.
+    expect(existsSync(join(m.homeDir, 'usage-diag.jsonl'))).toBe(false)
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+    liveStreams.dispose()
   }, 20_000)
 
   it('a reply written from live text leaves a diagnostics line naming the path', async () => {
@@ -1990,6 +2052,55 @@ describe('kimi mirror snapshot (live)', () => {
       fake.resolvePrompt({ stopReason: 'cancelled' })
       await until(() => child.snapshotEvents().some(event => event.type === 'turn/end'))
       execution.settle(result)
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      vi.useRealTimers()
+    }
+  })
+
+  it('a completed round whose next call streams its reasoning before the previous call folds → the exact child-session event sequence', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const m = mount({ config: {}, timeouts: { ...DEFAULT_TIMEOUTS, mirrorThrottleMs: 0, settleFoldWaitMs: 5_000 } })
+    try {
+      const child = Session.create(SessionId('child-kimi-live-split-snapshot'))
+      const execution = snapshotExecution(child, KIMI_UNRECORDED)
+      const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+      mkdirSync(wireDir, { recursive: true })
+      const loop = (event: Record<string, unknown>) => JSON.stringify({ type: 'context.append_loop_event', event: { turnId: 0, ...event } })
+      const usage = (input: number, output: number) => JSON.stringify({ type: 'usage.record', usage: { inputOther: input, output } })
+      const call = (id: string, name: string, step: number) => loop({ type: 'tool.call', step, toolCallId: id, toolCall: { name, args: { id } } })
+      const result = (id: string) => loop({ type: 'tool.result', toolCallId: id, result: { output: `ok ${id}` } })
+      const lines: string[] = [JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '修过滤' }], origin: { kind: 'user' } })]
+      const flush = (...more: string[]): void => { lines.push(...more); writeFileSync(join(wireDir, 'wire.jsonl'), lines.join('\n') + '\n') }
+      m.queueChild(new FakeAcpServer({ turn: () => { flush(); return { hang: true } } }))
+      const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+      const fake = m.spawns[0]!.fake!
+      const session = 'session_acp-session-1'
+      const logged = (id: string) => () => child.snapshotEvents().some(event => event.type === 'tool/call' && (event.data as { callId?: string }).callId === id)
+      // Call A: reasoning + Read.
+      fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '先读文件' } })
+      flush(loop({ type: 'step.begin', step: 1 }), usage(1, 1), loop({ type: 'content.part', step: 1, part: { type: 'think', think: '先读文件' } }), call('a', 'Read', 1), result('a'), loop({ type: 'step.end', step: 1 }))
+      fake.update(session, { sessionUpdate: 'tool_call', toolCallId: 'a', title: 'Read', status: 'in_progress' })
+      await until(logged('a'))
+      // Call C's reasoning streams before call B (a lone Edit) folds.
+      fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '再跑测试' } })
+      // (A thought chunk reports nothing to wait on: give the update its turn.)
+      await new Promise(resolve => setTimeout(resolve, 100))
+      flush(loop({ type: 'step.begin', step: 2 }), usage(2, 2), call('b', 'Edit', 2), result('b'), loop({ type: 'step.end', step: 2 }), loop({ type: 'step.begin', step: 3 }))
+      fake.update(session, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '' } }) // an empty chunk: only a mirror pass
+      await until(logged('b'))
+      // Call C lands; then the answer.
+      fake.update(session, { sessionUpdate: 'tool_call', toolCallId: 'c', title: 'Bash', status: 'in_progress' })
+      flush(usage(3, 3), loop({ type: 'content.part', step: 3, part: { type: 'think', think: '再跑测试' } }), call('c', 'Bash', 3), result('c'), loop({ type: 'step.end', step: 3 }))
+      await until(logged('c'))
+      fake.update(session, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '修好了' } })
+      flush(loop({ type: 'step.begin', step: 4 }), usage(4, 4), loop({ type: 'content.part', step: 4, part: { type: 'text', text: '修好了' } }), loop({ type: 'step.end', step: 4 }))
+      fake.resolvePrompt({ stopReason: 'end_turn' })
+      const settled = await run.result
+      expect(settled.stopReason).toBe('completed')
+      execution.settle(settled)
       expectValidReleasedLog(child)
       expect(mirrorSnapshot(child)).toMatchSnapshot()
     } finally {

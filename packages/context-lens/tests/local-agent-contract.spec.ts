@@ -54,16 +54,16 @@ describe('local-agent → Context Lens contract (fixture from the core\'s writer
     expect(requests.map(request => [request.hostTurn, request.executionId, request.usage?.inputTokens])).toEqual([
       [1, live!.executionId, 1000],
       [1, live!.executionId, 1200],
-      // Codex exec: three steps stay three rows — no call boundaries are recorded, so none are made up.
-      [2, exec!.executionId, undefined],
-      [2, exec!.executionId, undefined],
+      // Codex exec: no call boundaries are recorded, so none are made up —
+      // but its two text-only steps with neither usage nor a logged stream
+      // are mirror annotations (history), in every lens path alike.
       [2, exec!.executionId, 900],
     ])
   })
 
   it('a per-call-usage execution\'s usage reads as the round\'s total', () => {
     const { requests } = fold()
-    expect(requests.map(request => request.roundTotal === true)).toEqual([false, false, false, false, true])
+    expect(requests.map(request => request.roundTotal === true)).toEqual([false, false, true])
   })
 
   it('no recorded dispatch time: a request starts when its step was written, marked unrecorded (never the previous event)', () => {
@@ -85,14 +85,13 @@ describe('local-agent → Context Lens contract (fixture from the core\'s writer
 
   it('the same log without its records folds the legacy way (old logs keep their reading)', () => {
     const legacy = foldLogRows(openCursor(), fixture.rows.filter(row => row.type !== 'local-agent/execution')).filter(request => request.purpose === undefined)
-    // The old mirror convention: usage-less steps join the next step's call.
+    // Usage-less text-only steps are annotations here too; the round reads as one request.
     expect(legacy.map(request => [request.hostTurn, request.usage?.inputTokens])).toEqual([[1, 1000], [1, 1200], [2, 900]])
   })
 
   it('in the member\'s own lens, text-only steps with neither stream nor usage stay mirror annotations, as before', () => {
-    // The backfill reads the member's original CLI records; a step none of
-    // them streams and that carries no usage is history, not a model request
-    // (the existing annotation rule, unchanged by S8).
+    // A step that logged no stream and carries no usage is history, not a
+    // model request — the same rule as the live fold above.
     const turns = reconstructSession(fixture.rows)
     const real = turns.filter(turn => turn.hostTurn > 0)
     expect(real.map(turn => [turn.hostTurn, turn.requests.length])).toEqual([[1, 2], [2, 1]])
