@@ -144,7 +144,7 @@ async function mount(homes = mkdtempSync(join(tmpdir(), 'run-entry-homes-')), st
 
 /** Wait until the provider holds `count` rounds. */
 async function roundsReach(h: { rounds: Round[] }, count: number, stage?: string): Promise<void> {
-  await vi.waitFor(() => expect(h.rounds.map(round => round.kind), stage).toHaveLength(count), { timeout: 10_000 })
+  await vi.waitFor(() => expect(h.rounds.map(round => round.kind), stage).toHaveLength(count))
 }
 
 const text = (value: string) => [{ type: 'text' as const, text: value }]
@@ -270,6 +270,7 @@ describe('run(): the single execution entry', () => {
     // The key of the reconciled execution now reads as settled, not as new work.
     expect(await (await after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('x'), caller: 'room', key: 'delivery-10' })).settled).toMatchObject({ outcome: 'done' })
     const next = await after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('after reconcile'), caller: 'room', key: 'delivery-11' })
+    await next.started
     await roundsReach(after, 1, 'the post-reconcile round')
     expect(after.rounds[0]).toMatchObject({ kind: 'resume', prompt: 'after reconcile' })
     after.rounds[0]!.release()

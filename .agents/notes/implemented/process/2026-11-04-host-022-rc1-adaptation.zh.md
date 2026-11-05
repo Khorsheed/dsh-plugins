@@ -36,7 +36,7 @@ file-preview 使用官方 `dsh-fs-patch` 解析器和纯文本补丁应用函数
 
 全仓干净门禁已通过，3080 的受控部署已完成，preflight 和 canary 均通过；生产交互验收仍未收口。quote 的组合浏览器实测和移动端浏览器/Quick Tunnel 实测已通过；真机蜂窝、切网、相机权限和完整触控检查仍待验。本记录不代表 npm 发布或 push。只有实际验收覆盖 rc1 的包才前移 `verifiedHost`。`gen-typert` 在普通复制回退前清理自己 overlay 里被中断克隆的残留条目，Node 24 下不跳过任何包。目录符号链接改用 `unlinkSync` 删除链接本身，因为 Node 24 拒绝对目录链接执行 `rmSync(..., { force: true })`；不做递归删除。Room 的崩溃测试桩在模拟进程退出时抑制结算，避免正常 dispose 凭空制造 cancelled 结果。最终验收使用经官方校验和的 Node 24.9.0，而不是默认且不受支持的 Node 22。
 
-随后合入最新 main，保留 Quote 草稿来源/删除和 TaskPilot 导航改动。Room 同时保留崩溃生命周期修复与 S6 由核心持有用量的读数，delivery 行按 `runId` 选择执行。合并后的全仓门禁 17 步通过，耗时 469 秒，42 个包的 tarball 全部验证通过。运行时审计发现，启动记录和稳定启动规格写的是 Node 24，实际监听进程却仍被旧 supervisor 用 Node 22 拉起。先如实记录实际启动命令，再通过受控 `reconfigure` 切到经校验和的 Node 24.9.0，最终 receipt 为 ready、浏览器交接已确认，真实监听进程也使用 Node 24.9.0。仅写入启动规格不等于运行时已经切换。恢复入口测试辅助函数的 `vi.waitFor` 默认一秒等待在负载下两次超时，而后续完整测试通过；现在有界等待调为 10 秒，运行时行为和断言均不改变。
+随后合入最新 main，保留 Quote 草稿来源/删除和 TaskPilot 导航改动。Room 同时保留崩溃生命周期修复与 S6 由核心持有用量的读数，delivery 行按 `runId` 选择执行。合并后的全仓门禁 17 步通过，耗时 469 秒，42 个包的 tarball 全部验证通过。运行时审计发现，启动记录和稳定启动规格写的是 Node 24，实际监听进程却仍被旧 supervisor 用 Node 22 拉起。先如实记录实际启动命令，再通过受控 `reconfigure` 切到经校验和的 Node 24.9.0，最终 receipt 为 ready、浏览器交接已确认，真实监听进程也使用 Node 24.9.0。仅写入启动规格不等于运行时已经切换。间歇性的恢复后启动失败不是 provider 变慢：等待 `next.started` 暴露出子会话日志缺失。异步同步还未取得或写完句柄时，销毁流程已允许持久化栈关闭。local-agent 现在跟踪这些同步，等待它们结束后才摘除重挂的子会话并逐个关闭写句柄。受控 flush/close 测试覆盖该竞态，临时延长的 10 秒等待已撤回。
 
 ## Testing
 

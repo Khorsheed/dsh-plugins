@@ -1512,6 +1512,8 @@ export class LocalAgentRegistry {
    * sync ({@link syncChildSession}). Every handle closes on plugin dispose.
    */
   private readonly childWriteHandles = new Map<string, Promise<SessionHandle>>()
+  /** Child syncs that must finish before their write handles close on dispose. */
+  private readonly childSyncs = new Set<Promise<void>>()
 
   /**
    * @param ctx - context carrying the command registry.
@@ -1537,7 +1539,7 @@ export class LocalAgentRegistry {
     // Reattached child sessions leave the live store, in-flight run
     // heartbeats stop, and every cached child-session write handle closes,
     // when the plugin unloads.
-    ctx.effect(() => () => {
+    ctx.effect(() => async () => {
       // Ends still waiting for a settle report are written now, before the
       // write handles close.
       this.executions.flush()
@@ -1548,14 +1550,18 @@ export class LocalAgentRegistry {
       }
       for (const entry of this.settledRuns.values()) clearTimeout(entry.timer)
       this.settledRuns.clear()
+      while (this.childSyncs.size > 0) await Promise.allSettled([...this.childSyncs])
       for (const detach of this.reattachDisposers.values()) detach()
       this.reattachDisposers.clear()
-      for (const [childSessionId, cached] of this.childWriteHandles) {
+      await Promise.all([...this.childWriteHandles].map(async ([childSessionId, cached]) => {
         this.childWriteHandles.delete(childSessionId)
-        void cached.then(handle => handle.close()).catch((error: unknown) => {
+        try {
+          const handle = await cached
+          await handle.close()
+        } catch (error: unknown) {
           this.ctx.logger.warn(`localAgent: closing the child session ${childSessionId} write handle failed: ${String(error)}`)
-        })
-      }
+        }
+      }))
     })
   }
 
@@ -3608,6 +3614,12 @@ export class LocalAgentRegistry {
   }
 
   async syncChildSession(session: Session, strict: boolean = false): Promise<void> {
+    const pending = this.syncChildSessionWithRecovery(session, strict)
+    this.childSyncs.add(pending)
+    try { await pending } finally { this.childSyncs.delete(pending) }
+  }
+
+  private async syncChildSessionWithRecovery(session: Session, strict: boolean): Promise<void> {
     this.guardChildSession(session)
     const id = String(session.id)
     try {
