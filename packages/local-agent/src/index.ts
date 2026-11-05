@@ -792,6 +792,19 @@ export const MANUAL_LOGIN_LIMIT_MS = 5 * 60_000
 export const RUN_PROGRESS_HEARTBEAT_MS = 5_000
 
 /**
+ * Re-announce interval for a tool-registered (non-facade) delegation run's
+ * `running: true` on the host session-status channel. Facade runs re-announce
+ * on their own {@link RUN_PROGRESS_HEARTBEAT_MS} heartbeat instead.
+ *
+ * STOPGAP(session-activity-contribution): replace with host activity lease when upstream lands.
+ * The host's list summary only knows host agents and its status event is
+ * emit-only, so a browser that reloads or reconnects re-baselines a running
+ * CLI child to idle; a periodic `true` puts the spinner back within one beat.
+ * 4 s matches the client's own pendingCards poll.
+ */
+export const SESSION_STATUS_HEARTBEAT_MS = 4_000
+
+/**
  * How long after a run's result settles the facade still routes progress to
  * that call's `onProgress`.
  *
@@ -1484,6 +1497,11 @@ export class LocalAgentRegistry {
     onProgress: ((event: LocalAgentRunProgress) => void) | undefined
     startedAt: number
     heartbeat?: ReturnType<typeof setInterval>
+    /**
+     * STOPGAP(session-activity-contribution): replace with host activity lease when upstream lands.
+     * Tool-registered runs' periodic `running: true` re-announce timer.
+     */
+    statusBeat?: ReturnType<typeof setInterval>
     /** Its settle report already arrived (a provider may report before the result resolves): nothing is owed. */
     settled?: boolean
   }>()
@@ -1553,6 +1571,7 @@ export class LocalAgentRegistry {
       this.liveStreams.dispose()
       for (const entry of this.runs.values()) {
         if (entry.heartbeat !== undefined) clearInterval(entry.heartbeat)
+        if (entry.statusBeat !== undefined) clearInterval(entry.statusBeat)
       }
       for (const entry of this.settledRuns.values()) clearTimeout(entry.timer)
       this.settledRuns.clear()
@@ -3387,20 +3406,70 @@ export class LocalAgentRegistry {
    */
   trackDelegationRun(childSessionId: string, run: SubagentRun, cancel: () => void): void {
     if (this.runs.has(childSessionId)) return
+    // STOPGAP(session-activity-contribution): replace with host activity lease when upstream lands.
+    // Re-announce `running: true` while the run is in flight, so a browser that
+    // reloaded or reconnected (and re-baselined from the host's summary, which
+    // knows nothing of CLI children) gets the spinner back within one beat.
+    // An entry whose run's result never settles would spin forever: the
+    // member's ledger (the source of truth since batch 5 S7) retires it.
+    const startedAt = Date.now()
+    const statusBeat = setInterval(() => {
+      if (this.runs.get(childSessionId)?.run !== run) return
+      const stale = this.ledgerOutlived(childSessionId, startedAt)
+      if (stale === undefined) {
+        this.announceRunning(childSessionId, true)
+        return
+      }
+      clearInterval(statusBeat)
+      this.runs.delete(childSessionId)
+      this.ctx.logger.warn(`localAgent: dropped a stale active run ${childSessionId} (${stale})`)
+      this.announceRunning(childSessionId, false)
+    }, SESSION_STATUS_HEARTBEAT_MS)
+    statusBeat.unref()
     this.runs.set(childSessionId, {
       cancel,
       run,
       onProgress: undefined,
-      startedAt: Date.now(),
+      startedAt,
+      statusBeat,
     })
     this.announceRunning(childSessionId, true)
     const clear = (): void => {
+      clearInterval(statusBeat)
       const entry = this.runs.get(childSessionId)
       if (entry?.run !== run) return
       this.runs.delete(childSessionId)
       this.announceRunning(childSessionId, false)
     }
     void run.result.then(clear, clear)
+  }
+
+  /**
+   * STOPGAP(session-activity-contribution): replace with host activity lease when upstream lands.
+   * Whether the member's ledger says a tool-registered run is over although
+   * its result never settled. A tool-registered entry carries no execution
+   * id, so this is conservative: the ledger must be readable and hold rows,
+   * none of them queued or running, and its latest row must have settled (or
+   * turned uncertain) after the entry started — an older settled history next
+   * to a run that bypassed the ledger never counts. Anything else (no ledger,
+   * an unreadable one, an empty one) keeps the run.
+   * @param childSessionId - the member's dsh child session.
+   * @param startedAt - when the entry was registered.
+   * @returns why the run is stale, or undefined to keep it.
+   */
+  private ledgerOutlived(childSessionId: string, startedAt: number): string | undefined {
+    let rows: readonly LocalAgentMemberInput[]
+    try {
+      const inbox = this.memberInbox.read(childSessionId)
+      if (inbox.error !== undefined) return undefined
+      rows = inbox.messages
+    } catch {
+      return undefined
+    }
+    if (rows.length === 0 || rows.some(row => row.status === 'queued' || row.status === 'running')) return undefined
+    const latest = rows.reduce((last, row) => (row.settledAt ?? row.updatedAt) > (last.settledAt ?? last.updatedAt) ? row : last)
+    if ((latest.settledAt ?? latest.updatedAt) < startedAt) return undefined
+    return `ledger execution ${latest.id}: ${latest.status}`
   }
 
   /**
@@ -3741,6 +3810,9 @@ export class LocalAgentRegistry {
     const startedAt = Date.now()
     const heartbeat = setInterval(() => {
       this.reportRunProgress(childSessionId, { kind: 'heartbeat', elapsedMs: Date.now() - startedAt })
+      // STOPGAP(session-activity-contribution): replace with host activity lease when upstream lands.
+      // The same beat re-announces `running: true` — see SESSION_STATUS_HEARTBEAT_MS.
+      if (this.runs.get(childSessionId)?.run === run) this.announceRunning(childSessionId, true)
     }, RUN_PROGRESS_HEARTBEAT_MS)
     heartbeat.unref()
     // A resume round reuses the child session id. A previous round's parked

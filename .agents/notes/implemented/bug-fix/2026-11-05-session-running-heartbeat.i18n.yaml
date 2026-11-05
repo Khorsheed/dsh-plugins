@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-05-session-running-heartbeat.md
+.agents/notes/implemented/bug-fix/2026-11-05-session-running-heartbeat.md: eba7684d55aa70aa30ba21c5975d889e79588ee6
+.agents/notes/implemented/bug-fix/2026-11-05-session-running-heartbeat.zh.md: 37ca31c88b10490afa3cfab4cab51c472716acca

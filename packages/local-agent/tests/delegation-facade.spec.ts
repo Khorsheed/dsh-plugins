@@ -11,8 +11,8 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentActivationSpec, SubagentResult, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import * as localAgent from '@khorsheed/dsh-local-agent'
-import { LOCAL_AGENT_SERVICE, RUN_PROGRESS_HEARTBEAT_MS } from '@khorsheed/dsh-local-agent'
-import type { LocalAgentDelegationIntent, LocalAgentRunProgress } from '@khorsheed/dsh-local-agent'
+import { LOCAL_AGENT_SERVICE, RUN_PROGRESS_HEARTBEAT_MS, SESSION_STATUS_HEARTBEAT_MS } from '@khorsheed/dsh-local-agent'
+import type { LocalAgentDelegationIntent, LocalAgentMemberInput, LocalAgentRunProgress } from '@khorsheed/dsh-local-agent'
 
 const PROVIDER = 'fake-cli'
 const PARENT = 'parent-1'
@@ -722,6 +722,144 @@ describe('LocalAgentRegistry delegation facade', () => {
       await controllable.run.result
       await Promise.resolve()
       expect(flips).toEqual([['child-flip', true], ['child-flip', false]])
+    })
+
+    // STOPGAP(session-activity-contribution): the periodic re-announce that
+    // survives a browser reload until the host grows an activity lease.
+    describe('status heartbeat', () => {
+      const listen = (h: FacadeHarness): [string, boolean][] => {
+        const flips: [string, boolean][] = []
+        ;(h.ctx as unknown as { on: (name: string, listener: (id: string, running: boolean) => void) => void })
+          .on('api-session/status', (id, running) => { flips.push([String(id), running]) })
+        return flips
+      }
+
+      it('a tool-registered run re-announces running at the interval, then ends with one false', async () => {
+        vi.useFakeTimers()
+        try {
+          const h = await mountFacade()
+          const flips = listen(h)
+          const controllable = makeRun('child-beat')
+          h.registry.trackDelegationRun('child-beat', controllable.run, () => {})
+          expect(flips).toEqual([['child-beat', true]])
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS)
+          expect(flips).toEqual([['child-beat', true], ['child-beat', true]])
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS * 2)
+          expect(flips.filter(([, running]) => running)).toHaveLength(4)
+
+          controllable.settle({ stopReason: 'completed', output: [] })
+          await vi.advanceTimersByTimeAsync(0)
+          expect(flips.at(-1)).toEqual(['child-beat', false])
+          const settled = flips.length
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS * 3)
+          expect(flips).toHaveLength(settled)
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('a facade run re-announces running on its progress heartbeat', async () => {
+        vi.useFakeTimers()
+        try {
+          const h = await mountFacade()
+          h.enterParent(PARENT)
+          const flips = listen(h)
+          const controllable = makeRun('child-facade-beat')
+          h.setStartHandler((request) => {
+            h.consumeIntent(request)
+            return controllable.run
+          })
+          await h.registry.start(PARENT, PROVIDER, PROMPT)
+          const minted = (h.consumed[0] as { childSessionId?: string } | undefined)?.childSessionId
+          expect(flips).toEqual([[minted, true]])
+          await vi.advanceTimersByTimeAsync(RUN_PROGRESS_HEARTBEAT_MS * 2)
+          expect(flips).toEqual([[minted, true], [minted, true], [minted, true]])
+
+          controllable.settle({ stopReason: 'completed', output: [] })
+          await vi.advanceTimersByTimeAsync(0)
+          expect(flips.at(-1)).toEqual([minted, false])
+          const settled = flips.length
+          await vi.advanceTimersByTimeAsync(RUN_PROGRESS_HEARTBEAT_MS * 3)
+          expect(flips).toHaveLength(settled)
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('drops a tool-registered run its member ledger says is over, emitting false once', async () => {
+        vi.useFakeTimers()
+        try {
+          const h = await mountFacade()
+          const flips = listen(h)
+          const warn = vi.spyOn(h.ctx.logger, 'warn')
+          const rows = [{ id: 'exec-1', caller: 'tool' as const, status: 'running' as LocalAgentMemberInput['status'], createdAt: Date.now(), updatedAt: Date.now(), settledAt: undefined as number | undefined }]
+          vi.spyOn(h.registry.memberInbox, 'read').mockImplementation(() => ({ memberId: 'child-leak', paused: false, messages: rows }))
+          h.registry.trackDelegationRun('child-leak', makeRun('child-leak').run, () => {})
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS)
+          expect(flips).toEqual([['child-leak', true], ['child-leak', true]])
+
+          // The ledger settled the execution; the run's result never did.
+          rows[0]!.status = 'done'
+          rows[0]!.settledAt = Date.now()
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS)
+          expect(flips).toEqual([['child-leak', true], ['child-leak', true], ['child-leak', false]])
+          expect(h.registry.isDelegationActive('child-leak')).toBe(false)
+          expect(warn.mock.calls.some(([message]) => String(message).includes('dropped a stale active run'))).toBe(true)
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS * 3)
+          expect(flips).toHaveLength(3)
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('keeps a tool-registered run whose ledger shows it running, or holds only older settled history', async () => {
+        vi.useFakeTimers()
+        try {
+          const h = await mountFacade()
+          const flips = listen(h)
+          const old = Date.now() - 60_000
+          vi.spyOn(h.registry.memberInbox, 'read').mockImplementation((id: string) => ({ memberId: id, paused: false, messages: id === 'child-live'
+            ? [{ id: 'exec-1', caller: 'tool' as const, status: 'running' as const, createdAt: Date.now(), updatedAt: Date.now() }]
+            : [{ id: 'exec-0', caller: 'tool' as const, status: 'done' as const, createdAt: old, updatedAt: old, settledAt: old }] }))
+          h.registry.trackDelegationRun('child-live', makeRun('child-live').run, () => {})
+          h.registry.trackDelegationRun('child-bypass', makeRun('child-bypass').run, () => {})
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS * 2)
+          expect(flips.filter(([id, running]) => id === 'child-live' && running)).toHaveLength(3)
+          expect(flips.filter(([id, running]) => id === 'child-bypass' && running)).toHaveLength(3)
+          expect(flips.some(([, running]) => !running)).toBe(false)
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('emits nothing while no run is tracked', async () => {
+        vi.useFakeTimers()
+        try {
+          const h = await mountFacade()
+          const flips = listen(h)
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS * 3)
+          expect(flips).toEqual([])
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('stops re-announcing when the plugin disposes', async () => {
+        vi.useFakeTimers()
+        try {
+          const h = await mountFacade()
+          const flips = listen(h)
+          h.registry.trackDelegationRun('child-gone', makeRun('child-gone').run, () => {})
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS)
+          expect(flips).toHaveLength(2)
+
+          await h.fiber.dispose()
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS * 3)
+          expect(flips).toHaveLength(2)
+        } finally {
+          vi.useRealTimers()
+        }
+      })
     })
 
     it('tracks a tool-registered run and cancel() fires its cancel lever', async () => {
