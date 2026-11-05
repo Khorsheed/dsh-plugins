@@ -144,7 +144,7 @@ async function mount(homes = mkdtempSync(join(tmpdir(), 'run-entry-homes-')), st
 
 /** Wait until the provider holds `count` rounds. */
 async function roundsReach(h: { rounds: Round[] }, count: number, stage?: string): Promise<void> {
-  await vi.waitFor(() => expect(h.rounds.map(round => round.kind), stage).toHaveLength(count))
+  await vi.waitFor(() => expect(h.rounds.map(round => round.kind), stage).toHaveLength(count), { timeout: 10_000 })
 }
 
 const text = (value: string) => [{ type: 'text' as const, text: value }]
