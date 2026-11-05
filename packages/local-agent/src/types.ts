@@ -318,6 +318,14 @@ export interface LocalAgentExecutionEndEvent {
    * never added to it.
    */
   providerReportedUsage?: TokenUsage
+  /**
+   * The outcome is an operator's finding, not the run's own settlement: a
+   * restart left the execution `uncertain` and it was reconciled
+   * (`reconcileExecution`, batch 5 S7). The core writes this end after the
+   * fact, so the child log closes the execution; `turns` are the turns its
+   * range holds, `endedAt` the reconciliation time.
+   */
+  reconciled?: true
 }
 
 /**
@@ -791,6 +799,12 @@ export interface LocalAgentMemberInput {
   updatedAt: number
   admittedAt?: number
   settledAt?: number
+  /**
+   * Set when an operator reconciled the row from `uncertain`
+   * (`reconcileExecution`): its terminal status is the operator's finding,
+   * and `error` holds their evidence (batch 5 S7).
+   */
+  reconciledAt?: number
   error?: string
 }
 export interface LocalAgentMemberInbox {

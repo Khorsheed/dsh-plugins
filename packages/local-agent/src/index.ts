@@ -1255,6 +1255,12 @@ export class LocalAgentRegistry {
     },
     settleWaitMs: RUN_PROGRESS_SETTLE_GRACE_MS,
     onError: error => { this.ctx.logger.warn(`localAgent: execution record write failed: ${String(error)}`) },
+    reconciled: (childSessionId, executionId) => {
+      let row: LocalAgentMemberInput | undefined
+      try { row = this.memberInbox.find(childSessionId, executionId) } catch { return undefined }
+      return row?.reconciledAt === undefined || (row.status !== 'done' && row.status !== 'failed' && row.status !== 'cancelled')
+        ? undefined : { outcome: row.status, at: row.reconciledAt }
+    },
   })
 
   private requireInboxMember(childSessionId: string): LocalAgentDelegationRecord {
@@ -3319,11 +3325,17 @@ export class LocalAgentRegistry {
    * execution a restart left uncertain, with the operator's evidence. Every
    * surface that shows the uncertain execution (the members page, room)
    * reconciles through here, so reconciling in one place clears it in all.
+   * The child log closes the execution too (batch 5 S7): an end record with
+   * the operator's outcome and `reconciled: true` is written now when the
+   * member's session is live, else just before the member's next execution
+   * opens (the session is live again by then).
    * @param outcome - what the evidence shows.
    * @param evidence - non-empty operator evidence, kept on the ledger row.
    */
   reconcileExecution(childSessionId: string, executionId: string, outcome: 'done' | 'failed' | 'cancelled', evidence: string): void {
     this.memberInbox.reconcile(childSessionId, executionId, outcome, evidence)
+    const session = this.executions.lookup(childSessionId)
+    if (session !== undefined) this.executions.closeReconciled(session)
   }
 
   /**
