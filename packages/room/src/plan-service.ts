@@ -5,7 +5,9 @@ import { coordinatorMember, memberId, replay } from './journal.ts'
 import { activePlanMs, dependencyResults, admitPlanAttempt, changePlan, parsePlanCommand, planCommandSignature, queuePlanAttempt, readyPlanTasks, recoverPlan, settlePlanAttempt } from './plan.ts'
 import type { PlanActor, RoomPlan } from './plan.ts'
 import type { DispatchEngine } from './dispatch.ts'
-import { runChildSessionId, runChildTurn } from './dispatch.ts'
+import { cliChildId, runChildSessionId, runChildTurn, runExecutionId } from './dispatch.ts'
+import { probeLocalAgent } from './adapter.ts'
+import { CoreLedgers, reconcileCore } from './core-ledger.ts'
 
 export function readPlan(room: Session): RoomPlan | undefined {
   const event = room.snapshotEvents().filter(event => event.type === 'room/plan-state').at(-1)
@@ -170,6 +172,15 @@ export class PlanService {
           ...childSessionId === undefined ? {} : { childSessionId },
           ...childTurn === undefined ? {} : { childTurn },
           ...attempt.status === 'failed' ? { error: attempt.submission?.summary ?? 'Human reconciled the attempt as failed' } : {} })
+      }
+      // The core's ledger holds the same restart-lost round (batch 5 S7):
+      // settled there too, or the member stays blocked after the goal moved on.
+      if (member !== undefined && member.kind !== 'main-agent') {
+        const facade = probeLocalAgent(this.ctx)
+        const child = cliChildId(events, member)
+        const row = new CoreLedgers(facade).find(child, deliveryId, runExecutionId(events, deliveryId))
+        const refused = reconcileCore(facade, child, row, attempt.status === 'submitted' ? 'done' : 'failed', attempt.submission?.summary ?? 'Human reconciliation')
+        if (refused !== undefined) this.ctx.logger.warn(`room: reconciling goal attempt ${attempt.id} in the core failed: ${refused}`)
       }
       room.append('room/delivery-state', { id: deliveryId, dispatchSeq: dispatch.seq, memberId: target,
         state: attempt.status === 'submitted' ? 'done' : 'failed', text: attempt.submission?.summary ?? 'Human reconciliation' })

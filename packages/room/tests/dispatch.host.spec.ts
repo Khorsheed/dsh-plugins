@@ -8,10 +8,11 @@ import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import { PlanService, readPlan } from '../src/plan-service.ts'
 import { changePlan, queuePlanAttempt, admitPlanAttempt } from '../src/plan.ts'
-import { COMPACTED_TEXT, COMPACT_UNREPORTED_TEXT, DispatchEngine, MEMBER_UNRECONCILED_TEXT, ROOM_KIND, ROOM_PLUGIN, compactionUnreported, executionFacts, isRoomSource } from '../src/dispatch.ts'
+import { COMPACTED_TEXT, COMPACT_UNREPORTED_TEXT, DispatchEngine, DELIVERY_UNKNOWN_TEXT, MEMBER_UNRECONCILED_TEXT, MEMBER_WAITING_TEXT, RESTART_UNKNOWN_TEXT, ROOM_KIND, ROOM_PLUGIN, compactionUnreported, executionFacts, isRoomSource } from '../src/dispatch.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { LocalAgentFacade } from '../src/adapter.ts'
 import { withRunEntry } from './run-entry-shim.ts'
+import { replay } from '../src/journal.ts'
 
 /** A manually settled promise. */
 function deferred<T>() {
@@ -577,20 +578,57 @@ describe('DispatchEngine (real composition)', () => {
     expect(executionFacts(events, room, undefined, ['r1'])).toEqual({ cause: { kind: 'member', sessionId: room, fromMemberId: 'm-ada', dispatchSeq: 9 } })
   })
 
-  it('a member with an unreconciled execution: the round is not sent and the room points to 待对账', async () => {
+  it('a member waiting for 待对账 (members page): the room delivery waits, reads 待对账 rather than failed, and goes out once reconciled there', async () => {
     const bench = await bootRoom()
     const member = await preparedMemberOf(bench)
-    bench.localAgentStub['run'] = vi.fn(async () => { throw new Error('A member input has an uncertain outcome; reconcile before continuing') })
-    bench.localAgentStub['readMemberInbox'] = (id: string) => ({ paused: false, messages: id === member.childSessionId ? [{ status: 'uncertain' }] : [] })
+    const stub = bench.localAgentStub as ReturnType<typeof withRunEntry>
+    // A members-page input a restart cut off: the core admits nothing else of ada.
+    stub.seedLedgerRow('child-ada', { id: 'composer-1', key: 'input-1', caller: 'composer', status: 'uncertain', text: '页面里打的字' })
+    bench.facade.resume.mockImplementation(async () => settledRun('child-ada', '接着做完了'))
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 继续' })
     await bench.service.engine.idle()
     expect(bench.facade.resume).not.toHaveBeenCalled()
-    const state = await bench.service.getState({ sessionId: bench.sessionId })
-    expect(state).toMatchObject({ ok: true, value: {
-      deliveries: [{ status: 'failed', error: MEMBER_UNRECONCILED_TEXT }],
-      runs: [{ member: 'ada', state: 'failed', error: MEMBER_UNRECONCILED_TEXT }],
+    const waiting = await bench.service.getState({ sessionId: bench.sessionId })
+    expect(waiting).toMatchObject({ ok: true, value: {
+      deliveries: [{ status: 'queued', waiting: 'reconcile' }],
+      runs: [{ member: 'ada', state: 'uncertain', error: MEMBER_WAITING_TEXT }],
+      executions: [{ member: 'ada', state: 'uncertain', error: MEMBER_WAITING_TEXT }],
     } })
-    expect(MEMBER_UNRECONCILED_TEXT).toContain('待对账')
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    // Nothing failed: no delivery edge, one run row saying it waits.
+    expect(room.snapshotEvents().filter(event => event.type === 'room/delivery-state')).toHaveLength(0)
+    // Every later live access tries again and is refused again: still one row.
+    await bench.service.engine.recover(room)
+    await bench.service.engine.idle()
+    expect(room.snapshotEvents().filter(event => event.type === 'room/run-state').map(event => event.data.error)).toEqual([MEMBER_WAITING_TEXT])
+    // Reconciled on the members page (the core's one reconciliation): the
+    // room catches up on its next read and the delivery goes out once.
+    ;(stub['reconcileExecution'] as (child: string, id: string, outcome: string, evidence: string) => void)('child-ada', 'composer-1', 'done', '看过成员会话：已完成')
+    await bench.service.getState({ sessionId: bench.sessionId })
+    await vi.waitFor(() => expect(bench.facade.resume).toHaveBeenCalledOnce())
+    await bench.service.engine.idle()
+    await bench.service.getState({ sessionId: bench.sessionId })
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    expect(textOf(bench.facade.resume.mock.calls[0]![3])).toContain('继续')
+    expect(room.snapshotEvents().flatMap(event => event.type === 'room/delivery-state' ? [event.data.state] : [])).toEqual(['running', 'done'])
+    const after = await bench.service.getState({ sessionId: bench.sessionId })
+    expect(after).toMatchObject({ ok: true, value: { deliveries: [{ status: 'done' }], runs: [{ member: 'ada', state: 'done' }] } })
+    if (!after.ok) throw new Error('room unavailable')
+    expect(after.value.deliveries?.[0]).not.toHaveProperty('waiting')
+    expect(after.value.runs[0]).not.toHaveProperty('error')
+    expect(member.id).toBeDefined()
+  })
+
+  it('a legacy relay (no delivery to wait) refused for 待对账 still fails with the 待对账 pointer', async () => {
+    const bench = await bootRoom()
+    await preparedMemberOf(bench)
+    bench.localAgentStub['run'] = vi.fn(async () => { throw new Error('A member input has an uncertain outcome; reconcile before continuing') })
+    bench.localAgentStub['readMemberInbox'] = (id: string) => ({ paused: false, messages: id === 'child-ada' ? [{ id: 'x', status: 'uncertain' }] : [] })
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    bench.service.engine.dispatch(room, 'ada', 'relay text', { relayIds: ['r1'] })
+    await bench.service.engine.idle()
+    expect(room.snapshotEvents().filter(event => event.type === 'room/run-state').at(-1)?.data).toMatchObject({ state: 'failed', error: MEMBER_UNRECONCILED_TEXT })
   })
 
   it('a delivery replayed while the core holds it is admitted once', async () => {
@@ -1687,6 +1725,157 @@ describe('coordinator routing and durable deliveries', () => {
     expect(bench.facade.resume).toHaveBeenCalledTimes(1)
     expect(textOf(bench.facade.resume.mock.calls[0]![3])).toContain('next')
     expect(session.snapshotEvents().some(event => event.type === 'room/delivery-state' && event.data.state === 'uncertain')).toBe(true)
+  })
+})
+
+describe('restart recovery through the core ledger (batch 5 S7)', () => {
+  /** A room whose journal says ada was running delivery #1 (execution `exec-1`) when the host went away, with #2 queued behind it. */
+  async function crashed() {
+    const bench = await bootRoom()
+    const member = await preparedMemberOf(bench)
+    const stub = bench.localAgentStub as ReturnType<typeof withRunEntry>
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const first = room.append('room/dispatch', { id: 'crashed', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: '有副作用的一轮' })
+    const id = `${first.seq}:${member.id}`
+    room.append('room/delivery-state', { id, dispatchSeq: first.seq, memberId: member.id!, state: 'running' })
+    room.append('room/run-state', { member: 'ada', runId: id, state: 'running', startedAt: Date.now() - 5_000, childSessionId: SessionId('child-ada'), executionId: 'exec-1' })
+    const second = room.append('room/dispatch', { id: 'queued', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: '下一条' })
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) => settledRun(child, '收到'))
+    return { bench, member, stub, room, id, nextId: `${second.seq}:${member.id}` }
+  }
+  const deliveryEdges = (room: { snapshotEvents(): readonly SessionEvent[] }, id: string) =>
+    room.snapshotEvents().flatMap(event => event.type === 'room/delivery-state' && event.data.id === id ? [event.data.state] : [])
+
+  it('an execution the core says is uncertain reads 待对账 (not failed); recovery journals the core\'s verdict and resubmits nothing', async () => {
+    const { bench, stub, room, id, nextId } = await crashed()
+    stub.seedLedgerRow('child-ada', { id: 'exec-1', key: id, caller: 'room', status: 'uncertain' })
+    const before = room.snapshotEvents().length
+    // The projection (side-effect free) says what the core says; the journal is untouched until a pass.
+    expect(bench.service.engine.view(bench.sessionId, replay(room.snapshotEvents()))).toMatchObject({
+      deliveries: [{ id, status: 'uncertain' }, { id: nextId, status: 'queued', waiting: 'reconcile' }],
+      runs: [{ member: 'ada', state: 'uncertain', error: RESTART_UNKNOWN_TEXT }],
+    })
+    expect(room.snapshotEvents()).toHaveLength(before)
+    await bench.service.engine.recover(room)
+    await bench.service.engine.idle()
+    await bench.service.engine.recover(room)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(deliveryEdges(room, id)).toEqual(['running', 'uncertain'])
+    expect(room.snapshotEvents().filter(event => event.type === 'room/delivery-state' && event.data.id === id).at(-1)?.data).toMatchObject({ error: DELIVERY_UNKNOWN_TEXT })
+    // The card closes with the reason (the journal's failed edge); the projection keeps reading 待对账.
+    expect(room.snapshotEvents().filter(event => event.type === 'room/run-state').at(-1)?.data).toMatchObject({ state: 'failed', error: RESTART_UNKNOWN_TEXT, executionId: 'exec-1' })
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { runs: [{ state: 'uncertain' }] } })
+    expect(deliveryEdges(room, nextId)).toEqual([])
+  })
+
+  it('reconciling in the room settles the core\'s row too; the queued delivery then runs once', async () => {
+    const { bench, stub, room, id, nextId } = await crashed()
+    stub.seedLedgerRow('child-ada', { id: 'exec-1', key: id, caller: 'room', status: 'uncertain' })
+    await bench.service.engine.recover(room)
+    expect(await bench.service.reconcileDelivery({ sessionId: bench.sessionId, deliveryId: id, outcome: 'cancelled', evidence: '看过会话：没做完' })).toEqual({ ok: true })
+    await bench.service.engine.idle()
+    // The members page and the edit dialog read the same row: it is settled.
+    const ledger = (stub['readMemberInbox'] as (child: string) => { messages: Array<{ id: string; status: string; error?: string }> })('child-ada').messages
+    expect(ledger.find(row => row.id === 'exec-1')).toMatchObject({ status: 'cancelled', error: '看过会话：没做完' })
+    expect(deliveryEdges(room, id)).toEqual(['running', 'uncertain', 'cancelled'])
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    expect(textOf(bench.facade.resume.mock.calls[0]![3])).toContain('下一条')
+    expect(deliveryEdges(room, nextId)).toEqual(['running', 'done'])
+  })
+
+  it('a core refusal of the reconciliation leaves the room untouched and says why', async () => {
+    const { bench, stub, room, id } = await crashed()
+    stub.seedLedgerRow('child-ada', { id: 'exec-1', key: id, caller: 'room', status: 'uncertain' })
+    await bench.service.engine.recover(room)
+    stub['reconcileExecution'] = () => { throw new Error('Member inbox persistence failed') }
+    expect(await bench.service.reconcileDelivery({ sessionId: bench.sessionId, deliveryId: id, outcome: 'done', evidence: '核对过' }))
+      .toEqual({ ok: false, error: { code: 'reconcile-failed', message: 'Member inbox persistence failed' } })
+    expect(deliveryEdges(room, id)).toEqual(['running', 'uncertain'])
+  })
+
+  it('reconciling on the members page (or in the edit dialog) clears the room\'s 待对账 too', async () => {
+    const { bench, stub, room, id, nextId } = await crashed()
+    stub.seedLedgerRow('child-ada', { id: 'exec-1', key: id, caller: 'room', status: 'uncertain' })
+    await bench.service.engine.recover(room)
+    await bench.service.engine.idle()
+    expect(deliveryEdges(room, id)).toEqual(['running', 'uncertain'])
+    ;(stub['reconcileExecution'] as (child: string, id: string, outcome: string, evidence: string) => void)('child-ada', 'exec-1', 'done', '成员页核对：已完成')
+    // The projection follows the core at once; a live read lets the journal catch up.
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { deliveries: [{ id, status: 'done' }, { id: nextId }] } })
+    await vi.waitFor(() => expect(deliveryEdges(room, id)).toEqual(['running', 'uncertain', 'done']))
+    await bench.service.engine.idle()
+    expect(room.snapshotEvents().filter(event => event.type === 'room/delivery-state' && event.data.id === id).at(-1)?.data).toMatchObject({ text: '成员页核对：已完成' })
+    expect(room.snapshotEvents().filter(event => event.type === 'room/run-state' && event.data.runId === id).map(event => event.data.state)).toEqual(['running', 'failed', 'done'])
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    expect(deliveryEdges(room, nextId)).toEqual(['running', 'done'])
+    // A room reconciliation of the same delivery now has nothing left to settle.
+    expect(await bench.service.reconcileDelivery({ sessionId: bench.sessionId, deliveryId: id, outcome: 'cancelled', evidence: 'x' })).toEqual({ ok: false, error: { code: 'delivery-not-uncertain' } })
+  })
+
+  it('a delivery the core settled before the room journaled it is journaled from the core, never run again', async () => {
+    const { bench, stub, room, id, nextId } = await crashed()
+    stub.seedLedgerRow('child-ada', { id: 'exec-1', key: id, caller: 'room', status: 'done' })
+    // #2 was admitted and finished in the core, but the room never wrote its edges.
+    stub.seedLedgerRow('child-ada', { id: 'exec-2', key: nextId, caller: 'room', status: 'done' })
+    await bench.service.engine.recover(room)
+    await bench.service.engine.idle()
+    await bench.service.engine.recover(room)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(deliveryEdges(room, id)).toEqual(['running', 'done'])
+    expect(deliveryEdges(room, nextId)).toEqual(['done'])
+  })
+
+  it('a queued delivery the restart dropped from the core is resubmitted under its key and runs once, however often recovery runs', async () => {
+    const { bench, stub, room, id, nextId } = await crashed()
+    stub.seedLedgerRow('child-ada', { id: 'exec-1', key: id, caller: 'room', status: 'done' })
+    await Promise.all([bench.service.engine.recover(room), bench.service.engine.recover(room)])
+    await bench.service.engine.recover(room)
+    await bench.service.engine.idle()
+    await bench.service.engine.recover(room)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    const run = stub['run'] as ReturnType<typeof vi.fn>
+    expect(new Set(run.mock.calls.map(call => (call[0] as { key: string }).key))).toEqual(new Set([nextId]))
+    expect(deliveryEdges(room, nextId)).toEqual(['running', 'done'])
+  })
+
+  it('a round another caller started, cut off by a restart, reads 待对账 in the room as in the core, then the reconciled outcome', async () => {
+    const bench = await bootRoom()
+    await preparedMemberOf(bench)
+    const stub = bench.localAgentStub as ReturnType<typeof withRunEntry>
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    // The room showed a members-page round as its own card; the host restarted mid-round.
+    room.append('room/run-state', { member: 'ada', runId: 'execution:exec-tool', state: 'running', startedAt: Date.now() - 5_000, childSessionId: SessionId('child-ada'), executionId: 'exec-tool' })
+    stub.seedLedgerRow('child-ada', { id: 'exec-tool', key: 'input-7', caller: 'composer', status: 'uncertain', text: '页面输入' })
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: {
+      runs: [{ member: 'ada', state: 'uncertain', error: RESTART_UNKNOWN_TEXT }],
+      executions: [{ id: 'execution:exec-tool', state: 'uncertain' }],
+    } })
+    await bench.service.engine.recover(room)
+    const edges = () => room.snapshotEvents().flatMap(event => event.type === 'room/run-state' && event.data.runId === 'execution:exec-tool' ? [event.data.state] : [])
+    expect(edges()).toEqual(['running', 'failed'])
+    await bench.service.engine.recover(room)
+    expect(edges()).toEqual(['running', 'failed'])
+    ;(stub['reconcileExecution'] as (child: string, id: string, outcome: string, evidence: string) => void)('child-ada', 'exec-tool', 'done', '页面核对：完成')
+    expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { runs: [{ member: 'ada', state: 'done' }] } })
+    await bench.service.engine.recover(room)
+    expect(edges()).toEqual(['running', 'failed', 'done'])
+    // It was that caller's work: no room delivery appeared.
+    expect(room.snapshotEvents().some(event => event.type === 'room/delivery-state')).toBe(false)
+  })
+
+  it('a human message moves on from the lost round in the core too, so it is not refused', async () => {
+    const { bench, stub, room, id } = await crashed()
+    stub.seedLedgerRow('child-ada', { id: 'exec-1', key: id, caller: 'room', status: 'uncertain' })
+    await bench.service.engine.recover(room)
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 换个思路' })
+    await bench.service.engine.idle()
+    const ledger = (stub['readMemberInbox'] as (child: string) => { messages: Array<{ id: string; status: string }> })('child-ada').messages
+    expect(ledger.find(row => row.id === 'exec-1')).toMatchObject({ status: 'cancelled' })
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    expect(deliveryEdges(room, id)).toEqual(['running', 'uncertain', 'cancelled'])
   })
 })
 

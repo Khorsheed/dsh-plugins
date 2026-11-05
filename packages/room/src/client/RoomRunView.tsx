@@ -6,7 +6,10 @@
  * no handle), and a trailing stop button cancels through the Remote. A
  * failed run stays as a dim error row with the journaled reason (truncated,
  * the full text on hover); done/cancelled are hidden by the Definition and
- * never reach here. A RUNNING member's row takes the speech card's shape —
+ * never reach here. A CLI round the core's ledger says a restart cut off
+ * reads 待对账 (a warning row, no stop) until it is reconciled — here, on
+ * the members page or in the edit dialog — and so does the row of a
+ * delivery waiting for its member's 待对账 (batch 5 S7). A RUNNING member's row takes the speech card's shape —
  * avatar and light card, the row as the card's header, the live output
  * below — so the reply card that replaces it lands in the same place.
  */
@@ -25,8 +28,15 @@ import speech from './RoomSpeechView.module.css'
 /** The member run row. */
 export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMember, renderMemberOutput, openPath, answerQuestion, renderSlot, t }: RoomRunViewProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
-  const recovered = state?.runs.find(run => run.member === node.data.member && run.startedAt === node.data.startedAt)
-  const data = node.data.state === 'running' && recovered !== undefined ? { ...node.data, ...recovered } : node.data
+  // The projected run this card is (its execution by run id, else the
+  // member's latest run): the projection reads the core, the card's own
+  // edges may be behind it.
+  const own = node.data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === node.data.runId)
+  // A row of a run that has since started again under the same run id (a
+  // delivery that waited for 待对账 and went out): that run has its own card.
+  const superseded = own !== undefined && own.startedAt !== node.data.startedAt
+  const recovered = own ?? state?.runs.find(run => run.member === node.data.member && run.startedAt === node.data.startedAt)
+  const data = recovered !== undefined && !superseded && (node.data.state === 'running' || own !== undefined) ? { ...node.data, ...recovered } : node.data
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (data.state !== 'running') return undefined
@@ -44,9 +54,11 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
   const attachments = runId === undefined ? [] : state?.executions?.find(entry => entry.id === runId)?.attachments ?? []
   const mentions = useMemo(() => openPath === undefined ? undefined : pathMentions((path) => { openPath(sessionId, path) }, memberCwd), [openPath, sessionId, memberCwd])
   // The Definition hides done/cancelled; guard the same states here.
-  if (data.state === 'done' || data.state === 'cancelled') return null
+  if (superseded || data.state === 'done' || data.state === 'cancelled') return null
 
   const failed = data.state === 'failed'
+  const uncertain = data.state === 'uncertain'
+  const waitsForReconcile = uncertain && (data as { waiting?: string }).waiting === 'reconcile'
   const elapsed = failed ? data.elapsedMs : Math.max(0, now - data.startedAt)
   const jump = (): void => {
     if (childSessionId !== undefined) openSession(childSessionId)
@@ -60,21 +72,23 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
   const row = (
     <div
       className={css.run}
-      data-state={failed ? 'failed' : 'running'}
+      data-state={failed ? 'failed' : uncertain ? 'uncertain' : 'running'}
       role="button"
       tabIndex={0}
       onClick={jump}
       onKeyDown={onKeyDown}
     >
-      <StateDot state={failed ? 'error' : waiting.length > 0 ? 'warning' : 'ongoing'} />
+      <StateDot state={failed ? 'error' : uncertain || waiting.length > 0 ? 'warning' : 'ongoing'} />
       <span className={css.title}>
-        {failed ? t('run.failed', { member: data.member }) : waiting.length > 0 ? t('run.waiting', { member: data.member }) : data.operation === 'compact' ? t('run.compacting', { member: data.member }) : t('run.working', { member: data.member })}
+        {uncertain ? t(waitsForReconcile ? 'run.waitingReconcile' : 'run.uncertain', { member: data.member }) : failed ? t('run.failed', { member: data.member }) : waiting.length > 0 ? t('run.waiting', { member: data.member }) : data.operation === 'compact' ? t('run.compacting', { member: data.member }) : t('run.working', { member: data.member })}
       </span>
-      <span className={css.elapsed} aria-hidden>· {elapsed === undefined ? t('run.durationUnknown') : formatDurationMs(elapsed)}</span>
+      {uncertain
+        ? <span className={css.hint} title={t(waitsForReconcile ? 'run.waitingReconcileHint' : 'run.uncertainHint')}>· {t(waitsForReconcile ? 'run.waitingReconcileHint' : 'run.uncertainHint')}</span>
+        : <span className={css.elapsed} aria-hidden>· {elapsed === undefined ? t('run.durationUnknown') : formatDurationMs(elapsed)}</span>}
       {failed && data.error !== undefined && (
         <span className={css.reason} title={data.error}>{data.error}</span>
       )}
-      {!failed && (
+      {!failed && !uncertain && (
         <Tooltip label={t('run.stop')} side="bottom">
           <button
             type="button"
@@ -91,7 +105,7 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
       )}
     </div>
   )
-  if (failed) return <div>{row}</div>
+  if (failed || uncertain) return <div>{row}</div>
   return (
     <div className={speech.speech} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
       <span className={speech.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>

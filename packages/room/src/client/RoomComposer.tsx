@@ -316,7 +316,9 @@ export function RoomComposer({
   // blocks the ones after it until the human reconciles or stops its task —
   // say so, instead of a silent queue.
   const coordinatorRows = (state?.deliveries ?? []).filter(row => row.memberId === coordinator?.id && (row.status === 'queued' || row.status === 'uncertain'))
-  const blocked = coordinatorRows.some(row => row.status === 'uncertain')
+  // Also blocked by a round of the coordinator the core holds as 待对账 (the
+  // members page, a tool call: batch 5 S7), which is not a room delivery.
+  const blocked = coordinatorRows.some(row => row.status === 'uncertain' || row.waiting === 'reconcile')
   const coordinatorQueue: readonly RoomQueueItem[] = coordinatorRows.map(row => ({
     id: row.id,
     preview: row.status === 'uncertain' ? t('job.queueUncertain', { text: row.text }) : blocked ? t('job.queueBlocked', { text: row.text }) : row.text,
@@ -442,9 +444,12 @@ export function RoomComposer({
 
   // The oldest question a member's round is waiting on (shown inline in its card).
   const waitingAsk = state?.askLog?.find(ask => ask.state === 'pending' && ask.runId !== undefined)
-  // Members whose latest round a host restart cut off (outcome unknown).
+  // Members whose latest room round a host restart cut off (outcome unknown:
+  // 待对账 from the core, or a legacy failed row). Messaging them moves on
+  // from it; another caller's round (`execution:`) is not the room's to drop.
   const interrupted = (state?.runs ?? [])
-    .filter(run => run.state === 'failed' && run.error?.startsWith(RESTART_INTERRUPTED) === true)
+    .filter(run => run.runId?.startsWith('execution:') !== true && run.waiting === undefined
+      && (run.state === 'uncertain' || (run.state === 'failed' && run.error?.startsWith(RESTART_INTERRUPTED) === true)))
     .map(run => run.member)
     .filter(name => state?.members.some(member => member.name === name) === true)
   const continueAll = async (): Promise<void> => {

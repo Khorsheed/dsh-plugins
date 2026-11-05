@@ -180,6 +180,10 @@
   color: var(--dsw-alias-text-error, #d9363e);
 }
 
+.status[data-status='uncertain'] {
+  color: var(--dsw-alias-state-warn-primary, #b26a00);
+}
+
 .line {
   display: flex;
   flex-wrap: wrap;

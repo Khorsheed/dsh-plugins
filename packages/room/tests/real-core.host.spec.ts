@@ -24,7 +24,7 @@ import type { LocalAgentDelegationIntent, LocalAgentExecutionEndEvent, LocalAgen
 import { appendMirrorStep, closeMirrorTurn, openMirrorTurn } from '../../local-agent/src/mirror-step.ts'
 import RoomService from '../src/index.ts'
 import { executionRows } from '../src/client/executions.ts'
-import { MEMBER_UNRECONCILED_TEXT } from '../src/dispatch.ts'
+import { MEMBER_WAITING_TEXT, RESTART_UNKNOWN_TEXT } from '../src/dispatch.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
 
@@ -126,7 +126,8 @@ async function mount() {
   const homes = mkdtempSync(join(tmpdir(), 'room-real-core-homes-'))
   const rounds: Round[] = []
   const core = await mountCore(ctx, homes, rounds)
-  await ctx.plugin(RoomService)
+  const roomFiber = ctx.plugin(RoomService)
+  await roomFiber.await()
   const service = ctx.get('room') as RoomService
   const sessionId = await createRoom(ctx, service)
   mounted.push(async () => { await persistence.dispose() })
@@ -135,10 +136,47 @@ async function mount() {
     const reader = await ctx.sessionPersistence.open(SessionId(id), 'read')
     try { return (await reader.read(0)).events } finally { await reader.close() }
   }
-  return { ctx, homes, rounds, core, service, sessionId, room, stored }
+  return { ctx, homes, rounds, core, service, roomFiber, sessionId, room, stored }
 }
 
 type Bench = Awaited<ReturnType<typeof mount>>
+
+/**
+ * The host process dies (batch 5 S7): the core's ledger file stays as written
+ * (a round running, rounds queued), nothing settles, and neither the old core
+ * nor the old room writes another event. Then both come back: a fresh core
+ * reads the ledger (running → uncertain, queued room rows dropped) and a
+ * fresh room service recovers from the journal and the core.
+ */
+async function crashAndRestart(bench: Bench, childSessionId: string): Promise<{ registry: LocalAgentRegistry; rounds: Round[]; service: RoomService }> {
+  const dir = join(bench.homes, '.member-inbox')
+  const file = join(dir, readdirSync(dir).find(name => name.endsWith('.json'))!)
+  const crashed = readFileSync(file, 'utf8')
+  current.suppressSettlement = true
+  // A dead process journals nothing: drop the old room's writes until it is gone.
+  const room = bench.room()
+  const append = room.append.bind(room)
+  let dead = true
+  room.append = ((type: never, data: never, ...rest: never[]) => dead ? ({ type, data, seq: -1, time: Date.now() } as never) : append(type, data, ...rest)) as typeof room.append
+  await bench.roomFiber.dispose()
+  await bench.core.dispose()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  writeFileSync(file, crashed)
+  dead = false
+  room.append = append
+  const rounds: Round[] = []
+  const after = await mountCore(bench.ctx, bench.homes, rounds)
+  after.registry.recordDelegation({ childSessionId, provider: PROVIDER, parentSessionId: bench.sessionId, cliSessionId: 'native', cwd: '/home/user/work' })
+  // A new process: a fresh copy of the room module (no in-process state survives).
+  vi.resetModules()
+  const { default: FreshRoomService } = await import('../src/index.ts')
+  const fiber = bench.ctx.plugin(FreshRoomService)
+  await fiber.await()
+  mounted.push(async () => { await fiber.dispose() })
+  return { registry: after.registry, rounds, service: bench.ctx.get('room') as RoomService }
+}
+
+const deliveryStates = (bench: Bench, id: string) => bench.room().snapshotEvents().flatMap(event => event.type === 'room/delivery-state' && event.data.id === id ? [event.data.state] : [])
 
 async function roundsReach(bench: Bench, count: number): Promise<void> {
   await vi.waitFor(() => expect(bench.rounds).toHaveLength(count))
@@ -261,42 +299,109 @@ describe('room on the real local-agent core', () => {
     await releasedLog(bench, ada, 3)
   })
 
-  it('a member with an uncertain execution: the core refuses and the room says 待对账', async () => {
+  it('a tool round cut off by a restart reads 待对账 in the room as in the core; a room message waits for it (not failed) and goes out once the members page reconciles', async () => {
     const bench = await mount()
     const ada = await invite(bench)
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第一轮' })
     await roundsReach(bench, 1)
     bench.rounds[0]!.release()
     await bench.service.engine.idle()
-    // A tool round is in flight when the core goes away; its ledger row stays running on disk.
-    await bench.core.registry.run({ parentSessionId: bench.sessionId, provider: PROVIDER, member: { childSessionId: ada }, input: [{ type: 'text', text: '被打断' }], caller: 'tool' })
+    // A tool round (the room's own agent continuing ada) is in flight when the host dies.
+    const tool = await bench.core.registry.run({ parentSessionId: bench.sessionId, provider: PROVIDER, member: { childSessionId: ada }, input: [{ type: 'text', text: '被打断' }], caller: 'tool' })
     await roundsReach(bench, 2)
-    const dir = join(bench.homes, '.member-inbox')
-    const file = join(dir, readdirSync(dir).find(name => name.endsWith('.json'))!)
-    const crashed = readFileSync(file, 'utf8')
-    // Simulate process loss, not a graceful stop that settles the old round as cancelled.
-    current.suppressSettlement = true
-    await bench.core.dispose()
-    writeFileSync(file, crashed)
-    const rounds: Round[] = []
-    const after = await mountCore(bench.ctx, bench.homes, rounds)
-    after.registry.recordDelegation({ childSessionId: ada, provider: PROVIDER, parentSessionId: bench.sessionId, cliSessionId: 'native', cwd: '/home/user/work' })
-    expect(after.registry.readMemberInbox(ada).messages.map(row => row.status)).toEqual(['done', 'uncertain'])
+    await vi.waitFor(() => expect(runStates(bench).at(-1)).toMatchObject({ state: 'running', runId: `execution:${tool.executionId}` }))
+    const { registry, rounds, service } = await crashAndRestart(bench, ada)
+    expect(registry.readMemberInbox(ada).messages.map(row => row.status)).toEqual(['done', 'uncertain'])
 
-    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 继续' })
-    await bench.service.engine.idle()
-    expect(rounds).toHaveLength(0)
-    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    // The S5 gap: the room read this round failed while the core said uncertain. Now both say 待对账.
+    const state = await service.getState({ sessionId: bench.sessionId })
     if (!state.ok) throw new Error('room unavailable')
-    expect(state.value.deliveries?.at(-1)).toMatchObject({ status: 'failed', error: MEMBER_UNRECONCILED_TEXT })
-    // The timeline's failed row (a run-state edge; it never had a running edge, so no execution id).
-    // The interrupted tool round's own card (`execution:<id>`) settles on its
-    // own schedule once the old core is gone; it may land after this row
-    // (more likely now that getState awaits the core's reads), so pick the
-    // room delivery's edge explicitly.
-    const refused = runStates(bench).filter(edge => edge.runId?.startsWith('execution:') !== true).at(-1)
-    expect(refused).toMatchObject({ member: 'ada', state: 'failed', error: MEMBER_UNRECONCILED_TEXT })
-    expect(refused?.executionId).toBeUndefined()
+    expect(state.value.executions?.find(row => row.id === `execution:${tool.executionId}`)).toMatchObject({ state: 'uncertain', error: RESTART_UNKNOWN_TEXT })
+    await vi.waitFor(() => expect(runStates(bench).at(-1)).toMatchObject({ runId: `execution:${tool.executionId}`, state: 'failed', error: RESTART_UNKNOWN_TEXT }))
+
+    // A room message meanwhile waits for 待对账: no round, no failed delivery.
+    await service.postMessage({ sessionId: bench.sessionId, text: '@ada 继续' })
+    await service.engine.idle()
+    expect(rounds).toHaveLength(0)
+    const dispatch = bench.room().snapshotEvents().filter(event => event.type === 'room/dispatch').at(-1)!
+    const deliveryId = `${dispatch.seq}:${ada}`
+    const waiting = await service.getState({ sessionId: bench.sessionId })
+    if (!waiting.ok) throw new Error('room unavailable')
+    expect(waiting.value.deliveries?.find(row => row.id === deliveryId)).toMatchObject({ status: 'queued', waiting: 'reconcile' })
+    // Its timeline row (the run row the refusal wrote) reads 待对账 while it waits.
+    expect(waiting.value.executions?.find(row => row.id === deliveryId)).toMatchObject({ state: 'uncertain', error: MEMBER_WAITING_TEXT })
+    expect(deliveryStates(bench, deliveryId)).toEqual([])
+
+    // The members page reconciles the tool round (the core's one action): the room catches up on its own.
+    registry.reconcileExecution(ada, tool.executionId, 'done', '看过成员会话：已经改完')
+    await service.getState({ sessionId: bench.sessionId })
+    await vi.waitFor(() => expect(rounds).toHaveLength(1))
+    expect(rounds[0]).toMatchObject({ kind: 'resume' })
+    expect(rounds[0]!.prompt).toContain('继续')
+    rounds[0]!.release()
+    await service.engine.idle()
+    await service.getState({ sessionId: bench.sessionId })
+    await service.engine.idle()
+    expect(rounds).toHaveLength(1)
+    expect(deliveryStates(bench, deliveryId)).toEqual(['running', 'done'])
+    expect(runStates(bench).filter(edge => edge.runId === `execution:${tool.executionId}`).map(edge => edge.state)).toEqual(['running', 'failed', 'done'])
+    const final = await service.getState({ sessionId: bench.sessionId })
+    if (!final.ok) throw new Error('room unavailable')
+    expect(final.value.executions?.find(row => row.id === `execution:${tool.executionId}`)).toMatchObject({ state: 'done' })
+    // The child log closed the reconciled execution before the next one opened.
+    const log = await releasedLog(bench, ada, 3)
+    const ends = records(log).filter(record => record.phase === 'end') as LocalAgentExecutionEndEvent[]
+    expect(ends.find(end => end.executionId === tool.executionId)).toMatchObject({ outcome: 'done', reconciled: true })
+  })
+
+  it('a room delivery cut off by a restart: 待对账 from the core, never run twice; reconciling in the room settles the core and the queued delivery runs once', async () => {
+    const bench = await mount()
+    const ada = await invite(bench)
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第一轮' })
+    await roundsReach(bench, 1)
+    bench.rounds[0]!.release()
+    await bench.service.engine.idle()
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第二轮' })
+    await roundsReach(bench, 2)
+    await vi.waitFor(() => expect(runStates(bench).at(-1)).toMatchObject({ state: 'running' }))
+    // A third message waits in the core's ledger behind the second.
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第三轮' })
+    await vi.waitFor(() => expect(bench.core.registry.readMemberInbox(ada).messages.map(row => row.status)).toEqual(['done', 'running', 'queued']))
+    const [second, third] = bench.room().snapshotEvents().filter(event => event.type === 'room/dispatch').slice(-2).map(event => `${event.seq}:${ada}`) as [string, string]
+    const interrupted = runStates(bench).find(edge => edge.runId === second && edge.state === 'running')!.executionId!
+
+    const { registry, rounds, service } = await crashAndRestart(bench, ada)
+    // The queued room row carried no input: dropped, for the room to resubmit under its key.
+    expect(registry.readMemberInbox(ada).messages.map(row => [row.key, row.status])).toEqual([[expect.any(String), 'done'], [second, 'uncertain']])
+    const state = await service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    expect(state.value.deliveries?.find(row => row.id === second)).toMatchObject({ status: 'uncertain' })
+    expect(state.value.executions?.find(row => row.id === second)).toMatchObject({ state: 'uncertain', executionId: interrupted })
+    // Recovery passes (every live access runs one) journal the core's verdict and re-run nothing.
+    await service.engine.recover(bench.room())
+    await service.engine.idle()
+    await service.engine.recover(bench.room())
+    await service.engine.idle()
+    expect(rounds).toHaveLength(0)
+    expect(deliveryStates(bench, second)).toEqual(['running', 'uncertain'])
+    expect(deliveryStates(bench, third)).toEqual([])
+
+    // Reconciled in the room: the core's row settles too (the members page and the edit dialog read it).
+    expect(await service.reconcileDelivery({ sessionId: bench.sessionId, deliveryId: second, outcome: 'cancelled', evidence: '看过会话：没做完' })).toEqual({ ok: true })
+    expect(registry.readMemberInbox(ada).messages.find(row => row.id === interrupted)).toMatchObject({ status: 'cancelled', error: '看过会话：没做完', reconciledAt: expect.any(Number) })
+    await vi.waitFor(() => expect(rounds).toHaveLength(1))
+    expect(rounds[0]!.prompt).toContain('第三轮')
+    rounds[0]!.release()
+    await service.engine.idle()
+    await service.engine.recover(bench.room())
+    await service.engine.idle()
+    expect(rounds).toHaveLength(1)
+    expect(deliveryStates(bench, second)).toEqual(['running', 'uncertain', 'cancelled'])
+    expect(deliveryStates(bench, third)).toEqual(['running', 'done'])
+    expect(registry.readMemberInbox(ada).messages.filter(row => row.key === third)).toHaveLength(1)
+    const log = await releasedLog(bench, ada, 3)
+    const ends = records(log).filter(record => record.phase === 'end') as LocalAgentExecutionEndEvent[]
+    expect(ends.find(end => end.executionId === interrupted)).toMatchObject({ outcome: 'cancelled', reconciled: true, turns: [2] })
   })
 
   it('usage in one place (S6): the room stores no copy; getState attaches the core\'s reading (per-call sum and the CLI total)', async () => {

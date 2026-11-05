@@ -279,6 +279,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     switch (error.code) {
       case 'coordinator-busy': return t('coordinator.busy')
       case 'coordinator-not-ready': return error.message
+      case 'reconcile-failed': return error.message
       case 'coordinator-conflict': return t('coordinator.conflict')
       case 'active-coordinator': return t('coordinator.active')
       case 'member-cwd-bound': return t('coordinator.cwdBound')

@@ -399,7 +399,11 @@ export function replay(events: readonly SessionEvent[]): RoomState {
       case 'room/run-state': {
         const member = byName.get(event.data.member)
         const id = event.data.runId ?? `legacy:${member?.id ?? event.data.member}:${event.data.startedAt}`
-        const previous = executions.get(id)
+        const earlier = executions.get(id)
+        // A run that starts again (a delivery that waited for 待对账, batch 5
+        // S7) sheds the earlier edge's failure reason.
+        const { error: _error, ...shed } = earlier ?? {}
+        const previous = earlier === undefined ? undefined : event.data.state === 'running' ? shed : earlier
         executions.set(id, {
           id,
           ...member?.id === undefined ? {} : { memberId: member.id },

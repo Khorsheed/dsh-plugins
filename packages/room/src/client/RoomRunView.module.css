@@ -33,6 +33,21 @@
   color: var(--dsw-alias-text-error, #d9363e);
 }
 
+/* 待对账 (batch 5 S7): the outcome is unknown, not a failure — a warning
+   title and the plain-language hint in the elapsed slot. */
+.run[data-state='uncertain'] .title {
+  color: var(--dsw-alias-state-warn-primary, #b26a00);
+}
+
+.hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
 .elapsed {
   flex: 1;
   min-width: 0;

@@ -55,7 +55,8 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, roomSource, runChildSessionId, runChildTurn, runExecutionId } from './dispatch.ts'
+import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, cliChildId, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, RESTART_UNKNOWN_TEXT, roomSource, runChildSessionId, runChildTurn, runExecutionId } from './dispatch.ts'
+import { CoreLedgers, reconcileCore, type CoreOutcome } from './core-ledger.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
 import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
@@ -289,6 +290,25 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       ...childTurn === undefined ? {} : { childTurn },
       ...executionId === undefined ? {} : { executionId },
     }
+  }
+
+  /**
+   * Settle a room delivery's execution in the local-agent core (batch 5 S7):
+   * the core's ledger row is the one place a restart-lost round is recorded,
+   * so reconciling — or moving on from — it in the room clears the same row
+   * the members page and the edit dialog show (user decision 2026-11-03 ③).
+   * A delivery the core holds no row for (the room's own agent, a delivery
+   * from before S7) has nothing to clear there.
+   * @returns undefined on success or nothing to do, else the core's refusal.
+   */
+  private reconcileInCore(session: Session, state: RoomState, delivery: { readonly id: string; readonly memberId: string }, outcome: CoreOutcome, evidence: string): string | undefined {
+    const events = session.snapshotEvents()
+    const member = state.members.find(entry => memberId(events, entry) === delivery.memberId)
+    if (member === undefined || member.kind === 'main-agent') return undefined
+    const facade = probeLocalAgent(this.ctx)
+    const child = cliChildId(events, member)
+    const row = new CoreLedgers(facade).find(child, delivery.id, runExecutionId(events, delivery.id))
+    return reconcileCore(facade, child, row, outcome, evidence)
   }
 
   /** sessionId → in-flight cold resume (mutations on a cold room dedupe). */
@@ -590,7 +610,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       room.append('room/run-state', { member: name, runId: round.runId, state, startedAt: round.startedAt, elapsedMs: Math.max(0, data.endedAt - round.startedAt),
         childSessionId: child.id, executionId: data.executionId, ...turn === undefined ? {} : { childTurn: turn },
         ...round.operation === 'compact' ? { operation: 'compact' as const } : {},
-        ...state === 'failed' ? { error: data.outcome === 'uncertain' ? 'Execution outcome is unknown after restart; reconcile before retrying' : 'the member round failed' } : {} })
+        ...state === 'failed' ? { error: data.outcome === 'uncertain' ? RESTART_UNKNOWN_TEXT : 'the member round failed' } : {} })
       this.engine.releaseRun(room.id, round.runId)
       void this.ctx.sessions.flush(room).catch((error: unknown) => { this.ctx.logger.warn(`room: outside round edge flush failed: ${String(error)}`) })
     })
@@ -874,7 +894,9 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
         stopped++
       } else if (row.status === 'uncertain' && row.plan?.taskId === undefined) {
         // Stopping is the human abandoning the round whose outcome a restart
-        // lost: that settles it, so the member's later messages run again.
+        // lost: that settles it — in the core's ledger too — so the member's
+        // later messages run again.
+        this.reconcileInCore(loaded.session, loaded.state, row, 'cancelled', '任务已被停止；这一轮的结果没有核对')
         loaded.session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: '任务已被停止；这一轮的结果没有核对' })
         const run = loaded.state.runs.find(entry => entry.runId === row.id)
         if (run !== undefined) loaded.session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled', ...this.terminalRunStateFields(loaded.session, loaded.state, run.member, row.id) })
@@ -951,6 +973,9 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     const backlog = new Map<string, string[]>()
     for (const row of state.deliveries ?? []) {
       if (row.status !== 'uncertain' || row.plan?.taskId !== undefined || !ids.has(row.memberId)) continue
+      // The core's ledger holds the same lost round: closed there too, or it
+      // would refuse the very message that moves on (batch 5 S7).
+      this.reconcileInCore(session, state, row, 'cancelled', why)
       session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: why })
       const run = state.runs.find(entry => entry.runId === row.id)
       if (run !== undefined) session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled', ...this.terminalRunStateFields(session, state, run.member, row.id) })
@@ -1018,6 +1043,13 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       void this.ensureLive(request.sessionId).catch((error: unknown) => { this.ctx.logger.warn(`room: reviving held reports failed: ${String(error)}`) })
     }
     const view = this.engine.view(request.sessionId, loaded.state)
+    // The core settled, reconciled or lost a round the journal still shows
+    // open (a reconcile on the members page, say): a live room's records
+    // catch up now; a cold one on its next live access.
+    const live = this.ctx.sessions.get(request.sessionId)
+    if (live !== undefined && this.engine.behindCore(request.sessionId, loaded.state)) {
+      void this.engine.recover(live).catch((error: unknown) => { this.ctx.logger.warn(`room: catching up with the core failed: ${String(error)}`) })
+    }
     const executions = await this.readExecutions(view.executions)
     return { ok: true, value: { ...view, ...executions === undefined ? {} : { executions }, ...loaded.state.plan === undefined ? {} : { plan: this.plans.view(request.sessionId, loaded.state.plan) } } }
   }
@@ -1291,6 +1323,11 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     if (delivery?.status !== 'uncertain') return { ok: false, error: { code: 'delivery-not-uncertain' } }
     if (delivery.plan?.taskId !== undefined) return { ok: false, error: { code: 'plan-reconciliation-required' } }
     if (request.evidence.trim() === '') return { ok: false, error: { code: 'empty-text' } }
+    // One reconciliation (batch 5 S7): the core's ledger row first — the
+    // same row the members page and the edit dialog settle — then the room's
+    // records. A refusal leaves both untouched.
+    const refused = this.reconcileInCore(loaded.session, loaded.state, delivery, request.outcome, request.evidence.trim())
+    if (refused !== undefined) return { ok: false, error: { code: 'reconcile-failed', message: refused } }
     loaded.session.append('room/delivery-state', { id: delivery.id, dispatchSeq: delivery.dispatchSeq, memberId: delivery.memberId, state: request.outcome, text: request.evidence.trim() })
     const run = loaded.state.runs.find(run => run.runId === delivery.id)
     if (run !== undefined) loaded.session.append('room/run-state', { member: run.member, runId: delivery.id, startedAt: run.startedAt, state: request.outcome, ...this.terminalRunStateFields(loaded.session, loaded.state, run.member, delivery.id) })
