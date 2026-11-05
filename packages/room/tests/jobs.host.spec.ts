@@ -113,6 +113,8 @@ describe('tasks', () => {
     const humanDispatches = events.flatMap(event => event.type === 'room/dispatch' && event.data.origin === 'human' ? [event.data] : [])
     expect(humanDispatches.map(dispatch => dispatch.messageId)).toEqual(humanIds)
     expect(humanDispatches[1]!.task).toBe(humanIds[0])
+    // S9: the filing decision names the task it filed the message under.
+    expect(decisions[0]!.task).toBe(humanIds[0])
 
     // The room's agent answering that follow-up decides it is new work after all.
     const sent = await bench.service.messageMember({ sessionId: bench.sessionId, member: 'kimi', text: '另起：写部署脚本', task: 'new' })

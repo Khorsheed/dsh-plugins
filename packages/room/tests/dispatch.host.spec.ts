@@ -578,6 +578,31 @@ describe('DispatchEngine (real composition)', () => {
     expect(executionFacts(events, room, undefined, ['r1'])).toEqual({ cause: { kind: 'member', sessionId: room, fromMemberId: 'm-ada', dispatchSeq: 9 } })
   })
 
+  it('S9: a help round carries the asker\'s task, a help reply its thread\'s task, a release round its cited decision', () => {
+    const room = 'room-1'
+    let seq = 0
+    const event = (type: string, data: Record<string, unknown>) => ({ type, seq: seq++, time: 0, data }) as unknown as SessionEvent
+    const events: SessionEvent[] = [
+      event('room/member-added', { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' }),
+      event('room/dispatch', { origin: 'help', help: { id: 'h1', room: 'room-0', roomTitle: '别的房间', from: 'zed', task: 'asker-task' }, targets: ['ada'], text: '帮个忙', task: 't1' }),
+      event('room/help', { id: 'h2', from: 'm-ada', fromName: 'ada', target: { sessionId: 'helper-1', title: '帮手' }, text: '问一下', task: 't9' }),
+      event('room/dispatch', { origin: 'report', reportFor: 'help:h2', targets: ['ada'], text: '答复' }),
+      event('room/dispatch', { origin: 'report', reportFor: 'help:h2', targets: ['ada'], text: '答复', task: 't7' }),
+      event('room/decision', { id: 'd-cited', scenario: 'report-timing', outcome: 'later', about: { from: 'bill', to: 'ada' }, runId: '9:m-bill' }),
+      event('room/decision', { id: 'd-later', scenario: 'report-timing', outcome: 'later', about: { from: 'cid', to: 'ada' } }),
+      event('room/dispatch', { origin: 'report', releases: [2], releaseReason: 'timeout', releaseDecision: 'd-cited', targets: ['ada'], text: '等着交给你' }),
+    ]
+    expect(executionFacts(events, room, 1)).toEqual({
+      cause: { kind: 'help', sessionId: room, helpId: 'h1', fromRoom: 'room-0', fromTask: { sessionId: 'room-0', id: 'asker-task' } },
+      task: { sessionId: room, id: 't1' },
+    })
+    // The asking room's reply round: the thread's own task when the dispatch names none; its own task wins otherwise.
+    expect(executionFacts(events, room, 3)).toEqual({ cause: { kind: 'help', sessionId: room, helpId: 'h2', fromRoom: 'helper-1' }, task: { sessionId: room, id: 't9' } })
+    expect(executionFacts(events, room, 4)).toEqual({ cause: { kind: 'help', sessionId: room, helpId: 'h2', fromRoom: 'helper-1' }, task: { sessionId: room, id: 't7' } })
+    // The cited decision, not the latest one that held reports for the recipient.
+    expect(executionFacts(events, room, 7)).toEqual({ cause: { kind: 'decision', sessionId: room, decisionId: 'd-cited' } })
+  })
+
   it('a member waiting for 待对账 (members page): the room delivery waits, reads 待对账 rather than failed, and goes out once reconciled there', async () => {
     const bench = await bootRoom()
     const member = await preparedMemberOf(bench)

@@ -849,6 +849,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       ...suggestion.probability === undefined ? {} : { probability: suggestion.probability },
       ...suggestion.call === undefined ? {} : { call: suggestion.call },
       about: { message: messageId, ...target === undefined ? {} : { task: { number: target.number, title: target.title.slice(0, 200) } } },
+      task: target?.id ?? messageId,
     }))
     if (target === undefined) return { task: messageId }
     const probability = suggestion.probability ?? 0
@@ -1839,9 +1840,13 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       }], 10 * 60_000, true)
       if (answers?.[0]?.selected[0] !== '允许') return `The human did not allow asking "${target.title}". Do not retry unless they @ that session in the room.`
     }
+    // The task the asker is working on (batch 5 S9): a later per-task sum
+    // adds the helper's executions to it without guessing.
+    const askerTask = this.sendContext(room, asker).task
     const help = {
       id: randomUUID().slice(0, 8), from: memberId(events, asker), fromName: asker.name,
       target: targetRoom ? { ...target, room: true as const, ...named === undefined ? {} : { member: named } } : target, text,
+      ...askerTask === undefined ? {} : { task: askerTask },
     }
     room.append('room/help', help)
     await this.ctx.sessions.flush(room)
@@ -1855,7 +1860,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
    * agent message while that room is paused — and shown on that room's
    * timeline. The member's final reply comes back through {@link helpSettled}.
    */
-  private async deliverToRoom(room: Session, help: { readonly id: string; readonly fromName: string; readonly target: { readonly sessionId: string; readonly title: string; readonly member?: string } }, text: string, op: 'request' | 'message'): Promise<string> {
+  private async deliverToRoom(room: Session, help: { readonly id: string; readonly fromName: string; readonly task?: string; readonly target: { readonly sessionId: string; readonly title: string; readonly member?: string } }, text: string, op: 'request' | 'message'): Promise<string> {
     const fail = async (error: string): Promise<string> => {
       room.append('room/help-state', { help: help.id, state: 'failed', error })
       await this.ctx.sessions.flush(room)
@@ -1868,7 +1873,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       ? coordinatorMember(other.state, events)
       : other.state.members.find(entry => entry.name === help.target.member)
     if (member === undefined) return fail(help.target.member === undefined ? 'that room has no coordinator' : `that room has no member "${help.target.member}"`)
-    const origin = { id: help.id, room: room.id, roomTitle: this.roomTitle(room), from: help.fromName }
+    const origin = { id: help.id, room: room.id, roomTitle: this.roomTitle(room), from: help.fromName, ...help.task === undefined ? {} : { task: help.task } }
     // A round a restart left uncertain blocks the member's later work until a
     // human reconciles it — silently, for a request from outside. Move on
     // from it, as a human message to that member does.
