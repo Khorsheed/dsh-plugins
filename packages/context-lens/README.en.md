@@ -41,6 +41,7 @@ The context lens comes with the Dev Suite, and with 「多Agent协作」 (multi-
 - A turn that's still running doesn't update live; open it again once it's done.
 - For older turns filled in from the session record, the system prompt shows as one block, without where each part came from.
 - Model blocks, request bounds and tool execution for external CLI members are filled in from their original CLI records. Each CLI preserves a different level of detail; unknown intervals remain in “other” rather than inventing Deepseek's token-level precision.
+- In a room, a round splits its requests by member only when it recorded which member requests belong to it. Rounds left by older plugins or by members that record nothing show "No room-level request view"; use "View in member session" to read them in the member's own lens. When no round in the room has records, this is said once at the top. Decisions and compactions with no recorded round go under "Unattributed" instead of being guessed by time. Numbers a member does not report (sizes before and after a compaction, per-call usage) are marked "not recorded".
 - What you see is the content as assembled before sending, not the raw bytes that finally go to the model provider.
 
 ## Compatibility
