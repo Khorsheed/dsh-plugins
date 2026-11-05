@@ -123,6 +123,17 @@ function validName(name: string): boolean {
 const QUESTION_TIMEOUT_MS = 30 * 60_000
 
 /**
+ * Re-announce interval for rooms with members at work.
+ *
+ * STOPGAP(session-activity-contribution): replace with host activity lease when upstream lands.
+ * The host's list summary knows only host agents and its status event is
+ * emit-only, so a browser that reloads or reconnects re-baselines a room whose
+ * members (not its own agent) are running to idle. Re-emitting `running: true`
+ * puts the spinner back within one beat; 4 s matches the client's pendingCards poll.
+ */
+export const ROOM_STATUS_HEARTBEAT_MS = 4_000
+
+/**
  * How recent an execution's admission must be for the room to show it as a
  * live outside round: an older start record is a log replayed on load.
  */
@@ -347,6 +358,8 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       },
     })
     ctx.effect(() => () => this.plans.dispose())
+    // STOPGAP(session-activity-contribution): the status re-announce stops with the plugin.
+    ctx.effect(() => () => this.stopStatusBeat())
     // The human talking to the room's own agent directly (the official input
     // path): file the message under a task before the model reads it — the
     // composer's tag, else the decision model while tasks are open — and tell
@@ -548,6 +561,11 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
    */
   /** Run ids of the members working in each room (the session list's 运行中). */
   private readonly activeRuns = new Map<string, Set<string>>()
+  /**
+   * STOPGAP(session-activity-contribution): replace with host activity lease when upstream lands.
+   * One timer over every room in {@link activeRuns}, alive only while some room has a run.
+   */
+  private statusBeat: ReturnType<typeof setInterval> | undefined
   /** Question/approval cards waiting for the human, per room. */
   private readonly waitingCards = new Map<string, Map<string, { readonly kind: 'question' | 'approval'; readonly member: string }>>()
   /** Rounds of a room member the room did not start, by execution id: where their card is. */
@@ -635,6 +653,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
         else runs.delete(key)
         if (runs.size === 0) this.activeRuns.delete(id)
         else this.activeRuns.set(id, runs)
+        this.syncStatusBeat()
         // A member whose round ended is no longer waiting on its cards: its
         // bridge call is gone (a CLI's own MCP timeout can end it early, and
         // the round then goes on without the answer). Expire them, so an
@@ -688,6 +707,38 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       if (card.kind === 'question') this.questionWaiters.get(cardId)?.(undefined)
       else this.approvalWaiters.get(cardId)?.('cancelled')
     }
+  }
+
+  /**
+   * STOPGAP(session-activity-contribution): replace with host activity lease when upstream lands.
+   * Keep the re-announce timer alive exactly while some room has a member run:
+   * every {@link ROOM_STATUS_HEARTBEAT_MS} each such room re-emits `running: true`,
+   * so a reloaded or reconnected browser regains the spinner. The flips
+   * themselves (first start, last end) stay with {@link observeActivity}.
+   */
+  private syncStatusBeat(): void {
+    if (this.activeRuns.size === 0) {
+      this.stopStatusBeat()
+      return
+    }
+    if (this.statusBeat !== undefined) return
+    this.statusBeat = setInterval(() => {
+      for (const id of this.activeRuns.keys()) {
+        try {
+          this.emitStatus(id, true)
+        } catch {
+          // A host without the status channel: nothing to refresh.
+        }
+      }
+    }, ROOM_STATUS_HEARTBEAT_MS)
+    this.statusBeat.unref?.()
+  }
+
+  /** Stop the status re-announce timer (no rooms active, or the plugin unloads). */
+  private stopStatusBeat(): void {
+    if (this.statusBeat === undefined) return
+    clearInterval(this.statusBeat)
+    this.statusBeat = undefined
   }
 
   /** Broadcast a room's running flip on the host's session-status channel. */

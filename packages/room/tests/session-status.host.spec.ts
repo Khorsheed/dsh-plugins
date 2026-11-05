@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import RoomService from '../src/index.ts'
+import RoomService, { ROOM_STATUS_HEARTBEAT_MS } from '../src/index.ts'
 import { createRoom } from './promote.ts'
 import { withRunEntry } from './run-entry-shim.ts'
 
@@ -22,13 +22,13 @@ async function boot() {
   } as never)
   ctx.provide('localAgent', withRunEntry({ start: vi.fn(), resume: vi.fn(), cancel: vi.fn() }, ctx) as never)
   await ctx.plugin(SessionStore)
-  await ctx.plugin(RoomService)
+  const fiber = await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
   const sessionId = await createRoom(ctx, service)
   const flips: boolean[] = []
   ;(ctx as unknown as { on: (name: string, listener: (id: unknown, running: boolean) => void) => void })
     .on('api-session/status', (id, running) => { if (String(id) === String(sessionId)) flips.push(running) })
-  return { ctx, service, sessionId, flips, room: ctx.sessions.get(sessionId)! }
+  return { ctx, service, sessionId, flips, fiber, room: ctx.sessions.get(sessionId)! }
 }
 
 describe('room session status', () => {
@@ -67,5 +67,59 @@ describe('room session status', () => {
     await vi.waitFor(async () => expect(await bench.service.pendingCards({})).toEqual([]))
     const resolved = bench.room.snapshotEvents().filter(event => event.type === 'room/question-resolved').at(-1)!.data as { outcome: string }
     expect(resolved.outcome).toBe('cancelled')
+  })
+
+  // STOPGAP(session-activity-contribution): the periodic re-announce that
+  // survives a browser reload until the host grows an activity lease.
+  describe('status heartbeat', () => {
+    const fakeIntervals = () => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+
+    it('re-announces running at the interval while a member runs, and stops after the final false', async () => {
+      fakeIntervals()
+      try {
+        const bench = await boot()
+        bench.room.append('room/run-state', { member: 'a', state: 'running', startedAt: 1, runId: 'r1' })
+        expect(bench.flips).toEqual([true])
+        vi.advanceTimersByTime(ROOM_STATUS_HEARTBEAT_MS)
+        expect(bench.flips).toEqual([true, true])
+        vi.advanceTimersByTime(ROOM_STATUS_HEARTBEAT_MS * 2)
+        expect(bench.flips).toEqual([true, true, true, true])
+        bench.room.append('room/run-state', { member: 'a', state: 'done', startedAt: 1, runId: 'r1' })
+        expect(bench.flips).toEqual([true, true, true, true, false])
+        expect(vi.getTimerCount()).toBe(0)
+        vi.advanceTimersByTime(ROOM_STATUS_HEARTBEAT_MS * 3)
+        expect(bench.flips.at(-1)).toBe(false)
+        expect(bench.flips).toHaveLength(5)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('emits nothing while no room has a run', async () => {
+      fakeIntervals()
+      try {
+        const bench = await boot()
+        vi.advanceTimersByTime(ROOM_STATUS_HEARTBEAT_MS * 3)
+        expect(bench.flips).toEqual([])
+        expect(vi.getTimerCount()).toBe(0)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('clears the timer when the plugin disposes', async () => {
+      fakeIntervals()
+      try {
+        const bench = await boot()
+        bench.room.append('room/run-state', { member: 'a', state: 'running', startedAt: 1, runId: 'r1' })
+        expect(vi.getTimerCount()).toBe(1)
+        await bench.fiber.dispose()
+        expect(vi.getTimerCount()).toBe(0)
+        vi.advanceTimersByTime(ROOM_STATUS_HEARTBEAT_MS * 3)
+        expect(bench.flips).toEqual([true])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
   })
 })
