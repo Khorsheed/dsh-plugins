@@ -10,7 +10,7 @@ import RoomService, { ROOM_STATUS_HEARTBEAT_MS } from '../src/index.ts'
 import { createRoom } from './promote.ts'
 import { withRunEntry } from './run-entry-shim.ts'
 
-async function boot() {
+async function boot(facade: Record<string, unknown> = {}) {
   const ctx = new Context()
   const agent = { followup: vi.fn(), send: vi.fn(), whenIdle: vi.fn(async () => {}), cancel: vi.fn(), status: 'idle' }
   ctx.provide('agents', {
@@ -20,7 +20,7 @@ async function boot() {
       return { agent: { id: session.id, session }, dispose: async () => {} }
     }),
   } as never)
-  ctx.provide('localAgent', withRunEntry({ start: vi.fn(), resume: vi.fn(), cancel: vi.fn() }, ctx) as never)
+  ctx.provide('localAgent', withRunEntry({ start: vi.fn(), resume: vi.fn(), cancel: vi.fn(), ...facade }, ctx) as never)
   await ctx.plugin(SessionStore)
   const fiber = await ctx.plugin(RoomService)
   const service = ctx.get('room') as RoomService
@@ -90,6 +90,50 @@ describe('room session status', () => {
         vi.advanceTimersByTime(ROOM_STATUS_HEARTBEAT_MS * 3)
         expect(bench.flips.at(-1)).toBe(false)
         expect(bench.flips).toHaveLength(5)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('drops a leaked run whose core execution settled, and settles the room once', async () => {
+      fakeIntervals()
+      try {
+        const rows: { id: string; caller: string; status: string; createdAt: number; updatedAt: number }[] = [
+          { id: 'exec-1', caller: 'room', status: 'running', createdAt: 1, updatedAt: 1 },
+        ]
+        const bench = await boot({ readMemberInbox: () => ({ memberId: 'child-a', paused: false, messages: rows }) })
+        const warn = vi.spyOn(bench.ctx.logger, 'warn')
+        bench.room.append('room/run-state', { member: 'a', state: 'running', startedAt: 1, runId: 'r1', childSessionId: SessionId('child-a'), executionId: 'exec-1' })
+        vi.advanceTimersByTime(ROOM_STATUS_HEARTBEAT_MS)
+        expect(bench.flips).toEqual([true, true])
+        // The core settled the execution, but the room's terminal edge never landed.
+        rows[0]!.status = 'done'
+        vi.advanceTimersByTime(ROOM_STATUS_HEARTBEAT_MS)
+        expect(bench.flips).toEqual([true, true, false])
+        expect(warn.mock.calls.some(([message]) => String(message).includes('dropped a stale active run'))).toBe(true)
+        expect(vi.getTimerCount()).toBe(0)
+        vi.advanceTimersByTime(ROOM_STATUS_HEARTBEAT_MS * 3)
+        // A late terminal edge does not settle the room a second time.
+        bench.room.append('room/run-state', { member: 'a', state: 'done', startedAt: 1, runId: 'r1', childSessionId: SessionId('child-a'), executionId: 'exec-1' })
+        expect(bench.flips).toEqual([true, true, false])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps re-announcing a run the core still has in flight, and runs without an execution id', async () => {
+      fakeIntervals()
+      try {
+        const bench = await boot({ readMemberInbox: () => ({ memberId: 'child-a', paused: false, messages: [
+          { id: 'exec-1', caller: 'room', status: 'running', createdAt: 1, updatedAt: 1 },
+        ] }) })
+        bench.room.append('room/run-state', { member: 'a', state: 'running', startedAt: 1, runId: 'r1', childSessionId: SessionId('child-a'), executionId: 'exec-1' })
+        bench.room.append('room/run-state', { member: 'b', state: 'running', startedAt: 2, runId: 'r2' })
+        vi.advanceTimersByTime(ROOM_STATUS_HEARTBEAT_MS * 3)
+        expect(bench.flips).toEqual([true, true, true, true])
+        bench.room.append('room/run-state', { member: 'b', state: 'done', startedAt: 2, runId: 'r2' })
+        vi.advanceTimersByTime(ROOM_STATUS_HEARTBEAT_MS)
+        expect(bench.flips).toEqual([true, true, true, true, true])
       } finally {
         vi.useRealTimers()
       }

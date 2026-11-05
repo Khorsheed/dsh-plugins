@@ -12,7 +12,7 @@ import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/ds
 import type { SubagentActivationSpec, SubagentResult, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import * as localAgent from '@khorsheed/dsh-local-agent'
 import { LOCAL_AGENT_SERVICE, RUN_PROGRESS_HEARTBEAT_MS, SESSION_STATUS_HEARTBEAT_MS } from '@khorsheed/dsh-local-agent'
-import type { LocalAgentDelegationIntent, LocalAgentRunProgress } from '@khorsheed/dsh-local-agent'
+import type { LocalAgentDelegationIntent, LocalAgentMemberInput, LocalAgentRunProgress } from '@khorsheed/dsh-local-agent'
 
 const PROVIDER = 'fake-cli'
 const PARENT = 'parent-1'
@@ -781,6 +781,52 @@ describe('LocalAgentRegistry delegation facade', () => {
           const settled = flips.length
           await vi.advanceTimersByTimeAsync(RUN_PROGRESS_HEARTBEAT_MS * 3)
           expect(flips).toHaveLength(settled)
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('drops a tool-registered run its member ledger says is over, emitting false once', async () => {
+        vi.useFakeTimers()
+        try {
+          const h = await mountFacade()
+          const flips = listen(h)
+          const warn = vi.spyOn(h.ctx.logger, 'warn')
+          const rows = [{ id: 'exec-1', caller: 'tool' as const, status: 'running' as LocalAgentMemberInput['status'], createdAt: Date.now(), updatedAt: Date.now(), settledAt: undefined as number | undefined }]
+          vi.spyOn(h.registry.memberInbox, 'read').mockImplementation(() => ({ memberId: 'child-leak', paused: false, messages: rows }))
+          h.registry.trackDelegationRun('child-leak', makeRun('child-leak').run, () => {})
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS)
+          expect(flips).toEqual([['child-leak', true], ['child-leak', true]])
+
+          // The ledger settled the execution; the run's result never did.
+          rows[0]!.status = 'done'
+          rows[0]!.settledAt = Date.now()
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS)
+          expect(flips).toEqual([['child-leak', true], ['child-leak', true], ['child-leak', false]])
+          expect(h.registry.isDelegationActive('child-leak')).toBe(false)
+          expect(warn.mock.calls.some(([message]) => String(message).includes('dropped a stale active run'))).toBe(true)
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS * 3)
+          expect(flips).toHaveLength(3)
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('keeps a tool-registered run whose ledger shows it running, or holds only older settled history', async () => {
+        vi.useFakeTimers()
+        try {
+          const h = await mountFacade()
+          const flips = listen(h)
+          const old = Date.now() - 60_000
+          vi.spyOn(h.registry.memberInbox, 'read').mockImplementation((id: string) => ({ memberId: id, paused: false, messages: id === 'child-live'
+            ? [{ id: 'exec-1', caller: 'tool' as const, status: 'running' as const, createdAt: Date.now(), updatedAt: Date.now() }]
+            : [{ id: 'exec-0', caller: 'tool' as const, status: 'done' as const, createdAt: old, updatedAt: old, settledAt: old }] }))
+          h.registry.trackDelegationRun('child-live', makeRun('child-live').run, () => {})
+          h.registry.trackDelegationRun('child-bypass', makeRun('child-bypass').run, () => {})
+          await vi.advanceTimersByTimeAsync(SESSION_STATUS_HEARTBEAT_MS * 2)
+          expect(flips.filter(([id, running]) => id === 'child-live' && running)).toHaveLength(3)
+          expect(flips.filter(([id, running]) => id === 'child-bypass' && running)).toHaveLength(3)
+          expect(flips.some(([, running]) => !running)).toBe(false)
         } finally {
           vi.useRealTimers()
         }

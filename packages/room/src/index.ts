@@ -559,8 +559,12 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
    * @param request - session identity.
    * @returns true when the session carries the marker (false for unknown sessions too).
    */
-  /** Run ids of the members working in each room (the session list's 运行中). */
-  private readonly activeRuns = new Map<string, Set<string>>()
+  /**
+   * Run ids of the members working in each room (the session list's 运行中),
+   * with the running edge's core identity: a run with an `executionId` lets
+   * the status beat ask the core ledger whether it is still in flight.
+   */
+  private readonly activeRuns = new Map<string, Map<string, { readonly childSessionId?: string; readonly executionId?: string }>>()
   /**
    * STOPGAP(session-activity-contribution): replace with host activity lease when upstream lands.
    * One timer over every room in {@link activeRuns}, alive only while some room has a run.
@@ -646,11 +650,15 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     const id = String(session.id)
     switch (event.type) {
       case 'room/run-state': {
-        const runs = this.activeRuns.get(id) ?? new Set<string>()
+        const runs = this.activeRuns.get(id) ?? new Map<string, { readonly childSessionId?: string; readonly executionId?: string }>()
         const before = runs.size
         const key = event.data.runId ?? `${event.data.member}:${event.data.startedAt}`
-        if (event.data.state === 'running') runs.add(key)
-        else runs.delete(key)
+        if (event.data.state === 'running') {
+          runs.set(key, {
+            ...event.data.childSessionId === undefined ? {} : { childSessionId: String(event.data.childSessionId) },
+            ...event.data.executionId === undefined ? {} : { executionId: event.data.executionId },
+          })
+        } else runs.delete(key)
         if (runs.size === 0) this.activeRuns.delete(id)
         else this.activeRuns.set(id, runs)
         this.syncStatusBeat()
@@ -722,16 +730,47 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       return
     }
     if (this.statusBeat !== undefined) return
-    this.statusBeat = setInterval(() => {
-      for (const id of this.activeRuns.keys()) {
-        try {
-          this.emitStatus(id, true)
-        } catch {
-          // A host without the status channel: nothing to refresh.
+    this.statusBeat = setInterval(() => { this.beatStatus() }, ROOM_STATUS_HEARTBEAT_MS)
+    this.statusBeat.unref?.()
+  }
+
+  /**
+   * STOPGAP(session-activity-contribution): replace with host activity lease when upstream lands.
+   * One status beat. Since batch 5 S7 the core ledger says whether an
+   * execution is in flight, so a run whose terminal edge never reached the
+   * journal does not spin forever: each active run that carries an
+   * `executionId` is checked against its member's ledger row, and a row that
+   * is settled, uncertain, or absent drops the run (with a warning). A room
+   * that empties this way settles exactly as on a normal last end. Runs
+   * without an `executionId` (the room's own agent, pre-S5 runs), a core
+   * without the ledger read, and an unreadable ledger keep today's behaviour.
+   */
+  private beatStatus(): void {
+    const ledgers = new CoreLedgers(probeLocalAgent(this.ctx))
+    for (const [id, runs] of [...this.activeRuns]) {
+      if (ledgers.readable) {
+        for (const [key, run] of [...runs]) {
+          if (run.executionId === undefined || run.childSessionId === undefined) continue
+          const rows = ledgers.rows(run.childSessionId)
+          if (rows === undefined) continue
+          const status = rows.find(row => row.id === run.executionId)?.status
+          if (status === 'queued' || status === 'running') continue
+          runs.delete(key)
+          this.ctx.logger.warn(`room: dropped a stale active run ${key} in ${id} (core execution ${run.executionId}: ${status ?? 'unknown'})`)
         }
       }
-    }, ROOM_STATUS_HEARTBEAT_MS)
-    this.statusBeat.unref?.()
+      try {
+        if (runs.size > 0) this.emitStatus(id, true)
+        else {
+          this.activeRuns.delete(id)
+          // The room's own agent still running keeps the row running.
+          if (this.ctx.agents.get(SessionId(id))?.status !== 'running') this.emitStatus(id, false)
+        }
+      } catch {
+        // A host without the status channel: nothing to refresh.
+      }
+    }
+    this.syncStatusBeat()
   }
 
   /** Stop the status re-announce timer (no rooms active, or the plugin unloads). */

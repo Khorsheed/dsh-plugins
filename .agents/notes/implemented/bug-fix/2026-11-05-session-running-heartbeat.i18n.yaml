@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-05-session-running-heartbeat.md
-.agents/notes/implemented/bug-fix/2026-11-05-session-running-heartbeat.md: 41b58855326d304320e9712d6b40ac5c5afe81ed
-.agents/notes/implemented/bug-fix/2026-11-05-session-running-heartbeat.zh.md: cd97977d5879ffeab856f2ee5afc389dd43b1b50
+.agents/notes/implemented/bug-fix/2026-11-05-session-running-heartbeat.md: eba7684d55aa70aa30ba21c5975d889e79588ee6
+.agents/notes/implemented/bug-fix/2026-11-05-session-running-heartbeat.zh.md: 37ca31c88b10490afa3cfab4cab51c472716acca

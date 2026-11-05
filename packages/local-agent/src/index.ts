@@ -3410,15 +3410,27 @@ export class LocalAgentRegistry {
     // Re-announce `running: true` while the run is in flight, so a browser that
     // reloaded or reconnected (and re-baselined from the host's summary, which
     // knows nothing of CLI children) gets the spinner back within one beat.
+    // An entry whose run's result never settles would spin forever: the
+    // member's ledger (the source of truth since batch 5 S7) retires it.
+    const startedAt = Date.now()
     const statusBeat = setInterval(() => {
-      if (this.runs.get(childSessionId)?.run === run) this.announceRunning(childSessionId, true)
+      if (this.runs.get(childSessionId)?.run !== run) return
+      const stale = this.ledgerOutlived(childSessionId, startedAt)
+      if (stale === undefined) {
+        this.announceRunning(childSessionId, true)
+        return
+      }
+      clearInterval(statusBeat)
+      this.runs.delete(childSessionId)
+      this.ctx.logger.warn(`localAgent: dropped a stale active run ${childSessionId} (${stale})`)
+      this.announceRunning(childSessionId, false)
     }, SESSION_STATUS_HEARTBEAT_MS)
     statusBeat.unref()
     this.runs.set(childSessionId, {
       cancel,
       run,
       onProgress: undefined,
-      startedAt: Date.now(),
+      startedAt,
       statusBeat,
     })
     this.announceRunning(childSessionId, true)
@@ -3430,6 +3442,34 @@ export class LocalAgentRegistry {
       this.announceRunning(childSessionId, false)
     }
     void run.result.then(clear, clear)
+  }
+
+  /**
+   * STOPGAP(session-activity-contribution): replace with host activity lease when upstream lands.
+   * Whether the member's ledger says a tool-registered run is over although
+   * its result never settled. A tool-registered entry carries no execution
+   * id, so this is conservative: the ledger must be readable and hold rows,
+   * none of them queued or running, and its latest row must have settled (or
+   * turned uncertain) after the entry started — an older settled history next
+   * to a run that bypassed the ledger never counts. Anything else (no ledger,
+   * an unreadable one, an empty one) keeps the run.
+   * @param childSessionId - the member's dsh child session.
+   * @param startedAt - when the entry was registered.
+   * @returns why the run is stale, or undefined to keep it.
+   */
+  private ledgerOutlived(childSessionId: string, startedAt: number): string | undefined {
+    let rows: readonly LocalAgentMemberInput[]
+    try {
+      const inbox = this.memberInbox.read(childSessionId)
+      if (inbox.error !== undefined) return undefined
+      rows = inbox.messages
+    } catch {
+      return undefined
+    }
+    if (rows.length === 0 || rows.some(row => row.status === 'queued' || row.status === 'running')) return undefined
+    const latest = rows.reduce((last, row) => (row.settledAt ?? row.updatedAt) > (last.settledAt ?? last.updatedAt) ? row : last)
+    if ((latest.settledAt ?? latest.updatedAt) < startedAt) return undefined
+    return `ledger execution ${latest.id}: ${latest.status}`
   }
 
   /**
