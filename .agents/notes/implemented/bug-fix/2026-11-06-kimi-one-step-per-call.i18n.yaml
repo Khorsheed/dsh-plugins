@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-06-kimi-one-step-per-call.md
+.agents/notes/implemented/bug-fix/2026-11-06-kimi-one-step-per-call.md: 1e6961106965e7181194105ec3d0ec65bd86132a
+.agents/notes/implemented/bug-fix/2026-11-06-kimi-one-step-per-call.zh.md: 86972669e3323a347b34ce9e7a13ab4d4eba6780
