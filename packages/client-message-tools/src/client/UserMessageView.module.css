@@ -28,6 +28,7 @@
      height together through the body-published axis — the official bubble's
      own metrics, which this clone tracks. */
   padding: 10px 16px;
+  white-space: pre-wrap;
   font-size: var(--dsh-content-font-size, 14px);
   line-height: calc(22px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-label-primary, var(--dsw-alias-label-secondary));

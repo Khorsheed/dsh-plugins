@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import type { ReactNode } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -430,6 +431,18 @@ describe('UserMessageView text (the official user-text pipeline)', () => {
       facts: { sessionLabels: ['会话甲'], skillNames: ['plan'] },
       interactive: true,
     })
+  })
+
+  it('preserves source newlines around the official user-text pipeline', () => {
+    const text = '【房间变动】\n- dsh 改名\n\n**一、这段现在的问题**'
+    const node = userNode([{ type: 'text', text }])
+    const renderFactorySlot = vi.fn((name: string) => name === 'conversation.user.text' ? <span data-testid="user-text">{text}</span> : null)
+    render(<UserMessageView {...props({ node, renderFactorySlot, userTextAvailable: true })} />)
+    const rendered = screen.getByTestId('user-text')
+    expect(rendered.textContent).toBe(text)
+    expect(rendered.parentElement?.className).toContain('bubble')
+    const stylesheet = readFileSync('src/client/UserMessageView.module.css', 'utf8')
+    expect(stylesheet).toMatch(/\.bubble\s*\{[^}]*\bwhite-space:\s*pre-wrap;/)
   })
 
   it('keeps the local token projection on a host without the factory', () => {
