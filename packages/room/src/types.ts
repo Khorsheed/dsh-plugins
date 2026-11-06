@@ -329,6 +329,40 @@ export interface RoomMemberToolsEvent {
   readonly during: 'round' | 'idle'
 }
 
+/**
+ * Why a CLI member's background task lost contact: only what the room knows
+ * happened, never a guess about the task itself (design
+ * 2026-11-06-member-self-started-rounds, B① `lostBecause`). The host
+ * restarted (`host-restart`), the member's process was reclaimed
+ * (`process-reclaimed`), or that process exited on its own (`process-exited`).
+ */
+export type RoomBackgroundTaskLostBecause = 'host-restart' | 'process-reclaimed' | 'process-exited'
+
+/**
+ * A fact about a CLI member's background task that belongs to no execution
+ * (design 2026-11-06-member-self-started-rounds, C②): when the host restarts
+ * no round is running, so neither `room/run-state` nor `room/speech` can
+ * carry it. Written once per `taskId` (dedupe on the room log's own events).
+ *
+ * Step M0 registers the type and NOTHING writes it; M6 is its first writer.
+ * Once any build writes it the registration is permanent vocabulary: never
+ * remove or rename the type; later steps may add optional fields only.
+ */
+export interface RoomBackgroundTaskEvent {
+  /** The member's name when it happened. */
+  readonly member: string
+  readonly memberId: string
+  /** The CLI's own task id (Kimi `bash-…` / `agent-…`). */
+  readonly taskId: string
+  /** The CLI's description of the task, or the head of its command. */
+  readonly label: string
+  /** The only state this event carries: the task lost contact. */
+  readonly state: 'lost'
+  readonly because: RoomBackgroundTaskLostBecause
+  /** The room run whose round started the task; absent when that chain is not on record. */
+  readonly startedByRunId?: string
+}
+
 export interface RoomRunMovedEvent {
   readonly member: string
   readonly startedAt: number
@@ -889,6 +923,8 @@ declare module '@deepseek-ai/dsh-session/types' {
     'room/member-compacted': RoomMemberCompactedEvent
     /** A CLI member's mode tools were reloaded at round start, or still could not be loaded. */
     'room/member-tools': RoomMemberToolsEvent
+    /** A CLI member's background task lost contact (step M0: registered, nothing writes it yet). */
+    'room/background-task': RoomBackgroundTaskEvent
     /** Log-only observed metadata for a single execution. */
     'room/execution-metadata': RoomExecutionMetadataEvent
     /** Notification gate: a member-to-member relay arrived (pending). */

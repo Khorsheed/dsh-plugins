@@ -69,6 +69,11 @@ export const ROOM_EVENT_TYPES = [
   'room/member-compacted',
   // A member's mode tools were reloaded at round start, or still missing after a reload.
   'room/member-tools',
+  // A CLI member's background task lost contact (design
+  // 2026-11-06-member-self-started-rounds, C②). Step M0 registers it and
+  // nothing writes it; M6 is the first writer. Never remove or rename it once
+  // any build writes it: rooms carrying it would stop opening.
+  'room/background-task',
   'room/execution-metadata',
   'room/relay',
   'room/relay-resolved',
