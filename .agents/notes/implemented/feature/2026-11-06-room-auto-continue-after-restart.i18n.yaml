@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-06-room-auto-continue-after-restart.md
+.agents/notes/implemented/feature/2026-11-06-room-auto-continue-after-restart.md: a59840fb7e9513532a2d0cfae32e9042a17f6c63
+.agents/notes/implemented/feature/2026-11-06-room-auto-continue-after-restart.zh.md: eb3c135eaaaa31e8e308d575d4456ac046706173

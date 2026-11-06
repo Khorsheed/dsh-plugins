@@ -13,6 +13,9 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { LocalAgentFacade } from '../src/adapter.ts'
 import { withRunEntry } from './run-entry-shim.ts'
 import { replay } from '../src/journal.ts'
+import { AUTO_CONTINUE_MOVED_ON_TEXT, RESTART_CONTINUE_TEXT, autoContinueRounds, interruptedRounds } from '../src/restart-continue.ts'
+import { memberRestartLine, restartBanner } from '../src/client/restart-view.ts'
+import { loadEach } from '../src/startup-load.ts'
 
 /** A manually settled promise. */
 function deferred<T>() {
@@ -1730,6 +1733,8 @@ describe('coordinator routing and durable deliveries', () => {
     const member = await preparedMember(bench)
     bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'done'))
     const session = bench.ctx.sessions.get(bench.sessionId)!
+    // The manual path (M9's 重启后自动继续 off): recovery alone never replays.
+    session.append('room/settings', { autoContinueAfterRestart: false })
     const started = session.append('room/dispatch', { id: 'crashed', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: 'side effect' })
     session.append('room/delivery-state', { id: `${started.seq}:${member.id}`, dispatchSeq: started.seq, memberId: member.id!, state: 'running' })
     session.append('room/run-state', { member: 'ada', runId: `${started.seq}:${member.id}`, state: 'running', startedAt: Date.now() })
@@ -1762,6 +1767,8 @@ describe('restart recovery through the core ledger (batch 5 S7)', () => {
     const member = await preparedMemberOf(bench)
     const stub = bench.localAgentStub as ReturnType<typeof withRunEntry>
     const room = bench.ctx.sessions.get(bench.sessionId)!
+    // S7's manual path: the room's own 重启后自动继续 (M9, below) is off here.
+    room.append('room/settings', { autoContinueAfterRestart: false })
     const first = room.append('room/dispatch', { id: 'crashed', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: '有副作用的一轮' })
     const id = `${first.seq}:${member.id}`
     room.append('room/delivery-state', { id, dispatchSeq: first.seq, memberId: member.id!, state: 'running' })
@@ -1903,6 +1910,370 @@ describe('restart recovery through the core ledger (batch 5 S7)', () => {
     expect(ledger.find(row => row.id === 'exec-1')).toMatchObject({ status: 'cancelled' })
     expect(bench.facade.resume).toHaveBeenCalledOnce()
     expect(deliveryEdges(room, id)).toEqual(['running', 'uncertain', 'cancelled'])
+  })
+})
+
+describe('restart: the room continues interrupted rounds itself (M9)', () => {
+  /** ada's delivery #1 (execution `exec-1`) was running when the host went away; the core says uncertain. #2 waits behind it. */
+  async function crashed(options: { readonly via?: 'auto-continue' } = {}) {
+    const bench = await bootRoom()
+    const member = await preparedMemberOf(bench)
+    const stub = bench.localAgentStub as ReturnType<typeof withRunEntry>
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const first = room.append('room/dispatch', { id: 'crashed', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: '有副作用的一轮',
+      ...options.via === undefined ? {} : { via: options.via, continues: ['0:earlier'] } })
+    const id = `${first.seq}:${member.id}`
+    room.append('room/delivery-state', { id, dispatchSeq: first.seq, memberId: member.id!, state: 'running' })
+    room.append('room/run-state', { member: 'ada', runId: id, state: 'running', startedAt: Date.now() - 5_000, childSessionId: SessionId('child-ada'), executionId: 'exec-1' })
+    const second = room.append('room/dispatch', { id: 'queued', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: '下一条' })
+    stub.seedLedgerRow('child-ada', { id: 'exec-1', key: id, caller: 'room', status: 'uncertain' })
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) => settledRun(child, '核对过了，接着做完'))
+    return { bench, member, stub, room, id, nextId: `${second.seq}:${member.id}` }
+  }
+  /** The room's live access (every mutation, a cold room's load, getState when a round waits): recovery, then auto-continue. */
+  const access = (bench: Bench) => (bench.service as unknown as { ensureLive(id: SessionId): Promise<unknown> }).ensureLive(bench.sessionId)
+  const autoDispatches = (room: { snapshotEvents(): readonly SessionEvent[] }) =>
+    room.snapshotEvents().flatMap(event => event.type === 'room/dispatch' && event.data.via === 'auto-continue' ? [event] : [])
+  const view = async (bench: Bench) => {
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    return state.value
+  }
+
+  it('on (the default): recovery twice, concurrent and repeated, sends the continue message once, from the room', async () => {
+    const { bench, stub, room, id, nextId } = await crashed()
+    expect(replay(room.snapshotEvents()).settings?.autoContinueAfterRestart).toBe(true)
+    await Promise.all([access(bench), access(bench)])
+    await access(bench)
+    await bench.service.engine.idle()
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    const prompt = textOf(bench.facade.resume.mock.calls[0]![3])
+    expect(prompt).toContain(RESTART_CONTINUE_TEXT)
+    // The message queued behind the lost round rides along (the human's move-on, unchanged).
+    expect(prompt).toContain('下一条')
+    const [dispatch, ...more] = autoDispatches(room)
+    expect(more).toEqual([])
+    expect(dispatch!.data).toMatchObject({ origin: 'human', via: 'auto-continue', continues: [id], targets: ['ada'], text: RESTART_CONTINUE_TEXT })
+    // Moved on from the lost round, in the core too.
+    expect(room.snapshotEvents().filter(event => event.type === 'room/delivery-state' && event.data.id === id).at(-1)?.data).toMatchObject({ state: 'cancelled', text: AUTO_CONTINUE_MOVED_ON_TEXT })
+    const ledger = (stub['readMemberInbox'] as (child: string) => { messages: Array<{ id: string; status: string }> })('child-ada').messages
+    expect(ledger.find(row => row.id === 'exec-1')).toMatchObject({ status: 'cancelled' })
+    expect(room.snapshotEvents().filter(event => event.type === 'room/delivery-state' && event.data.id === nextId).at(-1)?.data).toMatchObject({ state: 'done' })
+    // The round's cause is the restart hand-off.
+    const run = stub['run'] as ReturnType<typeof vi.fn>
+    expect(run).toHaveBeenCalledOnce()
+    expect((run.mock.calls[0]![0] as { cause?: unknown }).cause).toEqual({ kind: 'restart', sessionId: String(bench.sessionId) })
+    expect(executionFacts(room.snapshotEvents(), bench.sessionId, dispatch!.seq).cause).toEqual({ kind: 'restart', sessionId: String(bench.sessionId) })
+    // Nothing is left for the human.
+    expect(interruptedRounds(await view(bench))).toEqual([])
+    expect((await view(bench)).continued).toEqual([id])
+  })
+
+  it('opening the room after the restart is enough: getState brings it live and continues once', async () => {
+    const { bench, room } = await crashed()
+    await bench.service.getState({ sessionId: bench.sessionId })
+    await bench.service.getState({ sessionId: bench.sessionId })
+    await vi.waitFor(() => expect(autoDispatches(room)).toHaveLength(1))
+    await bench.service.engine.idle()
+    await bench.service.getState({ sessionId: bench.sessionId })
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    expect(autoDispatches(room)).toHaveLength(1)
+  })
+
+  it('off: nothing is sent; the human gets the banner, and their 全部继续 records what it continues', async () => {
+    const { bench, room, id } = await crashed()
+    // Turned off on a room nobody opened since the restart: the write wins, nothing is continued on the way in.
+    expect(await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: false })).toMatchObject({ ok: true, value: { autoContinueAfterRestart: false } })
+    await bench.service.engine.idle()
+    expect(autoDispatches(room)).toEqual([])
+    await access(bench)
+    await bench.service.getState({ sessionId: bench.sessionId })
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(autoDispatches(room)).toEqual([])
+    expect(interruptedRounds(await view(bench))).toEqual([{ member: 'ada', memberId: expect.any(String), runId: id, task: expect.any(String) }])
+    // The human's button: the same message, with `continues` (no `via`).
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: RESTART_CONTINUE_TEXT, targets: ['ada'], continues: [id, 'not-a-round'] })
+    await bench.service.engine.idle()
+    const human = room.snapshotEvents().findLast(event => event.type === 'room/dispatch')
+    expect(human?.data).toMatchObject({ origin: 'human', continues: [id] })
+    expect((human?.data as { via?: string }).via).toBeUndefined()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+  })
+
+  it('turning it off wins over a live access racing the write (the room opened meanwhile)', async () => {
+    const { bench, room } = await crashed()
+    const [written] = await Promise.all([
+      bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: false }),
+      bench.service.getState({ sessionId: bench.sessionId }),
+      access(bench),
+    ])
+    expect(written).toMatchObject({ ok: true, value: { autoContinueAfterRestart: false } })
+    await bench.service.engine.idle()
+    expect(autoDispatches(room)).toEqual([])
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    // The banner's manual state: ada waits for the human, no reason.
+    expect(restartBanner(await view(bench)).manual).toMatchObject([{ member: 'ada' }])
+    expect(restartBanner(await view(bench)).auto).toBeUndefined()
+  })
+
+  it('turning it back on through the settings continues once, under the written setting', async () => {
+    const { bench, room } = await crashed()
+    await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: false })
+    await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: true })
+    await bench.service.engine.idle()
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(autoDispatches(room)).toHaveLength(1)
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+  })
+
+  it('a round the human already continued is never continued again by the room', async () => {
+    const { bench, room, id } = await crashed()
+    room.append('room/settings', { autoContinueAfterRestart: false })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: RESTART_CONTINUE_TEXT, targets: ['ada'], continues: [id] })
+    await bench.service.engine.idle()
+    await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: true })
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(autoDispatches(room)).toEqual([])
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+  })
+
+  it('an auto-continued round interrupted again is not continued again: the banner says why', async () => {
+    const { bench, room, id } = await crashed({ via: 'auto-continue' })
+    await access(bench)
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(autoDispatches(room)).toHaveLength(1)
+    expect(interruptedRounds(await view(bench))).toMatchObject([{ member: 'ada', runId: id, blocked: 'again' }])
+  })
+
+  it('the member whose round requested the restart is not continued when the guard records it', async () => {
+    const { bench, room, id } = await crashed()
+    bench.ctx.provide('selfRestartGuard', { lastRestart: () => ({ initiatorMember: 'child-ada' }) } as never)
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(autoDispatches(room)).toEqual([])
+    const state = await view(bench)
+    expect(state.restartFacts).toEqual({ restartInitiator: 'child-ada', bootedAt: expect.any(Number) })
+    expect(interruptedRounds(state)).toMatchObject([{ member: 'ada', runId: id, blocked: 'self-restart' }])
+  })
+
+  it('a guard that records no member (before M10) does not hold the round back: continued once', async () => {
+    const { bench, room } = await crashed()
+    bench.ctx.provide('selfRestartGuard', { verify: () => ({ ok: true }) } as never)
+    await access(bench)
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(autoDispatches(room)).toHaveLength(1)
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+  })
+
+  /**
+   * An earlier restart's recovery journaled ada's interruption (delivery
+   * `uncertain`, run restart-failed), then this host process started: the
+   * edges predate the room service's boot (incident 2026-11-06).
+   */
+  async function journaledBeforeBoot(crash: Awaited<ReturnType<typeof crashed>>): Promise<void> {
+    const { bench, room, id, member } = crash
+    const dispatchSeq = Number(id.split(':', 1)[0])
+    room.append('room/delivery-state', { id, dispatchSeq, memberId: member.id!, state: 'uncertain', error: DELIVERY_UNKNOWN_TEXT })
+    const run = replay(room.snapshotEvents()).runs.find(entry => entry.runId === id)!
+    room.append('room/run-state', { member: 'ada', runId: id, startedAt: run.startedAt, state: 'failed', error: RESTART_UNKNOWN_TEXT, childSessionId: SessionId('child-ada'), executionId: 'exec-1' })
+    await new Promise(resolve => setTimeout(resolve, 5))
+    bench.service.engine.bootedAt = Date.now()
+  }
+
+  it('stale: a round an earlier restart cut off is never continued by the room; it stays in the banner and 全部继续 still works', async () => {
+    const crash = await crashed()
+    const { bench, room, id } = crash
+    await journaledBeforeBoot(crash)
+    await access(bench)
+    await bench.service.getState({ sessionId: bench.sessionId })
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(autoDispatches(room)).toEqual([])
+    const state = await view(bench)
+    expect(interruptedRounds(state)).toEqual([{ member: 'ada', memberId: expect.any(String), runId: id, task: expect.any(String), stale: true }])
+    expect(autoContinueRounds(state)).toEqual([])
+    expect(restartBanner(state)).toEqual({ manual: [expect.objectContaining({ member: 'ada', runId: id, stale: true })] })
+    expect(memberRestartLine(state, 'ada')).toEqual({ kind: 'interrupted' })
+    // The human's 全部继续, unchanged.
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: RESTART_CONTINUE_TEXT, targets: ['ada'], continues: [id] })
+    await bench.service.engine.idle()
+    expect(room.snapshotEvents().findLast(event => event.type === 'room/dispatch')?.data).toMatchObject({ origin: 'human', continues: [id] })
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    expect(autoDispatches(room)).toEqual([])
+  })
+
+  it('fresh: the interruption this process\'s recovery journals is continued once', async () => {
+    const { bench, room, id } = await crashed()
+    bench.service.engine.bootedAt = Date.now()
+    await access(bench)
+    await access(bench)
+    await bench.service.engine.idle()
+    const edge = room.snapshotEvents().find(event => event.type === 'room/delivery-state' && event.data.id === id && event.data.state === 'uncertain')
+    expect(edge!.time).toBeGreaterThanOrEqual(bench.service.engine.bootedAt)
+    expect(autoDispatches(room)).toHaveLength(1)
+    expect(autoDispatches(room)[0]!.data).toMatchObject({ continues: [id] })
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+  })
+
+  it('mixed: only the round this restart cut off is continued; the stale one waits for the human', async () => {
+    const crash = await crashed()
+    const { bench, room, id, stub } = crash
+    await journaledBeforeBoot(crash)
+    // bob's round was running when THIS restart cut it off: recovery journals it now.
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'bob' })
+    room.append('room/member-updated', { name: 'bob', childSessionId: SessionId('child-bob') })
+    const bob = replay(room.snapshotEvents()).members.find(entry => entry.name === 'bob')!
+    const bobDispatch = room.append('room/dispatch', { id: 'bob-crashed', targets: ['bob'], targetIds: [bob.id!], origin: 'human', text: 'bob 的一轮' })
+    const bobId = `${bobDispatch.seq}:${bob.id}`
+    room.append('room/delivery-state', { id: bobId, dispatchSeq: bobDispatch.seq, memberId: bob.id!, state: 'running' })
+    room.append('room/run-state', { member: 'bob', runId: bobId, state: 'running', startedAt: Date.now() - 5_000, childSessionId: SessionId('child-bob'), executionId: 'exec-bob' })
+    stub.seedLedgerRow('child-bob', { id: 'exec-bob', key: bobId, caller: 'room', status: 'uncertain' })
+    await access(bench)
+    await access(bench)
+    await bench.service.engine.idle()
+    const [dispatch, ...more] = autoDispatches(room)
+    expect(more).toEqual([])
+    expect(dispatch!.data).toMatchObject({ targets: ['bob'], continues: [bobId] })
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    const state = await view(bench)
+    expect(interruptedRounds(state)).toMatchObject([{ member: 'ada', runId: id, stale: true }])
+    const banner = restartBanner(state)
+    expect(banner.manual.map(round => round.member)).toEqual(['ada'])
+  })
+
+  it('a member whose input queue is paused, and a paused room, are left to the human', async () => {
+    const paused = await crashed()
+    const stub = paused.stub as Record<string, unknown>
+    const read = stub['readMemberInbox'] as (child: string) => Record<string, unknown>
+    // Paused with typed input waiting on the members page: the human decides.
+    // (Paused alone is what every ledger reads after a restart and is no
+    // guard — real-core.host.spec covers that.)
+    stub['readMemberInbox'] = (child: string) => {
+      const inbox = read(child) as { messages: unknown[] }
+      return { ...inbox, paused: true, messages: [...inbox.messages, { id: 'typed', key: 'typed', caller: 'composer', status: 'queued', text: '页面里打的字', createdAt: 0, updatedAt: 0 }] }
+    }
+    await access(paused.bench)
+    await paused.bench.service.engine.idle()
+    expect(paused.bench.facade.resume).not.toHaveBeenCalled()
+    expect(autoDispatches(paused.room)).toEqual([])
+    expect(interruptedRounds(await view(paused.bench))).toMatchObject([{ member: 'ada', blocked: 'queue-paused' }])
+
+    const room = await crashed()
+    room.room.append('room/settings', { paused: true })
+    await access(room.bench)
+    await room.bench.service.engine.idle()
+    expect(room.bench.facade.resume).not.toHaveBeenCalled()
+    expect(autoDispatches(room.room)).toEqual([])
+    expect(interruptedRounds(await view(room.bench))).toMatchObject([{ member: 'ada', blocked: 'room-paused' }])
+  })
+})
+
+describe('restart: rooms nobody opens are loaded once at host start (M10)', () => {
+  /** ada's room delivery was running when the host went away; the core's ledger says uncertain. */
+  async function crashed() {
+    const bench = await bootRoom()
+    const member = await preparedMemberOf(bench)
+    const stub = bench.localAgentStub as ReturnType<typeof withRunEntry>
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const first = room.append('room/dispatch', { id: 'crashed', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: '有副作用的一轮' })
+    const id = `${first.seq}:${member.id}`
+    room.append('room/delivery-state', { id, dispatchSeq: first.seq, memberId: member.id!, state: 'running' })
+    room.append('room/run-state', { member: 'ada', runId: id, state: 'running', startedAt: Date.now() - 5_000, childSessionId: SessionId('child-ada'), executionId: 'exec-1' })
+    stub.seedLedgerRow('child-ada', { id: 'exec-1', key: id, caller: 'room', status: 'uncertain' })
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) => settledRun(child, '核对过了'))
+    const parents = vi.fn(() => [String(bench.sessionId), 'not-a-session', String(bench.sessionId)])
+    bench.localAgentStub['interruptedMemberParents'] = parents
+    const ensureLive = vi.spyOn(bench.service as unknown as { ensureLive(id: SessionId): Promise<unknown> }, 'ensureLive')
+    return { bench, room, id, parents, ensureLive }
+  }
+  const autoDispatches = (room: { snapshotEvents(): readonly SessionEvent[] }) =>
+    room.snapshotEvents().flatMap(event => event.type === 'room/dispatch' && event.data.via === 'auto-continue' ? [event] : [])
+
+  it('finds the room through the core, loads it once (duplicates and non-rooms skipped), and the room continues ada once', async () => {
+    const { bench, room, id, parents, ensureLive } = await crashed()
+    expect(await bench.service.loadInterruptedRooms()).toEqual([String(bench.sessionId)])
+    await bench.service.engine.idle()
+    expect(parents).toHaveBeenCalledOnce()
+    expect(ensureLive).toHaveBeenCalledOnce()
+    expect(autoDispatches(room)).toHaveLength(1)
+    expect(autoDispatches(room)[0]!.data).toMatchObject({ via: 'auto-continue', continues: [id] })
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    // A second pass (a plugin reload) finds nothing left to continue: not loaded again.
+    expect(await bench.service.loadInterruptedRooms()).toEqual([])
+    expect(ensureLive).toHaveBeenCalledOnce()
+    expect(autoDispatches(room)).toHaveLength(1)
+  })
+
+  it('a room with 重启后自动继续 off, or a paused room, is not loaded; the human decides as before', async () => {
+    const off = await crashed()
+    off.room.append('room/settings', { autoContinueAfterRestart: false })
+    expect(await off.bench.service.loadInterruptedRooms()).toEqual([])
+    expect(off.ensureLive).not.toHaveBeenCalled()
+    expect(autoDispatches(off.room)).toEqual([])
+    expect(off.bench.facade.resume).not.toHaveBeenCalled()
+
+    const paused = await crashed()
+    paused.room.append('room/settings', { paused: true })
+    expect(await paused.bench.service.loadInterruptedRooms()).toEqual([])
+    expect(paused.ensureLive).not.toHaveBeenCalled()
+  })
+
+  it('the member that requested the restart (guard record) keeps its room unloaded', async () => {
+    const { bench, room, ensureLive } = await crashed()
+    bench.ctx.provide('selfRestartGuard', { lastRestart: () => ({ exitAt: Date.now(), initiatorMember: 'child-ada' }) } as never)
+    expect(await bench.service.loadInterruptedRooms()).toEqual([])
+    expect(ensureLive).not.toHaveBeenCalled()
+    expect(autoDispatches(room)).toEqual([])
+  })
+
+  it('no-op without interrupted members, or with a core that has no such read', async () => {
+    const { bench, ensureLive } = await crashed()
+    bench.localAgentStub['interruptedMemberParents'] = () => []
+    expect(await bench.service.loadInterruptedRooms()).toEqual([])
+    delete bench.localAgentStub['interruptedMemberParents']
+    expect(await bench.service.loadInterruptedRooms()).toEqual([])
+    bench.localAgentStub['interruptedMemberParents'] = () => { throw new Error('ledger directory unreadable') }
+    expect(await bench.service.loadInterruptedRooms()).toEqual([])
+    expect(ensureLive).not.toHaveBeenCalled()
+  })
+})
+
+describe('loadEach (the startup load\'s bounded walk)', () => {
+  it('visits each candidate once, never more than the bound at a time; a failure is reported and skipped; a stop ends the walk', async () => {
+    let inFlight = 0
+    let peak = 0
+    const visited: string[] = []
+    const errors: string[] = []
+    const loaded = await loadEach(['a', 'b', 'a', 'c', 'd', 'e'], async (id) => {
+      visited.push(id)
+      inFlight++
+      peak = Math.max(peak, inFlight)
+      await new Promise(resolve => setTimeout(resolve, 5))
+      inFlight--
+      if (id === 'c') throw new Error('boom')
+      return id !== 'd'
+    }, { concurrency: 2, onError: id => { errors.push(id) } })
+    expect(visited.sort()).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(peak).toBe(2)
+    expect(loaded.sort()).toEqual(['a', 'b', 'e'])
+    expect(errors).toEqual(['c'])
+    let stop = false
+    const seen: string[] = []
+    await loadEach(['x', 'y', 'z'], async (id) => { seen.push(id); stop = true; return true }, { concurrency: 1, stopped: () => stop })
+    expect(seen).toEqual(['x'])
+    expect(await loadEach([], async () => true)).toEqual([])
   })
 })
 

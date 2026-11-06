@@ -171,6 +171,87 @@ describe('session-mirror', () => {
     expectValidReleasedLog(child)
   })
 
+  it('a self-opened round with its own execution is a turn of its own: its step carries its usage, no user message is written, and the next prompt opens the next turn (A③)', async () => {
+    const notice = '<notification id="task:bash-1:completed" type="task.completed" source_id="bash-1">done</notification>'
+    const wire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '部署' }], origin: { kind: 'user' } },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: '0', step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: '0', step: 1, part: { type: 'text', text: '完成后我会继续汇报' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: '0', step: 1 } },
+      { type: 'turn.ended', turnId: 0, reason: 'completed' },
+      { type: 'turn.prompt', input: [{ type: 'text', text: notice }], origin: { kind: 'task', taskId: 'bash-1', status: 'completed', notificationId: 'task:bash-1:completed' } },
+      { type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: notice }] } },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: '1', step: 1 } },
+      { type: 'usage.record', usage: { inputOther: 300, output: 20, inputCacheRead: 1000 }, model: 'kimi-code/k3' },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: '1', step: 1, part: { type: 'text', text: '部署完成' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: '1', step: 1 } },
+      { type: 'turn.ended', turnId: 1, reason: 'completed' },
+      { type: 'turn.prompt', input: [{ type: 'text', text: '继续' }], origin: { kind: 'user' } },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: '2', step: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: '2', step: 1, part: { type: 'text', text: '好的' } } },
+      { type: 'context.append_loop_event', event: { type: 'step.end', turnId: '2', step: 1 } },
+    ]
+    const { home, dir } = wireHome('self-round', wire.slice(0, 5))
+    const child = Session.create(SessionId('self-round'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+    child.append('user/message', createUserMessage({ content: [{ type: 'text', text: '部署' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+    const first = await mirrorKimiSessionDelta(ctx, child, home, 'self-round', 0, { throughTurn: 1, settle: true })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    // The self round lands on the wire; the live driver offers it to the core,
+    // which writes its start record — then the follow opens its turn.
+    appendFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), '\n' + wire.slice(5, 12).map(line => JSON.stringify(line)).join('\n'))
+    child.append('local-agent/execution' as never, { phase: 'start', executionId: 'self-1', caller: 'cli', operation: 'prompt', parentSessionId: 'room-1', admittedAt: 1,
+      cause: { kind: 'self', reason: 'background-task', taskId: 'bash-1', taskStatus: 'completed', notificationId: 'task:bash-1:completed' } } as never)
+    child.append('turn/start', { turn: 2 })
+    const second = await mirrorKimiSessionDelta(ctx, child, home, 'self-round', first.total, { throughTurn: 2, settle: true })
+    child.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    // The human's next round is turn 3.
+    appendFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), '\n' + wire.slice(12).map(line => JSON.stringify(line)).join('\n'))
+    child.append('turn/start', { turn: 3 })
+    child.append('user/message', createUserMessage({ content: [{ type: 'text', text: '继续' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+    await mirrorKimiSessionDelta(ctx, child, home, 'self-round', second.total, { throughTurn: 3, settle: true })
+    child.append('turn/end', { turn: 3, reason: { kind: 'completed' } })
+
+    const events = child.snapshotEvents()
+    // One user message per human round; the notification is not the human's.
+    expect(events.filter(event => event.type === 'user/message').map(event => (event.data as { turn?: number; content?: { text?: string }[] }).content?.[0]?.text)).toEqual(['部署', '继续'])
+    const messages = events.filter(event => event.type === 'assistant/message').map(event => event.data as { turn: number; usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number }; message: { content: { type: string; text?: string }[] } })
+    expect(messages.map(message => [message.turn, message.message.content.find(block => block.type === 'text')?.text])).toEqual([[1, '完成后我会继续汇报'], [2, '部署完成'], [3, '好的']])
+    // The self round's step carries its own usage record.
+    expect(messages[1]!.usage).toEqual({ inputTokens: 300, outputTokens: 20, cacheReadTokens: 1000 })
+    expect(second.usageAttached).toBe(true)
+    expect(messages[2]!.usage).toBeUndefined()
+    expectValidReleasedLog(child)
+  })
+
+  it('throughTurn holds a later turn\'s lines (and its boundary usage) for that turn, even when settling', async () => {
+    const wire = [
+      { type: 'turn.prompt', input: [{ type: 'text', text: '部署' }], origin: { kind: 'user' } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: '0', step: 1, part: { type: 'text', text: '去部署了' } } },
+      { type: 'turn.ended', turnId: 0, reason: 'completed' },
+      // kimi opened a turn of its own while round 1 was still settling.
+      { type: 'turn.prompt', input: [{ type: 'text', text: '<notification>' }], origin: { kind: 'task', taskId: 'bash-1', status: 'completed', notificationId: 'task:bash-1:completed' } },
+      { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: '1', step: 1 } },
+      { type: 'usage.record', usage: { inputOther: 9, output: 1 } },
+      { type: 'context.append_loop_event', event: { type: 'content.part', turnId: '1', step: 1, part: { type: 'text', text: '后台结果' } } },
+    ]
+    const { home } = wireHome('through-turn', wire)
+    const child = Session.create(SessionId('through-turn'))
+    const ctx = new Context()
+    ctx.provide('sessionPersistence', fakeSessionPersistence())
+    child.append('turn/start', { turn: 1 })
+    child.append('user/message', createUserMessage({ content: [{ type: 'text', text: '部署' }], source: { kind: 'user' } }), { surfaceOp: 'append' })
+    const delta = await mirrorKimiSessionDelta(ctx, child, home, 'through-turn', 0, { throughTurn: 1, settle: true })
+    child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    // Only round 1's two lines are consumed; turn 2's wait for the round that opens it.
+    expect(delta.total).toBe(2)
+    expect(delta.usage).toBeUndefined()
+    expect(child.snapshotEvents().filter(event => event.type === 'assistant/message')).toHaveLength(1)
+    expectValidReleasedLog(child)
+  })
+
   it('counts a boundary usage record once while a held unit keeps the offset still (3.2M = 10 × 320k)', async () => {
     // In the wild (fbc8ba18 turn 43): the round's only wire step never closed,
     // so every poll re-read the same window and re-carried its usage record.

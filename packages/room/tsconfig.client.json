@@ -77,6 +77,9 @@
     "src/client/RoomTaskCapsule.tsx",
     "src/client/MemberActivity.tsx",
     "src/client/MemberActivityTail.tsx",
-    "src/client/member-activity-view.ts"
+    "src/client/member-activity-view.ts",
+    "src/client/RoomRestart.tsx",
+    "src/client/restart-view.ts",
+    "src/restart-continue.ts"
   ]
 }

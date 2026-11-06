@@ -17,11 +17,13 @@
  *   dropped on load and its caller resubmits under the same key.
  * - **Restart recovery, in one place.** A row still `running` when the file
  *   is loaded becomes `uncertain`, whoever submitted it; an uncertain row
- *   blocks every later admission of that member until it is reconciled.
+ *   blocks every later admission of that member until it is reconciled. The
+ *   exception is a round the CLI opened itself (caller `cli`, {@link MemberInbox.runNow}):
+ *   it ends `failed` with {@link SELF_ROUND_RESTARTED} and blocks nothing.
  * @module @khorsheed/dsh-local-agent/member-inbox
  */
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type { LocalAgentExecutionCaller, LocalAgentMemberInbox, LocalAgentMemberInput } from './types.ts'
@@ -47,6 +49,8 @@ const TERMINAL = new Set(['done', 'failed', 'cancelled'])
 /** Terminal rows kept per member (key dedup reaches back this far). */
 const KEEP_TERMINAL = 200
 const QUEUE_LIMIT = 100
+/** The error a self-opened round's row ends with when a restart cut it off (see load). */
+export const SELF_ROUND_RESTARTED = 'Host restarted during a round the member\'s CLI opened itself; its outcome is unknown'
 
 function validRow(row: Partial<LocalAgentMemberInput> | undefined, version: number): boolean {
   if (typeof row?.id !== 'string' || !STATUSES.includes(row.status as string)) return false
@@ -66,6 +70,8 @@ export class MemberInbox {
   private readonly active = new Map<string, { id: string; controller: AbortController }>()
   private readonly pending = new Map<string, Pending>()
   private readonly storageErrors = new Map<string, string>()
+  /** Rows this process found `running` on load (the restart that started it cut them off), per member. */
+  private readonly cutOffThisBoot = new Map<string, Set<string>>()
   private closed = false
   constructor(private readonly directory: string, private readonly composer: ComposerDispatch, private readonly onError: (error: unknown) => void) {}
 
@@ -94,7 +100,17 @@ export class MemberInbox {
     if (version === 1) recovered.messages = recovered.messages.map(row => ({ ...row, caller: 'composer' as const, key: row.id }))
     // A queued row without its input cannot replay; its caller resubmits it.
     recovered.messages = recovered.messages.filter(row => row.status !== 'queued' || row.text !== undefined)
-    for (const row of recovered.messages) if (row.status === 'running') { row.status = 'uncertain'; row.error = 'Host restarted before durable settlement; reconcile this input before continuing' }
+    const cutOff = new Set<string>()
+    for (const row of recovered.messages) {
+      if (row.status !== 'running') continue
+      // A round the CLI opened itself is nobody's request: there is no
+      // delivery to reconcile, so it never blocks the member — it ends here,
+      // and its execution's end record reads `uncertain` (core).
+      if (row.caller === 'cli') { row.status = 'failed'; row.error = SELF_ROUND_RESTARTED; row.updatedAt = row.settledAt = Date.now(); continue }
+      row.status = 'uncertain'; row.error = 'Host restarted before durable settlement; reconcile this input before continuing'
+      cutOff.add(row.id)
+    }
+    if (cutOff.size > 0) this.cutOffThisBoot.set(memberId, cutOff)
     if (recovered.messages.some(row => row.status === 'queued' || row.status === 'uncertain')) recovered.paused = true
     this.save(recovered)
     return recovered
@@ -123,6 +139,41 @@ export class MemberInbox {
     const state = structuredClone(this.load(memberId))
     const error = this.storageErrors.get(memberId)
     return error === undefined ? state : { ...state, error }
+  }
+  /**
+   * Members the restart that started THIS process cut off (M10, the startup
+   * room load): a row still written `running` in a ledger file nobody has
+   * loaded since the restart, or a row this process converted from
+   * `running` to `uncertain` on load and that is still unreconciled. A row
+   * that was already `uncertain` on disk is an older restart's leftover and
+   * does not count — those wait for the human, never for a startup load.
+   * Read-only: nothing is loaded, converted or saved; an unreadable
+   * directory or file is skipped.
+   * @returns the member ids (dsh child session ids), each once.
+   */
+  interruptedMembers(): string[] {
+    const members = new Set<string>()
+    for (const [memberId, state] of this.states) {
+      const cutOff = this.cutOffThisBoot.get(memberId)
+      if (cutOff !== undefined && state.messages.some(row => row.status === 'uncertain' && cutOff.has(row.id))) members.add(memberId)
+    }
+    let names: string[]
+    try { names = readdirSync(this.directory) } catch { return [...members] }
+    const loaded = new Set([...this.states.keys()].map(memberId => this.path(memberId)))
+    for (const name of names) {
+      if (!/^[0-9a-f]{64}\.json$/.test(name)) continue
+      const path = join(this.directory, name)
+      if (loaded.has(path)) continue
+      try {
+        const stored = JSON.parse(readFileSync(path, 'utf8')) as { state?: { memberId?: unknown; messages?: unknown } }
+        const memberId = stored?.state?.memberId
+        const rows = stored?.state?.messages
+        if (typeof memberId !== 'string' || !Array.isArray(rows) || this.path(memberId) !== path) continue
+        // A round the CLI opened itself ends `failed` on load (nothing to continue).
+        if (rows.some((row: { status?: unknown; caller?: unknown } | null) => row?.status === 'running' && row?.caller !== 'cli')) members.add(memberId)
+      } catch { /* an unreadable ledger is reported when its member is next read */ }
+    }
+    return [...members]
   }
   /** A row by its id (the execution id) or, failing that, by its caller key. */
   find(memberId: string, idOrKey: string): LocalAgentMemberInput | undefined {
@@ -237,17 +288,48 @@ export class MemberInbox {
     const row = state.messages.find(input => input.status === 'queued')
     if (row === undefined || (state.paused && row.caller === 'composer')) return
     const pending = this.pending.get(this.pendingKey(memberId, row.id))
+    const admitted = (controller: AbortController) => (): void => {
+      controller.signal.throwIfAborted()
+      this.assertAdmission(memberId)
+      this.update(memberId, row.id, input => { if (input.status !== 'queued') throw new Error('Input is no longer queued'); input.status = 'running'; input.admittedAt = Date.now() })
+    }
+    this.drive(memberId, row, pending, admitted)
+  }
+
+  /**
+   * A round the member's CLI already runs (a self-opened round, caller
+   * `cli`): recorded `running` at once and holding the member's slot — the
+   * rows queued meanwhile wait for it — never queued itself. Refused
+   * (undefined) while another row holds the slot, while a row is uncertain,
+   * or when storage failed; a paused queue does not refuse it (it consumes
+   * no queued input).
+   * @param memberId - the member.
+   * @param row - the row's id and caller.
+   * @param pending - how it runs (`dispatch`, whose `admitted` is a no-op) and who hears its end.
+   * @returns the accepted row, or undefined when refused.
+   */
+  runNow(memberId: string, row: { id: string; caller: LocalAgentExecutionCaller }, pending: Pending): LocalAgentMemberInput | undefined {
+    if (this.closed || this.storageErrors.has(memberId) || this.active.has(memberId)) return undefined
+    const state = this.read(memberId)
+    if (state.messages.some(existing => existing.status === 'uncertain' || existing.id === row.id)) return undefined
+    const now = Date.now()
+    const accepted: LocalAgentMemberInput = { id: row.id, caller: row.caller, status: 'running', createdAt: now, updatedAt: now, admittedAt: now }
+    state.messages.push(accepted)
+    try { this.save(state) } catch { return undefined }
+    this.pending.set(this.pendingKey(memberId, row.id), pending)
+    this.drive(memberId, accepted, pending, () => () => {})
+    return structuredClone(accepted)
+  }
+
+  /** Run one row as the member's active row, then settle it and pump the next. */
+  private drive(memberId: string, row: LocalAgentMemberInput, pending: Pending | undefined, admittedFor: (controller: AbortController) => () => void): void {
     const controller = new AbortController()
     this.active.set(memberId, { id: row.id, controller })
     void (async () => {
       let run: SubagentRun | undefined
       let failure: unknown
       try {
-        const admitted = (): void => {
-          controller.signal.throwIfAborted()
-          this.assertAdmission(memberId)
-          this.update(memberId, row.id, input => { if (input.status !== 'queued') throw new Error('Input is no longer queued'); input.status = 'running'; input.admittedAt = Date.now() })
-        }
+        const admitted = admittedFor(controller)
         if (pending?.dispatch !== undefined) run = await pending.dispatch(controller.signal, admitted, structuredClone(row))
         else if (row.caller === 'composer') run = await this.composer(memberId, structuredClone(row), controller.signal, admitted)
         else throw new Error('Member execution has no dispatcher (its caller must resubmit it)')

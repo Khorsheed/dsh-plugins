@@ -5,7 +5,8 @@
  * choices and Switches. Two groups: 协作 (how members message each other,
  * the hop limit of one chain of messages, pause) and 自动判断 — the room's
  * decision scenarios (decisions.ts), one switch each; report timing carries
- * its threshold and longest wait in a box of its own.
+ * its threshold and longest wait in a box of its own — and 重启后自动继续
+ * (M9: the room presses 「全部继续」 itself after a restart).
  */
 import { useState, type ReactNode } from 'react'
 import { DisclosureRow, SegmentedControl, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -137,6 +138,13 @@ export function RoomSettingsView({ settings, onChange, t }: {
               </div>
             </div>
           )}
+          <div className={css.row} data-setting="auto-continue">
+            <span className={css.label}>
+              <b>{t('settings.autoContinue')}</b>
+              <span>{t('settings.autoContinueHint')}</span>
+            </span>
+            <Switch checked={settings.autoContinueAfterRestart !== false} label={t('settings.autoContinue')} onChange={(autoContinueAfterRestart) => { change({ autoContinueAfterRestart }) }} />
+          </div>
           {error !== null && <p className={css.error} role="alert">{error}</p>}
         </div>
       </DisclosureRow>

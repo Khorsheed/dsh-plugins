@@ -94,9 +94,12 @@ export interface ExecutionRecorderOptions {
   onError(error: unknown): void
   /**
    * An operator's finding for an execution a restart left open (batch 5 S7):
-   * its ledger row was reconciled. Undefined for anything else.
+   * its ledger row was reconciled. Or, for a round the CLI opened itself that
+   * a restart cut off, `{ outcome: 'uncertain', reconciled: false }`: it
+   * closes without anyone's evidence (member-self-started-rounds A②).
+   * Undefined for anything else.
    */
-  reconciled?(childSessionId: string, executionId: string): { readonly outcome: 'done' | 'failed' | 'cancelled'; readonly at: number } | undefined
+  reconciled?(childSessionId: string, executionId: string): { readonly outcome: LocalAgentExecutionOutcome; readonly at: number; readonly reconciled?: false } | undefined
 }
 
 function lastSeq(session: Session): number {
@@ -418,7 +421,7 @@ export class ExecutionRecorder {
         const turn = later.type === 'turn/start' ? Number((later.data as { turn?: unknown }).turn) : Number.NaN
         if (Number.isFinite(turn)) turns.push(turn)
       }
-      const end: LocalAgentExecutionEndEvent = { phase: 'end', executionId: data.executionId, outcome: finding.outcome, turns, endedAt: finding.at, reconciled: true }
+      const end: LocalAgentExecutionEndEvent = { phase: 'end', executionId: data.executionId, outcome: finding.outcome, turns, endedAt: finding.at, ...finding.reconciled === false ? {} : { reconciled: true } }
       try {
         session.append('local-agent/execution', end)
         ended.add(data.executionId)

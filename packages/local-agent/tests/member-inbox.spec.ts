@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { SubagentRun, SubagentResult } from '@deepseek-ai/dsh-subagent'
-import { MemberInbox } from '../src/member-inbox.ts'
+import { MemberInbox, SELF_ROUND_RESTARTED } from '../src/member-inbox.ts'
 import type { LocalAgentMemberInput } from '../src/types.ts'
 
 function deferred<T>() {
@@ -122,6 +122,55 @@ describe('member execution ledger', () => {
     after.inbox.dispose()
   })
 
+  it('lists members a restart interrupted without loading, converting or saving their ledgers (M10)', async () => {
+    const before = mount()
+    // `ada` was running a round when the host died; `bob` had finished his.
+    void before.submit('ada', 'ada-run', 'room', 'delivery-ada')
+    before.jobs[0]!.admitted()
+    const bob = before.submit('bob', 'bob-run', 'room', 'delivery-bob')
+    await before.finish(before.jobs[1]!)
+    await bob
+    // Before the restart nothing is interrupted: a row running in this process is live work.
+    expect(before.inbox.interruptedMembers()).toEqual([])
+    before.inbox.dispose()
+    const files = Object.fromEntries(readdirSync(before.directory).map(name => [name, readFileSync(join(before.directory, name), 'utf8')]))
+    const after = mount(before.directory)
+    expect(after.inbox.interruptedMembers()).toEqual(['ada'])
+    // Read-only: every file is byte-identical, still `running` on disk.
+    expect(Object.fromEntries(readdirSync(before.directory).map(name => [name, readFileSync(join(before.directory, name), 'utf8')]))).toEqual(files)
+    // Once loaded (uncertain in memory) it is still listed, once.
+    expect(after.inbox.read('ada').messages[0]).toMatchObject({ status: 'uncertain' })
+    expect(after.inbox.interruptedMembers()).toEqual(['ada'])
+    // Reconciled: no longer interrupted.
+    after.inbox.reconcile('ada', 'ada-run', 'done', 'checked the transcript')
+    expect(after.inbox.interruptedMembers()).toEqual([])
+    // A stray or corrupt file in the directory is skipped, not thrown.
+    writeFileSync(join(before.directory, `${'0'.repeat(64)}.json`), '{oops')
+    writeFileSync(join(before.directory, 'notes.txt'), 'x')
+    expect(after.inbox.interruptedMembers()).toEqual([])
+    after.inbox.dispose()
+    // No directory at all (no member ever ran): nothing.
+    expect(mount(join(before.directory, 'missing')).inbox.interruptedMembers()).toEqual([])
+  })
+
+  it('an older restart\'s leftover (already `uncertain` on disk) is not interrupted by this restart (M10)', () => {
+    const first = mount()
+    void first.submit('ada', 'ada-run', 'room', 'delivery-ada')
+    first.jobs[0]!.admitted()
+    first.inbox.dispose()
+    // Boot 2 loads the ledger (running → uncertain, saved) and nobody reconciles it.
+    const second = mount(first.directory)
+    expect(second.inbox.read('ada').messages[0]).toMatchObject({ status: 'uncertain' })
+    expect(second.inbox.interruptedMembers()).toEqual(['ada'])
+    second.inbox.dispose()
+    // Boot 3: the same stale row, from disk and once loaded, is not this restart's.
+    const third = mount(first.directory)
+    expect(third.inbox.interruptedMembers()).toEqual([])
+    expect(third.inbox.read('ada').messages[0]).toMatchObject({ status: 'uncertain' })
+    expect(third.inbox.interruptedMembers()).toEqual([])
+    third.inbox.dispose()
+  })
+
   it('reads a version-1 member inbox file as composer rows keyed by their request id', () => {
     const directory = mkdtempSync(join(tmpdir(), 'member-inbox-v1-'))
     const seed = mount(directory)
@@ -159,11 +208,14 @@ describe('member execution ledger', () => {
       { id: 'self-2', caller: 'cli', status: 'running', createdAt: 5, updatedAt: 6 },
     ] } }))
     const after = mount(directory)
-    // The running `cli` row reads as uncertain after the restart, like any caller's.
+    // A running `cli` row (a round the CLI opened itself) is nobody's request:
+    // after the restart it ends failed with the restart marker and blocks nothing.
     expect(after.inbox.read('member').messages).toMatchObject([
       { id: 'self-1', caller: 'cli', status: 'done' },
-      { id: 'self-2', caller: 'cli', status: 'uncertain' },
+      { id: 'self-2', caller: 'cli', status: 'failed', error: SELF_ROUND_RESTARTED },
     ])
+    expect(after.inbox.read('member').paused).toBe(false)
+    expect(() => after.inbox.assertAdmission('member')).not.toThrow()
     after.inbox.dispose()
     writeFileSync(path, JSON.stringify({ version: 2, state: { memberId: 'member', paused: false, messages: [
       { id: 'odd-1', caller: 'cron', status: 'done', createdAt: 3, updatedAt: 4 },
@@ -171,6 +223,32 @@ describe('member execution ledger', () => {
     const odd = mount(directory)
     expect(() => odd.inbox.read('member')).toThrow('Invalid member inbox')
     odd.inbox.dispose()
+  })
+
+  it('runNow: a round the CLI already runs takes the slot at once, queued rows wait for it, and a taken slot refuses it', async () => {
+    const m = mount()
+    const result = deferred<SubagentResult>()
+    const ended = deferred<LocalAgentMemberInput>()
+    const row = m.inbox.runNow('member', { id: 'self-1', caller: 'cli' }, {
+      dispatch: async () => ({ result: result.promise } as unknown as SubagentRun),
+      final: settled => ended.resolve(settled),
+    })
+    expect(row).toMatchObject({ id: 'self-1', caller: 'cli', status: 'running', admittedAt: expect.any(Number) })
+    // Asked for meanwhile: queued behind it, not dispatched.
+    const tool = m.submit('member', 'tool-1')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(m.jobs).toHaveLength(0)
+    expect(m.inbox.read('member').messages.map(input => [input.id, input.status])).toEqual([['self-1', 'running'], ['tool-1', 'queued']])
+    // A second self round while the slot is taken is refused.
+    expect(m.inbox.runNow('member', { id: 'self-2', caller: 'cli' }, {})).toBeUndefined()
+    result.resolve({ stopReason: 'completed', output: [] })
+    expect(await ended.promise).toMatchObject({ id: 'self-1', status: 'done' })
+    await vi.waitFor(() => expect(m.jobs).toHaveLength(1))
+    // A dispatched row holds the slot: a self round is refused.
+    expect(m.inbox.runNow('member', { id: 'self-3', caller: 'cli' }, {})).toBeUndefined()
+    await m.finish(m.jobs[0]!)
+    expect(await tool).toMatchObject({ id: 'tool-1', status: 'done' })
+    m.inbox.dispose()
   })
 
   it('never acknowledges an unpersisted input and blocks admission until storage is reconciled', () => {

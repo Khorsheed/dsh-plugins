@@ -16,7 +16,9 @@ import { PassThrough, Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
+import { ExecutionRecorder, executionOutcome, LocalAgentStreams } from '@khorsheed/dsh-local-agent'
+import type { LocalAgentExecutionCause } from '@khorsheed/dsh-local-agent/types'
+import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
 import { AcpRequestError, acpStopReasonToHarness, DEFAULT_TIMEOUTS, KimiAcpLiveDriver, KimiSessionOccupiedError, textSegmentSeparator } from '../src/live-driver.ts'
@@ -2138,6 +2140,72 @@ describe('kimi mirror snapshot (live)', () => {
       vi.useRealTimers()
     }
   })
+
+  it('a round kimi opened itself after a background task ended: its own execution and turn, no user message → the exact child-session event sequence (member-self-started-rounds M4)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const m = mount({
+      config: { backgroundWork: async () => ({ runningTaskIds: ['bash-1'], selfTurnOpen: false }) },
+      timeouts: { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 0, selfTurnPollMs: 20, selfTurnObserveMs: 20 },
+    })
+    try {
+      const child = Session.create(SessionId('child-kimi-self-snapshot'))
+      const wire = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main', 'wire.jsonl')
+      const rows = (...list: Record<string, unknown>[]): string => list.map(row => JSON.stringify(row)).join('\n') + '\n'
+      const loop = (event: Record<string, unknown>) => ({ type: 'context.append_loop_event', time: SNAPSHOT_NOW, event })
+      const head = rows(
+        { type: 'turn.prompt', time: SNAPSHOT_NOW, input: [{ type: 'text', text: '部署到3080吧' }], origin: { kind: 'user' } },
+        { type: 'task.started', time: SNAPSHOT_NOW, info: { taskId: 'bash-1', parentToolCallId: 'call_bg', status: 'running' } },
+        loop({ type: 'step.begin', turnId: '0', step: 1 }),
+        loop({ type: 'tool.call', turnId: '0', step: 1, toolCallId: 'call_bg', toolCall: { name: 'Bash', args: { command: 'pnpm deploy:3080 &' } } }),
+        loop({ type: 'tool.result', toolCallId: 'call_bg', result: { output: 'started bash-1' } }),
+        loop({ type: 'step.end', turnId: '0', step: 1 }),
+        loop({ type: 'step.begin', turnId: '0', step: 2 }),
+        loop({ type: 'content.part', turnId: '0', step: 2, part: { type: 'text', text: '完成后我会继续汇报' } }),
+        loop({ type: 'step.end', turnId: '0', step: 2 }),
+        { type: 'turn.ended', time: SNAPSHOT_NOW, turnId: 0, reason: 'completed' },
+      )
+      m.queueChild(new FakeAcpServer({ turn: () => {
+        mkdirSync(join(wire, '..'), { recursive: true })
+        writeFileSync(wire, head)
+        return { chunks: ['完成后我会继续汇报'] }
+      } }))
+      const first = snapshotExecution(child, KIMI_UNRECORDED)
+      const run = await m.driver.startRound(request({ prompt: '部署到3080吧' }) as never, roundSpec(m, child))
+      first.settle(await run.result)
+      // The core's admission, as the real admitSelf records it: the start
+      // lands before the follow opens the round's turn, the end after it.
+      let admitted: Promise<unknown> | undefined
+      const recorder = new ExecutionRecorder({ session: () => child, persist: () => {}, settleWaitMs: 0, onError: (error) => { throw error } })
+      Object.assign(m.ctx.get('localAgent') as object, {
+        admitSelf: async (offer: { cause: LocalAgentExecutionCause; follow: (round: { executionId: string; session: Session; signal: AbortSignal }) => Promise<SubagentResult> }) => {
+          const open = recorder.admit({
+            childSessionId: String(child.id), parentSessionId: 'room-snapshot', operation: 'prompt', unrecorded: KIMI_UNRECORDED, provider: 'kimi-cli',
+            execution: { executionId: 'self-1', caller: 'cli', cause: { ...offer.cause, startedBy: 'run-1-execution' } as LocalAgentExecutionCause, task: { sessionId: 'room-snapshot', id: 'task-1' } },
+          })
+          open.started()
+          const result = offer.follow({ executionId: 'self-1', session: child, signal: new AbortController().signal })
+          admitted = result.then(settled => { open.settle(executionOutcome(settled)) })
+          return { executionId: 'self-1', settled: admitted }
+        },
+      })
+      writeFileSync(wire, head + rows(
+        { type: 'turn.prompt', time: SNAPSHOT_NOW, input: [{ type: 'text', text: '<notification id="task:bash-1:completed" type="task.completed" source_id="bash-1">deployed</notification>' }],
+          origin: { kind: 'task', taskId: 'bash-1', status: 'completed', notificationId: 'task:bash-1:completed' } },
+        loop({ type: 'step.begin', turnId: '1', step: 1 }),
+        { type: 'usage.record', time: SNAPSHOT_NOW, model: 'kimi-code/k3', usage: { inputOther: 40, output: 6, inputCacheRead: 900 } },
+        loop({ type: 'content.part', turnId: '1', step: 1, part: { type: 'text', text: '部署完成，3080 已重启' } }),
+        loop({ type: 'step.end', turnId: '1', step: 1 }),
+        { type: 'turn.ended', time: SNAPSHOT_NOW, turnId: 1, reason: 'completed' },
+      ))
+      await until(() => admitted !== undefined)
+      await admitted
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('kimi session lock left by a dead process', () => {
@@ -2590,6 +2658,161 @@ describe('kimi live driver: background tasks keep the resident process (keep-ali
     writeFileSync(join(tasks, 'bash-a.json'), JSON.stringify({ taskId: 'bash-a', kind: 'process', status: 'completed', command: 'sleep 600', startedAt: Date.now() - 1_000, endedAt: Date.now(), exitCode: 0 }))
     await vi.advanceTimersByTimeAsync(IDLE * 3)
     await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
+    await m.driver.disposeAll()
+  })
+})
+
+describe('kimi live driver: a self-opened round becomes its own execution (member-self-started-rounds M4)', () => {
+  const FAST = { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 0, selfTurnPollMs: 20, collisionGraceMs: 200, selfTurnObserveMs: 20 }
+  const wireOf = (m: Mount): string => join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main', 'wire.jsonl')
+  const rows = (...list: Record<string, unknown>[]): string => list.map(row => JSON.stringify(row)).join('\n') + '\n'
+  const userPrompt = (text: string) => ({ type: 'turn.prompt', input: [{ type: 'text', text }], origin: { kind: 'user' }, time: Date.now() })
+  const taskPrompt = (time = Date.now(), id = 'bash-1') => ({
+    type: 'turn.prompt',
+    input: [{ type: 'text', text: `<notification type="task.completed" source_id="${id}">` }],
+    origin: { kind: 'task', taskId: id, status: 'completed', notificationId: `task:${id}:completed` },
+    time,
+  })
+  const ended = (turnId: number, reason = 'completed') => ({ type: 'turn.ended', turnId, reason })
+  const step = (turnId: number, n: number, value: string, usage?: { inputOther: number; output: number }) => [
+    { type: 'context.append_loop_event', event: { type: 'step.begin', turnId: String(turnId), step: n } },
+    ...usage === undefined ? [] : [{ type: 'usage.record', usage }],
+    { type: 'context.append_loop_event', event: { type: 'content.part', turnId: String(turnId), step: n, stepUuid: `s-${turnId}-${n}`, part: { type: 'text', text: value } } },
+    { type: 'context.append_loop_event', event: { type: 'step.end', turnId: String(turnId), step: n } },
+  ]
+  const prompts = (fake: FakeAcpServer) => fake.requests.filter(r => r.method === 'session/prompt')
+
+  /**
+   * The core's `admitSelf`, as the real one behaves for this driver: the
+   * start record lands in the member's child session first, then the
+   * harness follows. `accept` false refuses (the member's slot is taken).
+   */
+  function fakeAdmitSelf(m: Mount, child: Session, accept = true) {
+    const admitted: { cause: Record<string, unknown>; taskCallId?: string; result?: Promise<unknown> }[] = []
+    const admitSelf = vi.fn(async (request: { cause: Record<string, unknown>; taskCallId?: string; follow: (round: { executionId: string; session: Session; signal: AbortSignal }) => Promise<unknown> }) => {
+      if (!accept) return undefined
+      const executionId = `self-${admitted.length + 1}`
+      child.append('local-agent/execution' as never, { phase: 'start', executionId, caller: 'cli', operation: 'prompt', parentSessionId: 'parent-1', admittedAt: Date.now(), cause: request.cause } as never)
+      const result = request.follow({ executionId, session: child, signal: new AbortController().signal })
+      admitted.push({ cause: request.cause, ...request.taskCallId === undefined ? {} : { taskCallId: request.taskCallId }, result })
+      return { executionId, settled: result.then(() => ({ executionId, outcome: 'done', turns: [] })) }
+    })
+    Object.assign(m.ctx.get('localAgent') as object, { admitSelf })
+    return { admitSelf, admitted }
+  }
+
+  /** One finished round that started a background task: the member is idle, its process resident. */
+  async function idleWithTask(id: string, running = { ids: ['bash-1'] }) {
+    const m = mount({ timeouts: FAST, config: { backgroundWork: async () => ({ runningTaskIds: [...running.ids], selfTurnOpen: false }) } })
+    const child = Session.create(SessionId(id))
+    const fake = new FakeAcpServer({ turn: () => {
+      mkdirSync(join(wireOf(m), '..'), { recursive: true })
+      writeFileSync(wireOf(m), rows(userPrompt('部署到3080吧'), { type: 'task.started', info: { taskId: 'bash-1', parentToolCallId: 'call-bg', status: 'running' } }, ...step(0, 1, '完成后我会继续汇报'), ended(0)))
+      return { chunks: ['完成后我会继续汇报'] }
+    } })
+    m.queueChild(fake)
+    const first = await m.driver.startRound(request({ prompt: '部署到3080吧' }) as never, roundSpec(m, child))
+    expect((await first.result).stopReason).toBe('completed')
+    return { m, child, fake, head: readFileSync(wireOf(m), 'utf8') }
+  }
+
+  it('the observer admits a turn kimi opened when a task ended, follows it on the wire to its end, and mirrors it as a turn of its own (no user message, its usage on its step)', async () => {
+    const { m, child, fake, head } = await idleWithTask('child-self-own')
+    const { admitSelf, admitted } = fakeAdmitSelf(m, child)
+    writeFileSync(wireOf(m), head + rows(taskPrompt(), ...step(1, 1, '部署完成', { inputOther: 40, output: 6 })))
+    await vi.waitFor(() => expect(admitSelf).toHaveBeenCalledOnce())
+    expect(admitted[0]!.cause).toEqual({ kind: 'self', reason: 'background-task', taskId: 'bash-1', taskStatus: 'completed', notificationId: 'task:bash-1:completed' })
+    // The task's tool call, from the wire's task.started line: the core follows the chain to startedBy.
+    expect(admitted[0]!.taskCallId).toBe('call-bg')
+    // Still running on the wire: the turn is open, nothing settled.
+    await new Promise(resolve => setTimeout(resolve, 80))
+    expect(child.snapshotEvents().filter(event => event.type === 'turn/start').map(event => (event.data as { turn: number }).turn)).toEqual([1, 2])
+    expect(child.snapshotEvents().some(event => event.type === 'turn/end' && (event.data as { turn: number }).turn === 2)).toBe(false)
+    writeFileSync(wireOf(m), head + rows(taskPrompt(), ...step(1, 1, '部署完成', { inputOther: 40, output: 6 }), ...step(1, 2, '已重启'), ended(1)))
+    const result = await admitted[0]!.result
+    expect(result).toEqual({ stopReason: 'completed', output: [{ type: 'text', text: '部署完成\n\n已重启' }] })
+    const turn2 = child.snapshotEvents().filter(event => (event.data as { turn?: number }).turn === 2)
+    expect(child.snapshotEvents().filter(event => event.type === 'user/message')).toHaveLength(1)
+    const messages = turn2.filter(event => event.type === 'assistant/message').map(event => event.data as { usage?: { inputTokens: number }; message: { content: { type: string; text?: string }[] } })
+    expect(messages.map(message => message.message.content.find(block => block.type === 'text')?.text)).toEqual(['部署完成', '已重启'])
+    expect(messages[0]!.usage).toMatchObject({ inputTokens: 40, outputTokens: 6 })
+    expect(turn2.at(-1)).toMatchObject({ type: 'turn/end' })
+    // The round's spend is reported like any round's.
+    expect(m.settles.at(-1)).toMatchObject({ id: 'child-self-own', round: { usage: { inputTokens: 40, outputTokens: 6 } } })
+    // Offered once.
+    await new Promise(resolve => setTimeout(resolve, 80))
+    expect(admitSelf).toHaveBeenCalledOnce()
+    expect(prompts(fake)).toHaveLength(1)
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
+  it('a prompt asked for while the self round is followed waits for it, and goes out once (B③)', async () => {
+    const { m, child, fake, head } = await idleWithTask('child-self-wait')
+    const { admitSelf, admitted } = fakeAdmitSelf(m, child)
+    const open = head + rows(taskPrompt(), ...step(1, 1, '部署完成'))
+    writeFileSync(wireOf(m), open)
+    await vi.waitFor(() => expect(admitSelf).toHaveBeenCalledOnce())
+    // The ledger normally holds the next round back; the driver's own chain does too.
+    let promptAt: number | undefined
+    Object.assign(fake, { script: { turn: () => {
+      promptAt = Date.now()
+      writeFileSync(wireOf(m), open + rows(ended(1), userPrompt('下一步'), ...step(2, 1, '好的'), ended(2)))
+      return { chunks: ['好的'] }
+    } } })
+    const next = m.driver.startRound(request({ prompt: '下一步' }) as never, roundSpec(m, child, { resume: { cliSessionId: 'acp-session-1', turn: 3 } }))
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(prompts(fake)).toHaveLength(1)
+    const endedAt = Date.now()
+    writeFileSync(wireOf(m), open + rows(ended(1)))
+    await admitted[0]!.result
+    const run = await next
+    expect(await run.result).toMatchObject({ stopReason: 'completed', output: [{ type: 'text', text: '好的' }] })
+    expect(prompts(fake)).toHaveLength(2)
+    expect(promptAt).toBeGreaterThanOrEqual(endedAt)
+    expect(child.snapshotEvents().filter(event => event.type === 'turn/start').map(event => (event.data as { turn: number }).turn)).toEqual([1, 2, 3])
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
+  it('refused by the core (the slot is taken), a cron turn, or a stale turn: nothing is followed, the 11-01 fold keeps it', async () => {
+    const { m, child, head } = await idleWithTask('child-self-refused')
+    const { admitSelf } = fakeAdmitSelf(m, child, false)
+    const warnings: string[] = []
+    Object.assign(m.ctx.logger, { warn: (message: string) => { warnings.push(message) } })
+    // A turn stamped before this process spawned belongs to a process that is gone.
+    writeFileSync(wireOf(m), head + rows(taskPrompt(1, 'bash-0'), ended(1)))
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(admitSelf).not.toHaveBeenCalled()
+    const cron = { type: 'turn.prompt', input: [{ type: 'text', text: 'cron' }], origin: { kind: 'cron_job' }, time: Date.now() }
+    writeFileSync(wireOf(m), head + rows(taskPrompt(1, 'bash-0'), ended(1), cron, ended(2)))
+    await vi.waitFor(() => expect(warnings.some(warning => warning.includes('origin cron_job'))).toBe(true))
+    expect(admitSelf).not.toHaveBeenCalled()
+    writeFileSync(wireOf(m), head + rows(taskPrompt(1, 'bash-0'), ended(1), cron, ended(2), taskPrompt(), ...step(3, 1, '结果'), ended(3)))
+    await vi.waitFor(() => expect(admitSelf).toHaveBeenCalledOnce())
+    await new Promise(resolve => setTimeout(resolve, 80))
+    // Refused: offered once, no turn opened.
+    expect(admitSelf).toHaveBeenCalledOnce()
+    expect(child.snapshotEvents().filter(event => event.type === 'turn/start')).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
+  it('the observer stops when nothing runs, and never starts without background work', async () => {
+    const running = { ids: ['bash-1'] }
+    const { m, child, head } = await idleWithTask('child-self-stop', running)
+    const { admitSelf } = fakeAdmitSelf(m, child)
+    running.ids = []
+    // The task ended (the wire grows with its terminated line): the next look stops.
+    writeFileSync(wireOf(m), head + rows({ type: 'task.terminated', info: { taskId: 'bash-1', status: 'completed' } }))
+    await new Promise(resolve => setTimeout(resolve, 100))
+    // A turn kimi opens now is not seen until a round (or the tray) starts the observer again.
+    writeFileSync(wireOf(m), head + rows({ type: 'task.terminated', info: { taskId: 'bash-1', status: 'completed' } }, taskPrompt(), ended(1)))
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(admitSelf).not.toHaveBeenCalled()
+    // The tray's read sees work again: the observer restarts and finds the turn.
+    running.ids = ['bash-2']
+    m.driver.observeBackgroundTasks('child-self-stop', ['bash-2'])
+    await vi.waitFor(() => expect(admitSelf).toHaveBeenCalledOnce())
     await m.driver.disposeAll()
   })
 })

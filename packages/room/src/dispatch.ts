@@ -307,6 +307,7 @@ export interface RoomExecutionFacts {
  * | `report` of a delivery | `execution`: the source run's execution id; a source without one (the room's own agent, a pre-S5 run) → `member` from the reporting member |
  * | `report` of a help thread (`help:<id>`) | `help`: the thread and the helper session; the task is the thread's own (`room/help.task`) when the dispatch has none |
  * | release round, `restart` | `restart` |
+ * | the room's auto-continue after a restart (`via: 'auto-continue'`, M9) | `restart` |
  * | release round, `manual` (the human's 现在交给) | `human` via `room` |
  * | release round, `timeout` or unrecorded | `decision`: the dispatch's `releaseDecision`; a journal from before it (batch 5 S9) → the latest report-timing decision that held reports for the recipient; none recorded → no cause |
  * | legacy confirmed relay (no dispatch) | `member`: the relay sender, the relay's own seq |
@@ -333,6 +334,8 @@ export function executionFacts(events: readonly SessionEvent[], roomId: string, 
   const task: LocalAgentTaskRef | undefined = data.task === undefined ? undefined : { sessionId, id: data.task }
   const withTask = (cause: LocalAgentExecutionCause | undefined): RoomExecutionFacts => ({ ...cause === undefined ? {} : { cause }, ...task === undefined ? {} : { task } })
   const human = (): LocalAgentExecutionCause => ({ kind: 'human', sessionId, dispatchSeq, via: 'room', ...data.messageId === undefined ? {} : { messageId: data.messageId } })
+  // The room's own 「全部继续」 after a restart (M9): the restart hand-off cause.
+  if (data.via === 'auto-continue') return withTask({ kind: 'restart', sessionId })
   switch (data.origin ?? 'human') {
     case 'human': return withTask(human())
     case 'coordinator':
@@ -641,6 +644,25 @@ export interface RunOutcome {
   readonly turns?: readonly number[]
 }
 
+/**
+ * The member whose round requested the last host restart, as the restart
+ * guard (ankh-guard's optional `selfRestartGuard` service) records it: the
+ * member's child session id (`DSH_LOCAL_AGENT_MEMBER` at `schedule-exit`).
+ * Probed duck-typed through `lastRestart()`; a guard without that read
+ * (before M10), no guard, or a failing read all answer undefined — the room
+ * then treats the restart as not self-triggered and relies on continuing
+ * each round at most once.
+ */
+export function restartInitiatorMember(ctx: Context): string | undefined {
+  try {
+    const guard = (ctx.get as (name: string) => unknown)('selfRestartGuard') as { lastRestart?: () => { readonly initiatorMember?: unknown } | null | undefined } | undefined
+    const member = guard?.lastRestart?.()?.initiatorMember
+    return typeof member === 'string' && member !== '' ? member : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** A room run that journals nothing: the core never reached it for this delivery, or another room run owns its execution. */
 const DROPPED = Symbol('dropped')
 
@@ -664,6 +686,12 @@ export interface DispatchHooks {
   admitted?(room: Session, dispatchSeq?: number): Promise<void>
   settled?(room: Session, dispatchSeq: number | undefined, outcome: RunOutcome): Promise<void>
 }
+
+/**
+ * Read once when this module loads (the host process's start, as far as the
+ * room can tell) — not per engine, so a test's stepped clock is not consumed.
+ */
+const ROOM_MODULE_LOADED_AT = Date.now()
 
 /**
  * The per-room dispatch engine. Owned by the RoomService; all state lives in
@@ -696,6 +724,15 @@ export class DispatchEngine {
   private readonly recovering = new Map<string, Promise<void>>()
   /** room + recipient → the wake-anyway timer for its held reports. */
   private readonly holdTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+  /**
+   * When this host process loaded the room (module load, before any room
+   * recovery): a restart's interruption edges written by this process's
+   * recovery are at or after it; older edges were recorded by an earlier
+   * restart's recovery. Mutable for tests only (simulating rounds a past
+   * restart cut off).
+   */
+  bootedAt: number = ROOM_MODULE_LOADED_AT
 
   /**
    * @param ctx - host context carrying the session store and agents registry.
@@ -851,11 +888,19 @@ export class DispatchEngine {
         : memberActive(member?.id) || (run.runId !== undefined && this.followed.has(`${sessionId}:${run.runId}`))
       return active ? run : { ...run, state: 'failed', error: RESTART_UNKNOWN_TEXT }
     }
+    // What the restart-continue rule needs beyond the journal (M9).
+    const queuePaused = state.members.flatMap(member => member.id !== undefined && ledgers.paused(cliChild(member)) ? [member.id] : [])
+    const restartInitiator = restartInitiatorMember(this.ctx)
     return {
       ...state,
       ...state.executions === undefined ? {} : { executions: state.executions.map(project) },
       ...deliveries === undefined ? {} : { deliveries },
       runs: state.runs.map(project),
+      restartFacts: {
+        ...queuePaused.length === 0 ? {} : { queuePaused },
+        ...restartInitiator === undefined ? {} : { restartInitiator },
+        bootedAt: this.bootedAt,
+      },
     }
   }
 

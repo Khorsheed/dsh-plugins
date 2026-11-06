@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-06-kimi-self-started-rounds.md
+.agents/notes/implemented/feature/2026-11-06-kimi-self-started-rounds.md: 3aa9df7abaedd604a2d045580066a7465348e436
+.agents/notes/implemented/feature/2026-11-06-kimi-self-started-rounds.zh.md: 6d1e208d0a224cd0dfe3a13e62b394e4bd3b7c1a

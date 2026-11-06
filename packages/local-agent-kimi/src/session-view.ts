@@ -215,12 +215,29 @@ function argsOf(name: string, args: unknown): string | undefined {
   return summary.length > 200 ? `${summary.slice(0, 200)}…` : summary
 }
 
+/** How {@link readKimiTranscript} numbers the rounds kimi opened itself. */
+export interface KimiTranscriptOptions {
+  /**
+   * The notification ids (`origin.notificationId`, Kimi `task:<id>:<status>`)
+   * of the self-opened rounds the member's child log holds as rounds of their
+   * own — a `self` execution start followed by its `turn/start`
+   * (member-self-started-rounds A③, core `ownSelfRounds`). Such a round takes
+   * its own dsh turn number, and the human's next prompt opens the next one.
+   * Every other self-opened round keeps the 11-01 fold: it takes the next
+   * turn number and the next prompt joins it. Absent or empty, the transcript
+   * is exactly the 11-01 one.
+   */
+  readonly ownRounds?: ReadonlySet<string>
+}
+
 /**
  * Parse a session's wire log into transcript lines plus every usage record.
  * @param sessionDir - the session directory.
+ * @param options - which self-opened rounds count as rounds of their own.
  * @returns the transcript.
  */
-export async function readKimiTranscript(sessionDir: string): Promise<KimiSessionTranscript> {
+export async function readKimiTranscript(sessionDir: string, options: KimiTranscriptOptions = {}): Promise<KimiSessionTranscript> {
+  const ownRounds = options.ownRounds
   const sessionId = sessionDir.split('session_').pop() ?? sessionDir
   const lines: KimiTranscriptLine[] = []
   const usageRecords: { line: number; usage: TokenUsage; step?: string }[] = []
@@ -323,6 +340,18 @@ export async function readKimiTranscript(sessionDir: string): Promise<KimiSessio
       // re-wrote them at settle). Its work folds into the NEXT dsh round,
       // which the next human prompt opens at the same number.
       const origin = (event.origin as { kind?: unknown } | undefined)?.kind
+      const notificationId = (event.origin as { notificationId?: unknown } | undefined)?.notificationId
+      // A self-opened round the child log holds as its own (a `self`
+      // execution opened its turn): it numbers like a human prompt — the
+      // pending 11-01 fold, if any, joins it — and the next prompt opens the
+      // next turn. Its prompt line stays injected: not the human's message.
+      if (origin !== undefined && origin !== 'user' && typeof notificationId === 'string' && ownRounds?.has(notificationId) === true) {
+        turnSeen = true
+        if (injectedPending) injectedPending = false
+        else turn += 1
+        if (prompt.trim() !== '' && !isSystemReminder(prompt)) push({ kind: 'user', text: prompt, turn: turn === 0 ? 1 : turn, injected: true })
+        continue
+      }
       if (origin !== undefined && origin !== 'user') {
         if (!injectedPending) {
           injectedPending = true

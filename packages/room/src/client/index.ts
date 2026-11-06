@@ -47,11 +47,12 @@ import { RoomTaskTags } from './task-tag.ts'
 import { RoomSpeechView } from './RoomSpeechView.tsx'
 import { RoomRunView } from './RoomRunView.tsx'
 import { RoomEventView } from './RoomEventView.tsx'
-import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpReplyDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomDispatchDefinition, roomCompactionDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
+import { roomApprovalDefinition, roomDecisionDefinition, roomHelpDefinition, roomHelpInDefinition, roomHelpReplyDefinition, roomHelpRequestDefinition, roomQuestionDefinition, roomEventDefinition, roomRelayDefinition, roomInboxDefinition, roomDispatchDefinition, roomAutoContinueDefinition, roomCompactionDefinition, roomRunDefinition, roomSpeechDefinition } from './nodes.ts'
 import { mainSessionId, RoomStore, type RoomClientContext } from './room-store.ts'
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomDispatchView } from './RoomDispatchView.tsx'
+import { RoomAutoContinueView } from './RoomRestart.tsx'
 import { RoomCompactionView } from './RoomCompactionView.tsx'
 import { RoomInboxView } from './RoomInboxView.tsx'
 import { RoomApprovalView } from './RoomApprovalView.tsx'
@@ -61,12 +62,12 @@ import { RoomHelpReplyView, RoomHelpRequestView, RoomHelpView } from './RoomHelp
 import { sessionTitle, type RoomMenuMember, type SessionCandidate } from './at-menu.ts'
 import type {
   InviteAgentInjected, RoomComposerInjected, RoomComposerMatch, RoomInviteInjected, RoomMembersInjected, RoomModelDirectory, RoomMutationOutcome,
-  RoomEventInjected, RoomRelayInjected, RoomDispatchInjected, RoomCompactionInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
+  RoomEventInjected, RoomRelayInjected, RoomDispatchInjected, RoomAutoContinueInjected, RoomCompactionInjected, RoomInboxInjected, RoomRunInjected, RoomSpeechInjected, RoomGoalInjected, RoomApprovalInjected, RoomQuestionInjected, RoomDecisionInjected, RoomHelpInjected,
   RoomAttachmentsFace, RoomDraftAttachment, RoomModesService,
 } from './slots.ts'
 import { ROOM_RUN_CARD_SLOTS, ROOM_SPEECH_CARD_SLOTS } from './slots.ts'
 import type { RoomAttachmentInput, RoomQuestionAnswer } from '../types.ts'
-import type { RoomFailure } from '../types.ts'
+import type { RoomFailure, RoomSettings } from '../types.ts'
 
 /** The room Remote namespace, as mounted by this plugin. */
 export type RoomRemote = TypertRemoteNamespaceMap['room']
@@ -202,12 +203,13 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
 
     return attachmentsFace
   }
-  const submit = async (sessionId: SessionId, text: string, targets?: readonly string[], task?: string, attachments?: readonly RoomAttachmentInput[]): Promise<RoomMutationOutcome> => {
+  const submit = async (sessionId: SessionId, text: string, targets?: readonly string[], task?: string, attachments?: readonly RoomAttachmentInput[], continues?: readonly string[]): Promise<RoomMutationOutcome> => {
     if (remote === undefined) return { ok: false, message: t('composer.error.generic') }
     const requestId = requestIds.forInput(sessionId, text, targets)
     const carried = await remote.postMessage({
       sessionId, text, requestId, ...targets === undefined || targets.length === 0 ? {} : { targets },
       ...task === undefined ? {} : { task },
+      ...continues === undefined || continues.length === 0 ? {} : { continues },
       ...attachments === undefined || attachments.length === 0 ? {} : { attachments },
     })
     if (!carried.ok) return { ok: false, message: t('composer.error.generic') }
@@ -387,6 +389,15 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     unlinkSession: (target: string) => { void remote?.unlinkSession({ sessionId, target }).then(() => roomStore.refresh(sessionId)) },
     dismissNudge: (target: string) => { void remote?.dismissHelpNudge({ sessionId, target }).then(() => roomStore.refresh(sessionId)) },
   })
+  /** Change a room's settings (the members tab, and the restart banner's and row's 「设置」). */
+  const setSettingsFor = async (sessionId: SessionId, patch: Partial<RoomSettings>): Promise<RoomMutationOutcome> => {
+    if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
+    const carried = await remote.setSettings({ sessionId, ...patch })
+    if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
+    if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
+    void roomStore.refresh(sessionId)
+    return { ok: true }
+  }
   /** Hand the coordinator role over (the members tab's 设为协调者 and the composer's switch). */
   const setCoordinatorFor = (sessionId: SessionId) => async (memberId: string, expectedRevision: number): Promise<RoomMutationOutcome> => {
     if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
@@ -504,14 +515,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       void roomStore.refresh(sessionId)
       return { ok: true, value: carried.value.value }
     },
-    setSettings: async (patch) => {
-      if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
-      const carried = await remote.setSettings({ sessionId, ...patch })
-      if (!carried.ok) return { ok: false, message: t('invite.error.generic') }
-      if (!carried.value.ok) return { ok: false, message: failureText(carried.value.error) }
-      void roomStore.refresh(sessionId)
-      return { ok: true }
-    },
+    setSettings: patch => setSettingsFor(sessionId, patch),
     restoreMember: async (member) => {
       if (remote === undefined) return { ok: false, message: t('invite.error.generic') }
       const carried = await remote.restoreMember({ sessionId, name: member })
@@ -581,6 +585,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     lctx.uiConversation.events.register(roomEventDefinition)
     lctx.uiConversation.events.register(roomRelayDefinition)
     lctx.uiConversation.events.register(roomDispatchDefinition)
+    lctx.uiConversation.events.register(roomAutoContinueDefinition)
     lctx.uiConversation.events.register(roomCompactionDefinition)
     lctx.uiConversation.events.register(roomInboxDefinition)
     lctx.uiConversation.events.register(roomApprovalDefinition)
@@ -728,6 +733,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       },
       taskTags,
       submit,
+      setSettings: patch => setSettingsFor(sessionId, patch),
       ...(() => { const face = attachmentsFor(); return face === undefined ? {} : { attachments: face } })(),
       renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
@@ -930,6 +936,15 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       inject: (): RoomDispatchInjected => ({ roomStore }),
     },
     RoomDispatchView,
+  ))
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-auto-continue',
+      locale: NS,
+      inject: (): RoomAutoContinueInjected => ({ roomStore, setSettings: setSettingsFor }),
+    },
+    RoomAutoContinueView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'room-compaction', locale: NS, inject: (): RoomCompactionInjected => ({ roomStore }) },

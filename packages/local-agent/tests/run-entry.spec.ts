@@ -46,7 +46,7 @@ interface Round {
   readonly childSessionId: string
   readonly scope: string | undefined
   readonly cwd: string | undefined
-  release(stop?: SubagentResult['stopReason']): void
+  release(stop?: SubagentResult['stopReason'], toolCallId?: string): void
 }
 
 const mounted: Array<() => Promise<void>> = []
@@ -107,11 +107,11 @@ async function mount(homes = mkdtempSync(join(tmpdir(), 'run-entry-homes-')), st
       let settle!: (result: SubagentResult) => void
       const result = new Promise<SubagentResult>((resolve) => { settle = resolve })
       let done = false
-      const release = (stop: SubagentResult['stopReason'] = 'completed'): void => {
+      const release = (stop: SubagentResult['stopReason'] = 'completed', toolCallId?: string): void => {
         if (done) return
         done = true
         running -= 1
-        appendMirrorStep(child, turn, 1, { blocks: [{ kind: 'text', text: 'ok' }], usage: { inputTokens: 10, outputTokens: 2 } as TokenUsage }, { provider: PROVIDER, model: 'm' })
+        appendMirrorStep(child, turn, 1, { blocks: [{ kind: 'text', text: 'ok' }, ...toolCallId === undefined ? [] : [{ kind: 'tool' as const, id: toolCallId, name: 'Bash', args: 'deploy &', result: 'started bash-1' }]], usage: { inputTokens: 10, outputTokens: 2 } as TokenUsage }, { provider: PROVIDER, model: 'm' })
         closeMirrorTurn(child, turn, stop, 'stopped')
         if (intent.kind === 'fresh') registry.recordDelegation({ childSessionId, provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'native', cwd: '/home/user/work', ...intent.scope === undefined ? {} : { scope: intent.scope } })
         registry.recordRoundSettled(childSessionId, { observedModel: 'model-seen', cliVersion: '1.2.3' })
@@ -333,5 +333,97 @@ describe('run(): the single execution entry', () => {
     h.rounds[2]!.release()
     expect((await run.result).stopReason).toBe('completed')
     expect(h.maxRunning()).toBe(1)
+  })
+})
+
+describe('admitSelf: a round the member\'s CLI opened itself (member-self-started-rounds A②)', () => {
+  const cause = { kind: 'self' as const, reason: 'background-task' as const, taskId: 'bash-1', taskStatus: 'completed', notificationId: 'task:bash-1:completed' }
+
+  /** A follow that mirrors one turn of its own and settles when the test says so. */
+  function heldFollow(h: Awaited<ReturnType<typeof mount>>, childSessionId: string) {
+    let finish!: (stop?: SubagentResult['stopReason']) => void
+    const follow = vi.fn(({ session }: { session: Session }) => {
+      const turn = session.snapshotEvents().filter(event => event.type === 'turn/start').length + 1
+      openMirrorTurn(session, turn, 'live')
+      return new Promise<SubagentResult>((resolve) => {
+        finish = (stop = 'completed') => {
+          appendMirrorStep(session, turn, 1, { blocks: [{ kind: 'text', text: '部署完成' }], usage: { inputTokens: 7, outputTokens: 3 } as TokenUsage }, { provider: PROVIDER, model: 'm' })
+          closeMirrorTurn(session, turn, stop, 'stopped')
+          h.registry.recordRoundSettled(childSessionId, { observedModel: 'model-seen' })
+          resolve({ stopReason: stop, output: text('部署完成') })
+        }
+      })
+    })
+    return { follow, finish: (stop?: SubagentResult['stopReason']) => finish(stop) }
+  }
+
+  it('takes the slot at once and is recorded caller cli, cause self with startedBy and the task copied; a room run asked meanwhile waits for it', async () => {
+    const h = await mount()
+    const member = { childSessionId: 'member-self' }
+    const first = await h.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member, input: text('部署到3080吧'), caller: 'room', task: { sessionId: 'room-1', id: 'task-7' }, callerRef: 'run-1' })
+    await roundsReach(h, 1)
+    // The round started the background task with this tool call.
+    h.rounds[0]!.release('completed', 'call-bg')
+    await first.settled
+
+    const held = heldFollow(h, 'member-self')
+    const admission = await h.registry.admitSelf({ childSessionId: 'member-self', provider: PROVIDER, cause, taskCallId: 'call-bg', follow: held.follow })
+    expect(admission).toMatchObject({ executionId: expect.any(String), startedBy: first.executionId, task: { sessionId: 'room-1', id: 'task-7' } })
+    expect(held.follow).toHaveBeenCalledOnce()
+    // The start is in the log before the round's turn opened.
+    const types = h.childEvents('member-self').map(event => event.type)
+    expect(types.lastIndexOf('local-agent/execution')).toBeLessThan(types.lastIndexOf('turn/start'))
+
+    // Asked for meanwhile: queued in the ledger, not started.
+    const next = await h.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member, input: text('下一步'), caller: 'room' })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(h.rounds).toHaveLength(1)
+    expect(h.registry.readMemberInbox('member-self').messages.map(row => [row.caller, row.status])).toEqual([['room', 'done'], ['cli', 'running'], ['room', 'queued']])
+    // A second self round while the slot is taken is refused (the harness's own collision handling owns it).
+    expect(await h.registry.admitSelf({ childSessionId: 'member-self', provider: PROVIDER, cause, follow: vi.fn() })).toBeUndefined()
+
+    held.finish()
+    expect(await admission!.settled).toMatchObject({ executionId: admission!.executionId, outcome: 'done', turns: [2], observedModel: 'model-seen' })
+    await roundsReach(h, 2)
+    expect(h.rounds[1]).toMatchObject({ kind: 'resume', prompt: '下一步' })
+    h.rounds[1]!.release()
+    expect(await next.settled).toMatchObject({ outcome: 'done', turns: [3] })
+
+    const starts = records(h.childEvents('member-self')).filter((record): record is LocalAgentExecutionStartEvent => record.phase === 'start')
+    expect(starts[1]).toMatchObject({
+      executionId: admission!.executionId, caller: 'cli', operation: 'prompt',
+      cause: { ...cause, startedBy: first.executionId }, task: { sessionId: 'room-1', id: 'task-7' },
+    })
+    expect(records(h.childEvents('member-self')).find(record => record.phase === 'end' && record.executionId === admission!.executionId)).toMatchObject({ outcome: 'done', turns: [2] })
+    expect(h.maxRunning()).toBe(1)
+  })
+
+  it('without a recorded link no startedBy and no task; refused for a non-member, another provider, or a member with a round dispatched', async () => {
+    const h = await mount()
+    const member = { childSessionId: 'member-plain' }
+    expect(await h.registry.admitSelf({ childSessionId: 'member-plain', provider: PROVIDER, cause, follow: vi.fn() })).toBeUndefined()
+    const first = await h.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member, input: text('a'), caller: 'room', task: { sessionId: 'room-1', id: 'task-1' } })
+    await roundsReach(h, 1)
+    // A round is dispatched: the slot is taken.
+    expect(await h.registry.admitSelf({ childSessionId: 'member-plain', provider: PROVIDER, cause, follow: vi.fn() })).toBeUndefined()
+    h.rounds[0]!.release()
+    await first.settled
+    expect(await h.registry.admitSelf({ childSessionId: 'member-plain', provider: 'other-cli', cause, follow: vi.fn() })).toBeUndefined()
+    const held = heldFollow(h, 'member-plain')
+    // The tool call names nothing the log recorded: the chain stops, nothing is guessed.
+    const admission = await h.registry.admitSelf({ childSessionId: 'member-plain', provider: PROVIDER, cause, taskCallId: 'call-unknown', follow: held.follow })
+    expect(admission).toBeDefined()
+    expect(admission!.startedBy).toBeUndefined()
+    expect(admission!.task).toBeUndefined()
+    held.finish('error')
+    expect(await admission!.settled).toMatchObject({ outcome: 'failed', turns: [2] })
+    const start = records(h.childEvents('member-plain')).find(record => record.phase === 'start' && record.executionId === admission!.executionId) as LocalAgentExecutionStartEvent
+    expect(start.cause).toEqual(cause)
+    expect(start.task).toBeUndefined()
+    // A failed self round blocks nothing.
+    const after = await h.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member, input: text('b'), caller: 'room' })
+    await roundsReach(h, 2)
+    h.rounds[1]!.release()
+    expect(await after.settled).toMatchObject({ outcome: 'done' })
   })
 })

@@ -173,6 +173,8 @@ async function crashAndRestart(bench: Bench, childSessionId: string): Promise<{ 
   const fiber = bench.ctx.plugin(FreshRoomService)
   await fiber.await()
   mounted.push(async () => { await fiber.dispose() })
+  // The new process is what the next crash kills (a test may crash twice).
+  Object.assign(bench, { core: after, roomFiber: fiber })
   return { registry: after.registry, rounds, service: bench.ctx.get('room') as RoomService }
 }
 
@@ -357,6 +359,8 @@ describe('room on the real local-agent core', () => {
   it('a room delivery cut off by a restart: 待对账 from the core, never run twice; reconciling in the room settles the core and the queued delivery runs once', async () => {
     const bench = await mount()
     const ada = await invite(bench)
+    // Manual reconciliation is the subject here: the room does not continue on its own.
+    expect(await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: false })).toMatchObject({ ok: true })
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第一轮' })
     await roundsReach(bench, 1)
     bench.rounds[0]!.release()
@@ -402,6 +406,56 @@ describe('room on the real local-agent core', () => {
     const log = await releasedLog(bench, ada, 3)
     const ends = records(log).filter(record => record.phase === 'end') as LocalAgentExecutionEndEvent[]
     expect(ends.find(end => end.executionId === interrupted)).toMatchObject({ outcome: 'cancelled', reconciled: true, turns: [2] })
+  })
+
+  it('after a crash the room continues the cut-off delivery on its own, once, through the real core (M9/M10)', async () => {
+    const bench = await mount()
+    const ada = await invite(bench)
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第一轮' })
+    await roundsReach(bench, 1)
+    await vi.waitFor(() => expect(runStates(bench).at(-1)).toMatchObject({ state: 'running' }))
+    const [first] = bench.room().snapshotEvents().filter(event => event.type === 'room/dispatch').slice(-1).map(event => `${event.seq}:${ada}`) as [string]
+
+    const { registry, rounds, service } = await crashAndRestart(bench, ada)
+    // The startup load finds the room through the core's ledger and brings it live.
+    expect(registry.interruptedMemberParents()).toEqual([String(bench.sessionId)])
+    // The core pauses the queue on load because a row is uncertain; with no
+    // typed input waiting, that is not the 「队列暂停」 guard.
+    expect(registry.readMemberInbox(ada)).toMatchObject({ paused: true, messages: [{ status: 'uncertain' }] })
+    expect(await service.loadInterruptedRooms()).toEqual([String(bench.sessionId)])
+    await vi.waitFor(() => expect(rounds).toHaveLength(1))
+    expect(rounds[0]!.prompt).toContain('重启')
+    rounds[0]!.release()
+    await service.engine.idle()
+    // Further passes (getState, another load) continue nothing more.
+    await service.getState({ sessionId: bench.sessionId })
+    expect(await service.loadInterruptedRooms()).toEqual([])
+    await service.engine.idle()
+    expect(rounds).toHaveLength(1)
+    expect(deliveryStates(bench, first)).toEqual(['running', 'uncertain', 'cancelled'])
+    expect(registry.interruptedMemberParents()).toEqual([])
+  })
+
+  it('a room whose only interrupted round is an older restart\'s leftover is not loaded at start (M10)', async () => {
+    const bench = await mount()
+    const ada = await invite(bench)
+    // Restart 1 cuts ada off while the setting is off: the round stays 待对账 for the human.
+    expect(await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: false })).toMatchObject({ ok: true })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第一轮' })
+    await roundsReach(bench, 1)
+    await vi.waitFor(() => expect(runStates(bench).at(-1)).toMatchObject({ state: 'running' }))
+    const first = await crashAndRestart(bench, ada)
+    expect(first.registry.interruptedMemberParents()).toEqual([String(bench.sessionId)])
+    expect(await first.service.loadInterruptedRooms()).toEqual([])
+    expect(first.registry.readMemberInbox(ada).messages).toMatchObject([{ status: 'uncertain' }])
+    // The setting is turned back on (journaled, no pass), then restart 2 happens with nothing running.
+    bench.room().append('room/settings', { autoContinueAfterRestart: true })
+    const second = await crashAndRestart(bench, ada)
+    // Only weeks-old leftovers: the core names no room, nothing is loaded or continued.
+    expect(second.registry.interruptedMemberParents()).toEqual([])
+    expect(await second.service.loadInterruptedRooms()).toEqual([])
+    await second.service.engine.idle()
+    expect(second.rounds).toHaveLength(0)
   })
 
   it('usage in one place (S6): the room stores no copy; getState attaches the core\'s reading (per-call sum and the CLI total)', async () => {

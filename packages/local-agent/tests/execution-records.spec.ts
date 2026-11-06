@@ -418,6 +418,18 @@ describe('execution recorder', () => {
     expect(records(child.snapshotEvents())).toHaveLength(5)
   })
 
+  it('a self-opened round a restart cut off closes uncertain, without the reconciled mark (member-self-started-rounds A②)', () => {
+    const child = Session.create(SessionId('self-cut-child'))
+    const recorder = new ExecutionRecorder({ session: () => child, persist: () => {}, settleWaitMs: 0, onError: (error) => { throw error },
+      reconciled: (_child, executionId) => executionId === 'self-1' ? { outcome: 'uncertain', at: 40, reconciled: false } : undefined })
+    child.append(TYPE, { phase: 'start', executionId: 'self-1', caller: 'cli', operation: 'prompt', parentSessionId: PARENT, admittedAt: 1,
+      cause: { kind: 'self', reason: 'background-task', taskId: 'bash-1', taskStatus: 'completed', notificationId: 'task:bash-1:completed' } } as never)
+    child.append('turn/start', { turn: 3 } as never)
+    child.append('turn/end', { turn: 3, reason: { kind: 'interrupted' } } as never)
+    recorder.closeReconciled(child)
+    expect(records(child.snapshotEvents()).at(-1)).toEqual({ phase: 'end', executionId: 'self-1', outcome: 'uncertain', turns: [3], endedAt: 40 })
+  })
+
   it('a provider that fails before any child exists leaves no record', () => {
     const recorder = new ExecutionRecorder({ session: () => undefined, persist: () => { throw new Error('nothing to persist') }, settleWaitMs: 0, onError: (error) => { throw error } })
     const open = recorder.admit({ childSessionId: 'never', parentSessionId: PARENT, operation: 'prompt' })

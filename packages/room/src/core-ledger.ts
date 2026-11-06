@@ -32,7 +32,7 @@ export function isCoreOutcome(status: CoreRow['status']): status is CoreOutcome 
  * prepared identity) or an unreadable ledger reads as `undefined`.
  */
 export class CoreLedgers {
-  private readonly cache = new Map<string, readonly CoreRow[] | undefined>()
+  private readonly cache = new Map<string, { readonly rows: readonly CoreRow[]; readonly paused: boolean } | undefined>()
 
   constructor(private readonly facade: LocalAgentFacade | undefined) {}
 
@@ -41,12 +41,32 @@ export class CoreLedgers {
 
   /** The member's rows, or undefined when the core cannot say. */
   rows(childSessionId: string | undefined): readonly CoreRow[] | undefined {
+    return this.inbox(childSessionId)?.rows
+  }
+
+  /**
+   * Whether the member's input queue is paused with typed input waiting in
+   * the member session (members page). The core pauses every ledger that
+   * holds an uncertain or queued row when it loads it after a restart, so
+   * the flag alone is set for every interrupted member; only a queued
+   * composer row is input the human still has to decide on (the core holds
+   * just those back while paused — room rows run).
+   */
+  paused(childSessionId: string | undefined): boolean {
+    const inbox = this.inbox(childSessionId)
+    return inbox?.paused === true && inbox.rows.some(row => row.status === 'queued' && row.caller === 'composer')
+  }
+
+  private inbox(childSessionId: string | undefined): { readonly rows: readonly CoreRow[]; readonly paused: boolean } | undefined {
     if (childSessionId === undefined || this.facade?.readMemberInbox === undefined) return undefined
     if (this.cache.has(childSessionId)) return this.cache.get(childSessionId)
-    let rows: readonly CoreRow[] | undefined
-    try { rows = this.facade.readMemberInbox(childSessionId).messages } catch { rows = undefined }
-    this.cache.set(childSessionId, rows)
-    return rows
+    let inbox: { readonly rows: readonly CoreRow[]; readonly paused: boolean } | undefined
+    try {
+      const read = this.facade.readMemberInbox(childSessionId)
+      inbox = { rows: read.messages, paused: read.paused === true }
+    } catch { inbox = undefined }
+    this.cache.set(childSessionId, inbox)
+    return inbox
   }
 
   /**

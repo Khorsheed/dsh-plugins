@@ -23,6 +23,8 @@
     "src/messaging.ts",
     "src/report-gate.ts",
     "src/decisions.ts",
-    "src/help.ts"
+    "src/help.ts",
+    "src/restart-continue.ts",
+    "src/startup-load.ts"
   ]
 }

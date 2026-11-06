@@ -109,7 +109,7 @@ export const ROOM_EVENT_TYPES = [
 ] as const
 
 /** Collaboration settings of a room that never changed them. */
-export const DEFAULT_ROOM_SETTINGS: RoomSettings = { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge', autoTaskFiling: true, reportThreshold: 0.5, reportWaitMinutes: 3, helpReminderMinutes: 30 }
+export const DEFAULT_ROOM_SETTINGS: RoomSettings = { memberMessages: 'free', hopLimit: 10, paused: false, reportTiming: 'judge', autoTaskFiling: true, reportThreshold: 0.5, reportWaitMinutes: 3, helpReminderMinutes: 30, autoContinueAfterRestart: true }
 
 /** Whether an event log carries the room identity marker. */
 export function isRoomLog(events: readonly SessionEvent[]): boolean {
@@ -387,6 +387,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           reportThreshold: event.data.reportThreshold ?? settings.reportThreshold,
           reportWaitMinutes: event.data.reportWaitMinutes ?? settings.reportWaitMinutes,
           helpReminderMinutes: event.data.helpReminderMinutes ?? settings.helpReminderMinutes,
+          autoContinueAfterRestart: event.data.autoContinueAfterRestart ?? settings.autoContinueAfterRestart,
         }
         break
       }
@@ -452,7 +453,10 @@ export function replay(events: readonly SessionEvent[]): RoomState {
   const jobs = deliveries.length === 0 ? [] : replayJobs(events, deliveries)
   const helps = replayHelps(events)
   const links = replayLinks(events)
+  // Interrupted rounds a message already continues (M9: at most once each).
+  const continued = events.flatMap(event => event.type === 'room/dispatch' ? event.data.continues ?? [] : [])
   return {
+    ...continued.length === 0 ? {} : { continued: [...new Set(continued)] },
     ...helps.length === 0 ? {} : { helps },
     ...links.linked.length === 0 ? {} : { linked: links.linked },
     ...links.nudgesDismissed.length === 0 ? {} : { helpNudgesDismissed: links.nudgesDismissed }, members, relays, ...approvals.size === 0 ? {} : { approvals: [...approvals.values()] }, ...questions.size === 0 ? {} : { questions: [...questions.values()] }, ...asks.size === 0 ? {} : { askLog: [...asks.values()] }, tasks, ...executions.size === 0 ? {} : { executions: [...executions.values()] }, ...plan === undefined ? {} : { plan }, ...deliveries.length === 0 ? {} : { deliveries }, runs: [...runs.values()], ...coordinator === undefined ? {} : { coordinator }, ...goal === undefined ? {} : { goal }, ...latestReplySeq === undefined ? {} : { latestReplySeq }, ...latestSpeechSeq === undefined ? {} : { latestSpeechSeq }, settings, ...jobs.length === 0 ? {} : { jobs } }

@@ -222,6 +222,20 @@ export interface RoomDispatchEvent {
   readonly replyTo?: string
   /** Completion report deduplication key (one source delivery). */
   readonly reportFor?: string
+  /**
+   * Who pressed 「全部继续」 after a host restart (member-self-started-rounds
+   * M9): `auto-continue` = the room itself, on load, because the room's
+   * 重启后自动继续 setting is on. Absent = the human (or any other dispatch).
+   * Its execution cause is `restart`.
+   */
+  readonly via?: 'auto-continue'
+  /**
+   * The interrupted rounds (room run ids, `<seq>:<memberId>`) this message
+   * continues — written by the room's auto-continue and by the human's
+   * 「全部继续」 alike. Each interrupted round is continued at most once by
+   * the room.
+   */
+  readonly continues?: readonly string[]
   readonly targets: readonly string[]
   readonly text: string
 }
@@ -486,6 +500,12 @@ export interface RoomSettingsEvent {
   readonly reportWaitMinutes?: number
   /** Cross-session help: minutes an unanswered request waits before its row turns amber (10–120). */
   readonly helpReminderMinutes?: number
+  /**
+   * 重启后自动继续 (member-self-started-rounds M9): when a host restart cut
+   * members' rounds off, the room presses 「全部继续」 itself once the room
+   * loads. Absent = on (the user's 2026-11-06 default; existing rooms too).
+   */
+  readonly autoContinueAfterRestart?: boolean
 }
 
 /** The folded settings with defaults applied. */
@@ -498,6 +518,7 @@ export interface RoomSettings {
   readonly reportThreshold: number
   readonly reportWaitMinutes: number
   readonly helpReminderMinutes: number
+  readonly autoContinueAfterRestart: boolean
 }
 
 /** The room's own decision scenarios (the decision-model table, see decisions.ts). */
@@ -1152,6 +1173,29 @@ export interface RoomState {
   readonly linked?: readonly RoomLinkedSession[]
   /** Sessions whose 加入房间成员 hint was dismissed (absent when none). */
   readonly helpNudgesDismissed?: readonly string[]
+  /** Interrupted rounds (run ids) some message already continues (every dispatch's `continues`); absent when none. */
+  readonly continued?: readonly string[]
+  /**
+   * Projection only (`getState`): what the restart-continue rule needs that
+   * the journal does not hold — members whose core input queue is paused,
+   * and the member whose round requested the restart (when the guard
+   * records it). Absent when neither applies.
+   */
+  readonly restartFacts?: RestartFacts
+}
+
+/** See RoomState.restartFacts. */
+export interface RestartFacts {
+  /** Room member ids whose local-agent input queue is paused after a restart. */
+  readonly queuePaused?: readonly string[]
+  /** The child session id of the member whose round requested the last restart. */
+  readonly restartInitiator?: string
+  /**
+   * When this host process's room service started (epoch ms). A round whose
+   * interruption the journal recorded before it was cut off by an EARLIER
+   * restart: the room never continues it on its own (see restart-continue.ts).
+   */
+  readonly bootedAt?: number
 }
 
 /** Closed failure vocabulary of the room Remote surface. */
@@ -1424,6 +1468,12 @@ export interface RoomPostMessageRequest {
    * by local path.
    */
   readonly attachments?: readonly RoomAttachmentInput[]
+  /**
+   * 「全部继续」: the interrupted rounds (run ids) this message continues.
+   * Recorded on the dispatch (`continues`) for the ids that are interrupted
+   * rounds of its targets; others are dropped.
+   */
+  readonly continues?: readonly string[]
 }
 
 /** One composer attachment as it crosses the wire (the official prompt part shape). */
@@ -1514,6 +1564,7 @@ export interface RoomSetSettingsRequest {
   readonly reportWaitMinutes?: number
   /** 10–120, in steps of 10. */
   readonly helpReminderMinutes?: number
+  readonly autoContinueAfterRestart?: boolean
   readonly memberMessages?: 'free' | 'confirm'
   /** 2–50. */
   readonly hopLimit?: number
@@ -1698,6 +1749,8 @@ export interface RoomDelivery {
   readonly reportFor?: string
   /** A release round: the held report dispatch seqs it hands over. */
   readonly releases?: readonly number[]
+  /** `auto-continue`: the room continued an interrupted round after a restart (see RoomDispatchEvent.via). */
+  readonly via?: 'auto-continue'
   /** Epoch ms: dispatched, admitted (first running edge), settled. */
   readonly queuedAt: number
   readonly startedAt?: number

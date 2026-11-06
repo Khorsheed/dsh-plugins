@@ -22,6 +22,7 @@ import type { RoomMember, RoomRemoval } from '../types.ts'
 import { RemoveMemberConfirm, removalImpact } from './RemoveMemberConfirm.tsx'
 import { MemberCard } from './MemberCard.tsx'
 import { MemberActivityLine, useMemberActivity } from './MemberActivity.tsx'
+import { MemberRestartLineView } from './RoomRestart.tsx'
 import { InviteDialog, inviteRequest, type InviteDialogSubmit } from './InviteDialog.tsx'
 import { submitMemberEdit } from './MemberEditDialog.tsx'
 import type { MembersViewProps, RoomModelDirectory } from './slots.ts'
@@ -260,8 +261,11 @@ export function MembersView({
                   t={t}
                 />
               ) : undefined}
-              activity={memberActivity === undefined || member.kind !== 'cli' || member.childSessionId === undefined ? undefined
-                : <MemberActivityLine read={memberActivity.store.get(member.childSessionId)} t={t} />}
+              activity={<>
+                <MemberRestartLineView state={state} member={member.name} t={t} />
+                {memberActivity === undefined || member.kind !== 'cli' || member.childSessionId === undefined ? undefined
+                  : <MemberActivityLine read={memberActivity.store.get(member.childSessionId)} t={t} />}
+              </>}
               modelHint={member.kind === 'main-agent'
                 ? (modelDirectory !== undefined ? <MainAgentModelHint directory={modelDirectory} /> : undefined)
                 : memberModels.get(member.name)}

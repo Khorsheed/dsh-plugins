@@ -255,9 +255,12 @@ export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInject
    * mention-menu picks (explicit addressing wherever the `@name` sits in
    * the sentence); the host unions them with the parsed leading tokens.
    * `task` is the composer's tag (`new` or a task root id): it files the
-   * message under that task instead of letting dsh decide.
+   * message under that task instead of letting dsh decide. `continues`
+   * names the interrupted rounds a 「全部继续」 continues (M9).
    */
-  readonly submit: (sessionId: SessionId, text: string, targets?: readonly string[], task?: string, attachments?: readonly import('../types.ts').RoomAttachmentInput[]) => Promise<RoomMutationOutcome>
+  readonly submit: (sessionId: SessionId, text: string, targets?: readonly string[], task?: string, attachments?: readonly import('../types.ts').RoomAttachmentInput[], continues?: readonly string[]) => Promise<RoomMutationOutcome>
+  /** Change the room's settings (the restart banner's 「设置」: 重启后自动继续). */
+  readonly setSettings?: ((patch: Partial<RoomSettings>) => Promise<RoomMutationOutcome>) | undefined
   /** Interrupt the room's own main-agent turn (the hidden official bar's Stop). */
   readonly stop: () => void
   /**
@@ -567,6 +570,20 @@ export interface RoomDispatchInjected {
 export type RoomDispatchViewProps =
   PropsRuntime<'conversation.chat.node', 'room-dispatch'>
   & InjectFace<RoomDispatchInjected>
+  & PropsLocale<'room'>
+
+/** Injected face of the room's auto-continue row (M9). */
+export interface RoomAutoContinueInjected {
+  /** The client-side room state store: the current settings. */
+  readonly roomStore: RoomStore
+  /** Change a room's settings (the row's 「设置」); absent = no link. */
+  readonly setSettings?: ((sessionId: SessionId, patch: Partial<RoomSettings>) => Promise<RoomMutationOutcome>) | undefined
+}
+
+/** Full props of the 'room-auto-continue' chat-node renderer. */
+export type RoomAutoContinueViewProps =
+  PropsRuntime<'conversation.chat.node', 'room-auto-continue'>
+  & InjectFace<RoomAutoContinueInjected>
   & PropsLocale<'room'>
 
 /** Full props of the 'room-compaction' chat-node renderer. */
