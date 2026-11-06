@@ -41,7 +41,7 @@ import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent
 import { configureKimiSession } from './session-configuration.ts'
 import { kimiNativeConfiguration, type KimiNativeConfiguration } from './model-catalog.ts'
 import { StringDecoder } from 'node:string_decoder'
-import { appendFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -86,6 +86,7 @@ import { kimiMirrorSource, nextKimiSessionStep, nextWrittenKimiStep } from './se
 import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './session-mirror.ts'
 import { addTokenUsage, findKimiSessionDir, wirePath } from './session-view.ts'
 import { readKimiCompaction } from './kimi-compaction.ts'
+import { findOpenSelfTurn, readQueuedPrompt, turnEndedStopReason, wireLineCount } from './self-turn.ts'
 import { writeKimiDefaultModel } from './provision.ts'
 import {
   inspectKimiSessionLock,
@@ -150,6 +151,12 @@ export interface KimiLiveDriverTimeouts {
   readonly mirrorThrottleMs: number
   /** How long a completed round's settle waits for its streams' wire steps (0 turns the wait off). */
   readonly settleFoldWaitMs?: number
+  /** How long a prompt waits for a turn kimi opened on its own to end before sending anyway. */
+  readonly selfTurnWaitMs?: number
+  /** Wire poll cadence while waiting on / following a self-opened turn. */
+  readonly selfTurnPollMs?: number
+  /** How long an answerless `end_turn` waits for the wire to show whether it collided with a self turn. */
+  readonly collisionGraceMs?: number
 }
 
 export const DEFAULT_TIMEOUTS: KimiLiveDriverTimeouts = {
@@ -174,6 +181,14 @@ const SETTLE_MIRROR_FOLD_WAIT_MS = 10_000
 /** A compaction round polls the wire for its end this often, for at most this long. */
 const COMPACTION_POLL_MS = 500
 const COMPACTION_TIMEOUT_MS = 10 * 60_000
+/**
+ * Self-opened turns (see self-turn.ts): a prompt waits at most this long for
+ * one to end, polling the wire; an answerless `end_turn` gets this grace for
+ * the wire to show a collision before it counts as an empty answer.
+ */
+const SELF_TURN_WAIT_MS = 10 * 60_000
+const SELF_TURN_POLL_MS = 500
+const COLLISION_GRACE_MS = 2_000
 /** How long a load waits for this driver's own retiring process to release the session. */
 const OWN_EXIT_WAIT_MS = 5_000
 /** How long a requested reload may take to spawn the fresh process and load the session. */
@@ -466,6 +481,14 @@ class AcpWirePeer {
  */
 class KimiLiveRuntime {
   dead = false
+  /** Spawn time: a wire turn stamped before it belongs to an earlier process. */
+  readonly spawnedAt = Date.now()
+  /**
+   * A round stopped following a prompt kimi had queued behind its own turn
+   * (cancel or failure): kimi still runs that prompt's turn, which ACP cannot
+   * cancel, so the next prompt waits for ANY open turn, not just a self one.
+   */
+  queuedTurnAbandoned = false
   private reclaimed = false
   readonly peer: AcpWirePeer
   /** The member's ACP session; assigned by the first round's session/new or session/load. */
@@ -1434,6 +1457,8 @@ export class KimiAcpLiveDriver {
     let roundContext: { used: number; size?: number } | undefined
     /** The wire's line count when the prompt went out: a compaction kimi starts on its own lands after it. */
     let wireFrom: { homeDir: string; sessionId: string; line: number } | undefined
+    /** The member's kimi session directory, once the accept phase found it (a first round's appears later). */
+    let wireDir: string | undefined
     const turnStartedAt = Date.now()
     let lastMirrorAt = 0
     let mirrorQueue: Promise<unknown> = Promise.resolve()
@@ -1931,6 +1956,7 @@ export class KimiAcpLiveDriver {
       wireFrom = { homeDir: spec.homeDir, sessionId: bareKimiSessionId(rt.sessionId as string), line: 0 }
       try {
         const dir = await findKimiSessionDir(spec.homeDir, wireFrom.sessionId)
+        wireDir = dir
         if (dir !== undefined) wireFrom.line = Math.max(0, (await readFile(wirePath(dir), 'utf8').catch(() => '')).split('\n').length - 1)
       } catch { /* read from line 0 at settle */ }
       // The turn boundary opens before the prompt goes out (exec parity: the
@@ -1958,11 +1984,103 @@ export class KimiAcpLiveDriver {
         (error: unknown) => Promise.reject(thrown(error)),
       )
       processFailure.catch(() => {})
+      const cancelled = (): Error => new Error('subagent-kimi: run cancelled locally')
+      const readWire = async (): Promise<string> => {
+        wireDir ??= await findKimiSessionDir(spec.homeDir, bareKimiSessionId(rt.sessionId as string)).catch(() => undefined)
+        return wireDir === undefined ? '' : readFile(wirePath(wireDir), 'utf8').catch(() => '')
+      }
+      /** The same read, synchronous: the common no-self-turn path sends without yielding. */
+      const readWireNow = (): string => {
+        if (wireDir === undefined) return ''
+        try { return readFileSync(wirePath(wireDir), 'utf8') } catch { return '' }
+      }
+      const pollMs = this.timeouts.selfTurnPollMs ?? SELF_TURN_POLL_MS
+      const selfTurnWaitMs = this.timeouts.selfTurnWaitMs ?? SELF_TURN_WAIT_MS
+      /** The wire's line count when the prompt went out, and whether a self-opened turn was still running then. */
+      let sentAt = { line: 0, selfOpen: false }
+      /**
+       * Wait (bounded, cancellable) for a turn kimi opened on its own to end:
+       * a prompt sent into it is queued by the engine and answered `end_turn`
+       * at once (see self-turn.ts). The round is already open, so the room
+       * shows the member busy meanwhile; the self turn's lines mirror as they
+       * land. Past the bound the prompt goes out anyway and the collision
+       * follow below picks it up.
+       */
+      const awaitSelfTurn = async (): Promise<void> => {
+        const started = Date.now()
+        let noted = false
+        for (;;) {
+          if (runAbort.signal.aborted) throw cancelled()
+          if (rt.dead) throw new Error('subagent-kimi: the live runtime exited while waiting for kimi\'s own turn')
+          const wire = await readWire()
+          const open = findOpenSelfTurn(wire, rt.spawnedAt, rt.queuedTurnAbandoned)
+          if (open === undefined) {
+            rt.queuedTurnAbandoned = false
+            sentAt = { line: wireLineCount(wire), selfOpen: false }
+            return
+          }
+          if (Date.now() - started >= selfTurnWaitMs) {
+            this.ctx.logger.warn(`subagent-kimi: kimi's own turn (origin ${open.origin}) outlasted ${selfTurnWaitMs}ms; sending the prompt behind it`)
+            sentAt = { line: wireLineCount(wire), selfOpen: true }
+            return
+          }
+          if (!noted) {
+            noted = true
+            this.ctx.logger.info(`subagent-kimi: kimi is running its own turn (origin ${open.origin}); the prompt waits for it to end`)
+          }
+          triggerMirror()
+          await delay(pollMs)
+        }
+      }
+      /**
+       * An answerless `end_turn` may be a collision: kimi queued the prompt
+       * behind a turn it opened itself. Never re-send (the engine already
+       * holds it — a second send runs it twice); follow the wire until the
+       * queued prompt's own turn ends and settle on that. The stop reason, or
+       * undefined when the wire shows no collision (the empty answer stands).
+       * A local cancel ends the round here, but cannot stop kimi's queued
+       * turn: ACP's session/cancel only reaches a turn ACP itself drives.
+       */
+      const followQueuedPrompt = async (): Promise<SubagentStopReason | undefined> => {
+        const answeredAt = Date.now()
+        let noted = false
+        for (;;) {
+          if (runAbort.signal.aborted) throw cancelled()
+          if (rt.dead) throw new Error('subagent-kimi: the live runtime exited while a queued prompt waited for its turn')
+          const state = readQueuedPrompt(await readWire(), sentAt.line, sentAt.selfOpen)
+          const waited = Date.now() - answeredAt
+          if (state.phase === 'direct') return undefined
+          if (state.phase === 'unknown' && waited >= (this.timeouts.collisionGraceMs ?? COLLISION_GRACE_MS)) return undefined
+          if (state.phase !== 'unknown' && !noted) {
+            noted = true
+            this.ctx.logger.warn('subagent-kimi: kimi queued the prompt behind its own turn; following the wire to its end (not re-sending)')
+          }
+          if (state.phase === 'queued' && waited >= selfTurnWaitMs) {
+            throw new Error('subagent-kimi live: kimi queued the prompt behind its own turn, which did not end in time')
+          }
+          if (state.phase === 'running' || state.phase === 'ended') {
+            roundText = state.segments.reduce((text, segment) => text + textSegmentSeparator(text, segment) + segment, '')
+          }
+          if (state.phase === 'ended') return turnEndedStopReason(state.reason)
+          if (state.phase !== 'unknown') triggerMirror()
+          await delay(pollMs)
+        }
+      }
       // One prompt at a time per member: a cancelled turn converges (its
       // prompt settles 'cancelled') before the next prompt goes out — the
       // stop-then-rephrase gesture cannot interleave two turns' chunks.
-      const sendPrompt = (): Promise<{ stopReason?: string }> => {
-        if (runAbort.signal.aborted) return Promise.reject(new Error('subagent-kimi: run cancelled locally'))
+      const sendPrompt = async (): Promise<{ stopReason?: string }> => {
+        if (runAbort.signal.aborted) throw cancelled()
+        // Checked synchronously first, so a prompt with no self turn ahead
+        // of it goes out in the same tick as before this wait existed.
+        const wire = readWireNow()
+        if (findOpenSelfTurn(wire, rt.spawnedAt, rt.queuedTurnAbandoned) === undefined) {
+          rt.queuedTurnAbandoned = false
+          sentAt = { line: wireLineCount(wire), selfOpen: false }
+        } else {
+          await awaitSelfTurn()
+          if (runAbort.signal.aborted) throw cancelled()
+        }
         promptInFlight = true
         // Turn-length request: no wire timeout.
         return rt.peer.request<{ stopReason?: string }>('session/prompt', {
@@ -1973,7 +2091,15 @@ export class KimiAcpLiveDriver {
       const promptPromise: Promise<{ stopReason?: string }> = rt.turnChain.catch(() => {}).then(sendPrompt)
       rt.turnChain = promptPromise
       const promptResult = await Promise.race([promptPromise, processFailure])
-      const stopReason = acpStopReasonToHarness(String(promptResult?.stopReason ?? ''))
+      let stopReason = acpStopReasonToHarness(String(promptResult?.stopReason ?? ''))
+      if (stopReason === 'completed' && collectOutput().length === 0) {
+        // The follow holds the member's turn chain: the next prompt must not
+        // go out while kimi still runs this one.
+        const following = followQueuedPrompt()
+        following.catch(() => { rt.queuedTurnAbandoned = true })
+        rt.turnChain = following.catch(() => {})
+        stopReason = (await Promise.race([following, processFailure])) ?? stopReason
+      }
       // The exec path's silent-failure guard: an end_turn with no answer is an
       // error, never a 'completed' success with empty output.
       if (stopReason === 'completed' && collectOutput().length === 0) {

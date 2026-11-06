@@ -323,7 +323,9 @@ function mount(options: {
   ctx.provide('logger', { warn: () => {}, info: () => {} })
   // Rounds here stream text with no wire behind it unless a test writes one:
   // the settle's wait for wire steps is off unless a test asks for it.
-  const driver = new KimiAcpLiveDriver(ctx, options.config ?? {}, options.timeouts ?? { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 0 })
+  // Self-turn waits poll fast and an answerless end_turn's collision grace is
+  // short, so the empty-answer paths stay quick.
+  const driver = new KimiAcpLiveDriver(ctx, options.config ?? {}, options.timeouts ?? { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 0, selfTurnPollMs: 20, collisionGraceMs: 100 })
   return {
     ctx,
     homeDir,
@@ -2311,5 +2313,149 @@ describe('kimi session lock left by a dead process', () => {
     expect(server.stdinEnded).toBe(true)
     expect(server.terminated).toBe(true)
     expect(existsSync(path)).toBe(false)
+  })
+})
+
+describe('kimi live driver: turns kimi opens on its own (background task completion)', () => {
+  const FAST = { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 0, selfTurnPollMs: 20, collisionGraceMs: 200 }
+  const wireDirOf = (m: Mount): string => join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+  const rows = (...list: Record<string, unknown>[]): string => list.map(row => JSON.stringify(row)).join('\n') + '\n'
+  const userPrompt = (text: string) => ({ type: 'turn.prompt', input: [{ type: 'text', text }], origin: { kind: 'user' } })
+  const taskPrompt = (time?: number) => ({
+    type: 'turn.prompt',
+    input: [{ type: 'text', text: '<notification type="task.completed" source_id="bash-1">' }],
+    origin: { kind: 'task', taskId: 'bash-1', status: 'completed', notificationId: 'task:bash-1:completed' },
+    ...time === undefined ? {} : { time },
+  })
+  const ended = (turnId: number, reason = 'completed') => ({ type: 'turn.ended', turnId, reason })
+  const text = (turnId: number, step: number, value: string) => ({
+    type: 'context.append_loop_event',
+    event: { type: 'content.part', turnId: String(turnId), step, stepUuid: `s-${turnId}-${step}`, part: { type: 'text', text: value } },
+  })
+  const prompts = (fake: FakeAcpServer) => fake.requests.filter(r => r.method === 'session/prompt')
+
+  it('a prompt waits for a self-opened turn to end before it goes out', async () => {
+    const m = mount({ timeouts: FAST })
+    const dir = wireDirOf(m)
+    mkdirSync(dir, { recursive: true })
+    const head = rows(userPrompt('earlier'), ended(0), taskPrompt(), text(1, 1, 'task result read'))
+    writeFileSync(join(dir, 'wire.jsonl'), head)
+    const fake = new FakeAcpServer({ turn: () => ({ chunks: ['好的'] }) })
+    m.queueChild(fake)
+    const child = Session.create(SessionId('child-kimi-self-wait'))
+    const run = await m.driver.startRound(request({ prompt: '下一步' }) as never, roundSpec(m, child))
+    await new Promise(resolve => setTimeout(resolve, 200))
+    // The round is open (the member reads busy) but nothing went to kimi.
+    expect(child.snapshotEvents().some(e => e.type === 'turn/start')).toBe(true)
+    expect(prompts(fake)).toHaveLength(0)
+    writeFileSync(join(dir, 'wire.jsonl'), head + rows(ended(1)))
+    const result = await run.result
+    expect(result).toMatchObject({ stopReason: 'completed', output: [{ type: 'text', text: '好的' }] })
+    expect(prompts(fake)).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
+  it('a cancel while waiting never sends the prompt', async () => {
+    const m = mount({ timeouts: FAST })
+    const dir = wireDirOf(m)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'wire.jsonl'), rows(taskPrompt()))
+    const fake = new FakeAcpServer({ turn: () => ({ chunks: ['不该发出'] }) })
+    m.queueChild(fake)
+    const abort = new AbortController()
+    const run = await m.driver.startRound(request({ signal: abort.signal }) as never, roundSpec(m, Session.create(SessionId('child-kimi-self-cancel'))))
+    await new Promise(resolve => setTimeout(resolve, 100))
+    abort.abort()
+    expect((await run.result).stopReason).toBe('aborted')
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(prompts(fake)).toHaveLength(0)
+    await m.driver.disposeAll()
+  })
+
+  it('a self turn that outlasts the bound: the prompt goes out and is followed, not reported empty', async () => {
+    const m = mount({ timeouts: { ...FAST, selfTurnWaitMs: 100 } })
+    const dir = wireDirOf(m)
+    mkdirSync(dir, { recursive: true })
+    const head = rows(taskPrompt())
+    writeFileSync(join(dir, 'wire.jsonl'), head)
+    const fake = new FakeAcpServer({ turn: () => {
+      setTimeout(() => { writeFileSync(join(dir, 'wire.jsonl'), head + rows(ended(0), userPrompt('建个文件'), text(1, 1, '建好了'), ended(1))) }, 30)
+      return { chunks: [] }
+    } })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, Session.create(SessionId('child-kimi-self-bound'))))
+    expect(await run.result).toMatchObject({ stopReason: 'completed', output: [{ type: 'text', text: '建好了' }] })
+    expect(prompts(fake)).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
+  it('a collision (kimi queued the prompt behind its own turn): no empty success, follows the wire to the queued turn\'s end, never re-sends', async () => {
+    const m = mount({ timeouts: FAST })
+    const dir = wireDirOf(m)
+    mkdirSync(dir, { recursive: true })
+    const head = rows(userPrompt('earlier'), ended(0))
+    writeFileSync(join(dir, 'wire.jsonl'), head)
+    // The self turn opened between the driver's check and its send: kimi's
+    // engine queues the prompt, ACP answers end_turn at once with no chunks,
+    // and the queued prompt runs as its own turn after the self turn — on the
+    // wire only.
+    const fake = new FakeAcpServer({ turn: () => {
+      writeFileSync(join(dir, 'wire.jsonl'), head + rows(taskPrompt(), text(1, 1, 'task done')))
+      setTimeout(() => {
+        writeFileSync(join(dir, 'wire.jsonl'), head + rows(taskPrompt(), text(1, 1, 'task done'), ended(1), userPrompt('部署到3080吧'), text(2, 1, '部署')))
+      }, 300)
+      setTimeout(() => {
+        writeFileSync(join(dir, 'wire.jsonl'), head + rows(taskPrompt(), text(1, 1, 'task done'), ended(1), userPrompt('部署到3080吧'), text(2, 1, '部署'), text(2, 1, '完成'), text(2, 2, '已重启'), ended(2)))
+      }, 600)
+      return { chunks: [] }
+    } })
+    m.queueChild(fake)
+    const warnings: string[] = []
+    Object.assign(m.ctx.logger, { warn: (message: string) => { warnings.push(message) } })
+    const run = await m.driver.startRound(request({ prompt: '部署到3080吧' }) as never, roundSpec(m, Session.create(SessionId('child-kimi-collision'))))
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(result.output).toEqual([{ type: 'text', text: '部署完成\n\n已重启' }])
+    expect(prompts(fake)).toHaveLength(1)
+    expect(warnings.some(w => w.includes('queued the prompt behind its own turn'))).toBe(true)
+    await m.driver.disposeAll()
+  })
+
+  it('a queued turn that fails settles as an error, not an empty success', async () => {
+    const m = mount({ timeouts: FAST })
+    const dir = wireDirOf(m)
+    mkdirSync(dir, { recursive: true })
+    const fake = new FakeAcpServer({ turn: () => {
+      writeFileSync(join(dir, 'wire.jsonl'), rows(taskPrompt(), ended(0), userPrompt('建个文件'), ended(1, 'failed')))
+      return { chunks: [] }
+    } })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, Session.create(SessionId('child-kimi-collision-failed'))))
+    expect((await run.result).stopReason).toBe('error')
+    expect(prompts(fake)).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+
+  it('no self turn: the prompt goes out at once and an answerless end_turn stays an error', async () => {
+    const m = mount({ timeouts: FAST })
+    const dir = wireDirOf(m)
+    mkdirSync(dir, { recursive: true })
+    // A self turn a dead process left open (stamped before this spawn) is not running.
+    writeFileSync(join(dir, 'wire.jsonl'), rows(taskPrompt(1)))
+    let promptedAfter: number | undefined
+    const started = Date.now()
+    const fake = new FakeAcpServer({ turn: () => {
+      promptedAfter = Date.now() - started
+      // Our prompt ran directly and produced nothing.
+      writeFileSync(join(dir, 'wire.jsonl'), rows(taskPrompt(1), userPrompt('建个文件'), ended(1)))
+      return { chunks: [] }
+    } })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, Session.create(SessionId('child-kimi-no-self'))))
+    const result = await run.result
+    expect(result.stopReason).toBe('error')
+    expect(promptedAfter).toBeLessThan(1_000)
+    expect(prompts(fake)).toHaveLength(1)
+    await m.driver.disposeAll()
   })
 })
