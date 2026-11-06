@@ -23,6 +23,7 @@ import type {
   LocalAgentExecutionReading,
   LocalAgentExecutionStartEvent,
   LocalAgentExecutionSubagentReading,
+  LocalAgentTaskRef,
 } from './types.ts'
 
 const OPTIONAL_COUNTS = ['cacheReadTokens', 'cacheWriteTokens', 'reasoningTokens'] as const
@@ -148,6 +149,48 @@ export function executionOfToolCall(
     if (reading.operation === 'prompt' && reading.turns.includes(turn)) found = reading.executionId
   }
   return found
+}
+
+/**
+ * The task an execution's start record names, copied verbatim (a self-opened
+ * round inherits the task of the execution that started its background work).
+ * @param events - the member's session events.
+ * @param executionId - the execution.
+ * @returns the task, or undefined when the start names none or is absent.
+ */
+export function executionTaskOf(events: readonly SessionEvent[], executionId: string): LocalAgentTaskRef | undefined {
+  for (const event of events) {
+    if (event.type !== 'local-agent/execution') continue
+    const data = event.data as LocalAgentExecutionEvent
+    if (data.phase === 'start' && data.executionId === executionId) return data.task === undefined ? undefined : structuredClone(data.task)
+  }
+  return undefined
+}
+
+/**
+ * The notification ids of the rounds a member's CLI opened itself that the
+ * member's log holds as rounds of their own (member-self-started-rounds A③):
+ * a `self` start record naming a `notificationId`, followed by a `turn/start`
+ * before the next execution record. A start whose turn never opened (a crash
+ * between the two) is not one — the transcript then keeps folding that round
+ * into the next, as the child log does.
+ * @param events - the member's session events, in seq order.
+ * @returns the notification ids.
+ */
+export function ownSelfRounds(events: readonly SessionEvent[]): Set<string> {
+  const own = new Set<string>()
+  let pending: string | undefined
+  for (const event of events) {
+    if (event.type === 'local-agent/execution') {
+      const data = event.data as LocalAgentExecutionEvent
+      if (data.phase !== 'start') continue
+      pending = data.cause?.kind === 'self' ? data.cause.notificationId : undefined
+    } else if (event.type === 'turn/start' && pending !== undefined) {
+      own.add(pending)
+      pending = undefined
+    }
+  }
+  return own
 }
 
 /**

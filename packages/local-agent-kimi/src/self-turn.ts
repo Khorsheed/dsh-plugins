@@ -121,18 +121,121 @@ export function readQueuedPrompt(wire: string, fromLine: number, selfOpenAtSend:
       const reason = typeof row['reason'] === 'string' ? row['reason'] : 'completed'
       return { phase: 'ended', line: ours, reason, segments }
     }
-    if (type !== 'context.append_loop_event') continue
-    const event = row['event'] as Row | undefined
-    if (event?.['type'] !== 'content.part') continue
-    const part = event['part'] as { type?: unknown; text?: unknown } | undefined
-    if (part?.type !== 'text' || typeof part.text !== 'string' || part.text === '') continue
-    const key = event['stepUuid'] ?? event['step']
-    if (segments.length === 0 || key !== segmentKey) segments.push(part.text)
-    else segments[segments.length - 1] += part.text
-    segmentKey = key
+    segmentKey = collectSegment(row, segments, segmentKey)
   }
   if (ours !== undefined) return { phase: 'running', line: ours, segments }
   return selfAhead ? { phase: 'queued' } : { phase: 'unknown' }
+}
+
+/** A kimi-opened turn's prompt, as its `turn.prompt` row states it. */
+export interface SelfTurnPrompt {
+  /** Its `turn.prompt` line. */
+  readonly line: number
+  /** Its origin kind (`task`, legacy `background_task`, `cron_job`, …). */
+  readonly origin: string
+  /** A background task's id (`origin.taskId`), when the origin names one. */
+  readonly taskId?: string
+  /** The task's ending (`origin.status`: `completed`, `failed`, `timed_out`, …). */
+  readonly taskStatus?: string
+  /** The notification id (`origin.notificationId`, `task:<id>:<status>`). */
+  readonly notificationId?: string
+  /** The row's timestamp (epoch ms), when stamped. */
+  readonly time?: number
+}
+
+/** The line of the wire's last user-origin `turn.prompt` (an absent origin is a user prompt), or -1. */
+export function lastUserPromptLine(wire: string): number {
+  let last = -1
+  for (const { line, row } of rows(wire)) {
+    if (row['type'] === 'turn.prompt' && originKind(row) === 'user') last = line
+  }
+  return last
+}
+
+/**
+ * The next kimi-opened turn the self-turn observer has not dealt with: the
+ * first `turn.prompt` with a non-user origin after the member's last user
+ * prompt (one before it was a round's to wait for, or the fold's), stamped by
+ * the current process (`sinceMs`; an unstamped or older one belongs to a
+ * process that is gone), and not in `handled`.
+ * @param wire - the wire.jsonl text.
+ * @param sinceMs - the current kimi process's spawn time.
+ * @param handled - `turn.prompt` lines already dealt with.
+ */
+export function nextSelfTurn(wire: string, sinceMs: number, handled: ReadonlySet<number>): SelfTurnPrompt | undefined {
+  return selfTurnPrompts(wire, lastUserPromptLine(wire) + 1)
+    .find(prompt => !handled.has(prompt.line) && prompt.time !== undefined && prompt.time >= sinceMs)
+}
+
+/** Whether a self-opened turn's origin is a background task's notification (current and legacy spelling). */
+export function isTaskOrigin(origin: string): boolean {
+  return origin === 'task' || origin === 'background_task'
+}
+
+/**
+ * Every kimi-opened `turn.prompt` at or after `fromLine` (the self-turn
+ * observer's incremental read).
+ * @param wire - the wire.jsonl text.
+ * @param fromLine - the first line to look at.
+ */
+export function selfTurnPrompts(wire: string, fromLine = 0): SelfTurnPrompt[] {
+  const found: SelfTurnPrompt[] = []
+  for (const { line, row } of rows(wire, fromLine)) {
+    if (row['type'] !== 'turn.prompt') continue
+    const origin = originKind(row)
+    if (origin === 'user') continue
+    const stated = (row['origin'] ?? {}) as Row
+    const text = (value: unknown): string | undefined => typeof value === 'string' && value !== '' ? value : undefined
+    const time = row['time']
+    const taskId = text(stated['taskId'])
+    const taskStatus = text(stated['status'])
+    const notificationId = text(stated['notificationId'])
+    found.push({
+      line, origin,
+      ...taskId === undefined ? {} : { taskId },
+      ...taskStatus === undefined ? {} : { taskStatus },
+      ...notificationId === undefined ? {} : { notificationId },
+      ...typeof time === 'number' && Number.isFinite(time) ? { time } : {},
+    })
+  }
+  return found
+}
+
+/** Where a turn opened at a known `turn.prompt` line stands. */
+export type SelfTurnState =
+  | { readonly phase: 'running'; readonly segments: readonly string[] }
+  | { readonly phase: 'ended'; readonly reason: string; readonly segments: readonly string[] }
+
+/**
+ * Follow the turn whose `turn.prompt` sits at `line`: running until the
+ * next `turn.ended`, with its answer text one segment per model step.
+ * @param wire - the wire.jsonl text.
+ * @param line - the turn's `turn.prompt` line.
+ */
+export function readTurnAt(wire: string, line: number): SelfTurnState {
+  const segments: string[] = []
+  let segmentKey: unknown
+  for (const { row } of rows(wire, line + 1)) {
+    const type = row['type']
+    if (type === 'turn.ended') return { phase: 'ended', reason: typeof row['reason'] === 'string' ? row['reason'] : 'completed', segments }
+    // A turn that never wrote its end (a process cut off) is followed by the next prompt.
+    if (type === 'turn.prompt') return { phase: 'ended', reason: 'interrupted', segments }
+    segmentKey = collectSegment(row, segments, segmentKey)
+  }
+  return { phase: 'running', segments }
+}
+
+/** Add one row's answer text to `segments` (one entry per model step); answers the step key seen. */
+function collectSegment(row: Row, segments: string[], segmentKey: unknown): unknown {
+  if (row['type'] !== 'context.append_loop_event') return segmentKey
+  const event = row['event'] as Row | undefined
+  if (event?.['type'] !== 'content.part') return segmentKey
+  const part = event['part'] as { type?: unknown; text?: unknown } | undefined
+  if (part?.type !== 'text' || typeof part.text !== 'string' || part.text === '') return segmentKey
+  const key = event['stepUuid'] ?? event['step']
+  if (segments.length === 0 || key !== segmentKey) segments.push(part.text)
+  else segments[segments.length - 1] += part.text
+  return key
 }
 
 /** A kimi `turn.ended` reason as the shared stop contract. */

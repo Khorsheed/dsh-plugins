@@ -14,7 +14,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import { localAgentStreamRecords, type LocalAgentModelBlock, type LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
-import { appendMirrorStep, appendRequestHeaderIfChanged, persistChildSession, type MirrorBlock, type MirrorSource } from '@khorsheed/dsh-local-agent'
+import { appendMirrorStep, appendRequestHeaderIfChanged, ownSelfRounds, persistChildSession, type MirrorBlock, type MirrorSource } from '@khorsheed/dsh-local-agent'
 import { addTokenUsage, readKimiTranscript, sumUsageRecords, type KimiStepTiming, type KimiTranscriptLine } from './session-view.ts'
 
 // The tool-call id brand is compile-time only; take the field type from the
@@ -190,6 +190,13 @@ export interface KimiMirrorOptions {
    * is over — the result will never arrive). Mid-round passes hold there.
    */
   settle?: boolean
+  /**
+   * The live round's own turn: a unit of a LATER turn holds the pass, settle
+   * included — that turn is not open in the child log yet (kimi opened a turn
+   * of its own after this round's; the next round, or a self-opened round's
+   * own execution, opens it). Absent, every unit folds as before.
+   */
+  throughTurn?: number
 }
 
 /** Build one wire step's coarse model stream from the wire's own timing facts. */
@@ -280,6 +287,10 @@ export async function mirrorKimiSessionDelta(
     // No kimi sessions at all; nothing to mirror.
     return { total: 0, texts: [] }
   }
+  // The self-opened rounds this child log holds as rounds of their own: the
+  // transcript numbers them exactly as the log does (member-self-started-rounds
+  // A③), and every other one keeps the 11-01 fold.
+  const ownRounds = ownSelfRounds(childSession.snapshotEvents())
   let transcript: Awaited<ReturnType<typeof readKimiTranscript>> | undefined
   if (kimiSessionId !== undefined) {
     // Records may be bare uuids (the convention) or carry the ACP directory
@@ -288,7 +299,7 @@ export async function mirrorKimiSessionDelta(
     for (const workspace of workspaces) {
       const dir = join(homeDir, 'sessions', workspace, dirName)
       try {
-        transcript = await readKimiTranscript(dir)
+        transcript = await readKimiTranscript(dir, { ownRounds })
       } catch {
         // Not this workspace's session; keep looking.
         continue
@@ -319,7 +330,7 @@ export async function mirrorKimiSessionDelta(
     }
     if (newest !== undefined) {
       try {
-        transcript = await readKimiTranscript(newest.dir)
+        transcript = await readKimiTranscript(newest.dir, { ownRounds })
       } catch {
         transcript = undefined
       }
@@ -364,8 +375,12 @@ export async function mirrorKimiSessionDelta(
   // holds — a result that will never arrive folds as a synthesized
   // interrupted one.
   let holdAt = -1
+  const throughTurn = options?.throughTurn
+  if (throughTurn !== undefined) {
+    holdAt = units.findIndex(unit => (unit[0] as KimiTranscriptLine).turn > throughTurn)
+  }
   if (options?.settle !== true) {
-    for (let index = 0; index < units.length; index += 1) {
+    for (let index = 0; index < (holdAt < 0 ? units.length : holdAt); index += 1) {
       const unit = units[index] as KimiTranscriptLine[]
       const head = unit[0] as KimiTranscriptLine
       const openGroup = head.kind !== 'user'
@@ -403,9 +418,12 @@ export async function mirrorKimiSessionDelta(
   const heldStep = heldHead !== undefined && heldHead.kind !== 'user' && (heldHead as ContentLine).wireStep !== undefined
     ? `${heldHead.turn}:${(heldHead as ContentLine).wireStep}`
     : undefined
+  // A record of a later turn the pass holds (throughTurn) waits for that turn's own fold, settle or not.
+  const laterTurn = (step: string): boolean => throughTurn !== undefined && Number(step.split(':')[0]) > throughTurn
   const deferred = (record: { line: number; step?: string }): boolean =>
-    options?.settle !== true && record.line === consumedTotal && record.step !== undefined
-    && (!transcript.closedSteps.has(record.step) || record.step === heldStep)
+    record.line === consumedTotal && record.step !== undefined
+    && (laterTurn(record.step)
+      || (options?.settle !== true && (!transcript.closedSteps.has(record.step) || record.step === heldStep)))
   const inWindow = (record: { line: number; step?: string }): boolean =>
     record.line >= fromLines && record.line <= consumedTotal && !deferred(record)
   const seen = usageSeen(childSession)

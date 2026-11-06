@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { SubagentRun, SubagentResult } from '@deepseek-ai/dsh-subagent'
-import { MemberInbox } from '../src/member-inbox.ts'
+import { MemberInbox, SELF_ROUND_RESTARTED } from '../src/member-inbox.ts'
 import type { LocalAgentMemberInput } from '../src/types.ts'
 
 function deferred<T>() {
@@ -159,11 +159,14 @@ describe('member execution ledger', () => {
       { id: 'self-2', caller: 'cli', status: 'running', createdAt: 5, updatedAt: 6 },
     ] } }))
     const after = mount(directory)
-    // The running `cli` row reads as uncertain after the restart, like any caller's.
+    // A running `cli` row (a round the CLI opened itself) is nobody's request:
+    // after the restart it ends failed with the restart marker and blocks nothing.
     expect(after.inbox.read('member').messages).toMatchObject([
       { id: 'self-1', caller: 'cli', status: 'done' },
-      { id: 'self-2', caller: 'cli', status: 'uncertain' },
+      { id: 'self-2', caller: 'cli', status: 'failed', error: SELF_ROUND_RESTARTED },
     ])
+    expect(after.inbox.read('member').paused).toBe(false)
+    expect(() => after.inbox.assertAdmission('member')).not.toThrow()
     after.inbox.dispose()
     writeFileSync(path, JSON.stringify({ version: 2, state: { memberId: 'member', paused: false, messages: [
       { id: 'odd-1', caller: 'cron', status: 'done', createdAt: 3, updatedAt: 4 },
@@ -171,6 +174,32 @@ describe('member execution ledger', () => {
     const odd = mount(directory)
     expect(() => odd.inbox.read('member')).toThrow('Invalid member inbox')
     odd.inbox.dispose()
+  })
+
+  it('runNow: a round the CLI already runs takes the slot at once, queued rows wait for it, and a taken slot refuses it', async () => {
+    const m = mount()
+    const result = deferred<SubagentResult>()
+    const ended = deferred<LocalAgentMemberInput>()
+    const row = m.inbox.runNow('member', { id: 'self-1', caller: 'cli' }, {
+      dispatch: async () => ({ result: result.promise } as unknown as SubagentRun),
+      final: settled => ended.resolve(settled),
+    })
+    expect(row).toMatchObject({ id: 'self-1', caller: 'cli', status: 'running', admittedAt: expect.any(Number) })
+    // Asked for meanwhile: queued behind it, not dispatched.
+    const tool = m.submit('member', 'tool-1')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(m.jobs).toHaveLength(0)
+    expect(m.inbox.read('member').messages.map(input => [input.id, input.status])).toEqual([['self-1', 'running'], ['tool-1', 'queued']])
+    // A second self round while the slot is taken is refused.
+    expect(m.inbox.runNow('member', { id: 'self-2', caller: 'cli' }, {})).toBeUndefined()
+    result.resolve({ stopReason: 'completed', output: [] })
+    expect(await ended.promise).toMatchObject({ id: 'self-1', status: 'done' })
+    await vi.waitFor(() => expect(m.jobs).toHaveLength(1))
+    // A dispatched row holds the slot: a self round is refused.
+    expect(m.inbox.runNow('member', { id: 'self-3', caller: 'cli' }, {})).toBeUndefined()
+    await m.finish(m.jobs[0]!)
+    expect(await tool).toMatchObject({ id: 'tool-1', status: 'done' })
+    m.inbox.dispose()
   })
 
   it('never acknowledges an unpersisted input and blocks admission until storage is reconciled', () => {

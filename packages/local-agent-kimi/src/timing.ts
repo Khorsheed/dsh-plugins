@@ -1,12 +1,18 @@
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { ownSelfRounds } from '@khorsheed/dsh-local-agent'
 import type { LocalAgentMemberModelTiming } from '@khorsheed/dsh-local-agent/types'
 import { findKimiSessionDir, readKimiTranscript, type KimiTranscriptLine } from './session-view.ts'
 import { kimiStreamFromUnit } from './session-mirror.ts'
 
-/** Reconstruct a member's historical model streams and tool intervals from its wire log. */
-export async function readKimiModelTiming(homeDir: string, cliSessionId: string): Promise<LocalAgentMemberModelTiming | undefined> {
+/**
+ * Reconstruct a member's historical model streams and tool intervals from its wire log.
+ * The member's own log (when given) says which self-opened rounds are rounds of
+ * their own, so the `turn:step` keys match the child's turns.
+ */
+export async function readKimiModelTiming(homeDir: string, cliSessionId: string, memberEvents?: readonly SessionEvent[]): Promise<LocalAgentMemberModelTiming | undefined> {
   const dir = await findKimiSessionDir(homeDir, cliSessionId)
   if (dir === undefined) return undefined
-  const transcript = await readKimiTranscript(dir)
+  const transcript = await readKimiTranscript(dir, memberEvents === undefined ? {} : { ownRounds: ownSelfRounds(memberEvents) })
   const units: KimiTranscriptLine[][] = []
   for (const line of transcript.lines) {
     const last = units.at(-1)

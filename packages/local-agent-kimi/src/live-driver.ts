@@ -37,12 +37,12 @@
  * @module @khorsheed/dsh-local-agent-kimi/live-driver
  */
 
-import type { LocalAgentResolvedConfiguration } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentResolvedConfiguration, LocalAgentSelfAdmission, LocalAgentSelfAdmissionRequest } from '@khorsheed/dsh-local-agent/types'
 import { configureKimiSession } from './session-configuration.ts'
 import { kimiNativeConfiguration, type KimiNativeConfiguration } from './model-catalog.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { appendFileSync, readFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
@@ -86,8 +86,8 @@ import { kimiMirrorSource, nextKimiSessionStep, nextWrittenKimiStep } from './se
 import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './session-mirror.ts'
 import { addTokenUsage, findKimiSessionDir, wirePath } from './session-view.ts'
 import { readKimiCompaction } from './kimi-compaction.ts'
-import { findOpenSelfTurn, readQueuedPrompt, turnEndedStopReason, wireLineCount } from './self-turn.ts'
-import { readKimiBackgroundTasks } from './background-tasks.ts'
+import { findOpenSelfTurn, isTaskOrigin, nextSelfTurn, readQueuedPrompt, readTurnAt, turnEndedStopReason, wireLineCount, type SelfTurnPrompt } from './self-turn.ts'
+import { kimiTasksDir, readKimiBackgroundTasks } from './background-tasks.ts'
 import { writeKimiDefaultModel } from './provision.ts'
 import {
   inspectKimiSessionLock,
@@ -118,6 +118,38 @@ export const DEFAULT_LIVE_KEEPALIVE_CAP_MS = 4 * 60 * 60_000
 export interface KimiBackgroundWork {
   readonly runningTaskIds: readonly string[]
   readonly selfTurnOpen: boolean
+}
+
+/** One member's self-turn observer (see `KimiAcpLiveDriver.watchSelfTurns`). */
+interface SelfTurnObserver {
+  /** The resident process it watches; another process (a respawn) gets a fresh observer. */
+  readonly runtime: KimiLiveRuntime
+  /** The wire's size at the last read (-1: read at the next look). */
+  size: number
+  dir?: string | undefined
+  timer?: NodeJS.Timeout | undefined
+}
+
+/**
+ * The tool call that started a kimi background task: its state file's
+ * `parentToolCallId`, else the wire's `task.started` line for it. Undefined
+ * when neither names one.
+ */
+async function kimiTaskCallId(sessionDir: string, wire: string, taskId: string): Promise<string | undefined> {
+  const named = (value: unknown): string | undefined => typeof value === 'string' && value !== '' ? value : undefined
+  try {
+    const info = JSON.parse(await readFile(join(kimiTasksDir(sessionDir), `${taskId}.json`), 'utf8')) as { parentToolCallId?: unknown }
+    const callId = named(info?.parentToolCallId)
+    if (callId !== undefined) return callId
+  } catch { /* no state file (or one being rewritten): the wire below */ }
+  for (const raw of wire.split('\n')) {
+    if (!raw.includes('"task.started"') || !raw.includes(taskId)) continue
+    try {
+      const row = JSON.parse(raw) as { type?: unknown; info?: { taskId?: unknown; parentToolCallId?: unknown } }
+      if (row.type === 'task.started' && row.info?.taskId === taskId) return named(row.info.parentToolCallId)
+    } catch { /* a partial line */ }
+  }
+  return undefined
 }
 
 /** Default timeout for a wire request acknowledgement (never for session/prompt). */
@@ -175,6 +207,8 @@ export interface KimiLiveDriverTimeouts {
   readonly selfTurnPollMs?: number
   /** How long an answerless `end_turn` waits for the wire to show whether it collided with a self turn. */
   readonly collisionGraceMs?: number
+  /** The self-turn observer's look cadence while a member has background work (default 2 s). */
+  readonly selfTurnObserveMs?: number
 }
 
 export const DEFAULT_TIMEOUTS: KimiLiveDriverTimeouts = {
@@ -207,6 +241,8 @@ const COMPACTION_TIMEOUT_MS = 10 * 60_000
 const SELF_TURN_WAIT_MS = 10 * 60_000
 const SELF_TURN_POLL_MS = 500
 const COLLISION_GRACE_MS = 2_000
+/** The self-turn observer looks at the wire this often while background work runs (B②). */
+const SELF_TURN_OBSERVE_MS = 2_000
 /** How long a load waits for this driver's own retiring process to release the session. */
 const OWN_EXIT_WAIT_MS = 5_000
 /** How long a requested reload may take to spawn the fresh process and load the session. */
@@ -507,6 +543,12 @@ class KimiLiveRuntime {
    * cancel, so the next prompt waits for ANY open turn, not just a self one.
    */
   queuedTurnAbandoned = false
+  /**
+   * The `turn.prompt` lines of turns kimi opened itself that the self-turn
+   * observer already dealt with (admitted and followed, or left to the 11-01
+   * fold) — so a turn is offered to the core once.
+   */
+  readonly selfTurnsHandled = new Set<number>()
   private reclaimed = false
   readonly peer: AcpWirePeer
   /** The member's ACP session; assigned by the first round's session/new or session/load. */
@@ -627,6 +669,8 @@ export class KimiAcpLiveDriver {
   private readonly lastActivity = new Map<string, number>()
   /** The running task ids last observed per member (sorted, joined): a change is activity. */
   private readonly observedTasks = new Map<string, string>()
+  /** The self-turn observer per member, while it has background work (see watchSelfTurns). */
+  private readonly selfObservers = new Map<string, SelfTurnObserver>()
   /** Per-member round serialization (the resume lock covers resume-vs-resume only). */
   private readonly roundChains = new Map<string, Promise<unknown>>()
   /** Rounds accepted and not yet settled, per member (a reload asked meanwhile waits for them). */
@@ -710,6 +754,8 @@ export class KimiAcpLiveDriver {
   private armIdleTimer(key: string): void {
     this.lastActivity.set(key, Date.now())
     this.scheduleIdleCheck(key, this.config.liveIdleMs ?? DEFAULT_LIVE_IDLE_MS)
+    // A round may have started background work: look for turns kimi opens on its own.
+    this.watchSelfTurns(key)
   }
 
   private scheduleIdleCheck(key: string, delayMs: number): void {
@@ -789,6 +835,7 @@ export class KimiAcpLiveDriver {
     const runtime = this.runtimes.get(key)
     if (runtime === undefined || runtime.dead) return undefined
     if (!this.noteObservedTasks(key, runningTaskIds, Date.now())) return undefined
+    this.watchSelfTurns(key, false)
     return this.keepAliveDeadline(key)
   }
 
@@ -828,6 +875,239 @@ export class KimiAcpLiveDriver {
   }
 
   /**
+   * Start (or nudge) the member's self-turn observer (member-self-started-rounds
+   * B②): while the member's resident process runs background tasks, look at
+   * kimi's wire every {@link SELF_TURN_OBSERVE_MS} for a turn kimi opens on its
+   * own when one of them ends, and offer it to the core as an execution of its
+   * own (`admitSelf`). The look is a `stat`; the wire is read only when it
+   * grew. The observer stops when nothing runs and no self turn is open, and
+   * with the process.
+   */
+  private watchSelfTurns(key: string, nudge = true): void {
+    if (this.disposed) return
+    const runtime = this.runtimes.get(key)
+    if (runtime === undefined || runtime.dead) return
+    const known = this.selfObservers.get(key)
+    if (known !== undefined && known.runtime === runtime) {
+      // Already looking: a round that just ended may have started a task, so read again at the next look.
+      if (nudge) known.size = -1
+      return
+    }
+    this.stopSelfObserver(key)
+    const observer: SelfTurnObserver = { runtime, size: -1 }
+    this.selfObservers.set(key, observer)
+    this.scheduleSelfLook(key, observer, 0)
+  }
+
+  private stopSelfObserver(key: string): void {
+    const observer = this.selfObservers.get(key)
+    if (observer === undefined) return
+    if (observer.timer !== undefined) clearTimeout(observer.timer)
+    this.selfObservers.delete(key)
+  }
+
+  private scheduleSelfLook(key: string, observer: SelfTurnObserver, delayMs: number): void {
+    if (this.selfObservers.get(key) !== observer) return
+    if (observer.timer !== undefined) clearTimeout(observer.timer)
+    const timer: NodeJS.Timeout = setTimeout(() => {
+      if (observer.timer === timer) observer.timer = undefined
+      void this.selfLook(key, observer).catch((error: unknown) => {
+        this.ctx.logger.warn(`local-agent-kimi: looking for member ${key}'s self-opened turns failed: ${thrown(error).message}`)
+        this.scheduleSelfLook(key, observer, this.timeouts.selfTurnObserveMs ?? SELF_TURN_OBSERVE_MS)
+      })
+    }, Math.max(0, delayMs))
+    timer.unref?.()
+    observer.timer = timer
+  }
+
+  /** The member's kimi session directory (the wire's home), or undefined when not found yet. */
+  private async memberSessionDir(key: string, runtime: KimiLiveRuntime): Promise<string | undefined> {
+    const spec = this.lastSpecs.get(key)
+    const recorded = runtime.sessionId === undefined ? spec?.resume?.cliSessionId : bareKimiSessionId(runtime.sessionId)
+    if (spec === undefined || recorded === undefined) return undefined
+    return await findKimiSessionDir(spec.homeDir, recorded).catch(() => undefined)
+  }
+
+  /** One look of the self-turn observer (see {@link watchSelfTurns}). */
+  private async selfLook(key: string, observer: SelfTurnObserver): Promise<void> {
+    const every = this.timeouts.selfTurnObserveMs ?? SELF_TURN_OBSERVE_MS
+    const rt = observer.runtime
+    const current = (): boolean => this.selfObservers.get(key) === observer && !this.disposed && !rt.dead && this.runtimes.get(key) === rt
+    if (!current()) {
+      if (this.selfObservers.get(key) === observer) this.stopSelfObserver(key)
+      return
+    }
+    // A round of ours owns the wire meanwhile: it waits for a self turn itself
+    // (prompt-waits-for-self-turn), and the 11-01 fold covers what it saw.
+    if ((this.roundsInFlight.get(key) ?? 0) > 0) {
+      this.scheduleSelfLook(key, observer, every)
+      return
+    }
+    observer.dir ??= await this.memberSessionDir(key, rt)
+    if (observer.dir !== undefined) {
+      const path = wirePath(observer.dir)
+      const size = await stat(path).then(meta => meta.size, () => -1)
+      // Unchanged since the last read: nothing new (a task ending writes its
+      // `task.terminated` to the wire, so the stop check below waits for growth too).
+      if (size >= 0 && size === observer.size) {
+        this.scheduleSelfLook(key, observer, every)
+        return
+      }
+      const wire = size < 0 ? '' : await readFile(path, 'utf8').catch(() => '')
+      observer.size = size
+      if (!current()) return
+      if ((this.roundsInFlight.get(key) ?? 0) > 0) {
+        observer.size = -1
+        this.scheduleSelfLook(key, observer, every)
+        return
+      }
+      const next = nextSelfTurn(wire, rt.spawnedAt, rt.selfTurnsHandled)
+      if (next !== undefined) {
+        rt.selfTurnsHandled.add(next.line)
+        await this.offerSelfTurn(key, rt, observer.dir, wire, next)
+        observer.size = -1
+        this.scheduleSelfLook(key, observer, 0)
+        return
+      }
+    }
+    const work = await this.readBackgroundWork(key, rt)
+    if (!current()) return
+    if ((work?.runningTaskIds.length ?? 0) === 0 && work?.selfTurnOpen !== true) {
+      this.stopSelfObserver(key)
+      return
+    }
+    this.scheduleSelfLook(key, observer, every)
+  }
+
+  /**
+   * Offer one self-opened turn to the core (A②). Only a background task's
+   * notification that names its task, status and notification id becomes an
+   * execution — the mirror pairs the round by that id (A③). Anything else
+   * (`cron_job`, `system_trigger`, an older kimi without the id), a core
+   * without `admitSelf`, or a refusal (the member's slot is taken) leaves the
+   * turn to the 11-01 fold: it joins the member's next round.
+   */
+  private async offerSelfTurn(key: string, rt: KimiLiveRuntime, dir: string, wire: string, prompt: SelfTurnPrompt): Promise<void> {
+    if (!isTaskOrigin(prompt.origin) || prompt.taskId === undefined || prompt.taskStatus === undefined || prompt.notificationId === undefined) {
+      this.ctx.logger.warn(`local-agent-kimi: kimi opened a turn on its own for member ${key} (origin ${prompt.origin}); it joins the member's next round`)
+      return
+    }
+    const registry = this.ctx.get('localAgent') as { admitSelf?: (request: LocalAgentSelfAdmissionRequest) => Promise<LocalAgentSelfAdmission | undefined> } | undefined
+    if (typeof registry?.admitSelf !== 'function') return
+    const taskCallId = await kimiTaskCallId(dir, wire, prompt.taskId)
+    const taskId = prompt.taskId
+    let admission: LocalAgentSelfAdmission | undefined
+    try {
+      admission = await registry.admitSelf({
+        childSessionId: key,
+        provider: 'kimi-cli',
+        cause: { kind: 'self', reason: 'background-task', taskId, taskStatus: prompt.taskStatus, notificationId: prompt.notificationId },
+        ...taskCallId === undefined ? {} : { taskCallId },
+        follow: ({ session, signal }) => this.followSelfTurn(key, rt, dir, prompt, session, signal),
+      })
+    } catch (error) {
+      this.ctx.logger.warn(`local-agent-kimi: admitting member ${key}'s self-opened turn failed: ${thrown(error).message}`)
+      return
+    }
+    if (admission === undefined) {
+      this.ctx.logger.info(`local-agent-kimi: member ${key}'s self-opened turn (${prompt.notificationId}) was not admitted; it joins the member's next round`)
+      return
+    }
+    await admission.settled
+  }
+
+  /**
+   * Follow one admitted self-opened turn (A③) and mirror it into the child
+   * session as a turn of its own: no user message (the notification is not
+   * the human's), its steps folded from the wire as they close (ACP pushes
+   * nothing for a turn it did not drive), the round's spend reported like any
+   * round's. It holds the member's round chain, so a reload or the next
+   * prompt waits for it. kimi cannot be told to stop it: a cancel ends the
+   * following only, and the next prompt then waits for the turn to end.
+   * @returns the round's result (its answer is the turn's text, one paragraph per model step).
+   */
+  private async followSelfTurn(key: string, rt: KimiLiveRuntime, dir: string, prompt: SelfTurnPrompt, session: Session, signal: AbortSignal): Promise<SubagentResult> {
+    const spec = this.lastSpecs.get(key)
+    if (spec === undefined || rt.sessionId === undefined) throw new Error('subagent-kimi: the member has no resident session to follow')
+    const homeDir = spec.homeDir
+    const cliSessionId = bareKimiSessionId(rt.sessionId)
+    const pollMs = this.timeouts.selfTurnPollMs ?? SELF_TURN_POLL_MS
+    const waitMs = this.timeouts.selfTurnWaitMs ?? SELF_TURN_WAIT_MS
+    this.clearIdleTimer(key)
+    let release!: () => void
+    const done = new Promise<void>((resolve) => { release = resolve })
+    this.roundChains.set(key, (this.roundChains.get(key) ?? Promise.resolve()).catch(() => {}).then(() => done))
+    this.roundsInFlight.set(key, (this.roundsInFlight.get(key) ?? 0) + 1)
+    rt.turnChain = rt.turnChain.catch(() => {}).then(() => done)
+    const turn = session.snapshotEvents().filter(event => event.type === 'turn/start').length + 1
+    const startedAt = Date.now()
+    let segments: readonly string[] = []
+    let stopReason: SubagentStopReason = 'completed'
+    let diagnostic: string | undefined
+    let roundUsage: TokenUsage | undefined
+    let roundModel: string | undefined
+    const pass = async (settle: boolean): Promise<void> => {
+      const delta = await mirrorKimiDelta(this.ctx, session, homeDir, cliSessionId, { throughTurn: turn, ...settle ? { settle: true } : {} })
+      if (delta.usageUnattached !== undefined) roundUsage = addTokenUsage(roundUsage, delta.usageUnattached)
+      if (delta.model !== undefined) roundModel = delta.model
+    }
+    try {
+      openMirrorTurn(session, turn, 'live')
+      const deadline = Date.now() + waitMs
+      for (;;) {
+        const state = readTurnAt(await readFile(wirePath(dir), 'utf8').catch(() => ''), prompt.line)
+        segments = state.segments
+        await pass(false).catch((error: unknown) => { this.ctx.logger.warn(`subagent-kimi: self-turn mirror pass failed: ${thrown(error).message}`) })
+        if (state.phase === 'ended') {
+          stopReason = turnEndedStopReason(state.reason)
+          if (stopReason !== 'completed') diagnostic = `kimi's own turn ended ${state.reason}`
+          break
+        }
+        if (signal.aborted || rt.dead || Date.now() >= deadline) {
+          stopReason = signal.aborted ? 'aborted' : 'error'
+          diagnostic = signal.aborted ? 'stopped following kimi\'s own turn' : rt.dead ? 'the live runtime exited during kimi\'s own turn' : `kimi's own turn outlasted ${waitMs}ms`
+          // kimi still runs it: the next prompt waits for any open turn.
+          rt.queuedTurnAbandoned = true
+          break
+        }
+        await delay(pollMs)
+      }
+      await pass(true).catch((error: unknown) => { this.ctx.logger.warn(`subagent-kimi: self-turn settle mirror failed: ${thrown(error).message}`) })
+    } finally {
+      try {
+        closeMirrorTurn(session, turn, stopReason, 'kimi\'s own turn did not complete')
+        await this.recordRoundContext(session, undefined, { homeDir, sessionId: cliSessionId, line: prompt.line }, startedAt).catch(() => undefined)
+        let usage: TokenUsage | undefined
+        for (const event of session.snapshotEvents()) {
+          if (event.type !== 'assistant/message') continue
+          const data = event.data as { turn?: number; usage?: TokenUsage }
+          if (data.turn === turn && data.usage !== undefined) usage = addTokenUsage(usage, data.usage)
+        }
+        usage = addTokenUsage(usage, roundUsage)
+        this.ctx.get('localAgent')?.recordRoundSettled(session.id, {
+          ...roundModel === undefined ? {} : { observedModel: roundModel },
+          ...usage === undefined ? {} : { usage },
+        })
+        await persistChildSession(this.ctx, session).catch((error: unknown) => {
+          this.ctx.logger.warn(`subagent-kimi: self-turn persistence failed: ${thrown(error).message}`)
+        })
+      } finally {
+        const left = (this.roundsInFlight.get(key) ?? 1) - 1
+        if (left > 0) this.roundsInFlight.set(key, left)
+        else this.roundsInFlight.delete(key)
+        release()
+        if (this.runtimes.get(key) === rt) this.armIdleTimer(key)
+      }
+    }
+    const text = segments.reduce((joined, segment) => joined + textSegmentSeparator(joined, segment) + segment, '')
+    return {
+      stopReason,
+      output: text.trim() === '' ? [] : [{ type: 'text', text }],
+      ...diagnostic === undefined ? {} : { diagnostic },
+    }
+  }
+
+  /**
    * Tell the owner which running tasks lose their process with this reclaim
    * (`process-reclaimed`). Kimi's task files keep saying `running` after the
    * process is gone, so reading them before or after the kill is the same.
@@ -842,6 +1122,7 @@ export class KimiAcpLiveDriver {
   private async reclaim(key: string, options: { readonly noteTasks?: boolean } = {}): Promise<void> {
     const runtime = this.runtimes.get(key)
     this.clearIdleTimer(key)
+    this.stopSelfObserver(key)
     this.lastActivity.delete(key)
     this.observedTasks.delete(key)
     if (runtime === undefined) return
@@ -1976,7 +2257,9 @@ export class KimiAcpLiveDriver {
         }
       },
     }
-    const mirrorOptions = (settle = false): KimiMirrorOptions => ({ streams: mirrorStreams, ...settle ? { settle: true } : {} })
+    // A turn kimi opens on its own after this round's never folds into it:
+    // that turn is the next round's, or a self-opened round's own.
+    const mirrorOptions = (settle = false): KimiMirrorOptions => ({ streams: mirrorStreams, throughTurn: turn, ...settle ? { settle: true } : {} })
 
     /**
      * Observation accounting across mirror passes: a pass whose window
