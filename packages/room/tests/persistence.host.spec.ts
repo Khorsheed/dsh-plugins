@@ -149,6 +149,7 @@ describe('room journal persistence', () => {
       session.append('room/help-unlink', { sessionId: 'other' })
       session.append('room/member-compacted', { member: 'ada', memberId: 'm', runId: 'c', outcome: 'completed', summary: '摘要', beforeTokens: 9, afterTokens: 1 })
       session.append('room/member-tools', { member: 'ada', memberId: 'm', kind: 'reloaded', preset: 'gamedev', during: 'round' })
+      session.append('room/background-task', { member: 'ada', memberId: 'm', taskId: 'bash-icfn1mfm', label: '部署 canvas-novel 到 3080', state: 'lost', because: 'host-restart', startedByRunId: 'a' })
       session.append('room/help-in', { id: 'h2', room: 'other', roomTitle: '剪辑', from: 'dsh', member: 'gm', text: '帮忙', op: 'request' })
       expect(await service.planCommand({ sessionId, command: JSON.stringify({ action: 'create', requestId: 'persist-goal', expectedRevision: 0, id: 'goal', objective: 'Verify persistence', mode: 'draft', budget: { maxParallel: 1, maxAttempts: 3, maxAttemptsPerTask: 2, maxActiveMs: 60000 } }) })).toEqual({ ok: true })
       session.append('room/coordinator', { version: 1, memberId: 'legacy:1', previousMemberId: 'legacy:1', revision: 1, handoff: 'Continue' })
