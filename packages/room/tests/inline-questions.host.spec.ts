@@ -13,7 +13,29 @@ describe('inline questions', () => {
       { type: 'assistant/message', seq: 4, data: { message: { content: [{ type: 'reasoning', text: '想' }, { type: 'text', text: '我建议神灵各自承担一种仪式。' }] } } },
       { type: 'assistant/message', seq: 5, data: { message: { content: [{ type: 'text', text: '第一批你想先刻画哪一组？' }] } } },
     ] as never
-    expect(roundTextSoFar(events)).toBe('我建议神灵各自承担一种仪式。第一批你想先刻画哪一组？')
+    // Each model call is a segment; segments read as paragraphs, like the provider's round output.
+    expect(roundTextSoFar(events)).toBe('我建议神灵各自承担一种仪式。\n\n第一批你想先刻画哪一组？')
+  })
+
+  it('a tail spanning two segments still finds its place in the paragraphed reply', () => {
+    const child = [
+      { type: 'turn/start', seq: 1, data: { turn: 1 } },
+      { type: 'assistant/message', seq: 2, data: { message: { content: [{ type: 'text', text: '我建议神灵各自承担一种仪式。' }] } } },
+      { type: 'assistant/message', seq: 3, data: { message: { content: [{ type: 'tool_call', id: 't' }] } } },
+      { type: 'assistant/message', seq: 4, data: { message: { content: [{ type: 'text', text: '先定哪组？' }] } } },
+    ] as never
+    const before = roundTextSoFar(child)
+    // The provider's output joins the same segments with the same blank line.
+    const reply = '我建议神灵各自承担一种仪式。\n\n先定哪组？\n\n那就先深化阿努比斯。'
+    expect(reply.startsWith(before)).toBe(true)
+    expect(askOffsets([q(1, { id: 'a', runId: 'r', before })], 'r', reply)).toEqual([{ id: 'a', at: before.length }])
+    // A segment already ending in a blank line gains no extra one.
+    const ended = [
+      { type: 'turn/start', seq: 1, data: { turn: 1 } },
+      { type: 'assistant/message', seq: 2, data: { message: { content: [{ type: 'text', text: '列表：\n- 一\n' }] } } },
+      { type: 'assistant/message', seq: 3, data: { message: { content: [{ type: 'text', text: '完。' }] } } },
+    ] as never
+    expect(roundTextSoFar(ended)).toBe('列表：\n- 一\n\n完。')
   })
 
   it('places each question after the text said before it; none said → 0; tail lost → -1', () => {
