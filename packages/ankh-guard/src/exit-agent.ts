@@ -11,6 +11,8 @@
  *   WD_DELAY_MS=MS     delay before the kill, so the scheduling turn finishes
  *   WD_RESULT_FILE=F   the restart record written after the attempt
  *   WD_INITIATOR=ID    session that scheduled the exit (rides into the record)
+ *   WD_INITIATOR_MEMBER=ID  local-agent member (child session id) whose process
+ *                      scheduled the exit (rides into the record as `initiatorMember`)
  */
 import { writeFileSync } from 'node:fs'
 import { isDirectInvocation } from './defaults.ts'
@@ -23,15 +25,20 @@ export interface ExitAgentEnv {
   WD_DELAY_MS?: string
   WD_RESULT_FILE?: string
   WD_INITIATOR?: string
+  WD_INITIATOR_MEMBER?: string
 }
 
 /**
  * One exit attempt: SIGTERM the listener on {@link port} and record the
  * outcome. Extracted from the timer so tests can drive it directly.
  */
-export function performExit(port: number, resultFile: string, initiator: string | undefined): void {
+export function performExit(port: number, resultFile: string, initiator: string | undefined, initiatorMember?: string): void {
   const record = (fields: Record<string, unknown>): string =>
-    JSON.stringify({ ...fields, ...(initiator !== undefined ? { initiator } : {}) })
+    JSON.stringify({
+      ...fields,
+      ...(initiator !== undefined ? { initiator } : {}),
+      ...(initiatorMember !== undefined && initiatorMember !== '' ? { initiatorMember } : {}),
+    })
   try {
     const pid = findPidOnPort(port)
     const pidNumber = pid === null ? NaN : Number(pid)
@@ -55,7 +62,7 @@ export function exitAgentMain(env: ExitAgentEnv = process.env): void {
     process.stderr.write('exit-agent: WD_PORT, WD_DELAY_MS and WD_RESULT_FILE are required\n')
     process.exit(2)
   }
-  setTimeout(() => { performExit(port, resultFile, env.WD_INITIATOR) }, delayMs)
+  setTimeout(() => { performExit(port, resultFile, env.WD_INITIATOR, env.WD_INITIATOR_MEMBER) }, delayMs)
 }
 
 // Direct invocation only: imported (tests, bundling) it must never fire.

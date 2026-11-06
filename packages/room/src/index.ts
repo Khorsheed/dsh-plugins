@@ -63,6 +63,7 @@ import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
 import { resolveTaskRef } from './jobs.ts'
 import { AUTO_CONTINUE_MOVED_ON_TEXT, autoContinueRounds, interruptedRounds, RESTART_CONTINUE_TEXT, type InterruptedRound } from './restart-continue.ts'
 import { suggestTask } from './report-gate.ts'
+import { loadEach, STARTUP_ROOM_LOAD_CONCURRENCY, STARTUP_ROOM_LOAD_DELAY_MS } from './startup-load.ts'
 import { decisionRecord } from './decisions.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { askerPrompt, claimed, helperTools, helpMessage, memberFromLabel, mentionedSessions, messagePrompt, readHelpSource, receivedHelps, referencedSessions, replayHelps, requestPrompt, turnAnswer, type HelpSource } from './help.ts'
@@ -361,6 +362,17 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       },
     })
     ctx.effect(() => () => this.plans.dispose())
+    // M10 (user decision 7): once after the host starts, load the rooms whose
+    // members a restart interrupted, so auto-continue does not wait for
+    // someone to open them. See startup-load.ts.
+    ctx.effect(() => {
+      let stopped = false
+      const timer = setTimeout(() => {
+        void this.loadInterruptedRooms(() => stopped).catch((error: unknown) => { this.ctx.logger.warn(`room: startup load of interrupted rooms failed: ${String(error)}`) })
+      }, STARTUP_ROOM_LOAD_DELAY_MS)
+      timer.unref?.()
+      return () => { stopped = true; clearTimeout(timer) }
+    }, 'room: startup load of interrupted rooms')
     // STOPGAP(session-activity-contribution): the status re-announce stops with the plugin.
     ctx.effect(() => () => this.stopStatusBeat())
     // The human talking to the room's own agent directly (the official input
@@ -603,6 +615,36 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     for (const { seq, targets, carry } of sent) {
       for (const target of targets) this.engine.dispatch(session, target, carry(target, RESTART_CONTINUE_TEXT), { dispatchSeq: seq })
     }
+  }
+
+  /**
+   * The startup load (M10): every parent session the local-agent core names
+   * as having a member a restart interrupted, that is a room with rounds the
+   * room continues on its own right now (`autoContinueRounds` on the cold
+   * projection — the setting off, a paused room and every other M9 guard
+   * leave it unloaded), is brought live once, which runs recovery and the
+   * auto-continue pass. A core without the read, or none interrupted: no-op.
+   * @param stopped - whether the plugin went away meanwhile.
+   * @returns the rooms it loaded.
+   */
+  async loadInterruptedRooms(stopped: () => boolean = () => false): Promise<string[]> {
+    let parents: readonly string[]
+    try {
+      parents = probeLocalAgent(this.ctx)?.interruptedMemberParents?.() ?? []
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`room: reading interrupted members failed: ${String(error)}`)
+      return []
+    }
+    return await loadEach(parents, async (id) => {
+      const sessionId = SessionId(id)
+      const cold = await this.loadCold(sessionId)
+      if (!cold.ok || autoContinueRounds(this.engine.view(sessionId, cold.state)).length === 0) return false
+      return (await this.ensureLive(sessionId)).ok
+    }, {
+      concurrency: STARTUP_ROOM_LOAD_CONCURRENCY,
+      stopped,
+      onError: (id, error) => { this.ctx.logger.warn(`room: startup load of room ${id} failed: ${String(error)}`) },
+    })
   }
 
   /**

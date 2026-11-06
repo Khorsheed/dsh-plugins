@@ -24,9 +24,9 @@ import {
   processIdentityMatches, signalProcessIdentity,
 } from '../src/processes.ts'
 import {
-  acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, isExternalCoordinatorRoom, isParkedOnUserInput, pendingRestartRecord,
-  readInstanceLaunch, readInterruptedSnapshot, restartContextText, writeInstanceLaunch,
-  writeInstanceLaunchAsSupervisor, writeInterruptedSnapshot, writeSkillRegistration,
+  acknowledgeRestartRecord, buildLaunchCommand, continueAndReportText, initiatorMemberFromEnv, isExternalCoordinatorRoom, isParkedOnUserInput, pendingRestartRecord,
+  readInstanceLaunch, readInterruptedSnapshot, restartContextText, writeCompositionRecovery, writeInstanceLaunch,
+  writeInstanceLaunchAsSupervisor, writeInterruptedSnapshot, writeRestartOutcome, writeSkillRegistration,
 } from '../src/restart-context.ts'
 import { performExit } from '../src/exit-agent.ts'
 import {
@@ -1518,6 +1518,29 @@ tryListen();
     const marker = JSON.parse(readFileSync(join(stateDir, STATE_FILES.restartRequested), 'utf8'))
     expect(marker.bootTimeoutMs).toBe(42000)
     expect(marker.reason).toBe('scheduled self-restart')
+  })
+
+  it('schedule-exit run inside a local-agent member records that member as the initiator member (M10)', async () => {
+    const stateDir = tmpDir('guard-schedule-member-')
+    const repo = makeRepo()
+    const port = await freePort()
+    expect(await runCli([
+      'record', 'build', '--trust-command', '--command', 'test fixture', '--state-dir', stateDir, '--repo', repo,
+    ], io().io)).toBe(0)
+    markLiveWatchdog(stateDir)
+    stubPreflight('true')
+    const previous = process.env.DSH_LOCAL_AGENT_MEMBER
+    process.env.DSH_LOCAL_AGENT_MEMBER = 'child-kimi-canvas'
+    cleanups.push(() => {
+      if (previous === undefined) delete process.env.DSH_LOCAL_AGENT_MEMBER
+      else process.env.DSH_LOCAL_AGENT_MEMBER = previous
+    })
+    // A long delay: only the marker write is under assertion.
+    expect(await runCli([
+      'schedule-exit', '--port', String(port), '--delay-ms', '60000', '--state-dir', stateDir, '--repo', repo,
+    ], io().io)).toBe(0)
+    const marker = JSON.parse(readFileSync(join(stateDir, STATE_FILES.restartRequested), 'utf8'))
+    expect(marker.initiatorMember).toBe('child-kimi-canvas')
   })
 })
 
@@ -4535,6 +4558,31 @@ describe('restart context injection', () => {
     }
   })
 
+  it('an ownerless record is not claimed by a room loaded at boot; the next ordinary session reports it, a room it names still gets it (M10)', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-ctx-room-')
+    writeFileSync(join(stateDir, 'last-restart.json'), JSON.stringify({ exitAt: 1_700_000_000_000, unexpected: true }))
+    const roomEvents = [{ type: 'room/created', seq: 1, data: {} }]
+    const room = { id: 'room-1', followup: vi.fn(), session: { snapshotEvents: () => roomEvents } }
+    const plain = { id: 'session-2', followup: vi.fn(), session: { snapshotEvents: () => [] } }
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    ctx.provide('agents', { roots: () => [room, plain], list: () => [room, plain] } as never)
+    const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5, resumeInterrupted: false })
+    await fiber.await()
+    ctx.emit('agent/created', { agent: room as never })
+    expect(room.followup).not.toHaveBeenCalled()
+    expect(pendingRestartRecord(stateDir)).not.toBeNull()
+    ctx.emit('agent/created', { agent: plain as never })
+    expect(plain.followup).toHaveBeenCalledTimes(1)
+    expect(pendingRestartRecord(stateDir)).toBeNull()
+    // A record whose initiator IS the room is delivered there.
+    writeFileSync(join(stateDir, 'last-restart.json'), JSON.stringify({ exitAt: 1_700_000_000_001, initiator: 'room-1' }))
+    ctx.emit('agent/created', { agent: room as never })
+    expect(room.followup).toHaveBeenCalledTimes(1)
+    await fiber.dispose()
+  })
+
   it('does not followup for a non-root (subagent) agent', async () => {
     const repo = makeRepo()
     const stateDir = tmpDir('guard-ctx-')
@@ -5206,6 +5254,59 @@ describe('restart context injection', () => {
     } finally {
       await killListener(port)
     }
+  })
+
+  it('exit-agent performExit records the initiating member next to the session (M10)', () => {
+    const resultFile = join(tmpDir('guard-cli-'), 'last-restart.json')
+    performExit(1, resultFile, 'session-x', 'child-ada')
+    expect(JSON.parse(readFileSync(resultFile, 'utf8'))).toMatchObject({ initiator: 'session-x', initiatorMember: 'child-ada' })
+    performExit(1, resultFile, 'session-x', '')
+    expect(JSON.parse(readFileSync(resultFile, 'utf8')).initiatorMember).toBeUndefined()
+  })
+
+  it('initiatorMemberFromEnv reads DSH_LOCAL_AGENT_MEMBER; blank or absent is no member', () => {
+    expect(initiatorMemberFromEnv({ DSH_LOCAL_AGENT_MEMBER: 'child-ada' })).toBe('child-ada')
+    expect(initiatorMemberFromEnv({ DSH_LOCAL_AGENT_MEMBER: '  ' })).toBeUndefined()
+    expect(initiatorMemberFromEnv({})).toBeUndefined()
+  })
+
+  it('the restart verb outcome and a composition recovery keep the initiating member', () => {
+    const stateDir = tmpDir('guard-ctx-member-')
+    writeRestartOutcome(stateDir, { exitAt: NOW, pid: 7, initiator: 'session-x', initiatorMember: 'child-ada' })
+    expect(pendingRestartRecord(stateDir)).toMatchObject({ initiator: 'session-x', initiatorMember: 'child-ada' })
+    expect(writeCompositionRecovery(stateDir, NOW + 1, 'rows')).toBe(true)
+    expect(pendingRestartRecord(stateDir)).toMatchObject({ compositionRecovered: true, initiator: 'session-x', initiatorMember: 'child-ada' })
+  })
+
+  it('selfRestartGuard.lastRestart() reads this boot\'s restart record synchronously, reported or not, with or without the member', async () => {
+    const repo = makeRepo()
+    const stateDir = tmpDir('guard-last-restart-')
+    const ctx = new Context()
+    await ctx.plugin(Loader)
+    ctx.provide('agents', { roots: () => [], list: () => [] } as never)
+    const fiber = ctx.plugin(selfRestartGuard, { stateDir, repoDir: repo, maxAgeMinutes: 5, reportRestartContext: 'off', resumeInterrupted: false })
+    await fiber.await()
+    const file = join(stateDir, STATE_FILES.lastRestart)
+    // No record yet.
+    expect(ctx.selfRestartGuard.lastRestart()).toBeNull()
+    // A member's restart, already reported to its session: still readable.
+    const exitAt = Date.now()
+    writeFileSync(file, JSON.stringify({ exitAt, pid: 9, initiator: 'session-x', initiatorMember: 'child-ada', reportedAt: exitAt + 10 }))
+    expect(ctx.selfRestartGuard.lastRestart()).toMatchObject({ exitAt, initiator: 'session-x', initiatorMember: 'child-ada' })
+    // A record written before the field existed reads fine, without it.
+    writeFileSync(file, JSON.stringify({ exitAt, pid: 9, initiator: 'session-x' }))
+    const old = ctx.selfRestartGuard.lastRestart()
+    expect(old).toMatchObject({ exitAt, initiator: 'session-x' })
+    expect(old?.initiatorMember).toBeUndefined()
+    // A restart of an earlier boot (long before this process started) is not this boot's.
+    writeFileSync(file, JSON.stringify({ exitAt: 1_700_000_000_000, initiatorMember: 'child-ada' }))
+    expect(ctx.selfRestartGuard.lastRestart()).toBeNull()
+    // No exit happened (the exit agent found no listener), or the file is unreadable.
+    writeFileSync(file, JSON.stringify({ error: 'no listener on port 1', initiatorMember: 'child-ada' }))
+    expect(ctx.selfRestartGuard.lastRestart()).toBeNull()
+    writeFileSync(file, '{not json')
+    expect(ctx.selfRestartGuard.lastRestart()).toBeNull()
+    await fiber.dispose()
   })
 
   it('exit-agent performExit records an error when nothing listens', () => {

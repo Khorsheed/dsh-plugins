@@ -1371,6 +1371,24 @@ export class LocalAgentRegistry {
     return this.memberInbox.read(childSessionId)
   }
 
+  /**
+   * The parent sessions of members a restart left with an execution of
+   * unknown outcome (M10): the room loads those of them that are rooms once
+   * after the host starts, so its auto-continue pass runs without anyone
+   * opening the room. Reads the ledger files only (no model call, nothing
+   * converted); a member whose identity is unknown (its provider is not
+   * registered) is left out.
+   * @returns distinct parent session ids.
+   */
+  interruptedMemberParents(): string[] {
+    const parents = new Set<string>()
+    for (const childSessionId of this.memberInbox.interruptedMembers()) {
+      const parent = this.memberBinding(childSessionId)?.parentSessionId
+      if (parent !== undefined && parent !== '') parents.add(parent)
+    }
+    return [...parents]
+  }
+
   /** Rounds of the member waiting for admission: queued ledger rows, or provider starts waiting outside the ledger. */
   queuedMemberRounds(childSessionId: string): number {
     let ledger = 0
