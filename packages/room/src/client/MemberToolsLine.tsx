@@ -12,7 +12,8 @@
  * polls while the dialog is open, faster while a reload is in flight.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsStatus } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsReloadOptions, LocalAgentMemberToolsStatus } from '@khorsheed/dsh-local-agent/types'
+import { BackgroundConfirm } from './MemberActivity.tsx'
 import type { MembersViewProps } from './slots.ts'
 import { clock, count, memberToolsLine } from './member-tools-view.ts'
 import css from './MemberToolsLine.module.css'
@@ -32,7 +33,8 @@ export interface MemberToolsLineProps {
   /** The member is running a round: a reload waits for it to end. */
   readonly running: boolean
   readonly read: (childSessionId: string) => Promise<LocalAgentMemberToolsStatus | null | undefined>
-  readonly reload: (childSessionId: string) => Promise<LocalAgentMemberToolsReload | undefined>
+  /** `confirmBackgroundTasks` only after the human confirmed cutting off the process's background work. */
+  readonly reload: (childSessionId: string, options?: LocalAgentMemberToolsReloadOptions) => Promise<LocalAgentMemberToolsReload | undefined>
   /**
    * Before 立即载入 / 重新载入: recover a member whose last start failed
    * (对账并重试 first). Resolves undefined to go on, or the new reason when
@@ -55,6 +57,9 @@ export function MemberToolsLine({ childSessionId, modeName, provider, running, r
   // What the last click asked for: replace the process (重新载入) or start
   // one where there was none (立即载入); the in-place states word it.
   const [action, setAction] = useState<'reload' | 'start'>('reload')
+  // The host refused because the process runs background tasks: how many,
+  // until the human confirms (继续 asks again with the confirmation) or cancels.
+  const [confirm, setConfirm] = useState<{ readonly running: number; readonly kind: 'reload' | 'start' } | undefined>(undefined)
   const alive = useRef(true)
   useEffect(() => () => { alive.current = false }, [])
 
@@ -73,11 +78,12 @@ export function MemberToolsLine({ childSessionId, modeName, provider, running, r
   const state = memberToolsLine(status, clickedAt)
   if (state.kind === 'hidden') return null
 
-  const ask = async (kind: 'reload' | 'start' = 'reload'): Promise<void> => {
+  const ask = async (kind: 'reload' | 'start' = 'reload', confirmed = false): Promise<void> => {
     setClickedAt(Date.now())
     setAction(kind)
     setRefusal(undefined)
     setStartError(undefined)
+    setConfirm(undefined)
     // A member whose last start failed is recovered first (the host does
     // the same; this also covers a core that does not).
     const stuck = await recover?.().catch(() => undefined)
@@ -90,9 +96,15 @@ export function MemberToolsLine({ childSessionId, modeName, provider, running, r
     }
     // 立即载入 goes through the same request: with no process, the host
     // starts one instead of replacing it.
-    const answer = await reload(childSessionId).catch(() => undefined)
+    const answer = await (confirmed ? reload(childSessionId, { confirmBackgroundTasks: true }) : reload(childSessionId)).catch(() => undefined)
     if (!alive.current) return
     if (answer !== undefined && !answer.ok) {
+      if (answer.reason === 'background-tasks') {
+        // Nothing was done: confirm in place before cutting the background work off.
+        setConfirm({ running: answer.running, kind })
+        setClickedAt(undefined)
+        return
+      }
       if (answer.reason === 'start-failed') { setStartError(answer.error); setClickedAt(undefined) }
       else if (answer.reason === 'no-process' || answer.reason === 'unsupported' || answer.reason === 'busy') setRefusal(answer.reason)
     }
@@ -206,6 +218,14 @@ export function MemberToolsLine({ childSessionId, modeName, provider, running, r
       </div>
       {below}
       {refused}
+      {confirm !== undefined && (
+        <BackgroundConfirm
+          count={confirm.running}
+          onConfirm={() => { void ask(confirm.kind, true) }}
+          onCancel={() => { setConfirm(undefined) }}
+          t={t}
+        />
+      )}
     </div>
   )
 }

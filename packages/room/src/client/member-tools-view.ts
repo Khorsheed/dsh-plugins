@@ -5,7 +5,32 @@
  * reload) → one of the line's states. Kept apart from the component so every
  * state is testable without rendering.
  */
-import type { LocalAgentMemberToolsStatus } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsReloadOptions, LocalAgentMemberToolsStatus } from '@khorsheed/dsh-local-agent/types'
+
+/**
+ * The 重新载入 / 立即载入 request over the localAgentGateway namespace
+ * (duck-typed: absent family or method, transport failure = undefined). The
+ * options ride along — `confirmBackgroundTasks` once the human confirmed
+ * cutting off the process's background work; an older core ignores them.
+ * @param gateway - the mounted namespace, when any.
+ * @param childSessionId - the member's session.
+ * @param options - the reload options.
+ */
+export async function reloadThroughGateway(
+  gateway: Record<string, unknown> | undefined,
+  childSessionId: string,
+  options?: LocalAgentMemberToolsReloadOptions,
+): Promise<LocalAgentMemberToolsReload | undefined> {
+  if (gateway === undefined || typeof gateway['reloadMemberTools'] !== 'function') return undefined
+  try {
+    const call = gateway['reloadMemberTools'] as
+      (child: string, options?: LocalAgentMemberToolsReloadOptions) => Promise<{ readonly ok: true; readonly value: LocalAgentMemberToolsReload } | { readonly ok: false }>
+    const carried = await (options === undefined ? call(childSessionId) : call(childSessionId, options))
+    return carried.ok ? carried.value : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /**
  * What the line shows. `total` is how many tools the mode has, undefined

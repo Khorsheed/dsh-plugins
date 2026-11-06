@@ -50,6 +50,8 @@ async function mount(options: {
   live?: boolean
   /** A configuration broker: the member's rounds and 立即载入 admit through its control. */
   configuration?: MemberConfigurationAdapter
+  /** The harness's background-task read (member-self-started-rounds). */
+  backgroundTasks?: LocalAgentHarness['backgroundTasks']
 } = {}) {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -84,6 +86,7 @@ async function mount(options: {
         return undefined
       }),
     },
+    ...options.backgroundTasks === undefined ? {} : { backgroundTasks: options.backgroundTasks },
     ...options.start === undefined ? {} : { canStartMember: options.start.can ?? (() => true), startMember: options.start.start },
     ...options.configuration === undefined ? {} : { modelBroker: { modelInfo: () => ({ choices: [], switchable: true }), configurationAdapter: () => options.configuration! } },
   } as never)
@@ -257,6 +260,32 @@ describe('reloading a member\'s tools', () => {
     const h = await mount()
     expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'no-process' })
     expect(await h.registry.reloadMemberTools('nobody')).toEqual({ ok: false, reason: 'unknown-member' })
+  })
+
+  it('running background tasks: refused until the caller confirms they lose their process', async () => {
+    const task = (id: string, state: 'running' | 'completed') => ({ id, label: id, kind: 'shell' as const, startedAt: 1, state })
+    const read = { supported: true, processAlive: true, tasks: [task('bash-1', 'running'), task('bash-2', 'running'), task('bash-0', 'completed')] }
+    const reloads: string[] = []
+    const h = await mount({
+      backgroundTasks: async () => read,
+      reload: (child) => { reloads.push(child); return { when: 'now', done: Promise.resolve('respawned') } satisfies LocalAgentMemberReload },
+    })
+    h.spawn()
+    // Nothing is done: the room asks 「会让 2 项后台工作失去联系」 first.
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: false, reason: 'background-tasks', running: 2 })
+    expect(reloads).toEqual([])
+    expect(await h.registry.reloadMemberTools(CHILD, { confirmBackgroundTasks: true })).toEqual({ ok: true, when: 'now' })
+    expect(reloads).toEqual([CHILD])
+  })
+
+  it('tasks of a process that is gone are not cut off by a reload: no question asked', async () => {
+    const read = { supported: true, processAlive: false, tasks: [{ id: 'bash-1', label: 'bash-1', kind: 'shell' as const, startedAt: 1, state: 'running' as const }] }
+    const h = await mount({
+      backgroundTasks: async () => read,
+      reload: () => ({ when: 'now', done: Promise.resolve('respawned') } satisfies LocalAgentMemberReload),
+    })
+    h.spawn()
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: true, when: 'now' })
   })
 })
 

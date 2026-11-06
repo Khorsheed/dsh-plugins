@@ -52,7 +52,7 @@ export function MembersView({
   sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, unlinkSession, updateMember, invite, listProviders, browseDirectory,
   modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator,
   renderMemberModelPicker, readMemberSelection, saveMemberSelection, memberTools, reloadMemberTools,
-  memberRecovery, retryMemberStart, reconcileMemberExecution, memberActivity, t,
+  memberRecovery, retryMemberStart, reconcileMemberExecution, memberActivity, runningBackgroundTasks, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -187,6 +187,7 @@ export function MembersView({
       memberRecovery={memberRecovery}
       retryMemberStart={retryMemberStart}
       reconcileMemberExecution={reconcileMemberExecution}
+      runningBackgroundTasks={runningBackgroundTasks}
       onSubmit={submitDialog}
       onClose={() => { setDialog(null) }}
       t={t}

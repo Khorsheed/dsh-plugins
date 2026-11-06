@@ -28,6 +28,7 @@ import type {
   LocalAgentMemberFeedRequest,
   LocalAgentMemberFeedEvent,
   LocalAgentMemberToolsReload,
+  LocalAgentMemberToolsReloadOptions,
   LocalAgentMemberToolsStatus,
   LocalAgentBackgroundTasks,
 } from './types.ts'
@@ -415,13 +416,16 @@ export default class LocalAgentGateway extends TypertRemoteService {
    * Reload a member's mode tools: replace its resident process with one that
    * resumes the same CLI session, now when idle, right after its round when
    * running (no round is interrupted, no model is called).
+   * A member running CLI background tasks is refused (`background-tasks`)
+   * until the caller confirms with `confirmBackgroundTasks: true`.
    * @param childSessionId - the dsh child session id of the member.
+   * @param options - the user's confirmation, when given.
    * @returns when it happens, or why it cannot.
    */
   @Remote('reloadMemberTools')
-  async reloadMemberTools(childSessionId: string): Promise<LocalAgentMemberToolsReload> {
+  async reloadMemberTools(childSessionId: string, options?: LocalAgentMemberToolsReloadOptions): Promise<LocalAgentMemberToolsReload> {
     const registry = this.ctx.localAgent
-    return typeof registry.reloadMemberTools === 'function' ? registry.reloadMemberTools(childSessionId) : { ok: false, reason: 'unsupported' }
+    return typeof registry.reloadMemberTools === 'function' ? registry.reloadMemberTools(childSessionId, options) : { ok: false, reason: 'unsupported' }
   }
 
   @Remote('memberModel')

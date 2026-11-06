@@ -34,6 +34,13 @@ export class LiveDriverSwitch {
   /** Retiring generations still draining their in-flight rounds. */
   private readonly draining = new Set<KimiAcpLiveDriver>()
   private readonly unwatch: () => void
+  /**
+   * Background tasks whose resident process a driver generation reclaimed
+   * while they ran, per member (in memory: a host restart reads every
+   * running task as `host-restart` instead). Kept across generations, so a
+   * settings drain's reclaim is remembered too.
+   */
+  private readonly reclaimedTasks = new Map<string, Set<string>>()
 
   constructor(
     private readonly ctx: Context,
@@ -82,6 +89,7 @@ export class LiveDriverSwitch {
         ...this.liveIdleMs === undefined ? {} : { liveIdleMs: this.liveIdleMs },
         ...this.model === undefined ? {} : { model: this.model },
         ...this.endpoint === undefined ? {} : { endpoint: this.endpoint },
+        onReclaimedWithTasks: (childSessionId, taskIds) => { this.noteReclaimed(childSessionId, taskIds) },
       })
       : undefined
     if (retiring !== undefined) {
@@ -128,6 +136,33 @@ export class LiveDriverSwitch {
     for (const driver of [this.active, ...this.draining]) {
       const configuration = driver?.runtimeConfiguration(childSessionId)
       if (configuration !== undefined) return configuration
+    }
+    return undefined
+  }
+
+  private noteReclaimed(childSessionId: string, taskIds: readonly string[]): void {
+    const known = this.reclaimedTasks.get(childSessionId) ?? new Set<string>()
+    for (const id of taskIds) known.add(id)
+    this.reclaimedTasks.set(childSessionId, known)
+  }
+
+  /**
+   * Whether a driver generation reclaimed the member's process while this
+   * task ran in it (the task read's `lostBecause: 'process-reclaimed'`).
+   */
+  wasReclaimedWith(childSessionId: string, taskId: string): boolean {
+    return this.reclaimedTasks.get(childSessionId)?.has(taskId) ?? false
+  }
+
+  /**
+   * The task read's running tasks, handed to the generation hosting the
+   * member: a change counts as activity there.
+   * @returns the latest time the resident process is kept for them, or
+   *   undefined (no resident process, nothing running).
+   */
+  observeBackgroundTasks(childSessionId: string, runningTaskIds: readonly string[]): number | undefined {
+    for (const driver of [this.active, ...this.draining]) {
+      if (driver?.hasRuntime(childSessionId) === true) return driver.observeBackgroundTasks(childSessionId, runningTaskIds)
     }
     return undefined
   }

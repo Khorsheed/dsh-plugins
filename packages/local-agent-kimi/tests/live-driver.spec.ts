@@ -17,7 +17,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
 import { AcpRequestError, acpStopReasonToHarness, DEFAULT_TIMEOUTS, KimiAcpLiveDriver, KimiSessionOccupiedError, textSegmentSeparator } from '../src/live-driver.ts'
 import { readKimiDefaultModel } from '../src/provision.ts'
@@ -2456,6 +2456,140 @@ describe('kimi live driver: turns kimi opens on its own (background task complet
     expect(result.stopReason).toBe('error')
     expect(promptedAfter).toBeLessThan(1_000)
     expect(prompts(fake)).toHaveLength(1)
+    await m.driver.disposeAll()
+  })
+})
+
+describe('kimi live driver: background tasks keep the resident process (keep-alive)', () => {
+  const IDLE = 1_000
+  const CAP = 10_000
+
+  /** A resident member whose background-work read the test controls, under a fake clock. */
+  async function residentWithWork(id: string, work: { running: string[]; selfTurnOpen?: boolean }) {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true })
+    const reclaimed: { key: string; taskIds: readonly string[] }[] = []
+    const m = mount({
+      config: {
+        liveIdleMs: IDLE,
+        keepAliveCapMs: CAP,
+        backgroundWork: async () => ({ runningTaskIds: [...work.running], selfTurnOpen: work.selfTurnOpen ?? false }),
+        onReclaimedWithTasks: (key, taskIds) => { reclaimed.push({ key, taskIds }) },
+      },
+    })
+    const child = Session.create(SessionId(id))
+    const fake = new FakeAcpServer({ turn: () => ({ chunks: ['后台跑着'] }) })
+    m.queueChild(fake)
+    await (await m.driver.startRound(request() as never, roundSpec(m, child))).result
+    expect(m.driver.liveCount).toBe(1)
+    return { m, fake, reclaimed }
+  }
+
+  afterEach(() => { vi.useRealTimers() })
+
+  it('tasks running: the idle lifetime passes and the process stays', async () => {
+    const work = { running: ['bash-1'] }
+    const { m, fake, reclaimed } = await residentWithWork('child-keep-1', work)
+    await vi.advanceTimersByTimeAsync(IDLE * 3)
+    expect(m.driver.liveCount).toBe(1)
+    expect(fake.stdinEnded || fake.terminated).toBe(false)
+    expect(reclaimed).toEqual([])
+    // The tray's 「进程最晚保留到」: the last activity plus the cap.
+    const until = m.driver.observeBackgroundTasks('child-keep-1', ['bash-1'])
+    expect(until).toBeGreaterThan(Date.now())
+    expect(until! - Date.now()).toBeLessThanOrEqual(CAP)
+    expect(m.driver.observeBackgroundTasks('child-keep-none', ['bash-1'])).toBeUndefined()
+    await m.driver.disposeAll()
+  })
+
+  it('the cap from the last activity reached: reclaimed as usual, the running tasks recorded process-reclaimed', async () => {
+    const work = { running: ['bash-1'] }
+    const { m, fake, reclaimed } = await residentWithWork('child-keep-2', work)
+    await vi.advanceTimersByTimeAsync(CAP - IDLE)
+    expect(m.driver.liveCount).toBe(1)
+    await vi.advanceTimersByTimeAsync(IDLE * 2)
+    await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
+    await vi.waitFor(() => { expect(fake.stdinEnded || fake.terminated).toBe(true) })
+    expect(reclaimed).toEqual([{ key: 'child-keep-2', taskIds: ['bash-1'] }])
+    await m.driver.disposeAll()
+  })
+
+  it('a change in the running tasks is activity: the cap counts again from it', async () => {
+    const work = { running: ['bash-1'] }
+    const { m } = await residentWithWork('child-keep-3', work)
+    await vi.advanceTimersByTimeAsync(CAP - IDLE * 2)
+    work.running = ['bash-1', 'bash-2']
+    await vi.advanceTimersByTimeAsync(IDLE * 3)
+    // Past the first deadline, still kept: bash-2 started (activity).
+    expect(m.driver.liveCount).toBe(1)
+    await vi.advanceTimersByTimeAsync(CAP)
+    await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
+    await m.driver.disposeAll()
+  })
+
+  it('an open self turn keeps the process too', async () => {
+    const work = { running: [] as string[], selfTurnOpen: true }
+    const { m, reclaimed } = await residentWithWork('child-keep-4', work)
+    await vi.advanceTimersByTimeAsync(IDLE * 3)
+    expect(m.driver.liveCount).toBe(1)
+    work.selfTurnOpen = false
+    await vi.advanceTimersByTimeAsync(IDLE * 2)
+    await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
+    expect(reclaimed).toEqual([])
+    await m.driver.disposeAll()
+  })
+
+  it('tasks end: one normal idle lifetime from then, then reclaimed with nothing to record', async () => {
+    const work = { running: ['bash-1'] }
+    const { m, fake, reclaimed } = await residentWithWork('child-keep-5', work)
+    await vi.advanceTimersByTimeAsync(IDLE * 2)
+    expect(m.driver.liveCount).toBe(1)
+    work.running = []
+    // The look that sees them gone grants one idle lifetime…
+    await vi.advanceTimersByTimeAsync(IDLE)
+    expect(m.driver.liveCount).toBe(1)
+    // …then the idle reclaim runs as it always did.
+    await vi.advanceTimersByTimeAsync(IDLE)
+    await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
+    expect(fake.stdinEnded).toBe(true)
+    expect(reclaimed).toEqual([])
+    await m.driver.disposeAll()
+  })
+
+  it('no background work: reclaimed at the idle lifetime, as before', async () => {
+    const { m, reclaimed } = await residentWithWork('child-keep-6', { running: [] })
+    await vi.advanceTimersByTimeAsync(IDLE)
+    await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
+    expect(reclaimed).toEqual([])
+    await m.driver.disposeAll()
+  })
+
+  it('a reload with tasks running records them process-reclaimed; plugin unload records nothing', async () => {
+    const work = { running: ['bash-1'] }
+    const { m, reclaimed } = await residentWithWork('child-keep-7', work)
+    m.queueChild(new FakeAcpServer({ turn: () => ({ chunks: ['ok'] }) }))
+    await vi.advanceTimersByTimeAsync(0)
+    const reload = m.driver.reloadMember('child-keep-7', { onStart: () => {} })
+    await expect(reload!.done).resolves.toBe('respawned')
+    expect(reclaimed).toEqual([{ key: 'child-keep-7', taskIds: ['bash-1'] }])
+    await m.driver.disposeAll()
+    expect(reclaimed).toHaveLength(1)
+  })
+
+  it('the default read: kimi\'s running task files keep the process', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'], shouldAdvanceTime: true })
+    const m = mount({ config: { liveIdleMs: IDLE, keepAliveCapMs: CAP } })
+    const child = Session.create(SessionId('child-keep-8'))
+    m.queueChild(new FakeAcpServer({ turn: () => { writeKimiWire(m.homeDir, 'acp-session-1', '部署', '完成后我会继续汇报'); return { chunks: ['完成后我会继续汇报'] } } }))
+    await (await m.driver.startRound(request() as never, roundSpec(m, child))).result
+    const tasks = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main', 'tasks')
+    mkdirSync(tasks, { recursive: true })
+    writeFileSync(join(tasks, 'bash-a.json'), JSON.stringify({ taskId: 'bash-a', kind: 'process', status: 'running', command: 'sleep 600', startedAt: Date.now() }))
+    await expect(m.driver.hasRunningBackgroundTasks('child-keep-8')).resolves.toBe(true)
+    await vi.advanceTimersByTimeAsync(IDLE * 2)
+    expect(m.driver.liveCount).toBe(1)
+    writeFileSync(join(tasks, 'bash-a.json'), JSON.stringify({ taskId: 'bash-a', kind: 'process', status: 'completed', command: 'sleep 600', startedAt: Date.now() - 1_000, endedAt: Date.now(), exitCode: 0 }))
+    await vi.advanceTimersByTimeAsync(IDLE * 3)
+    await vi.waitFor(() => { expect(m.driver.liveCount).toBe(0) })
     await m.driver.disposeAll()
   })
 })
