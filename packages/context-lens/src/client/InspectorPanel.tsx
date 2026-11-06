@@ -2,7 +2,7 @@ import type { SessionTrend } from '../types.ts'
 import { Trend } from './Trend.tsx'
 import { AgentTabs, ParentLine, ROOM_TAB } from './AgentTabs.tsx'
 import { RoomDecisionsView } from './RoomDecisionsView.tsx'
-import { ExecutionNote, RoomFallbackCard, RoomRecordsNotice, UnattributedNote } from './RoomRecords.tsx'
+import { continuesText, ExecutionNote, RoomFallbackCard, RoomRecordsNotice, UnattributedNote } from './RoomRecords.tsx'
 /** Session/turn/scope navigation; request detail owns its JSON toggle. */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { PanelRoot } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
@@ -709,11 +709,14 @@ export function InspectorPanel({
           if (next === turnSeq) syncScrollToTurn(next)
           if (mainTab !== 'time') onOpenRequest(seq, targetScope)
         }} />}
-        {turn !== undefined && (turn.query !== '' || turn.trigger !== undefined) && <div className={css.query}>
+        {turn !== undefined && (turn.query !== '' || turn.trigger !== undefined || turn.continues !== undefined) && <div className={css.query}>
           {turnNumber(turn) !== undefined && <span className={css.queryTurn}>{t('query.turn', { turn: String(turnNumber(turn)) })}</span>}
           {turn.room !== undefined && <code className={css.querySource}>{t('query.room')}{turn.room.targets.length > 0 ? ` → ${turn.room.targets.join('、')}` : ''}</code>}
           {turn.query === '' && turn.trigger !== undefined && <code className={css.querySource}>{turn.trigger.source}</code>}
-          <b title={turn.query !== '' ? turn.query : turn.trigger?.text}>{turn.hostTurn === undefined && turn.query === 'compaction' ? t('compaction.title') : turn.query !== '' ? turn.query : turn.trigger!.text}</b>
+          {/* A round the member's CLI opened itself: why it ran; where the task started is the tabs row's jump. */}
+          {turn.query === '' && turn.trigger === undefined && turn.continues !== undefined
+            ? <b>{continuesText(turn.continues.taskStatus, t)}</b>
+            : <b title={turn.query !== '' ? turn.query : turn.trigger?.text}>{turn.hostTurn === undefined && turn.query === 'compaction' ? t('compaction.title') : turn.query !== '' ? turn.query : turn.trigger!.text}</b>}
         </div>}
         {turn?.roomUnattributed === true && <div className={css.query}><b>{t('room.unattributed')}</b></div>}
         {turn?.roomUnattributed === true && <UnattributedNote t={t} />}

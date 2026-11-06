@@ -11,6 +11,11 @@
  * `UPDATE_LOCAL_AGENT_CONTRACT=1 pnpm --filter @khorsheed/dsh-local-agent test`
  * and let the lens suite say whether it still reads it.
  *
+ * Last, a round that starts a background task (its tool result names the
+ * task), then the round the CLI opens itself when the task ends, admitted
+ * through `admitSelf` with the task's tool call: its start record carries
+ * cause `self` with `startedBy` and the task copied, as lens reads it.
+ *
  * The provider is a fake family provider (no CLI): its harness declares
  * codex exec's "not recorded" items for `exec`, `internal-calls` for `live`
  * and Claude Code's `compaction` for `compact`, so one log carries every
@@ -143,6 +148,15 @@ const execRound: Round = (child, turn) => {
   return { stopReason: 'completed', output: [{ type: 'text', text: '完成' }] }
 }
 
+/** e. A live round that starts a background task: its tool call's result names the task. */
+const backgroundRound: Round = (child, turn) => {
+  openMirrorTurn(child, turn, 'live')
+  appendMirrorStep(child, turn, 1, { blocks: [{ kind: 'tool', id: 'call-bg', name: 'Shell', args: '{"command":"sleep 20","run_in_background":true}', result: 'Started background task bash-1' }], usage: usage(1300, 20) }, source)
+  appendMirrorStep(child, turn, 2, { blocks: [{ kind: 'text', text: '已在后台运行，完成后继续' }], usage: usage(1400, 30) }, source)
+  closeMirrorTurn(child, turn, 'completed', '')
+  return { stopReason: 'completed', output: [{ type: 'text', text: '已在后台运行，完成后继续' }] }
+}
+
 const released = (events: readonly SessionEvent[]): string | undefined => {
   try {
     assertReleasedV4Relationships({
@@ -169,7 +183,7 @@ function normalize(value: unknown): unknown {
   return JSON.parse(text)
 }
 
-/** Drive one member through a live round, an exec round and an unreported /compact; returns the stored log as rows. */
+/** Drive one member through a live round, an exec round, an unreported /compact, a background task and the round the CLI opens itself; returns the stored log as rows. */
 async function produce(): Promise<{ readonly childSessionId: string; readonly rows: readonly SessionEvent[] }> {
   // A deterministic clock: every Date.now() call advances 10 ms.
   let now = 1_800_000_000_000
@@ -195,10 +209,32 @@ async function produce(): Promise<{ readonly childSessionId: string; readonly ro
   h.next({ round: () => ({ stopReason: 'completed', output: [] }) })
   const compaction = await h.registry.compact(PARENT, PROVIDER, child, { cause: { kind: 'human', sessionId: room, dispatchSeq: 12, via: 'room' } })
   await compaction.result
+  h.next({ round: backgroundRound })
+  const background = await h.registry.resume(PARENT, PROVIDER, child, [{ type: 'text', text: '后台跑一下' }], {
+    caller: 'room', callerRef: '14:m-ada',
+    cause: { kind: 'human', sessionId: room, dispatchSeq: 14, via: 'room', messageId: 'u-14' },
+    task: { sessionId: room, id: 'u-14' },
+  })
+  await background.result
+  // f. The task ended while the member was idle: its CLI opens a round on its own.
+  const self = await h.registry.admitSelf({
+    childSessionId: child, provider: PROVIDER, taskCallId: 'call-bg',
+    cause: { kind: 'self', reason: 'background-task', taskId: 'bash-1', taskStatus: 'completed', notificationId: 'task:bash-1:completed' },
+    follow: async ({ session }) => {
+      const turn = session.snapshotEvents().filter(event => event.type === 'turn/start').length + 1
+      openMirrorTurn(session, turn, 'live')
+      appendMirrorStep(session, turn, 1, { blocks: [{ kind: 'text', text: '后台任务完成了' }], usage: usage(1500, 40) }, source)
+      closeMirrorTurn(session, turn, 'completed', '')
+      h.registry.recordRoundSettled(child, {})
+      return { stopReason: 'completed', output: [{ type: 'text', text: '后台任务完成了' }] }
+    },
+  })
+  expect(self).toBeDefined()
+  await self!.settled
   let rows: readonly SessionEvent[] = []
   await vi.waitFor(async () => {
     rows = await h.stored(child)
-    expect(records(rows).filter(record => record.phase === 'end')).toHaveLength(3)
+    expect(records(rows).filter(record => record.phase === 'end')).toHaveLength(5)
   })
   expect(released(rows)).toBeUndefined()
   expect(existsSync(join(h.homes, 'quarantine', `${child}.jsonl`))).toBe(false)
@@ -249,6 +285,15 @@ describe('local-agent → Context Lens contract fixture', () => {
     expect(execEnd).toMatchObject({ executionId: execStart.executionId, turns: [2], unrecorded: ['call-boundaries', 'per-call-usage', 'internal-calls'], providerReportedUsage: ROUND_TOTAL })
     expect(compactStart).toMatchObject({ operation: 'compact' })
     expect(compactEnd).toMatchObject({ executionId: compactStart.executionId, turns: [], unrecorded: ['compaction'] })
+    // The self-opened round: caller cli, cause self naming the round that started the task, whose task it copies.
+    const [backgroundStart, backgroundEnd, selfStart, selfEnd] = records(rows).slice(6) as [
+      LocalAgentExecutionStartEvent, LocalAgentExecutionEndEvent, LocalAgentExecutionStartEvent, LocalAgentExecutionEndEvent]
+    expect(backgroundEnd).toMatchObject({ executionId: backgroundStart.executionId, turns: [3] })
+    expect(selfStart).toMatchObject({
+      caller: 'cli', operation: 'prompt', task: { id: 'u-14' },
+      cause: { kind: 'self', reason: 'background-task', taskId: 'bash-1', taskStatus: 'completed', startedBy: backgroundStart.executionId },
+    })
+    expect(selfEnd).toMatchObject({ executionId: selfStart.executionId, outcome: 'done', turns: [4] })
     const facts = rows.filter(event => event.type === 'local-agent/compaction').map(event => event.data as localAgent.LocalAgentCompactionEvent)
     expect(facts).toMatchObject([{ source: 'auto', unrecorded: ['usage'] }, { source: 'manual', unrecorded: ['usage', 'before-after', 'summary'] }])
     // Two calls with usage in the live turn; three steps in the exec turn, usage on the last only.
@@ -256,7 +301,7 @@ describe('local-agent → Context Lens contract fixture', () => {
       const data = event.data as { turn: number; usage?: unknown }
       return [data.turn, data.usage !== undefined]
     })
-    expect(steps).toEqual([[1, true], [1, true], [2, false], [2, false], [2, true]])
+    expect(steps).toEqual([[1, true], [1, true], [2, false], [2, false], [2, true], [3, true], [3, true], [4, true]])
     // The core's compaction fact sits inside its execution's range.
     const seqOf = (predicate: (event: SessionEvent) => boolean): number => rows.findIndex(predicate)
     const factAt = seqOf(event => event.type === 'local-agent/compaction' && (event.data as { source?: string }).source === 'manual')

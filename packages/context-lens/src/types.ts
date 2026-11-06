@@ -391,6 +391,8 @@ export interface TurnListItem {
   query: string
   /** No human message this turn: the producer and text of the first message that started it. */
   trigger?: { source: string; text: string }
+  /** The turn is a round the member's CLI opened itself after a background task ended (its own lens). */
+  continues?: ContinuesInfo
   /** The `turn/start` event's log seq — the target the chat pages history back to before a jump. */
   startSeq?: number
   /** The turn's number in one session-wide sequence (main turns and room rounds, by time). */
@@ -608,6 +610,12 @@ export interface AgentScopeOverview {
   error?: string
   /** A room round's member run: what its execution recorded (cause, not-recorded declarations). */
   execution?: ExecutionFacts
+  /**
+   * A round the member's CLI opened itself after a background task ended
+   * (cause `self`): on the room round whose run started the task (its own
+   * tab beside the member), and on the member's own turn (main scope).
+   */
+  continues?: ContinuesInfo
   config: RequestConfig
   startedAt: number
   endedAt?: number
@@ -631,14 +639,35 @@ export interface RoomFallbackMember {
 }
 
 /**
+ * A round a member's CLI opened on its own when a background task ended
+ * (`local-agent/execution` cause `self`, design member-self-started-rounds).
+ */
+export interface ContinuesInfo {
+  taskId: string
+  /** How the task ended, as the CLI said it: `completed`, `failed`, `timed_out`, `killed`; anything else reads as 结束. */
+  taskStatus: string
+  /**
+   * Where the task was started: the request of the starting execution whose
+   * tool result names the task (`viaTask`), else that execution's first
+   * request. Absent when the start recorded no `startedBy`, or its requests
+   * are not loaded in this view.
+   */
+  startedBy?: RequestLink & { viaTask: boolean }
+  /** A room round holding several of one member's self rounds: this one's 1-based position. */
+  index?: number
+}
+
+/**
  * What a member execution recorded about itself (`local-agent/execution`),
  * shown on a room round's member view: why it ran and what its source does
  * not report.
  */
 export interface ExecutionFacts {
   executionId: string
-  /** The recorded cause kind (`human`, `member`, `help`, `decision`, `execution`, `tool-call`, `restart`); absent = not recorded. */
+  /** The recorded cause kind (`human`, `member`, `help`, `decision`, `execution`, `tool-call`, `restart`, `self`); absent = not recorded. */
   cause?: string
+  /** `self` cause: how the background task ended. */
+  taskStatus?: string
   /** `member` cause: the sending member's roster id. */
   fromMember?: string
   /** `help` cause: the asking room. */

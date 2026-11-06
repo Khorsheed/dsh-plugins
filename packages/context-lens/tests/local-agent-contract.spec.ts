@@ -22,9 +22,11 @@ interface Fixture {
 }
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/local-agent-contract.json', import.meta.url), 'utf8')) as Fixture
-const [live, exec, compact] = fixture.executions
+const [live, exec, compact, background, self] = fixture.executions
 const child = fixture.childSessionId
 const rowOf = (seq: number): SessionLogRow => fixture.rows.find(row => row.seq === seq)!
+/** When an execution's start record was written. */
+const startOf = (executionId: string): number => fixture.rows.find(row => row.type === 'local-agent/execution' && (row.data as { executionId?: string }).executionId === executionId)!.time!
 
 function fold() {
   const records: ExecutionRecord[] = []
@@ -33,18 +35,23 @@ function fold() {
 }
 
 describe('local-agent → Context Lens contract (fixture from the core\'s writers)', () => {
-  it('the fixture holds a live round, a codex-exec round and a /compact, as the core recorded them', () => {
+  it('the fixture holds a live round, a codex-exec round, a /compact, a background task\'s round and the round the CLI opened itself, as the core recorded them', () => {
     expect(fixture.executions.map(e => [e.operation, e.turns, e.unrecorded])).toEqual([
       ['prompt', [1], ['internal-calls']],
       ['prompt', [2], ['call-boundaries', 'per-call-usage', 'internal-calls']],
       ['compact', [], ['compaction']],
+      ['prompt', [3], ['internal-calls']],
+      ['prompt', [4], ['internal-calls']],
     ])
     const { records } = fold()
     expect(records.map(record => [record.phase, record.executionId])).toEqual([
       ['start', live!.executionId], ['end', live!.executionId],
       ['start', exec!.executionId], ['end', exec!.executionId],
       ['start', compact!.executionId], ['end', compact!.executionId],
+      ['start', background!.executionId], ['end', background!.executionId],
+      ['start', self!.executionId], ['end', self!.executionId],
     ])
+    expect(records[8]).toMatchObject({ phase: 'start', caller: 'cli', cause: { kind: 'self', taskId: 'bash-1', taskStatus: 'completed', startedBy: background!.executionId } })
     expect(records[0]).toMatchObject({ phase: 'start', operation: 'prompt', cause: { kind: 'human', via: 'room' }, task: { id: expect.any(String) } })
     expect(records[3]).toMatchObject({ phase: 'end', turns: [2], unrecorded: exec!.unrecorded })
   })
@@ -58,12 +65,15 @@ describe('local-agent → Context Lens contract (fixture from the core\'s writer
       // but its two text-only steps with neither usage nor a logged stream
       // are mirror annotations (history), in every lens path alike.
       [2, exec!.executionId, 900],
+      [3, background!.executionId, 1300],
+      [3, background!.executionId, 1400],
+      [4, self!.executionId, 1500],
     ])
   })
 
   it('a per-call-usage execution\'s usage reads as the round\'s total', () => {
     const { requests } = fold()
-    expect(requests.map(request => request.roundTotal === true)).toEqual([false, false, true])
+    expect(requests.map(request => request.roundTotal === true)).toEqual([false, false, true, false, false, false])
   })
 
   it('no recorded dispatch time: a request starts when its step was written, marked unrecorded (never the previous event)', () => {
@@ -86,7 +96,7 @@ describe('local-agent → Context Lens contract (fixture from the core\'s writer
   it('the same log without its records folds the legacy way (old logs keep their reading)', () => {
     const legacy = foldLogRows(openCursor(), fixture.rows.filter(row => row.type !== 'local-agent/execution')).filter(request => request.purpose === undefined)
     // Usage-less text-only steps are annotations here too; the round reads as one request.
-    expect(legacy.map(request => [request.hostTurn, request.usage?.inputTokens])).toEqual([[1, 1000], [1, 1200], [2, 900]])
+    expect(legacy.map(request => [request.hostTurn, request.usage?.inputTokens])).toEqual([[1, 1000], [1, 1200], [2, 900], [3, 1300], [3, 1400], [4, 1500]])
   })
 
   it('in the member\'s own lens, text-only steps with neither stream nor usage stay mirror annotations, as before', () => {
@@ -94,7 +104,7 @@ describe('local-agent → Context Lens contract (fixture from the core\'s writer
     // model request — the same rule as the live fold above.
     const turns = reconstructSession(fixture.rows)
     const real = turns.filter(turn => turn.hostTurn > 0)
-    expect(real.map(turn => [turn.hostTurn, turn.requests.length])).toEqual([[1, 2], [2, 1]])
+    expect(real.map(turn => [turn.hostTurn, turn.requests.length])).toEqual([[1, 2], [2, 1], [3, 2], [4, 1]])
     expect(real[1]!.requests[0]).toMatchObject({ roundTotal: true, usage: { inputTokens: 900 } })
     expect(turns.filter(turn => turn.purpose === 'compaction')).toHaveLength(2)
   })
@@ -109,6 +119,10 @@ describe('local-agent → Context Lens contract (fixture from the core\'s writer
       { type: 'room/run-state', seq: 8, time: 1_800_000_000_200, data: { runId: '5:m-ada', member: 'ada', state: 'done', startedAt: 1_800_000_000_060, elapsedMs: 140, childSessionId: child, executionId: live!.executionId, childTurn: 1 } },
       { type: 'room/dispatch', seq: 12, time: 1_800_000_000_560, data: { origin: 'human', text: '/compact', targets: ['ada'] } },
       { type: 'room/run-state', seq: 13, time: 1_800_000_000_620, data: { runId: '12:m-ada', member: 'ada', state: 'done', operation: 'compact', startedAt: 1_800_000_000_570, elapsedMs: 50, childSessionId: child, executionId: compact!.executionId } },
+      { type: 'room/dispatch', seq: 14, time: startOf(background!.executionId) - 5, data: { origin: 'human', text: '后台跑一下', targets: ['ada'], messageId: 'u-14' } },
+      { type: 'room/run-state', seq: 15, time: startOf(background!.executionId), data: { runId: '14:m-ada', member: 'ada', state: 'done', startedAt: startOf(background!.executionId), elapsedMs: 50, childSessionId: child, executionId: background!.executionId } },
+      // The room observes the self round as a run started elsewhere (no dispatch seq).
+      { type: 'room/run-state', seq: 16, time: startOf(self!.executionId), data: { runId: `execution:${self!.executionId}`, member: 'ada', state: 'done', startedAt: startOf(self!.executionId), elapsedMs: 50, childSessionId: child, executionId: self!.executionId } },
     ]
     store.insertLogTurns('s', reconstructSession(room))
     for (const row of room) if (row.type.startsWith('room/')) store.noteRoomEvent('s', row.type, row.data, row.seq, row.time)
@@ -124,7 +138,23 @@ describe('local-agent → Context Lens contract (fixture from the core\'s writer
     expect(store.getTurn('s', compactRound.turnSeq)!.scopes.map(scope => [scope.scopeId, scope.requests.length, scope.compaction?.member?.unrecorded])).toEqual([
       [`compaction:${child}`, 1, ['usage', 'before-after', 'summary']],
     ])
+    // The background round holds the round the CLI opened itself, as a tab beside the member, with a jump to where the task started.
+    const backgroundRound = list.turns.find(turn => turn.query === '后台跑一下')!
+    const tabs = store.getTurn('s', backgroundRound.turnSeq)!.scopes
+    expect(tabs.map(scope => [scope.scopeId, scope.requests.length])).toEqual([[child, 2], [`self:${self!.executionId}`, 1]])
+    expect(tabs[1]!.continues).toEqual({ taskId: 'bash-1', taskStatus: 'completed', startedBy: { turnSeq: backgroundRound.turnSeq, scopeId: child, seq: tabs[0]!.requests[0]!.seq, requestNumber: tabs[0]!.requests[0]!.requestNumber, viaTask: true } })
+    expect(tabs[1]!.execution).toMatchObject({ cause: 'self', taskStatus: 'completed', outcome: 'done' })
+    expect(backgroundRound.requestCount).toBe(3)
     // The codex-exec execution no room round claims holds no compaction, so nothing is unattributed.
     expect(store.getTurn('s', ROOM_UNATTRIBUTED_TURN)).toBeUndefined()
+  })
+
+  it('in the member\'s own lens the self-opened round is its own turn, pointing at the request that started its task', () => {
+    const store = new InspectorStore()
+    store.insertLogTurns(child, reconstructSession(fixture.rows))
+    const turns = store.listTurns(child).turns.filter(turn => turn.hostTurn !== undefined)
+    expect(turns.map(turn => [turn.hostTurn, turn.continues?.taskId])).toEqual([[1, undefined], [2, undefined], [3, undefined], [4, 'bash-1']])
+    const starter = store.getTurn(child, 3)!.scopes[0]!.requests[0]!
+    expect(turns[3]!.continues?.startedBy).toMatchObject({ turnSeq: 3, scopeId: 'main', seq: starter.seq, viaTask: true })
   })
 })

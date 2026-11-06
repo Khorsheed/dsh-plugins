@@ -31,6 +31,26 @@
       "unrecorded": [
         "compaction"
       ]
+    },
+    {
+      "executionId": "00000000-0000-4000-8000-000000000005",
+      "operation": "prompt",
+      "turns": [
+        3
+      ],
+      "unrecorded": [
+        "internal-calls"
+      ]
+    },
+    {
+      "executionId": "00000000-0000-4000-8000-000000000006",
+      "operation": "prompt",
+      "turns": [
+        4
+      ],
+      "unrecorded": [
+        "internal-calls"
+      ]
     }
   ],
   "rows": [
@@ -107,7 +127,7 @@
             "provider": "fake-cli",
             "model": "m"
           },
-          "id": "00000000-0000-4000-8000-000000000005"
+          "id": "00000000-0000-4000-8000-000000000007"
         },
         "stream": [],
         "usage": {
@@ -155,7 +175,7 @@
             "provider": "fake-cli",
             "model": "m"
           },
-          "id": "00000000-0000-4000-8000-000000000006"
+          "id": "00000000-0000-4000-8000-000000000008"
         },
         "stream": [],
         "usage": {
@@ -280,7 +300,7 @@
             "provider": "fake-cli",
             "model": "m"
           },
-          "id": "00000000-0000-4000-8000-000000000007"
+          "id": "00000000-0000-4000-8000-000000000009"
         },
         "stream": []
       },
@@ -324,7 +344,7 @@
             "provider": "fake-cli",
             "model": "m"
           },
-          "id": "00000000-0000-4000-8000-000000000008"
+          "id": "00000000-0000-4000-8000-000000000010"
         },
         "stream": []
       },
@@ -368,7 +388,7 @@
             "provider": "fake-cli",
             "model": "m"
           },
-          "id": "00000000-0000-4000-8000-000000000009"
+          "id": "00000000-0000-4000-8000-000000000011"
         },
         "stream": [],
         "usage": {
@@ -470,6 +490,312 @@
         "endedAt": 1800000000610,
         "unrecorded": [
           "compaction"
+        ]
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 28,
+      "time": 1800000000690,
+      "data": {
+        "phase": "start",
+        "executionId": "00000000-0000-4000-8000-000000000005",
+        "caller": "room",
+        "callerRef": "14:m-ada",
+        "operation": "prompt",
+        "cause": {
+          "kind": "human",
+          "sessionId": "room-session",
+          "dispatchSeq": 14,
+          "via": "room",
+          "messageId": "u-14"
+        },
+        "task": {
+          "sessionId": "room-session",
+          "id": "u-14"
+        },
+        "parentSessionId": "room-parent",
+        "admittedAt": 1800000000680
+      }
+    },
+    {
+      "type": "turn/start",
+      "seq": 29,
+      "time": 1800000000710,
+      "data": {
+        "turn": 3
+      }
+    },
+    {
+      "type": "step/start",
+      "seq": 30,
+      "time": 1800000000730,
+      "data": {
+        "turn": 3,
+        "step": 1
+      }
+    },
+    {
+      "type": "assistant/message",
+      "seq": 31,
+      "time": 1800000000750,
+      "data": {
+        "turn": 3,
+        "step": 1,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "tool-call",
+              "id": "call-bg",
+              "name": "Shell",
+              "arguments": "{\"command\":\"sleep 20\",\"run_in_background\":true}"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "fake-cli",
+            "model": "m"
+          },
+          "id": "00000000-0000-4000-8000-000000000012"
+        },
+        "stream": [],
+        "usage": {
+          "inputTokens": 1300,
+          "outputTokens": 20
+        }
+      },
+      "surfaceOp": "append"
+    },
+    {
+      "type": "tool/call",
+      "seq": 32,
+      "time": 1800000000770,
+      "data": {
+        "turn": 3,
+        "step": 1,
+        "callId": "call-bg",
+        "name": "Shell",
+        "arguments": "{\"command\":\"sleep 20\",\"run_in_background\":true}"
+      }
+    },
+    {
+      "type": "tool/result",
+      "seq": 33,
+      "time": 1800000000790,
+      "data": {
+        "turn": 3,
+        "step": 1,
+        "message": {
+          "role": "tool",
+          "source": {
+            "kind": "tool",
+            "callId": "call-bg"
+          },
+          "toolCallId": "call-bg",
+          "content": [
+            {
+              "type": "text",
+              "text": "Started background task bash-1"
+            }
+          ],
+          "isError": false,
+          "id": "00000000-0000-4000-8000-000000000013"
+        }
+      },
+      "surfaceOp": "append"
+    },
+    {
+      "type": "step/end",
+      "seq": 34,
+      "time": 1800000000810,
+      "data": {
+        "turn": 3,
+        "step": 1
+      }
+    },
+    {
+      "type": "step/start",
+      "seq": 35,
+      "time": 1800000000830,
+      "data": {
+        "turn": 3,
+        "step": 2
+      }
+    },
+    {
+      "type": "assistant/message",
+      "seq": 36,
+      "time": 1800000000850,
+      "data": {
+        "turn": 3,
+        "step": 2,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "已在后台运行，完成后继续"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "fake-cli",
+            "model": "m"
+          },
+          "id": "00000000-0000-4000-8000-000000000014"
+        },
+        "stream": [],
+        "usage": {
+          "inputTokens": 1400,
+          "outputTokens": 30
+        }
+      },
+      "surfaceOp": "append"
+    },
+    {
+      "type": "step/end",
+      "seq": 37,
+      "time": 1800000000870,
+      "data": {
+        "turn": 3,
+        "step": 2
+      }
+    },
+    {
+      "type": "turn/end",
+      "seq": 38,
+      "time": 1800000000890,
+      "data": {
+        "turn": 3,
+        "reason": {
+          "kind": "completed"
+        }
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 39,
+      "time": 1800000000910,
+      "data": {
+        "phase": "end",
+        "executionId": "00000000-0000-4000-8000-000000000005",
+        "outcome": "done",
+        "turns": [
+          3
+        ],
+        "endedAt": 1800000000900,
+        "unrecorded": [
+          "internal-calls"
+        ]
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 40,
+      "time": 1800000000960,
+      "data": {
+        "phase": "start",
+        "executionId": "00000000-0000-4000-8000-000000000006",
+        "caller": "cli",
+        "operation": "prompt",
+        "cause": {
+          "kind": "self",
+          "reason": "background-task",
+          "taskId": "bash-1",
+          "taskStatus": "completed",
+          "notificationId": "task:bash-1:completed",
+          "startedBy": "00000000-0000-4000-8000-000000000005"
+        },
+        "task": {
+          "sessionId": "room-session",
+          "id": "u-14"
+        },
+        "parentSessionId": "room-parent",
+        "admittedAt": 1800000000950
+      }
+    },
+    {
+      "type": "turn/start",
+      "seq": 41,
+      "time": 1800000000980,
+      "data": {
+        "turn": 4
+      }
+    },
+    {
+      "type": "step/start",
+      "seq": 42,
+      "time": 1800000001000,
+      "data": {
+        "turn": 4,
+        "step": 1
+      }
+    },
+    {
+      "type": "assistant/message",
+      "seq": 43,
+      "time": 1800000001020,
+      "data": {
+        "turn": 4,
+        "step": 1,
+        "message": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "后台任务完成了"
+            }
+          ],
+          "source": {
+            "kind": "model",
+            "provider": "fake-cli",
+            "model": "m"
+          },
+          "id": "00000000-0000-4000-8000-000000000015"
+        },
+        "stream": [],
+        "usage": {
+          "inputTokens": 1500,
+          "outputTokens": 40
+        }
+      },
+      "surfaceOp": "append"
+    },
+    {
+      "type": "step/end",
+      "seq": 44,
+      "time": 1800000001040,
+      "data": {
+        "turn": 4,
+        "step": 1
+      }
+    },
+    {
+      "type": "turn/end",
+      "seq": 45,
+      "time": 1800000001060,
+      "data": {
+        "turn": 4,
+        "reason": {
+          "kind": "completed"
+        }
+      }
+    },
+    {
+      "type": "local-agent/execution",
+      "seq": 46,
+      "time": 1800000001080,
+      "data": {
+        "phase": "end",
+        "executionId": "00000000-0000-4000-8000-000000000006",
+        "outcome": "done",
+        "turns": [
+          4
+        ],
+        "endedAt": 1800000001070,
+        "unrecorded": [
+          "internal-calls"
         ]
       }
     }

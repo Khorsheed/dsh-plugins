@@ -13,6 +13,7 @@ import { scopeTiming } from './timing.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './TimingView.module.css'
 import { ScopeConfigs } from './ConfigFacts.tsx'
+import { selfRoundLabel } from './RoomRecords.tsx'
 type T = InspectorTabProps['t']
 export interface TimingViewProps {
   readonly timing: TurnTiming | null
@@ -135,7 +136,7 @@ export function TimingView({
               className={css.laneName}
               onClick={() => onSelectScope?.(s.scopeId)}
             >
-              {s.kind === 'main' ? t('lens.main') : (s.label ?? s.scopeId)}
+              {s.kind === 'main' ? t('lens.main') : s.continues !== undefined ? selfRoundLabel({ ...s, continues: s.continues }, t) : (s.label ?? s.scopeId)}
             </button>
             <div className={css.timeline}>
               {idleSpans(timing.lanes.filter((l) => l.scopeId === s.scopeId), s.kind === 'main' ? start : s.startedAt, s.kind === 'main' ? end : (s.endedAt ?? end))

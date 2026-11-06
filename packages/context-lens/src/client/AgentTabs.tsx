@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { AgentScopeOverview, ListTurnsResult, RequestLink } from '../types.ts'
 import { requestNumberText } from './aggregate.ts'
-import { unrecordedText } from './RoomRecords.tsx'
+import { selfRoundLabel, unrecordedText } from './RoomRecords.tsx'
 import type { InspectorTabProps } from './contract.ts'
 import css from './AgentTabs.module.css'
 type T = InspectorTabProps['t']
@@ -33,6 +33,10 @@ export interface AgentTabsProps {
 function labelOf(scope: AgentScopeOverview, t: T): string {
   if (scope.kind === 'main') return t('scope.mainName')
   if (scope.kind === 'compaction') return t('tabs.compaction')
+  // A member's self-started round beside the member in a room round: 「kimi · 后台任务完成后继续 2」.
+  if (scope.kind === 'subagent' && scope.continues !== undefined) {
+    return selfRoundLabel({ ...scope, continues: scope.continues }, t)
+  }
   return scope.label ?? scope.scopeId
 }
 
@@ -106,6 +110,10 @@ function Relation({ scope, onOpenRequest, t }: { readonly scope: AgentScopeOverv
     else if (c?.after) parts.push(<span key="w">{t('rel.after', { seq: requestNumberText(c.after) })}</span>, <span key="b">{back(c.after)}</span>)
   } else if (scope.delegatedBy) {
     parts.push(<span key="by">{t('rel.delegatedBy', { seq: requestNumberText(scope.delegatedBy) })}</span>, <span key="b">{back(scope.delegatedBy)}</span>)
+  } else if (scope.continues?.startedBy !== undefined) {
+    // A self-started round: the request whose tool call started the task (or its round's first request).
+    const start = scope.continues.startedBy
+    parts.push(<span key="by">{t(start.viaTask ? 'rel.startedByTask' : 'rel.startedByRound', { seq: requestNumberText(start) })}</span>, <span key="b">{back(start)}</span>)
   }
   return parts.length === 0 ? null : <div className={css.relation}>{parts}</div>
 }

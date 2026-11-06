@@ -27,6 +27,7 @@
 import { countToolCalls } from './tool-summary.ts'
 import type {
   AgentScopeOverview,
+  ContinuesInfo,
   ExecutionFacts,
   RoomDecisionRow,
   RoomFallbackMember,
@@ -52,14 +53,14 @@ import type {
   TurnTiming,
 } from './types.ts'
 import { splitRequest, rebaseSegments, type CapturedToolSchema, type ScopeFingerprint, type AssemblyRecord } from './segmenter.ts'
-import { AMBIENT_SOURCES, lastParagraph, previewLine, type CapturedMessage } from './messages.ts'
+import { AMBIENT_SOURCES, lastParagraph, previewLine, stripRoomPreamble, type CapturedMessage } from './messages.ts'
 import type { ExecutionRecord, LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
 import { diffRequests, type FactLookup, type ReplacementFact } from './changes.ts'
 import { answersMatch, askView, isAskTool, type RoomQuestionRecord } from './ask.ts'
 import {
-  HUMAN_MESSAGE_LOOKBACK, ROOM_UNATTRIBUTED_TURN, applyRoomEvent, emptyRoom, isCompactCommand, roomTurnSeq, runRecorded, runsOf,
-  type RoomRun, type RoomState,
+  HUMAN_MESSAGE_LOOKBACK, ROOM_UNATTRIBUTED_TURN, applyRoomEvent, emptyRoom, isCompactCommand, roomTurnSeq, runRecorded, runsOf, selfCauseOf,
+  type RoomRun, type RoomState, type SelfCause,
 } from './room.ts'
 
 /** One member execution's records in its child log (either may be missing: a log cut short, a writer's fallback). */
@@ -240,6 +241,20 @@ export interface ScopeRecord {
   provider?: string
   /** A room round's member run: what its execution recorded (built on read). */
   execution?: ExecutionFacts
+  /** A member's self-started round shown in a room view (built on read). */
+  continues?: ContinuesInfo
+}
+
+/** A member execution its CLI opened itself, placed in a room view: the round whose run started the task, else 未归轮. */
+interface RoomSelfRound {
+  childId: string
+  executionId: string
+  cause: SelfCause
+  /** The member's roster id and name, from the run its chain leads to (else any run of the child). */
+  memberId: string
+  member: string
+  /** The dispatch of the room round that claims the chain; absent → 未归轮. */
+  dispatchSeq?: number
 }
 
 /** One turn row's internal record (exported for the eviction hook's signature). */
@@ -265,6 +280,8 @@ export interface TurnRecord {
   room?: { targets: string[]; messageId?: string; unrecorded?: true; fallback?: RoomFallbackMember[] }
   /** First non-human message of the turn (see LogTurn.trigger). */
   trigger?: { source: string; text: string }
+  /** A round the member's CLI opened itself (see LogTurn.selfCause). */
+  selfCause?: SelfCause & { executionId: string }
   /** The `turn/start` event's log seq. */
   startSeq?: number
   startedAt: number
@@ -864,7 +881,7 @@ export class InspectorStore {
       if (turn.trigger === undefined && !AMBIENT_SOURCES.has(sourceKind)) turn.trigger = { source: sourceKind, text: lastParagraph(text) }
       return
     }
-    turn.query = text.replace(/\s+/g, ' ').trim().slice(0, 120)
+    turn.query = stripRoomPreamble(text).replace(/\s+/g, ' ').trim().slice(0, 120)
   }
 
   /** The turn's closing assistant message id + generation-time backfill for history rows. */
@@ -1253,6 +1270,7 @@ export class InspectorStore {
       query: logTurn.query,
     })
     if (logTurn.trigger !== undefined) turn.trigger = logTurn.trigger
+    if (logTurn.selfCause !== undefined) turn.selfCause = logTurn.selfCause
     if (logTurn.startSeq !== undefined) turn.startSeq = logTurn.startSeq
     if (logTurn.closingMessageId !== undefined) turn.closingMessageId = logTurn.closingMessageId
     // A turn the log never closed (a crash) reads as failed/interrupted, and
@@ -1434,6 +1452,7 @@ export class InspectorStore {
       ...turn.hostTurn === undefined ? {} : { hostTurn: turn.hostTurn },
       query: turn.query,
       ...turn.query === '' && turn.trigger !== undefined ? { trigger: turn.trigger } : {},
+      ...turn.selfCause === undefined ? {} : { continues: this.ownContinues(this.sessions.get(sessionId), turn.selfCause) },
       ...turn.room === undefined ? {} : { room: {
         targets: turn.room.targets,
         ...turn.room.messageId === undefined ? {} : { messageId: turn.room.messageId },
@@ -1463,6 +1482,8 @@ export class InspectorStore {
     const scopes: AgentScopeOverview[] = [...turn.scopes.values()]
       .filter(scope => scopeAuthorized(scope.scopeId, filter))
       .map(scope => this.scopeOverview(session, turn, scope))
+      // A self-started turn of the member's own lens: its main view says where the task was started.
+      .map(scope => scope.kind === 'main' && item.continues !== undefined ? { ...scope, continues: item.continues } : scope)
     // Compactions attach to the turn they happened in, as one more view beside the agents.
     if (turn.hostTurn !== undefined && scopeAuthorized('main', filter)) {
       for (const pseudo of session.turns) {
@@ -1578,6 +1599,7 @@ export class InspectorStore {
     // A human's `/compact` is a round too: its run's execution brackets the
     // compaction fact in the member log, so the round shows it in its 压缩 tab
     // (and no model-request view of its own).
+    const selves = this.roomSelfRounds(session)
     return room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at)).map((dispatch): TurnRecord => {
       const compactRound = isCompactCommand(dispatch.text)
       const scopes = new Map<string, ScopeRecord>()
@@ -1622,11 +1644,14 @@ export class InspectorStore {
         })
         if (compactions.length > 0) scopes.set(`compaction:${scopeId}`, compactionScope(`compaction:${scopeId}`, child, label, compactions))
       }
-      const ends = runs.map(run => run.endedAt).filter((end): end is number => end !== undefined)
+      // The rounds the members' CLIs opened on their own to continue a task one of these runs started.
+      if (recorded) this.addSelfScopes(session, roomTurnSeq(dispatch.seq), scopes, selves.filter(self => self.dispatchSeq === dispatch.seq), filter, true)
+      const ends = [...runs.map(run => run.endedAt), ...[...scopes.values()].filter(scope => scope.continues !== undefined).map(scope => scope.endedAt)]
+        .filter((end): end is number => end !== undefined)
       return {
         turnSeq: roomTurnSeq(dispatch.seq),
         purpose: 'room',
-        query: dispatch.text,
+        query: stripRoomPreamble(dispatch.text),
         room: {
           targets: dispatch.targets,
           ...dispatch.messageId === undefined ? {} : { messageId: dispatch.messageId },
@@ -1651,13 +1676,139 @@ export class InspectorStore {
    */
   private runRequests(run: RoomRun, child: ScopeRecord): StoredRequest[] {
     const execution = run.executionId === undefined ? undefined : this.childExecutions.get(child.scopeId)?.get(run.executionId)
-    if (execution !== undefined) {
-      const turns = execution.end?.turns
-      return child.requests.filter(request => request.executionId === run.executionId
-        || (turns !== undefined && request.hostTurn !== undefined && turns.includes(request.hostTurn)))
-    }
+    if (execution !== undefined) return this.executionRequests(child, run.executionId!)
     if (run.childTurn !== undefined) return child.requests.filter(request => request.hostTurn === run.childTurn)
     return []
+  }
+
+  /** The requests one execution's records name in its child's log: bracketed by its start/end, or in a turn its end lists. */
+  private executionRequests(child: ScopeRecord, executionId: string): StoredRequest[] {
+    const turns = this.childExecutions.get(child.scopeId)?.get(executionId)?.end?.turns
+    return child.requests.filter(request => request.executionId === executionId
+      || (turns !== undefined && request.hostTurn !== undefined && turns.includes(request.hostTurn)))
+  }
+
+  /**
+   * The member executions their CLI opened on its own (cause `self`) in this
+   * room's member logs, each placed by its recorded chain, never by time:
+   * `startedBy` names the execution that started the task; through other self
+   * rounds the chain is followed to the first execution that is not one, and
+   * the listed room round whose run IS that execution claims it. No round
+   * claims it (no `startedBy`, a member-page round, an unrecorded one) → 未归轮.
+   */
+  private roomSelfRounds(session: SessionRecord): RoomSelfRound[] {
+    const room = session.room
+    if (room === undefined) return []
+    const listed = new Set(room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at)).map(dispatch => dispatch.seq))
+    const runs = [...room.runs.values()]
+    const out: (RoomSelfRound & { at: number })[] = []
+    for (const childId of new Set(runs.flatMap(run => run.childSessionId === undefined ? [] : [run.childSessionId]))) {
+      const executions = this.childExecutions.get(childId)
+      if (executions === undefined) continue
+      const childRuns = runs.filter(run => run.childSessionId === childId)
+      for (const [executionId, execution] of executions) {
+        const cause = selfCauseOf(execution.start?.cause)
+        if (cause === undefined) continue
+        let root: string | undefined
+        let at = cause.startedBy
+        const seen = new Set([executionId])
+        while (at !== undefined && !seen.has(at)) {
+          seen.add(at)
+          const next = selfCauseOf(executions.get(at)?.start?.cause)
+          if (next === undefined) { root = at; break }
+          at = next.startedBy
+        }
+        const claim = root === undefined ? undefined
+          : childRuns.find(run => run.executionId === root && run.dispatchSeq !== undefined && listed.has(run.dispatchSeq))
+        const named = claim ?? childRuns.find(run => run.dispatchSeq !== undefined) ?? childRuns[0]!
+        out.push({
+          childId, executionId, cause,
+          memberId: named.memberId,
+          member: named.member ?? room.members.get(named.memberId) ?? named.memberId,
+          ...claim === undefined ? {} : { dispatchSeq: claim.dispatchSeq! },
+          at: execution.start?.at ?? execution.end?.at ?? 0,
+        })
+      }
+    }
+    return out.sort((a, b) => a.at - b.at)
+  }
+
+  /**
+   * One tab per self round beside the member (scope `self:<executionId>`),
+   * its requests named by its own execution records; then where each task was
+   * started, as a jump to the request in this view that holds it.
+   * @param withCompactions - false in 未归轮, whose own 压缩 tabs already list every unclaimed compaction.
+   */
+  private addSelfScopes(session: SessionRecord, turnSeq: number, scopes: Map<string, ScopeRecord>, selves: readonly RoomSelfRound[], filter: ScopeFilter | undefined, withCompactions: boolean): void {
+    const perChild = new Map<string, number>()
+    for (const self of selves) perChild.set(self.childId, (perChild.get(self.childId) ?? 0) + 1)
+    const position = new Map<string, number>()
+    for (const self of selves) {
+      const child = this.findScope(session, self.childId)?.scope
+      if (child === undefined || !scopeAuthorized(child.scopeId, filter)) continue
+      const execution = this.childExecutions.get(self.childId)?.get(self.executionId)
+      const matched = this.executionRequests(child, self.executionId)
+      const requests = matched.filter(request => request.purpose !== 'compaction')
+      const compactions = matched.filter(request => request.purpose === 'compaction')
+      const index = (position.get(self.childId) ?? 0) + 1
+      position.set(self.childId, index)
+      const outcome = execution?.end?.outcome
+      const facts = this.executionFacts(self.childId, self.executionId)
+      const scopeId = `self:${self.executionId}`
+      const endedAt = execution?.end?.at ?? requests.at(-1)?.settledAt
+      scopes.set(scopeId, {
+        scopeId,
+        scopeSeq: child.scopeSeq,
+        kind: 'subagent',
+        label: self.member,
+        ...child.provider === undefined ? {} : { provider: child.provider },
+        status: outcome === undefined ? 'running' : outcome === 'done' ? 'ok' : outcome === 'cancelled' ? 'cancelled' : 'failed',
+        ...facts === undefined ? {} : { execution: facts },
+        continues: { taskId: self.cause.taskId, taskStatus: self.cause.taskStatus, ...(perChild.get(self.childId) ?? 0) > 1 ? { index } : {} },
+        config: child.config,
+        requests,
+        startedAt: execution?.start?.at ?? requests[0]?.startedAt ?? 0,
+        ...endedAt === undefined ? {} : { endedAt },
+        live: false,
+        logFilled: true,
+      })
+      if (withCompactions && compactions.length > 0) scopes.set(`compaction:${scopeId}`, compactionScope(`compaction:${scopeId}`, child, self.member, compactions))
+    }
+    for (const self of selves) {
+      const scope = scopes.get(`self:${self.executionId}`)
+      const child = this.findScope(session, self.childId)?.scope
+      if (scope?.continues === undefined || child === undefined || self.cause.startedBy === undefined) continue
+      const start = this.startingRequest(this.executionRequests(child, self.cause.startedBy), self.cause.taskId)
+      const holder = start === undefined ? undefined : [...scopes.values()].find(candidate => candidate.requests.includes(start.request))
+      if (start === undefined || holder === undefined) continue
+      scope.continues = { ...scope.continues, startedBy: {
+        turnSeq, scopeId: holder.scopeId, seq: start.request.seq,
+        ...start.request.requestNumber === undefined ? {} : { requestNumber: start.request.requestNumber },
+        viaTask: start.viaTask,
+      } }
+    }
+  }
+
+  /**
+   * The request that started a background task, among the starting
+   * execution's requests: the one whose tool result names the task id (the
+   * CLI's own answer to the call), else the execution's first request.
+   */
+  private startingRequest(requests: readonly StoredRequest[], taskId: string): { request: StoredRequest; viaTask: boolean } | undefined {
+    const calls = requests.filter(request => request.purpose === undefined)
+    const named = taskId === '' ? undefined : calls.find(request => request.execs.some(exec => exec.result?.includes(taskId) === true))
+    if (named !== undefined) return { request: named, viaTask: true }
+    const first = [...calls].sort((a, b) => a.startedAt - b.startedAt)[0]
+    return first === undefined ? undefined : { request: first, viaTask: false }
+  }
+
+  /** A self-started turn of a member's own lens: its task, and where in this session the task was started. */
+  private ownContinues(session: SessionRecord | undefined, cause: SelfCause): ContinuesInfo {
+    const base: ContinuesInfo = { taskId: cause.taskId, taskStatus: cause.taskStatus }
+    if (session === undefined || cause.startedBy === undefined) return base
+    const candidates = session.turns.flatMap(turn => turn.scopes.get('main')?.requests ?? []).filter(request => request.executionId === cause.startedBy)
+    const start = this.startingRequest(candidates, cause.taskId)
+    return start === undefined ? base : { ...base, startedBy: { ...this.addressOf(session, start.request), viaTask: start.viaTask } }
   }
 
   /** What one execution recorded about itself, for the member view. */
@@ -1672,6 +1823,7 @@ export class InspectorStore {
       ...kind === undefined ? {} : { cause: kind },
       ...kind === 'member' && typeof cause?.['fromMemberId'] === 'string' ? { fromMember: cause['fromMemberId'] } : {},
       ...kind === 'help' && typeof cause?.['fromRoom'] === 'string' ? { fromRoom: cause['fromRoom'] } : {},
+      ...kind === 'self' && typeof cause?.['taskStatus'] === 'string' ? { taskStatus: cause['taskStatus'] } : {},
       ...execution.end?.outcome === undefined ? {} : { outcome: execution.end.outcome },
       ...unrecorded.length === 0 ? {} : { unrecorded },
     }
@@ -1701,6 +1853,8 @@ export class InspectorStore {
       const loose = child.requests.filter(request => request.purpose === 'compaction' && !claimed.has(request))
       if (loose.length > 0) scopes.set(`compaction:unattributed:${childId}`, compactionScope(`compaction:unattributed:${childId}`, child, name, loose))
     }
+    // Self rounds whose chain no round claims: their requests show here, not nowhere.
+    this.addSelfScopes(session, ROOM_UNATTRIBUTED_TURN, scopes, this.roomSelfRounds(session).filter(self => self.dispatchSeq === undefined), filter, false)
     const decisions = scopeAuthorized('main', filter) ? this.decisionsByTurn(session, filter).get(ROOM_UNATTRIBUTED_TURN) ?? [] : []
     if (scopes.size === 0 && decisions.length === 0) return undefined
     const times = [...decisions.map(decision => decision.at), ...[...scopes.values()].map(scope => scope.startedAt)]
@@ -1799,6 +1953,7 @@ export class InspectorStore {
       status: scope.status,
       ...scope.error === undefined ? {} : { error: scope.error },
       ...scope.execution === undefined ? {} : { execution: scope.execution },
+      ...scope.continues === undefined ? {} : { continues: scope.continues },
       config: scope.config,
       startedAt: scope.startedAt,
       ...scope.endedAt === undefined ? {} : { endedAt: scope.endedAt },
@@ -2064,13 +2219,14 @@ export class InspectorStore {
     for (const scope of turn.scopes.values()) {
       if (!scopeAuthorized(scope.scopeId, filter)) continue
       for (const request of scope.requests) {
-        lanes.push(...requestLanes(request))
+        // A view built on read (a room round's member, self-round or 压缩 tab) names its lanes by the view, not the request's home scope.
+        lanes.push(...requestLanes(request).map(lane => ({ ...lane, scopeId: scope.scopeId })))
         for (const exec of request.execs) {
           if (exec.end === undefined) continue
           lanes.push({
             kind: 'tool-exec',
             requestSeq: request.seq,
-            scopeId: request.scopeId,
+            scopeId: scope.scopeId,
             startedAt: exec.start,
             durationMs: exec.end - exec.start,
             tool: exec.name,

@@ -65,6 +65,47 @@ export function lastParagraph(text: string): string {
   return previewLine(paragraphs.at(-1) ?? text, 120)
 }
 
+/**
+ * The heads of the sections the room plugin puts IN FRONT of a delivered
+ * message (room `dispatch.ts` `assemblePrompt`: the briefing, a coordinator
+ * handoff, an instructions edit, room changes, carried notifications, held
+ * reports; each a `\n\n`-separated section). Room writes no structured marker
+ * for them (lens stays dependency-free and reads them by shape), so the list
+ * mirrors room's literals.
+ */
+const ROOM_PREAMBLE_HEADS: readonly string[] = [
+  '【房间简报】', '【协调者交接】', '你现在是本房间的协调者。', '你的指令更新为：', '【房间变动】', '【通知】',
+]
+/** A held report the round carries: `【#m12 的回报 · …】`. */
+const HELD_REPORT_HEAD = /^【#m\d+ 的回报/
+const REMINDER_OPEN = '<system-reminder>'
+const REMINDER_CLOSE = '</system-reminder>'
+
+/**
+ * A delivered message's own words: the text without the room's injected
+ * preamble sections and leading `<system-reminder>` blocks, so a member
+ * turn's title is the human's message, not the 【协调者交接】 notice that
+ * rode in front of it. Only leading sections go, and never the last one: a
+ * message that is all preamble (or none) is returned as it was.
+ * @param text - a turn's first human message (or a room dispatch's text).
+ * @returns the text from the first section that is not an injected preamble.
+ */
+export function stripRoomPreamble(text: string): string {
+  let rest = text.trimStart()
+  for (;;) {
+    let next: string | undefined
+    if (rest.startsWith(REMINDER_OPEN)) {
+      const close = rest.indexOf(REMINDER_CLOSE)
+      if (close >= 0) next = rest.slice(close + REMINDER_CLOSE.length)
+    } else if (ROOM_PREAMBLE_HEADS.some(head => rest.startsWith(head)) || HELD_REPORT_HEAD.test(rest)) {
+      const gap = /\n\s*\n/.exec(rest)
+      if (gap !== null) next = rest.slice(gap.index + gap[0].length)
+    }
+    if (next === undefined || next.trim() === '') return rest === text.trimStart() ? text : rest
+    rest = next.trimStart()
+  }
+}
+
 /** Collapse whitespace for the single-line preview, capped at `max` chars. */
 export function previewLine(text: string, max = 80): string {
   const collapsed = text.replace(/\s+/g, ' ').trim()

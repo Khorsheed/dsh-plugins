@@ -26,6 +26,29 @@
 import type { LensJsonValue, RoomDecisionRow } from './types.ts'
 import { readAnswers, readQuestions, type RoomQuestionRecord } from './ask.ts'
 
+/**
+ * A round the member's CLI opened on its own when a background task ended
+ * (local-agent cause `self`, member-self-started-rounds A①): the task, how it
+ * ended, and the execution that started it (`startedBy`, written only when
+ * the core followed the recorded chain; never guessed here either).
+ */
+export interface SelfCause {
+  taskId: string
+  taskStatus: string
+  startedBy?: string
+}
+
+/** The `self` cause of an execution start, read structurally; undefined for any other cause. */
+export function selfCauseOf(cause: Record<string, unknown> | undefined): SelfCause | undefined {
+  if (cause?.['kind'] !== 'self') return undefined
+  const taskId = cause['taskId'], taskStatus = cause['taskStatus'], startedBy = cause['startedBy']
+  return {
+    taskId: typeof taskId === 'string' ? taskId : '',
+    taskStatus: typeof taskStatus === 'string' ? taskStatus : '',
+    ...typeof startedBy === 'string' && startedBy !== '' ? { startedBy } : {},
+  }
+}
+
 /** One member run of a dispatch. */
 export interface RoomRun {
   /** The producer's run id; `legacy:<member>:<startedAt>` for a legacy run without one. */

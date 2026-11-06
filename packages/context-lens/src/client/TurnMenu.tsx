@@ -14,6 +14,7 @@ import type { TurnListItem } from '../types.ts'
 import { fmtK, gapShown, turnNumber, type TurnGap } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
+import { continuesText } from './RoomRecords.tsx'
 import css from './TurnMenu.module.css'
 
 /** The panel's translate face. */
@@ -24,7 +25,7 @@ export function turnTitle(turn: TurnListItem, t: T): string {
   const n = turnNumber(turn)
   return turn.hostTurn === undefined && turn.room === undefined
     ? turn.roomUnattributed === true ? t('room.unattributed') : turn.query === 'compaction' ? t('compaction.title') : turn.query
-    : `${t('turn.label', { seq: String(n ?? '·') })} · ${turn.room !== undefined ? `[${t('query.room')}] ` : ''}${turn.query !== '' ? turn.query : turn.trigger !== undefined ? `[${turn.trigger.source}] ${turn.trigger.text}` : ''}`
+    : `${t('turn.label', { seq: String(n ?? '·') })} · ${turn.room !== undefined ? `[${t('query.room')}] ` : ''}${turn.query !== '' ? turn.query : turn.trigger !== undefined ? `[${turn.trigger.source}] ${turn.trigger.text}` : turn.continues !== undefined ? continuesText(turn.continues.taskStatus, t) : ''}`
 }
 
 /** One menu row: the title line, then request count + token totals. */

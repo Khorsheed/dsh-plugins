@@ -8,7 +8,7 @@
  * the absence of one.
  */
 import type { ReactNode } from 'react'
-import type { ExecutionFacts, RoomFallbackMember } from '../types.ts'
+import type { AgentScopeOverview, ContinuesInfo, ExecutionFacts, RoomFallbackMember } from '../types.ts'
 import type { InspectorTabProps } from './contract.ts'
 import css from './RoomRecords.module.css'
 type T = InspectorTabProps['t']
@@ -58,6 +58,23 @@ export function UnattributedNote({ t }: { readonly t: T }): ReactNode {
   return <div className={css.notice} role="note">{t('room.unattributedNote')}</div>
 }
 
+const CONTINUES_KEYS: Record<string, Key> = {
+  completed: 'cont.completed',
+  failed: 'cont.failed',
+  timed_out: 'cont.timed_out',
+  killed: 'cont.killed',
+}
+
+/** A self-started round's one phrase by how its background task ended: 后台任务完成后继续 / 失败后 / 超时后 / …. */
+export function continuesText(taskStatus: string | undefined, t: T): string {
+  return t(CONTINUES_KEYS[taskStatus ?? ''] ?? 'cont.other')
+}
+
+/** A self round's view name beside its member: 「kimi · 后台任务完成后继续」, numbered when one round holds several. */
+export function selfRoundLabel(scope: Pick<AgentScopeOverview, 'label' | 'scopeId'> & { continues: ContinuesInfo }, t: T): string {
+  return `${scope.label ?? scope.scopeId} · ${continuesText(scope.continues.taskStatus, t)}${scope.continues.index === undefined ? '' : ` ${scope.continues.index}`}`
+}
+
 function causeText(execution: ExecutionFacts, t: T): string {
   switch (execution.cause) {
     case undefined: return t('exec.cause.none')
@@ -68,6 +85,7 @@ function causeText(execution: ExecutionFacts, t: T): string {
     case 'execution': return t('exec.cause.execution')
     case 'tool-call': return t('exec.cause.tool-call')
     case 'restart': return t('exec.cause.restart')
+    case 'self': return t('exec.cause.self', { continues: continuesText(execution.taskStatus, t) })
     default: return execution.cause
   }
 }

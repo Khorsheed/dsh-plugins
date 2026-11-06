@@ -31,7 +31,8 @@ import type { AssistantStreamRecord } from '@deepseek-ai/dsh-llm'
 import { responseFromSpans, toolExecutionFromMeta, type BlockSpan, type StoredRequest, type ToolExecutionInterval } from './store.ts'
 import { contentHash, splitRequest, type ScopeFingerprint } from './segmenter.ts'
 import type { ReplacementFact } from './changes.ts'
-import { AMBIENT_SOURCES, fromLogMessage, lastParagraph, messageKey, previewLine, serializeMessage, type CapturedMessage } from './messages.ts'
+import { selfCauseOf, type SelfCause } from './room.ts'
+import { AMBIENT_SOURCES, fromLogMessage, lastParagraph, messageKey, previewLine, serializeMessage, stripRoomPreamble, type CapturedMessage } from './messages.ts'
 
 /** The structural minimum of one decoded session-log row (untrusted JSON). */
 export interface SessionLogRow {
@@ -729,10 +730,21 @@ export function reconstructSession(
     }
     return turn
   }
+  // Execution starts by id: a turn opened inside a `self` execution is that round (its header says why it ran).
+  const starts = new Map<string, Extract<ExecutionRecord, { phase: 'start' }>>()
+  const markSelf = (turn: LogTurn | undefined, executionId: string | undefined): void => {
+    const cause = executionId === undefined ? undefined : selfCauseOf(starts.get(executionId)?.cause)
+    if (turn !== undefined && cause !== undefined && turn.selfCause === undefined) turn.selfCause = { ...cause, executionId: executionId! }
+  }
   const sink: FoldSink = {
     turnStart: (hostTurn, at, seq) => {
       const turn = turnFor(hostTurn, at)
       if (turn !== undefined && seq !== undefined && turn.startSeq === undefined) turn.startSeq = seq
+      markSelf(turn, cursor.openExecution)
+    },
+    execution: (record) => {
+      if (record.phase === 'start') starts.set(record.executionId, record)
+      else for (const hostTurn of record.turns) markSelf(byHostTurn.get(hostTurn), record.executionId)
     },
     turnEnd: (hostTurn, reason, at) => {
       const turn = turnFor(hostTurn, at)
@@ -781,6 +793,8 @@ export interface LogTurn {
   query: string
   /** First non-human message of the turn: who started it when no human did. */
   trigger?: { source: string; text: string }
+  /** The turn is a round the member's CLI opened itself (a `self` execution): why, and which execution. */
+  selfCause?: SelfCause & { executionId: string }
   /** The `turn/start` row's seq (the chat's history-jump target). */
   startSeq?: number
   startedAt: number
@@ -812,9 +826,9 @@ function delegationLabel(args: string): { label?: string } {
   return {}
 }
 
-/** The turn-list query preview: one collapsed line, capped. */
+/** The turn-list query preview: the message's own words (no room preamble), one collapsed line, capped. */
 function collapseQuery(text: string): string {
-  return text.replace(/\s+/g, ' ').trim().slice(0, 120)
+  return stripRoomPreamble(text).replace(/\s+/g, ' ').trim().slice(0, 120)
 }
 
 /**
