@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-06-claude-subagent-messages-not-member-steps.md
+.agents/notes/implemented/bug-fix/2026-11-06-claude-subagent-messages-not-member-steps.md: 4c74e878cad85cafb1e314b2304856dfc097b085
+.agents/notes/implemented/bug-fix/2026-11-06-claude-subagent-messages-not-member-steps.zh.md: 57ce3b3d4c69ba989b54ead09ff94acb64e9e006

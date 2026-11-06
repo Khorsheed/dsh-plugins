@@ -787,6 +787,14 @@ interface ClaudeStreamFoldState {
   /** Whether the stream's terminal `result` event was folded. */
   completed: boolean
   /**
+   * Subagent liveness signal: the member's `Agent`/`Task` tool_use id → how
+   * many subagent events (`parent_tool_use_id` set) the stream carried under
+   * it. Those events are the SUBAGENT's own conversation — they never fold
+   * into the member's lines, final answer, usage, or tool accounting; this
+   * count is all the fold keeps of them ("that call's subagent is alive").
+   */
+  readonly subagentEvents: Map<string, number>
+  /**
    * The last TodoWrite translation (last-wins within the stream). TodoWrite
    * blocks are intercepted BEFORE the text fold — the member's task list
    * crosses as a native `todo/write` snapshot, never a `[工具 TodoWrite]` line.
@@ -883,6 +891,18 @@ export function claudeVersionFromInit(value: unknown): string | undefined {
 }
 
 /**
+ * The member tool call a stream-json event belongs to when it is a subagent's
+ * (an `assistant`/`user`/`stream_event` carrying a non-empty
+ * `parent_tool_use_id`), else undefined — the member's own events carry
+ * `null` or nothing there.
+ */
+export function claudeSubagentParentId(event: { type?: unknown; parent_tool_use_id?: unknown }): string | undefined {
+  if (event.type !== 'assistant' && event.type !== 'user' && event.type !== 'stream_event') return undefined
+  const parent = event.parent_tool_use_id
+  return typeof parent === 'string' && parent !== '' ? parent : undefined
+}
+
+/**
  * Fold one NDJSON line into the stream state. Shared by
  * {@link parseClaudeStreamJson} (settle-time whole-stream parse) and
  * {@link ClaudeStreamParser} (live incremental parse) so the two paths cannot
@@ -902,10 +922,19 @@ function foldClaudeStreamLine(state: ClaudeStreamFoldState, raw: string): void {
     result?: unknown
     timestamp?: unknown
     claude_code_version?: unknown
+    parent_tool_use_id?: unknown
   }
   try {
     event = JSON.parse(line) as typeof event
   } catch {
+    return
+  }
+  // A subagent's message is never the member's step nor its answer: count it
+  // as a liveness signal and stop — before the timing boundary too, so the
+  // member's own generation windows are not cut by another conversation.
+  const subagentParent = claudeSubagentParentId(event)
+  if (subagentParent !== undefined) {
+    state.subagentEvents.set(subagentParent, (state.subagentEvents.get(subagentParent) ?? 0) + 1)
     return
   }
   const parsedAt = typeof event.timestamp === 'string' ? Date.parse(event.timestamp) : Number.NaN
@@ -1088,6 +1117,7 @@ export class ClaudeStreamParser implements ClaudeStreamFoldState {
   todos: TodoItem[] | undefined
   todoSkew = false
   readonly toolCalls = new Map<string, number>()
+  readonly subagentEvents = new Map<string, number>()
 
   /** Fold every complete NDJSON line in the chunk; the tail stays buffered. */
   push(chunk: string): void {
@@ -1143,6 +1173,7 @@ export function parseClaudeStreamJson(output: string): {
     completed: false,
     todos: undefined,
     todoSkew: false,
+    subagentEvents: new Map(),
   }
   for (const raw of output.split('\n')) foldClaudeStreamLine(state, raw)
   const toolCalls = toolCallsOf(state.toolCalls)
