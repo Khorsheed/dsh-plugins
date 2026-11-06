@@ -8,8 +8,9 @@
  * position's tick in blue (the latest message until the tracker answers);
  * hovering or keyboard-focusing the panel reveals the row texts with the
  * blue row on top, and clicking a row jumps the transcript to that message.
- * The panel is always on while the chat view shows; the `enabled` config is
- * the off switch.
+ * On fine-pointer devices the panel is always on while the chat view shows;
+ * coarse-pointer devices hide it through CSS. The `enabled` config is the off
+ * switch.
  *
  * The row list is whole-session from the moment the session opens: the host
  * `turnOutline` projection names every started turn, and the loaded chat
