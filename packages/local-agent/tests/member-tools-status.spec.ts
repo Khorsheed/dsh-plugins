@@ -264,7 +264,7 @@ describe('reloading a member\'s tools', () => {
 
   it('running background tasks: refused until the caller confirms they lose their process', async () => {
     const task = (id: string, state: 'running' | 'completed') => ({ id, label: id, kind: 'shell' as const, startedAt: 1, state })
-    let read = { supported: true, processAlive: true, tasks: [task('bash-1', 'running'), task('bash-2', 'running'), task('bash-0', 'completed')] }
+    const read = { supported: true, processAlive: true, tasks: [task('bash-1', 'running'), task('bash-2', 'running'), task('bash-0', 'completed')] }
     const reloads: string[] = []
     const h = await mount({
       backgroundTasks: async () => read,
@@ -276,10 +276,16 @@ describe('reloading a member\'s tools', () => {
     expect(reloads).toEqual([])
     expect(await h.registry.reloadMemberTools(CHILD, { confirmBackgroundTasks: true })).toEqual({ ok: true, when: 'now' })
     expect(reloads).toEqual([CHILD])
-    // Tasks of a process that is gone are not cut off by a reload.
-    read = { ...read, processAlive: false }
-    await vi.waitFor(async () => { expect((await h.registry.memberToolsStatus(CHILD))?.reload).toBeUndefined() })
-    expect(await h.registry.reloadMemberTools(CHILD)).toMatchObject({ ok: true })
+  })
+
+  it('tasks of a process that is gone are not cut off by a reload: no question asked', async () => {
+    const read = { supported: true, processAlive: false, tasks: [{ id: 'bash-1', label: 'bash-1', kind: 'shell' as const, startedAt: 1, state: 'running' as const }] }
+    const h = await mount({
+      backgroundTasks: async () => read,
+      reload: () => ({ when: 'now', done: Promise.resolve('respawned') } satisfies LocalAgentMemberReload),
+    })
+    h.spawn()
+    expect(await h.registry.reloadMemberTools(CHILD)).toEqual({ ok: true, when: 'now' })
   })
 })
 
