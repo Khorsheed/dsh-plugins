@@ -4,6 +4,7 @@
  * highlight, hover/focus brightening hooks, keyboard and click jumps,
  * scroll-top paging), and the conditions that keep the panel hidden.
  */
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
@@ -661,6 +662,13 @@ describe('width policy', () => {
     // 40% of 200px (80) floors at the minimum panel width.
     renderWith({ flowLeft: null, scrollportWidth: 200 })
     expect(panel().style.width).toBe('120px')
+  })
+})
+
+describe('touch input', () => {
+  it('hides the whole floating rail when the primary pointer is coarse', () => {
+    const stylesheet = readFileSync('src/client/TimelineRail.module.css', 'utf8')
+    expect(stylesheet).toMatch(/@media \(pointer: coarse\)\s*\{\s*\.panel\s*\{[^}]*\bdisplay:\s*none;/)
   })
 })
 

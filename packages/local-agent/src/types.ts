@@ -505,6 +505,18 @@ export interface LocalAgentBackgroundTask {
   resultIn?: string
   /** A background subagent's grandchild session (same task id), when it has one. */
   subagentSessionId?: string
+  /**
+   * The CLI tool call that started it — the same id the member's mirrored
+   * `tool-call` block carries, so a surface can place the task at that call.
+   * Absent when the CLI recorded none.
+   */
+  callId?: string
+  /**
+   * The last lines of a shell task's own output file (at most a few lines,
+   * read from its tail), oldest first. Absent for agent tasks and when the
+   * CLI wrote no output file.
+   */
+  outputTail?: string[]
 }
 
 /**
@@ -1343,6 +1355,23 @@ export type LocalAgentMemberToolsReload =
   | { readonly ok: true; readonly when: 'now' | 'after-round' }
   | { readonly ok: false; readonly reason: 'unknown-member' | 'unsupported' | 'no-process' | 'busy' }
   | { readonly ok: false; readonly reason: 'start-failed'; readonly error: string }
+  /**
+   * The member's resident process runs `running` CLI background tasks that a
+   * new process would cut off (member-self-started-rounds C①). Nothing was
+   * done: the caller confirms with the user (「会让 N 项后台工作失去联系」)
+   * and asks again with `confirmBackgroundTasks: true`.
+   */
+  | { readonly ok: false; readonly reason: 'background-tasks'; readonly running: number }
+
+/** Options of a reload request (`reloadMemberTools`). */
+export interface LocalAgentMemberToolsReloadOptions {
+  /**
+   * The user confirmed that the member's running background tasks lose
+   * their process. Absent: a member with running background tasks is
+   * refused with `background-tasks` instead of being reloaded.
+   */
+  readonly confirmBackgroundTasks?: boolean
+}
 
 /**
  * Outcome of one `member_message` delivery. Channel-level failures (unknown or

@@ -19,6 +19,7 @@ Once a session gets long, finding that requirement you mentioned three messages 
 - **Click to jump** — a loaded row scrolls the transcript straight to it; an outline row goes through the session's jump loader and lands on the freshly loaded message.
 - **Long-history friendly** — a short list centers vertically; a long one scrolls, its bottom-most row flush with the chat input box; goal/todo dock cards never push the timeline up. Assemblies without the turn-outline unit fall back to window paging: a few pages prefetch on open, and older history loads when the panel is scrolled to its top.
 - **Width adapts to the layout** — on wide layouts the panel's width is capped by the scrollport's left gutter; on narrow ones (a right sidebar or a small window, e.g. a Room's member panel open) it degrades to a tick strip in the flow's left padding and expands into a solid-background overlay on hover/focus instead of hiding.
+- **Hidden on touch input** — devices whose primary pointer is coarse (`pointer: coarse`) show neither the persistent ticks nor the expansion overlay; narrow desktop windows keep the tick-strip mode.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="the timeline at rest: a strip of dimmed ticks that stays out of the way, expanding on hover">
 
@@ -40,7 +41,7 @@ dsh plugin --profile web remove @khorsheed/dsh-message-timeline
 | --- | --- | --- |
 | `enabled` | `true` | Master switch; false hides the panel entirely. |
 | `includeSteering` | `true` | Count steering messages (user text admitted mid-turn) as rows. |
-| `panelWidth` | `360` | Panel width in px (clamped 120–640); shrinks to fit a narrow column, hides entirely when the gutter is too small. |
+| `panelWidth` | `360` | Panel width in px (clamped 120–640); shrinks to fit a narrow column and degrades to a tick strip when the gutter is too small; hidden on touch devices. |
 | `initialPages` | `5` | Window-paging fallback only: history pages (50 events each) prefetched on open (clamped 1–20). When the host serves the turnOutline projection the list starts whole and this does nothing. |
 
 ## Compatibility

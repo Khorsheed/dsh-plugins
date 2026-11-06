@@ -46,6 +46,9 @@
  *      the report to a session that will never exist: it stays pending until
  *      the next restart overwrites it (silently lost).
  *   --no-restart    install/refresh + diagnostic preflight; do not restart
+ *      (the only mode allowed from inside a local-agent member: with
+ *      $DSH_LOCAL_AGENT_MEMBER set, a restarting run is refused before any
+ *      command — the restart belongs to the coordinator or the human)
  *   --mobile-origin HTTPS  rotate an existing Quick Tunnel binding through reconfigure
  *   --clear-mobile-origin  retire the static Quick Tunnel binding (DSH_MOBILE_PUBLIC_ORIGIN
  *      and its --trusted-host) through reconfigure; the mobile plugin manages its own tunnel
@@ -113,6 +116,32 @@ if (mobileOrigin && clearMobile) usage('--mobile-origin and --clear-mobile-origi
 if ((mobileOrigin || clearMobile) && (noRestart || !packages.includes('packages/mobile'))) usage('--mobile-origin / --clear-mobile-origin require packages/mobile and a guarded restart')
 if (packages.length === 0) usage('--package <dir> is required (repeatable)')
 if (versionOverride !== undefined && packages.length > 1) usage('--version only makes sense with a single package')
+
+// A local-agent member (a Kimi / Codex / Claude CLI the family runs) carries
+// DSH_LOCAL_AGENT_MEMBER in its environment. A restart from inside it kills
+// the instance the member itself runs in — its process, its background
+// tasks, the report it promised (2026-11-06, kimi-canvas). The member may do
+// every step before the restart (--no-restart); the restart itself goes to
+// the coordinator or the human, before any command runs.
+const callingMember = process.env.DSH_LOCAL_AGENT_MEMBER
+if (!noRestart && callingMember !== undefined && callingMember !== '') {
+  const deployArgs = args.join(' ')
+  const room = process.env.DSH_LOCAL_AGENT_ROOM
+  process.stderr.write([
+    `deploy-3080: refusing to restart — this deploy runs inside local-agent member ${callingMember}${room ? ` (room ${room})` : ''}, and the restart would kill the instance it runs in.`,
+    'deploy-3080: 拒绝重启——这次部署是从成员内部发起的，重启会杀掉成员自己所在的实例。',
+    '',
+    'Prepare and verify from the member (pack + profile refresh + preflight, no restart):',
+    '在成员里先准备并验证（打包、刷新 profile、预检，不重启）：',
+    `  pnpm deploy:3080 ${deployArgs} --no-restart`,
+    '',
+    'Then hand the restart to the coordinator or the human, who runs:',
+    '然后把重启交给协调者或人来执行：',
+    `  pnpm deploy:3080 ${deployArgs}`,
+    '',
+  ].join('\n'))
+  process.exit(2)
+}
 
 function run(cmd, argv, options = {}) {
   execFileSync(cmd, argv, { stdio: 'inherit', ...options })

@@ -124,6 +124,20 @@ export class RoomStore {
   }
 
   /**
+   * The cached room a member session belongs to, with that member — only
+   * rooms this client has already pulled (a member session opened straight
+   * from a link answers undefined until its room is visited).
+   * @param childSessionId - the member's session.
+   */
+  memberRoom(childSessionId: string): { readonly state: RoomState; readonly member: RoomState['members'][number] } | undefined {
+    for (const state of this.states.values()) {
+      const member = state.members.find(entry => entry.childSessionId === childSessionId)
+      if (member !== undefined) return { state, member }
+    }
+    return undefined
+  }
+
+  /**
    * Subscribe to cache changes.
    * @param listener - called after any map mutation.
    * @returns unsubscribe.

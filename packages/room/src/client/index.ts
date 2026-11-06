@@ -31,8 +31,12 @@ import roomRemote from '@khorsheed/dsh-room/remote'
 import { presetDisplayText } from '@deepseek-ai/dsh-agent-preset-registry/display'
 import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
-import type { LocalAgentMemberControlState, LocalAgentMemberInbox, LocalAgentMemberToolsReload, LocalAgentMemberToolsStatus, LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentBackgroundTasks, LocalAgentMemberControlState, LocalAgentMemberInbox, LocalAgentMemberToolsStatus, LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import { RoomRequestIds } from './request-ids.ts'
+import { ActivityReveals, MemberActivityStore, type MemberActivityFace } from './MemberActivity.tsx'
+import { runningBackground } from './member-activity-view.ts'
+import { reloadThroughGateway } from './member-tools-view.ts'
+import { activityCallsDefinition, MemberActivityTail, type MemberActivityTailInjected } from './MemberActivityTail.tsx'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import { en, zh } from './locales.ts'
 import { InviteAgentAction } from './InviteAgentAction.tsx'
@@ -118,6 +122,20 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
 
   const roomStore = new RoomStore(ctx, remote)
   ctx.effect(() => roomStore.start(), 'room: store')
+  // Members' background activity (member-self-started-rounds M2): local-agent's
+  // memberBackgroundTasks read, probed per call like every other family read —
+  // a composition without the family, or a core without the read, answers
+  // undefined and no surface renders. Polled only while a surface shows it.
+  const memberActivity: MemberActivityFace = {
+    store: new MemberActivityStore(async (childSessionId) => {
+      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
+      if (gateway === undefined || typeof gateway['memberBackgroundTasks'] !== 'function') return undefined
+      const carried = await (gateway['memberBackgroundTasks'] as
+        (child: string) => Promise<{ readonly ok: true; readonly value: LocalAgentBackgroundTasks | null } | { readonly ok: false }>)(childSessionId)
+      return carried.ok ? carried.value : undefined
+    }),
+    reveals: new ActivityReveals(),
+  }
 
   // The modes at work in each room, for the other plugins' sidebar entries:
   // the room's sidebar shows what any member's mode reaches (slots.ts).
@@ -380,6 +398,8 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
   }
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
+    memberActivity,
+    runningBackgroundTasks: async childSessionId => runningBackground(await memberActivity.store.readNow(childSessionId)),
     unlinkSession: linkFace(sessionId).unlinkSession,
     // 团队 is the collaboration page's second view (one sidebar page, two switches).
     ...teamSidebar === undefined ? {} : { openTeam: (member?: string) => { teamSidebar.openTab(ROOM_TASKS_KIND, { params: { view: 'team', ...member === undefined ? {} : { member } } }) } },
@@ -418,17 +438,8 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
         return undefined
       }
     },
-    reloadMemberTools: async (childSessionId) => {
-      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
-      if (gateway === undefined || typeof gateway['reloadMemberTools'] !== 'function') return undefined
-      try {
-        const carried = await (gateway['reloadMemberTools'] as
-          (child: string) => Promise<{ readonly ok: true; readonly value: LocalAgentMemberToolsReload } | { readonly ok: false }>)(childSessionId)
-        return carried.ok ? carried.value : undefined
-      } catch {
-        return undefined
-      }
-    },
+    reloadMemberTools: (childSessionId, options) =>
+      reloadThroughGateway(ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined, childSessionId, options),
     // The edit dialog's recovery block (same lazy probe): each read answers
     // undefined on its own when the family or the method is absent.
     memberRecovery: async (childSessionId) => {
@@ -579,7 +590,22 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     lctx.uiConversation.events.register(roomHelpReplyDefinition)
     lctx.uiConversation.events.register(roomHelpRequestDefinition)
     lctx.uiConversation.events.register(roomHelpInDefinition)
+    // Each turn's Bash call ids: the member session's background command cards read them.
+    lctx.uiConversation.events.register(activityCallsDefinition as never)
   })
+  // A member session's background command cards, in the tail of the turn that
+  // started each command. Declared by ui-chat; a composition without it has no tail.
+  ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
+    name: 'conversation.chat.turnTail',
+    id: 'room-member-activity',
+    order: 30,
+    locale: NS,
+    inject: (): MemberActivityTailInjected => ({
+      memberActivity,
+      memberRoom: childSessionId => roomStore.memberRoom(childSessionId),
+      subscribeRooms: roomStore.subscribe,
+    }),
+  }, MemberActivityTail as never))
 
   // The slots are declared by ui-conversation, whose apply order
   // relative to this plugin is unconstrained: register through slots.inject so
@@ -696,6 +722,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       ...inviteFace(sessionId),
       reconcileDelivery: reconcileFor(sessionId),
       openPlanSession: id => openSession(id as SessionId),
+      memberActivity,
       ...sidebar === undefined || sidebarTabs === undefined ? {} : {
         openTasks: (task?: string) => { sidebar.openTab(ROOM_TASKS_KIND, { params: { view: 'tasks', ...task === undefined ? {} : { task } } }) },
       },

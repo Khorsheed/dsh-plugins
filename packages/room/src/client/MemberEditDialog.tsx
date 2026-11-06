@@ -122,6 +122,7 @@ export function MemberEditDialog({ sessionId, memberName, face, onClose, t }: Me
       memberRecovery={face.memberRecovery}
       retryMemberStart={face.retryMemberStart}
       reconcileMemberExecution={face.reconcileMemberExecution}
+      runningBackgroundTasks={face.runningBackgroundTasks}
       onSubmit={async (values) => {
         const { outcome } = await submitMemberEdit(face, member, values, t)
         if (outcome.ok) void face.roomStore.refresh(sessionId)

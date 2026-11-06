@@ -16,6 +16,7 @@ Once a session gets long, finding that request you made earlier means scrolling 
 - **Messages without text still get a line**: image messages, attachment messages, and automatic turns (restart recovery, scheduled tasks and so on) are labelled and clickable too.
 - **Quiet until you need it**: at rest it is a row of faint gray ticks; text appears only on hover or keyboard focus.
 - **Works in narrow windows**: with the right sidebar open or the window narrow, it shrinks to a rail on the left and floats out on hover.
+- **Hidden on touchscreens**: phones and other coarse-pointer devices do not show the timeline, avoiding reading distractions; narrow desktop windows keep it.
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="560" alt="the timeline at rest: a faint strip of ticks that stays out of the way and expands on hover">
 

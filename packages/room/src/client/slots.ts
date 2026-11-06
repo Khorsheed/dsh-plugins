@@ -15,7 +15,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 // Type-only: pulls this plugin's LocaleNamespaceMap merge.
 import type {} from './locales.ts'
 import type { RoomProviderList, RoomQuestionAnswer, RoomRemoval, RoomRunAttachment, RoomSettings } from '../types.ts'
-import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsStatus, LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsReloadOptions, LocalAgentMemberToolsStatus, LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import type { RoomChromeVisibility } from './preset-visibility.ts'
 import type { RoomStore } from './room-store.ts'
 
@@ -221,6 +221,8 @@ export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInject
   readonly taskTags?: import('./task-tag.ts').RoomTaskTags | undefined
   readonly reconcileDelivery?: ((deliveryId: string, outcome: 'done' | 'cancelled', evidence: string) => Promise<RoomMutationOutcome>) | undefined
   readonly openPlanSession?: ((sessionId: string) => void) | undefined
+  /** Members' background activity (local-agent's read, polled); absent = no 后台 capsule. */
+  readonly memberActivity?: import('./MemberActivity.tsx').MemberActivityFace | undefined
   readonly renderMemberInbox?: LocalAgentUi['renderMemberInbox'] | undefined
   readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
   /** A CLI member's occupancy ring and the tools registered beside it (the compaction reminder); renders nothing without them. */
@@ -357,8 +359,21 @@ export interface RoomMembersInjected extends RoomInviteInjected {
    * undefined = gateway absent or RPC failure. Absent = no 模式工具 line.
    */
   readonly memberTools?: ((childSessionId: string) => Promise<LocalAgentMemberToolsStatus | null | undefined>) | undefined
-  /** Reload a member's process so it lists its mode tools again (the localAgentGateway `reloadMemberTools` write). */
-  readonly reloadMemberTools?: ((childSessionId: string) => Promise<LocalAgentMemberToolsReload | undefined>) | undefined
+  /** Members' background activity (local-agent's read, polled): the members page's read-only line. Absent = no line. */
+  readonly memberActivity?: import('./MemberActivity.tsx').MemberActivityFace | undefined
+  /**
+   * Reload a member's process so it lists its mode tools again (the
+   * localAgentGateway `reloadMemberTools` write). Without
+   * `confirmBackgroundTasks` a process running background tasks answers
+   * `background-tasks` and is left alone; the line confirms first.
+   */
+  readonly reloadMemberTools?: ((childSessionId: string, options?: LocalAgentMemberToolsReloadOptions) => Promise<LocalAgentMemberToolsReload | undefined>) | undefined
+  /**
+   * How many background tasks a CLI member's live process runs right now
+   * (local-agent's `memberBackgroundTasks`, read fresh): saving a model change
+   * replaces that process, so the edit dialog confirms first. 0 = none or unknown.
+   */
+  readonly runningBackgroundTasks?: ((childSessionId: string) => Promise<number>) | undefined
   /**
    * What the edit dialog's recovery block needs about a CLI member (the
    * localAgentGateway `memberConfiguration` and `memberInbox` reads,

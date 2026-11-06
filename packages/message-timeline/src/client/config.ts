@@ -17,7 +17,8 @@ export interface TimelineConfig {
    * ellipsizes). The panel's right edge never crosses the message flow: the
    * width is capped by the scrollport's left gutter, so a narrow column
    * shrinks the panel automatically, and a gutter too small for
-   * {@link PANEL_WIDTH_MIN} hides the panel entirely.
+   * {@link PANEL_WIDTH_MIN} uses the narrow tick strip. Coarse-pointer devices
+   * hide the panel through CSS.
    */
   panelWidth: number
   /**

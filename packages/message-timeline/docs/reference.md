@@ -19,6 +19,7 @@
 - **点击跳转**——点击已加载的行直接滚动到位；点击未加载的行经会话的 jump loader 回翻历史后落位。
 - **长历史友好**——列表短时垂直居中；长时隐形滚动，最底部贴着聊天输入框；目标/任务等 dock 卡片不会把时间轴顶上去。投影缺席的装配（未挂载 turn-outline 单元）退回窗口分页：打开时预取数页，更早历史在面板滚动到顶部时按需加载。
 - **宽度随布局自适应**——宽布局下面板宽度受滚动区左缘沟槽约束；窄布局（右侧栏打开、窗口窄，如 Room 的成员面板展开时）退为左缘刻度条，悬停或聚焦时展开带底色的浮层，不再直接隐藏。
+- **触屏隐藏**——主输入方式为粗指针（`pointer: coarse`）的设备不显示时间轴，既没有常驻刻度，也不会展开浮层；桌面窄窗口仍保留刻度条模式。
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="时间轴的静止态：收成一排压淡的刻度条，不挡视线，悬停才展开">
 
@@ -40,7 +41,7 @@ dsh plugin --profile web remove @khorsheed/dsh-message-timeline
 | --- | --- | --- |
 | `enabled` | `true` | 总开关；false 时面板完全不渲染。 |
 | `includeSteering` | `true` | 回合中插入的用户消息（steering）是否也算行。 |
-| `panelWidth` | `360` | 面板宽度（px，限 120–640）；窄列自动收缩，左缘沟槽放不下时整条隐藏。 |
+| `panelWidth` | `360` | 面板宽度（px，限 120–640）；窄列自动收缩，左缘沟槽放不下时退为刻度条；触屏设备不显示面板。 |
 | `initialPages` | `5` | 窗口分页兜底路径下，面板打开时预取的历史页数（每页 50 条事件；限 1–20）。宿主提供 turnOutline 投影时列表一次到位，此配置不生效。 |
 
 ## Compatibility

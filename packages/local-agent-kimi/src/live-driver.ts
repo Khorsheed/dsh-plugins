@@ -87,6 +87,7 @@ import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './se
 import { addTokenUsage, findKimiSessionDir, wirePath } from './session-view.ts'
 import { readKimiCompaction } from './kimi-compaction.ts'
 import { findOpenSelfTurn, readQueuedPrompt, turnEndedStopReason, wireLineCount } from './self-turn.ts'
+import { readKimiBackgroundTasks } from './background-tasks.ts'
 import { writeKimiDefaultModel } from './provision.ts'
 import {
   inspectKimiSessionLock,
@@ -101,6 +102,23 @@ import {
 interface KimiTodoItem { content: string; status: 'pending' | 'in_progress' | 'completed' }
 
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
+
+/**
+ * How long a resident runtime with running background work is kept past its
+ * idle lifetime, counted from the member's last activity (a round ending, or
+ * an observed change in its running tasks). User decision 2026-11-06: 4 hours.
+ */
+export const DEFAULT_LIVE_KEEPALIVE_CAP_MS = 4 * 60 * 60_000
+
+/**
+ * A member's running background work, as the idle check sees it: the ids of
+ * Kimi's running background tasks, and whether a turn kimi opened itself is
+ * still open on the wire.
+ */
+export interface KimiBackgroundWork {
+  readonly runningTaskIds: readonly string[]
+  readonly selfTurnOpen: boolean
+}
 
 /** Default timeout for a wire request acknowledgement (never for session/prompt). */
 export const DEFAULT_LIVE_REQUEST_TIMEOUT_MS = 30_000
@@ -601,6 +619,14 @@ export class KimiAcpLiveDriver {
   private readonly ensuringModel = new Map<string, string | undefined>()
   private readonly ensuringConfiguration = new Map<string, string | undefined>()
   private readonly idleTimers = new Map<string, NodeJS.Timeout>()
+  /**
+   * The member's last activity (epoch ms): a round or preparation ending,
+   * or an observed change in its running background tasks. The keep-alive
+   * cap counts from here.
+   */
+  private readonly lastActivity = new Map<string, number>()
+  /** The running task ids last observed per member (sorted, joined): a change is activity. */
+  private readonly observedTasks = new Map<string, string>()
   /** Per-member round serialization (the resume lock covers resume-vs-resume only). */
   private readonly roundChains = new Map<string, Promise<unknown>>()
   /** Rounds accepted and not yet settled, per member (a reload asked meanwhile waits for them). */
@@ -645,6 +671,20 @@ export class KimiAcpLiveDriver {
       endpoint?: (scopeHome: string) => Promise<KimiEndpointAuth>
       /** Host probes for the session-lock check (tests inject them). */
       sessionLock?: KimiSessionLockProbes
+      /** Keep-alive cap for a runtime with running background work (default {@link DEFAULT_LIVE_KEEPALIVE_CAP_MS}). */
+      keepAliveCapMs?: number
+      /**
+       * Reads the member's running background work (default: Kimi's
+       * `tasks/*.json` and the wire's open self turn). Tests inject it.
+       */
+      backgroundWork?: (childSessionId: string) => Promise<KimiBackgroundWork>
+      /**
+       * Told when this driver reclaims a resident process while background
+       * tasks were running in it (idle cap, reload, model switch, settings
+       * drain — not plugin unload): those tasks lose their process, and the
+       * task read reports them `lost` (`process-reclaimed`).
+       */
+      onReclaimedWithTasks?: (childSessionId: string, taskIds: readonly string[]) => void
     } = {},
     private readonly timeouts: KimiLiveDriverTimeouts = DEFAULT_TIMEOUTS,
   ) {}
@@ -666,29 +706,161 @@ export class KimiAcpLiveDriver {
     this.idleTimers.delete(key)
   }
 
+  /** A round or preparation ended: the member's activity, and a fresh idle lifetime. */
   private armIdleTimer(key: string): void {
+    this.lastActivity.set(key, Date.now())
+    this.scheduleIdleCheck(key, this.config.liveIdleMs ?? DEFAULT_LIVE_IDLE_MS)
+  }
+
+  private scheduleIdleCheck(key: string, delayMs: number): void {
     this.clearIdleTimer(key)
-    const idleMs = this.config.liveIdleMs ?? DEFAULT_LIVE_IDLE_MS
-    const timer = setTimeout(() => { void this.reclaim(key) }, idleMs)
+    const timer: NodeJS.Timeout = setTimeout(() => { void this.idleCheck(key, timer) }, Math.max(0, delayMs))
     timer.unref()
     this.idleTimers.set(key, timer)
   }
 
-  private async reclaim(key: string): Promise<void> {
+  /**
+   * The idle lifetime ran out (member-self-started-rounds C①). A runtime
+   * with running background tasks, or a turn kimi opened itself, is kept —
+   * reclaiming it would cut those tasks off — up to the keep-alive cap from
+   * the member's last activity; a change in the running tasks counts as
+   * activity. Without background work the runtime is reclaimed as always;
+   * when the work has only just ended, it gets one more idle lifetime first.
+   * @param key - the member's child session id.
+   * @param timer - the timer that fired (a round starting meanwhile replaces or clears it).
+   */
+  private async idleCheck(key: string, timer: NodeJS.Timeout): Promise<void> {
+    if (this.idleTimers.get(key) !== timer) return
+    const runtime = this.runtimes.get(key)
+    if (runtime === undefined || runtime.dead) {
+      await this.reclaim(key)
+      return
+    }
+    const work = await this.readBackgroundWork(key)
+    // A round, reload or reclaim got there first.
+    if (this.idleTimers.get(key) !== timer || this.runtimes.get(key) !== runtime) return
+    const idleMs = this.config.liveIdleMs ?? DEFAULT_LIVE_IDLE_MS
+    const now = Date.now()
+    const before = this.observedTasks.get(key) ?? ''
+    const running = this.noteObservedTasks(key, work?.runningTaskIds ?? [], now)
+    if (work?.selfTurnOpen === true) this.lastActivity.set(key, now)
+    if (!running && work?.selfTurnOpen !== true) {
+      if (before === '') {
+        await this.reclaim(key)
+        return
+      }
+      // The work ended since the last look: from here, a normal idle lifetime.
+      this.scheduleIdleCheck(key, idleMs)
+      return
+    }
+    const until = this.keepAliveDeadline(key) ?? now
+    if (now >= until) {
+      this.ctx.logger.warn(`local-agent-kimi: member ${key}'s kimi process kept background work past the keep-alive cap; reclaiming it`)
+      await this.reclaim(key)
+      return
+    }
+    this.scheduleIdleCheck(key, Math.min(idleMs, until - now))
+  }
+
+  /** Record the running task ids; a change is activity. Answers whether any runs. */
+  private noteObservedTasks(key: string, taskIds: readonly string[], now: number): boolean {
+    const seen = [...taskIds].sort().join('\n')
+    if (seen !== (this.observedTasks.get(key) ?? '')) this.lastActivity.set(key, now)
+    if (seen === '') this.observedTasks.delete(key)
+    else this.observedTasks.set(key, seen)
+    return seen !== ''
+  }
+
+  private keepAliveDeadline(key: string): number | undefined {
+    const last = this.lastActivity.get(key)
+    return last === undefined ? undefined : last + (this.config.keepAliveCapMs ?? DEFAULT_LIVE_KEEPALIVE_CAP_MS)
+  }
+
+  /**
+   * The task read's view of the member's running tasks (the room's tray reads
+   * them anyway): a change counts as activity, like the idle check's own look.
+   * @param key - the member's child session id.
+   * @param runningTaskIds - the ids of the tasks the read found running.
+   * @returns the latest time the resident process is kept for them (the
+   *   tray's 「进程最晚保留到」), or undefined when the member has no resident
+   *   process or nothing runs.
+   */
+  observeBackgroundTasks(key: string, runningTaskIds: readonly string[]): number | undefined {
+    const runtime = this.runtimes.get(key)
+    if (runtime === undefined || runtime.dead) return undefined
+    if (!this.noteObservedTasks(key, runningTaskIds, Date.now())) return undefined
+    return this.keepAliveDeadline(key)
+  }
+
+  /**
+   * The member's running background work, read from kimi's own files (or
+   * the injected reader). An unreadable session answers undefined — the
+   * caller treats it as no work, exactly as before keep-alive existed.
+   */
+  private async readBackgroundWork(key: string, runtime = this.runtimes.get(key)): Promise<KimiBackgroundWork | undefined> {
+    try {
+      if (this.config.backgroundWork !== undefined) return await this.config.backgroundWork(key)
+      const spec = this.lastSpecs.get(key)
+      const recorded = runtime?.sessionId === undefined ? spec?.resume?.cliSessionId : bareKimiSessionId(runtime.sessionId)
+      if (spec === undefined || recorded === undefined) return undefined
+      const dir = await findKimiSessionDir(spec.homeDir, recorded)
+      if (dir === undefined) return undefined
+      const tasks = await readKimiBackgroundTasks(dir)
+      const wire = await readFile(wirePath(dir), 'utf8').catch(() => '')
+      return {
+        runningTaskIds: tasks.filter(task => task.state === 'running').map(task => task.id),
+        selfTurnOpen: findOpenSelfTurn(wire, runtime?.spawnedAt) !== undefined,
+      }
+    } catch (error) {
+      this.ctx.logger.warn(`local-agent-kimi: reading member ${key}'s background tasks failed: ${thrown(error).message}`)
+      return undefined
+    }
+  }
+
+  /**
+   * Whether the member's resident process runs background tasks right now
+   * (the self-heal's deferral). False without a process.
+   */
+  async hasRunningBackgroundTasks(key: string): Promise<boolean> {
+    const runtime = this.runtimes.get(key)
+    if (runtime === undefined || runtime.dead) return false
+    return ((await this.readBackgroundWork(key, runtime))?.runningTaskIds.length ?? 0) > 0
+  }
+
+  /**
+   * Tell the owner which running tasks lose their process with this reclaim
+   * (`process-reclaimed`). Kimi's task files keep saying `running` after the
+   * process is gone, so reading them before or after the kill is the same.
+   */
+  private async noteReclaimedTasks(key: string, runtime: KimiLiveRuntime): Promise<void> {
+    const report = this.config.onReclaimedWithTasks
+    if (report === undefined) return
+    const work = await this.readBackgroundWork(key, runtime)
+    if (work !== undefined && work.runningTaskIds.length > 0) report(key, work.runningTaskIds)
+  }
+
+  private async reclaim(key: string, options: { readonly noteTasks?: boolean } = {}): Promise<void> {
     const runtime = this.runtimes.get(key)
     this.clearIdleTimer(key)
+    this.lastActivity.delete(key)
+    this.observedTasks.delete(key)
     if (runtime === undefined) return
     this.runtimes.delete(key)
+    if (options.noteTasks !== false && !runtime.dead) await this.noteReclaimedTasks(key, runtime)
     await runtime.reclaim()
   }
 
-  /** Reclaim every runtime (plugin unload); no process survives the profile. */
+  /**
+   * Reclaim every runtime (plugin unload); no process survives the profile.
+   * Does not wait to look at background tasks: the unload takes the record
+   * with it, and the next host start reads them as `host-restart`.
+   */
   async disposeAll(): Promise<void> {
     this.disposed = true
     this.disposeController.abort()
     await Promise.all([...this.ensuring.values()].map(pending => pending.catch(() => undefined)))
     for (const key of [...this.runtimes.keys()]) {
-      await this.reclaim(key)
+      await this.reclaim(key, { noteTasks: false })
     }
   }
 
@@ -742,7 +914,10 @@ export class KimiAcpLiveDriver {
     if (existing !== undefined) {
       this.runtimes.delete(key)
       this.clearIdleTimer(key)
-      if (!existing.dead) void existing.reclaim()
+      if (!existing.dead) {
+        void this.noteReclaimedTasks(key, existing)
+        void existing.reclaim()
+      }
     }
     const pending = this.ensuring.get(key)
     if (pending !== undefined && this.ensuringModel.get(key) === model && this.ensuringConfiguration.get(key) === configurationKey) return pending
@@ -799,6 +974,13 @@ export class KimiAcpLiveDriver {
     if (token === undefined || typeof registry.memberToolsStale !== 'function') return
     const reason = await registry.memberToolsStale(token).catch(() => undefined)
     if (reason === undefined || this.runtimes.get(key) !== runtime) return
+    // A new process would cut the member's background tasks off: the
+    // self-heal waits until they end (the next round start looks again).
+    if (await this.hasRunningBackgroundTasks(key)) {
+      this.ctx.logger.warn(`local-agent-kimi: member ${key}'s kimi process lacks its mode tools (${reason}); keeping it while its background tasks run`)
+      return
+    }
+    if (this.runtimes.get(key) !== runtime) return
     this.ctx.logger.warn(`local-agent-kimi: respawning member ${key}'s kimi process before its round: ${reason}`)
     await this.retireRuntime(key)
     // The edit dialog and the room show that it happened (an older core lacks the hook).

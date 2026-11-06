@@ -8,7 +8,7 @@ import Commands from '@deepseek-ai/dsh-commands'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
-import { LocalAgentRegistry, type LocalAgentPreparation } from '../src/index.ts'
+import { delegationEnv, LocalAgentRegistry, type LocalAgentPreparation } from '../src/index.ts'
 import { PreparedMembers } from '../src/prepared-members.ts'
 
 type StoredSessions = Map<string, { header: SessionHeader; events: SessionEvent[] }>
@@ -36,7 +36,12 @@ async function mount(previous?: { root: string; stored: StoredSessions }) {
   } as never)
   const registry = new LocalAgentRegistry(ctx, root, 10)
   ctx.provide('localAgent', registry)
-  const nativePrepare = vi.fn(async (_request: LocalAgentPreparation) => {})
+  // The env layer each provider-side spawn would build (prepare, round start).
+  const spawnEnvs: Array<{ at: 'prepare' | 'round'; env: NodeJS.ProcessEnv }> = []
+  const nativePrepare = vi.fn(async (_request: LocalAgentPreparation) => {
+    await Promise.resolve()
+    spawnEnvs.push({ at: 'prepare', env: delegationEnv({}) })
+  })
   const starts = vi.fn(async (spec: SubagentActivationSpec) => {
     const request: SubagentStartRequest = {
       ...spec.request,
@@ -47,6 +52,7 @@ async function mount(previous?: { root: string; stored: StoredSessions }) {
     if (intent?.kind !== 'fresh' || intent.preparedMemberId === undefined) throw new Error('missing prepared identity')
     const binding = registry.memberBinding(intent.preparedMemberId)!
     return registry.withMemberConfigurationRound(binding, async () => {
+      spawnEnvs.push({ at: 'round', env: delegationEnv({ FAKE_HOME: '/scoped' }) })
       const run = {
         id: SessionId(intent.preparedMemberId!),
         result: Promise.resolve({ output: [], stopReason: 'completed' as const }), dispose: async () => {},
@@ -68,7 +74,7 @@ async function mount(previous?: { root: string; stored: StoredSessions }) {
       },
     },
   })
-  return { ctx, root, registry, nativePrepare, starts, stored, unauthenticate: () => { authenticated = false }, failFlush: () => { flushFailure = true }, restoreFlush: () => { flushFailure = false } }
+  return { ctx, root, registry, nativePrepare, starts, stored, spawnEnvs, unauthenticate: () => { authenticated = false }, failFlush: () => { flushFailure = true }, restoreFlush: () => { flushFailure = false } }
 }
 
 describe('native member preparation', () => {
@@ -88,6 +94,33 @@ describe('native member preparation', () => {
     expect(m.registry.runConfiguration(run)?.resolved.model).toBe('chosen')
     expect(m.registry.isPreparedMember(id)).toBe(false)
     await expect(m.registry.start('parent', 'fake-cli', [], { preparedMemberId: id })).rejects.toThrow('unavailable')
+    await m.ctx.fiber.dispose()
+  })
+
+  it('names the member (and its room) to every CLI process spawned for it', async () => {
+    const m = await mount()
+    const isRoom = vi.fn(async ({ sessionId }: { sessionId: string }) => sessionId === 'parent')
+    m.ctx.provide('room', { isRoom } as never)
+    const id = await m.registry.prepareMember('parent', 'fake-cli', 'room-member')
+    await m.registry.start('parent', 'fake-cli', [{ type: 'text', text: 'work' }], { preparedMemberId: id })
+    expect(m.spawnEnvs.map(entry => entry.at)).toEqual(['prepare', 'round'])
+    for (const { env } of m.spawnEnvs) {
+      expect(env.DSH_LOCAL_AGENT_MEMBER).toBe(id)
+      expect(env.DSH_LOCAL_AGENT_ROOM).toBe('parent')
+    }
+    expect(m.spawnEnvs[1]!.env.FAKE_HOME).toBe('/scoped')
+    // The room marker never changes: probed once per parent.
+    expect(isRoom).toHaveBeenCalledOnce()
+    // Outside a member's work nothing is named.
+    expect(delegationEnv({})).not.toHaveProperty('DSH_LOCAL_AGENT_MEMBER')
+    await m.ctx.fiber.dispose()
+  })
+
+  it('names only the member when the parent is not a room or the room service is absent', async () => {
+    const m = await mount()
+    const id = await m.registry.prepareMember('parent', 'fake-cli', 'plain-member')
+    expect(m.spawnEnvs[0]!.env.DSH_LOCAL_AGENT_MEMBER).toBe(id)
+    expect(m.spawnEnvs[0]!.env).not.toHaveProperty('DSH_LOCAL_AGENT_ROOM')
     await m.ctx.fiber.dispose()
   })
 

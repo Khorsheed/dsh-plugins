@@ -14,7 +14,7 @@
  * @module @khorsheed/dsh-local-agent-kimi/background-tasks
  */
 
-import { readdir, readFile } from 'node:fs/promises'
+import { open, readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { LocalAgentBackgroundTask, LocalAgentBackgroundTaskState } from '@khorsheed/dsh-local-agent/types'
 import { wirePath } from './session-view.ts'
@@ -101,6 +101,11 @@ export async function readKimiBackgroundTasks(sessionDir: string, lookups: KimiB
   const fromWire = missing.length === 0 ? new Map<string, string>() : await wireToolCallIds(sessionDir, new Set(missing))
   for (const { info, task } of listed) {
     const callId = text(info['parentToolCallId']) ?? fromWire.get(task.id)
+    if (callId !== undefined) task.callId = callId
+    if (task.kind === 'shell') {
+      const tail = await outputTail(join(dir, task.id, 'output.log'))
+      if (tail !== undefined) task.outputTail = tail
+    }
     const startedBy = callId === undefined ? undefined : await lookups.executionOfCall?.(callId)
     if (startedBy !== undefined) task.startedBy = startedBy
     if (task.state !== 'running') {
@@ -128,6 +133,40 @@ function taskOf(info: TaskInfo, fileId: string): LocalAgentBackgroundTask | unde
     ...command === undefined ? {} : { command },
     ...endedAt === undefined || state === 'running' ? {} : { endedAt },
     ...typeof exitCode === 'number' && Number.isFinite(exitCode) ? { exitCode } : {},
+  }
+}
+
+/** How many trailing output lines a task carries, and the most bytes read to find them. */
+export const KIMI_TASK_OUTPUT_LINES = 6
+const OUTPUT_TAIL_BYTES = 4096
+
+/**
+ * The last {@link KIMI_TASK_OUTPUT_LINES} non-empty lines of a task's
+ * `output.log`, read from its last {@link OUTPUT_TAIL_BYTES} bytes only (the
+ * file grows without bound). A cut first line is dropped; carriage-return
+ * progress redraws keep their last frame. Undefined when there is no file
+ * or it holds no text.
+ */
+export async function outputTail(path: string): Promise<string[] | undefined> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined
+  try {
+    handle = await open(path, 'r')
+    const { size } = await handle.stat()
+    const length = Math.min(size, OUTPUT_TAIL_BYTES)
+    if (length === 0) return undefined
+    const buffer = Buffer.alloc(length)
+    await handle.read(buffer, 0, length, size - length)
+    let lines = buffer.toString('utf8').split('\n')
+    if (length < size) lines = lines.slice(1)
+    const shown = lines
+      .map(line => (line.split('\r').filter(frame => frame !== '').at(-1) ?? '').trimEnd())
+      .filter(line => line.trim() !== '')
+      .slice(-KIMI_TASK_OUTPUT_LINES)
+    return shown.length === 0 ? undefined : shown
+  } catch {
+    return undefined
+  } finally {
+    await handle?.close().catch(() => undefined)
   }
 }
 
