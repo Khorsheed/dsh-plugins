@@ -14,8 +14,10 @@ import css from './MembersView.module.css'
 
 /** One roster card: identity, avatar block, role, status chip, actions. */
 export function MemberCard({
-  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, coordinator = false, onPromote, preview = false, removal, onLocate,
+  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, coordinator = false, onPromote, preview = false, removal, onLocate, activity,
 }: {
+  /** The member's background work, one read-only line under the head (the members page only; never in the dialog preview). */
+  readonly activity?: ReactNode
   /** Reveal this member in the team page. */
   readonly onLocate?: (() => void) | undefined
   /** The open removal confirmation, rendered inside the card. */
@@ -92,6 +94,7 @@ export function MemberCard({
           </span>
         )}
       </div>
+      {!preview && activity}
       {member.kind !== 'main-agent' && (
         member.instructions === undefined ? (
           <p className={css.instructionsEmpty}>{t('members.instructions.empty')}</p>

@@ -60,11 +60,11 @@ describe('readKimiBackgroundTasks', () => {
     ])
     expect(tasks.find(task => task.id === 'bash-fail')).toEqual({
       id: 'bash-fail', label: 'placeholder bash-fail', command: 'sleep 20', kind: 'shell',
-      startedAt: NOW - 2 * MIN, endedAt: NOW - MIN, state: 'failed', exitCode: 2,
+      startedAt: NOW - 2 * MIN, endedAt: NOW - MIN, state: 'failed', exitCode: 2, callId: 'call-bash-fail',
     })
     // A running task carries no end, exit code or result; an agent task no command.
-    expect(tasks.find(task => task.id === 'bash-run')).toEqual({ id: 'bash-run', label: 'placeholder bash-run', command: 'sleep 20', kind: 'shell', startedAt: NOW - 5 * MIN, state: 'running' })
-    expect(tasks.find(task => task.id === 'agent-bg')).toEqual({ id: 'agent-bg', label: 'explore placeholder', kind: 'agent', startedAt: NOW - 6 * MIN, state: 'running' })
+    expect(tasks.find(task => task.id === 'bash-run')).toEqual({ id: 'bash-run', label: 'placeholder bash-run', command: 'sleep 20', kind: 'shell', startedAt: NOW - 5 * MIN, state: 'running', callId: 'call-bash-run' })
+    expect(tasks.find(task => task.id === 'agent-bg')).toEqual({ id: 'agent-bg', label: 'explore placeholder', kind: 'agent', startedAt: NOW - 6 * MIN, state: 'running', callId: 'call-agent-bg' })
     // Kimi's own `lost` is reported as is; no reason of ours is invented.
     expect(tasks.find(task => task.id === 'bash-lost')).not.toHaveProperty('lostBecause')
   })
@@ -73,6 +73,23 @@ describe('readKimiBackgroundTasks', () => {
     const long = `pnpm deploy:3080 --package packages/${'x'.repeat(80)}`
     const dir = session([shell('bash-1', { description: '  ', command: long })])
     expect((await readKimiBackgroundTasks(dir, { now: NOW }))[0]).toMatchObject({ label: long.slice(0, 60), command: long })
+  })
+
+  it('a shell task carries the last lines of its own output file; an agent task none', async () => {
+    const dir = session([shell('bash-out', {}), shell('bash-quiet', {}), shell('bash-big', {}),
+      { taskId: 'agent-out', description: 'explore placeholder', status: 'running', detached: true, startedAt: NOW - MIN, kind: 'agent' }])
+    const out = (id: string, content: string) => { mkdirSync(join(kimiTasksDir(dir), id), { recursive: true }); writeFileSync(join(kimiTasksDir(dir), id, 'output.log'), content) }
+    out('bash-out', 'one\ntwo\n\nthree\nfour\nfive\nsix\nseven\nprogress 10%\rprogress 90%\n')
+    out('bash-quiet', '\n\n')
+    // Only the file's tail is read: a cut first line is dropped.
+    out('bash-big', `${'x'.repeat(10_000)}\nlast line\n`)
+    out('agent-out', 'not read\n')
+    const byId = new Map((await readKimiBackgroundTasks(dir, { now: NOW })).map(task => [task.id, task]))
+    expect(byId.get('bash-out')?.outputTail).toEqual(['three', 'four', 'five', 'six', 'seven', 'progress 90%'])
+    expect(byId.get('bash-quiet')).not.toHaveProperty('outputTail')
+    expect(byId.get('bash-big')?.outputTail).toEqual(['last line'])
+    expect(byId.get('agent-out')).not.toHaveProperty('outputTail')
+    expect(byId.get('bash-out')?.callId).toBe('call-bash-out')
   })
 
   it('a session without a tasks directory has no tasks', async () => {
@@ -116,7 +133,9 @@ describe('readKimiBackgroundTasks', () => {
     const byId = new Map(tasks.map(task => [task.id, task]))
     expect(byId.get('bash-a')?.startedBy).toBe('room-run-1')
     expect(byId.get('bash-b')?.startedBy).toBe('room-run-1')
+    expect(byId.get('bash-b')?.callId).toBe('call-bash-b')
     expect(byId.get('bash-c')).not.toHaveProperty('startedBy')
+    expect(byId.get('bash-c')).not.toHaveProperty('callId')
     expect(byId.get('bash-d')).not.toHaveProperty('startedBy')
     expect(byId.get('bash-e')).toMatchObject({ startedBy: 'room-run-2', resultIn: 'self-1' })
     // A running task has no result yet, whatever the log says.
