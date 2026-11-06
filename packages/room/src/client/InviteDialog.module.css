@@ -1,40 +1,77 @@
-/* Invite/edit dialog: transparent overlay (no dimming — the conversation
-   stays readable behind it) + centered card; Esc/overlay-click closes. The
-   visual language rides the official design tokens (ui-theme
+/* Invite/edit dialog: the host's ui-primitives Modal (headless) carries the
+   layer — portaled to document.body over the dimmed page mask
+   (--dsw-alias-bg-mask-1), so nothing in the room composer or conversation
+   moves; Esc / mask click close, Tab stays inside, focus returns to the
+   trigger. `.card` is the Modal's dialog frame (class bumped with
+   [role='dialog'] over the primitive's own .dialog rule); `.sheet` scrolls
+   inside it. The visual language rides the official design tokens (ui-theme
    design-platform.css, ui-primitives Modal/Button/FeedbackDialog): hierarchy
    comes from weight and spacing, the one filled action is the near-black
    button-primary-fill capsule, and the blue accent appears nowhere — dark
    theme follows the same aliases. Alias tokens with fallbacks. */
 
-.overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  z-index: 100;
-  /* Fixed positioning keeps the inherited text-align — the members guide
-     state (`.guide` in MembersView.module.css) centers its text, and the
-     dialog mounts inside that tree, so the card re-declares left alignment
-     (labels sit at the field's left edge, the official form convention). */
-  text-align: left;
-}
-
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+.card[role='dialog'] {
   width: 560px;
-  max-width: calc(100vw - 48px);
-  max-height: calc(100vh - 96px);
-  overflow-y: auto;
-  padding: 22px 24px;
+  max-width: 100%;
+  /* The Modal root's padding box caps the card (its documented contract). */
+  max-height: 100%;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
   border: 1px solid var(--dsw-alias-border-l1, rgba(127, 127, 127, 0.16));
   border-radius: 18px;
   background: var(--dsw-alias-bg-layer-1, #ffffff);
-  /* The card carries the whole separation now that the overlay does not dim. */
   box-shadow: var(--dsw-shadow-lv3, 0 12px 40px rgba(0, 0, 0, 0.24));
+  /* Body-portaled now, but keep left alignment explicit: the dialog never
+     inherits the members guide state's centered text. */
+  text-align: left;
+}
+
+/* Edit: one column, narrower. */
+.card.cardEdit[role='dialog'] {
+  width: 460px;
+}
+
+.sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 24px;
+}
+
+/* Narrow viewports: a bottom sheet — full width, docked to the bottom edge,
+   top corners rounded, clear of the home indicator. The layer is a
+   viewport-level overlay (body-portaled, outside any dsh-panel container),
+   so the viewport width is the axis here; 560px matches PANEL_COMPACT_MAX. */
+@media (max-width: 560px) {
+  .card[role='dialog'],
+  .card.cardEdit[role='dialog'] {
+    /* panel-check: allow-fixed — a body-portaled viewport sheet, not a panel-local popover */
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: calc(100dvh - max(48px, var(--dsh-frame-overlay-top, 48px)));
+    border-width: 1px 0 0;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .sheet {
+    padding: 18px 16px 0;
+  }
+
+  /* The actions stay reachable while the long form scrolls under them. */
+  .sheet > .buttons {
+    position: sticky;
+    bottom: 0;
+    margin-top: -8px;
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--dsw-alias-border-l1, rgba(127, 127, 127, 0.16));
+    background: var(--dsw-alias-bg-layer-1, #ffffff);
+  }
 }
 
 /* The character-creation split: form left, live member-card preview right.
@@ -478,11 +515,8 @@
 
 /* Edit: the member's own card on top (live with the edits), then what the
    invitation fixed — provider and mode — as quiet facts, then the form. One
-   column; the invite's side preview is not shown. */
-.card[data-mode='edit'] {
-  width: 460px;
-}
-
+   column; the invite's side preview is not shown. (The 460px card width
+   sits beside `.card` above, ahead of the bottom-sheet override.) */
 .editHead {
   display: flex;
   flex-direction: column;

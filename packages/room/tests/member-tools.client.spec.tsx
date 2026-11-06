@@ -288,7 +288,7 @@ describe('the edit dialog head agrees with the 模式工具 line', () => {
   it('a running member reads 运行中 in the head card, never 空闲, while the line offers 结束后重新载入', async () => {
     const view = dialog({ member: 'gm', state: 'running', startedAt: Date.now() - 65_000 } as RoomMemberRun)
     await screen.findByText('结束后重新载入')
-    const card = view.container.querySelector('[data-member="gm"]')!
+    const card = view.baseElement.querySelector('[data-member="gm"]')!
     expect(card.textContent).toContain(zh['members.status.running'])
     expect(card.textContent).not.toContain(zh['members.status.idle'])
   })
@@ -296,9 +296,9 @@ describe('the edit dialog head agrees with the 模式工具 line', () => {
   it('an idle member reads 空闲, a failed one 失败', async () => {
     const idle = dialog(undefined)
     await screen.findByText('重新载入')
-    expect(idle.container.querySelector('[data-member="gm"]')!.textContent).toContain(zh['members.status.idle'])
+    expect(idle.baseElement.querySelector('[data-member="gm"]')!.textContent).toContain(zh['members.status.idle'])
     cleanup()
     const failed = dialog({ member: 'gm', state: 'failed', startedAt: 1 } as RoomMemberRun)
-    expect(failed.container.querySelector('[data-member="gm"]')!.textContent).toContain(zh['members.status.failed'])
+    expect(failed.baseElement.querySelector('[data-member="gm"]')!.textContent).toContain(zh['members.status.failed'])
   })
 })
