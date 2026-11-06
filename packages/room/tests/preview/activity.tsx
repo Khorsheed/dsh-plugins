@@ -3,7 +3,9 @@
  * M2; compare with proposals/prototypes/member-activity.html) — the real
  * components over scripted local-agent reads:
  *   pnpm exec vite packages/room/tests/preview --config packages/room/tests/preview/vite.config.ts --host 127.0.0.1
- * then open /activity.html?state=<strip|tray|lost|cmdrun|cmdout|cmdlost|unsupported|members>[&lang=en][&dark=1]
+ * then open /activity.html?state=<strip|tray|lost|cmdrun|cmdout|cmdlost|unsupported|members|confirmReload|confirmSave>[&lang=en][&dark=1]
+ * (confirmReload / confirmSave = the edit dialog: 重新载入, or saving a new
+ * model, while the member's process runs 2 background tasks.)
  * (strip/tray/lost = the composer capsule and its tray; cmd* = the member
  * session's card in the launching turn's tail; unsupported = a Codex member:
  * no card, no members line; members = the members page lines.)
@@ -15,6 +17,7 @@ import { RoomTaskCapsule } from '../../src/client/RoomTaskCapsule.tsx'
 import { MembersView } from '../../src/client/MembersView.tsx'
 import { ActivityReveals, MemberActivityStore, useRoomActivity } from '../../src/client/MemberActivity.tsx'
 import { MemberActivityTail } from '../../src/client/MemberActivityTail.tsx'
+import { InviteDialog } from '../../src/client/InviteDialog.tsx'
 import { en, zh } from '../../src/client/locales.ts'
 import type { RoomMember, RoomState } from '../../src/types.ts'
 
@@ -161,6 +164,46 @@ function Members() {
   )
 }
 
+/** The edit dialog asking before it replaces a process with background work. */
+function Confirm() {
+  const save = state === 'confirmSave'
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (save) {
+        const input = document.querySelector<HTMLInputElement>(`input[aria-label="${dictionary['invite.model']}"]`)
+        const button = [...document.querySelectorAll('button')].find(entry => entry.textContent === dictionary['invite.save'])
+        if (input === null || button === undefined) return
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+        setter.call(input, 'kimi-code/k3.1-pro')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        setTimeout(() => { button.click() }, 50)
+        clearInterval(timer)
+        return
+      }
+      const button = [...document.querySelectorAll('button')].find(entry => entry.textContent === dictionary['tools.reload'])
+      if (button !== undefined) { button.click(); clearInterval(timer) }
+    }, 100)
+    return () => { clearInterval(timer) }
+  }, [])
+  const tools = { preset: 'dsh-gamedev', expected: ['game_open', 'game_read', 'game_publish'], process: 'placeholder', received: [], loadedAt: now - 30 * MIN, reloadable: true }
+  return (
+    <InviteDialog
+      mode="edit"
+      member={{ ...canvas, preset: 'dsh-gamedev', model: 'kimi-code/k3' }}
+      presets={[{ id: 'dsh-gamedev', name: english ? 'Game dev mode' : '游戏开发模式', isDefault: false }]}
+      localAgentAvailable
+      existingNames={[canvas.name]}
+      browseDirectory={async () => null}
+      memberTools={async () => tools as never}
+      reloadMemberTools={async (_child, options) => (options?.confirmBackgroundTasks === true ? { ok: true, when: 'now' } : { ok: false, reason: 'background-tasks', running: 2 })}
+      runningBackgroundTasks={async () => 2}
+      onSubmit={async () => ({ ok: true })}
+      onClose={() => {}}
+      t={t}
+    />
+  )
+}
+
 createRoot(document.getElementById('root')!).render(
-  state === 'members' ? <Members /> : state.startsWith('cmd') || state === 'unsupported' ? <Session /> : <Composer />,
+  state.startsWith('confirm') ? <Confirm /> : state === 'members' ? <Members /> : state.startsWith('cmd') || state === 'unsupported' ? <Session /> : <Composer />,
 )

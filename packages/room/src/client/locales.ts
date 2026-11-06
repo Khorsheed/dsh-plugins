@@ -628,6 +628,9 @@ export const zh = {
   'bg.member.commands': '命令 {count}',
   'bg.member.subagents': '子智能体 {count}',
   'bg.member.lost': '后台 {count} 失去联系',
+  'bg.confirm.text': '会让 {count} 项后台工作失去联系，继续吗？',
+  'bg.confirm.go': '继续',
+  'bg.confirm.cancel': '取消',
 } satisfies Record<string, string>
 
 /** The room namespace key union. */
@@ -1268,4 +1271,7 @@ export const en = {
   'bg.member.commands': '{count} command',
   'bg.member.subagents': '{count} subagent',
   'bg.member.lost': 'Background: {count} lost',
+  'bg.confirm.text': 'This will lose contact with {count} background job(s). Continue?',
+  'bg.confirm.go': 'Continue',
+  'bg.confirm.cancel': 'Cancel',
 } satisfies Record<RoomKey, string>

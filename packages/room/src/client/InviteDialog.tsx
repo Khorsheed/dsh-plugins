@@ -41,6 +41,7 @@ import type { RoomMember, RoomMemberRun, RoomPresetInfo, RoomProviderInfo } from
 import type { LocalAgentModelInfo } from '@khorsheed/dsh-local-agent/types'
 import { IconChevronDownOutlineMedium } from './icons.tsx'
 import { MemberCard } from './MemberCard.tsx'
+import { BackgroundConfirm } from './MemberActivity.tsx'
 import { MemberToolsLine } from './MemberToolsLine.tsx'
 import { MemberRecoveryLine } from './MemberRecoveryLine.tsx'
 import { memberRecovery as foldRecovery } from './member-recovery-view.ts'
@@ -162,6 +163,12 @@ export interface InviteDialogProps {
   readonly retryMemberStart?: MembersViewProps['retryMemberStart']
   /** Edit mode: the human's verdict on a round a restart interrupted. */
   readonly reconcileMemberExecution?: MembersViewProps['reconcileMemberExecution']
+  /**
+   * Edit mode, a started CLI member: how many background tasks its live
+   * process runs now. Saving a model change replaces that process, so a
+   * positive count asks 「会让 N 项后台工作失去联系，继续吗？」 first.
+   */
+  readonly runningBackgroundTasks?: MembersViewProps['runningBackgroundTasks']
   readonly onSubmit: (values: InviteDialogSubmit) => Promise<RoomMutationOutcome | RoomInviteOutcome>
   readonly onClose: () => void
   readonly t: MembersViewProps['t']
@@ -177,7 +184,7 @@ export function InviteDialog({
   mode, member, providers, presets, sessionPreset, localAgentAvailable, inheritedCwd, existingNames,
   browseDirectory, modelSurface, renderHarnessModelPicker, memberModel, memberConfiguration,
   renderMemberModelPicker, readMemberSelection, mainModelDirectory, memberRunning = false, memberRun, memberTools, reloadMemberTools,
-  memberRecovery, retryMemberStart, reconcileMemberExecution, onSubmit, onClose, t,
+  memberRecovery, retryMemberStart, reconcileMemberExecution, runningBackgroundTasks, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const isMain = mode === 'edit' && member?.kind === 'main-agent'
   /** A started CLI member edited through the member-control form fields (saved on 保存). */
@@ -238,6 +245,8 @@ export function InviteDialog({
   const modelFieldRef = useRef<HTMLDivElement | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /** Saving waits on 「会让 N 项后台工作失去联系」: N, until 继续 or 取消. */
+  const [saveConfirm, setSaveConfirm] = useState<number | undefined>(undefined)
   // Bumped after a 立即载入 / 重新载入 so the recovery block re-reads at once.
   const [recoveryKey, setRecoveryKey] = useState(0)
   const recoveryChild = mode === 'edit' && member?.kind === 'cli' && memberRecovery !== undefined && retryMemberStart !== undefined
@@ -468,7 +477,7 @@ export function InviteDialog({
     }
   }
 
-  const submit = async (): Promise<void> => {
+  const submit = async (confirmed = false): Promise<void> => {
     if (!canSubmit || busy) return
     if (!validName(name)) {
       setError(t('invite.error.invalid'))
@@ -476,7 +485,19 @@ export function InviteDialog({
     }
     setBusy(true)
     setError(null)
+    setSaveConfirm(undefined)
     try {
+      // A model (or effort) change replaces a started CLI member's process:
+      // its running background work would lose contact — confirm first.
+      const child = mode === 'edit' && member?.kind === 'cli' ? member.childSessionId : undefined
+      const modelEdit = model.trim() !== modelBaseline.trim() || effort.trim() !== effortBaseline.trim()
+      if (!confirmed && child !== undefined && modelEdit && runningBackgroundTasks !== undefined) {
+        const running = await runningBackgroundTasks(child).catch(() => 0)
+        if (running > 0) {
+          setSaveConfirm(running)
+          return
+        }
+      }
       const mainChanged = isMain && mainSelection != null && !sameSelection(mainSelection, mainBaseline)
       const outcome = await onSubmit({
         provider: chosen, preset: cliPreset, name, role: role.trim(), instructions: instructions.trim(), cwd: cwd.trim(), firstTask: firstTask.trim(),
@@ -734,6 +755,15 @@ export function InviteDialog({
           </div>}
         </div>
         {error !== null && <div className={css.error} role="alert">{error}</div>}
+        {saveConfirm !== undefined && (
+          <BackgroundConfirm
+            count={saveConfirm}
+            disabled={busy}
+            onConfirm={() => { void submit(true) }}
+            onCancel={() => { setSaveConfirm(undefined) }}
+            t={t}
+          />
+        )}
         <div className={css.buttons}>
           <button type="button" className={css.button} onClick={onClose}>{t('invite.cancel')}</button>
           <button

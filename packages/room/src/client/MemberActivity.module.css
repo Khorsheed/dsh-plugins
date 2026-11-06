@@ -341,3 +341,64 @@
     margin-left: 0;
   }
 }
+
+/* ---- in-place confirmation (reload / model save with background work) */
+
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--dsw-alias-state-warning, #c08419);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dsw-alias-state-warning, #c08419) 10%, transparent);
+  font-size: var(--dsh-panel-text-body, 13px);
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary, #16181c);
+}
+
+.confirmText {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.confirmText > span {
+  color: var(--dsw-alias-state-warning, #c08419);
+}
+
+.confirmActions {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.confirmCancel,
+.confirmGo {
+  padding: 3px 12px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: var(--dsh-panel-text-body, 13px);
+  cursor: pointer;
+}
+
+.confirmCancel {
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.16));
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.confirmGo {
+  border: 1px solid var(--dsw-alias-state-warning, #c08419);
+  background: var(--dsw-alias-state-warning, #c08419);
+  color: var(--dsw-alias-bg-layer-1, #ffffff);
+  font-weight: 600;
+}
+
+.confirmCancel:disabled,
+.confirmGo:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

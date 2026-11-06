@@ -214,6 +214,17 @@ export function memberActivityLine(read: LocalAgentBackgroundTasks | null | unde
 }
 
 /**
+ * How many background tasks a member's LIVE process runs now — what replacing
+ * that process (reload, a model switch) would cut off. 0 for an unsupported,
+ * unread or non-member read, and when no process is up (nothing to cut off).
+ * @param read - the member's read.
+ */
+export function runningBackground(read: LocalAgentBackgroundTasks | null | undefined): number {
+  if (!shown(read) || !read.processAlive) return 0
+  return read.tasks.filter(task => task.state === 'running').length
+}
+
+/**
  * How long it ran: now − start while running; start → end once ended; a lost
  * task only when its end is known (we do not know when it stopped).
  * @param item - the item.

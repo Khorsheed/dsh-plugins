@@ -76,6 +76,15 @@ export class MemberActivityStore {
     }
   }
 
+  /** Read one member now (not cached, not polled): a confirmation needs the current count. */
+  async readNow(id: string): Promise<LocalAgentBackgroundTasks | null | undefined> {
+    try {
+      return await this.read(id)
+    } catch {
+      return undefined
+    }
+  }
+
   /** The member's latest read (undefined before the first one lands). */
   get(id: string): LocalAgentBackgroundTasks | null | undefined {
     return this.entries.get(id)?.value
@@ -310,6 +319,38 @@ export function MemberActivityLine({ read, t }: { readonly read: LocalAgentBackg
     ...line.subagents > 0 ? [t('bg.member.subagents', { count: String(line.subagents) })] : [],
   ].join(' · ')
   return <div className={css.memberLine} data-testid="member-activity-line"><span aria-hidden>◔</span>{t('bg.member.counts', { parts })}</div>
+}
+
+/* ------------------------------------------------------------- confirmation */
+
+/**
+ * The in-place confirmation before an action that replaces a member's
+ * process while it runs background work (重新载入, 立即载入, saving a model):
+ * 「会让 N 项后台工作失去联系，继续吗？」 with 继续 / 取消.
+ */
+export function BackgroundConfirm({ count, onConfirm, onCancel, disabled = false, t }: {
+  readonly count: number
+  readonly onConfirm: () => void
+  readonly onCancel: () => void
+  readonly disabled?: boolean
+  readonly t: T
+}): ReactNode {
+  // The question appears where the action was (often at the bottom of a
+  // scrolled dialog): bring it into view and focus 继续.
+  const go = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    go.current?.scrollIntoView?.({ block: 'center' })
+    go.current?.focus({ preventScroll: true })
+  }, [])
+  return (
+    <div className={css.confirm} role="alertdialog" aria-label={t('bg.confirm.text', { count: String(count) })} data-testid="background-confirm">
+      <span className={css.confirmText}><span aria-hidden>⚠ </span>{t('bg.confirm.text', { count: String(count) })}</span>
+      <span className={css.confirmActions}>
+        <button type="button" className={css.confirmCancel} disabled={disabled} onClick={onCancel}>{t('bg.confirm.cancel')}</button>
+        <button type="button" ref={go} className={css.confirmGo} disabled={disabled} onClick={onConfirm}>{t('bg.confirm.go')}</button>
+      </span>
+    </div>
+  )
 }
 
 /* ------------------------------------------------------------- the card shell */
