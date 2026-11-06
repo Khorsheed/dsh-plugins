@@ -21,6 +21,7 @@ import { IconAgentPresetOutlineMedium } from './icons.tsx'
 import type { RoomMember, RoomRemoval } from '../types.ts'
 import { RemoveMemberConfirm, removalImpact } from './RemoveMemberConfirm.tsx'
 import { MemberCard } from './MemberCard.tsx'
+import { MemberActivityLine, useMemberActivity } from './MemberActivity.tsx'
 import { InviteDialog, inviteRequest, type InviteDialogSubmit } from './InviteDialog.tsx'
 import { submitMemberEdit } from './MemberEditDialog.tsx'
 import type { MembersViewProps, RoomModelDirectory } from './slots.ts'
@@ -51,7 +52,7 @@ export function MembersView({
   sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, unlinkSession, updateMember, invite, listProviders, browseDirectory,
   modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator,
   renderMemberModelPicker, readMemberSelection, saveMemberSelection, memberTools, reloadMemberTools,
-  memberRecovery, retryMemberStart, reconcileMemberExecution, t,
+  memberRecovery, retryMemberStart, reconcileMemberExecution, memberActivity, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -72,6 +73,8 @@ export function MembersView({
   /** The CLI members' effective models, keyed by member name (the cards' hints). */
   const [memberModels, setMemberModels] = useState<ReadonlyMap<string, string>>(new Map())
   const anyRunning = state?.runs.some(run => run.state === 'running') ?? false
+  // Each CLI member's background work: one read-only line on its card (nothing without the family's read).
+  useMemberActivity(memberActivity?.store, (state?.members ?? []).flatMap(member => member.kind === 'cli' && member.childSessionId !== undefined ? [member.childSessionId] : []))
   const [, setTick] = useState(0)
   useEffect(() => {
     if (!anyRunning) return undefined
@@ -255,6 +258,8 @@ export function MembersView({
                   t={t}
                 />
               ) : undefined}
+              activity={memberActivity === undefined || member.kind !== 'cli' || member.childSessionId === undefined ? undefined
+                : <MemberActivityLine read={memberActivity.store.get(member.childSessionId)} t={t} />}
               modelHint={member.kind === 'main-agent'
                 ? (modelDirectory !== undefined ? <MainAgentModelHint directory={modelDirectory} /> : undefined)
                 : memberModels.get(member.name)}

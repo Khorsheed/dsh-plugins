@@ -66,6 +66,7 @@ import { detectOffset, memberMention, otherRows, rankByMatch, sessionMention, se
 import { memberColor } from './member-color.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
 import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
+import { useRoomActivity } from './MemberActivity.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
 import { RoomQueueStrip, type RoomQueueItem } from './RoomQueueStrip.tsx'
 import { RoomModelPicker } from './RoomModelPicker.tsx'
@@ -191,10 +192,12 @@ export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, renderMemberTools, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
-  attachments: attachmentFace, setCoordinator, runCommand,
+  attachments: attachmentFace, setCoordinator, runCommand, memberActivity,
 }: RoomComposerProps): ReactNode {
   const [coordinatorMenu, setCoordinatorMenu] = useState(false)
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
+  // Members' background work: the 「后台 N」 capsule and its tray (nothing without the family's read).
+  const activity = useRoomActivity(memberActivity, state)
   const tag = useSyncExternalStore(taskTags?.subscribe ?? NO_TAGS, () => taskTags?.get(sessionId))
   // The draft is the session's official input machine (the module header):
   // shared with the hidden fallback bar, persistent across navigation, and
@@ -591,6 +594,13 @@ export function RoomComposer({
           renderHarnessModelPicker={renderHarnessModelPicker}
           // A member waiting on a question inside its round: the block may be
           // scrolled far up a long reply — its capsule brings it back.
+          background={memberActivity === undefined || openPlanSession === undefined ? undefined : {
+            ...activity,
+            jump: (item, expand) => {
+              memberActivity.reveals.request(item.id, expand)
+              openPlanSession(item.childSessionId)
+            },
+          }}
           waiting={waitingAsk === undefined ? undefined : {
             member: waitingAsk.member,
             jump: () => {
