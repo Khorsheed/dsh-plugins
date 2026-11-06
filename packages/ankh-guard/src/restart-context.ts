@@ -25,6 +25,15 @@ export interface RestartRecord {
   /** Session id of the agent that scheduled the exit, when known. */
   initiator?: string
   /**
+   * The local-agent member whose process scheduled the exit: its dsh child
+   * session id, read from {@link LOCAL_AGENT_MEMBER_ENV} in the scheduling
+   * process. Absent for every restart not run from inside a member (and in
+   * records written before the field existed). The room reads it through
+   * `selfRestartGuard.lastRestart()` so it does not continue the very
+   * round that asked for the restart.
+   */
+  initiatorMember?: string
+  /**
    * The watchdog recovered an UNPLANNED exit (crash, or a stop outside the
    * guard) — written on the respawn so the recovery is reported, not silent.
    */
@@ -43,6 +52,49 @@ export interface RestartRecord {
     receipt: string
   }
   reportedAt?: number
+}
+
+/**
+ * The environment variable the local-agent family sets on every CLI process a
+ * member runs (`packages/local-agent/src/env.ts` `LOCAL_AGENT_MEMBER_ENV`):
+ * the member's dsh child session id. Duplicated by name, not imported — the
+ * guard installs and runs without local-agent.
+ */
+export const LOCAL_AGENT_MEMBER_ENV = 'DSH_LOCAL_AGENT_MEMBER'
+
+/**
+ * The member a restart-scheduling process runs for, from its environment.
+ * @param env - the scheduling process's environment.
+ * @returns the member's child session id, or undefined outside a member.
+ */
+export function initiatorMemberFromEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const value = env[LOCAL_AGENT_MEMBER_ENV]?.trim()
+  return value === undefined || value === '' ? undefined : value
+}
+
+/**
+ * The restart that brought up THIS process, as the room reads it: the record
+ * file whether or not its report was already delivered (`reportedAt` does not
+ * retire it here), but only when its exit happened within `maxAgeMs` before
+ * this process booted. An older record belongs to an earlier boot (a later
+ * stop/start or crash recovery wrote nothing over it); a record without an
+ * `exitAt` (the exit agent found no listener) describes no restart at all.
+ * @param stateDir - state directory.
+ * @param bootedAt - epoch milliseconds when this process started.
+ * @param maxAgeMs - how long before the boot the exit may lie.
+ * @returns the record, or null when none belongs to this boot.
+ */
+export function readLastRestart(stateDir: string, bootedAt: number, maxAgeMs: number): RestartRecord | null {
+  let record: unknown
+  try {
+    record = JSON.parse(readFileSync(restartRecordFile(stateDir), 'utf8'))
+  } catch {
+    return null
+  }
+  if (typeof record !== 'object' || record === null || Array.isArray(record)) return null
+  const exitAt = (record as RestartRecord).exitAt
+  if (typeof exitAt !== 'number' || !Number.isFinite(exitAt) || exitAt < bootedAt - maxAgeMs) return null
+  return record as RestartRecord
 }
 
 /**
@@ -203,7 +255,7 @@ export function writeUnexpectedExitRecord(stateDir: string, now: number): boolea
  * @param stateDir - state directory.
  * @param record - the outcome fields (exitAt/pid for a stop, error on failure).
  */
-export function writeRestartOutcome(stateDir: string, record: { exitAt: number; pid?: number; error?: string; initiator?: string }): void {
+export function writeRestartOutcome(stateDir: string, record: { exitAt: number; pid?: number; error?: string; initiator?: string; initiatorMember?: string }): void {
   mkdirSync(stateDir, { recursive: true })
   atomicWrite(restartRecordFile(stateDir), `${JSON.stringify(record)}\n`)
 }
@@ -277,6 +329,7 @@ export function writeCompositionRecovery(stateDir: string, now: number, detail?:
     compositionRecovered: true,
     ...(detail !== undefined && detail !== '' ? { detail } : {}),
     ...(pending?.initiator !== undefined ? { initiator: pending.initiator } : {}),
+    ...(pending?.initiatorMember !== undefined ? { initiatorMember: pending.initiatorMember } : {}),
   })}\n`)
   return true
 }

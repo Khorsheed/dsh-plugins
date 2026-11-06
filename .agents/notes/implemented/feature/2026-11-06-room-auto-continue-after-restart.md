@@ -62,6 +62,19 @@ The member self-started rounds design (`proposals/active/2026-11-06-member-self-
 - Out of scope, left to later steps: loading unopened rooms at host start (待定 7, M10), the guard's `initiatorMember` (M10), and reporting the continued round's result to the original sender. That last one is not done for the human's press either. The sender already gets the `uncertain` report from recovery.
 - The room→lens contract fixture is unchanged. The contract run has no restart, and the new fields are optional and absent there.
 
+## Incident 2026-11-06: stale rounds continued, and the fix
+
+- **What happened.** Right after the first prod deploy, the room continued rounds that earlier restarts had cut off weeks before: room `ea508498` (the room's own dsh agent, dispatch #52, started about 2026-10-26) and room `f4410545` (a claude-code member, round #134, started 2026-10-23). Both had sat as restart-failed / `uncertain` since then. The rule checked "interrupted by a restart", not "interrupted by THIS restart".
+- **Rule now.** The room continues a round on its own only when this host process's recovery journaled its interruption. The fact is write-time:
+  - `DispatchEngine.bootedAt` is the time the room module loaded in this host process (before any room recovery); `engine.view` projects it as `RestartFacts.bootedAt`.
+  - A round's interruption time is the journal time of its delivery's `uncertain` edge (`RoomDelivery.endedAt`), else the run's restart-failed edge (`startedAt + elapsedMs`). Recovery never rewrites an existing `uncertain` edge, so the time stays the restart that wrote it.
+  - An edge older than `bootedAt` marks the round `stale: true`. `autoContinueRounds` drops stale rounds.
+  - The server pass (`RoomService.autoContinue`, after recovery) calls `autoContinueRounds(…, { recorded: true })`: it also requires the edge itself at or after `bootedAt`. A projection-only interruption (a cold room whose journal still says running) only makes `getState` bring the room live; recovery then writes the edge and the pass decides.
+- **Stale rounds for the human.** They stay in the manual banner, listed by name with no reason, as before M9; 「全部继续」 continues them unchanged (`postMessage` `continues` still accepts them). The members line reads 「被重启打断 · 等你决定」. The auto banner's count is unchanged: it counts only auto-continue deliveries still queued or running.
+- **Guards.** All M9 guards stay (`again`, `self-restart`, `queue-paused`, `room-paused`, goal attempts, the setting, settings-write precedence).
+- **One fact, with M10's startup load.** M10 ([restart initiator and startup room load](2026-11-06-restart-initiator-and-startup-room-load.md)) picks which rooms to load at host start from the core's side: members whose ledger rows are still `running` on disk or were converted `running → uncertain` by this process. That is only a candidate filter. The decision to continue stays this rule's journal fact (`recorded: true` after recovery), for the room's own agent and CLI members alike. The two agree on the incident rooms: a row already `uncertain` on disk is not a startup candidate, and its journal edge predates `bootedAt`.
+- **Known residual.** Both facts share one blind spot. A round whose ledger row (or room journal) still says `running` because nobody loaded it in ANY process since the restart that cut it off reads as this restart's: this process's recovery journals it now. Closing that needs a durable record of the previous process's lifetime; it is not in this hotfix.
+
 ## Testing
 
 - `packages/room/tests/dispatch.host.spec.ts`, block "restart: the room continues interrupted rounds itself (M9)", 10 cases:
@@ -75,7 +88,9 @@ The member self-started rounds design (`proposals/active/2026-11-06-member-self-
   - a guard recording the member blocks it (`self-restart`).
   - a guard without the read does not block, and the round is continued once.
   - a paused member queue blocks it (`queue-paused`), and so does a paused room (`room-paused`).
+- Same block, incident cases: stale (edges journaled before `bootedAt`: not continued, listed in the banner, 「全部继续」 still works); fresh (the edge this process's recovery writes is at/after boot: continued once); mixed (ada stale, bob fresh: only bob continued, ada left in the banner).
 - `packages/room/tests/restart-continue.client.spec.tsx` covers the shared rule's filters and guards; the banner with the setting off (no reasons), on (pending rounds hidden), auto-continued (dismissible, 「设置」 toggles the switch), and interrupted again (reason, other member unaffected); the timeline row; and the members line.
+- `restart-continue.client.spec.tsx` block "only this restart's rounds": the stale flag from the delivery edge and the legacy run edge, the banner and members line for a stale round, and `recorded: true` refusing a projection-only interruption.
 - `packages/room/tests/room-composer.client.spec.tsx`: the existing 全部继续 case still passes on legacy rows (no run ids).
 - Screenshots (not committed), from `packages/room/tests/preview/restart.html?state=autocont|manual|again|setting` at 1280 and 390, light and dark: `/tmp/m9-autocontinue/`.
 - Not verified: a real host restart on 3080 with live CLI members.

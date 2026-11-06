@@ -62,6 +62,19 @@ Status: implemented
 - 本步不做、留给后续：宿主启动时加载没人打开的房间（待定 7，M10）、guard 的 `initiatorMember`（M10）、把继续后那一轮的结果汇报给原派活人。最后一项人按「全部继续」时也没有做；原派活人已经从恢复那里收到了 `uncertain` 回报。
 - room→lens 契约夹具不变：契约里那次运行没有重启，新字段都是可选的，在那里不出现。
 
+## 事故 2026-11-06：继续了陈旧轮次，以及修复
+
+- **经过。** 首次部署到 prod 后，房间立刻继续了几周前别的重启打断的轮次：房间 `ea508498`（房间自己的 dsh agent，派活 #52，约 2026-10-26 开始）和房间 `f4410545`（claude-code 成员，第 134 轮，2026-10-23 开始）。两者自那以后一直是「重启失败」/`uncertain`。规则只看「被重启打断」，没看「被**这次**重启打断」。
+- **现在的规则。** 只有本宿主进程的恢复记下了打断，房间才自己继续。依据是写入时的事实：
+  - `DispatchEngine.bootedAt` 是本宿主进程加载房间模块的时间（早于任何房间恢复）；`engine.view` 投影为 `RestartFacts.bootedAt`。
+  - 一轮的打断时间取其派送 `uncertain` 边的日志时间（`RoomDelivery.endedAt`），没有则取运行的重启失败边（`startedAt + elapsedMs`）。恢复不会改写已有的 `uncertain` 边，所以这个时间一直是写下它的那次重启。
+  - 边早于 `bootedAt` 的轮次标为 `stale: true`，`autoContinueRounds` 不收。
+  - 服务端那一遍（`RoomService.autoContinue`，在恢复之后）调用 `autoContinueRounds(…, { recorded: true })`：还要求边本身存在且不早于 `bootedAt`。只在投影里被打断的轮次（冷房间，日志还写着运行中）只会让 `getState` 把房间拉活；恢复写下边之后再由那一遍判断。
+- **陈旧轮次交给人。** 它们留在手动横幅里，按名字列出、不带原因，和 M9 之前一样；「全部继续」照常继续它们（`postMessage` 的 `continues` 照收）。成员页那一行显示「被重启打断 · 等你决定」。自动横幅的人数不变：只数仍在排队或运行中的自动继续派送。
+- **护栏。** M9 的护栏全部保留（`again`、`self-restart`、`queue-paused`、`room-paused`、正式目标的尝试、开关、设置写入优先）。
+- **与 M10 启动加载用同一个事实。** M10（[重启发起者与启动时加载房间](2026-11-06-restart-initiator-and-startup-room-load.zh.md)）在宿主启动时从核心一侧挑要加载的房间：账本里仍写着 `running`、或由本进程从 `running` 转成 `uncertain` 的成员。那只是候选筛选。继续与否仍由本规则的日志事实决定（恢复之后 `recorded: true`），房间自己的 agent 和 CLI 成员都一样。两者对事故房间结论一致：磁盘上已是 `uncertain` 的行不是启动候选，其日志边也早于 `bootedAt`。
+- **已知遗留。** 两个事实有同一个盲区：如果从打断它的那次重启到现在，**任何**进程都没加载过它，账本行（或房间日志）仍写着 `running`，这一轮会被当成本次重启打断的——本进程的恢复此刻才把它记下。要堵上需要持久记录上一个进程的存活区间；本热修不做。
+
 ## Testing
 
 - `packages/room/tests/dispatch.host.spec.ts`，新块「restart: the room continues interrupted rounds itself (M9)」，10 例：
@@ -75,7 +88,9 @@ Status: implemented
   - guard 记录了这个成员时挡下（`self-restart`）。
   - guard 没有这个读法时不挡，只继续一次。
   - 成员输入队列暂停时挡下（`queue-paused`），房间暂停时也挡下（`room-paused`）。
+- 同一块里的事故用例：陈旧（边记在 `bootedAt` 之前：不继续、横幅里列出、「全部继续」照常可用）；新近（本进程恢复写下的边不早于启动：继续一次）；混合（ada 陈旧、bob 新近：只继续 bob，ada 留在横幅里）。
 - `packages/room/tests/restart-continue.client.spec.tsx` 覆盖：共用规则的筛选与护栏；横幅在开关关闭（无原因）、开着（待自动继续的不列）、已自动继续（可关掉、「设置」切换开关）、又被打断（带原因、另一位成员不受影响）时的样子；时间线行；成员页那一行。
+- `restart-continue.client.spec.tsx` 的「only this restart's rounds」块：由派送边和旧式运行边判定陈旧、陈旧轮次的横幅与成员页那一行、`recorded: true` 拒收只在投影里的打断。
 - `packages/room/tests/room-composer.client.spec.tsx`：原有的「全部继续」用例在旧式行（无 run id）上照常通过。
 - 截图（不提交）：`packages/room/tests/preview/restart.html?state=autocont|manual|again|setting`，1280 与 390、亮色与暗色，存于 `/tmp/m9-autocontinue/`。
 - 未验证：3080 上带真实 CLI 成员的真实宿主重启。

@@ -1,4 +1,5 @@
-import { mkdtempSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -1081,5 +1082,33 @@ describe('delegation cwd option and observation read side', () => {
     expect(() => h.registry.recordRoundSettled('child-unknown', { observedModel: 'm' })).not.toThrow()
     expect(h.registry.delegationOf('child-unknown')).toBeUndefined()
     expect(cordisEvents.at(-1)).toEqual(['child-unknown', { kind: 'settled', observedModel: 'm' }])
+  })
+})
+
+describe('interruptedMemberParents (M10: the startup room load)', () => {
+  it('names the parents of members this restart cut off (rows still `running` on disk), each once; stale uncertain, settled and unknown members are left out', async () => {
+    const h = await mountFacade()
+    for (const [child, parent] of [['child-1', PARENT], ['child-2', PARENT], ['child-3', 'parent-2'], ['child-4', 'parent-3']] as const) {
+      h.registry.recordDelegation({ childSessionId: child, provider: PROVIDER, parentSessionId: parent, cliSessionId: `cli-${child}`, cwd: '/home/user/work' })
+    }
+    const directory = (h.registry.memberInbox as unknown as { directory: string }).directory
+    const ledger = (memberId: string, status: string): void => {
+      mkdirSync(directory, { recursive: true })
+      writeFileSync(join(directory, `${createHash('sha256').update(memberId).digest('hex')}.json`), JSON.stringify({
+        version: 2,
+        state: { memberId, paused: false, messages: [{ id: `exec-${memberId}`, caller: 'room', key: `key-${memberId}`, status, createdAt: 1, updatedAt: 1 }] },
+      }))
+    }
+    expect(h.registry.interruptedMemberParents()).toEqual([])
+    ledger('child-1', 'running')
+    // Already uncertain on disk: an older restart's leftover, not this one's.
+    ledger('child-2', 'uncertain')
+    ledger('child-3', 'done')
+    ledger('child-4', 'running')
+    ledger('child-unknown', 'running')
+    ledger('child-5', 'running')
+    expect(h.registry.interruptedMemberParents().sort()).toEqual([PARENT, 'parent-3'])
+    h.registry.recordDelegation({ childSessionId: 'child-5', provider: PROVIDER, parentSessionId: 'parent-5', cliSessionId: 'cli-child-5', cwd: '/home/user/work' })
+    expect(h.registry.interruptedMemberParents().sort()).toEqual([PARENT, 'parent-3', 'parent-5'])
   })
 })

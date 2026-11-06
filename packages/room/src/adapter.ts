@@ -19,7 +19,7 @@ import type { LocalAgentRegistry } from '@khorsheed/dsh-local-agent'
  * the optional member reads. `start`/`resume` stay in the probe's method set
  * (the M1 facade a composition must carry to seat CLI members at all).
  */
-export type LocalAgentFacade = Pick<LocalAgentRegistry, 'run' | 'start' | 'resume' | 'cancel'> & Partial<Pick<LocalAgentRegistry, 'prepareMember' | 'isPreparedMember' | 'readMemberInbox' | 'readExecution' | 'reconcileExecution'>>
+export type LocalAgentFacade = Pick<LocalAgentRegistry, 'run' | 'start' | 'resume' | 'cancel'> & Partial<Pick<LocalAgentRegistry, 'prepareMember' | 'isPreparedMember' | 'readMemberInbox' | 'readExecution' | 'reconcileExecution' | 'interruptedMemberParents'>>
 
 /** The roster slice of the registry (older than the M1 facade). */
 export type LocalAgentRosterSlice = Pick<LocalAgentRegistry, 'roster' | 'statusOf'>

@@ -23,6 +23,17 @@
  *
  * A round some message already continues (`RoomState.continued`) is not
  * interrupted any more, whoever continued it.
+ *
+ * Only THIS restart's rounds are continued by the room (incident
+ * 2026-11-06: the first prod pass continued rounds cut off weeks earlier).
+ * A round is `stale` when its interruption edge — the delivery's `uncertain`
+ * edge, else the run's restart-failed edge — was journaled before this host
+ * process's room service started (`RestartFacts.bootedAt`): an earlier
+ * restart's recovery wrote it. Stale rounds stay in the human's banner
+ * (「全部继续」 unchanged) and are never continued on the room's own. The
+ * server pass also requires the edge itself (it runs after recovery, which
+ * writes it); a projection-only interruption (cold room, edge not written
+ * yet) only makes `getState` bring the room live so recovery can record it.
  * @module @khorsheed/dsh-room/restart-continue
  */
 import type { RestartFacts, RoomSettings, RoomState } from './types.ts'
@@ -59,7 +70,16 @@ export interface InterruptedRound {
    * its own; the human's 「全部继续」 still lists it.
    */
   readonly goalAttempt?: true
+  /**
+   * An earlier restart cut this round off (its interruption edge predates
+   * this host process): the room never continues it on its own; the
+   * human's 「全部继续」 lists it, without a reason.
+   */
+  readonly stale?: true
 }
+
+/** A round with the journal time of its interruption edge (undefined: not journaled yet). */
+interface ClassifiedRound { readonly round: InterruptedRound; readonly interruptedAt: number | undefined }
 
 /** The room's 重启后自动继续 setting (absent = on). */
 export function autoContinueOn(settings: Pick<RoomSettings, 'autoContinueAfterRestart'> | undefined): boolean {
@@ -77,28 +97,46 @@ export function interruptedRounds(
   state: Pick<RoomState, 'runs' | 'members' | 'deliveries' | 'settings' | 'continued' | 'restartFacts'>,
   facts: RestartFacts | undefined = state.restartFacts,
 ): InterruptedRound[] {
+  return classify(state, facts).map(entry => entry.round)
+}
+
+function classify(
+  state: Pick<RoomState, 'runs' | 'members' | 'deliveries' | 'settings' | 'continued' | 'restartFacts'>,
+  facts: RestartFacts | undefined,
+): ClassifiedRound[] {
   const continued = new Set(state.continued ?? [])
   const paused = new Set(facts?.queuePaused ?? [])
-  const rounds: InterruptedRound[] = []
+  const rounds: ClassifiedRound[] = []
   for (const run of state.runs) {
     if (run.runId?.startsWith('execution:') === true || run.waiting !== undefined) continue
     const lost = run.state === 'uncertain' || (run.state === 'failed' && run.error?.startsWith(RESTART_INTERRUPTED_PREFIX) === true)
     if (!lost || (run.runId !== undefined && continued.has(run.runId))) continue
     const member = state.members.find(entry => entry.name === run.member)
-    if (member === undefined || rounds.some(round => round.member === member.name)) continue
+    if (member === undefined || rounds.some(entry => entry.round.member === member.name)) continue
     const delivery = run.runId === undefined ? undefined : state.deliveries?.find(row => row.id === run.runId)
     const blocked: RestartContinueBlock | undefined = delivery?.via === 'auto-continue' ? 'again'
       : facts?.restartInitiator !== undefined && member.childSessionId !== undefined && String(member.childSessionId) === facts.restartInitiator ? 'self-restart'
         : member.id !== undefined && paused.has(member.id) ? 'queue-paused'
           : state.settings?.paused === true ? 'room-paused'
             : undefined
+    // The interruption edge's journal time: the delivery's `uncertain` edge
+    // (its last edge, so `endedAt`), else the run's restart-failed edge
+    // (`startedAt + elapsedMs`). A projection-only interruption has neither.
+    const interruptedAt = delivery?.status === 'uncertain' && delivery.endedAt !== undefined ? delivery.endedAt
+      : run.state === 'failed' && run.elapsedMs !== undefined ? run.startedAt + run.elapsedMs
+        : undefined
+    const stale = facts?.bootedAt !== undefined && interruptedAt !== undefined && interruptedAt < facts.bootedAt
     rounds.push({
-      member: member.name,
-      ...member.id === undefined ? {} : { memberId: member.id },
-      ...run.runId === undefined ? {} : { runId: run.runId },
-      ...delivery?.task === undefined ? {} : { task: delivery.task },
-      ...blocked === undefined ? {} : { blocked },
-      ...delivery?.plan?.taskId === undefined ? {} : { goalAttempt: true as const },
+      interruptedAt,
+      round: {
+        member: member.name,
+        ...member.id === undefined ? {} : { memberId: member.id },
+        ...run.runId === undefined ? {} : { runId: run.runId },
+        ...delivery?.task === undefined ? {} : { task: delivery.task },
+        ...blocked === undefined ? {} : { blocked },
+        ...delivery?.plan?.taskId === undefined ? {} : { goalAttempt: true as const },
+        ...stale ? { stale: true as const } : {},
+      },
     })
   }
   return rounds
@@ -107,12 +145,19 @@ export function interruptedRounds(
 /**
  * The rounds the room continues itself right now: none with the setting
  * off; otherwise every interrupted round no guard holds that has a run id
- * (the id is what makes it at-most-once).
+ * (the id is what makes it at-most-once) and that is not stale.
+ * @param options.recorded - the server's pass (after recovery): also require
+ *   the interruption edge itself, journaled at or after `facts.bootedAt` —
+ *   a write-time fact of THIS restart, never a projection.
  */
 export function autoContinueRounds(
   state: Pick<RoomState, 'runs' | 'members' | 'deliveries' | 'settings' | 'continued' | 'restartFacts'>,
   facts: RestartFacts | undefined = state.restartFacts,
+  options: { readonly recorded?: boolean } = {},
 ): InterruptedRound[] {
   if (!autoContinueOn(state.settings)) return []
-  return interruptedRounds(state, facts).filter(round => round.blocked === undefined && round.runId !== undefined && round.goalAttempt !== true)
+  return classify(state, facts)
+    .filter(({ round, interruptedAt }) => round.blocked === undefined && round.runId !== undefined && round.goalAttempt !== true && round.stale !== true
+      && (options.recorded !== true || (interruptedAt !== undefined && facts?.bootedAt !== undefined && interruptedAt >= facts.bootedAt)))
+    .map(entry => entry.round)
 }
