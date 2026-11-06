@@ -581,7 +581,9 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     if (this.handoffs.has(session.id) || (this.settingsWrites.get(session.id) ?? 0) > 0) return
     const events = session.snapshotEvents()
     const state = replay(events)
-    const rounds = autoContinueRounds(this.engine.view(session.id, state))
+    // Only rounds THIS restart cut off: their interruption edge is journaled
+    // by this process's recovery (incident 2026-11-06, restart-continue.ts).
+    const rounds = autoContinueRounds(this.engine.view(session.id, state), undefined, { recorded: true })
     if (rounds.length === 0) return
     const groups = new Map<string, InterruptedRound[]>()
     for (const round of rounds) groups.set(round.task ?? '', [...groups.get(round.task ?? '') ?? [], round])

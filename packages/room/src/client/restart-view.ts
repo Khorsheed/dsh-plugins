@@ -8,8 +8,8 @@
  *   still queued or running — the composer's 「重启后已自动继续 N 位成员」.
  * - `manual`: the rounds waiting for the human's 「全部继续」: all of them
  *   with the setting off (no reasons: the banner reads as before M9);
- *   with it on, the ones a guard held back (with the reason) and goal
- *   attempts. Rounds the room is about to continue itself are not listed —
+ *   with it on, the ones a guard held back (with the reason), goal
+ *   attempts, and stale rounds an earlier restart cut off (no reason). Rounds the room is about to continue itself are not listed —
  *   pressing then would send the message twice.
  */
 import type { RoomState } from '../types.ts'
@@ -35,7 +35,7 @@ export function restartBanner(state: RoomState | undefined): RestartBanner {
   if (state === undefined) return { manual: [] }
   const on = autoContinueOn(state.settings)
   const manual = interruptedRounds(state)
-    .filter(round => !on || round.blocked !== undefined || round.goalAttempt === true || round.runId === undefined)
+    .filter(round => !on || round.blocked !== undefined || round.goalAttempt === true || round.runId === undefined || round.stale === true)
     .map(round => on ? round : (({ blocked: _blocked, ...rest }) => rest)(round))
   const active = (state.deliveries ?? []).filter(row => row.via === 'auto-continue' && (row.status === 'queued' || row.status === 'running'))
   if (active.length === 0) return { manual }

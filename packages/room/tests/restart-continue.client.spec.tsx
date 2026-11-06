@@ -69,6 +69,40 @@ describe('the shared rule', () => {
   })
 })
 
+describe('only this restart\'s rounds (incident 2026-11-06)', () => {
+  // ada's interruption edge was journaled at 100 (an earlier restart), bill's at 300; this process booted at 200.
+  const mixed = (extra: Partial<RoomState> = {}) => interrupted({
+    deliveries: [delivery('4:m-ada', 'm-ada', { endedAt: 100 }), delivery('5:m-bill', 'm-bill', { endedAt: 300 })],
+    restartFacts: { bootedAt: 200 },
+    ...extra,
+  })
+
+  it('a round whose interruption edge predates this boot is stale: never automatic, listed for 全部继续 without a reason', () => {
+    expect(interruptedRounds(mixed()).map(round => [round.member, round.stale])).toEqual([['ada', true], ['bill', undefined]])
+    expect(autoContinueRounds(mixed()).map(round => round.member)).toEqual(['bill'])
+    expect(autoContinueRounds(mixed(), undefined, { recorded: true }).map(round => round.member)).toEqual(['bill'])
+    const banner = restartBanner(mixed())
+    expect(banner.manual.map(round => round.member)).toEqual(['ada'])
+    expect(memberRestartLine(mixed(), 'ada')).toEqual({ kind: 'interrupted' })
+    expect(memberRestartLine(mixed(), 'bill')).toBeUndefined()
+  })
+
+  it('a legacy run edge (startedAt + elapsedMs) dates the interruption when the delivery has none', () => {
+    const state = mixed({
+      runs: [{ member: 'ada', runId: '4:m-ada', state: 'failed', startedAt: 50, elapsedMs: 50, error: LOST }],
+      deliveries: [delivery('4:m-ada', 'm-ada', { status: 'failed' })],
+    })
+    expect(interruptedRounds(state)).toMatchObject([{ member: 'ada', stale: true }])
+    expect(autoContinueRounds(state)).toEqual([])
+  })
+
+  it('the server pass needs the edge itself: a projection-only interruption only brings the room live', () => {
+    const projected = interrupted({ restartFacts: { bootedAt: 200 } })
+    expect(autoContinueRounds(projected).map(round => round.member)).toEqual(['ada', 'bill'])
+    expect(autoContinueRounds(projected, undefined, { recorded: true })).toEqual([])
+  })
+})
+
 describe('the composer banner', () => {
   it('setting off: the manual banner as before — names, 全部继续, no reasons', () => {
     const state = interrupted({ settings: { ...DEFAULT_ROOM_SETTINGS, autoContinueAfterRestart: false }, restartFacts: { queuePaused: ['m-ada'] } })

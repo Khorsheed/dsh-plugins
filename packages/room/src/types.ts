@@ -1190,6 +1190,12 @@ export interface RestartFacts {
   readonly queuePaused?: readonly string[]
   /** The child session id of the member whose round requested the last restart. */
   readonly restartInitiator?: string
+  /**
+   * When this host process's room service started (epoch ms). A round whose
+   * interruption the journal recorded before it was cut off by an EARLIER
+   * restart: the room never continues it on its own (see restart-continue.ts).
+   */
+  readonly bootedAt?: number
 }
 
 /** Closed failure vocabulary of the room Remote surface. */
