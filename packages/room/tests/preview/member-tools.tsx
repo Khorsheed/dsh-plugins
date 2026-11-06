@@ -13,6 +13,7 @@ import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsStatus } from '@
 import { InviteDialog } from '../../src/client/InviteDialog.tsx'
 import { MembersView } from '../../src/client/MembersView.tsx'
 import { RoomEventView } from '../../src/client/RoomEventView.tsx'
+import { RoomTaskCapsule } from '../../src/client/RoomTaskCapsule.tsx'
 import type { MemberRecoveryRead } from '../../src/client/member-recovery-view.ts'
 import { en, zh } from '../../src/client/locales.ts'
 import type { RoomMember, RoomState } from '../../src/types.ts'
@@ -171,4 +172,49 @@ function Members() {
   )
 }
 
-createRoot(document.getElementById('root')!).render(state === 'feed' ? <Feed /> : state === 'members' ? <Members /> : <Dialog />)
+/** A fresh room: the capsule above a composer stand-in, the way the room composer docks it. */
+function InviteScene() {
+  useEffect(() => {
+    if (params.get('open') !== '1') return
+    const timer = setInterval(() => {
+      const button = [...document.querySelectorAll('button')].find(entry => entry.textContent === dictionary['members.invite'])
+      if (button !== undefined) { button.click(); clearInterval(timer) }
+    }, 50)
+  }, [])
+  const room: RoomState = { members: [{ name: 'dsh', kind: 'main-agent', invitedBy: 'human' }], relays: [], tasks: [], runs: [] }
+  const providers = {
+    localAgentAvailable: true,
+    providers: [
+      { provider: 'kimi-cli', displayName: 'Kimi CLI', authenticated: true },
+      { provider: 'codex', displayName: 'Codex', authenticated: true },
+      { provider: 'claude-code', displayName: 'Claude Code', authenticated: false },
+    ],
+    presets: [{ id: 'dsh-gamedev', name: '游戏开发模式', isDefault: false }],
+  }
+  return (
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <main style={{ flex: '1 1 auto', overflowY: 'auto', padding: '24px 16px' }}>
+        <div style={{ maxWidth: 780, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ alignSelf: 'flex-end', maxWidth: '80%', padding: '10px 14px', borderRadius: 16, background: 'var(--dsw-alias-bg-layer-2)' }}>帮我做一个小型网页游戏，先把玩法和关卡拆出来。</div>
+          <div>好的。这个房间现在只有我一个成员；可以先邀请一位负责人物建模、一位负责玩法设计的成员，我来分派任务并汇总验收。</div>
+        </div>
+      </main>
+      <div data-testid="dock" style={{ flex: 'none', padding: '0 16px 16px' }}>
+        <RoomTaskCapsule
+          state={room}
+          invite={async () => ({ ok: true }) as never}
+          listProviders={async () => providers as never}
+          roomCwd="/home/user/game"
+          browseDirectory={async () => null}
+          t={t}
+        />
+        <div data-testid="composer" style={{ maxWidth: 780, margin: '0 auto', padding: 16, border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 22, background: 'var(--dsw-alias-bg-layer-1)' }}>
+          <small style={{ color: 'var(--dsw-alias-label-tertiary)' }}>协调者 · dsh</small>
+          <div style={{ minHeight: 72, marginTop: 8, color: 'var(--dsw-alias-label-tertiary)' }}>跟协调者对话；@ 指定其他成员</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+createRoot(document.getElementById('root')!).render(state === 'feed' ? <Feed /> : state === 'members' ? <Members /> : state === 'invite' ? <InviteScene /> : <Dialog />)

@@ -1,7 +1,10 @@
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 /**
- * The invite/edit dialog as a character-creation card: a self-drawn
- * lightweight modal (overlay + centered card, Esc/overlay-click closes) with
+ * The invite/edit dialog as a character-creation card: the host's
+ * ui-primitives Modal (headless — portaled to document.body over the dimmed
+ * page mask, so the room composer and conversation never reflow; Esc / mask
+ * click / 取消 close it, Tab stays inside, focus returns to the trigger; a
+ * bottom sheet on narrow viewports) with
  * a live member-card preview beside the form — every keystroke re-renders
  * the preview (the preview avatar stays neutral; the name-hash color joins
  * once the member is seated), and a 🎲 dice button rolls a random
@@ -30,6 +33,7 @@ import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
  * edit mode diffs name/cwd/instructions/model.
  */
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
+import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   MembersViewProps, RoomInviteOutcome, RoomInviteValues, RoomModelDirectory, RoomModelSelection, RoomMutationOutcome,
 } from './slots.ts'
@@ -265,19 +269,13 @@ export function InviteDialog({
     return () => { clearInterval(timer) }
   }, [ticking])
 
-  useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
-      // An open model menu eats the first Esc; the next one closes the dialog.
-      if (modelMenuOpen) {
-        setModelMenuOpen(false)
-        return
-      }
-      onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('keydown', onKey) }
-  }, [onClose, modelMenuOpen])
+  // Esc belongs to the Modal layer (useModalLayer); an open model menu eats
+  // the first one during capture, so the layer sees it handled.
+  const onLayerKeyDownCapture = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Escape' || !modelMenuOpen) return
+    event.preventDefault()
+    setModelMenuOpen(false)
+  }
 
   // Click-outside closes the model menu (the settings cards' pattern).
   useEffect(() => {
@@ -496,22 +494,19 @@ export function InviteDialog({
     }
   }
 
+  // Keystrokes typed in the dialog stay out of the React ancestors the portal
+  // still bubbles through (the room composer); Esc and Tab reach the Modal
+  // layer's document listener (close, focus trap).
   const onCardKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === 'Escape' || event.key === 'Tab') return
     event.stopPropagation()
   }
 
+  const title = mode === 'invite' ? t('invite.title') : t('invite.title.edit', { member: member?.name ?? '' })
   return (
-    <div
-      className={css.overlay}
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
-      <div className={css.card} data-mode={mode} role="dialog" aria-modal="true" onKeyDown={onCardKeyDown}>
-        <div className={css.title}>
-          {mode === 'invite' ? t('invite.title') : t('invite.title.edit', { member: member?.name ?? '' })}
-        </div>
+    <Modal open headless title={title} onClose={onClose} className={mode === 'edit' ? `${css.card ?? ''} ${css.cardEdit ?? ''}` : css.card ?? ''} onKeyDownCapture={onLayerKeyDownCapture}>
+      <div className={css.sheet} data-mode={mode} onKeyDown={onCardKeyDown}>
+        <div className={css.title}>{title}</div>
         <div className={css.body}>
           <div className={css.form}>
             {mode === 'invite' && (
@@ -751,7 +746,7 @@ export function InviteDialog({
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   )
 }
 

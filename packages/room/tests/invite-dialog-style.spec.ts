@@ -25,7 +25,11 @@ describe('InviteDialog styling', () => {
     expect(css).not.toContain('border-accent')
   })
 
-  it('re-declares left alignment on the overlay — inherited centered text (the members guide state) must not reach the form labels', () => {
-    expect(css).toMatch(/\.overlay \{[^}]*text-align: left/s)
+  it('re-declares left alignment on the dialog card — inherited centered text (the members guide state) must not reach the form labels', () => {
+    expect(css).toMatch(/\.card\[role='dialog'\] \{[^}]*text-align: left/s)
+  })
+
+  it('the narrow layout is a bottom sheet docked to the viewport bottom', () => {
+    expect(css).toMatch(/@media \(max-width: 560px\) \{[^@]*bottom: 0;[^@]*border-radius: 18px 18px 0 0/s)
   })
 })
