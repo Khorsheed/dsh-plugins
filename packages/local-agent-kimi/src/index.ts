@@ -20,6 +20,7 @@ import { firstModelOf, readModelList, readModelListSync, settingsFace, vol, writ
 import type {} from '@khorsheed/dsh-local-agent'
 import type { LocalAgentUnrecordedDeclaration } from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
+import { readKimiBackgroundTasks } from './background-tasks.ts'
 import { KimiCliProvider, kimiCliVersion } from './kimi-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
@@ -310,6 +311,16 @@ export function apply(ctx: Context, config: Config): void {
         if (binding.model !== undefined) broker.noteStartModel(binding.childSessionId, binding.model)
         return await driver.startMember({ cwd: binding.cwd, homeDir: ctx.localAgent.homeDir('kimi', binding.scope), childSession,
           parentSessionId: binding.parentSessionId, resume, ...configuration === undefined ? {} : { configuration: configuration.resolved } })
+      },
+      // The room's 后台 tray: Kimi's own task state, read-only. Only the
+      // resident process keeps background tasks past a round (`kimi -p`
+      // exits with it), so exec answers unsupported.
+      backgroundTasks: async ({ childSessionId, homeDir, cliSessionId, executionOfCall, selfExecutionOf }) => {
+        if (!face.get().live) return { supported: false, tasks: [], processAlive: false }
+        const processAlive = liveSwitch.resolve(childSessionId)?.hasRuntime(childSessionId) ?? false
+        const dir = cliSessionId === undefined ? undefined : await findKimiSessionDir(homeDir, cliSessionId)
+        const tasks = dir === undefined ? [] : await readKimiBackgroundTasks(dir, { executionOfCall, selfExecutionOf })
+        return { supported: true, tasks, processAlive }
       },
       name: 'kimi',
       displayName: 'Kimi Code',

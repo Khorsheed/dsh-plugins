@@ -148,6 +148,31 @@ describe('member execution ledger', () => {
     after.inbox.dispose()
   })
 
+  it('accepts `cli` rows (a round the CLI opened itself); a row with an unknown caller still invalidates the ledger', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'member-inbox-cli-'))
+    const seed = mount(directory)
+    seed.enqueue('member', 'placeholder', 'p')
+    seed.inbox.dispose()
+    const path = file(directory)
+    writeFileSync(path, JSON.stringify({ version: 2, state: { memberId: 'member', paused: false, messages: [
+      { id: 'self-1', caller: 'cli', status: 'done', createdAt: 1, updatedAt: 2 },
+      { id: 'self-2', caller: 'cli', status: 'running', createdAt: 5, updatedAt: 6 },
+    ] } }))
+    const after = mount(directory)
+    // The running `cli` row reads as uncertain after the restart, like any caller's.
+    expect(after.inbox.read('member').messages).toMatchObject([
+      { id: 'self-1', caller: 'cli', status: 'done' },
+      { id: 'self-2', caller: 'cli', status: 'uncertain' },
+    ])
+    after.inbox.dispose()
+    writeFileSync(path, JSON.stringify({ version: 2, state: { memberId: 'member', paused: false, messages: [
+      { id: 'odd-1', caller: 'cron', status: 'done', createdAt: 3, updatedAt: 4 },
+    ] } }))
+    const odd = mount(directory)
+    expect(() => odd.inbox.read('member')).toThrow('Invalid member inbox')
+    odd.inbox.dispose()
+  })
+
   it('never acknowledges an unpersisted input and blocks admission until storage is reconciled', () => {
     const m = mount()
     m.inbox.read('member')

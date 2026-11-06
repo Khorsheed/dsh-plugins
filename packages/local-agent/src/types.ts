@@ -213,8 +213,12 @@ export interface LocalAgentContextEvent {
   contextWindow?: number
 }
 
-/** Who asked the core for an execution. */
-export type LocalAgentExecutionCaller = 'tool' | 'composer' | 'room' | 'api'
+/**
+ * Who asked the core for an execution. `cli`: the member's CLI itself — a
+ * round it opened on its own (cause `self`) or one of its own subagents'
+ * executions (cause `cli-subagent`); the two are told apart by `cause.kind`.
+ */
+export type LocalAgentExecutionCaller = 'tool' | 'composer' | 'room' | 'api' | 'cli'
 
 /** What one execution was for: a prompt round, or a `/compact`. */
 export type LocalAgentExecutionOperation = 'prompt' | 'compact'
@@ -252,6 +256,49 @@ export type LocalAgentExecutionCause =
   | { kind: 'tool-call'; sessionId: string; callId: string }
   /** The hand-off of held work after a restart. */
   | { kind: 'restart'; sessionId: string }
+  /**
+   * A round the member's CLI opened on its own: a background task it started
+   * completed, failed or timed out while the member was idle (Kimi's
+   * `turn.prompt` with `origin.kind: 'task'`). Caller `cli`.
+   */
+  | {
+    kind: 'self'
+    reason: 'background-task'
+    /** The CLI's own task id (Kimi `bash-…` / `agent-…`). */
+    taskId: string
+    /** The task's ending, from the CLI's notification: `completed` | `failed` | `timed_out` | `killed`. */
+    taskStatus: string
+    /** The CLI's notification id (Kimi `task:<id>:<status>`); the mirror pairs the round by it. */
+    notificationId?: string
+    /**
+     * The execution that started the task, followed through recorded facts
+     * (the task's tool call → the mirrored call's turn → the execution whose
+     * turns hold it). Absent = not recorded; never guessed.
+     */
+    startedBy?: string
+  }
+  /**
+   * One execution of a subagent the member's CLI ran itself (Kimi
+   * `Agent`/`AgentSwarm`, Claude Code `Agent`/`Task`), written in its
+   * grandchild session under the member. Caller `cli`.
+   */
+  | {
+    kind: 'cli-subagent'
+    /** The member's child session. */
+    sessionId: string
+    /** The member's `Agent`/`AgentSwarm`/`Task` tool call id (Kimi `parentToolCallId`, Claude `toolUseId`). */
+    callId: string
+    /** The member execution the call ran in (a per-task sum climbs through it). */
+    executionId?: string
+    /** The subagent type: `explore`, `coder`, `general-purpose`, … */
+    name?: string
+    /** Its place in an `AgentSwarm` call. */
+    group?: { index: number; size: number }
+    /** Started in the background (`runInBackground` / `run_in_background`). */
+    background?: true
+    /** A Kimi `resume`: another execution of an existing subagent. */
+    resumed?: true
+  }
 
 /**
  * A fact the source never reports, declared statically per harness (exec and
@@ -396,6 +443,103 @@ export interface LocalAgentExecutionReading {
    * {@link callUsage}.
    */
   compactions: LocalAgentCompactionEvent[]
+  /**
+   * The member CLI's own subagents that ran for this execution: each
+   * grandchild execution whose `cli-subagent` cause names this execution.
+   * Absent when the reader did not look (or found none to report).
+   */
+  subagents?: LocalAgentExecutionSubagentReading[]
+  /**
+   * The sum of the subagents' per-call usage ({@link LocalAgentExecutionSubagentReading.callUsage}),
+   * kept apart from {@link callUsage} (the member's own calls) so the
+   * member-vs-CLI-total check compares like with like. Absent when no
+   * subagent call carried usage.
+   */
+  subagentUsage?: TokenUsage
+}
+
+/** One subagent execution read back for its member's execution (see {@link LocalAgentExecutionReading.subagents}). */
+export interface LocalAgentExecutionSubagentReading {
+  /** The grandchild session (one per CLI subagent). */
+  sessionId: string
+  /** The grandchild execution. */
+  executionId: string
+  /** The subagent type, from the cause. */
+  name?: string
+  /** The sum of every `assistant/message.usage` in the grandchild execution's turns. */
+  callUsage?: TokenUsage
+  calls: number
+  /** The CLI's own total for the subagent (Kimi `subagent.completed.usage`), verbatim. */
+  providerReportedUsage?: TokenUsage
+}
+
+/**
+ * The state of one CLI background task (`LocalAgentBackgroundTask.state`),
+ * in the CLI's own terms: `stopped` is a task the CLI killed, `lost` one
+ * whose process went away before it reported an ending.
+ */
+export type LocalAgentBackgroundTaskState = 'running' | 'completed' | 'failed' | 'timed-out' | 'stopped' | 'lost'
+
+/**
+ * One background task the member's CLI runs on its own (Kimi's detached
+ * Bash and background subagents), read from the CLI's own task state —
+ * the core never runs, adopts or replays one.
+ */
+export interface LocalAgentBackgroundTask {
+  /** The CLI's task id. */
+  id: string
+  /** The CLI's description (the model's one line); else the command's first 60 characters. */
+  label: string
+  /** The full command, for a shell task. */
+  command?: string
+  kind: 'shell' | 'agent'
+  startedAt: number
+  endedAt?: number
+  state: LocalAgentBackgroundTaskState
+  exitCode?: number
+  /** The execution that started it (the same fact chain as the `self` cause's `startedBy`); absent = not recorded. */
+  startedBy?: string
+  /** Why it is `lost`, only when we know: our own restart, our own reclaim, or the process's own exit. */
+  lostBecause?: 'host-restart' | 'process-reclaimed' | 'process-exited'
+  /** The execution its result went to: the round the CLI opened for it, or the round it folded into. */
+  resultIn?: string
+  /** A background subagent's grandchild session (same task id), when it has one. */
+  subagentSessionId?: string
+}
+
+/**
+ * A member's background tasks, as the `memberBackgroundTasks` Remote answers
+ * it. `supported: false` = the harness (or its current way of running) has
+ * no background tasks to show — the room shows nothing, not "0".
+ */
+export interface LocalAgentBackgroundTasks {
+  supported: boolean
+  /** Running and lost tasks, and those that ended within the last hour. */
+  tasks: LocalAgentBackgroundTask[]
+  /** Whether the member's resident CLI process is up in this host process. */
+  processAlive: boolean
+  /** When an idle reclaim would end the process at the latest (epoch ms), when one is scheduled. */
+  keepAliveUntil?: number
+}
+
+/**
+ * What the core hands {@link LocalAgentHarness.backgroundTasks}: where the
+ * member's CLI session lives, and lookups over the member's own child log
+ * (read lazily, only when the harness asks).
+ */
+export interface LocalAgentBackgroundTasksRequest {
+  readonly childSessionId: string
+  /** The member's scoped home. */
+  readonly homeDir: string
+  /** The member's CLI session; absent before its first round recorded one. */
+  readonly cliSessionId?: string
+  /**
+   * The execution whose turns hold the mirrored tool call `callId`;
+   * undefined when any link of the chain is missing.
+   */
+  readonly executionOfCall: (callId: string) => Promise<string | undefined>
+  /** The execution the CLI opened for task `taskId` (cause `self`); undefined when none is recorded. */
+  readonly selfExecutionOf: (taskId: string) => Promise<string | undefined>
 }
 
 /** A member's context occupancy, as the `memberContext` Remote answers it. */

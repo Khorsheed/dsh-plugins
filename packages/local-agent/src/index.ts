@@ -116,9 +116,11 @@ import type {
   LocalAgentMemberCreate,
   LocalAgentMemberInput,
   LocalAgentTaskRef,
+  LocalAgentBackgroundTasks,
+  LocalAgentBackgroundTasksRequest,
 } from './types.ts'
 import { ExecutionRecorder, executionOutcome, type OpenExecution } from './execution-records.ts'
-import { executionReadingsOf } from './execution-read.ts'
+import { executionOfToolCall, executionReadingsOf, selfExecutionOfTask } from './execution-read.ts'
 import LocalAgentGateway from './gateway.ts'
 import { guardChildLog, type QuarantineEntry } from './child-log-guard.ts'
 import { MemberChannel } from './member-channel.ts'
@@ -167,6 +169,11 @@ export type {
   LocalAgentExecutionOutcome,
   LocalAgentExecutionReading,
   LocalAgentExecutionStartEvent,
+  LocalAgentExecutionSubagentReading,
+  LocalAgentBackgroundTask,
+  LocalAgentBackgroundTaskState,
+  LocalAgentBackgroundTasks,
+  LocalAgentBackgroundTasksRequest,
   LocalAgentTaskRef,
   LocalAgentUnrecorded,
   LocalAgentExecutionIntent,
@@ -181,7 +188,7 @@ export type {
 export { MemberInbox, MemberLedger } from './member-inbox.ts'
 export { BEFORE_PROMPT_FAILURE, LocalAgentRetryableStartError, RETRYABLE_START_FAILURE, isRetryableStartFailure } from './types.ts'
 export { beforeMirrorTurn, executionOutcome, ExecutionRecorder, OpenExecution } from './execution-records.ts'
-export { addUsage, executionReadingsOf } from './execution-read.ts'
+export { addUsage, executionOfToolCall, executionReadingsOf, selfExecutionOfTask, subagentReadingsFor } from './execution-read.ts'
 export type { ExecutionAdmission, ExecutionObservation, ExecutionRecorderOptions, MirrorTransport } from './execution-records.ts'
 
 export type {
@@ -526,6 +533,13 @@ export interface LocalAgentHarness {
    * meanwhile, the driver went away), `failed` when the spawn failed.
    */
   startMember?: (request: LocalAgentMemberStart) => Promise<'respawned' | 'no-process' | 'failed'>
+  /**
+   * The member's CLI background tasks, read-only from the CLI's own task
+   * state (the room's 后台 tray and member line). Answers `supported: false`
+   * when the member's current way of running keeps none (Kimi exec: the
+   * process ends with the round). Absent = this harness has none at all.
+   */
+  backgroundTasks?: (request: LocalAgentBackgroundTasksRequest) => Promise<LocalAgentBackgroundTasks>
   /** Command prefix and scoped-home directory name (lowercase, dashed). */
   name: string
   /** Human display name, used in command replies and UI labels. */
@@ -3084,6 +3098,64 @@ export class LocalAgentRegistry {
       }
     } catch {
       this.coldExecutionReadings.delete(childSessionId)
+      return undefined
+    }
+  }
+
+  /**
+   * A member's CLI background tasks (the `memberBackgroundTasks` Remote):
+   * the harness reads the CLI's own task state; the core hands it lookups
+   * over the member's child log (read only when the harness asks). Null for
+   * a session that is not a family member; `supported: false` for a harness
+   * without background tasks.
+   * @param childSessionId - the member's dsh child session.
+   * @returns the tasks, or null.
+   */
+  async memberBackgroundTasks(childSessionId: string): Promise<LocalAgentBackgroundTasks | null> {
+    const record = this.delegations.get(childSessionId)
+    const binding = record === undefined ? this.memberBinding(childSessionId) : undefined
+    const provider = record?.provider ?? binding?.provider
+    if (provider === undefined) return null
+    const harness = this.harnessForProvider(provider)
+    if (harness?.backgroundTasks === undefined) return { supported: false, tasks: [], processAlive: false }
+    let events: Promise<{ events: readonly SessionEvent[]; readings: Map<string, LocalAgentExecutionReading> } | undefined> | undefined
+    const memberLog = () => events ??= this.readMemberEvents(childSessionId)
+      .then(read => read === undefined ? undefined : { events: read, readings: executionReadingsOf(read) })
+    const cliSessionId = record?.cliSessionId
+    try {
+      return await harness.backgroundTasks({
+        childSessionId,
+        homeDir: this.homeDir(harness.name, record?.scope ?? binding?.scope),
+        ...cliSessionId === undefined || cliSessionId === '' ? {} : { cliSessionId },
+        executionOfCall: async callId => {
+          const log = await memberLog()
+          return log === undefined ? undefined : executionOfToolCall(log.events, callId, log.readings)
+        },
+        selfExecutionOf: async taskId => {
+          const log = await memberLog()
+          return log === undefined ? undefined : selfExecutionOfTask(log.events, taskId)
+        },
+      })
+    } catch (error) {
+      this.ctx.logger.warn(`localAgent: the background task read failed: ${error instanceof Error ? error.message : String(error)}`)
+      return null
+    }
+  }
+
+  /** A member's child-log events: the live session's snapshot, else one read from storage; undefined when unreadable. */
+  private async readMemberEvents(childSessionId: string): Promise<readonly SessionEvent[] | undefined> {
+    const live = this.ctx.get('sessions')?.get(SessionId(childSessionId))
+    if (live !== undefined) return live.snapshotEvents()
+    const persistence = this.ctx.get('sessionPersistence')
+    if (persistence === undefined) return undefined
+    try {
+      const reader = await persistence.open(SessionId(childSessionId), 'read')
+      try {
+        return (await reader.read(0)).events
+      } finally {
+        await reader.close()
+      }
+    } catch {
       return undefined
     }
   }
