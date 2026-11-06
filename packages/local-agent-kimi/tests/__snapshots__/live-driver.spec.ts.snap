@@ -689,3 +689,331 @@ exports[`kimi mirror snapshot (live) > a completed round whose next call streams
   },
 ]
 `;
+
+exports[`kimi mirror snapshot (live) > a round kimi opened itself after a background task ended: its own execution and turn, no user message → the exact child-session event sequence (member-self-started-rounds M4) 1`] = `
+[
+  {
+    "data": {
+      "admittedAt": 1767225600000,
+      "caller": "room",
+      "callerRef": "run-1",
+      "cause": {
+        "kind": "human",
+        "messageId": "msg-1",
+        "sessionId": "room-snapshot",
+        "via": "room",
+      },
+      "executionId": "<uuid>",
+      "operation": "prompt",
+      "parentSessionId": "room-snapshot",
+      "phase": "start",
+      "task": {
+        "id": "task-1",
+        "sessionId": "room-snapshot",
+      },
+    },
+    "seq": 0,
+    "time": 1767225600000,
+    "type": "local-agent/execution",
+  },
+  {
+    "data": {
+      "turn": 1,
+    },
+    "seq": 1,
+    "time": 1767225600000,
+    "type": "turn/start",
+  },
+  {
+    "data": {
+      "content": [
+        {
+          "text": "部署到3080吧",
+          "type": "text",
+        },
+      ],
+      "id": "<uuid>",
+      "role": "user",
+      "source": {
+        "kind": "user",
+      },
+    },
+    "seq": 2,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "user/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 3,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "arguments": "pnpm deploy:3080 &",
+            "id": "call_bg",
+            "name": "Bash",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "unobserved",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 1,
+      "stream": [],
+      "turn": 1,
+    },
+    "seq": 4,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "pnpm deploy:3080 &",
+      "callId": "call_bg",
+      "name": "Bash",
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 5,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "started bash-1",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": false,
+        "role": "tool",
+        "source": {
+          "callId": "call_bg",
+          "kind": "tool",
+        },
+        "toolCallId": "call_bg",
+      },
+      "meta": {
+        "localAgentTiming": {
+          "endedAt": 1767225600000,
+          "provider": "kimi-cli",
+          "source": "provider",
+          "startedAt": 1767225600000,
+          "version": 1,
+        },
+      },
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 6,
+    "sourceEventSeqs": [
+      5,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 7,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 8,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "完成后我会继续汇报",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "unobserved",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 2,
+      "stream": [],
+      "turn": 1,
+    },
+    "seq": 9,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 10,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "reason": {
+        "kind": "completed",
+      },
+      "turn": 1,
+    },
+    "seq": 11,
+    "time": 1767225600000,
+    "type": "turn/end",
+  },
+  {
+    "data": {
+      "endedAt": 1767225600000,
+      "executionId": "<uuid>",
+      "outcome": "done",
+      "phase": "end",
+      "turns": [
+        1,
+      ],
+    },
+    "seq": 12,
+    "time": 1767225600000,
+    "type": "local-agent/execution",
+  },
+  {
+    "data": {
+      "admittedAt": 1767225600000,
+      "caller": "cli",
+      "cause": {
+        "kind": "self",
+        "notificationId": "task:bash-1:completed",
+        "reason": "background-task",
+        "startedBy": "run-1-execution",
+        "taskId": "bash-1",
+        "taskStatus": "completed",
+      },
+      "executionId": "self-1",
+      "operation": "prompt",
+      "parentSessionId": "room-snapshot",
+      "phase": "start",
+      "task": {
+        "id": "task-1",
+        "sessionId": "room-snapshot",
+      },
+    },
+    "seq": 13,
+    "time": 1767225600000,
+    "type": "local-agent/execution",
+  },
+  {
+    "data": {
+      "turn": 2,
+    },
+    "seq": 14,
+    "time": 1767225600000,
+    "type": "turn/start",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 2,
+    },
+    "seq": 15,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "部署完成，3080 已重启",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "kimi-code/k3",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 1,
+      "stream": [],
+      "turn": 2,
+      "usage": {
+        "cacheReadTokens": 900,
+        "inputTokens": 40,
+        "outputTokens": 6,
+      },
+    },
+    "seq": 16,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 2,
+    },
+    "seq": 17,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "reason": {
+        "kind": "completed",
+      },
+      "turn": 2,
+    },
+    "seq": 18,
+    "time": 1767225600000,
+    "type": "turn/end",
+  },
+  {
+    "data": {
+      "endedAt": 1767225600000,
+      "executionId": "self-1",
+      "outcome": "done",
+      "phase": "end",
+      "turns": [
+        2,
+      ],
+    },
+    "seq": 19,
+    "time": 1767225600000,
+    "type": "local-agent/execution",
+  },
+]
+`;

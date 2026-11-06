@@ -16,7 +16,9 @@ import { PassThrough, Readable } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
+import { ExecutionRecorder, executionOutcome, LocalAgentStreams } from '@khorsheed/dsh-local-agent'
+import type { LocalAgentExecutionCause } from '@khorsheed/dsh-local-agent/types'
+import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
 import { AcpRequestError, acpStopReasonToHarness, DEFAULT_TIMEOUTS, KimiAcpLiveDriver, KimiSessionOccupiedError, textSegmentSeparator } from '../src/live-driver.ts'
@@ -2131,6 +2133,72 @@ describe('kimi mirror snapshot (live)', () => {
       const settled = await run.result
       expect(settled.stopReason).toBe('completed')
       execution.settle(settled)
+      expectValidReleasedLog(child)
+      expect(mirrorSnapshot(child)).toMatchSnapshot()
+    } finally {
+      await m.driver.disposeAll()
+      vi.useRealTimers()
+    }
+  })
+
+  it('a round kimi opened itself after a background task ended: its own execution and turn, no user message → the exact child-session event sequence (member-self-started-rounds M4)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: SNAPSHOT_NOW })
+    const m = mount({
+      config: { backgroundWork: async () => ({ runningTaskIds: ['bash-1'], selfTurnOpen: false }) },
+      timeouts: { ...DEFAULT_TIMEOUTS, settleFoldWaitMs: 0, selfTurnPollMs: 20, selfTurnObserveMs: 20 },
+    })
+    try {
+      const child = Session.create(SessionId('child-kimi-self-snapshot'))
+      const wire = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main', 'wire.jsonl')
+      const rows = (...list: Record<string, unknown>[]): string => list.map(row => JSON.stringify(row)).join('\n') + '\n'
+      const loop = (event: Record<string, unknown>) => ({ type: 'context.append_loop_event', time: SNAPSHOT_NOW, event })
+      const head = rows(
+        { type: 'turn.prompt', time: SNAPSHOT_NOW, input: [{ type: 'text', text: '部署到3080吧' }], origin: { kind: 'user' } },
+        { type: 'task.started', time: SNAPSHOT_NOW, info: { taskId: 'bash-1', parentToolCallId: 'call_bg', status: 'running' } },
+        loop({ type: 'step.begin', turnId: '0', step: 1 }),
+        loop({ type: 'tool.call', turnId: '0', step: 1, toolCallId: 'call_bg', toolCall: { name: 'Bash', args: { command: 'pnpm deploy:3080 &' } } }),
+        loop({ type: 'tool.result', toolCallId: 'call_bg', result: { output: 'started bash-1' } }),
+        loop({ type: 'step.end', turnId: '0', step: 1 }),
+        loop({ type: 'step.begin', turnId: '0', step: 2 }),
+        loop({ type: 'content.part', turnId: '0', step: 2, part: { type: 'text', text: '完成后我会继续汇报' } }),
+        loop({ type: 'step.end', turnId: '0', step: 2 }),
+        { type: 'turn.ended', time: SNAPSHOT_NOW, turnId: 0, reason: 'completed' },
+      )
+      m.queueChild(new FakeAcpServer({ turn: () => {
+        mkdirSync(join(wire, '..'), { recursive: true })
+        writeFileSync(wire, head)
+        return { chunks: ['完成后我会继续汇报'] }
+      } }))
+      const first = snapshotExecution(child, KIMI_UNRECORDED)
+      const run = await m.driver.startRound(request({ prompt: '部署到3080吧' }) as never, roundSpec(m, child))
+      first.settle(await run.result)
+      // The core's admission, as the real admitSelf records it: the start
+      // lands before the follow opens the round's turn, the end after it.
+      let admitted: Promise<unknown> | undefined
+      const recorder = new ExecutionRecorder({ session: () => child, persist: () => {}, settleWaitMs: 0, onError: (error) => { throw error } })
+      Object.assign(m.ctx.get('localAgent') as object, {
+        admitSelf: async (offer: { cause: LocalAgentExecutionCause; follow: (round: { executionId: string; session: Session; signal: AbortSignal }) => Promise<SubagentResult> }) => {
+          const open = recorder.admit({
+            childSessionId: String(child.id), parentSessionId: 'room-snapshot', operation: 'prompt', unrecorded: KIMI_UNRECORDED, provider: 'kimi-cli',
+            execution: { executionId: 'self-1', caller: 'cli', cause: { ...offer.cause, startedBy: 'run-1-execution' } as LocalAgentExecutionCause, task: { sessionId: 'room-snapshot', id: 'task-1' } },
+          })
+          open.started()
+          const result = offer.follow({ executionId: 'self-1', session: child, signal: new AbortController().signal })
+          admitted = result.then(settled => { open.settle(executionOutcome(settled)) })
+          return { executionId: 'self-1', settled: admitted }
+        },
+      })
+      writeFileSync(wire, head + rows(
+        { type: 'turn.prompt', time: SNAPSHOT_NOW, input: [{ type: 'text', text: '<notification id="task:bash-1:completed" type="task.completed" source_id="bash-1">deployed</notification>' }],
+          origin: { kind: 'task', taskId: 'bash-1', status: 'completed', notificationId: 'task:bash-1:completed' } },
+        loop({ type: 'step.begin', turnId: '1', step: 1 }),
+        { type: 'usage.record', time: SNAPSHOT_NOW, model: 'kimi-code/k3', usage: { inputOther: 40, output: 6, inputCacheRead: 900 } },
+        loop({ type: 'content.part', turnId: '1', step: 1, part: { type: 'text', text: '部署完成，3080 已重启' } }),
+        loop({ type: 'step.end', turnId: '1', step: 1 }),
+        { type: 'turn.ended', time: SNAPSHOT_NOW, turnId: 1, reason: 'completed' },
+      ))
+      await until(() => admitted !== undefined)
+      await admitted
       expectValidReleasedLog(child)
       expect(mirrorSnapshot(child)).toMatchSnapshot()
     } finally {
