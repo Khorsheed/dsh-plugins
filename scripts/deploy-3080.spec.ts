@@ -77,8 +77,10 @@ function fixture({ dependency = true, bundle = true, selfMounting = true, failur
   writeFileSync(join(profile, 'package.json'), JSON.stringify({ dependencies: dependency ? { [name]: `file:${old}` } : {}, dsh: { profile: { bundles: bundle ? [name] : [] } } }))
   writeFileSync(join(profile, 'pnpm-workspace.yaml'), "overrides:\nminimumReleaseAgeExclude:\n  - '@khorsheed/*'\n")
   writeStubs(bin)
-  return { root, home, harness, old, profile, run(noRestart = true, extra: string[] = []) {
-    return runOrchestrator(root, ['--package', 'packages/demo', ...(noRestart ? ['--no-restart'] : []), ...extra], { DSH_HOME: home, DSH_HARNESS: harness, PATH: bin, CALL_LOG: join(root, 'calls'), FAILURE: failure })
+  // The member identity is blanked by default: a test run from inside a
+  // local-agent member must not inherit the member guard.
+  return { root, home, harness, old, profile, run(noRestart = true, extra: string[] = [], env: Record<string, string> = {}) {
+    return runOrchestrator(root, ['--package', 'packages/demo', ...(noRestart ? ['--no-restart'] : []), ...extra], { DSH_HOME: home, DSH_HARNESS: harness, PATH: bin, CALL_LOG: join(root, 'calls'), FAILURE: failure, DSH_LOCAL_AGENT_MEMBER: '', DSH_LOCAL_AGENT_ROOM: '', ...env })
   } }
 }
 
@@ -165,6 +167,28 @@ describe('deploy 3080 flow', () => {
   it('leaves another live deploy lock untouched', async () => {
     const f = fixture(), lock = join(f.home, 'state/deploy-3080.pid'); writeFileSync(lock, String(process.pid))
     const r = await f.run(); expect(r.status).not.toBe(0); expect(r.calls).toEqual([]); expect(readFileSync(lock, 'utf8')).toBe(String(process.pid))
+  })
+  it('refuses a restart from inside a local-agent member before any command, naming the --no-restart path and the hand-off', async () => {
+    const f = fixture(), r = await f.run(false, [], { DSH_LOCAL_AGENT_MEMBER: 'child-1', DSH_LOCAL_AGENT_ROOM: 'room-1' })
+    expect(r.status).toBe(2)
+    expect(r.calls).toEqual([])
+    expect(r.output).toContain('local-agent member child-1 (room room-1)')
+    expect(r.output).toContain('pnpm deploy:3080 --package packages/demo --no-restart')
+    expect(r.output).toContain('coordinator or the human')
+    expect(existsSync(join(f.home, 'state/deploy-3080.pid'))).toBe(false)
+  })
+  it('lets a member run --no-restart (pack + refresh + preflight, no restart)', async () => {
+    const f = fixture(), r = await f.run(true, [], { DSH_LOCAL_AGENT_MEMBER: 'child-1' })
+    expect(r.status, r.output).toBe(0)
+    expect(r.output).toContain('未重启')
+    expect(r.calls.some(c => c[1]?.endsWith('cli.js') && c[2] === 'preflight')).toBe(true)
+    expect(r.calls.some(c => c.includes('schedule-exit'))).toBe(false)
+  })
+  it('restarts unchanged when no member identity is set', async () => {
+    const r = await fixture().run(false)
+    expect(r.status, r.output).toBe(0)
+    expect(r.output).not.toContain('refusing to restart')
+    expect(r.calls.some(c => c[1]?.endsWith('cli.js') && c[2] === 'schedule-exit')).toBe(true)
   })
   it('omits --initiator by default (the guard routes to the caller session) and passes an explicit session id through', async () => {
     // The old default ($USER) routed every restart report to a session that

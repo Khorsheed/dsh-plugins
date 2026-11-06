@@ -122,6 +122,8 @@ describe('DispatchEngine (real composition)', () => {
     expect(text).toContain('member_message')
     // A CLI is told where its room tools live (some keep MCP tools behind discovery).
     expect(text).toContain('名为 dsh-member 的 MCP 服务')
+    // Deploying 3080 restarts the member's own instance: prepare, hand the restart off.
+    expect(text).toContain('`--no-restart` 准备并验证，最后的重启交给协调者或人来做')
     expect(text).not.toContain('通知协议')
     expect(text).toContain('搭骨架')
 

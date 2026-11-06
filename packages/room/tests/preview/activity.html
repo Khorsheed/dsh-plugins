@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Member activity preview</title>
+<style>
+  /* Stand-ins for the host's design tokens (light; data-theme="dark" for dark). */
+  :root {
+    --dsw-alias-label-primary: #16181c; --dsw-alias-label-secondary: #3a3f47; --dsw-alias-label-tertiary: #8a919b;
+    --dsw-alias-bg-layer-1: #ffffff; --dsw-alias-bg-layer-2: #eef0f3;
+    --dsw-alias-border-l1: rgba(20, 30, 50, 0.08); --dsw-alias-border-l2: rgba(20, 30, 50, 0.16);
+    --dsw-alias-label-warning: #c87a12; --dsw-alias-fill-warning-weak: rgba(200, 122, 18, 0.14);
+    --dsw-alias-state-success-primary: #1f9a55;
+    --dsw-alias-state-business-primary: #2f6fe0; --dsw-alias-state-success: #1f9a55; --dsw-alias-state-warning: #c87a12; --dsw-alias-text-error: #c8413a;
+    --dsw-alias-border-l2-darkmode-thin: rgba(20, 30, 50, 0.16);
+    --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.24); --dsw-mask-blur: none;
+    color-scheme: light;
+  }
+  :root[data-theme='dark'] {
+    --dsw-alias-label-primary: rgb(249, 250, 251); --dsw-alias-label-secondary: rgb(207, 211, 214); --dsw-alias-label-tertiary: rgb(129, 133, 140);
+    --dsw-alias-bg-layer-1: rgb(35, 35, 36); --dsw-alias-bg-layer-2: rgb(44, 44, 46);
+    --dsw-alias-border-l1: rgba(255, 255, 255, 0.07); --dsw-alias-border-l2: rgba(255, 255, 255, 0.14);
+    --dsw-alias-label-warning: rgb(232, 152, 64); --dsw-alias-fill-warning-weak: rgba(232, 152, 64, 0.15);
+    --dsw-alias-state-success-primary: rgb(78, 209, 126);
+    --dsw-alias-state-business-primary: rgb(122, 170, 255); --dsw-alias-state-success: rgb(78, 209, 126); --dsw-alias-state-warning: rgb(232, 152, 64); --dsw-alias-text-error: rgb(240, 110, 100);
+    --dsw-alias-border-l2-darkmode-thin: rgba(255, 255, 255, 0.14);
+    --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+  body { margin: 0; background: light-dark(#f4f5f7, rgb(21, 21, 23)); color: var(--dsw-alias-label-primary);
+    font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", sans-serif; }
+  * { box-sizing: border-box; }
+</style>
+<div id="root"></div>
+<script type="module" src="./activity.tsx"></script>
+</html>

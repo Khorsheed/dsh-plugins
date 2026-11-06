@@ -221,6 +221,8 @@ export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInject
   readonly taskTags?: import('./task-tag.ts').RoomTaskTags | undefined
   readonly reconcileDelivery?: ((deliveryId: string, outcome: 'done' | 'cancelled', evidence: string) => Promise<RoomMutationOutcome>) | undefined
   readonly openPlanSession?: ((sessionId: string) => void) | undefined
+  /** Members' background activity (local-agent's read, polled); absent = no 后台 capsule. */
+  readonly memberActivity?: import('./MemberActivity.tsx').MemberActivityFace | undefined
   readonly renderMemberInbox?: LocalAgentUi['renderMemberInbox'] | undefined
   readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
   /** A CLI member's occupancy ring and the tools registered beside it (the compaction reminder); renders nothing without them. */
@@ -357,6 +359,8 @@ export interface RoomMembersInjected extends RoomInviteInjected {
    * undefined = gateway absent or RPC failure. Absent = no 模式工具 line.
    */
   readonly memberTools?: ((childSessionId: string) => Promise<LocalAgentMemberToolsStatus | null | undefined>) | undefined
+  /** Members' background activity (local-agent's read, polled): the members page's read-only line. Absent = no line. */
+  readonly memberActivity?: import('./MemberActivity.tsx').MemberActivityFace | undefined
   /** Reload a member's process so it lists its mode tools again (the localAgentGateway `reloadMemberTools` write). */
   readonly reloadMemberTools?: ((childSessionId: string) => Promise<LocalAgentMemberToolsReload | undefined>) | undefined
   /**

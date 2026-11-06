@@ -24,6 +24,7 @@
     "src/mirror-step.ts",
     "src/execution-records.ts",
     "src/execution-read.ts",
+    "src/cli-subagent.ts",
     "src/model-directory.ts",
     "src/model-list.ts",
     "src/member-control.ts",

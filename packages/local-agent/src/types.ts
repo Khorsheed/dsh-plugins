@@ -505,6 +505,18 @@ export interface LocalAgentBackgroundTask {
   resultIn?: string
   /** A background subagent's grandchild session (same task id), when it has one. */
   subagentSessionId?: string
+  /**
+   * The CLI tool call that started it — the same id the member's mirrored
+   * `tool-call` block carries, so a surface can place the task at that call.
+   * Absent when the CLI recorded none.
+   */
+  callId?: string
+  /**
+   * The last lines of a shell task's own output file (at most a few lines,
+   * read from its tail), oldest first. Absent for agent tasks and when the
+   * CLI wrote no output file.
+   */
+  outputTail?: string[]
 }
 
 /**

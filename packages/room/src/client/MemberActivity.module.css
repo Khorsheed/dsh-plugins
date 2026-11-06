@@ -1,0 +1,343 @@
+/* Members' background activity (member-activity.html): the composer capsule
+   and tray, the members page line, and the member session's card shell.
+   Colours ride the host aliases (accent = state-business, amber = warning). */
+
+.capsule {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.1));
+  border-radius: 24px;
+  background: transparent;
+  font-size: var(--dsh-panel-text-body, 13px);
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.capsule:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.capsule[aria-expanded='true'] {
+  border-color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, rgb(65, 118, 230)) 10%, transparent);
+}
+
+.capsule[data-lost] {
+  border-color: var(--dsw-alias-state-warning, #c08419);
+  color: var(--dsw-alias-state-warning, #c08419);
+}
+
+.capsule[data-lost][aria-expanded='true'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-warning, #c08419) 12%, transparent);
+}
+
+/* ---- tray */
+
+.tray {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.16));
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  box-shadow: var(--dsw-elevation-soft, 0 0 0 1px rgba(0, 0, 0, 0.06), 0 10px 30px rgba(20, 30, 50, 0.12));
+  color: var(--dsw-alias-label-primary, #16181c);
+  font-size: var(--dsh-panel-text-body, 13px);
+  line-height: 1.5;
+}
+
+.trayHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.close {
+  margin-left: auto;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.hint {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.groupHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.groupName {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.provider,
+.keep {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.05));
+}
+
+.itemText {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+}
+
+.itemName b {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.itemDetail {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  overflow-wrap: anywhere;
+}
+
+.link {
+  flex: none;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: var(--dsh-panel-text-body, 13px);
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.link:hover {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, rgb(65, 118, 230)) 10%, transparent);
+}
+
+/* ---- status pill (shared) */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  font-weight: 600;
+  white-space: nowrap;
+  --tone: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+}
+
+.pill[data-status='running'] { --tone: var(--dsw-alias-state-business-primary, rgb(65, 118, 230)); }
+.pill[data-status='done'] { --tone: var(--dsw-alias-state-success, #1f9a55); }
+.pill[data-status='failed'] { --tone: var(--dsw-alias-text-error, #d9363e); }
+.pill[data-status='lost'] { --tone: var(--dsw-alias-state-warning, #c08419); }
+.pill[data-status='cancelled'] { --tone: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8)); }
+
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: room-activity-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes room-activity-pulse {
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot { animation: none; }
+}
+
+/* ---- members page line */
+
+.memberLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0 52px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.memberLine[data-lost] {
+  color: var(--dsw-alias-state-warning, #c08419);
+}
+
+/* ---- card shell */
+
+.card {
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 6px 0;
+  padding: 9px 12px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  font-size: var(--dsh-panel-text-body, 13px);
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary, #16181c);
+}
+
+.card[data-status='running'] { border-color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230)); }
+.card[data-status='lost'] { border-color: var(--dsw-alias-state-warning, #c08419); }
+
+.cardHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.05));
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  font-family: var(--dsw-font-family-mono, ui-monospace, Menlo, monospace);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  font-weight: 700;
+}
+
+.item .icon {
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+}
+
+.kind {
+  flex: none;
+  font-weight: 700;
+}
+
+.desc {
+  flex: 1 1 140px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.actions {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.now {
+  margin: 3px 0 0 30px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  overflow-wrap: anywhere;
+}
+
+.card[data-status='lost'] .now {
+  color: var(--dsw-alias-state-warning, #c08419);
+}
+
+.mono {
+  font-family: var(--dsw-font-family-mono, ui-monospace, Menlo, monospace);
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 8px 0 0 30px;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.label {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.term {
+  max-height: 170px;
+  overflow: auto;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.05));
+  font-family: var(--dsw-font-family-mono, ui-monospace, Menlo, monospace);
+  font-size: var(--dsh-panel-text-meta, 12px);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.stats b {
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+/* Narrow (a phone, a narrow chat column): the card's lines start flush. */
+@media (max-width: 560px) {
+  .now,
+  .body,
+  .memberLine {
+    margin-left: 0;
+  }
+}

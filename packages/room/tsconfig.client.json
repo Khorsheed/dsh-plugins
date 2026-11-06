@@ -73,6 +73,9 @@
     "src/client/task-tag.ts",
     "src/client/TasksView.tsx",
     "src/client/TasksTab.tsx",
-    "src/client/RoomTaskCapsule.tsx"
+    "src/client/RoomTaskCapsule.tsx",
+    "src/client/MemberActivity.tsx",
+    "src/client/MemberActivityTail.tsx",
+    "src/client/member-activity-view.ts"
   ]
 }

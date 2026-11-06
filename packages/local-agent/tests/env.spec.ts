@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { delegationEnv } from '@khorsheed/dsh-local-agent'
+import { delegationEnv, memberIdentityEnv, withMemberProcessIdentity } from '@khorsheed/dsh-local-agent'
 
 /** Run `body` with `process.env` replaced by `env`, restoring it afterwards. */
 function withEnv(env: Record<string, string>, body: () => void): void {
@@ -50,6 +50,35 @@ describe('delegationEnv', () => {
       const env = delegationEnv({ EDITOR: undefined })
       expect(Object.keys(env)).toContain('EDITOR')
       expect(env.EDITOR).toBeUndefined()
+    })
+  })
+
+  it('names the member and its room inside a member identity, across awaits', async () => {
+    const env = await withMemberProcessIdentity({ member: 'child-1', room: 'room-1' }, async () => {
+      await new Promise(resolve => setTimeout(resolve, 1))
+      return delegationEnv({ KIMI_CODE_HOME: '/scoped' })
+    })
+    expect(env.DSH_LOCAL_AGENT_MEMBER).toBe('child-1')
+    expect(env.DSH_LOCAL_AGENT_ROOM).toBe('room-1')
+    expect(env.KIMI_CODE_HOME).toBe('/scoped')
+  })
+
+  it('omits the room for a member outside a room, and names nothing outside a member', () => {
+    expect(memberIdentityEnv({ member: 'child-2' })).toEqual({ DSH_LOCAL_AGENT_MEMBER: 'child-2' })
+    withMemberProcessIdentity({ member: 'child-2' }, () => {
+      expect(delegationEnv({})).not.toHaveProperty('DSH_LOCAL_AGENT_ROOM')
+    })
+    withEnv({ PATH: 'bin', DSH_LOCAL_AGENT_MEMBER: 'inherited' }, () => {
+      // A host that is itself a member's process does not pass its own
+      // identity on: the subprocess seam never inherits DSH_* keys, and the
+      // explicit layer names nothing outside a member's work.
+      expect(delegationEnv({})).not.toHaveProperty('DSH_LOCAL_AGENT_MEMBER')
+    })
+  })
+
+  it('lets the provider\'s explicit entries win over the member identity', () => {
+    withMemberProcessIdentity({ member: 'child-3' }, () => {
+      expect(delegationEnv({ DSH_LOCAL_AGENT_MEMBER: 'explicit' }).DSH_LOCAL_AGENT_MEMBER).toBe('explicit')
     })
   })
 })
