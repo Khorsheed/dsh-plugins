@@ -14,6 +14,7 @@ import type { LocalAgentFacade } from '../src/adapter.ts'
 import { withRunEntry } from './run-entry-shim.ts'
 import { replay } from '../src/journal.ts'
 import { AUTO_CONTINUE_MOVED_ON_TEXT, RESTART_CONTINUE_TEXT, interruptedRounds } from '../src/restart-continue.ts'
+import { restartBanner } from '../src/client/restart-view.ts'
 
 /** A manually settled promise. */
 function deferred<T>() {
@@ -1983,9 +1984,10 @@ describe('restart: the room continues interrupted rounds itself (M9)', () => {
 
   it('off: nothing is sent; the human gets the banner, and their 全部继续 records what it continues', async () => {
     const { bench, room, id } = await crashed()
-    // Off before the room's first access after the restart (a mutation's own access would continue first).
-    room.append('room/settings', { autoContinueAfterRestart: false })
+    // Turned off on a room nobody opened since the restart: the write wins, nothing is continued on the way in.
     expect(await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: false })).toMatchObject({ ok: true, value: { autoContinueAfterRestart: false } })
+    await bench.service.engine.idle()
+    expect(autoDispatches(room)).toEqual([])
     await access(bench)
     await bench.service.getState({ sessionId: bench.sessionId })
     await access(bench)
@@ -1999,6 +2001,33 @@ describe('restart: the room continues interrupted rounds itself (M9)', () => {
     const human = room.snapshotEvents().findLast(event => event.type === 'room/dispatch')
     expect(human?.data).toMatchObject({ origin: 'human', continues: [id] })
     expect((human?.data as { via?: string }).via).toBeUndefined()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+  })
+
+  it('turning it off wins over a live access racing the write (the room opened meanwhile)', async () => {
+    const { bench, room } = await crashed()
+    const [written] = await Promise.all([
+      bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: false }),
+      bench.service.getState({ sessionId: bench.sessionId }),
+      access(bench),
+    ])
+    expect(written).toMatchObject({ ok: true, value: { autoContinueAfterRestart: false } })
+    await bench.service.engine.idle()
+    expect(autoDispatches(room)).toEqual([])
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    // The banner's manual state: ada waits for the human, no reason.
+    expect(restartBanner(await view(bench)).manual).toMatchObject([{ member: 'ada' }])
+    expect(restartBanner(await view(bench)).auto).toBeUndefined()
+  })
+
+  it('turning it back on through the settings continues once, under the written setting', async () => {
+    const { bench, room } = await crashed()
+    await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: false })
+    await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: true })
+    await bench.service.engine.idle()
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(autoDispatches(room)).toHaveLength(1)
     expect(bench.facade.resume).toHaveBeenCalledOnce()
   })
 

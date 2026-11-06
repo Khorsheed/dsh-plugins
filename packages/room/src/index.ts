@@ -287,6 +287,8 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
   readonly plans: PlanService
   readonly engine: DispatchEngine
   private readonly handoffs = new Set<string>()
+  /** Rooms with a setSettings call in flight (count): the auto-continue pass waits for the write (M9). */
+  private readonly settingsWrites = new Map<string, number>()
 
   /**
    * The terminal run-state fields Context Lens correlates on: the child
@@ -517,14 +519,14 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
    * cold-resumed through the agent factory, which republishes session +
    * agent under the preset the log records; resumes dedupe per session.
    */
-  private ensureLive(sessionId: SessionId): Promise<RoomLoad> {
+  private ensureLive(sessionId: SessionId, options: { readonly autoContinue?: boolean } = {}): Promise<RoomLoad> {
     const hit = this.load(sessionId)
     if (hit.ok) return (async () => {
       await this.plans.recover(hit.session)
       await this.engine.recover(hit.session)
       this.expireApprovals(hit.session)
       this.expireQuestions(hit.session)
-      await this.autoContinue(hit.session)
+      if (options.autoContinue !== false) await this.autoContinue(hit.session)
       return this.load(sessionId)
     })()
     if (hit.error.code !== 'session-not-found') return Promise.resolve(hit)
@@ -533,7 +535,14 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       pending = this.resumeRoom(sessionId).finally(() => this.resumes.delete(sessionId))
       this.resumes.set(sessionId, pending)
     }
-    return pending
+    // The auto-continue pass runs per caller after the shared resume, so a
+    // settings write that opts out (see setSettings) is not carried into it.
+    if (options.autoContinue === false) return pending
+    return pending.then(async (loaded) => {
+      if (!loaded.ok) return loaded
+      await this.autoContinue(loaded.session)
+      return this.load(sessionId)
+    })
   }
 
   /** One cold resume: refuse non-rooms before paying an agent composition. */
@@ -550,7 +559,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       return { ok: false, error: { code: 'resume-failed', message: String(error) } }
     }
     const loaded = this.load(sessionId)
-    if (loaded.ok) { await this.plans.recover(loaded.session); await this.engine.recover(loaded.session); this.expireApprovals(loaded.session); this.expireQuestions(loaded.session); await this.autoContinue(loaded.session) }
+    if (loaded.ok) { await this.plans.recover(loaded.session); await this.engine.recover(loaded.session); this.expireApprovals(loaded.session); this.expireQuestions(loaded.session) }
     return this.load(sessionId)
   }
 
@@ -567,7 +576,9 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
    * `continues` and finds nothing), and a continued round never comes back.
    */
   private async autoContinue(session: Session): Promise<void> {
-    if (this.handoffs.has(session.id)) return
+    // A settings write in flight decides first: turning the setting off on a
+    // room not opened since the restart must not continue on the way in.
+    if (this.handoffs.has(session.id) || (this.settingsWrites.get(session.id) ?? 0) > 0) return
     const events = session.snapshotEvents()
     const state = replay(events)
     const rounds = autoContinueRounds(this.engine.view(session.id, state))
@@ -2659,7 +2670,26 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
    */
   @Remote('setSettings')
   async setSettings(request: RoomSetSettingsRequest): Promise<RoomSetSettingsResult> {
-    const loaded = await this.ensureLive(request.sessionId)
+    // The new settings land before any auto-continue pass (M9): this write's
+    // own live access skips the pass, and so does any concurrent one while
+    // it is in flight; the pass then runs once under the written settings
+    // (turning the setting on continues at once, off never continues).
+    const id = String(request.sessionId)
+    this.settingsWrites.set(id, (this.settingsWrites.get(id) ?? 0) + 1)
+    let written: Session | undefined
+    try {
+      const result = await this.writeSettings(request, (session) => { written = session })
+      return result
+    } finally {
+      const left = (this.settingsWrites.get(id) ?? 1) - 1
+      if (left <= 0) this.settingsWrites.delete(id)
+      else this.settingsWrites.set(id, left)
+      if (written !== undefined && left <= 0) await this.autoContinue(written)
+    }
+  }
+
+  private async writeSettings(request: RoomSetSettingsRequest, wrote: (session: Session) => void): Promise<RoomSetSettingsResult> {
+    const loaded = await this.ensureLive(request.sessionId, { autoContinue: false })
     if (!loaded.ok) return { ok: false, error: loaded.error }
     if (request.hopLimit !== undefined && (!Number.isInteger(request.hopLimit) || request.hopLimit < 2 || request.hopLimit > 50)) {
       return { ok: false, error: { code: 'invalid-settings' } }
@@ -2701,6 +2731,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       }
     }
     await this.ctx.sessions.flush(loaded.session)
+    wrote(loaded.session)
     return { ok: true, value: replay(loaded.session.snapshotEvents()).settings ?? DEFAULT_ROOM_SETTINGS }
   }
 

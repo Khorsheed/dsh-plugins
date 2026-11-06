@@ -34,7 +34,7 @@ Status: implemented
   - 投影里有要继续的轮次时，`getState` 会触发一次活访问。重启后打开冷房间就足以让它跑起来。
 - **已登记的 `room/dispatch` 上加两个可选字段。** `via?: 'auto-continue'` 和 `continues?: string[]`（被打断的 run id）。人按「全部继续」时也写 `continues`：`postMessage` 接收 `continues`，只记录属于目标成员的被打断轮次。两条路径只差 `via`。`executionFacts` 把 `via: 'auto-continue'` 映射到已有的 `{ kind: 'restart', sessionId }` 起因，不新增起因。`RoomDelivery.via` 会投影出来。
 - **继续消息**人按和自动用同一句话：说明实例重启打断了你；先核对文件、测试、提交、部署；做完的步骤不要重做；丢失的后台任务不会重跑。服务端是 `RESTART_CONTINUE_TEXT`，客户端 zh 的 `composer.continueText` 也是这句。en 版意思相同。
-- **投影事实**（`RoomState.restartFacts`，由 `engine.view` 给出）。`queuePaused` 是核心输入队列暂停的成员 id（`CoreLedgers.paused`）。`restartInitiator` 来自对可选服务 `selfRestartGuard` 的 `lastRestart()?.initiatorMember` 的鸭子类型探测。目前没有哪个 guard 提供这个读法（M10 才加 `initiatorMember`）。没有 guard 或没有这个读法时，视为不是成员自己触发的重启，靠「每轮最多一次」把最坏情况限制在多一次重启。
+- **投影事实**（`RoomState.restartFacts`，由 `engine.view` 给出）。`queuePaused` 是核心输入队列暂停的成员 id（`CoreLedgers.paused`）。`restartInitiator` 来自对可选服务 `selfRestartGuard` 的 `lastRestart()?.initiatorMember` 的鸭子类型探测。目前没有哪个 guard 提供这个读法。**M10 必须按这个形状提供**：同步的 `selfRestartGuard.lastRestart()`，返回上一次重启记录，其中带 `initiatorMember`（来自 `DSH_LOCAL_AGENT_MEMBER` 的成员子会话 id）；否则就改 `restartInitiatorMember`（`packages/room/src/dispatch.ts`）里的探测。没有 guard 或没有这个读法时，视为不是成员自己触发的重启，靠「每轮最多一次」把最坏情况限制在多一次重启。
 - **客户端**（纯状态 `client/restart-view.ts`，组件 `client/RoomRestart.tsx`）。
   - 自动继续的投递还在排队或运行时，输入框横幅显示「重启后已自动继续 N 位成员 · 设置 ×」。关掉后按房间和派活 seq 记在 `localStorage`。
   - 手动横幅显示「N 位成员被重启打断：… · 全部继续」。开关关闭时列出所有轮次，和以前一样。开关开着时只列被挡下的（各带原因）和正式目标尝试。只有一位成员被挡时读作「X 被重启打断」再加原因。
@@ -57,17 +57,19 @@ Status: implemented
   2. 人按「全部继续」现在发的是同一句较长的消息，不再是「继续」。
   3. 自动继续后又被打断、成员输入队列暂停、房间暂停、或记录到是成员自己触发的重启时，落回手动横幅，并用一句话写出原因。
   4. 新增设置项「重启后自动继续」。
-- `setSettings` 写入前会先做一次活访问。对重启后还没打开过的房间关掉开关，会先自动继续一次。实际上打开房间时就已经继续过了。
+- **设置写入优先于自动继续。** `setSettings` 加载房间时不跑自动继续（`ensureLive(…, { autoContinue: false })`）。写入进行中，这个房间上的其他自动继续一律跳过（`settingsWrites`）。新设置写入后，再按新设置跑一次。所以对重启后没人打开过的房间关掉开关，绝不会先继续；打开开关则立即继续。同样的原因，冷恢复不再自己跑自动继续：改由每个 `ensureLive` 调用方在共享的恢复完成后各自跑，选择不跑的调用方不会被带上。
 - 自动继续的那一轮花费与人按一样。它是看得见的房间轮次（不是后台静默调模型），可以停。
 - 本步不做、留给后续：宿主启动时加载没人打开的房间（待定 7，M10）、guard 的 `initiatorMember`（M10）、把继续后那一轮的结果汇报给原派活人。最后一项人按「全部继续」时也没有做；原派活人已经从恢复那里收到了 `uncertain` 回报。
 - room→lens 契约夹具不变：契约里那次运行没有重启，新字段都是可选的，在那里不出现。
 
 ## Testing
 
-- `packages/room/tests/dispatch.host.spec.ts`，新块「restart: the room continues interrupted rounds itself (M9)」，8 例：
+- `packages/room/tests/dispatch.host.spec.ts`，新块「restart: the room continues interrupted rounds itself (M9)」，10 例：
   - 开：并发和重复的活访问只发一次；派活带 `via`/`continues`；丢失的轮次在核心里也按没做完处理；排着的消息一并带上；起因是 `restart`。
   - 对房间 `getState` 会继续一次。
-  - 关：不发。人按「全部继续」会记录 `continues`，并丢掉不是被打断轮次的 id。
+  - 关（对重启后没打开过的房间经 `setSettings` 关掉）：不发。人按「全部继续」会记录 `continues`，并丢掉不是被打断轮次的 id。
+  - 关掉与 `getState`、活访问并发：仍然不发，横幅是手动态。
+  - 经 `setSettings` 重新打开：继续一次。
   - 人已经继续过的轮次，房间不会再继续。
   - 自动继续出来的轮次再被打断，不再继续（`again`）。
   - guard 记录了这个成员时挡下（`self-restart`）。

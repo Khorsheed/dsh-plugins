@@ -34,7 +34,7 @@ The member self-started rounds design (`proposals/active/2026-11-06-member-self-
   - `getState` triggers a live access when the projection has rounds to continue. Opening a cold room after a restart is enough for it to run.
 - **Two optional fields on the registered `room/dispatch`.** `via?: 'auto-continue'` and `continues?: string[]` (interrupted run ids). The human's 「全部继续」 writes `continues` too: `postMessage` takes `continues` and records the ids that are interrupted rounds of its targets. The two paths differ only in `via`. `executionFacts` maps `via: 'auto-continue'` to the existing `{ kind: 'restart', sessionId }` cause, so no new cause is added. `RoomDelivery.via` is projected.
 - **The continue text** is one sentence for both presses. It says the instance restarted and interrupted the member, asks it to check files, tests, commits and deployments first, not to redo completed steps, and notes that lost background tasks are not re-run. It is `RESTART_CONTINUE_TEXT` on the server, and the client's `composer.continueText` in zh. The en string has the same meaning.
-- **Projection facts** (`RoomState.restartFacts`, from `engine.view`). `queuePaused` lists member ids whose core inbox is paused (`CoreLedgers.paused`). `restartInitiator` comes from a duck-typed probe of the optional `selfRestartGuard` service's `lastRestart()?.initiatorMember`. Today no guard has that read (step M10 adds `initiatorMember`). With no guard, or without the read, the restart is treated as not self-triggered, and the at-most-once rule bounds the damage to one more restart.
+- **Projection facts** (`RoomState.restartFacts`, from `engine.view`). `queuePaused` lists member ids whose core inbox is paused (`CoreLedgers.paused`). `restartInitiator` comes from a duck-typed probe of the optional `selfRestartGuard` service's `lastRestart()?.initiatorMember`. Today no guard has that read. **Step M10 must provide exactly this shape**: a synchronous `selfRestartGuard.lastRestart()` returning the last restart record with `initiatorMember` (the member's child session id from `DSH_LOCAL_AGENT_MEMBER`), or change the probe in `restartInitiatorMember` (`packages/room/src/dispatch.ts`). With no guard, or without the read, the restart is treated as not self-triggered, and the at-most-once rule bounds the damage to one more restart.
 - **Client** (`client/restart-view.ts` pure state, `client/RoomRestart.tsx`).
   - The composer banner shows 「重启后已自动继续 N 位成员 · 设置 ×」 while an auto-continue delivery is queued or running. Dismissing it is remembered in `localStorage` per room and dispatch seq.
   - The manual banner shows 「N 位成员被重启打断：… · 全部继续」. With the setting off it lists every round, as before. With the setting on it lists only blocked rounds (each with its reason) and goal attempts. A single blocked member reads 「X 被重启打断」 plus the reason.
@@ -57,17 +57,19 @@ The member self-started rounds design (`proposals/active/2026-11-06-member-self-
   2. The human's 「全部继续」 now sends the same longer message instead of 「继续」.
   3. A round cut off again after an auto-continue, a paused member queue, a paused room, or a recorded self-restart falls back to the manual banner with a one-line reason.
   4. New settings row: 重启后自动继续.
-- A `setSettings` call runs a live access before it writes. Turning the setting off on a room that has not been opened since the restart therefore continues first. In practice opening the room already did that.
+- **A settings write wins over the auto-continue pass.** `setSettings` loads the room without the pass (`ensureLive(…, { autoContinue: false })`). While the write is in flight, every other pass on that room is skipped (`settingsWrites`). Once the new settings are written, it runs the pass once under them. Turning the setting off on a room nobody opened since the restart therefore never continues, and turning it on continues at once. For the same reason a cold resume no longer runs the pass itself: each `ensureLive` caller runs it after the shared resume, so a caller that opted out does not inherit it.
 - The auto-continue round costs the same as the human's press. It is a visible room round (no silent model call) and can be stopped.
 - Out of scope, left to later steps: loading unopened rooms at host start (待定 7, M10), the guard's `initiatorMember` (M10), and reporting the continued round's result to the original sender. That last one is not done for the human's press either. The sender already gets the `uncertain` report from recovery.
 - The room→lens contract fixture is unchanged. The contract run has no restart, and the new fields are optional and absent there.
 
 ## Testing
 
-- `packages/room/tests/dispatch.host.spec.ts`, block "restart: the room continues interrupted rounds itself (M9)", 8 cases:
+- `packages/room/tests/dispatch.host.spec.ts`, block "restart: the room continues interrupted rounds itself (M9)", 10 cases:
   - on: concurrent and repeated live access sends once. The dispatch carries `via`/`continues`, the lost round moves on in the core, the queued message rides along, and the cause is `restart`.
   - `getState` on the room continues once.
-  - off: nothing is sent. The human's 「全部继续」 records `continues` and drops ids that are not interrupted rounds.
+  - off, set through `setSettings` on a room not opened since the restart: nothing is sent. The human's 「全部继续」 records `continues` and drops ids that are not interrupted rounds.
+  - off racing a `getState` and a live access: still nothing sent, and the banner state is manual.
+  - set back on through `setSettings`: continued once.
   - a round the human already continued is never continued again.
   - an auto-continued round interrupted again is not continued (`again`).
   - a guard recording the member blocks it (`self-restart`).
