@@ -15,6 +15,7 @@ import { withRunEntry } from './run-entry-shim.ts'
 import { replay } from '../src/journal.ts'
 import { AUTO_CONTINUE_MOVED_ON_TEXT, RESTART_CONTINUE_TEXT, interruptedRounds } from '../src/restart-continue.ts'
 import { restartBanner } from '../src/client/restart-view.ts'
+import { loadEach } from '../src/startup-load.ts'
 
 /** A manually settled promise. */
 function deferred<T>() {
@@ -2079,7 +2080,13 @@ describe('restart: the room continues interrupted rounds itself (M9)', () => {
     const paused = await crashed()
     const stub = paused.stub as Record<string, unknown>
     const read = stub['readMemberInbox'] as (child: string) => Record<string, unknown>
-    stub['readMemberInbox'] = (child: string) => ({ ...read(child), paused: true })
+    // Paused with typed input waiting on the members page: the human decides.
+    // (Paused alone is what every ledger reads after a restart and is no
+    // guard — real-core.host.spec covers that.)
+    stub['readMemberInbox'] = (child: string) => {
+      const inbox = read(child) as { messages: unknown[] }
+      return { ...inbox, paused: true, messages: [...inbox.messages, { id: 'typed', key: 'typed', caller: 'composer', status: 'queued', text: '页面里打的字', createdAt: 0, updatedAt: 0 }] }
+    }
     await access(paused.bench)
     await paused.bench.service.engine.idle()
     expect(paused.bench.facade.resume).not.toHaveBeenCalled()
@@ -2093,6 +2100,103 @@ describe('restart: the room continues interrupted rounds itself (M9)', () => {
     expect(room.bench.facade.resume).not.toHaveBeenCalled()
     expect(autoDispatches(room.room)).toEqual([])
     expect(interruptedRounds(await view(room.bench))).toMatchObject([{ member: 'ada', blocked: 'room-paused' }])
+  })
+})
+
+describe('restart: rooms nobody opens are loaded once at host start (M10)', () => {
+  /** ada's room delivery was running when the host went away; the core's ledger says uncertain. */
+  async function crashed() {
+    const bench = await bootRoom()
+    const member = await preparedMemberOf(bench)
+    const stub = bench.localAgentStub as ReturnType<typeof withRunEntry>
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const first = room.append('room/dispatch', { id: 'crashed', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: '有副作用的一轮' })
+    const id = `${first.seq}:${member.id}`
+    room.append('room/delivery-state', { id, dispatchSeq: first.seq, memberId: member.id!, state: 'running' })
+    room.append('room/run-state', { member: 'ada', runId: id, state: 'running', startedAt: Date.now() - 5_000, childSessionId: SessionId('child-ada'), executionId: 'exec-1' })
+    stub.seedLedgerRow('child-ada', { id: 'exec-1', key: id, caller: 'room', status: 'uncertain' })
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) => settledRun(child, '核对过了'))
+    const parents = vi.fn(() => [String(bench.sessionId), 'not-a-session', String(bench.sessionId)])
+    bench.localAgentStub['interruptedMemberParents'] = parents
+    const ensureLive = vi.spyOn(bench.service as unknown as { ensureLive(id: SessionId): Promise<unknown> }, 'ensureLive')
+    return { bench, room, id, parents, ensureLive }
+  }
+  const autoDispatches = (room: { snapshotEvents(): readonly SessionEvent[] }) =>
+    room.snapshotEvents().flatMap(event => event.type === 'room/dispatch' && event.data.via === 'auto-continue' ? [event] : [])
+
+  it('finds the room through the core, loads it once (duplicates and non-rooms skipped), and the room continues ada once', async () => {
+    const { bench, room, id, parents, ensureLive } = await crashed()
+    expect(await bench.service.loadInterruptedRooms()).toEqual([String(bench.sessionId)])
+    await bench.service.engine.idle()
+    expect(parents).toHaveBeenCalledOnce()
+    expect(ensureLive).toHaveBeenCalledOnce()
+    expect(autoDispatches(room)).toHaveLength(1)
+    expect(autoDispatches(room)[0]!.data).toMatchObject({ via: 'auto-continue', continues: [id] })
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    // A second pass (a plugin reload) finds nothing left to continue: not loaded again.
+    expect(await bench.service.loadInterruptedRooms()).toEqual([])
+    expect(ensureLive).toHaveBeenCalledOnce()
+    expect(autoDispatches(room)).toHaveLength(1)
+  })
+
+  it('a room with 重启后自动继续 off, or a paused room, is not loaded; the human decides as before', async () => {
+    const off = await crashed()
+    off.room.append('room/settings', { autoContinueAfterRestart: false })
+    expect(await off.bench.service.loadInterruptedRooms()).toEqual([])
+    expect(off.ensureLive).not.toHaveBeenCalled()
+    expect(autoDispatches(off.room)).toEqual([])
+    expect(off.bench.facade.resume).not.toHaveBeenCalled()
+
+    const paused = await crashed()
+    paused.room.append('room/settings', { paused: true })
+    expect(await paused.bench.service.loadInterruptedRooms()).toEqual([])
+    expect(paused.ensureLive).not.toHaveBeenCalled()
+  })
+
+  it('the member that requested the restart (guard record) keeps its room unloaded', async () => {
+    const { bench, room, ensureLive } = await crashed()
+    bench.ctx.provide('selfRestartGuard', { lastRestart: () => ({ exitAt: Date.now(), initiatorMember: 'child-ada' }) } as never)
+    expect(await bench.service.loadInterruptedRooms()).toEqual([])
+    expect(ensureLive).not.toHaveBeenCalled()
+    expect(autoDispatches(room)).toEqual([])
+  })
+
+  it('no-op without interrupted members, or with a core that has no such read', async () => {
+    const { bench, ensureLive } = await crashed()
+    bench.localAgentStub['interruptedMemberParents'] = () => []
+    expect(await bench.service.loadInterruptedRooms()).toEqual([])
+    delete bench.localAgentStub['interruptedMemberParents']
+    expect(await bench.service.loadInterruptedRooms()).toEqual([])
+    bench.localAgentStub['interruptedMemberParents'] = () => { throw new Error('ledger directory unreadable') }
+    expect(await bench.service.loadInterruptedRooms()).toEqual([])
+    expect(ensureLive).not.toHaveBeenCalled()
+  })
+})
+
+describe('loadEach (the startup load\'s bounded walk)', () => {
+  it('visits each candidate once, never more than the bound at a time; a failure is reported and skipped; a stop ends the walk', async () => {
+    let inFlight = 0
+    let peak = 0
+    const visited: string[] = []
+    const errors: string[] = []
+    const loaded = await loadEach(['a', 'b', 'a', 'c', 'd', 'e'], async (id) => {
+      visited.push(id)
+      inFlight++
+      peak = Math.max(peak, inFlight)
+      await new Promise(resolve => setTimeout(resolve, 5))
+      inFlight--
+      if (id === 'c') throw new Error('boom')
+      return id !== 'd'
+    }, { concurrency: 2, onError: id => { errors.push(id) } })
+    expect(visited.sort()).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(peak).toBe(2)
+    expect(loaded.sort()).toEqual(['a', 'b', 'e'])
+    expect(errors).toEqual(['c'])
+    let stop = false
+    const seen: string[] = []
+    await loadEach(['x', 'y', 'z'], async (id) => { seen.push(id); stop = true; return true }, { concurrency: 1, stopped: () => stop })
+    expect(seen).toEqual(['x'])
+    expect(await loadEach([], async () => true)).toEqual([])
   })
 })
 

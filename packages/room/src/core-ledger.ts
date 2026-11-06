@@ -44,9 +44,17 @@ export class CoreLedgers {
     return this.inbox(childSessionId)?.rows
   }
 
-  /** Whether the member's input queue is paused after a restart (typed input waits in the member session). */
+  /**
+   * Whether the member's input queue is paused with typed input waiting in
+   * the member session (members page). The core pauses every ledger that
+   * holds an uncertain or queued row when it loads it after a restart, so
+   * the flag alone is set for every interrupted member; only a queued
+   * composer row is input the human still has to decide on (the core holds
+   * just those back while paused — room rows run).
+   */
   paused(childSessionId: string | undefined): boolean {
-    return this.inbox(childSessionId)?.paused === true
+    const inbox = this.inbox(childSessionId)
+    return inbox?.paused === true && inbox.rows.some(row => row.status === 'queued' && row.caller === 'composer')
   }
 
   private inbox(childSessionId: string | undefined): { readonly rows: readonly CoreRow[]; readonly paused: boolean } | undefined {
