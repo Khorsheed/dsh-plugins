@@ -303,6 +303,86 @@ describe('session-view', () => {
     ])
   })
 
+  describe('self-opened rounds with a start record of their own (member-self-started-rounds A③)', () => {
+    const notice = (id: string) => `<notification id="task:${id}:completed" category="task">\nBackground task completed\n</notification>`
+    const selfPrompt = (id: string, turnId: number) => JSON.stringify({
+      type: 'turn.prompt', input: [{ type: 'text', text: notice(id) }],
+      origin: { kind: 'task', taskId: id, status: 'completed', notificationId: `task:${id}:completed` }, turnId,
+    })
+    const part = (turnId: number, text: string) => JSON.stringify({ type: 'context.append_loop_event', event: { type: 'content.part', turnId: String(turnId), step: 1, part: { type: 'text', text } } })
+    /** Two background tasks end while the member is idle; then the human writes again. */
+    function selfWire(name: string): string {
+      const dir = join(tempHome('kimi-session-own-'), 'sessions', 'wd_x', `session_${name}`)
+      mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+      writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+        JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '部署' }], origin: { kind: 'user' }, turnId: 0 }),
+        part(0, '完成后我会继续汇报'),
+        JSON.stringify({ type: 'turn.ended', turnId: 0, reason: 'completed' }),
+        selfPrompt('bash-a', 1),
+        JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: notice('bash-a') }] } }),
+        part(1, '部署完成'),
+        JSON.stringify({ type: 'usage.record', usage: { inputOther: 30, output: 5 } }),
+        JSON.stringify({ type: 'turn.ended', turnId: 1, reason: 'completed' }),
+        selfPrompt('bash-b', 2),
+        part(2, '测试也过了'),
+        JSON.stringify({ type: 'turn.ended', turnId: 2, reason: 'completed' }),
+        JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '继续' }], origin: { kind: 'user' }, turnId: 3 }),
+        part(3, '好的'),
+      ].join('\n'))
+      return dir
+    }
+    const shape = (lines: readonly { kind: string; turn: number; text?: string; injected?: true }[]) =>
+      lines.map(line => [line.kind, line.turn, line.text, line.injected === true])
+
+    it('a round with a record takes its own dsh turn; the human\'s next prompt opens the next one', async () => {
+      const dir = selfWire('own-both')
+      const transcript = await readKimiTranscript(dir, { ownRounds: new Set(['task:bash-a:completed', 'task:bash-b:completed']) })
+      expect(shape(transcript.lines)).toEqual([
+        ['user', 1, '部署', false],
+        ['assistant', 1, '完成后我会继续汇报', false],
+        ['user', 2, notice('bash-a'), true],
+        ['assistant', 2, '部署完成', false],
+        ['user', 3, notice('bash-b'), true],
+        ['assistant', 3, '测试也过了', false],
+        ['user', 4, '继续', false],
+        ['assistant', 4, '好的', false],
+      ])
+    })
+
+    it('a round without a record keeps the 11-01 fold, and joins the next round with a record when that one is self-opened', async () => {
+      const dir = selfWire('own-second')
+      // Only the second round was admitted (the host was not watching the first).
+      const transcript = await readKimiTranscript(dir, { ownRounds: new Set(['task:bash-b:completed']) })
+      expect(shape(transcript.lines)).toEqual([
+        ['user', 1, '部署', false],
+        ['assistant', 1, '完成后我会继续汇报', false],
+        ['user', 2, notice('bash-a'), true],
+        ['assistant', 2, '部署完成', false],
+        ['user', 2, notice('bash-b'), true],
+        ['assistant', 2, '测试也过了', false],
+        ['user', 3, '继续', false],
+        ['assistant', 3, '好的', false],
+      ])
+    })
+
+    it('no records: line for line the 11-01 transcript, whether the set is absent or empty', async () => {
+      const dir = selfWire('own-none')
+      const before = await readKimiTranscript(dir)
+      expect(await readKimiTranscript(dir, { ownRounds: new Set() })).toEqual(before)
+      expect(await readKimiTranscript(dir, { ownRounds: new Set(['task:elsewhere:completed']) })).toEqual(before)
+      expect(shape(before.lines)).toEqual([
+        ['user', 1, '部署', false],
+        ['assistant', 1, '完成后我会继续汇报', false],
+        ['user', 2, notice('bash-a'), true],
+        ['assistant', 2, '部署完成', false],
+        ['user', 2, notice('bash-b'), true],
+        ['assistant', 2, '测试也过了', false],
+        ['user', 2, '继续', false],
+        ['assistant', 2, '好的', false],
+      ])
+    })
+  })
+
   it('a wire without turn.prompt still opens a round per user message (older kimi)', async () => {
     const home = tempHome('kimi-session-legacy-')
     const dir = join(home, 'sessions', 'wd_x', 'session_legacy')

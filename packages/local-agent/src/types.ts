@@ -7,7 +7,8 @@
  */
 
 import type { AssistantStreamRecord, ContentBlock, TokenUsage } from '@deepseek-ai/dsh-llm'
-import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type { LocalAgentToolTiming } from './tool-timing.ts'
 
 export { localAgentToolTimingMeta } from './tool-timing.ts'
@@ -27,7 +28,12 @@ export interface LocalAgentMemberModelTiming {
 
 /** Optional provider-owned reader for historical model and tool timing. */
 export interface LocalAgentTimingAdapter {
-  read(homeDir: string, cliSessionId: string): Promise<LocalAgentMemberModelTiming | undefined>
+  /**
+   * @param memberEvents - the member's child-log events, when the core could
+   *   read them: a provider that numbers turns from its own log (Kimi's
+   *   self-opened rounds) aligns its keys with the child's turns through them.
+   */
+  read(homeDir: string, cliSessionId: string, memberEvents?: readonly SessionEvent[]): Promise<LocalAgentMemberModelTiming | undefined>
 }
 
 /** In-flight text item, identified by the durable turn/step coordinate. */
@@ -1811,6 +1817,46 @@ export interface LocalAgentExecutionHandle {
    * it ended before that (the start/resume/compact wrappers return it).
    */
   readonly started: Promise<SubagentRun>
+}
+
+/** The `self` execution cause (a round the member's CLI opened on its own). */
+export type LocalAgentSelfCause = Extract<LocalAgentExecutionCause, { kind: 'self' }>
+
+/**
+ * A round the member's CLI opened on its own, offered to the core by its
+ * harness's driver (`admitSelf`, member-self-started-rounds A②). The CLI is
+ * already running it: the core never queues it — it takes the member's
+ * execution slot at once, or is refused.
+ */
+export interface LocalAgentSelfAdmissionRequest {
+  readonly childSessionId: string
+  readonly provider: string
+  /** The cause as the CLI's notification states it; the core fills `startedBy` from the member's own log. */
+  readonly cause: Omit<LocalAgentSelfCause, 'startedBy'>
+  /**
+   * The CLI tool call that started the background task (Kimi's
+   * `parentToolCallId`): the first link of the fact chain to `startedBy`.
+   * Absent = the chain is not followed (no `startedBy`, no `task`).
+   */
+  readonly taskCallId?: string
+  /**
+   * Follow the round to its end, mirroring it into the member's live child
+   * session as its own turn (the start record is already in the log when
+   * this runs). The CLI cannot be told to stop a round it opened, so
+   * `signal` only ends the following.
+   */
+  follow(round: { readonly executionId: string; readonly session: Session; readonly signal: AbortSignal }): Promise<SubagentResult>
+}
+
+/** What `admitSelf` answers for an admitted self-opened round. */
+export interface LocalAgentSelfAdmission {
+  readonly executionId: string
+  /** The execution that started the background task (the cause's `startedBy`); absent = not recorded. */
+  readonly startedBy?: string
+  /** The task copied from `startedBy`'s start record; absent with it. */
+  readonly task?: LocalAgentTaskRef
+  /** Resolves when the round ends (never rejects). */
+  readonly settled: Promise<LocalAgentExecutionSettlement>
 }
 
 /** One settings-card value (JSON scalars and string lists — what the cards write). See card-settings.ts. */

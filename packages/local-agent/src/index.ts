@@ -73,7 +73,7 @@ const releasedLogCheck = releasedFormat?.assertReleasedV4Relationships === undef
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
-import type { SubagentActivation, SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
+import type { SubagentActivation, SubagentResult, SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type {
   DelegationCallOptions,
   LocalAgentCredentialState,
@@ -119,16 +119,19 @@ import type {
   LocalAgentTaskRef,
   LocalAgentBackgroundTasks,
   LocalAgentBackgroundTasksRequest,
+  LocalAgentSelfAdmission,
+  LocalAgentSelfAdmissionRequest,
+  LocalAgentSelfCause,
 } from './types.ts'
 import { ExecutionRecorder, executionOutcome, type OpenExecution } from './execution-records.ts'
-import { executionOfToolCall, executionReadingsOf, selfExecutionOfTask } from './execution-read.ts'
+import { executionOfToolCall, executionReadingsOf, executionTaskOf, selfExecutionOfTask } from './execution-read.ts'
 import LocalAgentGateway from './gateway.ts'
 import { guardChildLog, type QuarantineEntry } from './child-log-guard.ts'
 import { MemberChannel } from './member-channel.ts'
 import { PresetToolHost } from './preset-tool-host.ts'
 import type { RoomMemberMessageGate as ModeApprovalGate } from './types.ts'
 import { withMemberProcessIdentity, type MemberProcessIdentity } from './env.ts'
-import { MemberInbox } from './member-inbox.ts'
+import { MemberInbox, SELF_ROUND_RESTARTED } from './member-inbox.ts'
 import { PreparedMembers } from './prepared-members.ts'
 import { MemberControls } from './member-controls.ts'
 import { FileMemberControlStorage } from './member-control-storage.ts'
@@ -186,11 +189,14 @@ export type {
   LocalAgentExecutionSettlement,
   LocalAgentMemberCreate,
   LocalAgentMemberInput,
+  LocalAgentSelfAdmission,
+  LocalAgentSelfAdmissionRequest,
+  LocalAgentSelfCause,
 } from './types.ts'
-export { MemberInbox, MemberLedger } from './member-inbox.ts'
+export { MemberInbox, MemberLedger, SELF_ROUND_RESTARTED } from './member-inbox.ts'
 export { BEFORE_PROMPT_FAILURE, LocalAgentRetryableStartError, RETRYABLE_START_FAILURE, isRetryableStartFailure } from './types.ts'
 export { beforeMirrorTurn, executionOutcome, ExecutionRecorder, OpenExecution } from './execution-records.ts'
-export { addUsage, executionOfToolCall, executionReadingsOf, selfExecutionOfTask, subagentReadingsFor } from './execution-read.ts'
+export { addUsage, executionOfToolCall, executionReadingsOf, executionTaskOf, ownSelfRounds, selfExecutionOfTask, subagentReadingsFor } from './execution-read.ts'
 export type { ExecutionAdmission, ExecutionObservation, ExecutionRecorderOptions, MirrorTransport } from './execution-records.ts'
 
 export type {
@@ -1327,6 +1333,10 @@ export class LocalAgentRegistry {
     reconciled: (childSessionId, executionId) => {
       let row: LocalAgentMemberInput | undefined
       try { row = this.memberInbox.find(childSessionId, executionId) } catch { return undefined }
+      // A round the CLI opened itself, cut off by a restart: unknown, and nobody's to reconcile.
+      if (row?.caller === 'cli' && row.status === 'failed' && row.error === SELF_ROUND_RESTARTED) {
+        return { outcome: 'uncertain', at: row.settledAt ?? row.updatedAt, reconciled: false }
+      }
       return row?.reconciledAt === undefined || (row.status !== 'done' && row.status !== 'failed' && row.status !== 'cancelled')
         ? undefined : { outcome: row.status, at: row.reconciledAt }
     },
@@ -2031,13 +2041,14 @@ export class LocalAgentRegistry {
   }
 
   /** Reconstruct one member's historical model and tool timing without changing either log. */
-  memberModelTiming(childSessionId: string): Promise<LocalAgentMemberModelTiming | undefined> {
+  async memberModelTiming(childSessionId: string): Promise<LocalAgentMemberModelTiming | undefined> {
     const record = this.getDelegation(childSessionId)
-    if (record === undefined) return Promise.resolve(undefined)
+    if (record === undefined) return undefined
     const harness = this.harnessForProvider(record.provider)
-    if (harness === undefined) return Promise.resolve(undefined)
-    return harness.timing?.read(this.homeDir(harness.name, record.scope), record.cliSessionId)
-      ?? Promise.resolve(undefined)
+    if (harness?.timing === undefined) return undefined
+    const home = this.homeDir(harness.name, record.scope)
+    const events = await this.readMemberEvents(childSessionId)
+    return events === undefined ? harness.timing.read(home, record.cliSessionId) : harness.timing.read(home, record.cliSessionId, events)
   }
 
   /**
@@ -3345,6 +3356,86 @@ export class LocalAgentRegistry {
     }
     plan.signal?.addEventListener('abort', onAbort, { once: true })
     return { executionId, settled, started }
+  }
+
+  /**
+   * Admit a round the member's CLI opened on its own — a background task it
+   * started ended while the member was idle (member-self-started-rounds A②).
+   * The CLI already runs it, so it is never queued: it takes the member's
+   * slot at once (a `cli` ledger row, `running`), and every execution asked
+   * for meanwhile waits for it in the ledger. It is recorded as one
+   * `local-agent/execution` (caller `cli`, cause `self`) like any other:
+   * the start lands in the member's child session before the harness's
+   * `follow` opens the round's turn, the end when `follow` settles.
+   *
+   * `startedBy` follows recorded facts only: the task's tool call
+   * (`taskCallId`) → the mirrored call's turn → the execution whose turns
+   * hold it. Its start record's `task` is copied verbatim, so the round's
+   * spend sums onto the task that started the background work. A missing
+   * link leaves both out.
+   *
+   * Refused (undefined) when the session is not this provider's member, or
+   * the member's slot is taken (a round is dispatched — the harness's own
+   * collision handling owns that case), a row is uncertain, or its ledger
+   * cannot be written.
+   * @param request - the round, its cause, and how to follow it.
+   * @returns the admitted execution, or undefined when refused.
+   */
+  async admitSelf(request: LocalAgentSelfAdmissionRequest): Promise<LocalAgentSelfAdmission | undefined> {
+    const childSessionId = request.childSessionId
+    const record = this.getDelegation(childSessionId)
+    if (record === undefined || record.provider !== request.provider) return undefined
+    const executionId = randomUUID()
+    const entry: { open?: OpenExecution } = {}
+    let resolveSettled!: (settlement: LocalAgentExecutionSettlement) => void
+    const settled = new Promise<LocalAgentExecutionSettlement>((resolve) => { resolveSettled = resolve })
+    let resolveAdmitted!: (admitted: { startedBy?: string; task?: LocalAgentTaskRef } | undefined) => void
+    const admitted = new Promise<{ startedBy?: string; task?: LocalAgentTaskRef } | undefined>((resolve) => { resolveAdmitted = resolve })
+    const dispatch = async (signal: AbortSignal): Promise<SubagentRun> => {
+      await this.reattachChildSession(childSessionId)
+      const session = this.ctx.get('sessions')?.get(SessionId(childSessionId))
+      if (session === undefined) throw new Error(`localAgent: member ${childSessionId}'s child session is not live`)
+      const events = session.snapshotEvents()
+      const startedBy = request.taskCallId === undefined ? undefined : executionOfToolCall(events, request.taskCallId)
+      const task = startedBy === undefined ? undefined : executionTaskOf(events, startedBy)
+      const cause: LocalAgentSelfCause = { ...structuredClone(request.cause), ...startedBy === undefined ? {} : { startedBy } }
+      const open = this.executions.admit({
+        childSessionId,
+        parentSessionId: record.parentSessionId,
+        operation: 'prompt',
+        provider: record.provider,
+        execution: { executionId, caller: 'cli', cause, ...task === undefined ? {} : { task } },
+        unrecorded: this.harnessForProvider(record.provider)?.unrecorded,
+      })
+      entry.open = open
+      open.started()
+      resolveAdmitted({ ...startedBy === undefined ? {} : { startedBy }, ...task === undefined ? {} : { task } })
+      const result = Promise.resolve()
+        .then(() => request.follow({ executionId, session, signal }))
+        .catch((error: unknown): SubagentResult => ({ stopReason: signal.aborted ? 'aborted' : 'error', output: [], diagnostic: error instanceof Error ? error.message : String(error) }))
+      void result.then(settledResult => open.settle(executionOutcome(settledResult)))
+      return { id: SessionId(executionId), result, dispose: async () => {} } as SubagentRun
+    }
+    let row: LocalAgentMemberInput | undefined
+    try {
+      row = this.memberInbox.runNow(childSessionId, { id: executionId, caller: 'cli' }, {
+        dispatch: signal => dispatch(signal),
+        final: (ended, run, error) => {
+          resolveAdmitted(undefined)
+          void this.settlementOf(executionId, ended, run, error, entry).then(resolveSettled)
+        },
+      })
+    } catch (error) {
+      this.ctx.logger.warn(`localAgent: admitting member ${childSessionId}'s self-opened round failed: ${String(error)}`)
+      return undefined
+    }
+    if (row === undefined) return undefined
+    this.memberControls.hold(childSessionId, settled)
+    const facts = await admitted
+    // The follow never started (the child could not be made live): the row
+    // already ended failed, and the CLI's round folds into the next one.
+    if (facts === undefined) return undefined
+    return { executionId, ...facts, settled }
   }
 
   /** A key the ledger already holds: the same execution, its settlement, or an error. */

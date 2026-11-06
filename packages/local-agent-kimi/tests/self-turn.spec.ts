@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { findOpenSelfTurn, readQueuedPrompt, turnEndedStopReason, wireLineCount } from '../src/self-turn.ts'
+import { findOpenSelfTurn, isTaskOrigin, nextSelfTurn, readQueuedPrompt, readTurnAt, selfTurnPrompts, turnEndedStopReason, wireLineCount } from '../src/self-turn.ts'
 
 const wire = (...rows: Record<string, unknown>[]): string => rows.map(row => JSON.stringify(row)).join('\n') + '\n'
 const userPrompt = (text: string, time?: number) => ({ type: 'turn.prompt', input: [{ type: 'text', text }], origin: { kind: 'user' }, ...time === undefined ? {} : { time } })
@@ -94,5 +94,36 @@ describe('turnEndedStopReason', () => {
     expect(turnEndedStopReason('cancelled')).toBe('aborted')
     expect(turnEndedStopReason('failed')).toBe('error')
     expect(turnEndedStopReason('something-new')).toBe('error')
+  })
+})
+
+describe('the self-turn observer\'s readers (member-self-started-rounds M4)', () => {
+  it('selfTurnPrompts states a self prompt\'s task, status, notification id and time; user prompts are not listed', () => {
+    const rows = wire(userPrompt('部署', 5), taskPrompt(10), { type: 'turn.prompt', input: [], origin: { kind: 'cron_job' } })
+    expect(selfTurnPrompts(rows)).toEqual([
+      { line: 1, origin: 'task', taskId: 'bash-1', taskStatus: 'completed', notificationId: 'task:bash-1:completed', time: 10 },
+      { line: 2, origin: 'cron_job' },
+    ])
+    expect(selfTurnPrompts(rows, 2)).toEqual([{ line: 2, origin: 'cron_job' }])
+    expect(isTaskOrigin('task')).toBe(true)
+    expect(isTaskOrigin('background_task')).toBe(true)
+    expect(isTaskOrigin('cron_job')).toBe(false)
+  })
+
+  it('nextSelfTurn: the first unhandled self prompt after the last user prompt, stamped by this process', () => {
+    // One before the user prompt was a round's to wait for; one stamped before the spawn is a dead process's.
+    const rows = wire(taskPrompt(100), ended(0), userPrompt('下一步', 110), ended(1), taskPrompt(50), ended(2), taskPrompt(120), ended(3), taskPrompt(130))
+    expect(nextSelfTurn(rows, 100, new Set())?.line).toBe(6)
+    expect(nextSelfTurn(rows, 100, new Set([6]))?.line).toBe(8)
+    expect(nextSelfTurn(rows, 100, new Set([6, 8]))).toBeUndefined()
+    // An unstamped prompt cannot be told from a dead process's: never offered.
+    expect(nextSelfTurn(wire(userPrompt('a'), taskPrompt()), 0, new Set())).toBeUndefined()
+  })
+
+  it('readTurnAt follows one turn to its end, answer segments per model step; a next prompt without an end reads interrupted', () => {
+    const open = wire(userPrompt('a'), ended(0), taskPrompt(1), text(1, 1, '部署'), text(1, 1, '完成'), text(1, 2, '已重启'))
+    expect(readTurnAt(open, 2)).toEqual({ phase: 'running', segments: ['部署完成', '已重启'] })
+    expect(readTurnAt(open + wire(ended(1, 'failed')), 2)).toEqual({ phase: 'ended', reason: 'failed', segments: ['部署完成', '已重启'] })
+    expect(readTurnAt(open + wire(userPrompt('b')), 2)).toEqual({ phase: 'ended', reason: 'interrupted', segments: ['部署完成', '已重启'] })
   })
 })

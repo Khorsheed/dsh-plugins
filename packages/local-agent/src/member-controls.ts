@@ -137,6 +137,19 @@ export class MemberControls {
     return await task
   }
 
+  /**
+   * Hold the member's round queue until `until` settles, without a
+   * configuration lease: a round the CLI already runs on its own (a
+   * self-opened round) cannot wait for the rounds before it, but every round
+   * asked for meanwhile waits for it. Not counted in {@link queuedCount}.
+   */
+  hold(memberId: string, until: Promise<unknown>): void {
+    const previous = this.tails.get(memberId) ?? Promise.resolve()
+    const tail = Promise.all([previous.catch(() => {}), until.catch(() => {})]).then(() => {})
+    this.tails.set(memberId, tail)
+    void tail.finally(() => { if (this.tails.get(memberId) === tail) this.tails.delete(memberId) })
+  }
+
   private async runNow(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void | Promise<void>): Promise<SubagentRun> {
     const control = this.get(binding)
     const lease = await control.admit(randomUUID())
