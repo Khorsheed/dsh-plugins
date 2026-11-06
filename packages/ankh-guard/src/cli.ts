@@ -41,7 +41,7 @@ import {
   discoverLaunchCommand, findOwnedListener, findPidOnPort, killPidTree,
   processIdentity, processIdentityMatches,
 } from './processes.ts'
-import { readInstanceLaunch, readSkillRegistration, writeAdoptionRecord, writeCompositionRecovery, writeInstanceLaunchAsSupervisor, writeRestartOutcome, writeUnexpectedExitRecord } from './restart-context.ts'
+import { initiatorMemberFromEnv, readInstanceLaunch, readSkillRegistration, writeAdoptionRecord, writeCompositionRecovery, writeInstanceLaunchAsSupervisor, writeRestartOutcome, writeUnexpectedExitRecord } from './restart-context.ts'
 import {
   activeCutover, prepareLaunchCutover, readCutoverReceipt, readLaunchState, recordCutoverEvent,
   selectedLaunchSpec, summarizeLaunchState, writeCutoverControl, writeStableLaunchSpec,
@@ -2261,9 +2261,11 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         // record the outcome (the exit agent's semantics) so the next boot's
         // pendingRestartRecord delivers the report to its initiator.
         const initiator = resolveInitiator(options.initiator, io)
+        const initiatorMember = initiatorMemberFromEnv()
+        const owners = { ...(initiator !== undefined ? { initiator } : {}), ...(initiatorMember !== undefined ? { initiatorMember } : {}) }
         if (!listening) {
           io.stderr(`new instance not listening on 127.0.0.1:${port} within ${timeoutMs}ms\n`)
-          writeRestartOutcome(stateDir, { exitAt: stoppedAt, pid: pidNumber, error: `new instance not listening on :${port}`, ...(initiator !== undefined ? { initiator } : {}) })
+          writeRestartOutcome(stateDir, { exitAt: stoppedAt, pid: pidNumber, error: `new instance not listening on :${port}`, ...owners })
           if (options.rollback) rollbackToKnownGood(stateDir, repoDir, io)
           return 1
         }
@@ -2271,11 +2273,11 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         io.stdout(`canary verify: ${post.ok ? 'PASS' : 'FAIL'} — ${post.reason}\n`)
         io.stdout(`canary port: PASS — listening on 127.0.0.1:${port}\n`)
         if (!post.ok) {
-          writeRestartOutcome(stateDir, { exitAt: stoppedAt, pid: pidNumber, error: `canary failed: ${post.reason}`, ...(initiator !== undefined ? { initiator } : {}) })
+          writeRestartOutcome(stateDir, { exitAt: stoppedAt, pid: pidNumber, error: `canary failed: ${post.reason}`, ...owners })
           if (options.rollback) rollbackToKnownGood(stateDir, repoDir, io)
           return 1
         }
-        writeRestartOutcome(stateDir, { exitAt: stoppedAt, pid: pidNumber, ...(initiator !== undefined ? { initiator } : {}) })
+        writeRestartOutcome(stateDir, { exitAt: stoppedAt, pid: pidNumber, ...owners })
         io.stdout('restart + canary PASS\n')
         return 0
       } finally {
@@ -2677,6 +2679,9 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         // first. Everything lands in stateDir directly — the same directory the
         // plugin reads (see the supervise case for why no home is derived).
         const initiator = resolveInitiator(options.initiator, io)
+        // The member whose process schedules this exit (M10): the room must
+        // not auto-continue the round that asked for the restart.
+        const initiatorMember = initiatorMemberFromEnv()
         mkdirSync(stateDir, { recursive: true })
         writeFileSync(stateFile(stateDir, 'restartRequested'),
           `${JSON.stringify({
@@ -2688,6 +2693,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
             ...(options.bootTimeoutMs === undefined ? {} : { bootTimeoutMs: options.bootTimeoutMs }),
             ...(gate.authorization === undefined ? {} : { authorization: gate.authorization }),
             ...(initiator !== undefined ? { initiator } : {}),
+            ...(initiatorMember !== undefined ? { initiatorMember } : {}),
           })}\n`)
         // A DETACHED exit agent (setsid via node spawn): it cannot be reaped by
         // the sandbox/harness process group, so the scheduled kill actually
@@ -2707,6 +2713,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
             WD_DELAY_MS: String(delayMs),
             WD_RESULT_FILE: resultFile,
             ...(initiator !== undefined ? { WD_INITIATOR: initiator } : {}),
+            WD_INITIATOR_MEMBER: initiatorMember ?? '',
           }, { port, tempRoot: stateDir }),
         })
         registerSpawnedTestProcess(child, 'schedule-exit-agent', { port, tempRoot: stateDir })
