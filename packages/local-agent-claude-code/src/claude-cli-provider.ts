@@ -57,6 +57,7 @@ import {
 import type { LocalAgentAppliedConfiguration, DelegationExecTarget, LocalAgentToolCalls, LocalAgentToolTiming } from '@khorsheed/dsh-local-agent/types'
 import { MEMBER_BRIDGE_SOCKET_ENV, MEMBER_BRIDGE_TOKEN_ENV } from '@khorsheed/dsh-local-agent/types'
 import { LiveChannelUnavailableError } from './live-driver.ts'
+import { ClaudeSubagentMirror } from './subagent-mirror.ts'
 import type { ClaudeLiveDriver } from './live-driver.ts'
 import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
 import { endpointAuthEnv } from './endpoint-auth.ts'
@@ -444,6 +445,7 @@ export class ClaudeCliProvider implements SubagentProvider {
         ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
         childSession,
         ctx: this.ctx,
+        homeDir,
         // The first round records the claude session id so a later resume round
         // can continue it.
         onSessionId: (sessionId) => {
@@ -569,6 +571,7 @@ export class ClaudeCliProvider implements SubagentProvider {
           ...member === undefined ? {} : { member: { mcpConfig: member.mcpConfig, allowedTool: member.allowedTool } },
           childSession,
           ctx: this.ctx,
+          homeDir,
           resume: { cliSessionId: intent.cliSessionId, turn: nextTurn },
           // Every settled round reports its observed model and usage through
           // the registry's observation channel.
@@ -663,6 +666,13 @@ export interface ClaudeCliRunSpec {
   readonly childSession?: Session | undefined
   /** Host context carrying session persistence. */
   readonly ctx?: Context | undefined
+  /**
+   * The scoped home the CLI runs against (the `CLAUDE_CONFIG_DIR` value on the
+   * host side). With it, the member's own `Agent`/`Task` subagents are
+   * mirrored at settle from the CLI's `subagents/` records
+   * (subagent-mirror.ts); absent, they are not.
+   */
+  readonly homeDir?: string | undefined
   /**
    * Resume round: continue the session named by `cliSessionId` with
    * `claude -p --resume <session_id>` instead of a fresh `claude -p`,
@@ -1588,6 +1598,16 @@ export async function startClaudeCliRun(
         if (spec.childSession === undefined) return
         const childSession = spec.childSession
         const settled = await result
+        // The member's own subagents (its `Agent`/`Task` calls), read from the
+        // CLI's subagents/ records now that the process has exited: inside
+        // the member's round, before its turn closes.
+        if (spec.homeDir !== undefined && spec.ctx !== undefined) {
+          const subagents = new ClaudeSubagentMirror({ ctx: spec.ctx, member: childSession, homeDir: spec.homeDir, transport: 'exec' })
+          subagents.setCliSession(parseClaudeStreamJson(drainedStdout).sessionId ?? spec.resume?.cliSessionId)
+          subagents.observeStream(drainedStdout)
+          await subagents.settleRound({ processExited: true })
+          subagents.dispose()
+        }
         // Every terminal path closes the turn so the timing window never stays
         // open on a failed or cancelled run. An in-stream error result or a
         // non-zero exit settles 'error', a locally cancelled run 'aborted'.
