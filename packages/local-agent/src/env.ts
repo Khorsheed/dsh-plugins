@@ -1,4 +1,64 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
+
+/**
+ * Names the CLI process of a member: its dsh child session id. Anything the
+ * member's CLI runs (its shell tool, a script) inherits it, so a script can
+ * tell it was started from inside a member — `scripts/deploy-3080.mts`
+ * refuses to restart the instance the member itself runs in.
+ */
+export const LOCAL_AGENT_MEMBER_ENV = 'DSH_LOCAL_AGENT_MEMBER'
+
+/** Names the room session a member sits in, set alongside {@link LOCAL_AGENT_MEMBER_ENV} only when the member's parent is a room. */
+export const LOCAL_AGENT_ROOM_ENV = 'DSH_LOCAL_AGENT_ROOM'
+
+/** Which member a CLI process belongs to (see {@link withMemberProcessIdentity}). */
+export interface MemberProcessIdentity {
+  /** The member's dsh child session id. */
+  readonly member: string
+  /** The room session id, when the member's parent is a room. */
+  readonly room?: string
+}
+
+// One store per process, shared by every copy of this module: source-based
+// toolchains and installed bundles can load the core twice, and the providers
+// must read the store the core wrote.
+const IDENTITY_STORE_KEY = Symbol.for('@khorsheed/dsh-local-agent/member-process-identity')
+const identityStore: AsyncLocalStorage<MemberProcessIdentity> = (() => {
+  const slot = globalThis as unknown as Record<symbol, AsyncLocalStorage<MemberProcessIdentity> | undefined>
+  return slot[IDENTITY_STORE_KEY] ??= new AsyncLocalStorage<MemberProcessIdentity>()
+})()
+
+/**
+ * Run `body` as work done for one member: every {@link delegationEnv} built
+ * inside it (directly, or in anything it awaits or schedules) adds the
+ * member's identity variables. The core wraps each provider round, member
+ * preparation, process start and reload in this, so the providers' spawns
+ * carry the identity without naming it themselves.
+ * @param identity - the member (and its room, if any) the work belongs to.
+ * @param body - the work.
+ * @returns what `body` returns.
+ */
+export function withMemberProcessIdentity<T>(identity: MemberProcessIdentity, body: () => T): T {
+  return identityStore.run(identity, body)
+}
+
+/** The member identity of the current async context, if any. */
+export function currentMemberProcessIdentity(): MemberProcessIdentity | undefined {
+  return identityStore.getStore()
+}
+
+/**
+ * The environment entries that name a member to its CLI process.
+ * @param identity - the member and its room.
+ * @returns the entries, `DSH_LOCAL_AGENT_ROOM` only when a room is known.
+ */
+export function memberIdentityEnv(identity: MemberProcessIdentity): Record<string, string> {
+  return {
+    [LOCAL_AGENT_MEMBER_ENV]: identity.member,
+    ...identity.room === undefined ? {} : { [LOCAL_AGENT_ROOM_ENV]: identity.room },
+  }
+}
 
 /**
  * Ambient keys a delegated CLI child may inherit on POSIX. Everything else the
@@ -73,6 +133,9 @@ const WINDOWS_INHERITED: ReadonlySet<string> = new Set([
  * entries always win, including over the allowlist. Anything the child truly
  * needs beyond the allowlist must be passed explicitly by the provider, which
  * is the point: the delegation env is reviewed, not inherited by accident.
+ *
+ * Inside {@link withMemberProcessIdentity} the layer also names the member
+ * ({@link memberIdentityEnv}); the provider's own entries still win.
  * @param extra - the provider's explicit entries (and any deliberate
  *   tombstones) for this spawn.
  * @returns the explicit env layer to hand to `ctx.subprocess.spawn`.
@@ -87,5 +150,6 @@ export function delegationEnv(extra: Readonly<NodeJS.ProcessEnv>): NodeJS.Proces
     if (explicit.has(normalize(key)) || inherited.has(normalize(key))) continue
     env[key] = undefined
   }
-  return { ...env, ...extra }
+  const identity = identityStore.getStore()
+  return { ...env, ...identity === undefined ? {} : memberIdentityEnv(identity), ...extra }
 }

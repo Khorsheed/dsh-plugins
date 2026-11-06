@@ -126,6 +126,7 @@ import { guardChildLog, type QuarantineEntry } from './child-log-guard.ts'
 import { MemberChannel } from './member-channel.ts'
 import { PresetToolHost } from './preset-tool-host.ts'
 import type { RoomMemberMessageGate as ModeApprovalGate } from './types.ts'
+import { withMemberProcessIdentity, type MemberProcessIdentity } from './env.ts'
 import { MemberInbox } from './member-inbox.ts'
 import { PreparedMembers } from './prepared-members.ts'
 import { MemberControls } from './member-controls.ts'
@@ -201,7 +202,8 @@ export type {
   RoomMemberMessageReceipt,
 } from './types.ts'
 
-export { delegationEnv } from './env.ts'
+export { delegationEnv, LOCAL_AGENT_MEMBER_ENV, LOCAL_AGENT_ROOM_ENV, memberIdentityEnv, withMemberProcessIdentity, currentMemberProcessIdentity } from './env.ts'
+export type { MemberProcessIdentity } from './env.ts'
 export { ModelDirectoryCache, extendModelDirectory, modelDirectoryContextKey } from './model-directory.ts'
 export { MODEL_LIST_FILE, firstModelOf, normalizeModelList, readModelList, readModelListSync, writeModelList } from './model-list.ts'
 export { MemberConfigurationController } from './member-control.ts'
@@ -1244,8 +1246,44 @@ export class LocalAgentRegistry {
    */
   withMemberConfigurationRound(binding: LocalAgentMemberBinding, start: (configuration: LocalAgentAppliedConfiguration) => Promise<SubagentRun>, signal?: AbortSignal, onAdmitted?: () => void | Promise<void>, execution?: LocalAgentExecutionIntent): Promise<SubagentRun> {
     this.memberInbox.assertAdmission(binding.childSessionId)
-    return this.memberControls.run(binding, configuration => this.recordedExecution(binding, execution, signal, () => start(configuration)),
+    return this.memberControls.run(binding, configuration => this.recordedExecution(binding, execution, signal, () => this.asMemberProcess(binding, () => start(configuration))),
       signal, () => { this.memberInbox.assertAdmission(binding.childSessionId); return onAdmitted?.() })
+  }
+
+  private readonly roomParents = new Map<string, boolean>()
+
+  /**
+   * Run `body` as work for one member, so every CLI process a provider spawns
+   * inside it carries `DSH_LOCAL_AGENT_MEMBER` (and `DSH_LOCAL_AGENT_ROOM`
+   * when the parent is a room) through `delegationEnv`. The room probe is
+   * optional and cached per parent (the room marker never changes); without
+   * the room service, or on any probe failure, only the member is named.
+   * @param binding - the member's identity.
+   * @param body - the provider work (a round start, a preparation, a process start or reload).
+   * @returns what `body` resolves to.
+   */
+  async asMemberProcess<T>(binding: Pick<LocalAgentMemberBinding, 'childSessionId' | 'parentSessionId'>, body: () => T | Promise<T>): Promise<T> {
+    return await withMemberProcessIdentity(await this.memberProcessIdentity(binding), body)
+  }
+
+  /** The identity {@link asMemberProcess} runs under, for a caller that must enter it synchronously. */
+  async memberProcessIdentity(binding: Pick<LocalAgentMemberBinding, 'childSessionId' | 'parentSessionId'>): Promise<MemberProcessIdentity> {
+    const room = await this.isRoomParent(binding.parentSessionId)
+    return { member: binding.childSessionId, ...room ? { room: binding.parentSessionId } : {} }
+  }
+
+  private async isRoomParent(parentSessionId: string): Promise<boolean> {
+    const known = this.roomParents.get(parentSessionId)
+    if (known !== undefined) return known
+    const room = (this.ctx.get as (key: string) => unknown).call(this.ctx, 'room') as { isRoom?: (request: { sessionId: SessionId }) => Promise<boolean> } | undefined
+    if (typeof room?.isRoom !== 'function') return false
+    try {
+      const answer = (await room.isRoom({ sessionId: SessionId(parentSessionId) })) === true
+      this.roomParents.set(parentSessionId, answer)
+      return answer
+    } catch {
+      return false
+    }
   }
 
   /** Open one execution around an admitted provider start (see {@link withMemberConfigurationRound}). */
@@ -1572,7 +1610,14 @@ export class LocalAgentRegistry {
     this.memberControls = new MemberControls(new FileMemberControlStorage(join(homesRoot, '.member-controls')), binding => {
       const adapter = this.harnessForProvider(binding.provider)?.modelBroker?.configurationAdapter?.(binding)
       if (adapter === undefined) throw new Error(`localAgent: ${binding.provider} exposes no configuration admission adapter`)
-      return adapter
+      // Applying a configuration may restart the member's process: it runs as that member.
+      const prepare = adapter.prepare
+      return {
+        ...prepare === undefined ? {} : { prepare: (selection: LocalAgentMemberConfiguration) => this.asMemberProcess(binding, () => prepare.call(adapter, selection)) },
+        validate: selection => this.asMemberProcess(binding, () => adapter.validate(selection)),
+        apply: (selection, previous, operationId) => this.asMemberProcess(binding, () => adapter.apply(selection, previous, operationId)),
+        reconcile: state => this.asMemberProcess(binding, () => adapter.reconcile(state)),
+      }
     }, error => { this.ctx.logger.warn(`localAgent: member control persistence failed: ${String(error)}`) })
     // Reattached child sessions leave the live store, in-flight run
     // heartbeats stop, and every cached child-session write handle closes,
@@ -2443,6 +2488,9 @@ export class LocalAgentRegistry {
     const binding = this.memberBinding(childSessionId)
     if (face === undefined || binding === undefined) return { ok: false, reason: 'unknown-member' }
     const harness = this.harnessForProvider(binding.provider)
+    // Resolved before the pending check, so the reload below is entered
+    // synchronously after it, as it always was.
+    const identity = await this.memberProcessIdentity(binding)
     if (face.reloadPending(childSessionId)) return { ok: false, reason: 'busy' }
     // An explicit load recovers a failed native start first (11-04: a Kimi
     // member whose start failed after a host restart kept failing in 0 ms,
@@ -2457,12 +2505,13 @@ export class LocalAgentRegistry {
     if (harness?.reloadMember === undefined) return { ok: false, reason: 'unsupported' }
     let accepted = false
     let startedEarly = false
-    const handle = harness.reloadMember(childSessionId, {
+    const reloadMember = harness.reloadMember
+    const handle = withMemberProcessIdentity(identity, () => reloadMember(childSessionId, {
       onStart: () => {
         if (accepted) face.reloadStarted(childSessionId)
         else startedEarly = true
       },
-    })
+    }))
     if (handle === undefined) return { ok: false, reason: 'no-process' }
     accepted = true
     face.reloadAccepted(childSessionId, handle.when)
@@ -2535,7 +2584,7 @@ export class LocalAgentRegistry {
       const childSession = this.ctx.get('sessions')?.get(SessionId(childSessionId))
       if (childSession === undefined) return 'no-process'
       const turn = childSession.snapshotEvents().filter(event => event.type === 'turn/start').length + 1
-      return await start({ binding, childSession, resume: { cliSessionId: record.cliSessionId, turn }, ...configuration === undefined ? {} : { configuration } })
+      return await this.asMemberProcess(binding, () => start({ binding, childSession, resume: { cliSessionId: record.cliSessionId, turn }, ...configuration === undefined ? {} : { configuration } }))
     }
     const done = this.supportsMemberConfiguration(binding.provider)
       ? this.memberControls.withAdmission(binding, configuration => run(configuration))
@@ -2638,7 +2687,8 @@ export class LocalAgentRegistry {
     if (control.read().status === 'failed') await control.retry(control.read().revision)
     const lease = await control.admit(`prepare:${randomUUID()}`)
     try {
-      await harness.prepareMember({ binding, childSession, configuration: lease.configuration, signal: options.signal ?? AbortSignal.timeout(30_000) })
+      const prepare = harness.prepareMember
+      await this.asMemberProcess(binding, () => prepare({ binding, childSession, configuration: lease.configuration, signal: options.signal ?? AbortSignal.timeout(30_000) }))
       await this.syncChildSession(childSession, true)
       this.preparedMembers.write({ version: 1, binding, phase: 'ready' })
     } catch (error) { control.rejectAdmission(error); throw error }
