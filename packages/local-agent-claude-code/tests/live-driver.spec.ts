@@ -1431,14 +1431,24 @@ describe('claude mirror snapshot (live)', () => {
       fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'thinking', thinking: '先列目录' }] } })
       partial(fake, { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: '我看看。' } })
       fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'text', text: '我看看。' }] } })
-      fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'tool_use', id: 'tu1', name: 'Bash', input: { command: 'ls' } }] } })
+      fake.emit({ type: 'assistant', message: { id: 'm1', role: 'assistant', usage: usage1, content: [{ type: 'tool_use', id: 'tu1', name: 'Agent', input: { description: '列目录', prompt: 'ls' } }] } })
       partial(fake, { type: 'message_delta', usage: { output_tokens: 40 } })
       partial(fake, { type: 'message_stop' })
+      // The member's Agent call runs a subagent: its partials, messages, and
+      // tool results carry parent_tool_use_id and must leave no trace.
+      const sub = { parent_tool_use_id: 'tu1' }
+      fake.emit({ type: 'stream_event', ...sub, event: { type: 'message_start', message: { id: 'sub1', usage: usage2 } } })
+      fake.emit({ type: 'stream_event', ...sub, event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '子智能体在说' } } })
+      fake.emit({ type: 'assistant', ...sub, message: { id: 'sub1', role: 'assistant', usage: usage2, content: [{ type: 'tool_use', id: 'sub-tu', name: 'Bash', input: { command: 'ls' } }] } })
+      fake.emit({ type: 'stream_event', ...sub, event: { type: 'message_stop' } })
+      fake.emit({ type: 'user', ...sub, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'sub-tu', content: 'a.txt' }] } })
+      fake.emit({ type: 'assistant', ...sub, message: { id: 'sub2', role: 'assistant', content: [{ type: 'text', text: '子智能体的结论' }] } })
       fake.emit({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'a.txt' }] } })
       partial(fake, { type: 'message_start', message: { id: 'm2', usage: usage2 } })
       partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '完成' } })
       partial(fake, { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '了。' } })
       fake.emit({ type: 'assistant', message: { id: 'm2', role: 'assistant', usage: usage2, content: [{ type: 'text', text: '完成了。' }] } })
+      fake.emit({ type: 'assistant', ...sub, message: { id: 'sub3', role: 'assistant', content: [{ type: 'text', text: '迟到的子智能体文字' }] } })
       partial(fake, { type: 'message_delta', usage: { output_tokens: 8 } })
       partial(fake, { type: 'message_stop' })
       fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 7, output_tokens: 48 },
