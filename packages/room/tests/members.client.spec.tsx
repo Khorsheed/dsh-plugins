@@ -107,6 +107,7 @@ async function bench(options: {
   memberModel?: (child: string) => Promise<LocalAgentModelInfo | null | undefined>
   setMemberModel?: (child: string, model?: string) => Promise<{ ok: true } | { ok: false; error: string }>
   modelDirectory?: RoomModelDirectory
+  listDirectory?: RoomMembersInjected['listDirectory']
   renderMemberConfiguration?: RoomMembersInjected['renderMemberConfiguration']
   renderHarnessModelPicker?: RoomMembersInjected['renderHarnessModelPicker']
   renderMemberModelPicker?: RoomMembersInjected['renderMemberModelPicker']
@@ -133,6 +134,7 @@ async function bench(options: {
     invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
     listProviders: vi.fn(async () => options.providers ?? PROVIDERS),
     browseDirectory: vi.fn(async () => '/home/user/web' as string | null),
+    listDirectory: options.listDirectory,
     modelSurface: vi.fn(async () => options.modelSurface),
     memberModel: vi.fn(options.memberModel ?? (async () => undefined)),
     setMemberModel: vi.fn(options.setMemberModel ?? (async () => ({ ok: true as const }))),
@@ -301,22 +303,23 @@ describe('MembersView', () => {
     expect(dialog.textContent).toContain('置灰的 provider 未登录')
 
     fireEvent.change(screen.getByPlaceholderText('ada'), { target: { value: 'dora' } })
-    // The cwd field: empty = inherit the room cwd (the placeholder); the
-    // read-only display fills through the 浏览… button (the official
-    // pickDirectory wire primitive).
+    // Empty inherits the room cwd (the placeholder). Both the official
+    // picker and direct path editing feed the same submitted value.
     const cwdInput = screen.getByText('工作目录（可选）')
       .closest('label')!.querySelector('input')!
     expect((cwdInput as HTMLInputElement).placeholder).toBe('/home/user/room')
-    expect((cwdInput as HTMLInputElement).readOnly).toBe(true)
+    expect((cwdInput as HTMLInputElement).readOnly).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: '浏览…' }))
     await waitFor(() => { expect((cwdInput as HTMLInputElement).value).toBe('/home/user/web') })
+    fireEvent.change(cwdInput, { target: { value: '/home/user/manual' } })
+    expect((cwdInput as HTMLInputElement).value).toBe('/home/user/manual')
     const textareas = dialog.querySelectorAll('textarea')
     fireEvent.change(textareas[0]!, { target: { value: '搭页面' } })
     fireEvent.change(textareas[1]!, { target: { value: '前端' } })
     fireEvent.click(screen.getByRole('button', { name: '邀请入队' }))
     await waitFor(() => {
       expect(face.invite).toHaveBeenCalledWith({
-        provider: 'kimi', name: 'dora', instructions: '前端', cwd: '/home/user/web', firstTask: '搭页面',
+        provider: 'kimi', name: 'dora', instructions: '前端', cwd: '/home/user/manual', firstTask: '搭页面',
       })
     })
     await screen.findByText('已邀请 dora 并开始工作')
@@ -514,6 +517,64 @@ describe('MembersView', () => {
     await screen.findByText('Kimi Code', { selector: 'option' })
     fireEvent.click(screen.getByRole('button', { name: '浏览…' }))
     await screen.findByText(/打不开选文件夹的窗口/)
+  })
+
+  it('a cancelled native pick neither changes the path nor opens the browse fallback', async () => {
+    const listDirectory = vi.fn()
+    const { face } = await bench({ listDirectory })
+    face.browseDirectory.mockResolvedValue(null)
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    await screen.findByRole('dialog')
+    fireEvent.click(screen.getByRole('button', { name: '浏览…' }))
+    await waitFor(() => { expect(face.browseDirectory).toHaveBeenCalledOnce() })
+    expect(screen.queryByRole('dialog', { name: '选择工作目录' })).toBeNull()
+    expect(screen.queryByText(/打不开选文件夹的窗口/)).toBeNull()
+    expect(listDirectory).not.toHaveBeenCalled()
+  })
+
+  it('falls back to directory browsing, supports crumbs and typed paths, and fills the chosen cwd', async () => {
+    const home = {
+      path: '/home/user', home: '/home/user',
+      crumbs: [{ name: 'Home', path: '/home/user', hidden: false }],
+      entries: [{ name: 'project', path: '/home/user/project', hidden: false }], truncated: false,
+    }
+    const project = {
+      path: '/home/user/project', home: '/home/user',
+      crumbs: [...home.crumbs, { name: 'project', path: '/home/user/project', hidden: false }],
+      entries: [{ name: 'src', path: '/home/user/project/src', hidden: false }], truncated: false,
+    }
+    const capcut = {
+      path: '/home/user/CapCut', home: '/home/user',
+      crumbs: [...home.crumbs, { name: 'CapCut', path: '/home/user/CapCut', hidden: false }],
+      entries: [], truncated: false,
+    }
+    const listDirectory = vi.fn(async (path?: string) => {
+      if (path === '/home/user/project') return project
+      if (path === '/home/user/CapCut') return capcut
+      if (path === undefined || path === '/home/user') return home
+      throw new Error('unreadable')
+    })
+    const { face } = await bench({ listDirectory })
+    face.browseDirectory.mockRejectedValue(new Error('native pick unavailable'))
+    fireEvent.click(screen.getByRole('button', { name: '＋ 邀请成员' }))
+    await screen.findByRole('dialog')
+    fireEvent.click(screen.getByRole('button', { name: '浏览…' }))
+
+    const browser = await screen.findByRole('dialog', { name: '选择工作目录' })
+    fireEvent.click(await within(browser).findByRole('button', { name: 'project' }))
+    await within(browser).findByRole('button', { name: 'src' })
+    fireEvent.click(within(browser).getByRole('button', { name: 'Home' }))
+    await within(browser).findByRole('button', { name: 'project' })
+
+    const path = within(browser).getByRole('textbox', { name: '目录路径' })
+    fireEvent.change(path, { target: { value: '/home/user/CapCut' } })
+    fireEvent.click(within(browser).getByRole('button', { name: '前往' }))
+    await waitFor(() => { expect((path as HTMLInputElement).value).toBe('/home/user/CapCut') })
+    fireEvent.click(within(browser).getByRole('button', { name: '使用此目录' }))
+
+    await waitFor(() => { expect(screen.queryByRole('dialog', { name: '选择工作目录' })).toBeNull() })
+    expect((screen.getByRole('textbox', { name: '工作目录（可选）' }) as HTMLInputElement).value).toBe('/home/user/CapCut')
+    expect(listDirectory.mock.calls.map(call => call[0])).toEqual([undefined, '/home/user/project', '/home/user', '/home/user/CapCut'])
   })
 
   it('previews the member card live as the form changes', async () => {

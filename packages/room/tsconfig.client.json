@@ -14,6 +14,7 @@
   "files": [
     "src/client/InviteAgentAction.tsx",
     "src/client/InviteDialog.tsx",
+    "src/client/RoomDirectoryBrowser.tsx",
     "src/client/MemberCard.tsx",
     "src/client/RemoveMemberConfirm.tsx",
     "src/client/RoomSettingsView.tsx",

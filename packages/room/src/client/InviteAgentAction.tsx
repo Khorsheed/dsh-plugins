@@ -14,7 +14,7 @@ import css from './InviteAgentAction.module.css'
 
 /** The header chip plus its dialog. */
 export function InviteAgentAction({
-  roomCwd, invite, listProviders, listNames, browseDirectory, modelSurface, renderHarnessModelPicker, roomChrome, sessionId, t,
+  roomCwd, invite, listProviders, listNames, browseDirectory, listDirectory, modelSurface, renderHarnessModelPicker, roomChrome, sessionId, t,
 }: InviteAgentActionProps): ReactNode {
   const [open, setOpen] = useState(false)
   const [providers, setProviders] = useState<RoomProviderList | undefined>(undefined)
@@ -31,21 +31,23 @@ export function InviteAgentAction({
 
   const submit = (values: InviteDialogSubmit) => invite(inviteRequest(values))
 
-  // M3' self-hide: the chip is the room's dev affordance — it renders only
-  // when this session's preset composition grants the room tools (or the
-  // session IS a room, or the criterion has no answer — all fail-open).
-  if (!roomChrome.show(sessionId)) return null
+  // M3' self-hide applies to the entry, not to an invitation already in
+  // progress: an inventory answer landing after the click must not discard it.
+  const show = roomChrome.show(sessionId)
+  if (!open && !show) return null
 
   return (
     <>
-      <button
-        type="button"
-        className={css.trigger}
-        aria-label={t('action.inviteAgent')}
-        onClick={openDialog}
-      >
-        {t('action.inviteAgent')}
-      </button>
+      {show && (
+        <button
+          type="button"
+          className={css.trigger}
+          aria-label={t('action.inviteAgent')}
+          onClick={openDialog}
+        >
+          {t('action.inviteAgent')}
+        </button>
+      )}
       {open && (
         <InviteDialog
           mode="invite"
@@ -56,6 +58,7 @@ export function InviteAgentAction({
           inheritedCwd={roomCwd}
           existingNames={listNames()}
           browseDirectory={browseDirectory}
+          listDirectory={listDirectory}
           modelSurface={modelSurface}
           renderHarnessModelPicker={renderHarnessModelPicker}
           onSubmit={submit}

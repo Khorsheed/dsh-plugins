@@ -49,7 +49,7 @@ async function bench(options: {
       : vi.fn(async (): Promise<() => Promise<void>> => async () => {}),
   }
   ctx.provide('remote', remoteService as never)
-  const uiWorkspace = { openSession: vi.fn() }
+  const uiWorkspace = { openSession: vi.fn(), pickDirectory: vi.fn(), listDirectory: vi.fn() }
   if (options.uiWorkspace === true) ctx.provide('uiWorkspace', uiWorkspace as never)
   const remote = {
     invite: vi.fn(async () => ({ ok: true as const, value: { ok: true as const, value: { name: 'ada', pendingFirstTask: false } } })),
@@ -153,6 +153,32 @@ describe('room client apply', () => {
     const outcome = await face.invite({ provider: 'kimi-cli', name: 'ada' })
     expect(outcome).toEqual({ ok: true, pendingFirstTask: false })
     expect(remote.invite).toHaveBeenCalledWith({ sessionId: 's-1', provider: 'kimi-cli', name: 'ada' })
+  })
+
+  it('the invite face routes native picks and browse listings through uiWorkspace', async () => {
+    const { ctx, slots, uiWorkspace } = await bench({ uiWorkspace: true })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.session.header.actions')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => InviteAgentInjected)('s-1')
+    const listing = {
+      path: '/home/user', home: '/home/user', crumbs: [],
+      entries: [{ name: 'project', path: '/home/user/project', hidden: false }], truncated: false,
+    }
+    uiWorkspace.pickDirectory.mockResolvedValue('/home/user/picked')
+    uiWorkspace.listDirectory.mockResolvedValue(listing)
+    await expect(face.browseDirectory()).resolves.toBe('/home/user/picked')
+    const controller = new AbortController()
+    await expect(face.listDirectory?.('/home/user', controller.signal)).resolves.toBe(listing)
+    expect(uiWorkspace.listDirectory).toHaveBeenCalledWith('/home/user', controller.signal)
+  })
+
+  it('the invite face distinguishes a missing native picker from cancellation', async () => {
+    const { ctx, slots } = await bench()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const entry = slots.entries('conversation.session.header.actions')[0]!
+    const face = (entry.inject as unknown as (sessionId: string) => InviteAgentInjected)('s-1')
+    expect(face.listDirectory).toBeUndefined()
+    await expect(face.browseDirectory()).rejects.toThrow('native directory picker unavailable')
   })
 
   it('the composer selector claims exactly the cached-room sessions', async () => {

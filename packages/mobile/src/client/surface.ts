@@ -73,7 +73,7 @@ export class MobileSurface {
     if (frame) for (const dialog of frame.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]')) {
       // Room invite/edit signature: preview member, name dice, advanced cwd.
       // Never style arbitrary host/plugin dialogs based on title text alone.
-      if (!dialog.querySelector('[data-member]') || !dialog.querySelector('details input[readonly]') || !dialog.querySelector('button[aria-label]:not([disabled])')) continue
+      if (!dialog.querySelector('[data-member]') || !dialog.querySelector('details input') || !dialog.querySelector('button[aria-label]:not([disabled])')) continue
       this.mark(dialog, 'data-mobile-room-form')
       const overlay = dialog.parentElement
       if (overlay?.getAttribute('role') === 'presentation') this.mark(overlay, 'data-mobile-room-overlay')
