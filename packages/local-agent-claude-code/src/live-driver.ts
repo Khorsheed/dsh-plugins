@@ -96,6 +96,7 @@ import type { Config } from './index.ts'
 import {
   claudeMirrorSource,
   claudeLineText,
+  claudeSubagentParentId,
   ClaudeStreamParser,
   claudeVersionFromInit,
   DEFAULT_DISPOSE_GRACE_MS,
@@ -1241,6 +1242,13 @@ export class ClaudeLiveDriver {
       // after a cancel) would land after the turn closed and corrupt the log.
       if (roundSettled) {
         if (type === 'result') { awaitingResult = false; resolveResult(event) }
+        return
+      }
+      if (claudeSubagentParentId(event) !== undefined) {
+        // A subagent's event (its partials, messages, tool results): never the
+        // member's step, stream, call usage, or answer. The parser records it
+        // as that call's liveness signal and folds nothing.
+        parser.push(JSON.stringify(event) + '\n')
         return
       }
       if (type === 'system' && typeof event['session_id'] === 'string') {

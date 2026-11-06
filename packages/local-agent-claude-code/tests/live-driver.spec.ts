@@ -378,6 +378,43 @@ describe('claude live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('a subagent\'s events (parent_tool_use_id) never enter the member\'s steps, streams, or final answer', async () => {
+    const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
+    const liveStreams = new LocalAgentStreams()
+    const published = vi.spyOn(liveStreams, 'publish')
+    Object.assign(m.ctx.localAgent, { liveStreams })
+    const child = Session.create(SessionId('child-claude-subagent'))
+    const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const sub = { parent_tool_use_id: 'tu-agent' }
+    fake.emit({ type: 'assistant', message: { id: 'm-1', role: 'assistant', usage: { input_tokens: 3, output_tokens: 9 }, content: [{ type: 'tool_use', id: 'tu-agent', name: 'Agent', input: { prompt: 'list files' } }] } })
+    fake.emit({ type: 'stream_event', ...sub, event: { type: 'message_start', message: { id: 'sub-1', usage: { input_tokens: 9_000 } } } })
+    fake.emit({ type: 'stream_event', ...sub, event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '子智能体在说' } } })
+    fake.emit({ type: 'stream_event', ...sub, event: { type: 'message_stop' } })
+    fake.emit({ type: 'assistant', ...sub, message: { id: 'sub-1', role: 'assistant', usage: { input_tokens: 9_000, output_tokens: 2 }, content: [{ type: 'tool_use', id: 'sub-tu', name: 'Bash', input: { command: 'ls' } }] } })
+    fake.emit({ type: 'user', ...sub, message: { content: [{ type: 'tool_result', tool_use_id: 'sub-tu', content: 'a.txt' }] } })
+    fake.emit({ type: 'assistant', ...sub, message: { id: 'sub-2', role: 'assistant', content: [{ type: 'text', text: '子智能体的结论' }] } })
+    fake.emit({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'tu-agent', content: 'a.txt' }] } })
+    fake.emit({ type: 'assistant', message: { id: 'm-2', role: 'assistant', usage: { input_tokens: 4, output_tokens: 5 }, content: [{ type: 'text', text: '成员的回答' }] } })
+    // A late subagent message after the member's own answer cannot displace it.
+    fake.emit({ type: 'assistant', ...sub, message: { id: 'sub-3', role: 'assistant', content: [{ type: 'text', text: '迟到的子智能体文字' }] } })
+    fake.emit({ type: 'result', is_error: false, session_id: 'claude-session-1', usage: { input_tokens: 7, output_tokens: 14 } })
+    const result = await run.result
+    expect(result.stopReason).toBe('completed')
+    expect(result.output).toEqual([{ type: 'text', text: '成员的回答' }])
+    const events = child.snapshotEvents()
+    expect(JSON.stringify(events)).not.toContain('子智能体')
+    expect(published.mock.calls.map(([, item]) => item.text).join('')).not.toContain('子智能体')
+    expect(events.filter(event => event.type === 'tool/call').map(event => event.data.name)).toEqual(['Agent'])
+    expect(events.filter(event => event.type === 'assistant/message').map(event => event.data.message.content))
+      .toEqual([expect.arrayContaining([expect.objectContaining({ type: 'tool-call', name: 'Agent' })]), [{ type: 'text', text: '成员的回答' }]])
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+    liveStreams.dispose()
+  })
+
   it('publishes transient output while keeping only authoritative assistant messages in history', async () => {
     const m = mount({ config: { permissionMode: 'skip', snapshotMinIntervalMs: 0 } })
     const liveStreams = new LocalAgentStreams()

@@ -9,7 +9,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fakeSessionPersistence } from './fake-persistence.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { MIRROR_INTERRUPTED_TOOL_RESULT } from '@khorsheed/dsh-local-agent'
-import { appendClaudeTranscriptGroup, claudeVersionFromInit, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider, REDACTED_THINKING_TEXT } from '../src/claude-cli-provider.ts'
+import { appendClaudeTranscriptGroup, claudeVersionFromInit, parseClaudeStreamJson, startClaudeCliRun, ClaudeCliProvider, ClaudeStreamParser, REDACTED_THINKING_TEXT } from '../src/claude-cli-provider.ts'
 
 /** The stream a real `claude -p --verbose --output-format stream-json` emits. */
 const streamJson = [
@@ -336,6 +336,43 @@ describe('claude stream fold content completeness', () => {
       { kind: 'think', text: REDACTED_THINKING_TEXT },
       { kind: 'text', text: '想好了' },
     ])
+  })
+  it('a subagent\'s messages (parent_tool_use_id) never become member lines, usage, tool accounting, or the final answer', () => {
+    const member = [
+      { type: 'system', subtype: 'init', session_id: 's1' },
+      { type: 'assistant', timestamp: '2026-08-16T00:00:00.100Z', message: { id: 'm1', usage: { input_tokens: 3, output_tokens: 9 }, content: [{ type: 'tool_use', id: 'tu-agent', name: 'Agent', input: { description: '查目录', prompt: 'list files' } }] } },
+      { type: 'user', timestamp: '2026-08-16T00:00:00.900Z', message: { content: [{ type: 'tool_result', tool_use_id: 'tu-agent', content: 'a.txt' }] } },
+      { type: 'assistant', timestamp: '2026-08-16T00:00:01.000Z', message: { id: 'm2', usage: { input_tokens: 4, output_tokens: 5 }, content: [{ type: 'text', text: '成员的回答' }] } },
+      { type: 'result', is_error: false, session_id: 's1', usage: { input_tokens: 7, output_tokens: 14 } },
+    ]
+    const subagent = [
+      { type: 'assistant', parent_tool_use_id: 'tu-agent', timestamp: '2026-08-16T00:00:00.200Z', message: { id: 'sub-1', usage: { input_tokens: 9_000, output_tokens: 1 }, content: [{ type: 'thinking', thinking: '子智能体在想' }, { type: 'tool_use', id: 'sub-tu', name: 'Bash', input: { command: 'ls' } }] } },
+      { type: 'user', parent_tool_use_id: 'tu-agent', timestamp: '2026-08-16T00:00:00.300Z', message: { content: [{ type: 'tool_result', tool_use_id: 'sub-tu', content: 'a.txt' }] } },
+      { type: 'stream_event', parent_tool_use_id: 'tu-agent', event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '子智能体' } } },
+      { type: 'assistant', parent_tool_use_id: 'tu-agent', timestamp: '2026-08-16T00:00:00.400Z', message: { id: 'sub-2', usage: { input_tokens: 9_100, output_tokens: 2 }, content: [{ type: 'text', text: '子智能体的结论' }] } },
+    ]
+    const plain = parseClaudeStreamJson(member.map(event => JSON.stringify(event)).join('\n'))
+    // Interleaved: the subagent runs between the Agent call and its result,
+    // and one late subagent text even lands after the member's own answer.
+    const interleaved = [member[0], member[1], ...subagent, member[2], member[3],
+      { ...subagent[3], message: { ...subagent[3]!.message, id: 'sub-3' } }, member[4]]
+    const parsed = parseClaudeStreamJson(interleaved.map(event => JSON.stringify(event)).join('\n'))
+    expect(parsed).toEqual(plain)
+    expect(parsed.text).toBe('成员的回答')
+    expect(parsed.toolCalls).toEqual({ count: 1, byName: { Agent: 1 } })
+    expect(parsed.lines.map(line => line.kind === 'tool' ? line.name : line.text)).toEqual(['Agent', '成员的回答'])
+  })
+
+  it('the incremental parser keeps the subagent events only as a per-call liveness count', () => {
+    const parser = new ClaudeStreamParser()
+    parser.push(JSON.stringify({ type: 'assistant', message: { id: 'm1', content: [{ type: 'tool_use', id: 'tu-agent', name: 'Agent', input: { prompt: 'go' } }] } }) + '\n')
+    parser.push(JSON.stringify({ type: 'assistant', parent_tool_use_id: 'tu-agent', message: { id: 'sub-1', content: [{ type: 'text', text: '子' }] } }) + '\n')
+    parser.push(JSON.stringify({ type: 'stream_event', parent_tool_use_id: 'tu-agent', event: { type: 'message_start', message: { id: 'sub-2' } } }) + '\n')
+    // A member event with an explicit null parent is the member's own.
+    parser.push(JSON.stringify({ type: 'assistant', parent_tool_use_id: null, message: { id: 'm2', content: [{ type: 'text', text: '成员' }] } }) + '\n')
+    expect(parser.lines.map(line => line.kind === 'tool' ? line.name : line.text)).toEqual(['Agent', '成员'])
+    expect(parser.text).toBe('成员')
+    expect([...parser.subagentEvents]).toEqual([['tu-agent', 2]])
   })
 })
 
