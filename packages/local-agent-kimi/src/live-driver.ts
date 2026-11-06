@@ -234,6 +234,22 @@ export function acpKimiSessionId(recordedId: string): string {
   return recordedId.startsWith('session_') ? recordedId : `session_${recordedId}`
 }
 
+/**
+ * The separator a new text segment needs after the round's text so far: a
+ * blank line (markdown's paragraph break), counting the newlines the previous
+ * text already ends with and the new segment already starts with. Empty when
+ * nothing came before, or when the two already form a blank line.
+ * @param before - the round's text so far.
+ * @param next - the new segment's first chunk.
+ * @returns "", "\n" or "\n\n".
+ */
+export function textSegmentSeparator(before: string, next: string): string {
+  if (before === '') return ''
+  const trailing = before.length - before.replace(/\n+$/, '').length
+  const leading = next.length - next.replace(/^\n+/, '').length
+  return '\n'.repeat(Math.max(0, 2 - trailing - leading))
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -1353,6 +1369,12 @@ export class KimiAcpLiveDriver {
     /** The round's accumulated assistant text (the run output — chunks are the only source). */
     let roundText = ''
     /**
+     * Something ended the current text segment (a thought chunk, a tool call
+     * or its update): the next text chunk opens a new paragraph instead of
+     * gluing onto the previous segment's last sentence.
+     */
+    let segmentEnded = false
+    /**
      * The preview ledger: the provisional steps in-flight reservations hold
      * this round (live streams and ACP tool notifications). They key the
      * browser preview and the settle order, never a durable coordinate — the
@@ -1452,7 +1474,9 @@ export class KimiAcpLiveDriver {
      * run output notes the drop) instead of the chunk vanishing. Flows exactly
      * like a text delta from here.
      */
-    const foldDelta = (text: string): void => {
+    const foldDelta = (chunk: string): void => {
+      const text = segmentEnded ? textSegmentSeparator(roundText, chunk) + chunk : chunk
+      segmentEnded = false
       roundText += text
       const key = streamKey('text')
       reserveStream(key, 'text')
@@ -1819,6 +1843,7 @@ export class KimiAcpLiveDriver {
         const content = update['content'] as { type?: string; text?: string } | undefined
         const text = content?.text ?? ''
         if (text !== '') {
+          segmentEnded = true
           const key = streamKey('think')
           reserveStream(key, 'think')
           const stream = streams.get(key)
@@ -1828,6 +1853,7 @@ export class KimiAcpLiveDriver {
           }
         }
       } else if (kind === 'tool_call') {
+        segmentEnded = true
         // ACP prefixes the call id with kimi's turn index ("1:tool_x") from the
         // second round on; the wire records the bare id. Unprefixed, the two
         // name one call — otherwise the fold never releases the reservation
@@ -1857,6 +1883,9 @@ export class KimiAcpLiveDriver {
           // segments; late file folds consume same-kind segments in order.
           generation++
         }
+      } else if (kind === 'tool_call_update') {
+        // The call's progress/result: still not text, so the segment stays ended.
+        segmentEnded = true
       } else if (kind === 'usage_update') {
         const used = update['used']
         const size = update['size']

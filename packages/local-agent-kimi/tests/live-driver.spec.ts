@@ -19,7 +19,7 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import { LocalAgentStreams } from '@khorsheed/dsh-local-agent'
 import { describe, expect, it, vi } from 'vitest'
 import { KimiCliProvider } from '../src/kimi-cli-provider.ts'
-import { AcpRequestError, acpStopReasonToHarness, DEFAULT_TIMEOUTS, KimiAcpLiveDriver, KimiSessionOccupiedError } from '../src/live-driver.ts'
+import { AcpRequestError, acpStopReasonToHarness, DEFAULT_TIMEOUTS, KimiAcpLiveDriver, KimiSessionOccupiedError, textSegmentSeparator } from '../src/live-driver.ts'
 import { readKimiDefaultModel } from '../src/provision.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { mirrorSnapshot, snapshotExecution, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
@@ -687,6 +687,34 @@ describe('kimi live driver rounds', () => {
     await vi.waitFor(() => { expect(m.reports.some(r => r.progress.kind === 'mirror')).toBe(true) })
     await m.driver.disposeAll()
     expect(m.driver.liveCount).toBe(0)
+  })
+
+  it('a round spoken in several segments between tool calls returns them as paragraphs', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-segments'))
+    const say = (text: string) => ({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } })
+    m.queueChild(new FakeAcpServer({ turn: () => ({ updates: [
+      say('我先看一下'), say('目录。'),
+      { sessionUpdate: 'tool_call', toolCallId: 'tool_a', title: 'ls' },
+      { sessionUpdate: 'tool_call_update', toolCallId: 'tool_a', status: 'completed' },
+      say('找到了三个文件。'),
+      { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '想一想' } },
+      say('结论：\n'),
+      { sessionUpdate: 'tool_call', toolCallId: 'tool_b', title: 'cat' },
+      say('都没问题。'),
+    ] }) }))
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const result = await run.result
+    expect(result.output).toEqual([{ type: 'text', text: '我先看一下目录。\n\n找到了三个文件。\n\n结论：\n\n都没问题。' }])
+    await m.driver.disposeAll()
+  })
+
+  it('the segment separator makes exactly one blank line and nothing at the start', () => {
+    expect(textSegmentSeparator('', 'a')).toBe('')
+    expect(textSegmentSeparator('a', 'b')).toBe('\n\n')
+    expect(textSegmentSeparator('a\n', 'b')).toBe('\n')
+    expect(textSegmentSeparator('a\n\n', 'b')).toBe('')
+    expect(textSegmentSeparator('a', '\nb')).toBe('\n')
   })
 
   it('settle reconciliation mirrors the wire.jsonl fold and advances the shared offset', async () => {

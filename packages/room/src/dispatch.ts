@@ -87,7 +87,12 @@ export const BEFORE_TAIL = 160
 
 /**
  * The text a member's current round has said so far in its own session: the
- * assistant text blocks since the latest turn start, in order.
+ * assistant text since the latest turn start, in order. Each assistant
+ * message (one model call) is a segment, and segments are separated by a
+ * blank line — the same rule a provider applies when its round output joins
+ * the segments a member spoke between tool calls (local-agent-kimi's
+ * `textSegmentSeparator`), so a question's recorded tail still finds itself
+ * in the final reply when it spans two segments.
  * @param events - the member's child session log.
  * @returns the round's text so far.
  */
@@ -96,13 +101,30 @@ export function roundTextSoFar(events: readonly SessionEvent[]): string {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     if (events[index]!.type === 'turn/start') { start = index; break }
   }
-  const parts: string[] = []
+  let text = ''
   for (const event of events.slice(start + 1)) {
     if (event.type !== 'assistant/message') continue
     const content = (event.data as { message?: { content?: readonly { type: string; text?: string }[] } }).message?.content ?? []
-    for (const block of content) if (block.type === 'text' && typeof block.text === 'string') parts.push(block.text)
+    let segment = ''
+    for (const block of content) if (block.type === 'text' && typeof block.text === 'string') segment += block.text
+    if (segment === '') continue
+    text += segmentSeparator(text, segment) + segment
   }
-  return parts.join('')
+  return text
+}
+
+/**
+ * The blank line between two text segments of one round: none at the start,
+ * fewer when the previous segment ends (or the next starts) with newlines.
+ * @param before - the text so far.
+ * @param next - the next segment.
+ * @returns "", "\n" or "\n\n".
+ */
+function segmentSeparator(before: string, next: string): string {
+  if (before === '') return ''
+  const trailing = before.length - before.replace(/\n+$/, '').length
+  const leading = next.length - next.replace(/^\n+/, '').length
+  return '\n'.repeat(Math.max(0, 2 - trailing - leading))
 }
 
 /**
