@@ -61,6 +61,7 @@ import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGE
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
 import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
 import { resolveTaskRef } from './jobs.ts'
+import { AUTO_CONTINUE_MOVED_ON_TEXT, autoContinueRounds, interruptedRounds, RESTART_CONTINUE_TEXT, type InterruptedRound } from './restart-continue.ts'
 import { suggestTask } from './report-gate.ts'
 import { decisionRecord } from './decisions.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -523,6 +524,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       await this.engine.recover(hit.session)
       this.expireApprovals(hit.session)
       this.expireQuestions(hit.session)
+      await this.autoContinue(hit.session)
       return this.load(sessionId)
     })()
     if (hit.error.code !== 'session-not-found') return Promise.resolve(hit)
@@ -548,8 +550,46 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       return { ok: false, error: { code: 'resume-failed', message: String(error) } }
     }
     const loaded = this.load(sessionId)
-    if (loaded.ok) { await this.plans.recover(loaded.session); await this.engine.recover(loaded.session); this.expireApprovals(loaded.session); this.expireQuestions(loaded.session) }
+    if (loaded.ok) { await this.plans.recover(loaded.session); await this.engine.recover(loaded.session); this.expireApprovals(loaded.session); this.expireQuestions(loaded.session); await this.autoContinue(loaded.session) }
     return this.load(sessionId)
+  }
+
+  /**
+   * 重启后自动继续 (member-self-started-rounds M9): after recovery, the room
+   * presses 「全部继续」 itself for every interrupted round the shared rule
+   * lets it (restart-continue.ts: setting on, not continued before, not an
+   * auto-continue itself, not self-triggered, queue and room not paused).
+   * The same action as the human's button — the same message, moving on
+   * from the lost round, the same dispatch path — written as a `room/dispatch`
+   * with `via: 'auto-continue'` and the rounds it `continues`, one per task.
+   * Runs on every live access, so it must be idempotent: everything from the
+   * read to the appends is synchronous (a concurrent pass sees the
+   * `continues` and finds nothing), and a continued round never comes back.
+   */
+  private async autoContinue(session: Session): Promise<void> {
+    if (this.handoffs.has(session.id)) return
+    const events = session.snapshotEvents()
+    const state = replay(events)
+    const rounds = autoContinueRounds(this.engine.view(session.id, state))
+    if (rounds.length === 0) return
+    const groups = new Map<string, InterruptedRound[]>()
+    for (const round of rounds) groups.set(round.task ?? '', [...groups.get(round.task ?? '') ?? [], round])
+    const sent: { readonly seq: number; readonly targets: readonly string[]; readonly carry: (member: string, text: string) => string }[] = []
+    for (const [task, group] of groups) {
+      const targets = group.map(round => round.member)
+      const carry = this.moveOnFromLostRounds(session, targets, AUTO_CONTINUE_MOVED_ON_TEXT)
+      const dispatch = session.append('room/dispatch', {
+        id: randomUUID(), targets, text: RESTART_CONTINUE_TEXT, origin: 'human', via: 'auto-continue',
+        continues: group.map(round => round.runId!),
+        ...task === '' ? {} : { task },
+        targetIds: targets.map(name => memberId(events, state.members.find(member => member.name === name)!)),
+      })
+      sent.push({ seq: dispatch.seq, targets, carry })
+    }
+    await this.ctx.sessions.flush(session)
+    for (const { seq, targets, carry } of sent) {
+      for (const target of targets) this.engine.dispatch(session, target, carry(target, RESTART_CONTINUE_TEXT), { dispatchSeq: seq })
+    }
   }
 
   /**
@@ -1134,6 +1174,12 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       void this.ensureLive(request.sessionId).catch((error: unknown) => { this.ctx.logger.warn(`room: reviving held reports failed: ${String(error)}`) })
     }
     const view = this.engine.view(request.sessionId, loaded.state)
+    // Rounds a restart cut off that the room continues on its own (M9): the
+    // room's live access runs it (a cold room is brought live, as for held
+    // reports; a live one after a restart it never recovered).
+    if (autoContinueRounds(view).length > 0) {
+      void this.ensureLive(request.sessionId).catch((error: unknown) => { this.ctx.logger.warn(`room: auto-continue after restart failed: ${String(error)}`) })
+    }
     // The core settled, reconciled or lost a round the journal still shows
     // open (a reconcile on the members page, say): a live room's records
     // catch up now; a cold one on its next live access.
@@ -1663,9 +1709,15 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     }
     floatRunningCards(loaded.session)
     const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
+    // 「全部继续」 names the interrupted rounds it continues (M9): recorded
+    // for those that are interrupted rounds of its targets, read before the
+    // move-on below closes them.
+    const continues = request.continues === undefined ? [] : interruptedRounds(this.engine.view(loaded.session.id, replay(loaded.session.snapshotEvents())))
+      .flatMap(round => round.runId !== undefined && targets.includes(round.member) && request.continues!.includes(round.runId) ? [round.runId] : [])
     const carry = this.moveOnFromLostRounds(loaded.session, targets)
     const dispatch = loaded.session.append('room/dispatch', {
       id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human', task: filed.task, messageId: String(human.id),
+      ...continues.length === 0 ? {} : { continues },
       ...admitted.records.length === 0 ? {} : { attachments: admitted.records },
       targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
     })
@@ -2619,6 +2671,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       return { ok: false, error: { code: 'invalid-settings' } }
     }
     if (request.autoTaskFiling !== undefined && typeof request.autoTaskFiling !== 'boolean') return { ok: false, error: { code: 'invalid-settings' } }
+    if (request.autoContinueAfterRestart !== undefined && typeof request.autoContinueAfterRestart !== 'boolean') return { ok: false, error: { code: 'invalid-settings' } }
     if (request.reportThreshold !== undefined && (typeof request.reportThreshold !== 'number' || !(request.reportThreshold >= 0.1 && request.reportThreshold <= 0.9))) {
       return { ok: false, error: { code: 'invalid-settings' } }
     }
@@ -2635,6 +2688,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       ...request.paused === undefined ? {} : { paused: request.paused },
       ...request.reportTiming === undefined ? {} : { reportTiming: request.reportTiming },
       ...request.autoTaskFiling === undefined ? {} : { autoTaskFiling: request.autoTaskFiling },
+      ...request.autoContinueAfterRestart === undefined ? {} : { autoContinueAfterRestart: request.autoContinueAfterRestart },
       ...request.reportThreshold === undefined ? {} : { reportThreshold: Math.round(request.reportThreshold * 100) / 100 },
       ...request.reportWaitMinutes === undefined ? {} : { reportWaitMinutes: request.reportWaitMinutes },
     }

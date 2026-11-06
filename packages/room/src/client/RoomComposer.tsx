@@ -73,6 +73,8 @@ import { RoomModelPicker } from './RoomModelPicker.tsx'
 import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconPaperclipOutlineMedium } from './icons.tsx'
 import { Menu, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { RoomAttachments } from './RoomAttachments.tsx'
+import { RoomRestartBanner } from './RoomRestart.tsx'
+import type { InterruptedRound } from '../restart-continue.ts'
 import css from './RoomComposer.module.css'
 
 const NO_TAGS = (): (() => void) => () => {}
@@ -175,8 +177,6 @@ interface ChipEditActions {
 
 const NO_CHIPS: readonly DraftChip[] = []
 const NO_IDS: readonly string[] = []
-/** The failed-run reason recovery journals for a round a host restart cut off (dispatch.ts). */
-const RESTART_INTERRUPTED = 'Execution outcome is unknown after restart'
 const NO_UPLOADS: Readonly<Record<string, { readonly status: string }>> = {}
 const NO_UPLOAD_STORE = { subscribe: (): (() => void) => () => {}, getSnapshot: () => NO_UPLOADS }
 
@@ -192,7 +192,7 @@ export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, renderMemberTools, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
-  attachments: attachmentFace, setCoordinator, runCommand, memberActivity,
+  attachments: attachmentFace, setCoordinator, runCommand, memberActivity, setSettings,
 }: RoomComposerProps): ReactNode {
   const [coordinatorMenu, setCoordinatorMenu] = useState(false)
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
@@ -447,20 +447,21 @@ export function RoomComposer({
 
   // The oldest question a member's round is waiting on (shown inline in its card).
   const waitingAsk = state?.askLog?.find(ask => ask.state === 'pending' && ask.runId !== undefined)
-  // Members whose latest room round a host restart cut off (outcome unknown:
-  // 待对账 from the core, or a legacy failed row). Messaging them moves on
-  // from it; another caller's round (`execution:`) is not the room's to drop.
-  const interrupted = (state?.runs ?? [])
-    .filter(run => run.runId?.startsWith('execution:') !== true && run.waiting === undefined
-      && (run.state === 'uncertain' || (run.state === 'failed' && run.error?.startsWith(RESTART_INTERRUPTED) === true)))
-    .map(run => run.member)
-    .filter(name => state?.members.some(member => member.name === name) === true)
-  const continueAll = async (): Promise<void> => {
-    if (busy || interrupted.length === 0) return
+  // Members whose latest room round a host restart cut off (the shared rule,
+  // ../restart-continue.ts, that the room's own auto-continue runs on): the
+  // banner lists the ones waiting for the human. Messaging them moves on
+  // from the lost round; another caller's round (`execution:`) is not the
+  // room's to drop.
+  const continueAll = async (rounds: readonly InterruptedRound[]): Promise<void> => {
+    if (busy || rounds.length === 0) return
     setBusy(true)
     setError(null)
     try {
-      const outcome = await submit(sessionId, t('composer.continueText'), interrupted)
+      const names = rounds.map(round => round.member)
+      const continues = rounds.flatMap(round => round.runId === undefined ? [] : [round.runId])
+      const outcome = continues.length === 0
+        ? await submit(sessionId, t('composer.continueText'), names)
+        : await submit(sessionId, t('composer.continueText'), names, undefined, undefined, continues)
       if (!outcome.ok) setError(outcome.message)
     } finally {
       setBusy(false)
@@ -616,14 +617,17 @@ export function RoomComposer({
           t={t}
         />
         {/* A host restart interrupts every working member at once and each
-            row reads 运行失败 far up the conversation: one 全部继续 resumes
-            them all (the same 继续 a human would type to each). */}
-        {interrupted.length > 0 && (
-          <div className={css.resumeStrip} role="status">
-            <span className={css.resumeText}>{t('composer.interrupted', { count: interrupted.length, names: interrupted.join('、') })}</span>
-            <button type="button" className={css.resumeAction} disabled={busy} onClick={() => { void continueAll() }}>{t('composer.continueAll')}</button>
-          </div>
-        )}
+            row reads 待对账 far up the conversation: the room continues them
+            itself (重启后自动继续, on by default) and says so; the rounds it
+            leaves to the human get one 全部继续 (the same message). */}
+        <RoomRestartBanner
+          sessionId={sessionId}
+          state={state}
+          busy={busy}
+          onContinueAll={(rounds) => { void continueAll(rounds) }}
+          setSettings={setSettings}
+          t={t}
+        />
       </div>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
       {external && coordinator.childSessionId !== undefined && renderMemberInbox?.(coordinator.childSessionId)}

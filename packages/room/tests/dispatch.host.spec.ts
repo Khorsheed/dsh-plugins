@@ -13,6 +13,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { LocalAgentFacade } from '../src/adapter.ts'
 import { withRunEntry } from './run-entry-shim.ts'
 import { replay } from '../src/journal.ts'
+import { AUTO_CONTINUE_MOVED_ON_TEXT, RESTART_CONTINUE_TEXT, interruptedRounds } from '../src/restart-continue.ts'
 
 /** A manually settled promise. */
 function deferred<T>() {
@@ -1730,6 +1731,8 @@ describe('coordinator routing and durable deliveries', () => {
     const member = await preparedMember(bench)
     bench.facade.resume.mockImplementation(async () => settledRun('child-ada', 'done'))
     const session = bench.ctx.sessions.get(bench.sessionId)!
+    // The manual path (M9's 重启后自动继续 off): recovery alone never replays.
+    session.append('room/settings', { autoContinueAfterRestart: false })
     const started = session.append('room/dispatch', { id: 'crashed', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: 'side effect' })
     session.append('room/delivery-state', { id: `${started.seq}:${member.id}`, dispatchSeq: started.seq, memberId: member.id!, state: 'running' })
     session.append('room/run-state', { member: 'ada', runId: `${started.seq}:${member.id}`, state: 'running', startedAt: Date.now() })
@@ -1762,6 +1765,8 @@ describe('restart recovery through the core ledger (batch 5 S7)', () => {
     const member = await preparedMemberOf(bench)
     const stub = bench.localAgentStub as ReturnType<typeof withRunEntry>
     const room = bench.ctx.sessions.get(bench.sessionId)!
+    // S7's manual path: the room's own 重启后自动继续 (M9, below) is off here.
+    room.append('room/settings', { autoContinueAfterRestart: false })
     const first = room.append('room/dispatch', { id: 'crashed', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: '有副作用的一轮' })
     const id = `${first.seq}:${member.id}`
     room.append('room/delivery-state', { id, dispatchSeq: first.seq, memberId: member.id!, state: 'running' })
@@ -1903,6 +1908,162 @@ describe('restart recovery through the core ledger (batch 5 S7)', () => {
     expect(ledger.find(row => row.id === 'exec-1')).toMatchObject({ status: 'cancelled' })
     expect(bench.facade.resume).toHaveBeenCalledOnce()
     expect(deliveryEdges(room, id)).toEqual(['running', 'uncertain', 'cancelled'])
+  })
+})
+
+describe('restart: the room continues interrupted rounds itself (M9)', () => {
+  /** ada's delivery #1 (execution `exec-1`) was running when the host went away; the core says uncertain. #2 waits behind it. */
+  async function crashed(options: { readonly via?: 'auto-continue' } = {}) {
+    const bench = await bootRoom()
+    const member = await preparedMemberOf(bench)
+    const stub = bench.localAgentStub as ReturnType<typeof withRunEntry>
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const first = room.append('room/dispatch', { id: 'crashed', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: '有副作用的一轮',
+      ...options.via === undefined ? {} : { via: options.via, continues: ['0:earlier'] } })
+    const id = `${first.seq}:${member.id}`
+    room.append('room/delivery-state', { id, dispatchSeq: first.seq, memberId: member.id!, state: 'running' })
+    room.append('room/run-state', { member: 'ada', runId: id, state: 'running', startedAt: Date.now() - 5_000, childSessionId: SessionId('child-ada'), executionId: 'exec-1' })
+    const second = room.append('room/dispatch', { id: 'queued', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: '下一条' })
+    stub.seedLedgerRow('child-ada', { id: 'exec-1', key: id, caller: 'room', status: 'uncertain' })
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) => settledRun(child, '核对过了，接着做完'))
+    return { bench, member, stub, room, id, nextId: `${second.seq}:${member.id}` }
+  }
+  /** The room's live access (every mutation, a cold room's load, getState when a round waits): recovery, then auto-continue. */
+  const access = (bench: Bench) => (bench.service as unknown as { ensureLive(id: SessionId): Promise<unknown> }).ensureLive(bench.sessionId)
+  const autoDispatches = (room: { snapshotEvents(): readonly SessionEvent[] }) =>
+    room.snapshotEvents().flatMap(event => event.type === 'room/dispatch' && event.data.via === 'auto-continue' ? [event] : [])
+  const view = async (bench: Bench) => {
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    return state.value
+  }
+
+  it('on (the default): recovery twice, concurrent and repeated, sends the continue message once, from the room', async () => {
+    const { bench, stub, room, id, nextId } = await crashed()
+    expect(replay(room.snapshotEvents()).settings?.autoContinueAfterRestart).toBe(true)
+    await Promise.all([access(bench), access(bench)])
+    await access(bench)
+    await bench.service.engine.idle()
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    const prompt = textOf(bench.facade.resume.mock.calls[0]![3])
+    expect(prompt).toContain(RESTART_CONTINUE_TEXT)
+    // The message queued behind the lost round rides along (the human's move-on, unchanged).
+    expect(prompt).toContain('下一条')
+    const [dispatch, ...more] = autoDispatches(room)
+    expect(more).toEqual([])
+    expect(dispatch!.data).toMatchObject({ origin: 'human', via: 'auto-continue', continues: [id], targets: ['ada'], text: RESTART_CONTINUE_TEXT })
+    // Moved on from the lost round, in the core too.
+    expect(room.snapshotEvents().filter(event => event.type === 'room/delivery-state' && event.data.id === id).at(-1)?.data).toMatchObject({ state: 'cancelled', text: AUTO_CONTINUE_MOVED_ON_TEXT })
+    const ledger = (stub['readMemberInbox'] as (child: string) => { messages: Array<{ id: string; status: string }> })('child-ada').messages
+    expect(ledger.find(row => row.id === 'exec-1')).toMatchObject({ status: 'cancelled' })
+    expect(room.snapshotEvents().filter(event => event.type === 'room/delivery-state' && event.data.id === nextId).at(-1)?.data).toMatchObject({ state: 'done' })
+    // The round's cause is the restart hand-off.
+    const run = stub['run'] as ReturnType<typeof vi.fn>
+    expect(run).toHaveBeenCalledOnce()
+    expect((run.mock.calls[0]![0] as { cause?: unknown }).cause).toEqual({ kind: 'restart', sessionId: String(bench.sessionId) })
+    expect(executionFacts(room.snapshotEvents(), bench.sessionId, dispatch!.seq).cause).toEqual({ kind: 'restart', sessionId: String(bench.sessionId) })
+    // Nothing is left for the human.
+    expect(interruptedRounds(await view(bench))).toEqual([])
+    expect((await view(bench)).continued).toEqual([id])
+  })
+
+  it('opening the room after the restart is enough: getState brings it live and continues once', async () => {
+    const { bench, room } = await crashed()
+    await bench.service.getState({ sessionId: bench.sessionId })
+    await bench.service.getState({ sessionId: bench.sessionId })
+    await vi.waitFor(() => expect(autoDispatches(room)).toHaveLength(1))
+    await bench.service.engine.idle()
+    await bench.service.getState({ sessionId: bench.sessionId })
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+    expect(autoDispatches(room)).toHaveLength(1)
+  })
+
+  it('off: nothing is sent; the human gets the banner, and their 全部继续 records what it continues', async () => {
+    const { bench, room, id } = await crashed()
+    // Off before the room's first access after the restart (a mutation's own access would continue first).
+    room.append('room/settings', { autoContinueAfterRestart: false })
+    expect(await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: false })).toMatchObject({ ok: true, value: { autoContinueAfterRestart: false } })
+    await access(bench)
+    await bench.service.getState({ sessionId: bench.sessionId })
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(autoDispatches(room)).toEqual([])
+    expect(interruptedRounds(await view(bench))).toEqual([{ member: 'ada', memberId: expect.any(String), runId: id, task: expect.any(String) }])
+    // The human's button: the same message, with `continues` (no `via`).
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: RESTART_CONTINUE_TEXT, targets: ['ada'], continues: [id, 'not-a-round'] })
+    await bench.service.engine.idle()
+    const human = room.snapshotEvents().findLast(event => event.type === 'room/dispatch')
+    expect(human?.data).toMatchObject({ origin: 'human', continues: [id] })
+    expect((human?.data as { via?: string }).via).toBeUndefined()
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+  })
+
+  it('a round the human already continued is never continued again by the room', async () => {
+    const { bench, room, id } = await crashed()
+    room.append('room/settings', { autoContinueAfterRestart: false })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: RESTART_CONTINUE_TEXT, targets: ['ada'], continues: [id] })
+    await bench.service.engine.idle()
+    await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: true })
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(autoDispatches(room)).toEqual([])
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+  })
+
+  it('an auto-continued round interrupted again is not continued again: the banner says why', async () => {
+    const { bench, room, id } = await crashed({ via: 'auto-continue' })
+    await access(bench)
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(autoDispatches(room)).toHaveLength(1)
+    expect(interruptedRounds(await view(bench))).toMatchObject([{ member: 'ada', runId: id, blocked: 'again' }])
+  })
+
+  it('the member whose round requested the restart is not continued when the guard records it', async () => {
+    const { bench, room, id } = await crashed()
+    bench.ctx.provide('selfRestartGuard', { lastRestart: () => ({ initiatorMember: 'child-ada' }) } as never)
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(bench.facade.resume).not.toHaveBeenCalled()
+    expect(autoDispatches(room)).toEqual([])
+    const state = await view(bench)
+    expect(state.restartFacts).toEqual({ restartInitiator: 'child-ada' })
+    expect(interruptedRounds(state)).toMatchObject([{ member: 'ada', runId: id, blocked: 'self-restart' }])
+  })
+
+  it('a guard that records no member (before M10) does not hold the round back: continued once', async () => {
+    const { bench, room } = await crashed()
+    bench.ctx.provide('selfRestartGuard', { verify: () => ({ ok: true }) } as never)
+    await access(bench)
+    await access(bench)
+    await bench.service.engine.idle()
+    expect(autoDispatches(room)).toHaveLength(1)
+    expect(bench.facade.resume).toHaveBeenCalledOnce()
+  })
+
+  it('a member whose input queue is paused, and a paused room, are left to the human', async () => {
+    const paused = await crashed()
+    const stub = paused.stub as Record<string, unknown>
+    const read = stub['readMemberInbox'] as (child: string) => Record<string, unknown>
+    stub['readMemberInbox'] = (child: string) => ({ ...read(child), paused: true })
+    await access(paused.bench)
+    await paused.bench.service.engine.idle()
+    expect(paused.bench.facade.resume).not.toHaveBeenCalled()
+    expect(autoDispatches(paused.room)).toEqual([])
+    expect(interruptedRounds(await view(paused.bench))).toMatchObject([{ member: 'ada', blocked: 'queue-paused' }])
+
+    const room = await crashed()
+    room.room.append('room/settings', { paused: true })
+    await access(room.bench)
+    await room.bench.service.engine.idle()
+    expect(room.bench.facade.resume).not.toHaveBeenCalled()
+    expect(autoDispatches(room.room)).toEqual([])
+    expect(interruptedRounds(await view(room.bench))).toMatchObject([{ member: 'ada', blocked: 'room-paused' }])
   })
 })
 
