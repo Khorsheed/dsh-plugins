@@ -196,6 +196,16 @@ export interface RoomDispatchData {
   readonly text: string
 }
 
+/** Chat node data of the room's own 「全部继续」 after a restart (M9). */
+export interface RoomAutoContinueData {
+  readonly seq: number
+  readonly time: number
+  /** The members it continued. */
+  readonly targets: readonly string[]
+  /** The continue message, as each member got it. */
+  readonly text: string
+}
+
 /** Chat node data of one member compaction (the room's copy of its compaction event). */
 export interface RoomCompactionData {
   readonly seq: number
@@ -252,6 +262,8 @@ declare module '@deepseek-ai/dsh-client-ui-chat/client' {
     'room-inbox': RoomInboxData
     /** room: a message one member sent another (派活 / 告知). */
     'room-dispatch': RoomDispatchData
+    /** room: the room continued members a restart interrupted (重启后自动继续). */
+    'room-auto-continue': RoomAutoContinueData
     /** room: a member compacted its context. */
     'room-compaction': RoomCompactionData
   }
@@ -562,6 +574,25 @@ export const roomDispatchDefinition: ConversationNodeDefinition<RoomDispatchData
   },
   update: context => context.state,
   buildViewNode: context => viewNode(context, 'room-dispatch'),
+}
+
+/**
+ * The room's own 「全部继续」 after a host restart (`room/dispatch` with
+ * `via: 'auto-continue'`, M9): the line 「已自动继续：…（重启打断）· 设置」 and
+ * the message itself from 「房间 · 自动」. The human's 「全部继续」 is their
+ * own message (the official user bubble) and gets no row here.
+ */
+export const roomAutoContinueDefinition: ConversationNodeDefinition<RoomAutoContinueData> = {
+  kind: 'room-auto-continue',
+  target: 'chat',
+  match: event => event.type === 'room/dispatch' && event.data.via === 'auto-continue' ? { id: String(event.seq), role: 'start' } : null,
+  start: (_context, match) => {
+    const event = match.event
+    if (event.type !== 'room/dispatch') throw new Error('room-auto-continue start requires a room/dispatch event')
+    return { seq: event.seq, time: event.time, targets: event.data.targets, text: event.data.text }
+  },
+  update: context => context.state,
+  buildViewNode: context => viewNode(context, 'room-auto-continue'),
 }
 
 /** One row per member compaction (`room/member-compacted`). */

@@ -32,7 +32,7 @@ export function isCoreOutcome(status: CoreRow['status']): status is CoreOutcome 
  * prepared identity) or an unreadable ledger reads as `undefined`.
  */
 export class CoreLedgers {
-  private readonly cache = new Map<string, readonly CoreRow[] | undefined>()
+  private readonly cache = new Map<string, { readonly rows: readonly CoreRow[]; readonly paused: boolean } | undefined>()
 
   constructor(private readonly facade: LocalAgentFacade | undefined) {}
 
@@ -41,12 +41,24 @@ export class CoreLedgers {
 
   /** The member's rows, or undefined when the core cannot say. */
   rows(childSessionId: string | undefined): readonly CoreRow[] | undefined {
+    return this.inbox(childSessionId)?.rows
+  }
+
+  /** Whether the member's input queue is paused after a restart (typed input waits in the member session). */
+  paused(childSessionId: string | undefined): boolean {
+    return this.inbox(childSessionId)?.paused === true
+  }
+
+  private inbox(childSessionId: string | undefined): { readonly rows: readonly CoreRow[]; readonly paused: boolean } | undefined {
     if (childSessionId === undefined || this.facade?.readMemberInbox === undefined) return undefined
     if (this.cache.has(childSessionId)) return this.cache.get(childSessionId)
-    let rows: readonly CoreRow[] | undefined
-    try { rows = this.facade.readMemberInbox(childSessionId).messages } catch { rows = undefined }
-    this.cache.set(childSessionId, rows)
-    return rows
+    let inbox: { readonly rows: readonly CoreRow[]; readonly paused: boolean } | undefined
+    try {
+      const read = this.facade.readMemberInbox(childSessionId)
+      inbox = { rows: read.messages, paused: read.paused === true }
+    } catch { inbox = undefined }
+    this.cache.set(childSessionId, inbox)
+    return inbox
   }
 
   /**
