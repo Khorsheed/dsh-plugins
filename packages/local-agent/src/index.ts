@@ -102,6 +102,7 @@ import type {
   LocalAgentContextEvent,
   LocalAgentMemberContext,
   LocalAgentMemberToolsReload,
+  LocalAgentMemberToolsReloadOptions,
   LocalAgentMemberToolsStatus,
   LocalAgentExecutionIntent,
   LocalAgentUnrecordedDeclaration,
@@ -194,6 +195,7 @@ export type { ExecutionAdmission, ExecutionObservation, ExecutionRecorderOptions
 export type {
   LocalAgentMemberMessage,
   LocalAgentMemberToolsReload,
+  LocalAgentMemberToolsReloadOptions,
   LocalAgentMemberToolsStatus,
   MemberToolsNotice,
   MemberMessageOutcome,
@@ -2435,10 +2437,13 @@ export class LocalAgentRegistry {
    * Replace the member's resident process so it lists its mode tools again,
    * resuming the same CLI session without a round. An idle member reloads
    * now; a running one right after its round ends (never interrupted).
+   * A member whose resident process runs CLI background tasks is refused
+   * (`background-tasks`, nothing done) unless the caller confirmed.
    * @param childSessionId - the member's child session.
+   * @param options - `confirmBackgroundTasks`: the user accepted that those tasks lose their process.
    * @returns when it happens, or why it cannot.
    */
-  async reloadMemberTools(childSessionId: string): Promise<LocalAgentMemberToolsReload> {
+  async reloadMemberTools(childSessionId: string, options: LocalAgentMemberToolsReloadOptions = {}): Promise<LocalAgentMemberToolsReload> {
     const face = this.memberToolsFace
     const binding = this.memberBinding(childSessionId)
     if (face === undefined || binding === undefined) return { ok: false, reason: 'unknown-member' }
@@ -2455,6 +2460,10 @@ export class LocalAgentRegistry {
     // where the harness can (立即载入), instead of waiting for a message.
     if (oldToken === undefined && harness?.startMember !== undefined) return await this.startMemberProcess(childSessionId, binding, harness, face)
     if (harness?.reloadMember === undefined) return { ok: false, reason: 'unsupported' }
+    if (options.confirmBackgroundTasks !== true && harness.backgroundTasks !== undefined) {
+      const running = await this.runningBackgroundTasks(childSessionId)
+      if (running > 0) return { ok: false, reason: 'background-tasks', running }
+    }
     let accepted = false
     let startedEarly = false
     const handle = harness.reloadMember(childSessionId, {
@@ -3111,6 +3120,16 @@ export class LocalAgentRegistry {
    * @param childSessionId - the member's dsh child session.
    * @returns the tasks, or null.
    */
+  /**
+   * How many of the member's CLI background tasks run in its live resident
+   * process (a reload would cut them off); 0 when unreadable.
+   */
+  private async runningBackgroundTasks(childSessionId: string): Promise<number> {
+    const read = await this.memberBackgroundTasks(childSessionId)
+    if (read === null || !read.supported || !read.processAlive) return 0
+    return read.tasks.filter(task => task.state === 'running').length
+  }
+
   async memberBackgroundTasks(childSessionId: string): Promise<LocalAgentBackgroundTasks | null> {
     const record = this.delegations.get(childSessionId)
     const binding = record === undefined ? this.memberBinding(childSessionId) : undefined

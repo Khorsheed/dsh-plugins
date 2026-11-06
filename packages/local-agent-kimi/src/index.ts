@@ -20,6 +20,7 @@ import { firstModelOf, readModelList, readModelListSync, settingsFace, vol, writ
 import type {} from '@khorsheed/dsh-local-agent'
 import type { LocalAgentUnrecordedDeclaration } from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentBackgroundTask } from '@khorsheed/dsh-local-agent/types'
 import { readKimiBackgroundTasks } from './background-tasks.ts'
 import { KimiCliProvider, kimiCliVersion } from './kimi-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
@@ -319,8 +320,18 @@ export function apply(ctx: Context, config: Config): void {
         if (!face.get().live) return { supported: false, tasks: [], processAlive: false }
         const processAlive = liveSwitch.resolve(childSessionId)?.hasRuntime(childSessionId) ?? false
         const dir = cliSessionId === undefined ? undefined : await findKimiSessionDir(homeDir, cliSessionId)
-        const tasks = dir === undefined ? [] : await readKimiBackgroundTasks(dir, { executionOfCall, selfExecutionOf })
-        return { supported: true, tasks, processAlive }
+        const read = dir === undefined ? [] : await readKimiBackgroundTasks(dir, { executionOfCall, selfExecutionOf })
+        // A task whose process we reclaimed while it ran: lost, and we know
+        // why. Kimi's file may still say `running` (no process rewrote it
+        // yet) or already `lost` (a later session/load did).
+        const tasks = read.map((task): LocalAgentBackgroundTask => {
+          if (!liveSwitch.wasReclaimedWith(childSessionId, task.id)) return task
+          if (task.state === 'lost' || (task.state === 'running' && !processAlive)) return { ...task, state: 'lost', lostBecause: 'process-reclaimed' }
+          return task
+        })
+        const running = tasks.filter(task => task.state === 'running').map(task => task.id)
+        const keepAliveUntil = processAlive ? liveSwitch.observeBackgroundTasks(childSessionId, running) : undefined
+        return { supported: true, tasks, processAlive, ...keepAliveUntil === undefined ? {} : { keepAliveUntil } }
       },
       name: 'kimi',
       displayName: 'Kimi Code',

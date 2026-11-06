@@ -1343,6 +1343,23 @@ export type LocalAgentMemberToolsReload =
   | { readonly ok: true; readonly when: 'now' | 'after-round' }
   | { readonly ok: false; readonly reason: 'unknown-member' | 'unsupported' | 'no-process' | 'busy' }
   | { readonly ok: false; readonly reason: 'start-failed'; readonly error: string }
+  /**
+   * The member's resident process runs `running` CLI background tasks that a
+   * new process would cut off (member-self-started-rounds C①). Nothing was
+   * done: the caller confirms with the user (「会让 N 项后台工作失去联系」)
+   * and asks again with `confirmBackgroundTasks: true`.
+   */
+  | { readonly ok: false; readonly reason: 'background-tasks'; readonly running: number }
+
+/** Options of a reload request (`reloadMemberTools`). */
+export interface LocalAgentMemberToolsReloadOptions {
+  /**
+   * The user confirmed that the member's running background tasks lose
+   * their process. Absent: a member with running background tasks is
+   * refused with `background-tasks` instead of being reloaded.
+   */
+  readonly confirmBackgroundTasks?: boolean
+}
 
 /**
  * Outcome of one `member_message` delivery. Channel-level failures (unknown or
