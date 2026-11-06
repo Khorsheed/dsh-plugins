@@ -108,6 +108,7 @@ import {
 } from './claude-cli-provider.ts'
 import type { ClaudeEndpointAuth } from './endpoint-auth.ts'
 import { endpointAuthEnv } from './endpoint-auth.ts'
+import { ClaudeSubagentMirror } from './subagent-mirror.ts'
 
 /** Default idle lifetime of an unused resident runtime before reclaim. */
 export const DEFAULT_LIVE_IDLE_MS = 30 * 60_000
@@ -172,6 +173,10 @@ export interface ClaudeLiveDriverTimeouts {
   readonly initMs: number
   readonly convergeMs: number
   readonly channelRetryMs: number
+  /** Coalescing delay for the member's subagent transcript tails (subagent-mirror.ts). */
+  readonly subagentTailMs?: number
+  /** Re-read interval for open background subagents between rounds. */
+  readonly subagentPollMs?: number
 }
 
 const DEFAULT_TIMEOUTS: ClaudeLiveDriverTimeouts = {
@@ -401,6 +406,12 @@ export class ClaudeLiveDriver {
   private readonly roundsInFlight = new Map<string, number>()
   /** The spec each member's runtime was last ensured with: a reload respawns from it. */
   private readonly lastSpecs = new Map<string, ClaudeLiveRoundSpec>()
+  /**
+   * Each member's subagent mirror: it outlives a round (a background subagent
+   * keeps running after the member's turn) and ends with the member's
+   * process (see subagent-mirror.ts).
+   */
+  private readonly subagentMirrors = new Map<string, ClaudeSubagentMirror>()
   private channelBrokenAt: number | undefined
   private disposed = false
   /**
@@ -515,6 +526,35 @@ export class ClaudeLiveDriver {
     for (const key of [...this.runtimes.keys()]) {
       await this.reclaim(key)
     }
+    for (const mirror of this.subagentMirrors.values()) {
+      await mirror.idle()
+      mirror.dispose()
+    }
+    this.subagentMirrors.clear()
+  }
+
+  /** The member's subagent mirror (created on its first live round). */
+  private subagentMirror(spec: ClaudeLiveRoundSpec): ClaudeSubagentMirror {
+    const key = String(spec.childSession.id)
+    let mirror = this.subagentMirrors.get(key)
+    if (mirror === undefined) {
+      mirror = new ClaudeSubagentMirror({
+        ctx: this.ctx,
+        member: spec.childSession,
+        homeDir: spec.homeDir,
+        transport: 'live',
+        ...this.timeouts.subagentTailMs === undefined ? {} : { tailDelayMs: this.timeouts.subagentTailMs },
+        ...this.timeouts.subagentPollMs === undefined ? {} : { pollMs: this.timeouts.subagentPollMs },
+      })
+      this.subagentMirrors.set(key, mirror)
+    }
+    mirror.setCliSession(spec.resume?.cliSessionId)
+    return mirror
+  }
+
+  /** The member's subagent mirror, if it has one (tests and diagnostics). */
+  subagentsOf(childSessionId: string): ClaudeSubagentMirror | undefined {
+    return this.subagentMirrors.get(childSessionId)
   }
 
   private ensureRuntime(spec: ClaudeLiveRoundSpec, signal: AbortSignal): Promise<ClaudeLiveRuntime> {
@@ -739,6 +779,9 @@ export class ClaudeLiveDriver {
       if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)
       this.clearIdleTimer(key)
       member?.release()
+      // The process ran the member's subagents too: one still open can no
+      // longer finish.
+      void this.subagentMirrors.get(key)?.lost()
     }
     if (member !== undefined) runtimeTokens.set(runtime, member.token)
     if (signal.aborted || this.disposeController.signal.aborted) {
@@ -831,6 +874,8 @@ export class ClaudeLiveDriver {
     let turnOpened = false
     /** This turn's fold (the exec live mirror's exact parser). */
     const parser = new ClaudeStreamParser()
+    /** The member's own subagents (subagent-mirror.ts): the stream only signals, the CLI's records carry the content. */
+    const subagents = this.subagentMirror(spec)
     /** The round's context occupancy (last top-level request + the result's window). */
     const contextTracker = new ClaudeContextTracker()
     let mirrored = 0
@@ -1247,11 +1292,14 @@ export class ClaudeLiveDriver {
       if (claudeSubagentParentId(event) !== undefined) {
         // A subagent's event (its partials, messages, tool results): never the
         // member's step, stream, call usage, or answer. The parser records it
-        // as that call's liveness signal and folds nothing.
+        // as that call's liveness signal and folds nothing; the subagent
+        // mirror takes it as the cue to tail the subagent's transcript.
         parser.push(JSON.stringify(event) + '\n')
+        if (subagents.observe(event)) subagents.schedule()
         return
       }
       if (type === 'system' && typeof event['session_id'] === 'string') {
+        subagents.observe(event)
         // EVERY turn emits an init; the first one mints the delegation id.
         // Its model/build fields are this round's settled observation (the
         // exec settle parse reads the same fields off the same event).
@@ -1315,6 +1363,8 @@ export class ClaudeLiveDriver {
       // Feed the exec path's exact parser: one line per event, as the exec
       // stdout carried them.
       parser.push(JSON.stringify(event) + '\n')
+      // An `Agent`/`Task` call or its result: the subagent mirror pairs and tails.
+      if (subagents.observe(event)) subagents.schedule()
       mirrorUpTo(parser.lines.length - 1, false)
       if (type === 'assistant') { messageKey = undefined; legacyMessage++ }
     }
@@ -1481,6 +1531,9 @@ export class ClaudeLiveDriver {
       if (turnOpened) {
         persist()
         await persistQueue
+        // The member's subagents: a foreground one still without its answer
+        // ends with the round; a background one stays open (subagent-mirror.ts).
+        await subagents.settleRound({ processExited: false })
       }
       return settled
     })
