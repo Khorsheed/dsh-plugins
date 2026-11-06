@@ -22,6 +22,8 @@ import { ClaudeCliProvider } from '../src/claude-cli-provider.ts'
 import { ClaudeLiveDriver } from '../src/live-driver.ts'
 import { expectValidReleasedLog } from './expect-valid-log.ts'
 import { mirrorSnapshot, snapshotExecution, SNAPSHOT_NOW, until } from './mirror-snapshot.ts'
+import { appendTranscript, memberAgentCall, memberAgentResult, subagentSignal, twoCallTranscript, writeMeta } from './subagent-fixtures.ts'
+import { cliSubagentSessionId } from '@khorsheed/dsh-local-agent'
 import { CLAUDE_CODE_UNRECORDED } from '../src/index.ts'
 
 /** One scripted turn: assistant events, the terminal result, or a hang. */
@@ -1490,5 +1492,109 @@ describe('claude mirror snapshot (live)', () => {
       await m.driver.disposeAll()
       vi.useRealTimers()
     }
+  })
+})
+
+describe('claude live driver mirrors the member\'s own subagents', () => {
+  /** A mount whose sessions service keeps what it creates and whose registry accepts grandchild writes. */
+  function subagentMount(): Mount & { sessions: Map<string, Session> } {
+    const m = mount({ config: { permissionMode: 'skip' }, timeouts: { initMs: 5_000, convergeMs: 50, channelRetryMs: 60_000, subagentTailMs: 0, subagentPollMs: 10 } })
+    const sessions = new Map<string, Session>()
+    Object.assign(m.ctx.sessions, {
+      create: (id: string, options?: { meta?: Record<string, unknown> }) => {
+        const session = headed(id, options?.meta ?? {})
+        sessions.set(id, session)
+        return session
+      },
+      get: (id: string) => sessions.get(String(id)),
+    })
+    Object.assign(m.ctx.localAgent, {
+      guardChildSession: () => {},
+      syncChildSession: async () => {},
+      harnessForProvider: () => ({ unrecorded: CLAUDE_CODE_UNRECORDED }),
+    })
+    return { ...m, sessions }
+  }
+  const events = (session: Session, type: string) => session.snapshotEvents().filter(event => event.type === type)
+  const phases = (session: Session) => events(session, 'local-agent/execution').map(event => (event.data as { phase: string; outcome?: string }).outcome ?? 'start')
+  /** A session with a real header (the host's sessions.create does the same from `meta`). */
+  const headed = (id: string, meta: Record<string, unknown>): Session =>
+    Session.create(SessionId(id), [], { version: 4, id: SessionId(id), createdAt: Date.now(), isSeeded: false, ...meta } as never)
+  const memberSession = (m: Mount & { sessions: Map<string, Session> }, id: string): Session => {
+    const child = headed(id, { cwd: '/tmp', parentSession: SessionId('parent-1'), origin: 'subagent', delegationDepth: 1 })
+    m.sessions.set(id, child)
+    return child
+  }
+
+  it('a foreground subagent mirrors while the round runs and ends done when the member\'s result arrives', async () => {
+    const m = subagentMount()
+    const child = memberSession(m, 'member-live-sub')
+    const transcript = twoCallTranscript('alive', '看看', '结论')
+    writeMeta(m.homeDir, 'alive', { toolUseId: 'tu-live', agentType: 'Explore', description: '看看' })
+    appendTranscript(m.homeDir, 'alive', transcript.first)
+    const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await until(() => fake.userMessages.length === 1)
+    fake.emit(memberAgentCall([{ id: 'tu-live', description: '看看', type: 'Explore' }]))
+    fake.emit(subagentSignal('tu-live'))
+    const grandchildId = cliSubagentSessionId(String(child.id), 'alive')
+    await until(() => m.sessions.get(grandchildId)?.snapshotEvents().some(event => event.type === 'assistant/message') === true)
+    const grandchild = m.sessions.get(grandchildId)!
+    expect(phases(grandchild)).toEqual(['start'])
+
+    appendTranscript(m.homeDir, 'alive', transcript.second)
+    fake.emit(memberAgentResult('tu-live', 'alive', '结论'))
+    await until(() => phases(grandchild).length === 2)
+    expect(phases(grandchild)).toEqual(['start', 'done'])
+    expect(events(grandchild, 'assistant/message')).toHaveLength(2)
+    expect(events(grandchild, 'local-agent/execution').at(-1)?.data).toMatchObject({ unrecorded: ['internal-calls'] })
+
+    fake.emit({ type: 'assistant', message: { id: 'm-final', role: 'assistant', content: [{ type: 'text', text: '好了' }] } })
+    fake.emit({ type: 'result', is_error: false, session_id: fake.sessionId })
+    expect((await run.result).stopReason).toBe('completed')
+    // The member keeps only its own steps: the Agent call and its answer.
+    expect(events(child, 'assistant/message')).toHaveLength(2)
+    expect(events(child, 'subagent/catalog')).toHaveLength(1)
+    expectValidReleasedLog(grandchild)
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
+  it('a background subagent outlives the round, closes when the meta reports finished, and a reclaim ends the next one uncertain', async () => {
+    const m = subagentMount()
+    const child = memberSession(m, 'member-live-bg')
+    for (const [agentId, callId] of [['abga', 'tu-bga'], ['abgb', 'tu-bgb']] as const) {
+      writeMeta(m.homeDir, agentId, { toolUseId: callId })
+      appendTranscript(m.homeDir, agentId, twoCallTranscript(agentId, '后台', '答').first)
+    }
+    const fake = new FakeClaude({ turn: () => ({ hang: true }) })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    await until(() => fake.userMessages.length === 1)
+    fake.emit(memberAgentCall([{ id: 'tu-bga', description: '后台 a', background: true }, { id: 'tu-bgb', description: '后台 b', background: true }]))
+    fake.emit(memberAgentResult('tu-bga', 'abga', 'Async agent launched successfully.', true))
+    fake.emit(memberAgentResult('tu-bgb', 'abgb', 'Async agent launched successfully.', true))
+    fake.emit({ type: 'assistant', message: { id: 'm-final', role: 'assistant', content: [{ type: 'text', text: '已在后台' }] } })
+    fake.emit({ type: 'result', is_error: false, session_id: fake.sessionId })
+    expect((await run.result).stopReason).toBe('completed')
+    const a = m.sessions.get(cliSubagentSessionId(String(child.id), 'abga'))!
+    const b = m.sessions.get(cliSubagentSessionId(String(child.id), 'abgb'))!
+    expect(phases(a)).toEqual(['start'])
+    expect(phases(b)).toEqual(['start'])
+
+    // Between rounds, the poll sees the meta report finished.
+    appendTranscript(m.homeDir, 'abga', twoCallTranscript('abga', '后台', '答').second)
+    writeMeta(m.homeDir, 'abga', { toolUseId: 'tu-bga', finished: true })
+    await until(() => phases(a).length === 2)
+    expect(phases(a)).toEqual(['start', 'done'])
+    expect(phases(b)).toEqual(['start'])
+
+    // The member's process goes away: the other one can no longer finish.
+    await m.driver.disposeAll()
+    await until(() => phases(b).length === 2)
+    expect(phases(b)).toEqual(['start', 'uncertain'])
+    expectValidReleasedLog(a)
+    expectValidReleasedLog(b)
   })
 })
