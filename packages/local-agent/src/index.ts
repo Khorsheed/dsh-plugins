@@ -222,6 +222,8 @@ export {
   recordContextOccupancy,
 } from './mirror-step.ts'
 export type { MirrorBlock, MirrorGeneration, MirrorRequestConfig, MirrorSource, MirrorUnit } from './mirror-step.ts'
+export { CLI_SUBAGENT_SESSION_SEPARATOR, cliSubagentLabel, cliSubagentSessionId, openCliSubagent } from './cli-subagent.ts'
+export type { CliSubagentCall, CliSubagentEndOptions, CliSubagentExecution, CliSubagentHandle, CliSubagentIdentity } from './cli-subagent.ts'
 import { LocalAgentStreams } from './live-stream.ts'
 export { LocalAgentStreams, LiveStreamPublisher, LIVE_CHECKPOINT_INTERVAL_MS } from './live-stream.ts'
 export { containerExecSpawn, containerScopedHome } from './container.ts'
