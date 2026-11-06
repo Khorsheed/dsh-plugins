@@ -29,6 +29,7 @@ import type {
   LocalAgentMemberFeedEvent,
   LocalAgentMemberToolsReload,
   LocalAgentMemberToolsStatus,
+  LocalAgentBackgroundTasks,
 } from './types.ts'
 import type { CardSettings, CardSettingValue, LocalAgentMemberContext, LocalAgentRosterRow, LocalAgentStatus, LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState } from './types.ts'
 import { extendModelDirectory } from './model-directory.ts'
@@ -394,6 +395,20 @@ export default class LocalAgentGateway extends TypertRemoteService {
   async memberTools(childSessionId: string): Promise<LocalAgentMemberToolsStatus | null> {
     const registry = this.ctx.localAgent
     return typeof registry.memberToolsStatus === 'function' ? await registry.memberToolsStatus(childSessionId) : null
+  }
+
+  /**
+   * A member's CLI background tasks (the room's 后台 tray and member line),
+   * read from the CLI's own task state. Null for an unknown member or a
+   * core without the read; `supported: false` for a harness (or way of
+   * running) without background tasks — show nothing, not "0".
+   * @param childSessionId - the dsh child session id of the member.
+   * @returns the tasks, or null.
+   */
+  @Remote('memberBackgroundTasks')
+  async memberBackgroundTasks(childSessionId: string): Promise<LocalAgentBackgroundTasks | null> {
+    const registry = this.ctx.localAgent
+    return typeof registry.memberBackgroundTasks === 'function' ? await registry.memberBackgroundTasks(childSessionId) : null
   }
 
   /**

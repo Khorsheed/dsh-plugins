@@ -15,7 +15,8 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as localAgent from '../src/index.ts'
-import { LOCAL_AGENT_SERVICE, addUsage, executionReadingsOf } from '../src/index.ts'
+import { LOCAL_AGENT_SERVICE, addUsage, executionOfToolCall, executionReadingsOf, selfExecutionOfTask, subagentReadingsFor } from '../src/index.ts'
+import type { LocalAgentBackgroundTasksRequest, LocalAgentExecutionCause } from '../src/index.ts'
 
 let seq = 0
 const ev = (type: string, data: unknown): SessionEvent => ({ type, data, seq: seq++, time: 0 }) as never
@@ -85,6 +86,73 @@ describe('executionReadingsOf', () => {
     expect(readings.get('e1')).not.toHaveProperty('outcome')
     expect(executionReadingsOf([turn(1), call(1, { inputTokens: 3, outputTokens: 1 })]).size).toBe(0)
   })
+
+  it('reads a `cli` execution (a round the CLI opened itself) exactly like any other caller\'s', () => {
+    const cause: LocalAgentExecutionCause = { kind: 'self', reason: 'background-task', taskId: 'bash-1', taskStatus: 'completed', notificationId: 'task:bash-1:completed', startedBy: 'e1' }
+    const readings = executionReadingsOf([
+      ev('local-agent/execution', { phase: 'start', executionId: 's1', caller: 'cli', operation: 'prompt', cause, parentSessionId: 'room-1', admittedAt: 1 }),
+      turn(3), call(3, { inputTokens: 4, outputTokens: 2 }), end('s1', [3]),
+    ])
+    expect(readings.get('s1')).toEqual({ executionId: 's1', operation: 'prompt', outcome: 'done', turns: [3], callUsage: { inputTokens: 4, outputTokens: 2 }, calls: 1, unrecorded: [], compactions: [] })
+  })
+})
+
+describe('background task fact chain', () => {
+  const toolCall = (turnNo: number, id: string): SessionEvent =>
+    ev('assistant/message', { turn: turnNo, step: 1, message: { role: 'assistant', content: [{ type: 'tool-call', id, name: 'Bash', arguments: '{}' }] }, stream: [] })
+  const selfStart = (executionId: string, taskId: string): SessionEvent =>
+    ev('local-agent/execution', { phase: 'start', executionId, caller: 'cli', operation: 'prompt', parentSessionId: 'room-1', admittedAt: 1,
+      cause: { kind: 'self', reason: 'background-task', taskId, taskStatus: 'completed' } })
+
+  it('tool call → its turn → the execution holding that turn; any missing link answers undefined', () => {
+    const events = [
+      start('e1'), turn(1), toolCall(1, 'call-a'), end('e1', [1]),
+      start('e2'), turn(2), toolCall(2, 'call-b'),
+      // A call mirrored into a turn no execution claims (an older log).
+      turn(3), toolCall(3, 'call-orphan'), end('e2', [2]),
+    ]
+    expect(executionOfToolCall(events, 'call-a')).toBe('e1')
+    expect(executionOfToolCall(events, 'call-b')).toBe('e2')
+    expect(executionOfToolCall(events, 'call-orphan')).toBeUndefined()
+    expect(executionOfToolCall(events, 'never-mirrored')).toBeUndefined()
+    // No execution records at all: nothing is guessed.
+    expect(executionOfToolCall([turn(1), toolCall(1, 'call-a')], 'call-a')).toBeUndefined()
+  })
+
+  it('the round the CLI opened for a task is the `self` start naming it', () => {
+    const events = [start('e1'), turn(1), end('e1', [1]), selfStart('s1', 'bash-1'), turn(2), end('s1', [2])]
+    expect(selfExecutionOfTask(events, 'bash-1')).toBe('s1')
+    expect(selfExecutionOfTask(events, 'bash-2')).toBeUndefined()
+  })
+})
+
+describe('subagentReadingsFor', () => {
+  const subStart = (executionId: string, cause: Record<string, unknown>): SessionEvent =>
+    ev('local-agent/execution', { phase: 'start', executionId, caller: 'cli', operation: 'prompt', parentSessionId: 'member-1', admittedAt: 1,
+      cause: { kind: 'cli-subagent', sessionId: 'member-1', callId: 'call-1', ...cause } })
+
+  it('collects the grandchild executions naming the member execution; the sum adds per-call usage only', () => {
+    const explore = [
+      subStart('x1', { executionId: 'e1', name: 'explore' }), turn(1), call(1, { inputTokens: 10, outputTokens: 2 }),
+      end('x1', [1], { providerReportedUsage: { inputTokens: 999, outputTokens: 9 } }),
+      // A resumed execution for another member execution: not this one's.
+      subStart('x2', { executionId: 'e2', name: 'explore', resumed: true }), turn(2), call(2, { inputTokens: 50, outputTokens: 5 }), end('x2', [2]),
+    ]
+    const coder = [subStart('y1', { executionId: 'e1', name: 'coder', group: { index: 0, size: 1 } }), turn(1), call(1, { inputTokens: 1, outputTokens: 1, cacheReadTokens: 7 }), end('y1', [1])]
+    const unrelated = [start('z1'), turn(1), call(1, { inputTokens: 100, outputTokens: 100 }), end('z1', [1])]
+    expect(subagentReadingsFor('e1', [
+      { sessionId: 'member-1.sub.agent-0', events: explore },
+      { sessionId: 'member-1.sub.agent-1', events: coder },
+      { sessionId: 'member-1.sub.agent-2', events: unrelated },
+    ])).toEqual({
+      subagents: [
+        { sessionId: 'member-1.sub.agent-0', executionId: 'x1', name: 'explore', callUsage: { inputTokens: 10, outputTokens: 2 }, calls: 1, providerReportedUsage: { inputTokens: 999, outputTokens: 9 } },
+        { sessionId: 'member-1.sub.agent-1', executionId: 'y1', name: 'coder', callUsage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 7 }, calls: 1 },
+      ],
+      subagentUsage: { inputTokens: 11, outputTokens: 3, cacheReadTokens: 7 },
+    })
+    expect(subagentReadingsFor('e9', [{ sessionId: 'member-1.sub.agent-0', events: explore }])).toEqual({ subagents: [] })
+  })
 })
 
 describe('LocalAgentRegistry.readExecution', () => {
@@ -120,5 +188,37 @@ describe('LocalAgentRegistry.readExecution', () => {
     expect(cold.ctx.sessions.get(SessionId('member-1'))).toBeUndefined()
     expect(await cold.registry.readExecution('member-1', 'e1')).toMatchObject({ outcome: 'done', turns: [1], providerReportedUsage: { inputTokens: 9, outputTokens: 1 } })
     expect(await cold.registry.readExecution('never-existed', 'e1')).toBeUndefined()
+  })
+
+  it('memberBackgroundTasks: hands the harness the member home, CLI session and child-log lookups; null / unsupported otherwise', async () => {
+    const { ctx, registry } = await mount(mkdtempSync(join(tmpdir(), 'exec-read-bg-')))
+    const seen: LocalAgentBackgroundTasksRequest[] = []
+    registry.register({
+      name: 'fake', displayName: 'Fake', homeEnvVar: 'FAKE_HOME', delegationProvider: 'fake-cli', records: { listSessions: async () => [] },
+      backgroundTasks: async (request: LocalAgentBackgroundTasksRequest) => {
+        seen.push(request)
+        const startedBy = await request.executionOfCall('call-a')
+        const resultIn = await request.selfExecutionOf('bash-1')
+        return { supported: true, processAlive: true, tasks: [{ id: 'bash-1', label: 'deploy', kind: 'shell', startedAt: 1, endedAt: 2, state: 'completed', ...startedBy === undefined ? {} : { startedBy }, ...resultIn === undefined ? {} : { resultIn } }] }
+      },
+    } as never)
+    registry.register({ name: 'plain', displayName: 'Plain', homeEnvVar: 'PLAIN_HOME', delegationProvider: 'plain-cli', records: { listSessions: async () => [] } } as never)
+    registry.recordDelegation({ childSessionId: 'member-1', provider: 'fake-cli', parentSessionId: 'room-1', cliSessionId: 'cli-1', cwd: '/home/user/work' })
+    registry.recordDelegation({ childSessionId: 'member-2', provider: 'plain-cli', parentSessionId: 'room-1', cliSessionId: 'cli-2', cwd: '/home/user/work' })
+    const child = ctx.sessions.create(SessionId('member-1'), { meta: { cwd: '/home/user/work' } } as never)
+    child.append('local-agent/execution', { phase: 'start', executionId: 'e1', caller: 'room', operation: 'prompt', parentSessionId: 'room-1', admittedAt: 1 })
+    child.append('turn/start', { turn: 1 } as never)
+    child.append('assistant/message', { turn: 1, step: 1, message: { role: 'assistant', content: [{ type: 'tool-call', id: 'call-a', name: 'Bash', arguments: '{}' }] }, stream: [] } as never, { surfaceOp: 'append' } as never)
+    child.append('local-agent/execution', { phase: 'end', executionId: 'e1', outcome: 'done', turns: [1], endedAt: 2 })
+    child.append('local-agent/execution', { phase: 'start', executionId: 's1', caller: 'cli', operation: 'prompt', parentSessionId: 'room-1', admittedAt: 3,
+      cause: { kind: 'self', reason: 'background-task', taskId: 'bash-1', taskStatus: 'completed', startedBy: 'e1' } })
+
+    expect(await registry.memberBackgroundTasks('member-1')).toEqual({
+      supported: true, processAlive: true,
+      tasks: [{ id: 'bash-1', label: 'deploy', kind: 'shell', startedAt: 1, endedAt: 2, state: 'completed', startedBy: 'e1', resultIn: 's1' }],
+    })
+    expect(seen[0]).toMatchObject({ childSessionId: 'member-1', cliSessionId: 'cli-1', homeDir: registry.homeDir('fake') })
+    expect(await registry.memberBackgroundTasks('member-2')).toEqual({ supported: false, tasks: [], processAlive: false })
+    expect(await registry.memberBackgroundTasks('not-a-member')).toBeNull()
   })
 })

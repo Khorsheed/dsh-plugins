@@ -21,8 +21,8 @@ export interface MemberRecoveryRead {
 /** One execution a restart interrupted, waiting for the human's verdict. */
 export interface MemberRecoveryUncertain {
   readonly id: string
-  /** Who asked for it: the members page, the room, a host session's tool call, a plugin. */
-  readonly caller: 'composer' | 'room' | 'tool' | 'api'
+  /** Who asked for it: the members page, the room, a host session's tool call, a plugin, the CLI itself. */
+  readonly caller: 'composer' | 'room' | 'tool' | 'api' | 'cli'
   /** What was typed (members-page input only). */
   readonly text?: string
 }

@@ -42,7 +42,7 @@ interface Pending {
 /** The ledger file format this build writes; version 1 is the old member inbox. */
 const LEDGER_VERSION = 2
 const STATUSES = ['queued', 'running', 'done', 'failed', 'cancelled', 'uncertain']
-const CALLERS: readonly LocalAgentExecutionCaller[] = ['tool', 'composer', 'room', 'api']
+const CALLERS: readonly LocalAgentExecutionCaller[] = ['tool', 'composer', 'room', 'api', 'cli']
 const TERMINAL = new Set(['done', 'failed', 'cancelled'])
 /** Terminal rows kept per member (key dedup reaches back this far). */
 const KEEP_TERMINAL = 200

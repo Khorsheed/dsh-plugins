@@ -22,6 +22,7 @@ import type {
   LocalAgentExecutionEvent,
   LocalAgentExecutionReading,
   LocalAgentExecutionStartEvent,
+  LocalAgentExecutionSubagentReading,
 } from './types.ts'
 
 const OPTIONAL_COUNTS = ['cacheReadTokens', 'cacheWriteTokens', 'reasoningTokens'] as const
@@ -112,4 +113,95 @@ export function executionReadingsOf(events: readonly SessionEvent[]): Map<string
     })
   }
   return readings
+}
+
+/**
+ * The member execution a mirrored tool call ran in: the `assistant/message`
+ * whose content holds the `tool-call` block `callId` → its turn → the prompt
+ * execution whose turns hold that turn. Every link is a recorded fact; any
+ * missing link answers undefined (never the nearest execution by time).
+ * @param events - the member's session events, in seq order.
+ * @param callId - the tool call id (the CLI's own, as the mirror wrote it).
+ * @param readings - the log's readings, when the caller already has them.
+ * @returns the execution id, or undefined.
+ */
+export function executionOfToolCall(
+  events: readonly SessionEvent[],
+  callId: string,
+  readings: ReadonlyMap<string, LocalAgentExecutionReading> = executionReadingsOf(events),
+): string | undefined {
+  let turn: number | undefined
+  for (const event of events) {
+    if (event.type !== 'assistant/message') continue
+    const data = event.data as { turn?: unknown; message?: { content?: unknown } }
+    const content = data.message?.content
+    if (typeof data.turn !== 'number' || !Array.isArray(content)) continue
+    if (content.some(block => typeof block === 'object' && block !== null
+      && (block as { type?: unknown }).type === 'tool-call' && (block as { id?: unknown }).id === callId)) {
+      turn = data.turn
+      break
+    }
+  }
+  if (turn === undefined) return undefined
+  let found: string | undefined
+  for (const reading of readings.values()) {
+    if (reading.operation === 'prompt' && reading.turns.includes(turn)) found = reading.executionId
+  }
+  return found
+}
+
+/**
+ * The execution the member's CLI opened for one of its background tasks: the
+ * last start record whose cause is `self` naming `taskId`.
+ * @param events - the member's session events, in seq order.
+ * @param taskId - the CLI's task id.
+ * @returns the execution id, or undefined when none is recorded.
+ */
+export function selfExecutionOfTask(events: readonly SessionEvent[], taskId: string): string | undefined {
+  let found: string | undefined
+  for (const event of events) {
+    if (event.type !== 'local-agent/execution') continue
+    const data = event.data as LocalAgentExecutionEvent
+    if (data.phase === 'start' && data.cause?.kind === 'self' && data.cause.taskId === taskId) found = data.executionId
+  }
+  return found
+}
+
+/**
+ * The member CLI's subagent executions that ran for one member execution
+ * (subagent design M0; wired into `readExecution` at M6): every grandchild
+ * start record whose `cli-subagent` cause names `executionId`, read with
+ * {@link executionReadingsOf} in its own log. `subagentUsage` sums their
+ * per-call usage only — a subagent's CLI-reported total stays on its own
+ * entry, never added in.
+ * @param executionId - the member's execution.
+ * @param grandchildren - each grandchild session's id and events.
+ * @returns the subagent readings (empty when none ran) and their call sum.
+ */
+export function subagentReadingsFor(
+  executionId: string,
+  grandchildren: readonly { readonly sessionId: string; readonly events: readonly SessionEvent[] }[],
+): { subagents: LocalAgentExecutionSubagentReading[]; subagentUsage?: TokenUsage } {
+  const subagents: LocalAgentExecutionSubagentReading[] = []
+  let subagentUsage: TokenUsage | undefined
+  for (const { sessionId, events } of grandchildren) {
+    const readings = executionReadingsOf(events)
+    for (const event of events) {
+      if (event.type !== 'local-agent/execution') continue
+      const data = event.data as LocalAgentExecutionEvent
+      if (data.phase !== 'start' || data.cause?.kind !== 'cli-subagent' || data.cause.executionId !== executionId) continue
+      const reading = readings.get(data.executionId)
+      if (reading === undefined || subagents.some(entry => entry.sessionId === sessionId && entry.executionId === data.executionId)) continue
+      subagents.push({
+        sessionId,
+        executionId: data.executionId,
+        ...data.cause.name === undefined ? {} : { name: data.cause.name },
+        ...reading.callUsage === undefined ? {} : { callUsage: reading.callUsage },
+        calls: reading.calls,
+        ...reading.providerReportedUsage === undefined ? {} : { providerReportedUsage: reading.providerReportedUsage },
+      })
+      if (reading.callUsage !== undefined) subagentUsage = addUsage(subagentUsage, reading.callUsage)
+    }
+  }
+  return { subagents, ...subagentUsage === undefined ? {} : { subagentUsage } }
 }
