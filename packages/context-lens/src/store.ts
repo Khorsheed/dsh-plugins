@@ -55,7 +55,7 @@ import { splitRequest, rebaseSegments, type CapturedToolSchema, type ScopeFinger
 import { AMBIENT_SOURCES, lastParagraph, previewLine, type CapturedMessage } from './messages.ts'
 import type { ExecutionRecord, LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
-import { diffRequests, type FactLookup, type ReplacementFact } from './changes.ts'
+import { diffRequests, messagesOf, type FactLookup, type ReplacementFact } from './changes.ts'
 import { answersMatch, askView, isAskTool, type RoomQuestionRecord } from './ask.ts'
 import {
   HUMAN_MESSAGE_LOOKBACK, ROOM_UNATTRIBUTED_TURN, applyRoomEvent, emptyRoom, isCompactCommand, roomTurnSeq, runRecorded, runsOf,
@@ -2399,11 +2399,12 @@ function factLookup(session: SessionRecord): FactLookup {
 function comparePrefix(previous: StoredRequest, current: StoredRequest, facts: FactLookup): NonNullable<CapturedRequest['prefix']> {
   const rows = (request: StoredRequest) => [...request.segments.system, ...request.segments.history, ...request.segments.added]
     .sort((a, b) => a.index - b.index)
-  const a = rows(previous), b = rows(current)
+  const previousRows = rows(previous), currentRows = rows(current)
+  const a = messagesOf(previousRows), b = messagesOf(currentRows)
   let i = 0
-  while (i < a.length && i < b.length && a[i]?.full === b[i]?.full && a[i]?.category === b[i]?.category) i++
+  while (i < a.length && i < b.length && a[i]?.text === b[i]?.text && a[i]?.category === b[i]?.category) i++
   // Appending new messages preserves the old prefix; deletion or replacement breaks it.
-  const text = i < a.length ? prefixTextChange(a[i]?.full ?? '', b[i]?.full ?? '') : undefined
+  const text = i < a.length ? prefixTextChange(a[i]?.text ?? '', b[i]?.text ?? '') : undefined
   const changed = text === undefined ? undefined : {
     index: b[i]?.index ?? a[i]?.index ?? 0,
     before: `${text.leadingOmitted ? '…' : ''}${text.leading}${text.removed}${text.removedChars > 160 ? '…' : ''}${text.trailing}${text.trailingOmitted ? '…' : ''}`,
@@ -2412,7 +2413,7 @@ function comparePrefix(previous: StoredRequest, current: StoredRequest, facts: F
     ...b[i] === undefined ? {} : { afterCategory: b[i]!.category },
     text,
   }
-  const listed = diffRequests({ rows: a, tools: previous.segments.tools }, { rows: b, tools: current.segments.tools }, facts, changed === undefined ? undefined : changed.index)
+  const listed = diffRequests({ rows: previousRows, tools: previous.segments.tools }, { rows: currentRows, tools: current.segments.tools }, facts, changed === undefined ? undefined : changed.index)
   return { previousSeq: previous.seq, ...previous.requestNumber === undefined ? {} : { previousRequestNumber: previous.requestNumber }, gapMs: Math.max(0, current.startedAt - (previous.settledAt ?? previous.startedAt)),
     changes: listed.changes, toolChanges: listed.tools, ...listed.tail === undefined ? {} : { tail: listed.tail },
     ...configKey(previous.config) === configKey(current.config) || configKey(previous.config) === '' || configKey(current.config) === '' ? {} : { configChanged: { from: configKey(previous.config), to: configKey(current.config) } },

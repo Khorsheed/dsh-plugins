@@ -915,6 +915,7 @@ function buildRequest(
     : mirroredSettledAt
   const usage = readUsage(data['usage'])
   const messages = cursor.messages.map(folded => folded.message)
+    .filter(message => message.content.length > 0 || message.role !== 'system' && message.role !== 'developer' && message.role !== 'assistant')
   let segments: ReturnType<typeof splitRequest>
   // The request's position among this log's requests (a merged external call keeps its first step's).
   const logIndex = cursor.requests.length

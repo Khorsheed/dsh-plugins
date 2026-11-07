@@ -306,6 +306,7 @@ function readBlock(raw: unknown): CapturedBlock | undefined {
   const value = raw as Record<string, unknown>
   const type = value['type']
   if (typeof type !== 'string') return undefined
+  const ref = type === 'file' || type === 'image' ? attachmentLabel(value['attachment']) : undefined
   return {
     type,
     ...typeof value['text'] === 'string' ? { text: value['text'] } : {},
@@ -313,6 +314,7 @@ function readBlock(raw: unknown): CapturedBlock | undefined {
     ...typeof value['name'] === 'string' ? { name: value['name'] } : {},
     ...typeof value['arguments'] === 'string' ? { arguments: value['arguments'] } : {},
     ...typeof value['toolName'] === 'string' ? { toolName: value['toolName'] } : {},
+    ...ref === undefined ? {} : { ref },
   }
 }
 
