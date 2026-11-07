@@ -972,6 +972,12 @@ export interface LocalAgentMemberInput {
 export interface LocalAgentMemberInbox {
   memberId: string
   paused: boolean
+  /**
+   * `restart`: the pause the host put on at boot because a restart left rows
+   * to reconcile; it lifts by itself once nothing is left to decide (no
+   * uncertain row, no queued composer input). Absent: the operator paused.
+   */
+  pausedBy?: 'restart'
   error?: string
   messages: LocalAgentMemberInput[]
 }

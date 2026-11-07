@@ -122,6 +122,37 @@ describe('member execution ledger', () => {
     after.inbox.dispose()
   })
 
+  it('the boot pause lifts by itself once the lost round is reconciled and no composer input waits; an operator pause stays', async () => {
+    const before = mount()
+    void before.submit('member', 'room-run', 'room', 'delivery-1')
+    before.jobs[0]!.admitted()
+    before.inbox.dispose()
+    const after = mount(before.directory)
+    expect(after.inbox.read('member')).toMatchObject({ paused: true, pausedBy: 'restart' })
+    // Auto-continue / moving on reconciles the lost round: nothing left to decide.
+    after.inbox.reconcile('member', 'room-run', 'cancelled', 'moved on after restart')
+    expect(after.inbox.read('member').paused).toBe(false)
+    expect(after.inbox.read('member').pausedBy).toBeUndefined()
+    after.inbox.dispose()
+
+    // Composer input still waiting: the pause stays until it is resumed or cancelled.
+    const b2 = mount()
+    void b2.submit('member', 'run-2', 'tool')
+    b2.jobs[0]!.admitted()
+    b2.enqueue('member', 'waiting', 'w')
+    b2.inbox.dispose()
+    const a2 = mount(b2.directory)
+    a2.inbox.reconcile('member', 'run-2', 'failed', 'crashed')
+    expect(a2.inbox.read('member')).toMatchObject({ paused: true, pausedBy: 'restart' })
+    a2.inbox.cancel('member', 'w')
+    expect(a2.inbox.read('member').paused).toBe(false)
+    // An operator's pause never lifts by itself.
+    a2.inbox.pause('member')
+    expect(a2.inbox.read('member')).toMatchObject({ paused: true })
+    expect(a2.inbox.read('member').pausedBy).toBeUndefined()
+    a2.inbox.dispose()
+  })
+
   it('lists members a restart interrupted without loading, converting or saving their ledgers (M10)', async () => {
     const before = mount()
     // `ada` was running a round when the host died; `bob` had finished his.

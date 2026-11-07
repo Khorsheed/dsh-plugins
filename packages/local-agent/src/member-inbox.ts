@@ -111,7 +111,7 @@ export class MemberInbox {
       cutOff.add(row.id)
     }
     if (cutOff.size > 0) this.cutOffThisBoot.set(memberId, cutOff)
-    if (recovered.messages.some(row => row.status === 'queued' || row.status === 'uncertain')) recovered.paused = true
+    if (!recovered.paused && recovered.messages.some(row => row.status === 'queued' || row.status === 'uncertain')) { recovered.paused = true; recovered.pausedBy = 'restart' }
     this.save(recovered)
     return recovered
   }
@@ -222,6 +222,7 @@ export class MemberInbox {
   pause(memberId: string): void {
     const state = this.read(memberId)
     state.paused = true
+    delete state.pausedBy
     this.save(state)
     // The dispatched composer row that is not admitted yet goes back to waiting.
     const active = this.active.get(memberId)
@@ -233,6 +234,7 @@ export class MemberInbox {
     const state = this.read(memberId)
     if (state.messages.some(row => row.status === 'uncertain')) throw new Error('Reconcile uncertain inputs before resuming')
     state.paused = false
+    delete state.pausedBy
     this.save(state)
     this.pump(memberId)
   }
@@ -251,6 +253,7 @@ export class MemberInbox {
     const row = state.messages.find(row => row.id === idOrKey) ?? state.messages.find(row => row.key === idOrKey)
     if (row?.status !== 'queued') throw new Error('Only a queued input can be cancelled here; use member Stop for a running turn')
     row.status = 'cancelled'; row.updatedAt = Date.now(); row.settledAt = row.updatedAt
+    liftRestartPause(state)
     this.save(state)
     const active = this.active.get(memberId)
     if (active?.id === row.id) active.controller.abort(new Error('Queued input cancelled'))
@@ -262,6 +265,7 @@ export class MemberInbox {
     const row = state.messages.find(row => row.id === idOrKey) ?? state.messages.find(row => row.key === idOrKey)
     if (row?.status !== 'uncertain' || evidence.trim() === '') throw new Error('Reconciliation requires an uncertain input and evidence')
     row.status = outcome; row.error = evidence.trim(); row.updatedAt = Date.now(); row.settledAt = row.updatedAt; row.reconciledAt = row.updatedAt
+    liftRestartPause(state)
     this.save(state)
     this.pump(memberId)
   }
@@ -393,3 +397,15 @@ export class MemberInbox {
 
 /** The ledger under its batch-5 name. */
 export { MemberInbox as MemberLedger }
+
+/**
+ * The boot pause exists so nothing replays before its lost round is decided.
+ * Once no row is uncertain and no composer input waits, nothing is left to
+ * decide: it lifts (an operator's own pause never does).
+ */
+function liftRestartPause(state: LocalAgentMemberInbox): void {
+  if (!state.paused || state.pausedBy !== 'restart') return
+  if (state.messages.some(row => row.status === 'uncertain' || (row.status === 'queued' && row.caller === 'composer'))) return
+  state.paused = false
+  delete state.pausedBy
+}
