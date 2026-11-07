@@ -195,6 +195,32 @@ const memberRows: SessionLogRow[] = [
   { type: 'local-agent/execution', seq: 18, time: 41_800, data: { phase: 'end', executionId: 'e-self', outcome: 'done', turns: [3], unrecorded: ['internal-calls'] } },
 ]
 
+describe('room lens: a self round of a run a member delegated', () => {
+  it('lands under the human round at the collaboration root, not in 未归轮', () => {
+    // coco coordinates the human round 181 and delegates to kimi (member dispatch 185);
+    // kimi's run there starts the background task.
+    const rows: SessionLogRow[] = [
+      ...roomRows.filter(row => row.seq < 181),
+      { type: 'room/member-added', seq: 7, time: 700, data: { id: 'm-coco', name: 'coco' } },
+      { type: 'room/dispatch', seq: 181, time: 10_000, data: { origin: 'human', text: '把插件部署到 3080', targets: ['coco'], targetIds: ['m-coco'], messageId: 'u-181' } },
+      { type: 'room/run-state', seq: 182, time: 10_010, data: { runId: '181:m-coco', member: 'coco', state: 'running', startedAt: 10_010 } },
+      { type: 'room/dispatch', seq: 185, time: 10_040, data: { origin: 'member', parent: '181:m-coco', text: '部署', targets: ['kimi'], targetIds: ['m-kimi'] } },
+      { type: 'room/run-state', seq: 186, time: 10_050, data: { runId: '185:m-kimi', member: 'kimi', state: 'running', startedAt: 10_050, childSessionId: 'child-kimi', executionId: 'e-dispatch' } },
+      { type: 'room/run-state', seq: 187, time: 20_050, data: { runId: '185:m-kimi', member: 'kimi', state: 'done', startedAt: 10_050, elapsedMs: 10_000, childSessionId: 'child-kimi', executionId: 'e-dispatch', childTurn: 2 } },
+      { type: 'room/run-state', seq: 188, time: 20_100, data: { runId: '181:m-coco', member: 'coco', state: 'done', startedAt: 10_010, elapsedMs: 10_090 } },
+      ...roomRows.filter(row => row.seq >= 190),
+    ]
+    const store = new InspectorStore()
+    store.insertLogTurns('s', reconstructSession(rows))
+    for (const row of rows) if (row.type.startsWith('room/')) store.noteRoomEvent('s', row.type, row.data, row.seq, row.time)
+    memberLog(store)
+    const turns = store.listTurns('s').turns
+    const round = turns.find(turn => turn.room !== undefined && turn.roomUnattributed !== true)!
+    expect(store.getTurn('s', round.turnSeq)!.scopes.map(scope => scope.scopeId)).toContain('self:e-self')
+    expect(turns.some(turn => turn.roomUnattributed === true)).toBe(false)
+  })
+})
+
 describe('member lens: the self round is its own turn and says why it ran', () => {
   it('titles the dispatch turn with the human\'s words and marks the self turn with its task and starting request', () => {
     const store = new InspectorStore()

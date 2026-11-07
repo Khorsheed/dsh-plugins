@@ -56,10 +56,10 @@ import { splitRequest, rebaseSegments, type CapturedToolSchema, type ScopeFinger
 import { AMBIENT_SOURCES, lastParagraph, previewLine, stripRoomPreamble, type CapturedMessage } from './messages.ts'
 import type { ExecutionRecord, LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
-import { diffRequests, type FactLookup, type ReplacementFact } from './changes.ts'
+import { diffRequests, messagesOf, type FactLookup, type ReplacementFact } from './changes.ts'
 import { answersMatch, askView, isAskTool, type RoomQuestionRecord } from './ask.ts'
 import {
-  HUMAN_MESSAGE_LOOKBACK, ROOM_UNATTRIBUTED_TURN, applyRoomEvent, emptyRoom, isCompactCommand, roomTurnSeq, runRecorded, runsOf, selfCauseOf,
+  HUMAN_MESSAGE_LOOKBACK, ROOM_UNATTRIBUTED_TURN, applyRoomEvent, collaborationRoots, collaborationRuns, emptyRoom, isCompactCommand, roomTurnSeq, runRecorded, selfCauseOf,
   type RoomRun, type RoomState, type SelfCause,
 } from './room.ts'
 
@@ -239,8 +239,8 @@ export interface ScopeRecord {
   callId?: string
   /** The child's `subagent/descriptor` provider (`dsh-cli`, `codex-local`, …), once seen. */
   provider?: string
-  /** A room round's member run: what its execution recorded (built on read). */
-  execution?: ExecutionFacts
+  /** A room round's member runs: what their executions recorded (built on read). */
+  executions?: ExecutionFacts[]
   /** A member's self-started round shown in a room view (built on read). */
   continues?: ContinuesInfo
 }
@@ -1517,6 +1517,11 @@ export class InspectorStore {
     const decisions = room?.decisions ?? []
     if (room === undefined || decisions.length === 0) return byTurn
     const rounds = new Set(this.roomTurns(session, filter).map(round => round.turnSeq))
+    const roots = collaborationRoots(room)
+    const ofRunId = (runId: string): number | undefined => {
+      const root = roots.get(runId)
+      return root === undefined || !rounds.has(roomTurnSeq(root)) ? undefined : roomTurnSeq(root)
+    }
     const byMessage = new Map<string, number>()
     for (const dispatch of room.dispatches) {
       if (dispatch.messageId !== undefined && rounds.has(roomTurnSeq(dispatch.seq))) byMessage.set(dispatch.messageId, roomTurnSeq(dispatch.seq))
@@ -1524,11 +1529,11 @@ export class InspectorStore {
     const mainTurns = session.turns.filter(turn => turn.hostTurn !== undefined)
     for (const decision of decisions) {
       const run = decision.runId === undefined ? undefined : room.runs.get(decision.runId)
-      const ofRun = run?.dispatchSeq === undefined || !rounds.has(roomTurnSeq(run.dispatchSeq)) ? undefined : roomTurnSeq(run.dispatchSeq)
+      const ofRun = run === undefined ? undefined : ofRunId(run.runId)
       // The execution it names, when a round's run is that execution.
       const byExecution = decision.executionId === undefined ? undefined
-        : [...room.runs.values()].find(candidate => candidate.executionId === decision.executionId && candidate.dispatchSeq !== undefined && rounds.has(roomTurnSeq(candidate.dispatchSeq)))
-      const ofExecution = byExecution?.dispatchSeq === undefined ? undefined : roomTurnSeq(byExecution.dispatchSeq)
+        : [...room.runs.values()].find(candidate => candidate.executionId === decision.executionId && ofRunId(candidate.runId) !== undefined)
+      const ofExecution = byExecution === undefined ? undefined : ofRunId(byExecution.runId)
       const ofMessage = decision.about.message === undefined ? undefined : byMessage.get(decision.about.message)
       const inside = mainTurns.find(turn => turn.startedAt <= decision.at && (turn.endedAt ?? Number.POSITIVE_INFINITY) >= decision.at)?.turnSeq
       const ofTask = decision.task === undefined ? undefined : byMessage.get(decision.task)
@@ -1586,11 +1591,11 @@ export class InspectorStore {
 
   /**
    * Every human room dispatch made outside a main turn, as a round: the
-   * dispatch's message and its member runs. Decided per round by data, never
-   * by date or version: a round whose runs carry write-side records (an
-   * execution id, or a child turn the producer wrote) shows each run's
-   * requests as those records name them; a round with none shows no
-   * room-dimension view, only each member's session and time span
+   * dispatch's message and its collaboration tree. Decided per round by data,
+   * never by date or version: a round whose runs carry write-side records (an
+   * execution id, or a child turn the producer wrote) shows each run's requests
+   * as those records name them, deduplicated per child; a round with none shows
+   * no room-dimension view, only each member's session and time span
    * (`room.unrecorded`, `room.fallback`). Built on read; nothing is stored.
    */
   private roomTurns(session: SessionRecord, filter?: ScopeFilter): TurnRecord[] {
@@ -1603,9 +1608,10 @@ export class InspectorStore {
     return room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at)).map((dispatch): TurnRecord => {
       const compactRound = isCompactCommand(dispatch.text)
       const scopes = new Map<string, ScopeRecord>()
-      const runs = runsOf(room, dispatch.seq)
+      const runs = collaborationRuns(room, dispatch.seq)
       const recorded = runs.some(runRecorded)
       const fallback: RoomFallbackMember[] = []
+      const groups = new Map<string, { child: ScopeRecord | undefined; label: string; runs: RoomRun[] }>()
       for (const run of runs) {
         const child = run.childSessionId === undefined ? undefined : this.findScope(session, run.childSessionId)?.scope
         const label = run.member ?? room.members.get(run.memberId) ?? child?.label ?? run.memberId
@@ -1621,24 +1627,40 @@ export class InspectorStore {
         if (child !== undefined && !scopeAuthorized(child.scopeId, filter)) continue
         // The child's own scope id: its requests open by that id from any view.
         const scopeId = child?.scopeId ?? `room:${dispatch.seq}:${run.memberId}`
-        const matched = child === undefined ? [] : this.runRequests(run, child)
+        const group = groups.get(scopeId) ?? { child, label, runs: [] }
+        group.runs.push(run)
+        groups.set(scopeId, group)
+      }
+      for (const [scopeId, group] of groups) {
+        const { child, label } = group
+        const matched = [...new Map(group.runs.flatMap(run => child === undefined ? [] : this.runRequests(run, child))
+          .map(request => [request.seq, request])).values()]
+          .sort((a, b) => a.startedAt - b.startedAt || a.seq - b.seq)
         const requests = matched.filter(request => request.purpose !== 'compaction')
         const compactions = matched.filter(request => request.purpose === 'compaction')
-        const execution = child === undefined || run.executionId === undefined ? undefined : this.executionFacts(child.scopeId, run.executionId)
+        const executions = child === undefined ? [] : [...new Map(group.runs.flatMap(run => {
+          const fact = run.executionId === undefined ? undefined : this.executionFacts(child.scopeId, run.executionId)
+          return fact === undefined ? [] : [[fact.executionId, fact] as const]
+        })).values()]
+        const status: ScopeRecord['status'] = group.runs.some(run => run.state !== 'done' && run.state !== 'failed' && run.state !== 'cancelled') ? 'running'
+          : group.runs.some(run => run.state === 'failed') ? 'failed'
+            : group.runs.every(run => run.state === 'cancelled') ? 'cancelled' : 'ok'
+        const startedAt = Math.min(...group.runs.map(run => run.startedAt ?? dispatch.at))
+        const ends = group.runs.map(run => run.endedAt).filter((end): end is number => end !== undefined)
         // A /compact run's work is its compaction: the member view only stands in while that fact is not read.
-        const compactRun = compactRound || run.operation === 'compact'
+        const compactRun = compactRound || group.runs.every(run => run.operation === 'compact')
         if (!compactRun || compactions.length === 0) scopes.set(scopeId, {
           scopeId,
           scopeSeq: child?.scopeSeq ?? 0,
           kind: 'subagent',
           label,
           ...child?.provider === undefined ? {} : { provider: child.provider },
-          status: run.state === 'failed' ? 'failed' : run.state === 'done' ? 'ok' : run.state === 'cancelled' ? 'cancelled' : 'running',
-          ...execution === undefined ? {} : { execution },
+          status,
+          ...executions.length === 0 ? {} : { executions },
           config: child?.config ?? {},
           requests,
-          startedAt: run.startedAt ?? dispatch.at,
-          ...run.endedAt === undefined ? {} : { endedAt: run.endedAt },
+          startedAt,
+          ...ends.length === 0 ? {} : { endedAt: Math.max(...ends) },
           live: false,
           logFilled: true,
         })
@@ -1701,6 +1723,8 @@ export class InspectorStore {
     if (room === undefined) return []
     const listed = new Set(room.dispatches.filter(dispatch => !this.insideMainTurn(session, dispatch.at)).map(dispatch => dispatch.seq))
     const runs = [...room.runs.values()]
+    // A run a member delegated belongs to the human round at its collaboration root.
+    const roots = collaborationRoots(room)
     const out: (RoomSelfRound & { at: number })[] = []
     for (const childId of new Set(runs.flatMap(run => run.childSessionId === undefined ? [] : [run.childSessionId]))) {
       const executions = this.childExecutions.get(childId)
@@ -1719,13 +1743,13 @@ export class InspectorStore {
           at = next.startedBy
         }
         const claim = root === undefined ? undefined
-          : childRuns.find(run => run.executionId === root && run.dispatchSeq !== undefined && listed.has(run.dispatchSeq))
+          : childRuns.find(run => run.executionId === root && roots.has(run.runId) && listed.has(roots.get(run.runId)!))
         const named = claim ?? childRuns.find(run => run.dispatchSeq !== undefined) ?? childRuns[0]!
         out.push({
           childId, executionId, cause,
           memberId: named.memberId,
           member: named.member ?? room.members.get(named.memberId) ?? named.memberId,
-          ...claim === undefined ? {} : { dispatchSeq: claim.dispatchSeq! },
+          ...claim === undefined ? {} : { dispatchSeq: roots.get(claim.runId)! },
           at: execution.start?.at ?? execution.end?.at ?? 0,
         })
       }
@@ -1763,7 +1787,7 @@ export class InspectorStore {
         label: self.member,
         ...child.provider === undefined ? {} : { provider: child.provider },
         status: outcome === undefined ? 'running' : outcome === 'done' ? 'ok' : outcome === 'cancelled' ? 'cancelled' : 'failed',
-        ...facts === undefined ? {} : { execution: facts },
+        ...facts === undefined ? {} : { executions: [facts] },
         continues: { taskId: self.cause.taskId, taskStatus: self.cause.taskStatus, ...(perChild.get(self.childId) ?? 0) > 1 ? { index } : {} },
         config: child.config,
         requests,
@@ -1952,7 +1976,8 @@ export class InspectorStore {
       } },
       status: scope.status,
       ...scope.error === undefined ? {} : { error: scope.error },
-      ...scope.execution === undefined ? {} : { execution: scope.execution },
+      ...scope.executions?.length === 1 ? { execution: scope.executions[0] } : {},
+      ...scope.executions === undefined || scope.executions.length < 2 ? {} : { executions: scope.executions },
       ...scope.continues === undefined ? {} : { continues: scope.continues },
       config: scope.config,
       startedAt: scope.startedAt,
@@ -2555,11 +2580,12 @@ function factLookup(session: SessionRecord): FactLookup {
 function comparePrefix(previous: StoredRequest, current: StoredRequest, facts: FactLookup): NonNullable<CapturedRequest['prefix']> {
   const rows = (request: StoredRequest) => [...request.segments.system, ...request.segments.history, ...request.segments.added]
     .sort((a, b) => a.index - b.index)
-  const a = rows(previous), b = rows(current)
+  const previousRows = rows(previous), currentRows = rows(current)
+  const a = messagesOf(previousRows), b = messagesOf(currentRows)
   let i = 0
-  while (i < a.length && i < b.length && a[i]?.full === b[i]?.full && a[i]?.category === b[i]?.category) i++
+  while (i < a.length && i < b.length && a[i]?.text === b[i]?.text && a[i]?.category === b[i]?.category) i++
   // Appending new messages preserves the old prefix; deletion or replacement breaks it.
-  const text = i < a.length ? prefixTextChange(a[i]?.full ?? '', b[i]?.full ?? '') : undefined
+  const text = i < a.length ? prefixTextChange(a[i]?.text ?? '', b[i]?.text ?? '') : undefined
   const changed = text === undefined ? undefined : {
     index: b[i]?.index ?? a[i]?.index ?? 0,
     before: `${text.leadingOmitted ? '…' : ''}${text.leading}${text.removed}${text.removedChars > 160 ? '…' : ''}${text.trailing}${text.trailingOmitted ? '…' : ''}`,
@@ -2568,7 +2594,7 @@ function comparePrefix(previous: StoredRequest, current: StoredRequest, facts: F
     ...b[i] === undefined ? {} : { afterCategory: b[i]!.category },
     text,
   }
-  const listed = diffRequests({ rows: a, tools: previous.segments.tools }, { rows: b, tools: current.segments.tools }, facts, changed === undefined ? undefined : changed.index)
+  const listed = diffRequests({ rows: previousRows, tools: previous.segments.tools }, { rows: currentRows, tools: current.segments.tools }, facts, changed === undefined ? undefined : changed.index)
   return { previousSeq: previous.seq, ...previous.requestNumber === undefined ? {} : { previousRequestNumber: previous.requestNumber }, gapMs: Math.max(0, current.startedAt - (previous.settledAt ?? previous.startedAt)),
     changes: listed.changes, toolChanges: listed.tools, ...listed.tail === undefined ? {} : { tail: listed.tail },
     ...configKey(previous.config) === configKey(current.config) || configKey(previous.config) === '' || configKey(current.config) === '' ? {} : { configChanged: { from: configKey(previous.config), to: configKey(current.config) } },

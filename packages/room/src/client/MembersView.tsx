@@ -50,7 +50,7 @@ function MainAgentModelHint({ directory }: { readonly directory: RoomModelDirect
 
 /** The members tab. */
 export function MembersView({
-  sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, unlinkSession, updateMember, invite, listProviders, browseDirectory,
+  sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, unlinkSession, updateMember, invite, listProviders, browseDirectory, listDirectory,
   modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator,
   renderMemberModelPicker, readMemberSelection, saveMemberSelection, memberTools, reloadMemberTools,
   memberRecovery, retryMemberStart, reconcileMemberExecution, memberActivity, runningBackgroundTasks, t,
@@ -174,6 +174,7 @@ export function MembersView({
       inheritedCwd={roomCwd}
       existingNames={(state?.members ?? []).map(entry => entry.name)}
       browseDirectory={browseDirectory}
+      listDirectory={listDirectory}
       modelSurface={modelSurface}
       renderHarnessModelPicker={renderHarnessModelPicker}
       memberModel={memberModel}

@@ -74,7 +74,11 @@ function titleOf(change: RequestChange, t: T): string {
 
 function whereOf(change: RequestChange, t: T): string {
   const rows = change.added.length > 0 ? change.added : change.removed
-  const parts = [t('chg.messages', { range: range(rows) })]
+  const before = change.removed[0], after = change.added[0]
+  const moved = !change.system && change.kind === 'replace' && change.removed.length === 1 && change.added.length === 1 && before!.index !== after!.index
+  const parts = [moved
+    ? t('chg.messageMove', { from: pad(before!.index), to: pad(after!.index) })
+    : t('chg.messages', { range: range(rows) })]
   if (change.eventSeq !== undefined && change.replacedSeqs !== undefined) parts.push(t('chg.seq', { seq: String(change.eventSeq), replaced: change.replacedSeqs.join('、') }))
   return parts.join(' · ')
 }

@@ -18,7 +18,7 @@ import type { ActivityGroup, ActivityItem } from './member-activity-view.ts'
 import css from './RoomTaskCapsule.module.css'
 
 type Props = Pick<RoomComposerProps,
-  'openTasks' | 'reconcileDelivery' | 'openPlanSession' | 'invite' | 'listProviders' | 'roomCwd' | 'browseDirectory' | 'modelSurface' | 'renderHarnessModelPicker' | 't'>
+  'openTasks' | 'reconcileDelivery' | 'openPlanSession' | 'invite' | 'listProviders' | 'roomCwd' | 'browseDirectory' | 'listDirectory' | 'modelSurface' | 'renderHarnessModelPicker' | 't'>
   & {
     readonly state: RoomState
     /** A member waiting on a question inside its round: its capsule jumps back to the question. */
@@ -44,7 +44,7 @@ function backgroundParts(background: Props['background'], t: Props['t']): { read
 
 /** The capsule row. */
 export function RoomTaskCapsule({
-  state, openTasks, reconcileDelivery, openPlanSession, invite, listProviders, roomCwd, browseDirectory, modelSurface, renderHarnessModelPicker, waiting, background, t,
+  state, openTasks, reconcileDelivery, openPlanSession, invite, listProviders, roomCwd, browseDirectory, listDirectory, modelSurface, renderHarnessModelPicker, waiting, background, t,
 }: Props): ReactNode {
   const bg = backgroundParts(background, t)
   const [inviteOpen, setInviteOpen] = useState(false)
@@ -71,6 +71,7 @@ export function RoomTaskCapsule({
         inheritedCwd={roomCwd}
         existingNames={state.members.map(entry => entry.name)}
         browseDirectory={browseDirectory}
+        listDirectory={listDirectory}
         modelSurface={modelSurface}
         renderHarnessModelPicker={renderHarnessModelPicker}
         onSubmit={submitInvite}

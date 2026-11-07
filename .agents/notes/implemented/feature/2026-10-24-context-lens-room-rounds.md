@@ -33,3 +33,7 @@ In a room session the main conversation stops running turns once another member 
 ## Testing
 
 `tests/room-rounds.spec.ts` covers the hidden holder, rounds numbered with main turns, the handoff, slicing a run by span and by child turn, the trend rows, and skipping dispatches made inside a main turn.
+
+## Related
+
+- [Context Lens attributes a room round to its whole collaboration tree](../bug-fix/2026-11-07-context-lens-room-collaboration-tree.md) extends the direct-run membership defined here to recorded descendant runs while preserving the human-rooted numbering model.

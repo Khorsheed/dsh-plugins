@@ -134,7 +134,7 @@ export interface RequestFace {
 }
 
 /** One wire message rebuilt from its segment rows (system rows may be split into sections). */
-interface Msg {
+export interface Msg {
   index: number
   key: string
   id?: string
@@ -144,7 +144,7 @@ interface Msg {
   sections: { name: string; start: number; end: number }[]
 }
 
-function messagesOf(rows: readonly SegmentItem[]): Msg[] {
+export function messagesOf(rows: readonly SegmentItem[]): Msg[] {
   const byIndex = new Map<number, SegmentItem[]>()
   for (const row of rows) byIndex.set(row.index, [...byIndex.get(row.index) ?? [], row])
   const seen = new Map<string, number>()

@@ -404,9 +404,7 @@
   padding-top: 10px;
 }
 
-/* The cwd row: the read-only picked-path display plus the 浏览… trigger (and
-   the reset ✕ once a path is picked). The display keeps the field skin but
-   never takes a caret. */
+/* The cwd row accepts a picked or typed path; empty inherits the room cwd. */
 .cwdRow {
   display: flex;
   align-items: center;
@@ -416,7 +414,6 @@
 .cwdRow .input {
   flex: 1 1 auto;
   min-width: 0;
-  cursor: default;
 }
 
 .browse {
@@ -442,6 +439,79 @@
 
 .browse:focus:not(:focus-visible) {
   outline: none;
+}
+
+.directoryPath {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.directoryPath .field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.directoryCrumbs,
+.directoryCrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.directoryList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 180px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 10px;
+}
+
+.directoryEntry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.directoryEntry:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.directoryEntry > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.directoryMessage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+@media (max-width: 560px) {
+  .directoryList {
+    max-height: 42dvh;
+  }
+
+  .directoryEntry {
+    min-height: 44px;
+  }
 }
 
 .error {

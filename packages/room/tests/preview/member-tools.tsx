@@ -2,7 +2,8 @@
  * Manual UI fixture for the edit dialog's 模式工具 line and the room's
  * mode-tools notice (the real components, with a scripted local-agent read):
  *   pnpm exec vite packages/room/tests/preview --config packages/room/tests/preview/vite.config.ts --host 127.0.0.1
- * then open /member-tools.html?state=<ok|okOpen|missing|queued|reloaded|running|scheduled|healed|unknown|nomode|start|starting|started|startMissing|feed|members>[&lang=en][&dark=1]
+ * then open /member-tools.html?state=<ok|okOpen|missing|queued|reloaded|running|scheduled|healed|unknown|nomode|start|starting|started|startMissing|feed|members|invite>[&lang=en][&dark=1][&directory=browse]
+ * `invite&open=1` opens the fresh-room invitation; `directory=browse` simulates a native-pick failure with browse listings.
  * (`members` = the members page: a long name, a running member, an idle and a failed one.
  * `start*` = no process after a host restart: 立即载入, 载入中…, the result, a start that still lacks the tools.
  * `recoveryFailed` = the last start failed (对账并重试 beside 立即载入); `recoveryUncertain` = a round a restart interrupted (待对账).)
@@ -191,6 +192,19 @@ function InviteScene() {
     ],
     presets: [{ id: 'dsh-gamedev', name: '游戏开发模式', isDefault: false }],
   }
+  const listDirectory = async (path?: string) => {
+    const current = path ?? '/home/user'
+    const names = current === '/home/user' ? ['CapCut', 'game'] : current === '/home/user/game' ? ['src'] : []
+    return {
+      path: current,
+      home: '/home/user',
+      crumbs: current === '/home/user'
+        ? [{ name: 'Home', path: '/home/user', hidden: false }]
+        : [{ name: 'Home', path: '/home/user', hidden: false }, { name: current.split('/').at(-1) ?? current, path: current, hidden: false }],
+      entries: names.map(name => ({ name, path: `${current}/${name}`, hidden: false })),
+      truncated: false,
+    }
+  }
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
       <main style={{ flex: '1 1 auto', overflowY: 'auto', padding: '24px 16px' }}>
@@ -205,7 +219,11 @@ function InviteScene() {
           invite={async () => ({ ok: true }) as never}
           listProviders={async () => providers as never}
           roomCwd="/home/user/game"
-          browseDirectory={async () => null}
+          browseDirectory={async () => {
+            if (params.get('directory') === 'browse') throw new Error('native picker unavailable')
+            return null
+          }}
+          listDirectory={listDirectory}
           t={t}
         />
         <div data-testid="composer" style={{ maxWidth: 780, margin: '0 auto', padding: 16, border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 22, background: 'var(--dsw-alias-bg-layer-1)' }}>

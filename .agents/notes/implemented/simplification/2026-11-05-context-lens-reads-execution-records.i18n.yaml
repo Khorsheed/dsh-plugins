@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-11-05-context-lens-reads-execution-records.md
-.agents/notes/implemented/simplification/2026-11-05-context-lens-reads-execution-records.md: dc94107dc9ed175b12c94d4cac4514310f1c12c9
-.agents/notes/implemented/simplification/2026-11-05-context-lens-reads-execution-records.zh.md: 824ade89e8dfa1d8905b95ca70e2bb227c2ae190
+.agents/notes/implemented/simplification/2026-11-05-context-lens-reads-execution-records.md: ee806e30a69f614e47c7c362caf16b98424a03ab
+.agents/notes/implemented/simplification/2026-11-05-context-lens-reads-execution-records.zh.md: ecc16f4283f9ddb9c29ed945dbd74b963374b35f

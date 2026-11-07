@@ -735,6 +735,7 @@ export function InspectorPanel({
         )}
         {/* A recorded room run: what its execution recorded about itself. */}
         {scopeId !== ROOM_TAB && effectiveScope?.execution !== undefined && <ExecutionNote execution={effectiveScope.execution} t={t} />}
+        {scopeId !== ROOM_TAB && effectiveScope?.executions?.map(execution => <ExecutionNote key={execution.executionId} execution={execution} t={t} />)}
       </div>
       <div className={css.body} ref={bodyRef}>{body}</div>
     </PanelRoot>

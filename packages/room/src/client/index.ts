@@ -88,8 +88,8 @@ interface InputTriggersMirror {
  * provided by an ancestor fiber — declaring it would deadlock the loader.
  * The event-Definition registry (`uiConversation.events`) is likewise NOT a
  * static inject: the deferred ctx.inject arm keeps the registration
- * independent of ui-conversation's mount order. The native directory picker
- * (uiWorkspace) is probed at gesture time, never injected.
+ * independent of ui-conversation's mount order. Directory picking and listing
+ * (uiWorkspace) are probed at gesture time, never injected.
  */
 export const inject = ['slots', 'sessions', 'remote', 'locale']
 
@@ -317,14 +317,12 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       default: return t('invite.error.generic')
     }
   }
-  /**
-   * The invite dialog's share (sessionId binds per entry inject), consumed by
-   * both dialog hosts — the members tab and the fresh-room dock's invite
-   * capsule. `browseDirectory` is the official wire primitive the native
-   * directory-picker flow drives (`workspaces.pickDirectory`): the picker UI
-   * itself is bound to ui-workspace's adopt-as-workspace flow holes and cannot
-   * serve a pure path pick, so the dialog consumes the primitive directly.
-   */
+  const directoryService = () => ctx.get('uiWorkspace') as {
+    pickDirectory?: () => Promise<string | null>
+    listDirectory?: (path?: string, signal?: AbortSignal) => Promise<import('@deepseek-ai/dsh-api-remotes/client').DirectoryListing>
+  } | undefined
+
+  /** The invite dialog's share; sessionId binds separately for every entry. */
   const inviteFace = (sessionId: SessionId): RoomInviteInjected => ({
     renderHarnessModelPicker: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderHarnessModelPicker,
     // The room session's own cwd: the invite dialog's cwd field placeholder
@@ -355,10 +353,14 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       }
     },
     browseDirectory: () => {
-      // The native picker hangs on ui-workspace's service. Absent service =
-      // the picker's cancel value.
-      const uiWorkspace = ctx.get('uiWorkspace') as { pickDirectory(): Promise<string | null> } | undefined
-      return uiWorkspace?.pickDirectory() ?? Promise.resolve(null)
+      const service = directoryService()
+      if (service?.pickDirectory === undefined) return Promise.reject(new Error('native directory picker unavailable'))
+      return service.pickDirectory()
+    },
+    listDirectory: directoryService()?.listDirectory === undefined ? undefined : (path, signal) => {
+      const service = directoryService()
+      if (service?.listDirectory === undefined) return Promise.reject(new Error('directory browsing unavailable'))
+      return service.listDirectory(path, signal)
     },
     listNames: () => roomStore.getCached(sessionId)?.members.map(member => member.name) ?? [],
     modelSurface: async (harness) => {

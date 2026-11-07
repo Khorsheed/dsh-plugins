@@ -83,4 +83,12 @@ describe('cache comparison explanation', () => {
     fireEvent.click(screen.getByText('1 条 → 1 条'))
     expect(screen.getByText('换掉')).toBeTruthy()
   })
+  it('shows both wire positions when a replacement moves a message', () => {
+    const row = (index: number) => ({ index, category: 'user' as const, source: 'user', preview: 'text', chars: 4 })
+    const request = { ...r, prefix: { previousSeq: 0, gapMs: 0, toolsChanged: false, changes: [
+      { kind: 'replace' as const, removed: [row(85)], added: [row(84)], text: prefixTextChange('old text', 'new text') },
+    ] } }
+    render(<CacheFacts request={request} t={t} />)
+    expect(screen.getByRole('button', { name: /消息 085 → 084/ })).toBeTruthy()
+  })
 })

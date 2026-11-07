@@ -616,6 +616,8 @@ export interface AgentScopeOverview {
    * tab beside the member), and on the member's own turn (main scope).
    */
   continues?: ContinuesInfo
+  /** Every execution when one member ran more than once in the same collaboration round. */
+  executions?: ExecutionFacts[]
   config: RequestConfig
   startedAt: number
   endedAt?: number

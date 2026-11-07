@@ -10,7 +10,7 @@
  * null return.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -254,5 +254,26 @@ describe('InviteAgentAction self-hide', () => {
     shown = true
     listener?.()
     await waitFor(() => expect(screen.getByRole('button', { name: 'action.inviteAgent' })).toBeDefined())
+  })
+
+  it('keeps an open invite dialog when the header chip hides, then restores the criterion on close', async () => {
+    let shown = true
+    let listener: (() => void) | undefined
+    const subscribe = (next: () => void): (() => void) => {
+      listener = next
+      return () => {}
+    }
+    render(<InviteAgentAction {...({ ...face(() => shown, subscribe), sessionId: 's1', t: (key: string) => key } as never)} />)
+    fireEvent.click(screen.getByRole('button', { name: 'action.inviteAgent' }))
+    expect(await screen.findByRole('dialog')).toBeDefined()
+
+    shown = false
+    listener?.()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'action.inviteAgent' })).toBeNull())
+    expect(screen.getByRole('dialog')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'invite.cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.queryByRole('button', { name: 'action.inviteAgent' })).toBeNull()
   })
 })

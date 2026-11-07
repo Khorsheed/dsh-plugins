@@ -48,7 +48,7 @@ import {
   isExternalCoordinatorRoom,
   isParkedOnUserInput,
   writeInstanceLaunch, writeSkillRegistration,
-  pendingRestartRecord, readInterruptedSnapshot, restartContextText, writeInterruptedSnapshot,
+  pendingRestartRecord, readInterruptedSnapshot, readLastRestart, restartContextText, writeInterruptedSnapshot,
   type RestartRecord,
 } from './restart-context.ts'
 import {
@@ -303,7 +303,22 @@ export interface SelfRestartGuard {
    * @returns the structured verdict; terminal hint text never crosses this seam.
    */
   requestRestart(request: RestartRequest): Promise<RestartRequestResult>
+  /**
+   * The restart that brought up this instance, read synchronously from the
+   * durable restart record (delivered or not). Only a record whose exit lies
+   * within `resumeMaxSnapshotAgeMs` before this process booted counts — an
+   * older one belongs to an earlier boot. `initiatorMember` names the
+   * local-agent member (its dsh child session id, `DSH_LOCAL_AGENT_MEMBER`)
+   * whose process scheduled the exit; the room reads it so it does not
+   * auto-continue the round that asked for the restart. Records written
+   * before the field existed read fine, without it.
+   * @returns the record, or null when none belongs to this boot.
+   */
+  lastRestart(): LastRestart | null
 }
+
+/** What {@link SelfRestartGuard.lastRestart} returns: the restart record's public fields. */
+export type LastRestart = Readonly<RestartRecord>
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -401,6 +416,9 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
   const resumeInterrupted = config.resumeInterrupted ?? true
   const resumeDelayMs = config.resumeDelayMs ?? 5000
   const resumeMaxSnapshotAgeMs = config.resumeMaxSnapshotAgeMs ?? 600_000
+  // When this process started: the restart record that counts as "the
+  // restart that brought us up" exited shortly before (lastRestart()).
+  const bootedAt = Date.now() - process.uptime() * 1000
 
   // Restart continuity, two halves wired into `agent/created`:
   //
@@ -483,6 +501,21 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       }
     }
 
+    // Any collaboration room (whoever coordinates). The room plugin loads
+    // rooms whose members a restart interrupted at boot, with nobody looking
+    // (M10): such a load must not make the room's own agent the
+    // first-created claimant of an OWNERLESS report — it would start a room
+    // turn nobody asked for. A record naming the room as its initiator still
+    // goes there.
+    const roomSession = (agent: unknown): boolean => {
+      try {
+        const session = (agent as { session?: { snapshotEvents?: () => readonly { type: string }[] } }).session
+        return session?.snapshotEvents?.().some(event => event.type === 'room/created') === true
+      } catch {
+        return false
+      }
+    }
+
     // The resume pass's cold-log twin of externalCoordinatorRoom: such a
     // room is not recreated at all (its room plugin continues the runs).
     const checkExternalRoom = async (id: string): Promise<boolean> => {
@@ -541,7 +574,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
         acknowledgeRestartRecord(stateDir, record, Date.now())
         record = null
       }
-      const owesReport = record !== null && (record.initiator === undefined || id === record.initiator)
+      const owesReport = record !== null && (record.initiator === undefined ? !roomSession(agent) : id === record.initiator)
       if (exitAt !== undefined) {
         void (async () => {
           const parked = await checkParked(id)
@@ -583,9 +616,8 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
         })()
         return
       }
-      if (record === null) return
+      if (record === null || !owesReport) return
       // The report waits for its owner; other sessions are never woken.
-      if (record.initiator !== undefined && id !== record.initiator) return
       claim(agent, record)
     }
 
@@ -793,6 +825,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     },
     reset: sha => resetToCheckpoint(repoDir, sha),
     requestRestart: request => requestRestart(request, { stateDir, repoDir }),
+    lastRestart: () => readLastRestart(stateDir, bootedAt, resumeMaxSnapshotAgeMs),
     canary: async (options) => {
       const checks: CanaryCheck[] = []
       const verdict = service.verify()

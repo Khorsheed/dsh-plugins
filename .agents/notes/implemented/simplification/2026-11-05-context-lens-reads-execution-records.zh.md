@@ -56,3 +56,7 @@ Lens 仍然零依赖：`local-agent/execution` 和 room 的新字段都按结构
 - context-lens 311 → 335，room 530 → 531，local-agent 528 → 530，bundle-local-agent 5；`pnpm check:plugins` 无问题。
 - 截图（1280 与 390）取自 `examples/workbench/room-records.html`，用真实 store 加 local-agent 夹具；未提交。
 - 未验证：3080 上的真实房间、真实宿主里入口切换会话、真实的 codex exec 日志。
+
+## Related
+
+- [Context Lens 将房间轮次归属到完整协作树](../bug-fix/2026-11-07-context-lens-room-collaboration-tree.zh.md) 将同一按记录归属规则应用于 `parent` / `reportFor` 链接，并合并同一成员的重复执行而不重复计算请求。

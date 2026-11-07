@@ -2,11 +2,12 @@
  * Room rounds: once another member coordinates, a human's message to the room
  * runs no main turn — it dispatches member runs into their child sessions.
  * Each such dispatch is a round of its own, numbered with the main turns by
- * time. What a round shows of its runs is decided per round, by data: runs
- * with write-side records (an execution id whose records live in the child,
- * or a child turn the room wrote) show exactly the requests those records
- * name; a round with none shows no room-dimension view, only each member's
- * own session and time span. Nothing is attributed by time.
+ * time; descendant coordinator/report dispatches join its collaboration tree
+ * without adding rounds. What a round shows of its runs is decided per round,
+ * by data: runs with write-side records (an execution id whose records live in
+ * the child, or a child turn the room wrote) show exactly the requests those
+ * records name; a round with none shows no room-dimension view, only each
+ * member's own session and time span. Nothing is attributed by time.
  */
 import { describe, expect, it } from 'vitest'
 import { readExecutionRecord, reconstructSession, type BuiltLogRequest, type SessionLogRow } from '../src/log-lane.ts'

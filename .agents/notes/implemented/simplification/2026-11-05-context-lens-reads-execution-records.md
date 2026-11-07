@@ -56,3 +56,7 @@ Lens stays dependency-free: `local-agent/execution` and the new room fields are 
 - context-lens 311 → 335, room 530 → 531, local-agent 528 → 530, bundle-local-agent 5; `pnpm check:plugins` clean.
 - Screenshots (1280 and 390) from `examples/workbench/room-records.html` on the real store with the local-agent fixture; not committed.
 - Not verified: a live 3080 room, the door's session switch in a real host, a real codex exec log.
+
+## Related
+
+- [Context Lens attributes a room round to its whole collaboration tree](../bug-fix/2026-11-07-context-lens-room-collaboration-tree.md) applies the same record-driven rule to `parent` / `reportFor` links and merges repeated executions of one member without duplicating requests.

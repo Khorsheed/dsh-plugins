@@ -61,13 +61,13 @@ export interface RoomInviteInjected {
   /** List the invitable providers (undefined on transport failure); with a session, its mode rides along (`sessionPreset`). */
   readonly listProviders: (sessionId?: SessionId) => Promise<RoomProviderList | undefined>
   /**
-   * Pick a member-level working directory through the official picker call
-   * (`uiWorkspace.pickDirectory` — the picker UI itself is not
-   * reusable: ui-workspace's flow holes adopt the pick as a workspace).
-   * Resolves null on cancel or when the host serves no native
-   * directory-picking capability.
+   * Pick a member-level working directory through `uiWorkspace.pickDirectory`.
+   * Null means the operator cancelled; a rejection lets the dialog fall back
+   * to listDirectory when the Host has no native picking capability.
    */
   readonly browseDirectory: () => Promise<string | null>
+  /** List one Host directory level for the in-app fallback when native picking is unavailable. */
+  readonly listDirectory?: ((path?: string, signal?: AbortSignal) => Promise<import('@deepseek-ai/dsh-api-remotes/client').DirectoryListing>) | undefined
   /**
    * The roster's current names, read from the store cache at call time (the
    * invite dialog's name dice never rolls one of these). Empty on a cache

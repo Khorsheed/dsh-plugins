@@ -1010,6 +1010,15 @@ describe('Context Lens room rounds without records (batch 5 S8)', () => {
     expect(screen.getByText(zh['exec.callBoundaries'])).toBeTruthy()
   })
 
+  it('renders every execution note when one member runs more than once in a round', async () => {
+    const repeated = { ...member, execution: undefined, executions: [member.execution!, { executionId: 'e4', cause: 'execution' }] }
+    const repeatedOverview = (seq: number): TurnOverview | undefined => seq === NEW.turnSeq
+      ? { ...OVERVIEW2, turn: NEW, scopes: [repeated] } as never : overview(seq)
+    bench({ turns: [OLD, NEW, GROUP], roomRecords: 'some', overview: repeatedOverview, params: { turnSeq: NEW.turnSeq }, revision: 1 })
+    expect(await screen.findByText('起因：成员 kimi 发来')).toBeTruthy()
+    expect(screen.getByText('起因：上一轮汇报触发')).toBeTruthy()
+  })
+
   it('the 未归轮 group is never the landing turn, and shows unreported compaction facts as 未记录', async () => {
     bench({ turns: [OLD, NEW, GROUP], roomRecords: 'some', overview })
     // Lands on the latest round, not the group.

@@ -27,10 +27,10 @@ import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
  * absent facade degrades the whole section to a hint), the name precheck
  * plus the host's structured duplicate/invalid errors ride the inline error
  * line, instructions ride the front of the member's FIRST task message
- * (never a system-prompt channel), the cwd is a read-only display filled by
- * the 浏览… button (the official `uiWorkspace.pickDirectory` call;
- * empty = inherit the room session's cwd, shown as the placeholder), and
- * edit mode diffs name/cwd/instructions/model.
+ * (never a system-prompt channel), and the cwd accepts direct input, a native
+ * pick, or a directory chosen through the browse-backend fallback. Empty cwd
+ * inherits the room session's cwd (shown as the placeholder); edit mode diffs
+ * name/cwd/instructions/model.
  */
 import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react'
 import { Modal } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -44,6 +44,7 @@ import { MemberCard } from './MemberCard.tsx'
 import { BackgroundConfirm } from './MemberActivity.tsx'
 import { MemberToolsLine } from './MemberToolsLine.tsx'
 import { MemberRecoveryLine } from './MemberRecoveryLine.tsx'
+import { RoomDirectoryBrowser } from './RoomDirectoryBrowser.tsx'
 import { memberRecovery as foldRecovery } from './member-recovery-view.ts'
 import { modeShortName } from './member-tools-view.ts'
 import { rollName } from './name-pool.ts'
@@ -116,12 +117,9 @@ export interface InviteDialogProps {
   readonly inheritedCwd?: string | undefined
   /** The roster's current names — the name dice never rolls one of these. */
   readonly existingNames: readonly string[]
-  /**
-   * The 浏览… button's pick call (the official `uiWorkspace.pickDirectory`
-   * call): resolves the picked absolute path, null on cancel or when the
-   * host serves no native picking capability.
-   */
+  /** The native pick call; null means cancelled, a rejection can fall back to listDirectory. */
   readonly browseDirectory: () => Promise<string | null>
+  readonly listDirectory?: MembersViewProps['listDirectory']
   /**
    * The pickable model surface of one harness (the localAgentGateway
    * `harnessModel` read): the model row's menu vocabulary plus the default an
@@ -182,7 +180,7 @@ function validName(name: string): boolean {
 /** The invite/edit modal card. */
 export function InviteDialog({
   mode, member, providers, presets, sessionPreset, localAgentAvailable, inheritedCwd, existingNames,
-  browseDirectory, modelSurface, renderHarnessModelPicker, memberModel, memberConfiguration,
+  browseDirectory, listDirectory, modelSurface, renderHarnessModelPicker, memberModel, memberConfiguration,
   renderMemberModelPicker, readMemberSelection, mainModelDirectory, memberRunning = false, memberRun, memberTools, reloadMemberTools,
   memberRecovery, retryMemberStart, reconcileMemberExecution, runningBackgroundTasks, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
@@ -265,6 +263,7 @@ export function InviteDialog({
     return outcome.ok ? undefined : outcome.message
   }
   const [browsing, setBrowsing] = useState(false)
+  const [directoryOpen, setDirectoryOpen] = useState(false)
   // Invite keeps the advanced drawer folded; edit opens it — changing those
   // fields is what the edit dialog is for.
   const [advancedOpen, setAdvancedOpen] = useState(mode === 'edit')
@@ -469,9 +468,8 @@ export function InviteDialog({
       const picked = await browseDirectory()
       if (picked !== null) setCwd(picked)
     } catch {
-      // No native picking capability on this host (or a transport failure):
-      // the field keeps its value and the hint explains the miss.
-      setError(t('invite.browseFailed'))
+      if (listDirectory !== undefined) setDirectoryOpen(true)
+      else setError(t('invite.browseFailed'))
     } finally {
       setBrowsing(false)
     }
@@ -706,15 +704,15 @@ export function InviteDialog({
                 {!isMain && <label className={css.field}>
                   <span className={css.label}>{t('invite.cwd')}</span>
                   <span className={css.cwdRow}>
-                    {/* Read-only display: a picked path only (manual typing went
-                        away with the 浏览… button; empty = inherit the room cwd,
-                        shown as the placeholder). */}
                     <input
                       className={css.input}
                       value={cwd}
                       placeholder={inheritedCwd ?? ''}
-                      readOnly
                       aria-label={t('invite.cwd')}
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      onChange={event => { setCwd(event.target.value) }}
                     />
                     <button
                       type="button"
@@ -776,6 +774,14 @@ export function InviteDialog({
           </button>
         </div>
       </div>
+      {directoryOpen && listDirectory !== undefined && (
+        <RoomDirectoryBrowser
+          listDirectory={listDirectory}
+          onPicked={(picked) => { setCwd(picked); setDirectoryOpen(false) }}
+          onClose={() => { setDirectoryOpen(false) }}
+          t={t}
+        />
+      )}
     </Modal>
   )
 }

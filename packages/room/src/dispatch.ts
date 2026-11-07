@@ -688,6 +688,12 @@ export interface DispatchHooks {
 }
 
 /**
+ * Read once when this module loads (the host process's start, as far as the
+ * room can tell) — not per engine, so a test's stepped clock is not consumed.
+ */
+const ROOM_MODULE_LOADED_AT = Date.now()
+
+/**
  * The per-room dispatch engine. Owned by the RoomService; all state lives in
  * the journal, the core's ledger (CLI members, batch 5 S7) and, for the
  * room's own agent only, an in-process FIFO queue (a restart simply has no
@@ -718,6 +724,15 @@ export class DispatchEngine {
   private readonly recovering = new Map<string, Promise<void>>()
   /** room + recipient → the wake-anyway timer for its held reports. */
   private readonly holdTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+  /**
+   * When this host process loaded the room (module load, before any room
+   * recovery): a restart's interruption edges written by this process's
+   * recovery are at or after it; older edges were recorded by an earlier
+   * restart's recovery. Mutable for tests only (simulating rounds a past
+   * restart cut off).
+   */
+  bootedAt: number = ROOM_MODULE_LOADED_AT
 
   /**
    * @param ctx - host context carrying the session store and agents registry.
@@ -881,8 +896,10 @@ export class DispatchEngine {
       ...state.executions === undefined ? {} : { executions: state.executions.map(project) },
       ...deliveries === undefined ? {} : { deliveries },
       runs: state.runs.map(project),
-      ...queuePaused.length === 0 && restartInitiator === undefined ? {} : {
-        restartFacts: { ...queuePaused.length === 0 ? {} : { queuePaused }, ...restartInitiator === undefined ? {} : { restartInitiator } },
+      restartFacts: {
+        ...queuePaused.length === 0 ? {} : { queuePaused },
+        ...restartInitiator === undefined ? {} : { restartInitiator },
+        bootedAt: this.bootedAt,
       },
     }
   }
