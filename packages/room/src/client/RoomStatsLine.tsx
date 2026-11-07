@@ -266,17 +266,17 @@ export const RoomStatsLine = memo(function RoomStatsLine({ useProjection, state,
       {open && (
         <div className={css.breakdown} role="dialog" aria-label={t('stats.membersTitle')}>
           <table>
-            <thead><tr><th>{t('stats.col.member')}</th><th>{t('stats.col.model')}</th><th className={css.num}>{t('stats.col.rounds')}</th><th className={css.num}>{t('stats.col.total')}</th><th className={`${css.num} ${css.optional}`}>{t('stats.col.input')}</th><th className={`${css.num} ${css.optional}`}>{t('stats.col.cacheHit')}</th><th className={`${css.num} ${css.optional}`}>{t('stats.col.output')}</th><th className={`${css.num} ${css.optional}`}>{t('stats.col.time')}</th>{contexts && <th>{t('stats.col.context')}</th>}</tr></thead>
+            <thead><tr><th className={css.name}>{t('stats.col.member')}</th><th className={css.model}>{t('stats.col.model')}</th><th className={`${css.num} ${css.rounds}`}>{t('stats.col.rounds')}</th><th className={css.num}>{t('stats.col.total')}</th><th className={`${css.num} ${css.optional} ${css.split}`}>{t('stats.col.input')}</th><th className={`${css.num} ${css.optional}`}>{t('stats.col.cacheHit')}</th><th className={`${css.num} ${css.optional} ${css.split}`}>{t('stats.col.output')}</th><th className={`${css.num} ${css.optional}`}>{t('stats.col.time')}</th>{contexts && <th className={css.context}>{t('stats.col.context')}</th>}</tr></thead>
             <tbody>
               {members.map(row => (
                 <tr key={row.member}>
                   <td className={css.name} title={row.member}>{row.member}</td>
                   <td className={css.model} title={row.model}>{row.model ?? '—'}</td>
-                  <td className={css.num}>{row.rounds}</td>
+                  <td className={`${css.num} ${css.rounds}`}>{row.rounds}</td>
                   <td className={css.num}>{row.tokens > 0 ? formatTokens(row.tokens) : '—'}</td>
-                  <td className={`${css.num} ${css.optional}`}>{row.input !== undefined && row.input > 0 ? formatTokens(row.input) : '—'}</td>
+                  <td className={`${css.num} ${css.optional} ${css.split}`}>{row.input !== undefined && row.input > 0 ? formatTokens(row.input) : '—'}</td>
                   <td className={`${css.num} ${css.optional}`}>{row.input !== undefined && row.input > 0 ? `${Math.round((row.cacheRead ?? 0) / row.input * 100)}%` : '—'}</td>
-                  <td className={`${css.num} ${css.optional}`}>{row.output !== undefined && row.output > 0 ? formatTokens(row.output) : '—'}</td>
+                  <td className={`${css.num} ${css.optional} ${css.split}`}>{row.output !== undefined && row.output > 0 ? formatTokens(row.output) : '—'}</td>
                   <td className={`${css.num} ${css.optional}`}>{row.elapsedMs > 0 ? formatDuration(row.elapsedMs) : '—'}</td>
                   {contexts && (
                     <td className={css.context}>

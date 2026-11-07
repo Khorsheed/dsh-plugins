@@ -85,15 +85,13 @@
 .breakdown {
   position: absolute;
   bottom: calc(100% + 6px);
-  /* Centered inside the composer column and never wider than it: a split
-     pane is narrower than the viewport, so a viewport clamp let the table
-     spill past the conversation's edge. Overlong tables scroll inside. */
+  /* Fill the composer column at every width. The column tiers below keep the
+     table inside it; intrinsic overflow is only the last-resort fallback. */
   left: 8px;
   right: 8px;
   z-index: 10;
-  width: max-content;
-  max-width: calc(100% - 16px);
-  margin: 0 auto;
+  width: auto;
+  margin: 0;
   box-sizing: border-box;
   overflow-x: auto;
   padding: 6px 0;
@@ -147,9 +145,16 @@
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
 
-/* A narrow column (a split pane, a phone) keeps who / model / rounds / total /
-   context; the per-bucket figures drop out rather than overflow. */
-@container room-stats (max-width: 560px) {
+/* Medium columns keep the cache share and run time but drop the two redundant
+   billing buckets. Narrower columns progressively keep only the figures and
+   actions that answer who / how much / what to do next. */
+@container room-stats (max-width: 960px) {
+  .breakdown .split {
+    display: none;
+  }
+}
+
+@container room-stats (max-width: 640px) {
   .breakdown .optional {
     display: none;
   }
@@ -162,6 +167,27 @@
   .breakdown td.name,
   .breakdown td.model {
     max-width: 112px;
+  }
+}
+
+@container room-stats (max-width: 440px) {
+  .breakdown .model {
+    display: none;
+  }
+
+  .breakdown th,
+  .breakdown td {
+    padding: 3px 6px;
+  }
+
+  .breakdown td.name {
+    max-width: 104px;
+  }
+}
+
+@container room-stats (max-width: 360px) {
+  .breakdown .rounds {
+    display: none;
   }
 }
 
@@ -185,6 +211,7 @@
 /* The 上下文 column: the member's occupancy ring, then its compact button. */
 .context {
   white-space: nowrap;
+  text-align: right;
 }
 
 .contextCell {

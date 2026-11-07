@@ -11,10 +11,11 @@
  * from before S6 shows the copies it stored. The sizes are the context's
  * before and after — never usage; only 用量 is the compaction call's spend.
  */
-import { useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { RoomCompactionViewProps } from './slots.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
 import { compactionNumbers } from './round-usage.ts'
+import { IconChevronUpOutlineMedium } from './icons.tsx'
 import css from './RoomCompactionView.module.css'
 
 const NO_STATE = (): undefined => undefined
@@ -23,6 +24,8 @@ const NO_SUBSCRIBE = (): (() => void) => () => {}
 export function RoomCompactionView({ node, sessionId, roomStore, t }: RoomCompactionViewProps): ReactNode {
   const data = node.data
   const [open, setOpen] = useState(false)
+  const summaryId = useId()
+  const lineRef = useRef<HTMLButtonElement | null>(null)
   const state = useSyncExternalStore(roomStore?.subscribe ?? NO_SUBSCRIBE, roomStore === undefined ? NO_STATE : () => roomStore.getCached(sessionId))
   const execution = data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === data.runId)
   const numbers = compactionNumbers(data, execution)
@@ -38,12 +41,29 @@ export function RoomCompactionView({ node, sessionId, roomStore, t }: RoomCompac
   const summary = data.summary
   return (
     <div className={css.row} data-outcome={data.outcome}>
-      <button type="button" className={css.line} disabled={summary === undefined} aria-expanded={summary === undefined ? undefined : open} onClick={() => { setOpen(!open) }}>
+      <button ref={lineRef} type="button" className={css.line} disabled={summary === undefined} aria-expanded={summary === undefined ? undefined : open} aria-controls={summary === undefined ? undefined : summaryId} onClick={() => { setOpen(!open) }}>
         <span aria-hidden>📦</span>
         <span className={css.text}>{parts.join(' · ')}</span>
         {summary !== undefined && <span className={css.toggle}>{open ? t('compaction.hideSummary') : t('compaction.showSummary')}</span>}
       </button>
-      {open && summary !== undefined && <div className={css.summary}>{summary}</div>}
+      {open && summary !== undefined && (
+        <div className={css.summary} id={summaryId}>
+          <div className={css.summaryText}>{summary}</div>
+          <button
+            type="button"
+            className={css.collapse}
+            aria-expanded="true"
+            aria-controls={summaryId}
+            onClick={() => {
+              setOpen(false)
+              lineRef.current?.focus({ preventScroll: true })
+            }}
+          >
+            {t('compaction.hideSummary')}
+            <IconChevronUpOutlineMedium size={14} />
+          </button>
+        </div>
+      )}
     </div>
   )
 }

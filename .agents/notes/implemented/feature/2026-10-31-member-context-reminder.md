@@ -45,7 +45,7 @@ The host's ring and button cannot reach a member session. The member composer hi
   - The members popup gains a 上下文 column (`meter` + `row`); the chip shows the first `dot`.
   - The ring joins the stats line at that line's metrics (12px / 20px, a 12px ring) through `--dsh-member-context-*` variables; the composer keeps the host meter's 13px.
   - The chip's arrow is the room's chevron icon.
-  - The breakdown is clamped to the composer column, not the viewport, because a split pane is narrower than the window. Below 560px of column (a container query), it drops 输入, 缓存命中, 输出 and 耗时.
+  - The breakdown fills the composer column minus 8px on each side, rather than sizing its frame to the table's intrinsic width. Container queries progressively drop 输入 / 输出 at 960px, 缓存命中 / 耗时 at 640px, 模型 at 440px and 轮次 at 360px; 成员, 总量 and the 上下文 meter/actions always remain. Internal horizontal scrolling is only the fallback for extreme content, not the normal medium-width layout.
   - The composer gains the `/` menu, including after an @mention.
   - A human `/compact` no longer advances the member's prompt cursor, so a pending handoff or room change still rides the next real prompt.
 
@@ -55,6 +55,7 @@ The host's ring and button cannot reach a member session. The member composer hi
 - **Writing `request/context` into member logs so the host `contextPressure` projection works.** That projection cannot see our compactions, and the host ring is hidden in member sessions anyway.
 - **Room button through the member inbox, with Context Lens reading the member log.** The room would still show no card and no compaction row, and a typed `/compact` and a button press would leave different records. One path is simpler.
 - **Each surface polling on its own.** A room with several members would multiply the requests. One store per member serves all surfaces.
+- **A viewport clamp, one narrow breakpoint, or horizontal scrolling as the main adaptation.** None tracks the actual chat column well enough: a split pane can be narrow inside a wide window, and a single 560px threshold left medium-width tables clipping the context actions. The composer container and progressive column tiers address the actual constraint.
 
 ## Consequences
 

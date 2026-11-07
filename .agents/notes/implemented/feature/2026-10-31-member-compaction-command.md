@@ -13,7 +13,7 @@ The compaction round (2026-10-31-member-compaction-round) had no entry point. Th
   - It writes no `room/speech`. Kimi answers `/compact` with its summary text, and that belongs to the row, not to a reply.
   - It appends `room/member-compacted`, copied from the child session's last `local-agent/compaction` event: outcome, token counts before and after, window, usage, summary, error, duration. The type is registered in `ROOM_EVENT_TYPES`.
   - A member that never ran gets a done delivery reading 「还没有可压缩的上下文」 and starts nothing.
-- **room client**: a `room-compaction` node (`RoomCompactionView`) draws one dim row with 看摘要 / 收起摘要 and a failed state.
+- **room client**: a `room-compaction` node (`RoomCompactionView`) draws one dim row with 看摘要 / 收起摘要 and a failed state. An expanded summary also ends with a full-width 收起摘要 button and an up arrow. Closing from the end returns focus to the top toggle without forcing it to scroll into view, so keyboard focus is not lost when the end button unmounts.
 - **Coordinator path**: a bare `/compact` with no mention and no attachment, while dsh coordinates, runs the host's own `/compact` command through `ctx.remote.commands.execute`. That compaction is the host's, so the room adds nothing of its own.
 
 ## Alternatives considered
@@ -21,6 +21,7 @@ The compaction round (2026-10-31-member-compaction-round) had no entry point. Th
 - **A 压缩 button in the room composer.** The user rejected it as a duplicate design: context-guard owns the only button, and it appears only above the threshold (a later phase).
 - **Letting Kimi's summary land as a speech.** Rejected: it looks like a member reply, and coordinators would react to it as one.
 - **Matching `/compact` anywhere in the text.** Rejected: only an exact command is unambiguous. Prose that mentions /compact stays a normal message.
+- **A sticky summary collapse control, or moving the only control to the end.** A sticky action would float over long-form text; an end-only action would remove the established top entry. The two quiet controls share one state instead.
 
 ## Consequences
 

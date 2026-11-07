@@ -83,4 +83,17 @@ describe('member usage', () => {
     expect(breakdown.querySelector('[data-testid="row-child-m-cut"]')).not.toBeNull()
     expect(breakdown.querySelector('[data-testid="meter-child-m-cut"]')).not.toBeNull()
   })
+
+  it('keeps each responsive column tier identical in the header and every member row', () => {
+    const useProjection = (() => undefined) as unknown as RoomStatsLineProps['useProjection']
+    const state: RoomState = { ...STATE, members: STATE.members.map(member => member.kind === 'cli' ? { ...member, childSessionId: `child-${member.id}` as never } : member) }
+    render(<RoomStatsLine useProjection={useProjection} state={state} t={t} renderMemberTools={() => <span />} />)
+    fireEvent.click(screen.getByRole('button', { name: /成员 2 位/ }))
+    const breakdown = screen.getByRole('dialog', { name: '成员用量' })
+    const headers = [...breakdown.querySelectorAll('thead th')]
+    expect(headers.map(header => header.textContent)).toEqual(['成员', '模型', '轮次', '总量', '输入', '缓存命中', '输出', '耗时', '上下文'])
+    for (const row of breakdown.querySelectorAll('tbody tr')) {
+      expect([...row.cells].map(cell => cell.className)).toEqual(headers.map(header => header.className))
+    }
+  })
 })

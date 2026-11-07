@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-10-31-member-context-reminder.md
-.agents/notes/implemented/feature/2026-10-31-member-context-reminder.md: 610aa6dec066303ad23393934608166eb68e6509
-.agents/notes/implemented/feature/2026-10-31-member-context-reminder.zh.md: 150654273dc61f460b91250959ef996d6677b699
+.agents/notes/implemented/feature/2026-10-31-member-context-reminder.md: e94b619c919613cc815cd81e777e8b59042427b6
+.agents/notes/implemented/feature/2026-10-31-member-context-reminder.zh.md: 483f9d825d254d3ebcd87f6e9a00c867e1a489c3
