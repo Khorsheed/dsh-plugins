@@ -343,6 +343,16 @@
   cursor: default;
 }
 
+/* A lost task's follow-up report (C②) reads amber. */
+.cause[data-tone='warning'] {
+  color: var(--dsw-alias-state-warning, #c08419);
+}
+
+/* The task's description on a self-opened round's line: the link to the round that started it. */
+.causeLink {
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+}
+
 .causeHead,
 .causeChevron {
   flex: none;

@@ -8,7 +8,8 @@
 import type { RoomDelivery, RoomState } from '../types.ts'
 
 export interface SpeechCause {
-  readonly kind: 'task' | 'notify' | 'report'
+  /** `followUp`/`followUpLost`: a follow-up report on a background task (member-self-started-rounds A④/C②). */
+  readonly kind: 'task' | 'notify' | 'report' | 'followUp' | 'followUpLost'
   /** Who sent it (reporters, joined, for a release round). */
   readonly member: string
   /** The message text, for 派活/告知. */
@@ -17,11 +18,29 @@ export interface SpeechCause {
   readonly target?: string
 }
 
-/** The reporter's member id and its run id off a report delivery. */
-function reporter(row: RoomDelivery): { readonly id: string; readonly runId: string } | undefined {
+/**
+ * The reporter's member id and the run a click scrolls to, off a report
+ * delivery. A delivery's report names its run (`<seq>:<memberId>`); a
+ * follow-up names the round the member's CLI opened on its own
+ * (`execution:<id>`, the member read off that run) or a lost task
+ * (`background-task:<memberId>:<taskId>`, no round: the original delivery
+ * is the target).
+ */
+function reporter(row: RoomDelivery, state: RoomState): { readonly id: string; readonly runId: string; readonly lost?: true } | undefined {
   const runId = row.reportFor
-  const at = runId?.indexOf(':') ?? -1
-  return runId === undefined || at < 0 ? undefined : { id: runId.slice(at + 1), runId }
+  if (runId === undefined) return undefined
+  if (runId.startsWith('execution:')) {
+    const id = state.executions?.find(entry => entry.id === runId)?.memberId
+      ?? (row.followUpOf === undefined ? undefined : row.followUpOf.slice(row.followUpOf.indexOf(':') + 1))
+    return id === undefined ? undefined : { id, runId }
+  }
+  if (runId.startsWith('background-task:')) {
+    const rest = runId.slice('background-task:'.length)
+    const id = rest.slice(0, Math.max(0, rest.lastIndexOf(':')))
+    return id === '' ? undefined : { id, runId: row.followUpOf ?? runId, lost: true }
+  }
+  const at = runId.indexOf(':')
+  return at < 0 ? undefined : { id: runId.slice(at + 1), runId }
 }
 
 /**
@@ -49,10 +68,13 @@ export function speechCause(runId: string | undefined, state: RoomState | undefi
   const reports = row.releases === undefined
     ? [row]
     : row.releases.flatMap(seq => deliveries.filter(entry => entry.dispatchSeq === seq && entry.memberId === row.memberId))
-  const sources = reports.map(reporter).filter(source => source !== undefined)
+  const sources = reports.map(entry => reporter(entry, state)).filter(source => source !== undefined)
   const names = [...new Set(sources.map(source => name(source.id)).filter(member => member !== undefined))]
   if (names.length === 0) return undefined
-  return { kind: 'report', member: names.join('、'), target: `[data-room-run="${sources[0]!.runId}"]` }
+  // A follow-up on its own (not folded into a release round) says so.
+  const followUp = row.releases === undefined && row.followUpOf !== undefined
+  const kind = !followUp ? 'report' : sources[0]?.lost === true ? 'followUpLost' : 'followUp'
+  return { kind, member: names.join('、'), target: `[data-room-run="${sources[0]!.runId}"]` }
 }
 
 /**

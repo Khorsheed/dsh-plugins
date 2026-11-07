@@ -55,7 +55,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, cliChildId, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, RESTART_UNKNOWN_TEXT, roomSource, runChildSessionId, runChildTurn, runExecutionId } from './dispatch.ts'
+import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, cliChildId, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, RESTART_UNKNOWN_TEXT, roomSource, runChildSessionId, runChildTurn, runExecutionId, followUpDelivery, followUpRecipient, runOfExecution } from './dispatch.ts'
 import { CoreLedgers, reconcileCore, type CoreOutcome } from './core-ledger.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
@@ -83,7 +83,7 @@ import type {
   RoomRelayResolveRequest, RoomRelayResolveResult,
   RoomRemoveMemberRequest, RoomRemoveMemberResult, RoomRestoreMemberRequest, RoomRestoreMemberResult,
   RoomSetGoalRequest, RoomSetGoalResult,
-  RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult, RoomAnswerApprovalRequest, RoomAnswerApprovalResult, RoomAnswerQuestionRequest, RoomAnswerQuestionResult, RoomQuestionAnswer, RoomQuestionItem,
+  RoomRoundContinues, RoomState, RoomUpdateMemberRequest, RoomUpdateMemberResult, RoomAnswerApprovalRequest, RoomAnswerApprovalResult, RoomAnswerQuestionRequest, RoomAnswerQuestionResult, RoomQuestionAnswer, RoomQuestionItem,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -140,6 +140,19 @@ export const ROOM_STATUS_HEARTBEAT_MS = 4_000
  * live outside round: an older start record is a log replayed on load.
  */
 const OUTSIDE_ROUND_WINDOW_MS = 60_000
+
+/** A round of a room member another caller started (see RoomService.observeMemberExecution). */
+interface OutsideRound {
+  readonly room: Session
+  readonly memberId: string
+  readonly member: string
+  readonly runId: string
+  readonly startedAt: number
+  readonly fromSeq: number
+  readonly operation: 'prompt' | 'compact'
+  /** A self-opened round's background task (its label filled in once read). */
+  continues?: RoomRoundContinues
+}
 
 /**
  * Validate a member's `ask_user_question` questions: an array, or that array
@@ -668,7 +681,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
   /** Question/approval cards waiting for the human, per room. */
   private readonly waitingCards = new Map<string, Map<string, { readonly kind: 'question' | 'approval'; readonly member: string }>>()
   /** Rounds of a room member the room did not start, by execution id: where their card is. */
-  private readonly outsideRounds = new Map<string, { readonly room: Session; readonly memberId: string; readonly member: string; readonly runId: string; readonly startedAt: number; readonly fromSeq: number; readonly operation: 'prompt' | 'compact' }>()
+  private readonly outsideRounds = new Map<string, OutsideRound>()
 
   /**
    * A round of a room member that another caller started through the core's
@@ -695,12 +708,27 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       if (!isRoomLog(events)) return
       const member = replay(events).members.find(entry => entry.kind === 'cli' && (entry.childSessionId ?? memberId(events, entry)) === String(child.id))
       if (member === undefined || events.some(row => row.type === 'room/run-state' && row.data.executionId === data.executionId)) return
-      const round = { room, memberId: memberId(events, member), member: member.name, runId: `execution:${data.executionId}`, startedAt: data.admittedAt, fromSeq: event.seq, operation: data.operation }
+      // A round the member's CLI opened on its own for a background task's
+      // result (A④): what it continues on, and the room run that started
+      // the task when that chain is on record.
+      const self = data.caller === 'cli' && data.cause?.kind === 'self' ? data.cause : undefined
+      const startedByRun = runOfExecution(events, self?.startedBy)
+      const continues: RoomRoundContinues | undefined = self === undefined ? undefined
+        : { taskId: self.taskId, taskStatus: self.taskStatus, ...startedByRun === undefined ? {} : { runId: startedByRun } }
+      const round: OutsideRound = { room, memberId: memberId(events, member), member: member.name, runId: `execution:${data.executionId}`, startedAt: data.admittedAt, fromSeq: event.seq, operation: data.operation,
+        ...continues === undefined ? {} : { continues } }
       this.outsideRounds.set(data.executionId, round)
       this.engine.holdRun(room.id, round.runId)
+      // The task's own description, from the CLI's task state (read while the round runs).
+      if (self !== undefined) {
+        void this.backgroundTaskLabel(String(child.id), self.taskId).then((label) => {
+          if (label !== undefined && round.continues !== undefined) round.continues = { ...round.continues, label }
+        })
+      }
       queueMicrotask(() => {
         room.append('room/run-state', { member: round.member, state: 'running', startedAt: round.startedAt, runId: round.runId,
-          childSessionId: child.id, childFromSeq: round.fromSeq, executionId: data.executionId, ...round.operation === 'compact' ? { operation: 'compact' as const } : {} })
+          childSessionId: child.id, childFromSeq: round.fromSeq, executionId: data.executionId, ...round.operation === 'compact' ? { operation: 'compact' as const } : {},
+          ...round.continues === undefined ? {} : { continues: round.continues } })
         void this.ctx.sessions.flush(room).catch((error: unknown) => { this.ctx.logger.warn(`room: outside round edge flush failed: ${String(error)}`) })
       })
       return
@@ -717,10 +745,17 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       const { room } = round
       const events = room.snapshotEvents()
       const name = replay(events).members.find(entry => memberId(events, entry) === round.memberId)?.name ?? round.member
+      // A self-opened round reports to whoever waits on the delivery that
+      // started its task (A④): only a delivery that reports at all.
+      const continues = round.continues
+      const followUpOf = continues === undefined || round.operation !== 'prompt' ? undefined : followUpDelivery(events, continues.runId)
+      const reportedTo = followUpRecipient(events, followUpOf)
       if (round.operation === 'prompt' && (text !== '' || state === 'done')) {
         room.append('room/speech', { member: name, text, childSessionId: child.id, runId: round.runId,
           ...typeof messageId === 'string' ? { messageId } : {}, durationMs: Math.max(0, data.endedAt - round.startedAt),
-          ...state === 'done' ? {} : { interrupted: state } })
+          ...state === 'done' ? {} : { interrupted: state },
+          ...continues === undefined ? {} : { continues },
+          ...reportedTo === undefined ? {} : { reportedTo } })
         floatRunningCards(room, name)
       }
       const turn = data.turns.at(-1)
@@ -730,7 +765,25 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
         ...state === 'failed' ? { error: data.outcome === 'uncertain' ? RESTART_UNKNOWN_TEXT : 'the member round failed' } : {} })
       this.engine.releaseRun(room.id, round.runId)
       void this.ctx.sessions.flush(room).catch((error: unknown) => { this.ctx.logger.warn(`room: outside round edge flush failed: ${String(error)}`) })
+      if (followUpOf !== undefined && reportedTo !== undefined) {
+        void this.engine.reportFollowUp(room, followUpOf, { reportFor: round.runId }, state, text)
+          .catch((error: unknown) => { this.ctx.logger.warn(`room: follow-up report failed: ${String(error)}`) })
+      }
     })
+  }
+
+  /**
+   * A CLI member's background task description, from its own task state
+   * (local-agent's `memberBackgroundTasks`, probed): undefined when the core
+   * or harness cannot read it.
+   */
+  private async backgroundTaskLabel(childSessionId: string, taskId: string): Promise<string | undefined> {
+    try {
+      const read = await probeLocalAgent(this.ctx)?.memberBackgroundTasks?.(childSessionId)
+      return read?.tasks.find(task => task.id === taskId)?.label
+    } catch {
+      return undefined
+    }
   }
 
   /**

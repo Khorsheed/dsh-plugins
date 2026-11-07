@@ -114,6 +114,7 @@ export function sendOrHold(session: Session, message: OutgoingMessage, skipHold 
     ...intent.note === undefined ? {} : { note: intent.note },
     ...intent.replyTo === undefined ? {} : { replyTo: intent.replyTo },
     ...intent.reportFor === undefined ? {} : { reportFor: intent.reportFor },
+    ...intent.followUpOf === undefined ? {} : { followUpOf: intent.followUpOf },
     ...intent.plan === undefined ? {} : { plan: intent.plan },
     ...intent.help === undefined ? {} : { help: intent.help },
   })
@@ -131,6 +132,19 @@ export function releaseIntent(relay: RoomRelay): RoomHeldDispatch | undefined {
 
 const OUTCOME_LABEL: Readonly<Record<string, string>> = {
   done: '完成', cancelled: '已取消', failed: '失败', uncertain: '结果不确定',
+}
+
+/** A follow-up's ending, by the CLI's task status (member-self-started-rounds A④). */
+const FOLLOW_UP_LABEL: Readonly<Record<string, string>> = {
+  completed: '后台任务完成', failed: '后台任务失败', timed_out: '后台任务超时', killed: '后台任务已停止',
+}
+
+/** The envelope label of a follow-up report: how the background task ended, or 失去联系. */
+function followUpLabel(events: readonly SessionEvent[], reportFor: string | undefined): string {
+  if (reportFor?.startsWith('background-task:') === true) return '失去联系'
+  const speech = events.find(row => row.type === 'room/speech' && row.data.runId === reportFor && row.data.continues !== undefined)
+  const status = speech?.type === 'room/speech' ? speech.data.continues?.taskStatus : undefined
+  return status === undefined ? '' : FOLLOW_UP_LABEL[status] ?? `后台任务 ${status}`
 }
 
 /**
@@ -156,6 +170,15 @@ export function envelopeLine(events: readonly SessionEvent[], seq: number): stri
       // The human's own words need no envelope: an unmarked message is theirs.
       return undefined
     case 'report': {
+      // A follow-up (A④/C②): 【#m12 的后续回报 · 来自 kimi-canvas · 后台任务完成】.
+      if (dispatch.followUpOf !== undefined && /^\d+:/.test(dispatch.followUpOf)) {
+        const source = Number(dispatch.followUpOf.split(':', 1)[0])
+        const sender = nameOf(dispatch.followUpOf.split(':').slice(1).join(':'))
+        const label = followUpLabel(events, dispatch.reportFor)
+        // A lost task's follow-up is the room's own note, not a reply the human read.
+        const lost = dispatch.reportFor?.startsWith('background-task:') === true
+        return `【#${messageId(source)} 的后续回报${sender === undefined ? '' : ` · 来自 ${sender}`}${label === '' ? '' : ` · ${label}`}】${lost ? '' : '（这条回复用户已在房间里看到，不要复述）'}`
+      }
       // Plan bookkeeping reports (goal-start:/reconcile:) carry their own text.
       if (dispatch.reportFor === undefined || !/^\d+:/.test(dispatch.reportFor)) return undefined
       const source = Number(dispatch.reportFor.split(':', 1)[0])

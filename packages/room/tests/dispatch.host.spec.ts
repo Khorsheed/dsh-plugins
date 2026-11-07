@@ -722,6 +722,128 @@ describe('DispatchEngine (real composition)', () => {
     expect(room.snapshotEvents().filter(event => event.type === 'room/run-state')).toHaveLength(2)
   })
 
+  /**
+   * A round a member's CLI opens on its own after a background task ended
+   * (member-self-started-rounds A④): the core's start record (caller `cli`,
+   * cause `self`, `startedBy` = the execution that started the task), the
+   * reply, the end record.
+   */
+  function selfRound(child: ReturnType<Bench['ctx']['sessions']['create']>, parent: SessionId, executionId: string, startedBy: string | undefined, text: string, taskStatus = 'completed'): void {
+    child.append('local-agent/execution', { phase: 'start', executionId, caller: 'cli', operation: 'prompt',
+      cause: { kind: 'self', reason: 'background-task', taskId: 'bash-build', taskStatus, notificationId: `task:bash-build:${taskStatus}`, ...startedBy === undefined ? {} : { startedBy } },
+      parentSessionId: parent, admittedAt: Date.now() } as never)
+    const turn = child.snapshotEvents().filter(event => event.type === 'turn/start').length + 1
+    child.append('turn/start', { turn } as never)
+    child.append('assistant/message', { turn, step: 1, message: { role: 'assistant', id: `msg-${executionId}`, content: [{ type: 'text', text }] } } as never, { surfaceOp: 'append' } as never)
+    child.append('local-agent/execution', { phase: 'end', executionId, outcome: 'done', turns: [turn], endedAt: Date.now() } as never)
+  }
+
+  /** bill's latest delivery run in the room: its run id and the core execution it was. */
+  function billRun(bench: Bench): { runId: string; executionId: string } {
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const edge = room.snapshotEvents().findLast(event => event.type === 'room/run-state' && event.data.member === 'bill' && event.data.state === 'running' && event.data.executionId !== undefined)
+    if (edge?.type !== 'room/run-state') throw new Error('bill never ran')
+    return { runId: edge.data.runId!, executionId: edge.data.executionId! }
+  }
+
+  it('a self-opened round after a background task a member dispatched reports to that member as a follow-up, through the gate', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async (_parent: string, provider: string) => settledRun(provider === 'kimi' ? 'child-ada' : 'child-bill', 'ready'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '准备' })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', firstTask: '准备' })
+    await bench.service.engine.idle()
+    // The task description comes from the member's CLI task state.
+    bench.localAgentStub['memberBackgroundTasks'] = vi.fn(async () => ({ supported: true, processAlive: true,
+      tasks: [{ id: 'bash-build', label: '构建并跑测试', kind: 'shell', startedAt: 1, state: 'completed' }] }))
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) =>
+      settledRun(child, child === 'child-bill' ? '已在后台运行，完成后我会继续汇报' : '收到'))
+    const receipt = await bench.service.receiveMemberMessage({ from: 'child-ada', to: 'bill', content: '构建并跑测试', parentSessionId: bench.sessionId, provenance: { provider: 'kimi' } })
+    await bench.service.engine.idle()
+    const id = /#(m\d+)/.exec(receipt)![1]
+    const started = billRun(bench)
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const resumesBefore = bench.facade.resume.mock.calls.length
+    const child = bench.ctx.sessions.get(SessionId('child-bill')) ?? bench.ctx.sessions.create(SessionId('child-bill'))
+    child.append('local-agent/execution', { phase: 'start', executionId: 'exec-self', caller: 'cli', operation: 'prompt',
+      cause: { kind: 'self', reason: 'background-task', taskId: 'bash-build', taskStatus: 'completed', startedBy: started.executionId },
+      parentSessionId: bench.sessionId, admittedAt: Date.now() } as never)
+    await tick()
+    // The running card says what the round is doing.
+    expect(room.snapshotEvents().findLast(event => event.type === 'room/run-state')?.data).toMatchObject({
+      member: 'bill', state: 'running', runId: 'execution:exec-self', continues: { taskId: 'bash-build', taskStatus: 'completed', runId: started.runId } })
+    child.append('turn/start', { turn: 9 } as never)
+    child.append('assistant/message', { turn: 9, step: 1, message: { role: 'assistant', id: 'msg-self', content: [{ type: 'text', text: '构建通过，测试 412/412' }] } } as never, { surfaceOp: 'append' } as never)
+    child.append('local-agent/execution', { phase: 'end', executionId: 'exec-self', outcome: 'done', turns: [9], endedAt: Date.now() } as never)
+    await tick()
+    await bench.service.engine.idle()
+    await tick()
+    await bench.service.engine.idle()
+    const rows = room.snapshotEvents()
+    // The reply carries the quiet line (with the task's description) and who it went to.
+    expect(rows.findLast(event => event.type === 'room/speech' && event.data.member === 'bill')?.data).toMatchObject({
+      text: '构建通过，测试 412/412', runId: 'execution:exec-self', reportedTo: 'ada',
+      continues: { taskId: 'bash-build', taskStatus: 'completed', label: '构建并跑测试', runId: started.runId } })
+    // The follow-up is a report of its own: its own dedupe key, the original delivery named.
+    const reports = rows.filter(event => event.type === 'room/dispatch' && event.data.origin === 'report')
+    expect(reports.filter(event => event.type === 'room/dispatch' && event.data.reportFor === started.runId)).toHaveLength(1)
+    const followUp = reports.find(event => event.type === 'room/dispatch' && event.data.reportFor === 'execution:exec-self')
+    expect(followUp?.data).toMatchObject({ followUpOf: started.runId, targets: ['ada'] })
+    expect(bench.facade.resume.mock.calls.length).toBe(resumesBefore + 1)
+    const back = bench.facade.resume.mock.calls.at(-1) as [string, string, string, ContentBlock[]]
+    expect(back[2]).toBe('child-ada')
+    expect(textOf(back[3])).toContain(`【#${id} 的后续回报 · 来自 bill · 后台任务完成】`)
+    expect(textOf(back[3])).toContain('构建通过，测试 412/412')
+    // ada's round names the self-opened round as its cause.
+    const runs = (bench.localAgentStub['run'] as ReturnType<typeof vi.fn>).mock.calls
+    expect((runs.at(-1)![0] as { cause?: unknown }).cause).toEqual({ kind: 'execution', executionId: 'exec-self' })
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    expect(state.value.deliveries?.find(row => row.reportFor === 'execution:exec-self')).toMatchObject({ followUpOf: started.runId, memberId: state.value.members.find(m => m.name === 'ada')!.id })
+  })
+
+  it('a self-opened round after a background task the human dispatched shows the line and reports nothing', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async () => settledRun('child-bill', 'ready'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', firstTask: '准备' })
+    await bench.service.engine.idle()
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) => settledRun(child, '已在后台运行'))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@bill 构建并跑测试' })
+    await bench.service.engine.idle()
+    const started = billRun(bench)
+    const resumesBefore = bench.facade.resume.mock.calls.length
+    const dispatchesBefore = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents().filter(event => event.type === 'room/dispatch').length
+    const child = bench.ctx.sessions.get(SessionId('child-bill')) ?? bench.ctx.sessions.create(SessionId('child-bill'))
+    selfRound(child, bench.sessionId, 'exec-self', started.executionId, '构建失败：缺依赖', 'failed')
+    await tick()
+    await bench.service.engine.idle()
+    const rows = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
+    const speech = rows.findLast(event => event.type === 'room/speech')
+    expect(speech?.data).toMatchObject({ runId: 'execution:exec-self', continues: { taskStatus: 'failed', runId: started.runId } })
+    expect(speech?.type === 'room/speech' ? speech.data.reportedTo : 'none').toBeUndefined()
+    expect(rows.filter(event => event.type === 'room/dispatch')).toHaveLength(dispatchesBefore)
+    expect(bench.facade.resume.mock.calls.length).toBe(resumesBefore)
+  })
+
+  it('a self-opened round after work from the members page (or the host subagent tool) reports nothing in the room', async () => {
+    const bench = await bootRoom()
+    await preparedMemberOf(bench)
+    const child = bench.ctx.sessions.create(SessionId('child-ada'))
+    // The members-page composer's round started the task.
+    child.append('local-agent/execution', { phase: 'start', executionId: 'exec-page', caller: 'composer', operation: 'prompt',
+      cause: { kind: 'human', sessionId: bench.sessionId, via: 'member-composer' }, parentSessionId: bench.sessionId, admittedAt: Date.now() } as never)
+    child.append('local-agent/execution', { phase: 'end', executionId: 'exec-page', outcome: 'done', turns: [], endedAt: Date.now() } as never)
+    await tick()
+    selfRound(child, bench.sessionId, 'exec-self', 'exec-page', '后台任务结果')
+    await tick()
+    await bench.service.engine.idle()
+    const rows = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
+    const speech = rows.findLast(event => event.type === 'room/speech')
+    // The line points at the members-page round; no report anywhere.
+    expect(speech?.data).toMatchObject({ runId: 'execution:exec-self', continues: { taskId: 'bash-build', runId: 'execution:exec-page' } })
+    expect(speech?.type === 'room/speech' ? speech.data.reportedTo : 'none').toBeUndefined()
+    expect(rows.some(event => event.type === 'room/dispatch')).toBe(false)
+  })
+
   it('a notify is delivered once and never reported back', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async (_parent: string, provider: string) => settledRun(provider === 'kimi' ? 'child-ada' : 'child-bill', 'ok'))

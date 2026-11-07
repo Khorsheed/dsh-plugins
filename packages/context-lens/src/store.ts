@@ -1744,12 +1744,17 @@ export class InspectorStore {
         }
         const claim = root === undefined ? undefined
           : childRuns.find(run => run.executionId === root && roots.has(run.runId) && listed.has(roots.get(run.runId)!))
-        const named = claim ?? childRuns.find(run => run.dispatchSeq !== undefined) ?? childRuns[0]!
+        // A starting run outside any human round's tree (the coordinator's
+        // own send) still names its task: the round that started that task.
+        const rootRun = claim ?? (root === undefined ? undefined : childRuns.find(run => run.executionId === root && run.dispatchSeq !== undefined))
+        const task = claim !== undefined || rootRun?.dispatchSeq === undefined ? undefined : room.dispatchLinks.get(rootRun.dispatchSeq)?.task
+        const ofTask = task === undefined ? undefined : room.dispatches.find(dispatch => listed.has(dispatch.seq) && dispatch.messageId === task)?.seq
+        const named = rootRun ?? childRuns.find(run => run.dispatchSeq !== undefined) ?? childRuns[0]!
         out.push({
           childId, executionId, cause,
           memberId: named.memberId,
           member: named.member ?? room.members.get(named.memberId) ?? named.memberId,
-          ...claim === undefined ? {} : { dispatchSeq: roots.get(claim.runId)! },
+          ...claim !== undefined ? { dispatchSeq: roots.get(claim.runId)! } : ofTask === undefined ? {} : { dispatchSeq: ofTask },
           at: execution.start?.at ?? execution.end?.at ?? 0,
         })
       }

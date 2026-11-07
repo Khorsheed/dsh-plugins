@@ -175,6 +175,25 @@ async function produce(): Promise<unknown> {
   await helperTools.find(entry => entry.name === 'room_help_reply')!.execute({ text: '换个参数就好', handoff: '无' }, { agent: helper })
   await service.engine.idle()
 
+  // 10. bea's CLI opens a round on its own after a background task the
+  //     coordinator's 「做甲」 round started (member-self-started-rounds A④):
+  //     the core's records (caller `cli`, cause `self`), the room's card and
+  //     reply with what it continues on, and the follow-up report through the
+  //     gate (its own key `execution:<id>`, `followUpOf` the original delivery).
+  const first = room.snapshotEvents().find(event => event.type === 'room/dispatch' && event.data.origin === 'coordinator' && event.data.text === '做甲')
+  const startedBy = room.snapshotEvents().find(event => event.type === 'room/run-state' && event.data.state === 'running' && first !== undefined && event.data.runId?.startsWith(`${first.seq}:`) === true)
+  if (startedBy?.type !== 'room/run-state' || startedBy.data.executionId === undefined) throw new Error('no 做甲 run journaled')
+  child.append('local-agent/execution', { phase: 'start', executionId: 'exec-self', caller: 'cli', operation: 'prompt',
+    cause: { kind: 'self', reason: 'background-task', taskId: 'bash-build', taskStatus: 'completed', notificationId: 'task:bash-build:completed', startedBy: startedBy.data.executionId },
+    parentSessionId: sessionId, admittedAt: Date.now() } as never)
+  await tick()
+  child.append('turn/start', { turn: 8 })
+  child.append('assistant/message', { turn: 8, step: 1, message: { role: 'assistant', id: 'msg-self', content: [{ type: 'text', text: '后台构建通过' }] } } as never, { surfaceOp: 'append' } as never)
+  child.append('local-agent/execution', { phase: 'end', executionId: 'exec-self', outcome: 'done', turns: [8], endedAt: Date.now() } as never)
+  await tick()
+  for (let index = 0; index < 50 && !room.snapshotEvents().some(event => event.type === 'room/dispatch' && event.data.reportFor === 'execution:exec-self'); index += 1) await tick()
+  await service.engine.idle()
+
   const rowsOf = (id: SessionId) => ctx.sessions.get(id)!.snapshotEvents().map(event => ({ type: event.type, seq: event.seq, time: event.time, data: event.data }))
   // Help thread ids are random 8-hex prefixes: stable placeholders too.
   const helpIds = rowsOf(sessionId).flatMap(row => row.type === 'room/help' ? [(row.data as { id: string }).id] : [])

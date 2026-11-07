@@ -144,6 +144,16 @@ describe('room → Context Lens contract (fixture from room\'s writers)', () => 
     expect(store.listTurns('s').turns.some(turn => turn.roomDecisionIds?.includes(data(rule)['id'] as string) === true)).toBe(false)
   })
 
+  it('a self-opened round after the coordinator\'s send sits in the round that started the task (member-self-started-rounds A④)', () => {
+    const store = loaded()
+    const third = roundOf(store, '第三轮')
+    const scopes = store.getTurn('s', third.turnSeq)!.scopes
+    expect(scopes.some(scope => scope.execution?.cause === 'self' && scope.execution.executionId === 'exec-self')).toBe(true)
+    // room's follow-up: its own key, the original delivery named.
+    const followUp = rows.find(row => row.type === 'room/dispatch' && data(row)['reportFor'] === 'execution:exec-self')
+    expect(data(followUp!)['followUpOf']).toEqual(expect.stringMatching(/^\d+:/))
+  })
+
   it('a help thread names the asker\'s task', () => {
     const help = rows.find(row => row.type === 'room/help')!
     expect(data(help)['task']).toBe(userMessageId('@bea 第三轮'))

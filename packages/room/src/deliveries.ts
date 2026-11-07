@@ -48,7 +48,9 @@ export function replayDeliveries(events: readonly SessionEvent[]): RoomDelivery[
     } else if (event.type === 'room/dispatch' && event.data.targetIds !== undefined) {
       const data = event.data
       const targetIds = data.targetIds ?? []
-      const sourceSeq = data.reportFor !== undefined && /^\d+:/.test(data.reportFor) ? Number(data.reportFor.split(':', 1)[0]) : data.releases?.[0]
+      // A report's source: the delivery it reports on (a follow-up's original delivery), or a release's first hold.
+      const sourceRun = data.followUpOf ?? data.reportFor
+      const sourceSeq = sourceRun !== undefined && /^\d+:/.test(sourceRun) ? Number(sourceRun.split(':', 1)[0]) : data.releases?.[0]
       const task = data.task
         ?? (sourceSeq === undefined ? undefined : taskBySeq.get(sourceSeq))
         ?? (data.origin === 'human' && lastHuman === undefined ? data.id : undefined)
@@ -67,6 +69,7 @@ export function replayDeliveries(events: readonly SessionEvent[]): RoomDelivery[
           ...task === undefined ? {} : { task },
           ...data.parent === undefined ? {} : { parent: data.parent },
           ...data.reportFor === undefined ? {} : { reportFor: data.reportFor },
+          ...data.followUpOf === undefined ? {} : { followUpOf: data.followUpOf },
           ...data.releases === undefined ? {} : { releases: data.releases },
           ...data.via === undefined ? {} : { via: data.via },
           ...data.held === true ? { heldAt: event.time } : {},

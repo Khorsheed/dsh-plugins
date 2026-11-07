@@ -12,7 +12,7 @@
  * through the official user node.
  * @module @khorsheed/dsh-room/client/nodes
  */
-import type { RoomAsk, RoomDecisionEvent, RoomHelp, RoomQuestionAnswer, RoomQuestionItem } from '../types.ts'
+import type { RoomAsk, RoomDecisionEvent, RoomHelp, RoomQuestionAnswer, RoomQuestionItem, RoomRoundContinues } from '../types.ts'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
@@ -42,6 +42,8 @@ export interface RoomSpeechData {
   readonly runId?: string
   /** The member's closing message in its own session. */
   readonly messageId?: string
+  /** A round the member's CLI opened on its own for a background task's result (the small 「后台任务完成后继续」 line). */
+  readonly continues?: RoomRoundContinues
 }
 
 /** Chat node data of one member run row. */
@@ -57,6 +59,8 @@ export interface RoomRunData {
   readonly runId?: string
   /** `compact`: a compaction round (the card reads 「正在压缩」). */
   readonly operation?: 'compact'
+  /** A round the member's CLI opened on its own (the card reads 「正在处理后台任务的结果」). */
+  readonly continues?: RoomRoundContinues
   /** Settled run milliseconds (terminal edges only). */
   readonly elapsedMs?: number
   /** Why the run failed (failed terminal edges only). */
@@ -313,6 +317,7 @@ export const roomSpeechDefinition: ConversationNodeDefinition<RoomSpeechData> = 
       ...event.data.durationMs === undefined ? {} : { durationMs: event.data.durationMs },
       ...event.data.runId === undefined ? {} : { runId: event.data.runId },
       ...event.data.messageId === undefined ? {} : { messageId: event.data.messageId },
+      ...event.data.continues === undefined ? {} : { continues: event.data.continues },
     }
   },
   update: context => context.state,
@@ -352,6 +357,7 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
       state: event.data.state,
       ...event.data.runId === undefined ? {} : { runId: event.data.runId },
       ...event.data.operation === undefined ? {} : { operation: event.data.operation },
+      ...event.data.continues === undefined ? {} : { continues: event.data.continues },
     }
   },
   update: (context, match) => {

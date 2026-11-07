@@ -108,6 +108,11 @@ export function replyParts(data: RoomSpeechData, askLog: readonly RoomAsk[] | un
   return parts
 }
 
+/** The small line's head for a self-opened round, by how the CLI said the task ended. */
+function continuesText(status: string, t: RoomSpeechViewProps['t']): string {
+  return t(status === 'failed' || status === 'timed_out' || status === 'killed' ? `speech.continues.${status}` : 'speech.continues.completed')
+}
+
 export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDetail, openPath, answerQuestion, renderSlot, t }: RoomSpeechViewProps): ReactNode {
   const data = node.data
   const [copied, setCopied] = useState(false)
@@ -125,6 +130,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
   const child = data.childSessionId
   // What started this round (a member's 派活/告知, or reports): its line tops the card.
   const cause = speechCause(data.runId, state)
+  const continues = data.continues
   // The run's usage, as the host's 用量 chip shows it: read from the
   // member's log through the core (the CLI's round total, else the per-call
   // sum — batch 5 S6), or a pre-S6 run's stored numbers. Never stored here.
@@ -166,12 +172,28 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
         <button
           type="button"
           className={css.cause}
+          data-tone={cause.kind === 'followUpLost' ? 'warning' : undefined}
           disabled={cause.target === undefined}
           onClick={() => { if (cause.target !== undefined) revealRoomRow(cause.target) }}
         >
-          <span className={css.causeHead}>{t(`speech.cause.${cause.kind}`, { member: cause.member })}</span>
+          <span className={css.causeHead}>{cause.kind === 'followUpLost' ? '⚠ ' : ''}{t(`speech.cause.${cause.kind}`, { member: cause.member })}</span>
           {cause.text !== undefined && <span className={css.causeText}>{t('dispatch.colon')}{cause.text.replace(/\s+/g, ' ')}</span>}
           {cause.target !== undefined && <span className={css.causeChevron} aria-hidden>›</span>}
+        </button>
+      )}
+      {/* A round the member's CLI opened on its own (A④): the quiet
+          「↻ 后台任务完成后继续 · 部署 …」 line; a click scrolls to the round
+          that started the task. */}
+      {continues !== undefined && (
+        <button
+          type="button"
+          className={css.cause}
+          data-room-continues=""
+          disabled={continues.runId === undefined}
+          onClick={() => { if (continues.runId !== undefined) revealRoomRow(`[data-room-run="${continues.runId}"]`) }}
+        >
+          <span className={css.causeHead}>↻ {continuesText(continues.taskStatus, t)}</span>
+          {continues.label !== undefined && <span className={css.causeText}>· <span className={css.causeLink}>{continues.label}</span></span>}
         </button>
       )}
       <div className={css.identity}>
@@ -215,7 +237,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
         </div>
       )}
       {data.reportedTo !== undefined && (
-        <span className={css.reported}>{t('speech.reportedTo', { member: data.reportedTo })}</span>
+        <span className={css.reported}>{t(continues === undefined ? 'speech.reportedTo' : 'speech.followUpTo', { member: data.reportedTo })}</span>
       )}
       </div>
       {/* The host's message action row, outside the card: copy, the member's

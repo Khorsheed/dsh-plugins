@@ -95,6 +95,8 @@ export interface RoomDispatchLink {
   origin: string
   parent?: string
   reportFor?: string
+  /** The task the dispatch belongs to (the human message id that started it), when room recorded one. */
+  task?: string
   releases: number[]
 }
 
@@ -161,9 +163,9 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
       if (seq === undefined || at === undefined) return true
       const origin = str(d['origin']) ?? ''
       if (origin !== 'human') {
-        const parent = str(d['parent']), reportFor = str(d['reportFor'])
+        const parent = str(d['parent']), reportFor = str(d['reportFor']), task = str(d['task'])
         const releases = Array.isArray(d['releases']) ? d['releases'].filter((value): value is number => typeof value === 'number' && Number.isSafeInteger(value)) : []
-        room.dispatchLinks.set(seq, { seq, origin, ...parent === undefined ? {} : { parent }, ...reportFor === undefined ? {} : { reportFor }, releases })
+        room.dispatchLinks.set(seq, { seq, origin, ...parent === undefined ? {} : { parent }, ...reportFor === undefined ? {} : { reportFor }, ...task === undefined ? {} : { task }, releases })
         return true
       }
       const targets = Array.isArray(d['targets']) ? d['targets'].filter((t): t is string => typeof t === 'string') : []

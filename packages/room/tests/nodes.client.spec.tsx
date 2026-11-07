@@ -282,6 +282,25 @@ describe('RoomSpeechView', () => {
     return { openSession, container }
   }
 
+  it('a self-opened round reads 「↻ 后台任务完成后继续 · …」 above its reply and scrolls to the round that started the task', async () => {
+    const target = document.createElement('div')
+    target.setAttribute('data-room-run', '9:m-ada')
+    target.scrollIntoView = vi.fn()
+    document.body.appendChild(target)
+    await bench({ ...speech, runId: 'execution:exec-self', reportedTo: 'dsh', continues: { taskId: 'bash-1', taskStatus: 'completed', label: '部署 canvas-novel 到 3080', runId: '9:m-ada' } })
+    expect(screen.getByText('↻ 后台任务完成后继续')).toBeDefined()
+    expect(screen.getByText('部署 canvas-novel 到 3080')).toBeDefined()
+    expect(screen.getByText('→ 已作为后续回报交给 dsh')).toBeDefined()
+    fireEvent.click(screen.getByText('↻ 后台任务完成后继续'))
+    expect(target.scrollIntoView).toHaveBeenCalled()
+    target.remove()
+    cleanup()
+    // A failed task, no description read, no starting round on record: the line alone, not clickable.
+    await bench({ ...speech, runId: 'execution:exec-2', continues: { taskId: 'bash-2', taskStatus: 'timed_out' } })
+    expect((screen.getByText('↻ 后台任务超时后继续').closest('button') as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.queryByText(/已作为后续回报/)).toBeNull()
+  })
+
   it('shows the run\'s billed tokens once its execution record carries them', async () => {
     await bench({ ...speech, runId: '7:m-ada' }, { ...STATE, executions: [{ id: '7:m-ada', memberId: 'm-ada', member: 'ada', state: 'done', startedAt: 1, tokens: 4_200 }] })
     expect(screen.getByText('用量 4.2K tok')).toBeDefined()
@@ -465,6 +484,11 @@ describe('RoomRunView', () => {
     expect(openSession).toHaveBeenCalledWith('child-1')
   })
 
+  it('a round the CLI opened on its own reads 「正在处理后台任务的结果」', async () => {
+    await bench({ seq: 3, time: 1003, member: 'ada', startedAt: 1_000, state: 'running', runId: 'execution:exec-self', continues: { taskId: 'bash-1', taskStatus: 'completed' } })
+    expect(screen.getByText('ada 正在处理后台任务的结果')).toBeDefined()
+  })
+
   it('the stop button cancels without triggering the row jump', async () => {
     vi.useFakeTimers()
     const { openSession, cancelMember } = await bench({ seq: 3, time: 1003, member: 'ada', startedAt: 1_000, state: 'running' })
@@ -561,6 +585,23 @@ describe('member-to-member messages', () => {
     expect(speechCause('13:m-ada', state)).toEqual({ kind: 'report', member: 'bill', target: '[data-room-run="9:m-bill"]' })
     expect(speechCause('14:m-ada', state)).toBeUndefined()
     expect(speechCause(undefined, state)).toBeUndefined()
+  })
+
+  it('names a follow-up report: the self-opened round\'s member off its run, a lost task\'s off its key (amber kind)', () => {
+    const state: RoomState = {
+      ...ROSTER,
+      executions: [{ id: 'execution:exec-self', memberId: 'm-bill', member: 'bill', state: 'done', startedAt: 1 }],
+      deliveries: [
+        delivery({ id: '9:m-bill', dispatchSeq: 9, memberId: 'm-bill', origin: 'member', from: 'm-ada', kind: 'task', text: '构建' }),
+        delivery({ id: '20:m-ada', dispatchSeq: 20, memberId: 'm-ada', origin: 'report', reportFor: 'execution:exec-self', followUpOf: '9:m-bill' }),
+        delivery({ id: '21:m-ada', dispatchSeq: 21, memberId: 'm-ada', origin: 'report', reportFor: 'background-task:m-bill:bash-1', followUpOf: '9:m-bill' }),
+        // Not on record any more: the original delivery still names the member.
+        delivery({ id: '22:m-ada', dispatchSeq: 22, memberId: 'm-ada', origin: 'report', reportFor: 'execution:gone', followUpOf: '9:m-bill' }),
+      ],
+    }
+    expect(speechCause('20:m-ada', state)).toEqual({ kind: 'followUp', member: 'bill', target: '[data-room-run="execution:exec-self"]' })
+    expect(speechCause('21:m-ada', state)).toEqual({ kind: 'followUpLost', member: 'bill', target: '[data-room-run="9:m-bill"]' })
+    expect(speechCause('22:m-ada', state)).toEqual({ kind: 'followUp', member: 'bill', target: '[data-room-run="execution:gone"]' })
   })
 })
 

@@ -265,6 +265,77 @@ export function runExecutionId(roomEvents: readonly SessionEvent[], runId: strin
   return undefined
 }
 
+/** A follow-up report's own dedupe key (`room/dispatch.reportFor`), see {@link DispatchEngine.reportFollowUp}. */
+export interface FollowUpReport {
+  readonly reportFor: string
+}
+
+/** The `reportFor` prefix of a lost background task's follow-up (`background-task:<memberId>:<taskId>`). */
+export const BACKGROUND_TASK_REPORT = 'background-task:'
+
+/** The follow-up key of a lost background task (one per member and task). */
+export function backgroundTaskReportKey(memberIdValue: string, taskId: string): string {
+  return `${BACKGROUND_TASK_REPORT}${memberIdValue}:${taskId}`
+}
+
+/** How deep a chain of self-opened rounds is followed back to its delivery. */
+const FOLLOW_UP_DEPTH = 8
+
+/**
+ * The room run that started a task, by the execution that started it (the
+ * self cause's `startedBy`): the run whose running edge names it.
+ * @param roomEvents - the room log.
+ * @param executionId - the starting execution.
+ * @returns the run id, or undefined when no room run is that execution.
+ */
+export function runOfExecution(roomEvents: readonly SessionEvent[], executionId: string | undefined): string | undefined {
+  if (executionId === undefined) return undefined
+  for (const event of roomEvents) {
+    if (event.type === 'room/run-state' && event.data.executionId === executionId && event.data.runId !== undefined) return event.data.runId
+  }
+  return undefined
+}
+
+/**
+ * The room delivery a follow-up reports on: the run itself when it is a
+ * delivery; a round the CLI opened on its own (`execution:<id>`) follows
+ * the task it continued back to the run that started it — a chain of such
+ * rounds (a self round that started another background task) leads to the
+ * same delivery. Any other run (the members page, the host `subagent`
+ * tool) is not room work: undefined.
+ * @param roomEvents - the room log.
+ * @param runId - the run that started the task.
+ * @returns the delivery id (`<seq>:<memberId>`), or undefined.
+ */
+export function followUpDelivery(roomEvents: readonly SessionEvent[], runId: string | undefined): string | undefined {
+  const deliveries = new Set(replayDeliveries(roomEvents).map(row => row.id))
+  let current = runId
+  for (let depth = 0; current !== undefined && depth < FOLLOW_UP_DEPTH; depth++) {
+    if (deliveries.has(current)) return current
+    if (!current.startsWith('execution:')) return undefined
+    const at = current
+    const speech = roomEvents.find(event => event.type === 'room/speech' && event.data.runId === at && event.data.continues !== undefined)
+    const edge = roomEvents.find(event => event.type === 'room/run-state' && event.data.runId === at && event.data.continues !== undefined)
+    current = speech?.type === 'room/speech' ? speech.data.continues?.runId : edge?.type === 'room/run-state' ? edge.data.continues?.runId : undefined
+  }
+  return undefined
+}
+
+/**
+ * Who a follow-up on this delivery would go to: the recipient its own
+ * report goes to, only when that report exists at all (the gate's rule:
+ * a coordinator/member dispatch with `replyTo`).
+ * @param roomEvents - the room log.
+ * @param deliveryId - the original delivery.
+ * @returns the recipient's name, or undefined when nothing is reported.
+ */
+export function followUpRecipient(roomEvents: readonly SessionEvent[], deliveryId: string | undefined): string | undefined {
+  if (deliveryId === undefined) return undefined
+  const row = replayDeliveries(roomEvents).find(entry => entry.id === deliveryId)
+  if (row === undefined || (row.origin !== 'coordinator' && row.origin !== 'member') || row.replyTo === undefined) return undefined
+  return reportRecipient(roomEvents, row.dispatchSeq)?.name
+}
+
 /**
  * The turns one execution wrote, from its `local-agent/execution` records in
  * the member's session: the end record's turns once it ended; while it is
@@ -364,8 +435,19 @@ export function executionFacts(events: readonly SessionEvent[], roomId: string, 
         const threadTask = task === undefined && help?.type === 'room/help' && help.data.task !== undefined ? { task: { sessionId, id: help.data.task } } : {}
         return { ...threadTask, ...withTask({ kind: 'help', sessionId, helpId, fromRoom: help?.type === 'room/help' ? help.data.target.sessionId : '' }) }
       }
+      // A follow-up (A④): the self-opened round's run is `execution:<id>`,
+      // so its running edge names the execution like any delivery's.
       const executionId = runExecutionId(events, reportFor)
       if (executionId !== undefined) return withTask({ kind: 'execution', executionId })
+      if (reportFor.startsWith('execution:')) return withTask({ kind: 'execution', executionId: reportFor.slice('execution:'.length) })
+      // A lost task's follow-up (C②): no round ran; it follows up on the
+      // original delivery's execution, else on its member.
+      if (reportFor.startsWith(BACKGROUND_TASK_REPORT)) {
+        const original = data.followUpOf === undefined ? undefined : runExecutionId(events, data.followUpOf)
+        if (original !== undefined) return withTask({ kind: 'execution', executionId: original })
+        const memberPart = reportFor.slice(BACKGROUND_TASK_REPORT.length)
+        return withTask({ kind: 'member', sessionId, fromMemberId: memberPart.slice(0, Math.max(0, memberPart.lastIndexOf(':'))), dispatchSeq })
+      }
       const separator = reportFor.indexOf(':')
       return withTask({ kind: 'member', sessionId, fromMemberId: separator < 0 ? '' : reportFor.slice(separator + 1), dispatchSeq })
     }
@@ -1192,23 +1274,45 @@ export class DispatchEngine {
    * rule) would hand over its batch without the one still being judged —
    * which then got held behind a round that had already answered.
    */
-  async reportOutcome(room: Session, dispatchSeq: number, deliveryId: string, fromId: string, outcome: string, text: string): Promise<void> {
+  async reportOutcome(room: Session, dispatchSeq: number, deliveryId: string, fromId: string, outcome: string, text: string, followUp?: FollowUpReport): Promise<void> {
     const source = room.snapshotEvents().find(event => event.seq === dispatchSeq)
     const key = `${room.id} ${source?.type === 'room/dispatch' ? source.data.replyTo ?? '' : ''}`
     const next = (this.gateQueues.get(key) ?? Promise.resolve())
       .catch(() => {})
-      .then(() => this.gateReport(room, dispatchSeq, deliveryId, fromId, outcome, text))
+      .then(() => this.gateReport(room, dispatchSeq, deliveryId, fromId, outcome, text, followUp))
     this.gateQueues.set(key, next)
     void next.then(() => { if (this.gateQueues.get(key) === next) this.gateQueues.delete(key) }, () => { if (this.gateQueues.get(key) === next) this.gateQueues.delete(key) })
     return next
   }
 
-  private async gateReport(room: Session, dispatchSeq: number, deliveryId: string, fromId: string, outcome: string, text: string): Promise<void> {
+  /**
+   * A follow-up report on a delivery whose report was handed over long ago
+   * (member-self-started-rounds A④/C②): the same gate, recipient, task and
+   * plan cadence as the delivery's own report, deduplicated on the
+   * follow-up's own key instead of the delivery id. A delivery that would
+   * not have reported (human-dispatched, a notify, no `replyTo`) reports no
+   * follow-up either.
+   * @param room - the room.
+   * @param deliveryId - the original delivery (`<seq>:<memberId>`).
+   * @param followUp - the follow-up's own key (`execution:<id>` / `background-task:<memberId>:<taskId>`).
+   * @param outcome - `done` | `failed` | … of the follow-up round, or `uncertain` for a lost task.
+   * @param text - what is reported.
+   */
+  async reportFollowUp(room: Session, deliveryId: string, followUp: FollowUpReport, outcome: string, text: string): Promise<void> {
+    const events = room.snapshotEvents()
+    const row = (replay(events).deliveries ?? []).find(entry => entry.id === deliveryId)
+    if (row === undefined) return
+    await this.reportOutcome(room, row.dispatchSeq, deliveryId, row.memberId, outcome, text, followUp)
+  }
+
+  private async gateReport(room: Session, dispatchSeq: number, deliveryId: string, fromId: string, outcome: string, text: string, followUp?: FollowUpReport): Promise<void> {
     const events = room.snapshotEvents()
     const source = events.find(event => event.seq === dispatchSeq)
     if (source?.type !== 'room/dispatch' || (source.data.origin !== 'coordinator' && source.data.origin !== 'member') || source.data.replyTo === undefined) return
-    if (events.some(event => event.type === 'room/dispatch' && event.data.reportFor === deliveryId)) return
-    if (events.some(event => event.type === 'room/relay' && event.data.intent?.reportFor === deliveryId)) return
+    // The dedupe key: the delivery itself, or a follow-up's own key.
+    const key = followUp?.reportFor ?? deliveryId
+    if (events.some(event => event.type === 'room/dispatch' && event.data.reportFor === key)) return
+    if (events.some(event => event.type === 'room/relay' && event.data.intent?.reportFor === key)) return
     const state = replay(events)
     if (closedGoal(state, source.data.plan?.goalId)) return
     const recipient = source.data.plan === undefined ? state.members.find(member => memberId(events, member) === source.data.replyTo) : coordinatorMember(state, events)
@@ -1220,7 +1324,8 @@ export class DispatchEngine {
     // the text is the member's own conclusion.
     const reportText = text.trim() === '' ? `（${outcome === 'done' ? '没有文字输出' : outcome}）` : text.slice(0, 32000)
     const sourceTask = (state.deliveries ?? []).find(row => row.id === deliveryId)?.task
-    const intent: RoomHeldDispatch = { origin: 'report', hop: (source.data.hop ?? 1) + 1, reportFor: deliveryId,
+    const intent: RoomHeldDispatch = { origin: 'report', hop: (source.data.hop ?? 1) + 1, reportFor: key,
+      ...followUp === undefined ? {} : { followUpOf: deliveryId },
       ...sourceTask === undefined ? {} : { task: sourceTask },
       ...source.data.plan === undefined ? {} : { plan: { goalId: source.data.plan.goalId } } }
     // The gate decides WHEN the recipient gets it; plan work keeps its own cadence.
@@ -1240,11 +1345,11 @@ export class DispatchEngine {
         ], Date.now()),
       })
     // The judgement awaited: a concurrent path may have reported meanwhile.
-    if (room.snapshotEvents().some(event => event.type === 'room/dispatch' && event.data.reportFor === deliveryId)) return
+    if (room.snapshotEvents().some(event => event.type === 'room/dispatch' && event.data.reportFor === key)) return
     // Every timing decision the room weighed is recorded (the timeline row,
     // Context Lens); the each-setting and plan cadence decide nothing.
     if (verdict.reason !== 'setting' && verdict.reason !== 'plan') {
-      const gatedExecution = runExecutionId(events, deliveryId)
+      const gatedExecution = runExecutionId(events, key)
       room.append('room/decision', decisionRecord('report-timing', {
         outcome: verdict.hold ? 'later' : 'now',
         ...verdict.reason === 'model' ? {} : { rule: verdict.reason },
@@ -1253,7 +1358,7 @@ export class DispatchEngine {
         about: { from: senderName ?? fromId, to: recipient.name },
         // What it decided for (batch 5 S9): the gated run and its task.
         ...sourceTask === undefined ? {} : { task: sourceTask },
-        runId: deliveryId,
+        runId: key,
         ...gatedExecution === undefined ? {} : { executionId: gatedExecution },
       }))
     }
@@ -1315,6 +1420,7 @@ export class DispatchEngine {
     const dispatch = room.append('room/dispatch', {
       id: randomUUID(), origin: 'report', targets: [recipient.name], targetIds: [recipientId], text, held: true,
       hop: intent.hop, ...intent.task === undefined ? {} : { task: intent.task }, ...intent.reportFor === undefined ? {} : { reportFor: intent.reportFor },
+      ...intent.followUpOf === undefined ? {} : { followUpOf: intent.followUpOf },
       ...intent.plan === undefined ? {} : { plan: intent.plan },
     })
     room.append('room/report-gate', { dispatchSeq: dispatch.seq, memberId: recipientId, member: recipient.name, verdict: 'hold', reason: verdict.reason,

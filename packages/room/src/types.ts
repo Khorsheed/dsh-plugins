@@ -236,8 +236,36 @@ export interface RoomDispatchEvent {
    * the room.
    */
   readonly continues?: readonly string[]
+  /**
+   * A follow-up report (member-self-started-rounds A④/C②): the original
+   * delivery (`<seq>:<memberId>`) whose work this report follows up on — a
+   * background task that delivery's round started finished in a round the
+   * member's CLI opened on its own (`reportFor` = `execution:<that
+   * round's executionId>`), or lost contact at a host restart (`reportFor`
+   * = `background-task:<memberId>:<taskId>`). Recipient, task and plan
+   * cadence come from this delivery; its own report was handed over long
+   * before and is untouched.
+   */
+  readonly followUpOf?: string
   readonly targets: readonly string[]
   readonly text: string
+}
+
+/**
+ * What a member's round continues on (`room/speech.continues`, and the
+ * running edge's): a background task of the member's CLI ended while the
+ * member was idle and the CLI opened this round on its own for the result
+ * (member-self-started-rounds A④).
+ */
+export interface RoomRoundContinues {
+  /** The CLI's own task id. */
+  readonly taskId: string
+  /** The task's ending as the CLI stated it: `completed` | `failed` | `timed_out` | `killed`. */
+  readonly taskStatus: string
+  /** The CLI's description of the task, when it could be read. */
+  readonly label?: string
+  /** The room run whose round started the task (its click target), when that chain is on record. */
+  readonly runId?: string
 }
 
 /**
@@ -261,6 +289,8 @@ export interface RoomSpeechEvent {
   readonly runId?: string
   /** The member's closing assistant message in its own session (`childSessionId`): what per-message tools address. */
   readonly messageId?: string
+  /** A round the member's CLI opened on its own for a background task's result: what it continues on. */
+  readonly continues?: RoomRoundContinues
 }
 
 /** Observed execution metadata; separate from lifecycle edges to avoid restarting chat nodes. */
@@ -411,6 +441,11 @@ export interface RoomRunStateEvent {
    * recorded turns, never from `childFromSeq`.
    */
   readonly executionId?: string
+  /**
+   * A round the member's CLI opened on its own for a background task's
+   * result (running edge): the card reads 「正在处理后台任务的结果」.
+   */
+  readonly continues?: RoomRoundContinues
   /** Observed round metadata, never a requested-model guess or session total. */
   readonly model?: string
   readonly effort?: string
@@ -469,6 +504,8 @@ export interface RoomHeldDispatch {
   readonly inReplyTo?: number
   readonly replyTo?: string
   readonly reportFor?: string
+  /** A follow-up report: the original delivery it follows up on (see RoomDispatchEvent.followUpOf). */
+  readonly followUpOf?: string
   readonly plan?: { readonly goalId: string }
   readonly note?: string
   readonly task?: string
@@ -1745,8 +1782,10 @@ export interface RoomDelivery {
   readonly task?: string
   /** The sender's own delivery this was sent from (the task tree's parent). */
   readonly parent?: string
-  /** A report: the delivery it reports on (`<seq>:<memberId>`, the reporter's run id). */
+  /** A report: the delivery it reports on (`<seq>:<memberId>`, the reporter's run id), or a follow-up's own key (see RoomDispatchEvent.followUpOf). */
   readonly reportFor?: string
+  /** A follow-up report: the original delivery it follows up on. */
+  readonly followUpOf?: string
   /** A release round: the held report dispatch seqs it hands over. */
   readonly releases?: readonly number[]
   /** `auto-continue`: the room continued an interrupted round after a restart (see RoomDispatchEvent.via). */
