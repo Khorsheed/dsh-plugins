@@ -608,6 +608,8 @@ export interface AgentScopeOverview {
   error?: string
   /** A room round's member run: what its execution recorded (cause, not-recorded declarations). */
   execution?: ExecutionFacts
+  /** Every execution when one member ran more than once in the same collaboration round. */
+  executions?: ExecutionFacts[]
   config: RequestConfig
   startedAt: number
   endedAt?: number

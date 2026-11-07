@@ -33,3 +33,7 @@ Status: implemented
 ## Testing
 
 `tests/room-rounds.spec.ts` 覆盖：隐藏容器、轮次与主会话 turn 统一编号、交接、按时间段与按子会话 turn 切分运行、trend 行，以及跳过主会话 turn 内的派发。
+
+## Related
+
+- [Context Lens 将房间轮次归属到完整协作树](../bug-fix/2026-11-07-context-lens-room-collaboration-tree.zh.md) 将本文的直接运行成员范围扩展到记录中的派生运行，同时保留人工根轮编号模型。

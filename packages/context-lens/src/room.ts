@@ -5,11 +5,13 @@
  * plugin's dispatches. This module reads the room plugin's session events
  * structurally (no dependency on the package; absent events change nothing)
  * and keeps what the panel needs to show each human dispatch made outside a
- * main turn as a round of its own, with the member runs it started:
+ * main turn as a round of its own, with the whole collaboration tree descended
+ * from it. Non-human dispatches contribute parent/report links, never rounds:
  *
  * - `room/member-added`: member id → display name; `room/member-updated`
  *   with `rename`: that member's new name (it addresses the member by name).
- * - `room/dispatch` with `origin: 'human'`: the message, its time, its targets.
+ * - `room/dispatch` with `origin: 'human'`: the message, its time, its targets;
+ *   other origins retain `parent` / `reportFor` / `releases` as tree links.
  * - `room/run-state`: one member run per `runId` — `<dispatchSeq>:<memberId>`
  *   for a journaled dispatch's delivery, a bare UUID for one that is not (a
  *   confirmed relay's delivery), absent on legacy journals (keyed by member
@@ -64,10 +66,20 @@ export interface RoomDispatch {
   messageId?: string
 }
 
+/** A non-human dispatch's place in the collaboration tree; it never opens a numbered round. */
+export interface RoomDispatchLink {
+  seq: number
+  origin: string
+  parent?: string
+  reportFor?: string
+  releases: number[]
+}
+
 /** What one session's room events say, accumulated (log backfill and live alike). */
 export interface RoomState {
   members: Map<string, string>
   dispatches: RoomDispatch[]
+  dispatchLinks: Map<number, RoomDispatchLink>
   runs: Map<string, RoomRun>
   handoffs: { seq: number; at: number; memberId: string }[]
   /** The decision-model calls the room recorded (`room/decision` with a call). */
@@ -79,7 +91,7 @@ export interface RoomState {
 }
 
 export function emptyRoom(): RoomState {
-  return { members: new Map(), dispatches: [], runs: new Map(), handoffs: [], decisions: [], questions: new Map(), seen: new Set() }
+  return { members: new Map(), dispatches: [], dispatchLinks: new Map(), runs: new Map(), handoffs: [], decisions: [], questions: new Map(), seen: new Set() }
 }
 
 /**
@@ -123,7 +135,14 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
       return true
     }
     case 'room/dispatch': {
-      if (d['origin'] !== 'human' || seq === undefined || at === undefined) return true
+      if (seq === undefined || at === undefined) return true
+      const origin = str(d['origin']) ?? ''
+      if (origin !== 'human') {
+        const parent = str(d['parent']), reportFor = str(d['reportFor'])
+        const releases = Array.isArray(d['releases']) ? d['releases'].filter((value): value is number => typeof value === 'number' && Number.isSafeInteger(value)) : []
+        room.dispatchLinks.set(seq, { seq, origin, ...parent === undefined ? {} : { parent }, ...reportFor === undefined ? {} : { reportFor }, releases })
+        return true
+      }
       const targets = Array.isArray(d['targets']) ? d['targets'].filter((t): t is string => typeof t === 'string') : []
       const messageId = str(d['messageId'])
       room.dispatches.push({ seq, at, text: str(d['text']) ?? '', targets, ...messageId === undefined ? {} : { messageId } })
@@ -224,6 +243,38 @@ function memberIdByName(room: RoomState, name: string): string | undefined {
 export function runsOf(room: RoomState, dispatchSeq: number): RoomRun[] {
   return [...room.runs.values()].filter(run => run.dispatchSeq === dispatchSeq)
     .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
+}
+
+/** Every run descended from one human dispatch through recorded parent/report links. */
+export function collaborationRuns(room: RoomState, dispatchSeq: number): RoomRun[] {
+  const out = runsOf(room, dispatchSeq)
+  const seenRuns = new Set(out.map(run => run.runId))
+  const seenDispatches = new Set([dispatchSeq])
+  for (let index = 0; index < out.length; index += 1) {
+    const runId = out[index]!.runId
+    const children = [...room.dispatchLinks.values()].filter(link => link.parent === runId || link.reportFor === runId
+      || link.releases.some(seq => room.dispatchLinks.get(seq)?.reportFor === runId))
+      .sort((a, b) => a.seq - b.seq)
+    for (const link of children) {
+      if (seenDispatches.has(link.seq)) continue
+      seenDispatches.add(link.seq)
+      for (const run of runsOf(room, link.seq)) {
+        if (seenRuns.has(run.runId)) continue
+        seenRuns.add(run.runId)
+        out.push(run)
+      }
+    }
+  }
+  return out.sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0) || (a.dispatchSeq ?? Number.MAX_SAFE_INTEGER) - (b.dispatchSeq ?? Number.MAX_SAFE_INTEGER) || a.runId.localeCompare(b.runId))
+}
+
+/** The human root of every run that belongs to a collaboration tree; first recorded root wins malformed duplicates. */
+export function collaborationRoots(room: RoomState): Map<string, number> {
+  const roots = new Map<string, number>()
+  for (const dispatch of room.dispatches) {
+    for (const run of collaborationRuns(room, dispatch.seq)) if (!roots.has(run.runId)) roots.set(run.runId, dispatch.seq)
+  }
+  return roots
 }
 
 /** How far back a human room post's own user/message may sit before its room/dispatch. */
