@@ -24,7 +24,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import type { LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome, MemberToolsNotice, RoomMemberMessageGate } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentBackgroundTask, LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome, MemberToolsNotice, RoomMemberMessageGate } from '@khorsheed/dsh-local-agent/types'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context (create/resume
 // are consumed through the registry, not the agent-loop package).
@@ -55,7 +55,8 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, cliChildId, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, RESTART_UNKNOWN_TEXT, roomSource, runChildSessionId, runChildTurn, runExecutionId, followUpDelivery, followUpRecipient, runOfExecution } from './dispatch.ts'
+import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, cliChildId, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, RESTART_UNKNOWN_TEXT, roomSource, runChildSessionId, runChildTurn, runExecutionId, followUpDelivery, followUpRecipient, runOfExecution, backgroundTaskReportKey } from './dispatch.ts'
+import { LOST_TASK_LOOKBACK_MS, lostReportText, lostToRecord, recordLostTask } from './background-lost.ts'
 import { CoreLedgers, reconcileCore, type CoreOutcome } from './core-ledger.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
@@ -551,6 +552,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       await this.engine.recover(hit.session)
       this.expireApprovals(hit.session)
       this.expireQuestions(hit.session)
+      this.scanLostOnce(hit.session)
       if (options.autoContinue !== false) await this.autoContinue(hit.session)
       return this.load(sessionId)
     })()
@@ -562,9 +564,13 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     }
     // The auto-continue pass runs per caller after the shared resume, so a
     // settings write that opts out (see setSettings) is not carried into it.
-    if (options.autoContinue === false) return pending
+    if (options.autoContinue === false) return pending.then((loaded) => {
+      if (loaded.ok) this.scanLostOnce(loaded.session)
+      return loaded
+    })
     return pending.then(async (loaded) => {
       if (!loaded.ok) return loaded
+      this.scanLostOnce(loaded.session)
       await this.autoContinue(loaded.session)
       return this.load(sessionId)
     })
@@ -630,6 +636,64 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     }
   }
 
+  /** Rooms whose lost background tasks this process has looked for (once per room, M6). */
+  private readonly lostScans = new Map<string, Promise<void>>()
+
+  /** Look for the room's lost background tasks once per host process, on its first live access. */
+  private scanLostOnce(session: Session): void {
+    void this.recordLostBackgroundTasks(session).catch((error: unknown) => { this.ctx.logger.warn(`room: recording lost background tasks failed: ${String(error)}`) })
+  }
+
+  /**
+   * Record the background tasks this host restart lost for the room's CLI
+   * members (M6, design C②): one `room/background-task` fact per task (the
+   * timeline's amber line), and a 「失去联系」 follow-up through the report
+   * gate when the delivery that started the task would report. Read-only on
+   * the member side (the harness reads the CLI's own task state); runs once
+   * per room per host process and dedupes on the room's own log, so a
+   * second process or pass writes nothing twice.
+   * @param room - the live room.
+   * @param options - `force`: look again even if this process looked already
+   *   (the startup pass: a room opened before the harnesses registered read nothing).
+   */
+  recordLostBackgroundTasks(room: Session, options: { readonly force?: boolean } = {}): Promise<void> {
+    const key = String(room.id)
+    const known = this.lostScans.get(key)
+    if (known !== undefined && options.force !== true) return known
+    const scan = (async () => {
+      const read = probeLocalAgent(this.ctx)?.memberBackgroundTasks
+      if (read === undefined) return
+      const members = replay(room.snapshotEvents()).members.filter(member => member.kind === 'cli' && member.childSessionId !== undefined)
+      const reads: { readonly member: RoomMember; readonly tasks: readonly LocalAgentBackgroundTask[] }[] = []
+      for (const member of members) {
+        try {
+          const tasks = (await read.call(probeLocalAgent(this.ctx), String(member.childSessionId)))?.tasks ?? []
+          reads.push({ member, tasks })
+        } catch { /* an unreadable member is looked at again next host process */ }
+      }
+      // From here on synchronous: the dedupe read and the appends see one log.
+      const since = this.engine.bootedAt - LOST_TASK_LOOKBACK_MS
+      const reports: { readonly deliveryId: string; readonly key: string; readonly text: string }[] = []
+      for (const { member, tasks } of reads) {
+        const events = room.snapshotEvents()
+        const id = memberId(events, member)
+        for (const task of lostToRecord(events, id, tasks, since)) {
+          const startedByRunId = runOfExecution(events, task.startedBy)
+          recordLostTask(room, member, id, task, startedByRunId)
+          const deliveryId = followUpDelivery(room.snapshotEvents(), startedByRunId)
+          if (deliveryId !== undefined && followUpRecipient(room.snapshotEvents(), deliveryId) !== undefined) {
+            reports.push({ deliveryId, key: backgroundTaskReportKey(id, task.id), text: lostReportText(member.name, task.label) })
+          }
+        }
+      }
+      if (reads.length === 0) return
+      await this.ctx.sessions.flush(room)
+      for (const report of reports) await this.engine.reportFollowUp(room, report.deliveryId, { reportFor: report.key }, 'uncertain', report.text)
+    })()
+    this.lostScans.set(key, scan)
+    return scan
+  }
+
   /**
    * The startup load (M10): every parent session the local-agent core names
    * as having a member a restart interrupted, that is a room with rounds the
@@ -648,10 +712,24 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       this.ctx.logger.warn(`room: reading interrupted members failed: ${String(error)}`)
       return []
     }
-    return await loadEach(parents, async (id) => {
+    // M6: rooms with a member whose background task this restart lost (a
+    // read-only scan of the CLIs' own task state), loaded to record it.
+    let lost: ReadonlySet<string> = new Set()
+    try {
+      lost = new Set(await probeLocalAgent(this.ctx)?.lostBackgroundTaskParents?.(this.engine.bootedAt - LOST_TASK_LOOKBACK_MS) ?? [])
+    } catch (error: unknown) {
+      this.ctx.logger.warn(`room: reading lost background tasks failed: ${String(error)}`)
+    }
+    return await loadEach([...parents, ...lost], async (id) => {
       const sessionId = SessionId(id)
       const cold = await this.loadCold(sessionId)
-      if (!cold.ok || autoContinueRounds(this.engine.view(sessionId, cold.state)).length === 0) return false
+      if (!cold.ok) return false
+      if (lost.has(id)) {
+        const loaded = await this.ensureLive(sessionId)
+        if (loaded.ok) await this.recordLostBackgroundTasks(loaded.session, { force: true })
+        return loaded.ok
+      }
+      if (autoContinueRounds(this.engine.view(sessionId, cold.state)).length === 0) return false
       return (await this.ensureLive(sessionId)).ok
     }, {
       concurrency: STARTUP_ROOM_LOAD_CONCURRENCY,

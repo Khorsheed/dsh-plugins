@@ -33,6 +33,6 @@ Step M0 registers `room/background-task` and writes nothing. Step M6 is its firs
 - the type is in `ROOM_EVENT_TYPES` and in the host catalog after module load;
 - a room log carrying the fact (with and without `startedByRunId`) round-trips through the real jsonl persistence reader, and `replay` gives the same room state as the log without it;
 - the same log is refused (`SessionFormatUnsupportedError`) once the registration is removed, while the log without the fact still loads. This is the control;
-- no file under `packages/room/src` other than `journal.ts` and `types.ts` names the type, so nothing writes it yet. M6 updates this assertion.
+- at M0 no file under `packages/room/src` other than `journal.ts` and `types.ts` named the type. Since M6 the assertion is: the only writer is `background-lost.ts` and the only reader is `client/nodes.ts` (see [the lost-at-restart note](2026-11-07-room-background-task-lost-at-restart.md)).
 
 `packages/room/tests/persistence.host.spec.ts` also appends the event in its round-trip, because that test requires every `ROOM_EVENT_TYPES` entry to come back from a reload.

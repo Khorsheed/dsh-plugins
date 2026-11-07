@@ -844,6 +844,90 @@ describe('DispatchEngine (real composition)', () => {
     expect(rows.some(event => event.type === 'room/dispatch')).toBe(false)
   })
 
+  /** bill's CLI task state as its harness reads it after a restart (M6). */
+  function lostTasks(bench: Bench, tasks: (startedBy: string) => unknown[], started: { executionId: string }): ReturnType<typeof vi.fn> {
+    const read = vi.fn(async (child: string) => ({ supported: true, processAlive: false, tasks: child === 'child-bill' ? tasks(started.executionId) : [] }))
+    bench.localAgentStub['memberBackgroundTasks'] = read
+    return read
+  }
+
+  it('a background task a host restart lost: one timeline fact per task, and a 「失去联系」 follow-up to the member that dispatched it', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async (_parent: string, provider: string) => settledRun(provider === 'kimi' ? 'child-ada' : 'child-bill', 'ready'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada', firstTask: '准备' })
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', firstTask: '准备' })
+    await bench.service.engine.idle()
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) => settledRun(child, child === 'child-bill' ? '已在后台部署' : '收到'))
+    const receipt = await bench.service.receiveMemberMessage({ from: 'child-ada', to: 'bill', content: '部署到 3080', parentSessionId: bench.sessionId, provenance: { provider: 'kimi' } })
+    await bench.service.engine.idle()
+    const id = /#(m\d+)/.exec(receipt)![1]
+    const started = billRun(bench)
+    const now = Date.now()
+    lostTasks(bench, startedBy => [
+      { id: 'bash-deploy', label: '部署 canvas-novel 到 3080', kind: 'shell', startedAt: now, state: 'lost', lostBecause: 'host-restart', startedBy },
+      // Not this restart's news: a reclaim, a task from long ago, one still running.
+      { id: 'bash-reclaimed', label: 'x', kind: 'shell', startedAt: now, state: 'lost', lostBecause: 'process-reclaimed', startedBy },
+      { id: 'bash-ancient', label: 'x', kind: 'shell', startedAt: bench.service.engine.bootedAt - 25 * 3_600_000, state: 'lost', lostBecause: 'host-restart', startedBy },
+      { id: 'bash-live', label: 'x', kind: 'shell', startedAt: now, state: 'running', startedBy },
+    ], started)
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const resumesBefore = bench.facade.resume.mock.calls.length
+    await bench.service.recordLostBackgroundTasks(room, { force: true })
+    await bench.service.engine.idle()
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    const billId = state.value.members.find(member => member.name === 'bill')!.id!
+    const facts = room.snapshotEvents().filter(event => event.type === 'room/background-task').map(event => event.data)
+    expect(facts).toEqual([{ member: 'bill', memberId: billId, taskId: 'bash-deploy', label: '部署 canvas-novel 到 3080', state: 'lost', because: 'host-restart', startedByRunId: started.runId }])
+    const followUp = room.snapshotEvents().find(event => event.type === 'room/dispatch' && event.data.reportFor === `background-task:${billId}:bash-deploy`)
+    expect(followUp?.data).toMatchObject({ origin: 'report', followUpOf: started.runId, targets: ['ada'] })
+    expect(bench.facade.resume.mock.calls.length).toBe(resumesBefore + 1)
+    const back = bench.facade.resume.mock.calls.at(-1) as [string, string, string, ContentBlock[]]
+    expect(back[2]).toBe('child-ada')
+    expect(textOf(back[3])).toContain(`【#${id} 的后续回报 · 来自 bill · 失去联系】`)
+    expect(textOf(back[3])).toContain('后台任务「部署 canvas-novel 到 3080」在宿主重启后失去联系，它可能已经结束，也可能还在跑；没有结果。需要的话请让 bill 核对后重做。')
+    expect(textOf(back[3])).not.toContain('不要复述')
+    // Once per task: another pass (a second process, the startup load) writes nothing.
+    await bench.service.recordLostBackgroundTasks(room, { force: true })
+    await bench.service.engine.idle()
+    expect(room.snapshotEvents().filter(event => event.type === 'room/background-task')).toHaveLength(1)
+    expect(room.snapshotEvents().filter(event => event.type === 'room/dispatch' && event.data.reportFor?.startsWith('background-task:') === true)).toHaveLength(1)
+    expect(bench.facade.resume.mock.calls.length).toBe(resumesBefore + 1)
+  })
+
+  it('a lost background task of human-dispatched work gets the timeline fact only', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async () => settledRun('child-bill', 'ready'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', firstTask: '准备' })
+    await bench.service.engine.idle()
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) => settledRun(child, '已在后台部署'))
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@bill 部署到 3080' })
+    await bench.service.engine.idle()
+    const started = billRun(bench)
+    lostTasks(bench, startedBy => [{ id: 'bash-deploy', label: '部署', kind: 'shell', startedAt: Date.now(), state: 'lost', lostBecause: 'host-restart', startedBy }], started)
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const dispatchesBefore = room.snapshotEvents().filter(event => event.type === 'room/dispatch').length
+    await bench.service.recordLostBackgroundTasks(room, { force: true })
+    await bench.service.engine.idle()
+    expect(room.snapshotEvents().filter(event => event.type === 'room/background-task').map(event => event.data)).toMatchObject([{ member: 'bill', taskId: 'bash-deploy', startedByRunId: started.runId }])
+    expect(room.snapshotEvents().filter(event => event.type === 'room/dispatch')).toHaveLength(dispatchesBefore)
+  })
+
+  it('the startup load brings in rooms whose members lost background tasks in this restart (read-only scan, since the lookback)', async () => {
+    const bench = await bootRoom()
+    bench.facade.start.mockImplementation(async () => settledRun('child-bill', 'ready'))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'codex', name: 'bill', firstTask: '准备' })
+    await bench.service.engine.idle()
+    const started = billRun(bench)
+    lostTasks(bench, startedBy => [{ id: 'bash-deploy', label: '部署', kind: 'shell', startedAt: Date.now(), state: 'lost', lostBecause: 'host-restart', startedBy }], started)
+    const parents = vi.fn(async () => [String(bench.sessionId)])
+    bench.localAgentStub['lostBackgroundTaskParents'] = parents
+    expect(await bench.service.loadInterruptedRooms()).toEqual([String(bench.sessionId)])
+    expect(parents).toHaveBeenCalledWith(bench.service.engine.bootedAt - 24 * 3_600_000)
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    expect(room.snapshotEvents().filter(event => event.type === 'room/background-task')).toHaveLength(1)
+  })
+
   it('a notify is delivered once and never reported back', async () => {
     const bench = await bootRoom()
     bench.facade.start.mockImplementation(async (_parent: string, provider: string) => settledRun(provider === 'kimi' ? 'child-ada' : 'child-bill', 'ok'))

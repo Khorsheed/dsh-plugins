@@ -21,7 +21,7 @@ import type {} from '@khorsheed/dsh-local-agent'
 import type { LocalAgentUnrecordedDeclaration } from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
 import type { LocalAgentBackgroundTask } from '@khorsheed/dsh-local-agent/types'
-import { readKimiBackgroundTasks } from './background-tasks.ts'
+import { readKimiBackgroundTasks, withKnownLoss } from './background-tasks.ts'
 import { KimiCliProvider, kimiCliVersion } from './kimi-cli-provider.ts'
 import { DEFAULT_LIVE_IDLE_MS } from './live-driver.ts'
 import { LiveDriverSwitch } from './live-switch.ts'
@@ -193,6 +193,9 @@ async function handleSessionSubcommand(input: string, invocation: CommandInvocat
  * @param ctx - plugin context carrying the registry.
  */
 export function apply(ctx: Context, config: Config): void {
+  // When this host process's Kimi plugin started: a background task that
+  // started earlier lost its process with the previous host process (M6).
+  const bootedAt = Date.now()
   ctx.effect(() => {
     const homeDir = ctx.localAgent.homeDir('kimi')
     // The ACP server refuses to authenticate without provider/model config;
@@ -324,11 +327,10 @@ export function apply(ctx: Context, config: Config): void {
         // A task whose process we reclaimed while it ran: lost, and we know
         // why. Kimi's file may still say `running` (no process rewrote it
         // yet) or already `lost` (a later session/load did).
-        const tasks = read.map((task): LocalAgentBackgroundTask => {
-          if (!liveSwitch.wasReclaimedWith(childSessionId, task.id)) return task
-          if (task.state === 'lost' || (task.state === 'running' && !processAlive)) return { ...task, state: 'lost', lostBecause: 'process-reclaimed' }
-          return task
-        })
+        // A task that started before this host process did (M6): its process
+        // went with the previous one — `host-restart`, read-only, no pid probe.
+        const tasks = read.map((task): LocalAgentBackgroundTask =>
+          withKnownLoss(task, { bootedAt, processAlive, reclaimed: liveSwitch.wasReclaimedWith(childSessionId, task.id) }))
         const running = tasks.filter(task => task.state === 'running').map(task => task.id)
         const keepAliveUntil = processAlive ? liveSwitch.observeBackgroundTasks(childSessionId, running) : undefined
         return { supported: true, tasks, processAlive, ...keepAliveUntil === undefined ? {} : { keepAliveUntil } }

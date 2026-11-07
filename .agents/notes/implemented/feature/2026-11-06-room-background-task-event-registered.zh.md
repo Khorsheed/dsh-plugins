@@ -33,6 +33,6 @@ M0 只登记 `room/background-task`，不写入。第一个写入方是 M6。
 - 模块加载后，类型在 `ROOM_EVENT_TYPES` 里，也在宿主目录里；
 - 带这条事实的房间日志（有和没有 `startedByRunId` 各一条）经真实 jsonl 持久化读取器往返，`replay` 的结果与不带它的日志相同；
 - 去掉登记后，同一份日志被拒绝（`SessionFormatUnsupportedError`），而不带它的日志照常读出。这是对照组；
-- `packages/room/src` 下除 `journal.ts` 和 `types.ts` 外没有文件提到这个类型，即还没有人写它。M6 要同时改这条断言。
+- M0 时 `packages/room/src` 下只有 `journal.ts` 和 `types.ts` 提到这个类型。M6 起这条断言改为：写入方只有 `background-lost.ts`，读取方只有 `client/nodes.ts`（见[失去联系的说明](2026-11-07-room-background-task-lost-at-restart.zh.md)）。
 
 `packages/room/tests/persistence.host.spec.ts` 的往返测试也追加了这个事件，因为那条测试要求 `ROOM_EVENT_TYPES` 的每一项重载后都在。

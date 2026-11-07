@@ -221,4 +221,36 @@ describe('LocalAgentRegistry.readExecution', () => {
     expect(await registry.memberBackgroundTasks('member-2')).toEqual({ supported: false, tasks: [], processAlive: false })
     expect(await registry.memberBackgroundTasks('not-a-member')).toBeNull()
   })
+
+  it('lostBackgroundTaskParents: the parents of members with a task this restart lost, read-only (no member-log lookups)', async () => {
+    const { registry } = await mount(mkdtempSync(join(tmpdir(), 'exec-read-lost-')))
+    const seen: LocalAgentBackgroundTasksRequest[] = []
+    const lookups: string[] = []
+    const byChild: Record<string, { state: 'lost' | 'running'; lostBecause?: 'host-restart' | 'process-reclaimed'; startedAt: number }[]> = {
+      'member-1': [{ state: 'lost', lostBecause: 'host-restart', startedAt: 500 }],
+      'member-2': [{ state: 'lost', lostBecause: 'host-restart', startedAt: 10 }],
+      'member-3': [{ state: 'lost', lostBecause: 'process-reclaimed', startedAt: 500 }, { state: 'running', startedAt: 600 }],
+      'member-4': [{ state: 'lost', lostBecause: 'host-restart', startedAt: 700 }],
+    }
+    registry.register({
+      name: 'fake', displayName: 'Fake', homeEnvVar: 'FAKE_HOME', delegationProvider: 'fake-cli', records: { listSessions: async () => [] },
+      backgroundTasks: async (request: LocalAgentBackgroundTasksRequest) => {
+        seen.push(request)
+        if (await request.executionOfCall('call-a') !== undefined) lookups.push('call')
+        if (await request.selfExecutionOf('bash-1') !== undefined) lookups.push('self')
+        return { supported: true, processAlive: false, tasks: (byChild[request.childSessionId] ?? []).map((task, index) => ({ id: `bash-${index}`, label: 'x', kind: 'shell' as const, ...task })) }
+      },
+    } as never)
+    registry.register({ name: 'plain', displayName: 'Plain', homeEnvVar: 'PLAIN_HOME', delegationProvider: 'plain-cli', records: { listSessions: async () => [] } } as never)
+    registry.recordDelegation({ childSessionId: 'member-1', provider: 'fake-cli', parentSessionId: 'room-1', cliSessionId: 'cli-1', cwd: '/home/user/work' })
+    registry.recordDelegation({ childSessionId: 'member-2', provider: 'fake-cli', parentSessionId: 'room-2', cliSessionId: 'cli-2', cwd: '/home/user/work' })
+    registry.recordDelegation({ childSessionId: 'member-3', provider: 'fake-cli', parentSessionId: 'room-3', cliSessionId: 'cli-3', cwd: '/home/user/work' })
+    registry.recordDelegation({ childSessionId: 'member-4', provider: 'fake-cli', parentSessionId: 'room-1', cliSessionId: 'cli-4', cwd: '/home/user/work' })
+    registry.recordDelegation({ childSessionId: 'member-5', provider: 'plain-cli', parentSessionId: 'room-5', cliSessionId: 'cli-5', cwd: '/home/user/work' })
+    // room-2's loss is older than `since`; room-3's was a reclaim, not this restart.
+    expect(await registry.lostBackgroundTaskParents(100)).toEqual(['room-1'])
+    // room-1 answered after its first member: its second member is not read.
+    expect(seen.map(request => request.childSessionId)).toEqual(['member-1', 'member-2', 'member-3'])
+    expect(lookups).toEqual([])
+  })
 })

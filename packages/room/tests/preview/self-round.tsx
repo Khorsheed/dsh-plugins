@@ -16,6 +16,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { RoomRunView } from '../../src/client/RoomRunView.tsx'
 import { RoomSpeechView } from '../../src/client/RoomSpeechView.tsx'
+import { RoomEventView } from '../../src/client/RoomEventView.tsx'
 import { en, zh } from '../../src/client/locales.ts'
 import type { RoomDelivery, RoomMember, RoomState } from '../../src/types.ts'
 
@@ -70,6 +71,7 @@ function Page() {
           text: english ? 'Build passed, 412/412 tests pass, the panel check is clean. Ready to merge.' : '构建通过，测试 412/412 通过，面板检查没有提示。可以合并。' }) } as never} />}
         {state === 'selfdone' && <RoomSpeechView {...{ ...common, node: node('room-speech', 12, { member: '人物协调', runId: '9:m-lead',
           text: english ? 'Good, I will merge and schedule the release.' : '好，我来合并并安排上线。' }) } as never} />}
+        {state === 'lost' && <RoomEventView {...{ node: node('room-event', 10, { sub: 'background-lost', member: 'kimi-canvas', lost: { label: BUILD, because: 'host-restart' } }), sessionId: 'room-1', t } as never} />}
         {state === 'lost' && <RoomSpeechView {...{ ...common, node: node('room-speech', 12, { member: '人物协调', runId: '9:m-lead',
           text: english ? 'kimi-canvas lost the build and tests in the host restart, no result. @kimi-canvas please check and rerun if needed.' : 'kimi-canvas 的构建和测试在宿主重启时失去联系，没有结果。@kimi-canvas 请核对一下，需要的话重新跑。' }) } as never} />}
       </div>

@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { executionOfToolCall, selfExecutionOfTask } from '@khorsheed/dsh-local-agent'
-import { KIMI_TASK_RECENT_MS, kimiTasksDir, readKimiBackgroundTasks } from '../src/background-tasks.ts'
+import { KIMI_TASK_RECENT_MS, kimiTasksDir, readKimiBackgroundTasks, withKnownLoss } from '../src/background-tasks.ts'
 
 const NOW = 1_800_000_000_000
 const MIN = 60_000
@@ -140,5 +140,26 @@ describe('readKimiBackgroundTasks', () => {
     expect(byId.get('bash-e')).toMatchObject({ startedBy: 'room-run-2', resultIn: 'self-1' })
     // A running task has no result yet, whatever the log says.
     expect(byId.get('bash-a')).not.toHaveProperty('resultIn')
+  })
+})
+
+describe('withKnownLoss (M6: what this host process knows about a loss)', () => {
+  const BOOT = NOW
+  const task = (state: 'running' | 'lost' | 'completed', startedAt: number) => ({ id: 'bash-1', label: 'placeholder', kind: 'shell' as const, startedAt, state })
+
+  it('a task started before this host process lost its process with the previous one: host-restart, whatever the file says', () => {
+    for (const processAlive of [false, true]) {
+      expect(withKnownLoss(task('running', BOOT - MIN), { bootedAt: BOOT, processAlive, reclaimed: false })).toMatchObject({ state: 'lost', lostBecause: 'host-restart' })
+      // A later session/load rewrote the file to lost: the reason is still ours to give.
+      expect(withKnownLoss(task('lost', BOOT - MIN), { bootedAt: BOOT, processAlive, reclaimed: false })).toMatchObject({ state: 'lost', lostBecause: 'host-restart' })
+    }
+  })
+
+  it('a task of this host process stays as Kimi says unless we reclaimed its process; ended tasks are never touched', () => {
+    expect(withKnownLoss(task('running', BOOT + MIN), { bootedAt: BOOT, processAlive: true, reclaimed: false })).toEqual(task('running', BOOT + MIN))
+    // No fact of ours: a running file with no process is not judged (no pid probe, no guess).
+    expect(withKnownLoss(task('running', BOOT + MIN), { bootedAt: BOOT, processAlive: false, reclaimed: false })).toEqual(task('running', BOOT + MIN))
+    expect(withKnownLoss(task('running', BOOT + MIN), { bootedAt: BOOT, processAlive: false, reclaimed: true })).toMatchObject({ state: 'lost', lostBecause: 'process-reclaimed' })
+    expect(withKnownLoss(task('completed', BOOT - MIN), { bootedAt: BOOT, processAlive: false, reclaimed: false })).toEqual(task('completed', BOOT - MIN))
   })
 })

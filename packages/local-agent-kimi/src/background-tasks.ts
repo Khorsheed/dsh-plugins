@@ -197,3 +197,26 @@ async function wireToolCallIds(sessionDir: string, taskIds: ReadonlySet<string>)
   }
   return found
 }
+
+/**
+ * The facts this host process knows about a task's loss (member-self-started-rounds
+ * B①/C②), applied to the CLI's own state. Only what we recorded ourselves:
+ *
+ * - our generation reclaimed the member's process while the task ran → `lost`, `process-reclaimed`;
+ * - the task started before this host process (the Kimi plugin) started:
+ *   the process that ran it went with the previous host process, so a file
+ *   still saying `running`, or one a later load rewrote to `lost`, reads
+ *   `lost`, `host-restart`. Never a pid probe (pids are reused).
+ *
+ * Pure: the read-only startup scan and every tray read go through it.
+ * @param task - one task as Kimi's state file states it.
+ * @param facts - when this host process started, whether the member's
+ *   process is up, whether we reclaimed it while this task ran.
+ * @returns the task, with `lost` and its reason when we know one.
+ */
+export function withKnownLoss(task: LocalAgentBackgroundTask, facts: { readonly bootedAt: number; readonly processAlive: boolean; readonly reclaimed: boolean }): LocalAgentBackgroundTask {
+  if (task.state !== 'running' && task.state !== 'lost') return task
+  if (facts.reclaimed) return task.state === 'lost' || !facts.processAlive ? { ...task, state: 'lost', lostBecause: 'process-reclaimed' } : task
+  if (task.startedAt < facts.bootedAt) return { ...task, state: 'lost', lostBecause: 'host-restart' }
+  return task
+}

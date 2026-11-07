@@ -95,12 +95,12 @@ describe('room/background-task registration (M0)', () => {
     }
   })
 
-  it('nothing in room writes it yet (M0 registers only)', () => {
+  it('one writer (M6, background-lost.ts) and one reader (the timeline line); nothing else names it', () => {
     const root = join(import.meta.dirname, '../src')
     const sources = readdirSync(root, { recursive: true, encoding: 'utf8' })
       .filter(path => /\.tsx?$/.test(path))
       .filter(path => readFileSync(join(root, path), 'utf8').includes(`'${TYPE}'`))
       .sort()
-    expect(sources).toEqual(['journal.ts', 'types.ts'])
+    expect(sources).toEqual(['background-lost.ts', 'client/nodes.ts', 'journal.ts', 'types.ts'])
   })
 })

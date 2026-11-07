@@ -1389,6 +1389,29 @@ export class LocalAgentRegistry {
     return [...parents]
   }
 
+  /**
+   * The parent sessions of members whose CLI background tasks a host restart
+   * cut off (member-self-started-rounds M6): the room loads those that are
+   * rooms once after the host starts, so it records the loss and tells the
+   * dispatcher without anyone opening the room. A read-only scan of the
+   * harness's own task state (`backgroundTasks`, its lookups over the member
+   * log skipped): no CLI process is started and no model is called.
+   * @param since - only tasks started at or after this epoch ms count (an
+   *   older loss was another restart's, long past).
+   * @returns distinct parent session ids.
+   */
+  async lostBackgroundTaskParents(since: number): Promise<string[]> {
+    const parents = new Set<string>()
+    for (const record of [...this.delegations.values()]) {
+      const parent = record.parentSessionId
+      if (parent === undefined || parent === '' || parents.has(parent)) continue
+      if (this.harnessForProvider(record.provider)?.backgroundTasks === undefined) continue
+      const read = await this.memberBackgroundTasks(record.childSessionId, { lookups: false })
+      if (read?.tasks.some(task => task.state === 'lost' && task.lostBecause === 'host-restart' && task.startedAt >= since) === true) parents.add(parent)
+    }
+    return [...parents]
+  }
+
   /** Rounds of the member waiting for admission: queued ledger rows, or provider starts waiting outside the ledger. */
   queuedMemberRounds(childSessionId: string): number {
     let ledger = 0
@@ -3211,7 +3234,7 @@ export class LocalAgentRegistry {
     return read.tasks.filter(task => task.state === 'running').length
   }
 
-  async memberBackgroundTasks(childSessionId: string): Promise<LocalAgentBackgroundTasks | null> {
+  async memberBackgroundTasks(childSessionId: string, options: { readonly lookups?: boolean } = {}): Promise<LocalAgentBackgroundTasks | null> {
     const record = this.delegations.get(childSessionId)
     const binding = record === undefined ? this.memberBinding(childSessionId) : undefined
     const provider = record?.provider ?? binding?.provider
@@ -3228,10 +3251,12 @@ export class LocalAgentRegistry {
         homeDir: this.homeDir(harness.name, record?.scope ?? binding?.scope),
         ...cliSessionId === undefined || cliSessionId === '' ? {} : { cliSessionId },
         executionOfCall: async callId => {
+          if (options.lookups === false) return undefined
           const log = await memberLog()
           return log === undefined ? undefined : executionOfToolCall(log.events, callId, log.readings)
         },
         selfExecutionOf: async taskId => {
+          if (options.lookups === false) return undefined
           const log = await memberLog()
           return log === undefined ? undefined : selfExecutionOfTask(log.events, taskId)
         },

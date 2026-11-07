@@ -529,6 +529,15 @@ describe('RoomEventView', () => {
     bench({ seq: 2, time: 1002, sub: 'member-removed', member: 'bill' })
     expect(screen.getByText('bill 离开了 room')).toBeDefined()
   })
+
+  it('a background task lost at a restart: room/background-task is one amber line naming the member and the task (M6)', () => {
+    const lost = ev('room/background-task', 9, { member: 'kimi-canvas', memberId: 'm-k', taskId: 'bash-1', label: '部署 canvas-novel 到 3080', state: 'lost', because: 'host-restart', startedByRunId: '4:m-k' })
+    expect(roomEventDefinition.match(lost)).toEqual({ id: '9', role: 'start' })
+    const data = roomEventDefinition.start(contextOf(undefined), matchOf(lost))
+    expect(data).toEqual({ seq: 9, time: 1009, sub: 'background-lost', member: 'kimi-canvas', lost: { label: '部署 canvas-novel 到 3080', because: 'host-restart' } })
+    bench(data)
+    expect(screen.getByRole('note').textContent).toBe('⚠ kimi-canvas 的后台任务「部署 canvas-novel 到 3080」在宿主重启后失去联系 · 结果不会自动回来')
+  })
 })
 
 describe('member-to-member messages', () => {

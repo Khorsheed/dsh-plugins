@@ -73,13 +73,15 @@ export interface RoomEventData {
   readonly seq: number
   /** Unix epoch ms from the event. */
   readonly time: number
-  readonly sub: 'member-added' | 'member-removed' | 'member-tools'
+  readonly sub: 'member-added' | 'member-removed' | 'member-tools' | 'background-lost'
   /** The joining/leaving member (member-tools: the member the line is about). */
   readonly member?: string
   /** The joining member's provider (member-added, cli members). */
   readonly provider?: string
   /** Who invited the joining member (member-added). */
   readonly invitedBy?: 'human' | 'agent'
+  /** background-lost: the lost task's description and why it lost contact (M6). */
+  readonly lost?: { readonly label: string; readonly because: 'host-restart' | 'process-reclaimed' | 'process-exited' }
   /** member-tools: reloaded at round start, or still unavailable after a reload. */
   readonly tools?: { readonly kind: 'reloaded' | 'unavailable'; readonly preset: string; readonly during: 'round' | 'idle' }
 }
@@ -394,6 +396,7 @@ export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
         return event.data.kind === 'main-agent' ? null : { id: String(event.seq), role: 'start' as const }
       case 'room/member-removed':
       case 'room/member-tools':
+      case 'room/background-task':
         return { id: String(event.seq), role: 'start' as const }
       default:
         return null
@@ -421,6 +424,8 @@ export const roomEventDefinition: ConversationNodeDefinition<RoomEventData> = {
           member: event.data.member,
           tools: { kind: event.data.kind, preset: event.data.preset, during: event.data.during },
         }
+      case 'room/background-task':
+        return { seq: event.seq, time: event.time, sub: 'background-lost', member: event.data.member, lost: { label: event.data.label, because: event.data.because } }
       default:
         throw new Error('room-event start requires a room boundary event')
     }

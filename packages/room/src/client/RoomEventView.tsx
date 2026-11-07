@@ -18,6 +18,15 @@ export function RoomEventView(props: RoomEventViewProps): ReactNode {
   const { node, t } = props
   const data = node.data
   if (data.sub === 'member-tools') return <MemberToolsNotice {...props} />
+  // A background task lost at a restart (M6): one amber line, nothing to press.
+  if (data.sub === 'background-lost') {
+    if (data.lost === undefined) return null
+    return (
+      <div className={css.notice} role="note" data-room-event="background-lost">
+        <span className={css.noticeText}>⚠ <b className={css.noticeMember}>{data.member}</b>{t(`event.lost.${data.lost.because}`, { label: data.lost.label })}</span>
+      </div>
+    )
+  }
   let text: string
   switch (data.sub) {
     case 'member-added':
