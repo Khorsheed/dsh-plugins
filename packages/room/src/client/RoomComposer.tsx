@@ -69,6 +69,8 @@ import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
 import { useRoomActivity } from './MemberActivity.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
 import { RoomQueueStrip, type RoomQueueItem } from './RoomQueueStrip.tsx'
+import { RoomQueueCapsules } from './RoomQueueCapsules.tsx'
+import { queueCapsules } from './queue-capsules.ts'
 import { RoomModelPicker } from './RoomModelPicker.tsx'
 import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconPaperclipOutlineMedium } from './icons.tsx'
 import { Menu, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -192,7 +194,7 @@ export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, renderMemberTools, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
-  attachments: attachmentFace, setCoordinator, runCommand, memberActivity, setSettings,
+  attachments: attachmentFace, setCoordinator, runCommand, memberActivity, setSettings, controlMemberQueue,
 }: RoomComposerProps): ReactNode {
   const [coordinatorMenu, setCoordinatorMenu] = useState(false)
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
@@ -322,10 +324,14 @@ export function RoomComposer({
   // Also blocked by a round of the coordinator the core holds as 待对账 (the
   // members page, a tool call: batch 5 S7), which is not a room delivery.
   const blocked = coordinatorRows.some(row => row.status === 'uncertain' || row.waiting === 'reconcile')
-  const coordinatorQueue: readonly RoomQueueItem[] = coordinatorRows.map(row => ({
+  // Rows only for what has no bubble in the timeline yet (room-timeline D):
+  // a message with its bubble reads its state on its receipt line, and the
+  // member-level state rides the capsules below.
+  const coordinatorQueue: readonly RoomQueueItem[] = coordinatorRows.filter(row => row.bubble === undefined && row.origin === 'human').map(row => ({
     id: row.id,
     preview: row.status === 'uncertain' ? t('job.queueUncertain', { text: row.text }) : blocked ? t('job.queueBlocked', { text: row.text }) : row.text,
   }))
+  const capsules = queueCapsules(state, coordinator?.id)
 
   const resize = (area: HTMLTextAreaElement): void => {
     area.style.height = 'auto'
@@ -602,6 +608,18 @@ export function RoomComposer({
               openPlanSession(item.childSessionId)
             },
           }}
+          extra={<RoomQueueCapsules
+            capsules={capsules}
+            resume={controlMemberQueue === undefined ? undefined : async (capsule) => {
+              if (capsule.kind !== 'paused' || capsule.childSessionId === undefined) return undefined
+              const failure = await controlMemberQueue(capsule.childSessionId, 'resume')
+              if (failure !== undefined) setError(failure)
+              void roomStore.refresh(sessionId)
+              return failure
+            }}
+            openSession={openPlanSession}
+            t={t}
+          />}
           waiting={waitingAsk === undefined ? undefined : {
             member: waitingAsk.member,
             jump: () => {

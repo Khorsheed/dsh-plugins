@@ -102,3 +102,15 @@
     display: none;
   }
 }
+
+/* A queue capsule's action word (↑ / 继续 / 去核对): the link colour. */
+.capsuleLink {
+  flex: none;
+  font-weight: 600;
+  color: var(--dsw-alias-state-business-primary, #2f6fe0);
+}
+
+.capsule:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

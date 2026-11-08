@@ -739,7 +739,9 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       setSettings: patch => setSettingsFor(sessionId, patch),
       ...(() => { const face = attachmentsFor(); return face === undefined ? {} : { attachments: face } })(),
       renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
-      renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
+      // The room's own copy leaves out the room's queued rows (they read on their messages); an older core has only the plain one.
+      renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderRoomMemberInbox ?? (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
+      controlMemberQueue: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.controlMemberQueue,
       // Read at render: a local-agent core loading after this entry still lands.
       // A named member compacts through the room's own `/compact` dispatch —
       // the reminder button then runs exactly what the typed command runs
@@ -946,7 +948,19 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       name: 'conversation.chat.node',
       key: 'room-receipt',
       locale: NS,
-      inject: (): RoomReceiptInjected => ({ roomStore, openSession }),
+      inject: (sessionId: SessionId): RoomReceiptInjected => {
+        const ui = ctx.get('localAgentUi') as LocalAgentUi | undefined
+        const control = ui?.controlMemberQueue
+        return {
+          roomStore, openSession,
+          ...control === undefined ? {} : {
+            resumeQueue: async (memberId: string) => {
+              const child = roomStore.getCached(sessionId)?.members.find(member => member.id === memberId)?.childSessionId
+              return child === undefined ? t('composer.error.generic') : control(String(child), 'resume')
+            },
+          },
+        }
+      },
     },
     RoomReceiptView,
   ))

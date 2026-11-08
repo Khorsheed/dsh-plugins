@@ -10,8 +10,13 @@ export interface MemberInboxFace {
   control(action: 'pause' | 'resume' | 'cancel' | 'reconcile', requestId?: string, outcome?: 'done' | 'cancelled', evidence?: string): Promise<LocalAgentPromptResult | undefined>
 }
 
-/** Core owns admission; the dock displays only inputs still waiting for it. */
-export function MemberInboxView({ face, t }: { face: MemberInboxFace } & PropsLocale<typeof NS>) {
+/**
+ * Core owns admission; the dock displays only inputs still waiting for it.
+ * `room`: the room's own copy under its composer — the room's queued rows
+ * are left out (each reads on its message in the room timeline) and the
+ * pause control lives on the room's capsule (room-timeline B2).
+ */
+export function MemberInboxView({ face, room = false, t }: { face: MemberInboxFace; room?: boolean } & PropsLocale<typeof NS>) {
   const [state, setState] = useState<LocalAgentMemberInbox>()
   const [error, setError] = useState<string>()
   const [evidence, setEvidence] = useState('')
@@ -25,13 +30,13 @@ export function MemberInboxView({ face, t }: { face: MemberInboxFace } & PropsLo
     return () => { closed = true; clearInterval(timer) }
   }, [face])
   if (state === undefined) return null
-  const queued = state.messages.filter(row => row.status === 'queued')
+  const queued = state.messages.filter(row => row.status === 'queued' && !(room && row.caller === 'room'))
   // The ledger holds every caller's executions (batch 5 S4): an uncertain
   // one blocks the member whoever sent it, so it is reconciled here too
   // (user decision 2026-11-03 ③); a failure is shown for composer input only.
   const recovery = state.messages.filter(row => row.status === 'uncertain' || (row.status === 'failed' && (row.caller ?? 'composer') === 'composer')).slice(-8)
   const preview = (row: LocalAgentMemberInput): string => row.text ?? t(`inbox.caller.${row.caller ?? 'api'}` as 'inbox.caller.api')
-  if (queued.length === 0 && recovery.length === 0 && !state.paused && error === undefined && state.error === undefined) return null
+  if (queued.length === 0 && recovery.length === 0 && (room || !state.paused) && error === undefined && state.error === undefined) return null
   const control = (action: 'pause' | 'resume' | 'cancel' | 'reconcile', requestId?: string, outcome?: 'done' | 'cancelled'): void => {
     setError(undefined)
     void face.control(action, requestId, outcome, evidence).then(async result => {
@@ -40,7 +45,7 @@ export function MemberInboxView({ face, t }: { face: MemberInboxFace } & PropsLo
       if (next !== undefined) setState(next)
     }).catch(failure => setError(String(failure)))
   }
-  const pause = <button className={css.action} type="button" onClick={() => control(state.paused ? 'resume' : 'pause')}>{t(state.paused ? 'inbox.resume' : 'inbox.pause')}</button>
+  const pause = room ? null : <button className={css.action} type="button" onClick={() => control(state.paused ? 'resume' : 'pause')}>{t(state.paused ? 'inbox.resume' : 'inbox.pause')}</button>
   return <section className={css.root} aria-label={t('inbox.title')}>
     <div className={css.panel}>
       {queued.length > 1 && <div className={css.header}>
@@ -58,7 +63,7 @@ export function MemberInboxView({ face, t }: { face: MemberInboxFace } & PropsLo
           <button className={css.iconAction} type="button" aria-label={t('inbox.cancel')} title={t('inbox.cancel')} onClick={() => control('cancel', row.id)}><IconTrashOutlineMedium /></button>
         </li>)}
       </ul>}
-      {state.paused && <div className={css.notice}><span>{t('inbox.paused')}</span>{queued.length === 0 && pause}</div>}
+      {state.paused && !room && <div className={css.notice}><span>{t('inbox.paused')}</span>{queued.length === 0 && pause}</div>}
       {(error ?? state.error) !== undefined && <p className={css.notice} role="alert">{error ?? state.error}</p>}
       {recovery.map(row => <div key={row.id} className={css.recovery}>
         <span>{t(`inbox.status.${row.status}` as 'inbox.status.uncertain')} · {preview(row).slice(0, 160)}</span>

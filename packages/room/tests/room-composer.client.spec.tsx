@@ -114,6 +114,7 @@ async function bench(
     listSessions?: RoomComposerProps['listSessions']
     insertSessionReference?: RoomComposerProps['insertSessionReference']
     setCoordinator?: RoomComposerProps['setCoordinator']
+    controlMemberQueue?: RoomComposerProps['controlMemberQueue']
   } = {},
 ): Promise<Bench> {
   const roomStore = await primedStore(options.state)
@@ -155,6 +156,7 @@ async function bench(
     listSessions: options.listSessions,
     insertSessionReference: options.insertSessionReference,
     setCoordinator: options.setCoordinator,
+    controlMemberQueue: options.controlMemberQueue,
     useSession,
     // Default: a projection seat that serves nothing (no stats row, no todo strip).
     useProjection: options.useProjection === undefined
@@ -535,6 +537,30 @@ describe('RoomComposer', () => {
     await bench(vi.fn(), { state: { ...STATE, deliveries: [], jobs: [] }, openTasks: vi.fn() })
     expect(screen.getByRole('button', { name: 'members.invite' })).toBeDefined()
     expect(screen.queryByTestId('room-task-capsule')).toBeNull()
+  })
+
+  it('waiting messages with a bubble become one count capsule, never their text; a paused queue gets its own capsule', async () => {
+    const control = vi.fn(async () => undefined)
+    const queued = (seq: number, text: string) => ({ id: `${seq}:m-ada`, dispatchSeq: seq, memberId: 'm-ada', status: 'queued' as const, origin: 'human' as const, text, queuedAt: 1000 + seq, messageId: `msg-${seq}`, bubble: 'before' as const })
+    const state: RoomState = {
+      ...STATE,
+      members: [
+        { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', childSessionId: 'child-ada' as SessionId },
+        { id: 'm-bill', name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'human', childSessionId: 'child-bill' as SessionId },
+      ],
+      coordinator: { version: 1, memberId: 'm-ada', revision: 1, previousMemberId: 'm-bill', handoff: '' },
+      deliveries: [queued(7, '第一条排队'), queued(9, '第二条排队')],
+      restartFacts: { queuePaused: ['m-bill'] },
+    }
+    await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'], state, openTasks: vi.fn() })
+    expect(screen.getByRole('button', { name: /⏳ 2 条消息在等 ada/ })).toBeDefined()
+    expect(screen.queryByText(/第一条排队/)).toBeNull()
+    expect(screen.queryByTestId('room-queue-strip')).toBeNull()
+    expect(screen.getByRole('button', { name: /⏸ bill 的队列已暂停/ }).textContent).toContain('去看看')
+    cleanup()
+    await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'], state, openTasks: vi.fn(), controlMemberQueue: control })
+    fireEvent.click(screen.getByRole('button', { name: /⏸ bill 的队列已暂停 ·\s*继续/ }))
+    await vi.waitFor(() => { expect(control).toHaveBeenCalledWith('child-bill', 'resume') })
   })
 
   it('the task tag rides the next send as its task and clears; removing it leaves the filing to dsh', async () => {

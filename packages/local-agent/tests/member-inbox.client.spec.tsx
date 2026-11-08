@@ -21,6 +21,24 @@ describe('member inbox controls', () => {
     expect(face.control).toHaveBeenCalledWith('resume', undefined, undefined, '')
   })
 
+  it('the room\'s copy leaves out the room\'s own queued rows and the pause control; other callers\' rows stay', async () => {
+    const state: LocalAgentMemberInbox = { memberId: 'member', paused: true, messages: [
+      { id: 'room-1', caller: 'room', status: 'queued', createdAt: 1, updatedAt: 1 },
+      { id: 'composer-1', caller: 'composer', text: 'from the members page', status: 'queued', createdAt: 2, updatedAt: 2 },
+    ] }
+    const face: MemberInboxFace = { read: vi.fn(async () => state), control: vi.fn() }
+    const view = render(<MemberInboxView face={face} room t={t} />)
+    await screen.findByText(/from the members page/)
+    expect(view.container.textContent).not.toContain(zh['inbox.caller.room'])
+    expect(screen.queryByRole('button', { name: zh['inbox.resume'] })).toBeNull()
+    expect(view.container.textContent).not.toContain(zh['inbox.paused'])
+    cleanup()
+    // Only room rows queued: the room's copy shows nothing at all.
+    const roomOnly: LocalAgentMemberInbox = { ...state, messages: [state.messages[0]!] }
+    const empty = render(<MemberInboxView face={{ read: vi.fn(async () => roomOnly), control: vi.fn() }} room t={t} />)
+    await waitFor(() => expect(empty.container.textContent).toBe(''))
+  })
+
   it('does not present admitted or completed input as a waiting queue', async () => {
     const state: LocalAgentMemberInbox = { memberId: 'member', paused: false, messages: [
       { id: 'active', text: 'already executing', status: 'running', createdAt: 1, updatedAt: 1 },
