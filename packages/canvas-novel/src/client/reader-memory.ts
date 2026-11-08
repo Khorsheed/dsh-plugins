@@ -15,8 +15,8 @@ function readingKey(canvasId: string): string {
   return `novel-reading:${canvasId}`
 }
 
-function positionKey(canvasId: string, n: number): string {
-  return `novel-editor-position:${canvasId}:${n}`
+function positionKey(canvasId: string, chapterId: string | number): string {
+  return `novel-editor-position:${canvasId}:${chapterId}`
 }
 
 function read(key: string): unknown {
@@ -57,8 +57,8 @@ export function saveReadingMemory(canvasId: string, value: ReadingMemory | null)
   write(readingKey(canvasId), value === null ? null : { version: VERSION, n: value.n, editing: value.editing === true })
 }
 
-export function loadEditorPosition(canvasId: string, n: number, textLength: number): EditorPosition | null {
-  const value = record(read(positionKey(canvasId, n)))
+export function loadEditorPosition(canvasId: string, chapterId: string | number, textLength: number): EditorPosition | null {
+  const value = record(read(positionKey(canvasId, chapterId)))
   const start = value?.['start']
   const end = value?.['end']
   const scrollTop = value?.['scrollTop']
@@ -72,12 +72,12 @@ export function loadEditorPosition(canvasId: string, n: number, textLength: numb
   }
 }
 
-export function saveEditorPosition(canvasId: string, n: number, position: EditorPosition): void {
-  write(positionKey(canvasId, n), { version: VERSION, ...position })
+export function saveEditorPosition(canvasId: string, chapterId: string | number, position: EditorPosition): void {
+  write(positionKey(canvasId, chapterId), { version: VERSION, ...position })
 }
 
-export function clearEditorPosition(canvasId: string, n: number): void {
-  write(positionKey(canvasId, n), null)
+export function clearEditorPosition(canvasId: string, chapterId: string | number): void {
+  write(positionKey(canvasId, chapterId), null)
 }
 
 export function continuationTail(text: string, limit = 80): string {

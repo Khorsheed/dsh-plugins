@@ -21,6 +21,9 @@ import type {
   ChapterFeedbackAddRequest, ChapterFeedbackBatchRequest, ChapterFeedbackCandidateRequest, ChapterFeedbackDeleteRequest,
   ChapterFeedbackMutationResult, ChapterFeedbackPrepareResult, ChapterFeedbackRestoreRequest, ChapterFeedbackResult,
 } from '../chapter-feedback.ts'
+import type {
+  ChapterDeletionApplyRequest, ChapterDeletionListResult, ChapterDeletionMutationResult, ChapterDeletionPreviewRequest, ChapterDeletionPreviewResult, ChapterDeletionPurgeRequest, ChapterDeletionRestoreRequest,
+} from '../chapter-deletion.ts'
 import type {} from './locales.ts'
 
 /** The canvas's navigation face, as far as the genre uses it. */
@@ -95,6 +98,11 @@ export interface NovelRemote {
   decideOutline: (sessionId: SessionId, request: NovelOutlineDecideRequest) => Promise<RemoteResult<NovelGestureResult>>
   deletePreview: (request: NovelDeleteRequest) => Promise<RemoteResult<NovelDeletePreviewResult>>
   deleteNode: (sessionId: SessionId, request: NovelDeleteRequest) => Promise<RemoteResult<NovelGestureResult>>
+  chapterDeletionPreview: (sessionId: SessionId, request: ChapterDeletionPreviewRequest) => Promise<RemoteResult<ChapterDeletionPreviewResult>>
+  applyChapterDeletion: (sessionId: SessionId, request: ChapterDeletionApplyRequest) => Promise<RemoteResult<ChapterDeletionMutationResult>>
+  chapterDeletions: (request: NovelWorkRequest) => Promise<RemoteResult<ChapterDeletionListResult>>
+  restoreChapters: (sessionId: SessionId, request: ChapterDeletionRestoreRequest) => Promise<RemoteResult<ChapterDeletionMutationResult>>
+  purgeChapters: (sessionId: SessionId, request: ChapterDeletionPurgeRequest) => Promise<RemoteResult<ChapterDeletionMutationResult>>
   align: (request: NovelWorkRequest) => Promise<RemoteResult<NovelAlignResult>>
   alignAck: (sessionId: SessionId, request: NovelAlignAckRequest) => Promise<RemoteResult<NovelGestureResult>>
   chapterFeedback: (request: NovelChapterRequest) => Promise<RemoteResult<ChapterFeedbackResult>>

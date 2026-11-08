@@ -96,6 +96,11 @@ function fakeRemote(fixture: { items: PendingView[]; phase?: EffectiveChapterPha
     prepareChapterFeedback: vi.fn(() => ok({ ok: true, batchId: 'fb1', text: '请结合整章修改。' })),
     recallChapterFeedback: vi.fn(() => ok({ ok: true })),
     submitChapterFeedbackCandidate: vi.fn(() => ok({ ok: true })),
+    chapterDeletions: vi.fn(() => ok({ ok: true, operations: [], size: 0 })),
+    chapterDeletionPreview: vi.fn(),
+    applyChapterDeletion: vi.fn(),
+    restoreChapters: vi.fn(),
+    purgeChapters: vi.fn(),
   } as unknown as NovelRemote & Record<string, ReturnType<typeof vi.fn>>
   return remote
 }
@@ -892,6 +897,26 @@ describe('the timeline, ideas, candidates and editing (2026-11-01)', () => {
     expect(restored.scrollTop).toBe(140)
     expect(document.activeElement).not.toBe(restored)
     expect(screen.getByRole('tab', { name: zh['edit.mode'] }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('does not restore the previous chapter position when its number is reused', async () => {
+    const original = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '旧章', { id: 'chapter-old' }), phase: 'extracted', body: '0123456789' }] })
+    const first = render(<ChapterBook {...props(original)} target={ask('1')} />)
+    fireEvent.click(await screen.findByRole('tab', { name: zh['edit.mode'] }))
+    const box = screen.getByRole('textbox', { name: zh['edit.open'] }) as HTMLTextAreaElement
+    box.setSelectionRange(2, 6)
+    fireEvent.select(box)
+    box.scrollTop = 140
+    fireEvent.scroll(box)
+    first.unmount()
+
+    const replacement = fakeRemote({ items: [], rows: [{ chapter: chapter(1, '新章', { id: 'chapter-new' }), phase: 'extracted', body: '0123456789' }] })
+    render(<ChapterBook {...props(replacement)} target={ask('1')} />)
+    fireEvent.click(await screen.findByRole('tab', { name: zh['edit.mode'] }))
+    const reopened = screen.getByRole('textbox', { name: zh['edit.open'] }) as HTMLTextAreaElement
+    expect(reopened.selectionStart).toBe(0)
+    expect(reopened.selectionEnd).toBe(0)
+    expect(reopened.scrollTop).toBe(0)
   })
 
   it('lets explicit navigation win and clears automatic resume at the contents', async () => {

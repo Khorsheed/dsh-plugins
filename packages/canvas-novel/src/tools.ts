@@ -30,6 +30,7 @@ import type { NovelService } from './store.ts'
 import { volumeNumeral, volumePosition, type ChapterPlan, type ExtractPayload, type ImportDrop, type PendingItem, type ReviewAction } from './types.ts'
 import { isFuture, TIER_LABELS, tensionOf, tierReason, type StoryEvent } from './timeline.ts'
 import { searchSettings, settingKindOf } from './settings.ts'
+import { deletionCounts } from './chapter-deletion.ts'
 
 /** The community tool-origin tag (the catalog's documented no-import path). */
 function tagOrigin<T extends object>(definition: T): T {
@@ -235,7 +236,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       + '(phase=preview proposes and answers the 整理结果; phase=apply only after the user agreed). review decides a pending item '
       + '(action=accept|discard). Cards: canvas_write. Load the novel skill first.',
     parameters: {
-      what: { type: 'string', enum: ['chapter', 'confirm', 'outline', 'organize', 'event', 'idea', 'review', 'delete', 'aligned'], required: true, description: 'What to write. confirm: record the user\'s confirmation of a chapter plan (chapter=N) — only when their latest message says so. delete: remove a setting, person, relation, foreshadow (card id), event (e3) or idea (i2) by id, with the same fixes the person\'s 删除 makes (children move up, references cleared, a person\'s relations go too); the answer lists the written chapters that still carry it.' },
+      what: { type: 'string', enum: ['chapter', 'confirm', 'outline', 'organize', 'event', 'idea', 'review', 'delete', 'aligned'], required: true, description: 'What to write. confirm: record the user\'s confirmation of a chapter plan (chapter=N) — only when their latest message says so. delete: remove a setting, person, relation, foreshadow (card id), event (e3) or idea (i2) by id, with the same fixes the person\'s 删除 makes (children move up, references cleared, a person\'s relations go too); the answer lists the written chapters that still carry it. Chapters use chapters=[N] with phase=preview first, then deletionId with phase=apply after the user confirms in a later message; restore/purge use the same operation id.' },
       id: { type: 'string', description: 'review: the pending item id. delete: the card / event / idea id. aligned: the 待对齐 item\'s node id done, or "all".' },
       cardId: { type: 'string', description: 'review accept: the duplicate candidate to merge into; use one of the pending item\'s candidateIds.' },
       title: { type: 'string', description: 'chapter: the title.' },
@@ -287,7 +288,11 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           + 'Keep the chapter and the quote out of valueWhy and when: chapters and evidence carry them. '
           + 'idea: the event id to bind the idea to (null unbinds).',
       },
-      phase: { type: 'string', enum: ['preview', 'apply'], description: 'organize: preview (default) stores the plan and answers the 整理结果; apply carries out the stored plan — only after the user agreed in a later message.' },
+      phase: { type: 'string', enum: ['preview', 'apply', 'restore', 'purge'], description: 'organize: preview/apply. delete with chapters: preview first, then apply only after the user confirms in a later message; restore/purge use deletionId.' },
+      chapters: { type: 'array', items: { type: 'number' }, description: 'delete: chapter numbers to preview, restore or permanently purge (batch is one operation).' },
+      deletionId: { type: 'string', description: 'delete: the preview/operation id returned by phase=preview.' },
+      cards: { type: 'array', items: { type: 'string' }, description: 'delete: cascade card ids to archive on apply, or to restore explicitly later.' },
+      position: { type: 'string', enum: ['original', 'next'], description: 'delete restore: original chapter number, or the next free one when it is occupied.' },
       moves: {
         type: 'array', items: { type: 'object', additionalProperties: true },
         description: 'organize: [{card (ref or name), to (体系|地点|势力|物种与道具|写作原则), parent? (the card or new entry it sits under), name? (a 原则 card\'s name as a setting)}]. '
@@ -312,6 +317,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
       const { workId } = resolved
       const args = withTextForms(arrived)
       if (args.what === 'chapter') {
+        if (args.delete === true) return '失败：what=chapter 不接受 delete。删除章节请用 novel_write(what=delete, chapters=[N], phase="preview")，确认影响后再 apply；不会把 delete 当成普通写入。'
         if ((args.title ?? '').trim() === '') return '失败：what=chapter 要给 title。'
         // Asking to plan 「第 N 章」 when N is simply the next one is a create, not a miss.
         const existing = args.chapter === undefined ? [] : await store.listChapters({ workId })
@@ -433,8 +439,50 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         const outcome = await store.alignAck({ workId, ids }, resolved.session)
         return outcome.ok ? (ids === 'all' ? '待对齐已清空：当前状态记为新的基线。' : `已勾掉 ${ids.join('、')}。`) : `失败：${outcome.error ?? 'io'}`
       }
+      if (args.what === 'delete' && (args.chapters !== undefined || args.deletionId !== undefined)) {
+        const phase = args.phase
+        if (phase === 'preview') {
+          if (args.deletionId !== undefined) return '失败：删除预览不需要 deletionId；请用 chapters 指定章节。'
+          if (args.chapters === undefined || args.chapters.length === 0) return '失败：删除预览要给 chapters（章号数组）。'
+          const outcome = await store.previewChapterDeletion({ workId, chapters: args.chapters }, resolved.session, true)
+          if (!outcome.ok) return `失败：${outcome.error === 'missing' ? '有这些章节不存在，先 novel_read(what=chapters) 核对' : outcome.error}。`
+          const operation = outcome.operation
+          const counts = deletionCounts(operation)
+          const answer = [
+            `删除预览：第 ${args.chapters.join('、')} 章（${args.chapters.length} 章），尚未删除。`,
+            `正文 ${counts.bodies} 份 / 计划 ${counts.plans} 份 / 派生记录 ${counts.mentions + counts.experiences + counts.relations + counts.history + counts.minds + counts.pending + counts.feedback} 条（伏笔 ${counts.mentions}、经历 ${counts.experiences}、关系 ${counts.relations}、卡片历史 ${counts.history}、人物记忆 ${counts.minds}、待审 ${counts.pending}、想法 ${counts.feedback}）。`,
+            `级联清理候选 ${operation.cascadeCards.length} 张卡片（${operation.cascadeCards.map(row => row.id).join('、') || '无'}）；共享卡片待对齐 ${operation.reviewCards.length} 项。`,
+            `回收站快照约 ${Math.ceil(operation.size / 1024)} KB。正文与计划可恢复，含正文的章节恢复后要重新对账。`,
+            `deletionId=${operation.id}。请把影响告诉用户，等他下一条消息明确确认后，再 novel_write(what=delete, deletionId="${operation.id}", phase="apply")；可传 cards 只保留选中的级联候选。`,
+          ].join('\n')
+          return withNovelDestination(answer, `canvas:${workId}:delete-preview:${operation.id}`, { canvasId: workId, face: 'manuscripts' }, `删除预览 · ${args.chapters.length} 章`, { status: '等你确认', awaiting: true, door: '查看影响 →' })
+        }
+        if (args.deletionId === undefined) return '失败：章节删除、恢复或彻底删除要给 deletionId（先 phase=preview 获取）。'
+        if (phase === 'apply') {
+          const outcome = await store.applyChapterDeletion({ workId, deletionId: args.deletionId, ...(args.cards === undefined ? {} : { cards: args.cards }) }, resolved.session, true)
+          if (!outcome.ok) return outcome.error === 'plan-unseen'
+            ? '失败：预览之后还没有新的用户确认消息。先把影响告诉用户，等他明确同意后再 apply，不能由 Agent 自己确认。'
+            : `失败：${outcome.error === 'stale' ? '预览后章节或正文已变化，请重新 preview' : outcome.error ?? 'io'}。`
+          const answer = outcome.cleanupPending
+            ? `第 ${outcome.operation.chapters.map(row => row.record.n).join('、')} 章已删除并移入回收站，但部分清理尚未完成（${outcome.operation.cleanupError ?? 'io'}）。旧数据不会进入写作；同章号新章要等清理重试成功。`
+            : `第 ${outcome.operation.chapters.map(row => row.record.n).join('、')} 章已删除并移入回收站。正文、计划和派生快照长期保留，可逐章恢复；含正文的章节恢复后要重新对账。`
+          return withNovelDestination(answer, `canvas:${workId}:delete:${args.deletionId}`, { canvasId: workId, face: 'manuscripts' }, '章节回收站', { status: outcome.cleanupPending ? '清理待完成' : '已移入回收站', awaiting: false, door: '查看回收站 →' })
+        }
+        if (phase === 'restore') {
+          const outcome = await store.restoreChapters({ workId, deletionId: args.deletionId, ...(args.chapters === undefined ? {} : { chapters: args.chapters }), ...(args.cards === undefined ? {} : { cards: args.cards }), ...(args.position === undefined ? {} : { position: args.position }) }, resolved.session)
+          if (!outcome.ok) return `失败：${outcome.error === 'duplicate' ? '原章号已被新章占用，请用 position="next" 恢复到下一空闲章号' : outcome.error ?? 'io'}。`
+          const answer = `已恢复 ${outcome.restored} 章正文和计划${outcome.cardErrors.length > 0 ? `；${outcome.cardErrors.length} 张卡片恢复失败` : ''}。含正文的章节已标为待对账，旧派生记忆不会自动倒放。`
+          return withNovelDestination(answer, `canvas:${workId}:restore:${args.deletionId}`, { canvasId: workId, face: 'manuscripts' }, '章节已恢复', { status: '待对账', awaiting: true, door: '去对账 →' })
+        }
+        if (phase === 'purge') {
+          const outcome = await store.purgeChapters({ workId, deletionId: args.deletionId, ...(args.chapters === undefined ? {} : { chapters: args.chapters }) }, resolved.session)
+          if (!outcome.ok) return `失败：${outcome.error ?? 'io'}。`
+          return `已彻底删除 ${outcome.purged} 章的回收站快照，无法再通过回收站恢复。当前章节目录不变；会话历史、外部导出副本和系统备份不在清理范围内。`
+        }
+        return '失败：章节删除 phase 只能是 preview/apply/restore/purge；先 preview，再按流程操作。'
+      }
       if (args.what === 'delete') {
-        if (args.id === undefined) return '失败：what=delete 要给 id（卡片编号、事件 e3 或灵感 i2）。'
+        if (args.id === undefined) return '失败：what=delete 要给 id（卡片编号、事件 e3 或灵感 i2）；章节请给 chapters 并先 phase=preview。'
         const outcome = await store.deleteNode({ workId, node: args.id }, resolved.session)
         if (!outcome.ok) return outcome.error === 'unsupported' ? '失败：当前画布版本不支持删卡片。' : `失败：${outcome.error === 'missing' ? `没有 ${args.id}（章节不能这样删）` : outcome.error ?? 'io'}。`
         const impact = outcome.impact!
@@ -584,8 +632,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         return report.error === 'missing' ? `失败：没有第 ${args.chapter} 章。` : `失败：${report.error ?? 'io'}`
       }
       // A 对账 brings this chapter's memory up to date: what it moved is aligned (other chapters' text is not its to clear).
-      const moved = (await store.alignMoved(resolved.workId)).filter(id => !/^ch:\d+$/.test(id) || id === `ch:${args.chapter}`)
-      await store.alignAck({ workId: resolved.workId, ids: [...new Set([...moved, `ch:${args.chapter}`])] }, resolved.session)
+      const current = await store.readChapter({ workId: resolved.workId, n: args.chapter })
+      const currentId = current.ok && current.chapter !== undefined ? current.chapter.id ?? `ch:${args.chapter}` : `ch:${args.chapter}`
+      const moved = (await store.alignMoved(resolved.workId)).filter(id => !/^ch(?::\d+|_)/.test(id) || id === currentId)
+      await store.alignAck({ workId: resolved.workId, ids: [...new Set([...moved, currentId])] }, resolved.session)
       if (!report.settled) {
         return [
           `未对完，修正引用后重新导入：${report.dropped.length} 条引用对不上第 ${args.chapter} 章正文，这次什么都没写，这章仍是「待对账」。`,
@@ -700,6 +750,7 @@ interface WriteArgs {
   chapter?: number
   byUser?: boolean
   replace?: boolean
+  delete?: boolean
   plan?: Record<string, unknown>
   action?: ReviewAction
   volume?: string
@@ -708,6 +759,10 @@ interface WriteArgs {
   sketches?: unknown[]
   rationale?: string
   phase?: string
+  chapters?: number[]
+  deletionId?: string
+  cards?: string[]
+  position?: 'original' | 'next'
   event?: unknown
   moves?: unknown[]
   create?: unknown[]

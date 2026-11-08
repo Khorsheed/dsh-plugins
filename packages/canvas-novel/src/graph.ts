@@ -38,6 +38,8 @@ export interface GraphNode {
   readonly id: string
   readonly kind: NodeKind
   readonly name: string
+  /** Chapters only: the display number, not the node's identity. */
+  readonly chapter?: number
 }
 
 export interface GraphEdge {
@@ -49,6 +51,7 @@ export interface GraphEdge {
 /** What the graph is built from: plain rows, so the module stays pure. */
 export interface GraphInput {
   readonly chapters: readonly {
+    readonly id?: string
     readonly n: number
     readonly title: string
     readonly written: boolean
@@ -80,12 +83,14 @@ export interface BookGraph {
   into(id: string): readonly GraphEdge[]
   /** Edges leaving a node. */
   out(id: string): readonly GraphEdge[]
+  /** A chapter node's display number; stable ids are deliberately not parsed. */
+  chapterOf(id: string): number | undefined
 }
 
-/** A chapter's node id. */
+/** A pre-migration chapter's stable id. New generations use a fresh id instead. */
 export const chapterNode = (n: number): string => `ch:${n}`
 
-/** The chapter number of a chapter node id, or undefined. */
+/** The number of a legacy chapter id, or undefined for other nodes and new-generation ids. */
 export function chapterOfNode(id: string): number | undefined {
   const m = /^ch:(\d+)$/.exec(id)
   return m === null ? undefined : Number(m[1])
@@ -94,8 +99,9 @@ export function chapterOfNode(id: string): number | undefined {
 /** Build the graph; edges to nodes the book does not hold are dropped. */
 export function buildGraph(input: GraphInput): BookGraph {
   const nodes = new Map<string, GraphNode>()
-  const add = (id: string, kind: NodeKind, name: string): void => { if (!nodes.has(id)) nodes.set(id, { id, kind, name }) }
-  for (const row of input.chapters) add(chapterNode(row.n), 'chapter', row.title)
+  const add = (id: string, kind: NodeKind, name: string, chapter?: number): void => { if (!nodes.has(id)) nodes.set(id, { id, kind, name, ...(chapter === undefined ? {} : { chapter }) }) }
+  const chapterIds = new Map(input.chapters.map(row => [row.n, row.id ?? chapterNode(row.n)]))
+  for (const row of input.chapters) add(row.id ?? chapterNode(row.n), 'chapter', row.title, row.n)
   for (const row of input.settings) add(row.id, 'setting', row.name)
   for (const row of input.characters) add(row.id, 'character', row.name)
   for (const row of input.relations) add(row.id, 'relation', row.name)
@@ -112,7 +118,7 @@ export function buildGraph(input: GraphInput): BookGraph {
     edges.push({ from, to, kind })
   }
   for (const row of input.events) {
-    for (const n of row.chapters ?? []) link(row.id, chapterNode(n), 'told-in')
+    for (const n of row.chapters ?? []) { const chapter = chapterIds.get(n); if (chapter !== undefined) link(row.id, chapter, 'told-in') }
     for (const id of row.places ?? []) link(row.id, id, 'at')
     for (const id of row.who ?? []) link(row.id, id, 'with')
     for (const id of row.causes ?? []) link(row.id, id, 'cause')
@@ -128,12 +134,12 @@ export function buildGraph(input: GraphInput): BookGraph {
   }
   for (const row of input.relations) for (const id of row.pair) link(row.id, id, 'pair')
   for (const row of input.chapters) {
-    const ch = chapterNode(row.n)
+    const ch = row.id ?? chapterNode(row.n)
     for (const id of [...row.settings ?? [], ...row.uses ?? []]) link(ch, id, 'uses')
     for (const id of row.advances ?? []) link(ch, id, 'advances')
     for (const id of row.cast ?? []) link(ch, id, 'cast')
   }
-  for (const row of input.foreshadows) for (const n of row.chapters) link(chapterNode(n), row.id, 'moves')
+  for (const row of input.foreshadows) for (const n of row.chapters) { const chapter = chapterIds.get(n); if (chapter !== undefined) link(chapter, row.id, 'moves') }
   for (const row of input.ideas) if (row.eventId !== undefined) link(row.id, row.eventId, 'bound')
 
   const into = new Map<string, GraphEdge[]>()
@@ -142,7 +148,7 @@ export function buildGraph(input: GraphInput): BookGraph {
     into.set(edge.to, [...into.get(edge.to) ?? [], edge])
     out.set(edge.from, [...out.get(edge.from) ?? [], edge])
   }
-  return { nodes, edges, into: id => into.get(id) ?? [], out: id => out.get(id) ?? [] }
+  return { nodes, edges, into: id => into.get(id) ?? [], out: id => out.get(id) ?? [], chapterOf: id => nodes.get(id)?.chapter }
 }
 
 /** What deleting a node does: the fixes made at once, and the written chapters that still carry it. */
@@ -178,7 +184,7 @@ export function deleteImpact(graph: BookGraph, id: string, written: ReadonlySet<
       case 'bound': auto.push({ kind: 'unbind', id: edge.from }); break
       case 'reveals': auto.push({ kind: 'drop', id: edge.from }); break
       case 'uses': case 'moves': case 'cast': case 'advances': {
-        const n = chapterOfNode(edge.from)
+        const n = graph.chapterOf(edge.from)
         if (n !== undefined && written.has(n)) chapters.add(n)
         else auto.push({ kind: 'unlink', id: edge.from, edge: edge.kind })
         break
@@ -188,7 +194,7 @@ export function deleteImpact(graph: BookGraph, id: string, written: ReadonlySet<
   }
   if (node.kind === 'event') {
     for (const edge of graph.out(id)) {
-      const n = edge.kind === 'told-in' ? chapterOfNode(edge.to) : undefined
+      const n = edge.kind === 'told-in' ? graph.chapterOf(edge.to) : undefined
       if (n !== undefined && written.has(n)) chapters.add(n)
     }
   }

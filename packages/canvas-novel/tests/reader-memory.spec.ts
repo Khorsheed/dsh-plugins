@@ -34,6 +34,12 @@ describe('chapter reader memory', () => {
     expect(loadEditorPosition('canvas-a', 1, 10)).toBeNull()
   })
 
+  it('does not inherit editor position when a chapter number is reused', () => {
+    saveEditorPosition('canvas-a', 'chapter-old', { start: 4, end: 8, scrollTop: 120 })
+    expect(loadEditorPosition('canvas-a', 'chapter-new', 10)).toBeNull()
+    expect(loadEditorPosition('canvas-a', 'chapter-old', 10)).toEqual({ start: 4, end: 8, scrollTop: 120 })
+  })
+
   it('ignores malformed or unavailable storage', () => {
     window.localStorage.setItem('novel-reading:canvas-a', '{bad json')
     window.localStorage.setItem('novel-editor-position:canvas-a:1', JSON.stringify({ version: 1, start: 9, end: 2, scrollTop: 0 }))

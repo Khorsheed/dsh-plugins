@@ -45,6 +45,17 @@ describe('the graph', () => {
     expect(impact.auto).toEqual(expect.arrayContaining([{ kind: 'unlink', id: 'c1', edge: 'home' }, { kind: 'unlink', id: 'e1', edge: 'at' }]))
     expect(deleteImpact(graph, 'e1', new Set([1]))!.auto).toEqual([{ kind: 'unbind', id: 'i1' }])
   })
+
+  it('uses a chapter generation id for edges and impact while keeping n for display', () => {
+    const graph = buildGraph({
+      chapters: [{ id: 'ch_new-generation', n: 1, title: '新第一章', written: true, settings: ['w1'] }],
+      settings: [{ id: 'w1', name: '小镇' }], characters: [], relations: [], foreshadows: [],
+      events: [{ id: 'e1', title: '新事件', chapters: [1] }], ideas: [],
+    })
+    expect(graph.chapterOf('ch_new-generation')).toBe(1)
+    expect(graph.out('e1').find(edge => edge.kind === 'told-in')?.to).toBe('ch_new-generation')
+    expect(deleteImpact(graph, 'w1', new Set([1]))?.chapters).toEqual([1])
+  })
 })
 
 describe('deleting from the book', () => {

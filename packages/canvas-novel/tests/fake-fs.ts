@@ -106,6 +106,24 @@ export class FakeFs {
     }
   }
 
+  /** Paths whose deletion should fail once, to exercise retryable chapter cleanup. */
+  readonly deleteFailures = new Set<string>()
+
+  async deleteFile(target: string, expected?: { version: string }, _signal?: unknown, policy?: SeenPolicy): Promise<{ before: string | null }> {
+    this.policies.push(policy)
+    if (this.sandboxMode === 'read-only') throw new FsError(`denied: ${target}`, 'FS_SANDBOX_DENIED')
+    if (this.sandboxMode !== undefined) {
+      const root = policy?.workspaceRoot ?? (this.sandboxMode === 'danger-full-access' ? undefined : HOST_CWD)
+      if (root !== undefined && target !== root && !target.startsWith(`${root}/`)) throw new FsError(`denied: ${target}`, 'FS_SANDBOX_DENIED')
+    }
+    if (this.deleteFailures.delete(target)) throw new FsError(`injected delete failure: ${target}`, 'FS_IO_ERROR')
+    const existing = this.entries.get(target)
+    if (existing === undefined || existing.kind !== 'file') throw new FsError(`missing: ${target}`, 'FS_STALE_VERSION')
+    if (expected !== undefined && String(existing.version) !== expected.version) throw new FsError(`stale: ${target}`, 'FS_STALE_VERSION')
+    this.entries.delete(target)
+    return { before: existing.content }
+  }
+
   async listDir(target: string): Promise<Array<{ name: string; type: 'file' | 'directory'; target: string }>> {
     if (this.entries.get(target) === undefined) {
       throw new FsError(`no directory at ${target}`, 'FS_NOT_FOUND')

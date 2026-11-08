@@ -40,6 +40,13 @@ async function call(tool: { execute: (args: never, exec: never) => Promise<unkno
   return typeof outcome === 'string' ? outcome : String(outcome)
 }
 
+/** Run one call after a user message with the given sequence number. */
+async function callConfirmed(tool: { execute: (args: never, exec: never) => Promise<unknown> }, args: Record<string, unknown>, seq: number): Promise<string> {
+  const session = { ...SESSION, snapshotEvents: () => [{ type: 'user/message', seq }] } as unknown as Session
+  const outcome = await tool.execute(args as never, { agent: { session, sessionId: String(SESSION.id) } } as never)
+  return typeof outcome === 'string' ? outcome : String(outcome)
+}
+
 describe('novel_bind', () => {
   it('lists the works, binds by title (exact, then unique part), and refuses what it cannot resolve', async () => {
     const { store, canvas, read } = await bench()
@@ -251,5 +258,33 @@ describe('the novel tools', () => {
     expect(report).toContain('省略号')
     expect(report).not.toContain('计划命中')
     expect(await call(read, { what: 'chapters' })).toContain('待对账：第5章')
+  })
+
+  it('rejects chapter delete as an unknown write instead of re-registering a plan', async () => {
+    const { write, store } = await bench({ bound: true })
+    const before = await store.listChapters({ workId: DREAM.workId })
+    const answer = await call(write, { what: 'chapter', chapter: 3, title: '不应再登记', delete: true })
+    expect(answer).toContain('what=chapter 不接受 delete')
+    expect(await store.listChapters({ workId: DREAM.workId })).toEqual(before)
+  })
+
+  it('previews chapters, refuses self-confirmation, then applies, restores and purges by operation id', async () => {
+    const { write, store } = await bench({ bound: true })
+    const preview = await call(write, { what: 'delete', chapters: [3, 6], phase: 'preview' })
+    expect(preview).toContain('删除预览：第 3、6 章')
+    expect(preview).toContain('deletionId=del_')
+    expect(preview).toContain('⟦dsh-nav⟧')
+    const deletionId = /deletionId=(del_[^\s。]+)/.exec(preview)?.[1]
+    expect(deletionId).toBeDefined()
+    expect(await call(write, { what: 'delete', deletionId, phase: 'apply' })).toContain('没有新的用户确认消息')
+    const applied = await callConfirmed(write, { what: 'delete', deletionId, phase: 'apply' }, 2)
+    expect(applied).toContain('已删除并移入回收站')
+    expect((await store.listChapters({ workId: DREAM.workId })).map(row => row.chapter.n)).toEqual([1, 2, 4, 5])
+    const restored = await callConfirmed(write, { what: 'delete', deletionId, chapters: [3], phase: 'restore' }, 2)
+    expect(restored).toContain('已恢复 1 章正文和计划')
+    expect((await store.readChapter({ workId: DREAM.workId, n: 3 })).ok).toBe(true)
+    const purged = await callConfirmed(write, { what: 'delete', deletionId, chapters: [6], phase: 'purge' }, 2)
+    expect(purged).toContain('已彻底删除 1 章的回收站快照')
+    expect(await store.listChapterDeletions(DREAM.workId)).toEqual([])
   })
 })

@@ -44,6 +44,9 @@
 .tocBar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 2px 0 14px; }
 .tocActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
 .chs { display: grid; }
+.chPick { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: center; }
+.chPick > input { margin: 0 4px; accent-color: var(--dsw-alias-brand-primary); cursor: pointer; }
+.chPick[data-selected="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent); }
 .ch, .chAdd {
   display: grid; grid-template-columns: 4em minmax(0, 1fr) auto; gap: 2px 12px; align-items: baseline; padding: 10px 6px; width: 100%;
   border: 0; border-top: 1px solid var(--dsw-alias-border-l1); background: none; border-radius: 0; cursor: pointer; text-align: left; color: var(--dsw-alias-label-primary);

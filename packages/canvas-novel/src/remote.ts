@@ -38,6 +38,11 @@ import type {
   ChapterFeedbackAddRequest, ChapterFeedbackBatchRequest, ChapterFeedbackCandidateRequest, ChapterFeedbackDeleteRequest,
   ChapterFeedbackMutationResult, ChapterFeedbackPrepareResult, ChapterFeedbackRestoreRequest, ChapterFeedbackResult,
 } from './chapter-feedback.ts'
+import {
+  deletionCounts,
+  type ChapterDeletionApplyRequest, type ChapterDeletionListResult, type ChapterDeletionMutationResult, type ChapterDeletionOperation,
+  type ChapterDeletionPreviewRequest, type ChapterDeletionPreviewResult, type ChapterDeletionPurgeRequest, type ChapterDeletionRestoreRequest, type ChapterDeletionView,
+} from './chapter-deletion.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -65,6 +70,30 @@ function namesOf(entries: WorkEntries | undefined): Map<string, string> {
 /** The card a pending item is about, when it names one. */
 function subjectOf(item: PendingItem): string | undefined {
   return item.payload.foreshadowId ?? item.payload.characterId ?? item.payload.cardId ?? item.payload.id
+}
+
+/** A deletion operation without manuscript payloads: enough for the confirm and recycle surfaces. */
+async function deletionView(core: NovelService, operation: ChapterDeletionOperation): Promise<ChapterDeletionView> {
+  const entries = await core.readEntries(operation.workId)
+  const nameOf = (id: string): string => {
+    const card = entries?.board.cards.find(row => row.id === id)
+    const fields = card?.fields ?? {}
+    const value = fields['name'] ?? fields['question'] ?? fields['rule'] ?? fields['principle'] ?? card?.text
+    return value === undefined ? id : String(value)
+  }
+  return {
+    id: operation.id, status: operation.status,
+    chapters: operation.chapters.map(row => ({
+      n: row.record.n, title: row.record.title, hasBody: row.body.trim() !== '',
+      words: row.record.wordCount ?? row.body.replace(/\s+/g, '').length,
+      size: new TextEncoder().encode(JSON.stringify(row)).byteLength,
+    })),
+    counts: deletionCounts(operation),
+    cascadeCards: operation.cascadeCards.map(row => ({ ...row, name: nameOf(row.id) })),
+    reviewCards: operation.reviewCards.map(id => ({ id, name: nameOf(id) })),
+    size: operation.size, updatedAt: operation.updatedAt,
+    ...(operation.cleanupError === undefined ? {} : { cleanupError: operation.cleanupError }),
+  }
 }
 
 /** The wire namespace is `novel`: the browser calls `remote.novel.pending`. */
@@ -485,7 +514,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
         const places = entries.rules.filter(view => view.sort === 'place' && at(view.name) >= 0).sort((a, b) => at(a.name) - at(b.name)).map(view => view.cardId)
         const lane = laneOf(places)
         return {
-          id: `ch:${row.chapter.n}`, title: row.chapter.recap!, status: 'happened', chapters: [row.chapter.n], ideas: 0, recap: true,
+          id: row.chapter.id ?? `ch:${row.chapter.n}`, title: row.chapter.recap!, status: 'happened', chapters: [row.chapter.n], ideas: 0, recap: true,
           ...(who.length === 0 ? {} : { who }), ...(places.length === 0 ? {} : { places }), ...(lane === undefined ? {} : { lane }),
         }
       })
@@ -586,6 +615,50 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
     const fixed = (outcome.impact?.auto ?? []).map(fix => fix.id)
     if (fixed.length > 0) await this.core.alignAck({ workId: request.canvasId, ids: fixed }, session)
     return { ok: true }
+  }
+
+  /** Preview a chapter batch with the exact bodies, derived records and cascade candidates it owns. */
+  @Remote('chapterDeletionPreview')
+  async chapterDeletionPreview(sessionId: SessionId, request: ChapterDeletionPreviewRequest): Promise<ChapterDeletionPreviewResult> {
+    const outcome = await this.core.previewChapterDeletion({ workId: request.canvasId, chapters: request.chapters }, await panelSession(this.ctx, sessionId))
+    return outcome.ok ? { ok: true, operation: await deletionView(this.core, outcome.operation) } : { ok: false, error: outcome.error }
+  }
+
+  /** The person's direct confirm; the Agent uses the same method with a later-message gate. */
+  @Remote('applyChapterDeletion')
+  async applyChapterDeletion(sessionId: SessionId, request: ChapterDeletionApplyRequest): Promise<ChapterDeletionMutationResult> {
+    const session = await panelSession(this.ctx, sessionId)
+    const outcome = await this.core.applyChapterDeletion({ workId: request.canvasId, deletionId: request.deletionId, ...(request.cards === undefined ? {} : { cards: request.cards }) }, session)
+    return outcome.ok
+      ? { ok: true, operation: await deletionView(this.core, outcome.operation), deleted: outcome.deleted, cleanupPending: outcome.cleanupPending }
+      : { ok: false, error: outcome.error }
+  }
+
+  /** Current recycle contents and their retained size. */
+  @Remote('chapterDeletions')
+  async chapterDeletions(request: { readonly canvasId: string }): Promise<ChapterDeletionListResult> {
+    const operations = await this.core.listChapterDeletions(request.canvasId)
+    return { ok: true, operations: await Promise.all(operations.map(operation => deletionView(this.core, operation))), size: operations.reduce((sum, row) => sum + row.size, 0) }
+  }
+
+  /** Restore selected chapters and, only when explicitly selected, their archived cascade cards. */
+  @Remote('restoreChapters')
+  async restoreChapters(sessionId: SessionId, request: ChapterDeletionRestoreRequest): Promise<ChapterDeletionMutationResult> {
+    const session = await panelSession(this.ctx, sessionId)
+    const outcome = await this.core.restoreChapters({ workId: request.canvasId, deletionId: request.deletionId, ...(request.chapters === undefined ? {} : { chapters: request.chapters }), ...(request.cards === undefined ? {} : { cards: request.cards }), ...(request.position === undefined ? {} : { position: request.position }) }, session)
+    return outcome.ok
+      ? { ok: true, operation: await deletionView(this.core, outcome.operation), restored: outcome.restored, cardErrors: outcome.cardErrors }
+      : { ok: false, error: outcome.error }
+  }
+
+  /** Permanently purge selected snapshots without changing the current chapter directory. */
+  @Remote('purgeChapters')
+  async purgeChapters(sessionId: SessionId, request: ChapterDeletionPurgeRequest): Promise<ChapterDeletionMutationResult> {
+    const session = await panelSession(this.ctx, sessionId)
+    const outcome = await this.core.purgeChapters({ workId: request.canvasId, deletionId: request.deletionId, ...(request.chapters === undefined ? {} : { chapters: request.chapters }) }, session)
+    return outcome.ok
+      ? { ok: true, operation: await deletionView(this.core, outcome.operation), purged: outcome.purged, cardErrors: outcome.cardErrors }
+      : { ok: false, error: outcome.error }
   }
 
   @Remote('chapterFeedback')

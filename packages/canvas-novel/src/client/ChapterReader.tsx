@@ -249,7 +249,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
 
 /** A local draft survives a dropped connection or a closed page until it is saved. */
 function draftKey(view: NovelChapterResult): string {
-  return `novel-draft:${view.file ?? ''}:${view.chapter?.n ?? 0}`
+  return `novel-draft:${view.file ?? ''}:${view.chapter?.id ?? `ch:${view.chapter?.n ?? 0}`}`
 }
 
 type SaveOutcome = { readonly error?: string; readonly changed?: number; readonly kept?: boolean }
@@ -275,14 +275,14 @@ function BodyEditor({ id, canvasId, view, open, tabbed, onOpenChange, onSave, on
   const scrollFrame = useRef<number | null>(null)
   const positionKnown = useRef(false)
   const latestPosition = useRef<EditorPosition>({ start: 0, end: 0, scrollTop: 0 })
-  const chapterN = view.chapter?.n ?? 0
+  const positionId = view.chapter?.id ?? view.chapter?.n ?? 0
   const text = draft ?? stored() ?? view.body ?? ''
   useEffect(() => { if (open) setNote(null) }, [open])
   const keep = (value: string | null): void => {
     try { if (value === null) window.localStorage.removeItem(draftKey(view)); else window.localStorage.setItem(draftKey(view), value) } catch { /* a private window keeps nothing; the edit still works */ }
   }
   const rememberNow = (): void => {
-    if (positionKnown.current) saveEditorPosition(canvasId, chapterN, latestPosition.current)
+    if (positionKnown.current) saveEditorPosition(canvasId, positionId, latestPosition.current)
   }
   const capture = (node: HTMLTextAreaElement): void => {
     latestPosition.current = { start: node.selectionStart, end: node.selectionEnd, scrollTop: node.scrollTop }
@@ -296,19 +296,19 @@ function BodyEditor({ id, canvasId, view, open, tabbed, onOpenChange, onSave, on
     if (!open) return
     const node = box.current
     if (node === null) return
-    const saved = loadEditorPosition(canvasId, chapterN, text.length)
+    const saved = loadEditorPosition(canvasId, positionId, text.length)
     if (saved === null) return
     latestPosition.current = saved
     positionKnown.current = true
     node.setSelectionRange(saved.start, saved.end)
     node.scrollTop = saved.scrollTop
     node.scrollIntoView?.({ block: 'start' })
-  }, [open, canvasId, chapterN])
+  }, [open, canvasId, positionId])
   useEffect(() => () => {
     if (scrollFrame.current !== null) window.cancelAnimationFrame(scrollFrame.current)
     scrollFrame.current = null
     rememberNow()
-  }, [canvasId, chapterN])
+  }, [canvasId, positionId])
   const save = async (): Promise<SaveOutcome> => {
     setBusy(true)
     try {
@@ -339,7 +339,7 @@ function BodyEditor({ id, canvasId, view, open, tabbed, onOpenChange, onSave, on
             keep(null)
             setDraft(null)
             positionKnown.current = false
-            clearEditorPosition(canvasId, chapterN)
+            clearEditorPosition(canvasId, positionId)
             onOpenChange(false)
           }}
         >
