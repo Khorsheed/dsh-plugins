@@ -82,6 +82,35 @@ describe('roundUsage', () => {
     expect(roundUsage(run({ tokens: 99_999, reading: reading({ callUsage: { inputTokens: 300, outputTokens: 50 } }) }))?.tokens).toBe(350)
     expect(roundUsage(run({ executionId: undefined, tokens: 4_200 }))).toEqual({ tokens: 4_200, source: 'stored' })
   })
+
+  it('kimi from 0 to including subagents (M6): the headline adds them, the line keeps both parts; a resumed subagent counts once', () => {
+    const own = { inputTokens: 300, cacheReadTokens: 1_000, outputTokens: 50 }
+    // Before M6 the subagents were in no reading: the member's own sum only.
+    expect(roundUsage(run({ reading: reading({ callUsage: own }) }))).toEqual({ tokens: 1_350, breakdown: own, source: 'calls' })
+    const subagentUsage = { inputTokens: 200, cacheReadTokens: 400, outputTokens: 30 }
+    const subagents = [
+      { sessionId: 'child-1.sub.agent-0', executionId: 'x1', name: 'explore', calls: 2, callUsage: { inputTokens: 120, cacheReadTokens: 400, outputTokens: 20 } },
+      { sessionId: 'child-1.sub.agent-0', executionId: 'x2', name: 'explore', calls: 1, callUsage: { inputTokens: 80, outputTokens: 10 } },
+    ]
+    expect(roundUsage(run({ reading: reading({ callUsage: own, subagents, subagentUsage }) }))).toEqual({
+      tokens: 1_980,
+      breakdown: { inputTokens: 500, cacheReadTokens: 1_400, outputTokens: 80 },
+      source: 'calls',
+      member: { tokens: 1_350, breakdown: own },
+      subagents: { tokens: 630, breakdown: subagentUsage, count: 1 },
+    })
+    // Only subagents spent (the member's own calls carried nothing): still a line.
+    expect(roundUsage(run({ reading: reading({ calls: 0, subagents, subagentUsage }) }))).toMatchObject({ tokens: 630, member: { tokens: 0 }, subagents: { count: 1 } })
+  })
+
+  it('a CLI total with subagents: the check compares the member\'s own calls only', () => {
+    const line = roundUsage(run({ reading: reading({
+      providerReportedUsage: CLI, callUsage: CLI,
+      subagents: [{ sessionId: 'child-1.sub.a1', executionId: 'x1', calls: 1 }], subagentUsage: { inputTokens: 5_000, outputTokens: 100 },
+    }) }))
+    expect(line).toMatchObject({ tokens: 17_500, source: 'cli', callTokens: 12_400, member: { tokens: 12_400 }, subagents: { tokens: 5_100 } })
+    expect(line?.gap).toBeUndefined()
+  })
 })
 
 describe('the reply\'s usage line, fed by the reading', () => {
@@ -114,6 +143,30 @@ describe('the reply\'s usage line, fed by the reading', () => {
     fireEvent.mouseEnter(screen.getByText('用量 8.2K tok').parentElement!)
     expect(screen.getByRole('tooltip').textContent).toContain('本轮用量（逐次合计）8,200 tok')
     expect(screen.queryByTestId('usage-gap')).toBeNull()
+  })
+
+  it('subagents counted in: two lines in the breakdown and the round\'s small text opens the member session', async () => {
+    const roomStore = await storeOf({ ...STATE, executions: [run({ reading: reading({
+      callUsage: { inputTokens: 1_000, outputTokens: 200 },
+      subagents: [
+        { sessionId: 'child-1.sub.agent-0', executionId: 'x1', calls: 1 },
+        { sessionId: 'child-1.sub.agent-1', executionId: 'y1', calls: 1 },
+      ],
+      subagentUsage: { inputTokens: 700, outputTokens: 100 },
+    }) })] })
+    const openSession = vi.fn()
+    const data = { seq: 7, time: 1007, member: 'ada', text: 'done', childSessionId: 'child-1', runId: 'r1' }
+    render(<RoomSpeechView {...{
+      node: { key: 'k', kind: 'room-speech', id: '7', target: 'chat', anchorSeq: 7, location: { kind: 'unresolved' }, visibility: 'visible', data },
+      sessionId: 'room-1', roomStore, openSession, t: makeTranslate(zh),
+    } as unknown as RoomSpeechViewProps} />)
+    fireEvent.mouseEnter(screen.getByText('用量 2K tok').parentElement!)
+    const panel = screen.getByRole('tooltip').textContent ?? ''
+    expect(panel).toContain('成员自己1,200 tok')
+    expect(panel).toContain('子智能体（2 个）800 tok')
+    fireEvent.click(screen.getByTestId('speech-subagents'))
+    expect(screen.getByTestId('speech-subagents').textContent).toBe('这一轮用了 2 个子智能体')
+    expect(openSession).toHaveBeenCalledWith('child-1')
   })
 
   it('an old run (no execution id, no reading) still shows its stored numbers', async () => {
