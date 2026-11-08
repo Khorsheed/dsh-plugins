@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { SubagentRun, SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { MemberInbox, SELF_ROUND_RESTARTED } from '../src/member-inbox.ts'
+import type { HostProcesses } from '../src/host-process.ts'
 import type { LocalAgentMemberInput } from '../src/types.ts'
 
 function deferred<T>() {
@@ -12,7 +13,7 @@ function deferred<T>() {
   return { promise, resolve }
 }
 interface Job { memberId: string; row: LocalAgentMemberInput; signal: AbortSignal; admitted: () => void; started: ReturnType<typeof deferred<SubagentRun>>; result: ReturnType<typeof deferred<SubagentResult>> }
-function mount(directory = mkdtempSync(join(tmpdir(), 'member-inbox-'))) {
+function mount(directory = mkdtempSync(join(tmpdir(), 'member-inbox-')), processes?: HostProcesses) {
   const jobs: Job[] = []
   const dispatch = (memberId: string, row: LocalAgentMemberInput, signal: AbortSignal, admitted: () => void): Promise<SubagentRun> => {
     const started = deferred<SubagentRun>()
@@ -23,7 +24,7 @@ function mount(directory = mkdtempSync(join(tmpdir(), 'member-inbox-'))) {
   }
   const composer = vi.fn(dispatch)
   const errors = vi.fn()
-  const inbox = new MemberInbox(directory, composer, errors)
+  const inbox = new MemberInbox(directory, composer, errors, processes)
   /** The composer path: dedup by request id, then one ledger row (the registry passes run()'s submission). */
   const enqueue = (memberId: string, text: string, requestId: string) =>
     inbox.enqueue(memberId, text, requestId, row => { inbox.submit(memberId, { id: `exec-${requestId}`, caller: 'composer', key: row.key, text: row.text }) })
@@ -200,6 +201,29 @@ describe('member execution ledger', () => {
     expect(third.inbox.read('ada').messages[0]).toMatchObject({ status: 'uncertain' })
     expect(third.inbox.interruptedMembers()).toEqual([])
     third.inbox.dispose()
+  })
+
+  it('a row still `running` on disk that was admitted before the previous host process started is an older restart\'s leftover, loaded or not', () => {
+    const first = mount()
+    void first.submit('ada', 'ada-run', 'room', 'delivery-ada')
+    first.jobs[0]!.admitted()
+    const admittedAt = first.inbox.read('ada').messages[0]!.admittedAt!
+    first.inbox.dispose()
+    // Process 2 started after the round and touched nothing; this is process 3.
+    const later: HostProcesses = { current: { id: 'p3', startedAt: admittedAt + 20 }, previous: { id: 'p2', startedAt: admittedAt + 10 } }
+    const third = mount(first.directory, later)
+    expect(third.inbox.interruptedMembers()).toEqual([])
+    // Loading still converts it (it does block admission), but not as this restart's.
+    expect(third.inbox.read('ada').messages[0]).toMatchObject({ status: 'uncertain' })
+    expect(third.inbox.interruptedMembers()).toEqual([])
+    third.inbox.dispose()
+    // The same file with the round started inside the previous process: this restart's.
+    const fresh = mount(mkdtempSync(join(tmpdir(), 'member-inbox-')), { current: { id: 'p3', startedAt: admittedAt + 20 }, previous: { id: 'p2', startedAt: admittedAt - 10 } })
+    writeFileSync(join(fresh.directory, readdirSync(first.directory).find(name => name.endsWith('.json'))!), JSON.stringify({ version: 2, state: { memberId: 'ada', paused: false, messages: [{ id: 'ada-run', caller: 'room', key: 'delivery-ada', status: 'running', createdAt: admittedAt, updatedAt: admittedAt, admittedAt }] } }))
+    expect(fresh.inbox.interruptedMembers()).toEqual(['ada'])
+    expect(fresh.inbox.read('ada').messages[0]).toMatchObject({ status: 'uncertain' })
+    expect(fresh.inbox.interruptedMembers()).toEqual(['ada'])
+    fresh.inbox.dispose()
   })
 
   it('reads a version-1 member inbox file as composer rows keyed by their request id', () => {

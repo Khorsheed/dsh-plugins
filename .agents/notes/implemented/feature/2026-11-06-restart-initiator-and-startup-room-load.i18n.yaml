@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-06-restart-initiator-and-startup-room-load.md
-.agents/notes/implemented/feature/2026-11-06-restart-initiator-and-startup-room-load.md: 23e563e266157ee0b1cc766cfbe1bccbc7e73e9f
-.agents/notes/implemented/feature/2026-11-06-restart-initiator-and-startup-room-load.zh.md: 5173b7f31d2d263f4474da1aa852ce87016bdc30
+.agents/notes/implemented/feature/2026-11-06-restart-initiator-and-startup-room-load.md: 2ac8e0887a52c73b672fc3da9896848d5dc3c99b
+.agents/notes/implemented/feature/2026-11-06-restart-initiator-and-startup-room-load.zh.md: f0a13be2a61ecf4807045a1a95337a841e73ffc0

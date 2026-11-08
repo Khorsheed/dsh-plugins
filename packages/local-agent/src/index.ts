@@ -132,6 +132,7 @@ import { PresetToolHost } from './preset-tool-host.ts'
 import type { RoomMemberMessageGate as ModeApprovalGate } from './types.ts'
 import { withMemberProcessIdentity, type MemberProcessIdentity } from './env.ts'
 import { MemberInbox, SELF_ROUND_RESTARTED } from './member-inbox.ts'
+import { recordHostProcess, type HostProcesses } from './host-process.ts'
 import { PreparedMembers } from './prepared-members.ts'
 import { MemberControls } from './member-controls.ts'
 import { FileMemberControlStorage } from './member-control-storage.ts'
@@ -849,6 +850,11 @@ export const RUN_PROGRESS_SETTLE_GRACE_MS = 60_000
 /** Socket filename of the member-bridge listener, under the shared homes root. */
 export const MEMBER_BRIDGE_SOCKET_FILENAME = 'member-bridge.sock'
 
+/** The host-process record (host-process.ts), under the shared homes root. */
+export const HOST_PROCESS_FILENAME = '.host-process.json'
+
+export type { HostProcess, HostProcesses } from './host-process.ts'
+
 /** One delegation-intent queue per (parent session, provider). */
 function delegationIntentKey(parentSessionId: string, provider: string): string {
   return `${parentSessionId}\u0000${provider}`
@@ -1246,6 +1252,8 @@ export class LocalAgentRegistry {
   private readonly preparedMembers: PreparedMembers
   private readonly preparations = new Map<string, { signature: string; promise: Promise<string> }>()
   readonly memberInbox: MemberInbox
+  /** This host process and the one before it (see {@link hostProcesses}). */
+  private readonly processes: HostProcesses
   private readonly memberControls: MemberControls
   /**
    * All provider starts, including direct tool starts, acquire the same
@@ -1387,6 +1395,18 @@ export class LocalAgentRegistry {
       if (parent !== undefined && parent !== '') parents.add(parent)
     }
     return [...parents]
+  }
+
+  /**
+   * This host process and the one before it (host-process.ts), as recorded
+   * when the core started: the boot evidence a restart's consumers judge
+   * "cut off by THIS restart" with — a round that started before the
+   * previous process did belongs to an earlier restart, whenever its
+   * interruption happens to be written down. `previous` is absent on the
+   * first boot with the record.
+   */
+  hostProcesses(): HostProcesses {
+    return this.processes
   }
 
   /**
@@ -1657,11 +1677,13 @@ export class LocalAgentRegistry {
     private readonly loginPromptTimeoutMs: number,
   ) {
     this.preparedMembers = new PreparedMembers(join(homesRoot, '.prepared-members'))
+    // Which host process this is and which one ran before (before any ledger is read).
+    this.processes = recordHostProcess(join(homesRoot, HOST_PROCESS_FILENAME), undefined, error => this.ctx.logger.warn(`localAgent: recording the host process failed: ${String(error)}`))
     // The member execution ledger. A composer row replayed after a restart
     // (its in-memory dispatcher is gone) runs from its stored text here.
     this.memberInbox = new MemberInbox(join(homesRoot, '.member-inbox'), async (childSessionId, row, signal, admitted) => {
       return await this.dispatchExecution(this.composerPlan(childSessionId, row.text ?? '', row.key), row.id, signal, admitted)
-    }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`))
+    }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`), this.processes)
     this.memberControls = new MemberControls(new FileMemberControlStorage(join(homesRoot, '.member-controls')), binding => {
       const adapter = this.harnessForProvider(binding.provider)?.modelBroker?.configurationAdapter?.(binding)
       if (adapter === undefined) throw new Error(`localAgent: ${binding.provider} exposes no configuration admission adapter`)
