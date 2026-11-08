@@ -27,6 +27,7 @@
 import { countToolCalls } from './tool-summary.ts'
 import type {
   AgentScopeOverview,
+  CliSubagentInfo,
   ContinuesInfo,
   ExecutionFacts,
   RoomDecisionRow,
@@ -54,7 +55,7 @@ import type {
 } from './types.ts'
 import { splitRequest, rebaseSegments, type CapturedToolSchema, type ScopeFingerprint, type AssemblyRecord } from './segmenter.ts'
 import { AMBIENT_SOURCES, lastParagraph, previewLine, stripRoomPreamble, type CapturedMessage } from './messages.ts'
-import type { ExecutionRecord, LogTurn } from './log-lane.ts'
+import { IN_PROCESS_PROVIDERS, cliSubagentCauseOf, type CliSubagentCause, type ExecutionRecord, type LogTurn } from './log-lane.ts'
 import { prefixTextChange } from './prefix-diff.ts'
 import { diffRequests, messagesOf, type FactLookup, type ReplacementFact } from './changes.ts'
 import { answersMatch, askView, isAskTool, type RoomQuestionRecord } from './ask.ts'
@@ -243,6 +244,26 @@ export interface ScopeRecord {
   executions?: ExecutionFacts[]
   /** A member's self-started round shown in a room view (built on read). */
   continues?: ContinuesInfo
+  /** A member CLI's own subagent opened from the member's log (stored grandchild scope): the member's child id. */
+  spawnedFrom?: string
+  /** A CLI subagent's view in one turn (built on read): the view and call that started it. */
+  cliSubagent?: CliSubagentInfo
+  /** A CLI subagent view: the calling view's request whose tool call started it (built on read). */
+  delegatedLink?: RequestLink
+}
+
+/** A view in one turn that may have called CLI subagents (see InspectorStore.subagentViews). */
+interface CallingView {
+  /** Its scope id in the turn. */
+  viewId: string
+  /** The session it reads (a member's child id; the session itself for `main`). */
+  childId: string
+  /** Its name; absent for the main conversation. */
+  name?: string
+  /** Its requests in this view: the calls they issued claim subagent executions. */
+  requests: readonly StoredRequest[]
+  /** The executions this view is (a room round's runs): a subagent execution naming one is claimed. */
+  executionIds?: readonly string[]
 }
 
 /** A member execution its CLI opened itself, placed in a room view: the round whose run started the task, else 未归轮. */
@@ -955,7 +976,14 @@ export class InspectorStore {
 
   /** subagent/catalog: open the child scope on the current turn and bind the pending call. */
   subagentCatalog(sessionId: string, childId: string, label: string | undefined, at: number): void {
-    if (this.isChild(sessionId)) return
+    if (this.isChild(sessionId)) {
+      // An external member's row names its CLI's own subagent: one more view
+      // under the member. A host-native child's nesting stays unshown.
+      const root = this.sessions.get(this.rootOf(sessionId))
+      const provider = root === undefined ? undefined : this.findScope(root, sessionId)?.scope.provider
+      if (provider !== undefined && !IN_PROCESS_PROVIDERS.has(provider)) this.noteGrandchild(root!.id, sessionId, childId, label, at)
+      return
+    }
     const session = this.session(sessionId)
     this.childToParent.set(childId, sessionId)
     const scope = this.openChildScope(session, childId, label, at)
@@ -968,6 +996,35 @@ export class InspectorStore {
         break
       }
     }
+  }
+
+  /**
+   * A member CLI's own subagent, named by a catalog row in the member's log
+   * (local-agent grandchild session): stored as a hidden scope beside the
+   * member's, so the log lane reads its log and its execution records. Where
+   * it shows is decided on read, by those records (see subagentViews).
+   */
+  noteGrandchild(rootSessionId: string, memberId: string, grandchildId: string, label: string | undefined, at: number): void {
+    const session = this.sessions.get(rootSessionId)
+    if (session === undefined || grandchildId === memberId || grandchildId === rootSessionId) return
+    if (this.findScope(session, grandchildId) !== undefined) return
+    const member = this.findScope(session, memberId)
+    if (member === undefined) return
+    this.childToParent.set(grandchildId, memberId)
+    member.turn.scopes.set(grandchildId, {
+      scopeId: grandchildId,
+      scopeSeq: session.nextScopeSeq,
+      kind: 'subagent',
+      ...label === undefined ? {} : { label },
+      status: 'running',
+      config: {},
+      requests: [],
+      startedAt: at,
+      live: false,
+      logFilled: false,
+      spawnedFrom: memberId,
+    })
+    session.nextScopeSeq += 1
   }
 
   /** Open one child scope on the session's current turn (or latest turn as a fallback). */
@@ -1433,17 +1490,26 @@ export class InspectorStore {
     let failedScopeCount = 0
     let totalInputTokens = 0
     let totalOutputTokens = 0
-    for (const scope of turn.scopes.values()) {
+    // Member CLIs' subagents: one view each, so every request counts once; their part is labeled, not added.
+    const subagents = { requestCount: 0, inputTokens: 0, outputTokens: 0 }
+    const session = this.sessions.get(sessionId)
+    for (const scope of session === undefined ? turn.scopes.values() : this.viewScopes(session, turn, filter)) {
       if (!scopeAuthorized(scope.scopeId, filter)) continue
       scopeCount += 1
       requestCount += scope.requests.length
       if (scope.status === 'failed') failedScopeCount += 1
+      if (scope.cliSubagent !== undefined) subagents.requestCount += scope.requests.length
       for (const request of scope.requests) {
         // The usage buckets are disjoint: the turn total counts all three.
-        totalInputTokens += (request.usage?.inputTokens ?? 0)
+        const input = (request.usage?.inputTokens ?? 0)
           + (request.usage?.cacheReadTokens ?? 0)
           + (request.usage?.cacheWriteTokens ?? 0)
+        totalInputTokens += input
         totalOutputTokens += request.usage?.outputTokens ?? 0
+        if (scope.cliSubagent !== undefined) {
+          subagents.inputTokens += input
+          subagents.outputTokens += request.usage?.outputTokens ?? 0
+        }
       }
     }
     return {
@@ -1468,6 +1534,7 @@ export class InspectorStore {
       failedScopeCount,
       totalInputTokens,
       totalOutputTokens,
+      ...subagents.requestCount === 0 ? {} : { subagents },
       origin: turn.liveContent ? 'live' : 'log-reconstructed',
       ...turn.closingMessageId === undefined ? {} : { closingMessageId: turn.closingMessageId },
     }
@@ -1480,9 +1547,9 @@ export class InspectorStore {
     const turn = session === undefined ? undefined : this.findTurn(session, turnSeq, filter)
     if (session === undefined || turn === undefined) return undefined
     const item = this.turnItem(sessionId, turn, filter)
-    const scopes: AgentScopeOverview[] = [...turn.scopes.values()]
+    const scopes: AgentScopeOverview[] = withSubagentLinks(this.viewScopes(session, turn, filter)
       .filter(scope => scopeAuthorized(scope.scopeId, filter))
-      .map(scope => this.scopeOverview(session, turn, scope))
+      .map(scope => this.scopeOverview(session, turn, scope)))
       // A self-started turn of the member's own lens: its main view says where the task was started.
       .map(scope => scope.kind === 'main' && item.continues !== undefined ? { ...scope, continues: item.continues } : scope)
     // Compactions attach to the turn they happened in, as one more view beside the agents.
@@ -1673,7 +1740,22 @@ export class InspectorStore {
         if (compactions.length > 0) scopes.set(`compaction:${scopeId}`, compactionScope(`compaction:${scopeId}`, child, label, compactions))
       }
       // The rounds the members' CLIs opened on their own to continue a task one of these runs started.
-      if (recorded) this.addSelfScopes(session, roomTurnSeq(dispatch.seq), scopes, selves.filter(self => self.dispatchSeq === dispatch.seq), filter, true)
+      const ownSelves = selves.filter(self => self.dispatchSeq === dispatch.seq)
+      if (recorded) this.addSelfScopes(session, roomTurnSeq(dispatch.seq), scopes, ownSelves, filter, true)
+      // The members' CLIs' own subagents, under the member view whose records name them.
+      if (recorded) {
+        const parents: CallingView[] = []
+        for (const [scopeId, group] of groups) {
+          if (group.child === undefined || !scopes.has(scopeId)) continue
+          parents.push({ viewId: scopeId, childId: group.child.scopeId, name: group.label, requests: scopes.get(scopeId)!.requests,
+            executionIds: group.runs.flatMap(run => run.executionId === undefined ? [] : [run.executionId]) })
+        }
+        for (const self of ownSelves) {
+          const view = scopes.get(`self:${self.executionId}`)
+          if (view !== undefined) parents.push({ viewId: view.scopeId, childId: self.childId, name: self.member, requests: view.requests, executionIds: [self.executionId] })
+        }
+        for (const view of this.subagentViews(session, roomTurnSeq(dispatch.seq), parents, filter)) scopes.set(view.scopeId, view)
+      }
       const ends = [...runs.map(run => run.endedAt), ...[...scopes.values()].filter(scope => scope.continues !== undefined).map(scope => scope.endedAt)]
         .filter((end): end is number => end !== undefined)
       const queuedMs = roomQueuedMs(dispatch.at, runsOf(room, dispatch.seq))
@@ -1871,9 +1953,137 @@ export class InspectorStore {
       ...kind === 'member' && typeof cause?.['fromMemberId'] === 'string' ? { fromMember: cause['fromMemberId'] } : {},
       ...kind === 'help' && typeof cause?.['fromRoom'] === 'string' ? { fromRoom: cause['fromRoom'] } : {},
       ...kind === 'self' && typeof cause?.['taskStatus'] === 'string' ? { taskStatus: cause['taskStatus'] } : {},
+      ...kind === 'cli-subagent' && cause?.['background'] === true ? { background: true as const } : {},
+      ...kind === 'cli-subagent' && cause?.['resumed'] === true ? { resumed: true as const } : {},
       ...execution.end?.outcome === undefined ? {} : { outcome: execution.end.outcome },
       ...unrecorded.length === 0 ? {} : { unrecorded },
     }
+  }
+
+  /** The `cli-subagent` executions a child's log recorded (a member CLI's own subagent), in record order. */
+  private cliSubagentExecutions(childId: string): { executionId: string; cause: CliSubagentCause; execution: ChildExecution }[] {
+    const out: { executionId: string; cause: CliSubagentCause; execution: ChildExecution }[] = []
+    for (const [executionId, execution] of this.childExecutions.get(childId) ?? []) {
+      const cause = cliSubagentCauseOf(execution.start?.cause)
+      if (cause !== undefined) out.push({ executionId, cause, execution })
+    }
+    return out
+  }
+
+  /** Whether a stored scope is a member CLI's own subagent: its log recorded a `cli-subagent` execution. */
+  private isCliSubagent(scope: ScopeRecord): boolean {
+    return scope.kind === 'subagent' && this.cliSubagentExecutions(scope.scopeId).length > 0
+  }
+
+  /**
+   * One turn's views: its stored scopes, except member CLIs' subagents, which
+   * show under the view whose records call them. A room round and the 未归轮
+   * group are built on read with them already placed.
+   */
+  private viewScopes(session: SessionRecord, turn: TurnRecord, filter?: ScopeFilter): ScopeRecord[] {
+    if (turn.purpose === 'room' || turn.purpose === 'room-unattributed') return [...turn.scopes.values()]
+    const own = [...turn.scopes.values()].filter(scope => !this.isCliSubagent(scope))
+    if (turn.hostTurn === undefined) return own
+    const parents: CallingView[] = own.filter(scope => scope.kind !== 'compaction').map(scope => scope.kind === 'main'
+      ? { viewId: 'main', childId: session.id, requests: scope.requests }
+      : { viewId: scope.scopeId, childId: scope.scopeId, ...scope.label === undefined ? {} : { name: scope.label }, requests: scope.requests })
+    return [...own, ...this.subagentViews(session, turn.turnSeq, parents, filter)]
+  }
+
+  /**
+   * The CLI subagent views of one turn (member-cli-subagents M7). Each
+   * `cli-subagent` execution of a stored grandchild scope is claimed by the
+   * calling view whose records name it, on the member session its cause
+   * names: the member execution it ran in (`cause.executionId`) or the
+   * member's tool call that started it (`cause.callId`) — never by time or
+   * order. One view per subagent, its requests only the claimed executions'
+   * (a resumed subagent shows in each turn that called it, with that call's
+   * requests). Named by its type, numbered when one view called several of
+   * one type; under a named view the tab reads 「member › type」.
+   */
+  private subagentViews(session: SessionRecord, turnSeq: number, parents: readonly CallingView[], filter?: ScopeFilter): ScopeRecord[] {
+    if (parents.length === 0) return []
+    const views: { scope: ScopeRecord; parent: CallingView; base: string; order: number }[] = []
+    const seen = new Set<string>()
+    for (const turn of session.turns) for (const stored of turn.scopes.values()) {
+      if (stored.kind !== 'subagent' || seen.has(stored.scopeId)) continue
+      seen.add(stored.scopeId)
+      if (!scopeAuthorized(stored.scopeId, filter)) continue
+      const executions = this.cliSubagentExecutions(stored.scopeId)
+      let parent: CallingView | undefined
+      const claimed: typeof executions = []
+      for (const entry of executions) {
+        const owner = entry.cause.sessionId ?? this.childToParent.get(stored.scopeId)
+        const by = parents.find(view => view.childId === owner && viewClaims(view, entry.cause))
+        if (by === undefined || (parent !== undefined && by !== parent)) continue
+        parent = by
+        claimed.push(entry)
+      }
+      if (parent === undefined) continue
+      const requests = [...new Map(claimed.flatMap(entry => this.executionRequests(stored, entry.executionId))
+        .filter(request => request.purpose !== 'compaction').map(request => [request.seq, request])).values()]
+        .sort((a, b) => a.startedAt - b.startedAt || a.seq - b.seq)
+      const outcomes = claimed.map(entry => entry.execution.end?.outcome)
+      // `uncertain` (a restart cut it off) reads as stopped, never as done or failed.
+      const status: ScopeRecord['status'] = outcomes.some(outcome => outcome === undefined) ? 'running'
+        : outcomes.some(outcome => outcome === 'failed') ? 'failed'
+          : outcomes.every(outcome => outcome === 'done') ? 'ok' : 'cancelled'
+      const facts = claimed.flatMap(entry => this.executionFacts(stored.scopeId, entry.executionId) ?? [])
+      const first = claimed[0]!.cause
+      const caller = parent.requests.find(request => issuesCall(request, first.callId))
+      const starts = claimed.map(entry => entry.execution.start?.at).filter((at): at is number => at !== undefined)
+      const ends = claimed.map(entry => entry.execution.end?.at)
+      const startedAt = Math.min(...starts, ...requests.map(request => request.startedAt))
+      const lastEnd = ends.every((at): at is number => at !== undefined) ? Math.max(...ends) : undefined
+      const base = first.name ?? stored.label ?? stored.scopeId
+      views.push({
+        parent,
+        base,
+        order: first.group?.index ?? 0,
+        scope: {
+          scopeId: stored.scopeId,
+          scopeSeq: stored.scopeSeq,
+          kind: 'subagent',
+          ...stored.provider === undefined ? {} : { provider: stored.provider },
+          status,
+          ...facts.length === 0 ? {} : { executions: facts },
+          config: stored.config,
+          requests,
+          startedAt: Number.isFinite(startedAt) ? startedAt : stored.startedAt,
+          ...lastEnd === undefined ? {} : { endedAt: lastEnd },
+          live: false,
+          logFilled: true,
+          cliSubagent: {
+            parentScopeId: parent.viewId,
+            ...parent.name === undefined ? {} : { parentName: parent.name },
+            name: base,
+            callId: first.callId,
+            ...first.group === undefined ? {} : { group: first.group },
+            ...first.background === true ? { background: true as const } : {},
+            ...claimed.some(entry => entry.cause.resumed === true) ? { resumed: true as const } : {},
+          },
+          ...caller === undefined ? {} : { delegatedLink: {
+            turnSeq, scopeId: parent.viewId, seq: caller.seq,
+            ...caller.requestNumber === undefined ? {} : { requestNumber: caller.requestNumber },
+          } },
+        },
+      })
+    }
+    // Several of one type under one view: numbered by their place in the call (an AgentSwarm), else in call order.
+    const byName = new Map<string, typeof views>()
+    for (const view of views) {
+      const key = `${view.parent.viewId}\u0000${view.base}`
+      byName.set(key, [...byName.get(key) ?? [], view])
+    }
+    for (const group of byName.values()) {
+      group.sort((a, b) => a.scope.startedAt - b.scope.startedAt || a.order - b.order)
+      group.forEach((view, index) => {
+        const name = group.length > 1 ? `${view.base} ${index + 1}` : view.base
+        view.scope.cliSubagent = { ...view.scope.cliSubagent!, name }
+        view.scope.label = view.parent.name === undefined ? name : `${view.parent.name} › ${name}`
+      })
+    }
+    return views.map(view => view.scope)
   }
 
   /**
@@ -1902,6 +2112,15 @@ export class InspectorStore {
     }
     // Self rounds whose chain no round claims: their requests show here, not nowhere.
     this.addSelfScopes(session, ROOM_UNATTRIBUTED_TURN, scopes, this.roomSelfRounds(session).filter(self => self.dispatchSeq === undefined), filter, false)
+    // A member CLI's subagent run no listed round's records claim (its member execution is no round's run).
+    for (const turn of session.turns) for (const stored of turn.scopes.values()) {
+      if (!this.isCliSubagent(stored) || !scopeAuthorized(stored.scopeId, filter)) continue
+      const name = children.get(stored.spawnedFrom ?? this.childToParent.get(stored.scopeId) ?? '')
+      const loose = stored.requests.filter(request => request.purpose !== 'compaction' && !claimed.has(request))
+      if (name === undefined || loose.length === 0) continue
+      const own = this.cliSubagentExecutions(stored.scopeId)[0]?.cause.name ?? stored.label ?? stored.scopeId
+      scopes.set(stored.scopeId, { ...stored, label: `${name} › ${own}`, requests: loose, startedAt: loose[0]!.startedAt, status: stored.status === 'running' ? 'ok' : stored.status })
+    }
     const decisions = scopeAuthorized('main', filter) ? this.decisionsByTurn(session, filter).get(ROOM_UNATTRIBUTED_TURN) ?? [] : []
     if (scopes.size === 0 && decisions.length === 0) return undefined
     const times = [...decisions.map(decision => decision.at), ...[...scopes.values()].map(scope => scope.startedAt)]
@@ -1984,7 +2203,9 @@ export class InspectorStore {
       kind: host !== undefined ? 'compaction' : scope.kind,
       ...scope.label === undefined ? {} : { label: scope.label },
       ...scope.provider === undefined ? {} : { provider: scope.provider },
-      ...delegator === undefined ? {} : { delegatedBy: this.addressOf(session, delegator) },
+      ...scope.delegatedLink !== undefined ? { delegatedBy: scope.delegatedLink }
+        : delegator === undefined ? {} : { delegatedBy: this.addressOf(session, delegator) },
+      ...scope.cliSubagent === undefined ? {} : { cliSubagent: scope.cliSubagent },
       ...compaction === undefined ? {} : { compaction: {
         ...compaction.replacedCount === undefined ? {} : { replacedCount: compaction.replacedCount },
         ...after === undefined ? {} : { after: this.addressOf(session, after) },
@@ -2021,16 +2242,21 @@ export class InspectorStore {
         ...request.startUnrecorded === true ? { startUnrecorded: true as const } : {},
         totalChars: request.totalChars,
         toolErrors: request.execs.filter(exec => exec.isError).length,
+        ...scope.cliSubagent === undefined ? {} : { spawnedFrom: scope.cliSubagent.parentScopeId },
       })),
     }
   }
 
   /** Record the child's provider from its `subagent/descriptor` (live child events or its log). */
   noteChildProvider(childId: string, provider: string): void {
-    const root = this.childToParent.get(childId)
-    const session = root === undefined ? undefined : this.sessions.get(root)
-    const found = session === undefined ? undefined : this.findScope(session, childId)
-    if (found !== undefined) found.scope.provider = provider
+    const parent = this.childToParent.get(childId)
+    if (parent === undefined) return
+    // Its parent's record (a member opened alone holding its CLI's subagent), and the root it rolls up to (the room).
+    for (const root of new Set([parent, this.rootOf(childId)])) {
+      const session = this.sessions.get(root)
+      const found = session === undefined ? undefined : this.findScope(session, childId)
+      if (found !== undefined) found.scope.provider = provider
+    }
   }
 
   /** A session opened on its own that is some other session's child. */
@@ -2264,7 +2490,8 @@ export class InspectorStore {
     if (session === undefined || turn === undefined) return undefined
     const lanes: TimingLane[] = []
     const tools = new Map<string, ToolTiming>()
-    for (const scope of turn.scopes.values()) {
+    const views = this.viewScopes(session, turn, filter)
+    for (const scope of views) {
       if (!scopeAuthorized(scope.scopeId, filter)) continue
       for (const request of scope.requests) {
         // A view built on read (a room round's member, self-round or 压缩 tab) names its lanes by the view, not the request's home scope.
@@ -2313,7 +2540,7 @@ export class InspectorStore {
       tools: [...tools.values()].sort((a, b) => b.totalMs - a.totalMs),
       generation: this.generation,
       ...filter?.scopes === undefined ? {} : {
-        authorizedScopes: [...turn.scopes.values()]
+        authorizedScopes: views
           .filter(scope => scopeAuthorized(scope.scopeId, filter))
           .map(scope => scope.scopeId),
       },
@@ -2632,4 +2859,41 @@ function executionSize(request: Pick<StoredRequest, 'execs'>): number {
 function responseSize(response: CapturedResponse | undefined): number {
   return (response?.reasoning?.length ?? 0) + (response?.text?.length ?? 0)
     + (response?.toolCalls.reduce((n, call) => n + call.name.length + call.arguments.length, 0) ?? 0)
+}
+
+/** Whether a request's response issued the tool call (its stream's calls, or a mirrored call's execution). */
+function issuesCall(request: StoredRequest, callId: string): boolean {
+  return request.response?.toolCalls.some(call => call.callId === callId) === true || request.execs.some(exec => exec.callId === callId)
+}
+
+/** Whether a calling view's records name a CLI subagent execution: its member execution, or the call that started it. */
+function viewClaims(view: CallingView, cause: CliSubagentCause): boolean {
+  if (cause.executionId !== undefined && (view.executionIds?.includes(cause.executionId) === true || view.requests.some(request => request.executionId === cause.executionId))) return true
+  return view.requests.some(request => issuesCall(request, cause.callId))
+}
+
+/**
+ * A turn's views in the order the tabs and lanes read: each CLI subagent
+ * right after the view that called it (and its earlier subagents), and the
+ * calling request carries the 「派出 X →」 jump to it.
+ */
+function withSubagentLinks(scopes: AgentScopeOverview[]): AgentScopeOverview[] {
+  const children = scopes.filter(scope => scope.cliSubagent !== undefined)
+  if (children.length === 0) return scopes
+  const out = scopes.filter(scope => scope.cliSubagent === undefined).map(scope => {
+    const spawned = children.filter(child => child.cliSubagent!.parentScopeId === scope.scopeId)
+    if (spawned.length === 0) return scope
+    return { ...scope, requests: scope.requests.map(request => {
+      const spawns = spawned.filter(child => child.delegatedBy?.seq === request.seq).map(child => ({ scopeId: child.scopeId, name: child.cliSubagent!.name }))
+      return spawns.length === 0 ? request : { ...request, spawns }
+    }) }
+  })
+  for (const child of children) {
+    const at = out.findIndex(scope => scope.scopeId === child.cliSubagent!.parentScopeId)
+    if (at < 0) { out.push(child); continue }
+    let end = at + 1
+    while (end < out.length && out[end]!.cliSubagent?.parentScopeId === child.cliSubagent!.parentScopeId) end += 1
+    out.splice(end, 0, child)
+  }
+  return out
 }

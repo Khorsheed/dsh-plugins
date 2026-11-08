@@ -306,8 +306,30 @@ export function codexAppServerItemToLine(item: JsonObject): CodexTranscriptLine 
       }
     }
     case 'collabAgentToolCall': {
+      // codex's own subagents (multi_agent): {tool: spawnAgent|wait|…, status,
+      // prompt, model, receiverThreadIds, agentsStates}. The subagent's own
+      // thread is not mirrored (phase 1); the row keeps what the call says —
+      // the prompt and model it sent, the states it reported — so the member
+      // session's card names the subagent (「暂不支持查看过程」).
       const tool = typeof item['tool'] === 'string' ? item.tool : 'collab'
-      return { kind: 'tool', id: itemId ?? `codex-live-${randomUUID()}`, name: `collab/${tool}` }
+      const prompt = typeof item['prompt'] === 'string' && item['prompt'].trim() !== '' ? item['prompt'] : undefined
+      const model = typeof item['model'] === 'string' && item['model'] !== '' ? item['model'] : undefined
+      const states = item['agentsStates'] !== null && typeof item['agentsStates'] === 'object'
+        ? Object.values(item['agentsStates'] as Record<string, unknown>)
+        : []
+      const messages = states
+        .map(state => (state !== null && typeof state === 'object' ? (state as JsonObject)['message'] : undefined))
+        .filter((message): message is string => typeof message === 'string' && message.trim() !== '')
+      const status = typeof item['status'] === 'string' ? item['status'] : undefined
+      const result = messages.length > 0 ? messages.join('\n') : status
+      return {
+        kind: 'tool',
+        id: itemId ?? `codex-live-${randomUUID()}`,
+        name: `collab/${tool}`,
+        ...prompt === undefined && model === undefined ? {} : { args: JSON.stringify({ ...prompt === undefined ? {} : { prompt }, ...model === undefined ? {} : { model } }) },
+        ...result === undefined ? {} : { result },
+        ...status === 'failed' ? { failed: true } : {},
+      }
     }
     case 'mcpToolCall': {
       // An MCP call (the member bridge's room tools): {server, tool,

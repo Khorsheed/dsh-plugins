@@ -87,7 +87,6 @@ export function RoomSegmentView({ node, sessionId, answerQuestion, segment, t }:
         }}
       >
         <StateDot state="warning" />
-        {previous !== undefined && <span className={speech.cont}>{t('segment.continued')}</span>}
         <span className={run.title}>{t('run.waiting', { member: data.member })}</span>
         {round !== undefined && <span className={run.elapsed} aria-hidden>· {formatDurationMs(Math.max(0, now - round.startedAt))}</span>}
         {round?.state !== 'running' ? null : <Tooltip label={t('run.stop')} side="bottom">
@@ -107,7 +106,6 @@ export function RoomSegmentView({ node, sessionId, answerQuestion, segment, t }:
         {!grouped && <span className={speech.name}>{data.member}</span>}
         {!grouped && member?.role !== undefined && <span className={speech.role}>{member.role}</span>}
         {!grouped && provider !== undefined && provider !== '' && <span className={speech.provider}>{provider}</span>}
-        {previous !== undefined && <span className={speech.cont}>{t('segment.continued')}</span>}
         <span className={speech.cont}>{t('segment.asked')}</span>
       </div>
     )

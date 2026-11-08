@@ -27,7 +27,6 @@ import { RoomQuestionView } from './RoomQuestionView.tsx'
 import { askCardData, type RoomSpeechData } from './nodes.ts'
 import { formatClock, formatDurationMs } from './format.ts'
 import { revealRoomRow, speechCause } from './speech-cause.ts'
-import { replyTarget } from './reply-target.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
 import { roundUsage, type RoundUsage } from './round-usage.ts'
 import { replySplit, useRoundGroup } from './round-segments.ts'
@@ -137,8 +136,6 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
   const child = data.childSessionId
   // What started this round (a member's 派活/告知, or reports): its line tops the card.
   const cause = speechCause(data.runId, state)
-  // A later message to this member was waiting when this reply landed: say which message it answers (B③).
-  const answers = replyTarget(data.runId, data.time, state)
   const continues = data.continues
   // The run's usage, as the host's 用量 chip shows it: read from the
   // member's log through the core (the CLI's round total, else the per-call
@@ -200,12 +197,6 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
           {cause.target !== undefined && <span className={css.causeChevron} aria-hidden>›</span>}
         </button>
       )}
-      {answers !== undefined && (
-        <button type="button" className={css.cause} data-room-reply-to="" onClick={() => { revealRoomRow(answers.target) }}>
-          <span className={css.causeHead}>{t('speech.replyTo', { answered: formatClock(answers.answeredAt), later: formatClock(answers.laterAt) })}</span>
-          <span className={css.causeChevron} aria-hidden>›</span>
-        </button>
-      )}
       {/* A round the member's CLI opened on its own (A④): the quiet
           「↻ 后台任务完成后继续 · 部署 …」 line; a click scrolls to the round
           that started the task. */}
@@ -233,7 +224,6 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
         {!grouped && <span className={css.name}>{data.member}</span>}
         {!grouped && member?.role !== undefined && <span className={css.role}>{member.role}</span>}
         {!grouped && provider !== undefined && provider !== '' && <span className={css.provider}>{provider}</span>}
-        {split.kind === 'split' && <span className={css.cont}>{t('segment.continued')}</span>}
         {data.interrupted !== undefined && <span className={css.interrupted}>{t(data.interrupted === 'cancelled' ? 'speech.stopped' : 'speech.failed')}</span>}
       </div>
       <div className={clamped ? `${css.body} ${css.clamped}` : css.body}>
@@ -316,6 +306,11 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
         {usage !== undefined
           ? <UsageChip usage={usage} execution={execution} provider={member?.kind === 'cli' ? member.provider : undefined} durationMs={data.durationMs} t={t} />
           : data.durationMs !== undefined && <span className={css.meta}>{formatDurationMs(data.durationMs)}</span>}
+        {usage?.subagents !== undefined && usage.subagents.count > 0 && child !== undefined && (
+          <button type="button" className={css.subagentsNote} data-testid="speech-subagents" onClick={() => { openSession(child) }}>
+            {t('speech.subagents', { count: String(usage.subagents.count) })}
+          </button>
+        )}
         <span className={css.meta}>{formatClock(data.time)}</span>
         {/* Last in the row: on a narrow reply it wraps to a line of its own. */}
         {usage?.gap !== undefined && (
@@ -358,6 +353,11 @@ function UsageChip({ usage: line, execution, provider, durationMs, t }: {
       [t('usage.output'), `${exact(usage.outputTokens)} tok`],
     ] as [string, string][],
     ...line.source === 'cli' ? [[t('usage.callSum'), `${exact(line.callTokens ?? 0)} tok`] as [string, string]] : [],
+    // The member CLI's own subagents are counted in: the member's part and theirs, two lines.
+    ...line.subagents === undefined ? [] : [
+      [t('usage.member'), `${exact(line.member?.tokens ?? 0)} tok`],
+      [t('usage.subagents', { count: String(line.subagents.count) }), `${exact(line.subagents.tokens)} tok`],
+    ] as [string, string][],
     ...durationMs === undefined ? [] : [[t('usage.duration'), formatDurationMs(durationMs)] as [string, string]],
   ]
   return (

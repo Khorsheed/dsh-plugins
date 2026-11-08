@@ -86,6 +86,7 @@ function causeText(execution: ExecutionFacts, t: T): string {
     case 'tool-call': return t('exec.cause.tool-call')
     case 'restart': return t('exec.cause.restart')
     case 'self': return t('exec.cause.self', { continues: continuesText(execution.taskStatus, t) })
+    case 'cli-subagent': return t(execution.resumed === true ? 'exec.cause.cli-subagent.resumed' : execution.background === true ? 'exec.cause.cli-subagent.background' : 'exec.cause.cli-subagent')
     default: return execution.cause
   }
 }

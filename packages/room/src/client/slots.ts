@@ -2,6 +2,7 @@
  * Slot-facing types of the room client half: the injected action faces and
  * the composed props of its slot entries.
  */
+import type { SubagentCardsFace } from './SubagentCards.tsx'
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import type { ReactNode } from 'react'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
@@ -453,6 +454,8 @@ export interface RoomRunInjected {
   readonly cancelMember: (member: string) => Promise<void>
   /** Answer the question the round is waiting on, right in its live card. */
   readonly answerQuestion: RoomQuestionInjected['answerQuestion']
+  /** The member's CLI subagents (「正在等子智能体」); absent without local-agent's read. */
+  readonly memberSubagents?: SubagentCardsFace | undefined
 }
 
 /** Full props of the 'room-run' chat-node renderer. */

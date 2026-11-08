@@ -14,9 +14,10 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-settings'
-import { firstModelOf, readModelList, readModelListSync, settingsFace, vol, writeModelList } from '@khorsheed/dsh-local-agent'
+import { cliSubagentSessionId, firstModelOf, readModelList, readModelListSync, settingsFace, vol, writeModelList } from '@khorsheed/dsh-local-agent'
 import type {} from '@khorsheed/dsh-local-agent'
 import type { LocalAgentUnrecordedDeclaration } from '@khorsheed/dsh-local-agent'
 import { endpointHost } from '@khorsheed/dsh-local-agent/types'
@@ -323,7 +324,14 @@ export function apply(ctx: Context, config: Config): void {
         if (!face.get().live) return { supported: false, tasks: [], processAlive: false }
         const processAlive = liveSwitch.resolve(childSessionId)?.hasRuntime(childSessionId) ?? false
         const dir = cliSessionId === undefined ? undefined : await findKimiSessionDir(homeDir, cliSessionId)
-        const read = dir === undefined ? [] : await readKimiBackgroundTasks(dir, { executionOfCall, selfExecutionOf })
+        // A background subagent's grandchild (subagent-mirror.ts), when the
+        // member's log holds its catalog row: a recorded fact, never assumed.
+        const subagentSessionOf = (subagentId: string): string | undefined => {
+          const id = cliSubagentSessionId(childSessionId, subagentId)
+          const member = ctx.get('sessions')?.get(SessionId(childSessionId))
+          return member?.snapshotEvents().some(event => event.type === 'subagent/catalog' && String((event.data as { childId?: unknown }).childId) === id) === true ? id : undefined
+        }
+        const read = dir === undefined ? [] : await readKimiBackgroundTasks(dir, { executionOfCall, selfExecutionOf, subagentSessionOf })
         // A task whose process we reclaimed while it ran: lost, and we know
         // why. Kimi's file may still say `running` (no process rewrote it
         // yet) or already `lost` (a later session/load did).

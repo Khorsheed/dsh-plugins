@@ -135,3 +135,49 @@
 .liveCard > .run {
   margin: -2px -4px 2px;
 }
+
+/* 「看子智能体」 beside 「正在等子智能体：…」: a text link, never the row's own jump. */
+.link {
+  flex: none;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+/* 「正在等子智能体：探索 · 6 分钟」 follows the elapsed time directly. */
+.wait {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.run:has(.wait) .elapsed {
+  flex: none;
+}
+
+.waitShort {
+  display: none;
+}
+
+/* A narrow row keeps the subagent and its time; the row itself opens the member session. */
+@media (max-width: 560px) {
+  .waitFull,
+  .link {
+    display: none;
+  }
+
+  .waitShort {
+    display: inline;
+  }
+}

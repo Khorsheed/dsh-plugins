@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-08-canvas-novel-chapter-deletion.md
-.agents/notes/implemented/feature/2026-11-08-canvas-novel-chapter-deletion.md: 3dea3e2a0a07909b6b03f85c51e148447848b2d8
-.agents/notes/implemented/feature/2026-11-08-canvas-novel-chapter-deletion.zh.md: a02af34d652607eeabad7f5968aed362aba5f5e4
+.agents/notes/implemented/feature/2026-11-08-canvas-novel-chapter-deletion.md: 39f62b618e28ce1903e6186020aee909a7a8eeaa
+.agents/notes/implemented/feature/2026-11-08-canvas-novel-chapter-deletion.zh.md: e6c93aee030c265acb74e3deaac5b6f7397f0bff

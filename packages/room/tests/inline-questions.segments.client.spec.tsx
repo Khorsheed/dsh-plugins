@@ -109,7 +109,7 @@ describe('a landed reply, cut at its questions', () => {
     expect(card.textContent).not.toContain('你的回答')
     expect(card.querySelector('b')!.textContent).toBe('按人物')
     expect(seat('q').querySelector('[data-member-output]')).toBeNull()
-    expect(seat('s').textContent).toContain('接着说')
+    expect(seat('s').textContent).not.toContain('接着说')
     expect(seat('s').textContent).toContain('按人物交替，拆成 6 节。')
     // Joined: the reply drops its own name and avatar.
     expect(seat('s').firstElementChild!.className).toMatch(/grouped/)
@@ -160,7 +160,7 @@ describe('a round in progress', () => {
     const { seat } = await timeline([asked(), answered], 'running')
     expect(seat('q').querySelector('[data-ask-id] b')!.textContent).toBe('按人物')
     expect(screen.getByTestId('live-before').textContent).toContain(`${STARTED}..1100`)
-    expect(seat('r').textContent).toContain('接着说')
+    expect(seat('r').textContent).not.toContain('接着说')
     expect(screen.getByTestId('live-after').textContent).toBe('1120..')
     expect(seat('r').firstElementChild!.className).toMatch(/grouped/)
   })
@@ -170,7 +170,7 @@ describe('a round in progress', () => {
     const { seat } = await timeline([asked(), byMessage], 'running', '按人物交替吧')
     expect(seat('q').querySelector('[data-ask-id] b')!.textContent).toBe('用下面这条消息回答了')
     expect(seat('q').textContent).not.toContain('直接回复了')
-    expect(seat('r').textContent).toContain('接着说')
+    expect(seat('r').textContent).not.toContain('接着说')
     expect(seat('r').firstElementChild!.className).not.toMatch(/grouped/)
   })
 

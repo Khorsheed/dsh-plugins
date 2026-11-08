@@ -21,6 +21,13 @@
  * and Claude Code's `compaction` for `compact`, so one log carries every
  * declaration lens shows. local-agent cannot import the codex package
  * (dependency direction), so the exec list is copied from `CODEX_UNRECORDED`.
+ *
+ * A second fixture (fixtures/local-agent-cli-subagents.json) carries a
+ * member's CLI subagents (member-cli-subagents M7), written through the
+ * core's real grandchild writer (`openCliSubagent`): one room round with a
+ * foreground `Agent` subagent and a three-way `AgentSwarm`, and a later
+ * round that resumes the first subagent. It holds the member log and every
+ * grandchild log; lens's `cli-subagents.spec.ts` replays them.
  */
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -38,11 +45,12 @@ import * as JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-j
 import { assertReleasedV4Relationships } from '@deepseek-ai/dsh-session-format-v3-to-v4'
 import type { SubagentActivationSpec, SubagentResult, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import * as localAgent from '../src/index.ts'
-import { LOCAL_AGENT_SERVICE } from '../src/index.ts'
+import { LOCAL_AGENT_SERVICE, cliSubagentSessionId, openCliSubagent } from '../src/index.ts'
 import type { LocalAgentDelegationIntent, LocalAgentExecutionEndEvent, LocalAgentExecutionStartEvent, LocalAgentUnrecordedDeclaration } from '../src/index.ts'
 import { appendMirrorStep, closeMirrorTurn, openMirrorTurn } from '../src/mirror-step.ts'
 
 const FIXTURE = fileURLToPath(new URL('../../context-lens/tests/fixtures/local-agent-contract.json', import.meta.url))
+const SUBAGENT_FIXTURE = fileURLToPath(new URL('../../context-lens/tests/fixtures/local-agent-cli-subagents.json', import.meta.url))
 const PROVIDER = 'fake-cli'
 const PARENT = 'room-parent'
 const TYPE = 'local-agent/execution'
@@ -54,7 +62,7 @@ const UNRECORDED: LocalAgentUnrecordedDeclaration = {
 }
 const ROUND_TOTAL = { inputTokens: 900, outputTokens: 90 } as TokenUsage
 
-type Round = (child: Session, turn: number) => SubagentResult
+type Round = (child: Session, turn: number) => SubagentResult | Promise<SubagentResult>
 interface Script { round: Round; total?: TokenUsage }
 
 const disposers: (() => Promise<void>)[] = []
@@ -105,7 +113,7 @@ async function mount() {
         ?? ctx.sessions.create(SessionId(childSessionId), { meta: { cwd: '/home/user/work', parentSession: SessionId(PARENT), origin: 'subagent', delegationDepth: 1 } } as never)
       if (intent.kind === 'fresh') child.append('subagent/descriptor', { version: 1, mode: 'one-shot', provider: PROVIDER, label: 'Fake' } as never)
       const turn = child.snapshotEvents().filter(event => event.type === 'turn/start').length + 1
-      const settled = script.round(child, turn)
+      const settled = await script.round(child, turn)
       await registry.syncChildSession(child)
       // Only a CLI-reported whole-round total is a providerReportedUsage (S1).
       registry.recordRoundSettled(childSessionId, { ...script.total === undefined ? {} : { usage: script.total, providerReportedUsage: script.total } })
@@ -306,5 +314,132 @@ describe('local-agent → Context Lens contract fixture', () => {
     const seqOf = (predicate: (event: SessionEvent) => boolean): number => rows.findIndex(predicate)
     const factAt = seqOf(event => event.type === 'local-agent/compaction' && (event.data as { source?: string }).source === 'manual')
     expect(factAt).toBeGreaterThan(seqOf(event => event.type === TYPE && (event.data as { executionId?: string }).executionId === compactStart.executionId))
+  })
+})
+
+const subSource = { provider: PROVIDER, model: 'sub-m' }
+
+/**
+ * Drive one member through two room rounds whose CLI runs subagents of its
+ * own, mirrored through the core's grandchild writer: round one a foreground
+ * `Agent` (explore, two calls) and an `AgentSwarm` of three coders (the third
+ * cut off when the round settled), round two a resume of the explore
+ * subagent. Returns the member log and every grandchild log as stored.
+ */
+async function produceSubagents(): Promise<{ readonly childSessionId: string; readonly rows: readonly SessionEvent[]; readonly grandchildren: readonly { key: string; sessionId: string; rows: readonly SessionEvent[] }[] }> {
+  let now = 1_800_000_000_000
+  vi.spyOn(Date, 'now').mockImplementation(() => (now += 10))
+  const h = await mount()
+  const room = 'room-session'
+  const firstRound: Round = async (child, turn) => {
+    openMirrorTurn(child, turn, 'live')
+    appendMirrorStep(child, turn, 1, { blocks: [{ kind: 'tool', id: 'call-explore', name: 'Agent', args: '{"description":"找穿模点","subagent_type":"explore"}', result: '一共 3 处' }], usage: usage(2000, 50) }, source)
+    // a. A foreground subagent: the member waits on its two calls.
+    const explore = await openCliSubagent(h.ctx, child, { provider: PROVIDER, key: 'agent-0', name: 'explore', description: '找穿模点' })
+    const scouting = explore.beginExecution({ callId: 'call-explore', transport: 'live' })
+    scouting.mirror({ blocks: [{ kind: 'tool', id: 'sub-grep', name: 'Grep', args: '{"pattern":"clip"}', result: '3 处' }], usage: usage(800, 30) }, subSource)
+    scouting.mirror({ blocks: [{ kind: 'text', text: '找到 3 处' }], usage: usage(900, 40) }, subSource)
+    scouting.end('done')
+    appendMirrorStep(child, turn, 2, { blocks: [{ kind: 'tool', id: 'call-swarm', name: 'AgentSwarm', args: '{"description":"三段字幕","subagent_type":"coder"}', result: '两段完成' }], usage: usage(2100, 60) }, source)
+    // b. A three-way swarm: one call, three subagents; the third never finished.
+    for (const index of [0, 1, 2]) {
+      const coder = await openCliSubagent(h.ctx, child, { provider: PROVIDER, key: `agent-${index + 1}`, name: 'coder', description: `第 ${index + 1} 段` })
+      const part = coder.beginExecution({ callId: 'call-swarm', group: { index, size: 3 }, transport: 'live' })
+      part.mirror({ blocks: [{ kind: 'text', text: `第 ${index + 1} 段字幕` }], usage: usage(500 + index * 10, 20) }, subSource)
+      part.end(index === 2 ? 'cancelled' : 'done')
+    }
+    appendMirrorStep(child, turn, 3, { blocks: [{ kind: 'text', text: '清单和字幕都在这里' }], usage: usage(2200, 70) }, source)
+    closeMirrorTurn(child, turn, 'completed', '')
+    return { stopReason: 'completed', output: [{ type: 'text', text: '清单和字幕都在这里' }] }
+  }
+  const secondRound: Round = async (child, turn) => {
+    openMirrorTurn(child, turn, 'live')
+    appendMirrorStep(child, turn, 1, { blocks: [{ kind: 'tool', id: 'call-resume', name: 'Agent', args: '{"resume":"agent-0","description":"再看一处"}', result: '看过了' }], usage: usage(2300, 40) }, source)
+    // c. The same subagent resumed: one more execution in its session, the CLI's own total for this call.
+    const explore = await openCliSubagent(h.ctx, child, { provider: PROVIDER, key: 'agent-0', name: 'explore', description: '找穿模点' })
+    const again = explore.beginExecution({ callId: 'call-resume', resumed: true, transport: 'live' })
+    again.mirror({ blocks: [{ kind: 'text', text: '左手袖口也穿模' }], usage: usage(1000, 25) }, subSource)
+    again.end('done', { providerReportedUsage: usage(1000, 25) })
+    appendMirrorStep(child, turn, 2, { blocks: [{ kind: 'text', text: '补上了' }], usage: usage(2400, 30) }, source)
+    closeMirrorTurn(child, turn, 'completed', '')
+    return { stopReason: 'completed', output: [{ type: 'text', text: '补上了' }] }
+  }
+  h.next({ round: firstRound })
+  const first = await h.registry.start(PARENT, PROVIDER, [{ type: 'text', text: '找穿模点，再出三段字幕' }], {
+    caller: 'room', callerRef: '20:m-ada',
+    cause: { kind: 'human', sessionId: room, dispatchSeq: 20, via: 'room', messageId: 'u-20' },
+    task: { sessionId: room, id: 'u-20' },
+  })
+  await first.result
+  const child = String(first.id)
+  h.registry.recordDelegation({ childSessionId: child, provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'native', cwd: '/home/user/work' })
+  h.next({ round: secondRound })
+  const second = await h.registry.resume(PARENT, PROVIDER, child, [{ type: 'text', text: '再看一处' }], {
+    caller: 'room', callerRef: '30:m-ada',
+    cause: { kind: 'human', sessionId: room, dispatchSeq: 30, via: 'room', messageId: 'u-30' },
+    task: { sessionId: room, id: 'u-30' },
+  })
+  await second.result
+  let rows: readonly SessionEvent[] = []
+  await vi.waitFor(async () => {
+    rows = await h.stored(child)
+    expect(records(rows).filter(record => record.phase === 'end')).toHaveLength(2)
+  })
+  expect(released(rows)).toBeUndefined()
+  const grandchildren: { key: string; sessionId: string; rows: readonly SessionEvent[] }[] = []
+  for (const [key, ends] of [['agent-0', 2], ['agent-1', 1], ['agent-2', 1], ['agent-3', 1]] as const) {
+    const sessionId = cliSubagentSessionId(child, key)
+    let stored: readonly SessionEvent[] = []
+    await vi.waitFor(async () => {
+      stored = await h.stored(sessionId)
+      expect(records(stored).filter(record => record.phase === 'end')).toHaveLength(ends)
+    })
+    grandchildren.push({ key, sessionId, rows: stored })
+  }
+  for (const id of [child, ...grandchildren.map(grandchild => grandchild.sessionId)]) expect(existsSync(join(h.homes, 'quarantine', `${id}.jsonl`))).toBe(false)
+  return { childSessionId: child, rows, grandchildren }
+}
+
+const rowsOf = (rows: readonly SessionEvent[]): unknown[] => rows.map(event => {
+  const row = event as unknown as Record<string, unknown>
+  return {
+    type: row['type'], seq: row['seq'], time: row['time'], data: row['data'],
+    ...row['surfaceOp'] === undefined ? {} : { surfaceOp: row['surfaceOp'] },
+    ...row['ignorable'] === undefined ? {} : { ignorable: row['ignorable'] },
+  }
+})
+
+describe('local-agent → Context Lens contract fixture: a member CLI\'s own subagents', () => {
+  it('the core\'s grandchild writer still produces the checked-in fixture lens replays', async () => {
+    const produced = await produceSubagents()
+    const fixture = normalize({
+      note: 'Generated by packages/local-agent/tests/lens-contract.spec.ts from the core\'s real writers (openCliSubagent); do not edit by hand.',
+      childSessionId: produced.childSessionId,
+      rows: rowsOf(produced.rows),
+      grandchildren: produced.grandchildren.map(grandchild => ({ key: grandchild.key, sessionId: grandchild.sessionId, rows: rowsOf(grandchild.rows) })),
+    })
+    if (process.env['UPDATE_LOCAL_AGENT_CONTRACT'] === '1') writeFileSync(SUBAGENT_FIXTURE, `${JSON.stringify(fixture, null, 2)}\n`)
+    const checkedIn: unknown = JSON.parse(readFileSync(SUBAGENT_FIXTURE, 'utf8'))
+    // Stale: regenerate with UPDATE_LOCAL_AGENT_CONTRACT=1 and rerun the context-lens suite.
+    expect(checkedIn).toEqual(fixture)
+  })
+
+  it('the logs hold what lens pairs: catalog rows on the member, cli-subagent causes naming its calls and executions', async () => {
+    const { childSessionId, rows, grandchildren } = await produceSubagents()
+    const [firstStart, , secondStart] = records(rows) as LocalAgentExecutionStartEvent[]
+    expect(rows.filter(event => event.type === 'subagent/catalog').map(event => (event.data as { childId: string }).childId))
+      .toEqual(grandchildren.map(grandchild => grandchild.sessionId))
+    const causes = grandchildren.flatMap(grandchild => records(grandchild.rows).flatMap(record => record.phase === 'start' ? [record.cause] : []))
+    expect(causes).toEqual([
+      { kind: 'cli-subagent', sessionId: childSessionId, callId: 'call-explore', executionId: firstStart!.executionId, name: 'explore' },
+      { kind: 'cli-subagent', sessionId: childSessionId, callId: 'call-resume', executionId: secondStart!.executionId, name: 'explore', resumed: true },
+      ...[0, 1, 2].map(index => ({ kind: 'cli-subagent', sessionId: childSessionId, callId: 'call-swarm', executionId: firstStart!.executionId, name: 'coder', group: { index, size: 3 } })),
+    ])
+    // Each grandchild execution copies the member execution's task.
+    expect(grandchildren.flatMap(grandchild => records(grandchild.rows).flatMap(record => record.phase === 'start' ? [record.task?.id] : [])))
+      .toEqual(['u-20', 'u-30', 'u-20', 'u-20', 'u-20'])
+    for (const grandchild of grandchildren) {
+      expect(released(grandchild.rows)).toBeUndefined()
+    }
   })
 })

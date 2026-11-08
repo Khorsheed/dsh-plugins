@@ -451,7 +451,7 @@ export function InspectorPanel({
   // child it delegated by a tool call (nested under that call); a room
   // member's calls live in the member's own session.
   const callsInConversation = viewed === null && effectiveScope !== undefined
-    && (effectiveScope.kind === 'main' || effectiveScope.delegatedBy !== undefined)
+    && (effectiveScope.kind === 'main' || (effectiveScope.delegatedBy !== undefined && effectiveScope.cliSubagent === undefined))
   // A navigation's call (handed over from a room's lens): shown once the turn list is in state.
   useEffect(() => {
     if (locateRequest === undefined || turns === null) return
@@ -466,7 +466,8 @@ export function InspectorPanel({
    * keys as `room:<seq>:<member>` and has no session to open). Its calls are
    * shown there, not in this conversation.
    */
-  const memberSession = viewed === null && turn?.room !== undefined && effectiveScope !== undefined
+  // A member CLI's own subagent is its own session too, in a room round or the member's own lens.
+  const memberSession = viewed === null && (turn?.room !== undefined || effectiveScope?.cliSubagent !== undefined) && effectiveScope !== undefined
     && effectiveScope.kind === 'subagent' && !effectiveScope.scopeId.includes(':')
     ? effectiveScope.scopeId : undefined
   /** Keep this panel's place, then send the reader to the member's session, on the call. */
@@ -652,6 +653,7 @@ export function InspectorPanel({
             setRequestTrail(previous => previous.slice(0, -1)); setTurnSeq(target.turnSeq); onOpenRequest(target.seq, target.scopeId)
           }}
           scope={effectiveScope}
+          onOpenScope={onSelectScope}
           selectedSeq={selectedRequestSeq}
           request={request}
           filterCat={filterCat}

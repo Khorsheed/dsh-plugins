@@ -68,6 +68,9 @@ import type {
   RoomAttachmentsFace, RoomDraftAttachment, RoomModesService,
 } from './slots.ts'
 import { ROOM_RUN_CARD_SLOTS, ROOM_SPEECH_CARD_SLOTS } from './slots.ts'
+import { SubagentCallsStore, SubagentToolView, type SubagentCardsFace } from './SubagentCards.tsx'
+import { CODEX_SUBAGENT_TOOLS, SUBAGENT_TOOLS } from './subagent-card-view.ts'
+import type { LocalAgentSubagentCalls } from '@khorsheed/dsh-local-agent/types'
 import type { RoomAttachmentInput, RoomQuestionAnswer } from '../types.ts'
 import type { RoomFailure, RoomSettings } from '../types.ts'
 
@@ -141,6 +144,37 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       return carried.ok ? carried.value : undefined
     }),
     reveals: new ActivityReveals(),
+  }
+
+  // A member CLI's own subagents (member-cli-subagents M5): local-agent's
+  // memberSubagentCalls read, probed per call — a composition without the
+  // family (or a core without the read) answers undefined and every
+  // Agent/AgentSwarm/Task row stays a plain tool row.
+  const memberSubagents: SubagentCardsFace = {
+    store: new SubagentCallsStore(async (childSessionId) => {
+      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
+      if (gateway === undefined || typeof gateway['memberSubagentCalls'] !== 'function') return undefined
+      const carried = await (gateway['memberSubagentCalls'] as
+        (child: string) => Promise<{ readonly ok: true; readonly value: LocalAgentSubagentCalls | null } | { readonly ok: false }>)(childSessionId)
+      return carried.ok ? carried.value : undefined
+    }),
+    reveals: memberActivity.reveals,
+    // The host's subagent chat in the right sidebar (ui-subagent's
+    // openChildAside address); the whole page on a phone, or without it.
+    open: (grandchild, member) => {
+      const narrow = typeof window !== 'undefined' && window.matchMedia?.('(max-width: 560px)').matches === true
+      const sidebar = ctx.get('sidebarRight') as { openResource?: (address: string, options: Record<string, unknown>) => void } | undefined
+      if (!narrow && typeof sidebar?.openResource === 'function') {
+        const query = new URLSearchParams({ parent: member, mode: 'one-shot' })
+        try {
+          sidebar.openResource(`dsh-resource://subagentchat/session/${encodeURIComponent(grandchild)}?${query}`, { kind: 'subagentchat', preferNewPane: true })
+          return
+        } catch {
+          // A host without the sidebar chat resource keeps the page route.
+        }
+      }
+      openSession(grandchild as SessionId)
+    },
   }
 
   // The modes at work in each room, for the other plugins' sidebar entries:
@@ -626,6 +660,20 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     }),
   }, MemberActivityTail as never))
 
+  // The member session's Agent / AgentSwarm / Task rows as subagent cards
+  // (and Codex's spawn, which reads 「暂不支持查看过程」).
+  // Declared by ui-tool; a composition without it keeps the host's rows.
+  // The slot is ui-tool's (no type dependency on it here): structurally typed.
+  const toolSlots = ctx.slots as unknown as { inject: (key: string, body: () => () => void) => () => void; register: (options: unknown, component: unknown) => () => void }
+  for (const tool of [...SUBAGENT_TOOLS, ...CODEX_SUBAGENT_TOOLS]) {
+    toolSlots.inject('tool.call.toolview', () => toolSlots.register({
+      name: 'tool.call.toolview',
+      key: tool,
+      locale: NS,
+      inject: () => ({ subagents: memberSubagents }),
+    }, SubagentToolView))
+  }
+
   // The slots are declared by ui-conversation, whose apply order
   // relative to this plugin is unconstrained: register through slots.inject so
   // each entry waits for the declaration instead of crashing the loader entry
@@ -911,6 +959,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
         cancelMember: member => cancelMember(sessionId, member),
         answerQuestion: answerFor(sessionId),
         ...openPath === undefined ? {} : { openPath },
+        memberSubagents,
       }),
     },
     RoomRunView,

@@ -143,6 +143,8 @@
 .blk[data-bucket="other"] { background: var(--ri-bucket-other); }
 /* Idle time: no lane ran. Drawn, not left blank, so the bar accounts for the whole turn. */
 .idle { position: absolute; top: 0; bottom: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--dsw-alias-label-tertiary) 28%, transparent) 0 3px, transparent 3px 7px); }
+/* A CLI subagent's start and end on its lane: where its caller's tool call waits on it. */
+.link { position: absolute; top: 0; bottom: 0; border-left: 1.5px dashed var(--ri-bucket-tool-exec); pointer-events: none; z-index: 1; }
 .dotIdle { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: repeating-linear-gradient(135deg, var(--dsw-alias-label-tertiary) 0 2px, transparent 2px 4px); }
 
 .tlScale {

@@ -93,10 +93,15 @@ export interface InspectorDeps {
 export class InspectorService {
   private readonly store: InspectorStore
   private readonly disposers: (() => void)[]
-  /** childId → open read handle (persistent: reads are offset-incremental). */
+  /**
+   * `<root>\0<childId>` → open read handle (persistent: reads are
+   * offset-incremental). Keyed per root: one child (a member, its CLI's
+   * subagent) can be a view of several opened sessions (the room, the
+   * member's own lens), each holding its own request rows.
+   */
   private readonly handles = new Map<string, SessionLogHandle>()
   private readonly cursors = new Map<string, SessionLogCursor>()
-  /** In-flight refresh per childId — concurrent panel queries share one read. */
+  /** In-flight refresh per `<root>\0<childId>` — concurrent panel queries share one read. */
   private readonly refreshing = new Map<string, Promise<void>>()
   /** sessionId → the metering event (`compaction/summary` | `compaction/prune`) just seen; the host appends its replacement next. */
   private readonly meters = new Map<string, PendingMeter>()
@@ -119,7 +124,7 @@ export class InspectorService {
     }
     this.store = new InspectorStore(storeConfig, {
       now: this.now,
-      onTurnEvicted: (_sessionId, turn) => this.dropEvictedChildState(turn),
+      onTurnEvicted: (sessionId, turn) => this.dropEvictedChildState(sessionId, turn),
       ...deps.generation === undefined ? {} : { generation: deps.generation },
     })
     this.disposers = [
@@ -319,6 +324,14 @@ export class InspectorService {
     await Promise.all(scopes.map(scope => scopeAuthorized(scope.scopeId, filter)
       ? this.refreshChild(rootSessionId, scope.scopeId, reader, scope.live)
       : Promise.resolve()))
+    // A member log names its CLI's own subagents (catalog rows): those
+    // grandchild scopes open during the read above and are read in the same
+    // query, so their requests and execution records arrive together.
+    const seen = new Set(scopes.map(scope => scope.scopeId))
+    const added = this.store.childScopes(rootSessionId).filter(scope => !seen.has(scope.scopeId))
+    await Promise.all(added.map(scope => scopeAuthorized(scope.scopeId, filter)
+      ? this.refreshChild(rootSessionId, scope.scopeId, reader, scope.live)
+      : Promise.resolve()))
   }
 
   private refreshChild(
@@ -328,13 +341,14 @@ export class InspectorService {
     live: boolean,
   ): Promise<void> {
     if (live) return Promise.resolve()
-    const pending = this.refreshing.get(childId)
+    const key = childKey(rootSessionId, childId)
+    const pending = this.refreshing.get(key)
     if (pending !== undefined) return pending
     const job = this.doRefreshChild(rootSessionId, childId, reader)
       .finally(() => {
-        this.refreshing.delete(childId)
+        this.refreshing.delete(key)
       })
-    this.refreshing.set(childId, job)
+    this.refreshing.set(key, job)
     return job
   }
 
@@ -372,7 +386,8 @@ export class InspectorService {
     childId: string,
     reader: SessionLogReader,
   ): Promise<void> {
-    let cursor = this.cursors.get(childId)
+    const key = childKey(rootSessionId, childId)
+    let cursor = this.cursors.get(key)
     if (cursor?.broken !== undefined) return
     if (cursor === undefined) {
       cursor = openCursor()
@@ -381,14 +396,14 @@ export class InspectorService {
       // budget — and the eviction then emptied the room). The body is rebuilt
       // when one request is read (see hydrate).
       cursor.materialize = () => false
-      this.cursors.set(childId, cursor)
+      this.cursors.set(key, cursor)
     }
     await this.attachMemberTiming(cursor, childId)
     try {
-      let handle = this.handles.get(childId)
+      let handle = this.handles.get(key)
       if (handle === undefined) {
         handle = await reader.open(childId, 'read')
-        this.handles.set(childId, handle)
+        this.handles.set(key, handle)
       }
       const { events } = await handle.read(cursor.consumed)
       const descriptor = events.find(row => row.type === 'subagent/descriptor')
@@ -396,9 +411,16 @@ export class InspectorService {
       if (typeof provider === 'string') this.store.noteChildProvider(childId, provider)
       // A CLI member's compaction implies a surface replacement: recorded for the change list.
       // Its execution records name each room run's requests (store.roomTurns).
+      const external = cursor
       for (const request of foldLogRows(cursor, events, {
         replacement: fact => this.store.noteReplacement(rootSessionId, fact),
         execution: record => this.store.noteExecution(childId, record),
+        // An external member's catalog rows are its CLI's own subagents
+        // (local-agent grandchild sessions): one more view under the member.
+        // A host-native child's nesting stays as it is.
+        catalog: (grandchildId, label, at) => {
+          if (external.external === true) this.store.noteGrandchild(rootSessionId, childId, grandchildId, label, at ?? this.now())
+        },
       })) {
         this.store.appendLogRequest(rootSessionId, childId, request)
       }
@@ -415,14 +437,15 @@ export class InspectorService {
   }
 
   /** Turn eviction drops the child cursors/handles whose scopes lived on it. */
-  private dropEvictedChildState(turn: EvictedTurn): void {
+  private dropEvictedChildState(sessionId: string, turn: EvictedTurn): void {
     for (const scopeId of turn.scopes.keys()) {
       if (scopeId === 'main') continue
-      this.cursors.delete(scopeId)
+      const key = childKey(sessionId, scopeId)
+      this.cursors.delete(key)
       this.memberTimingCache.delete(scopeId)
-      const handle = this.handles.get(scopeId)
+      const handle = this.handles.get(key)
       if (handle !== undefined) {
-        this.handles.delete(scopeId)
+        this.handles.delete(key)
         void handle.close().catch(() => undefined)
       }
     }
@@ -682,6 +705,11 @@ export class InspectorService {
     this.handles.clear()
     this.cursors.clear()
   }
+}
+
+/** One child log's read state key under one opened session. */
+function childKey(rootSessionId: string, childId: string): string {
+  return `${rootSessionId}\0${childId}`
 }
 
 /** The dispatch-time snapshot of one GenerateOptions (never mutates the frozen input). */

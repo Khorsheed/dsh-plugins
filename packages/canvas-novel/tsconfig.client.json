@@ -42,6 +42,7 @@
     "src/client/import-documents.ts",
     "src/client/ImportNovel.tsx",
     "src/client/chapter-selection.ts",
+    "src/client/reader-memory.ts",
     "src/client/ChapterFeedback.tsx",
     "src/client/ChapterMarkdown.tsx",
     "src/client/ChapterReader.tsx",

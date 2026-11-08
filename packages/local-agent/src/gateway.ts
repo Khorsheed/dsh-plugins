@@ -31,6 +31,7 @@ import type {
   LocalAgentMemberToolsReloadOptions,
   LocalAgentMemberToolsStatus,
   LocalAgentBackgroundTasks,
+  LocalAgentSubagentCalls,
 } from './types.ts'
 import type { CardSettings, CardSettingValue, LocalAgentMemberContext, LocalAgentRosterRow, LocalAgentStatus, LocalAgentEndpointAuthFields, LocalAgentEndpointAuthState } from './types.ts'
 import { extendModelDirectory } from './model-directory.ts'
@@ -410,6 +411,19 @@ export default class LocalAgentGateway extends TypertRemoteService {
   async memberBackgroundTasks(childSessionId: string): Promise<LocalAgentBackgroundTasks | null> {
     const registry = this.ctx.localAgent
     return typeof registry.memberBackgroundTasks === 'function' ? await registry.memberBackgroundTasks(childSessionId) : null
+  }
+
+  /**
+   * A member's CLI subagent calls (the member session's subagent cards),
+   * read back from its grandchild sessions. Null for an unknown member or a
+   * core without the read.
+   * @param childSessionId - the dsh child session id of the member.
+   * @returns the calls, or null.
+   */
+  @Remote('memberSubagentCalls')
+  async memberSubagentCalls(childSessionId: string): Promise<LocalAgentSubagentCalls | null> {
+    const registry = this.ctx.localAgent
+    return typeof registry.memberSubagentCalls === 'function' ? await registry.memberSubagentCalls(childSessionId) : null
   }
 
   /**

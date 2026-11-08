@@ -121,12 +121,15 @@ import type {
   LocalAgentBackgroundTasks,
   LocalAgentBackgroundTasksLost,
   LocalAgentBackgroundTasksRequest,
+  LocalAgentSubagentCalls,
   LocalAgentSelfAdmission,
   LocalAgentSelfAdmissionRequest,
   LocalAgentSelfCause,
 } from './types.ts'
 import { ExecutionRecorder, executionOutcome, type OpenExecution } from './execution-records.ts'
-import { executionOfToolCall, executionReadingsOf, executionTaskOf, selfExecutionOfTask } from './execution-read.ts'
+import { executionOfToolCall, executionReadingsOf, executionTaskOf, selfExecutionOfTask, subagentReadingsFor } from './execution-read.ts'
+import { CLI_SUBAGENT_SESSION_SEPARATOR } from './cli-subagent.ts'
+import { grandchildIdsOf, subagentCallsOf } from './subagent-calls.ts'
 import LocalAgentGateway from './gateway.ts'
 import { guardChildLog, type QuarantineEntry } from './child-log-guard.ts'
 import { MemberChannel } from './member-channel.ts'
@@ -183,6 +186,9 @@ export type {
   LocalAgentBackgroundTasks,
   LocalAgentBackgroundTasksLost,
   LocalAgentBackgroundTasksRequest,
+  LocalAgentSubagentCall,
+  LocalAgentSubagentCalls,
+  LocalAgentSubagentStep,
   LocalAgentTaskRef,
   LocalAgentUnrecorded,
   LocalAgentExecutionIntent,
@@ -236,6 +242,7 @@ export {
 } from './mirror-step.ts'
 export type { MirrorBlock, MirrorGeneration, MirrorRequestConfig, MirrorSource, MirrorUnit } from './mirror-step.ts'
 export { CLI_SUBAGENT_SESSION_SEPARATOR, cliSubagentLabel, cliSubagentSessionId, openCliSubagent } from './cli-subagent.ts'
+export { SUBAGENT_STEP_LIMIT, grandchildIdsOf, subagentCallsOf, toolArgumentSummary } from './subagent-calls.ts'
 export type { CliSubagentCall, CliSubagentEndOptions, CliSubagentExecution, CliSubagentHandle, CliSubagentIdentity } from './cli-subagent.ts'
 import { LocalAgentStreams } from './live-stream.ts'
 export { LocalAgentStreams, LiveStreamPublisher, LIVE_CHECKPOINT_INTERVAL_MS } from './live-stream.ts'
@@ -1261,6 +1268,22 @@ function loginFailure(harness: LocalAgentHarness, exitCode: number | null, signa
  * Registry of local code-agent harnesses and the per-harness command family.
  * @module @khorsheed/dsh-local-agent
  */
+/** One member log's execution readings and the CLI-subagent grandchildren its catalog names. */
+interface MemberExecutionRead {
+  readonly readings: Map<string, LocalAgentExecutionReading>
+  readonly subagentSessions: readonly string[]
+}
+
+function memberExecutionRead(childSessionId: string, events: readonly SessionEvent[]): MemberExecutionRead {
+  const prefix = `${childSessionId}${CLI_SUBAGENT_SESSION_SEPARATOR}`
+  const subagentSessions = [...new Set(events.flatMap((event) => {
+    if (event.type !== 'subagent/catalog') return []
+    const childId = (event.data as { childId?: unknown }).childId
+    return typeof childId === 'string' && childId.startsWith(prefix) ? [childId] : []
+  }))]
+  return { readings: executionReadingsOf(events), subagentSessions }
+}
+
 export class LocalAgentRegistry {
   private readonly preparedMembers: PreparedMembers
   private readonly preparations = new Map<string, { signature: string; promise: Promise<string> }>()
@@ -3224,9 +3247,11 @@ export class LocalAgentRegistry {
   }
 
   /** Each member's execution readings, keyed by the log's last seq they were read at (live). */
-  private readonly executionReadings = new Map<string, { readonly seq: number; readonly readings: Map<string, LocalAgentExecutionReading> }>()
+  private readonly executionReadings = new Map<string, { readonly seq: number; readonly read: MemberExecutionRead }>()
   /** A cold member log's execution readings, read once from storage (it cannot move until a round revives it). */
-  private readonly coldExecutionReadings = new Map<string, Promise<Map<string, LocalAgentExecutionReading> | undefined>>()
+  private readonly coldExecutionReadings = new Map<string, Promise<MemberExecutionRead | undefined>>()
+  /** A cold grandchild log (a CLI subagent's), read once from storage while it is not live. */
+  private readonly coldSubagentEvents = new Map<string, Promise<readonly SessionEvent[] | undefined>>()
 
   /**
    * Read one execution back from the member's log (batch 5 S6): the sum of
@@ -3234,12 +3259,20 @@ export class LocalAgentRegistry {
    * total from its end record, its "not recorded" declarations, and the
    * compaction facts in its range. Computed, never stored: a live log is
    * re-read when it moved, a cold one is read once from storage.
+   *
+   * The member CLI's own subagents that ran for the execution
+   * (member-cli-subagents M6) come with it: each grandchild the member's
+   * catalog names (`<member>.sub.<id>`) is read the same way — live, or once
+   * from storage — and every grandchild execution whose `cli-subagent` cause
+   * names this execution is listed in `subagents`, their per-call sum in
+   * `subagentUsage`, apart from the member's own `callUsage`.
    * @param childSessionId - the member's dsh child session.
    * @param executionId - the execution (room's run-state `executionId`).
    * @returns the reading, or undefined when the log holds no record of it or cannot be read.
    */
   async readExecution(childSessionId: string, executionId: string): Promise<LocalAgentExecutionReading | undefined> {
     const live = this.ctx.get('sessions')?.get(SessionId(childSessionId))
+    let read: MemberExecutionRead | undefined
     if (live !== undefined) {
       this.coldExecutionReadings.delete(childSessionId)
       const events = live.snapshotEvents()
@@ -3247,35 +3280,76 @@ export class LocalAgentRegistry {
       const seq = last === undefined ? -1 : Number(last.seq)
       let cached = this.executionReadings.get(childSessionId)
       if (cached?.seq !== seq) {
-        cached = { seq, readings: executionReadingsOf(events) }
+        cached = { seq, read: memberExecutionRead(childSessionId, events) }
         this.executionReadings.set(childSessionId, cached)
       }
-      const reading = cached.readings.get(executionId)
-      return reading === undefined ? undefined : structuredClone(reading)
+      read = cached.read
+    } else {
+      this.executionReadings.delete(childSessionId)
+      let cold = this.coldExecutionReadings.get(childSessionId)
+      if (cold === undefined) {
+        cold = this.readStoredExecutions(childSessionId)
+        this.coldExecutionReadings.set(childSessionId, cold)
+      }
+      read = await cold
     }
-    this.executionReadings.delete(childSessionId)
-    let cold = this.coldExecutionReadings.get(childSessionId)
-    if (cold === undefined) {
-      cold = this.readStoredExecutions(childSessionId)
-      this.coldExecutionReadings.set(childSessionId, cold)
+    const reading = read?.readings.get(executionId)
+    if (reading === undefined) return undefined
+    const out = structuredClone(reading)
+    if (read!.subagentSessions.length === 0) return out
+    const grandchildren: Array<{ sessionId: string; events: readonly SessionEvent[] }> = []
+    for (const sessionId of read!.subagentSessions) {
+      const events = await this.subagentEvents(sessionId)
+      if (events !== undefined) grandchildren.push({ sessionId, events })
     }
-    const reading = (await cold)?.get(executionId)
-    return reading === undefined ? undefined : structuredClone(reading)
+    const { subagents, subagentUsage } = subagentReadingsFor(executionId, grandchildren)
+    return {
+      ...out,
+      ...subagents.length === 0 ? {} : { subagents },
+      ...subagentUsage === undefined ? {} : { subagentUsage },
+    }
   }
 
   /** {@link readExecution}'s cold read; undefined (and not kept) when the log is unreadable. */
-  private async readStoredExecutions(childSessionId: string): Promise<Map<string, LocalAgentExecutionReading> | undefined> {
+  private async readStoredExecutions(childSessionId: string): Promise<MemberExecutionRead | undefined> {
+    const events = await this.readStoredEvents(childSessionId)
+    if (events === undefined) {
+      this.coldExecutionReadings.delete(childSessionId)
+      return undefined
+    }
+    return memberExecutionRead(childSessionId, events)
+  }
+
+  /** A grandchild's events: the live snapshot, else one storage read kept while it stays cold. */
+  private async subagentEvents(sessionId: string): Promise<readonly SessionEvent[] | undefined> {
+    const live = this.ctx.get('sessions')?.get(SessionId(sessionId))
+    if (live !== undefined) {
+      this.coldSubagentEvents.delete(sessionId)
+      return live.snapshotEvents()
+    }
+    let cold = this.coldSubagentEvents.get(sessionId)
+    if (cold === undefined) {
+      cold = this.readStoredEvents(sessionId).then((events) => {
+        if (events === undefined) this.coldSubagentEvents.delete(sessionId)
+        return events
+      })
+      this.coldSubagentEvents.set(sessionId, cold)
+    }
+    return cold
+  }
+
+  /** One stored session log's events; undefined when there is no persistence or it cannot be read. */
+  private async readStoredEvents(sessionId: string): Promise<readonly SessionEvent[] | undefined> {
     const persistence = this.ctx.get('sessionPersistence')
     try {
       if (persistence === undefined) throw new Error('no session persistence')
-      const reader = await persistence.open(SessionId(childSessionId), 'read')
+      const reader = await persistence.open(SessionId(sessionId), 'read')
       try {
-        return executionReadingsOf((await reader.read(0)).events)
+        return (await reader.read(0)).events
       } finally {
         await reader.close()
       }
     } catch {
-      this.coldExecutionReadings.delete(childSessionId)
       return undefined
     }
   }
@@ -3330,6 +3404,29 @@ export class LocalAgentRegistry {
       this.ctx.logger.warn(`localAgent: the background task read failed: ${error instanceof Error ? error.message : String(error)}`)
       return null
     }
+  }
+
+  /**
+   * A member's CLI subagent calls (the `memberSubagentCalls` Remote; the
+   * member session's subagent cards): the member's catalog rows name its
+   * grandchild sessions, each grandchild execution with a `cli-subagent`
+   * cause is one call's subagent. Null for a session that is not a family
+   * member; an empty list for a member whose CLI ran none (or a log this
+   * host cannot read).
+   * @param childSessionId - the member's dsh child session.
+   * @returns the calls, or null.
+   */
+  async memberSubagentCalls(childSessionId: string): Promise<LocalAgentSubagentCalls | null> {
+    const provider = this.delegations.get(childSessionId)?.provider ?? this.memberBinding(childSessionId)?.provider
+    if (provider === undefined) return null
+    const events = await this.readMemberEvents(childSessionId)
+    if (events === undefined) return { calls: [] }
+    const grandchildren: Array<{ sessionId: string; events: readonly SessionEvent[] }> = []
+    for (const sessionId of grandchildIdsOf(childSessionId, events)) {
+      const read = await this.readMemberEvents(sessionId)
+      if (read !== undefined) grandchildren.push({ sessionId, events: read })
+    }
+    return { calls: subagentCallsOf(grandchildren) }
   }
 
   /** A member's child-log events: the live session's snapshot, else one read from storage; undefined when unreadable. */
