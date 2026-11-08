@@ -50,6 +50,23 @@ describe('member tool approvals', () => {
       .toEqual({ ok: false, error: { code: 'approval-not-pending' } })
   })
 
+  it('the human\'s answer moves the asking member\'s running card below the approval row', async () => {
+    const bench = await boot()
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    room.append('room/run-state', { member: 'coco', state: 'running', startedAt: 5, runId: 'run-coco' })
+    const asked = bench.service.askMemberApproval(bench.run, { toolName: 'video_render' })
+    await vi.waitFor(async () => expect((await bench.state()).approvals).toHaveLength(1))
+    const [approval] = (await bench.state()).approvals!
+    expect(room.snapshotEvents().some(event => event.type === 'room/run-moved')).toBe(false)
+    await bench.service.answerApproval({ sessionId: bench.sessionId, id: approval!.id, outcome: 'allowed-once' })
+    await asked
+    const events = room.snapshotEvents()
+    const resolved = events.find(event => event.type === 'room/approval-resolved')!
+    const moved = events.find(event => event.type === 'room/run-moved')!
+    expect(moved.data).toEqual({ member: 'coco', startedAt: 5 })
+    expect(moved.seq).toBeGreaterThan(resolved.seq)
+  })
+
   it('a call that ends first closes the approval as cancelled; strangers are not asked', async () => {
     const bench = await boot()
     const controller = new AbortController()

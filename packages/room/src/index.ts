@@ -2519,6 +2519,10 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     const waiter = this.approvalWaiters.get(request.id)
     if (waiter === undefined || loaded.state.approvals?.some(entry => entry.id === request.id) !== true) return { ok: false, error: { code: 'approval-not-pending' } }
     loaded.session.append('room/approval-resolved', { id: request.id, outcome: request.outcome })
+    // The approval is where the round took in the human's input: its card
+    // (and any other still running) continues below the approval row
+    // (room-timeline E2 — the text itself is not split at an approval).
+    floatRunningCards(loaded.session)
     await this.ctx.sessions.flush(loaded.session)
     waiter(request.outcome)
     return { ok: true }
