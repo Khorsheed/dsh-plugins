@@ -10,7 +10,7 @@ Said something too fast, or the conversation went off course? Until now you coul
 
 ## What it does
 
-- **Edit and get a fresh answer**: hit edit and the message turns into an input box in place — you can switch the model too; "Save and resend" and the model answers again from there. Edited messages can be edited again.
+- **Edit and get a fresh answer**: hit edit and the message turns into an input box in place. Native sessions default to the model that answered that message; you can pick another, and the switch applies only when you hit "Save and resend". In a room coordinated by an external CLI member, no model picker appears and the resend uses that member's current model setting. Edited messages can be edited again.
 - **Withdraw means forgotten**: the message and everything after it leave the model's context; the conversation keeps only a "Withdrawn N messages" line you can expand to read the original.
 - **Your words come back to the composer**: the withdrawn text lands back in the input box for you to rework — it is never sent for you.
 - **Changed your mind? Put it back**: "Restore to the end of the conversation" brings the withdrawn content back, as it was, at the end.

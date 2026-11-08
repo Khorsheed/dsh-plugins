@@ -107,7 +107,7 @@ describe('room client apply', () => {
     await settled()
     expect(remoteService.$mount).toHaveBeenCalledTimes(1)
     // Fifteen node Definitions (M9: room-auto-continue) plus the member-activity Turn-data Definition.
-    expect(conversationEvents.register).toHaveBeenCalledTimes(16)
+    expect(conversationEvents.register).toHaveBeenCalledTimes(17)
 
     const header = slots.entries('conversation.session.header.actions')
     expect(header).toHaveLength(1)
@@ -127,7 +127,7 @@ describe('room client apply', () => {
     expect((views[0]!.options.label as () => string)()).toBe('Members')
 
     const nodes = slots.entries('conversation.chat.node').map(entry => entry.options.key)
-    expect(nodes).toEqual(['room-speech', 'room-run', 'room-event', 'room-relay', 'room-dispatch', 'room-auto-continue', 'room-compaction', 'room-inbox', 'room-approval', 'room-question', 'room-decision', 'room-help', 'room-help-reply', 'room-help-request'])
+    expect(nodes).toEqual(['room-speech', 'room-run', 'room-event', 'room-relay', 'room-dispatch', 'room-receipt', 'room-auto-continue', 'room-compaction', 'room-inbox', 'room-approval', 'room-question', 'room-decision', 'room-help', 'room-help-reply', 'room-help-request'])
 
     // The dock capsules no longer occupy the input dock: that seat hides with
     // the official fallback under the composer takeover, so the takeover
@@ -142,7 +142,7 @@ describe('room client apply', () => {
     expect(slots.entries('conversation.session.header.actions')).toHaveLength(1)
     expect(slots.entries('conversation.composer')).toHaveLength(1)
     expect(slots.entries('conversation.view')).toHaveLength(1)
-    expect(slots.entries('conversation.chat.node')).toHaveLength(14)
+    expect(slots.entries('conversation.chat.node')).toHaveLength(15)
   })
 
   it('the header action face invites through the Remote bound to the session (its own cwd rides as the placeholder)', async () => {

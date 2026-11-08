@@ -124,3 +124,33 @@ describe('foreground paint diagnostics', () => {
     bus.dispose()
   })
 })
+
+describe('room round stretches (room-timeline-order E1)', () => {
+  it('narrows a round to [since, until), shows `empty` for a stretch with nothing, and keeps finished text across a hand-off', async () => {
+    const bus = new LocalAgentStreams()
+    const before = { id: '1:1', turn: 1, step: 1, kind: 'text' as const, receivedAt: 110, text: '提问前说的话' }
+    const after = { id: '1:3', turn: 1, step: 3, kind: 'text' as const, receivedAt: 210, text: '回答后接着说' }
+    bus.publish('member', before)
+    bus.publish('member', after)
+    let connections = 0
+    const outputs = new MemberLiveOutputs(async function* (id, signal) { connections++; yield* bus.follow(id, signal) })
+    const t = makeTranslate(zh)
+    const view = render(<>
+      <div data-testid="segment"><MemberLiveOutputView sessionId="member" startedAt={100} until={200} outputs={outputs} t={t} /></div>
+      <div data-testid="continued"><MemberLiveOutputView sessionId="member" startedAt={100} since={200} outputs={outputs} t={t} /></div>
+      <div data-testid="gap"><MemberLiveOutputView sessionId="member" startedAt={100} since={150} until={200} empty={<span>……</span>} outputs={outputs} t={t} /></div>
+    </>)
+    await waitFor(() => { expect(screen.getByTestId('segment').textContent).toBe('提问前说的话') })
+    expect(screen.getByTestId('continued').textContent).toBe('回答后接着说')
+    expect(screen.getByTestId('gap').textContent).toBe('……')
+    // The step before the question finishes: its text leaves the live registry.
+    await act(async () => { bus.finish('member', before.id) })
+    // One view gives way to another in the same commit: the finished text stays.
+    view.rerender(<section data-testid="segment2"><MemberLiveOutputView sessionId="member" startedAt={100} until={200} outputs={outputs} t={t} /></section>)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)) })
+    expect(screen.getByTestId('segment2').textContent).toBe('提问前说的话')
+    expect(connections).toBe(1)
+    view.unmount()
+    bus.dispose()
+  })
+})

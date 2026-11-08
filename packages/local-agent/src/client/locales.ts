@@ -21,6 +21,7 @@ export const zh = {
   'inbox.status.cancelled': '已取消',
   'inbox.caller.tool': '宿主会话的子代理调用',
   'inbox.caller.room': '协作间派活',
+  'inbox.fromRoom': '来自协作间：{text}',
   'inbox.caller.api': '插件调用',
   'inbox.caller.composer': '成员页输入',
   'inbox.caller.cli': '成员 CLI 自己开的一轮',
@@ -153,6 +154,9 @@ export const zh = {
   'member.model.followSettings': '跟随设置',
   'member.model.empty': '暂无候选模型',
   'member.model.failed': '切换模型失败，请重试',
+  'member.background.confirm': '会让 {count} 项后台工作失去联系，继续吗？',
+  'member.background.go': '继续',
+  'member.background.cancel': '取消',
 } as const
 
 /** English dictionary, key-identical to the Chinese source of truth. */
@@ -173,6 +177,7 @@ export const en: Record<LocalAgentKey, string> = {
   'inbox.status.cancelled': 'Cancelled',
   'inbox.caller.tool': 'Subagent call from a host session',
   'inbox.caller.room': 'Room dispatch',
+  'inbox.fromRoom': 'From the room: {text}',
   'inbox.caller.api': 'Plugin call',
   'inbox.caller.composer': 'Members page input',
   'inbox.caller.cli': 'A round the member\'s CLI opened itself',
@@ -305,6 +310,9 @@ export const en: Record<LocalAgentKey, string> = {
   'member.model.followSettings': 'Follow settings',
   'member.model.empty': 'No models to pick',
   'member.model.failed': 'Could not switch the model; try again',
+  'member.background.confirm': 'This will lose contact with {count} background job(s). Continue?',
+  'member.background.go': 'Continue',
+  'member.background.cancel': 'Cancel',
 }
 
 /** Key domain of the `local-agent` namespace (zh is the source of truth). */

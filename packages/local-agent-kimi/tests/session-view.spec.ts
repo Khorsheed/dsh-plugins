@@ -124,6 +124,30 @@ describe('session-view', () => {
     expect(transcript.closedSteps.has('1:2')).toBe(false)
   })
 
+  it('reports each retried model-call attempt as its wall-clock window (step.begin → retry + backoff)', async () => {
+    const home = tempHome('kimi-session-retry-')
+    const dir = join(home, 'sessions', 'wd_x', 'session_retry')
+    mkdirSync(join(dir, 'agents', 'main'), { recursive: true })
+    const loop = (event: Record<string, unknown>, time: number) => JSON.stringify({ type: 'context.append_loop_event', event: { turnId: '0', ...event }, time })
+    writeFileSync(join(dir, 'agents', 'main', 'wire.jsonl'), [
+      JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '对账' }] }),
+      loop({ type: 'step.begin', uuid: 'a1', step: 1 }, 1000),
+      loop({ type: 'step.end', uuid: 'a1', step: 1, finishReason: 'error' }, 5000),
+      JSON.stringify({ type: 'turn.step.retrying', turnId: 0, step: 1, stepId: 'a1', delayMs: 617.9, time: 5000 }),
+      loop({ type: 'step.begin', uuid: 'a2', step: 2 }, 5700),
+      loop({ type: 'content.part', step: 2, part: { type: 'text', text: '好了' } }, 9000),
+      loop({ type: 'step.end', uuid: 'a2', step: 2, finishReason: 'end_turn' }, 9000),
+      // A retry whose attempt's begin was never seen keeps an open start.
+      JSON.stringify({ type: 'turn.step.retrying', turnId: 0, step: 3, stepId: 'unknown', time: 9500 }),
+    ].join('\n'))
+    const transcript = await readKimiTranscript(dir)
+    expect(transcript.retriedAttempts).toEqual([{ turn: 1, from: 1000, until: 5617.9 }, { turn: 1, until: 9500 }])
+    expect(transcript.lines).toEqual([
+      { kind: 'user', text: '对账', turn: 1 },
+      { kind: 'assistant', text: '好了', turn: 1, wireStep: 2, at: 9000 },
+    ])
+  })
+
   it('matches parallel tool results to their owning call by parentUuid', async () => {
     const home = tempHome('kimi-session-toolpair-')
     const dir = join(home, 'sessions', 'wd_x', 'session_tp')

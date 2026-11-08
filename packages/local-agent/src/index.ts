@@ -114,10 +114,12 @@ import type {
   LocalAgentExecutionReading,
   LocalAgentExecutionRequest,
   LocalAgentExecutionSettlement,
+  LocalAgentFoldedTaskResult,
   LocalAgentMemberCreate,
   LocalAgentMemberInput,
   LocalAgentTaskRef,
   LocalAgentBackgroundTasks,
+  LocalAgentBackgroundTasksLost,
   LocalAgentBackgroundTasksRequest,
   LocalAgentSelfAdmission,
   LocalAgentSelfAdmissionRequest,
@@ -132,6 +134,7 @@ import { PresetToolHost } from './preset-tool-host.ts'
 import type { RoomMemberMessageGate as ModeApprovalGate } from './types.ts'
 import { withMemberProcessIdentity, type MemberProcessIdentity } from './env.ts'
 import { MemberInbox, SELF_ROUND_RESTARTED } from './member-inbox.ts'
+import { recordHostProcess, type HostProcesses } from './host-process.ts'
 import { PreparedMembers } from './prepared-members.ts'
 import { MemberControls } from './member-controls.ts'
 import { FileMemberControlStorage } from './member-control-storage.ts'
@@ -178,6 +181,7 @@ export type {
   LocalAgentBackgroundTask,
   LocalAgentBackgroundTaskState,
   LocalAgentBackgroundTasks,
+  LocalAgentBackgroundTasksLost,
   LocalAgentBackgroundTasksRequest,
   LocalAgentTaskRef,
   LocalAgentUnrecorded,
@@ -187,6 +191,7 @@ export type {
   LocalAgentExecutionHandle,
   LocalAgentExecutionRequest,
   LocalAgentExecutionSettlement,
+  LocalAgentFoldedTaskResult,
   LocalAgentMemberCreate,
   LocalAgentMemberInput,
   LocalAgentSelfAdmission,
@@ -849,6 +854,11 @@ export const RUN_PROGRESS_SETTLE_GRACE_MS = 60_000
 /** Socket filename of the member-bridge listener, under the shared homes root. */
 export const MEMBER_BRIDGE_SOCKET_FILENAME = 'member-bridge.sock'
 
+/** The host-process record (host-process.ts), under the shared homes root. */
+export const HOST_PROCESS_FILENAME = '.host-process.json'
+
+export type { HostProcess, HostProcesses } from './host-process.ts'
+
 /** One delegation-intent queue per (parent session, provider). */
 function delegationIntentKey(parentSessionId: string, provider: string): string {
   return `${parentSessionId}\u0000${provider}`
@@ -1078,6 +1088,13 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'localAgent/run-progress'(childSessionId: string, progress: LocalAgentRunProgress): void
+    /**
+     * A member's CLI background tasks lost contact because a harness took
+     * its resident process away (`LocalAgentRegistry.noteBackgroundTasksLost`).
+     * @param lost - the member, its parent session, the task ids and why.
+     * @mode emit
+     */
+    'localAgent/background-tasks-lost'(lost: LocalAgentBackgroundTasksLost): void
   }
 }
 
@@ -1207,6 +1224,8 @@ interface ExecutionPlan {
   readonly signal?: AbortSignal | undefined
   /** Composer rows only: the text the ledger keeps for replay. */
   readonly text?: string | undefined
+  /** Display only: the ledger row's preview (see LocalAgentMemberInput.preview). */
+  readonly preview?: string | undefined
   readonly on?: LocalAgentExecutionRequest['on']
 }
 
@@ -1246,6 +1265,8 @@ export class LocalAgentRegistry {
   private readonly preparedMembers: PreparedMembers
   private readonly preparations = new Map<string, { signature: string; promise: Promise<string> }>()
   readonly memberInbox: MemberInbox
+  /** This host process and the one before it (see {@link hostProcesses}). */
+  private readonly processes: HostProcesses
   private readonly memberControls: MemberControls
   /**
    * All provider starts, including direct tool starts, acquire the same
@@ -1387,6 +1408,18 @@ export class LocalAgentRegistry {
       if (parent !== undefined && parent !== '') parents.add(parent)
     }
     return [...parents]
+  }
+
+  /**
+   * This host process and the one before it (host-process.ts), as recorded
+   * when the core started: the boot evidence a restart's consumers judge
+   * "cut off by THIS restart" with — a round that started before the
+   * previous process did belongs to an earlier restart, whenever its
+   * interruption happens to be written down. `previous` is absent on the
+   * first boot with the record.
+   */
+  hostProcesses(): HostProcesses {
+    return this.processes
   }
 
   /**
@@ -1657,11 +1690,13 @@ export class LocalAgentRegistry {
     private readonly loginPromptTimeoutMs: number,
   ) {
     this.preparedMembers = new PreparedMembers(join(homesRoot, '.prepared-members'))
+    // Which host process this is and which one ran before (before any ledger is read).
+    this.processes = recordHostProcess(join(homesRoot, HOST_PROCESS_FILENAME), undefined, error => this.ctx.logger.warn(`localAgent: recording the host process failed: ${String(error)}`))
     // The member execution ledger. A composer row replayed after a restart
     // (its in-memory dispatcher is gone) runs from its stored text here.
     this.memberInbox = new MemberInbox(join(homesRoot, '.member-inbox'), async (childSessionId, row, signal, admitted) => {
       return await this.dispatchExecution(this.composerPlan(childSessionId, row.text ?? '', row.key), row.id, signal, admitted)
-    }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`))
+    }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`), this.processes)
     this.memberControls = new MemberControls(new FileMemberControlStorage(join(homesRoot, '.member-controls')), binding => {
       const adapter = this.harnessForProvider(binding.provider)?.modelBroker?.configurationAdapter?.(binding)
       if (adapter === undefined) throw new Error(`localAgent: ${binding.provider} exposes no configuration admission adapter`)
@@ -2342,12 +2377,19 @@ export class LocalAgentRegistry {
        */
       readonly providerReportedUsage?: TokenUsage
       readonly toolCalls?: LocalAgentToolCalls
+      /**
+       * Background-task results the CLI folded into this round while it ran
+       * (a Kimi task that ended mid-round). They land on the execution's end
+       * record as `taskResults`; the room marks the reply with them.
+       */
+      readonly taskResults?: readonly LocalAgentFoldedTaskResult[]
     },
   ): void {
     this.executions.noteReport(childSessionId, round.providerReportedUsage, {
       ...round.observedModel === undefined ? {} : { observedModel: round.observedModel },
       ...round.observedEffort === undefined ? {} : { observedEffort: round.observedEffort },
       ...round.cliVersion === undefined ? {} : { cliVersion: round.cliVersion },
+      ...round.taskResults === undefined || round.taskResults.length === 0 ? {} : { taskResults: round.taskResults },
     })
     if (round.observedModel !== undefined || round.cliVersion !== undefined) {
       const record = this.delegations.get(childSessionId)
@@ -2676,6 +2718,29 @@ export class LocalAgentRegistry {
       this.memberToolsFace?.autoReloaded(childSessionId, oldToken)
     } catch (error) {
       this.ctx.logger.warn(`localAgent: recording a member respawn failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * A harness took a member's resident process away while some of its CLI
+   * background tasks ran in it (member-self-started-rounds C①: the
+   * keep-alive cap, a reload, a model switch): those tasks lost contact.
+   * Re-emitted as `localAgent/background-tasks-lost` with the member's parent
+   * session, so the room records the loss and tells the dispatcher when it
+   * happens (a host restart's losses are found by the startup scan instead).
+   * Plugin unload does not report (the next host start reads those tasks as
+   * `host-restart`). Never throws: a missing parent drops the report.
+   * @param childSessionId - the member's child session.
+   * @param taskIds - the CLI's ids of the tasks that ran in the process.
+   * @param because - why the process went away (only `process-reclaimed` today).
+   */
+  noteBackgroundTasksLost(childSessionId: string, taskIds: readonly string[], because: LocalAgentBackgroundTasksLost['because'] = 'process-reclaimed'): void {
+    try {
+      const parentSessionId = this.delegations.get(childSessionId)?.parentSessionId ?? this.memberBinding(childSessionId)?.parentSessionId
+      if (parentSessionId === undefined || parentSessionId === '' || taskIds.length === 0) return
+      this.ctx.emit('localAgent/background-tasks-lost', { childSessionId, parentSessionId, taskIds: [...taskIds], because })
+    } catch (error) {
+      this.ctx.logger.warn(`localAgent: reporting lost background tasks failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -3343,6 +3408,7 @@ export class LocalAgentRegistry {
       key: request.key,
       callerRef: request.callerRef,
       label: request.label ?? request.member.create?.label,
+      ...request.preview === undefined || request.preview.trim() === '' ? {} : { preview: request.preview.trim().slice(0, 120) },
       signal: request.signal,
       on: request.on,
     })
@@ -3388,6 +3454,7 @@ export class LocalAgentRegistry {
         id: executionId, caller: plan.caller,
         ...plan.key === undefined ? {} : { key: plan.key },
         ...plan.text === undefined ? {} : { text: plan.text },
+        ...plan.preview === undefined ? {} : { preview: plan.preview },
         ...plan.operation === 'compact' ? { operation: 'compact' as const } : {},
       }, {
         dispatch: (signal, admitted) => this.dispatchExecution(plan, executionId, signal, admitted).then((run) => { resolveStarted(run); return run }),
@@ -3509,6 +3576,7 @@ export class LocalAgentRegistry {
       ...open?.observed?.observedModel === undefined ? {} : { observedModel: open.observed.observedModel },
       ...open?.observed?.observedEffort === undefined ? {} : { observedEffort: open.observed.observedEffort },
       ...open?.observed?.cliVersion === undefined ? {} : { cliVersion: open.observed.cliVersion },
+      ...open?.observed?.taskResults === undefined || open.observed.taskResults.length === 0 ? {} : { taskResults: open.observed.taskResults },
       ...reason === undefined || row.status === 'done' ? {} : { error: reason },
     }
   }

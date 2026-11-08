@@ -124,6 +124,53 @@ describe('member questions', () => {
     expect(moved).toBeLessThan(room.snapshotEvents().findIndex(event => event.type === 'room/question'))
   })
 
+  it('answering a question in a running round moves its card below the answer (room-timeline-order E1)', async () => {
+    const bench = await boot()
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    room.append('room/run-state', { member: 'gm', state: 'running', startedAt: 7, runId: 'run-7' })
+    const asked = bench.service.receiveMemberCommand(bench.run, { name: 'ask_user_question', arguments: { questions: QUESTIONS } })
+    await vi.waitFor(async () => expect((await bench.state()).questions).toHaveLength(1))
+    const [card] = (await bench.state()).questions!
+    expect(await bench.service.answerQuestion({ sessionId: bench.sessionId, id: card!.id, answers: [{ id: 'fun', selected: ['读懂习性'] }, { id: 'len', selected: ['3-5 分钟'] }] })).toEqual({ ok: true })
+    await asked
+    const types = room.snapshotEvents().map(event => event.type)
+    const resolved = types.lastIndexOf('room/question-resolved')
+    expect(types.slice(resolved + 1)).toContain('room/run-moved')
+    expect(room.snapshotEvents()[types.lastIndexOf('room/run-moved')]!.data).toEqual({ member: 'gm', startedAt: 7 })
+    expect(types.lastIndexOf('room/run-moved')).toBeGreaterThan(resolved)
+    // The question log carries when it settled: the round's 「接着说」 starts there.
+    const ask = (await bench.state()).askLog!.find(entry => entry.id === card!.id)!
+    expect(ask.resolvedAt).toBe(room.snapshotEvents()[resolved]!.time)
+  })
+
+  it('a question answered with no round running moves nothing', async () => {
+    const bench = await boot()
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const asked = bench.service.receiveMemberCommand(bench.run, { name: 'ask_user_question', arguments: { questions: QUESTIONS } })
+    await vi.waitFor(async () => expect((await bench.state()).questions).toHaveLength(1))
+    const [card] = (await bench.state()).questions!
+    await bench.service.answerQuestion({ sessionId: bench.sessionId, id: card!.id, answers: [{ id: 'fun', selected: ['读懂习性'] }, { id: 'len', selected: ['3-5 分钟'] }] })
+    await asked
+    expect(room.snapshotEvents().some(event => event.type === 'room/run-moved')).toBe(false)
+  })
+
+  it('a landed reply places its questions in the log: each question\'s slice, or the inline fallback', async () => {
+    const bench = await boot()
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    room.append('room/question', { id: 'a', member: 'gm', memberId: 'm', questions: [{ id: 'x', question: '?' }], runId: 'run-1', before: '先说一句。' })
+    room.append('room/question-resolved', { id: 'a', outcome: 'answered', answers: [{ id: 'x', selected: [] }] })
+    room.append('room/question', { id: 'b', member: 'gm', memberId: 'm', questions: [{ id: 'x', question: '?' }], runId: 'run-1', before: '再说一句。' })
+    room.append('room/question-resolved', { id: 'b', outcome: 'answered', answers: [{ id: 'x', selected: [] }] })
+    room.append('room/speech', { member: 'gm', runId: 'run-1', text: '先说一句。再说一句。最后。', asks: [{ id: 'a', at: 5 }, { id: 'b', at: 10 }] })
+    room.append('room/question', { id: 'c', member: 'gm', memberId: 'm', questions: [{ id: 'x', question: '?' }], runId: 'run-2', before: '找不到' })
+    room.append('room/speech', { member: 'gm', runId: 'run-2', text: '全文。', asks: [{ id: 'c', at: -1 }] })
+    const log = new Map((await bench.state()).askLog!.map(ask => [ask.id, ask]))
+    expect(log.get('a')!.reply).toMatchObject({ at: 5, said: '先说一句。' })
+    expect(log.get('b')!.reply).toMatchObject({ at: 10, said: '再说一句。' })
+    expect(log.get('a')!.before).toBe('先说一句。')
+    expect(log.get('c')!.reply).toMatchObject({ at: -1, inline: true })
+  })
+
   it('a running member card re-anchors below the room agent\'s turn when that turn ends', async () => {
     // The coordinator invited or sent mid-turn: the card started inside its
     // turn and would fold away with the turn's process.

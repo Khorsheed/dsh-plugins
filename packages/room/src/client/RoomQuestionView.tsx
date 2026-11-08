@@ -14,6 +14,8 @@ import type { RoomQuestionAnswer } from '../types.ts'
 import { memberColor } from './member-color.ts'
 import type { RoomQuestionViewProps } from './slots.ts'
 import css from './RoomQuestionView.module.css'
+import { RoomSegmentView } from './RoomSegmentView.tsx'
+import { ANSWER_BY_MESSAGE_PREFIX } from './round-segments.ts'
 
 /** One question's draft: picked option labels and the 其他 text. */
 interface Draft {
@@ -21,11 +23,19 @@ interface Draft {
   readonly custom: string
 }
 
-/** The question card. */
-export function RoomQuestionView({ node, answerQuestion, inline, t }: RoomQuestionViewProps & {
-  /** Inside the asker's round (its run card or reply) instead of a chat row of its own; `mid` = the split point was not found. */
-  readonly inline?: { readonly mid?: boolean } | undefined
-}): ReactNode {
+/** Where a question card sits: inside the asker's round (its reply) instead of a chat row of its own; `mid` = the split point was not found. */
+type QuestionPlacement = { readonly inline?: { readonly mid?: boolean; readonly segment?: boolean } | undefined }
+
+/**
+ * The question card. A question asked in a member's round, given the round
+ * face, is that round's card up to the question (RoomSegmentView, E1).
+ */
+export function RoomQuestionView(props: RoomQuestionViewProps & QuestionPlacement): ReactNode {
+  if (props.inline === undefined && props.segment !== undefined && props.node.data.runId !== undefined) return <RoomSegmentView {...props} segment={props.segment} />
+  return <QuestionCard {...props} />
+}
+
+function QuestionCard({ node, answerQuestion, inline, t }: RoomQuestionViewProps & QuestionPlacement): ReactNode {
   const data = node.data
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
   const [busy, setBusy] = useState(false)
@@ -62,7 +72,21 @@ export function RoomQuestionView({ node, answerQuestion, inline, t }: RoomQuesti
     return [...answer?.selected ?? [], ...answer?.custom === undefined ? [] : [answer.custom]].join('；')
   }
 
-  const status = !pending && <span className={css.status}>{t(data.state === 'answered' ? (data.late === true ? 'question.answeredLate' : 'question.answered') : lateOpen ? 'question.lateOpen' : 'question.cancelled')}</span>
+  // On a round's question card (E1) an answered question reads as the
+  // prototype's 问 + 答: 「问了你 · ✓ 已回答」, the 你 chip and the answer in bold
+  // (or 「用下面这条消息回答了」 when the human answered by message).
+  const asSegment = inline?.segment === true && data.state === 'answered'
+  const status = !pending && (asSegment
+    ? <span className={`${css.status} ${css.statusDone}`}>{t(data.late === true ? 'question.answeredLate' : 'segment.answered')}</span>
+    : <span className={css.status}>{t(data.state === 'answered' ? (data.late === true ? 'question.answeredLate' : 'question.answered') : lateOpen ? 'question.lateOpen' : 'question.cancelled')}</span>)
+  /** One question's answer on a round's question card. */
+  const answerRow = (id: string): ReactNode => {
+    const answer = data.answers?.find(entry => entry.id === id)
+    const byMessage = answer?.custom?.startsWith(ANSWER_BY_MESSAGE_PREFIX) === true
+    if (byMessage && answer?.selected.length === 0) return <div className={css.answerRow}><span className={css.who} aria-hidden>{t('segment.you')}</span><b>{t('segment.byMessage')}</b></div>
+    const text = answerText(id)
+    return text === '' ? null : <div className={css.answerRow}><span className={css.who} aria-hidden>{t('segment.you')}</span><b>{text}</b></div>
+  }
   const body = (
     <>
         {data.questions.map((question) => {
@@ -104,7 +128,7 @@ export function RoomQuestionView({ node, answerQuestion, inline, t }: RoomQuesti
                   />
                 </>
               ) : data.state === 'answered' && (
-                <div className={css.answer}>{t('question.answer', { answer: answerText(question.id) })}</div>
+                asSegment ? answerRow(question.id) : <div className={css.answer}>{t('question.answer', { answer: answerText(question.id) })}</div>
               )}
             </fieldset>
           )
@@ -123,7 +147,7 @@ export function RoomQuestionView({ node, answerQuestion, inline, t }: RoomQuesti
     return (
       <div className={css.inline} data-state={lateOpen ? 'late' : data.state} data-ask-id={data.questionId}>
         <div className={css.inlineHead}>
-          <span>{pending ? t('question.waiting', { member: data.member }) : t('question.asked')}{inline.mid === true ? ` · ${t('question.midRound')}` : ''}</span>
+          <span>{pending ? t('question.waiting', { member: data.member }) : t(asSegment ? 'segment.asked' : 'question.asked')}{inline.mid === true ? ` · ${t('question.midRound')}` : ''}</span>
           {status}
         </div>
         {body}

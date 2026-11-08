@@ -5,6 +5,7 @@
  * @module @khorsheed/dsh-client-message-tools/types
  */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 
 /**
  * Withdraw one user message: hide it and everything logged after it from the
@@ -79,6 +80,17 @@ export interface MessageToolsEditRequest {
   /** The edited text (non-blank). */
   readonly text: string
 }
+
+/** Read the native model route that answered one editable user message. */
+export interface MessageToolsEditModelRequest {
+  /** Session that owns the target message. */
+  readonly sessionId: SessionId
+  /** Seq of the editable user message (an original or a previous edit's replacement). */
+  readonly targetSeq: number
+}
+
+/** Historical route evidence; null means no reliable native model request exists. */
+export type MessageToolsEditModel = ModelSelection | null
 
 /** What a landed edit appended and started. */
 export interface MessageToolsEdit {

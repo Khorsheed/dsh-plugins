@@ -25,7 +25,7 @@ The room had no way to pass the confirmation. Before this change its 重新载�
 
 ## Consequences
 
-- Only the room's surfaces confirm. The member composer's own model control (local-agent) does not confirm yet.
+- The member's own model control (local-agent) confirms too since [one background-work confirmation in the core](2026-11-08-background-confirm-in-core.md), and `BackgroundConfirm` here now renders the core's component, keeping this copy only for an older core.
 - If the read fails, the count is 0 and the save goes through without a question. This degrades in the same direction as a missing family.
 
 ## Testing

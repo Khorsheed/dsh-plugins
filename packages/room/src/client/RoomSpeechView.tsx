@@ -27,8 +27,10 @@ import { RoomQuestionView } from './RoomQuestionView.tsx'
 import { askCardData, type RoomSpeechData } from './nodes.ts'
 import { formatClock, formatDurationMs } from './format.ts'
 import { revealRoomRow, speechCause } from './speech-cause.ts'
+import { replyTarget } from './reply-target.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
 import { roundUsage, type RoundUsage } from './round-usage.ts'
+import { replySplit, useRoundGroup } from './round-segments.ts'
 import { attachmentsByOwner, type RoomQuestionViewProps, type RoomSpeechViewProps } from './slots.ts'
 import type { RoomAsk, RoomExecution } from '../types.ts'
 import css from './RoomSpeechView.module.css'
@@ -68,7 +70,7 @@ export const foldChoices = {
 }
 
 /** Localized Markdown chrome (code-fence copy buttons, footnotes) over the room namespace. */
-function markdownLabels(t: RoomSpeechViewProps['t']): MarkdownLabels {
+export function markdownLabels(t: RoomSpeechViewProps['t']): MarkdownLabels {
   return {
     code: { copyLabel: t('action.copy'), copiedLabel: t('action.copied') },
     footnotes: t('markdown.footnotes'),
@@ -113,6 +115,11 @@ function continuesText(status: string, t: RoomSpeechViewProps['t']): string {
   return t(status === 'failed' || status === 'timed_out' || status === 'killed' ? `speech.continues.${status}` : 'speech.continues.completed')
 }
 
+/** The folded tasks' descriptions, joined (the ones the CLI recorded one for). */
+function foldedLabels(folded: readonly { readonly label?: string }[], t: RoomSpeechViewProps['t']): string {
+  return folded.flatMap(entry => entry.label === undefined ? [] : [entry.label]).join(t('speech.taskResults.join'))
+}
+
 export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDetail, openPath, answerQuestion, renderSlot, t }: RoomSpeechViewProps): ReactNode {
   const data = node.data
   const [copied, setCopied] = useState(false)
@@ -130,16 +137,28 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
   const child = data.childSessionId
   // What started this round (a member's 派活/告知, or reports): its line tops the card.
   const cause = speechCause(data.runId, state)
+  // A later message to this member was waiting when this reply landed: say which message it answers (B③).
+  const answers = replyTarget(data.runId, data.time, state)
   const continues = data.continues
   // The run's usage, as the host's 用量 chip shows it: read from the
   // member's log through the core (the CLI's round total, else the per-call
   // sum — batch 5 S6), or a pre-S6 run's stored numbers. Never stored here.
   const execution = data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === data.runId)
   const usage = roundUsage(execution)
+  // Background tasks that ended while this round ran: the CLI folded their
+  // results into it (A④ 「轮内收到的结果」, read from the core's end record).
+  const folded = execution?.reading?.taskResults ?? []
   // The newest speech keeps its action row shown; older rows reveal on hover
   // (the host's turn-tail rule). A speech newer than the cached state's is the newest.
   const newestSpeech = data.seq >= (state?.latestSpeechSeq ?? data.seq)
-  const collapsible = data.text.length > COLLAPSE_CHARS
+  // The round stopped for the human (E1): its questions sit at their own
+  // cards above, with what it said before each; this card is what it said
+  // after the last one (「接着说」). Copy still takes the whole reply.
+  const split = replySplit(data, state?.askLog)
+  const shown = split.kind === 'split' ? split.rest : data.text
+  const root = useRef<HTMLDivElement>(null)
+  const grouped = useRoundGroup(root, data.runId, split.kind === 'split')
+  const collapsible = shown.length > COLLAPSE_CHARS
   // The newest reply to the room reads unfolded. A reply newer than the
   // cached state's (the refresh is debounced) is the newest already.
   const newestReply = data.reportedTo === undefined && data.seq >= (state?.latestReplySeq ?? data.seq)
@@ -164,7 +183,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
 
   const color = memberColor(data.member)
   return (
-    <div className={css.speech} data-time-hover-root="" data-room-run={data.runId} data-actions-reveal={newestSpeech ? 'always' : 'hover'} style={{ '--member-color': color } as CSSProperties}>
+    <div ref={root} className={grouped ? `${css.speech} ${css.grouped}` : css.speech} data-time-hover-root="" data-room-run={data.runId} data-actions-reveal={newestSpeech ? 'always' : 'hover'} style={{ '--member-color': color } as CSSProperties}>
       <span className={css.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
       <div className={css.stack}>
       <div className={css.card}>
@@ -179,6 +198,12 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
           <span className={css.causeHead}>{cause.kind === 'followUpLost' ? '⚠ ' : ''}{t(`speech.cause.${cause.kind}`, { member: cause.member })}</span>
           {cause.text !== undefined && <span className={css.causeText}>{t('dispatch.colon')}{cause.text.replace(/\s+/g, ' ')}</span>}
           {cause.target !== undefined && <span className={css.causeChevron} aria-hidden>›</span>}
+        </button>
+      )}
+      {answers !== undefined && (
+        <button type="button" className={css.cause} data-room-reply-to="" onClick={() => { revealRoomRow(answers.target) }}>
+          <span className={css.causeHead}>{t('speech.replyTo', { answered: formatClock(answers.answeredAt), later: formatClock(answers.laterAt) })}</span>
+          <span className={css.causeChevron} aria-hidden>›</span>
         </button>
       )}
       {/* A round the member's CLI opened on its own (A④): the quiet
@@ -196,16 +221,27 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
           {continues.label !== undefined && <span className={css.causeText}>· <span className={css.causeLink}>{continues.label}</span></span>}
         </button>
       )}
+      {/* Results the round received mid-way (decision 5 = A): only marked,
+          never forwarded — 「含后台任务结果 · 部署 …」. */}
+      {folded.length > 0 && (
+        <div className={css.cause} data-room-task-results="">
+          <span className={css.causeHead}>{t('speech.taskResults')}</span>
+          {foldedLabels(folded, t) !== '' && <span className={css.causeText}>· {foldedLabels(folded, t)}</span>}
+        </div>
+      )}
       <div className={css.identity}>
-        <span className={css.name}>{data.member}</span>
-        {member?.role !== undefined && <span className={css.role}>{member.role}</span>}
-        {provider !== undefined && provider !== '' && <span className={css.provider}>{provider}</span>}
+        {!grouped && <span className={css.name}>{data.member}</span>}
+        {!grouped && member?.role !== undefined && <span className={css.role}>{member.role}</span>}
+        {!grouped && provider !== undefined && provider !== '' && <span className={css.provider}>{provider}</span>}
+        {split.kind === 'split' && <span className={css.cont}>{t('segment.continued')}</span>}
         {data.interrupted !== undefined && <span className={css.interrupted}>{t(data.interrupted === 'cancelled' ? 'speech.stopped' : 'speech.failed')}</span>}
       </div>
       <div className={clamped ? `${css.body} ${css.clamped}` : css.body}>
-        {replyParts(data, state?.askLog).map(part => part.kind === 'text'
-          ? <MarkdownText key={`t${part.from}`} text={part.text} labels={labels} fileMentions={mentions} />
-          : <RoomQuestionView key={part.ask.id} {...{ node: { data: askCardData(part.ask) }, answerQuestion, t } as unknown as RoomQuestionViewProps} inline={{ mid: part.mid }} />)}
+        {split.kind === 'split'
+          ? split.rest.trim() !== '' && <MarkdownText key={`t${split.from}`} text={split.rest} labels={labels} fileMentions={mentions} />
+          : replyParts(data, state?.askLog).map(part => part.kind === 'text'
+            ? <MarkdownText key={`t${part.from}`} text={part.text} labels={labels} fileMentions={mentions} />
+            : <RoomQuestionView key={part.ask.id} {...{ node: { data: askCardData(part.ask) }, answerQuestion, t } as unknown as RoomQuestionViewProps} inline={{ mid: part.mid }} />)}
         {clamped && <div className={css.fade} aria-hidden onClick={() => { toggle(true) }} />}
         {/* message-tools' fold control, shared look: a small chevron seated in
             the body's bottom-right corner (over the fade while folded). */}

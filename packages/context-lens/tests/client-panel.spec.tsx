@@ -14,7 +14,7 @@ import type {
 } from '../src/types.ts'
 import type { InspectorTabProps } from '../src/client/contract.ts'
 import type { RequestInspectorTabParams } from '../src/client/definition.tsx'
-import { InspectorPanel } from '../src/client/InspectorPanel.tsx'
+import { InspectorPanel, queuedText } from '../src/client/InspectorPanel.tsx'
 import { zh } from '../src/client/locales.ts'
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
@@ -1035,5 +1035,12 @@ describe('Context Lens room rounds without records (batch 5 S8)', () => {
   it('a locateTime navigation selects the turn holding that moment', async () => {
     bench({ params: { locateTime: { at: 3_500 } }, revision: 1 })
     await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
+  })
+})
+
+describe('room round wait (room-timeline-order H1)', () => {
+  it('says the wait in minutes and seconds', () => {
+    expect(t('query.queued', { duration: queuedText(79_000, t as never) })).toBe('排队 1 分 19 秒后开始')
+    expect(t('query.queued', { duration: queuedText(42_400, t as never) })).toBe('排队 42 秒后开始')
   })
 })

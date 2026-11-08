@@ -17,8 +17,11 @@ export class MemberLiveOutput {
     private readonly diagnostics: LivePaintDiagnostics) {}
 
   readonly getSnapshot = (): LiveOutputSnapshot => this.snapshot
+  /** A last unsubscribe waiting out the commit (see {@link subscribe}). */
+  private idle: ReturnType<typeof setTimeout> | undefined
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener)
+    if (this.idle !== undefined) { clearTimeout(this.idle); this.idle = undefined }
     if (this.controller === undefined) {
       const controller = new AbortController()
       this.controller = controller
@@ -26,12 +29,19 @@ export class MemberLiveOutput {
     }
     return () => {
       this.listeners.delete(listener)
-      if (this.listeners.size === 0) {
+      if (this.listeners.size !== 0 || this.idle !== undefined) return
+      // One view handing the output to another in the same commit (a room
+      // round's card giving way to its question's card) unsubscribes before
+      // the other subscribes: wait that out, or the retained text of steps
+      // that already finished is dropped and a fresh baseline lacks it.
+      this.idle = setTimeout(() => {
+        this.idle = undefined
+        if (this.listeners.size !== 0) return
         this.controller?.abort()
         this.controller = undefined
         this.snapshot = { items: new Map(), connected: false }
         this.onIdle()
-      }
+      }, 0)
     }
   }
 

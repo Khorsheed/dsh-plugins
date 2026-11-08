@@ -1,10 +1,8 @@
 /**
- * Model chip for the inline editor's trailing seat: shows the session's
- * current provider/model/effort and switches it through the SAME per-session
- * ModelDirectory the composer seat and the /model popup share, so a switch
- * made here is what every surface echoes next — and it is the host-validated
- * selection the resent edit lands on. Visual structure clones the composer
- * seat (ModelSelect), simplified to one scrollable menu.
+ * Model chip for the inline editor's trailing seat: renders the edit's draft
+ * provider/model/effort over the session's shared catalog. Menu choices only
+ * change that draft; saving the edit submits it through the same per-session
+ * ModelDirectory the composer seat and the /model popup share.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
@@ -16,23 +14,26 @@ import css from './ModelChip.module.css'
 
 type Translate = UserMessageViewProps['t']
 
-/** Props of the editor model chip: the bound directory hook plus verbs. */
+/** Props of the editor model chip: the shared catalog and the edit's draft route. */
 export interface ModelChipProps {
   /** Selector hook over the session's shared model directory snapshot. */
   useModelDirectory: SnapshotSelectorHook<ModelDirectoryState>
   /** Refresh the advisory directory (fire-and-forget; errors land on the store). */
   loadModels: () => void
-  /** Submit a complete provider/model/effort selection; resolves to host acceptance. */
-  selectModel: (selection: ModelSelection) => Promise<boolean>
+  /** Route the edit will submit when saved. */
+  selection: ModelSelection
+  /** Replace the edit's draft route without writing the session selection. */
+  onSelection: (selection: ModelSelection) => void
+  /** Disable changes while the edit is saving or another selection is in flight. */
+  disabled?: boolean
   /** The message-tools locale seat. */
   t: Translate
 }
 
-/** The editor's model chip: trigger with current model/effort plus the switch menu. */
-export function ModelChip({ useModelDirectory, loadModels, selectModel, t }: ModelChipProps): ReactNode {
+/** The editor's model chip: trigger with the draft model/effort plus the switch menu. */
+export function ModelChip({ useModelDirectory, loadModels, selection, onSelection, disabled = false, t }: ModelChipProps): ReactNode {
   const state = useModelDirectory(snapshot => snapshot)
   const [open, setOpen] = useState(false)
-  const [failed, setFailed] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
 
   // The composer seat loads on session mount; the editor may open first, so
@@ -54,26 +55,25 @@ export function ModelChip({ useModelDirectory, loadModels, selectModel, t }: Mod
     }
   }, [open])
 
-  const current = state.current
-  const currentGroup = state.groups.find(group => group.id === current?.provider)
-  const currentModel = currentGroup?.models.find(model => model.id === current?.model)
+  const current = selection
+  const currentGroup = state.groups.find(group => group.id === current.provider)
+  const currentModel = currentGroup?.models.find(model => model.id === current.model)
   const reasoning = currentModel?.reasoning
-  const effectiveEffort = current?.reasoningEffort ?? reasoning?.defaultEffort
+  const effectiveEffort = current.reasoningEffort ?? reasoning?.defaultEffort
   const effortLabel = reasoning === undefined
     ? undefined
     : effectiveEffort === undefined
       ? t('model.providerDefault')
       : reasoning.efforts.find(level => level.id === effectiveEffort)?.name ?? effectiveEffort
-  const modelLabel = currentModel?.name ?? current?.model ?? t('loading')
-  const busy = state.status === 'selecting'
+  const modelLabel = currentModel?.name ?? current.model
+  const busy = disabled || state.status === 'selecting'
 
-  const submit = (selection: ModelSelection): void => {
-    setFailed(false)
+  const submit = (next: ModelSelection): void => {
     setOpen(false)
-    void selectModel(selection).then((ok) => { if (!ok) setFailed(true) })
+    onSelection(next)
   }
   const chooseModel = (provider: string, modelId: string, defaultEffort: string | undefined): void => {
-    if (busy || (current?.provider === provider && current.model === modelId)) return
+    if (busy || (current.provider === provider && current.model === modelId)) return
     submit({
       provider,
       model: modelId,
@@ -81,7 +81,7 @@ export function ModelChip({ useModelDirectory, loadModels, selectModel, t }: Mod
     })
   }
   const chooseEffort = (effort: string | undefined): void => {
-    if (busy || current === null || effectiveEffort === effort) return
+    if (busy || effectiveEffort === effort) return
     submit({
       provider: current.provider,
       model: current.model,
@@ -107,7 +107,7 @@ export function ModelChip({ useModelDirectory, loadModels, selectModel, t }: Mod
       </button>
       {open && (
         <div className={css.menu} role="menu" aria-label={t('model.menuAria')} aria-busy={state.status === 'loading'}>
-          {reasoning !== undefined && current !== null && (
+          {reasoning !== undefined && (
             <section className={css.group}>
               <div className={css.groupTitle}>{t('model.effort')}</div>
               {[
@@ -135,7 +135,7 @@ export function ModelChip({ useModelDirectory, loadModels, selectModel, t }: Mod
             <section className={css.group} key={group.id}>
               <div className={css.groupTitle}>{group.name}</div>
               {group.models.map((model) => {
-                const selected = current?.provider === group.id && current.model === model.id
+                const selected = current.provider === group.id && current.model === model.id
                 return (
                   <button
                     key={model.id}
@@ -158,7 +158,6 @@ export function ModelChip({ useModelDirectory, loadModels, selectModel, t }: Mod
           )}
         </div>
       )}
-      {failed && <span className={css.selectFailed} role="status">{t('model.selectFailed')}</span>}
     </div>
   )
 }

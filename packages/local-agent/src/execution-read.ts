@@ -111,6 +111,7 @@ export function executionReadingsOf(events: readonly SessionEvent[]): Map<string
       ...ended?.end.providerReportedUsage === undefined ? {} : { providerReportedUsage: structuredClone(ended.end.providerReportedUsage) },
       unrecorded: [...ended?.end.unrecorded ?? []],
       compactions,
+      ...ended?.end.taskResults === undefined || ended.end.taskResults.length === 0 ? {} : { taskResults: structuredClone(ended.end.taskResults) },
     })
   }
   return readings

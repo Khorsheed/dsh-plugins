@@ -15,6 +15,7 @@
 import { Fragment, memo, useEffect, useRef, useState, type ReactNode } from 'react'
 import { shallowEqual } from '@deepseek-ai/dsh-client-store'
 import type { UserMessageNode } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, JsonBlock, RiskConfirmation, Tooltip, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconCheckOutlineMedium, IconChevronDownOutlineMedium, IconCopyOutlineMedium, IconEditOutlineMedium } from './icons.tsx'
 import { IconUndoOutlineMedium } from './icons-local.tsx'
@@ -153,21 +154,24 @@ const EDITOR_MAX_HEIGHT = 240
 /**
  * Inline editor (MessageEditBox structure): the textarea is backfilled with
  * the true original text and auto-grows to its content, capped so a long
- * message scrolls inside instead of pushing the row's anchor. The trailing
- * seat renders the real model chip when the session's model directory is
- * available; its margin-right: auto container keeps the buttons
- * right-aligned either way.
+ * message scrolls inside instead of pushing the row's anchor. The model chip
+ * waits for the target's historical route; no native request evidence means
+ * no chip, as when an external CLI member owns generation.
  */
-function InlineEditor({ initial, busy, t, onSave, onCancel, models }: {
+function InlineEditor({ initial, busy, t, onSave, onCancel, models, targetSeq, loadEditModel }: {
   initial: string
   busy: boolean
   t: Translate
-  onSave: (text: string) => void
+  onSave: (text: string, selection: ModelSelection | null) => void
   onCancel: () => void
-  /** Model-chip wiring; undefined when ui-model-selection is not composed. */
-  models: ModelChipProps | undefined
+  /** Shared catalog wiring; undefined when ui-model-selection is not composed. */
+  models: Omit<ModelChipProps, 'selection' | 'onSelection' | 'disabled'> | undefined
+  targetSeq: number
+  loadEditModel: (targetSeq: number) => Promise<ModelSelection | null>
 }): ReactNode {
   const [draft, setDraft] = useState(initial)
+  const [selection, setSelection] = useState<ModelSelection | null>(null)
+  const [resolvingModel, setResolvingModel] = useState(models !== undefined)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
   const autoGrow = (): void => {
     const el = inputRef.current
@@ -179,10 +183,21 @@ function InlineEditor({ initial, busy, t, onSave, onCancel, models }: {
   // Grow once on mount (the backfilled text may exceed the default height)
   // and on every edit; the cap keeps the box bounded.
   useEffect(autoGrow, [])
+  const modelsAvailable = models !== undefined
+  useEffect(() => {
+    if (!modelsAvailable) return
+    let live = true
+    const settle = (route: ModelSelection | null): void => {
+      if (!live) return
+      setSelection(route)
+      setResolvingModel(false)
+    }
+    void loadEditModel(targetSeq).then(settle, () => { settle(null) })
+    return () => { live = false }
+  }, [loadEditModel, modelsAvailable, targetSeq])
   const save = (): void => {
-    /* v8 ignore next -- the save button is disabled while the draft is blank, and jsdom drops clicks on disabled controls. */
-    if (draft.trim() === '') return
-    onSave(draft)
+    if (draft.trim() === '' || resolvingModel) return
+    onSave(draft, selection)
   }
   return (
     <div className={css.editor} data-message-tools-edit-box>
@@ -200,9 +215,13 @@ function InlineEditor({ initial, busy, t, onSave, onCancel, models }: {
         }}
       />
       <div className={css.editorActions}>
-        <div className={css.editorTrailing}>{models !== undefined && <ModelChip {...models} />}</div>
+        <div className={css.editorTrailing}>
+          {models !== undefined && !resolvingModel && selection !== null && (
+            <ModelChip {...models} selection={selection} onSelection={setSelection} disabled={busy} />
+          )}
+        </div>
         <Button variant="outline" disabled={busy} onClick={onCancel}>{t('cancel')}</Button>
-        <Button variant="primary" disabled={busy || draft.trim() === ''} onClick={save}>
+        <Button variant="primary" disabled={busy || resolvingModel || draft.trim() === ''} onClick={save}>
           {t('editor.save')}
         </Button>
       </div>
@@ -213,7 +232,7 @@ function InlineEditor({ initial, busy, t, onSave, onCancel, models }: {
 /** The shadowed user-message view: bubble plus copy/edit/withdraw actions. */
 export const UserMessageView = memo(function UserMessageView({
   node, renderMessageImages, loadImage, renderFactorySlot, t, editMessage, withdrawMessage, backfillDraft, foldScope, userTextAvailable,
-  useModelDirectory, modelsAvailable, loadModels, selectModel,
+  useModelDirectory, modelsAvailable, loadModels, loadEditModel, selectModel,
   ...standard
 }: UserMessageViewProps): ReactNode {
   // Chat data lives in the `useChat` session standard prop on host 0.1.2
@@ -221,6 +240,7 @@ export const UserMessageView = memo(function UserMessageView({
   const useChat = chatHookOf(standard as Pick<UserMessageViewProps, 'useChat'>)
   const ranges = useChat(selectHiddenRanges, shallowEqual)
   const newestUserSeq = useChat(selectNewestUserSeq)
+  const currentModel = useModelDirectory(snapshot => snapshot.current)
   // The human's own choice for this message (remembered), else the default.
   const [chosen, setChosen] = useState<boolean | undefined>(() => foldChoices.read(foldScope)[String(node.data.seq)])
   const [editing, setEditing] = useState(false)
@@ -243,10 +263,20 @@ export const UserMessageView = memo(function UserMessageView({
     foldChoices.write(foldScope, data.seq, next)
   }
 
-  const saveEdit = (newText: string): void => {
+  const saveEdit = (newText: string, selection: ModelSelection | null): void => {
     setBusy(true)
     setFailed(null)
-    void editMessage(data.seq, newText)
+    const submit = async (): Promise<void> => {
+      const changed = selection !== null && (
+        currentModel === null
+        || currentModel.provider !== selection.provider
+        || currentModel.model !== selection.model
+        || currentModel.reasoningEffort !== selection.reasoningEffort
+      )
+      if (changed && !await selectModel(selection)) throw new Error('message-tools: model selection rejected')
+      await editMessage(data.seq, newText)
+    }
+    void submit()
       .then(() => { setEditing(false) })
       .catch(() => { setFailed('edit') })
       .finally(() => { setBusy(false) })
@@ -275,8 +305,10 @@ export const UserMessageView = memo(function UserMessageView({
             t={t}
             onSave={saveEdit}
             onCancel={() => { setEditing(false) }}
+            targetSeq={data.seq}
+            loadEditModel={loadEditModel}
             models={modelsAvailable
-              ? { useModelDirectory, loadModels, selectModel, t }
+              ? { useModelDirectory, loadModels, t }
               : undefined}
           />
           {failed === 'edit' && <div className={css.actionError} role="status">{t('error.edit')}</div>}

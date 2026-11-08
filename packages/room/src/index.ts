@@ -24,7 +24,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import type { LocalAgentBackgroundTask, LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome, MemberToolsNotice, RoomMemberMessageGate } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentBackgroundTask, LocalAgentBackgroundTasksLost, LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome, MemberToolsNotice, RoomMemberMessageGate } from '@khorsheed/dsh-local-agent/types'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context (create/resume
 // are consumed through the registry, not the agent-loop package).
@@ -56,11 +56,12 @@ import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, cliChildId, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, RESTART_UNKNOWN_TEXT, roomSource, runChildSessionId, runChildTurn, runExecutionId, followUpDelivery, followUpRecipient, runOfExecution, backgroundTaskReportKey } from './dispatch.ts'
-import { LOST_TASK_LOOKBACK_MS, lostReportText, lostToRecord, recordLostTask } from './background-lost.ts'
+import { LOST_TASK_LOOKBACK_MS, lostReportText, lostToRecord, recordLostTask, type ReportedLoss } from './background-lost.ts'
 import { CoreLedgers, reconcileCore, type CoreOutcome } from './core-ledger.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
-import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
+import { isHumanMessage, linkedTask, replayDeliveries, taskLinks } from './deliveries.ts'
+import { WITHDRAWN_TEXT } from './delivery-notes.ts'
 import { resolveTaskRef } from './jobs.ts'
 import { AUTO_CONTINUE_MOVED_ON_TEXT, autoContinueRounds, interruptedRounds, RESTART_CONTINUE_TEXT, type InterruptedRound } from './restart-continue.ts'
 import { suggestTask } from './report-gate.ts'
@@ -78,7 +79,7 @@ import type {
   RoomIsRoomRequest,
   RoomListProvidersRequest,
   RoomExecution, RoomMember, RoomMemberMessage, RoomMemberMessageReceipt,
-  RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomSetTaskHintRequest, RoomStopJobRequest, RoomStopJobResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
+  RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomSetTaskHintRequest, RoomStopJobRequest, RoomStopJobResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult, RoomWithdrawDeliveryRequest, RoomWithdrawDeliveryResult,
   RoomPostMessageRequest, RoomPostMessageResult, RoomAttachmentInput, RoomDispatchAttachment, RoomPendingCard, RoomPendingCardsRequest,
   RoomMemberDesk, RoomPresetInfo, RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
@@ -480,6 +481,11 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       // The room's own agent settling must not hide members still at work.
       if (status !== 'running' && (this.activeRuns.get(String(agent.id))?.size ?? 0) > 0) this.emitStatus(String(agent.id), true)
     })
+    // C①: a member's process reclaimed while its background tasks ran — the
+    // room records the loss when it happens (a host restart's: the startup scan).
+    ctx.on('localAgent/background-tasks-lost', (lost) => {
+      void this.recordReclaimedBackgroundTasks(lost).catch((error: unknown) => { this.ctx.logger.warn(`room: recording reclaimed background tasks failed: ${String(error)}`) })
+    })
     // Cross-session help (help.ts): a help message reaching a helper's turn
     // equips that agent with the helper tools and marks the thread running;
     // an agent whose log already holds help requests (a restart dropped its
@@ -652,18 +658,24 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
    * the member side (the harness reads the CLI's own task state); runs once
    * per room per host process and dedupes on the room's own log, so a
    * second process or pass writes nothing twice.
+   * A reclaim of a member's process (C①) records the same way, when the
+   * harness reports it (`reported`: only that member is read, and its
+   * reported tasks count as lost whatever their file says by now).
    * @param room - the live room.
    * @param options - `force`: look again even if this process looked already
    *   (the startup pass: a room opened before the harnesses registered read nothing).
+   *   `reported`: the member and tasks a reclaim just cut off (implies a fresh look).
    */
-  recordLostBackgroundTasks(room: Session, options: { readonly force?: boolean } = {}): Promise<void> {
+  recordLostBackgroundTasks(room: Session, options: { readonly force?: boolean; readonly reported?: { readonly childSessionId: string; readonly loss: ReportedLoss } } = {}): Promise<void> {
     const key = String(room.id)
     const known = this.lostScans.get(key)
-    if (known !== undefined && options.force !== true) return known
+    if (known !== undefined && options.force !== true && options.reported === undefined) return known
+    const reported = options.reported
     const scan = (async () => {
       const read = probeLocalAgent(this.ctx)?.memberBackgroundTasks
       if (read === undefined) return
-      const members = replay(room.snapshotEvents()).members.filter(member => member.kind === 'cli' && member.childSessionId !== undefined)
+      const members = replay(room.snapshotEvents()).members.filter(member => member.kind === 'cli' && member.childSessionId !== undefined
+        && (reported === undefined || String(member.childSessionId) === reported.childSessionId))
       const reads: { readonly member: RoomMember; readonly tasks: readonly LocalAgentBackgroundTask[] }[] = []
       for (const member of members) {
         try {
@@ -677,12 +689,12 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       for (const { member, tasks } of reads) {
         const events = room.snapshotEvents()
         const id = memberId(events, member)
-        for (const task of lostToRecord(events, id, tasks, since)) {
+        for (const task of lostToRecord(events, id, tasks, since, reported?.loss)) {
           const startedByRunId = runOfExecution(events, task.startedBy)
           recordLostTask(room, member, id, task, startedByRunId)
           const deliveryId = followUpDelivery(room.snapshotEvents(), startedByRunId)
           if (deliveryId !== undefined && followUpRecipient(room.snapshotEvents(), deliveryId) !== undefined) {
-            reports.push({ deliveryId, key: backgroundTaskReportKey(id, task.id), text: lostReportText(member.name, task.label) })
+            reports.push({ deliveryId, key: backgroundTaskReportKey(id, task.id), text: lostReportText(member.name, task.label, task.lostBecause) })
           }
         }
       }
@@ -690,8 +702,27 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       await this.ctx.sessions.flush(room)
       for (const report of reports) await this.engine.reportFollowUp(room, report.deliveryId, { reportFor: report.key }, 'uncertain', report.text)
     })()
-    this.lostScans.set(key, scan)
+    // A reclaim's pass is not the room's once-per-process restart scan.
+    if (reported === undefined) this.lostScans.set(key, scan)
     return scan
+  }
+
+  /**
+   * A member's process was reclaimed while its background tasks ran (C①,
+   * `localAgent/background-tasks-lost`): when the member's parent is a room,
+   * bring it live — the access opening it would be, as the startup load
+   * does — and record the loss now, with the follow-up when the starting
+   * delivery would report. Not a room, or the room unavailable: nothing.
+   * @param lost - the core's report.
+   */
+  async recordReclaimedBackgroundTasks(lost: LocalAgentBackgroundTasksLost): Promise<void> {
+    if (lost.taskIds.length === 0) return
+    const sessionId = SessionId(lost.parentSessionId)
+    const cold = await this.loadCold(sessionId)
+    if (!cold.ok) return
+    const loaded = await this.ensureLive(sessionId)
+    if (!loaded.ok) return
+    await this.recordLostBackgroundTasks(loaded.session, { reported: { childSessionId: lost.childSessionId, loss: { taskIds: new Set(lost.taskIds), because: lost.because } } })
   }
 
   /**
@@ -1893,7 +1924,6 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     } else {
       this.engine.directMessages.add(String(human.id))
     }
-    floatRunningCards(loaded.session)
     const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
     // 「全部继续」 names the interrupted rounds it continues (M9): recorded
     // for those that are interrupted rounds of its targets, read before the
@@ -1907,6 +1937,9 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       ...admitted.records.length === 0 ? {} : { attachments: admitted.records },
       targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
     })
+    // The running cards move below the message AND its receipt line (the
+    // room-receipt row anchors at this dispatch), never between the two.
+    floatRunningCards(loaded.session)
     await this.ctx.sessions.flush(loaded.session)
     const answered = await this.answerByMessage(loaded.session, dispatch.seq, targets, withAttachmentPaths(prompt, admitted.records))
     for (const target of targets) {
@@ -2516,6 +2549,10 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     const waiter = this.approvalWaiters.get(request.id)
     if (waiter === undefined || loaded.state.approvals?.some(entry => entry.id === request.id) !== true) return { ok: false, error: { code: 'approval-not-pending' } }
     loaded.session.append('room/approval-resolved', { id: request.id, outcome: request.outcome })
+    // The approval is where the round took in the human's input: its card
+    // (and any other still running) continues below the approval row
+    // (room-timeline E2 — the text itself is not split at an approval).
+    floatRunningCards(loaded.session)
     await this.ctx.sessions.flush(loaded.session)
     waiter(request.outcome)
     return { ok: true }
@@ -2566,9 +2603,26 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     this.questionWaiters.delete(id)
     if (answers === undefined && replay(session.snapshotEvents()).questions?.some(entry => entry.id === id) === true) {
       session.append('room/question-resolved', { id, outcome: 'cancelled' })
+      this.moveAskerCard(session, id)
       await this.ctx.sessions.flush(session)
     }
     return answers
+  }
+
+  /**
+   * A question in a still-running round settled (answered, or expired while
+   * the round goes on): the round's card moves below the answer, where what
+   * it says next grows (room-timeline-order E1) — the question card stays
+   * where it was asked, with what the round said before it.
+   * @param session - the live room session.
+   * @param questionId - the settled question.
+   */
+  private moveAskerCard(session: Session, questionId: string): void {
+    const state = replay(session.snapshotEvents())
+    const runId = state.askLog?.find(ask => ask.id === questionId)?.runId
+    if (runId === undefined) return
+    const run = state.runs.find(entry => entry.runId === runId && entry.state === 'running')
+    if (run !== undefined) session.append('room/run-moved', { member: run.member, startedAt: run.startedAt })
   }
 
   /**
@@ -2590,6 +2644,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       return { id: question.id, selected: [...given?.selected ?? []].filter(label => typeof label === 'string'), ...custom === undefined || custom === '' ? {} : { custom } }
     })
     loaded.session.append('room/question-resolved', { id: request.id, outcome: 'answered', answers })
+    this.moveAskerCard(loaded.session, request.id)
     await this.ctx.sessions.flush(loaded.session)
     waiter(answers)
     return { ok: true }
@@ -2835,6 +2890,31 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     if (member === undefined) return { ok: false, error: { code: 'member-not-found' } }
     const released = await this.engine.releaseHeld(loaded.session, memberId(loaded.session.snapshotEvents(), member), 'manual')
     return { ok: true, value: { released } }
+  }
+
+  /**
+   * Take back a human message from one recipient before it reached them
+   * (room-timeline B3, the receipt's 撤回). Only a delivery still queued can
+   * be withdrawn: it is journaled cancelled with {@link WITHDRAWN_TEXT}, then
+   * a CLI member's queued core row is cancelled (the same core action as the
+   * members page's 取消这条); the room's own agent drops it when its turn
+   * comes. The bubble stays (the log is append-only); its receipt says
+   * 已撤回.
+   * @param request - room session, the human dispatch's seq and the recipient.
+   * @returns withdrawn, or a rejection (`not-queued` once it is admitted or settled).
+   */
+  @Remote('withdrawDelivery')
+  async withdrawDelivery(request: RoomWithdrawDeliveryRequest): Promise<RoomWithdrawDeliveryResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const id = `${request.dispatchSeq}:${request.memberId}`
+    const row = replayDeliveries(loaded.session.snapshotEvents()).find(entry => entry.id === id)
+    if (row === undefined || row.origin !== 'human') return { ok: false, error: { code: 'member-not-found' } }
+    if (row.status !== 'queued') return { ok: false, error: { code: 'not-queued' } }
+    loaded.session.append('room/delivery-state', { id, dispatchSeq: request.dispatchSeq, memberId: request.memberId, state: 'cancelled', text: WITHDRAWN_TEXT })
+    await this.ctx.sessions.flush(loaded.session)
+    this.engine.withdraw(String(loaded.session.id), id)
+    return { ok: true, value: { withdrawn: true } }
   }
 
   /**

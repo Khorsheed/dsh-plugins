@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { findOpenSelfTurn, isTaskOrigin, nextSelfTurn, readQueuedPrompt, readTurnAt, selfTurnPrompts, turnEndedStopReason, wireLineCount } from '../src/self-turn.ts'
+import { findOpenSelfTurn, firstUserPromptLine, foldedTaskResults, isTaskOrigin, nextSelfTurn, readQueuedPrompt, readTurnAt, selfTurnPrompts, turnEndedStopReason, wireLineCount } from '../src/self-turn.ts'
 
 const wire = (...rows: Record<string, unknown>[]): string => rows.map(row => JSON.stringify(row)).join('\n') + '\n'
 const userPrompt = (text: string, time?: number) => ({ type: 'turn.prompt', input: [{ type: 'text', text }], origin: { kind: 'user' }, ...time === undefined ? {} : { time } })
@@ -125,5 +125,39 @@ describe('the self-turn observer\'s readers (member-self-started-rounds M4)', ()
     expect(readTurnAt(open, 2)).toEqual({ phase: 'running', segments: ['部署完成', '已重启'] })
     expect(readTurnAt(open + wire(ended(1, 'failed')), 2)).toEqual({ phase: 'ended', reason: 'failed', segments: ['部署完成', '已重启'] })
     expect(readTurnAt(open + wire(userPrompt('b')), 2)).toEqual({ phase: 'ended', reason: 'interrupted', segments: ['部署完成', '已重启'] })
+  })
+})
+
+describe('foldedTaskResults (A④ 轮内收到的结果)', () => {
+  const started = (taskId: string, description: string) => ({ type: 'task.started', info: { taskId, description, status: 'running' } })
+  const appended = (taskId: string, status: string, kind = 'task') => ({
+    type: 'context.append_message',
+    message: { role: 'user', content: [{ type: 'text', text: `<notification type="task.${status}">` }], origin: { kind, taskId, status, notificationId: `task:${taskId}:${status}` } },
+  })
+
+  it('collects task notifications appended inside the round, with the task\'s own description', () => {
+    const rows = wire(started('bash-1', '部署 canvas-novel'), ended(0), userPrompt('写下一章'), text(1, 1, '好'), appended('bash-1', 'completed'), appended('bash-2', 'failed'), ended(1))
+    expect(firstUserPromptLine(rows, 1)).toBe(2)
+    expect(foldedTaskResults(rows, 2)).toEqual([
+      { taskId: 'bash-1', taskStatus: 'completed', notificationId: 'task:bash-1:completed', label: '部署 canvas-novel' },
+      { taskId: 'bash-2', taskStatus: 'failed', notificationId: 'task:bash-2:failed' },
+    ])
+  })
+
+  it('stops at the turn\'s end: a later turn\'s notification is not this round\'s', () => {
+    const rows = wire(userPrompt('a'), ended(0), appended('bash-1', 'completed'), userPrompt('b'), appended('bash-2', 'completed'), ended(1))
+    expect(foldedTaskResults(rows, 0)).toEqual([])
+  })
+
+  it('a self-opened turn\'s own notification echo is its cause, not a result; another task inside it is', () => {
+    const rows = wire(taskPrompt(), appended('bash-1', 'completed'), appended('bash-3', 'timed_out'), ended(0))
+    expect(foldedTaskResults(rows, 0)).toEqual([{ taskId: 'bash-3', taskStatus: 'timed_out', notificationId: 'task:bash-3:timed_out' }])
+  })
+
+  it('ignores other injections, duplicates, and a line that is no prompt', () => {
+    const rows = wire(userPrompt('a'), appended('bash-1', 'completed', 'injection'), appended('bash-4', 'completed'), appended('bash-4', 'completed'), ended(0))
+    expect(foldedTaskResults(rows, 0)).toEqual([{ taskId: 'bash-4', taskStatus: 'completed', notificationId: 'task:bash-4:completed' }])
+    expect(foldedTaskResults(rows, 1)).toEqual([])
+    expect(firstUserPromptLine(wire(taskPrompt()), 0)).toBeUndefined()
   })
 })

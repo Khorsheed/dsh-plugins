@@ -8,6 +8,12 @@ export interface MemberConfigurationFace {
   select(id: string, request: string, revision: number, selection: LocalAgentMemberConfiguration): Promise<LocalAgentControlReceipt>
   cancel(id: string, request: string, revision: number): Promise<LocalAgentControlReceipt>
   retry(id: string, revision: number): Promise<void>
+  /**
+   * How many background tasks the member's live process runs right now (a
+   * fresh `memberBackgroundTasks` read): a selection replaces that process,
+   * so the control confirms first. 0 = none or unknown. Absent = no check.
+   */
+  runningBackgroundTasks?(id: string): Promise<number>
 }
 
 export interface MemberConfigurationSnapshot {

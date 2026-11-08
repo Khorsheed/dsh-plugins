@@ -1,5 +1,5 @@
 /** Generation-time text rendered through the public Markdown component. */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { DisclosureRow, MarkdownText, TextShimmer, type MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconThinkOutlineRegular } from './icons.tsx'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -23,18 +23,30 @@ export function MemberLiveNode({ node, outputs, t }: MemberLiveNodeProps) {
     recovering={live === undefined || !snapshot.connected} t={t} />
 }
 
-/** Same subscription in Room: run boundary excludes retained output from earlier turns. */
-export function MemberLiveOutputView({ sessionId, startedAt, outputs, fileMentions, t }: {
+/**
+ * Same subscription in Room: run boundary excludes retained output from
+ * earlier turns; `since`/`until` (exclusive) narrow it to one stretch of the
+ * round, and `empty` stands in while that stretch shows nothing.
+ */
+export function MemberLiveOutputView({ sessionId, startedAt, since, until, empty, outputs, fileMentions, t }: {
   sessionId: string
   startedAt: number
+  /** Only output received at or after this time. */
+  since?: number | undefined
+  /** Only output received before this time. */
+  until?: number | undefined
+  /** Shown while the stretch has no output. */
+  empty?: ReactNode | undefined
   outputs: MemberLiveOutputs
   /** The host surface's inline-code file links (Room passes the member's path openers). */
   fileMentions?: MarkdownFileMentions | undefined
 } & PropsLocale<typeof NS>) {
   const store = outputs.get(sessionId)
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
+  const from = Math.max(startedAt, since ?? startedAt)
+  const items = [...snapshot.items.values()].filter(item => item.receivedAt >= from && (until === undefined || item.receivedAt < until))
   return <div data-member-output={sessionId}>
-    {[...snapshot.items.values()].filter(item => item.receivedAt >= startedAt).map(item => (
+    {items.length === 0 ? empty : items.map(item => (
       <StreamText key={item.id} {...item} sessionId={sessionId} surface="room" diagnostics={outputs.diagnostics} recovering={!snapshot.connected} fileMentions={fileMentions} t={t} />
     ))}
   </div>

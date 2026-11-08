@@ -408,6 +408,12 @@ export interface TurnListItem {
      * room-dimension request view, only a way into each member's own lens.
      */
     unrecorded?: true
+    /**
+     * How long the human's message waited before a member started on it (the
+     * dispatch's time to its first run's start), when it waited noticeably —
+     * the round's title reads 「排队 N 后开始」 (room-timeline-order H1).
+     */
+    queuedMs?: number
   }
   /**
    * The room's 未归轮 group: decision-model calls and member compactions no

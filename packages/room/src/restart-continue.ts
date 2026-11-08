@@ -34,6 +34,13 @@
  * server pass also requires the edge itself (it runs after recovery, which
  * writes it); a projection-only interruption (cold room, edge not written
  * yet) only makes `getState` bring the room live so recovery can record it.
+ *
+ * The edge's time alone has a blind spot: a round whose room no process
+ * loaded since the restart that cut it off gets its edge written by the
+ * first process that does — fresh, as if this restart's. So a round is also
+ * `stale` when it STARTED before the previous host process did
+ * (`RestartFacts.previousProcessStartedAt`, the local-agent core's durable
+ * host-process record): the previous process's start had already cut it off.
  * @module @khorsheed/dsh-room/restart-continue
  */
 import type { RestartFacts, RoomSettings, RoomState } from './types.ts'
@@ -125,7 +132,12 @@ function classify(
     const interruptedAt = delivery?.status === 'uncertain' && delivery.endedAt !== undefined ? delivery.endedAt
       : run.state === 'failed' && run.elapsedMs !== undefined ? run.startedAt + run.elapsedMs
         : undefined
-    const stale = facts?.bootedAt !== undefined && interruptedAt !== undefined && interruptedAt < facts.bootedAt
+    // Stale by the journal (an earlier process recorded the edge), or by the
+    // round's own start: it began before the previous host process did, so
+    // that process's start already cut it off — however late its edge is
+    // journaled (a room no process loaded since that restart).
+    const stale = (facts?.bootedAt !== undefined && interruptedAt !== undefined && interruptedAt < facts.bootedAt)
+      || (facts?.previousProcessStartedAt !== undefined && run.startedAt < facts.previousProcessStartedAt)
     rounds.push({
       interruptedAt,
       round: {

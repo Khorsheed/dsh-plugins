@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-08-auto-continue-round-start-vs-previous-process.md
+.agents/notes/implemented/bug-fix/2026-11-08-auto-continue-round-start-vs-previous-process.md: bdc2c4d4580404aaf5eaaba05f9968d68ae2aea5
+.agents/notes/implemented/bug-fix/2026-11-08-auto-continue-round-start-vs-previous-process.zh.md: c20e286bc8d04787703dd2a731d56da53fe94e62

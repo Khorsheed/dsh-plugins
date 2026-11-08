@@ -54,6 +54,13 @@ export interface KimiStepTiming {
   firstChunkAt?: number
 }
 
+/** One abandoned model-call attempt: its turn and wall-clock window (`from` absent when its step.begin carried no time). */
+export interface KimiRetriedAttempt {
+  readonly turn: number
+  readonly from?: number
+  readonly until: number
+}
+
 /** A parsed transcript of one kimi session. */
 export interface KimiSessionTranscript {
   /** Session id. */
@@ -78,6 +85,16 @@ export interface KimiSessionTranscript {
   closedSteps: ReadonlySet<string>
   /** Request and first-content times for steps that report them. */
   stepTimings: ReadonlyMap<string, KimiStepTiming>
+  /**
+   * Model-call attempts kimi abandoned and retried (`turn.step.retrying`,
+   * e.g. a connection cut mid-stream). The wire records nothing of such an
+   * attempt's content, but its ACP notifications (thought chunks, a
+   * lazily-created `pending` tool call) already reached the live driver.
+   * Each entry is the attempt's wall-clock window on kimi's own clock: from
+   * its `step.begin` to the retry's time plus its announced backoff (the next
+   * attempt is not even requested before then).
+   */
+  retriedAttempts?: readonly KimiRetriedAttempt[]
   /**
    * The model identifier the wire named: the `model` field of a `usage.record`
    * or `llm.request` event, LAST one seen (a resumed session's later rounds
@@ -243,6 +260,9 @@ export async function readKimiTranscript(sessionDir: string, options: KimiTransc
   const usageRecords: { line: number; usage: TokenUsage; step?: string }[] = []
   const closedSteps = new Set<string>()
   const stepTimings = new Map<string, KimiStepTiming>()
+  const retriedAttempts: KimiRetriedAttempt[] = []
+  /** Each step attempt's `step.begin` time by its uuid (a retry names the attempt it abandons by it). */
+  const stepBegunAt = new Map<string, number>()
   /** The wire step begun and not yet ended (`${turn}:${wireStep}`). */
   let openStep: string | undefined
   let model: string | undefined
@@ -312,8 +332,19 @@ export async function readKimiTranscript(sessionDir: string, options: KimiTransc
       if (usage !== undefined) usageRecords.push({ line: lines.length, usage, ...openStep === undefined ? {} : { step: openStep } })
       continue
     }
+    if (event.type === 'turn.step.retrying') {
+      // The attempt is abandoned: its content never reaches the wire, the
+      // next attempt re-asks the model. Its window bounds the ACP updates it
+      // sent; the live driver drops them instead of writing them at settle.
+      if (typeof event.time === 'number' && Number.isFinite(event.time)) {
+        const begun = typeof event.stepId === 'string' ? stepBegunAt.get(event.stepId) : undefined
+        const backoff = typeof event.delayMs === 'number' && Number.isFinite(event.delayMs) && event.delayMs > 0 ? event.delayMs : 0
+        retriedAttempts.push({ turn: turn === 0 ? 1 : turn, ...begun === undefined ? {} : { from: begun }, until: event.time + backoff })
+      }
+      continue
+    }
     if (event.type === 'llm.request') {
-      lineModel = typeof event.model === 'string' && event.model !== '' ? event.model : undefined
+      lineModel =typeof event.model === 'string' && event.model !== '' ? event.model : undefined
       if (typeof event.model === 'string' && event.model !== '') { model = event.model; modelTurn = turn || 1 }
       // The header contract requires provider+model; a wire that names no
       // model records no config at all rather than an invented one.
@@ -421,6 +452,7 @@ export async function readKimiTranscript(sessionDir: string, options: KimiTransc
       const part = loop.part as { type?: string; text?: string; think?: string } | undefined
       const lineTurn = turn === 0 ? 1 : turn
       if (loop.type === 'step.begin' && wireStep !== undefined) openStep = `${lineTurn}:${wireStep}`
+      if (loop.type === 'step.begin' && typeof loop.uuid === 'string' && typeof event.time === 'number' && Number.isFinite(event.time)) stepBegunAt.set(loop.uuid, event.time)
       if (loop.type === 'step.end' && wireStep !== undefined) {
         const key = `${lineTurn}:${wireStep}`
         closedSteps.add(key)
@@ -507,7 +539,12 @@ export async function readKimiTranscript(sessionDir: string, options: KimiTransc
       }
     }
   }
-  return { sessionId, lines, usageRecords, closedSteps, stepTimings, ...model === undefined ? {} : { model }, ...modelTurn === undefined ? {} : { modelTurn } }
+  return {
+    sessionId, lines, usageRecords, closedSteps, stepTimings,
+    ...retriedAttempts.length === 0 ? {} : { retriedAttempts },
+    ...model === undefined ? {} : { model },
+    ...modelTurn === undefined ? {} : { modelTurn },
+  }
 }
 
 /**

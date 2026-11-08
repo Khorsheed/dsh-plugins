@@ -13,7 +13,7 @@ import { MemberToolsLine } from '../src/client/MemberToolsLine.tsx'
 import { InviteDialog } from '../src/client/InviteDialog.tsx'
 import { runningBackground } from '../src/client/member-activity-view.ts'
 import { reloadThroughGateway } from '../src/client/member-tools-view.ts'
-import { MemberActivityStore } from '../src/client/MemberActivity.tsx'
+import { MemberActivityStore, setCoreBackgroundConfirm } from '../src/client/MemberActivity.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import type { RoomMember } from '../src/types.ts'
 
@@ -167,5 +167,29 @@ describe('the reload request', () => {
     expect(await reloadThroughGateway({}, 'child-gm')).toBeUndefined()
     expect(await reloadThroughGateway({ reloadMemberTools: async () => ({ ok: false }) }, 'child-gm')).toBeUndefined()
     expect(await reloadThroughGateway({ reloadMemberTools: async () => { throw new Error('x') } }, 'child-gm')).toBeUndefined()
+  })
+})
+
+describe('the one confirmation is the core\'s', () => {
+  it('renders local-agent\'s renderBackgroundConfirm when the core has it, the room\'s own copy otherwise', async () => {
+    const core = vi.fn((input: { count: number; onConfirm: () => void }) => <button type="button" data-testid="core-confirm" onClick={input.onConfirm}>core {input.count}</button>)
+    const unset = setCoreBackgroundConfirm(() => core)
+    try {
+      const reload = line(missing)
+      fireEvent.click(await screen.findByText('重新载入'))
+      const confirm = await screen.findByTestId('core-confirm')
+      expect(confirm.textContent).toBe('core 2')
+      expect(screen.queryByTestId('background-confirm')).toBeNull()
+      fireEvent.click(confirm)
+      await waitFor(() => { expect(reload).toHaveBeenLastCalledWith('child-gm', { confirmBackgroundTasks: true }) })
+    } finally { unset() }
+    cleanup()
+    // An older core without the renderer (or none at all): the room's own copy.
+    const unsetEmpty = setCoreBackgroundConfirm(() => undefined)
+    try {
+      line(missing)
+      fireEvent.click(await screen.findByText('重新载入'))
+      expect((await screen.findByTestId('background-confirm')).textContent).toContain('会让 2 项后台工作失去联系')
+    } finally { unsetEmpty() }
   })
 })

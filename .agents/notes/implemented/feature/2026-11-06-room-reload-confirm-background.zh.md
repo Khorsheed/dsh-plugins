@@ -25,7 +25,7 @@ Kimi M3（`2026-11-06-kimi-keepalive-background-tasks`）让核心在成员的�
 
 ## Consequences
 
-- 目前只有房间的界面会确认。成员输入框里 local-agent 自带的模型控件还不会问。
+- 自[后台工作确认归核心](2026-11-08-background-confirm-in-core.zh.md)起，成员自己的模型控件（local-agent）也会确认；这里的 `BackgroundConfirm` 改为渲染核心的组件，只给旧核心保留这份副本。
 - 读取失败时数目按 0 处理，保存直接进行、不弹确认。降级方向和没装家族时一样。
 
 ## Testing

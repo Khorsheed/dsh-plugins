@@ -24,6 +24,7 @@ import type { LocalAgentDelegationView, LocalAgentModelInfo, LocalAgentModelSour
 import { memberDockLines, type MemberDockProjections } from './member-dock.ts'
 import { NS, type LocalAgentKey } from './locales.ts'
 import css from './MemberComposer.module.css'
+import { BackgroundConfirm } from './BackgroundConfirm.tsx'
 
 /** What the chain selector hands the elected component. */
 export interface MemberComposerMatch {
@@ -90,6 +91,12 @@ export interface MemberComposerInjected {
    * structured error renders inline like a promptMember failure.
    */
   setMemberModel: (childSessionId: string, model?: string) => Promise<LocalAgentPromptResult | undefined>
+  /**
+   * How many background tasks the member's live process runs right now: a
+   * model switch replaces that process, so the picker confirms first
+   * (「会让 N 项后台工作失去联系」). 0 = none or unknown; absent = no check.
+   */
+  runningBackgroundTasks?: ((childSessionId: string) => Promise<number>) | undefined
 }
 
 /** Full chain props after the member selector accepts the owner currency. */
@@ -164,7 +171,7 @@ export function resetMembershipCache(): void {
  * @returns the composer, the neutral checking state while probing, or the
  *   read-only panel when not a member.
  */
-export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, activeDelegations, memberModel, setMemberModel, renderMemberConfiguration, renderMemberInbox, renderMemberTools, t }: MemberComposerProps) {
+export function MemberComposer({ matched, useSession, useProjection, memberOf, promptMember, stopMember, activeDelegations, memberModel, setMemberModel, runningBackgroundTasks, renderMemberConfiguration, renderMemberInbox, renderMemberTools, t }: MemberComposerProps) {
   const [membership, setMembership] = useState<Membership>(() => membershipCache.get(matched.childSessionId))
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -178,6 +185,8 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   const [modelSurface, setModelSurface] = useState<ModelSurface | undefined>(undefined)
   /** The picker's dropdown open bit. */
   const [modelMenuOpen, setModelMenuOpen] = useState(false)
+  /** A model switch waiting on 「会让 N 项后台工作失去联系」 (this member only). */
+  const [modelConfirm, setModelConfirm] = useState<{ readonly child: string; readonly count: number; readonly model: string | undefined }>()
   /** The picker's root node (click-outside closes the dropdown). */
   const modelPickerRef = useRef<HTMLDivElement | null>(null)
   /** The child the current membership answer belongs to (re-probes on switch). */
@@ -344,10 +353,20 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
    * so a refused switch leaves the chip on the real model — the structured
    * error rides the same inline line a promptMember failure uses.
    */
-  const chooseModel = (model: string | undefined): void => {
+  const chooseModel = (model: string | undefined, confirmed = false): void => {
     setModelMenuOpen(false)
     setError(null)
+    setModelConfirm(undefined)
     const childId = matched.childSessionId
+    // A switch replaces the member's process: while it runs background
+    // tasks, ask first (member-self-started-rounds C①).
+    if (!confirmed && runningBackgroundTasks !== undefined) {
+      void runningBackgroundTasks(childId).catch(() => 0).then((count) => {
+        if (count > 0) setModelConfirm({ child: childId, count, model })
+        else chooseModel(model, true)
+      })
+      return
+    }
     void setMemberModel(childId, model).then((result) => {
       if (result !== undefined && result.ok) {
         void memberModel(childId).then((info) => {
@@ -380,6 +399,11 @@ export function MemberComposer({ matched, useSession, useProjection, memberOf, p
   return (
     <div className={css.root}>
       {error !== null && <div className={css.error} role="alert">{error}</div>}
+      {modelConfirm !== undefined && modelConfirm.child === matched.childSessionId && (
+        <BackgroundConfirm count={modelConfirm.count} t={t}
+          onConfirm={() => { chooseModel(modelConfirm.model, true) }}
+          onCancel={() => { setModelConfirm(undefined) }} />
+      )}
       {renderMemberInbox?.(matched.childSessionId)}
       {commands.length > 0 && (
         <div className={css.commandMenu} role="listbox" aria-label={t('member.command.title')}>

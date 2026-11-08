@@ -5,12 +5,14 @@
  * 「③ 重启后 · 失去联系」) — the real timeline components over a scripted
  * room state:
  *   pnpm exec vite packages/room/tests/preview --config packages/room/tests/preview/vite.config.ts --host 127.0.0.1
- * then open /self-round.html?state=<running|selfdone|human|lost>[&lang=en][&dark=1]
+ * then open /self-round.html?state=<running|selfdone|human|lost|folded>[&lang=en][&dark=1]
  * (running = the CLI opened its own round for the result; selfdone = its
  * reply with the 「后台任务完成后继续」 line, handed to the coordinator as a
  * follow-up, and the coordinator's answer; human = the human dispatched the
  * work: the line, no follow-up; lost = a host restart lost the task: the
- * timeline line and the coordinator's 「失去联系」 follow-up.)
+ * timeline line and the coordinator's 「失去联系」 follow-up; folded = the task
+ * ended while the member worked on another round: that reply carries the
+ * quiet 「含后台任务结果」 line and nothing is forwarded.)
  */
 import React from 'react'
 import { createRoot } from 'react-dom/client'
@@ -47,6 +49,10 @@ const room: RoomState = {
   executions: [
     { id: '4:m-canvas', memberId: 'm-canvas', member: 'kimi-canvas', state: 'done', startedAt: now - 20 * 60_000 },
     { id: 'execution:exec-self', memberId: 'm-canvas', member: 'kimi-canvas', state: state === 'running' ? 'running' : 'done', startedAt: now - 40_000 },
+    { id: '7:m-canvas', memberId: 'm-canvas', member: 'kimi-canvas', state: 'done', startedAt: now - 60_000, executionId: 'exec-7', childSessionId: 'child-canvas' as never,
+      reading: { executionId: 'exec-7', operation: 'prompt', outcome: 'done', turns: [4], calls: 3, unrecorded: [], compactions: [],
+        callUsage: { inputTokens: 18_000, cacheReadTokens: 42_000, outputTokens: 900 },
+        taskResults: [{ taskId: 'bash-1', taskStatus: 'completed', label: BUILD }] } },
   ],
   latestSpeechSeq: 12,
 }
@@ -66,6 +72,8 @@ function Page() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <RoomSpeechView {...{ ...common, node: node('room-speech', 5, { member: 'kimi-canvas', runId: '4:m-canvas', ...human ? {} : { reportedTo: '人物协调' },
           text: english ? 'The build and the full test run are going in the background, about 8 minutes; I will report back when they finish.' : '构建和全部测试已在后台运行，大约需要 8 分钟，完成后我会继续汇报。' }) } as never} />
+        {state === 'folded' && <RoomSpeechView {...{ ...common, node: node('room-speech', 8, { member: 'kimi-canvas', runId: '7:m-canvas', childSessionId: 'child-canvas', durationMs: 58_000,
+          text: english ? 'Chapter 12 outline is in the canvas. The build that was running meanwhile finished too: 412/412 tests pass.' : '第 12 章的大纲已经写进画布。期间在跑的构建也结束了：测试 412/412 通过。' }) } as never} />}
         {state === 'running' && <RoomRunView {...{ ...common, node: node('room-run', 10, { member: 'kimi-canvas', startedAt: now - 40_000, runId: 'execution:exec-self', state: 'running', continues }) } as never} />}
         {(state === 'selfdone' || human) && <RoomSpeechView {...{ ...common, node: node('room-speech', 11, { member: 'kimi-canvas', runId: 'execution:exec-self', continues, ...human ? {} : { reportedTo: '人物协调' },
           text: english ? 'Build passed, 412/412 tests pass, the panel check is clean. Ready to merge.' : '构建通过，测试 412/412 通过，面板检查没有提示。可以合并。' }) } as never} />}

@@ -101,6 +101,25 @@ describe('only this restart\'s rounds (incident 2026-11-06)', () => {
     expect(autoContinueRounds(projected).map(round => round.member)).toEqual(['ada', 'bill'])
     expect(autoContinueRounds(projected, undefined, { recorded: true })).toEqual([])
   })
+
+  it('a round that started before the previous host process did is stale, however fresh its edge (a room no process loaded since that restart)', () => {
+    // Both edges were just written by this process's recovery (300 ≥ boot 200);
+    // ada's round started at 1, bill's at 160; the previous process started at 150.
+    const state = interrupted({
+      runs: [
+        { member: 'ada', runId: '4:m-ada', state: 'uncertain', startedAt: 1, error: LOST },
+        { member: 'bill', runId: '5:m-bill', state: 'uncertain', startedAt: 160, error: LOST },
+      ],
+      deliveries: [delivery('4:m-ada', 'm-ada', { endedAt: 300 }), delivery('5:m-bill', 'm-bill', { endedAt: 300 })],
+      restartFacts: { bootedAt: 200, previousProcessStartedAt: 150 },
+    })
+    expect(interruptedRounds(state).map(round => [round.member, round.stale])).toEqual([['ada', true], ['bill', undefined]])
+    expect(autoContinueRounds(state, undefined, { recorded: true }).map(round => round.member)).toEqual(['bill'])
+    expect(restartBanner(state).manual.map(round => round.member)).toEqual(['ada'])
+    // Without the record (first boot with it, or no core): the edge rule alone, as before.
+    const { previousProcessStartedAt: _gone, ...edgeOnly } = state.restartFacts!
+    expect(autoContinueRounds({ ...state, restartFacts: edgeOnly }, undefined, { recorded: true }).map(round => round.member)).toEqual(['ada', 'bill'])
+  })
 })
 
 describe('the composer banner', () => {

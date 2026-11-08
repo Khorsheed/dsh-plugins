@@ -87,6 +87,8 @@ function props(over: {
   modelsAvailable?: boolean
   directory?: ModelDirectoryState
   loadModels?: () => void
+  editModel?: ModelSelection | null
+  loadEditModel?: (seq: number) => Promise<ModelSelection | null>
   selectModel?: (selection: ModelSelection) => Promise<boolean>
 } = {}): UserMessageViewProps {
   const node = over.node ?? userNode([{ type: 'text', text: '你好' }])
@@ -110,6 +112,7 @@ function props(over: {
     useModelDirectory: (select: (snapshot: ModelDirectoryState) => unknown) => select(directory),
     modelsAvailable: over.modelsAvailable ?? false,
     loadModels: over.loadModels ?? vi.fn(),
+    loadEditModel: over.loadEditModel ?? vi.fn(async () => over.editModel === undefined ? directory.current : over.editModel),
     selectModel: over.selectModel ?? vi.fn(async () => true),
   } as unknown as UserMessageViewProps
 }
@@ -366,10 +369,98 @@ describe('UserMessageView edit', () => {
     expect(editMessage).not.toHaveBeenCalled()
   })
 
-  it('renders the model chip in the trailing seat when the session directory is available', () => {
-    render(<UserMessageView {...props({ modelsAvailable: true })} />)
+  it('renders the historical model, not the session default, without selecting it on open or cancel', async () => {
+    const selectModel = vi.fn(async () => true)
+    const directory = directoryState({
+      groups: [
+        { id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat' }] },
+        { id: 'moonshot', name: 'Moonshot', models: [{ id: 'k3', name: 'K3 Pro' }] },
+      ],
+    })
+    render(<UserMessageView {...props({ modelsAvailable: true, directory, editModel: { provider: 'moonshot', model: 'k3' }, selectModel })} />)
     fireEvent.click(screen.getByRole('button', EDIT))
-    expect(screen.getByRole('button', { name: '切换模型，当前 DeepSeek Chat' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: '切换模型，当前 K3 Pro' })).toBeTruthy()
+    expect(selectModel).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'cancel' }))
+    expect(selectModel).not.toHaveBeenCalled()
+  })
+
+  it('selects the historical model before editing and skips the write when it is already current', async () => {
+    const selectModel = vi.fn(async () => true)
+    const editMessage = vi.fn(async () => {})
+    render(<UserMessageView {...props({ modelsAvailable: true, editModel: { provider: 'moonshot', model: 'k3' }, selectModel, editMessage })} />)
+    fireEvent.click(screen.getByRole('button', EDIT))
+    await screen.findByRole('button', { name: '切换模型，当前 k3' })
+    fireEvent.click(screen.getByRole('button', { name: '保存并重新发送' }))
+    await act(async () => {})
+    expect(selectModel).toHaveBeenCalledWith({ provider: 'moonshot', model: 'k3' })
+    expect(editMessage).toHaveBeenCalledWith(5, '你好')
+    expect(selectModel.mock.invocationCallOrder[0]!).toBeLessThan(editMessage.mock.invocationCallOrder[0]!)
+
+    cleanup()
+    const currentSelect = vi.fn(async () => true)
+    const currentEdit = vi.fn(async () => {})
+    render(<UserMessageView {...props({ modelsAvailable: true, selectModel: currentSelect, editMessage: currentEdit })} />)
+    fireEvent.click(screen.getByRole('button', EDIT))
+    await screen.findByRole('button', { name: '切换模型，当前 DeepSeek Chat' })
+    fireEvent.click(screen.getByRole('button', { name: '保存并重新发送' }))
+    await act(async () => {})
+    expect(currentSelect).not.toHaveBeenCalled()
+    expect(currentEdit).toHaveBeenCalledWith(5, '你好')
+  })
+
+  it('saves a model chosen in the editor instead of the historical default', async () => {
+    const selectModel = vi.fn(async () => true)
+    const editMessage = vi.fn(async () => {})
+    const directory = directoryState({
+      groups: [
+        { id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat' }] },
+        { id: 'moonshot', name: 'Moonshot', models: [{ id: 'k3', name: 'K3 Pro' }] },
+      ],
+    })
+    render(<UserMessageView {...props({ modelsAvailable: true, directory, selectModel, editMessage })} />)
+    fireEvent.click(screen.getByRole('button', EDIT))
+    fireEvent.click(await screen.findByRole('button', { name: '切换模型，当前 DeepSeek Chat' }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'K3 Pro' }))
+    expect(selectModel).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '保存并重新发送' }))
+    await act(async () => {})
+    expect(selectModel).toHaveBeenCalledWith({ provider: 'moonshot', model: 'k3' })
+    expect(editMessage).toHaveBeenCalledWith(5, '你好')
+  })
+
+  it('does not edit when the model selection is rejected', async () => {
+    const selectModel = vi.fn(async () => false)
+    const editMessage = vi.fn(async () => {})
+    render(<UserMessageView {...props({ modelsAvailable: true, editModel: { provider: 'moonshot', model: 'k3' }, selectModel, editMessage })} />)
+    fireEvent.click(screen.getByRole('button', EDIT))
+    await screen.findByRole('button', { name: '切换模型，当前 k3' })
+    fireEvent.click(screen.getByRole('button', { name: '保存并重新发送' }))
+    expect((await screen.findByRole('status')).textContent).toBe('编辑失败，请重试')
+    expect(editMessage).not.toHaveBeenCalled()
+  })
+
+  it('omits the chip and saves without a native selection when no request evidence exists', async () => {
+    const selectModel = vi.fn(async () => true)
+    const editMessage = vi.fn(async () => {})
+    render(<UserMessageView {...props({ modelsAvailable: true, editModel: null, selectModel, editMessage })} />)
+    fireEvent.click(screen.getByRole('button', EDIT))
+    await act(async () => {})
+    expect(screen.queryByRole('button', { name: /切换模型/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '保存并重新发送' }))
+    await act(async () => {})
+    expect(selectModel).not.toHaveBeenCalled()
+    expect(editMessage).toHaveBeenCalledWith(5, '你好')
+  })
+
+  it('disables save until historical model resolution settles', async () => {
+    let resolveModel!: (selection: ModelSelection) => void
+    const loadEditModel = vi.fn(() => new Promise<ModelSelection>((resolve) => { resolveModel = resolve }))
+    render(<UserMessageView {...props({ modelsAvailable: true, loadEditModel })} />)
+    fireEvent.click(screen.getByRole('button', EDIT))
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '保存并重新发送' }).disabled).toBe(true)
+    await act(async () => { resolveModel({ provider: 'deepseek', model: 'deepseek-chat' }) })
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '保存并重新发送' }).disabled).toBe(false)
   })
 
   it('omits the model chip when the session has no model directory', () => {

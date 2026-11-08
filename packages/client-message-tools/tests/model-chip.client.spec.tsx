@@ -48,14 +48,18 @@ function props(over: {
   state?: ModelDirectoryState
   /** Mutable directory box; flip `box.current` plus rerender to move the directory mid-test. */
   box?: { current: ModelDirectoryState }
+  selection?: ModelSelection
+  disabled?: boolean
   loadModels?: () => void
-  selectModel?: (selection: ModelSelection) => Promise<boolean>
+  onSelection?: (selection: ModelSelection) => void
 } = {}): ModelChipProps {
   const box = over.box ?? { current: over.state ?? state() }
   return {
     useModelDirectory: (select: (snapshot: ModelDirectoryState) => unknown) => select(box.current),
     loadModels: over.loadModels ?? vi.fn(),
-    selectModel: over.selectModel ?? vi.fn(async () => true),
+    selection: over.selection ?? box.current.current ?? state().current!,
+    disabled: over.disabled,
+    onSelection: over.onSelection ?? vi.fn(),
     t,
   } as unknown as ModelChipProps
 }
@@ -81,9 +85,9 @@ describe('ModelChip trigger', () => {
     expect(trigger.textContent).not.toContain('默认')
   })
 
-  it('falls back to the loading label before the first load', () => {
+  it('keeps the draft model visible before the catalog resolves', () => {
     render(<ModelChip {...props({ state: state({ current: null, groups: [] }) })} />)
-    expect(screen.getByRole('button', { name: '切换模型，当前 loading' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '切换模型，当前 deepseek-chat' })).toBeTruthy()
   })
 
   it('falls back to the raw model id when the route is missing from the catalog', () => {
@@ -158,38 +162,38 @@ describe('ModelChip menu lifecycle', () => {
 
 describe('ModelChip selection', () => {
   it('ignores re-selecting the current model and submits a full selection for another', async () => {
-    const selectModel = vi.fn(async () => true)
-    render(<ModelChip {...props({ selectModel })} />)
+    const onSelection = vi.fn(async () => true)
+    render(<ModelChip {...props({ onSelection })} />)
     openMenu()
     const current = screen.getByRole('menuitemradio', { name: 'DeepSeek Chat' })
     expect(current.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(current)
-    expect(selectModel).not.toHaveBeenCalled()
+    expect(onSelection).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'GPT-5' }))
-    expect(selectModel).toHaveBeenCalledWith({ provider: 'openai', model: 'gpt-5' })
+    expect(onSelection).toHaveBeenCalledWith({ provider: 'openai', model: 'gpt-5' })
     await act(async () => {})
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
   it('includes the model default effort when switching to a reasoning model', () => {
-    const selectModel = vi.fn(async () => true)
-    render(<ModelChip {...props({ selectModel })} />)
+    const onSelection = vi.fn(async () => true)
+    render(<ModelChip {...props({ onSelection })} />)
     openMenu()
     fireEvent.click(screen.getByRole('menuitemradio', { name: 'DeepSeek Reasoner' }))
-    expect(selectModel).toHaveBeenCalledWith({ provider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'max' })
+    expect(onSelection).toHaveBeenCalledWith({ provider: 'deepseek', model: 'deepseek-reasoner', reasoningEffort: 'max' })
   })
 
   it('submits an effort change and ignores the already-active effort', () => {
-    const selectModel = vi.fn(async () => true)
-    render(<ModelChip {...props({ selectModel })} />)
+    const onSelection = vi.fn(async () => true)
+    render(<ModelChip {...props({ onSelection })} />)
     openMenu()
     const active = screen.getByRole('menuitemradio', { name: '高' })
     expect(active.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(active)
-    expect(selectModel).not.toHaveBeenCalled()
+    expect(onSelection).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('menuitemradio', { name: '低' }))
-    expect(selectModel).toHaveBeenCalledWith({ provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'low' })
+    expect(onSelection).toHaveBeenCalledWith({ provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'low' })
   })
 
   it('offers a provider-default effort row that clears the selected effort', () => {
@@ -200,13 +204,13 @@ describe('ModelChip selection', () => {
         models: [{ id: 'flex-1', name: 'Flex One', reasoning: { efforts: [{ id: 'a', name: 'A' }] } }],
       }],
     })
-    const selectModel = vi.fn(async () => true)
-    render(<ModelChip {...props({ state: flex, selectModel })} />)
+    const onSelection = vi.fn(async () => true)
+    render(<ModelChip {...props({ state: flex, onSelection })} />)
     openMenu()
     const providerDefault = screen.getByRole('menuitemradio', { name: '默认' })
     expect(providerDefault.getAttribute('aria-checked')).toBe('false')
     fireEvent.click(providerDefault)
-    expect(selectModel).toHaveBeenCalledWith({ provider: 'flex', model: 'flex-1' })
+    expect(onSelection).toHaveBeenCalledWith({ provider: 'flex', model: 'flex-1' })
   })
 
   it('checks the provider-default row and ignores re-selecting it when no effort is selected', () => {
@@ -217,33 +221,37 @@ describe('ModelChip selection', () => {
         models: [{ id: 'flex-1', name: 'Flex One', reasoning: { efforts: [{ id: 'a', name: 'A' }] } }],
       }],
     })
-    const selectModel = vi.fn(async () => true)
-    render(<ModelChip {...props({ state: flex, selectModel })} />)
+    const onSelection = vi.fn(async () => true)
+    render(<ModelChip {...props({ state: flex, onSelection })} />)
     openMenu()
     const providerDefault = screen.getByRole('menuitemradio', { name: '默认' })
     expect(providerDefault.getAttribute('aria-checked')).toBe('true')
     fireEvent.click(providerDefault)
-    expect(selectModel).not.toHaveBeenCalled()
+    expect(onSelection).not.toHaveBeenCalled()
   })
 
-  it('surfaces the failure hint when the host rejects the selection', async () => {
-    const selectModel = vi.fn(async () => false)
-    render(<ModelChip {...props({ selectModel })} />)
-    openMenu()
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'GPT-5' }))
-    expect((await screen.findByRole('status')).textContent).toBe('模型切换失败')
+  it('renders the draft route independently of the directory current route', () => {
+    render(<ModelChip {...props({ selection: { provider: 'openai', model: 'gpt-5' } })} />)
+    expect(screen.getByRole('button', { name: '切换模型，当前 GPT-5' })).toBeTruthy()
+  })
+
+  it('disables draft changes while the parent edit is saving', () => {
+    const onSelection = vi.fn()
+    render(<ModelChip {...props({ disabled: true, onSelection })} />)
+    expect(screen.getByRole<HTMLButtonElement>('button', TRIGGER).disabled).toBe(true)
+    expect(onSelection).not.toHaveBeenCalled()
   })
 })
 
 describe('ModelChip busy', () => {
   it('disables the trigger and menu actions while a selection is in flight', () => {
-    const selectModel = vi.fn(async () => true)
+    const onSelection = vi.fn(async () => true)
     const box = { current: state() }
-    const view = render(<ModelChip {...props({ box, selectModel })} />)
+    const view = render(<ModelChip {...props({ box, onSelection })} />)
     openMenu()
     // The directory flips to selecting while the menu is open (a submit landed on another seat).
     box.current = state({ status: 'selecting' })
-    view.rerender(<ModelChip {...props({ box, selectModel })} />)
+    view.rerender(<ModelChip {...props({ box, onSelection })} />)
     expect(screen.getByRole<HTMLButtonElement>('button', TRIGGER).disabled).toBe(true)
     const other = screen.getByRole('menuitemradio', { name: 'GPT-5' }) as HTMLButtonElement
     const effort = screen.getByRole('menuitemradio', { name: '低' }) as HTMLButtonElement
@@ -252,6 +260,6 @@ describe('ModelChip busy', () => {
     // jsdom suppresses click dispatch on disabled controls, so no selection is submitted.
     fireEvent.click(other)
     fireEvent.click(effort)
-    expect(selectModel).not.toHaveBeenCalled()
+    expect(onSelection).not.toHaveBeenCalled()
   })
 })

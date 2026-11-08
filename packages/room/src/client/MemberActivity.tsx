@@ -323,12 +323,45 @@ export function MemberActivityLine({ read, t }: { readonly read: LocalAgentBackg
 
 /* ------------------------------------------------------------- confirmation */
 
+/** The core's confirmation renderer (local-agent's `LocalAgentUi.renderBackgroundConfirm`), read when a confirmation shows. */
+type CoreConfirm = (input: { readonly count: number; readonly onConfirm: () => void; readonly onCancel: () => void; readonly disabled?: boolean | undefined }) => ReactNode
+let coreConfirmSource: (() => CoreConfirm | undefined) | undefined
+
+/**
+ * Point the room's confirmation at the core's one (set by the client entry,
+ * read lazily so a core that loads later still counts). Returns the unset.
+ * @param source - reads the core's renderer, undefined when absent.
+ */
+export function setCoreBackgroundConfirm(source: () => CoreConfirm | undefined): () => void {
+  coreConfirmSource = source
+  return () => { if (coreConfirmSource === source) coreConfirmSource = undefined }
+}
+
 /**
  * The in-place confirmation before an action that replaces a member's
  * process while it runs background work (重新载入, 立即载入, saving a model):
- * 「会让 N 项后台工作失去联系，继续吗？」 with 继续 / 取消.
+ * 「会让 N 项后台工作失去联系，继续吗？」 with 继续 / 取消. The core (local-agent)
+ * owns the one confirmation every surface shows — its member page asks the
+ * same question — so the room renders the core's when it is there and keeps
+ * this copy only for a core that predates it.
  */
-export function BackgroundConfirm({ count, onConfirm, onCancel, disabled = false, t }: {
+export function BackgroundConfirm(props: {
+  readonly count: number
+  readonly onConfirm: () => void
+  readonly onCancel: () => void
+  readonly disabled?: boolean
+  readonly t: T
+}): ReactNode {
+  const core = coreConfirmSource?.()
+  if (core !== undefined) {
+    const { t: _t, ...input } = props
+    return core(input)
+  }
+  return <RoomBackgroundConfirm {...props} />
+}
+
+/** The room's own copy of the confirmation (a core without `renderBackgroundConfirm`). */
+function RoomBackgroundConfirm({ count, onConfirm, onCancel, disabled = false, t }: {
   readonly count: number
   readonly onConfirm: () => void
   readonly onCancel: () => void

@@ -144,6 +144,14 @@ export class LiveDriverSwitch {
     const known = this.reclaimedTasks.get(childSessionId) ?? new Set<string>()
     for (const id of taskIds) known.add(id)
     this.reclaimedTasks.set(childSessionId, known)
+    // Noted first, so a read the report triggers already says `process-reclaimed`;
+    // then the core tells the member's room (an older core lacks the hook).
+    try {
+      const registry = this.ctx.localAgent as { noteBackgroundTasksLost?: (child: string, ids: readonly string[], because: 'process-reclaimed') => void } | undefined
+      if (typeof registry?.noteBackgroundTasksLost === 'function') registry.noteBackgroundTasksLost(childSessionId, taskIds, 'process-reclaimed')
+    } catch (error) {
+      this.ctx.logger.warn(`local-agent-kimi: reporting lost background tasks failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /**

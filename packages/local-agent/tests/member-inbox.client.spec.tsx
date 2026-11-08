@@ -6,7 +6,7 @@ import type { LocalAgentMemberInbox } from '../src/types.ts'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
-const t = ((key: keyof typeof zh) => zh[key]) as never
+const t = ((key: keyof typeof zh, vars?: Record<string, unknown>) => zh[key].replace(/\{(\w+)\}/g, (_m, name: string) => String(vars?.[name] ?? `{${name}}`))) as never
 
 describe('member inbox controls', () => {
   it('shows queued input, cancels its identity and resumes a recovered queue', async () => {
@@ -19,6 +19,35 @@ describe('member inbox controls', () => {
     fireEvent.click(screen.getByRole('button', { name: zh['inbox.resume'] }))
     await screen.findByRole('button', { name: zh['inbox.pause'] })
     expect(face.control).toHaveBeenCalledWith('resume', undefined, undefined, '')
+  })
+
+  it('the room\'s copy leaves out the room\'s own queued rows and the pause control; other callers\' rows stay', async () => {
+    const state: LocalAgentMemberInbox = { memberId: 'member', paused: true, messages: [
+      { id: 'room-1', caller: 'room', status: 'queued', createdAt: 1, updatedAt: 1 },
+      { id: 'composer-1', caller: 'composer', text: 'from the members page', status: 'queued', createdAt: 2, updatedAt: 2 },
+    ] }
+    const face: MemberInboxFace = { read: vi.fn(async () => state), control: vi.fn() }
+    const view = render(<MemberInboxView face={face} room t={t} />)
+    await screen.findByText(/from the members page/)
+    expect(view.container.textContent).not.toContain(zh['inbox.caller.room'])
+    expect(screen.queryByRole('button', { name: zh['inbox.resume'] })).toBeNull()
+    expect(view.container.textContent).not.toContain(zh['inbox.paused'])
+    cleanup()
+    // Only room rows queued: the room's copy shows nothing at all.
+    const roomOnly: LocalAgentMemberInbox = { ...state, messages: [state.messages[0]!] }
+    const empty = render(<MemberInboxView face={{ read: vi.fn(async () => roomOnly), control: vi.fn() }} room t={t} />)
+    await waitFor(() => expect(empty.container.textContent).toBe(''))
+  })
+
+  it('a room row with a preview reads 来自协作间：…; without one it keeps the caller name', async () => {
+    const state: LocalAgentMemberInbox = { memberId: 'member', paused: false, messages: [
+      { id: 'room-1', caller: 'room', preview: '另外：师父这条线最后不要死', status: 'queued', createdAt: 1, updatedAt: 1 },
+      { id: 'room-2', caller: 'room', status: 'queued', createdAt: 2, updatedAt: 2 },
+    ] }
+    const view = render(<MemberInboxView face={{ read: vi.fn(async () => state), control: vi.fn() }} t={t} />)
+    fireEvent.click(await screen.findByRole('button', { name: /待处理消息 · 2/ }))
+    expect(view.container.textContent).toContain('来自协作间：另外：师父这条线最后不要死')
+    expect(view.container.textContent).toContain(zh['inbox.caller.room'])
   })
 
   it('does not present admitted or completed input as a waiting queue', async () => {

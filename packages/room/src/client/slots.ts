@@ -224,6 +224,10 @@ export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInject
   /** Members' background activity (local-agent's read, polled); absent = no 后台 capsule. */
   readonly memberActivity?: import('./MemberActivity.tsx').MemberActivityFace | undefined
   readonly renderMemberInbox?: LocalAgentUi['renderMemberInbox'] | undefined
+  /** Pause or resume a member's input queue (the 「队列已暂停 · 继续」 capsule); absent on an older core. */
+  readonly controlMemberQueue?: LocalAgentUi['controlMemberQueue'] | undefined
+  /** Take back a queued human delivery (the queue row's 撤回); resolves to an error message, or undefined. */
+  readonly withdrawDelivery?: ((dispatchSeq: number, memberId: string) => Promise<string | undefined>) | undefined
   readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
   /** A CLI member's occupancy ring and the tools registered beside it (the compaction reminder); renders nothing without them. */
   readonly renderMemberTools?: NonNullable<LocalAgentUi['renderMemberTools']> | undefined
@@ -510,6 +514,18 @@ export type RoomDecisionViewProps =
 export interface RoomQuestionInjected {
   /** Submit the answers; resolves with an error message when the card already ended. */
   readonly answerQuestion: (questionId: string, answers: readonly RoomQuestionAnswer[]) => Promise<string | undefined>
+  /**
+   * A question asked in a member's round renders as that round's card up to
+   * the question (room-timeline-order E1): these read the round and its live
+   * output. Absent (a bare question face) = the plain question card.
+   */
+  readonly segment?: {
+    readonly roomStore: RoomStore
+    readonly renderMemberOutput?: LocalAgentUi['renderMemberOutput'] | undefined
+    readonly openSession: (sessionId: SessionId) => void
+    readonly openPath?: ((sessionId: SessionId, path: string) => void) | undefined
+    readonly cancelMember: (member: string) => Promise<void>
+  } | undefined
 }
 
 /** Full props of the 'room-question' chat-node renderer. */

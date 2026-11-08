@@ -36,6 +36,9 @@ export function replayDeliveries(events: readonly SessionEvent[]): RoomDelivery[
   const taskBySeq = new Map<number, string>()
   const links = new Map<string, string>()
   let lastHuman: { readonly id: string; readonly seq: number } | undefined
+  // Human message ids already in the log; and the deliveries waiting for theirs (the room's own agent writes it when it takes the message in).
+  const humanIds = new Set<string>()
+  const awaiting = new Map<string, string[]>()
   const set = (id: string, patch: Partial<RoomDelivery>): void => {
     const row = rows.get(id)
     if (row !== undefined) rows.set(id, { ...row, ...patch })
@@ -43,6 +46,10 @@ export function replayDeliveries(events: readonly SessionEvent[]): RoomDelivery[
   for (const event of events) {
     if (isHumanMessage(event)) {
       lastHuman = { id: event.data.id, seq: event.seq }
+      const id = String(event.data.id)
+      humanIds.add(id)
+      for (const rowId of awaiting.get(id) ?? []) set(rowId, { bubble: 'after' })
+      awaiting.delete(id)
     } else if (event.type === 'room/task-link') {
       links.set(event.data.message, event.data.task)
     } else if (event.type === 'room/dispatch' && event.data.targetIds !== undefined) {
@@ -59,6 +66,8 @@ export function replayDeliveries(events: readonly SessionEvent[]): RoomDelivery[
       for (const memberId of targetIds) {
         const id = `${event.seq}:${memberId}`
         if (rows.has(id)) continue
+        const bubble = data.messageId === undefined ? undefined : humanIds.has(data.messageId) ? 'before' as const : undefined
+        if (data.messageId !== undefined && bubble === undefined) awaiting.set(data.messageId, [...awaiting.get(data.messageId) ?? [], id])
         rows.set(id, {
           id, dispatchSeq: event.seq, memberId, status: data.held === true ? 'held' : 'queued', text: data.text,
           origin: data.origin ?? 'human', queuedAt: event.time,
@@ -72,6 +81,8 @@ export function replayDeliveries(events: readonly SessionEvent[]): RoomDelivery[
           ...data.followUpOf === undefined ? {} : { followUpOf: data.followUpOf },
           ...data.releases === undefined ? {} : { releases: data.releases },
           ...data.via === undefined ? {} : { via: data.via },
+          ...data.messageId === undefined ? {} : { messageId: data.messageId },
+          ...bubble === undefined ? {} : { bubble },
           ...data.held === true ? { heldAt: event.time } : {},
         })
       }
@@ -82,6 +93,7 @@ export function replayDeliveries(events: readonly SessionEvent[]): RoomDelivery[
       rows.set(row.id, {
         ...row, status: event.data.state,
         ...event.data.error === undefined ? {} : { error: event.data.error },
+        ...event.data.text === undefined ? {} : { note: event.data.text },
         ...event.data.state === 'running' && row.startedAt === undefined ? { startedAt: event.time } : {},
         ...terminal ? { endedAt: event.time } : {},
       })

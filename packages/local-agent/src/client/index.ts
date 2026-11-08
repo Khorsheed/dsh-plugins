@@ -27,6 +27,7 @@ import { scopeDirectoryToList } from './model-directory-scope.ts'
 import { LocalAgentFamilyCard, type FamilyCardInjected } from './FamilyCard.tsx'
 import { HarnessCardRegistry, type HarnessCardRegistration } from './harness-cards.ts'
 import { MemberConfiguration } from './MemberConfiguration.tsx'
+import { BackgroundConfirm, runningBackgroundTasks as countRunning, type BackgroundConfirmInput } from './BackgroundConfirm.tsx'
 import { MemberConfigurationStores } from './member-configuration.ts'
 import { draftOf, selectionOf } from './member-selection.ts'
 import { requestId } from './request-id.ts'
@@ -83,8 +84,26 @@ export interface MemberSelectionDraft {
   readonly busy: boolean
 }
 
+/** Options of {@link LocalAgentUi.renderMemberOutput}. */
+export interface MemberOutputOptions {
+  readonly fileMentions?: MarkdownFileMentions | undefined
+  /** Only output received at or after this time (epoch ms). */
+  readonly since?: number | undefined
+  /** Only output received before this time (epoch ms). */
+  readonly until?: number | undefined
+  /** Shown while the stretch has no live output. */
+  readonly empty?: ReactNode | undefined
+}
+
 export interface LocalAgentUi {
-  renderMemberOutput(childSessionId: string, startedAt: number, options?: { readonly fileMentions?: MarkdownFileMentions | undefined }): ReactNode
+  /**
+   * A member's live output for one round (`startedAt` on). `since`/`until`
+   * narrow it to a stretch of the round (`until` exclusive) — a room cuts a
+   * round at the points it stopped for the human (room-timeline-order E1) —
+   * and `empty` is shown while that stretch has no live output (a refresh
+   * cannot bring back output that already finished).
+   */
+  renderMemberOutput(childSessionId: string, startedAt: number, options?: MemberOutputOptions): ReactNode
   renderMemberInbox(childSessionId: string): ReactNode
   renderHarnessModelPicker(name: string, props: HarnessModelPickerInput): ReactNode
   renderMemberConfiguration(childSessionId: string): ReactNode
@@ -108,6 +127,20 @@ export interface LocalAgentUi {
    */
   saveMemberSelection?(childSessionId: string, draft: { readonly model: string; readonly effort: string }): Promise<{ readonly ok: true; readonly deferred: boolean } | { readonly ok: false; readonly error: string }>
   /**
+   * The one in-place confirmation before an operation replaces a member's
+   * process while it runs background work (「会让 N 项后台工作失去联系，继续吗？」
+   * with 取消 / 继续; member-self-started-rounds C①). The member page's own
+   * model control uses it; a room's reload line and edit dialog render it
+   * through here. Optional on the TYPE: a room probes it and keeps its own
+   * copy against a core that predates it.
+   */
+  renderBackgroundConfirm?(input: BackgroundConfirmInput): ReactNode
+  /**
+   * How many background tasks a member's live process runs right now (a
+   * fresh read; 0 = none, no process, or unreadable).
+   */
+  runningBackgroundTasks?(childSessionId: string): Promise<number>
+  /**
    * Register one harness's section in the family card; returns the
    * unregister. Optional on the TYPE because a companion may run against a
    * core that predates the family card: companions probe
@@ -125,6 +158,19 @@ export interface LocalAgentUi {
    * unregister. Optional on the TYPE: a registrant probes it.
    */
   registerMemberTool?(entry: MemberToolRegistration): () => void
+  /**
+   * The member's input queue as a room shows it under its composer
+   * (room-timeline B2): the room's own queued rows are left out — each sits
+   * on its message in the room timeline — and the pause control moves to the
+   * room's capsule; other callers' rows, failures and 待对账 stay. Optional
+   * on the TYPE: a room probes it and falls back to {@link renderMemberInbox}.
+   */
+  renderRoomMemberInbox?(childSessionId: string): ReactNode
+  /**
+   * Pause or resume a member's input queue (the room's 「队列已暂停 · 继续」
+   * capsule). Resolves to an error message, or undefined on success.
+   */
+  controlMemberQueue?(childSessionId: string, action: 'pause' | 'resume'): Promise<string | undefined>
   /**
    * A member's occupancy ring (`meter`) or one placement's registered tools,
    * for surfaces outside the member composer (a room's composer and members
@@ -145,6 +191,7 @@ declare module '@deepseek-ai/cordis' {
   interface Context { localAgentUi: LocalAgentUi }
 }
 export { ModelConfigurationFields } from './ModelConfigurationFields.tsx'
+export type { BackgroundConfirmInput } from './BackgroundConfirm.tsx'
 export type { ConfigurationTranslate } from './ModelConfigurationFields.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -184,6 +231,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
   const feeds = new MemberFeeds((requests, signal) => gateway.followMembers(requests, signal))
   ctx.effect(() => () => feeds.dispose(), 'local-agent: shared member feed')
+  // A fresh read of the member's background tasks, for the confirmation
+  // before an operation replaces its process: 0 when unreadable.
+  const runningBackgroundTasks = async (id: string): Promise<number> => {
+    try {
+      const result = await gateway.memberBackgroundTasks(id)
+      return result.ok ? countRunning(result.value) : 0
+    } catch {
+      return 0
+    }
+  }
   const configurations = new MemberConfigurationStores({
     read: async id => unwrap(await gateway.memberConfiguration(id)),
     follow: (id, signal) => feeds.follow(id, 'configuration', signal),
@@ -192,6 +249,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     select: async (id, request, revision, selection) => unwrap(await gateway.selectMemberConfiguration(id, request, revision, selection)),
     cancel: async (id, request, revision) => unwrap(await gateway.cancelMemberConfiguration(id, request, revision)),
     retry: async (id, revision) => { unwrap(await gateway.retryMemberConfiguration(id, revision)) },
+    runningBackgroundTasks,
   })
   // One member's own directory in the picker's face shape (the edit form's
   // model fields read what the live control reads).
@@ -254,7 +312,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       store: memberContexts, registry: memberTools, compact: options?.compact === undefined ? compactMember : options.compact, t,
     })
   const configurationUi: LocalAgentUi = {
-    renderMemberOutput: (id, startedAt, options) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, ...options?.fileMentions === undefined ? {} : { fileMentions: options.fileMentions }, t: ctx.locale.bind(NS) }),
+    renderMemberOutput: (id, startedAt, options) => createElement(MemberLiveOutputView, {
+      key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs,
+      ...options?.fileMentions === undefined ? {} : { fileMentions: options.fileMentions },
+      ...options?.since === undefined ? {} : { since: options.since },
+      ...options?.until === undefined ? {} : { until: options.until },
+      ...options?.empty === undefined ? {} : { empty: options.empty },
+      t: ctx.locale.bind(NS),
+    }),
     renderMemberInbox: id => createElement(MemberInboxView, { key: id, face: inboxFace(id), t: ctx.locale.bind(NS) }),
     renderHarnessModelPicker: (name, props) => createElement(HarnessModelPicker, { ...props, key: name, face: directoryFace(name), t: ctx.locale.bind(NS) }),
     renderMemberConfiguration: id => createElement(MemberConfiguration, { key: id, store: configurations.get(id), diagnostics: outputs.diagnostics, t: ctx.locale.bind(NS) }),
@@ -279,11 +344,22 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         return { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
     },
+    renderBackgroundConfirm: input => createElement(BackgroundConfirm, { ...input, t: ctx.locale.bind(NS) }),
+    runningBackgroundTasks,
     registerHarnessCard: entry => harnessCards.register(entry),
     harnessCards: () => harnessCards.cards(),
     subscribeHarnessCards: listener => harnessCards.subscribe(listener),
     registerMemberTool: entry => memberTools.register(entry),
     renderMemberTools,
+    renderRoomMemberInbox: id => createElement(MemberInboxView, { key: `room:${id}`, face: inboxFace(id), room: true, t: ctx.locale.bind(NS) }),
+    controlMemberQueue: async (id, action) => {
+      try {
+        const result = await inboxFace(id).control(action)
+        return result?.ok === true ? undefined : result?.error ?? ctx.locale.bind(NS)('member.sendFailed')
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+      }
+    },
   }
   ctx.provide('localAgentUi', configurationUi)
   ctx.inject(['uiConversation'], lctx => { lctx.uiConversation.events.register(memberLiveDefinition) })
@@ -316,6 +392,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         activeDelegations: () => gateway.activeDelegations().then(result => (result.ok ? result.value : undefined)),
         memberModel: childSessionId => gateway.memberModel(childSessionId).then(result => (result.ok ? result.value : undefined)),
         setMemberModel: (childSessionId, model) => gateway.setMemberModel(childSessionId, model).then(result => (result.ok ? result.value : undefined)),
+        runningBackgroundTasks,
       }),
     }, MemberComposer),
   )

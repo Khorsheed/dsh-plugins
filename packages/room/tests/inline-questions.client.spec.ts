@@ -16,9 +16,9 @@ describe('reply parts', () => {
     expect(replyParts(data, []).map(part => part.kind)).toEqual(['text'])
   })
 
-  it('hides the row of a question placed in a round; an unplaced one keeps its row', () => {
+  it('a question placed in a round keeps its row (the round\'s card up to it, E1), as does an unplaced one', () => {
     const start = (data: Record<string, unknown>) => roomQuestionDefinition.start({} as never, { event: { type: 'room/question', seq: 3, time: 3, data: { id: 'q', member: 'gm', memberId: 'm', questions: [], ...data } }, role: 'start' } as never, undefined as never)
-    expect(roomQuestionDefinition.buildViewNode!({ key: 'k', id: 'q', state: start({ runId: 'r' }) } as never)).toMatchObject({ visibility: 'hidden' })
+    expect(roomQuestionDefinition.buildViewNode!({ key: 'k', id: 'q', state: start({ runId: 'r' }) } as never)).toMatchObject({ visibility: 'visible' })
     expect(roomQuestionDefinition.buildViewNode!({ key: 'k', id: 'q', state: start({}) } as never)).toMatchObject({ visibility: 'visible' })
   })
 })
