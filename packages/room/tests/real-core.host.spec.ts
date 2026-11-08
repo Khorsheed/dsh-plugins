@@ -25,6 +25,7 @@ import { appendMirrorStep, closeMirrorTurn, openMirrorTurn } from '../../local-a
 import RoomService from '../src/index.ts'
 import { executionRows } from '../src/client/executions.ts'
 import { MEMBER_WAITING_TEXT, RESTART_UNKNOWN_TEXT } from '../src/dispatch.ts'
+import { interruptedRounds } from '../src/restart-continue.ts'
 import { stubAgents } from './agents-stub.ts'
 import { createRoom } from './promote.ts'
 
@@ -46,7 +47,19 @@ const mounted: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const dispose of mounted.splice(0).reverse()) await dispose()
   delete current.reportedTotal
+  // Back to this test process's own start (crashAndRestart stands in a new one).
+  delete (performance as { timeOrigin?: number }).timeOrigin
 })
+
+/**
+ * A new host process: `performance.timeOrigin` (when the process started) is
+ * the core's process identity and start time, so a "restart" inside one test
+ * process moves it to now.
+ */
+function newHostProcess(): void {
+  const startedAt = Date.now()
+  Object.defineProperty(performance, 'timeOrigin', { get: () => startedAt, configurable: true })
+}
 
 /** Mount the local-agent core (again, after a "crash") on a context that already carries the host and room. */
 const current: { registry?: LocalAgentRegistry; rounds: Round[]; suppressSettlement: boolean; reportedTotal?: TokenUsage } = { rounds: [], suppressSettlement: false }
@@ -164,6 +177,8 @@ async function crashAndRestart(bench: Bench, childSessionId: string): Promise<{ 
   writeFileSync(file, crashed)
   dead = false
   room.append = append
+  newHostProcess()
+  await new Promise(resolve => setTimeout(resolve, 5))
   const rounds: Round[] = []
   const after = await mountCore(bench.ctx, bench.homes, rounds)
   after.registry.recordDelegation({ childSessionId, provider: PROVIDER, parentSessionId: bench.sessionId, cliSessionId: 'native', cwd: '/home/user/work' })
@@ -456,6 +471,66 @@ describe('room on the real local-agent core', () => {
     expect(await second.service.loadInterruptedRooms()).toEqual([])
     await second.service.engine.idle()
     expect(second.rounds).toHaveLength(0)
+  })
+
+  // The blind spot the M9 hotfix left (its Agent Note's "known residual"):
+  // the room judged "this restart's" by WHEN its own journal got the
+  // interruption edge, and the core by whether IT converted the row. A round
+  // an earlier restart cut off, in a room no process loaded since, gets its
+  // edge written by whichever later process first opens the room — fresh, so
+  // it read as this restart's and was continued on the room's own.
+  it('a round an earlier restart cut off, in a room nobody loaded since, is not continued by a later restart\'s process (core converted it in between)', async () => {
+    const bench = await mount()
+    const ada = await invite(bench)
+    expect(await bench.service.setSettings({ sessionId: bench.sessionId, autoContinueAfterRestart: false })).toMatchObject({ ok: true })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第一轮' })
+    await roundsReach(bench, 1)
+    await vi.waitFor(() => expect(runStates(bench).at(-1)).toMatchObject({ state: 'running' }))
+    const [first] = bench.room().snapshotEvents().filter(event => event.type === 'room/dispatch').slice(-1).map(event => `${event.seq}:${ada}`) as [string]
+    // Restart 1: the setting is off, so the startup load leaves the room cold;
+    // its cold read still loads ada's ledger (running → uncertain in the core).
+    const one = await crashAndRestart(bench, ada)
+    expect(await one.service.loadInterruptedRooms()).toEqual([])
+    expect(one.registry.readMemberInbox(ada).messages).toMatchObject([{ status: 'uncertain' }])
+    // The room's journal never heard: no process recovered the room.
+    expect(deliveryStates(bench, first)).toEqual(['running'])
+    bench.room().append('room/settings', { autoContinueAfterRestart: true })
+    // Restart 2, nothing running. Someone opens the room in the new process.
+    const two = await crashAndRestart(bench, ada)
+    expect(await two.service.loadInterruptedRooms()).toEqual([])
+    const opened = await two.service.getState({ sessionId: bench.sessionId })
+    if (!opened.ok) throw new Error('room unavailable')
+    await two.service.getState({ sessionId: bench.sessionId })
+    await two.service.engine.idle()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(two.rounds).toHaveLength(0)
+    expect(bench.room().snapshotEvents().filter(event => event.type === 'room/dispatch' && event.data.via === 'auto-continue')).toHaveLength(0)
+    // The human still sees it (「全部继续」 unchanged), as an earlier restart's round.
+    expect(interruptedRounds(opened.value)).toMatchObject([{ member: 'ada', runId: first, stale: true }])
+  })
+
+  it('a round an earlier restart cut off, whose ledger AND room nobody loaded since, is neither a startup candidate nor continued by a later restart\'s process', async () => {
+    const bench = await mount()
+    const ada = await invite(bench)
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第一轮' })
+    await roundsReach(bench, 1)
+    await vi.waitFor(() => expect(runStates(bench).at(-1)).toMatchObject({ state: 'running' }))
+    const [first] = bench.room().snapshotEvents().filter(event => event.type === 'room/dispatch').slice(-1).map(event => `${event.seq}:${ada}`) as [string]
+    // Restart 1: the process goes down again before anything reads ada's
+    // ledger or the room (a short-lived process, a build without the startup load).
+    await crashAndRestart(bench, ada)
+    const two = await crashAndRestart(bench, ada)
+    // The ledger file still says running — but the round started before the
+    // previous process did, so that process's start had already cut it off.
+    expect(two.registry.interruptedMemberParents()).toEqual([])
+    expect(await two.service.loadInterruptedRooms()).toEqual([])
+    const opened = await two.service.getState({ sessionId: bench.sessionId })
+    if (!opened.ok) throw new Error('room unavailable')
+    await two.service.engine.idle()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(two.rounds).toHaveLength(0)
+    expect(bench.room().snapshotEvents().filter(event => event.type === 'room/dispatch' && event.data.via === 'auto-continue')).toHaveLength(0)
+    expect(interruptedRounds(opened.value)).toMatchObject([{ member: 'ada', runId: first, stale: true }])
   })
 
   it('usage in one place (S6): the room stores no copy; getState attaches the core\'s reading (per-call sum and the CLI total)', async () => {

@@ -26,6 +26,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
+import { startedBeforePreviousProcess, type HostProcesses } from './host-process.ts'
 import type { LocalAgentExecutionCaller, LocalAgentMemberInbox, LocalAgentMemberInput } from './types.ts'
 
 /** Run one ledger row: called when the row reaches the head of its member's queue. */
@@ -73,7 +74,19 @@ export class MemberInbox {
   /** Rows this process found `running` on load (the restart that started it cut them off), per member. */
   private readonly cutOffThisBoot = new Map<string, Set<string>>()
   private closed = false
-  constructor(private readonly directory: string, private readonly composer: ComposerDispatch, private readonly onError: (error: unknown) => void) {}
+  /**
+   * @param processes - this host process and the one before it (host-process.ts):
+   *   a row admitted before the previous process started was cut off by that
+   *   process's start, not by the restart that started this one. Absent: no
+   *   evidence, every row still `running` on disk counts as this restart's.
+   */
+  constructor(private readonly directory: string, private readonly composer: ComposerDispatch, private readonly onError: (error: unknown) => void, private readonly processes?: HostProcesses) {}
+
+  /** Whether a row still `running` on disk was cut off by an earlier restart than this process's (see the constructor). */
+  private earlierRestart(row: { readonly admittedAt?: unknown; readonly createdAt?: unknown }): boolean {
+    const startedAt = typeof row.admittedAt === 'number' ? row.admittedAt : typeof row.createdAt === 'number' ? row.createdAt : undefined
+    return startedBeforePreviousProcess(startedAt, this.processes)
+  }
 
   private path(memberId: string): string { return join(this.directory, createHash('sha256').update(memberId).digest('hex') + '.json') }
   private pendingKey(memberId: string, id: string): string { return `${memberId}\u0000${id}` }
@@ -108,7 +121,9 @@ export class MemberInbox {
       // and its execution's end record reads `uncertain` (core).
       if (row.caller === 'cli') { row.status = 'failed'; row.error = SELF_ROUND_RESTARTED; row.updatedAt = row.settledAt = Date.now(); continue }
       row.status = 'uncertain'; row.error = 'Host restarted before durable settlement; reconcile this input before continuing'
-      cutOff.add(row.id)
+      // Converted here, but an earlier restart's leftover when nobody loaded
+      // the file since: it began before the previous process did.
+      if (!this.earlierRestart(row)) cutOff.add(row.id)
     }
     if (cutOff.size > 0) this.cutOffThisBoot.set(memberId, cutOff)
     if (!recovered.paused && recovered.messages.some(row => row.status === 'queued' || row.status === 'uncertain')) { recovered.paused = true; recovered.pausedBy = 'restart' }
@@ -146,7 +161,9 @@ export class MemberInbox {
    * loaded since the restart, or a row this process converted from
    * `running` to `uncertain` on load and that is still unreconciled. A row
    * that was already `uncertain` on disk is an older restart's leftover and
-   * does not count — those wait for the human, never for a startup load.
+   * does not count, and neither does a `running` row admitted before the
+   * previous host process started (an older restart cut it off; nobody
+   * loaded its file since) — those wait for the human, never for a startup load.
    * Read-only: nothing is loaded, converted or saved; an unreadable
    * directory or file is skipped.
    * @returns the member ids (dsh child session ids), each once.
@@ -170,7 +187,7 @@ export class MemberInbox {
         const rows = stored?.state?.messages
         if (typeof memberId !== 'string' || !Array.isArray(rows) || this.path(memberId) !== path) continue
         // A round the CLI opened itself ends `failed` on load (nothing to continue).
-        if (rows.some((row: { status?: unknown; caller?: unknown } | null) => row?.status === 'running' && row?.caller !== 'cli')) members.add(memberId)
+        if (rows.some((row: { status?: unknown; caller?: unknown; admittedAt?: unknown; createdAt?: unknown } | null) => row !== null && row?.status === 'running' && row.caller !== 'cli' && !this.earlierRestart(row))) members.add(memberId)
       } catch { /* an unreadable ledger is reported when its member is next read */ }
     }
     return [...members]

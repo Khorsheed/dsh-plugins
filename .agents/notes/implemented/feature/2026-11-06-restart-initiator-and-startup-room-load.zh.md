@@ -22,7 +22,7 @@ Status: implemented
   - `exitAt` 早于本进程启动超过 `resumeMaxSnapshotAgeMs`（默认 10 分钟）时同样返回 null。这样的记录属于更早的一次启动：普通的停止再启动不会写新记录覆盖它。
   - 形状与 M9 的探测完全一致，所以 `packages/room/src/dispatch.ts` 的 `restartInitiatorMember` 没有改动。
 - **启动加载**（`packages/room/src/startup-load.ts`、`RoomService.loadInterruptedRooms`）。
-  - 先由 local-agent 核心回答该看哪些房间。`MemberInbox.interruptedMembers()` 只列出被**启动本进程的那次重启**打断的成员：重启后还没被载入的账本文件，看是否有行仍写着 `running`；已经载入的账本，看是否有本进程在载入时亲手从 `running` 转成 `uncertain`、且尚未对账的行（按成员记录）。磁盘上本来就是 `uncertain` 的行是更早一次重启的遗留，一律不算。生产上自动继续曾经恢复过几周前（10-23、10-26）被打断的轮次，所以启动加载绝不能因为陈旧轮次去加载房间。这次读取是只读的：不载入、不转换、不保存，读不了的文件和无关文件都跳过。
+  - 先由 local-agent 核心回答该看哪些房间。`MemberInbox.interruptedMembers()` 只列出被**启动本进程的那次重启**打断的成员：重启后还没被载入的账本文件，看是否有行仍写着 `running`；已经载入的账本，看是否有本进程在载入时亲手从 `running` 转成 `uncertain`、且尚未对账的行（按成员记录）。磁盘上本来就是 `uncertain` 的行是更早一次重启的遗留，一律不算；在上一个宿主进程启动之前就已准入的行也一样，不管它在磁盘上仍写着 `running` 还是此刻才被转换（[宿主进程记录](../bug-fix/2026-11-08-auto-continue-round-start-vs-previous-process.zh.md)）。生产上自动继续曾经恢复过几周前（10-23、10-26）被打断的轮次，所以启动加载绝不能因为陈旧轮次去加载房间。这次读取是只读的：不载入、不转换、不保存，读不了的文件和无关文件都跳过。
   - `LocalAgentRegistry.interruptedMemberParents()` 经 `memberBinding` 把这些成员映射到父会话 id。provider 还没登记的成员不列出。
   - 房间服务启动 5 秒后（`STARTUP_ROOM_LOAD_DELAY_MS`），房间取得这些父会话，像 `getState` 一样冷读每一个。只有当它是房间、并且 `autoContinueRounds(engine.view(...))` 不为空时才加载。这和实时访问用的是同一条规则，所以设置关闭、房间暂停、成员队列暂停、自己触发的重启、已经继续过的轮次，都会让房间保持不加载。
   - 加载就是 `ensureLive`，也就是打开房间时会发生的那次实时访问：先恢复，再跑 M9 的自动继续。

@@ -33,6 +33,7 @@
     "src/member-controls.ts",
     "src/prepared-members.ts",
     "src/member-inbox.ts",
+    "src/host-process.ts",
     "src/settings-face.ts",
     "src/card-settings.ts",
     "src/child-log-guard.ts",

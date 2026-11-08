@@ -1112,3 +1112,23 @@ describe('interruptedMemberParents (M10: the startup room load)', () => {
     expect(h.registry.interruptedMemberParents().sort()).toEqual([PARENT, 'parent-3', 'parent-5'])
   })
 })
+
+describe('a reclaimed process\'s background tasks (C①) and the host-process record', () => {
+  it('noteBackgroundTasksLost re-emits with the member\'s parent; an unknown member or no tasks emit nothing, and nothing throws', async () => {
+    const h = await mountFacade()
+    h.registry.recordDelegation({ childSessionId: 'child-1', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'cli-child-1', cwd: '/home/user/work' })
+    const heard: unknown[] = []
+    ;(h.ctx.on as unknown as (name: string, listener: (payload: unknown) => void) => void)('localAgent/background-tasks-lost', payload => { heard.push(payload) })
+    h.registry.noteBackgroundTasksLost('child-1', ['bash-1', 'agent-2'])
+    h.registry.noteBackgroundTasksLost('child-1', [])
+    h.registry.noteBackgroundTasksLost('child-unknown', ['bash-9'])
+    expect(heard).toEqual([{ childSessionId: 'child-1', parentSessionId: PARENT, taskIds: ['bash-1', 'agent-2'], because: 'process-reclaimed' }])
+  })
+
+  it('the core records this host process at start: no previous process on the first boot', async () => {
+    const h = await mountFacade()
+    const processes = h.registry.hostProcesses()
+    expect(processes.current.startedAt).toBe(Math.round(performance.timeOrigin))
+    expect(processes.previous).toBeUndefined()
+  })
+})

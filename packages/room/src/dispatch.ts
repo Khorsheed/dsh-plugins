@@ -745,6 +745,22 @@ export function restartInitiatorMember(ctx: Context): string | undefined {
   }
 }
 
+/**
+ * When the host process before this one started, as the local-agent core
+ * records it (`hostProcesses().previous`): a round that started earlier was
+ * cut off by an earlier restart, whenever its interruption gets journaled.
+ * Undefined without the core, without the read, or on the first boot with
+ * the record — the room then keeps its journal-time rule alone.
+ */
+export function previousHostProcessStart(ctx: Context): number | undefined {
+  try {
+    const startedAt = probeLocalAgent(ctx)?.hostProcesses?.().previous?.startedAt
+    return typeof startedAt === 'number' && Number.isFinite(startedAt) ? startedAt : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** A room run that journals nothing: the core never reached it for this delivery, or another room run owns its execution. */
 const DROPPED = Symbol('dropped')
 
@@ -973,6 +989,7 @@ export class DispatchEngine {
     // What the restart-continue rule needs beyond the journal (M9).
     const queuePaused = state.members.flatMap(member => member.id !== undefined && ledgers.paused(cliChild(member)) ? [member.id] : [])
     const restartInitiator = restartInitiatorMember(this.ctx)
+    const previousProcessStartedAt = previousHostProcessStart(this.ctx)
     return {
       ...state,
       ...state.executions === undefined ? {} : { executions: state.executions.map(project) },
@@ -981,6 +998,7 @@ export class DispatchEngine {
       restartFacts: {
         ...queuePaused.length === 0 ? {} : { queuePaused },
         ...restartInitiator === undefined ? {} : { restartInitiator },
+        ...previousProcessStartedAt === undefined ? {} : { previousProcessStartedAt },
         bootedAt: this.bootedAt,
       },
     }
