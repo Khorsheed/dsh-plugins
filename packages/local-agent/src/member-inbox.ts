@@ -217,7 +217,7 @@ export class MemberInbox {
    * row without one runs through the composer dispatch); `final` hears its
    * terminal status.
    */
-  submit(memberId: string, row: { id: string; key?: string; caller: LocalAgentExecutionCaller; text?: string; operation?: 'compact' }, pending: Pending = {}): LocalAgentMemberInput {
+  submit(memberId: string, row: { id: string; key?: string; caller: LocalAgentExecutionCaller; text?: string; preview?: string; operation?: 'compact' }, pending: Pending = {}): LocalAgentMemberInput {
     if (this.closed) throw new Error('Member inbox is closed')
     const state = this.read(memberId)
     if (state.messages.some(existing => existing.id === row.id || (row.key !== undefined && existing.key === row.key))) throw new Error('Member execution id or key already exists')
@@ -227,6 +227,7 @@ export class MemberInbox {
       id: row.id, caller: row.caller, status: 'queued', createdAt: now, updatedAt: now,
       ...row.key === undefined ? {} : { key: row.key },
       ...row.text === undefined ? {} : { text: row.text },
+      ...row.preview === undefined ? {} : { preview: row.preview },
       ...row.operation === undefined ? {} : { operation: row.operation },
     }
     state.messages.push(accepted)

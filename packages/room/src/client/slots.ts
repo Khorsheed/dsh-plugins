@@ -224,6 +224,10 @@ export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInject
   /** Members' background activity (local-agent's read, polled); absent = no 后台 capsule. */
   readonly memberActivity?: import('./MemberActivity.tsx').MemberActivityFace | undefined
   readonly renderMemberInbox?: LocalAgentUi['renderMemberInbox'] | undefined
+  /** Pause or resume a member's input queue (the 「队列已暂停 · 继续」 capsule); absent on an older core. */
+  readonly controlMemberQueue?: LocalAgentUi['controlMemberQueue'] | undefined
+  /** Take back a queued human delivery (the queue row's 撤回); resolves to an error message, or undefined. */
+  readonly withdrawDelivery?: ((dispatchSeq: number, memberId: string) => Promise<string | undefined>) | undefined
   readonly renderMemberConfiguration?: LocalAgentUi['renderMemberConfiguration'] | undefined
   /** A CLI member's occupancy ring and the tools registered beside it (the compaction reminder); renders nothing without them. */
   readonly renderMemberTools?: NonNullable<LocalAgentUi['renderMemberTools']> | undefined

@@ -19,6 +19,18 @@ import css from './RoomQueueStrip.module.css'
 export interface RoomQueueItem {
   readonly id: string
   readonly preview: string
+  /** A room message not in the timeline yet (room-timeline C1): reads 「待送达 ·」. */
+  readonly pending?: boolean
+  /** Take it back (the row's 撤回); absent = no button. */
+  readonly withdraw?: (() => void) | undefined
+}
+
+/** One row's text and its 撤回. */
+function Row({ item, t }: { readonly item: RoomQueueItem; readonly t: RoomComposerProps['t'] }): ReactNode {
+  return <>
+    <span className={css.preview}>{item.pending === true && <span className={css.pending}>{t('queue.pending')}</span>}{item.preview}</span>
+    {item.withdraw !== undefined && <button type="button" className={css.action} onClick={item.withdraw}>{t('receipt.withdraw')}</button>}
+  </>
 }
 
 /** Props: the still-queued rows plus the room locale seat. */
@@ -39,7 +51,7 @@ export function RoomQueueStrip({ items, t }: RoomQueueStripProps): ReactNode {
       <div className={css.root} data-testid="room-queue-strip">
         <div className={css.header} role="status">
           <span className={css.lead} aria-hidden><IconQueueOutlineMedium /></span>
-          <span className={css.preview}>{items[0]!.preview}</span>
+          <Row item={items[0]!} t={t} />
         </div>
       </div>
     )
@@ -64,7 +76,7 @@ export function RoomQueueStrip({ items, t }: RoomQueueStripProps): ReactNode {
         <ul id={listId} className={css.list}>
           {items.map(item => (
             <li key={item.id} className={css.row}>
-              <span className={css.preview}>{item.preview}</span>
+              <Row item={item} t={t} />
             </li>
           ))}
         </ul>

@@ -190,8 +190,7 @@ export const RESTART_UNKNOWN_TEXT = 'Execution outcome is unknown after restart;
 export const DELIVERY_UNKNOWN_TEXT = 'Host restarted before a durable settlement; reconcile before retrying'
 /** `/compact` to a member that has never run: nothing to compact. */
 export const NOTHING_TO_COMPACT_TEXT = '还没有可压缩的上下文'
-/** A message that answered the question its recipient was waiting on: delivered as that answer, not as a round of its own. */
-export const ANSWERED_QUESTION_TEXT = '作为对它提问的回答送达'
+export { ANSWERED_QUESTION_TEXT } from './delivery-notes.ts'
 /** How a message standing in for an answer reads on the card and to the member. */
 export const ANSWER_BY_MESSAGE_PREFIX = '没有选选项，直接回复了：'
 /** A message that queued behind a lost round an earlier move-on skipped: closed, not replayed. */
@@ -209,6 +208,17 @@ export const SUPERSEDED_BACKLOG_TEXT = '被重启打断前排队，已被后续�
 export function supersededByMoveOn(events: readonly SessionEvent[], targetId: string, dispatchSeq: number): boolean {
   return events.some(event => event.type === 'room/delivery-state' && event.data.memberId === targetId && event.data.state === 'cancelled'
     && (event.data as { text?: string }).text === MOVED_ON_TEXT && event.data.dispatchSeq < dispatchSeq && dispatchSeq < event.seq)
+}
+
+/**
+ * The opening of what a room round asks, for the member's queue row on the
+ * members page: the dispatch's own words (not the assembled prompt with the
+ * room's briefing), first 120 characters on one line.
+ */
+export function previewOf(events: readonly SessionEvent[], dispatchSeq: number | undefined, fallback: string): string {
+  const source = dispatchSeq === undefined ? undefined : events.find(event => event.seq === dispatchSeq)
+  const text = source?.type === 'room/dispatch' ? source.data.text : fallback
+  return text.replace(/\s+/g, ' ').trim().slice(0, 120)
 }
 
 export function floatRunningCards(room: Session, except?: string): void {
@@ -818,6 +828,8 @@ export class DispatchEngine {
   private readonly inFlight = new Map<Promise<void>, string>()
   /** Outside rounds (another caller's executions) the service follows: their edges are its to write. */
   private readonly followed = new Set<string>()
+  /** CLI deliveries still waiting in the core's queue, by `<roomId>:<deliveryId>`: aborting one takes it out of the queue (a withdrawal). */
+  private readonly queuedStops = new Map<string, AbortController>()
   /** One recovery pass per room at a time (recover runs on every live access). */
   private readonly recovering = new Map<string, Promise<void>>()
   /** room + recipient → the wake-anyway timer for its held reports. */
@@ -904,6 +916,22 @@ export class DispatchEngine {
 
   /** The followed run ended (see {@link holdRun}). */
   releaseRun(roomId: string, runId: string): void { this.followed.delete(`${roomId}:${runId}`) }
+
+  /**
+   * Take a still-queued CLI delivery out of its member's core queue (the
+   * receipt's 撤回): the caller has already journaled it cancelled, so the
+   * round that waited for it records nothing more. Undefined-safe: a
+   * delivery already admitted (or the room's own agent's, which waits in the
+   * room's own chain and is dropped when its turn comes) has nothing to abort.
+   * @returns whether a queued core row was told to leave.
+   */
+  withdraw(roomId: string, deliveryId: string): boolean {
+    const stop = this.queuedStops.get(`${roomId}:${deliveryId}`)
+    if (stop === undefined) return false
+    this.queuedStops.delete(`${roomId}:${deliveryId}`)
+    stop.abort(new Error('withdrawn by the human'))
+    return true
+  }
 
   /** Drain includes reports queued by the runs being drained. */
   async idle(): Promise<void> {
@@ -1264,6 +1292,10 @@ export class DispatchEngine {
         this.ctx.logger.warn(`room: dispatch to "${memberName}" failed: ${String(error)}`)
         outcome = { state: 'failed', error: faultMessage(error) }
       }
+      // Withdrawn (or otherwise settled) before its member ever took it in:
+      // the journal already holds its outcome — nothing ran, nothing to add.
+      if (startedAt === undefined && deliveryId !== undefined
+        && replay(room.snapshotEvents()).deliveries?.some(row => row.id === deliveryId && row.status !== 'queued' && row.status !== 'running') === true) return
       outcome = await this.settle(room, member, runId, startedAt ?? Date.now(), outcome, executionId)
       await this.hooks.settled?.(room, options.dispatchSeq, outcome)
       if (deliveryId !== undefined) {
@@ -1575,6 +1607,10 @@ export class DispatchEngine {
     let heldCarried: readonly number[] = []
     let dropped = false
     const stop = new AbortController()
+    // Until the core admits it, this delivery can be withdrawn (the abort cancels its queued ledger row).
+    const stopKey = deliveryId === undefined ? undefined : `${room.id}:${deliveryId}`
+    if (stopKey !== undefined) this.queuedStops.set(stopKey, stop)
+    const admittedNow = (): void => { if (stopKey !== undefined && this.queuedStops.get(stopKey) === stop) this.queuedStops.delete(stopKey) }
     // Evaluated when the core reaches this round: the prompt carries what the
     // member has not seen by then. A delivery settled while it waited (a
     // removal, a move-on) or a removed member never reaches the member.
@@ -1631,16 +1667,20 @@ export class DispatchEngine {
         // same delivery is never admitted twice.
         key: deliveryId ?? (relayIds.length > 0 ? `relay:${relayIds.join(',')}` : runId),
         callerRef: runId,
+        // The members page's queue row reads 「来自协作间：…」 (display only; an older core ignores it).
+        ...compacting ? {} : { preview: previewOf(room.snapshotEvents(), dispatchSeq, text) },
         signal: stop.signal,
-        on: { admitted: async (execution) => { startedAt = await admitted(execution) }, progress },
+        on: { admitted: async (execution) => { admittedNow(); startedAt = await admitted(execution) }, progress },
       })
     } catch (error) {
+      admittedNow()
       // The core refuses every round of a member with an unknown-outcome
       // execution or a paused queue: say where to clear it instead of a bare failure.
       const refused = this.refusal(facade, childSessionId, error)
       if (refused === MEMBER_UNRECONCILED_TEXT && deliveryId !== undefined) return await this.waitForReconcile(room, member, runId)
       throw refused === undefined ? error : new Error(refused)
     }
+    void handle.settled.then(admittedNow, admittedNow)
     if (claimed.has(handle.executionId)) return DROPPED
     claimed.add(handle.executionId)
     // Released by run() once the outcome is journaled.

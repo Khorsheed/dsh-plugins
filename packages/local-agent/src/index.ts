@@ -1222,6 +1222,8 @@ interface ExecutionPlan {
   readonly signal?: AbortSignal | undefined
   /** Composer rows only: the text the ledger keeps for replay. */
   readonly text?: string | undefined
+  /** Display only: the ledger row's preview (see LocalAgentMemberInput.preview). */
+  readonly preview?: string | undefined
   readonly on?: LocalAgentExecutionRequest['on']
 }
 
@@ -3397,6 +3399,7 @@ export class LocalAgentRegistry {
       key: request.key,
       callerRef: request.callerRef,
       label: request.label ?? request.member.create?.label,
+      ...request.preview === undefined || request.preview.trim() === '' ? {} : { preview: request.preview.trim().slice(0, 120) },
       signal: request.signal,
       on: request.on,
     })
@@ -3442,6 +3445,7 @@ export class LocalAgentRegistry {
         id: executionId, caller: plan.caller,
         ...plan.key === undefined ? {} : { key: plan.key },
         ...plan.text === undefined ? {} : { text: plan.text },
+        ...plan.preview === undefined ? {} : { preview: plan.preview },
         ...plan.operation === 'compact' ? { operation: 'compact' as const } : {},
       }, {
         dispatch: (signal, admitted) => this.dispatchExecution(plan, executionId, signal, admitted).then((run) => { resolveStarted(run); return run }),

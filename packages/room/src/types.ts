@@ -1274,6 +1274,8 @@ export type RoomFailure =
   | { readonly code: 'duplicate-name' }
   | { readonly code: 'empty-provider' }
   | { readonly code: 'member-not-found' }
+  /** A withdrawal of a delivery that is no longer waiting (its member took it in, or it settled). */
+  | { readonly code: 'not-queued' }
   | { readonly code: 'empty-text' }
   /** An attachment was refused (not uploaded to this room, too large, an unsupported image…). */
   | { readonly code: 'attachment-invalid'; readonly message: string }
@@ -1611,6 +1613,20 @@ export type RoomReleaseReportsResult =
   | { readonly ok: true; readonly value: { readonly released: boolean } }
   | { readonly ok: false; readonly error: RoomFailure }
 
+/** withdrawDelivery request: take back a human message from one recipient before it reached them (the receipt's 撤回). */
+export interface RoomWithdrawDeliveryRequest {
+  readonly sessionId: SessionId
+  /** The human dispatch's seq. */
+  readonly dispatchSeq: number
+  /** The recipient's member id. */
+  readonly memberId: string
+}
+
+/** withdrawDelivery outcome: withdrawn, or why not (`not-queued`: it already reached the member, or settled). */
+export type RoomWithdrawDeliveryResult =
+  | { readonly ok: true; readonly value: { readonly withdrawn: true } }
+  | { readonly ok: false; readonly error: RoomFailure }
+
 /** setSettings request: change any subset of the collaboration settings. */
 export interface RoomSetSettingsRequest {
   readonly sessionId: SessionId
@@ -1796,6 +1812,17 @@ export interface RoomDelivery {
   readonly kind?: 'task' | 'notify'
   readonly text: string
   readonly error?: string
+  /** The settling edge's own words (`room/delivery-state.text`): why it was cancelled, that it answered a question. */
+  readonly note?: string
+  /** A human message's id (`room/dispatch.messageId`): the bubble this delivery's state is shown under. */
+  readonly messageId?: string
+  /**
+   * Where that message sits in the room log: `before` the dispatch (the
+   * room wrote the bubble first — its receipt line applies), `after` it (the
+   * room's own agent wrote it when it took the message in). Absent: not in
+   * the log yet — still waiting in the queue above the composer.
+   */
+  readonly bubble?: 'before' | 'after'
   readonly plan?: RoomDispatchEvent['plan']
   /** The task this delivery belongs to (see RoomDispatchEvent.task). */
   readonly task?: string

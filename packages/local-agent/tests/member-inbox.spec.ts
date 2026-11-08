@@ -47,6 +47,19 @@ function mount(directory = mkdtempSync(join(tmpdir(), 'member-inbox-')), process
 const file = (directory: string) => join(directory, readdirSync(directory).find(name => name.endsWith('.json'))!)
 
 describe('member execution ledger', () => {
+  it('keeps a row\'s display preview durably and never treats it as replayable input', () => {
+    const m = mount()
+    m.inbox.submit('member', { id: 'busy', caller: 'tool' }, { dispatch: (signal, admitted, row) => new Promise(() => { void signal; void admitted; void row }) })
+    m.inbox.submit('member', { id: 'with', caller: 'room', key: 'd-1', preview: '第三章的冲突太平了' }, { dispatch: async () => new Promise(() => {}) })
+    m.inbox.submit('member', { id: 'without', caller: 'room', key: 'd-2' }, { dispatch: async () => new Promise(() => {}) })
+    const rows = m.inbox.read('member').messages
+    expect(rows.find(row => row.id === 'with')).toMatchObject({ preview: '第三章的冲突太平了', status: 'queued' })
+    expect(rows.find(row => row.id === 'with')?.text).toBeUndefined()
+    expect(rows.find(row => row.id === 'without')).not.toHaveProperty('preview')
+    const stored = JSON.parse(readFileSync(file(m.directory), 'utf8')) as { state: { messages: LocalAgentMemberInput[] } }
+    expect(stored.state.messages.find(row => row.id === 'with')?.preview).toBe('第三章的冲突太平了')
+  })
+
   it('persists before acceptance, deduplicates retries and records actual admission and settlement', async () => {
     const m = mount()
     const first = m.enqueue('member', 'work', 'request-1')

@@ -93,3 +93,28 @@
 .header:focus:not(:focus-visible) {
   outline: none;
 }
+
+/* A room message not in the timeline yet: 「待送达 ·」 in amber, and its 撤回. */
+.pending {
+  color: var(--dsw-alias-state-warning, #c08419);
+}
+
+.action {
+  flex: none;
+  padding: 3px 7px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(38, 49, 72, 0.06));
+}
+
+.action:focus:not(:focus-visible) {
+  outline: none;
+}

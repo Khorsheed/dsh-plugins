@@ -19,7 +19,7 @@ import type {
   RoomComposerProps, RoomModelDirectory, RoomModelDirectoryState, RoomModelSelection, RoomMutationOutcome,
   RoomAttachmentsFace,
 } from '../src/client/slots.ts'
-import type { RoomState } from '../src/types.ts'
+import type { RoomDelivery, RoomState } from '../src/types.ts'
 
 afterEach(() => {
   cleanup()
@@ -114,6 +114,8 @@ async function bench(
     listSessions?: RoomComposerProps['listSessions']
     insertSessionReference?: RoomComposerProps['insertSessionReference']
     setCoordinator?: RoomComposerProps['setCoordinator']
+    controlMemberQueue?: RoomComposerProps['controlMemberQueue']
+    withdrawDelivery?: RoomComposerProps['withdrawDelivery']
   } = {},
 ): Promise<Bench> {
   const roomStore = await primedStore(options.state)
@@ -155,6 +157,8 @@ async function bench(
     listSessions: options.listSessions,
     insertSessionReference: options.insertSessionReference,
     setCoordinator: options.setCoordinator,
+    controlMemberQueue: options.controlMemberQueue,
+    withdrawDelivery: options.withdrawDelivery,
     useSession,
     // Default: a projection seat that serves nothing (no stats row, no todo strip).
     useProjection: options.useProjection === undefined
@@ -535,6 +539,53 @@ describe('RoomComposer', () => {
     await bench(vi.fn(), { state: { ...STATE, deliveries: [], jobs: [] }, openTasks: vi.fn() })
     expect(screen.getByRole('button', { name: 'members.invite' })).toBeDefined()
     expect(screen.queryByTestId('room-task-capsule')).toBeNull()
+  })
+
+  it('waiting messages with a bubble become one count capsule, never their text; a paused queue gets its own capsule', async () => {
+    const control = vi.fn(async () => undefined)
+    const queued = (seq: number, text: string) => ({ id: `${seq}:m-ada`, dispatchSeq: seq, memberId: 'm-ada', status: 'queued' as const, origin: 'human' as const, text, queuedAt: 1000 + seq, messageId: `msg-${seq}`, bubble: 'before' as const })
+    const state: RoomState = {
+      ...STATE,
+      members: [
+        { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', childSessionId: 'child-ada' as SessionId },
+        { id: 'm-bill', name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'human', childSessionId: 'child-bill' as SessionId },
+      ],
+      coordinator: { version: 1, memberId: 'm-ada', revision: 1, previousMemberId: 'm-bill', handoff: '' },
+      deliveries: [queued(7, '第一条排队'), queued(9, '第二条排队')],
+      restartFacts: { queuePaused: ['m-bill'] },
+    }
+    await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'], state, openTasks: vi.fn() })
+    expect(screen.getByRole('button', { name: /⏳ 2 条消息在等 ada/ })).toBeDefined()
+    expect(screen.queryByText(/第一条排队/)).toBeNull()
+    expect(screen.queryByTestId('room-queue-strip')).toBeNull()
+    expect(screen.getByRole('button', { name: /⏸ bill 的队列已暂停/ }).textContent).toContain('去看看')
+    cleanup()
+    await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'], state, openTasks: vi.fn(), controlMemberQueue: control })
+    fireEvent.click(screen.getByRole('button', { name: /⏸ bill 的队列已暂停 ·\s*继续/ }))
+    await vi.waitFor(() => { expect(control).toHaveBeenCalledWith('child-bill', 'resume') })
+  })
+
+  it('a message the native coordinator has not taken in yet waits above the composer as 待送达 with 撤回, and leaves once its bubble is in the log', async () => {
+    const withdraw = vi.fn(async () => undefined)
+    const row = (over: Partial<RoomDelivery>) => ({ id: '7:legacy:1', dispatchSeq: 7, memberId: 'legacy:1', status: 'queued' as const, origin: 'human' as const, text: '另外：师父不要死', queuedAt: 1000, messageId: 'msg-7', ...over })
+    const base: RoomState = {
+      ...STATE,
+      members: [
+        { id: 'legacy:1', name: 'main', kind: 'main-agent', invitedBy: 'human' },
+        { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human' },
+      ],
+      deliveries: [row({}), row({ id: '8:m-ada', dispatchSeq: 8, memberId: 'm-ada', text: '给 ada 的', messageId: 'msg-8', bubble: 'before' })],
+    }
+    await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'], state: base, withdrawDelivery: withdraw })
+    const strip = screen.getByTestId('room-queue-strip')
+    expect(strip.textContent).toContain('待送达 · 另外：师父不要死')
+    expect(strip.textContent).not.toContain('给 ada 的')
+    fireEvent.click(screen.getByRole('button', { name: '撤回' }))
+    await vi.waitFor(() => { expect(withdraw).toHaveBeenCalledWith(7, 'legacy:1') })
+    cleanup()
+    // Taken in: the host wrote its bubble (after the dispatch) — the row is gone even before the delivery settles.
+    await bench(vi.fn(), { t: makeTranslate(zh) as RoomComposerProps['t'], state: { ...base, deliveries: [row({ status: 'running', bubble: 'after' })] } })
+    expect(screen.queryByTestId('room-queue-strip')).toBeNull()
   })
 
   it('the task tag rides the next send as its task and clears; removing it leaves the filing to dsh', async () => {

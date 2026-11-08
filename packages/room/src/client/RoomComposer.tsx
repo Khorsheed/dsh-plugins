@@ -69,6 +69,8 @@ import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
 import { useRoomActivity } from './MemberActivity.tsx'
 import { RoomTodoStrip } from './RoomTodoStrip.tsx'
 import { RoomQueueStrip, type RoomQueueItem } from './RoomQueueStrip.tsx'
+import { RoomQueueCapsules } from './RoomQueueCapsules.tsx'
+import { queueCapsules } from './queue-capsules.ts'
 import { RoomModelPicker } from './RoomModelPicker.tsx'
 import { IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconPaperclipOutlineMedium } from './icons.tsx'
 import { Menu, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -192,7 +194,7 @@ export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, renderMemberTools, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
-  attachments: attachmentFace, setCoordinator, runCommand, memberActivity, setSettings,
+  attachments: attachmentFace, setCoordinator, runCommand, memberActivity, setSettings, controlMemberQueue, withdrawDelivery,
 }: RoomComposerProps): ReactNode {
   const [coordinatorMenu, setCoordinatorMenu] = useState(false)
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
@@ -322,10 +324,29 @@ export function RoomComposer({
   // Also blocked by a round of the coordinator the core holds as 待对账 (the
   // members page, a tool call: batch 5 S7), which is not a room delivery.
   const blocked = coordinatorRows.some(row => row.status === 'uncertain' || row.waiting === 'reconcile')
-  const coordinatorQueue: readonly RoomQueueItem[] = coordinatorRows.map(row => ({
-    id: row.id,
-    preview: row.status === 'uncertain' ? t('job.queueUncertain', { text: row.text }) : blocked ? t('job.queueBlocked', { text: row.text }) : row.text,
-  }))
+  // Rows only for what has no bubble in the timeline yet (room-timeline D):
+  // a message with its bubble reads its state on its receipt line, and the
+  // member-level state rides the capsules below.
+  // A message whose bubble is not in the log yet (the room's own agent
+  // writes it when it takes the message in): 待送达, withdrawable while
+  // queued, gone once the message is in the log — not when its delivery
+  // turns running, so it never vanishes before its bubble appears (C1).
+  const coordinatorQueue: readonly RoomQueueItem[] = (state?.deliveries ?? [])
+    .filter(row => row.origin === 'human' && row.messageId !== undefined && row.bubble === undefined && (row.status === 'queued' || row.status === 'running'))
+    .map(row => ({
+      id: row.id,
+      preview: row.memberId === coordinator?.id && blocked ? t('job.queueBlocked', { text: row.text }) : row.text,
+      pending: true,
+      ...withdrawDelivery === undefined || row.status !== 'queued' ? {} : {
+        withdraw: () => {
+          void withdrawDelivery(row.dispatchSeq, row.memberId).then((failure) => {
+            if (failure !== undefined) setError(failure)
+            void roomStore.refresh(sessionId)
+          })
+        },
+      },
+    }))
+  const capsules = queueCapsules(state, coordinator?.id)
 
   const resize = (area: HTMLTextAreaElement): void => {
     area.style.height = 'auto'
@@ -602,6 +623,18 @@ export function RoomComposer({
               openPlanSession(item.childSessionId)
             },
           }}
+          extra={<RoomQueueCapsules
+            capsules={capsules}
+            resume={controlMemberQueue === undefined ? undefined : async (capsule) => {
+              if (capsule.kind !== 'paused' || capsule.childSessionId === undefined) return undefined
+              const failure = await controlMemberQueue(capsule.childSessionId, 'resume')
+              if (failure !== undefined) setError(failure)
+              void roomStore.refresh(sessionId)
+              return failure
+            }}
+            openSession={openPlanSession}
+            t={t}
+          />}
           waiting={waitingAsk === undefined ? undefined : {
             member: waitingAsk.member,
             jump: () => {

@@ -144,6 +144,19 @@ export interface LocalAgentUi {
    */
   registerMemberTool?(entry: MemberToolRegistration): () => void
   /**
+   * The member's input queue as a room shows it under its composer
+   * (room-timeline B2): the room's own queued rows are left out — each sits
+   * on its message in the room timeline — and the pause control moves to the
+   * room's capsule; other callers' rows, failures and 待对账 stay. Optional
+   * on the TYPE: a room probes it and falls back to {@link renderMemberInbox}.
+   */
+  renderRoomMemberInbox?(childSessionId: string): ReactNode
+  /**
+   * Pause or resume a member's input queue (the room's 「队列已暂停 · 继续」
+   * capsule). Resolves to an error message, or undefined on success.
+   */
+  controlMemberQueue?(childSessionId: string, action: 'pause' | 'resume'): Promise<string | undefined>
+  /**
    * A member's occupancy ring (`meter`) or one placement's registered tools,
    * for surfaces outside the member composer (a room's composer and members
    * popup). Renders nothing for a session that is not a family member.
@@ -309,6 +322,15 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     subscribeHarnessCards: listener => harnessCards.subscribe(listener),
     registerMemberTool: entry => memberTools.register(entry),
     renderMemberTools,
+    renderRoomMemberInbox: id => createElement(MemberInboxView, { key: `room:${id}`, face: inboxFace(id), room: true, t: ctx.locale.bind(NS) }),
+    controlMemberQueue: async (id, action) => {
+      try {
+        const result = await inboxFace(id).control(action)
+        return result?.ok === true ? undefined : result?.error ?? ctx.locale.bind(NS)('member.sendFailed')
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error)
+      }
+    },
   }
   ctx.provide('localAgentUi', configurationUi)
   ctx.inject(['uiConversation'], lctx => { lctx.uiConversation.events.register(memberLiveDefinition) })

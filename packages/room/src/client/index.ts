@@ -52,6 +52,8 @@ import { mainSessionId, RoomStore, type RoomClientContext } from './room-store.t
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomDispatchView } from './RoomDispatchView.tsx'
+import { RoomReceiptView, type RoomReceiptInjected } from './RoomReceiptView.tsx'
+import { roomReceiptDefinition } from './receipt.ts'
 import { RoomAutoContinueView } from './RoomRestart.tsx'
 import { RoomCompactionView } from './RoomCompactionView.tsx'
 import { RoomInboxView } from './RoomInboxView.tsx'
@@ -295,6 +297,14 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
   const taskTags = new RoomTaskTags()
 
   /** Map a structured RoomFailure to the dialog's localized copy. */
+  /** Take back a queued human delivery (the receipt's and the queue row's 撤回): undefined, or why not. */
+  const withdrawFor = (sessionId: SessionId) => async (dispatchSeq: number, memberId: string): Promise<string | undefined> => {
+    if (remote === undefined) return t('composer.error.generic')
+    const carried = await remote.withdrawDelivery({ sessionId, dispatchSeq, memberId }).catch(() => undefined)
+    if (carried === undefined || !carried.ok) return t('composer.error.generic')
+    if (!carried.value.ok) return carried.value.error.code === 'not-queued' ? t('receipt.notQueued') : t('composer.error.generic')
+    return undefined
+  }
   const failureText = (error: RoomFailure): string => {
     switch (error.code) {
       case 'coordinator-busy': return t('coordinator.busy')
@@ -595,6 +605,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     lctx.uiConversation.events.register(roomHelpReplyDefinition)
     lctx.uiConversation.events.register(roomHelpRequestDefinition)
     lctx.uiConversation.events.register(roomHelpInDefinition)
+    lctx.uiConversation.events.register(roomReceiptDefinition)
     // Each turn's Bash call ids: the member session's background command cards read them.
     lctx.uiConversation.events.register(activityCallsDefinition as never)
   })
@@ -736,7 +747,10 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       setSettings: patch => setSettingsFor(sessionId, patch),
       ...(() => { const face = attachmentsFor(); return face === undefined ? {} : { attachments: face } })(),
       renderMemberConfiguration: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberConfiguration,
-      renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
+      // The room's own copy leaves out the room's queued rows (they read on their messages); an older core has only the plain one.
+      renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderRoomMemberInbox ?? (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
+      controlMemberQueue: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.controlMemberQueue,
+      ...remote === undefined ? {} : { withdrawDelivery: withdrawFor(sessionId) },
       // Read at render: a local-agent core loading after this entry still lands.
       // A named member compacts through the room's own `/compact` dispatch —
       // the reminder button then runs exactly what the typed command runs
@@ -936,6 +950,29 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       inject: (): RoomDispatchInjected => ({ roomStore }),
     },
     RoomDispatchView,
+  ))
+  // The receipt line under a human message (排队中 · 撤回 …).
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-receipt',
+      locale: NS,
+      inject: (sessionId: SessionId): RoomReceiptInjected => {
+        const ui = ctx.get('localAgentUi') as LocalAgentUi | undefined
+        const control = ui?.controlMemberQueue
+        return {
+          roomStore, openSession,
+          ...remote === undefined ? {} : { withdraw: withdrawFor(sessionId) },
+          ...control === undefined ? {} : {
+            resumeQueue: async (memberId: string) => {
+              const child = roomStore.getCached(sessionId)?.members.find(member => member.id === memberId)?.childSessionId
+              return child === undefined ? t('composer.error.generic') : control(String(child), 'resume')
+            },
+          },
+        }
+      },
+    },
+    RoomReceiptView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     {

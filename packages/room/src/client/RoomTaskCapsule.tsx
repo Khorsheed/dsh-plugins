@@ -23,6 +23,8 @@ type Props = Pick<RoomComposerProps,
     readonly state: RoomState
     /** A member waiting on a question inside its round: its capsule jumps back to the question. */
     readonly waiting?: { readonly member: string; readonly jump: () => void } | undefined
+    /** More capsules for the row (the member-level queue capsules, room-timeline B2). */
+    readonly extra?: ReactNode
     /** Members' background activity: the 「后台 N」 capsule and its tray (absent = none). */
     readonly background?: {
       readonly groups: readonly ActivityGroup[]
@@ -44,7 +46,7 @@ function backgroundParts(background: Props['background'], t: Props['t']): { read
 
 /** The capsule row. */
 export function RoomTaskCapsule({
-  state, openTasks, reconcileDelivery, openPlanSession, invite, listProviders, roomCwd, browseDirectory, listDirectory, modelSurface, renderHarnessModelPicker, waiting, background, t,
+  state, openTasks, reconcileDelivery, openPlanSession, invite, listProviders, roomCwd, browseDirectory, listDirectory, modelSurface, renderHarnessModelPicker, waiting, background, extra, t,
 }: Props): ReactNode {
   const bg = backgroundParts(background, t)
   const [inviteOpen, setInviteOpen] = useState(false)
@@ -60,6 +62,7 @@ export function RoomTaskCapsule({
           setInviteOpen(true)
           void listProviders().then(setProviders)
         }}><span className={css.guide}>{t('members.invite')}</span></button>
+        {extra}
         {bg.capsule}
       </div>
       {inviteOpen && <InviteDialog
@@ -100,6 +103,7 @@ export function RoomTaskCapsule({
       {waiting !== undefined && <button type="button" className={css.capsule} data-attention="" data-waiting="" onClick={waiting.jump}>
         <span className={css.dot} aria-hidden />{t('question.capsule', { member: waiting.member })}
       </button>}
+      {extra}
       {bg.capsule}
     </div>
   </div>

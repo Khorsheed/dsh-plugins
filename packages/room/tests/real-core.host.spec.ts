@@ -252,8 +252,41 @@ describe('room on the real local-agent core', () => {
     expect(end).toMatchObject({ phase: 'end', executionId, outcome: 'done', turns: [1] })
     const ledger = bench.core.registry.readMemberInbox(ada).messages
     expect(ledger.map(row => [row.id, row.caller, row.key, row.status])).toEqual([[executionId, 'room', `${dispatch.seq}:${ada}`, 'done']])
+    // The members page's queue row reads the message's own words (display only).
+    expect(ledger[0]!.preview).toBe('搭骨架')
     expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { members: [{ name: 'dsh' }, { name: 'ada', childSessionId: ada }] } })
     await releasedLog(bench, ada, 1)
+  })
+
+  it('a queued human message withdrawn: the core row is cancelled, the delivery reads 已撤回, the next message still runs; an admitted one cannot be withdrawn', async () => {
+    const bench = await mount()
+    const ada = await invite(bench)
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第一件' })
+    await roundsReach(bench, 1)
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第二件' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 第三件' })
+    const dispatches = bench.room().snapshotEvents().filter(event => event.type === 'room/dispatch')
+    const [first, second, third] = dispatches.map(event => event.seq) as [number, number, number]
+    // Both wait in the core's queue behind the first round.
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    expect(await bench.service.withdrawDelivery({ sessionId: bench.sessionId, dispatchSeq: first, memberId: ada })).toEqual({ ok: false, error: { code: 'not-queued' } })
+    expect(await bench.service.withdrawDelivery({ sessionId: bench.sessionId, dispatchSeq: second, memberId: ada })).toEqual({ ok: true, value: { withdrawn: true } })
+    const { WITHDRAWN_TEXT } = await import('../src/delivery-notes.ts')
+    expect(bench.room().snapshotEvents().filter(event => event.type === 'room/delivery-state' && event.data.id === `${second}:${ada}`).map(event => [event.data.state, event.data.text]))
+      .toEqual([['cancelled', WITHDRAWN_TEXT]])
+
+    bench.rounds[0]!.release()
+    await roundsReach(bench, 2)
+    expect(bench.rounds[1]!.prompt).toContain('第三件')
+    expect(bench.rounds[1]!.prompt).not.toContain('第二件')
+    bench.rounds[1]!.release()
+    await bench.service.engine.idle()
+    expect(deliveryStates(bench, `${second}:${ada}`)).toEqual(['cancelled'])
+    expect(bench.core.registry.readMemberInbox(ada).messages.find(row => row.key === `${second}:${ada}`)?.status).toBe('cancelled')
+    expect(deliveryStates(bench, `${third}:${ada}`)).toEqual(['running', 'done'])
+    // The withdrawn delivery never opened a run of its own.
+    expect(runStates(bench).filter(edge => edge.runId === `${second}:${ada}`)).toEqual([])
   })
 
   it('the same delivery submitted twice is one execution', async () => {
