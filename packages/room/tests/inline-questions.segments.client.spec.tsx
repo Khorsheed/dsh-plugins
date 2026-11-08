@@ -14,6 +14,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { replay } from '../src/journal.ts'
+import { ANSWER_BY_MESSAGE_PREFIX } from '../src/client/round-segments.ts'
 import { roomQuestionDefinition, roomSpeechDefinition, type RoomQuestionData, type RoomSpeechData } from '../src/client/nodes.ts'
 import { RoomQuestionView } from '../src/client/RoomQuestionView.tsx'
 import { RoomRunView } from '../src/client/RoomRunView.tsx'
@@ -101,8 +102,12 @@ async function timeline(events: never[], run: 'running' | 'done' | 'cancelled', 
 describe('a landed reply, cut at its questions', () => {
   it('at = 0: the question card holds no text; the reply is all 「接着说」, joined to it', async () => {
     const { seat } = await timeline([asked(), answered, spoke('按人物交替，拆成 6 节。', [{ id: 'q1', at: 0 }])], 'done')
-    expect(seat('q').textContent).toContain('问了你')
-    expect(seat('q').textContent).toContain('你的回答：按人物')
+    // The prototype's 问 + 答: 「问了你 · ✓ 已回答」, the 你 chip, the answer in bold.
+    const card = seat('q').querySelector('[data-ask-id]')!
+    expect(card.textContent).toContain('问了你')
+    expect(card.textContent).toContain('✓ 已回答')
+    expect(card.textContent).not.toContain('你的回答')
+    expect(card.querySelector('b')!.textContent).toBe('按人物')
     expect(seat('q').querySelector('[data-member-output]')).toBeNull()
     expect(seat('s').textContent).toContain('接着说')
     expect(seat('s').textContent).toContain('按人物交替，拆成 6 节。')
@@ -122,6 +127,8 @@ describe('a landed reply, cut at its questions', () => {
   it('at = -1 (split point not found): the reply carries the question first, marked mid-round; no card of its own', async () => {
     const { seat } = await timeline([asked('找不到的尾巴'), answered, spoke('双线有两种切法。按人物交替。', [{ id: 'q1', at: -1 }])], 'done')
     expect(seat('q').textContent).toBe('')
+    // The legacy look is unchanged: 「问你」, 「你的回答：…」.
+    expect(seat('s').textContent).toContain('你的回答：按人物')
     expect(seat('s').textContent).toContain('提问于这一轮中途')
     expect(seat('s').textContent).toContain('双线有两种切法。按人物交替。')
     expect(seat('s').textContent).not.toContain('接着说')
@@ -151,15 +158,18 @@ describe('a round in progress', () => {
 
   it('answered: the question folds in place; the run card goes on below with only what came after, joined', async () => {
     const { seat } = await timeline([asked(), answered], 'running')
-    expect(seat('q').textContent).toContain('你的回答：按人物')
+    expect(seat('q').querySelector('[data-ask-id] b')!.textContent).toBe('按人物')
     expect(screen.getByTestId('live-before').textContent).toContain(`${STARTED}..1100`)
     expect(seat('r').textContent).toContain('接着说')
     expect(screen.getByTestId('live-after').textContent).toBe('1120..')
     expect(seat('r').firstElementChild!.className).toMatch(/grouped/)
   })
 
-  it('answered by a message: the message sits between, so the run card keeps its avatar', async () => {
-    const { seat } = await timeline([asked(), answered], 'running', '按人物交替吧')
+  it('answered by a message: the card says so; the message sits between, so the run card keeps its avatar', async () => {
+    const byMessage = ev(12, 'room/question-resolved', { id: 'q1', outcome: 'answered', answers: [{ id: 'cut', selected: [], custom: `${ANSWER_BY_MESSAGE_PREFIX}按人物交替吧` }] })
+    const { seat } = await timeline([asked(), byMessage], 'running', '按人物交替吧')
+    expect(seat('q').querySelector('[data-ask-id] b')!.textContent).toBe('用下面这条消息回答了')
+    expect(seat('q').textContent).not.toContain('直接回复了')
     expect(seat('r').textContent).toContain('接着说')
     expect(seat('r').firstElementChild!.className).not.toMatch(/grouped/)
   })

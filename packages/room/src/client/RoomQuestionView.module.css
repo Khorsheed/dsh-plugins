@@ -222,3 +222,31 @@
   color: var(--dsw-alias-state-warning-primary, #c08419);
   font-weight: 600;
 }
+
+/* A round's question card, answered (E1, the prototype's 问 + 答): the
+   green 「✓ 已回答」, the 你 chip and the answer in bold. */
+.statusDone {
+  color: var(--dsw-alias-state-success-primary, #1f9a55);
+}
+
+.answerRow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.7));
+  overflow-wrap: anywhere;
+}
+
+.who {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-tertiary, rgba(31, 35, 41, 0.5));
+  color: var(--dsw-alias-bg-layer-1, #ffffff);
+  font-size: 10px;
+  font-weight: 700;
+}

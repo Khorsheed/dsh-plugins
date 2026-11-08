@@ -68,6 +68,13 @@ export function replySplit(data: RoomSpeechData, askLog: readonly RoomAsk[] | un
   return { kind: 'split', from, rest: data.text.slice(from) }
 }
 
+/**
+ * The head the room writes on a question answered by a message instead of a
+ * pick (host `dispatch.ts` ANSWER_BY_MESSAGE_PREFIX; a spec pins the two
+ * equal): the round's question card then reads 「用下面这条消息回答了」.
+ */
+export const ANSWER_BY_MESSAGE_PREFIX = '没有选选项，直接回复了：'
+
 /** The attribute a question card carries with its round's id, for the card after it to group with. */
 export const SEGMENT_ATTR = 'data-room-seg'
 

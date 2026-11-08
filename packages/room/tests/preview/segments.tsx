@@ -18,6 +18,7 @@ import { RoomRunView } from '../../src/client/RoomRunView.tsx'
 import { RoomSpeechView } from '../../src/client/RoomSpeechView.tsx'
 import { roomQuestionDefinition, type RoomQuestionData } from '../../src/client/nodes.ts'
 import { replay } from '../../src/journal.ts'
+import { ANSWER_BY_MESSAGE_PREFIX } from '../../src/client/round-segments.ts'
 import { en, zh } from '../../src/client/locales.ts'
 import type { RoomMember, RoomState } from '../../src/types.ts'
 
@@ -51,7 +52,7 @@ const ev = (seq: number, type: string, data: unknown, time: number) => ({ seq, t
 const answered = state !== 'asking'
 const landed = state === 'landed' || state === 'legacy'
 const answers = state === 'message'
-  ? [{ id: 'cut', selected: [], custom: `${english ? 'Replied directly instead of picking: ' : '没有选选项，直接回复了：'}${BY_MESSAGE}` }]
+  ? [{ id: 'cut', selected: [], custom: `${ANSWER_BY_MESSAGE_PREFIX}${BY_MESSAGE}` }]
   : [{ id: 'cut', selected: [QUESTIONS[0]!.options[1]!.label] }]
 const events = [
   ev(10, 'room/question', { id: 'q1', member: gu.name, memberId: gu.id, questions: QUESTIONS, runId: RUN, before: SEG1.slice(-160) }, ASKED),

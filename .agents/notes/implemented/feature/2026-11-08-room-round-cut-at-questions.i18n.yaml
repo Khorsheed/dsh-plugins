@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-08-room-round-cut-at-questions.md
-.agents/notes/implemented/feature/2026-11-08-room-round-cut-at-questions.md: 58ece4fda56dfa91dfa570ead0d78a9af8c382dd
-.agents/notes/implemented/feature/2026-11-08-room-round-cut-at-questions.zh.md: 9ca545c7ac84a06163a3e9ad99f1cca721816ec6
+.agents/notes/implemented/feature/2026-11-08-room-round-cut-at-questions.md: d5db5a5c639b093ad893980a2e9e21c37b481c78
+.agents/notes/implemented/feature/2026-11-08-room-round-cut-at-questions.zh.md: 4aa2e0a15faed228cb6304461588dd03bbee0910

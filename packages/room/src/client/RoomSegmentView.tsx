@@ -124,7 +124,7 @@ export function RoomSegmentView({ node, sessionId, answerQuestion, segment, t }:
       <div className={pending ? `${speech.card} ${run.liveCard}` : speech.card}>
         {header}
         {said !== undefined && <div className={speech.body}>{said}</div>}
-        <RoomQuestionView {...{ node, answerQuestion, t } as unknown as RoomQuestionViewProps} inline={{}} />
+        <RoomQuestionView {...{ node, answerQuestion, t } as unknown as RoomQuestionViewProps} inline={{ segment: true }} />
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 /** Questions sit inside the asker's round: recorded with its run and the text said so far, placed in the reply by that tail. */
 import { describe, expect, it } from 'vitest'
-import { askOffsets, roundTextSoFar } from '../src/dispatch.ts'
+import { ANSWER_BY_MESSAGE_PREFIX, askOffsets, roundTextSoFar } from '../src/dispatch.ts'
+import { ANSWER_BY_MESSAGE_PREFIX as CLIENT_PREFIX } from '../src/client/round-segments.ts'
 
 const q = (seq: number, data: Record<string, unknown>) => ({ type: 'room/question', seq, time: seq, data: { member: 'gm', memberId: 'm', questions: [], ...data } }) as never
 
@@ -51,5 +52,9 @@ describe('inline questions', () => {
     ])
     expect(askOffsets([q(1, { id: 'c', runId: 'r' })], 'r', reply)).toEqual([{ id: 'c', at: 0 }])
     expect(askOffsets([q(1, { id: 'd', runId: 'r', before: '这一段文字在最终回复里被改写掉了，找不到' })], 'r', reply)).toEqual([{ id: 'd', at: -1 }])
+  })
+
+  it('the client reads an answer-by-message with the same head the room writes', () => {
+    expect(CLIENT_PREFIX).toBe(ANSWER_BY_MESSAGE_PREFIX)
   })
 })
