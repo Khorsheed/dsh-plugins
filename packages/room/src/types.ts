@@ -752,6 +752,18 @@ export interface RoomAsk {
   readonly consent?: true
   readonly runId?: string
   readonly time: number
+  /** The tail of what the round had said when it asked (the question event's `before`). */
+  readonly before?: string
+  /** When the question was answered or expired (replayed from its resolution's event time). */
+  readonly resolvedAt?: number
+  /**
+   * Where the round's reply put this question, once it landed (replayed from
+   * the reply's `asks`): `at` its offset (-1 = not found), `said` the reply's
+   * text from the previous question up to this one — this question's segment —
+   * and `inline` when the reply falls back to carrying its questions inside
+   * itself (one of its offsets was not found).
+   */
+  readonly reply?: { readonly seq: number; readonly at: number; readonly said: string; readonly inline?: true }
 }
 
 /** A member's questions still waiting for the human. */

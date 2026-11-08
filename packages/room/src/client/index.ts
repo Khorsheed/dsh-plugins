@@ -987,7 +987,17 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       name: 'conversation.chat.node',
       key: 'room-question',
       locale: NS,
-      inject: (sessionId: SessionId): RoomQuestionInjected => ({ answerQuestion: answerFor(sessionId) }),
+      inject: (sessionId: SessionId): RoomQuestionInjected => ({
+        answerQuestion: answerFor(sessionId),
+        // A question asked in a round is that round's card up to the question (E1).
+        segment: {
+          roomStore,
+          renderMemberOutput: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberOutput,
+          openSession,
+          cancelMember: member => cancelMember(sessionId, member),
+          ...openPath === undefined ? {} : { openPath },
+        },
+      }),
     },
     RoomQuestionView,
   ))

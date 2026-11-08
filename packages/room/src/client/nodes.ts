@@ -509,8 +509,10 @@ export const roomQuestionDefinition: ConversationNodeDefinition<RoomQuestionData
     if (event.type !== 'room/question-resolved') return context.state
     return { ...context.state, state: event.data.outcome, ...event.data.answers === undefined ? {} : { answers: event.data.answers }, ...event.data.late === true ? { late: true as const } : {} }
   },
-  // A question placed in a round renders inside it (RoomRunView, RoomSpeechView): its own row hides.
-  buildViewNode: context => viewNode(context, 'room-question', context.state?.runId === undefined ? 'visible' : 'hidden'),
+  // A question placed in a round is that round's card up to the question
+  // (RoomSegmentView, E1); it renders nothing when the landed reply carries
+  // its questions itself (an offset not found).
+  buildViewNode: context => viewNode(context, 'room-question'),
 }
 
 /**

@@ -139,6 +139,29 @@ export function parseMentions(raw: string): { readonly targets: readonly string[
 }
 
 /**
+ * Record where a landed reply put its round's questions (room-timeline-order
+ * E1): each question's segment is the reply's text from the previous
+ * question's offset up to its own. One unfound offset (-1) makes the whole
+ * reply fall back to carrying its questions inside itself.
+ * @param asks - the question log, by id (updated in place).
+ * @param seq - the reply's seq.
+ * @param text - the reply's text.
+ * @param placed - the reply's question offsets.
+ */
+function placeReplyAsks(asks: Map<string, RoomAsk>, seq: number, text: string, placed: readonly { readonly id: string; readonly at: number }[] | undefined): void {
+  const known = (placed ?? []).filter(entry => asks.has(entry.id)).sort((a, b) => a.at - b.at)
+  if (known.length === 0) return
+  const inline = known.some(entry => entry.at < 0)
+  let cursor = 0
+  for (const entry of known) {
+    const at = Math.max(cursor, Math.min(entry.at, text.length))
+    const ask = asks.get(entry.id)!
+    asks.set(entry.id, { ...ask, reply: { seq, at: entry.at, said: inline ? '' : text.slice(cursor, at), ...inline ? { inline: true as const } : {} } })
+    cursor = at
+  }
+}
+
+/**
  * Fold a session's event log into the room state.
  *
  * Write-side invariants (invite/update/remove validate before appending) are
@@ -173,6 +196,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
     switch (event.type) {
       case 'room/speech':
         latestSpeechSeq = event.seq
+        placeReplyAsks(asks, event.seq, event.data.text, event.data.asks)
         // A reply to the room (not a report to another member).
         if (event.data.reportedTo === undefined) latestReplySeq = event.seq
         break
@@ -311,6 +335,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           id: event.data.id, member: event.data.member, questions: event.data.questions, state: 'pending', time: event.time,
           ...event.data.runId === undefined ? {} : { runId: event.data.runId },
           ...event.data.consent === true ? { consent: true as const } : {},
+          ...event.data.before === undefined ? {} : { before: event.data.before },
         })
         break
       case 'room/question-resolved': {
@@ -318,7 +343,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         const ask = asks.get(event.data.id)
         if (ask !== undefined) {
           asks.set(ask.id, {
-            ...ask, state: event.data.outcome,
+            ...ask, state: event.data.outcome, resolvedAt: ask.resolvedAt ?? event.time,
             ...event.data.answers === undefined ? {} : { answers: event.data.answers },
             ...event.data.late === true ? { late: true as const } : {},
           })

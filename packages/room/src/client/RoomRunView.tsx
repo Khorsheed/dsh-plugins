@@ -13,20 +13,19 @@
  * avatar and light card, the row as the card's header, the live output
  * below — so the reply card that replaces it lands in the same place.
  */
-import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { StateDot, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconStopFillMedium } from './icons.tsx'
 import { formatDurationMs } from './format.ts'
-import { attachmentsByOwner, type RoomQuestionViewProps, type RoomRunViewProps } from './slots.ts'
+import { attachmentsByOwner, type RoomRunViewProps } from './slots.ts'
 import { memberColor } from './member-color.ts'
 import { pathMentions } from './path-mentions.ts'
-import { RoomQuestionView } from './RoomQuestionView.tsx'
-import { askCardData } from './nodes.ts'
+import { continuedSince, useRoundGroup } from './round-segments.ts'
 import css from './RoomRunView.module.css'
 import speech from './RoomSpeechView.module.css'
 
 /** The member run row. */
-export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMember, renderMemberOutput, openPath, answerQuestion, renderSlot, t }: RoomRunViewProps): ReactNode {
+export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMember, renderMemberOutput, openPath, renderSlot, t }: RoomRunViewProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   // The projected run this card is (its execution by run id, else the
   // member's latest run): the projection reads the core, the card's own
@@ -48,13 +47,19 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
   const childSessionId = rosterEntry?.childSessionId
   // Paths the member writes while it works open in the sidebar's file viewer.
   const memberCwd = rosterEntry?.cwd
-  // The question this round stopped on: answered right here, at the end of its live output.
+  // A question this round stopped on is the round's card for now (its
+  // question card holds what the round said up to it, E1): this card steps
+  // aside until it is answered, then shows only what came after (「接着说」).
   const runId = recovered?.runId
   const waiting = runId === undefined ? [] : (state?.askLog ?? []).filter(ask => ask.runId === runId && ask.state === 'pending')
+  const since = continuedSince(state?.askLog, runId)
+  const root = useRef<HTMLDivElement>(null)
+  const grouped = useRoundGroup(root, runId, since !== undefined)
   const attachments = runId === undefined ? [] : state?.executions?.find(entry => entry.id === runId)?.attachments ?? []
   const mentions = useMemo(() => openPath === undefined ? undefined : pathMentions((path) => { openPath(sessionId, path) }, memberCwd), [openPath, sessionId, memberCwd])
   // The Definition hides done/cancelled; guard the same states here.
   if (superseded || data.state === 'done' || data.state === 'cancelled') return null
+  if (waiting.length > 0 && data.state === 'running') return null
 
   const failed = data.state === 'failed'
   const uncertain = data.state === 'uncertain'
@@ -79,6 +84,7 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
       onKeyDown={onKeyDown}
     >
       <StateDot state={failed ? 'error' : uncertain || waiting.length > 0 ? 'warning' : 'ongoing'} />
+      {since !== undefined && !failed && !uncertain && <span className={speech.cont}>{t('segment.continued')}</span>}
       <span className={css.title}>
         {uncertain ? t(waitsForReconcile ? 'run.waitingReconcile' : 'run.uncertain', { member: data.member }) : failed ? t('run.failed', { member: data.member }) : waiting.length > 0 ? t('run.waiting', { member: data.member }) : data.operation === 'compact' ? t('run.compacting', { member: data.member }) : data.continues !== undefined ? t('run.selfRound', { member: data.member }) : t('run.working', { member: data.member })}
       </span>
@@ -107,14 +113,13 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
   )
   if (failed || uncertain) return <div>{row}</div>
   return (
-    <div className={speech.speech} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
+    <div ref={root} className={grouped ? `${speech.speech} ${speech.grouped}` : speech.speech} data-room-run-live={runId} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
       <span className={speech.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
       <div className={`${speech.card} ${css.liveCard}`}>
         {row}
-        {childSessionId !== undefined && (mentions === undefined ? renderMemberOutput?.(childSessionId, data.startedAt) : renderMemberOutput?.(childSessionId, data.startedAt, { fileMentions: mentions }))}
-        {waiting.map(ask => (
-          <RoomQuestionView key={ask.id} {...{ node: { data: askCardData(ask) }, answerQuestion, t } as unknown as RoomQuestionViewProps} inline={{}} />
-        ))}
+        {childSessionId !== undefined && (since === undefined && mentions === undefined
+          ? renderMemberOutput?.(childSessionId, data.startedAt)
+          : renderMemberOutput?.(childSessionId, data.startedAt, { ...since === undefined ? {} : { since }, ...mentions === undefined ? {} : { fileMentions: mentions } }))}
         {/* What this run has put on the room's desk so far, live. */}
         {attachments.length > 0 && (
           <div className={speech.attachments}>

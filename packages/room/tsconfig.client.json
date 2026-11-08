@@ -45,6 +45,8 @@
     "src/client/RoomCompactionView.tsx",
     "src/client/speech-cause.ts",
     "src/client/RoomRunView.tsx",
+    "src/client/RoomSegmentView.tsx",
+    "src/client/round-segments.ts",
     "src/client/RoomSpeechView.tsx",
     "src/client/path-mentions.ts",
     "src/client/RoomStatsLine.tsx",

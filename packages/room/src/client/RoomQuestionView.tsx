@@ -14,6 +14,7 @@ import type { RoomQuestionAnswer } from '../types.ts'
 import { memberColor } from './member-color.ts'
 import type { RoomQuestionViewProps } from './slots.ts'
 import css from './RoomQuestionView.module.css'
+import { RoomSegmentView } from './RoomSegmentView.tsx'
 
 /** One question's draft: picked option labels and the 其他 text. */
 interface Draft {
@@ -21,11 +22,19 @@ interface Draft {
   readonly custom: string
 }
 
-/** The question card. */
-export function RoomQuestionView({ node, answerQuestion, inline, t }: RoomQuestionViewProps & {
-  /** Inside the asker's round (its run card or reply) instead of a chat row of its own; `mid` = the split point was not found. */
-  readonly inline?: { readonly mid?: boolean } | undefined
-}): ReactNode {
+/** Where a question card sits: inside the asker's round (its reply) instead of a chat row of its own; `mid` = the split point was not found. */
+type QuestionPlacement = { readonly inline?: { readonly mid?: boolean } | undefined }
+
+/**
+ * The question card. A question asked in a member's round, given the round
+ * face, is that round's card up to the question (RoomSegmentView, E1).
+ */
+export function RoomQuestionView(props: RoomQuestionViewProps & QuestionPlacement): ReactNode {
+  if (props.inline === undefined && props.segment !== undefined && props.node.data.runId !== undefined) return <RoomSegmentView {...props} segment={props.segment} />
+  return <QuestionCard {...props} />
+}
+
+function QuestionCard({ node, answerQuestion, inline, t }: RoomQuestionViewProps & QuestionPlacement): ReactNode {
   const data = node.data
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
   const [busy, setBusy] = useState(false)

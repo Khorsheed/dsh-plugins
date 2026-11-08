@@ -2566,9 +2566,26 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     this.questionWaiters.delete(id)
     if (answers === undefined && replay(session.snapshotEvents()).questions?.some(entry => entry.id === id) === true) {
       session.append('room/question-resolved', { id, outcome: 'cancelled' })
+      this.moveAskerCard(session, id)
       await this.ctx.sessions.flush(session)
     }
     return answers
+  }
+
+  /**
+   * A question in a still-running round settled (answered, or expired while
+   * the round goes on): the round's card moves below the answer, where what
+   * it says next grows (room-timeline-order E1) — the question card stays
+   * where it was asked, with what the round said before it.
+   * @param session - the live room session.
+   * @param questionId - the settled question.
+   */
+  private moveAskerCard(session: Session, questionId: string): void {
+    const state = replay(session.snapshotEvents())
+    const runId = state.askLog?.find(ask => ask.id === questionId)?.runId
+    if (runId === undefined) return
+    const run = state.runs.find(entry => entry.runId === runId && entry.state === 'running')
+    if (run !== undefined) session.append('room/run-moved', { member: run.member, startedAt: run.startedAt })
   }
 
   /**
@@ -2590,6 +2607,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       return { id: question.id, selected: [...given?.selected ?? []].filter(label => typeof label === 'string'), ...custom === undefined || custom === '' ? {} : { custom } }
     })
     loaded.session.append('room/question-resolved', { id: request.id, outcome: 'answered', answers })
+    this.moveAskerCard(loaded.session, request.id)
     await this.ctx.sessions.flush(loaded.session)
     waiter(answers)
     return { ok: true }

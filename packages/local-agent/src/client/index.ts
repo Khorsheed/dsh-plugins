@@ -83,8 +83,26 @@ export interface MemberSelectionDraft {
   readonly busy: boolean
 }
 
+/** Options of {@link LocalAgentUi.renderMemberOutput}. */
+export interface MemberOutputOptions {
+  readonly fileMentions?: MarkdownFileMentions | undefined
+  /** Only output received at or after this time (epoch ms). */
+  readonly since?: number | undefined
+  /** Only output received before this time (epoch ms). */
+  readonly until?: number | undefined
+  /** Shown while the stretch has no live output. */
+  readonly empty?: ReactNode | undefined
+}
+
 export interface LocalAgentUi {
-  renderMemberOutput(childSessionId: string, startedAt: number, options?: { readonly fileMentions?: MarkdownFileMentions | undefined }): ReactNode
+  /**
+   * A member's live output for one round (`startedAt` on). `since`/`until`
+   * narrow it to a stretch of the round (`until` exclusive) — a room cuts a
+   * round at the points it stopped for the human (room-timeline-order E1) —
+   * and `empty` is shown while that stretch has no live output (a refresh
+   * cannot bring back output that already finished).
+   */
+  renderMemberOutput(childSessionId: string, startedAt: number, options?: MemberOutputOptions): ReactNode
   renderMemberInbox(childSessionId: string): ReactNode
   renderHarnessModelPicker(name: string, props: HarnessModelPickerInput): ReactNode
   renderMemberConfiguration(childSessionId: string): ReactNode
@@ -254,7 +272,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       store: memberContexts, registry: memberTools, compact: options?.compact === undefined ? compactMember : options.compact, t,
     })
   const configurationUi: LocalAgentUi = {
-    renderMemberOutput: (id, startedAt, options) => createElement(MemberLiveOutputView, { key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs, ...options?.fileMentions === undefined ? {} : { fileMentions: options.fileMentions }, t: ctx.locale.bind(NS) }),
+    renderMemberOutput: (id, startedAt, options) => createElement(MemberLiveOutputView, {
+      key: `${id}:${startedAt}`, sessionId: id, startedAt, outputs,
+      ...options?.fileMentions === undefined ? {} : { fileMentions: options.fileMentions },
+      ...options?.since === undefined ? {} : { since: options.since },
+      ...options?.until === undefined ? {} : { until: options.until },
+      ...options?.empty === undefined ? {} : { empty: options.empty },
+      t: ctx.locale.bind(NS),
+    }),
     renderMemberInbox: id => createElement(MemberInboxView, { key: id, face: inboxFace(id), t: ctx.locale.bind(NS) }),
     renderHarnessModelPicker: (name, props) => createElement(HarnessModelPicker, { ...props, key: name, face: directoryFace(name), t: ctx.locale.bind(NS) }),
     renderMemberConfiguration: id => createElement(MemberConfiguration, { key: id, store: configurations.get(id), diagnostics: outputs.diagnostics, t: ctx.locale.bind(NS) }),

@@ -510,6 +510,18 @@ export type RoomDecisionViewProps =
 export interface RoomQuestionInjected {
   /** Submit the answers; resolves with an error message when the card already ended. */
   readonly answerQuestion: (questionId: string, answers: readonly RoomQuestionAnswer[]) => Promise<string | undefined>
+  /**
+   * A question asked in a member's round renders as that round's card up to
+   * the question (room-timeline-order E1): these read the round and its live
+   * output. Absent (a bare question face) = the plain question card.
+   */
+  readonly segment?: {
+    readonly roomStore: RoomStore
+    readonly renderMemberOutput?: LocalAgentUi['renderMemberOutput'] | undefined
+    readonly openSession: (sessionId: SessionId) => void
+    readonly openPath?: ((sessionId: SessionId, path: string) => void) | undefined
+    readonly cancelMember: (member: string) => Promise<void>
+  } | undefined
 }
 
 /** Full props of the 'room-question' chat-node renderer. */
