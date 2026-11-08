@@ -15,7 +15,7 @@ import type { TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEventMap } from '@deepseek-ai/dsh-session'
 import { localAgentStreamRecords, type LocalAgentModelBlock, type LocalAgentToolCalls } from '@khorsheed/dsh-local-agent/types'
 import { appendMirrorStep, appendRequestHeaderIfChanged, ownSelfRounds, persistChildSession, type MirrorBlock, type MirrorSource } from '@khorsheed/dsh-local-agent'
-import { addTokenUsage, readKimiTranscript, sumUsageRecords, type KimiStepTiming, type KimiTranscriptLine } from './session-view.ts'
+import { addTokenUsage, readKimiTranscript, sumUsageRecords, type KimiRetriedAttempt, type KimiStepTiming, type KimiTranscriptLine } from './session-view.ts'
 
 // The tool-call id brand is compile-time only; take the field type from the
 // consuming API instead of importing a brand factory.
@@ -166,6 +166,15 @@ export interface KimiMirrorStreams {
    * their reservations free.
    */
   completeStreams(turn: number, kinds: readonly ('think' | 'text')[]): void
+  /**
+   * Drop what an abandoned model-call attempt previewed (its thought/text
+   * streams and the tool calls it began streaming): kimi retried it, so the
+   * wire will never log it and nothing of it is written — neither consumed by
+   * the retry's fold (which would shift every later stream by one) nor
+   * finalized at settle as an interrupted call. Called every pass, before
+   * any unit folds, with every retried attempt the wire holds.
+   */
+  discardAttempt?(attempt: KimiRetriedAttempt): void
 }
 
 /** Mirror behavior switches shared by the exec and live paths. */
@@ -337,6 +346,10 @@ export async function mirrorKimiSessionDelta(
     }
   }
   if (transcript === undefined || transcript.lines.length === 0) return { total: 0, texts: [] }
+  // Before anything folds: an attempt kimi retried previewed content the wire
+  // never logs — the retry's fold must not consume its streams, and the
+  // settle must not write them.
+  for (const attempt of transcript.retriedAttempts ?? []) options?.streams?.discardAttempt?.(attempt)
 
   const delta = transcript.lines.slice(fromLines)
   const observedModel = options?.turn === undefined || transcript.modelTurn === options.turn ? transcript.model : undefined

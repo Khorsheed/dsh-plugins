@@ -1898,6 +1898,8 @@ export class KimiAcpLiveDriver {
       lastSnapshotLen: number
       /** The settle wrote its live text (or released it empty). */
       sealed?: boolean
+      /** When its first chunk arrived (an abandoned attempt's streams are found by it). */
+      readonly arrivedAt: number
     }
     const streams = new Map<string, StreamEntry>()
     /** The stream the latest delta accumulated into (a kind switch force-snapshots it). */
@@ -1951,7 +1953,7 @@ export class KimiAcpLiveDriver {
      * one closed step) is written by the wire line's fold, or at settle with
      * an interrupted placeholder when kimi never logged the call.
      */
-    const toolSteps = new Map<string, { step: number; title?: string }>()
+    const toolSteps = new Map<string, { step: number; title?: string; arrivedAt: number }>()
     const streamKey = (kind: 'think' | 'text'): string => `kimi-stream-${kind}-${turn}-${generation}`
     /** The plan stream's key: a snapshot stream beside the think/text delta streams. */
     const planKey = `kimi-stream-plan-${turn}`
@@ -2196,7 +2198,7 @@ export class KimiAcpLiveDriver {
           reservedSteps.push(step)
           if (key !== planKey) generationSteps.set(generation, step)
         }
-        stream = { kind, step, generation: key === planKey ? -1 : generation, text: '', lastSnapshotLen: 0 }
+        stream = { kind, step, generation: key === planKey ? -1 : generation, text: '', lastSnapshotLen: 0, arrivedAt: Date.now() }
         streams.set(key, stream)
       }
       activeStream = key
@@ -2251,6 +2253,42 @@ export class KimiAcpLiveDriver {
         // unless another open stream still holds the same (shared) step.
         const held = new Set([...streams.values()].filter(stream => stream.sealed !== true).map(stream => stream.step))
         for (const step of new Set(picked.map(([, stream]) => stream.step))) {
+          if (held.has(step)) continue
+          const index = reservedSteps.indexOf(step)
+          if (index >= 0) reservedSteps.splice(index, 1)
+        }
+      },
+      discardAttempt: (attempt) => {
+        if (attempt.turn !== turn) return
+        // kimi's ACP server forwards an attempt's deltas live and says nothing
+        // when it retries the call: its thought chunks and the tool call it
+        // lazily created from a streamed argument delta (`pending`, never
+        // started) would otherwise be consumed by the retry's fold in place of
+        // the retry's own streams, and written at settle as a reasoning-only
+        // step plus an interrupted call (75844e33 round 149). Nothing that
+        // arrived inside the attempt's window survives; the retry re-streams.
+        const inside = (at: number): boolean => (attempt.from === undefined || at >= attempt.from) && at < attempt.until
+        const freed = new Set<number>()
+        for (const [key, stream] of [...streams.entries()]) {
+          if (key === planKey || stream.sealed === true || !inside(stream.arrivedAt)) continue
+          streams.delete(key)
+          if (generationSteps.get(stream.generation) === stream.step) generationSteps.delete(stream.generation)
+          if (activeStream === key) activeStream = undefined
+          liveFlush.cancel(stream.step)
+          pendingStreamArrival.delete(stream.step)
+          streamPublisher?.dropPreview?.(stream.step, stream.kind)
+          freed.add(stream.step)
+        }
+        for (const [id, entry] of [...toolSteps.entries()]) {
+          if (!inside(entry.arrivedAt) || toolLogged(id)) continue
+          toolSteps.delete(id)
+          freed.add(entry.step)
+        }
+        const held = new Set([
+          ...[...streams.values()].filter(stream => stream.sealed !== true).map(stream => stream.step),
+          ...[...toolSteps.values()].map(entry => entry.step),
+        ])
+        for (const step of freed) {
           if (held.has(step)) continue
           const index = reservedSteps.indexOf(step)
           if (index >= 0) reservedSteps.splice(index, 1)
@@ -2367,6 +2405,7 @@ export class KimiAcpLiveDriver {
             toolSteps.set(id, {
               step,
               ...typeof update['title'] === 'string' ? { title: update['title'] } : {},
+              arrivedAt: Date.now(),
             })
           }
           // ACP has no text-item ids. A new tool call separates generation

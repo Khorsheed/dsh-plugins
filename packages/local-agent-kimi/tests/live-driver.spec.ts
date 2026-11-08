@@ -1215,6 +1215,66 @@ describe('kimi live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('a model-call attempt kimi retried leaves nothing: its streamed thought and pending tool call are neither folded nor written as an orphan', async () => {
+    // In the wild (75844e33 round 149): a connection cut a step mid-stream
+    // after kimi's ACP server had already forwarded its thinking and a
+    // lazily-created `pending` tool call; kimi retried the step and the wire
+    // logged only the retry. The retry's fold consumed the dead attempt's
+    // thought stream, the leftover stream became a reasoning-only step, and
+    // the dead call was written as an interrupted, failed call — in a round
+    // that completed.
+    const m = mount({ config: {} })
+    const child = Session.create(SessionId('child-kimi-retried-attempt'))
+    const wireDir = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main')
+    mkdirSync(wireDir, { recursive: true })
+    const prompt = JSON.stringify({ type: 'turn.prompt', input: [{ type: 'text', text: '对账' }], origin: { kind: 'user' } })
+    const loop = (event: Record<string, unknown>, time: number) => JSON.stringify({ type: 'context.append_loop_event', event: { turnId: '0', ...event }, time })
+    const fake = new FakeAcpServer({
+      turn: () => {
+        writeFileSync(join(wireDir, 'wire.jsonl'), prompt + '\n')
+        return { hang: true }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    const begun = Date.now() - 1
+    // The dead attempt: its thinking and the call it began streaming.
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '旧的想法' } })
+    fake.update('session_acp-session-1', { sessionUpdate: 'tool_call', toolCallId: '0:tool_ghost', title: 'mcp__dsh-member__novel_extract', status: 'pending', content: [] })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    const retried = Date.now()
+    const failed = [
+      prompt,
+      loop({ type: 'step.begin', uuid: 'attempt-1', step: 1 }, begun),
+      loop({ type: 'step.end', uuid: 'attempt-1', step: 1, finishReason: 'error' }, retried),
+      JSON.stringify({ type: 'turn.step.retrying', turnId: 0, step: 1, stepId: 'attempt-1', failedAttempt: 1, nextAttempt: 2, delayMs: 0, errorName: 'APIConnectionError', time: retried }),
+    ]
+    writeFileSync(join(wireDir, 'wire.jsonl'), failed.join('\n') + '\n')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    // The retry streams afresh; the wire logs only it.
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: '新的想法' } })
+    fake.update('session_acp-session-1', { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '对完了' } })
+    const answered = Date.now()
+    writeFileSync(join(wireDir, 'wire.jsonl'), [
+      ...failed,
+      loop({ type: 'step.begin', uuid: 'attempt-2', step: 2 }, answered),
+      loop({ type: 'content.part', step: 2, part: { type: 'think', think: '新的想法' } }, answered),
+      loop({ type: 'content.part', step: 2, part: { type: 'text', text: '对完了' } }, answered),
+      loop({ type: 'step.end', uuid: 'attempt-2', step: 2, finishReason: 'end_turn' }, answered),
+    ].join('\n') + '\n')
+    fake.resolvePrompt({ stopReason: 'end_turn' })
+    expect((await run.result).stopReason).toBe('completed')
+
+    const events = child.snapshotEvents()
+    expect(events.filter(e => e.type === 'tool/call' || e.type === 'tool/result')).toEqual([])
+    const messages = events.filter(e => e.type === 'assistant/message').map(e => (e.data as { message: { content: unknown[] } }).message.content)
+    expect(messages).toEqual([[{ type: 'reasoning', text: '新的想法' }, { type: 'text', text: '对完了' }]])
+    expect(JSON.stringify(events)).not.toContain('旧的想法')
+    expectStepBoundaries(child)
+    expectValidReleasedLog(child)
+    await m.driver.disposeAll()
+  })
+
   it('token granularity: a round whose stream stayed under the throttle still folds every wire item 1:1', async () => {
     const m = mount({ config: {} })
     const child = Session.create(SessionId('child-kimi-token-nostream'))
