@@ -108,6 +108,10 @@ function Relation({ scope, onOpenRequest, t }: { readonly scope: AgentScopeOverv
       if (m.unrecorded !== undefined && m.unrecorded.length > 0) parts.push(<span key="u">{t('rel.memberUnrecorded', { items: unrecordedText(m.unrecorded, t) })}</span>)
     } else if (c?.betweenTurns) parts.push(<span key="w">{t('rel.betweenTurns')}</span>)
     else if (c?.after) parts.push(<span key="w">{t('rel.after', { seq: requestNumberText(c.after) })}</span>, <span key="b">{back(c.after)}</span>)
+  } else if (scope.cliSubagent !== undefined && scope.delegatedBy) {
+    // A member CLI's own subagent: the request of the view whose call started it.
+    const by = scope.cliSubagent.parentName ?? t('scope.mainName')
+    parts.push(<span key="by">{t('rel.spawnedBy', { name: by, seq: requestNumberText(scope.delegatedBy) })}</span>, <span key="b">{back(scope.delegatedBy)}</span>)
   } else if (scope.delegatedBy) {
     parts.push(<span key="by">{t('rel.delegatedBy', { seq: requestNumberText(scope.delegatedBy) })}</span>, <span key="b">{back(scope.delegatedBy)}</span>)
   } else if (scope.continues?.startedBy !== undefined) {
@@ -118,6 +122,19 @@ function Relation({ scope, onOpenRequest, t }: { readonly scope: AgentScopeOverv
   return parts.length === 0 ? null : <div className={css.relation}>{parts}</div>
 }
 
+/** A member CLI's own subagents right after the view that called them (the order the response gave them). */
+function afterCallers(agents: readonly AgentScopeOverview[]): AgentScopeOverview[] {
+  const out = agents.filter(scope => scope.cliSubagent === undefined || !agents.some(other => other.scopeId === scope.cliSubagent!.parentScopeId))
+  const placed = agents.filter(scope => !out.includes(scope))
+  for (const child of placed) {
+    const at = out.findIndex(scope => scope.scopeId === child.cliSubagent!.parentScopeId)
+    let end = at + 1
+    while (end < out.length && out[end]!.cliSubagent?.parentScopeId === child.cliSubagent!.parentScopeId) end += 1
+    out.splice(end, 0, child)
+  }
+  return out
+}
+
 /** The 房间 tab's value (no agent scope carries it). */
 export const ROOM_TAB = 'room:decisions'
 
@@ -125,7 +142,7 @@ export function AgentTabs({ scopes, value, onSelect, onOpenRequest, roomCount, t
   const selected = scopes.find(scope => scope.scopeId === value) ?? scopes[0]
   const main = scopes.filter(scope => scope.kind === 'main')
   const others = [
-    ...scopes.filter(scope => scope.kind === 'subagent').sort((a, b) => a.startedAt - b.startedAt),
+    ...afterCallers(scopes.filter(scope => scope.kind === 'subagent').sort((a, b) => a.startedAt - b.startedAt)),
     ...scopes.filter(scope => scope.kind === 'compaction'),
   ]
   let shown = others

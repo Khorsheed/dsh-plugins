@@ -1,5 +1,5 @@
 /** Compact composition rows and immediately readable exchange cards. */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { CapturedRequest, CapturedResponse, RequestLink, SegmentCategory, SegmentItem } from '../types.ts'
 import { duplicateStats, fmt, fmtK, fmtSpan, type CompositionFilter } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
@@ -422,7 +422,7 @@ function InputCard({ item, from, repeats, onOpenRequest, t }: { readonly item: S
 /** Inputs shown before the rest folds (a compaction's region can hold hundreds). */
 const INPUT_FOLD_AT = 8
 
-export function Exchange({ request, previousResponseNumber, onOpenRequest, t }: { readonly request: CapturedRequest; readonly previousResponseNumber: number | null; readonly onOpenRequest?: ((link: RequestLink) => void) | undefined; readonly t: T }) {
+export function Exchange({ request, previousResponseNumber, onOpenRequest, outputExtra, t }: { readonly request: CapturedRequest; readonly previousResponseNumber: number | null; readonly onOpenRequest?: ((link: RequestLink) => void) | undefined; /** Below the output (the 「派出 X →」 jumps). */ readonly outputExtra?: ReactNode; readonly t: T }) {
   const duplicates = duplicateStats([...request.segments.system, ...request.segments.history, ...request.segments.added])
   const [inputsOpen, setInputsOpen] = useState(false)
   // A new request starts folded again.
@@ -435,7 +435,7 @@ export function Exchange({ request, previousResponseNumber, onOpenRequest, t }: 
         {request.segments.added.length > INPUT_FOLD_AT && <button className={css.more} type="button" aria-expanded={inputsOpen} onClick={() => setInputsOpen(v => !v)}>{inputsOpen ? t('lens.collapse') : t('lens.expandInputs', { count: String(request.segments.added.length - INPUT_FOLD_AT) })}</button>}
       </div>
       <div className={css.arrow} aria-hidden="true">→</div>
-      <div className={css.column} role="region" aria-label={t('out.title')}><div className={css.columnLabel}><span>{t('out.title')}</span><span>{request.usage ? fmt(request.usage.outputTokens) : '—'} tok</span></div><OutputBlock request={request} t={t} /></div>
+      <div className={css.column} role="region" aria-label={t('out.title')}><div className={css.columnLabel}><span>{t('out.title')}</span><span>{request.usage ? fmt(request.usage.outputTokens) : '—'} tok</span></div><OutputBlock request={request} t={t} />{outputExtra}</div>
     </div>
   </section>
 }

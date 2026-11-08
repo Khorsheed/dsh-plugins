@@ -59,6 +59,11 @@ export function TimingView({
   if (!timing || !scope) return <div role="status">{t('state.loading')}</div>
   const requestBySeq = new Map(scopes.flatMap(s => s.requests).map(r => [r.seq, r]))
   const numberOf = (seq: number) => requestNumberText(requestBySeq.get(seq))
+  /** A tool call that started CLI subagents waits on them: 「 · 等 探索」. */
+  const waitsOn = (callId: string | undefined): string => {
+    const names = callId === undefined ? [] : scopes.filter(s => s.cliSubagent?.callId === callId).map(s => s.cliSubagent!.name)
+    return names.length === 0 ? '' : ` · ${t('time.waitsOn', { names: names.join('、') })}`
+  }
   const data = scopeTiming(timing, scope)
   const rows = [...data.tools].sort((a, b) => b[sort] - a[sort])
   const keys = ['calls', 'errors', 'think', 'args', 'exec', 'total'] as const
@@ -136,9 +141,13 @@ export function TimingView({
               className={css.laneName}
               onClick={() => onSelectScope?.(s.scopeId)}
             >
-              {s.kind === 'main' ? t('lens.main') : s.continues !== undefined ? selfRoundLabel({ ...s, continues: s.continues }, t) : (s.label ?? s.scopeId)}
+              {s.kind === 'main' ? t('lens.main') : s.continues !== undefined ? selfRoundLabel({ ...s, continues: s.continues }, t) : s.cliSubagent !== undefined ? `› ${s.cliSubagent.name}` : (s.label ?? s.scopeId)}
             </button>
             <div className={css.timeline}>
+              {/* A CLI subagent's run: thin dashed marks at its start and end, where its caller's tool call waits on it. */}
+              {s.cliSubagent !== undefined && [s.startedAt, ...s.endedAt === undefined ? [] : [s.endedAt]].map((at, i) => (
+                <i key={`link-${i}`} className={css.link} aria-hidden="true" style={{ left: `${((at - start) / span) * 100}%` }} />
+              ))}
               {idleSpans(timing.lanes.filter((l) => l.scopeId === s.scopeId), s.kind === 'main' ? start : s.startedAt, s.kind === 'main' ? end : (s.endedAt ?? end))
                 .filter((g) => g.to - g.from >= Math.max(200, span * 0.01))
                 .map((g) => {
@@ -155,7 +164,7 @@ export function TimingView({
                     type="button"
                     className={css.blk}
                     data-bucket={l.kind}
-                    title={`#${numberOf(l.requestSeq)} ${l.tool ?? t(`time.bucket.${l.kind}`)} · ${fmtSpan(l.durationMs)}`}
+                    title={`#${numberOf(l.requestSeq)} ${l.tool ?? t(`time.bucket.${l.kind}`)}${waitsOn(l.callId)} · ${fmtSpan(l.durationMs)}`}
                     aria-label={`#${numberOf(l.requestSeq)} ${t(`time.bucket.${l.kind}`)}`}
                     style={{
                       left: `${((l.startedAt - start) / span) * 100}%`,

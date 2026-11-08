@@ -39,6 +39,12 @@ function TurnRow({ turn, t }: { readonly turn: TurnListItem; readonly t: T }) {
           input: fmtK(turn.totalInputTokens),
           output: fmtK(turn.totalOutputTokens),
         })}
+        {/* What member CLIs' own subagents spent, already inside the totals. */}
+        {turn.subagents !== undefined && ` · ${t('turn.rowMetaSub', {
+          count: String(turn.subagents.requestCount),
+          input: fmtK(turn.subagents.inputTokens),
+          output: fmtK(turn.subagents.outputTokens),
+        })}`}
       </span>
     </span>
   )

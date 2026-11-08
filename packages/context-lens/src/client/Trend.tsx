@@ -90,7 +90,8 @@ export function Trend({
   const main = scopeId === 'main'
   // On the session map a room round's member runs stand where the main turn would.
   const rounds = new Set(main ? data.turns.filter(turn => turn.room !== undefined).map(turn => turn.turnSeq) : [])
-  const requests = data.requests.filter(r => r.scopeId === scopeId || rounds.has(r.turnSeq))
+  // A member CLI's subagents called from this view count in its turns' bars, drawn apart (dashed).
+  const requests = data.requests.filter(r => r.scopeId === scopeId || r.spawnedFrom === scopeId || rounds.has(r.turnSeq))
   const compactions = main ? data.requests.filter(r => isCompaction(r.scopeId)) : []
   const turns = data.turns.filter(turn => requests.some(r => r.turnSeq === turn.turnSeq))
   // The scale is the 95th percentile, not the maximum: one outlier (a
@@ -161,7 +162,7 @@ export function Trend({
                       title={`#${requestNumberText(r)} · ${total} tok · ${hit ?? '—'}%`}
                       onClick={() => onSelect(turn.turnSeq, r.seq, r.scopeId)}
                     >
-                      <span className={css.trendBar} data-unknown={hit === null} data-clipped={total > max} aria-hidden="true" style={{ height: `${Math.max(3, Math.min(1, total / max) * 40)}px` }}>
+                      <span className={css.trendBar} data-unknown={hit === null} data-clipped={total > max} data-sub={r.spawnedFrom !== undefined || undefined} aria-hidden="true" style={{ height: `${Math.max(3, Math.min(1, total / max) * 40)}px` }}>
                         <i style={{ height: `${hit ?? 0}%` }} />
                       </span>
                     </button>,
