@@ -33,7 +33,7 @@ import type { TypertRemoteNamespaceMap } from '@deepseek-ai/dsh-typert-protocol'
 import type { LocalAgentUi } from '@khorsheed/dsh-local-agent/client'
 import type { LocalAgentBackgroundTasks, LocalAgentMemberControlState, LocalAgentMemberInbox, LocalAgentMemberToolsStatus, LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import { RoomRequestIds } from './request-ids.ts'
-import { ActivityReveals, MemberActivityStore, type MemberActivityFace } from './MemberActivity.tsx'
+import { ActivityReveals, MemberActivityStore, setCoreBackgroundConfirm, type MemberActivityFace } from './MemberActivity.tsx'
 import { runningBackground } from './member-activity-view.ts'
 import { reloadThroughGateway } from './member-tools-view.ts'
 import { activityCallsDefinition, MemberActivityTail, type MemberActivityTailInjected } from './MemberActivityTail.tsx'
@@ -125,6 +125,9 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
 
   const roomStore = new RoomStore(ctx, remote)
   ctx.effect(() => roomStore.start(), 'room: store')
+  // The one 「会让 N 项后台工作失去联系」 confirmation is the core's (C①):
+  // read when a confirmation shows; a core without it keeps the room's copy.
+  ctx.effect(() => setCoreBackgroundConfirm(() => (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderBackgroundConfirm), 'room: background confirm')
   // Members' background activity (member-self-started-rounds M2): local-agent's
   // memberBackgroundTasks read, probed per call like every other family read —
   // a composition without the family, or a core without the read, answers

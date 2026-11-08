@@ -3,9 +3,12 @@
  * M2; compare with proposals/prototypes/member-activity.html) — the real
  * components over scripted local-agent reads:
  *   pnpm exec vite packages/room/tests/preview --config packages/room/tests/preview/vite.config.ts --host 127.0.0.1
- * then open /activity.html?state=<strip|tray|lost|cmdrun|cmdout|cmdlost|unsupported|members|confirmReload|confirmSave>[&lang=en][&dark=1]
+ * then open /activity.html?state=<strip|tray|lost|cmdrun|cmdout|cmdlost|unsupported|members|confirmReload|confirmSave|confirmPick>[&lang=en][&dark=1]
  * (confirmReload / confirmSave = the edit dialog: 重新载入, or saving a new
- * model, while the member's process runs 2 background tasks.)
+ * model, while the member's process runs 2 background tasks; confirmPick =
+ * the member's own model control — the room composer's CLI coordinator seat
+ * and the member page — picking a new model in the same situation. Every
+ * confirmation is local-agent's one BackgroundConfirm.)
  * (strip/tray/lost = the composer capsule and its tray; cmd* = the member
  * session's card in the launching turn's tail; unsupported = a Codex member:
  * no card, no members line; members = the members page lines.)
@@ -15,7 +18,11 @@ import { createRoot } from 'react-dom/client'
 import type { LocalAgentBackgroundTask, LocalAgentBackgroundTasks } from '@khorsheed/dsh-local-agent/types'
 import { RoomTaskCapsule } from '../../src/client/RoomTaskCapsule.tsx'
 import { MembersView } from '../../src/client/MembersView.tsx'
-import { ActivityReveals, MemberActivityStore, useRoomActivity } from '../../src/client/MemberActivity.tsx'
+import { ActivityReveals, MemberActivityStore, setCoreBackgroundConfirm, useRoomActivity } from '../../src/client/MemberActivity.tsx'
+import { BackgroundConfirm as CoreConfirm } from '../../../local-agent/src/client/BackgroundConfirm.tsx'
+import { MemberConfiguration } from '../../../local-agent/src/client/MemberConfiguration.tsx'
+import { MemberConfigurationStore } from '../../../local-agent/src/client/member-configuration.ts'
+import { zh as laZh, en as laEn } from '../../../local-agent/src/client/locales.ts'
 import { MemberActivityTail } from '../../src/client/MemberActivityTail.tsx'
 import { InviteDialog } from '../../src/client/InviteDialog.tsx'
 import { en, zh } from '../../src/client/locales.ts'
@@ -204,6 +211,52 @@ function Confirm() {
   )
 }
 
+// The core's translate and its one confirmation (as local-agent provides it).
+const laDictionary: Record<string, string> = english ? laEn : laZh
+const lt = ((key: string, vars?: Record<string, unknown>) => (laDictionary[key] ?? key).replace(/\{(\w+)\}/g, (_m, k: string) => String(vars?.[k] ?? k))) as never
+setCoreBackgroundConfirm(() => input => <CoreConfirm {...input} t={lt} />)
+
+/** The member's own model control picking a new model while 2 background tasks run. */
+function Pick() {
+  const current = { revision: 0, selection: { model: { mode: 'value' as const, value: 'kimi-code/k3' }, effort: { mode: 'default' as const } }, resolved: { model: 'kimi-code/k3', effort: 'high' } }
+  const directory = { status: 'ready', revision: 1, refreshing: false, complete: true, customInput: true, entries: [
+    { value: 'kimi-code/k3', label: 'Kimi K3', source: 'native' },
+    { value: 'kimi-code/k3.1-pro', label: 'Kimi K3.1 Pro', source: 'native' },
+  ] } as never
+  const [store] = useState(() => new MemberConfigurationStore('child-canvas', {
+    read: async () => ({ memberId: 'child-canvas', revision: 0, status: 'idle', current }),
+    follow: async function* (_id: string, signal: AbortSignal) { yield { memberId: 'child-canvas', revision: 0, status: 'idle', current }; await new Promise<void>(resolve => { signal.addEventListener('abort', () => { resolve() }) }) },
+    directory: async () => directory,
+    followDirectory: async function* (_id: string, signal: AbortSignal) { yield directory; await new Promise<void>(resolve => { signal.addEventListener('abort', () => { resolve() }) }) },
+    select: async (_id: string, request: string) => ({ requestId: request, revision: 1, status: 'pending' }),
+    cancel: async (_id: string, request: string) => ({ requestId: request, revision: 1, status: 'cancelled' }),
+    retry: async () => {},
+    runningBackgroundTasks: async () => 2,
+  } as never))
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const details = document.querySelector('details')
+      if (details === null) return
+      if (!details.open) { details.querySelector('summary')?.click(); return }
+      const model = [...document.querySelectorAll('button')].find(entry => entry.textContent?.startsWith(laDictionary['configuration.model']))
+      if (model !== undefined && !(model.closest('fieldset')?.disabled ?? false)) {
+        model.click()
+        setTimeout(() => {
+          const option = [...document.querySelectorAll('[role="option"]')].find(entry => entry.textContent?.includes('K3.1 Pro'))
+          ;(option as HTMLElement | undefined)?.click()
+        }, 50)
+        clearInterval(timer)
+      }
+    }, 100)
+    return () => { clearInterval(timer) }
+  }, [])
+  return (
+    <div style={{ maxWidth: 780, margin: '420px auto 24px', padding: '0 16px', display: 'flex', justifyContent: 'flex-end' }}>
+      <MemberConfiguration store={store} t={lt} />
+    </div>
+  )
+}
+
 createRoot(document.getElementById('root')!).render(
-  state.startsWith('confirm') ? <Confirm /> : state === 'members' ? <Members /> : state.startsWith('cmd') || state === 'unsupported' ? <Session /> : <Composer />,
+  state === 'confirmPick' ? <Pick /> : state.startsWith('confirm') ? <Confirm /> : state === 'members' ? <Members /> : state.startsWith('cmd') || state === 'unsupported' ? <Session /> : <Composer />,
 )

@@ -132,3 +132,56 @@ describe('shared member configuration UI', () => {
     unsubscribe()
   })
 })
+
+describe('a selection that replaces a process running background work (C①)', () => {
+  const tp = (key: keyof typeof zh, params?: Record<string, string>): string => zh[key].replace(/\{(\w+)\}/g, (_m, name: string) => params?.[name] ?? name)
+  const pick = async (container: HTMLElement): Promise<void> => {
+    open(container)
+    const view = within(container)
+    await waitFor(() => expect(view.getByRole('button', { name: /模型 old-model/ }).closest('fieldset')?.disabled).toBe(false))
+    fireEvent.click(view.getByRole('button', { name: /模型 old-model/ }))
+    fireEvent.click(view.getByRole('option', { name: /Full native model label/ }))
+  }
+
+  it('asks 「会让 N 项后台工作失去联系」 first: nothing is selected until 继续', async () => {
+    const h = bench()
+    h.face.runningBackgroundTasks = vi.fn(async () => 2)
+    const view = render(<MemberConfiguration store={h.store} t={tp} />)
+    await pick(view.container)
+    const confirm = await screen.findByTestId('background-confirm')
+    expect(confirm.textContent).toContain('会让 2 项后台工作失去联系，继续吗？')
+    expect(h.face.runningBackgroundTasks).toHaveBeenCalledWith('member')
+    expect(h.face.select).not.toHaveBeenCalled()
+    fireEvent.click(within(confirm).getByRole('button', { name: '继续' }))
+    await waitFor(() => expect(h.face.select).toHaveBeenCalledWith('member', expect.any(String), 0, { model: { mode: 'value', value: 'long-native-model-id' }, effort: { mode: 'value', value: 'low' } }))
+    expect(screen.queryByTestId('background-confirm')).toBeNull()
+  })
+
+  it('取消 drops the selection; closing the menu drops it too', async () => {
+    const h = bench()
+    h.face.runningBackgroundTasks = vi.fn(async () => 1)
+    const view = render(<MemberConfiguration store={h.store} t={tp} />)
+    await pick(view.container)
+    fireEvent.click(within(await screen.findByTestId('background-confirm')).getByRole('button', { name: '取消' }))
+    expect(screen.queryByTestId('background-confirm')).toBeNull()
+    await pick(view.container)
+    await screen.findByTestId('background-confirm')
+    const details = view.container.querySelector('details')!
+    details.open = false
+    fireEvent(details, new Event('toggle'))
+    await waitFor(() => expect(screen.queryByTestId('background-confirm')).toBeNull())
+    expect(h.face.select).not.toHaveBeenCalled()
+  })
+
+  it('no background work, or an unreadable count: selects at once', async () => {
+    for (const read of [vi.fn(async () => 0), vi.fn(async () => { throw new Error('offline') })]) {
+      const h = bench()
+      h.face.runningBackgroundTasks = read
+      const view = render(<MemberConfiguration store={h.store} t={tp} />)
+      await pick(view.container)
+      await waitFor(() => expect(h.face.select).toHaveBeenCalled())
+      expect(screen.queryByTestId('background-confirm')).toBeNull()
+      view.unmount()
+    }
+  })
+})

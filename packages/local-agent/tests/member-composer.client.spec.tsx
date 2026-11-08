@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -440,6 +440,39 @@ describe('MemberComposer', () => {
       fireEvent.click(screen.getByRole('menuitemradio', { name: 'm2' }))
       expect(await screen.findByText('localAgent: a round is in flight')).toBeTruthy()
       expect(chip.textContent).toBe('m1')
+    })
+
+    it('a switch while the member runs background work asks first (C①): 继续 switches, 取消 does not', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo())
+      const setMemberModel = vi.fn().mockResolvedValue({ ok: true } satisfies LocalAgentPromptResult)
+      const runningBackgroundTasks = vi.fn().mockResolvedValue(3)
+      render(<MemberComposer {...props({ memberModel, setMemberModel, runningBackgroundTasks })} />)
+      const chip = await screen.findByRole('button', { name: zh['member.model.picker'] })
+
+      fireEvent.click(chip)
+      fireEvent.click(screen.getByRole('menuitemradio', { name: 'm2' }))
+      const confirm = await screen.findByTestId('background-confirm')
+      expect(runningBackgroundTasks).toHaveBeenCalledWith(CHILD)
+      expect(setMemberModel).not.toHaveBeenCalled()
+      fireEvent.click(within(confirm).getByRole('button', { name: zh['member.background.cancel'] }))
+      expect(screen.queryByTestId('background-confirm')).toBeNull()
+      expect(setMemberModel).not.toHaveBeenCalled()
+
+      fireEvent.click(chip)
+      fireEvent.click(screen.getByRole('menuitemradio', { name: 'm2' }))
+      fireEvent.click(within(await screen.findByTestId('background-confirm')).getByRole('button', { name: zh['member.background.go'] }))
+      await waitFor(() => { expect(setMemberModel).toHaveBeenCalledWith(CHILD, 'm2') })
+      expect(screen.queryByTestId('background-confirm')).toBeNull()
+    })
+
+    it('no background work: the switch goes straight through', async () => {
+      const memberModel = vi.fn().mockResolvedValue(modelInfo())
+      const setMemberModel = vi.fn().mockResolvedValue({ ok: true } satisfies LocalAgentPromptResult)
+      render(<MemberComposer {...props({ memberModel, setMemberModel, runningBackgroundTasks: vi.fn().mockResolvedValue(0) })} />)
+      fireEvent.click(await screen.findByRole('button', { name: zh['member.model.picker'] }))
+      fireEvent.click(screen.getByRole('menuitemradio', { name: 'm2' }))
+      await waitFor(() => { expect(setMemberModel).toHaveBeenCalledWith(CHILD, 'm2') })
+      expect(screen.queryByTestId('background-confirm')).toBeNull()
     })
 
     it('falls back to its own copy when the setMemberModel RPC itself fails', async () => {

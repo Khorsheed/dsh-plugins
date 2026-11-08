@@ -1,0 +1,67 @@
+/* The in-place confirmation before an operation replaces a member process
+   that runs background work (reload / model save). Amber, like every
+   「失去联系」 surface. */
+.confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--dsw-alias-state-warning, #c08419);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--dsw-alias-state-warning, #c08419) 10%, transparent);
+  font-size: var(--dsh-panel-text-body, 13px);
+  line-height: 1.5;
+  color: var(--dsw-alias-label-primary, #16181c);
+  text-align: left;
+  white-space: normal;
+}
+
+.text {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.text > span {
+  color: var(--dsw-alias-state-warning, #c08419);
+}
+
+.actions {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+/* Two classes and the element: a host panel's own `.panel button` rules
+   (the model menu this often sits in) must not restyle these. */
+.confirm button.cancel,
+.confirm button.go {
+  padding: 3px 12px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: var(--dsh-panel-text-body, 13px);
+  cursor: pointer;
+}
+
+.confirm button.cancel,
+.confirm button.cancel:hover:not(:disabled) {
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.16));
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.confirm button.go,
+.confirm button.go:hover:not(:disabled) {
+  border: 1px solid var(--dsw-alias-state-warning, #c08419);
+  background: var(--dsw-alias-state-warning, #c08419);
+  color: var(--dsw-alias-bg-layer-1, #ffffff);
+  font-weight: 600;
+}
+
+.confirm button.cancel:disabled,
+.confirm button.go:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

@@ -27,6 +27,7 @@ import { scopeDirectoryToList } from './model-directory-scope.ts'
 import { LocalAgentFamilyCard, type FamilyCardInjected } from './FamilyCard.tsx'
 import { HarnessCardRegistry, type HarnessCardRegistration } from './harness-cards.ts'
 import { MemberConfiguration } from './MemberConfiguration.tsx'
+import { BackgroundConfirm, runningBackgroundTasks as countRunning, type BackgroundConfirmInput } from './BackgroundConfirm.tsx'
 import { MemberConfigurationStores } from './member-configuration.ts'
 import { draftOf, selectionOf } from './member-selection.ts'
 import { requestId } from './request-id.ts'
@@ -126,6 +127,20 @@ export interface LocalAgentUi {
    */
   saveMemberSelection?(childSessionId: string, draft: { readonly model: string; readonly effort: string }): Promise<{ readonly ok: true; readonly deferred: boolean } | { readonly ok: false; readonly error: string }>
   /**
+   * The one in-place confirmation before an operation replaces a member's
+   * process while it runs background work (「会让 N 项后台工作失去联系，继续吗？」
+   * with 取消 / 继续; member-self-started-rounds C①). The member page's own
+   * model control uses it; a room's reload line and edit dialog render it
+   * through here. Optional on the TYPE: a room probes it and keeps its own
+   * copy against a core that predates it.
+   */
+  renderBackgroundConfirm?(input: BackgroundConfirmInput): ReactNode
+  /**
+   * How many background tasks a member's live process runs right now (a
+   * fresh read; 0 = none, no process, or unreadable).
+   */
+  runningBackgroundTasks?(childSessionId: string): Promise<number>
+  /**
    * Register one harness's section in the family card; returns the
    * unregister. Optional on the TYPE because a companion may run against a
    * core that predates the family card: companions probe
@@ -176,6 +191,7 @@ declare module '@deepseek-ai/cordis' {
   interface Context { localAgentUi: LocalAgentUi }
 }
 export { ModelConfigurationFields } from './ModelConfigurationFields.tsx'
+export type { BackgroundConfirmInput } from './BackgroundConfirm.tsx'
 export type { ConfigurationTranslate } from './ModelConfigurationFields.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -215,6 +231,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   }
   const feeds = new MemberFeeds((requests, signal) => gateway.followMembers(requests, signal))
   ctx.effect(() => () => feeds.dispose(), 'local-agent: shared member feed')
+  // A fresh read of the member's background tasks, for the confirmation
+  // before an operation replaces its process: 0 when unreadable.
+  const runningBackgroundTasks = async (id: string): Promise<number> => {
+    try {
+      const result = await gateway.memberBackgroundTasks(id)
+      return result.ok ? countRunning(result.value) : 0
+    } catch {
+      return 0
+    }
+  }
   const configurations = new MemberConfigurationStores({
     read: async id => unwrap(await gateway.memberConfiguration(id)),
     follow: (id, signal) => feeds.follow(id, 'configuration', signal),
@@ -223,6 +249,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     select: async (id, request, revision, selection) => unwrap(await gateway.selectMemberConfiguration(id, request, revision, selection)),
     cancel: async (id, request, revision) => unwrap(await gateway.cancelMemberConfiguration(id, request, revision)),
     retry: async (id, revision) => { unwrap(await gateway.retryMemberConfiguration(id, revision)) },
+    runningBackgroundTasks,
   })
   // One member's own directory in the picker's face shape (the edit form's
   // model fields read what the live control reads).
@@ -317,6 +344,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         return { ok: false, error: error instanceof Error ? error.message : String(error) }
       }
     },
+    renderBackgroundConfirm: input => createElement(BackgroundConfirm, { ...input, t: ctx.locale.bind(NS) }),
+    runningBackgroundTasks,
     registerHarnessCard: entry => harnessCards.register(entry),
     harnessCards: () => harnessCards.cards(),
     subscribeHarnessCards: listener => harnessCards.subscribe(listener),
@@ -363,6 +392,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         activeDelegations: () => gateway.activeDelegations().then(result => (result.ok ? result.value : undefined)),
         memberModel: childSessionId => gateway.memberModel(childSessionId).then(result => (result.ok ? result.value : undefined)),
         setMemberModel: (childSessionId, model) => gateway.setMemberModel(childSessionId, model).then(result => (result.ok ? result.value : undefined)),
+        runningBackgroundTasks,
       }),
     }, MemberComposer),
   )

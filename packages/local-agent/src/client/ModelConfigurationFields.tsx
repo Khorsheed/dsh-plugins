@@ -3,7 +3,7 @@ import type { LocalAgentMemberConfiguration, LocalAgentModelDirectory } from '..
 import type { LocalAgentKey } from './locales.ts'
 import css from './MemberConfiguration.module.css'
 
-export type ConfigurationTranslate = (key: LocalAgentKey) => string
+export type ConfigurationTranslate = (key: LocalAgentKey, params?: Record<string, string>) => string
 
 /** User choices are concrete; legacy inheritance stays a backend compatibility concern. */
 export function ModelConfigurationFields({ directory, value, onChange, resolvedModel, resolvedEffort, disabled, showEffort = true, t }: {

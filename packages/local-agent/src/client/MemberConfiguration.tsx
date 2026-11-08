@@ -7,12 +7,15 @@ import css from './MemberConfiguration.module.css'
 import { MemberPaintDiagnostics } from './MemberPaintDiagnostics.tsx'
 import type { LivePaintDiagnostics } from './live-paint.ts'
 import { useConfigurationMenu } from './use-configuration-menu.ts'
+import { BackgroundConfirm } from './BackgroundConfirm.tsx'
 
 export function MemberConfiguration({ store, t, diagnostics }: { store: MemberConfigurationStore; t: ConfigurationTranslate; diagnostics?: LivePaintDiagnostics }) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot)
   const menu = useConfigurationMenu('above')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  /** A selection waiting on 「会让 N 项后台工作失去联系」: applied on 继续, dropped on 取消. */
+  const [confirm, setConfirm] = useState<{ readonly count: number; readonly selection: LocalAgentMemberConfiguration }>()
   const state = snapshot.state
   const current = state?.round?.configuration ?? state?.current
   const selection = state?.pending?.selection ?? state?.operation?.selection ?? state?.current.selection
@@ -37,12 +40,34 @@ export function MemberConfiguration({ store, t, diagnostics }: { store: MemberCo
     } catch (error) { setError(error instanceof Error ? error.message : String(error)) }
     finally { setBusy(false) }
   }
-  return <details className={css.root} ref={menu.root} open={menu.open} onToggle={event => menu.setOpen(event.currentTarget.open)}>
+  /**
+   * A new model or effort replaces the member's process (the next round
+   * respawns on it): while that process runs background tasks, ask first
+   * (member-self-started-rounds C①). An unreadable count asks nothing.
+   */
+  const choose = async (next: LocalAgentMemberConfiguration): Promise<void> => {
+    if (!state || disabled) return
+    const read = store.face.runningBackgroundTasks
+    if (read !== undefined) {
+      setBusy(true)
+      const count = await read.call(store.face, store.id).catch(() => 0)
+      setBusy(false)
+      if (count > 0) { setConfirm({ count, selection: next }); return }
+    }
+    await act('select', next)
+  }
+  return <details className={css.root} ref={menu.root} open={menu.open} onToggle={(event) => {
+    menu.setOpen(event.currentTarget.open)
+    if (!event.currentTarget.open) setConfirm(undefined)
+  }}>
     <summary aria-label={t('configuration.title')} aria-expanded={menu.open}><span className={css.triggerLabel}>{currentLabel}{state?.pending || state?.operation ? ` · ${t('configuration.pending')}` : ''}</span></summary>
     {diagnostics && <MemberPaintDiagnostics sessionId={store.id} diagnostics={diagnostics} />}
     <div ref={menu.panel} className={css.panel} style={menu.style}>
       {selection && <ModelConfigurationFields directory={snapshot.directory} value={selection} resolvedModel={state?.current.resolved.model} resolvedEffort={state?.current.resolved.effort} disabled={disabled} t={t}
-        onChange={selection => { void act('select', selection) }} />}
+        onChange={selection => { void choose(selection) }} />}
+      {confirm && <BackgroundConfirm count={confirm.count} disabled={busy} t={t}
+        onConfirm={() => { const next = confirm.selection; setConfirm(undefined); void act('select', next) }}
+        onCancel={() => { setConfirm(undefined) }} />}
       {state?.pending && <div role="status">{t('configuration.pending')}: {label(state.pending.selection)}</div>}
       {state?.operation && <div role="status">{t('configuration.applying')}: {label(state.operation.selection)}</div>}
       {state?.round && <small>{t('configuration.boundary')}</small>}
