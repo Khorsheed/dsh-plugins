@@ -44,7 +44,7 @@ export interface SubagentCallArgs {
   readonly background?: boolean
   /** Kimi `resume`: the subagent id it continues. */
   readonly resume?: string
-  /** `AgentSwarm`: how many subagents it asks for. */
+  /** `AgentSwarm`: how many subagents it asks for (`items`). */
   readonly count?: number
 }
 
@@ -60,7 +60,8 @@ export function subagentCallArgs(raw: string | undefined): SubagentCallArgs {
   let args: Record<string, unknown> | undefined
   try { args = raw === undefined ? undefined : record(JSON.parse(raw)) } catch { args = undefined }
   if (args === undefined) return {}
-  const tasks = Array.isArray(args['tasks']) ? args['tasks'] : Array.isArray(args['agents']) ? args['agents'] : undefined
+  // Kimi AgentSwarm: `items` (with `prompt_template`); older shapes `tasks` / `agents`.
+  const tasks = Array.isArray(args['items']) ? args['items'] : Array.isArray(args['tasks']) ? args['tasks'] : Array.isArray(args['agents']) ? args['agents'] : undefined
   const description = text(args['description']) ?? text(args['task_name']) ?? text(args['name'])
   const type = text(args['subagent_type']) ?? text(args['subagentType']) ?? text(args['profile'])
   const resume = text(args['resume'])

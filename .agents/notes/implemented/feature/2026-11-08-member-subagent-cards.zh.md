@@ -37,7 +37,7 @@ Status: implemented
 
 ## Consequences
 
-- Kimi（M3）不需要改客户端：它的镜像一旦写出 cause 为 `cli-subagent` 的孙会话执行，`Agent` / `AgentSwarm` 行就变成卡片。Kimi 的参数名（`run_in_background` / `runInBackground`、`resume`、`tasks`）只宽松地用于等待中与不支持两种状态；卡片的事实都来自读取。
+- Kimi（M3）不需要改客户端：它的镜像写出 cause 为 `cli-subagent` 的孙会话执行，`Agent` / `AgentSwarm` 行就变成卡片。`packages/local-agent-kimi/tests/subagent-cards-read.spec.ts` 对合成 wire 上 M3 的镜像输出做折叠：续用读作同一会话的第 2 次调用，`AgentSwarm` 是同一调用 id 上的三条，组内位置从 0 数（wire 上的 `swarmIndex` 从 1 数；行号按这个位置从 1 编）。调用参数（`description`、`subagent_type`、`run_in_background`、`resume`、AgentSwarm 的 `items`）只用于等待中与不支持两种状态；卡片的事实都来自读取。
 - 成员调用的工具行要等镜像写出成员那一步才出现在成员会话里，前台子智能体通常已经结束；它在跑时，实时的界面是房间运行行的「正在等子智能体」。
 - 「打开」进孙会话的开头，不定位到续用那一次的轮次（侧栏对话地址没有轮次参数）。
 - 步骤只保留最近 40 步（「前面还有 N 步」）。

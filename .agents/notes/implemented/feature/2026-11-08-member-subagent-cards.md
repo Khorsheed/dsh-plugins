@@ -37,7 +37,7 @@ A member CLI's own subagents (Kimi `Agent` / `AgentSwarm`, Claude Code `Agent` /
 
 ## Consequences
 
-- Kimi (M3) needs no client change: once its mirror writes grandchild executions with the `cli-subagent` cause, its `Agent` / `AgentSwarm` rows become cards. The Kimi argument names (`run_in_background` / `runInBackground`, `resume`, `tasks`) are read loosely and only for the pending / unsupported states; the card's facts come from the read.
+- Kimi (M3) needs no client change: its mirror writes grandchild executions with the `cli-subagent` cause and its `Agent` / `AgentSwarm` rows become cards. `packages/local-agent-kimi/tests/subagent-cards-read.spec.ts` folds M3's mirror output over the synthetic wires: a resume reads ordinal 2 of the same session, an `AgentSwarm` three entries on one call id with the 0-based group place (the wire's `swarmIndex` counts from 1; rows are numbered from 1 by that place). The call arguments (`description`, `subagent_type`, `run_in_background`, `resume`, AgentSwarm `items`) are only read for the pending / unsupported states; the card's facts come from the read.
 - A member call's row appears in the member session only once the mirror wrote the member's step, which for a foreground subagent is usually after it finished; the run row's 「正在等子智能体」 is the live surface while it runs.
 - 「打开」 opens the grandchild at its top, not at a resumed call's turn (the sidebar chat address has no turn parameter).
 - Steps stop at the latest 40 (「前面还有 N 步」).

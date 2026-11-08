@@ -255,6 +255,29 @@ describe('the subagent cards', () => {
   })
 })
 
+describe('a Kimi member (M3 shapes)', () => {
+  it('reads the real Agent / AgentSwarm argument names', () => {
+    expect(subagentCallArgs('{"description":"核对第一章","subagent_type":"explore","prompt":"…"}')).toEqual({ description: '核对第一章', type: 'explore' })
+    expect(subagentCallArgs('{"description":"配字幕","subagent_type":"coder","items":["a","b","c"],"prompt_template":"…"}'))
+      .toEqual({ description: '配字幕', type: 'coder', count: 3 })
+    expect(subagentCallArgs('{"description":"补字幕","run_in_background":true}')).toEqual({ description: '补字幕', background: true })
+  })
+
+  it('an AgentSwarm group: the core\'s 0-based place (wire swarmIndex − 1) orders the rows, numbered from 1', async () => {
+    // As local-agent-kimi writes it: swarmIndex 1..3 on the wire → group.index 0..2; read back out of spawn order.
+    const kimi = (index: number, state: LocalAgentSubagentCall['state']) => call('swarm-1', {
+      sessionId: `${MEMBER}.sub.agent-${index + 1}`, executionId: `e${index}`, name: 'coder', description: '占位任务',
+      group: { index, size: 3 }, state, ...state === 'running' ? {} : { endedAt: NOW },
+    })
+    const { face: f } = await view(reads(kimi(2, 'done'), kimi(0, 'done'), kimi(1, 'running')), { callId: 'swarm-1', toolName: 'AgentSwarm', block: { call: { argsRaw: '{"description":"配字幕","subagent_type":"coder","items":["a","b","c"]}' } } })
+    const rows = [...screen.getByTestId('subagent-rows').children]
+    expect(rows.map(row => row.firstElementChild?.textContent)).toEqual(['1', '2', '3'])
+    expect(rows[1]!.textContent).toContain('运行中')
+    fireEvent.click(screen.getAllByText('打开')[0]!)
+    expect(f.open).toHaveBeenCalledWith(`${MEMBER}.sub.agent-1`, MEMBER)
+  })
+})
+
 describe('a Codex member (M8): spawn reads 「暂不支持查看过程」', () => {
   const spawn = { call: { argsRaw: '{"prompt":"试 0.9 倍语速\\n其余照旧","model":"gpt-5.5"}' } }
 
