@@ -1642,9 +1642,14 @@ export class InspectorStore {
           const fact = run.executionId === undefined ? undefined : this.executionFacts(child.scopeId, run.executionId)
           return fact === undefined ? [] : [[fact.executionId, fact] as const]
         })).values()]
-        const status: ScopeRecord['status'] = group.runs.some(run => run.state !== 'done' && run.state !== 'failed' && run.state !== 'cancelled') ? 'running'
-          : group.runs.some(run => run.state === 'failed') ? 'failed'
-            : group.runs.every(run => run.state === 'cancelled') ? 'cancelled' : 'ok'
+        // A run's outcome is its execution's end record when the child wrote
+        // one; only a run without it falls back to the room's run state. A
+        // failed tool call inside a done execution is that request's tool
+        // failure, never the member's.
+        const states = group.runs.map(run => child === undefined ? run.state : this.runOutcome(run, child.scopeId))
+        const status: ScopeRecord['status'] = states.some(state => state !== 'done' && state !== 'failed' && state !== 'cancelled') ? 'running'
+          : states.some(state => state === 'failed') ? 'failed'
+            : states.every(state => state === 'cancelled') ? 'cancelled' : 'ok'
         const startedAt = Math.min(...group.runs.map(run => run.startedAt ?? dispatch.at))
         const ends = group.runs.map(run => run.endedAt).filter((end): end is number => end !== undefined)
         // A /compact run's work is its compaction: the member view only stands in while that fact is not read.
@@ -1688,6 +1693,16 @@ export class InspectorStore {
         scopes,
       }
     })
+  }
+
+  /**
+   * How one run ended: its execution's end record (`done` / `failed` /
+   * `cancelled`) when the child wrote one, else the room's run state (no end
+   * record yet, a batch-4 run, or an `uncertain` end a restart cut off).
+   */
+  private runOutcome(run: RoomRun, childId: string): string | undefined {
+    const outcome = run.executionId === undefined ? undefined : this.childExecutions.get(childId)?.get(run.executionId)?.end?.outcome
+    return outcome === 'done' || outcome === 'failed' || outcome === 'cancelled' ? outcome : run.state
   }
 
   /**

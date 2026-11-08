@@ -152,6 +152,35 @@ describe('room rounds', () => {
     expect(store.getTurn('s', round.turnSeq)!.scopes[0]!.requests.map(r => r.startedAt)).toEqual([71_000])
   })
 
+  it('a run\'s outcome is its execution\'s end record: a failed tool call inside a done execution is a tool failure only', () => {
+    const withState = (state: string): SessionLogRow[] => [...turn1, ...roster, ...legacyRound, ...executionRound.filter(row => row.seq !== 42),
+      { type: 'room/run-state', seq: 42, time: 79_050, data: { runId: '40:m-coco', member: 'coco', state, startedAt: 70_050, elapsedMs: 9000, childSessionId: 'child-coco', executionId: 'e3', childTurn: 3 } },
+    ]
+    const member = (outcome: string) => (s: InspectorStore): void => {
+      s.noteExecution('child-coco', execution({ phase: 'start', executionId: 'e3', caller: 'room', operation: 'prompt' }))
+      s.appendLogRequest('s', 'child-coco', childRequest(71_000, 3, 'e3'))
+      // A usage-less step whose call the mirror closed with an error result.
+      const { usage: _usage, ...bare } = childRequest(78_000, 3, 'e3')
+      s.appendLogRequest('s', 'child-coco', { ...bare, execs: [{ callId: 'c-x', name: 'mcp__dsh-member__novel_extract', start: 78_001, end: 78_002, isError: true, result: '（中断）' }] })
+      s.noteExecution('child-coco', execution({ phase: 'end', executionId: 'e3', outcome, turns: [3] }))
+    }
+    const view = (rows: SessionLogRow[], outcome: string) => {
+      const store = load(rows, member(outcome))
+      const round = store.listTurns('s').turns.find(t => t.query === '写测试')!
+      return { round, scope: store.getTurn('s', round.turnSeq)!.scopes[0]! }
+    }
+    // Done: the member reads ok, the error stays on its own request as a tool failure.
+    const done = view(withState('done'), 'done')
+    expect([done.scope.status, done.round.failedScopeCount]).toEqual(['ok', 0])
+    expect(done.scope.requests.map(r => [r.status, r.toolErrors ?? 0])).toEqual([['ok', 0], ['ok', 1]])
+    // The record wins over the room's run state either way.
+    expect(view(withState('failed'), 'done').scope.status).toBe('ok')
+    expect(view(withState('done'), 'failed').scope.status).toBe('failed')
+    expect(view(withState('done'), 'cancelled').scope.status).toBe('cancelled')
+    // An end a restart could not settle keeps the room's state.
+    expect(view(withState('done'), 'uncertain').scope.status).toBe('ok')
+  })
+
   it('a run whose execution has not ended yet holds what its start record brackets so far', () => {
     const rows = [...turn1, ...roster, ...legacyRound, ...executionRound.filter(row => row.seq !== 42)]
     const store = load(rows, s => {
