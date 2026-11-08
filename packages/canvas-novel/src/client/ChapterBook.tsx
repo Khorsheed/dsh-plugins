@@ -19,7 +19,7 @@
  *
  * @module @khorsheed/dsh-canvas-novel/client
  */
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { Button, Menu, Modal, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ChipRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
@@ -30,6 +30,7 @@ import { ALIGN_PAGE, type ChapterTarget, type NovelSurfaceProps } from './contra
 import { awaitsReconcile } from './NovelFaces.tsx'
 import { PendingList } from './PendingList.tsx'
 import { useNovelRead } from './use-novel.ts'
+import { loadReadingMemory, saveReadingMemory } from './reader-memory.ts'
 import { ImportNovel } from './ImportNovel.tsx'
 import css from './novel.module.css'
 import book from './book.module.css'
@@ -47,6 +48,8 @@ type Filter = 'all' | 'todo' | 'open'
  */
 const answered = new Map<string, number>()
 
+type Reading = { n: number; focusPlan: boolean; editing?: boolean }
+
 /** The 章节 entry. */
 export function ChapterBook(props: NovelSurfaceProps & {
   readonly onEmpty?: (() => void) | undefined
@@ -55,12 +58,22 @@ export function ChapterBook(props: NovelSurfaceProps & {
 }): ReactNode {
   const { canvasId, target } = props
   const asked = target === undefined || (answered.get(canvasId) ?? 0) >= target.n ? undefined : target
-  const [reading, setReading] = useState<{ n: number; focusPlan: boolean; editing?: boolean } | null>(() => readingOf(asked))
+  const [reading, setReading] = useState<Reading | null>(() => readingOf(asked) ?? storedReading(canvasId))
+  const previousCanvas = useRef(canvasId)
+  const select = (next: Reading | null): void => {
+    setReading(next)
+    saveReadingMemory(canvasId, next === null ? null : { n: next.n, ...(next.editing === true ? { editing: true } : {}) })
+  }
   useEffect(() => {
-    if (asked === undefined) return
-    answered.set(canvasId, asked.n)
-    const next = readingOf(asked)
-    if (next !== null) setReading(next)
+    const changed = previousCanvas.current !== canvasId
+    previousCanvas.current = canvasId
+    if (asked !== undefined) {
+      answered.set(canvasId, asked.n)
+      const next = readingOf(asked)
+      if (next !== null) select(next)
+    } else if (changed) {
+      select(storedReading(canvasId))
+    }
   }, [asked, canvasId])
   if (props.board.genre?.id !== NOVEL_GENRE_ID) return null
   if (reading !== null) {
@@ -70,19 +83,24 @@ export function ChapterBook(props: NovelSurfaceProps & {
         n={reading.n}
         focusPlan={reading.focusPlan}
         editing={reading.editing === true}
-        onEditingChange={editing => { setReading(current => current === null || current.n !== reading.n ? current : { n: current.n, focusPlan: current.focusPlan, ...(editing ? { editing: true } : {}) }) }}
-        onGo={n => { setReading({ n, focusPlan: false }) }}
-        onToc={() => { setReading(null) }}
+        onEditingChange={editing => { select({ n: reading.n, focusPlan: reading.focusPlan, ...(editing ? { editing: true } : {}) }) }}
+        onGo={n => { select({ n, focusPlan: false }) }}
+        onToc={() => { select(null) }}
       />
     )
   }
-  return <Contents {...props} onRead={(n, editing, focusPlan) => { setReading({ n, focusPlan: focusPlan === true, ...(editing === true ? { editing: true } : {}) }) }} />
+  return <Contents {...props} onRead={(n, editing, focusPlan) => { select({ n, focusPlan: focusPlan === true, ...(editing === true ? { editing: true } : {}) }) }} />
 }
 
 /** The reader position an ask names, or null for an unreadable one. */
-function readingOf(target: ChapterTarget | undefined): { n: number; focusPlan: boolean } | null {
+function readingOf(target: ChapterTarget | undefined): Reading | null {
   const n = target === undefined ? NaN : parseInt(target.item, 10)
   return Number.isFinite(n) ? { n, focusPlan: target!.focus === 'plan' } : null
+}
+
+function storedReading(canvasId: string): Reading | null {
+  const stored = loadReadingMemory(canvasId)
+  return stored === null ? null : { n: stored.n, focusPlan: false, ...(stored.editing === true ? { editing: true } : {}) }
 }
 
 /**

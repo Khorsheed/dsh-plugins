@@ -1809,11 +1809,24 @@
   position: sticky; top: 0; z-index: 1; display: flex; gap: 8px; align-items: center; justify-content: space-between;
   padding: 6px 0; background: var(--dsw-alias-bg-base);
 }
+.editSurface {
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-brand-primary);
+  border-radius: 8px;
+}
+.editSurface:focus-within { box-shadow: 0 0 0 1px var(--dsw-alias-brand-primary); }
 .editBox {
-  width: 100%; box-sizing: border-box; min-height: 60vh; padding: 12px 14px; border-radius: 8px; resize: vertical;
-  border: 1px solid var(--dsw-alias-brand-primary); background: none; color: var(--dsw-alias-label-primary);
+  display: block; width: 100%; box-sizing: border-box; min-height: 60vh; padding: 12px 14px; border: 0; outline: none; resize: vertical;
+  background: none; color: var(--dsw-alias-label-primary);
   font: var(--dsh-panel-text-body, 15px)/1.9 var(--dsw-font-family);
 }
+.editContinue { display: flex; justify-content: center; padding: 2px 12px; border-top: 1px solid var(--dsw-alias-border-l1); }
+.editContinueButton {
+  min-height: 44px; padding: 6px 12px; border: 0; background: none; cursor: pointer; text-align: center;
+  font: var(--dsh-panel-text-body, 13px)/1.6 var(--dsw-font-family); color: var(--dsw-alias-label-secondary);
+}
+.editContinueButton:hover:not(:disabled) { color: var(--dsw-alias-brand-primary); }
+.editContinueButton:disabled { cursor: default; opacity: .5; }
 .editBar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .editNote { margin: 0; font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); color: var(--dsw-alias-label-secondary); }
 
