@@ -118,6 +118,7 @@ import type {
   LocalAgentMemberInput,
   LocalAgentTaskRef,
   LocalAgentBackgroundTasks,
+  LocalAgentBackgroundTasksLost,
   LocalAgentBackgroundTasksRequest,
   LocalAgentSelfAdmission,
   LocalAgentSelfAdmissionRequest,
@@ -179,6 +180,7 @@ export type {
   LocalAgentBackgroundTask,
   LocalAgentBackgroundTaskState,
   LocalAgentBackgroundTasks,
+  LocalAgentBackgroundTasksLost,
   LocalAgentBackgroundTasksRequest,
   LocalAgentTaskRef,
   LocalAgentUnrecorded,
@@ -1084,6 +1086,13 @@ declare module '@deepseek-ai/cordis' {
      * @mode emit
      */
     'localAgent/run-progress'(childSessionId: string, progress: LocalAgentRunProgress): void
+    /**
+     * A member's CLI background tasks lost contact because a harness took
+     * its resident process away (`LocalAgentRegistry.noteBackgroundTasksLost`).
+     * @param lost - the member, its parent session, the task ids and why.
+     * @mode emit
+     */
+    'localAgent/background-tasks-lost'(lost: LocalAgentBackgroundTasksLost): void
   }
 }
 
@@ -2698,6 +2707,29 @@ export class LocalAgentRegistry {
       this.memberToolsFace?.autoReloaded(childSessionId, oldToken)
     } catch (error) {
       this.ctx.logger.warn(`localAgent: recording a member respawn failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * A harness took a member's resident process away while some of its CLI
+   * background tasks ran in it (member-self-started-rounds C①: the
+   * keep-alive cap, a reload, a model switch): those tasks lost contact.
+   * Re-emitted as `localAgent/background-tasks-lost` with the member's parent
+   * session, so the room records the loss and tells the dispatcher when it
+   * happens (a host restart's losses are found by the startup scan instead).
+   * Plugin unload does not report (the next host start reads those tasks as
+   * `host-restart`). Never throws: a missing parent drops the report.
+   * @param childSessionId - the member's child session.
+   * @param taskIds - the CLI's ids of the tasks that ran in the process.
+   * @param because - why the process went away (only `process-reclaimed` today).
+   */
+  noteBackgroundTasksLost(childSessionId: string, taskIds: readonly string[], because: LocalAgentBackgroundTasksLost['because'] = 'process-reclaimed'): void {
+    try {
+      const parentSessionId = this.delegations.get(childSessionId)?.parentSessionId ?? this.memberBinding(childSessionId)?.parentSessionId
+      if (parentSessionId === undefined || parentSessionId === '' || taskIds.length === 0) return
+      this.ctx.emit('localAgent/background-tasks-lost', { childSessionId, parentSessionId, taskIds: [...taskIds], because })
+    } catch (error) {
+      this.ctx.logger.warn(`localAgent: reporting lost background tasks failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
