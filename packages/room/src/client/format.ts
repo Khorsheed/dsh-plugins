@@ -22,13 +22,31 @@ export function formatDurationMs(ms: number): string {
 }
 
 /**
- * The hover-revealed message clock: HH:MM local.
+ * A compact wall clock: HH:MM local.
  * @param time - unix epoch ms.
  * @returns the wall-clock label.
  */
 export function formatClock(time: number): string {
   const date = new Date(time)
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+/**
+ * The message clock: HH:MM today, month/day earlier this year, and year/month/day
+ * across years, matching the host's conversation chrome.
+ * @param time - unix epoch ms from the message event.
+ * @param t - the room locale seat supplying the date templates.
+ * @param now - reference instant for the calendar-day and year cuts.
+ * @returns the date-aware wall-clock label.
+ */
+export function formatMessageClock(time: number, t: TimeTranslate, now: number = Date.now()): string {
+  const date = new Date(time)
+  const current = new Date(now)
+  const clock = formatClock(time)
+  if (date.getFullYear() === current.getFullYear() && date.getMonth() === current.getMonth() && date.getDate() === current.getDate()) return clock
+  const params = { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() }
+  const day = date.getFullYear() === current.getFullYear() ? t('time.monthDay', params) : t('time.yearMonthDay', params)
+  return `${day} ${clock}`
 }
 
 /** The translate face the relative-time formatter needs (locale-owned copy). */

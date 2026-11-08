@@ -25,7 +25,7 @@ import { memberColor } from './member-color.ts'
 import { pathMentions } from './path-mentions.ts'
 import { RoomQuestionView } from './RoomQuestionView.tsx'
 import { askCardData, type RoomSpeechData } from './nodes.ts'
-import { formatClock, formatDurationMs } from './format.ts'
+import { formatDurationMs, formatMessageClock } from './format.ts'
 import { revealRoomRow, speechCause } from './speech-cause.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
 import { roundUsage, type RoundUsage } from './round-usage.ts'
@@ -306,7 +306,7 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
         {usage !== undefined
           ? <UsageChip usage={usage} execution={execution} provider={member?.kind === 'cli' ? member.provider : undefined} durationMs={data.durationMs} t={t} />
           : data.durationMs !== undefined && <span className={css.meta}>{formatDurationMs(data.durationMs)}</span>}
-        <span className={css.meta}>{formatClock(data.time)}</span>
+        <span className={css.meta}>{formatMessageClock(data.time, t)}</span>
         {/* Last in the row: on a narrow reply it wraps to a line of its own. */}
         {usage?.gap !== undefined && (
           <span className={css.usageGap} data-testid="usage-gap">

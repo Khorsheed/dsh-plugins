@@ -286,7 +286,12 @@
 }
 
 .meta,
-.reported,
+.reported {
+  font-size: 12px;
+  line-height: 24px;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  white-space: nowrap;
+}
 
 .reported {
   color: var(--dsw-alias-state-success, #1f9a55);
