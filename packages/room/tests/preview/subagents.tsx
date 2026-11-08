@@ -4,11 +4,11 @@
  * 「成员会话」 group and 「运行卡片 · 正在等子智能体」) — the real toolview and
  * run row over scripted local-agent reads:
  *   pnpm exec vite packages/room/tests/preview --config packages/room/tests/preview/vite.config.ts --host 127.0.0.1
- * then open /subagents.html?state=<subrun|substeps|subdone|subbg|swarm|resume|claude|ended|waitcard>[&lang=en][&dark=1]
+ * then open /subagents.html?state=<subrun|substeps|subdone|subbg|swarm|resume|claude|ended|codex|waitcard>[&lang=en][&dark=1]
  * (subrun/substeps/subdone/subbg = one Kimi `Agent` subagent running,
  * expanded, done, in the background; swarm = an `AgentSwarm` group; resume =
  * a reused subagent; claude = a Claude Code `Task` in the M4 mirror's shape;
- * ended = cancelled and lost;
+ * ended = cancelled and lost; codex = a Codex member's spawn (「暂不支持查看过程」, M8);
  * waitcard = the room run row while the member waits for its subagent.)
  */
 import React, { useEffect } from 'react'
@@ -105,6 +105,10 @@ const SCENES: Record<string, Scene> = {
       call('call-2', { name: 'coder', description: L('测量 B 机位音量', 'Measure camera B levels'), state: 'lost', background: true, startedAt: now - 900_000, usage: { inputTokens: 2_000, outputTokens: 500, cacheReadTokens: 10_000 } }),
     ],
     extra: [{ tool: 'Agent', args: JSON.stringify({ description: L('测量 B 机位音量', 'Measure camera B levels'), subagent_type: 'coder', run_in_background: true }), callId: 'call-2' }] },
+  codex: { who: '配音员', provider: 'codex', ask: L('分别试三种配音语速。', 'Try three voice-over speeds.'),
+    lead: L('我开几个子智能体分别试。', 'I will spawn a few subagents to try them.'),
+    tool: 'collab/spawnAgent', args: JSON.stringify({ prompt: L('试 0.9 倍语速', 'Try 0.9× speed'), model: 'gpt-5.5' }), phase: 'result', calls: [],
+    after: L('三种都试过了，0.9 倍听起来最自然……', 'Tried all three; 0.9× sounds the most natural…') },
 }
 
 const scene = SCENES[state] ?? SCENES['subrun']!

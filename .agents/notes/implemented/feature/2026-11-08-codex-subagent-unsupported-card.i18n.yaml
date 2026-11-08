@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-08-codex-subagent-unsupported-card.md
+.agents/notes/implemented/feature/2026-11-08-codex-subagent-unsupported-card.md: e868b8ac3c528241f8a1ee9380da6f82d06a4b01
+.agents/notes/implemented/feature/2026-11-08-codex-subagent-unsupported-card.zh.md: ea0e06d14cda9629c885ad8fd107346fe6b41959

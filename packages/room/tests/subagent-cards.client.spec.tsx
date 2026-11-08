@@ -255,6 +255,31 @@ describe('the subagent cards', () => {
   })
 })
 
+describe('a Codex member (M8): spawn reads 「暂不支持查看过程」', () => {
+  const spawn = { call: { argsRaw: '{"prompt":"试 0.9 倍语速\\n其余照旧","model":"gpt-5.5"}' } }
+
+  it('the card names the subagent by its prompt; no 打开, no usage, no steps', async () => {
+    await view(reads(), { callId: 'c2', toolName: 'collab/spawnAgent', block: spawn })
+    expect(screen.getByText('子智能体')).toBeTruthy()
+    expect(screen.getByText('试 0.9 倍语速')).toBeTruthy()
+    expect(screen.getByText('暂不支持查看过程')).toBeTruthy()
+    expect(screen.queryByText('打开')).toBeNull()
+    expect(screen.queryByText('展开 ▾')).toBeNull()
+  })
+
+  it('never a running card, and never polled past the first read', () => {
+    const facts = { callId: 'c2', toolName: 'collab/spawnAgent', phase: 'start' as const, argsRaw: '{"prompt":"试"}' }
+    const model = subagentCardModel(facts, reads(), MEMBER)
+    expect(model).toEqual({ kind: 'unsupported', description: '试' })
+    expect(cardWantsPolling(model, facts, 1)).toBe(false)
+  })
+
+  it('outside a member session it stays a plain row', async () => {
+    await view(null, { callId: 'c2', toolName: 'collab/spawnAgent', block: spawn })
+    expect(screen.getByTestId('subagent-plain-row').textContent).toContain('collab/spawnAgent')
+  })
+})
+
 describe('the room run row: 正在等子智能体', () => {
   it('names the subagent and how long; 看子智能体 opens the member session at that card', async () => {
     vi.useFakeTimers({ now: NOW, toFake: ['Date'] })

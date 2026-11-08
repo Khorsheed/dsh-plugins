@@ -69,7 +69,7 @@ import type {
 } from './slots.ts'
 import { ROOM_RUN_CARD_SLOTS, ROOM_SPEECH_CARD_SLOTS } from './slots.ts'
 import { SubagentCallsStore, SubagentToolView, type SubagentCardsFace } from './SubagentCards.tsx'
-import { SUBAGENT_TOOLS } from './subagent-card-view.ts'
+import { CODEX_SUBAGENT_TOOLS, SUBAGENT_TOOLS } from './subagent-card-view.ts'
 import type { LocalAgentSubagentCalls } from '@khorsheed/dsh-local-agent/types'
 import type { RoomAttachmentInput, RoomQuestionAnswer } from '../types.ts'
 import type { RoomFailure, RoomSettings } from '../types.ts'
@@ -660,11 +660,12 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     }),
   }, MemberActivityTail as never))
 
-  // The member session's Agent / AgentSwarm / Task rows as subagent cards.
+  // The member session's Agent / AgentSwarm / Task rows as subagent cards
+  // (and Codex's spawn, which reads 「暂不支持查看过程」).
   // Declared by ui-tool; a composition without it keeps the host's rows.
   // The slot is ui-tool's (no type dependency on it here): structurally typed.
   const toolSlots = ctx.slots as unknown as { inject: (key: string, body: () => () => void) => () => void; register: (options: unknown, component: unknown) => () => void }
-  for (const tool of SUBAGENT_TOOLS) {
+  for (const tool of [...SUBAGENT_TOOLS, ...CODEX_SUBAGENT_TOOLS]) {
     toolSlots.inject('tool.call.toolview', () => toolSlots.register({
       name: 'tool.call.toolview',
       key: tool,

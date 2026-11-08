@@ -361,7 +361,15 @@ describe('codex app-server item fold (transport → shared line shape)', () => {
     expect(codexAppServerItemToLine({ type: 'dynamicToolCall', id: 'e1', tool: 'exec', arguments: 'text(ALL_TOOLS)', status: 'completed', success: true, contentItems: [{ type: 'inputText', text: 'Script completed' }, { type: 'inputImage', imageUrl: 'data:…' }] }))
       .toEqual({ kind: 'tool', id: 'e1', name: 'exec', args: 'text(ALL_TOOLS)', result: 'Script completed' })
     expect(codexAppServerItemToLine({ type: 'collabAgentToolCall', id: 'c1', tool: 'spawn', status: 'completed' }))
-      .toEqual({ kind: 'tool', id: 'c1', name: 'collab/spawn' })
+      .toEqual({ kind: 'tool', id: 'c1', name: 'collab/spawn', result: 'completed' })
+    // A spawn keeps the prompt and model it sent and the states it reported (the member session's 「暂不支持查看过程」 card names it).
+    expect(codexAppServerItemToLine({
+      type: 'collabAgentToolCall', id: 'c2', tool: 'spawnAgent', status: 'completed', senderThreadId: 't0', receiverThreadIds: ['t1'],
+      prompt: '试 0.9 倍语速', model: 'gpt-5.5', reasoningEffort: null, agentsStates: { t1: { status: 'running', message: null } },
+    })).toEqual({ kind: 'tool', id: 'c2', name: 'collab/spawnAgent', args: '{"prompt":"试 0.9 倍语速","model":"gpt-5.5"}', result: 'completed' })
+    expect(codexAppServerItemToLine({
+      type: 'collabAgentToolCall', id: 'c3', tool: 'wait', status: 'failed', prompt: null, model: null, agentsStates: { t1: { status: 'errored', message: '超时' } },
+    })).toEqual({ kind: 'tool', id: 'c3', name: 'collab/wait', result: '超时', failed: true })
     expect(codexAppServerItemToLine({ type: 'plan', text: '计划' })).toEqual({ kind: 'think', text: '计划' })
     expect(codexAppServerItemToLine({ type: 'userMessage' })).toBeUndefined()
     expect(codexAppServerItemToLine({ type: 'reasoning', summary: [], content: [] })).toBeUndefined()

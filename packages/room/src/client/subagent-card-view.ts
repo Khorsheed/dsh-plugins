@@ -24,6 +24,13 @@ export type TokenUsage = NonNullable<LocalAgentSubagentCall['usage']>
 /** The member tool names whose calls start a CLI subagent (Kimi `Agent`/`AgentSwarm`, Claude `Agent`/`Task`). */
 export const SUBAGENT_TOOLS: readonly string[] = ['Agent', 'AgentSwarm', 'Task']
 
+/**
+ * Codex's own subagent spawn (multi_agent), as its live driver mirrors the
+ * app-server `collabAgentToolCall` item. Phase 1 mirrors no grandchild for
+ * it: the card always reads 「暂不支持查看过程」 (member-cli-subagents M8).
+ */
+export const CODEX_SUBAGENT_TOOLS: readonly string[] = ['collab/spawnAgent']
+
 /** A group shows this many rows before 「另外 N 个」 (only past {@link GROUP_ROWS_ALL}). */
 export const GROUP_ROWS_SHOWN = 5
 /** Up to this many rows a group shows them all. */
@@ -64,6 +71,14 @@ export function subagentCallArgs(raw: string | undefined): SubagentCallArgs {
     ...resume === undefined ? {} : { resume },
     ...tasks === undefined ? {} : { count: tasks.length },
   }
+}
+
+/** A Codex spawn's description: its prompt's first line. */
+function codexPrompt(raw: string | undefined): string | undefined {
+  let args: Record<string, unknown> | undefined
+  try { args = raw === undefined ? undefined : record(JSON.parse(raw)) } catch { args = undefined }
+  const line = text(args?.['prompt'])?.split('\n').map(part => part.trim()).find(part => part !== '')
+  return line === undefined ? undefined : line.length > 80 ? `${line.slice(0, 79)}…` : line
 }
 
 /** One subagent as the card shell reads it. */
@@ -163,6 +178,10 @@ export function subagentCardModel(
 ): SubagentCardModel {
   if (read === null || read === undefined) return { kind: 'fallback' }
   const args = subagentCallArgs(facts.argsRaw)
+  if (CODEX_SUBAGENT_TOOLS.includes(facts.toolName)) {
+    const prompt = codexPrompt(facts.argsRaw)
+    return { kind: 'unsupported', ...prompt === undefined ? {} : { description: prompt } }
+  }
   const calls = read.calls.filter(call => call.callId === facts.callId)
   if (calls.length === 0) {
     if (facts.phase === 'result') {
@@ -238,7 +257,7 @@ export function cardWantsPolling(model: SubagentCardModel, facts: SubagentCallFa
   switch (model.kind) {
     case 'fallback': return reads === 0
     case 'pending': return true
-    case 'unsupported': return reads < 3
+    case 'unsupported': return reads < 3 && !CODEX_SUBAGENT_TOOLS.includes(facts.toolName)
     case 'single': return model.entry.call.state === 'running'
     case 'group': return model.status === 'running' || facts.phase !== 'result'
   }
