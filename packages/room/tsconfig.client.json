@@ -46,7 +46,6 @@
     "src/client/speech-cause.ts",
     "src/client/receipt.ts",
     "src/client/RoomReceiptView.tsx",
-    "src/client/reply-target.ts",
     "src/client/queue-capsules.ts",
     "src/client/RoomQueueCapsules.tsx",
     "src/client/RoomRunView.tsx",
