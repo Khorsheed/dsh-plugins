@@ -98,7 +98,9 @@ async function bench(
     useProjection?: UseProjection | undefined
     t?: RoomComposerProps['t']
     session?: SessionSlice
+    sessionPreset?: string
     state?: RoomState
+    modeNames?: RoomComposerProps['modeNames']
     /** Prime (or share, across remounts) the machine's draft. */
     inputStore?: InputStore
     renderMemberConfiguration?: RoomComposerProps['renderMemberConfiguration']
@@ -119,6 +121,14 @@ async function bench(
   } = {},
 ): Promise<Bench> {
   const roomStore = await primedStore(options.state)
+  const sessionList = createSnapshotStore({
+    byId: options.sessionPreset === undefined ? {} : {
+      [SESSION]: { projectionValues: { agentPreset: options.sessionPreset } },
+    },
+  })
+  const useSessions = (<T,>(selector: (snapshot: ReturnType<typeof sessionList.getSnapshot>) => T): T =>
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- the framework hook contract, faked
+    useSyncExternalStore(sessionList.subscribe, () => selector(sessionList.getSnapshot()))) as unknown as RoomComposerProps['useSessions']
   const inputStore = options.inputStore ?? createSnapshotStore<InputSlice>({ draft: '' })
   const inputActions = {
     setDraft: vi.fn((text: string) => { inputStore.set({ draft: text }) }),
@@ -138,6 +148,7 @@ async function bench(
     matched: { room: true },
     inputActions,
     useInput,
+    useSessions,
     roomStore,
     submit,
     stop,
@@ -148,6 +159,7 @@ async function bench(
     invite: vi.fn(async () => ({ ok: true as const, pendingFirstTask: false })),
     listProviders: vi.fn(async () => ({ localAgentAvailable: true, providers: [] })),
     browseDirectory: vi.fn(async () => null),
+    modeNames: options.modeNames ?? (async () => new Map<string, string>()),
     renderMemberConfiguration: options.renderMemberConfiguration,
     renderMemberInbox: options.renderMemberInbox,
     renderMemberTools: options.renderMemberTools,
@@ -493,6 +505,32 @@ describe('RoomComposer', () => {
     expect(screen.getByText('main')).toBeDefined()
     expect(screen.getByText('· 协调者 · DSH')).toBeDefined()
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).placeholder).toBe('跟main对话；@ 指定其他成员')
+  })
+
+  it('shows the coordinator mode and follows a handoff back to the native agent\'s room mode', async () => {
+    const roster: RoomState = {
+      ...STATE,
+      members: [
+        { id: 'legacy:1', name: 'main', kind: 'main-agent', invitedBy: 'human' },
+        { id: 'm-ada', name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', preset: 'dsh-writing' },
+      ],
+      coordinator: { version: 1, memberId: 'm-ada', previousMemberId: 'legacy:1', revision: 1, handoff: 'goal' },
+      deliveries: [],
+      jobs: [],
+    }
+    const { rerenderWith } = await bench(vi.fn(), {
+      state: roster,
+      sessionPreset: 'dsh-dev',
+      modeNames: async () => new Map([
+        ['dsh-writing', '写作模式'],
+        ['dsh-dev', '开发模式'],
+      ]),
+      t: makeTranslate(zh) as RoomComposerProps['t'],
+    })
+    expect(await screen.findByText('· 协调者 · kimi · 写作模式')).toBeDefined()
+
+    rerenderWith({ roomStore: await primedStore({ ...roster, coordinator: undefined }) })
+    expect(await screen.findByText('· 协调者 · DSH · 开发模式')).toBeDefined()
   })
 
   it('the coordinator line opens the host menu and hands the role to the picked member', async () => {

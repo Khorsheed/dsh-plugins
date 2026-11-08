@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** The members tab and the invite/edit dialog. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { useSyncExternalStore } from 'react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -102,6 +103,9 @@ function editModelInput(): HTMLInputElement {
 /** Render the tab against a primed store and a vi.fn inject face. */
 async function bench(options: {
   room?: boolean
+  state?: RoomState
+  sessionPreset?: string
+  modeNames?: RoomMembersInjected['modeNames']
   providers?: RoomProviderList
   modelSurface?: LocalAgentModelInfo
   memberModel?: (child: string) => Promise<LocalAgentModelInfo | null | undefined>
@@ -115,11 +119,20 @@ async function bench(options: {
   saveMemberSelection?: RoomMembersInjected['saveMemberSelection']
 } = {}): Promise<Bench> {
   const isRoom = options.room !== false
+  const state = options.state ?? STATE
   const list = createSnapshotStore<{ current: SessionId | undefined }>({ current: undefined })
+  const sessionList = createSnapshotStore({
+    byId: options.sessionPreset === undefined ? {} : {
+      [SESSION]: { projectionValues: { agentPreset: options.sessionPreset } },
+    },
+  })
+  const useSessions = (<T,>(selector: (snapshot: ReturnType<typeof sessionList.getSnapshot>) => T): T =>
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- the framework hook contract, faked
+    useSyncExternalStore(sessionList.subscribe, () => selector(sessionList.getSnapshot()))) as unknown as MembersViewProps['useSessions']
   const gateway: RoomGateway = {
     isRoom: async () => ({ ok: true, value: isRoom }),
     getState: async () => isRoom
-      ? { ok: true, value: { ok: true, value: STATE } }
+      ? { ok: true, value: { ok: true, value: state } }
       : { ok: true, value: { ok: false, error: { code: 'not-a-room' } } },
   }
   const roomStore = new RoomStore({ sessions: { list } } as unknown as Context, gateway)
@@ -127,6 +140,7 @@ async function bench(options: {
   const face = {
     roomStore,
     roomCwd: '/home/user/room',
+    modeNames: options.modeNames ?? (async () => new Map<string, string>()),
     openSession: vi.fn(),
     removeMember: vi.fn(async (name: string) => ({ ok: true as const, value: { name, stopped: false, cancelledDeliveries: 1, notified: [] } })),
     restoreMember: vi.fn(async () => ({ ok: true as const })),
@@ -145,7 +159,7 @@ async function bench(options: {
     readMemberSelection: options.readMemberSelection,
     saveMemberSelection: options.saveMemberSelection,
   }
-  const props = { sessionId: SESSION, ...face, t } as unknown as MembersViewProps
+  const props = { sessionId: SESSION, ...face, useSessions, t } as unknown as MembersViewProps
   render(<MembersView {...props} />)
   return { face: face as Bench['face'] }
 }
@@ -185,6 +199,41 @@ describe('MembersView', () => {
     const billCard = cardOf('bill')
     expect(billCard.textContent).toContain('运行中')
     expect(billCard.textContent).toContain('未设置角色')
+  })
+
+  it('shows CLI modes and the main agent\'s current room mode, with id fallback and no empty chip', async () => {
+    const state: RoomState = {
+      ...STATE,
+      members: [
+        { name: 'main', kind: 'main-agent', invitedBy: 'human' },
+        { name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', preset: 'dsh-writing' },
+        { name: 'bill', kind: 'cli', provider: 'codex', invitedBy: 'human' },
+        { name: 'cathy', kind: 'cli', provider: 'kimi', invitedBy: 'human', preset: 'dsh-custom' },
+      ],
+    }
+    await bench({
+      state,
+      sessionPreset: 'dsh-dev',
+      modeNames: async () => new Map([
+        ['dsh-writing', '写作模式'],
+        ['dsh-dev', '开发模式'],
+      ]),
+    })
+    await waitFor(() => {
+      expect(cardOf('ada').textContent).toContain('写作模式')
+      expect(cardOf('main').textContent).toContain('开发模式')
+    })
+    expect(cardOf('cathy').textContent).toContain('dsh-custom')
+    expect(cardOf('bill').textContent).not.toContain('模式')
+  })
+
+  it('keeps the preset id visible when the mode-name read fails', async () => {
+    const state: RoomState = {
+      ...STATE,
+      members: [{ name: 'ada', kind: 'cli', provider: 'kimi', invitedBy: 'human', preset: 'dsh-writing' }],
+    }
+    await bench({ state, modeNames: async () => { throw new Error('unavailable') } })
+    await waitFor(() => { expect(cardOf('ada').textContent).toContain('dsh-writing') })
   })
 
   it('carries no interrupt action — interrupt lives on the run surfaces', async () => {

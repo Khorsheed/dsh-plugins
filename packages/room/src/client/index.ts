@@ -454,8 +454,23 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     await roomStore.refresh(sessionId)
     return { ok: true }
   }
+  // Mode display names for the member cards, composer and mode-tools notice,
+  // one providers read per room. Preset copy is static for the page's lifetime;
+  // the main agent's current preset id comes from the reactive session list.
+  const modeNameCache = new Map<SessionId, Promise<ReadonlyMap<string, string>>>()
+  const modeNames = (sessionId: SessionId): Promise<ReadonlyMap<string, string>> => {
+    let names = modeNameCache.get(sessionId)
+    if (names === undefined) {
+      names = inviteFace(sessionId).listProviders(sessionId)
+        .then(list => new Map((list?.presets ?? []).map(row => [row.id, row.name ?? row.id] as const)))
+      names.catch(() => { modeNameCache.delete(sessionId) })
+      modeNameCache.set(sessionId, names)
+    }
+    return names
+  }
   const membersFace = (sessionId: SessionId): RoomMembersInjected => ({
     roomStore,
+    modeNames,
     memberActivity,
     runningBackgroundTasks: async childSessionId => runningBackground(await memberActivity.store.readNow(childSessionId)),
     unlinkSession: linkFace(sessionId).unlinkSession,
@@ -787,6 +802,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     inject: (sessionId: SessionId): RoomComposerInjected => ({
       ...goalFace(sessionId),
       ...inviteFace(sessionId),
+      modeNames,
       reconcileDelivery: reconcileFor(sessionId),
       openPlanSession: id => openSession(id as SessionId),
       memberActivity,
@@ -964,18 +980,6 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     },
     RoomRunView,
   ))
-  // Mode display names for the mode-tools notice, one providers read per room.
-  const modeNameCache = new Map<SessionId, Promise<ReadonlyMap<string, string>>>()
-  const modeNames = (sessionId: SessionId): Promise<ReadonlyMap<string, string>> => {
-    let names = modeNameCache.get(sessionId)
-    if (names === undefined) {
-      names = inviteFace(sessionId).listProviders(sessionId)
-        .then(list => new Map((list?.presets ?? []).map(row => [row.id, row.name ?? row.id] as const)))
-      names.catch(() => { modeNameCache.delete(sessionId) })
-      modeNameCache.set(sessionId, names)
-    }
-    return names
-  }
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     {
       name: 'conversation.chat.node',

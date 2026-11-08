@@ -64,6 +64,7 @@ import type { RoomComposerMatch, RoomComposerProps } from './slots.ts'
 import { chipDetectIndex, draftSegments, freeText, planFreeEdit, type DraftChip } from './draft-chips.ts'
 import { detectOffset, memberMention, otherRows, rankByMatch, sessionMention, sessionTitle, shortTime, type RoomMenuMember, type SessionCandidate } from './at-menu.ts'
 import { memberColor } from './member-color.ts'
+import { memberModeName, roomPresetOf, useMemberModeNames } from './member-mode.ts'
 import { RoomStatsLine } from './RoomStatsLine.tsx'
 import { RoomTaskCapsule } from './RoomTaskCapsule.tsx'
 import { useRoomActivity } from './MemberActivity.tsx'
@@ -193,11 +194,13 @@ interface AttachmentActions {
 export function RoomComposer({
   sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
-  modelDirectory, renderMemberConfiguration, renderMemberInbox, renderMemberTools, stopMember, openReference, listSessions, insertSessionReference, useSession, useProjection, useInput, inputActions, t,
+  modelDirectory, renderMemberConfiguration, renderMemberInbox, renderMemberTools, stopMember, openReference, listSessions, insertSessionReference, useSession, useSessions, useProjection, useInput, inputActions, modeNames, t,
   attachments: attachmentFace, setCoordinator, runCommand, memberActivity, setSettings, controlMemberQueue, withdrawDelivery,
 }: RoomComposerProps): ReactNode {
   const [coordinatorMenu, setCoordinatorMenu] = useState(false)
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
+  const roomPreset = useSessions(sessions => roomPresetOf(sessions.byId[sessionId]))
+  const modeNameById = useMemberModeNames(modeNames, sessionId)
   // Members' background work: the 「后台 N」 capsule and its tray (nothing without the family's read).
   const activity = useRoomActivity(memberActivity, state)
   const tag = useSyncExternalStore(taskTags?.subscribe ?? NO_TAGS, () => taskTags?.get(sessionId))
@@ -286,6 +289,7 @@ export function RoomComposer({
   // projection).
   const nativeRunning = useSession(snapshot => snapshot.running) ?? false
   const coordinator = state === undefined ? undefined : coordinatorMember(state)
+  const coordinatorMode = coordinator === undefined ? undefined : memberModeName(coordinator, roomPreset, modeNameById)
   const external = coordinator?.kind === 'cli'
   const running = external ? state?.runs.some(run => run.member === coordinator.name && run.state === 'running') ?? false : nativeRunning
   const inbox = useProjection('inbox') as unknown as InboxState | undefined
@@ -691,7 +695,7 @@ export function RoomComposer({
             >
               <span className={css.coordinatorDot} aria-hidden />
               <span className={css.coordinatorName}>{coordinator?.name ?? 'dsh'}</span>
-              <span>· {t('coordinator.label')} · {external ? coordinator.provider : 'DSH'}</span>
+              <span>· {t('coordinator.label')} · {external ? coordinator.provider : 'DSH'}{coordinatorMode !== undefined && <> · {coordinatorMode}</>}</span>
               {switchable && <IconChevronDownOutlineMedium className={css.coordinatorChevron} />}
             </button>
           )}
