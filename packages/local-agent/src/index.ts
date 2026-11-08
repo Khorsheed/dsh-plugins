@@ -121,12 +121,14 @@ import type {
   LocalAgentBackgroundTasks,
   LocalAgentBackgroundTasksLost,
   LocalAgentBackgroundTasksRequest,
+  LocalAgentSubagentCalls,
   LocalAgentSelfAdmission,
   LocalAgentSelfAdmissionRequest,
   LocalAgentSelfCause,
 } from './types.ts'
 import { ExecutionRecorder, executionOutcome, type OpenExecution } from './execution-records.ts'
 import { executionOfToolCall, executionReadingsOf, executionTaskOf, selfExecutionOfTask } from './execution-read.ts'
+import { grandchildIdsOf, subagentCallsOf } from './subagent-calls.ts'
 import LocalAgentGateway from './gateway.ts'
 import { guardChildLog, type QuarantineEntry } from './child-log-guard.ts'
 import { MemberChannel } from './member-channel.ts'
@@ -183,6 +185,9 @@ export type {
   LocalAgentBackgroundTasks,
   LocalAgentBackgroundTasksLost,
   LocalAgentBackgroundTasksRequest,
+  LocalAgentSubagentCall,
+  LocalAgentSubagentCalls,
+  LocalAgentSubagentStep,
   LocalAgentTaskRef,
   LocalAgentUnrecorded,
   LocalAgentExecutionIntent,
@@ -236,6 +241,7 @@ export {
 } from './mirror-step.ts'
 export type { MirrorBlock, MirrorGeneration, MirrorRequestConfig, MirrorSource, MirrorUnit } from './mirror-step.ts'
 export { CLI_SUBAGENT_SESSION_SEPARATOR, cliSubagentLabel, cliSubagentSessionId, openCliSubagent } from './cli-subagent.ts'
+export { SUBAGENT_STEP_LIMIT, grandchildIdsOf, subagentCallsOf, toolArgumentSummary } from './subagent-calls.ts'
 export type { CliSubagentCall, CliSubagentEndOptions, CliSubagentExecution, CliSubagentHandle, CliSubagentIdentity } from './cli-subagent.ts'
 import { LocalAgentStreams } from './live-stream.ts'
 export { LocalAgentStreams, LiveStreamPublisher, LIVE_CHECKPOINT_INTERVAL_MS } from './live-stream.ts'
@@ -3330,6 +3336,29 @@ export class LocalAgentRegistry {
       this.ctx.logger.warn(`localAgent: the background task read failed: ${error instanceof Error ? error.message : String(error)}`)
       return null
     }
+  }
+
+  /**
+   * A member's CLI subagent calls (the `memberSubagentCalls` Remote; the
+   * member session's subagent cards): the member's catalog rows name its
+   * grandchild sessions, each grandchild execution with a `cli-subagent`
+   * cause is one call's subagent. Null for a session that is not a family
+   * member; an empty list for a member whose CLI ran none (or a log this
+   * host cannot read).
+   * @param childSessionId - the member's dsh child session.
+   * @returns the calls, or null.
+   */
+  async memberSubagentCalls(childSessionId: string): Promise<LocalAgentSubagentCalls | null> {
+    const provider = this.delegations.get(childSessionId)?.provider ?? this.memberBinding(childSessionId)?.provider
+    if (provider === undefined) return null
+    const events = await this.readMemberEvents(childSessionId)
+    if (events === undefined) return { calls: [] }
+    const grandchildren: Array<{ sessionId: string; events: readonly SessionEvent[] }> = []
+    for (const sessionId of grandchildIdsOf(childSessionId, events)) {
+      const read = await this.readMemberEvents(sessionId)
+      if (read !== undefined) grandchildren.push({ sessionId, events: read })
+    }
+    return { calls: subagentCallsOf(grandchildren) }
   }
 
   /** A member's child-log events: the live session's snapshot, else one read from storage; undefined when unreadable. */

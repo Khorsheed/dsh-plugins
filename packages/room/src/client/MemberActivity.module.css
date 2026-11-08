@@ -333,12 +333,180 @@
   color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
 }
 
+/* ---- CLI subagent cards (the shell's spinner, tag, usage; steps and group rows) */
+
+.spin {
+  flex: none;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  margin: 0 4px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--dsw-alias-state-business-primary, rgb(65, 118, 230)) 22%, transparent);
+  border-top-color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  animation: room-activity-spin 1s linear infinite;
+}
+
+@keyframes room-activity-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin { animation: none; }
+}
+
+.tag {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.05));
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.usage {
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  white-space: nowrap;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 8px 0 0 30px;
+  padding-left: 10px;
+  border-left: 2px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.12));
+}
+
+.step {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 0;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.step[data-step='tool'] {
+  padding-left: 14px;
+}
+
+.stepKind {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.05));
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.step[data-step='request'] .stepKind {
+  --tone: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+}
+
+.step[data-step='reply'] .stepKind {
+  --tone: var(--dsw-alias-state-success, #1f9a55);
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 12%, transparent);
+}
+
+.step[data-latest] .stepText,
+.step[data-latest] .stepText .mono {
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+}
+
+.step[data-failed] .stepText,
+.step[data-failed] .stepText .mono {
+  color: var(--dsw-alias-text-error, #d9363e);
+}
+
+.stepText {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.stepTime {
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 8px 0 0 30px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.05));
+}
+
+.rowIndex {
+  flex: none;
+  width: 12px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.more {
+  padding: 2px 8px;
+  font-size: var(--dsh-panel-text-meta, 12px);
+  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+/* The host's generic tool row, for a call outside a member session. */
+.plain {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 24px;
+  font-size: var(--dsh-panel-text-body, 13px);
+  color: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
+}
+
+.plain b {
+  flex: none;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, #16181c);
+}
+
+.plainSummary {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Narrow (a phone, a narrow chat column): the card's lines start flush. */
 @media (max-width: 560px) {
   .now,
   .body,
+  .rows,
   .memberLine {
     margin-left: 0;
+  }
+
+  .steps {
+    margin-left: 4px;
   }
 }
 

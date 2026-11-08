@@ -21,11 +21,12 @@ import { attachmentsByOwner, type RoomRunViewProps } from './slots.ts'
 import { memberColor } from './member-color.ts'
 import { pathMentions } from './path-mentions.ts'
 import { continuedSince, useRoundGroup } from './round-segments.ts'
+import { RunSubagentWait } from './SubagentCards.tsx'
 import css from './RoomRunView.module.css'
 import speech from './RoomSpeechView.module.css'
 
 /** The member run row. */
-export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMember, renderMemberOutput, openPath, renderSlot, t }: RoomRunViewProps): ReactNode {
+export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMember, renderMemberOutput, openPath, renderSlot, memberSubagents, t }: RoomRunViewProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   // The projected run this card is (its execution by run id, else the
   // member's latest run): the projection reads the core, the card's own
@@ -90,6 +91,10 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
       {uncertain
         ? <span className={css.hint} title={t(waitsForReconcile ? 'run.waitingReconcileHint' : 'run.uncertainHint')}>· {t(waitsForReconcile ? 'run.waitingReconcileHint' : 'run.uncertainHint')}</span>
         : <span className={css.elapsed} aria-hidden>· {elapsed === undefined ? t('run.durationUnknown') : formatDurationMs(elapsed)}</span>}
+      {/* A foreground subagent the member waits for is the round's current action. */}
+      {!failed && !uncertain && waiting.length === 0 && (
+        <RunSubagentWait face={memberSubagents} childSessionId={childSessionId} startedAt={data.startedAt} openSession={id => { openSession(id as never) }} t={t} className={css.wait} linkClassName={css.link} fullClassName={css.waitFull} shortClassName={css.waitShort} />
+      )}
       {failed && data.error !== undefined && (
         <span className={css.reason} title={data.error}>{data.error}</span>
       )}

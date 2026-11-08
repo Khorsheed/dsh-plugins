@@ -391,9 +391,10 @@ function RoomBackgroundConfirm({ count, onConfirm, onCancel, disabled = false, t
 /**
  * The shared card shell: icon · type · description · status/elapsed ·
  * actions, an optional one-line `now`, and the expanded body. Background
- * commands use it here; background subagents reuse it with their own body.
+ * commands use it here; CLI subagents (SubagentCards.tsx) reuse it with a
+ * spinner while running, a tag (后台 / 续用), their usage, and their rows.
  */
-export function ActivityCardShell({ item, kindLabel, now, t, actions, line, body, exit = false }: {
+export function ActivityCardShell({ item, kindLabel, now, t, actions, line, body, exit = false, spin = false, icon, tag, usage, status, rows }: {
   readonly item: ActivityItem
   readonly kindLabel: string
   readonly now: number
@@ -402,17 +403,32 @@ export function ActivityCardShell({ item, kindLabel, now, t, actions, line, body
   readonly line?: ReactNode
   readonly body?: ReactNode
   readonly exit?: boolean
+  /** A spinner in place of the icon (a running subagent, the host's own run card). */
+  readonly spin?: boolean
+  /** The icon glyph, when not the kind's own. */
+  readonly icon?: string
+  readonly tag?: string
+  readonly usage?: string
+  /** The status pill, when not the item's own words. */
+  readonly status?: ReactNode
+  /** Rows under the head (a subagent's steps, a group's members). */
+  readonly rows?: ReactNode
 }): ReactNode {
   return (
     <div className={css.card} data-status={item.status} data-member-activity={item.id}>
       <div className={css.cardHead}>
-        <span className={css.icon} aria-hidden>{ICON[item.kind]}</span>
+        {spin
+          ? <span className={css.spin} aria-hidden />
+          : <span className={css.icon} aria-hidden>{icon ?? ICON[item.kind]}</span>}
         <span className={css.kind}>{kindLabel}</span>
+        {tag !== undefined && <span className={css.tag}>{tag}</span>}
         <span className={css.desc} title={item.label}>{item.label}</span>
-        <StatusPill item={item} now={now} t={t} exit={exit} />
+        {status ?? <StatusPill item={item} now={now} t={t} exit={exit} />}
+        {usage !== undefined && <span className={css.usage}>{usage}</span>}
         {actions !== undefined && <span className={css.actions}>{actions}</span>}
       </div>
       {line !== undefined && <div className={css.now}>{line}</div>}
+      {rows}
       {body !== undefined && <div className={css.body}>{body}</div>}
     </div>
   )

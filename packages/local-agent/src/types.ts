@@ -568,6 +568,56 @@ export interface LocalAgentBackgroundTasks {
 }
 
 /**
+ * One step of a CLI subagent's execution, as its card lists it (in order):
+ * a model request (its first line of thought or text and how long it
+ * generated), a tool it called (name, the argument a reader recognizes, how
+ * long it ran), or the final reply it handed back.
+ */
+export type LocalAgentSubagentStep =
+  | { kind: 'request'; index: number; text?: string; durationMs?: number }
+  | { kind: 'tool'; name: string; summary?: string; durationMs?: number; failed?: true }
+  | { kind: 'reply'; text: string }
+
+/**
+ * One member call's CLI subagent, read back from its grandchild session
+ * (member-cli-subagents M5): one grandchild execution whose `cli-subagent`
+ * cause names the member's call. A Kimi `AgentSwarm` call has one entry per
+ * subagent (each with its `group` place).
+ */
+export interface LocalAgentSubagentCall {
+  /** The member's `Agent`/`AgentSwarm`/`Task` call id. */
+  callId: string
+  /** The grandchild session (the 「打开」 target). */
+  sessionId: string
+  executionId: string
+  /** The subagent type (`explore`, `general-purpose`, …). */
+  name?: string
+  /** The description the member gave (the grandchild's label after `<type>: `). */
+  description?: string
+  group?: { index: number; size: number }
+  background?: true
+  /** The nth call of this subagent (1 = the call that created it; 2+ = a Kimi resume). */
+  ordinal: number
+  /** The first turn this call opened in the grandchild (where 「打开」 lands). */
+  turn?: number
+  /** `running` while the end record is missing; `uncertain` reads `lost`. */
+  state: 'running' | 'done' | 'failed' | 'cancelled' | 'lost'
+  startedAt: number
+  endedAt?: number
+  /** The sum of the call's per-request usage (absent before the first request lands). */
+  usage?: TokenUsage
+  /** The call's steps, oldest first; at most the last 40 (the read's limit). */
+  steps: LocalAgentSubagentStep[]
+  /** How many earlier steps were left out. */
+  stepsOmitted?: number
+}
+
+/** A member's CLI subagent calls, as the `memberSubagentCalls` Remote answers it. */
+export interface LocalAgentSubagentCalls {
+  calls: LocalAgentSubagentCall[]
+}
+
+/**
  * The `localAgent/background-tasks-lost` payload: a harness took a member's
  * resident process away while these background tasks ran in it.
  */
