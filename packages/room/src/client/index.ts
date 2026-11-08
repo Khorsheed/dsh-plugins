@@ -52,6 +52,8 @@ import { mainSessionId, RoomStore, type RoomClientContext } from './room-store.t
 import { RoomPresetVisibility, RegistrationToggle } from './preset-visibility.ts'
 import { RoomRelayView } from './RoomRelayView.tsx'
 import { RoomDispatchView } from './RoomDispatchView.tsx'
+import { RoomReceiptView, type RoomReceiptInjected } from './RoomReceiptView.tsx'
+import { roomReceiptDefinition } from './receipt.ts'
 import { RoomAutoContinueView } from './RoomRestart.tsx'
 import { RoomCompactionView } from './RoomCompactionView.tsx'
 import { RoomInboxView } from './RoomInboxView.tsx'
@@ -595,6 +597,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     lctx.uiConversation.events.register(roomHelpReplyDefinition)
     lctx.uiConversation.events.register(roomHelpRequestDefinition)
     lctx.uiConversation.events.register(roomHelpInDefinition)
+    lctx.uiConversation.events.register(roomReceiptDefinition)
     // Each turn's Bash call ids: the member session's background command cards read them.
     lctx.uiConversation.events.register(activityCallsDefinition as never)
   })
@@ -936,6 +939,16 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       inject: (): RoomDispatchInjected => ({ roomStore }),
     },
     RoomDispatchView,
+  ))
+  // The receipt line under a human message (排队中 · 撤回 …).
+  ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+    {
+      name: 'conversation.chat.node',
+      key: 'room-receipt',
+      locale: NS,
+      inject: (): RoomReceiptInjected => ({ roomStore, openSession }),
+    },
+    RoomReceiptView,
   ))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     {

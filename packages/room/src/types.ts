@@ -1777,6 +1777,17 @@ export interface RoomDelivery {
   readonly kind?: 'task' | 'notify'
   readonly text: string
   readonly error?: string
+  /** The settling edge's own words (`room/delivery-state.text`): why it was cancelled, that it answered a question. */
+  readonly note?: string
+  /** A human message's id (`room/dispatch.messageId`): the bubble this delivery's state is shown under. */
+  readonly messageId?: string
+  /**
+   * Where that message sits in the room log: `before` the dispatch (the
+   * room wrote the bubble first — its receipt line applies), `after` it (the
+   * room's own agent wrote it when it took the message in). Absent: not in
+   * the log yet — still waiting in the queue above the composer.
+   */
+  readonly bubble?: 'before' | 'after'
   readonly plan?: RoomDispatchEvent['plan']
   /** The task this delivery belongs to (see RoomDispatchEvent.task). */
   readonly task?: string

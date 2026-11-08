@@ -1123,6 +1123,27 @@ describe('DispatchEngine (real composition)', () => {
     expect(events().filter(event => event.type === 'room/run-moved').length).toBe(count)
   })
 
+  it('a human message moves the running cards below its dispatch, so the receipt line stays under the bubble', async () => {
+    const bench = await bootRoom()
+    const adaFlight = deferred<SubagentResult>()
+    bench.facade.start.mockImplementationOnce(async () => ({
+      id: SessionId('child-ada'), localAgent: undefined, result: adaFlight.promise, dispose: async () => {},
+    }))
+    await bench.service.invite({ sessionId: bench.sessionId, provider: 'kimi', name: 'ada' })
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 慢活' })
+    await tick()
+    await bench.service.postMessage({ sessionId: bench.sessionId, text: '@ada 另外一件' })
+    const events = bench.ctx.sessions.get(bench.sessionId)!.snapshotEvents()
+    const message = events.findLast(event => event.type === 'user/message')!
+    const dispatch = events.findLast(event => event.type === 'room/dispatch')!
+    const move = events.findLast(event => event.type === 'room/run-moved')!
+    expect((dispatch.data as { messageId?: string }).messageId).toBe(String((message.data as { id: unknown }).id))
+    expect(message.seq).toBeLessThan(dispatch.seq)
+    expect(move.seq).toBeGreaterThan(dispatch.seq)
+    adaFlight.resolve({ output: [{ type: 'text', text: 'ada 完成' }], stopReason: 'completed' })
+    await bench.service.engine.idle()
+  })
+
   it('the main-agent member gets the human\'s own message, the room\'s additions beside it, and no speech projection', async () => {
     const bench = await bootRoom()
     // What the room hands the turn's first step, read while the followup runs

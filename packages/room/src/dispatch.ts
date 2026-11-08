@@ -190,8 +190,7 @@ export const RESTART_UNKNOWN_TEXT = 'Execution outcome is unknown after restart;
 export const DELIVERY_UNKNOWN_TEXT = 'Host restarted before a durable settlement; reconcile before retrying'
 /** `/compact` to a member that has never run: nothing to compact. */
 export const NOTHING_TO_COMPACT_TEXT = '还没有可压缩的上下文'
-/** A message that answered the question its recipient was waiting on: delivered as that answer, not as a round of its own. */
-export const ANSWERED_QUESTION_TEXT = '作为对它提问的回答送达'
+export { ANSWERED_QUESTION_TEXT } from './delivery-notes.ts'
 /** How a message standing in for an answer reads on the card and to the member. */
 export const ANSWER_BY_MESSAGE_PREFIX = '没有选选项，直接回复了：'
 /** A message that queued behind a lost round an earlier move-on skipped: closed, not replayed. */

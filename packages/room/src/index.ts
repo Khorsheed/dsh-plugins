@@ -1893,7 +1893,6 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     } else {
       this.engine.directMessages.add(String(human.id))
     }
-    floatRunningCards(loaded.session)
     const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
     // 「全部继续」 names the interrupted rounds it continues (M9): recorded
     // for those that are interrupted rounds of its targets, read before the
@@ -1907,6 +1906,9 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       ...admitted.records.length === 0 ? {} : { attachments: admitted.records },
       targetIds: targets.map(name => memberId(loaded.session.snapshotEvents(), loaded.state.members.find(member => member.name === name)!)),
     })
+    // The running cards move below the message AND its receipt line (the
+    // room-receipt row anchors at this dispatch), never between the two.
+    floatRunningCards(loaded.session)
     await this.ctx.sessions.flush(loaded.session)
     const answered = await this.answerByMessage(loaded.session, dispatch.seq, targets, withAttachmentPaths(prompt, admitted.records))
     for (const target of targets) {
