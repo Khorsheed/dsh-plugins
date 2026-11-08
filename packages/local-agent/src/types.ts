@@ -954,6 +954,12 @@ export interface LocalAgentMemberInput {
   key?: string
   /** The input text: composer rows only (their only source; they replay after a restart). */
   text?: string
+  /**
+   * Display only, never replayed: the opening of what another caller sent
+   * (a room passes its message's first 120 characters), so the members page
+   * reads 「来自协作间：…」 instead of a bare caller name.
+   */
+  preview?: string
   /** `compact` for a compaction execution; absent = a prompt. */
   operation?: 'compact'
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'uncertain'
@@ -1804,6 +1810,8 @@ export interface LocalAgentExecutionRequest {
   readonly callerRef?: string
   /** Display label of this round's activation; absent = `member.create.label`, then the harness name. */
   readonly label?: string
+  /** Display only: the opening of the input, kept on the ledger row for the members page (never replayed). */
+  readonly preview?: string
   /** Cancels the execution while queued and while running. */
   readonly signal?: AbortSignal
   readonly on?: {

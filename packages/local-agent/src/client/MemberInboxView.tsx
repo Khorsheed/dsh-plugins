@@ -35,7 +35,10 @@ export function MemberInboxView({ face, room = false, t }: { face: MemberInboxFa
   // one blocks the member whoever sent it, so it is reconciled here too
   // (user decision 2026-11-03 ③); a failure is shown for composer input only.
   const recovery = state.messages.filter(row => row.status === 'uncertain' || (row.status === 'failed' && (row.caller ?? 'composer') === 'composer')).slice(-8)
-  const preview = (row: LocalAgentMemberInput): string => row.text ?? t(`inbox.caller.${row.caller ?? 'api'}` as 'inbox.caller.api')
+  // Another caller's row reads its preview when it left one (a room: 「来自协作间：…」), else the caller's name.
+  const preview = (row: LocalAgentMemberInput): string => row.text
+    ?? (row.preview !== undefined && row.caller === 'room' ? t('inbox.fromRoom', { text: row.preview }) : undefined)
+    ?? t(`inbox.caller.${row.caller ?? 'api'}` as 'inbox.caller.api')
   if (queued.length === 0 && recovery.length === 0 && (room || !state.paused) && error === undefined && state.error === undefined) return null
   const control = (action: 'pause' | 'resume' | 'cancel' | 'reconcile', requestId?: string, outcome?: 'done' | 'cancelled'): void => {
     setError(undefined)

@@ -237,6 +237,8 @@ describe('room on the real local-agent core', () => {
     expect(end).toMatchObject({ phase: 'end', executionId, outcome: 'done', turns: [1] })
     const ledger = bench.core.registry.readMemberInbox(ada).messages
     expect(ledger.map(row => [row.id, row.caller, row.key, row.status])).toEqual([[executionId, 'room', `${dispatch.seq}:${ada}`, 'done']])
+    // The members page's queue row reads the message's own words (display only).
+    expect(ledger[0]!.preview).toBe('搭骨架')
     expect(await bench.service.getState({ sessionId: bench.sessionId })).toMatchObject({ ok: true, value: { members: [{ name: 'dsh' }, { name: 'ada', childSessionId: ada }] } })
     await releasedLog(bench, ada, 1)
   })

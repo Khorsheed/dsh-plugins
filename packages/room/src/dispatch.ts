@@ -210,6 +210,17 @@ export function supersededByMoveOn(events: readonly SessionEvent[], targetId: st
     && (event.data as { text?: string }).text === MOVED_ON_TEXT && event.data.dispatchSeq < dispatchSeq && dispatchSeq < event.seq)
 }
 
+/**
+ * The opening of what a room round asks, for the member's queue row on the
+ * members page: the dispatch's own words (not the assembled prompt with the
+ * room's briefing), first 120 characters on one line.
+ */
+export function previewOf(events: readonly SessionEvent[], dispatchSeq: number | undefined, fallback: string): string {
+  const source = dispatchSeq === undefined ? undefined : events.find(event => event.seq === dispatchSeq)
+  const text = source?.type === 'room/dispatch' ? source.data.text : fallback
+  return text.replace(/\s+/g, ' ').trim().slice(0, 120)
+}
+
 export function floatRunningCards(room: Session, except?: string): void {
   const running = replay(room.snapshotEvents()).runs
     .filter(run => run.state === 'running' && run.member !== except)
@@ -1638,6 +1649,8 @@ export class DispatchEngine {
         // same delivery is never admitted twice.
         key: deliveryId ?? (relayIds.length > 0 ? `relay:${relayIds.join(',')}` : runId),
         callerRef: runId,
+        // The members page's queue row reads 「来自协作间：…」 (display only; an older core ignores it).
+        ...compacting ? {} : { preview: previewOf(room.snapshotEvents(), dispatchSeq, text) },
         signal: stop.signal,
         on: { admitted: async (execution) => { admittedNow(); startedAt = await admitted(execution) }, progress },
       })
