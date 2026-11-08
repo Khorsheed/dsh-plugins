@@ -34,11 +34,13 @@ export interface MessageToolsInjected {
     /** The session's shared model directory (the composer seat's own store; a frozen empty stub when ui-model-selection is absent). */
     modelDirectory: HostObservable<ModelDirectoryState>
   }
-  /** Whether the editor's model chip can switch models in this session. */
+  /** Whether this session has a native model directory; historical evidence still decides whether the chip renders. */
   modelsAvailable: boolean
   /** Refresh the advisory model directory (fire-and-forget; errors land on the store). */
   loadModels: () => void
-  /** Submit a provider/model/effort selection; resolves to host acceptance. */
+  /** Read the route that answered the target; null means no reliable native request or a read failure. */
+  loadEditModel: (targetSeq: number) => Promise<ModelSelection | null>
+  /** Submit a provider/model/effort selection when the edit saves; resolves to host acceptance. */
   selectModel: (selection: ModelSelection) => Promise<boolean>
   /**
    * Edit one user message in place: replace it (and the surface tail) with

@@ -23,7 +23,9 @@ import {
 } from './marker.ts'
 import { registerRestoreProjection } from './restore-projection.ts'
 import { planEdit, planRestore, planWithdrawal } from './withdraw.ts'
+import { editModelSelection } from './edit-model.ts'
 import type {
+  MessageToolsEditModel, MessageToolsEditModelRequest,
   MessageToolsEditRequest, MessageToolsEditResult,
   MessageToolsRestoreRequest, MessageToolsRestoreResult,
   MessageToolsWithdrawRequest, MessageToolsWithdrawResult,
@@ -123,6 +125,21 @@ export class MessageToolsService extends TypertRemoteService {
     await this.ctx.sessions.flush(session)
     /* v8 ignore next -- entries is never empty (the target itself always replays), so [0] exists */
     return { ok: true, value: { restoredSeq: appendedSeqs[0] ?? request.targetSeq } }
+  }
+
+  /**
+   * Read the model route that answered an editable message without mutating
+   * the log. Null means the message has no reliable native model request, as
+   * with a room whose external CLI coordinator owns generation instead.
+   * @param request - session identity and target message seq.
+   * @returns the historical route, or null when no native request is recorded.
+   */
+  @Remote('editModel')
+  async editModel(request: MessageToolsEditModelRequest): Promise<MessageToolsEditModel> {
+    const session = this.ctx.sessions.get(request.sessionId)
+    return session === undefined
+      ? null
+      : editModelSelection(session.snapshotEvents(), session.surface.nodes, request.targetSeq)
   }
 
   /**

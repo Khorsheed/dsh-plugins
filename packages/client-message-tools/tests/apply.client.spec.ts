@@ -19,6 +19,9 @@ function remoteStub(behavior: 'ok' | 'transport-error' | 'rejected' = 'ok') {
     withdraw: vi.fn(async () => reply({ replacementSeq: 9, shadowedCount: 2 })),
     restore: vi.fn(async () => reply({ restoredSeq: 10 })),
     edit: vi.fn(async () => reply({ replacementSeq: 11, triggered: true })),
+    editModel: vi.fn(async () => behavior === 'transport-error'
+      ? { ok: false, error: { code: 'offline' } }
+      : { ok: true, value: { provider: 'p', model: 'm' } }),
   }
 }
 
@@ -347,5 +350,18 @@ describe('message-tools client apply', () => {
     chipped.loadModels()
     withModels.directory.select.mockRejectedValueOnce(new Error('denied'))
     expect(await chipped.selectModel({ provider: 'p', model: 'm' })).toBe(false)
+  })
+
+  it('user face reads historical edit models and degrades transport failures to null', async () => {
+    const { ctx, slots, remote } = await bench({ models: true })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const user = face(slots, 'user')('s1') as MessageToolsInjected
+    expect(await user.loadEditModel(4)).toEqual({ provider: 'p', model: 'm' })
+    expect(remote.editModel).toHaveBeenCalledWith({ sessionId: 's1', targetSeq: 4 })
+
+    remote.editModel.mockResolvedValueOnce({ ok: false, error: { code: 'offline' } })
+    expect(await user.loadEditModel(4)).toBeNull()
+    remote.editModel.mockRejectedValueOnce(new Error('offline'))
+    expect(await user.loadEditModel(4)).toBeNull()
   })
 })

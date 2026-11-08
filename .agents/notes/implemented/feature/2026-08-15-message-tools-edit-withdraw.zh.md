@@ -33,7 +33,7 @@ Status: implemented
 
 同一包的第二轮迭代，两处新增：
 
-- **编辑框的 trailing 位渲染真实模型 chip。** 读写都经 `ctx.get('modelDirectories')`——ui-model-selection 的按会话共享 `ModelDirectory`，与 composer 模型座位、/model 弹层用的是同一份 store——因此编辑框里的切换经 host 校验，作用于重发的消息。该服务用 `ctx.get` 读取、绝不声明为 inject 边，组合里没有 ui-model-selection 时退化为不渲染 chip（以一个冻结的空 stub observable 保持 hooks 舱形状），而不是让 loader 空等。子 agent 会话按官方同款可用性规则不提供 chip。
+- **编辑框的 trailing 位渲染真实模型 chip。** 读写都经 `ctx.get('modelDirectories')`——ui-model-selection 的按会话共享 `ModelDirectory`，与 composer 模型座位、/model 弹层用的是同一份 store——因此编辑框里的切换经 host 校验，作用于重发的消息。该服务用 `ctx.get` 读取、绝不声明为 inject 边，组合里没有 ui-model-selection 时退化为不渲染 chip（以一个冻结的空 stub observable 保持 hooks 舱形状），而不是让 loader 空等。子 agent 会话按官方同款可用性规则不提供 chip。自 2026-11-08 起，[编辑重发的历史模型](../bug-fix/2026-11-08-message-tools-edit-historical-model.md) 取代最初的当前模型默认值与菜单即选即写：chip 从目标消息的实际路由开始，只在保存时写入，没有原生请求证据（包括外部 CLI 协调者）时不渲染。
 - **全区间聊天隐藏移到 DOM 层。** 上文的投影分析依然成立——没有可用 seam——因此客户端安装一张动态样式表，把 `data-chat-flow-key` 属性（`ChatNodeSeat.tsx:44-46`）锚点落在撤回区间内的所有聊天行一律隐藏，覆盖全部节点种类。隐藏器只跟踪当前选中的会话（flow key 跨会话会撞），仅在区间集合或节点数变化时重写规则，并随插件 fiber 释放。该属性未文档化，因此隐藏器在首个非空规则集出现时延后一帧探测（等 React 提交）；探测不到就自动停用、`console.warn` 一次，行为退回第一版（用户消息仍由被遮蔽的渲染器隐藏）。分隔线自身的 kind 不参与规则生成。
 
 ## Follow-up：恢复、分隔线重做为可展开标记、undo 图标

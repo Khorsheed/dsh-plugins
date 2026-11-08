@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ReasoningEffortId, type UserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { AssistantMessage } from '@deepseek-ai/dsh-llm/message'
 import MessageToolsService from '../src/index.ts'
@@ -26,14 +26,34 @@ function appendUser(ctx: Context, text: string): number {
   }), { surfaceOp: 'append' }).seq
 }
 
-function appendAssistant(ctx: Context, turn: number, step: number, text: string): number {
+function appendAssistant(ctx: Context, turn: number, step: number, text: string, route = { provider: 'deepseek', model: 'deepseek-chat' }): number {
   const session = ctx.sessions.get(SESSION)!
   const message = {
     id: `a${turn}-${step}`, role: 'assistant',
     content: [{ type: 'text', text }],
-    source: { kind: 'model', provider: 'deepseek', model: 'deepseek-chat' },
+    source: { kind: 'model', ...route },
   } as unknown as AssistantMessage
   return session.append('assistant/message', { turn, step, message, stream: [] }, { surfaceOp: 'append' }).seq
+}
+
+function appendHeader(ctx: Context, route: { provider: string; model: string; effort?: string }): void {
+  const session = ctx.sessions.get(SESSION)!
+  session.append('request/header', {
+    reason: 'change',
+    header: { config: {
+      provider: route.provider,
+      model: route.model,
+      ...route.effort === undefined ? {} : { reasoningEffort: ReasoningEffortId(route.effort) },
+    } },
+  })
+}
+
+function appendStep(ctx: Context, turn: number, route: { provider: string; model: string; effort?: string }, options: { header?: boolean; assistant?: boolean } = {}): void {
+  const session = ctx.sessions.get(SESSION)!
+  session.append('step/start', { turn, step: 1 })
+  if (options.header !== false) appendHeader(ctx, route)
+  if (options.assistant !== false) appendAssistant(ctx, turn, 1, `reply ${turn}`, route)
+  session.append('step/end', { turn, step: 1 })
 }
 
 describe('MessageToolsService (real composition)', () => {
@@ -128,5 +148,58 @@ describe('MessageToolsService (real composition)', () => {
     expect(result).toMatchObject({ ok: true, value: { triggered: false } })
     expect(await service.edit({ sessionId: SessionId('nope'), targetSeq: target, text: 'x' }))
       .toEqual({ ok: false, error: { code: 'session-not-found' } })
+  })
+
+  it('editModel restores each historical message\'s own provider, model and effort without writing events', async () => {
+    const { ctx, service } = await boot()
+    ctx.sessions.create(SESSION, { meta: {} })
+    const first = appendUser(ctx, 'first')
+    appendStep(ctx, 1, { provider: 'moonshot', model: 'k3', effort: 'high' })
+    const second = appendUser(ctx, 'second')
+    appendStep(ctx, 2, { provider: 'deepseek', model: 'v4', effort: 'low' })
+    const before = ctx.sessions.get(SESSION)!.snapshotEvents().length
+
+    expect(await service.editModel({ sessionId: SESSION, targetSeq: first }))
+      .toEqual({ provider: 'moonshot', model: 'k3', reasoningEffort: 'high' })
+    expect(await service.editModel({ sessionId: SESSION, targetSeq: second }))
+      .toEqual({ provider: 'deepseek', model: 'v4', reasoningEffort: 'low' })
+    expect(ctx.sessions.get(SESSION)!.snapshotEvents()).toHaveLength(before)
+  })
+
+  it('editModel reuses a matching unchanged header on a later turn', async () => {
+    const { ctx, service } = await boot()
+    ctx.sessions.create(SESSION, { meta: {} })
+    appendUser(ctx, 'first')
+    appendStep(ctx, 1, { provider: 'moonshot', model: 'k3', effort: 'high' })
+    const second = appendUser(ctx, 'second')
+    appendStep(ctx, 2, { provider: 'moonshot', model: 'k3' }, { header: false })
+
+    expect(await service.editModel({ sessionId: SESSION, targetSeq: second }))
+      .toEqual({ provider: 'moonshot', model: 'k3', reasoningEffort: 'high' })
+  })
+
+  it('editModel accepts a recorded request header even when its step produced no assistant message', async () => {
+    const { ctx, service } = await boot()
+    ctx.sessions.create(SESSION, { meta: {} })
+    const target = appendUser(ctx, 'failed attempt')
+    appendStep(ctx, 1, { provider: 'deepseek', model: 'v4', effort: 'low' }, { assistant: false })
+
+    expect(await service.editModel({ sessionId: SESSION, targetSeq: target }))
+      .toEqual({ provider: 'deepseek', model: 'v4', reasoningEffort: 'low' })
+  })
+
+  it('editModel returns null without native step evidence or for a target outside the live surface', async () => {
+    const { ctx, service } = await boot()
+    ctx.sessions.create(SESSION, { meta: {} })
+    const external = appendUser(ctx, 'external CLI coordinator')
+    const session = ctx.sessions.get(SESSION)!
+    session.append('turn/start', { turn: 1 })
+    session.append('turn/end', { turn: 1, reason: 'completed' })
+    expect(await service.editModel({ sessionId: SESSION, targetSeq: external })).toBeNull()
+    expect(await service.editModel({ sessionId: SESSION, targetSeq: 99 })).toBeNull()
+    expect(await service.editModel({ sessionId: SessionId('missing'), targetSeq: external })).toBeNull()
+
+    await service.withdraw({ sessionId: SESSION, targetSeq: external })
+    expect(await service.editModel({ sessionId: SESSION, targetSeq: external })).toBeNull()
   })
 })

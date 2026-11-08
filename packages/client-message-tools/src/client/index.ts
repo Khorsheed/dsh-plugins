@@ -20,6 +20,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the ctx.uiConversation service merge.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ModelDirectoryState } from '@deepseek-ai/dsh-client-ui-model-selection/client'
+import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the ctx.locale service merge.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -185,6 +186,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       if (!carried.ok) throw new Error(`messageTools.edit transport: ${carried.error.code}`)
       if (!carried.value.ok) throw new Error(`messageTools.edit rejected: ${carried.value.error.code}`)
     }
+    const loadEditModel = async (targetSeq: number): Promise<ModelSelection | null> => {
+      try {
+        const carried = await remote.editModel({ sessionId, targetSeq })
+        return carried.ok ? carried.value : null
+      } catch {
+        return null
+      }
+    }
     // After a cancel, `running` flips false BEFORE the turn's teardown
     // finishes landing (cancelled tool results persist after the flip,
     // turn/end last); a replacement's span must cover all of it, so wait
@@ -228,6 +237,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         // Load failures surface on the directory store itself.
         directory?.load().catch(() => undefined)
       },
+      loadEditModel,
       selectModel: selection => directory === undefined
         ? Promise.resolve(false)
         // Host 0.1.6-alpha.2 turned select() into a never-rejecting
