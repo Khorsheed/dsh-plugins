@@ -286,7 +286,8 @@
 }
 
 .meta,
-.reported {
+.reported,
+.subagentsNote {
   font-size: 12px;
   line-height: 24px;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
@@ -419,4 +420,17 @@
    back: 「……」 and the tail the question recorded. */
 .tail {
   color: var(--dsw-alias-label-secondary, rgba(90, 90, 90, 0.9));
+}
+
+/* 「这一轮用了 N 个子智能体」: the meta row's small text, a door to the member session. */
+.subagentsNote {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.subagentsNote:hover {
+  color: var(--dsw-alias-label-secondary, rgba(127, 127, 127, 1));
+  text-decoration: underline;
 }

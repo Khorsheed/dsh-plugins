@@ -190,6 +190,48 @@ describe('LocalAgentRegistry.readExecution', () => {
     expect(await cold.registry.readExecution('never-existed', 'e1')).toBeUndefined()
   })
 
+  it('includes the member CLI\'s own subagents (M6): the catalog\'s grandchildren, live and cold, apart from the member\'s calls', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'exec-read-sub-'))
+    const { ctx, registry } = await mount(root)
+    const member = ctx.sessions.create(SessionId('member-1'), { meta: { cwd: '/home/user/work' } } as never)
+    member.append('local-agent/execution', { phase: 'start', executionId: 'e1', caller: 'room', operation: 'prompt', parentSessionId: 'room-1', admittedAt: 1 })
+    localAgent.openMirrorTurn(member, 1, 'live')
+    localAgent.appendMirrorStep(member, 1, 1, { blocks: [{ kind: 'text', text: '派个子智能体' }], usage: { inputTokens: 100, outputTokens: 10 } }, { provider: 'kimi-cli', model: 'k' })
+    // No subagent yet: the reading is exactly the member's own.
+    expect(await registry.readExecution('member-1', 'e1')).not.toHaveProperty('subagents')
+    // The member's subagent: a grandchild under it, one catalog row, an execution naming e1.
+    const grandchild = ctx.sessions.create(SessionId('member-1.sub.agent-0'), { meta: { parentSession: SessionId('member-1'), origin: 'subagent', delegationDepth: 2 } } as never)
+    member.append('subagent/catalog', { version: 0, childId: grandchild.header.id, childCreatedAt: grandchild.header.createdAt, mode: 'one-shot', label: 'explore: 看目录' } as never)
+    // A host subagent's row (not `<member>.sub.`) is never read as a CLI subagent.
+    member.append('subagent/catalog', { version: 0, childId: 'other-child', childCreatedAt: 1, mode: 'one-shot' } as never)
+    grandchild.append('local-agent/execution', { phase: 'start', executionId: 'x1', caller: 'cli', operation: 'prompt', parentSessionId: 'member-1', admittedAt: 1,
+      cause: { kind: 'cli-subagent', sessionId: 'member-1', callId: 'call-1', executionId: 'e1', name: 'explore' } })
+    localAgent.openMirrorTurn(grandchild, 1, 'live')
+    localAgent.appendMirrorStep(grandchild, 1, 1, { blocks: [{ kind: 'text', text: '结论' }], usage: { inputTokens: 40, outputTokens: 4, cacheReadTokens: 7 } }, { provider: 'kimi-cli', model: 'k' })
+    const running = await registry.readExecution('member-1', 'e1')
+    expect(running).toMatchObject({
+      callUsage: { inputTokens: 100, outputTokens: 10 },
+      subagents: [{ sessionId: 'member-1.sub.agent-0', executionId: 'x1', name: 'explore', calls: 1 }],
+      subagentUsage: { inputTokens: 40, outputTokens: 4, cacheReadTokens: 7 },
+    })
+    localAgent.closeMirrorTurn(grandchild, 1, 'completed', '')
+    grandchild.append('local-agent/execution', { phase: 'end', executionId: 'x1', outcome: 'done', turns: [1], endedAt: 2, providerReportedUsage: { inputTokens: 40, outputTokens: 4, cacheReadTokens: 7 } })
+    localAgent.closeMirrorTurn(member, 1, 'completed', '')
+    member.append('local-agent/execution', { phase: 'end', executionId: 'e1', outcome: 'done', turns: [1], endedAt: 3 })
+    await registry.syncChildSession(grandchild)
+    await registry.syncChildSession(member)
+
+    // Another process: both logs cold, read once from storage.
+    const cold = await mount(root)
+    const reading = await cold.registry.readExecution('member-1', 'e1')
+    expect(reading).toMatchObject({
+      outcome: 'done',
+      callUsage: { inputTokens: 100, outputTokens: 10 },
+      subagents: [{ sessionId: 'member-1.sub.agent-0', executionId: 'x1', providerReportedUsage: { inputTokens: 40, outputTokens: 4, cacheReadTokens: 7 } }],
+      subagentUsage: { inputTokens: 40, outputTokens: 4, cacheReadTokens: 7 },
+    })
+  })
+
   it('memberBackgroundTasks: hands the harness the member home, CLI session and child-log lookups; null / unsupported otherwise', async () => {
     const { ctx, registry } = await mount(mkdtempSync(join(tmpdir(), 'exec-read-bg-')))
     const seen: LocalAgentBackgroundTasksRequest[] = []

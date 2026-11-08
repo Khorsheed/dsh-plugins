@@ -49,6 +49,12 @@ export interface KimiBackgroundTaskLookups {
   readonly now?: number
   readonly executionOfCall?: (callId: string) => Promise<string | undefined>
   readonly selfExecutionOf?: (taskId: string) => Promise<string | undefined>
+  /**
+   * The grandchild session a background subagent (Kimi `agentId`) is
+   * mirrored into (member-cli-subagents M3), when it is; undefined leaves
+   * the task without `subagentSessionId`.
+   */
+  readonly subagentSessionOf?: (subagentId: string) => string | undefined
 }
 
 /** The tasks directory for a session directory. */
@@ -108,6 +114,9 @@ export async function readKimiBackgroundTasks(sessionDir: string, lookups: KimiB
     }
     const startedBy = callId === undefined ? undefined : await lookups.executionOfCall?.(callId)
     if (startedBy !== undefined) task.startedBy = startedBy
+    const subagentId = task.kind === 'agent' ? text(info['agentId']) : undefined
+    const subagentSessionId = subagentId === undefined ? undefined : lookups.subagentSessionOf?.(subagentId)
+    if (subagentSessionId !== undefined) task.subagentSessionId = subagentSessionId
     if (task.state !== 'running') {
       const resultIn = await lookups.selfExecutionOf?.(task.id)
       if (resultIn !== undefined) task.resultIn = resultIn

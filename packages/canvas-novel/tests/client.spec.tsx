@@ -324,6 +324,8 @@ describe('ChapterReader', () => {
     const target = ask('2')
     const { unmount } = render(<ChapterBook {...props(remote)} target={target} />)
     expect(await screen.findByRole('heading', { name: '蓝叶' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['reader.toc'] }))
+    expect(await screen.findByText(zh['next.heading'])).toBeTruthy()
     unmount()
     render(<ChapterBook {...props(remote)} target={target} />)
     expect(await screen.findByText(zh['next.heading'])).toBeTruthy()
@@ -829,6 +831,84 @@ describe('the timeline, ideas, candidates and editing (2026-11-01)', () => {
     await waitFor(() => { expect(remote.editChapterBody).toHaveBeenCalledWith(SESSION, expect.objectContaining({ canvasId: CANVAS_ID, n: 1, text: '新的正文。' })) })
     expect(await screen.findByText(zh['edit.kept'].replace('{count}', '3'))).toBeTruthy()
     expect(screen.getByRole('tab', { name: zh['edit.preview'] }).getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('textbox', { name: zh['edit.open'] })).toBeNull()
+  })
+
+  it('saves before filling a continuation request, and never sends it', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    const draft = vi.fn((_session: SessionId, _text: string) => true)
+    const send = vi.fn(() => 'sent' as const)
+    render(<ChapterBook {...props(remote)} target={ask('1')} draftToConversation={draft} sendToConversation={send} />)
+    fireEvent.click(await screen.findByRole('tab', { name: zh['edit.mode'] }))
+    const box = screen.getByRole('textbox', { name: zh['edit.open'] })
+    fireEvent.change(box, { target: { value: '新的正文。末尾一句。' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['edit.continue'] }))
+    await waitFor(() => { expect(draft).toHaveBeenCalledOnce() })
+    expect(remote.editChapterBody).toHaveBeenCalledWith(SESSION, expect.objectContaining({ canvasId: CANVAS_ID, n: 1, text: '新的正文。末尾一句。' }))
+    expect(remote.editChapterBody.mock.invocationCallOrder[0]!).toBeLessThan(draft.mock.invocationCallOrder[0]!)
+    const request = draft.mock.calls[0]![1]
+    expect(request).toContain('novel_read(what=chapter, chapter=1)')
+    expect(request).toContain('「新的正文。末尾一句。」')
+    expect(request).toContain('可以直接修改')
+    expect(request).toContain('完整正文')
+    expect(send).not.toHaveBeenCalled()
+    expect(await screen.findByText(zh['edit.continueDrafted'])).toBeTruthy()
+    expect(screen.getByRole('tab', { name: zh['edit.preview'] }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('keeps the draft and position and does not fill a request when saving conflicts', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    remote.editChapterBody.mockImplementation(() => ok({ ok: false as const, error: 'stale' as const }))
+    const draft = vi.fn((_session: SessionId, _text: string) => true)
+    render(<ChapterBook {...props(remote)} target={ask('1')} draftToConversation={draft} />)
+    fireEvent.click(await screen.findByRole('tab', { name: zh['edit.mode'] }))
+    const box = screen.getByRole('textbox', { name: zh['edit.open'] }) as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: '还没保存成功的正文。' } })
+    fireEvent.click(screen.getByRole('button', { name: zh['edit.continue'] }))
+    expect(await screen.findByText(zh['edit.stale'])).toBeTruthy()
+    expect(draft).not.toHaveBeenCalled()
+    expect(box.value).toBe('还没保存成功的正文。')
+    expect(window.localStorage.getItem('novel-editor-position:canvas_novel:1')).not.toBeNull()
+    expect(screen.getByRole('tab', { name: zh['edit.mode'] }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('restores the chapter, edit mode, draft, caret and scroll after a remount without focusing', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    const first = render(<ChapterBook {...props(remote)} target={ask('1')} />)
+    fireEvent.click(await screen.findByRole('tab', { name: zh['edit.mode'] }))
+    const box = screen.getByRole('textbox', { name: zh['edit.open'] }) as HTMLTextAreaElement
+    fireEvent.change(box, { target: { value: '0123456789' } })
+    box.setSelectionRange(2, 6)
+    fireEvent.select(box)
+    box.scrollTop = 140
+    fireEvent.scroll(box)
+    first.unmount()
+
+    render(<ChapterBook {...props(remote)} />)
+    const restored = await screen.findByRole('textbox', { name: zh['edit.open'] }) as HTMLTextAreaElement
+    expect(restored.value).toBe('0123456789')
+    expect(restored.selectionStart).toBe(2)
+    expect(restored.selectionEnd).toBe(6)
+    expect(restored.scrollTop).toBe(140)
+    expect(document.activeElement).not.toBe(restored)
+    expect(screen.getByRole('tab', { name: zh['edit.mode'] }).getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('lets explicit navigation win and clears automatic resume at the contents', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    const first = render(<ChapterBook {...props(remote)} target={ask('1')} />)
+    fireEvent.click(await screen.findByRole('tab', { name: zh['edit.mode'] }))
+    first.unmount()
+
+    const second = render(<ChapterBook {...props(remote)} target={ask('2')} />)
+    expect(await screen.findByRole('heading', { name: '第2章' })).toBeTruthy()
+    expect(screen.queryByRole('textbox', { name: zh['edit.open'] })).toBeNull()
+    fireEvent.click(screen.getByRole('tab', { name: zh['edit.mode'] }))
+    fireEvent.click(screen.getByRole('button', { name: zh['reader.toc'] }))
+    second.unmount()
+
+    render(<ChapterBook {...props(remote)} />)
+    expect(await screen.findByText(zh['next.heading'])).toBeTruthy()
     expect(screen.queryByRole('textbox', { name: zh['edit.open'] })).toBeNull()
   })
 
