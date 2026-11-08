@@ -27,6 +27,7 @@ import { RoomQuestionView } from './RoomQuestionView.tsx'
 import { askCardData, type RoomSpeechData } from './nodes.ts'
 import { formatClock, formatDurationMs } from './format.ts'
 import { revealRoomRow, speechCause } from './speech-cause.ts'
+import { replyTarget } from './reply-target.ts'
 import { formatTokens } from './RoomStatsLine.tsx'
 import { roundUsage, type RoundUsage } from './round-usage.ts'
 import { attachmentsByOwner, type RoomQuestionViewProps, type RoomSpeechViewProps } from './slots.ts'
@@ -130,6 +131,8 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
   const child = data.childSessionId
   // What started this round (a member's 派活/告知, or reports): its line tops the card.
   const cause = speechCause(data.runId, state)
+  // A later message to this member was waiting when this reply landed: say which message it answers (B③).
+  const answers = replyTarget(data.runId, data.time, state)
   const continues = data.continues
   // The run's usage, as the host's 用量 chip shows it: read from the
   // member's log through the core (the CLI's round total, else the per-call
@@ -179,6 +182,12 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
           <span className={css.causeHead}>{cause.kind === 'followUpLost' ? '⚠ ' : ''}{t(`speech.cause.${cause.kind}`, { member: cause.member })}</span>
           {cause.text !== undefined && <span className={css.causeText}>{t('dispatch.colon')}{cause.text.replace(/\s+/g, ' ')}</span>}
           {cause.target !== undefined && <span className={css.causeChevron} aria-hidden>›</span>}
+        </button>
+      )}
+      {answers !== undefined && (
+        <button type="button" className={css.cause} data-room-reply-to="" onClick={() => { revealRoomRow(answers.target) }}>
+          <span className={css.causeHead}>{t('speech.replyTo', { answered: formatClock(answers.answeredAt), later: formatClock(answers.laterAt) })}</span>
+          <span className={css.causeChevron} aria-hidden>›</span>
         </button>
       )}
       {/* A round the member's CLI opened on its own (A④): the quiet
