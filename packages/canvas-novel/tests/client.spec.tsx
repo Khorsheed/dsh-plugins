@@ -96,6 +96,11 @@ function fakeRemote(fixture: { items: PendingView[]; phase?: EffectiveChapterPha
     prepareChapterFeedback: vi.fn(() => ok({ ok: true, batchId: 'fb1', text: '请结合整章修改。' })),
     recallChapterFeedback: vi.fn(() => ok({ ok: true })),
     submitChapterFeedbackCandidate: vi.fn(() => ok({ ok: true })),
+    chapterDeletions: vi.fn(() => ok({ ok: true, operations: [], size: 0 })),
+    chapterDeletionPreview: vi.fn(),
+    applyChapterDeletion: vi.fn(),
+    restoreChapters: vi.fn(),
+    purgeChapters: vi.fn(),
   } as unknown as NovelRemote & Record<string, ReturnType<typeof vi.fn>>
   return remote
 }

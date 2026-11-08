@@ -76,9 +76,15 @@ import {
   MAX_FEEDBACK_QUOTE, MAX_FEEDBACK_TEXT,
   type ChapterFeedbackBatch, type ChapterFeedbackDoc, type ChapterFeedbackIdea, type ChapterFeedbackPrepareResult, type ChapterFeedbackResult,
 } from './chapter-feedback.ts'
+import {
+  chapterTombstone, deletionOperationSize, deletedChapterNumbers, feedbackWithoutChapters, finishDeletionChapters,
+  ideasWithoutChapters, journalRecordIsChapterOwned, normalizeDeletionOperation, pendingWithoutChapters, restoredChapterRecord, timelineWithoutChapters,
+  type ChapterDeletionOperation, type ChapterDeletionSnapshot,
+} from './chapter-deletion.ts'
 
 /** The package's npm name, stamped on store errors. */
 const PACKAGE_NAME = '@khorsheed/dsh-canvas-novel'
+const PREVIEW_TTL_MS = 24 * 60 * 60 * 1000
 
 /** The state directory name under `$DSH_HOME/state`. */
 export const NOVEL_STATE_DIR_NAME = 'novel'
@@ -99,6 +105,7 @@ export const WORK_FILES = {
   minds: 'minds.jsonl',
   align: 'align.json',
   chapterFeedback: 'chapter-feedback.json',
+  deletions: 'deletions',
 } as const
 
 /**
@@ -423,6 +430,20 @@ export class NovelService {
   private readonly feedbackCandidates = new Map<string, string>()
   private readonly feedbackTurnTexts = new Map<string, string>()
   private readonly feedbackTurnOutcomes = new Map<string, 'completed' | 'interrupted'>()
+  private readonly workQueues = new Map<string, Promise<void>>()
+
+  /** Serialize cross-document mutations per work; per-file version guards still apply inside the queue. */
+  private async withWorkLock<T>(workId: string, run: () => Promise<T>): Promise<T> {
+    const previous = this.workQueues.get(workId) ?? Promise.resolve()
+    const result = previous.then(run, run)
+    const tail = result.then(() => undefined, () => undefined)
+    this.workQueues.set(workId, tail)
+    try {
+      return await result
+    } finally {
+      if (this.workQueues.get(workId) === tail) this.workQueues.delete(workId)
+    }
+  }
 
   private rememberFeedbackTurn<T>(map: Map<string, T>, key: string, value: T): void {
     map.delete(key)
@@ -1149,8 +1170,9 @@ export class NovelService {
     this.assertAlive('listExperiences')
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
+    const deleted = await this.deletedChapterNumbers(id)
     const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.experiences), raw => normalizeExperience(raw))
-    return entries.filter(entry => request.characterId === undefined || entry.characterId === request.characterId)
+    return entries.filter(entry => !journalRecordIsChapterOwned(WORK_FILES.experiences, entry, deleted) && (request.characterId === undefined || entry.characterId === request.characterId))
   }
 
   /** The mention journal (a foreshadow card's chapter track), optionally one card's, oldest first. */
@@ -1158,8 +1180,9 @@ export class NovelService {
     this.assertAlive('listMentions')
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
+    const deleted = await this.deletedChapterNumbers(id)
     const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.mentions), raw => normalizeMention(raw))
-    return entries.filter(entry => request.foreshadowId === undefined || entry.foreshadowId === request.foreshadowId)
+    return entries.filter(entry => !journalRecordIsChapterOwned(WORK_FILES.mentions, entry, deleted) && (request.foreshadowId === undefined || entry.foreshadowId === request.foreshadowId))
   }
 
   /** The relation journal (a relation card's points and stage events), optionally one card's, oldest first. */
@@ -1167,8 +1190,9 @@ export class NovelService {
     this.assertAlive('listRelationJournal')
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
+    const deleted = await this.deletedChapterNumbers(id)
     const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.relations), raw => normalizeRelationEntry(raw))
-    return entries.filter(entry => request.relationId === undefined || entry.relationId === request.relationId)
+    return entries.filter(entry => !journalRecordIsChapterOwned(WORK_FILES.relations, entry, deleted) && (request.relationId === undefined || entry.relationId === request.relationId))
   }
 
   /** The card change history (plot fields of characters and world cards), optionally one card's, oldest first. */
@@ -1176,16 +1200,27 @@ export class NovelService {
     this.assertAlive('listHistory')
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
+    const deleted = await this.deletedChapterNumbers(id)
     const entries = await this.readJsonl(await this.fileTarget(id, WORK_FILES.history), raw => normalizeHistoryEntry(raw))
-    return entries.filter(entry => request.cardId === undefined || entry.cardId === request.cardId)
+    return entries.filter(entry => !journalRecordIsChapterOwned(WORK_FILES.history, entry, deleted) && (request.cardId === undefined || entry.cardId === request.cardId))
   }
 
   /* ------------------------------------------------------------- chapters */
 
-  /** Read the whole chapter table. */
-  private async readChapters(workId: string): Promise<ChapterRecord[]> {
+  /** Read every chapter generation, including non-content tombstones. */
+  private async readChapterSlots(workId: string): Promise<ChapterRecord[]> {
     const read = await this.readJson(await this.fileTarget(workId, WORK_FILES.chapters), raw => normalizeChapterTable(raw))
     return typeof read === 'object' ? read.data.chapters : []
+  }
+
+  /** Read only active chapters; tombstones remain solely to keep generations distinct. */
+  private async readChapters(workId: string): Promise<ChapterRecord[]> {
+    return (await this.readChapterSlots(workId)).filter(row => row.deletedAt === undefined)
+  }
+
+  /** Deleted display numbers whose cleanup must not leak into active reads. */
+  private async deletedChapterNumbers(workId: string): Promise<Set<number>> {
+    return deletedChapterNumbers(await this.readChapterSlots(workId))
   }
 
   /** The manuscript's fingerprint, undefined when it is empty or gone (the 写作中 / 待对账 derivation). */
@@ -1306,7 +1341,7 @@ export class NovelService {
     if (kept) {
       const workId = normalizeWorkId(request.workId)!
       await this.mutateJson(await this.fileTarget(workId, WORK_FILES.chapters), session, raw => normalizeChapterTable(raw), undefined, (table, now) => {
-        const row = table.chapters.find(candidate => candidate.n === request.n)
+        const row = table.chapters.find(candidate => candidate.n === request.n && candidate.deletedAt === undefined)
         if (row === undefined) return 'missing'
         const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
         mutable.bodyHash = bodyFingerprint(text)!
@@ -1351,6 +1386,11 @@ export class NovelService {
     if (workId === undefined || title === undefined) return { ok: false, error: 'invalid-name' }
     const meta = await this.readWorkMeta(workId)
     if (meta === undefined) return { ok: false, error: 'missing' }
+    const currentRows = await this.readChapters(workId)
+    if (request.n === undefined || !currentRows.some(row => row.n === request.n)) {
+      const targetN = request.n ?? currentRows.reduce((max, row) => Math.max(max, row.n), 0) + 1
+      if (await this.pendingChapterReuse(workId, targetN)) return { ok: false, error: 'cleanup-pending' }
+    }
     const rawPlan = request.plan === undefined ? undefined : normalizePlan(request.plan)
     if (request.plan !== undefined && rawPlan === undefined) return { ok: false, error: 'invalid-name' }
     // Where this plan is put to the person (see `ChapterRecord.planAsk`).
@@ -1471,7 +1511,7 @@ export class NovelService {
       () => ({ version: 1 as const, chapters: [] }),
       (table, now) => {
         if (request.n !== undefined) {
-          const row = table.chapters.find(candidate => candidate.n === request.n)
+          const row = table.chapters.find(candidate => candidate.n === request.n && candidate.deletedAt === undefined)
           if (row === undefined) return 'missing'
           const mutable = row as { -readonly [K in keyof ChapterRecord]: ChapterRecord[K] }
           mutable.title = title
@@ -1493,8 +1533,9 @@ export class NovelService {
           chapter = { ...row }
           return table
         }
-        const n = table.chapters.reduce((max, row) => Math.max(max, row.n), 0) + 1
-        const previous = [...table.chapters].sort((a, b) => b.seq - a.seq || b.n - a.n)[0]
+        const activeRows = table.chapters.filter(row => row.deletedAt === undefined)
+        const n = activeRows.reduce((max, row) => Math.max(max, row.n), 0) + 1
+        const previous = [...activeRows].sort((a, b) => b.seq - a.seq || b.n - a.n)[0]
         const volume = volumeId ?? previous?.volume ?? outline.volumes[0]?.id
         const created: ChapterRecord = {
           id: `ch_${crypto.randomUUID()}`,
@@ -1531,7 +1572,7 @@ export class NovelService {
 
   private async readFeedback(workId: string): Promise<ChapterFeedbackDoc> {
     const read = await this.readJson(await this.fileTarget(workId, WORK_FILES.chapterFeedback), normalizeChapterFeedback)
-    return typeof read === 'object' ? read.data : emptyChapterFeedback()
+    return typeof read === 'object' ? feedbackWithoutChapters(read.data, await this.deletedChapterNumbers(workId)) : emptyChapterFeedback()
   }
 
   private async mutateFeedback(
@@ -1983,7 +2024,7 @@ export class NovelService {
     const id = normalizeWorkId(workId)
     if (id === undefined) return emptyTimeline()
     const read = await this.readJson(await this.fileTarget(id, WORK_FILES.timeline), raw => normalizeTimeline(raw))
-    return typeof read === 'object' ? read.data : emptyTimeline()
+    return typeof read === 'object' ? timelineWithoutChapters(read.data, await this.deletedChapterNumbers(id)) : emptyTimeline()
   }
 
   /**
@@ -2148,7 +2189,7 @@ export class NovelService {
     const id = normalizeWorkId(workId)
     if (id === undefined) return emptyIdeas()
     const read = await this.readJson(await this.fileTarget(id, WORK_FILES.ideas), raw => normalizeIdeas(raw))
-    return typeof read === 'object' ? read.data : emptyIdeas()
+    return typeof read === 'object' ? ideasWithoutChapters(read.data, await this.deletedChapterNumbers(id)) : emptyIdeas()
   }
 
   /**
@@ -2251,6 +2292,10 @@ export class NovelService {
    */
   async deleteNode(request: { readonly workId: string; readonly node: string }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly impact?: DeleteImpact }> {
     this.assertAlive('deleteNode')
+    return this.withWorkLock(request.workId, () => this.deleteNodeLocked(request, session))
+  }
+
+  private async deleteNodeLocked(request: { readonly workId: string; readonly node: string }, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly impact?: DeleteImpact }> {
     const built = await this.bookGraph(request.workId)
     if (built === undefined) return { ok: false, error: 'missing' }
     const { graph, written, entries } = built
@@ -2301,6 +2346,385 @@ export class NovelService {
       if (!gone.ok) return { ok: false, error: gone.error === 'missing' ? 'missing' : 'io' }
     }
     return { ok: true, impact }
+  }
+
+  /* ------------------------------------------------------ chapter deletion */
+
+  private async deletionTarget(workId: string, deletionId: string): Promise<FsTarget> {
+    return this.fs.resolve(`${deletionId}.json`, { cwd: join(this.workDir(workId), WORK_FILES.deletions) })
+  }
+
+  private async readDeletionOperation(workId: string, deletionId: string): Promise<DocumentRead<ChapterDeletionOperation>> {
+    return this.readJson(await this.deletionTarget(workId, deletionId), normalizeDeletionOperation)
+  }
+
+  private async writeDeletionOperation(operation: ChapterDeletionOperation, session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError; readonly operation?: ChapterDeletionOperation }> {
+    const sized = { ...operation, size: deletionOperationSize({ ...operation, size: 0 }) }
+    const outcome = await this.mutateJson(await this.deletionTarget(operation.workId, operation.id), session, normalizeDeletionOperation, () => sized, () => sized)
+    return outcome.ok ? { ok: true, operation: sized } : { ok: false, error: outcome.error }
+  }
+
+  /** List operations that still hold restorable chapter snapshots, newest first. */
+  async listChapterDeletions(workId: string): Promise<ChapterDeletionOperation[]> {
+    this.assertAlive('listChapterDeletions')
+    const id = normalizeWorkId(workId)
+    if (id === undefined) return []
+    const directory = join(this.workDir(id), WORK_FILES.deletions)
+    let entries: { name: string; type: 'file' | 'directory' | 'other' }[]
+    try {
+      entries = await this.fs.listDir(await this.fs.resolve(directory))
+    } catch {
+      return []
+    }
+    const operations: ChapterDeletionOperation[] = []
+    for (const entry of entries) {
+      if (entry.type !== 'file' || !entry.name.endsWith('.json')) continue
+      const read = await this.readDeletionOperation(id, entry.name.slice(0, -5))
+      if (typeof read === 'object' && read.data.status === 'preview' && Date.now() - Date.parse(read.data.updatedAt) > PREVIEW_TTL_MS) {
+        const policy = this.policyOf(undefined)
+        if (policy !== 'denied') await this.fs.deleteFile(await this.deletionTarget(id, read.data.id), undefined, undefined, policy).catch(() => undefined)
+        continue
+      }
+      if (typeof read === 'object' && read.data.status !== 'preview' && read.data.status !== 'closed' && read.data.chapters.length > 0) operations.push(read.data)
+    }
+    return operations.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  }
+
+  private async snapshotChapter(meta: WorkMeta, record: ChapterRecord): Promise<ChapterDeletionSnapshot> {
+    const workId = meta.id
+    const n = record.n
+    const targets = new Set([n])
+    const path = this.bodyPath(meta, record)
+    const target = path === undefined ? undefined : await this.fs.resolve(path)
+    const info = target === undefined ? undefined : await this.fs.stat(target).catch(() => undefined)
+    const body = await this.readChapterBody(meta, record)
+    const [mentions, experiences, relations, history, minds, pending, feedback, timeline, ideas] = await Promise.all([
+      this.listMentions({ workId }), this.listExperiences({ workId }), this.listRelationJournal({ workId }), this.listHistory({ workId }),
+      this.listMinds({ workId }), this.readPendingItems(workId), this.readFeedback(workId), this.readTimeline(workId), this.readIdeas(workId),
+    ])
+    const owned = <T extends object>(file: string, rows: readonly T[]): T[] => rows.filter(row => journalRecordIsChapterOwned(file, row, targets))
+    return {
+      record, body, ...(info === undefined ? {} : { bodyVersion: info.version }),
+      derived: {
+        [WORK_FILES.mentions]: owned(WORK_FILES.mentions, mentions),
+        [WORK_FILES.experiences]: owned(WORK_FILES.experiences, experiences),
+        [WORK_FILES.relations]: owned(WORK_FILES.relations, relations),
+        [WORK_FILES.history]: owned(WORK_FILES.history, history),
+        [WORK_FILES.minds]: owned(WORK_FILES.minds, minds),
+        [WORK_FILES.pending]: pending.filter(item => item.chapter === n),
+        [WORK_FILES.chapterFeedback]: [...feedback.ideas, ...feedback.batches].filter(row => row.chapter === n),
+        [WORK_FILES.timeline]: timeline.events.filter(event => event.chapters?.includes(n) === true || event.touched?.includes(n) === true || event.pre?.some(row => row.met === n) === true),
+        [WORK_FILES.ideas]: ideas.ideas.filter(idea => idea.writtenIn === n),
+      },
+    }
+  }
+
+  /** Persist a chapter deletion preview with exact generation, body and derived snapshots. */
+  async previewChapterDeletion(
+    request: { readonly workId: string; readonly chapters: readonly number[] },
+    session: Session | undefined,
+    byAgent: boolean = false,
+  ): Promise<{ readonly ok: true; readonly operation: ChapterDeletionOperation } | { readonly ok: false; readonly error: NovelError }> {
+    this.assertAlive('previewChapterDeletion')
+    const workId = normalizeWorkId(request.workId)
+    const numbers = [...new Set(request.chapters)].sort((a, b) => a - b)
+    if (workId === undefined || numbers.length === 0 || numbers.length > 20 || numbers.some(n => !Number.isInteger(n) || n < 1)) return { ok: false, error: 'invalid-name' }
+    return this.withWorkLock(workId, async () => {
+      const meta = await this.readWorkMeta(workId)
+      if (meta === undefined) return { ok: false as const, error: 'missing' as const }
+      const active = await this.readChapters(workId)
+      const rows = numbers.map(n => active.find(row => row.n === n))
+      if (rows.some(row => row === undefined)) return { ok: false as const, error: 'missing' as const }
+      const snapshots = await Promise.all(rows.map(row => this.snapshotChapter(meta, row!)))
+      const targets = new Set(numbers)
+      const built = await this.bookGraph(workId)
+      const board = built?.entries.board
+      const newIds = new Set(snapshots.flatMap(row => row.record.newCards ?? []))
+      const cascadeCards = [...newIds].flatMap(cardId => {
+        const card = board?.cards.find(row => row.id === cardId)
+        if (card === undefined || card.status !== 'kept' || built === undefined) return []
+        const impact = deleteImpact(built.graph, cardId, built.written)
+        if (impact === undefined || impact.auto.length > 0 || impact.chapters.some(n => !targets.has(n))) return []
+        return [{ id: cardId, status: 'kept' as const }]
+      })
+      const cascadeIds = new Set(cascadeCards.map(row => row.id))
+      const review = new Set<string>()
+      for (const row of snapshots) {
+        for (const id of [...row.record.settings ?? [], ...row.record.newCards ?? [], ...row.record.plan?.uses ?? [], ...row.record.plan?.cast.map(member => member.who) ?? [], ...(row.record.plan?.pov === undefined ? [] : [row.record.plan.pov])]) {
+          if (!cascadeIds.has(id) && board?.cards.some(card => card.id === id && card.status === 'kept')) review.add(id)
+        }
+        for (const values of Object.values(row.derived)) {
+          if (!Array.isArray(values)) continue
+          for (const value of values) {
+            if (typeof value !== 'object' || value === null) continue
+            const item = value as Record<string, unknown>
+            for (const key of ['characterId', 'relationId', 'foreshadowId', 'cardId']) {
+              const id = item[key]
+              if (typeof id === 'string' && !cascadeIds.has(id) && board?.cards.some(card => card.id === id && card.status === 'kept')) review.add(id)
+            }
+          }
+        }
+      }
+      const now = new Date().toISOString()
+      const operation: ChapterDeletionOperation = {
+        version: 1, id: `del_${crypto.randomUUID()}`, workId, status: 'preview', chapters: snapshots,
+        cascadeCards, reviewCards: [...review], createdAt: now, updatedAt: now,
+        ...(session === undefined ? {} : { sessionId: String(session.id) }),
+        ...(byAgent ? { askUserSeq: latestUserSeq(session) ?? 0 } : {}), size: 0, finished: {},
+      }
+      const written = await this.writeDeletionOperation(operation, session)
+      return written.ok ? { ok: true as const, operation: written.operation! } : { ok: false as const, error: written.error ?? 'io' as const }
+    })
+  }
+
+  /** Apply a persisted preview. Deletion commits at the tombstone; later cleanup is retryable and reported separately. */
+  async applyChapterDeletion(
+    request: { readonly workId: string; readonly deletionId: string; readonly cards?: readonly string[] },
+    session: Session | undefined,
+    byAgent: boolean = false,
+  ): Promise<{ readonly ok: true; readonly operation: ChapterDeletionOperation; readonly deleted: number; readonly cleanupPending: boolean } | { readonly ok: false; readonly error: NovelError }> {
+    this.assertAlive('applyChapterDeletion')
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    return this.withWorkLock(workId, async () => {
+      const read = await this.readDeletionOperation(workId, request.deletionId)
+      if (typeof read !== 'object') return { ok: false as const, error: 'missing' as const }
+      let operation = read.data
+      if (operation.status === 'closed') return { ok: false as const, error: 'missing' as const }
+      if (operation.status === 'active') return { ok: true as const, operation, deleted: 0, cleanupPending: false }
+      const allowed = new Set(operation.cascadeCards.map(row => row.id))
+      if ((request.cards ?? []).some(id => !allowed.has(id))) return { ok: false as const, error: 'invalid-name' as const }
+      const cascadeCards = request.cards === undefined ? operation.cascadeCards : operation.cascadeCards.filter(row => request.cards!.includes(row.id))
+      let deleted = 0
+      if (operation.status === 'preview') {
+        if (byAgent && (operation.sessionId !== String(session?.id) || latestUserSeq(session) === undefined || latestUserSeq(session)! <= (operation.askUserSeq ?? 0))) return { ok: false as const, error: 'plan-unseen' as const }
+        const now = new Date().toISOString()
+        const table = await this.readChapterSlots(workId)
+        const already = operation.chapters.every(snapshot => table.some(row => row.n === snapshot.record.n && row.deletionId === operation.id))
+        if (!already) {
+          const meta = await this.readWorkMeta(workId)
+          if (meta === undefined) return { ok: false as const, error: 'missing' as const }
+          for (const snapshot of operation.chapters) {
+            const current = table.find(row => row.n === snapshot.record.n && row.deletedAt === undefined)
+            if (current === undefined || chapterIdentity(current) !== chapterIdentity(snapshot.record) || current.updatedAt !== snapshot.record.updatedAt) return { ok: false as const, error: 'stale' as const }
+            const body = await this.readChapterBody(meta, current)
+            if (bodyFingerprint(body) !== bodyFingerprint(snapshot.body)) return { ok: false as const, error: 'stale' as const }
+          }
+          const targets = new Set(operation.chapters.map(row => row.record.n))
+          const tombstoned = await this.mutateJson(await this.fileTarget(workId, WORK_FILES.chapters), session, raw => normalizeChapterTable(raw), undefined, (table, timestamp) => {
+            for (const snapshot of operation.chapters) {
+              const index = table.chapters.findIndex(row => row.n === snapshot.record.n && row.deletedAt === undefined)
+              if (index < 0 || chapterIdentity(table.chapters[index]!) !== chapterIdentity(snapshot.record)) return 'stale'
+              table.chapters[index] = chapterTombstone(table.chapters[index]!, operation.id, timestamp)
+            }
+            if (!table.chapters.some(row => targets.has(row.n) && row.deletionId === operation.id)) return 'stale'
+            return table
+          })
+          if (!tombstoned.ok) return { ok: false as const, error: tombstoned.error }
+        }
+        operation = { ...operation, status: 'active', cascadeCards, updatedAt: now }
+        const activated = await this.writeDeletionOperation(operation, session)
+        if (!activated.ok) return { ok: false as const, error: activated.error ?? 'io' as const }
+        operation = activated.operation!
+        deleted = operation.chapters.length
+      }
+      const cleanupError = await this.cleanupChapterDeletion(operation, session)
+      operation = { ...operation, status: cleanupError === undefined ? 'active' : 'cleanup-pending', ...(cleanupError === undefined ? {} : { cleanupError }), updatedAt: new Date().toISOString() }
+      const finished = await this.writeDeletionOperation(operation, session)
+      if (!finished.ok) return { ok: false as const, error: finished.error ?? 'io' as const }
+      return { ok: true as const, operation: finished.operation!, deleted, cleanupPending: cleanupError !== undefined }
+    })
+  }
+
+  /** Remove source files and derived rows idempotently; manual corrections stay in place. */
+  private async cleanupChapterDeletion(operation: ChapterDeletionOperation, session: Session | undefined): Promise<string | undefined> {
+    const { workId } = operation
+    const targets = new Set(operation.chapters.map(row => row.record.n))
+    const meta = await this.readWorkMeta(workId)
+    if (meta === undefined) return 'missing'
+    const errors: string[] = []
+    const resolved = this.resolveFence(session)
+    if (resolved === 'denied' || resolved?.mode === 'read-only') return 'denied'
+    for (const snapshot of operation.chapters) {
+      const path = this.bodyPath(meta, snapshot.record)
+      if (path === undefined || snapshot.bodyVersion === undefined) continue
+      try {
+        const target = await this.fs.resolve(path)
+        const info = await this.fs.stat(target).catch(() => undefined)
+        if (info === undefined) continue
+        const policy = resolved === undefined || meta.workspace === undefined ? undefined : { ...resolved, workspaceRoot: meta.workspace }
+        await this.fs.deleteFile(target, { version: FsVersion(snapshot.bodyVersion) }, undefined, policy)
+      } catch (error) {
+        errors.push(`${snapshot.record.file}:${novelErrorOf(error)}`)
+      }
+    }
+    const documents: { readonly file: 'timeline' | 'ideas' | 'pending' | 'chapterFeedback'; readonly mutate: () => Promise<{ readonly ok: boolean; readonly error?: NovelError }> }[] = [
+      { file: 'timeline', mutate: async () => this.mutateJson(await this.fileTarget(workId, WORK_FILES.timeline), session, raw => normalizeTimeline(raw), undefined, doc => timelineWithoutChapters(doc, targets)) },
+      { file: 'ideas', mutate: async () => this.mutateJson(await this.fileTarget(workId, WORK_FILES.ideas), session, raw => normalizeIdeas(raw), undefined, doc => ideasWithoutChapters(doc, targets)) },
+      { file: 'pending', mutate: async () => this.mutateJson(await this.fileTarget(workId, WORK_FILES.pending), session, raw => normalizePendingTable(raw), undefined, doc => pendingWithoutChapters(doc, targets)) },
+      { file: 'chapterFeedback', mutate: async () => this.mutateJson(await this.fileTarget(workId, WORK_FILES.chapterFeedback), session, normalizeChapterFeedback, undefined, doc => feedbackWithoutChapters(doc, targets)) },
+    ]
+    for (const document of documents) {
+      const outcome = await document.mutate()
+      if (!outcome.ok && outcome.error !== 'missing') errors.push(`${document.file}:${outcome.error ?? 'io'}`)
+    }
+    for (const file of [WORK_FILES.mentions, WORK_FILES.experiences, WORK_FILES.relations, WORK_FILES.history, WORK_FILES.minds] as const) {
+      const outcome = await this.appendJsonl(await this.fileTarget(workId, file), session, [], record => journalRecordIsChapterOwned(file, record, targets))
+      if (!outcome.ok) errors.push(`${file}:${outcome.error ?? 'io'}`)
+    }
+    const canvas = this.canvas
+    if (canvas === undefined && operation.cascadeCards.length > 0) errors.push('cards:missing')
+    for (const card of operation.cascadeCards) {
+      const current = canvas && 'readBoard' in canvas ? (await canvas.readBoard({ canvasId: workId })) : undefined
+      const record = current?.ok === true ? current.board.cards.find(row => row.id === card.id) : undefined
+      if (record === undefined || record.status === 'archived') continue
+      const outcome = await canvas!.patchCard({ canvasId: workId, cardId: card.id, status: 'archived' }, session)
+      if (!outcome.ok) errors.push(`${card.id}:${outcome.error}`)
+    }
+    const aligned = await this.alignAck({ workId, ids: operation.chapters.map(row => chapterIdentity(row.record)) }, session)
+    if (!aligned.ok) errors.push(`align:${aligned.error ?? 'io'}`)
+    const invalidated = await this.alignInvalidate(workId, operation.reviewCards, session)
+    if (!invalidated.ok) errors.push(`align:${invalidated.error ?? 'io'}`)
+    return errors.length === 0 ? undefined : errors.join(',')
+  }
+
+  /** Force shared-card review without pretending their current fields can be rolled back safely. */
+  private async alignInvalidate(workId: string, ids: readonly string[], session: Session | undefined): Promise<{ readonly ok: boolean; readonly error?: NovelError }> {
+    if (ids.length === 0) return { ok: true }
+    const baseline = await this.alignRead({ workId }, session)
+    if (!baseline.ok) return { ok: false, error: baseline.error ?? 'io' }
+    const built = await this.bookGraph(workId)
+    if (built === undefined) return { ok: false, error: 'missing' }
+    const outcome = await this.mutateJson(await this.fileTarget(workId, WORK_FILES.align), session, raw => normalizeAlign(raw), undefined, (doc, now) => {
+      const nodes = { ...doc.nodes }
+      for (const id of ids) {
+        if (!built.graph.nodes.has(id) || nodes[id] === undefined) continue
+        nodes[id] = { ...nodes[id]!, fp: `chapter-deleted:${now}` }
+      }
+      return { ...doc, nodes, at: now }
+    })
+    return outcome.ok ? { ok: true } : { ok: false, error: outcome.error }
+  }
+
+  /** Restore selected chapters as new generations, with their bodies and plans but without replaying old memories. */
+  async restoreChapters(
+    request: { readonly workId: string; readonly deletionId: string; readonly chapters?: readonly number[]; readonly cards?: readonly string[]; readonly position?: 'original' | 'next' },
+    session: Session | undefined,
+  ): Promise<{ readonly ok: true; readonly operation: ChapterDeletionOperation; readonly restored: number; readonly cardErrors: readonly string[] } | { readonly ok: false; readonly error: NovelError }> {
+    this.assertAlive('restoreChapters')
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    return this.withWorkLock(workId, async () => {
+      const read = await this.readDeletionOperation(workId, request.deletionId)
+      if (typeof read !== 'object') return { ok: false as const, error: 'missing' as const }
+      const operation = read.data
+      if (operation.status === 'cleanup-pending') return { ok: false as const, error: 'cleanup-pending' as const }
+      if (operation.status !== 'active') return { ok: false as const, error: 'missing' as const }
+      const targets = new Set(request.chapters ?? operation.chapters.map(row => row.record.n))
+      const snapshots = operation.chapters.filter(row => targets.has(row.record.n))
+      if (targets.size === 0 || snapshots.length !== targets.size) return { ok: false as const, error: 'invalid-name' as const }
+      const allowed = new Set(operation.cascadeCards.map(row => row.id))
+      const restoreCards = request.cards ?? []
+      if (restoreCards.some(id => !allowed.has(id))) return { ok: false as const, error: 'invalid-name' as const }
+      const meta = await this.readWorkMeta(workId)
+      if (meta === undefined) return { ok: false as const, error: 'missing' as const }
+      const active = await this.readChapters(workId)
+      let nextN = active.reduce((max, row) => Math.max(max, row.n), 0) + 1
+      const assignments: { readonly snapshot: ChapterDeletionSnapshot; readonly record: ChapterRecord }[] = []
+      const now = new Date().toISOString()
+      for (const snapshot of [...snapshots].sort((a, b) => a.record.seq - b.record.seq || a.record.n - b.record.n)) {
+        const occupied = active.some(row => row.n === snapshot.record.n)
+        if (occupied && request.position !== 'next') return { ok: false as const, error: 'duplicate' as const }
+        const n = occupied ? nextN : snapshot.record.n
+        nextN = Math.max(nextN, n + 1)
+        assignments.push({ snapshot, record: restoredChapterRecord(snapshot, n, session === undefined ? undefined : String(session.id), now) })
+      }
+      const resolved = this.resolveFence(session)
+      if (resolved === 'denied' || resolved?.mode === 'read-only') return { ok: false as const, error: 'denied' as const }
+      const created: { readonly target: FsTarget; readonly policy: SandboxExecutionPolicy | undefined }[] = []
+      const rollback = async (): Promise<void> => {
+        for (const item of created.reverse()) await this.fs.deleteFile(item.target, undefined, undefined, item.policy).catch(() => undefined)
+      }
+      for (const { snapshot, record } of assignments) {
+        if (snapshot.body.trim() === '') continue
+        if (meta.workspace === undefined) { await rollback(); return { ok: false as const, error: 'no-workspace' as const } }
+        const target = await this.fs.resolve(join(meta.workspace, meta.title, record.file))
+        const policy = resolved === undefined ? undefined : { ...resolved, workspaceRoot: meta.workspace }
+        try {
+          await this.fs.writeText(target, snapshot.body, { kind: 'createIfAbsent' }, undefined, policy)
+          created.push({ target, policy })
+        } catch (error) {
+          await rollback()
+          return { ok: false as const, error: novelErrorOf(error) }
+        }
+      }
+      const registered = await this.mutateJson(await this.fileTarget(workId, WORK_FILES.chapters), session, raw => normalizeChapterTable(raw), undefined, table => {
+        for (const { record } of assignments) {
+          if (table.chapters.some(row => row.n === record.n && row.deletedAt === undefined)) return 'duplicate'
+          table.chapters.push(record)
+        }
+        return table
+      })
+      if (!registered.ok) { await rollback(); return { ok: false as const, error: registered.error } }
+      const cardErrors: string[] = []
+      const canvas = this.canvas
+      for (const cardId of restoreCards) {
+        if (canvas === undefined) { cardErrors.push(cardId); continue }
+        const outcome = await canvas.patchCard({ canvasId: workId, cardId, status: 'kept' }, session)
+        if (!outcome.ok) cardErrors.push(cardId)
+      }
+      let next = finishDeletionChapters(operation, targets, 'restored', new Date().toISOString())
+      next = { ...next, cascadeCards: next.cascadeCards.filter(row => !restoreCards.includes(row.id)) }
+      const written = await this.writeDeletionOperation(next, session)
+      if (!written.ok) return { ok: false as const, error: written.error ?? 'io' as const }
+      return { ok: true as const, operation: written.operation!, restored: assignments.length, cardErrors }
+    })
+  }
+
+  /** Permanently remove selected snapshots; current tombstones and later generations are never reactivated. */
+  async purgeChapters(
+    request: { readonly workId: string; readonly deletionId: string; readonly chapters?: readonly number[] },
+    session: Session | undefined,
+  ): Promise<{ readonly ok: true; readonly operation: ChapterDeletionOperation; readonly purged: number; readonly cardErrors: readonly string[] } | { readonly ok: false; readonly error: NovelError }> {
+    this.assertAlive('purgeChapters')
+    const workId = normalizeWorkId(request.workId)
+    if (workId === undefined) return { ok: false, error: 'invalid-name' }
+    return this.withWorkLock(workId, async () => {
+      const read = await this.readDeletionOperation(workId, request.deletionId)
+      if (typeof read !== 'object') return { ok: false as const, error: 'missing' as const }
+      let operation = read.data
+      if (operation.status !== 'active' && operation.status !== 'cleanup-pending') return { ok: false as const, error: 'missing' as const }
+      if (operation.status === 'cleanup-pending') {
+        const cleanupError = await this.cleanupChapterDeletion(operation, session)
+        if (cleanupError !== undefined) return { ok: false as const, error: 'cleanup-pending' as const }
+        const { cleanupError: _cleanupError, ...rest } = operation
+        operation = { ...rest, status: 'active', updatedAt: new Date().toISOString() }
+      }
+      const targets = new Set(request.chapters ?? operation.chapters.map(row => row.record.n))
+      if (targets.size === 0 || ![...targets].every(n => operation.chapters.some(row => row.record.n === n))) return { ok: false as const, error: 'invalid-name' as const }
+      let next = finishDeletionChapters(operation, targets, 'purged', new Date().toISOString())
+      const cardErrors: string[] = []
+      if (next.chapters.length === 0) {
+        const canvas = this.canvas
+        for (const card of next.cascadeCards) {
+          if (canvas?.deleteCard === undefined) { cardErrors.push(card.id); continue }
+          const board = await canvas.readBoard({ canvasId: workId })
+          const current = board.ok ? board.board.cards.find(row => row.id === card.id) : undefined
+          if (current?.status !== 'archived') continue
+          const outcome = await canvas.deleteCard({ canvasId: workId, cardId: card.id }, session)
+          if (!outcome.ok) cardErrors.push(card.id)
+        }
+        next = { ...next, cascadeCards: [] }
+      }
+      const written = await this.writeDeletionOperation(next, session)
+      if (!written.ok) return { ok: false as const, error: written.error ?? 'io' as const }
+      return { ok: true as const, operation: written.operation!, purged: targets.size, cardErrors }
+    })
+  }
+
+  /** Whether a display number must stay unavailable until its old files and derived rows finish cleanup. */
+  private async pendingChapterReuse(workId: string, n: number): Promise<boolean> {
+    return (await this.listChapterDeletions(workId)).some(operation => operation.status === 'cleanup-pending' && operation.chapters.some(row => row.record.n === n))
   }
 
   /* ------------------------------------------------------------ 待对齐 */
@@ -2391,8 +2815,9 @@ export class NovelService {
   async listMinds(request: { readonly workId: string; readonly characterId?: string }): Promise<MindEntry[]> {
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
+    const deleted = await this.deletedChapterNumbers(id)
     const lines = await this.readJsonl(await this.fileTarget(id, WORK_FILES.minds), raw => normalizeMindEntry(raw))
-    return lines.filter(line => request.characterId === undefined || line.characterId === request.characterId)
+    return lines.filter(line => !journalRecordIsChapterOwned(WORK_FILES.minds, line, deleted) && (request.characterId === undefined || line.characterId === request.characterId))
   }
 
   /** Append the person's correction to a character's memory; re-reconciliation never replaces it. */
@@ -2707,7 +3132,7 @@ export class NovelService {
       raw => normalizeChapterTable(raw),
       undefined,
       (table, now) => {
-        const row = table.chapters.find(candidate => candidate.n === request.n)
+        const row = table.chapters.find(candidate => candidate.n === request.n && candidate.deletedAt === undefined)
         if (row === undefined) return 'missing'
         if (row.byUser === true) return 'plan-on-draft'
         // A plan the text was already checked against stays; a re-plan that
@@ -2748,7 +3173,7 @@ export class NovelService {
       raw => normalizeChapterTable(raw),
       undefined,
       (table, now) => {
-        const row = table.chapters.find(candidate => candidate.n === request.n)
+        const row = table.chapters.find(candidate => candidate.n === request.n && candidate.deletedAt === undefined)
         if (row === undefined) return 'missing'
         if (row.phase === 'planning') return 'not-extracted'
         if (row.phase === 'extracted') {
@@ -2858,7 +3283,7 @@ export class NovelService {
       raw => normalizeChapterTable(raw),
       undefined,
       (table, now) => {
-        const row = table.chapters.find(candidate => candidate.n === request.n)
+        const row = table.chapters.find(candidate => candidate.n === request.n && candidate.deletedAt === undefined)
         if (row === undefined) return 'missing'
         if (row.plan === undefined) return 'invalid-name'
         if (row.planConfirmedAt === undefined && request.byAgent === true && row.planAsk !== undefined
@@ -3894,7 +4319,8 @@ export class NovelService {
     const id = normalizeWorkId(request.workId)
     if (id === undefined) return []
     const items = await this.readPendingItems(id)
-    return items.filter(item => request.includeResolved === true || item.status === 'pending')
+    const deleted = await this.deletedChapterNumbers(id)
+    return items.filter(item => (request.includeResolved === true || item.status === 'pending') && (item.chapter === undefined || !deleted.has(item.chapter)) )
   }
 
   /**

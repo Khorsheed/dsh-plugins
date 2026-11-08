@@ -568,6 +568,10 @@ export interface ChapterRecord {
   readonly sessionIds: readonly string[]
   readonly createdAt: string
   readonly updatedAt: string
+  /** The generation is deleted and excluded from every active read. */
+  readonly deletedAt?: string
+  /** The operation that owns the recoverable snapshot, when one exists. */
+  readonly deletionId?: string
 }
 
 /** `chapters.json` as one document. */
@@ -763,6 +767,8 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
   const settings = cleanStringList(record['settings'], 200)
   const newCards = cleanStringList(record['newCards'], 200)
   const volume = cleanText(record['volume'], 40)
+  const deletedAt = cleanText(record['deletedAt'], 40)
+  const deletionId = cleanText(record['deletionId'], 100)
   return {
     id: cleanText(record['id'], 80) ?? chapterIdentity({ n }),
     n,
@@ -786,6 +792,8 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
     sessionIds: cleanStringList(record['sessionIds'], 40),
     createdAt: cleanText(record['createdAt'], 40) ?? now,
     updatedAt: cleanText(record['updatedAt'], 40) ?? now,
+    ...(deletedAt === undefined ? {} : { deletedAt }),
+    ...(deletionId === undefined ? {} : { deletionId }),
   }
 }
 
@@ -1343,9 +1351,80 @@ export function normalizePendingItem(raw: unknown): PendingItem | undefined {
 /* --------------------------------------------------------------- outcomes */
 
 /** The store's failure codes (the canvas vocabulary, plus the chapter gates'). */
-export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists' | 'plan-on-draft' | 'unknown-protagonist' | 'unknown-volume' | 'no-proposal' | 'plan-unseen' | 'unsupported'
+export type NovelError = 'invalid-name' | 'missing' | 'io' | 'stale' | 'denied' | 'not-reviewed' | 'not-extracted' | 'no-workspace' | 'duplicate' | 'plan-unconfirmed' | 'unknown-foreshadow' | 'body-exists' | 'plan-on-draft' | 'unknown-protagonist' | 'unknown-volume' | 'no-proposal' | 'plan-unseen' | 'unsupported' | 'cleanup-pending'
 
 /* ---------------------------------------------- wire-boundary contracts */
+
+export type ChapterDeletionStatus = 'preview' | 'active' | 'cleanup-pending' | 'closed'
+
+export interface ChapterDeletionCounts {
+  readonly bodies: number
+  readonly plans: number
+  readonly words: number
+  readonly mentions: number
+  readonly experiences: number
+  readonly relations: number
+  readonly history: number
+  readonly minds: number
+  readonly pending: number
+  readonly feedback: number
+}
+
+export interface ChapterDeletionPreviewRequest {
+  readonly canvasId: string
+  readonly chapters: readonly number[]
+}
+
+export interface ChapterDeletionApplyRequest {
+  readonly canvasId: string
+  readonly deletionId: string
+  readonly cards?: readonly string[]
+}
+
+export interface ChapterDeletionRestoreRequest extends ChapterDeletionApplyRequest {
+  readonly chapters?: readonly number[]
+  readonly position?: 'original' | 'next'
+}
+
+export interface ChapterDeletionPurgeRequest extends ChapterDeletionApplyRequest {
+  readonly chapters?: readonly number[]
+}
+
+export interface ChapterDeletionView {
+  readonly id: string
+  readonly status: ChapterDeletionStatus
+  readonly chapters: readonly { readonly n: number; readonly title: string; readonly words: number; readonly hasBody: boolean; readonly size: number }[]
+  readonly counts: ChapterDeletionCounts
+  readonly cascadeCards: readonly { readonly id: string; readonly name: string; readonly status: 'kept' | 'archived' }[]
+  readonly reviewCards: readonly { readonly id: string; readonly name: string }[]
+  readonly size: number
+  readonly updatedAt: string
+  readonly cleanupError?: string
+}
+
+export interface ChapterDeletionPreviewResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly operation?: ChapterDeletionView
+}
+
+export interface ChapterDeletionListResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly operations: readonly ChapterDeletionView[]
+  readonly size: number
+}
+
+export interface ChapterDeletionMutationResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly operation?: ChapterDeletionView
+  readonly deleted?: number
+  readonly restored?: number
+  readonly purged?: number
+  readonly cleanupPending?: boolean
+  readonly cardErrors?: readonly string[]
+}
 
 /** The review verb's actions: a pending item is accepted or discarded (a card archives through canvas_write). */
 export type ReviewAction = 'accept' | 'discard'

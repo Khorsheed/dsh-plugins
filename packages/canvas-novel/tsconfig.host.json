@@ -9,6 +9,7 @@
     "src/agent.ts",
     "src/brief.ts",
     "src/chapter-feedback.ts",
+    "src/chapter-deletion.ts",
     "src/genre.ts",
     "src/genre-agent.ts",
     "src/gestures.ts",
