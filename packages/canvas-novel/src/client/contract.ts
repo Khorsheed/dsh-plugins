@@ -23,6 +23,7 @@ import type {
 } from '../chapter-feedback.ts'
 import type {
   ChapterDeletionApplyRequest, ChapterDeletionListResult, ChapterDeletionMutationResult, ChapterDeletionPreviewRequest, ChapterDeletionPreviewResult, ChapterDeletionPurgeRequest, ChapterDeletionRestoreRequest,
+  ChapterDeletionSnapshotRequest, ChapterDeletionSnapshotResult,
 } from '../chapter-deletion.ts'
 import type {} from './locales.ts'
 
@@ -101,6 +102,7 @@ export interface NovelRemote {
   chapterDeletionPreview: (sessionId: SessionId, request: ChapterDeletionPreviewRequest) => Promise<RemoteResult<ChapterDeletionPreviewResult>>
   applyChapterDeletion: (sessionId: SessionId, request: ChapterDeletionApplyRequest) => Promise<RemoteResult<ChapterDeletionMutationResult>>
   chapterDeletions: (request: NovelWorkRequest) => Promise<RemoteResult<ChapterDeletionListResult>>
+  chapterDeletionSnapshot: (request: ChapterDeletionSnapshotRequest) => Promise<RemoteResult<ChapterDeletionSnapshotResult>>
   restoreChapters: (sessionId: SessionId, request: ChapterDeletionRestoreRequest) => Promise<RemoteResult<ChapterDeletionMutationResult>>
   purgeChapters: (sessionId: SessionId, request: ChapterDeletionPurgeRequest) => Promise<RemoteResult<ChapterDeletionMutationResult>>
   align: (request: NovelWorkRequest) => Promise<RemoteResult<NovelAlignResult>>
@@ -152,6 +154,8 @@ export type NovelSurfaceProps<O extends NovelOwnerProps = NovelOwnerProps> = O &
 export const STORY_LOG_PAGE = 'novel:story-log'
 /** The 待对齐 page (2026-11-02). */
 export const ALIGN_PAGE = 'novel:align'
+/** The chapter recycle page; the canvas owns its native breadcrumb and back action. */
+export const RECYCLE_PAGE = 'novel:chapter-recycle'
 /** The 章节 face's ask: one chapter to show, on its plan or its text (the canvas's `target`). */
 export interface ChapterTarget {
   readonly item: string

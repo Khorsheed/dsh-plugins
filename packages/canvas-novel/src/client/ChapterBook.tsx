@@ -21,18 +21,18 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
-import { Button, Menu, Modal, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconArchiveOutlineMedium, IconTrashOutlineMedium, Menu, Modal, Toast, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ChipRow } from '@khorsheed/dsh-client-ui-panel-kit/src/client/index.ts'
 import { NOVEL_GENRE_ID, volumeNumeral, type ChapterRow, type EffectiveChapterPhase } from '../types.ts'
 import { goalSegments } from './PlanView.tsx'
 import { bareTitle, ChapterReader } from './ChapterReader.tsx'
-import { ALIGN_PAGE, type ChapterTarget, type NovelSurfaceProps } from './contract.ts'
+import { ALIGN_PAGE, RECYCLE_PAGE, type ChapterTarget, type NovelSurfaceProps } from './contract.ts'
 import { awaitsReconcile } from './NovelFaces.tsx'
 import { PendingList } from './PendingList.tsx'
 import { useNovelRead } from './use-novel.ts'
 import { loadReadingMemory, saveReadingMemory } from './reader-memory.ts'
 import { ImportNovel } from './ImportNovel.tsx'
-import { DeleteChaptersDialog, RecycleBinDialog } from './ChapterDeletion.tsx'
+import { DeleteChaptersDialog } from './ChapterDeletion.tsx'
 import type { ChapterDeletionView } from '../chapter-deletion.ts'
 import css from './novel.module.css'
 import book from './book.module.css'
@@ -135,13 +135,13 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
   const queue = useNovelRead(api, r => r.pending({ canvasId }), `pending:${canvasId}`, rev)
   const outlineRead = useNovelRead(api, r => r.outline({ canvasId }), `outline:${canvasId}`, rev)
   const alignRead = useNovelRead(api, r => r.align({ canvasId }), `align:${canvasId}`, rev)
-  const recycleRead = useNovelRead(api, r => r.chapterDeletions({ canvasId }), `deletions:${canvasId}`, rev)
   const surface = { ...rest, canvasId, rev, navigate, sessionId, remote, t } as NovelSurfaceProps
   const [filter, setFilter] = useState<Filter>('all')
   const [queueOpen, setQueueOpen] = useState(false)
+  const [selectionMode, setSelectionMode] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set())
   const [deletionPreview, setDeletionPreview] = useState<ChapterDeletionView | null>(null)
-  const [recycleOpen, setRecycleOpen] = useState(false)
+  const [deletionNotice, setDeletionNotice] = useState<{ readonly id: number; readonly text: string } | null>(null)
   const [deletionFailure, setDeletionFailure] = useState<string | null>(null)
   const empty = read.state === 'ready' && read.value.chapters.length === 0
   useEffect(() => { if (empty) onEmpty?.() }, [empty, onEmpty])
@@ -177,6 +177,11 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
   } else {
     for (let index = 0; index < rows.length; index += GROUP) groups.push({ rows: rows.slice(index, index + GROUP) })
   }
+  const filteredRows = filter === 'all' ? rows : rows.filter(item => filter === 'todo' ? needsPerson(item, pending) : !settled(item.phase))
+  const exitDelete = (): void => {
+    setSelectionMode(false)
+    setSelected(new Set())
+  }
   const toggleChapter = (n: number): void => {
     setSelected(current => {
       const next = new Set(current)
@@ -186,7 +191,7 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
     })
   }
   const openDelete = (): void => {
-    if (sessionId === undefined || selected.size === 0) return
+    if (sessionId === undefined || !selectionMode || selected.size === 0) return
     setDeletionFailure(null)
     void api.chapterDeletionPreview(sessionId, { canvasId, chapters: [...selected].sort((a, b) => a - b) }).then(result => {
       if (!result.ok) { setDeletionFailure(t('error.generic', { message: result.error.message })); return }
@@ -195,7 +200,7 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
     }).catch((error: unknown) => { setDeletionFailure(t('error.generic', { message: error instanceof Error ? error.message : String(error) })) })
   }
   const row = (item: ChapterRow): ReactNode => (
-    <ChapterLine key={item.chapter.n} row={item} pending={pending[item.chapter.n] ?? 0} onRead={onRead} t={t} selected={selected.has(item.chapter.n)} onToggle={() => { toggleChapter(item.chapter.n) }} />
+    <ChapterLine key={item.chapter.n} row={item} pending={pending[item.chapter.n] ?? 0} onRead={onRead} t={t} selecting={selectionMode} selected={selected.has(item.chapter.n)} onToggle={() => { toggleChapter(item.chapter.n) }} />
   )
   const nextN = Math.max(...rows.map(item => item.chapter.n)) + 1
   const send = (text: string): void => { if (sessionId !== undefined) rest.sendToConversation?.(sessionId, text) }
@@ -254,7 +259,11 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
   const primaryAt = steps.findIndex(step => step.acts !== null || step.body !== undefined)
 
   return (
-    <div className={css.book} data-canvas-scroll="novel-book">
+    <div className={css.book} data-canvas-scroll="novel-book" onKeyDown={event => {
+      if (event.key !== 'Escape' || !selectionMode) return
+      event.stopPropagation()
+      exitDelete()
+    }}>
       <section className={book.next}>
         <div className={book.nextHead}>{t('next.heading')}</div>
         {steps.map((step, index) => {
@@ -279,17 +288,27 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
               className={css.filters}
               label={t('toc.filter.label')}
               value={filter}
-              onSelect={setFilter}
+              onSelect={next => { setFilter(next); setSelected(new Set()) }}
               chips={([['all', rows.length], ['todo', rows.filter(item => needsPerson(item, pending)).length], ['open', rows.filter(item => !settled(item.phase)).length]] as const).map(([id, count]) => ({ id, label: t(`toc.filter.${id}Label`), count }))}
             />
           )
           : <span />}
-        <ChapterActions {...surface} n={nextN} onPlan={canSend ? () => { send(t('cand.planAsk', { n: nextN })) } : undefined} onCreated={n => { onRead(n, true) }} selectedCount={selected.size} onDelete={openDelete} onRecycle={() => { setRecycleOpen(true) }} />
+        {selectionMode ? (
+          <div className={book.selectionBar}>
+            <Button size="sm" variant="ghost" onClick={exitDelete}>{t('edit.cancel')}</Button>
+            <strong>{t('toc.selectedCount', { count: selected.size })}</strong>
+            <span className={book.selectionHint}>{t('toc.selectionHint')}</span>
+            <Button size="sm" variant="ghost" onClick={() => { setSelected(selected.size === filteredRows.length && filteredRows.length > 0 ? new Set() : new Set(filteredRows.map(item => item.chapter.n))) }}>{t(selected.size === filteredRows.length && filteredRows.length > 0 ? 'toc.clearSelection' : 'toc.selectFiltered')}</Button>
+            <Button size="sm" variant="primary" disabled={selected.size === 0} onClick={openDelete}>{t('toc.previewDelete')}</Button>
+          </div>
+        ) : (
+          <ChapterActions {...surface} n={nextN} onPlan={canSend ? () => { send(t('cand.planAsk', { n: nextN })) } : undefined} onCreated={n => { onRead(n, true) }} {...(sessionId === undefined ? {} : { onDelete: () => { setSelectionMode(true); setSelected(new Set()); setDeletionNotice(null) } })} onRecycle={() => { navigate.openPage(RECYCLE_PAGE, t('recycle.title')) }} />
+        )}
       </div>
       {deletionFailure !== null && <p className={css.warn} role="alert">{deletionFailure}</p>}
       {filter !== 'all' ? (
         <div className={book.chs}>
-          {(filter === 'todo' ? rows.filter(item => needsPerson(item, pending)) : rows.filter(item => !settled(item.phase))).map(row)}
+          {filteredRows.map(row)}
         </div>
       ) : groups.map(({ rows: group, volume }, index) => {
         if (group.length === 0 && volume === undefined) return null
@@ -349,15 +368,23 @@ function ContentsBody({ canvasId, rev, navigate, sessionId, remote, t, onRead, o
           operation={deletionPreview}
           onClose={() => { setDeletionPreview(null) }}
           onDone={cleanupPending => {
+            const count = deletionPreview.chapters.length
             setDeletionPreview(null)
-            setSelected(new Set())
+            exitDelete()
             setDeletionFailure(cleanupPending ? t('error.cleanup-pending') : null)
-            setRecycleOpen(true)
+            setDeletionNotice({ id: Date.now(), text: t('recycle.moved', { count }) })
           }}
         />
       )}
-      {recycleOpen && recycleRead.state === 'ready' && (
-        <RecycleBinDialog {...surface} operations={recycleRead.value.operations} size={recycleRead.value.size} onClose={() => { setRecycleOpen(false) }} />
+      {deletionNotice !== null && (
+        <Toast
+          key={deletionNotice.id}
+          tone="success"
+          text={deletionNotice.text}
+          holdMs={6000}
+          actions={[{ label: t('recycle.open'), onClick: () => { setDeletionNotice(null); navigate.openPage(RECYCLE_PAGE, t('recycle.title')) } }]}
+          onDone={() => { setDeletionNotice(null) }}
+        />
       )}
     </div>
   )
@@ -428,15 +455,14 @@ type NewChapterProps = NovelSurfaceProps & {
 
 /** Import, new-chapter, deletion and recycle commands belong to the book, not to one chapter row. */
 function ChapterActions(props: NewChapterProps & {
-  readonly selectedCount?: number
   readonly onDelete?: () => void
   readonly onRecycle?: () => void
 }): ReactNode {
   return (
     <div className={book.tocActions}>
-      {(props.selectedCount ?? 0) > 0 && <Button size="sm" variant="outline" onClick={props.onDelete}>{props.t('toc.deleteSelected', { count: props.selectedCount! })}</Button>}
-      {props.onRecycle !== undefined && <Button size="sm" variant="ghost" onClick={props.onRecycle}>{props.t('recycle.open')}</Button>}
+      {props.onRecycle !== undefined && <Button size="sm" variant="ghost" icon={<IconArchiveOutlineMedium size={16} />} onClick={props.onRecycle}>{props.t('recycle.open')}</Button>}
       <ImportNovel {...props} />
+      {props.onDelete !== undefined && <Button size="sm" variant="outline" icon={<IconTrashOutlineMedium size={16} />} onClick={props.onDelete}>{props.t('toc.delete')}</Button>}
       <NewOwnChapter {...props} />
     </div>
   )
@@ -489,7 +515,7 @@ function NewOwnChapter(props: NewChapterProps): ReactNode {
             </button>
           )
           : (
-            <Button size="sm" variant="outline" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => { setMenuOpen(value => !value) }}>
+            <Button size="sm" variant="primary" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => { setMenuOpen(value => !value) }}>
               {t('toc.newChapter', { n: props.n })}<span aria-hidden="true"> ▾</span>
             </Button>
           )}
@@ -515,11 +541,12 @@ function NewOwnChapter(props: NewChapterProps): ReactNode {
 }
 
 /** One chapter: number, title, its one-line recap (or the plan's summary); a state only when it needs something. */
-function ChapterLine({ row, pending, onRead, t, selected, onToggle }: {
+function ChapterLine({ row, pending, onRead, t, selecting, selected, onToggle }: {
   readonly row: ChapterRow
   readonly pending: number
   readonly onRead: (n: number, editing?: boolean, focusPlan?: boolean) => void
   readonly t: TranslateNS<'novel'>
+  readonly selecting: boolean
   readonly selected: boolean
   readonly onToggle: () => void
 }): ReactNode {
@@ -527,9 +554,9 @@ function ChapterLine({ row, pending, onRead, t, selected, onToggle }: {
   const state = tocState(phase)
   const line = chapter.recap ?? (chapter.plan === undefined ? undefined : t('next.planLine', { text: chapter.plan.summary }))
   return (
-    <div className={book.chPick} data-selected={selected || undefined}>
-      <input type="checkbox" checked={selected} aria-label={t('toc.selectChapter', { n: chapter.n })} onChange={onToggle} />
-      <button type="button" className={book.ch} onClick={() => { onRead(chapter.n, undefined, phase === 'planning') }}>
+    <div className={book.chPick} data-selecting={selecting || undefined} data-selected={selecting && selected || undefined}>
+      {selecting && <input type="checkbox" checked={selected} aria-label={t('toc.selectChapter', { n: chapter.n })} onChange={onToggle} />}
+      <button type="button" className={book.ch} onClick={selecting ? onToggle : () => { onRead(chapter.n, undefined, phase === 'planning') }}>
         <span className={book.chNo}>{t('strip.chapter', { n: chapter.n })}</span>
         <span className={book.chTitle}>
           {bareTitle(chapter.n, chapter.title)}

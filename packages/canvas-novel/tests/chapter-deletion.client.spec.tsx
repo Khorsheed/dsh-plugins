@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ChapterDeletionView } from '../src/chapter-deletion.ts'
-import { DeleteChaptersDialog, RecycleBinDialog } from '../src/client/ChapterDeletion.tsx'
+import { DeleteChaptersDialog, RecycleBinPage } from '../src/client/ChapterDeletion.tsx'
 import type { NovelRemote, NovelSurfaceProps } from '../src/client/contract.ts'
 import { zh } from '../src/client/locales.ts'
 
@@ -24,10 +24,14 @@ const operation: ChapterDeletionView = {
 }
 
 function props(api: Partial<NovelRemote>, onClose = vi.fn()): NovelSurfaceProps & { onClose: () => void } {
+  const withReads = {
+    chapterDeletions: vi.fn(() => ok({ ok: true, operations: [operation], size: operation.size })),
+    ...api,
+  }
   return {
     canvasId: 'canvas_dream0001', board: { id: 'canvas_dream0001', title: '潜梦者', genre: { id: 'novel' } }, rev: 0,
     navigate: { openCard: vi.fn(), openPage: vi.fn(), openManuscripts: vi.fn(), refresh: vi.fn() },
-    sessionId: SESSION, remote: () => api as NovelRemote, t, onClose,
+    sessionId: SESSION, remote: () => withReads as NovelRemote, t, onClose,
   }
 }
 
@@ -46,8 +50,9 @@ describe('chapter deletion surfaces', () => {
 
   it('restores one chapter to the next free number and optionally restores its cards', async () => {
     const restoreChapters = vi.fn(() => ok({ ok: true, restored: 1, cardErrors: [] }))
-    const onClose = vi.fn()
-    render(<RecycleBinDialog {...props({ restoreChapters }, onClose)} operations={[operation]} size={operation.size} />)
+    const surface = props({ restoreChapters })
+    render(<RecycleBinPage {...surface} rev={0} />)
+    await screen.findByText('第3章 · 无名之地')
     const row = screen.getByRole('checkbox', { name: zh['recycle.selectChapter'].replace('{n}', '3') })
     fireEvent.click(row)
     fireEvent.click(screen.getAllByRole('button', { name: zh['recycle.restore'] })[0]!)
@@ -57,12 +62,13 @@ describe('chapter deletion surfaces', () => {
     await vi.waitFor(() => expect(restoreChapters).toHaveBeenCalledWith(SESSION, {
       canvasId: 'canvas_dream0001', deletionId: 'del-1', chapters: [3], cards: ['c-old-setting', 'c-old-rule'], position: 'next',
     }))
-    expect(onClose).toHaveBeenCalled()
+    expect(surface.navigate.openManuscripts).toHaveBeenCalled()
   })
 
   it('requires acknowledgement before purging only the selected chapter', async () => {
     const purgeChapters = vi.fn(() => ok({ ok: true, purged: 1, cardErrors: [] }))
-    render(<RecycleBinDialog {...props({ purgeChapters })} operations={[operation]} size={operation.size} />)
+    render(<RecycleBinPage {...props({ purgeChapters })} rev={0} />)
+    await screen.findByText('第3章 · 无名之地')
     fireEvent.click(screen.getByRole('checkbox', { name: zh['recycle.selectChapter'].replace('{n}', '4') }))
     fireEvent.click(screen.getByRole('button', { name: zh['recycle.purgeSelected'].replace('{count}', '1') }))
     expect(screen.getByRole('button', { name: zh['recycle.confirmPurge'] }).hasAttribute('disabled')).toBe(true)
@@ -73,10 +79,41 @@ describe('chapter deletion surfaces', () => {
 
   it('empties every operation without restoring deleted chapters', async () => {
     const purgeChapters = vi.fn(() => ok({ ok: true, purged: 4, cardErrors: [] }))
-    render(<RecycleBinDialog {...props({ purgeChapters })} operations={[operation]} size={operation.size} />)
+    render(<RecycleBinPage {...props({ purgeChapters })} rev={0} />)
+    await screen.findByText('第3章 · 无名之地')
     fireEvent.click(screen.getByRole('button', { name: zh['recycle.emptyAll'] }))
     fireEvent.click(screen.getByRole('checkbox', { name: zh['recycle.purgeAck'] }))
     fireEvent.click(screen.getByRole('button', { name: zh['recycle.confirmPurge'] }))
     await vi.waitFor(() => expect(purgeChapters).toHaveBeenCalledWith(SESSION, { canvasId: 'canvas_dream0001', deletionId: 'del-1', chapters: [3, 4, 5, 6] }))
+  })
+
+  it('loads a real manuscript snapshot without exposing derived records', async () => {
+    const chapterDeletionSnapshot = vi.fn(() => ok({ ok: true, snapshot: { n: 3, title: '无名之地', body: '第三章的真实正文。' } }))
+    render(<RecycleBinPage {...props({ chapterDeletionSnapshot })} rev={0} />)
+    await screen.findByText('第3章 · 无名之地')
+    fireEvent.click(screen.getAllByRole('button', { name: zh['recycle.snapshot'] })[0]!)
+    expect(await screen.findByText('第三章的真实正文。')).toBeTruthy()
+    expect(chapterDeletionSnapshot).toHaveBeenCalledWith({ canvasId: 'canvas_dream0001', deletionId: 'del-1', chapter: 3 })
+    expect(screen.getByText(zh['recycle.snapshotReadonly'])).toBeTruthy()
+  })
+
+  it('shows the summary and beats for a plan-only snapshot', async () => {
+    const chapterDeletionSnapshot = vi.fn(() => ok({ ok: true, snapshot: { n: 5, title: '别替我起名', body: '', plan: { summary: '重复规划的摘要', beats: [{ at: '深夜', text: '第一拍' }, { text: '第二拍' }] } } }))
+    render(<RecycleBinPage {...props({ chapterDeletionSnapshot })} rev={0} />)
+    await screen.findByText('第3章 · 无名之地')
+    fireEvent.click(screen.getAllByRole('button', { name: zh['recycle.snapshot'] })[2]!)
+    expect(await screen.findByText('重复规划的摘要')).toBeTruthy()
+    expect(screen.getByText('深夜｜第一拍')).toBeTruthy()
+    expect(screen.getByText('第二拍')).toBeTruthy()
+    expect(chapterDeletionSnapshot).toHaveBeenCalledWith({ canvasId: 'canvas_dream0001', deletionId: 'del-1', chapter: 5 })
+  })
+
+  it('shows the empty state and a read failure without custom page navigation', async () => {
+    const { unmount } = render(<RecycleBinPage {...props({ chapterDeletions: vi.fn(() => ok({ ok: true, operations: [], size: 0 })) })} rev={0} />)
+    expect(await screen.findByText(zh['recycle.empty'])).toBeTruthy()
+    expect(screen.queryByRole('button', { name: zh['recycle.restore'] })).toBeNull()
+    unmount()
+    render(<RecycleBinPage {...props({ chapterDeletions: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: 'io', message: '读取失败' } })) })} rev={0} />)
+    expect(await screen.findByText(/读取失败/)).toBeTruthy()
   })
 })

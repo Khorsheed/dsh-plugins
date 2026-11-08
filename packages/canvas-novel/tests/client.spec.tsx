@@ -1088,3 +1088,64 @@ describe('设定 (2026-11-02 改版稿)', () => {
     await waitFor(() => { expect(remote.alignAck).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, ids: ['w1'] }) })
   })
 })
+
+describe('ChapterBook · chapter deletion selection', () => {
+  const deletionOperation = (ns: number[]) => ({
+    id: 'del-ui', status: 'active' as const, updatedAt: NOW, size: 0,
+    chapters: ns.map(n => ({ n, title: `章${n}`, words: 100, hasBody: true, size: 1000 })),
+    counts: { bodies: ns.length, plans: ns.length, words: ns.length * 100, mentions: 0, experiences: 0, relations: 0, history: 0, minds: 0, pending: 0, feedback: 0 },
+    cascadeCards: [], reviewCards: [],
+  })
+
+  it('keeps checkboxes out of the reading list until delete starts, and restores it on Escape', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    render(<ChapterBook {...props(remote)} />)
+    await screen.findByText('第3章')
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: zh['toc.delete'] }))
+    expect(screen.getAllByRole('checkbox')).toHaveLength(FIVE.length)
+    expect(screen.getByRole('button', { name: zh['toc.previewDelete'] }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('checkbox', { name: zh['toc.selectChapter'].replace('{n}', '3') }))
+    expect(screen.getByText(zh['toc.selectedCount'].replace('{count}', '1'))).toBeTruthy()
+    fireEvent.keyDown(screen.getByRole('checkbox', { name: zh['toc.selectChapter'].replace('{n}', '3') }), { key: 'Escape' })
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.getByRole('button', { name: zh['toc.delete'] })).toBeTruthy()
+  })
+
+  it('selects only the current filter before opening the deletion preview', async () => {
+    const rows = Array.from({ length: 14 }, (_, index) => ({
+      chapter: chapter(index + 1, `章${index + 1}`, { phase: index % 2 === 0 ? 'planning' : 'extracted' }),
+      phase: index % 2 === 0 ? 'planning' as const : 'extracted' as const,
+      body: '正文',
+    }))
+    const remote = fakeRemote({ items: [], rows })
+    render(<ChapterBook {...props(remote)} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['toc.delete'] }))
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(zh['toc.filter.openLabel']) }))
+    fireEvent.click(screen.getByRole('button', { name: zh['toc.selectFiltered'] }))
+    expect(screen.getByText(zh['toc.selectedCount'].replace('{count}', '7'))).toBeTruthy()
+    expect(screen.getAllByRole('checkbox')).toHaveLength(7)
+    fireEvent.click(screen.getByRole('button', { name: zh['toc.clearSelection'] }))
+    expect(screen.getByRole('button', { name: zh['toc.previewDelete'] }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('deletes through the preview and opens the native recycle page from the host toast', async () => {
+    const remote = fakeRemote({ items: [], rows: FIVE })
+    remote.chapterDeletionPreview.mockImplementation(() => ok({ ok: true, operation: deletionOperation([3, 4]) }))
+    remote.applyChapterDeletion.mockImplementation(() => ok({ ok: true, cleanupPending: false }))
+    const p = props(remote)
+    render(<ChapterBook {...p} />)
+    fireEvent.click(await screen.findByRole('button', { name: zh['toc.delete'] }))
+    fireEvent.click(screen.getByRole('checkbox', { name: zh['toc.selectChapter'].replace('{n}', '3') }))
+    fireEvent.click(screen.getByRole('checkbox', { name: zh['toc.selectChapter'].replace('{n}', '4') }))
+    fireEvent.click(screen.getByRole('button', { name: zh['toc.previewDelete'] }))
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: zh['delete.confirm'] }))
+    await vi.waitFor(() => { expect(remote.applyChapterDeletion).toHaveBeenCalledWith(SESSION, { canvasId: CANVAS_ID, deletionId: 'del-ui', cards: [] }) })
+    const toast = await screen.findByRole('alert')
+    expect(toast.textContent).toContain(zh['recycle.moved'].replace('{count}', '2'))
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    fireEvent.click(within(toast).getByRole('button', { name: zh['recycle.open'] }))
+    expect(p.navigate.openPage).toHaveBeenCalledWith('novel:chapter-recycle', zh['recycle.title'])
+  })
+})

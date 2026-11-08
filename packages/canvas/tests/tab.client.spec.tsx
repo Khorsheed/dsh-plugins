@@ -960,6 +960,8 @@ describe('CanvasTab — genre seats (创作体裁)', () => {
     await screen.findByText('卡片 c_1')
     act(() => { store.openPageTab(CANVAS_ID, 'novel:ledger', '伏笔账本') })
     await screen.findByText('seat canvas.page novel:ledger')
+    fireEvent.click(screen.getByRole('button', { name: zh['crumb.back'] }))
+    expect(props.backToBoard).toHaveBeenCalledWith(CANVAS_ID)
     act(() => { store.openPageTab(CANVAS_ID, 'thesis:outline', '大纲') })
     await screen.findByText(zh['genre.pageMissing'])
   })

@@ -2390,6 +2390,18 @@ export class NovelService {
     return operations.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   }
 
+  /** Read one retained manuscript snapshot without exposing its derived records. */
+  async readChapterDeletionSnapshot(request: { readonly workId: string; readonly deletionId: string; readonly chapter: number }): Promise<ChapterDeletionSnapshot | undefined> {
+    this.assertAlive('readChapterDeletionSnapshot')
+    const workId = normalizeWorkId(request.workId)
+    const deletionId = cleanText(request.deletionId, 120)
+    const chapter = cleanNumber(request.chapter)
+    if (workId === undefined || deletionId === undefined || chapter === undefined) return undefined
+    const read = await this.readDeletionOperation(workId, deletionId)
+    if (typeof read !== 'object' || read.data.status === 'preview' || read.data.status === 'closed') return undefined
+    return read.data.chapters.find(row => row.record.n === chapter)
+  }
+
   private async snapshotChapter(meta: WorkMeta, record: ChapterRecord): Promise<ChapterDeletionSnapshot> {
     const workId = meta.id
     const n = record.n

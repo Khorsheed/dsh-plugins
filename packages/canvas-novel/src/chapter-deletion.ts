@@ -5,7 +5,7 @@ import { chapterIdentity, cleanNumber, cleanText, normalizeChapter, normalizeWor
 
 export type {
   ChapterDeletionApplyRequest, ChapterDeletionListResult, ChapterDeletionMutationResult, ChapterDeletionPreviewRequest, ChapterDeletionPreviewResult,
-  ChapterDeletionPurgeRequest, ChapterDeletionRestoreRequest, ChapterDeletionView,
+  ChapterDeletionPurgeRequest, ChapterDeletionRestoreRequest, ChapterDeletionSnapshotRequest, ChapterDeletionSnapshotResult, ChapterDeletionSnapshotView, ChapterDeletionView,
 } from './types.ts'
 
 export interface ChapterDeletionSnapshot {

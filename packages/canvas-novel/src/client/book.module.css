@@ -43,8 +43,12 @@
 
 .tocBar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 2px 0 14px; }
 .tocActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.selectionBar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-left: auto; }
+.selectionBar strong { color: var(--dsw-alias-brand-primary); font: 600 var(--dsh-panel-text-meta, 13px)/1.5 var(--dsw-font-family); white-space: nowrap; }
+.selectionHint { color: var(--dsw-alias-label-tertiary); font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family); }
 .chs { display: grid; }
-.chPick { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: center; }
+.chPick { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; }
+.chPick[data-selecting="true"] { grid-template-columns: 22px minmax(0, 1fr); }
 .chPick > input { margin: 0 4px; accent-color: var(--dsw-alias-brand-primary); cursor: pointer; }
 .chPick[data-selected="true"] { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 7%, transparent); }
 .ch, .chAdd {
@@ -67,6 +71,8 @@
 @container dsh-panel (max-width: 560px) {
   .step { grid-template-columns: 22px minmax(0, 1fr); }
   .stepActs { grid-column: 2; justify-content: flex-start; }
+  .selectionBar { width: 100%; }
+  .selectionHint { display: none; }
   .ch { grid-template-columns: 3.6em minmax(0, 1fr) auto; }
   .chAdd { grid-template-columns: 3.6em minmax(0, 1fr); }
 }

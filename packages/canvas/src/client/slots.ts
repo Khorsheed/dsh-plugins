@@ -50,8 +50,8 @@ export interface CanvasGenreOwnerProps {
  * One place in the canvas surface, as an address (proposal
  * 2026-10-30-agent-sidebar-navigation): the canvas tab's navigation params,
  * and the `params` of every destination a canvas or genre tool names. The most
- * specific field wins: a card, a manuscript, a type page, a face (with a scope
- * pressed and an item shown on it), else the canvas where its row stood.
+ * specific field wins: a card, a manuscript, a type page, a genre page, a face
+ * (with a scope pressed and an item shown on it), else the canvas where its row stood.
  */
 export interface CanvasNavParams {
   readonly canvasId: string
@@ -59,6 +59,10 @@ export interface CanvasNavParams {
   readonly manuscript?: string
   /** A category's type page. */
   readonly type?: string
+  /** A genre-owned canvas.page key; the host supplies its native breadcrumb and back action. */
+  readonly page?: string
+  /** The genre page's opaque parameter. */
+  readonly param?: string
   readonly face?: 'board' | 'link' | 'manuscripts' | 'view' | 'lead' | 'extra'
   readonly scope?: string | null
   /** One thing on that face the genre shows (the novel's 章节 face: a chapter number). */
@@ -70,7 +74,7 @@ export interface CanvasNavParams {
    * 「本轮改动」 chip (a room member's turn that touched several cards).
    */
   readonly cards?: readonly string[]
-  /** The strip chip's words for a card, manuscript or type page. */
+  /** The strip chip's words for a card, manuscript, type page or genre page. */
   readonly heading?: string
 }
 
