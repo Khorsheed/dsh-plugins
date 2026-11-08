@@ -306,11 +306,6 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
         {usage !== undefined
           ? <UsageChip usage={usage} execution={execution} provider={member?.kind === 'cli' ? member.provider : undefined} durationMs={data.durationMs} t={t} />
           : data.durationMs !== undefined && <span className={css.meta}>{formatDurationMs(data.durationMs)}</span>}
-        {usage?.subagents !== undefined && usage.subagents.count > 0 && child !== undefined && (
-          <button type="button" className={css.subagentsNote} data-testid="speech-subagents" onClick={() => { openSession(child) }}>
-            {t('speech.subagents', { count: String(usage.subagents.count) })}
-          </button>
-        )}
         <span className={css.meta}>{formatClock(data.time)}</span>
         {/* Last in the row: on a narrow reply it wraps to a line of its own. */}
         {usage?.gap !== undefined && (

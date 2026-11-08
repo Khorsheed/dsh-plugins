@@ -164,9 +164,8 @@ describe('the reply\'s usage line, fed by the reading', () => {
     const panel = screen.getByRole('tooltip').textContent ?? ''
     expect(panel).toContain('成员自己1,200 tok')
     expect(panel).toContain('子智能体（2 个）800 tok')
-    fireEvent.click(screen.getByTestId('speech-subagents'))
-    expect(screen.getByTestId('speech-subagents').textContent).toBe('这一轮用了 2 个子智能体')
-    expect(openSession).toHaveBeenCalledWith('child-1')
+    // No separate 「这一轮用了 n 个子智能体」 line (user 11-08): the breakdown and the cards say it.
+    expect(screen.queryByTestId('speech-subagents')).toBeNull()
   })
 
   it('an old run (no execution id, no reading) still shows its stored numbers', async () => {
