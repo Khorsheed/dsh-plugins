@@ -297,6 +297,14 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
   const taskTags = new RoomTaskTags()
 
   /** Map a structured RoomFailure to the dialog's localized copy. */
+  /** Take back a queued human delivery (the receipt's and the queue row's 撤回): undefined, or why not. */
+  const withdrawFor = (sessionId: SessionId) => async (dispatchSeq: number, memberId: string): Promise<string | undefined> => {
+    if (remote === undefined) return t('composer.error.generic')
+    const carried = await remote.withdrawDelivery({ sessionId, dispatchSeq, memberId }).catch(() => undefined)
+    if (carried === undefined || !carried.ok) return t('composer.error.generic')
+    if (!carried.value.ok) return carried.value.error.code === 'not-queued' ? t('receipt.notQueued') : t('composer.error.generic')
+    return undefined
+  }
   const failureText = (error: RoomFailure): string => {
     switch (error.code) {
       case 'coordinator-busy': return t('coordinator.busy')
@@ -742,6 +750,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       // The room's own copy leaves out the room's queued rows (they read on their messages); an older core has only the plain one.
       renderMemberInbox: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderRoomMemberInbox ?? (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.renderMemberInbox,
       controlMemberQueue: (ctx.get('localAgentUi') as LocalAgentUi | undefined)?.controlMemberQueue,
+      ...remote === undefined ? {} : { withdrawDelivery: withdrawFor(sessionId) },
       // Read at render: a local-agent core loading after this entry still lands.
       // A named member compacts through the room's own `/compact` dispatch —
       // the reminder button then runs exactly what the typed command runs
@@ -953,14 +962,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
         const control = ui?.controlMemberQueue
         return {
           roomStore, openSession,
-          ...remote === undefined ? {} : {
-            withdraw: async (dispatchSeq: number, memberId: string) => {
-              const carried = await remote.withdrawDelivery({ sessionId, dispatchSeq, memberId }).catch(() => undefined)
-              if (carried === undefined || !carried.ok) return t('composer.error.generic')
-              if (!carried.value.ok) return carried.value.error.code === 'not-queued' ? t('receipt.notQueued') : t('composer.error.generic')
-              return undefined
-            },
-          },
+          ...remote === undefined ? {} : { withdraw: withdrawFor(sessionId) },
           ...control === undefined ? {} : {
             resumeQueue: async (memberId: string) => {
               const child = roomStore.getCached(sessionId)?.members.find(member => member.id === memberId)?.childSessionId
