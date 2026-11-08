@@ -1,0 +1,640 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`kimi subagent mirror snapshot > one resumed subagent (two calls) → the exact grandchild event sequence 1`] = `
+[
+  {
+    "data": {
+      "label": "explore: 看目录",
+      "mode": "one-shot",
+      "provider": "kimi-cli",
+      "version": 3,
+    },
+    "seq": 0,
+    "time": 1767225600000,
+    "type": "subagent/descriptor",
+  },
+  {
+    "data": {
+      "admittedAt": 1000000,
+      "caller": "cli",
+      "callerRef": "call-1",
+      "cause": {
+        "callId": "call-1",
+        "executionId": "member-exec-1",
+        "kind": "cli-subagent",
+        "name": "explore",
+        "sessionId": "member-kimi",
+      },
+      "executionId": "<uuid>",
+      "operation": "prompt",
+      "parentSessionId": "member-kimi",
+      "phase": "start",
+      "task": {
+        "id": "task-1",
+        "sessionId": "room-parent",
+      },
+    },
+    "seq": 1,
+    "time": 1767225600000,
+    "type": "local-agent/execution",
+  },
+  {
+    "data": {
+      "turn": 1,
+    },
+    "seq": 2,
+    "time": 1767225600000,
+    "type": "turn/start",
+  },
+  {
+    "data": {
+      "content": [
+        {
+          "text": "看看 a.txt",
+          "type": "text",
+        },
+      ],
+      "id": "<uuid>",
+      "role": "user",
+      "source": {
+        "kind": "user",
+      },
+    },
+    "seq": 3,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "user/message",
+  },
+  {
+    "data": {
+      "header": {
+        "config": {
+          "maxTokens": 32768,
+          "model": "k-fixture",
+          "provider": "kimi-cli",
+          "reasoningEffort": "high",
+        },
+      },
+      "reason": "initial",
+    },
+    "seq": 4,
+    "time": 1767225600000,
+    "type": "request/header",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 5,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "先看文件",
+            "type": "reasoning",
+          },
+          {
+            "arguments": "a.txt",
+            "id": "agent-0-t0-read",
+            "name": "ReadFile",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "k-fixture",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 1,
+      "stream": [
+        {
+          "chunk": {
+            "blockType": "reasoning",
+            "index": 0,
+            "type": "block-start",
+          },
+          "time": 1000450,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "先看文件",
+              "type": "reasoning",
+            },
+            "index": 0,
+            "type": "block-end",
+          },
+          "time": 1000600,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "blockType": "tool-call",
+            "index": 1,
+            "type": "block-start",
+          },
+          "time": 1000600,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "arguments": "a.txt",
+              "id": "agent-0-t0-read",
+              "name": "ReadFile",
+              "type": "tool-call",
+            },
+            "index": 1,
+            "type": "block-end",
+          },
+          "time": 1000700,
+          "type": "chunk",
+        },
+      ],
+      "turn": 1,
+      "usage": {
+        "cacheReadTokens": 50,
+        "inputTokens": 100,
+        "outputTokens": 10,
+      },
+    },
+    "seq": 6,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "a.txt",
+      "callId": "agent-0-t0-read",
+      "name": "ReadFile",
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 7,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "文件内容占位",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": false,
+        "role": "tool",
+        "source": {
+          "callId": "agent-0-t0-read",
+          "kind": "tool",
+        },
+        "toolCallId": "agent-0-t0-read",
+      },
+      "meta": {
+        "localAgentTiming": {
+          "endedAt": 1000800,
+          "provider": "kimi-cli",
+          "source": "provider",
+          "startedAt": 1000700,
+          "version": 1,
+        },
+      },
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 8,
+    "sourceEventSeqs": [
+      7,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 1,
+    },
+    "seq": 9,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 10,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "结论一",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "k-fixture",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 2,
+      "stream": [
+        {
+          "chunk": {
+            "blockType": "text",
+            "index": 0,
+            "type": "block-start",
+          },
+          "time": 1001150,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "结论一",
+              "type": "text",
+            },
+            "index": 0,
+            "type": "block-end",
+          },
+          "time": 1001300,
+          "type": "chunk",
+        },
+      ],
+      "turn": 1,
+      "usage": {
+        "cacheReadTokens": 150,
+        "inputTokens": 120,
+        "outputTokens": 20,
+      },
+    },
+    "seq": 11,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 1,
+    },
+    "seq": 12,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "reason": {
+        "kind": "completed",
+      },
+      "turn": 1,
+    },
+    "seq": 13,
+    "time": 1767225600000,
+    "type": "turn/end",
+  },
+  {
+    "data": {
+      "endedAt": 1010000,
+      "executionId": "<uuid>",
+      "outcome": "done",
+      "phase": "end",
+      "providerReportedUsage": {
+        "cacheReadTokens": 200,
+        "inputTokens": 220,
+        "outputTokens": 30,
+      },
+      "turns": [
+        1,
+      ],
+    },
+    "seq": 14,
+    "time": 1767225600000,
+    "type": "local-agent/execution",
+  },
+  {
+    "data": {
+      "admittedAt": 1000000,
+      "caller": "cli",
+      "callerRef": "call-2",
+      "cause": {
+        "callId": "call-2",
+        "executionId": "member-exec-1",
+        "kind": "cli-subagent",
+        "name": "explore",
+        "resumed": true,
+        "sessionId": "member-kimi",
+      },
+      "executionId": "<uuid>",
+      "operation": "prompt",
+      "parentSessionId": "member-kimi",
+      "phase": "start",
+      "task": {
+        "id": "task-1",
+        "sessionId": "room-parent",
+      },
+    },
+    "seq": 15,
+    "time": 1767225600000,
+    "type": "local-agent/execution",
+  },
+  {
+    "data": {
+      "turn": 2,
+    },
+    "seq": 16,
+    "time": 1767225600000,
+    "type": "turn/start",
+  },
+  {
+    "data": {
+      "content": [
+        {
+          "text": "再看 b.txt",
+          "type": "text",
+        },
+      ],
+      "id": "<uuid>",
+      "role": "user",
+      "source": {
+        "kind": "user",
+      },
+    },
+    "seq": 17,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "user/message",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 2,
+    },
+    "seq": 18,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "先看文件",
+            "type": "reasoning",
+          },
+          {
+            "arguments": "a.txt",
+            "id": "agent-0-t1-read",
+            "name": "ReadFile",
+            "type": "tool-call",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "k-fixture",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 1,
+      "stream": [
+        {
+          "chunk": {
+            "blockType": "reasoning",
+            "index": 0,
+            "type": "block-start",
+          },
+          "time": 1100450,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "先看文件",
+              "type": "reasoning",
+            },
+            "index": 0,
+            "type": "block-end",
+          },
+          "time": 1100600,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "blockType": "tool-call",
+            "index": 1,
+            "type": "block-start",
+          },
+          "time": 1100600,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "arguments": "a.txt",
+              "id": "agent-0-t1-read",
+              "name": "ReadFile",
+              "type": "tool-call",
+            },
+            "index": 1,
+            "type": "block-end",
+          },
+          "time": 1100700,
+          "type": "chunk",
+        },
+      ],
+      "turn": 2,
+      "usage": {
+        "cacheReadTokens": 300,
+        "inputTokens": 30,
+        "outputTokens": 3,
+      },
+    },
+    "seq": 19,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "arguments": "a.txt",
+      "callId": "agent-0-t1-read",
+      "name": "ReadFile",
+      "step": 1,
+      "turn": 2,
+    },
+    "seq": 20,
+    "time": 1767225600000,
+    "type": "tool/call",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "文件内容占位",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "isError": false,
+        "role": "tool",
+        "source": {
+          "callId": "agent-0-t1-read",
+          "kind": "tool",
+        },
+        "toolCallId": "agent-0-t1-read",
+      },
+      "meta": {
+        "localAgentTiming": {
+          "endedAt": 1100800,
+          "provider": "kimi-cli",
+          "source": "provider",
+          "startedAt": 1100700,
+          "version": 1,
+        },
+      },
+      "step": 1,
+      "turn": 2,
+    },
+    "seq": 21,
+    "sourceEventSeqs": [
+      20,
+    ],
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "tool/result",
+  },
+  {
+    "data": {
+      "step": 1,
+      "turn": 2,
+    },
+    "seq": 22,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 2,
+    },
+    "seq": 23,
+    "time": 1767225600000,
+    "type": "step/start",
+  },
+  {
+    "data": {
+      "message": {
+        "content": [
+          {
+            "text": "结论二",
+            "type": "text",
+          },
+        ],
+        "id": "<uuid>",
+        "role": "assistant",
+        "source": {
+          "kind": "model",
+          "model": "k-fixture",
+          "provider": "kimi-cli",
+        },
+      },
+      "step": 2,
+      "stream": [
+        {
+          "chunk": {
+            "blockType": "text",
+            "index": 0,
+            "type": "block-start",
+          },
+          "time": 1101150,
+          "type": "chunk",
+        },
+        {
+          "chunk": {
+            "block": {
+              "text": "结论二",
+              "type": "text",
+            },
+            "index": 0,
+            "type": "block-end",
+          },
+          "time": 1101300,
+          "type": "chunk",
+        },
+      ],
+      "turn": 2,
+      "usage": {
+        "cacheReadTokens": 330,
+        "inputTokens": 40,
+        "outputTokens": 4,
+      },
+    },
+    "seq": 24,
+    "surfaceOp": "append",
+    "time": 1767225600000,
+    "type": "assistant/message",
+  },
+  {
+    "data": {
+      "step": 2,
+      "turn": 2,
+    },
+    "seq": 25,
+    "time": 1767225600000,
+    "type": "step/end",
+  },
+  {
+    "data": {
+      "reason": {
+        "kind": "completed",
+      },
+      "turn": 2,
+    },
+    "seq": 26,
+    "time": 1767225600000,
+    "type": "turn/end",
+  },
+  {
+    "data": {
+      "endedAt": 1010000,
+      "executionId": "<uuid>",
+      "outcome": "done",
+      "phase": "end",
+      "providerReportedUsage": {
+        "cacheReadTokens": 630,
+        "inputTokens": 70,
+        "outputTokens": 7,
+      },
+      "turns": [
+        2,
+      ],
+    },
+    "seq": 27,
+    "time": 1767225600000,
+    "type": "local-agent/execution",
+  },
+]
+`;

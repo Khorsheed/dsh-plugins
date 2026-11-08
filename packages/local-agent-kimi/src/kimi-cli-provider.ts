@@ -54,6 +54,7 @@ import { endpointAuthEnv, hasEndpointCredential, type KimiEndpointAuth } from '.
 import { kimiExecConfiguration } from './model-configuration.ts'
 import { addTokenUsage } from './session-view.ts'
 import { mirrorKimiSessionDelta, type KimiMirrorDelta, type KimiMirrorOptions } from './session-mirror.ts'
+import { KimiSubagentMirror } from './subagent-mirror.ts'
 
 /** Default POSIX grace between subprocess termination tiers. */
 export const DEFAULT_DISPOSE_GRACE_MS = 3_000
@@ -718,6 +719,11 @@ export function textTask(prompt: readonly ContentBlock[]): string {
   return texts.join('\n')
 }
 
+/** A recorded Kimi session id without the ACP directory prefix. */
+function bareSessionId(id: string): string {
+  return id.startsWith('session_') ? id.slice('session_'.length) : id
+}
+
 /**
  * Mirror the transcript delta after the recorded offset, advance the offset,
  * and report one `delta` progress per newly mirrored line. Shared by the live
@@ -844,6 +850,14 @@ export async function startKimiCliRun(
     ? { argv, env }
     : containerExecSpawn(spec.exec, { argv, env }, 'subagent-kimi')
 
+  // The member's own subagents (subagent-mirror.ts), mirrored while the
+  // round runs and closed at settle. A resumed session's earlier subagents
+  // are history: the baseline is taken before the process starts.
+  const subagents = spec.childSession !== undefined && spec.homeDir !== undefined && spec.ctx !== undefined
+    ? new KimiSubagentMirror({ ctx: spec.ctx, member: spec.childSession, homeDir: spec.homeDir, transport: 'exec', pollMs: 60 * 60_000 })
+    : undefined
+  if (subagents !== undefined && spec.resume !== undefined) await subagents.attach(bareSessionId(spec.resume.cliSessionId))
+
   const child = spec.spawn({
     argv: launch.argv,
     cwd: spec.cwd,
@@ -891,6 +905,9 @@ export async function startKimiCliRun(
       if (kimiSessionId === undefined) return
       const delta = await mirrorKimiDelta(mirrorCtx, childSession, homeDir, kimiSessionId)
       addRoundUsage(delta.usage)
+      // A fresh run's session is new: everything it spawned is this round's.
+      if (spec.resume === undefined) await subagents?.attach(bareSessionId(kimiSessionId), { baseline: 0 })
+      await subagents?.tail()
       if (delta.texts.length > 0) {
         mirrorCtx.get('localAgent')?.reportRunProgress(childSession.id, { kind: 'mirror', mirroredLines: delta.total })
       }
@@ -1027,6 +1044,14 @@ export async function startKimiCliRun(
         const settled = await result
         const mirrored = await mirrorKimiAfterExit(spec, stderr)
         addRoundUsage(mirrored?.usage)
+        // The process exited: every subagent still open ends with the round
+        // (a background one cannot outlive `kimi -p`).
+        if (subagents !== undefined) {
+          const kimiSessionId = spec.resume?.cliSessionId ?? kimiSessionIdFromOutput(stderr)
+          if (spec.resume === undefined && kimiSessionId !== undefined) await subagents.attach(bareSessionId(kimiSessionId), { baseline: 0 })
+          await subagents.settleRound({ processExited: true })
+          subagents.dispose()
+        }
         // The turn closes at the real settle moment, so the timing
         // projection's duration equals the actual CLI runtime (plus the
         // settle-mirror quiescence). Every terminal path closes the window —
