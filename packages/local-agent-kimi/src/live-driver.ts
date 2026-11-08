@@ -88,6 +88,7 @@ import { addTokenUsage, findKimiSessionDir, wirePath } from './session-view.ts'
 import { readKimiCompaction } from './kimi-compaction.ts'
 import { findOpenSelfTurn, firstUserPromptLine, foldedTaskResults, isTaskOrigin, nextSelfTurn, readQueuedPrompt, readTurnAt, turnEndedStopReason, wireLineCount, type FoldedTaskResult, type SelfTurnPrompt } from './self-turn.ts'
 import { kimiTasksDir, readKimiBackgroundTasks } from './background-tasks.ts'
+import { KimiSubagentMirror } from './subagent-mirror.ts'
 import { writeKimiDefaultModel } from './provision.ts'
 import {
   inspectKimiSessionLock,
@@ -209,6 +210,8 @@ export interface KimiLiveDriverTimeouts {
   readonly collisionGraceMs?: number
   /** The self-turn observer's look cadence while a member has background work (default 2 s). */
   readonly selfTurnObserveMs?: number
+  /** Re-read cadence of the member's open subagents (subagent-mirror.ts; default 2 s). */
+  readonly subagentPollMs?: number
 }
 
 export const DEFAULT_TIMEOUTS: KimiLiveDriverTimeouts = {
@@ -677,6 +680,12 @@ export class KimiAcpLiveDriver {
   private readonly roundsInFlight = new Map<string, number>()
   /** The spec each member's runtime was last ensured with: a reload respawns from it. */
   private readonly lastSpecs = new Map<string, KimiLiveRoundSpec>()
+  /**
+   * Each member's subagent mirror (subagent-mirror.ts): it outlives a round
+   * (a background subagent keeps running after the member's turn) and its
+   * open subagents end with the member's process.
+   */
+  private readonly subagentMirrors = new Map<string, KimiSubagentMirror>()
   private channelBrokenAt: number | undefined
   private disposed = false
   /**
@@ -1050,6 +1059,8 @@ export class KimiAcpLiveDriver {
       const delta = await mirrorKimiDelta(this.ctx, session, homeDir, cliSessionId, { throughTurn: turn, ...settle ? { settle: true } : {} })
       if (delta.usageUnattached !== undefined) roundUsage = addTokenUsage(roundUsage, delta.usageUnattached)
       if (delta.model !== undefined) roundModel = delta.model
+      // A turn kimi opened itself may run subagents of its own.
+      void this.subagentMirrors.get(key)?.tail()
     }
     try {
       openMirrorTurn(session, turn, 'live')
@@ -1130,6 +1141,8 @@ export class KimiAcpLiveDriver {
     this.observedTasks.delete(key)
     if (runtime === undefined) return
     this.runtimes.delete(key)
+    // The process ran the member's subagents too: one still open can no longer finish.
+    void this.subagentMirrors.get(key)?.lost()
     if (options.noteTasks !== false && !runtime.dead) await this.noteReclaimedTasks(key, runtime)
     await runtime.reclaim()
   }
@@ -1146,6 +1159,33 @@ export class KimiAcpLiveDriver {
     for (const key of [...this.runtimes.keys()]) {
       await this.reclaim(key, { noteTasks: false })
     }
+    for (const mirror of this.subagentMirrors.values()) {
+      await mirror.idle()
+      mirror.dispose()
+    }
+    this.subagentMirrors.clear()
+  }
+
+  /** The member's subagent mirror (created on its first live round). */
+  private subagentMirror(spec: KimiLiveRoundSpec): KimiSubagentMirror {
+    const key = String(spec.childSession.id)
+    let mirror = this.subagentMirrors.get(key)
+    if (mirror === undefined) {
+      mirror = new KimiSubagentMirror({
+        ctx: this.ctx,
+        member: spec.childSession,
+        homeDir: spec.homeDir,
+        transport: 'live',
+        ...this.timeouts.subagentPollMs === undefined ? {} : { pollMs: this.timeouts.subagentPollMs },
+      })
+      this.subagentMirrors.set(key, mirror)
+    }
+    return mirror
+  }
+
+  /** The member's subagent mirror, if it has one (the task read, tests). */
+  subagentsOf(childSessionId: string): KimiSubagentMirror | undefined {
+    return this.subagentMirrors.get(childSessionId)
   }
 
   /**
@@ -1434,6 +1474,7 @@ export class KimiAcpLiveDriver {
       if (this.runtimes.get(key) === runtime) this.runtimes.delete(key)
       this.clearIdleTimer(key)
       member?.release()
+      void this.subagentMirrors.get(key)?.lost()
     }
     const aborted = new Promise<never>((_, reject) => {
       const cancel = (): void => { reject(new Error('subagent-kimi: run cancelled locally')) }
@@ -1947,6 +1988,8 @@ export class KimiAcpLiveDriver {
     let wireDir: string | undefined
     const turnStartedAt = Date.now()
     let lastMirrorAt = 0
+    /** The member's own subagents (subagent-mirror.ts): their wires carry the content, every mirror pass tails them. */
+    const subagents = this.subagentMirror(spec)
     let mirrorQueue: Promise<unknown> = Promise.resolve()
     let persistQueue: Promise<unknown> = Promise.resolve()
     const persist = (): void => {
@@ -2348,6 +2391,7 @@ export class KimiAcpLiveDriver {
       mirrorQueue = mirrorQueue.then(() =>
         mirrorKimiDelta(this.ctx, childSession, spec.homeDir, runtime?.sessionId === undefined ? undefined : bareKimiSessionId(runtime.sessionId), mirrorOptions()).then((delta) => {
           noteMirrorUsage(delta)
+          void subagents.tail()
         }).catch((error: unknown) => {
           this.ctx.logger.warn(`subagent-kimi: live mirror pass failed: ${thrown(error).message}`)
         }))
@@ -2477,6 +2521,9 @@ export class KimiAcpLiveDriver {
       // ACP session/load replays historical chunks and tools. Bind this round's
       // sink only after loading/configuration, so replay never becomes new output.
       rt.onSessionUpdate = onSessionUpdate
+      // Before the prompt goes out: the subagents its round spawns are new,
+      // everything the wire already holds is history.
+      await subagents.attach(bareKimiSessionId(rt.sessionId as string))
       // A first round's wire does not exist yet: the settle finds it then, from line 0.
       wireFrom = { homeDir: spec.homeDir, sessionId: bareKimiSessionId(rt.sessionId as string), line: 0 }
       try {
@@ -2718,6 +2765,9 @@ export class KimiAcpLiveDriver {
         } catch (error) {
           this.ctx.logger.warn(`subagent-kimi: live settle mirror failed: ${thrown(error).message}`)
         }
+        // The member's subagents: a foreground one still open ends with the
+        // round; a background one stays open (subagent-mirror.ts). Never fails the round.
+        await subagents.settleRound({ processExited: false })
         const pending: (
           | { step: number; entries: [string, StreamEntry][] }
           | { step: number; toolId: string; tool: { step: number; title?: string } }

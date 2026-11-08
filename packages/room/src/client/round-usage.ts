@@ -10,6 +10,11 @@
  * - No CLI total (kimi, dsh): the round shows the per-call sum.
  * - A run from before S6 without a reading: the numbers the room stored for
  *   it back then, as written (never mixed with a reading).
+ * - The member CLI ran subagents of its own (member-cli-subagents M6; user
+ *   decision 2026-11-06: counted in, shown as two lines): the headline adds
+ *   their per-call sum (`reading.subagentUsage`) to the member's own, and the
+ *   line carries both parts. The CLI-total check compares the member's own
+ *   calls only — like with like.
  *
  * A compaction's spend and context sizes are never part of a round's usage:
  * they are the compaction row's (see `RoomCompactionView`).
@@ -51,6 +56,45 @@ export interface RoundUsage {
    * calls that never reached the stream), positive = more.
    */
   readonly gap?: number
+  /** The member's own part, when subagents are counted in (the headline before they were added). */
+  readonly member?: { readonly tokens: number; readonly breakdown?: RoomRunUsage }
+  /**
+   * The member CLI's own subagents that ran in this round: their per-call
+   * sum, and how many subagents (a resumed one counts once: one session).
+   */
+  readonly subagents?: { readonly tokens: number; readonly breakdown: RoomRunUsage; readonly count: number }
+}
+
+function addRunUsage(a: RoomRunUsage | undefined, b: RoomRunUsage): RoomRunUsage {
+  const sum = (x: number | undefined, y: number | undefined): number | undefined => x === undefined && y === undefined ? undefined : (x ?? 0) + (y ?? 0)
+  const cacheReadTokens = sum(a?.cacheReadTokens, b.cacheReadTokens)
+  const cacheWriteTokens = sum(a?.cacheWriteTokens, b.cacheWriteTokens)
+  const reasoningTokens = sum(a?.reasoningTokens, b.reasoningTokens)
+  return {
+    inputTokens: (a?.inputTokens ?? 0) + b.inputTokens,
+    outputTokens: (a?.outputTokens ?? 0) + b.outputTokens,
+    ...cacheReadTokens === undefined ? {} : { cacheReadTokens },
+    ...cacheWriteTokens === undefined ? {} : { cacheWriteTokens },
+    ...reasoningTokens === undefined ? {} : { reasoningTokens },
+  }
+}
+
+/** Add the round's subagents to the member's own line (unchanged when none carried usage). */
+function withSubagents(own: RoundUsage | undefined, execution: RoomExecution): RoundUsage | undefined {
+  const reading = execution.reading
+  const usage = reading?.subagentUsage
+  const tokens = usage === undefined ? 0 : usageTotal(usage)
+  if (usage === undefined || tokens === 0) return own
+  const count = new Set((reading?.subagents ?? []).map(entry => entry.sessionId)).size
+  const subagents = { tokens, breakdown: usage, count }
+  if (own === undefined) return { tokens, breakdown: usage, source: 'calls', member: { tokens: 0 }, subagents }
+  return {
+    ...own,
+    tokens: own.tokens + tokens,
+    breakdown: addRunUsage(own.breakdown, usage),
+    member: { tokens: own.tokens, ...own.breakdown === undefined ? {} : { breakdown: own.breakdown } },
+    subagents,
+  }
 }
 
 /**
@@ -61,26 +105,29 @@ export interface RoundUsage {
 export function roundUsage(execution: RoomExecution | undefined): RoundUsage | undefined {
   if (execution === undefined) return undefined
   const reading = execution.reading
-  if (reading !== undefined) {
-    const cli = reading.providerReportedUsage
-    const callTokens = reading.callUsage === undefined ? 0 : usageTotal(reading.callUsage)
-    if (cli !== undefined && usageTotal(cli) > 0) {
-      const tokens = usageTotal(cli)
-      const gap = callTokens - tokens
-      return {
-        tokens, breakdown: cli, source: 'cli', callTokens,
-        ...Math.abs(gap) > usageGapTolerance(tokens) ? { gap } : {},
-      }
-    }
-    if (reading.callUsage !== undefined && callTokens > 0) return { tokens: callTokens, breakdown: reading.callUsage, source: 'calls' }
-    return undefined
-  }
+  if (reading !== undefined) return withSubagents(memberRoundUsage(reading), execution)
   const usage = execution.usage
   // Legacy rows: the billed total is the sum of the disjoint buckets when
   // they were recorded (an older record's total may leave the cache out).
   const tokens = usage === undefined ? execution.tokens : usageTotal(usage)
   if (tokens === undefined || !(tokens > 0)) return undefined
   return { tokens, ...usage === undefined ? {} : { breakdown: usage }, source: 'stored' }
+}
+
+/** The member's own round line from a reading: the CLI total (with the check), else the per-call sum. */
+function memberRoundUsage(reading: NonNullable<RoomExecution['reading']>): RoundUsage | undefined {
+  const cli = reading.providerReportedUsage
+  const callTokens = reading.callUsage === undefined ? 0 : usageTotal(reading.callUsage)
+  if (cli !== undefined && usageTotal(cli) > 0) {
+    const tokens = usageTotal(cli)
+    const gap = callTokens - tokens
+    return {
+      tokens, breakdown: cli, source: 'cli', callTokens,
+      ...Math.abs(gap) > usageGapTolerance(tokens) ? { gap } : {},
+    }
+  }
+  if (reading.callUsage !== undefined && callTokens > 0) return { tokens: callTokens, breakdown: reading.callUsage, source: 'calls' }
+  return undefined
 }
 
 /** A compaction row's numbers: context sizes (never usage) and the compaction call's own spend. */

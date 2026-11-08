@@ -104,11 +104,22 @@ export interface KimiSessionTranscript {
   model?: string
   /** Turn containing the latest native model observation. */
   modelTurn?: number
+  /**
+   * A subagent wire's ended rounds (`turn.ended`): 1-based turn → the
+   * reason Kimi gave (`completed`, `cancelled`, …). Read only for a
+   * subagent's wire ({@link KimiTranscriptOptions.agent}); absent otherwise.
+   */
+  endedTurns?: ReadonlyMap<number, string>
 }
 
-/** The wire event log path for a session directory. */
-export function wirePath(sessionDir: string): string {
-  return join(sessionDir, 'agents', 'main', 'wire.jsonl')
+/**
+ * The wire event log path for a session directory.
+ * @param sessionDir - the session directory.
+ * @param agent - the agent whose wire to read: `main` (the member itself,
+ *   the default) or one of its own subagents (`agent-N`).
+ */
+export function wirePath(sessionDir: string, agent = 'main'): string {
+  return join(sessionDir, 'agents', agent, 'wire.jsonl')
 }
 
 /**
@@ -245,6 +256,23 @@ export interface KimiTranscriptOptions {
    * is exactly the 11-01 one.
    */
   readonly ownRounds?: ReadonlySet<string>
+  /**
+   * Read one of the member's own subagents' wires (`agents/<agent>/wire.jsonl`)
+   * instead of the member's (member-cli-subagents M3). Each call that starts
+   * or resumes the subagent is a `turn.prompt` Kimi opens itself (origin
+   * `system_trigger`/`subagent`): there it is the round's own prompt — it
+   * opens the next turn and its text is the subagent's task, never an
+   * injection — and the wire's `turn.ended` lines are reported as
+   * {@link KimiSessionTranscript.endedTurns}. Absent or `main`: the member's
+   * own wire, read exactly as before.
+   */
+  readonly agent?: string
+}
+
+/** Whether a `turn.prompt` origin is the start (or resume) of a subagent call. */
+function isSubagentCallOrigin(origin: unknown): boolean {
+  const record = origin as { kind?: unknown; name?: unknown } | undefined
+  return record?.kind === 'system_trigger' && record.name === 'subagent'
 }
 
 /**
@@ -255,6 +283,9 @@ export interface KimiTranscriptOptions {
  */
 export async function readKimiTranscript(sessionDir: string, options: KimiTranscriptOptions = {}): Promise<KimiSessionTranscript> {
   const ownRounds = options.ownRounds
+  const agent = options.agent ?? 'main'
+  const subagentWire = agent !== 'main'
+  const endedTurns = new Map<number, string>()
   const sessionId = sessionDir.split('session_').pop() ?? sessionDir
   const lines: KimiTranscriptLine[] = []
   const usageRecords: { line: number; usage: TokenUsage; step?: string }[] = []
@@ -294,10 +325,10 @@ export async function readKimiTranscript(sessionDir: string, options: KimiTransc
   const callsByToolCallId = new Map<string, number>()
   let text: string
   try {
-    text = await readFile(wirePath(sessionDir), 'utf8')
+    text = await readFile(wirePath(sessionDir, agent), 'utf8')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { sessionId, lines, usageRecords, closedSteps, stepTimings }
+      return { sessionId, lines, usageRecords, closedSteps, stepTimings, ...subagentWire ? { endedTurns } : {} }
     }
     throw error
   }
@@ -360,10 +391,23 @@ export async function readKimiTranscript(sessionDir: string, options: KimiTransc
       }
       continue
     }
+    if (event.type === 'turn.ended') {
+      if (subagentWire && turn > 0) endedTurns.set(turn, typeof event.reason === 'string' ? event.reason : 'completed')
+      continue
+    }
     if (event.type === 'turn.prompt') {
       promptsMarkTurns = true
       lineModel = undefined
       const prompt = textOf((event.input as unknown[] | undefined) ?? [])
+      // A subagent's wire: each call (new or resumed) is a prompt Kimi opened
+      // for it — the round's own task, one turn per call.
+      if (subagentWire && isSubagentCallOrigin(event.origin)) {
+        turnSeen = true
+        injectedPending = false
+        turn += 1
+        if (prompt.trim() !== '' && !isSystemReminder(prompt)) push({ kind: 'user', text: prompt, turn })
+        continue
+      }
       // A round kimi opened on its own — a background task's completion
       // notification (`origin.kind: 'task'`) — is no dsh round: dsh never
       // sent it, so counting it put every later wire round one turn ahead of
@@ -544,6 +588,7 @@ export async function readKimiTranscript(sessionDir: string, options: KimiTransc
     ...retriedAttempts.length === 0 ? {} : { retriedAttempts },
     ...model === undefined ? {} : { model },
     ...modelTurn === undefined ? {} : { modelTurn },
+    ...subagentWire ? { endedTurns } : {},
   }
 }
 
@@ -649,6 +694,143 @@ export function addTokenUsage(
     { line: 0, usage: left },
     { line: 0, usage: right },
   ])
+}
+
+/**
+ * One call that started (or resumed) one of the member's own subagents, read
+ * from the member's wire (member-cli-subagents M3): a `subagent.spawned`
+ * line plus the `subagent.completed` line that closes it.
+ */
+export interface KimiSubagentCall {
+  /** Kimi's subagent id (`agent-N`): its wire is `agents/<id>/wire.jsonl`. */
+  readonly subagentId: string
+  /** The member's `Agent`/`AgentSwarm` tool call id (`parentToolCallId`). */
+  readonly callId: string
+  /** The subagent type (`subagentName`: `explore`, `coder`, …). */
+  readonly name?: string
+  readonly description?: string
+  /** `runInBackground: true`: the member's round does not wait for it. */
+  readonly background: boolean
+  /** The background task id Kimi gave a background call (`taskId`). */
+  readonly taskId?: string
+  /** Its place in an `AgentSwarm` call (0-based), when the call started several. */
+  readonly group?: { readonly index: number; readonly size: number }
+  /** 1-based: the how-many-th call of this subagent (its wire's turn). */
+  readonly ordinal: number
+  /** The call resumed an existing subagent (an earlier spawn of the same id). */
+  readonly resumed: boolean
+  /** The member wire's line index of the spawn (a mirror skips calls before its baseline). */
+  readonly line: number
+  /** When Kimi spawned it (epoch ms). */
+  readonly spawnedAt?: number
+  /** `subagent.completed`, once Kimi wrote it. */
+  readonly completed?: {
+    readonly at?: number
+    /**
+     * This call's own spend. Kimi's `usage` on a resumed subagent is the
+     * subagent's running total (checked against local wires: each resumed
+     * completion equals the sum of all its rounds so far), so a resumed
+     * call's share is the difference from the previous completion.
+     */
+    readonly usage?: TokenUsage
+  }
+}
+
+/** Kimi writes the member wire's `subagent.*` times in seconds, its loop events in ms. */
+function epochMs(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined
+  return value < 1e12 ? value * 1000 : value
+}
+
+function subtractUsage(total: TokenUsage, earlier: TokenUsage | undefined): TokenUsage {
+  if (earlier === undefined) return total
+  const minus = (a: number | undefined, b: number | undefined): number => Math.max(0, (a ?? 0) - (b ?? 0))
+  const usage: TokenUsage = {
+    inputTokens: minus(total.inputTokens, earlier.inputTokens),
+    outputTokens: minus(total.outputTokens, earlier.outputTokens),
+  }
+  if (total.cacheReadTokens !== undefined) usage.cacheReadTokens = minus(total.cacheReadTokens, earlier.cacheReadTokens)
+  if (total.cacheWriteTokens !== undefined) {
+    const write = minus(total.cacheWriteTokens, earlier.cacheWriteTokens)
+    if (write > 0) usage.cacheWriteTokens = write
+  }
+  return usage
+}
+
+type MutableSubagentCall = { -readonly [K in keyof KimiSubagentCall]: KimiSubagentCall[K] } & { swarmIndex?: number }
+
+/**
+ * Read the member's own subagent calls from its wire's `subagent.*` lines,
+ * in spawn order. A completion belongs to the subagent's latest spawn
+ * before it; a spawn without one is still running (or was cut off).
+ * @param sessionDir - the Kimi session directory.
+ * @returns the calls (empty when the wire is missing or holds none).
+ */
+export async function readKimiSubagents(sessionDir: string): Promise<KimiSubagentCall[]> {
+  let text: string
+  try {
+    text = await readFile(wirePath(sessionDir), 'utf8')
+  } catch {
+    return []
+  }
+  const calls: MutableSubagentCall[] = []
+  const lastOf = new Map<string, MutableSubagentCall>()
+  const totals = new Map<string, TokenUsage>()
+  const rows = text.split('\n')
+  for (let line = 0; line < rows.length; line += 1) {
+    const raw = rows[line] as string
+    if (!raw.includes('"subagent.')) continue
+    let event: Record<string, unknown>
+    try {
+      event = JSON.parse(raw) as Record<string, unknown>
+    } catch {
+      continue
+    }
+    const subagentId = typeof event.subagentId === 'string' && event.subagentId !== '' ? event.subagentId : undefined
+    if (subagentId === undefined) continue
+    if (event.type === 'subagent.spawned') {
+      const callId = typeof event.parentToolCallId === 'string' && event.parentToolCallId !== '' ? event.parentToolCallId : undefined
+      if (callId === undefined) continue
+      const previous = calls.filter(call => call.subagentId === subagentId).length
+      const at = epochMs(event.time)
+      const call: MutableSubagentCall = {
+        subagentId,
+        callId,
+        ...typeof event.subagentName === 'string' && event.subagentName !== '' ? { name: event.subagentName } : {},
+        ...typeof event.description === 'string' && event.description.trim() !== '' ? { description: event.description } : {},
+        background: event.runInBackground === true,
+        ...event.runInBackground === true && typeof event.taskId === 'string' && event.taskId !== '' ? { taskId: event.taskId } : {},
+        ordinal: previous + 1,
+        resumed: previous > 0,
+        line,
+        ...at === undefined ? {} : { spawnedAt: at },
+        ...typeof event.swarmIndex === 'number' && Number.isSafeInteger(event.swarmIndex) ? { swarmIndex: event.swarmIndex } : {},
+      }
+      calls.push(call)
+      lastOf.set(subagentId, call)
+    } else if (event.type === 'subagent.completed') {
+      const call = lastOf.get(subagentId)
+      if (call === undefined || call.completed !== undefined) continue
+      const total = usageFromWire(event.usage)
+      const at = epochMs(event.time)
+      call.completed = {
+        ...at === undefined ? {} : { at },
+        ...total === undefined ? {} : { usage: subtractUsage(total, totals.get(subagentId)) },
+      }
+      if (total !== undefined) totals.set(subagentId, total)
+    }
+  }
+  // An AgentSwarm call spawns several subagents under one tool call id.
+  const bySwarm = new Map<string, MutableSubagentCall[]>()
+  for (const call of calls) bySwarm.set(call.callId, [...bySwarm.get(call.callId) ?? [], call])
+  return calls.map(({ swarmIndex, ...call }): KimiSubagentCall => {
+    const members = bySwarm.get(call.callId) as MutableSubagentCall[]
+    if (members.length < 2) return call
+    const index = swarmIndex !== undefined && swarmIndex >= 1 && swarmIndex <= members.length
+      ? swarmIndex - 1
+      : members.findIndex(entry => entry.line === call.line)
+    return { ...call, group: { index, size: members.length } }
+  })
 }
 
 /** Render a transcript as command-reply text. */

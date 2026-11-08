@@ -306,6 +306,11 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
         {usage !== undefined
           ? <UsageChip usage={usage} execution={execution} provider={member?.kind === 'cli' ? member.provider : undefined} durationMs={data.durationMs} t={t} />
           : data.durationMs !== undefined && <span className={css.meta}>{formatDurationMs(data.durationMs)}</span>}
+        {usage?.subagents !== undefined && usage.subagents.count > 0 && child !== undefined && (
+          <button type="button" className={css.subagentsNote} data-testid="speech-subagents" onClick={() => { openSession(child) }}>
+            {t('speech.subagents', { count: String(usage.subagents.count) })}
+          </button>
+        )}
         <span className={css.meta}>{formatClock(data.time)}</span>
         {/* Last in the row: on a narrow reply it wraps to a line of its own. */}
         {usage?.gap !== undefined && (
@@ -348,6 +353,11 @@ function UsageChip({ usage: line, execution, provider, durationMs, t }: {
       [t('usage.output'), `${exact(usage.outputTokens)} tok`],
     ] as [string, string][],
     ...line.source === 'cli' ? [[t('usage.callSum'), `${exact(line.callTokens ?? 0)} tok`] as [string, string]] : [],
+    // The member CLI's own subagents are counted in: the member's part and theirs, two lines.
+    ...line.subagents === undefined ? [] : [
+      [t('usage.member'), `${exact(line.member?.tokens ?? 0)} tok`],
+      [t('usage.subagents', { count: String(line.subagents.count) }), `${exact(line.subagents.tokens)} tok`],
+    ] as [string, string][],
     ...durationMs === undefined ? [] : [[t('usage.duration'), formatDurationMs(durationMs)] as [string, string]],
   ]
   return (
