@@ -249,7 +249,7 @@ export function ChapterReader(props: NovelSurfaceProps & {
 
 /** A local draft survives a dropped connection or a closed page until it is saved. */
 function draftKey(view: NovelChapterResult): string {
-  return `novel-draft:${view.file ?? ''}:${view.chapter?.n ?? 0}`
+  return `novel-draft:${view.file ?? ''}:${view.chapter?.id ?? `ch:${view.chapter?.n ?? 0}`}`
 }
 
 /**

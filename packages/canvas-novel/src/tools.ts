@@ -584,8 +584,10 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
         return report.error === 'missing' ? `失败：没有第 ${args.chapter} 章。` : `失败：${report.error ?? 'io'}`
       }
       // A 对账 brings this chapter's memory up to date: what it moved is aligned (other chapters' text is not its to clear).
-      const moved = (await store.alignMoved(resolved.workId)).filter(id => !/^ch:\d+$/.test(id) || id === `ch:${args.chapter}`)
-      await store.alignAck({ workId: resolved.workId, ids: [...new Set([...moved, `ch:${args.chapter}`])] }, resolved.session)
+      const current = await store.readChapter({ workId: resolved.workId, n: args.chapter })
+      const currentId = current.ok && current.chapter !== undefined ? current.chapter.id ?? `ch:${args.chapter}` : `ch:${args.chapter}`
+      const moved = (await store.alignMoved(resolved.workId)).filter(id => !/^ch(?::\d+|_)/.test(id) || id === currentId)
+      await store.alignAck({ workId: resolved.workId, ids: [...new Set([...moved, currentId])] }, resolved.session)
       if (!report.settled) {
         return [
           `未对完，修正引用后重新导入：${report.dropped.length} 条引用对不上第 ${args.chapter} 章正文，这次什么都没写，这章仍是「待对账」。`,

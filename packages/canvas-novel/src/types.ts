@@ -523,8 +523,10 @@ export interface PlanDelivery {
   readonly ops: readonly boolean[]
 }
 
-/** One row of `chapters.json`: n is the continuous number (max+1 on create), seq the sort key that allows inserts. */
+/** One row of `chapters.json`: n is the display number, seq the sort key; id is stable across edits and never reused across deleted generations. */
 export interface ChapterRecord {
+  /** Absent only in pre-migration data and hand-built fixtures; readers use `ch:<n>` for that generation. */
+  readonly id?: string
   readonly n: number
   readonly seq: number
   readonly title: string
@@ -577,6 +579,11 @@ export interface ChapterTable {
 /** The manuscript file name a chapter number owns — the ONLY naming rule (proposal §2). */
 export function chapterFileName(n: number): string {
   return `第${n}章.md`
+}
+
+/** A chapter generation's stable identity; pre-migration rows use their original `ch:<n>` graph id. */
+export function chapterIdentity(chapter: Pick<ChapterRecord, 'id' | 'n'>): string {
+  return chapter.id ?? `ch:${chapter.n}`
 }
 
 /** The chapter number behind a store-generated file name, or undefined for a foreign name. */
@@ -757,6 +764,7 @@ export function normalizeChapter(raw: unknown): ChapterRecord | undefined {
   const newCards = cleanStringList(record['newCards'], 200)
   const volume = cleanText(record['volume'], 40)
   return {
+    id: cleanText(record['id'], 80) ?? chapterIdentity({ n }),
     n,
     seq: cleanNumber(record['seq']) ?? n,
     title,

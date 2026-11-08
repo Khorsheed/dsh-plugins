@@ -485,7 +485,7 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
         const places = entries.rules.filter(view => view.sort === 'place' && at(view.name) >= 0).sort((a, b) => at(a.name) - at(b.name)).map(view => view.cardId)
         const lane = laneOf(places)
         return {
-          id: `ch:${row.chapter.n}`, title: row.chapter.recap!, status: 'happened', chapters: [row.chapter.n], ideas: 0, recap: true,
+          id: row.chapter.id ?? `ch:${row.chapter.n}`, title: row.chapter.recap!, status: 'happened', chapters: [row.chapter.n], ideas: 0, recap: true,
           ...(who.length === 0 ? {} : { who }), ...(places.length === 0 ? {} : { places }), ...(lane === undefined ? {} : { lane }),
         }
       })

@@ -95,6 +95,9 @@ describe('the novel store', () => {
     const second = await store.writeChapter({ workId, title: '第二章' }, SESSION)
     expect(first.chapter).toMatchObject({ n: 1, seq: 1, file: '第1章.md', phase: 'planning' })
     expect(second.chapter).toMatchObject({ n: 2, seq: 2, file: '第2章.md' })
+    expect(first.chapter?.id).toMatch(/^ch_/)
+    expect(second.chapter?.id).toMatch(/^ch_/)
+    expect(second.chapter?.id).not.toBe(first.chapter?.id)
     // An explicit seq inserts between neighbors without touching n.
     const inserted = await store.writeChapter({ workId, title: '幕间', seq: 1.5 }, SESSION)
     expect(inserted.chapter).toMatchObject({ n: 3, seq: 1.5, file: '第3章.md' })

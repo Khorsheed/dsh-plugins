@@ -16,7 +16,7 @@
  *
  * @module @khorsheed/dsh-canvas-novel
  */
-import { chapterNode, chapterOfNode, type BookGraph, type NodeKind } from './graph.ts'
+import { chapterNode, type BookGraph, type NodeKind } from './graph.ts'
 
 /** One node as the last alignment saw it. */
 export interface AlignedNode {
@@ -162,11 +162,11 @@ export function alignChanges(
   const carriedBy = (id: string): number[] => {
     const out = new Set<number>()
     for (const edge of graph.into(id)) {
-      const n = chapterOfNode(edge.from)
+      const n = graph.chapterOf(edge.from)
       if (n !== undefined && written.has(n)) out.add(n)
     }
     for (const edge of graph.out(id)) {
-      const n = edge.kind === 'told-in' ? chapterOfNode(edge.to) : undefined
+      const n = edge.kind === 'told-in' ? graph.chapterOf(edge.to) : undefined
       if (n !== undefined && written.has(n)) out.add(n)
     }
     return [...out].sort((a, b) => a - b)
@@ -178,7 +178,7 @@ export function alignChanges(
 
   for (const [id, was] of Object.entries(doc.nodes)) {
     const current = now.get(id)
-    const n = chapterOfNode(id)
+    const n = graph.chapterOf(id)
     if (n !== undefined) {
       if (current === undefined || current.body === undefined || !written.has(n)) continue
       const before = doc.bodies[String(n)]
@@ -215,7 +215,7 @@ export function baselineOf(graph: BookGraph, now: ReadonlyMap<string, NodeNow>, 
     const current = now.get(id)
     if (current === undefined) continue
     nodes[id] = { fp: current.fp, kind: node.kind, name: node.name, chapters: chaptersOf(graph, id, written) }
-    const n = chapterOfNode(id)
+    const n = graph.chapterOf(id)
     if (n !== undefined && current.body !== undefined) bodies[String(n)] = current.body
   }
   return { version: 2, at, nodes, bodies }
@@ -228,7 +228,7 @@ export function ackNodes(doc: AlignDoc, ids: readonly string[], graph: BookGraph
   for (const id of ids) {
     const current = now.get(id)
     const node = graph.nodes.get(id)
-    const n = chapterOfNode(id)
+    const n = graph.chapterOf(id)
     if (current === undefined || node === undefined) {
       delete nodes[id]
       if (n !== undefined) delete bodies[String(n)]
@@ -242,8 +242,8 @@ export function ackNodes(doc: AlignDoc, ids: readonly string[], graph: BookGraph
 
 function chaptersOf(graph: BookGraph, id: string, written: ReadonlySet<number>): number[] {
   const out = new Set<number>()
-  for (const edge of graph.into(id)) { const n = chapterOfNode(edge.from); if (n !== undefined && written.has(n)) out.add(n) }
-  for (const edge of graph.out(id)) { const n = edge.kind === 'told-in' ? chapterOfNode(edge.to) : undefined; if (n !== undefined && written.has(n)) out.add(n) }
+  for (const edge of graph.into(id)) { const n = graph.chapterOf(edge.from); if (n !== undefined && written.has(n)) out.add(n) }
+  for (const edge of graph.out(id)) { const n = edge.kind === 'told-in' ? graph.chapterOf(edge.to) : undefined; if (n !== undefined && written.has(n)) out.add(n) }
   return [...out].sort((a, b) => a - b)
 }
 

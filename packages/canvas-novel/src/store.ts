@@ -55,7 +55,7 @@ import {
   type NovelFieldValue,
 } from './genre.ts'
 import {
-  bodyFingerprint, chapterFileName, cleanNumber, cleanText, deriveForeshadowState, effectiveChapterPhase, isOverdue, laterForeshadowState, linesOf, MENTION_TO_STATE,
+  bodyFingerprint, chapterFileName, chapterIdentity, cleanNumber, cleanText, deriveForeshadowState, effectiveChapterPhase, isOverdue, laterForeshadowState, linesOf, MENTION_TO_STATE,
   normalizeAnnotations, normalizeChapter, normalizeHistoryEntry, PLOT_FIELDS, plotDiff, plotOf, normalizePendingItem, normalizePlan, normalizeWorkId, NOVEL_GENRE_ID,
   nextMilestoneOf, normalizeRelationEntry, OP_TO_MENTION, parseRef, PTS_PER_LEVEL, MAX_RELATION_DELTA, readRelationStage,
   refGroupOf, refOf, relationEventOf, relationMove, typeChangeOf, relationProgress, relationTypeOf, stageNameOf, RELATION_TYPES,
@@ -1497,6 +1497,7 @@ export class NovelService {
         const previous = [...table.chapters].sort((a, b) => b.seq - a.seq || b.n - a.n)[0]
         const volume = volumeId ?? previous?.volume ?? outline.volumes[0]?.id
         const created: ChapterRecord = {
+          id: `ch_${crypto.randomUUID()}`,
           n,
           seq: request.seq ?? n,
           title,
@@ -2200,6 +2201,7 @@ export class NovelService {
     const nameOf = (cardId: string): string => entries.characters.find(view => view.cardId === cardId)?.name ?? cardId
     const input: GraphInput = {
       chapters: rows.map(row => ({
+        id: chapterIdentity(row.chapter),
         n: row.chapter.n,
         title: row.chapter.title,
         written: row.phase !== 'planning',
@@ -2315,7 +2317,7 @@ export class NovelService {
     for (const [id, node] of built.graph.nodes) {
       if (only !== undefined && !only.has(id)) continue
       if (node.kind === 'chapter') {
-        const n = Number(id.slice(3))
+        const n = node.chapter!
         const chapter = chapters.find(row => row.n === n)
         if (chapter === undefined || meta === undefined || !built.written.has(n)) { now.set(id, { fp: fingerprint(chapter?.plan ?? null) }); continue }
         const body = await this.readChapterBody(meta, chapter)
