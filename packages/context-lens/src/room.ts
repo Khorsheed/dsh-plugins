@@ -270,6 +270,24 @@ export function runsOf(room: RoomState, dispatchSeq: number): RoomRun[] {
     .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0))
 }
 
+/** Below this, a message counts as delivered at once (no 「排队 N 后开始」). */
+export const ROOM_QUEUED_SHOWN_MS = 3_000
+
+/**
+ * How long a human message waited before a member started on it: the
+ * dispatch's time to its first run's start. Undefined when no run started
+ * yet, or it started at once (under {@link ROOM_QUEUED_SHOWN_MS}).
+ * @param at - the dispatch's time.
+ * @param runs - the runs the dispatch delivered.
+ * @returns the wait, or undefined.
+ */
+export function roomQueuedMs(at: number, runs: readonly RoomRun[]): number | undefined {
+  const starts = runs.map(run => run.startedAt).filter((start): start is number => start !== undefined)
+  if (starts.length === 0) return undefined
+  const waited = Math.min(...starts) - at
+  return waited >= ROOM_QUEUED_SHOWN_MS ? waited : undefined
+}
+
 /** Every run descended from one human dispatch through recorded parent/report links. */
 export function collaborationRuns(room: RoomState, dispatchSeq: number): RoomRun[] {
   const out = runsOf(room, dispatchSeq)

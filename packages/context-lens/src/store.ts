@@ -59,7 +59,7 @@ import { prefixTextChange } from './prefix-diff.ts'
 import { diffRequests, messagesOf, type FactLookup, type ReplacementFact } from './changes.ts'
 import { answersMatch, askView, isAskTool, type RoomQuestionRecord } from './ask.ts'
 import {
-  HUMAN_MESSAGE_LOOKBACK, ROOM_UNATTRIBUTED_TURN, applyRoomEvent, collaborationRoots, collaborationRuns, emptyRoom, isCompactCommand, roomTurnSeq, runRecorded, selfCauseOf,
+  HUMAN_MESSAGE_LOOKBACK, ROOM_UNATTRIBUTED_TURN, applyRoomEvent, collaborationRoots, collaborationRuns, emptyRoom, isCompactCommand, roomQueuedMs, roomTurnSeq, runRecorded, runsOf, selfCauseOf,
   type RoomRun, type RoomState, type SelfCause,
 } from './room.ts'
 
@@ -277,7 +277,7 @@ export interface TurnRecord {
   liveStartObserved?: boolean
   query: string
   /** A room round: the dispatch's targets, its chat anchor, and, without records, its fallback (see roomTurns). */
-  room?: { targets: string[]; messageId?: string; unrecorded?: true; fallback?: RoomFallbackMember[] }
+  room?: { targets: string[]; messageId?: string; unrecorded?: true; fallback?: RoomFallbackMember[]; queuedMs?: number }
   /** First non-human message of the turn (see LogTurn.trigger). */
   trigger?: { source: string; text: string }
   /** A round the member's CLI opened itself (see LogTurn.selfCause). */
@@ -1457,6 +1457,7 @@ export class InspectorStore {
         targets: turn.room.targets,
         ...turn.room.messageId === undefined ? {} : { messageId: turn.room.messageId },
         ...turn.room.unrecorded === true ? { unrecorded: true as const } : {},
+        ...turn.room.queuedMs === undefined ? {} : { queuedMs: turn.room.queuedMs },
       } },
       ...turn.purpose === 'room-unattributed' ? { roomUnattributed: true as const } : {},
       ...turn.startSeq === undefined ? {} : { startSeq: turn.startSeq },
@@ -1675,6 +1676,7 @@ export class InspectorStore {
       if (recorded) this.addSelfScopes(session, roomTurnSeq(dispatch.seq), scopes, selves.filter(self => self.dispatchSeq === dispatch.seq), filter, true)
       const ends = [...runs.map(run => run.endedAt), ...[...scopes.values()].filter(scope => scope.continues !== undefined).map(scope => scope.endedAt)]
         .filter((end): end is number => end !== undefined)
+      const queuedMs = roomQueuedMs(dispatch.at, runsOf(room, dispatch.seq))
       return {
         turnSeq: roomTurnSeq(dispatch.seq),
         purpose: 'room',
@@ -1682,6 +1684,7 @@ export class InspectorStore {
         room: {
           targets: dispatch.targets,
           ...dispatch.messageId === undefined ? {} : { messageId: dispatch.messageId },
+          ...queuedMs === undefined ? {} : { queuedMs },
           ...recorded || runs.length === 0 ? {} : { unrecorded: true as const, fallback },
         },
         // Where the chat pages history back to before landing on the human's

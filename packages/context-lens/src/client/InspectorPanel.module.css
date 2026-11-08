@@ -80,6 +80,15 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* 「排队 1 分 19 秒后开始」 on a room round's title: quiet, never squeezed. */
+.queryQueued {
+  flex: none;
+  margin-right: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-panel-text-meta, 11px);
+  font-weight: 400;
+}
+
 .latestButton {
   display: inline-flex;
   align-items: center;

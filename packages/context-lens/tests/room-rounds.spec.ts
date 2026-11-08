@@ -317,6 +317,17 @@ describe('room rounds', () => {
     expect(load(rows).listTurns('s').turns.map(t => t.room?.messageId)).toEqual([undefined, undefined])
   })
 
+  it('a message that waited behind the member\'s previous round says how long (排队 N 后开始); one taken at once says nothing', () => {
+    const store = load([...turn1, ...roster, ...executionRound,
+      { type: 'room/dispatch', seq: 50, time: 75_000, data: { origin: 'human', text: '另外', targets: ['coco'], targetIds: ['m-coco'] } },
+      // Taken only when the round before it ended, 79 seconds later.
+      { type: 'room/run-state', seq: 51, time: 154_000, data: { runId: '50:m-coco', member: 'coco', state: 'running', startedAt: 154_000, childSessionId: 'child-coco', executionId: 'e4' } },
+    ])
+    const rounds = store.listTurns('s').turns.filter(t => t.room !== undefined)
+    expect(rounds.find(t => t.query === '写测试')?.room?.queuedMs).toBeUndefined()
+    expect(rounds.find(t => t.query === '另外')?.room?.queuedMs).toBe(79_000)
+  })
+
   it('skips a dispatch made inside a main turn', () => {
     const store = load(turn1)
     store.noteRoomEvent('s', 'room/dispatch', { origin: 'human', text: 'mid-turn', targets: [] }, 9, 200)

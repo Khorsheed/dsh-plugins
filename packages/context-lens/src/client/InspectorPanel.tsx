@@ -28,6 +28,14 @@ type T = InspectorTabProps['t']
 type MainTab = 'token' | 'time'
 
 /** The failure state page — a failed run with 0 requests IS the diagnostic. */
+/** A room message's wait, as the round title says it: 「1 分 19 秒」, 「42 秒」. */
+export function queuedText(ms: number, t: T): string {
+  const total = Math.round(ms / 1000)
+  return total >= 60
+    ? t('query.queuedMinutes', { m: String(Math.floor(total / 60)), s: String(total % 60) })
+    : t('query.queuedSeconds', { s: String(total) })
+}
+
 function FailureCard({ scope, t }: { readonly scope: AgentScopeOverview; readonly t: T }) {
   const duration = scope.endedAt === undefined ? '—' : fmtSpan(Math.max(0, scope.endedAt - scope.startedAt))
   return (
@@ -712,6 +720,8 @@ export function InspectorPanel({
         {turn !== undefined && (turn.query !== '' || turn.trigger !== undefined || turn.continues !== undefined) && <div className={css.query}>
           {turnNumber(turn) !== undefined && <span className={css.queryTurn}>{t('query.turn', { turn: String(turnNumber(turn)) })}</span>}
           {turn.room !== undefined && <code className={css.querySource}>{t('query.room')}{turn.room.targets.length > 0 ? ` → ${turn.room.targets.join('、')}` : ''}</code>}
+          {/* The message waited behind the member's previous round (room-timeline-order H1). */}
+          {turn.room?.queuedMs !== undefined && <span className={css.queryQueued}>{t('query.queued', { duration: queuedText(turn.room.queuedMs, t) })}</span>}
           {turn.query === '' && turn.trigger !== undefined && <code className={css.querySource}>{turn.trigger.source}</code>}
           {/* A round the member's CLI opened itself: why it ran; where the task started is the tabs row's jump. */}
           {turn.query === '' && turn.trigger === undefined && turn.continues !== undefined
