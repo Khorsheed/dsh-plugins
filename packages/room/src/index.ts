@@ -60,7 +60,8 @@ import { LOST_TASK_LOOKBACK_MS, lostReportText, lostToRecord, recordLostTask } f
 import { CoreLedgers, reconcileCore, type CoreOutcome } from './core-ledger.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
-import { isHumanMessage, linkedTask, taskLinks } from './deliveries.ts'
+import { isHumanMessage, linkedTask, replayDeliveries, taskLinks } from './deliveries.ts'
+import { WITHDRAWN_TEXT } from './delivery-notes.ts'
 import { resolveTaskRef } from './jobs.ts'
 import { AUTO_CONTINUE_MOVED_ON_TEXT, autoContinueRounds, interruptedRounds, RESTART_CONTINUE_TEXT, type InterruptedRound } from './restart-continue.ts'
 import { suggestTask } from './report-gate.ts'
@@ -78,7 +79,7 @@ import type {
   RoomIsRoomRequest,
   RoomListProvidersRequest,
   RoomExecution, RoomMember, RoomMemberMessage, RoomMemberMessageReceipt,
-  RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomSetTaskHintRequest, RoomStopJobRequest, RoomStopJobResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult,
+  RoomMessageReceipt, RoomMessageRequest, RoomReleaseReportsRequest, RoomReleaseReportsResult, RoomSetTaskHintRequest, RoomStopJobRequest, RoomStopJobResult, RoomMessageResult, RoomRelay, RoomSetSettingsRequest, RoomSetSettingsResult, RoomWithdrawDeliveryRequest, RoomWithdrawDeliveryResult,
   RoomPostMessageRequest, RoomPostMessageResult, RoomAttachmentInput, RoomDispatchAttachment, RoomPendingCard, RoomPendingCardsRequest,
   RoomMemberDesk, RoomPresetInfo, RoomProviderInfo, RoomProviderList,
   RoomRelayResolveRequest, RoomRelayResolveResult,
@@ -2837,6 +2838,31 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     if (member === undefined) return { ok: false, error: { code: 'member-not-found' } }
     const released = await this.engine.releaseHeld(loaded.session, memberId(loaded.session.snapshotEvents(), member), 'manual')
     return { ok: true, value: { released } }
+  }
+
+  /**
+   * Take back a human message from one recipient before it reached them
+   * (room-timeline B3, the receipt's 撤回). Only a delivery still queued can
+   * be withdrawn: it is journaled cancelled with {@link WITHDRAWN_TEXT}, then
+   * a CLI member's queued core row is cancelled (the same core action as the
+   * members page's 取消这条); the room's own agent drops it when its turn
+   * comes. The bubble stays (the log is append-only); its receipt says
+   * 已撤回.
+   * @param request - room session, the human dispatch's seq and the recipient.
+   * @returns withdrawn, or a rejection (`not-queued` once it is admitted or settled).
+   */
+  @Remote('withdrawDelivery')
+  async withdrawDelivery(request: RoomWithdrawDeliveryRequest): Promise<RoomWithdrawDeliveryResult> {
+    const loaded = await this.ensureLive(request.sessionId)
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const id = `${request.dispatchSeq}:${request.memberId}`
+    const row = replayDeliveries(loaded.session.snapshotEvents()).find(entry => entry.id === id)
+    if (row === undefined || row.origin !== 'human') return { ok: false, error: { code: 'member-not-found' } }
+    if (row.status !== 'queued') return { ok: false, error: { code: 'not-queued' } }
+    loaded.session.append('room/delivery-state', { id, dispatchSeq: request.dispatchSeq, memberId: request.memberId, state: 'cancelled', text: WITHDRAWN_TEXT })
+    await this.ctx.sessions.flush(loaded.session)
+    this.engine.withdraw(String(loaded.session.id), id)
+    return { ok: true, value: { withdrawn: true } }
   }
 
   /**

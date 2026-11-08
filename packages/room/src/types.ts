@@ -1255,6 +1255,8 @@ export type RoomFailure =
   | { readonly code: 'duplicate-name' }
   | { readonly code: 'empty-provider' }
   | { readonly code: 'member-not-found' }
+  /** A withdrawal of a delivery that is no longer waiting (its member took it in, or it settled). */
+  | { readonly code: 'not-queued' }
   | { readonly code: 'empty-text' }
   /** An attachment was refused (not uploaded to this room, too large, an unsupported image…). */
   | { readonly code: 'attachment-invalid'; readonly message: string }
@@ -1590,6 +1592,20 @@ export interface RoomReleaseReportsRequest {
 /** releaseReports outcome: whether anything was held. */
 export type RoomReleaseReportsResult =
   | { readonly ok: true; readonly value: { readonly released: boolean } }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** withdrawDelivery request: take back a human message from one recipient before it reached them (the receipt's 撤回). */
+export interface RoomWithdrawDeliveryRequest {
+  readonly sessionId: SessionId
+  /** The human dispatch's seq. */
+  readonly dispatchSeq: number
+  /** The recipient's member id. */
+  readonly memberId: string
+}
+
+/** withdrawDelivery outcome: withdrawn, or why not (`not-queued`: it already reached the member, or settled). */
+export type RoomWithdrawDeliveryResult =
+  | { readonly ok: true; readonly value: { readonly withdrawn: true } }
   | { readonly ok: false; readonly error: RoomFailure }
 
 /** setSettings request: change any subset of the collaboration settings. */

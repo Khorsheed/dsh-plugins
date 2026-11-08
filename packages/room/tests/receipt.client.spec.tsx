@@ -5,11 +5,11 @@
  * state's line. Fixtures are synthetic (the event shapes of a real queue, no
  * real content).
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { replayDeliveries } from '../src/deliveries.ts'
 import { ANSWERED_QUESTION_TEXT, WITHDRAWN_TEXT } from '../src/delivery-notes.ts'
 import { receiptParts, roomReceiptDefinition } from '../src/client/receipt.ts'
@@ -125,6 +125,14 @@ describe('the receipt line', () => {
     expect(receipt?.textContent).toContain('故事顾问 排队中')
     const buttons = [...receipt!.querySelectorAll('button')].map(button => button.textContent)
     expect(buttons).toEqual(['撤回给故事顾问的'])
+  })
+
+  it('撤回 takes back the queued delivery and shows why it failed', async () => {
+    const withdraw = vi.fn(async () => '已经送到，撤不回了')
+    const receipt = line(stateOf([...first, ...second]), 5, zh, { withdraw })
+    fireEvent.click(receipt!.querySelector('button')!)
+    expect(withdraw).toHaveBeenCalledWith(5, 'm-gu')
+    await waitFor(() => expect(receipt!.querySelector('[role="alert"]')?.textContent).toBe('已经送到，撤不回了'))
   })
 
   it('reads in English', () => {

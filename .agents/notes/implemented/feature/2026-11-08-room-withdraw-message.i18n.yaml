@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the
+# last confirmed-consistent state. Both languages carry equal authority; after
+# editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-08-room-withdraw-message.md
+.agents/notes/implemented/feature/2026-11-08-room-withdraw-message.md: 937c5868843fa1906db9c785aa778726fd3333d4
+.agents/notes/implemented/feature/2026-11-08-room-withdraw-message.zh.md: 290ec96c34d3bf6a8cdf2142c32f1d3d532a63ba

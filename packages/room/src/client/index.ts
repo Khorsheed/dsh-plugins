@@ -953,6 +953,14 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
         const control = ui?.controlMemberQueue
         return {
           roomStore, openSession,
+          ...remote === undefined ? {} : {
+            withdraw: async (dispatchSeq: number, memberId: string) => {
+              const carried = await remote.withdrawDelivery({ sessionId, dispatchSeq, memberId }).catch(() => undefined)
+              if (carried === undefined || !carried.ok) return t('composer.error.generic')
+              if (!carried.value.ok) return carried.value.error.code === 'not-queued' ? t('receipt.notQueued') : t('composer.error.generic')
+              return undefined
+            },
+          },
           ...control === undefined ? {} : {
             resumeQueue: async (memberId: string) => {
               const child = roomStore.getCached(sessionId)?.members.find(member => member.id === memberId)?.childSessionId
