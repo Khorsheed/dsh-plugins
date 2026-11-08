@@ -181,6 +181,12 @@ export interface FoldSink {
   replacement?(fact: ReplacementFact): void
   /** One `local-agent/execution` record (a member execution's start or end). */
   execution?(record: ExecutionRecord): void
+  /**
+   * Every `subagent/catalog` row as written, whatever delegation call it may
+   * bind to: a member log's rows name its CLI's own subagents (grandchild
+   * sessions), which lens pairs by their execution records, never by order.
+   */
+  catalog?(childId: string, label: string | undefined, at: number | undefined): void
 }
 
 /** One `local-agent/execution` record, read structurally (lens keeps no dependency on local-agent). */
@@ -211,6 +217,37 @@ export function readExecutionRecord(data: Record<string, unknown>, at: number | 
     turns: Array.isArray(data['turns']) ? data['turns'].filter((turn): turn is number => typeof turn === 'number') : [],
     unrecorded: Array.isArray(data['unrecorded']) ? data['unrecorded'].filter((item): item is string => typeof item === 'string') : [],
     ...at === undefined ? {} : { at },
+  }
+}
+
+/** A `cli-subagent` execution cause (local-agent member-cli-subagents), read structurally. */
+export interface CliSubagentCause {
+  /** The member's child session that called it. */
+  sessionId?: string
+  /** The member's `Agent`/`AgentSwarm`/`Task` tool call id. */
+  callId: string
+  /** The member execution the call ran in. */
+  executionId?: string
+  /** The subagent type (`explore`, `coder`, …). */
+  name?: string
+  /** Its place in an `AgentSwarm` call (0-based index). */
+  group?: { index: number; size: number }
+  background?: true
+  resumed?: true
+}
+
+/** The `cli-subagent` cause of an execution start, or undefined for any other cause. */
+export function cliSubagentCauseOf(cause: Record<string, unknown> | undefined): CliSubagentCause | undefined {
+  if (cause?.['kind'] !== 'cli-subagent' || typeof cause['callId'] !== 'string' || cause['callId'] === '') return undefined
+  const group = cause['group'] as { index?: unknown; size?: unknown } | undefined
+  return {
+    callId: cause['callId'],
+    ...typeof cause['sessionId'] === 'string' ? { sessionId: cause['sessionId'] } : {},
+    ...typeof cause['executionId'] === 'string' ? { executionId: cause['executionId'] } : {},
+    ...typeof cause['name'] === 'string' && cause['name'] !== '' ? { name: cause['name'] } : {},
+    ...typeof group?.index === 'number' && typeof group.size === 'number' ? { group: { index: group.index, size: group.size } } : {},
+    ...cause['background'] === true ? { background: true as const } : {},
+    ...cause['resumed'] === true ? { resumed: true as const } : {},
   }
 }
 
@@ -419,6 +456,7 @@ export function foldLogRows(
       case 'subagent/catalog': {
         const childId = typeof data['childId'] === 'string' ? data['childId'] : undefined
         if (childId !== undefined && childId.length > 0) {
+          sink.catalog?.(childId, typeof data['label'] === 'string' && data['label'].length > 0 ? data['label'] : undefined, row.time)
           // FIFO bind: the catalog belongs to the oldest unbound delegation call.
           let bound = false
           for (const pending of cursor.pendingDelegations.values()) {

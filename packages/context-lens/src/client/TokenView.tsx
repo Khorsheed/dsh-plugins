@@ -1,5 +1,5 @@
 /** Request navigation and the selected capture's structured / JSON detail. */
-import { useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import type { AgentScopeOverview, CapturedRequest, RequestLink, RequestListItem } from '../types.ts'
 import { requestNumberText, aggregateCategories, cachePct, duplicateStats, fmt, fmtSpan, fmtK, inputTotal, summaryText, type CompositionFilter } from './aggregate.ts'
 import type { InspectorTabProps } from './contract.ts'
@@ -27,8 +27,18 @@ function RequestCard({ request: r, selected, onSelect, t }: {
   </button>
 }
 
+/** The CLI subagents a request's tool calls started: 「派出 探索 →」, each opening its view. */
+export function SpawnLinks({ spawns, onOpenScope, t }: { readonly spawns: RequestListItem['spawns']; readonly onOpenScope?: ((scopeId: string) => void) | undefined; readonly t: T }): ReactNode {
+  if (spawns === undefined || spawns.length === 0 || onOpenScope === undefined) return null
+  return <span className={css.spawns}>
+    {spawns.map(spawn => <button key={spawn.scopeId} type="button" className={css.spawn} onClick={() => onOpenScope(spawn.scopeId)}>{t('req.spawn', { name: spawn.name })}</button>)}
+  </span>
+}
+
 export interface TokenViewProps {
   readonly scope: AgentScopeOverview
+  /** Open another view of this turn (a CLI subagent this scope's request started). */
+  readonly onOpenScope?: ((scopeId: string) => void) | undefined
   readonly onOpenRequest?: ((link: RequestLink) => void) | undefined
   /** Show a tool call in the conversation on the left; absent when this scope's calls are not there. */
   readonly onLocateCall?: ((callId: string, sourceTurn: number | undefined) => void) | undefined
@@ -48,7 +58,7 @@ export interface TokenViewProps {
   readonly t: T
 }
 
-export function TokenView({ scope, selectedSeq, request, filterCat, previousResponseNumber, onSelect, onOpenRequest, onLocateCall, locateInMember, onReturn, onToggleFilter, focus, onFocusApplied, onFocusChange, t }: TokenViewProps): ReactNode {
+export function TokenView({ scope, selectedSeq, request, filterCat, previousResponseNumber, onSelect, onOpenRequest, onOpenScope, onLocateCall, locateInMember, onReturn, onToggleFilter, focus, onFocusApplied, onFocusChange, t }: TokenViewProps): ReactNode {
   const [raw, setRaw] = useState(false)
   const selectedItem = scope.requests.find(r => r.seq === selectedSeq) ?? scope.requests[0]
   const cats = request === null ? [] : aggregateCategories(request).filter(c => c.chars > 0)
@@ -56,7 +66,10 @@ export function TokenView({ scope, selectedSeq, request, filterCat, previousResp
   const duplicates = duplicateStats(request ? [...request.segments.system, ...request.segments.history, ...request.segments.added] : [])
   return <div className={css.md}>
     <nav className={css.reqList} aria-label={t('view.token')}>
-      {scope.requests.map(r => <RequestCard key={r.seq} request={r} selected={selectedItem?.seq === r.seq} onSelect={onSelect} t={t} />)}
+      {scope.requests.map(r => <Fragment key={r.seq}>
+        <RequestCard request={r} selected={selectedItem?.seq === r.seq} onSelect={onSelect} t={t} />
+        <SpawnLinks spawns={r.spawns} onOpenScope={onOpenScope} t={t} />
+      </Fragment>)}
     </nav>
     <div className={css.reqDetail} data-lens-detail="">
       {request === null || selectedItem === undefined ? <div className={css.stateNote} role="status">{t('state.loading')}</div> : <>
@@ -74,7 +87,8 @@ export function TokenView({ scope, selectedSeq, request, filterCat, previousResp
             {request.compaction.before && onOpenRequest && <button type="button" className={css.jsonToggle} onClick={() => onOpenRequest(request.compaction!.before!)}>{t('compaction.before')} ↗</button>}
           </div>}
           <CacheFacts request={request} onOpenRequest={onOpenRequest} onShowCategory={category => { if (filterCat !== category) onToggleFilter(category) }} t={t} />
-          <Exchange key={`${request.scopeId}-${request.seq}`} request={request} previousResponseNumber={previousResponseNumber} onOpenRequest={onOpenRequest} t={t} />
+          <Exchange key={`${request.scopeId}-${request.seq}`} request={request} previousResponseNumber={previousResponseNumber} onOpenRequest={onOpenRequest} t={t}
+            outputExtra={<SpawnLinks spawns={selectedItem.spawns} onOpenScope={onOpenScope} t={t} />} />
           <section aria-label={t('lens.composition')}>
             <div className={css.sectionTitle}><h3>{t(request.compaction?.inputPartial ? 'compaction.region' : 'lens.composition')}</h3><span>{t('chain.chars', { count: fmt(totalChars) })}</span><abbr className={css.info} title={t('lens.compositionHint')}>i</abbr></div>
             <div className={css.stack}>

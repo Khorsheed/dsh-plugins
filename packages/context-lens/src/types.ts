@@ -428,6 +428,12 @@ export interface TurnListItem {
   totalInputTokens: number
   totalOutputTokens: number
   /**
+   * The part of the totals above that member CLIs' own subagents spent
+   * (their views' requests, already counted once in the totals — never
+   * added on top). Absent when no CLI subagent ran in this turn.
+   */
+  subagents?: { requestCount: number; inputTokens: number; outputTokens: number }
+  /**
    * Fidelity marker: `live` once any in-process capture landed on the turn
    * (the log lane never merges into such a turn), `log-reconstructed` when
    * the whole turn was rebuilt from the session log.
@@ -603,8 +609,16 @@ export interface AgentScopeOverview {
   label?: string
   /** The child's `subagent/descriptor` provider; anything not `dsh*` is an external agent. */
   provider?: string
-  /** The main request whose tool call started this child, when one did. */
+  /** The main request whose tool call started this child, when one did (a CLI subagent: the member request whose call started it). */
   delegatedBy?: RequestLink
+  /**
+   * A member CLI's own subagent (local-agent grandchild session, execution
+   * cause `cli-subagent`), placed in the turn that called it by its records:
+   * the view that called it (`main` in the member's own lens, the member's
+   * view in a room round) and the call. Its requests are only the executions
+   * the calling view's records claim.
+   */
+  cliSubagent?: CliSubagentInfo
   /** Compaction views: how many messages it replaced, and the main request it followed. */
   compaction?: {
     replacedCount?: number; after?: RequestLink; betweenTurns?: true
@@ -634,6 +648,22 @@ export interface AgentScopeOverview {
    */
   origin?: CaptureOrigin
   requests: RequestListItem[]
+}
+
+/** A CLI subagent view's relation to the view that called it. */
+export interface CliSubagentInfo {
+  /** The calling view's scope id in this turn (`main`, a member's child id, `self:<executionId>`). */
+  parentScopeId: string
+  /** The calling view's name; absent for the main conversation. */
+  parentName?: string
+  /** The subagent's own short name (its type, numbered when the turn holds several of one type). */
+  name: string
+  /** The member's tool call that started (or resumed) it. */
+  callId: string
+  /** Its place in an `AgentSwarm` call (0-based index). */
+  group?: { index: number; size: number }
+  background?: true
+  resumed?: true
 }
 
 /** One member run of an unrecorded room round: where its own lens shows it. */
@@ -676,6 +706,9 @@ export interface ExecutionFacts {
   cause?: string
   /** `self` cause: how the background task ended. */
   taskStatus?: string
+  /** `cli-subagent` cause: started in the background / a resumed subagent. */
+  background?: true
+  resumed?: true
   /** `member` cause: the sending member's roster id. */
   fromMember?: string
   /** `help` cause: the asking room. */
@@ -706,6 +739,10 @@ export interface RequestListItem {
   /** 请求体总字符数（明细头右上）。 */
   totalChars: number
   toolErrors?: number
+  /** A CLI subagent view's request: the calling view's scope id (the session map draws it with that view's bars). */
+  spawnedFrom?: string
+  /** The CLI subagent views this request's tool calls started, in this turn (the 「派出 X →」 jumps). */
+  spawns?: { scopeId: string; name: string }[]
 }
 
 /** One turn's whole-turn timing view (the 耗时分布 tab). */

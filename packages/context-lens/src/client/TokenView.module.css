@@ -12,6 +12,10 @@
 .reqIo, .reqTime { color: var(--dsw-alias-label-tertiary); }
 .reqTime { text-align: right; }
 .reqFlag { grid-column: 1 / -1; font-size: var(--dsh-panel-text-meta,11px); }
+/* 「派出 X →」: a CLI subagent this request started, opened as its view (under its row, and under the output). */
+.spawns { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 0 12px 6px 14px; }
+.spawn { padding: 0; border: 0; background: transparent; color: var(--dsw-alias-state-business-primary); font: inherit; font-size: var(--dsh-panel-text-meta,12px); cursor: pointer; }
+.spawn:hover { text-decoration: underline; }
 .reqDetail { --ri-reader-inset: 14px; flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 14px 16px 28px; display: flex; flex-direction: column; gap: 16px; }
 .reqDetail > * { flex-shrink: 0; }
 .stateNote { padding: 8px 4px; color: var(--dsw-alias-label-tertiary); }
