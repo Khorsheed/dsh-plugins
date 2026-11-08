@@ -84,7 +84,6 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
       onKeyDown={onKeyDown}
     >
       <StateDot state={failed ? 'error' : uncertain || waiting.length > 0 ? 'warning' : 'ongoing'} />
-      {since !== undefined && !failed && !uncertain && <span className={speech.cont}>{t('segment.continued')}</span>}
       <span className={css.title}>
         {uncertain ? t(waitsForReconcile ? 'run.waitingReconcile' : 'run.uncertain', { member: data.member }) : failed ? t('run.failed', { member: data.member }) : waiting.length > 0 ? t('run.waiting', { member: data.member }) : data.operation === 'compact' ? t('run.compacting', { member: data.member }) : data.continues !== undefined ? t('run.selfRound', { member: data.member }) : t('run.working', { member: data.member })}
       </span>

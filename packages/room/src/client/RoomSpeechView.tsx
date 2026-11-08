@@ -224,7 +224,6 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
         {!grouped && <span className={css.name}>{data.member}</span>}
         {!grouped && member?.role !== undefined && <span className={css.role}>{member.role}</span>}
         {!grouped && provider !== undefined && provider !== '' && <span className={css.provider}>{provider}</span>}
-        {split.kind === 'split' && <span className={css.cont}>{t('segment.continued')}</span>}
         {data.interrupted !== undefined && <span className={css.interrupted}>{t(data.interrupted === 'cancelled' ? 'speech.stopped' : 'speech.failed')}</span>}
       </div>
       <div className={clamped ? `${css.body} ${css.clamped}` : css.body}>
