@@ -86,7 +86,7 @@ import { kimiMirrorSource, nextKimiSessionStep, nextWrittenKimiStep } from './se
 import type { KimiMirrorDelta, KimiMirrorOptions, KimiMirrorStreams } from './session-mirror.ts'
 import { addTokenUsage, findKimiSessionDir, wirePath } from './session-view.ts'
 import { readKimiCompaction } from './kimi-compaction.ts'
-import { findOpenSelfTurn, isTaskOrigin, nextSelfTurn, readQueuedPrompt, readTurnAt, turnEndedStopReason, wireLineCount, type SelfTurnPrompt } from './self-turn.ts'
+import { findOpenSelfTurn, firstUserPromptLine, foldedTaskResults, isTaskOrigin, nextSelfTurn, readQueuedPrompt, readTurnAt, turnEndedStopReason, wireLineCount, type FoldedTaskResult, type SelfTurnPrompt } from './self-turn.ts'
 import { kimiTasksDir, readKimiBackgroundTasks } from './background-tasks.ts'
 import { writeKimiDefaultModel } from './provision.ts'
 import {
@@ -1084,9 +1084,12 @@ export class KimiAcpLiveDriver {
           if (data.turn === turn && data.usage !== undefined) usage = addTokenUsage(usage, data.usage)
         }
         usage = addTokenUsage(usage, roundUsage)
+        // Another task that ended while this self-opened turn ran joined it too.
+        const taskResults = await this.foldedTaskResults({ homeDir, sessionId: cliSessionId, line: prompt.line }, prompt.line).catch(() => [])
         this.ctx.get('localAgent')?.recordRoundSettled(session.id, {
           ...roundModel === undefined ? {} : { observedModel: roundModel },
           ...usage === undefined ? {} : { usage },
+          ...taskResults.length === 0 ? {} : { taskResults },
         })
         await persistChildSession(this.ctx, session).catch((error: unknown) => {
           this.ctx.logger.warn(`subagent-kimi: self-turn persistence failed: ${thrown(error).message}`)
@@ -1701,6 +1704,24 @@ export class KimiAcpLiveDriver {
       else this.roundsInFlight.delete(key)
     }))
     return round
+  }
+
+  /**
+   * The background-task results kimi folded into a round (A④ 「轮内收到的结果」):
+   * the task-origin notifications appended inside the round's own turn — a
+   * live round's is the first user prompt after `wireFrom.line`, a
+   * self-opened turn's sits at `selfLine`. Empty when the wire cannot be read.
+   */
+  private async foldedTaskResults(
+    wireFrom: { homeDir: string; sessionId: string; line: number } | undefined,
+    selfLine?: number,
+  ): Promise<FoldedTaskResult[]> {
+    if (wireFrom === undefined) return []
+    const dir = await findKimiSessionDir(wireFrom.homeDir, wireFrom.sessionId).catch(() => undefined)
+    if (dir === undefined) return []
+    const wire = await readFile(wirePath(dir), 'utf8').catch(() => '')
+    const line = selfLine ?? firstUserPromptLine(wire, wireFrom.line)
+    return line === undefined ? [] : foldedTaskResults(wire, line)
   }
 
   /**
@@ -2737,7 +2758,9 @@ export class KimiAcpLiveDriver {
     })
 
     // Re-arm the reaper and publish observations after in-turn reconciliation.
-    void result.then(() => {
+    void result.then(async () => {
+      // Re-armed first: the report below waits on a wire read.
+      this.armIdleTimer(String(childSession.id))
       // Every settled round reports its observed model through the
       // registry's observation channel (record merge + `settled` event) —
       // the live drive's half of the exec path's onRoundSettled. A mirror
@@ -2757,13 +2780,17 @@ export class KimiAcpLiveDriver {
           if (data.turn === turn && data.usage !== undefined) usage = addTokenUsage(usage, data.usage)
         }
         if (roundUsage !== undefined) usage = addTokenUsage(usage, roundUsage)
+        // Background tasks that ended while this round ran: kimi folded their
+        // results into it (A④ 「轮内收到的结果」); the core keeps them on the
+        // execution's end record and the room marks the reply.
+        const taskResults = await this.foldedTaskResults(wireFrom).catch(() => [])
         const round = {
           ...roundModel === undefined ? {} : { observedModel: roundModel },
           ...usage === undefined ? {} : { usage },
+          ...taskResults.length === 0 ? {} : { taskResults },
         }
         localAgent?.recordRoundSettled(childSession.id, round)
       }
-      this.armIdleTimer(String(childSession.id))
     })
 
     // Publication gate: hold start() until the session is ready and the

@@ -114,6 +114,7 @@ import type {
   LocalAgentExecutionReading,
   LocalAgentExecutionRequest,
   LocalAgentExecutionSettlement,
+  LocalAgentFoldedTaskResult,
   LocalAgentMemberCreate,
   LocalAgentMemberInput,
   LocalAgentTaskRef,
@@ -190,6 +191,7 @@ export type {
   LocalAgentExecutionHandle,
   LocalAgentExecutionRequest,
   LocalAgentExecutionSettlement,
+  LocalAgentFoldedTaskResult,
   LocalAgentMemberCreate,
   LocalAgentMemberInput,
   LocalAgentSelfAdmission,
@@ -2375,12 +2377,19 @@ export class LocalAgentRegistry {
        */
       readonly providerReportedUsage?: TokenUsage
       readonly toolCalls?: LocalAgentToolCalls
+      /**
+       * Background-task results the CLI folded into this round while it ran
+       * (a Kimi task that ended mid-round). They land on the execution's end
+       * record as `taskResults`; the room marks the reply with them.
+       */
+      readonly taskResults?: readonly LocalAgentFoldedTaskResult[]
     },
   ): void {
     this.executions.noteReport(childSessionId, round.providerReportedUsage, {
       ...round.observedModel === undefined ? {} : { observedModel: round.observedModel },
       ...round.observedEffort === undefined ? {} : { observedEffort: round.observedEffort },
       ...round.cliVersion === undefined ? {} : { cliVersion: round.cliVersion },
+      ...round.taskResults === undefined || round.taskResults.length === 0 ? {} : { taskResults: round.taskResults },
     })
     if (round.observedModel !== undefined || round.cliVersion !== undefined) {
       const record = this.delegations.get(childSessionId)
@@ -3567,6 +3576,7 @@ export class LocalAgentRegistry {
       ...open?.observed?.observedModel === undefined ? {} : { observedModel: open.observed.observedModel },
       ...open?.observed?.observedEffort === undefined ? {} : { observedEffort: open.observed.observedEffort },
       ...open?.observed?.cliVersion === undefined ? {} : { cliVersion: open.observed.cliVersion },
+      ...open?.observed?.taskResults === undefined || open.observed.taskResults.length === 0 ? {} : { taskResults: open.observed.taskResults },
       ...reason === undefined || row.status === 'done' ? {} : { error: reason },
     }
   }

@@ -348,6 +348,11 @@
   color: var(--dsw-alias-state-warning, #c08419);
 }
 
+/* Results a round received mid-way: a mark, not a link. */
+.cause[data-room-task-results] {
+  cursor: default;
+}
+
 /* The task's description on a self-opened round's line: the link to the round that started it. */
 .causeLink {
   color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
@@ -364,7 +369,7 @@
   text-overflow: ellipsis;
 }
 
-.cause:not(:disabled):hover {
+.cause:not(:disabled):not([data-room-task-results]):hover {
   color: var(--dsw-alias-label-secondary, rgba(127, 127, 127, 1));
 }
 

@@ -157,6 +157,23 @@ describe('member totals read the same line', () => {
   })
 })
 
+describe('含后台任务结果 (A④: results a round received mid-way, from the end record)', () => {
+  it('marks the reply with the folded tasks\' descriptions; a reply without any shows no line', async () => {
+    await speech(run({ reading: reading({ taskResults: [
+      { taskId: 'bash-1', taskStatus: 'completed', label: '部署 canvas-novel' },
+      { taskId: 'bash-2', taskStatus: 'failed', label: '跑测试' },
+      { taskId: 'agent-3', taskStatus: 'completed' },
+    ] }) }))
+    expect(document.querySelector('[data-room-task-results]')?.textContent).toBe('含后台任务结果· 部署 canvas-novel、跑测试')
+    cleanup()
+    await speech(run({ reading: reading({ taskResults: [{ taskId: 'agent-3', taskStatus: 'completed' }] }) }), en)
+    expect(document.querySelector('[data-room-task-results]')?.textContent).toBe('Includes background task results')
+    cleanup()
+    await speech(run({ reading: reading({}) }))
+    expect(document.querySelector('[data-room-task-results]')).toBeNull()
+  })
+})
+
 describe('delivery rows fed by the reading', () => {
   it('joins a delivery to its execution by runId, retaining the delivery identity and state', () => {
     const rows = executionRows({ ...STATE,

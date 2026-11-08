@@ -43,6 +43,8 @@ interface Script {
   /** The settle report: before the result, after it, or never. */
   report?: 'before' | 'after' | 'never'
   transport?: 'exec' | 'live'
+  /** Background-task results the settle report names (folded into the round). */
+  taskResults?: { taskId: string; taskStatus: string; label?: string; notificationId?: string }[]
 }
 
 interface Harness {
@@ -113,7 +115,7 @@ async function mount(): Promise<Harness> {
       }
       if (script.failStart === true) throw new Error('spawn failed')
       const report = (): void => {
-        registry.recordRoundSettled(childSessionId, { usage: TOTAL, providerReportedUsage: TOTAL })
+        registry.recordRoundSettled(childSessionId, { usage: TOTAL, providerReportedUsage: TOTAL, ...script.taskResults === undefined ? {} : { taskResults: script.taskResults } })
       }
       let settle!: (result: SubagentResult) => void
       const result = new Promise<SubagentResult>((resolve) => { settle = resolve })
@@ -326,6 +328,27 @@ describe('local-agent/execution records (batch 5 S1)', () => {
     await run.result
     const events = await storedLog(h, String(run.id), 1)
     expect(records(events)[1]).toMatchObject({ outcome: 'done', providerReportedUsage: TOTAL })
+  })
+
+  it('background-task results the settle report names land on the end record; a round without any writes none', async () => {
+    const h = await mount()
+    const folded = [{ taskId: 'bash-1', taskStatus: 'completed', label: '部署', notificationId: 'task:bash-1:completed' }]
+    h.next({ round: promptRound('live'), report: 'after', taskResults: folded })
+    const run = await h.registry.start(PARENT, PROVIDER, [{ type: 'text', text: 'go' }])
+    await run.result
+    const child = String(run.id)
+    let events = await storedLog(h, child, 1)
+    expect((records(events)[1] as LocalAgentExecutionEndEvent).taskResults).toEqual(folded)
+    // The reading passes them through.
+    const executionId = (records(events)[1] as LocalAgentExecutionEndEvent).executionId
+    expect((await h.registry.readExecution(child, executionId))?.taskResults).toEqual(folded)
+    // The next round received none: its end record carries no field.
+    h.registry.recordDelegation({ childSessionId: child, provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'native', cwd: '/home/user/work' })
+    h.next({ round: promptRound('live'), report: 'before', taskResults: [] })
+    const again = await h.registry.resume(PARENT, PROVIDER, child, [{ type: 'text', text: 'again' }])
+    await again.result
+    events = await storedLog(h, child, 2)
+    expect(records(events)[3]).not.toHaveProperty('taskResults')
   })
 
   it('the member composer is the caller of its rounds, with the input row as its handle and a human cause', async () => {

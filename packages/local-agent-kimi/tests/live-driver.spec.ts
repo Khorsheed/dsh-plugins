@@ -769,6 +769,30 @@ describe('kimi live driver rounds', () => {
     await m.driver.disposeAll()
   })
 
+  it('a background task that ended mid-round rides the settle report as a folded result (A④)', async () => {
+    const m = mount()
+    const child = Session.create(SessionId('child-kimi-folded'))
+    const fake = new FakeAcpServer({
+      turn: (params) => {
+        writeKimiWire(m.homeDir, 'acp-session-1', String((params['prompt'] as { text: string }[])[0]!.text), '写好了')
+        const wire = join(m.homeDir, 'sessions', 'wd_test', 'session_acp-session-1', 'agents', 'main', 'wire.jsonl')
+        writeFileSync(wire, [
+          JSON.stringify({ type: 'task.started', info: { taskId: 'bash-7', description: '跑测试', status: 'running' } }),
+          readFileSync(wire, 'utf8').trimEnd(),
+          JSON.stringify({ type: 'context.append_message', message: { role: 'user', content: [{ type: 'text', text: '<notification>' }], origin: { kind: 'task', taskId: 'bash-7', status: 'completed', notificationId: 'task:bash-7:completed' } } }),
+          JSON.stringify({ type: 'turn.ended', turnId: 0, reason: 'completed' }),
+        ].join('\n') + '\n')
+        return { chunks: ['写好了'] }
+      },
+    })
+    m.queueChild(fake)
+    const run = await m.driver.startRound(request() as never, roundSpec(m, child))
+    expect((await run.result).stopReason).toBe('completed')
+    await vi.waitFor(() => { expect(m.settles).toHaveLength(1) })
+    expect(m.settles[0]?.round['taskResults']).toEqual([{ taskId: 'bash-7', taskStatus: 'completed', notificationId: 'task:bash-7:completed', label: '跑测试' }])
+    await m.driver.disposeAll()
+  })
+
   it('a settled round whose wire named no model still reports, with the observation absent', async () => {
     // Absence is recorded, never guessed: the `settled` event fires (the
     // parked progress route closes on it) without an observedModel field.

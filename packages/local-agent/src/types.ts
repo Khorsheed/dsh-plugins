@@ -379,6 +379,31 @@ export interface LocalAgentExecutionEndEvent {
    * range holds, `endedAt` the reconciliation time.
    */
   reconciled?: true
+  /**
+   * Background tasks whose results the CLI folded into this execution while
+   * it ran (a Kimi task that ended mid-round: its notification joins the
+   * running round instead of opening one of its own), as the provider's
+   * settle report named them. Absent = none, or a provider/log that does not
+   * report them — never inferred later.
+   */
+  taskResults?: LocalAgentFoldedTaskResult[]
+}
+
+/**
+ * A background task's result the member's CLI folded into a round that was
+ * already running (member-self-started-rounds A④ 「轮内收到的结果」): the
+ * round answered whoever asked for it, so nothing is forwarded — the room
+ * only marks the reply 「含后台任务结果」.
+ */
+export interface LocalAgentFoldedTaskResult {
+  /** The CLI's own task id (Kimi `bash-…`/`agent-…`). */
+  taskId: string
+  /** How the CLI said it ended: `completed` | `failed` | `timed_out` | `killed`. */
+  taskStatus: string
+  /** The task's own description, when the CLI recorded one. */
+  label?: string
+  /** The CLI's notification id (Kimi `task:<id>:<status>`). */
+  notificationId?: string
 }
 
 /**
@@ -462,6 +487,8 @@ export interface LocalAgentExecutionReading {
    * subagent call carried usage.
    */
   subagentUsage?: TokenUsage
+  /** The end record's folded background-task results, verbatim (absent while open or when none). */
+  taskResults?: LocalAgentFoldedTaskResult[]
 }
 
 /** One subagent execution read back for its member's execution (see {@link LocalAgentExecutionReading.subagents}). */
@@ -1784,6 +1811,8 @@ export interface LocalAgentExecutionSettlement {
   readonly observedModel?: string
   readonly observedEffort?: string
   readonly cliVersion?: string
+  /** Background-task results the CLI folded into this execution, when the settle report named any. */
+  readonly taskResults?: readonly LocalAgentFoldedTaskResult[]
   /** Why it failed or was cancelled, when it did. */
   readonly error?: string
 }

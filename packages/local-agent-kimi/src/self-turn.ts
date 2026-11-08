@@ -238,6 +238,89 @@ function collectSegment(row: Row, segments: string[], segmentKey: unknown): unkn
   return key
 }
 
+/**
+ * A background task's result kimi folded into a turn that was already
+ * running (member-self-started-rounds A④ 「轮内收到的结果」): the task ended
+ * mid-round, so its notification joined the round as a user-role
+ * `context.append_message` with `origin.kind: 'task'` instead of opening a
+ * turn of its own.
+ */
+export interface FoldedTaskResult {
+  readonly taskId: string
+  /** `origin.status`: `completed`, `failed`, `timed_out`, … */
+  readonly taskStatus: string
+  /** `origin.notificationId` (`task:<id>:<status>`), when stated. */
+  readonly notificationId?: string
+  /** The task's description from its `task.started` row, when the wire has one. */
+  readonly label?: string
+}
+
+/**
+ * The line of the first user-origin `turn.prompt` at or after `fromLine`
+ * (a live round's own prompt: turns run one at a time in wire order).
+ * @param wire - the wire.jsonl text.
+ * @param fromLine - the line count read before the prompt was sent.
+ */
+export function firstUserPromptLine(wire: string, fromLine: number): number | undefined {
+  for (const { line, row } of rows(wire, fromLine)) {
+    if (row['type'] === 'turn.prompt' && originKind(row) === 'user') return line
+  }
+  return undefined
+}
+
+/**
+ * The background-task results kimi folded into the turn whose `turn.prompt`
+ * sits at `line`: every task-origin `context.append_message` inside the turn
+ * (up to its `turn.ended`, or the next prompt for a turn cut off) except the
+ * turn's own notification — a self-opened turn's prompt is echoed as an
+ * append with the same notification id, and that is the turn's cause, not a
+ * result it received. One entry per notification, in wire order.
+ * @param wire - the wire.jsonl text.
+ * @param line - the turn's `turn.prompt` line.
+ */
+export function foldedTaskResults(wire: string, line: number): FoldedTaskResult[] {
+  const all = rows(wire)
+  const prompt = all.find(entry => entry.line === line)?.row
+  if (prompt?.['type'] !== 'turn.prompt') return []
+  const text = (value: unknown): string | undefined => typeof value === 'string' && value !== '' ? value : undefined
+  const own = text((prompt['origin'] as Row | undefined)?.['notificationId'])
+  const found: Omit<FoldedTaskResult, 'label'>[] = []
+  for (const { line: at, row } of all) {
+    if (at <= line) continue
+    const type = row['type']
+    if (type === 'turn.ended' || type === 'turn.prompt') break
+    if (type !== 'context.append_message') continue
+    const message = row['message'] as Row | undefined
+    if (message?.['role'] !== 'user') continue
+    const origin = (message['origin'] ?? {}) as Row
+    const kind = text(origin['kind'])
+    if (kind === undefined || !isTaskOrigin(kind)) continue
+    const taskId = text(origin['taskId'])
+    const taskStatus = text(origin['status'])
+    const notificationId = text(origin['notificationId'])
+    if (taskId === undefined || taskStatus === undefined) continue
+    if (own !== undefined && notificationId === own) continue
+    const key = notificationId ?? `${taskId}:${taskStatus}`
+    if (found.some(entry => (entry.notificationId ?? `${entry.taskId}:${entry.taskStatus}`) === key)) continue
+    found.push({ taskId, taskStatus, ...notificationId === undefined ? {} : { notificationId } })
+  }
+  if (found.length === 0) return []
+  // The task's own words: its `task.started` row (anywhere on the wire — a
+  // task started rounds earlier, possibly by an earlier process).
+  const labels = new Map<string, string>()
+  for (const { row } of all) {
+    if (row['type'] !== 'task.started') continue
+    const info = row['info'] as Row | undefined
+    const id = text(info?.['taskId'])
+    const description = text(info?.['description'])
+    if (id !== undefined && description !== undefined) labels.set(id, description)
+  }
+  return found.map((entry) => {
+    const label = labels.get(entry.taskId)
+    return label === undefined ? entry : { ...entry, label }
+  })
+}
+
 /** A kimi `turn.ended` reason as the shared stop contract. */
 export function turnEndedStopReason(reason: string): 'completed' | 'aborted' | 'error' {
   if (reason === 'completed') return 'completed'

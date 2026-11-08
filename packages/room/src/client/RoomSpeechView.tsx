@@ -115,6 +115,11 @@ function continuesText(status: string, t: RoomSpeechViewProps['t']): string {
   return t(status === 'failed' || status === 'timed_out' || status === 'killed' ? `speech.continues.${status}` : 'speech.continues.completed')
 }
 
+/** The folded tasks' descriptions, joined (the ones the CLI recorded one for). */
+function foldedLabels(folded: readonly { readonly label?: string }[], t: RoomSpeechViewProps['t']): string {
+  return folded.flatMap(entry => entry.label === undefined ? [] : [entry.label]).join(t('speech.taskResults.join'))
+}
+
 export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDetail, openPath, answerQuestion, renderSlot, t }: RoomSpeechViewProps): ReactNode {
   const data = node.data
   const [copied, setCopied] = useState(false)
@@ -140,6 +145,9 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
   // sum — batch 5 S6), or a pre-S6 run's stored numbers. Never stored here.
   const execution = data.runId === undefined ? undefined : state?.executions?.find(entry => entry.id === data.runId)
   const usage = roundUsage(execution)
+  // Background tasks that ended while this round ran: the CLI folded their
+  // results into it (A④ 「轮内收到的结果」, read from the core's end record).
+  const folded = execution?.reading?.taskResults ?? []
   // The newest speech keeps its action row shown; older rows reveal on hover
   // (the host's turn-tail rule). A speech newer than the cached state's is the newest.
   const newestSpeech = data.seq >= (state?.latestSpeechSeq ?? data.seq)
@@ -212,6 +220,14 @@ export function RoomSpeechView({ node, sessionId, roomStore, openSession, openDe
           <span className={css.causeHead}>↻ {continuesText(continues.taskStatus, t)}</span>
           {continues.label !== undefined && <span className={css.causeText}>· <span className={css.causeLink}>{continues.label}</span></span>}
         </button>
+      )}
+      {/* Results the round received mid-way (decision 5 = A): only marked,
+          never forwarded — 「含后台任务结果 · 部署 …」. */}
+      {folded.length > 0 && (
+        <div className={css.cause} data-room-task-results="">
+          <span className={css.causeHead}>{t('speech.taskResults')}</span>
+          {foldedLabels(folded, t) !== '' && <span className={css.causeText}>· {foldedLabels(folded, t)}</span>}
+        </div>
       )}
       <div className={css.identity}>
         {!grouped && <span className={css.name}>{data.member}</span>}

@@ -37,6 +37,7 @@ import type {
   LocalAgentExecutionOperation,
   LocalAgentExecutionOutcome,
   LocalAgentExecutionStartEvent,
+  LocalAgentFoldedTaskResult,
   LocalAgentUnrecorded,
   LocalAgentUnrecordedDeclaration,
 } from './types.ts'
@@ -69,6 +70,8 @@ export interface ExecutionObservation {
   readonly observedModel?: string
   readonly observedEffort?: string
   readonly cliVersion?: string
+  /** Background-task results the CLI folded into the round (they land on the end record). */
+  readonly taskResults?: readonly LocalAgentFoldedTaskResult[]
 }
 
 /** What the core knows at the admission point. */
@@ -330,6 +333,7 @@ export class OpenExecution {
       endedAt: Date.now(),
       ...unrecorded.length === 0 ? {} : { unrecorded },
       ...this.reportedUsage === undefined ? {} : { providerReportedUsage: this.reportedUsage },
+      ...this.observed?.taskResults === undefined || this.observed.taskResults.length === 0 ? {} : { taskResults: structuredClone([...this.observed.taskResults]) },
     }
     try {
       session.append('local-agent/execution', end)
