@@ -1233,6 +1233,13 @@ export interface RestartFacts {
    * restart: the room never continues it on its own (see restart-continue.ts).
    */
   readonly bootedAt?: number
+  /**
+   * When the host process before this one started (epoch ms; the
+   * local-agent core's host-process record). A round that started earlier
+   * was cut off by an earlier restart even when no process journaled its
+   * interruption until now. Absent without that evidence.
+   */
+  readonly previousProcessStartedAt?: number
 }
 
 /** Closed failure vocabulary of the room Remote surface. */

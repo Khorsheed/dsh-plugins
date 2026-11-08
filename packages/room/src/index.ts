@@ -24,7 +24,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the `sessions` SessionStore merge onto Context.
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import type { LocalAgentBackgroundTask, LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome, MemberToolsNotice, RoomMemberMessageGate } from '@khorsheed/dsh-local-agent/types'
+import type { LocalAgentBackgroundTask, LocalAgentBackgroundTasksLost, LocalAgentMemberRun, MemberRoomCommand, MemberMessageOutcome, MemberToolsNotice, RoomMemberMessageGate } from '@khorsheed/dsh-local-agent/types'
 import { SessionId } from '@deepseek-ai/dsh-session'
 // Type-only: pulls the `agents` registry merge onto Context (create/resume
 // are consumed through the registry, not the agent-loop package).
@@ -56,7 +56,7 @@ import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
 import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, cliChildId, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, RESTART_UNKNOWN_TEXT, roomSource, runChildSessionId, runChildTurn, runExecutionId, followUpDelivery, followUpRecipient, runOfExecution, backgroundTaskReportKey } from './dispatch.ts'
-import { LOST_TASK_LOOKBACK_MS, lostReportText, lostToRecord, recordLostTask } from './background-lost.ts'
+import { LOST_TASK_LOOKBACK_MS, lostReportText, lostToRecord, recordLostTask, type ReportedLoss } from './background-lost.ts'
 import { CoreLedgers, reconcileCore, type CoreOutcome } from './core-ledger.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
@@ -481,6 +481,11 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       // The room's own agent settling must not hide members still at work.
       if (status !== 'running' && (this.activeRuns.get(String(agent.id))?.size ?? 0) > 0) this.emitStatus(String(agent.id), true)
     })
+    // C①: a member's process reclaimed while its background tasks ran — the
+    // room records the loss when it happens (a host restart's: the startup scan).
+    ctx.on('localAgent/background-tasks-lost', (lost) => {
+      void this.recordReclaimedBackgroundTasks(lost).catch((error: unknown) => { this.ctx.logger.warn(`room: recording reclaimed background tasks failed: ${String(error)}`) })
+    })
     // Cross-session help (help.ts): a help message reaching a helper's turn
     // equips that agent with the helper tools and marks the thread running;
     // an agent whose log already holds help requests (a restart dropped its
@@ -653,18 +658,24 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
    * the member side (the harness reads the CLI's own task state); runs once
    * per room per host process and dedupes on the room's own log, so a
    * second process or pass writes nothing twice.
+   * A reclaim of a member's process (C①) records the same way, when the
+   * harness reports it (`reported`: only that member is read, and its
+   * reported tasks count as lost whatever their file says by now).
    * @param room - the live room.
    * @param options - `force`: look again even if this process looked already
    *   (the startup pass: a room opened before the harnesses registered read nothing).
+   *   `reported`: the member and tasks a reclaim just cut off (implies a fresh look).
    */
-  recordLostBackgroundTasks(room: Session, options: { readonly force?: boolean } = {}): Promise<void> {
+  recordLostBackgroundTasks(room: Session, options: { readonly force?: boolean; readonly reported?: { readonly childSessionId: string; readonly loss: ReportedLoss } } = {}): Promise<void> {
     const key = String(room.id)
     const known = this.lostScans.get(key)
-    if (known !== undefined && options.force !== true) return known
+    if (known !== undefined && options.force !== true && options.reported === undefined) return known
+    const reported = options.reported
     const scan = (async () => {
       const read = probeLocalAgent(this.ctx)?.memberBackgroundTasks
       if (read === undefined) return
-      const members = replay(room.snapshotEvents()).members.filter(member => member.kind === 'cli' && member.childSessionId !== undefined)
+      const members = replay(room.snapshotEvents()).members.filter(member => member.kind === 'cli' && member.childSessionId !== undefined
+        && (reported === undefined || String(member.childSessionId) === reported.childSessionId))
       const reads: { readonly member: RoomMember; readonly tasks: readonly LocalAgentBackgroundTask[] }[] = []
       for (const member of members) {
         try {
@@ -678,12 +689,12 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       for (const { member, tasks } of reads) {
         const events = room.snapshotEvents()
         const id = memberId(events, member)
-        for (const task of lostToRecord(events, id, tasks, since)) {
+        for (const task of lostToRecord(events, id, tasks, since, reported?.loss)) {
           const startedByRunId = runOfExecution(events, task.startedBy)
           recordLostTask(room, member, id, task, startedByRunId)
           const deliveryId = followUpDelivery(room.snapshotEvents(), startedByRunId)
           if (deliveryId !== undefined && followUpRecipient(room.snapshotEvents(), deliveryId) !== undefined) {
-            reports.push({ deliveryId, key: backgroundTaskReportKey(id, task.id), text: lostReportText(member.name, task.label) })
+            reports.push({ deliveryId, key: backgroundTaskReportKey(id, task.id), text: lostReportText(member.name, task.label, task.lostBecause) })
           }
         }
       }
@@ -691,8 +702,27 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       await this.ctx.sessions.flush(room)
       for (const report of reports) await this.engine.reportFollowUp(room, report.deliveryId, { reportFor: report.key }, 'uncertain', report.text)
     })()
-    this.lostScans.set(key, scan)
+    // A reclaim's pass is not the room's once-per-process restart scan.
+    if (reported === undefined) this.lostScans.set(key, scan)
     return scan
+  }
+
+  /**
+   * A member's process was reclaimed while its background tasks ran (C①,
+   * `localAgent/background-tasks-lost`): when the member's parent is a room,
+   * bring it live — the access opening it would be, as the startup load
+   * does — and record the loss now, with the follow-up when the starting
+   * delivery would report. Not a room, or the room unavailable: nothing.
+   * @param lost - the core's report.
+   */
+  async recordReclaimedBackgroundTasks(lost: LocalAgentBackgroundTasksLost): Promise<void> {
+    if (lost.taskIds.length === 0) return
+    const sessionId = SessionId(lost.parentSessionId)
+    const cold = await this.loadCold(sessionId)
+    if (!cold.ok) return
+    const loaded = await this.ensureLive(sessionId)
+    if (!loaded.ok) return
+    await this.recordLostBackgroundTasks(loaded.session, { reported: { childSessionId: lost.childSessionId, loss: { taskIds: new Set(lost.taskIds), because: lost.because } } })
   }
 
   /**

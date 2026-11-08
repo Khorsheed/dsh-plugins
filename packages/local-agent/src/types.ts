@@ -541,6 +541,19 @@ export interface LocalAgentBackgroundTasks {
 }
 
 /**
+ * The `localAgent/background-tasks-lost` payload: a harness took a member's
+ * resident process away while these background tasks ran in it.
+ */
+export interface LocalAgentBackgroundTasksLost {
+  readonly childSessionId: string
+  /** The member's parent session (a room, when the member is a room member). */
+  readonly parentSessionId: string
+  /** The CLI's own task ids. */
+  readonly taskIds: readonly string[]
+  readonly because: 'process-reclaimed'
+}
+
+/**
  * What the core hands {@link LocalAgentHarness.backgroundTasks}: where the
  * member's CLI session lives, and lookups over the member's own child log
  * (read lazily, only when the harness asks).
