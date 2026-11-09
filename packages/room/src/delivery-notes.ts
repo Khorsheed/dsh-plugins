@@ -11,3 +11,6 @@ export const ANSWERED_QUESTION_TEXT = '作为对它提问的回答送达'
 
 /** A queued human message the human took back before its member reached it (the receipt's 撤回). */
 export const WITHDRAWN_TEXT = '人撤回了这条'
+
+/** A queued release round whose held reports were already handed over (by an earlier pending release, or a round that ran): closed, never run. */
+export const DUPLICATE_RELEASE_TEXT = '重复的提醒'

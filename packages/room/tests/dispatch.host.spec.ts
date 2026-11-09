@@ -2604,3 +2604,70 @@ describe('isRoomSource (durable source forms)', () => {
     expect(isRoomSource('room')).toBe(false)
   })
 })
+
+describe('held-report releases on room entry (restart-recovery R1)', () => {
+  /** ada (CLI) is busy with a long round; reports held for her wait behind it. */
+  async function busyAda() {
+    const bench = await bootRoom()
+    const member = await preparedMemberOf(bench)
+    const stub = bench.localAgentStub as ReturnType<typeof withRunEntry>
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    const long = deferred<SubagentResult>()
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) => ({
+      id: SessionId(child), localAgent: undefined, dispose: async () => {},
+      result: long.promise,
+    }))
+    room.append('room/dispatch', { id: 'long', targets: ['ada'], targetIds: [member.id!], origin: 'human', text: '长任务' })
+    await bench.service.engine.recover(room)
+    await vi.waitFor(() => expect(bench.facade.resume).toHaveBeenCalledOnce())
+    const dsh = replay(room.snapshotEvents()).members.find(entry => entry.name === 'dsh')!
+    /** A report from dsh held for ada (the gate's hold, as the journal records it). */
+    const hold = (text: string): number => {
+      const held = room.append('room/dispatch', { id: `held-${text}`, origin: 'report', targets: ['ada'], targetIds: [member.id!], text, held: true, reportFor: `1:${dsh.id!}`, hop: 2 })
+      room.append('room/report-gate', { dispatchSeq: held.seq, memberId: member.id!, member: 'ada', verdict: 'hold', reason: 'model' })
+      return held.seq
+    }
+    const releases = () => room.snapshotEvents().flatMap(event => event.type === 'room/dispatch' && event.data.releases !== undefined ? [event] : [])
+    const finish = async () => {
+      long.resolve({ output: [{ type: 'text', text: '好了' }], stopReason: 'completed' })
+      await bench.service.engine.idle()
+    }
+    return { bench, member, stub, room, hold, releases, finish }
+  }
+
+  it('entering the room again and again queues ONE release; a later hold gets a release of its own carrying only it', async () => {
+    const { bench, member, stub, room, hold, releases, finish } = await busyAda()
+    const first = hold('四地区交付与校验已完成')
+    for (let entry = 0; entry < 5; entry++) await bench.service.engine.recover(room)
+    expect(releases().map(event => event.data.releases)).toEqual([[first]])
+    // The members page's queue row previews what it carries, not its trailer.
+    const submitted = () => (stub.run.mock.calls as Array<[{ key?: string; preview?: string }]>).map(call => call[0])
+    await vi.waitFor(() => expect(submitted().find(request => request.key === `${releases()[0]!.seq}:${member.id}`)?.preview)
+      .toBe('补交回报：dsh · 四地区交付与校验已完成'))
+
+    const second = hold('地图画好了')
+    for (let entry = 0; entry < 3; entry++) await bench.service.engine.recover(room)
+    expect(releases().map(event => event.data.releases)).toEqual([[first], [second]])
+    await finish()
+  })
+
+  it('an older journal\'s queued duplicates close on entry: only the earliest goes out', async () => {
+    const { bench, member, stub, room, hold, releases, finish } = await busyAda()
+    const first = hold('交付完成')
+    for (let copy = 0; copy < 5; copy++) {
+      room.append('room/dispatch', { id: `old-${copy}`, origin: 'report', targets: ['ada'], targetIds: [member.id!], text: `（以上 1 条回报一直等着交给你：#m${first}。）`, releases: [first], releaseReason: 'restart', hop: 1 })
+    }
+    const [kept, ...duplicates] = releases()
+    await bench.service.engine.recover(room)
+    await bench.service.engine.recover(room)
+    expect(releases()).toHaveLength(5)
+    const last = (seq: number) => room.snapshotEvents().filter(event => event.type === 'room/delivery-state' && event.data.dispatchSeq === seq).at(-1)?.data
+    for (const duplicate of duplicates) expect(last(duplicate.seq)).toMatchObject({ state: 'cancelled', text: '重复的提醒' })
+    expect(last(kept!.seq)).toBeUndefined()
+    // Only the kept one reached the core.
+    const keys = (stub.run.mock.calls as Array<[{ key?: string }]>).map(call => call[0].key)
+    expect(keys.filter(key => duplicates.some(duplicate => key?.startsWith(`${duplicate.seq}:`)))).toEqual([])
+    expect(keys).toContain(`${kept!.seq}:${member.id}`)
+    await finish()
+  })
+})

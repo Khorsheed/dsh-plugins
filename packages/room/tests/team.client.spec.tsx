@@ -73,6 +73,17 @@ describe('teamOf', () => {
     expect(team.nodes.at(-1)).toMatchObject({ member: { name: 'new' }, parent: 'm-dsh' })
   })
 
+  it('a release round reads as the reports it hands over; a duplicate the room closed unrun is not listed', () => {
+    const team = teamOf({ ...STATE, deliveries: [
+      ...STATE.deliveries!,
+      { id: '20:m-dsh', dispatchSeq: 20, memberId: 'm-dsh', status: 'done', origin: 'report', reportFor: '1:m-kimi', text: '登录做完了\n含测试', queuedAt: 1 },
+      { id: '21:m-dsh', dispatchSeq: 21, memberId: 'm-dsh', status: 'queued', origin: 'report', releases: [20], text: '（以上 1 条回报一直等着交给你：#m20。）', queuedAt: 2 },
+      { id: '22:m-dsh', dispatchSeq: 22, memberId: 'm-dsh', status: 'cancelled', origin: 'report', releases: [20], text: '（以上 1 条回报一直等着交给你：#m20。）', note: '重复的提醒', queuedAt: 3 },
+    ] })
+    const dsh = team.nodes.find(node => node.member.name === 'dsh')!
+    expect(dsh.deliveries.map(delivery => [delivery.seq, delivery.text])).toEqual([[21, 'kimi · 登录做完了 含测试'], [20, '登录做完了\n含测试'], [0, '做登录功能']])
+  })
+
   it('formats token counts compactly', () => {
     expect([formatTokens(512), formatTokens(288_000), formatTokens(1_540_000), formatTokens(12_000_000)]).toEqual(['512', '288k', '1.5M', '12M'])
   })
