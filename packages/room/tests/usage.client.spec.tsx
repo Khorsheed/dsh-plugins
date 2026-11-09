@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** Member usage: per-member rows from the execution records, the stats row's members chip and its breakdown. */
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it } from 'vitest'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -95,5 +96,10 @@ describe('member usage', () => {
     for (const row of breakdown.querySelectorAll('tbody tr')) {
       expect([...row.cells].map(cell => cell.className)).toEqual(headers.map(header => header.className))
     }
+  })
+
+  it('aligns the context header with its right-aligned controls', () => {
+    const stylesheet = readFileSync('src/client/RoomStatsLine.module.css', 'utf8')
+    expect(stylesheet).toMatch(/\.breakdown th\.context\s*\{[^}]*\btext-align:\s*right;/)
   })
 })

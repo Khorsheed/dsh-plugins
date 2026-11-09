@@ -214,6 +214,10 @@
   text-align: right;
 }
 
+.breakdown th.context {
+  text-align: right;
+}
+
 .contextCell {
   display: inline-flex;
   align-items: center;
