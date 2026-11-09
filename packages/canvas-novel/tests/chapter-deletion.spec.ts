@@ -3,6 +3,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { NovelService } from '../src/store.ts'
+import { NovelRemoteService } from '../src/remote.ts'
 import { novelGenreAgent } from '../src/genre-agent.ts'
 import { provideCanvas } from './fake-canvas.ts'
 import { FakeFs } from './fake-fs.ts'
@@ -19,7 +20,7 @@ function bench() {
   canvas.addShelves(DREAM.workId)
   const store = new NovelService(ctx, { stateRoot: DREAM.stateRoot })
   ctx.provide('canvasNovel', store as never)
-  return { fs, store, canvas }
+  return { ctx, fs, store, canvas }
 }
 
 async function previewAndApply(store: NovelService, chapters: readonly number[]) {
@@ -85,6 +86,30 @@ describe('chapter deletion with recyclable snapshots', () => {
     expect(restored.ok && restored.operation.status).toBe('closed')
     expect(await activeNumbers(store)).toEqual([1, 2, 4, 5, 6])
     expect(await store.listChapterDeletions(DREAM.workId)).toEqual([])
+  })
+
+  it('reads retained body and plan snapshots only until they are purged or restored', async () => {
+    const { ctx, store } = bench()
+    const preview = await store.previewChapterDeletion({ workId: DREAM.workId, chapters: [3, 6] }, session)
+    expect(preview.ok).toBe(true)
+    if (!preview.ok) return
+    expect(await store.readChapterDeletionSnapshot({ workId: DREAM.workId, deletionId: preview.operation.id, chapter: 3 })).toBeUndefined()
+    expect(await store.applyChapterDeletion({ workId: DREAM.workId, deletionId: preview.operation.id }, session)).toMatchObject({ ok: true })
+    const body = await store.readChapterDeletionSnapshot({ workId: DREAM.workId, deletionId: preview.operation.id, chapter: 3 })
+    expect(body?.body).toContain('半页守则')
+    expect(body?.record.n).toBe(3)
+    const plan = await store.readChapterDeletionSnapshot({ workId: DREAM.workId, deletionId: preview.operation.id, chapter: 6 })
+    expect(plan?.body).toBe('')
+    expect(plan?.record.plan?.summary).toBeTruthy()
+    const remote = new NovelRemoteService(ctx)
+    const wire = await remote.chapterDeletionSnapshot({ canvasId: DREAM.workId, deletionId: preview.operation.id, chapter: 3 })
+    expect(wire).toMatchObject({ ok: true, snapshot: { n: 3, title: body?.record.title, body: body?.body } })
+    expect(wire.ok && wire.snapshot?.plan).toBeUndefined()
+    expect(JSON.stringify(wire)).not.toContain('"derived"')
+    expect(await store.purgeChapters({ workId: DREAM.workId, deletionId: preview.operation.id, chapters: [3] }, session)).toMatchObject({ ok: true })
+    expect(await store.readChapterDeletionSnapshot({ workId: DREAM.workId, deletionId: preview.operation.id, chapter: 3 })).toBeUndefined()
+    expect(await store.restoreChapters({ workId: DREAM.workId, deletionId: preview.operation.id, chapters: [6] }, session)).toMatchObject({ ok: true })
+    expect(await store.readChapterDeletionSnapshot({ workId: DREAM.workId, deletionId: preview.operation.id, chapter: 6 })).toBeUndefined()
   })
 
   it('requires a later user message for an agent apply', async () => {

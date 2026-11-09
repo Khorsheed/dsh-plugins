@@ -279,6 +279,7 @@ describe('the novel tools', () => {
     expect(await call(write, { what: 'delete', deletionId, phase: 'apply' })).toContain('没有新的用户确认消息')
     const applied = await callConfirmed(write, { what: 'delete', deletionId, phase: 'apply' }, 2)
     expect(applied).toContain('已删除并移入回收站')
+    expect(readDestinations(String(applied))[0]?.params).toEqual({ canvasId: DREAM.workId, page: 'novel:chapter-recycle', heading: '章节回收站' })
     expect((await store.listChapters({ workId: DREAM.workId })).map(row => row.chapter.n)).toEqual([1, 2, 4, 5])
     const restored = await callConfirmed(write, { what: 'delete', deletionId, chapters: [3], phase: 'restore' }, 2)
     expect(restored).toContain('已恢复 1 章正文和计划')

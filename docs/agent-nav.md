@@ -20,6 +20,12 @@
 ⟦dsh-nav⟧{"id":"canvas:canvas_x:chapter:3:plan:1730…","kind":"canvas","params":{"canvasId":"canvas_x","face":"manuscripts","item":"3","focus":"plan"},"label":"第 3 章《雨夜》"}
 ```
 
+画布里的体裁独立页使用 `page` 和可选 `param`，而不是 `face`。这类页面由画布绘制原生面包屑与返回按钮，插件不另画返回控件：
+
+```
+⟦dsh-nav⟧{"id":"canvas:canvas_x:delete:del_1","kind":"canvas","params":{"canvasId":"canvas_x","page":"novel:chapter-recycle","heading":"章节回收站"},"label":"章节回收站"}
+```
+
 - `kind`：拥有这个位置的右栏 tab kind；`params`：该 kind 的地址；`id`：每次落地唯一（跟随器按 id 只处理一次，日志按 id 关联）；`label`：卡片上给人看的字。
 - 为什么是一行文字：工具结果只有内容块，没有不进模型的旁路字段；自造会话事件类型在登记它的包卸载后会让整份历史打不开。一行文字在哪里都无害。
 - 宿主侧（工具）不能在运行时 import 源码面库（宿主面不打包），所以各包用一个小的内联 `nav-line.ts` 写这一行，**测试里用 `readDestinations` 钉住格式**（见 `packages/canvas/tests/nav-line.spec.ts`）。

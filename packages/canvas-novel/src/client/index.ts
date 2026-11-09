@@ -53,8 +53,9 @@ import { TimelineView } from './TimelineView.tsx'
 import { CardSection } from './CardSection.tsx'
 import { ChapterBook } from './ChapterBook.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { ALIGN_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
+import { ALIGN_PAGE, RECYCLE_PAGE, STORY_LOG_PAGE, type NovelFace, type NovelRemote } from './contract.ts'
 import { AlignPage } from './AlignPage.tsx'
+import { RecycleBinPage } from './ChapterDeletion.tsx'
 import { en, NS, zh } from './locales.ts'
 import { ChaptersBadge, CardScopes, DeleteNote, FaceLabel } from './NovelFaces.tsx'
 import { PlanView } from './PlanView.tsx'
@@ -358,7 +359,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     locale: NS,
     inject: () => face,
   }, CardSection)), 'canvas-novel: card section')
-  for (const [key, page] of [[STORY_LOG_PAGE, StoryLogPage], [ALIGN_PAGE, AlignPage]] as const) {
+  for (const [key, page] of [[STORY_LOG_PAGE, StoryLogPage], [ALIGN_PAGE, AlignPage], [RECYCLE_PAGE, RecycleBinPage]] as const) {
     ctx.effect(() => seats.inject('canvas.page', () => seats.register({
       name: 'canvas.page',
       key,

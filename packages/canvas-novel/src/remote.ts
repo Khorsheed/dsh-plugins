@@ -41,7 +41,8 @@ import type {
 import {
   deletionCounts,
   type ChapterDeletionApplyRequest, type ChapterDeletionListResult, type ChapterDeletionMutationResult, type ChapterDeletionOperation,
-  type ChapterDeletionPreviewRequest, type ChapterDeletionPreviewResult, type ChapterDeletionPurgeRequest, type ChapterDeletionRestoreRequest, type ChapterDeletionView,
+  type ChapterDeletionPreviewRequest, type ChapterDeletionPreviewResult, type ChapterDeletionPurgeRequest, type ChapterDeletionRestoreRequest,
+  type ChapterDeletionSnapshotRequest, type ChapterDeletionSnapshotResult, type ChapterDeletionView,
 } from './chapter-deletion.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -639,6 +640,20 @@ export class NovelRemoteService extends TypertRemoteService<NovelRemoteConfig> {
   async chapterDeletions(request: { readonly canvasId: string }): Promise<ChapterDeletionListResult> {
     const operations = await this.core.listChapterDeletions(request.canvasId)
     return { ok: true, operations: await Promise.all(operations.map(operation => deletionView(this.core, operation))), size: operations.reduce((sum, row) => sum + row.size, 0) }
+  }
+
+  /** Read one manuscript snapshot for the recycle page, never its derived records. */
+  @Remote('chapterDeletionSnapshot')
+  async chapterDeletionSnapshot(request: ChapterDeletionSnapshotRequest): Promise<ChapterDeletionSnapshotResult> {
+    const snapshot = await this.core.readChapterDeletionSnapshot({ workId: request.canvasId, deletionId: request.deletionId, chapter: request.chapter })
+    if (snapshot === undefined) return { ok: false, error: 'missing' }
+    return {
+      ok: true,
+      snapshot: {
+        n: snapshot.record.n, title: snapshot.record.title, body: snapshot.body,
+        ...(snapshot.record.plan === undefined ? {} : { plan: snapshot.record.plan }),
+      },
+    }
   }
 
   /** Restore selected chapters and, only when explicitly selected, their archived cascade cards. */

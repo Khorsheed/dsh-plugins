@@ -1,14 +1,16 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconArchiveOutlineMedium, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChapterDeletionView } from '../chapter-deletion.ts'
+import type { ChapterRecord } from '../types.ts'
 import type { NovelSurfaceProps } from './contract.ts'
-import { errorKey } from './use-novel.ts'
+import { errorKey, useNovelRead } from './use-novel.ts'
 import css from './chapter-deletion.module.css'
 
-type Props = Pick<NovelSurfaceProps, 'canvasId' | 'remote' | 'sessionId' | 'navigate' | 't'>
-type Target = { readonly deletionId: string; readonly n: number; readonly title: string }
+type Props = Pick<NovelSurfaceProps, 'canvasId' | 'board' | 'remote' | 'sessionId' | 'navigate' | 't'>
+type Target = { readonly deletionId: string; readonly n: number; readonly title: string; readonly size: number; readonly hasBody: boolean; readonly words: number }
 
 function formatSize(bytes: number): string {
+  if (bytes <= 0) return '0 KB'
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
   return `${Math.max(1, Math.ceil(bytes / 1024))} KB`
 }
@@ -19,7 +21,7 @@ function derivedTotal(operation: ChapterDeletionView): number {
 }
 
 function targetsOf(operations: readonly ChapterDeletionView[]): Target[] {
-  return operations.flatMap(operation => operation.chapters.map(row => ({ deletionId: operation.id, n: row.n, title: row.title })))
+  return operations.flatMap(operation => operation.chapters.map(row => ({ deletionId: operation.id, n: row.n, title: row.title, size: row.size, hasBody: row.hasBody, words: row.words })))
 }
 
 /** The person's impact preview before one chapter batch is deleted. */
@@ -109,23 +111,35 @@ function Impact({ title, count, children }: { readonly title: string; readonly c
   return <section className={css.impactGroup}><h3>{title}<span>{count}</span></h3><div className={css.impactBody}>{children}</div></section>
 }
 
-/** The recycle bin: per-chapter restore, selected purge and explicit empty-all. */
-export function RecycleBinDialog({ operations, size, onClose, ...props }: Props & {
-  readonly operations: readonly ChapterDeletionView[]
-  readonly size: number
-  readonly onClose: () => void
-}): ReactNode {
-  const { canvasId, sessionId, remote, navigate, t } = props
+type SnapshotState = Target & {
+  readonly loading: boolean
+  readonly body?: string
+  readonly plan?: ChapterRecord['plan']
+  readonly error?: string
+}
+
+/** A canvas-native recycle page; the canvas supplies its breadcrumb and back action. */
+export function RecycleBinPage(props: Props & { readonly rev: number }): ReactNode {
+  const { canvasId, rev, sessionId, remote, navigate, t } = props
   const api = remote()
+  const read = useNovelRead(api, r => r.chapterDeletions({ canvasId }), `deletions:${canvasId}`, rev)
+  const operations = read.state === 'ready' ? read.value.operations : []
   const targets = useMemo(() => targetsOf(operations), [operations])
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
-  const [view, setView] = useState<'list' | 'restore' | 'purge'>('list')
+  const [flow, setFlow] = useState<'list' | 'restore' | 'purge'>('list')
+  const [emptyAll, setEmptyAll] = useState(false)
   const [position, setPosition] = useState<'original' | 'next'>('original')
   const [restoreCards, setRestoreCards] = useState(false)
   const [ack, setAck] = useState(false)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
-  if (api === undefined || sessionId === undefined) return null
+  const [snapshot, setSnapshot] = useState<SnapshotState | null>(null)
+  if (api === undefined) return null
+  if (read.state === 'loading') return <div className={css.recyclePage}><p className={css.muted}>{t('state.loading')}</p></div>
+  if (read.state === 'error') return <div className={css.recyclePage}><p className={css.failure} role="alert">{t('error.generic', { message: read.message })}</p></div>
+  if (!read.value.ok) return <div className={css.recyclePage}><p className={css.failure} role="alert">{t(errorKey(read.value.error))}</p></div>
+  const size = read.value.size
+  const canMutate = sessionId !== undefined
   const chosen = targets.filter(row => selected.has(`${row.deletionId}:${row.n}`))
   const selectedSize = operations.reduce((sum, operation) => sum + operation.chapters.filter(row => selected.has(`${operation.id}:${row.n}`)).reduce((inner, row) => inner + row.size, 0), 0)
   const groups = (list: readonly Target[]): Map<string, number[]> => {
@@ -133,14 +147,13 @@ export function RecycleBinDialog({ operations, size, onClose, ...props }: Props 
     for (const row of list) out.set(row.deletionId, [...out.get(row.deletionId) ?? [], row.n])
     return out
   }
-  const toggleAll = (): void => {
-    setSelected(current => current.size === targets.length ? new Set() : new Set(targets.map(row => `${row.deletionId}:${row.n}`)))
-  }
-  const run = async (kind: 'restore' | 'purge', list: readonly Target[]): Promise<void> => {
+  const closeFlow = (): void => { setFlow('list'); setFailure(null); setEmptyAll(false) }
+  const run = async (kind: 'restore' | 'purge'): Promise<void> => {
+    if (sessionId === undefined) return
     setBusy(true)
     setFailure(null)
     const errors: string[] = []
-    for (const [deletionId, chapters] of groups(list)) {
+    for (const [deletionId, chapters] of groups(chosen)) {
       const result = kind === 'restore'
         ? await api.restoreChapters(sessionId, { canvasId, deletionId, chapters, ...(restoreCards ? { cards: operations.find(row => row.id === deletionId)?.cascadeCards.map(row => row.id) ?? [] } : {}), position })
         : await api.purgeChapters(sessionId, { canvasId, deletionId, chapters })
@@ -149,88 +162,145 @@ export function RecycleBinDialog({ operations, size, onClose, ...props }: Props 
       for (const cardError of result.value.cardErrors ?? []) errors.push(cardError)
     }
     setBusy(false)
-    if (errors.length > 0) setFailure(t('recycle.operationFailed', { message: errors.join('、') }))
     navigate.refresh()
-    if (errors.length === 0) onClose()
+    if (errors.length > 0) {
+      setFailure(t('recycle.operationFailed', { message: errors.join('、') }))
+      return
+    }
+    closeFlow()
+    setSelected(new Set())
+    if (kind === 'restore') navigate.openManuscripts()
   }
+  const openSnapshot = (target: Target): void => {
+    setSnapshot({ ...target, loading: true })
+    void api.chapterDeletionSnapshot({ canvasId, deletionId: target.deletionId, chapter: target.n }).then(result => {
+      if (!result.ok) { setSnapshot({ ...target, loading: false, error: result.error.message }); return }
+      if (!result.value.ok || result.value.snapshot === undefined) { setSnapshot({ ...target, loading: false, error: t(errorKey(result.value.error)) }); return }
+      setSnapshot({ ...target, loading: false, body: result.value.snapshot.body, ...(result.value.snapshot.plan === undefined ? {} : { plan: result.value.snapshot.plan }) })
+    }).catch((error: unknown) => {
+      setSnapshot({ ...target, loading: false, error: error instanceof Error ? error.message : String(error) })
+    })
+  }
+  return (
+    <>
+      <div className={css.recyclePage} data-canvas-scroll="novel-recycle">
+        <p className={css.muted}>{t('recycle.pageSubtitle', { title: props.board.title ?? props.canvasId })}</p>
+        <div className={css.storage}>
+          <span className={css.storageIcon}><IconArchiveOutlineMedium size={20} /></span>
+          <div><small>{t('recycle.size')}</small><strong>{formatSize(size)}</strong><span>{t('recycle.items', { count: targets.length })}</span></div>
+          <div className={css.storageActions}>
+            <Button size="sm" variant="outline" disabled={busy || !canMutate || chosen.length === 0} onClick={() => { setEmptyAll(false); setFlow('restore'); setFailure(null) }}>{t('recycle.restoreSelected', { count: chosen.length })}</Button>
+            <Button size="sm" variant="primary" className={css.dangerButton} disabled={busy || !canMutate || chosen.length === 0} onClick={() => { setEmptyAll(false); setFlow('purge'); setAck(false); setFailure(null) }}>{t('recycle.purgeSelected', { count: chosen.length })}</Button>
+            <Button size="sm" variant="ghost" disabled={busy || !canMutate || targets.length === 0} onClick={() => { setSelected(new Set(targets.map(row => `${row.deletionId}:${row.n}`))); setEmptyAll(true); setFlow('purge'); setAck(false); setFailure(null) }}>{t('recycle.emptyAll')}</Button>
+          </div>
+        </div>
+        <p className={css.muted}>{t('recycle.scope')}</p>
+        {failure !== null && flow === 'list' && <p className={css.failure} role="alert">{failure}</p>}
+        {targets.length === 0 ? (
+          <div className={css.emptyState}><IconArchiveOutlineMedium size={28} /><p className={css.empty}>{t('recycle.empty')}</p></div>
+        ) : (
+          <>
+            <label className={css.selectAll}><input type="checkbox" checked={selected.size === targets.length && targets.length > 0} onChange={() => { setSelected(current => current.size === targets.length ? new Set() : new Set(targets.map(row => `${row.deletionId}:${row.n}`))) }} />{t('recycle.selectAll')}<span>{selected.size > 0 ? t('recycle.selectedSize', { size: formatSize(selectedSize) }) : ''}</span></label>
+            {operations.map(operation => (
+              <section key={operation.id} className={css.deletionBatch}>
+                <h3>{t('recycle.batch', { time: operation.updatedAt.slice(0, 16).replace('T', ' ') })}<span>{formatSize(operation.size)}</span></h3>
+                {operation.status === 'cleanup-pending' && <p className={css.warning}>{operation.cleanupError ?? t('error.cleanup-pending')}</p>}
+                {operation.chapters.map(row => {
+                  const key = `${operation.id}:${row.n}`
+                  return (
+                    <div className={css.recycleRow} key={key} data-selected={selected.has(key) || undefined}>
+                      <input type="checkbox" checked={selected.has(key)} aria-label={t('recycle.selectChapter', { n: row.n })} onChange={() => {
+                        setSelected(current => {
+                          const next = new Set(current)
+                          if (next.has(key)) next.delete(key)
+                          else next.add(key)
+                          return next
+                        })
+                      }} />
+                      <span className={css.recycleChapter}><strong>{t('strip.chapter', { n: row.n })} · {row.title}</strong><small>{row.hasBody ? t('recycle.bodyAndPlan', { words: row.words }) : t('recycle.planOnly')}</small></span>
+                      <span className={css.rowSize}>{formatSize(row.size)}</span>
+                      <Button size="sm" variant="ghost" onClick={() => { openSnapshot(targets.find(target => target.deletionId === operation.id && target.n === row.n)!) }}>{t('recycle.snapshot')}</Button>
+                      <Button size="sm" variant="outline" disabled={busy || !canMutate || operation.status === 'cleanup-pending'} onClick={() => { setSelected(new Set([key])); setEmptyAll(false); setFlow('restore'); setFailure(null) }}>{t('recycle.restore')}</Button>
+                    </div>
+                  )
+                })}
+              </section>
+            ))}
+          </>
+        )}
+      </div>
+      {flow !== 'list' && (
+        <Modal
+          open
+          onClose={closeFlow}
+          title={t(flow === 'restore' ? 'recycle.restoreTitle' : emptyAll ? 'recycle.emptyAll' : 'recycle.purgeTitle')}
+          closeLabel={t('edit.cancel')}
+          description={t(flow === 'restore' ? 'recycle.restoreNote' : 'recycle.purgeNote')}
+          footer={flow === 'restore' ? (
+            <>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={closeFlow}>{t('edit.cancel')}</Button>
+              <Button size="sm" variant="primary" disabled={busy} onClick={() => { void run('restore') }}>{t('recycle.confirmRestore')}</Button>
+            </>
+          ) : (
+            <>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={closeFlow}>{t('edit.cancel')}</Button>
+              <Button size="sm" variant="primary" className={css.dangerButton} disabled={busy || !ack} onClick={() => { void run('purge') }}>{t('recycle.confirmPurge')}</Button>
+            </>
+          )}
+        >
+          {flow === 'restore' ? (
+            <div className={css.confirmView}>
+              <p>{t('recycle.restoreSummary', { count: chosen.length, size: formatSize(selectedSize) })}</p>
+              <label className={css.field}><span>{t('recycle.position')}</span><select value={position} onChange={event => { setPosition(event.target.value as 'original' | 'next') }}><option value="original">{t('recycle.original')}</option><option value="next">{t('recycle.next')}</option></select></label>
+              {chosen.some(row => (operations.find(operation => operation.id === row.deletionId)?.cascadeCards.length ?? 0) > 0) && (
+                <label className={css.checkRow}><input type="checkbox" checked={restoreCards} onChange={event => { setRestoreCards(event.target.checked) }} /><span>{t('recycle.restoreCards')}</span></label>
+              )}
+              <p className={css.muted}>{t('recycle.restoreCardsNote')}</p>
+            </div>
+          ) : (
+            <div className={css.confirmView}>
+              <p>{t('recycle.purgeSummary', { count: chosen.length, size: formatSize(selectedSize) })}</p>
+              <ul className={css.scopeList}><li>{t('recycle.purgeIncluded')}</li><li>{t('recycle.purgeExcluded')}</li><li>{t('recycle.purgeMetadata')}</li></ul>
+              <label className={css.checkRow}><input type="checkbox" checked={ack} onChange={event => { setAck(event.target.checked) }} /><span>{t('recycle.purgeAck')}</span></label>
+            </div>
+          )}
+          {failure !== null && <p className={css.failure} role="alert">{failure}</p>}
+        </Modal>
+      )}
+      {snapshot !== null && <SnapshotDialog snapshot={snapshot} onClose={() => { setSnapshot(null) }} t={t} />}
+    </>
+  )
+}
+
+function SnapshotDialog({ snapshot, onClose, t }: { readonly snapshot: SnapshotState; readonly onClose: () => void; readonly t: Props['t'] }): ReactNode {
   return (
     <Modal
       open
-      onClose={view === 'list' ? onClose : () => { setView('list'); setFailure(null) }}
-      title={t(view === 'list' ? 'recycle.title' : view === 'restore' ? 'recycle.restoreTitle' : 'recycle.purgeTitle')}
-      closeLabel={t('edit.cancel')}
-      description={t(view === 'list' ? 'recycle.subtitle' : view === 'restore' ? 'recycle.restoreNote' : 'recycle.purgeNote')}
-      footer={view === 'list' ? (
-        <>
-          <Button size="sm" variant="ghost" onClick={onClose}>{t('recycle.close')}</Button>
-          <Button size="sm" variant="outline" disabled={busy || chosen.length === 0} onClick={() => { setView('restore'); setFailure(null) }}>{t('recycle.restoreSelected', { count: chosen.length })}</Button>
-          <Button size="sm" variant="primary" className={css.dangerButton} disabled={busy || chosen.length === 0} onClick={() => { setView('purge'); setAck(false); setFailure(null) }}>{t('recycle.purgeSelected', { count: chosen.length })}</Button>
-        </>
-      ) : view === 'restore' ? (
-        <>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setView('list') }}>{t('edit.cancel')}</Button>
-          <Button size="sm" variant="primary" disabled={busy} onClick={() => { void run('restore', chosen) }}>{t('recycle.confirmRestore')}</Button>
-        </>
-      ) : (
-        <>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => { setView('list') }}>{t('edit.cancel')}</Button>
-          <Button size="sm" variant="primary" className={css.dangerButton} disabled={busy || !ack} onClick={() => { void run('purge', chosen) }}>{t('recycle.confirmPurge')}</Button>
-        </>
-      )}
+      onClose={onClose}
+      title={`${t('strip.chapter', { n: snapshot.n })} · ${snapshot.title}`}
+      closeLabel={t('recycle.close')}
+      description={t('recycle.snapshotReadonly')}
+      footer={<Button size="sm" variant="primary" onClick={onClose}>{t('recycle.close')}</Button>}
     >
-      {view === 'list' ? (
-        <div className={css.recycleList}>
-          <div className={css.storage}>
-            <div><small>{t('recycle.size')}</small><strong>{formatSize(size)}</strong><span>{t('recycle.items', { count: targets.length })}</span></div>
-            <Button size="sm" variant="ghost" disabled={busy || targets.length === 0} onClick={() => { setSelected(new Set(targets.map(row => `${row.deletionId}:${row.n}`))); setView('purge'); setAck(false) }}>{t('recycle.emptyAll')}</Button>
-          </div>
-          <p className={css.muted}>{t('recycle.scope')}</p>
-          {targets.length === 0 ? <p className={css.empty}>{t('recycle.empty')}</p> : (
-            <>
-              <label className={css.selectAll}><input type="checkbox" checked={selected.size === targets.length && targets.length > 0} onChange={toggleAll} />{t('recycle.selectAll')}<span>{selected.size > 0 ? t('recycle.selectedSize', { size: formatSize(selectedSize) }) : ''}</span></label>
-              {operations.map(operation => (
-                <section key={operation.id} className={css.deletionBatch}>
-                  <h3>{t('recycle.batch', { time: operation.updatedAt.slice(0, 16).replace('T', ' ') })}<span>{formatSize(operation.size)}</span></h3>
-                  {operation.chapters.map(row => {
-                    const key = `${operation.id}:${row.n}`
-                    return (
-                      <div className={css.recycleRow} key={key} data-selected={selected.has(key) || undefined}>
-                        <input type="checkbox" checked={selected.has(key)} aria-label={t('recycle.selectChapter', { n: row.n })} onChange={() => {
-                          setSelected(current => {
-                            const next = new Set(current)
-                            if (next.has(key)) next.delete(key)
-                            else next.add(key)
-                            return next
-                          })
-                        }} />
-                        <span className={css.recycleChapter}><strong>{t('strip.chapter', { n: row.n })} · {row.title}</strong><small>{row.hasBody ? t('recycle.bodyAndPlan', { words: row.words }) : t('recycle.planOnly')}</small></span>
-                        <span className={css.rowSize}>{formatSize(row.size)}</span>
-                        <Button size="sm" variant="outline" disabled={busy} onClick={() => { setSelected(new Set([key])); setView('restore'); setFailure(null) }}>{t('recycle.restore')}</Button>
-                      </div>
-                    )
-                  })}
-                </section>
-              ))}
-            </>
-          )}
-        </div>
-      ) : view === 'restore' ? (
-        <div className={css.confirmView}>
-          <p>{t('recycle.restoreSummary', { count: chosen.length, size: formatSize(selectedSize) })}</p>
-          <label className={css.field}><span>{t('recycle.position')}</span><select value={position} onChange={event => { setPosition(event.target.value as 'original' | 'next') }}><option value="original">{t('recycle.original')}</option><option value="next">{t('recycle.next')}</option></select></label>
-          {chosen.some(row => (operations.find(operation => operation.id === row.deletionId)?.cascadeCards.length ?? 0) > 0) && (
-            <label className={css.checkRow}><input type="checkbox" checked={restoreCards} onChange={event => { setRestoreCards(event.target.checked) }} /><span>{t('recycle.restoreCards')}</span></label>
-          )}
-          <p className={css.muted}>{t('recycle.restoreCardsNote')}</p>
-        </div>
-      ) : (
-        <div className={css.confirmView}>
-          <p>{t('recycle.purgeSummary', { count: chosen.length, size: formatSize(selectedSize) })}</p>
-          <ul className={css.scopeList}><li>{t('recycle.purgeIncluded')}</li><li>{t('recycle.purgeExcluded')}</li><li>{t('recycle.purgeMetadata')}</li></ul>
-          <label className={css.checkRow}><input type="checkbox" checked={ack} onChange={event => { setAck(event.target.checked) }} /><span>{t('recycle.purgeAck')}</span></label>
+      {snapshot.loading ? <p className={css.muted}>{t('state.loading')}</p> : snapshot.error !== undefined ? <p className={css.failure} role="alert">{snapshot.error}</p> : (
+        <div className={css.snapshotContent}>
+          <div className={css.dialogSummary}><span>{formatSize(snapshot.size)}</span><span>{snapshot.hasBody ? t('recycle.bodyAndPlan', { words: snapshot.words }) : t('recycle.planOnly')}</span></div>
+          {snapshot.body !== undefined && snapshot.body.trim() !== '' ? <pre className={css.snapshotBody}>{snapshot.body}</pre> : <SnapshotPlan plan={snapshot.plan} t={t} />}
         </div>
       )}
-      {failure !== null && <p className={css.failure} role="alert">{failure}</p>}
     </Modal>
+  )
+}
+
+function SnapshotPlan({ plan, t }: { readonly plan: ChapterRecord['plan'] | undefined; readonly t: Props['t'] }): ReactNode {
+  if (plan === undefined) return <p className={css.muted}>{t('recycle.planOnly')}</p>
+  return (
+    <section className={css.snapshotPlan}>
+      <h3>{t('recycle.snapshotPlan')}</h3>
+      <p>{plan.summary}</p>
+      <ol>{plan.beats.map((beat, index) => <li key={`${beat.at ?? ''}:${index}`}>{beat.at === undefined ? beat.text : `${beat.at}｜${beat.text}`}</li>)}</ol>
+      {plan.conflict !== undefined && <p>{plan.conflict}</p>}
+      {plan.hook !== undefined && <p>{plan.hook}</p>}
+    </section>
   )
 }

@@ -155,6 +155,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     if (params.card !== undefined) selection.openCardTab(canvasId, params.card, heading)
     else if (params.manuscript !== undefined) selection.openManuscriptTab(canvasId, params.manuscript, heading)
     else if (params.type !== undefined) selection.openTypeTab(canvasId, params.type as Parameters<typeof selection.openTypeTab>[1], heading)
+    else if (params.page !== undefined) selection.openPageTab(canvasId, params.page, heading, params.param)
     else if (params.face !== undefined) selection.openBoardFace(canvasId, params.face, params.scope ?? null, params.item, params.focus, params.cards)
     else selection.openCanvas(canvasId)
   }

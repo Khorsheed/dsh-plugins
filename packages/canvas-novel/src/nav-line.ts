@@ -21,10 +21,13 @@ export const RECENT_SCOPE = 'recent'
 /** A canvas address (the canvas browser half's `CanvasNavParams`). */
 interface CanvasPlace {
   readonly canvasId: string
-  readonly face: 'board' | 'manuscripts' | 'lead'
+  readonly face?: 'board' | 'manuscripts' | 'lead'
   readonly scope?: string
   readonly item?: string
   readonly focus?: 'plan' | 'body'
+  readonly page?: string
+  readonly param?: string
+  readonly heading?: string
 }
 
 /**

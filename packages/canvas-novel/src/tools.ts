@@ -466,7 +466,7 @@ export function novelToolDefinitions(store: NovelService): ToolDefinition[] {
           const answer = outcome.cleanupPending
             ? `第 ${outcome.operation.chapters.map(row => row.record.n).join('、')} 章已删除并移入回收站，但部分清理尚未完成（${outcome.operation.cleanupError ?? 'io'}）。旧数据不会进入写作；同章号新章要等清理重试成功。`
             : `第 ${outcome.operation.chapters.map(row => row.record.n).join('、')} 章已删除并移入回收站。正文、计划和派生快照长期保留，可逐章恢复；含正文的章节恢复后要重新对账。`
-          return withNovelDestination(answer, `canvas:${workId}:delete:${args.deletionId}`, { canvasId: workId, face: 'manuscripts' }, '章节回收站', { status: outcome.cleanupPending ? '清理待完成' : '已移入回收站', awaiting: false, door: '查看回收站 →' })
+          return withNovelDestination(answer, `canvas:${workId}:delete:${args.deletionId}`, { canvasId: workId, page: 'novel:chapter-recycle', heading: '章节回收站' }, '章节回收站', { status: outcome.cleanupPending ? '清理待完成' : '已移入回收站', awaiting: false, door: '查看回收站 →' })
         }
         if (phase === 'restore') {
           const outcome = await store.restoreChapters({ workId, deletionId: args.deletionId, ...(args.chapters === undefined ? {} : { chapters: args.chapters }), ...(args.cards === undefined ? {} : { cards: args.cards }), ...(args.position === undefined ? {} : { position: args.position }) }, resolved.session)

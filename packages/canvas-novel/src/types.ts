@@ -1415,6 +1415,25 @@ export interface ChapterDeletionListResult {
   readonly size: number
 }
 
+export interface ChapterDeletionSnapshotRequest {
+  readonly canvasId: string
+  readonly deletionId: string
+  readonly chapter: number
+}
+
+export interface ChapterDeletionSnapshotView {
+  readonly n: number
+  readonly title: string
+  readonly body: string
+  readonly plan?: ChapterPlan
+}
+
+export interface ChapterDeletionSnapshotResult {
+  readonly ok: boolean
+  readonly error?: NovelError
+  readonly snapshot?: ChapterDeletionSnapshotView
+}
+
 export interface ChapterDeletionMutationResult {
   readonly ok: boolean
   readonly error?: NovelError
