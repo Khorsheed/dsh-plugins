@@ -27,6 +27,8 @@
  * @module @khorsheed/dsh-room/dispatch
  */
 import { replayDeliveries } from './deliveries.ts'
+import { DUPLICATE_RELEASE_TEXT } from './delivery-notes.ts'
+import { releasePreview } from './release-preview.ts'
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { SessionId, type Session } from '@deepseek-ai/dsh-session'
@@ -204,6 +206,13 @@ export function openInterruptedRounds(view: RoomState): Map<string, string[]> {
  */
 export function previewOf(events: readonly SessionEvent[], dispatchSeq: number | undefined, fallback: string): string {
   const source = dispatchSeq === undefined ? undefined : events.find(event => event.seq === dispatchSeq)
+  // A release round's own text is only its trailer: preview what it carries.
+  if (source?.type === 'room/dispatch' && source.data.releases !== undefined) {
+    const state = replay(events)
+    const release = state.deliveries?.find(row => row.dispatchSeq === source.seq)
+    const carried = release === undefined ? undefined : releasePreview(state, release)
+    if (carried !== undefined) return carried.replace(/\s+/g, ' ').trim().slice(0, 120)
+  }
   const text = source?.type === 'room/dispatch' ? source.data.text : fallback
   return text.replace(/\s+/g, ' ').trim().slice(0, 120)
 }
@@ -679,6 +688,41 @@ export function pendingHolds(events: readonly SessionEvent[], recipientId: strin
 }
 
 /**
+ * The held reports a release round still on its way to the recipient
+ * (queued, or running) hands over: a later release must not hand them over
+ * again. Read from the journal, so it holds across restarts.
+ * @param events - the room log.
+ * @param recipientId - the member the reports were held for.
+ * @returns the held dispatch seqs those releases carry.
+ */
+export function pendingReleaseSeqs(events: readonly SessionEvent[], recipientId: string): ReadonlySet<number> {
+  return new Set(replayDeliveries(events).flatMap(row => row.memberId === recipientId && row.releases !== undefined
+    && (row.status === 'queued' || row.status === 'running') ? row.releases : []))
+}
+
+/**
+ * Queued release rounds of one recipient that would hand over nothing: every
+ * report they name is already handed over — its hold closed, or named by an
+ * earlier release still pending (a running one, or an earlier queued one
+ * kept). Journals from before releases were deduplicated hold several
+ * identical ones, one per room entry.
+ * @param events - the room log.
+ * @param recipientId - the member the reports were held for.
+ * @returns the redundant release deliveries, oldest first.
+ */
+export function redundantReleases(events: readonly SessionEvent[], recipientId: string): readonly RoomDelivery[] {
+  const releases = replayDeliveries(events).filter(row => row.memberId === recipientId && row.releases !== undefined)
+  const open = new Set(pendingHolds(events, recipientId))
+  const covered = new Set(releases.flatMap(row => row.status === 'running' ? row.releases! : []))
+  const redundant: RoomDelivery[] = []
+  for (const row of releases.filter(entry => entry.status === 'queued').sort((left, right) => left.dispatchSeq - right.dispatchSeq)) {
+    if (row.releases!.some(seq => open.has(seq) && !covered.has(seq))) for (const seq of row.releases!) covered.add(seq)
+    else redundant.push(row)
+  }
+  return redundant
+}
+
+/**
  * The report-timing decision that held one report: the `later` decision
  * recorded for the held dispatch's run (`room/decision.runId` = its
  * `reportFor`). A hold is only ever the decision model's `later`, and that
@@ -1120,6 +1164,8 @@ export class DispatchEngine {
    * (they wait for its continuation or 停止).
    */
   private async recoverOnce(room: Session): Promise<void> {
+    // Release rounds that would hand over nothing close before anything is resubmitted.
+    for (const member of replay(room.snapshotEvents()).members) await this.dropRedundantReleases(room, memberId(room.snapshotEvents(), member))
     const events = room.snapshotEvents()
     const state = replay(events)
     const ledgers = new CoreLedgers(probeLocalAgent(this.ctx))
@@ -1566,13 +1612,18 @@ export class DispatchEngine {
    * Wake a member for the reports held for it (the hold timeout, a human's
    * 「现在交给」, or a restart). One short release round: an inbox already
    * holds the reports; a CLI member gets them carried by the round's prompt.
-   * A no-op when nothing is held any more.
+   * A no-op when nothing is held any more, or when a release still on its
+   * way hands every held report over already; otherwise the new round names
+   * only the holds no pending release covers.
    * @returns whether a release round was dispatched.
    */
   async releaseHeld(room: Session, recipientId: string, reason: 'timeout' | 'manual' | 'restart'): Promise<boolean> {
     this.clearHoldTimer(room.id, recipientId)
     const events = room.snapshotEvents()
-    const open = pendingHolds(events, recipientId)
+    // Only the holds no pending release already hands over: each room entry
+    // (and each timeout) would otherwise queue the same release again.
+    const covered = pendingReleaseSeqs(events, recipientId)
+    const open = pendingHolds(events, recipientId).filter(seq => !covered.has(seq))
     const recipient = replay(events).members.find(member => memberId(events, member) === recipientId)
     if (open.length === 0 || recipient === undefined) return false
     const ids = open.map(seq => `#${messageId(seq)}`).join('、')
@@ -1584,6 +1635,20 @@ export class DispatchEngine {
     await this.ctx.sessions.flush(room)
     this.dispatch(room, recipient.name, text, { dispatchSeq: release.seq, targetId: recipientId })
     return true
+  }
+
+  /**
+   * Close the queued release rounds of a recipient that would hand over
+   * nothing (see {@link redundantReleases}) — the duplicates older journals
+   * queued on every room entry — so none of them costs a round; taken out of
+   * the core's queue too when this process submitted them.
+   */
+  private async dropRedundantReleases(room: Session, recipientId: string): Promise<void> {
+    const redundant = redundantReleases(room.snapshotEvents(), recipientId)
+    if (redundant.length === 0) return
+    for (const row of redundant) room.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: DUPLICATE_RELEASE_TEXT })
+    await this.ctx.sessions.flush(room)
+    for (const row of redundant) this.withdraw(String(room.id), row.id)
   }
 
   private async markSent(room: Session, relays: readonly RoomRelay[]): Promise<void> {

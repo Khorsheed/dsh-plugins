@@ -580,9 +580,9 @@ describe('member-to-member messages', () => {
       ...ROSTER,
       deliveries: [
         delivery({ id: '9:m-bill', dispatchSeq: 9, memberId: 'm-bill', origin: 'member', from: 'm-ada', kind: 'task', text: '补预览' }),
-        delivery({ id: '10:m-ada', dispatchSeq: 10, memberId: 'm-ada', origin: 'report', reportFor: '9:m-bill' }),
+        delivery({ id: '10:m-ada', dispatchSeq: 10, memberId: 'm-ada', origin: 'report', reportFor: '9:m-bill', text: '预览补好了' }),
         delivery({ id: '11:m-bill', dispatchSeq: 11, memberId: 'm-bill', origin: 'coordinator', from: 'legacy:1', text: '画图' }),
-        delivery({ id: '12:m-ada', dispatchSeq: 12, memberId: 'm-ada', origin: 'report', reportFor: '11:m-bill', status: 'held' }),
+        delivery({ id: '12:m-ada', dispatchSeq: 12, memberId: 'm-ada', origin: 'report', reportFor: '11:m-bill', status: 'held', text: '图画好了\n  三张' }),
         delivery({ id: '13:m-ada', dispatchSeq: 13, memberId: 'm-ada', origin: 'report', releases: [10, 12] }),
         delivery({ id: '14:m-ada', dispatchSeq: 14, memberId: 'm-ada', origin: 'human' }),
       ],
@@ -591,7 +591,8 @@ describe('member-to-member messages', () => {
     expect(speechCause('10:m-ada', state)).toEqual({ kind: 'report', member: 'bill', target: '[data-room-run="9:m-bill"]' })
     // The native main agent's send has no row to scroll to (its tool call shows).
     expect(speechCause('11:m-bill', state)).toEqual({ kind: 'task', member: 'dsh', text: '画图' })
-    expect(speechCause('13:m-ada', state)).toEqual({ kind: 'report', member: 'bill', target: '[data-room-run="9:m-bill"]' })
+    // A release round says what it carries, not its trailer.
+    expect(speechCause('13:m-ada', state)).toEqual({ kind: 'report', member: 'bill', target: '[data-room-run="9:m-bill"]', text: '预览补好了 / 图画好了 三张' })
     expect(speechCause('14:m-ada', state)).toBeUndefined()
     expect(speechCause(undefined, state)).toBeUndefined()
   })

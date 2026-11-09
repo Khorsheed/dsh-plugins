@@ -72,6 +72,7 @@
     "src/plan.ts",
     "src/deliveries.ts",
     "src/delivery-notes.ts",
+    "src/release-preview.ts",
     "src/jobs.ts",
     "src/helps.ts",
     "src/client/icons.tsx",

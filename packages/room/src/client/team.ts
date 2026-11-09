@@ -18,6 +18,8 @@
  */
 import { coordinatorMember } from '../journal.ts'
 import { roundUsage } from './round-usage.ts'
+import { DUPLICATE_RELEASE_TEXT } from '../delivery-notes.ts'
+import { releasedReports } from '../release-preview.ts'
 import type { RoomDelivery, RoomHelp, RoomMember, RoomState } from '../types.ts'
 
 /** The human, as a tree root. */
@@ -87,6 +89,21 @@ const idOf = (member: RoomMember): string => member.id ?? member.name
  * @param state - the replayed room state.
  * @returns nodes in tree order (parents before children), edges and totals.
  */
+/**
+ * A delivery's words in the team view: a release round's own text is only
+ * its trailer, so it reads as the reports it hands over (「招摇构筑师 · 四地区…」).
+ */
+function deliveryText(state: RoomState, delivery: RoomDelivery): string {
+  const reports = releasedReports(state, delivery)
+  if (reports.length === 0) return delivery.text
+  return reports.map(report => [report.member, report.opening].filter(part => part !== undefined && part !== '').join(' · ')).join(' / ')
+}
+
+/** The first line of what a running round was asked. */
+function currentText(state: RoomState, delivery: RoomDelivery | undefined): string | undefined {
+  return delivery === undefined ? undefined : deliveryText(state, delivery).trim().split('\n', 1)[0]
+}
+
 export function teamOf(state: RoomState): Team {
   const coordinator = coordinatorMember(state)
   const byId = new Map(state.members.map(member => [idOf(member), member]))
@@ -101,6 +118,8 @@ export function teamOf(state: RoomState): Team {
   const received = new Map<string, TeamDelivery[]>()
   for (const delivery of state.deliveries ?? []) {
     if (!byId.has(delivery.memberId) || delivery.origin === 'relay') continue
+    // A duplicate release the room closed unrun was never delivered.
+    if (delivery.status === 'cancelled' && delivery.note === DUPLICATE_RELEASE_TEXT) continue
     const from = delivery.origin === 'human' ? TEAM_ROOT
       : delivery.origin === 'report' ? undefined
         : delivery.from ?? (delivery.origin === 'coordinator' && coordinator !== undefined ? idOf(coordinator) : undefined)
@@ -114,7 +133,7 @@ export function teamOf(state: RoomState): Team {
       }
     }
     const list = received.get(delivery.memberId) ?? []
-    list.push({ id: delivery.id, seq: delivery.dispatchSeq, from: from === undefined ? '' : nameOf(from), text: delivery.text, status: delivery.status, kind })
+    list.push({ id: delivery.id, seq: delivery.dispatchSeq, from: from === undefined ? '' : nameOf(from), text: deliveryText(state, delivery), status: delivery.status, kind })
     received.set(delivery.memberId, list)
   }
 
@@ -155,7 +174,7 @@ export function teamOf(state: RoomState): Team {
     const run = state.runs.find(entry => entry.member === member.name)
     const executions = (state.executions ?? []).filter(row => row.memberId === id)
     const current = run?.state === 'running'
-      ? (state.deliveries ?? []).find(row => row.memberId === id && row.status === 'running' && (run.runId === undefined || row.id === run.runId))?.text.trim().split('\n', 1)[0]
+      ? currentText(state, (state.deliveries ?? []).find(row => row.memberId === id && row.status === 'running' && (run.runId === undefined || row.id === run.runId)))
       : undefined
     const model = executions.findLast(row => row.model !== undefined)?.model ?? member.model
     return {
