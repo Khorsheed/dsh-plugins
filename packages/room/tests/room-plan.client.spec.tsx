@@ -71,15 +71,10 @@ describe('formal goal controls', () => {
     expect(stopMember).toHaveBeenCalledWith('Worker', 'delivery:a')
   })
 
-  it('records an uncertain outcome with evidence without silently resuming the goal', async () => {
-    const command = vi.fn(async (_json: string) => ({ ok: true as const }))
-    render(<RoomPlanView plan={recoverPlan(plan(), 5)} members={members} command={command} t={t} />)
+  it('an attempt a restart cut off offers no reconciliation (the goal opens a new attempt)', () => {
+    render(<RoomPlanView plan={recoverPlan(plan(), 5)} members={members} command={vi.fn()} t={t} />)
     openPlan(); openTask()
-    fireEvent.click(screen.getByRole('button', { name: 'Reconcile' }))
-    fillEvidence()
-    fireEvent.click(screen.getByRole('button', { name: 'Reconcile as submitted' }))
-    await waitFor(() => expect(command).toHaveBeenCalledOnce())
-    expect(JSON.parse(command.mock.calls[0]![0])).toMatchObject({ action: 'reconcile', outcome: 'submitted', evidence: { references: ['review:test-pass'] } })
+    expect(screen.queryByRole('button', { name: 'Reconcile' })).toBeNull()
   })
 
   it('preserves a retry identity after a lost acknowledgement', async () => {

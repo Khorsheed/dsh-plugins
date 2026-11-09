@@ -13,6 +13,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import { readPlan } from '../src/plan-service.ts'
+import { activePlanAttempts, countedAttempts, PLAN_RESTART_REASON, recoverPlan, type RoomPlan } from '../src/plan.ts'
 import { replay } from '../src/journal.ts'
 import { interruptedRounds } from '../src/restart-continue.ts'
 import { OBSOLETE_RESTART_REPORT_TEXT, RESTART_STOPPED_TEXT, RESTART_UNKNOWN_TEXT, SUPERSEDED_BACKLOG_TEXT } from '../src/restart-interrupted.ts'
@@ -189,5 +190,117 @@ describe('the incident room after the upgrade (R3, design section G)', () => {
     if (!state.ok) throw new Error('room unavailable')
     expect(interruptedRounds(state.value).map(round => round.member)).not.toContain('地图匠')
     expect(state.value.deliveries?.find(row => row.id === seeded.d1530)).toMatchObject({ status: 'cancelled', endedBy: 'restart' })
+  })
+})
+
+/** A new host process for the room's goal service: its once-per-process recovery runs again. */
+function newPlanProcess(bench: Bench): void {
+  (bench.service.plans as unknown as { recovered: Set<string> }).recovered.clear()
+}
+
+describe('formal goals after a restart (R4)', () => {
+  it('the incident goal after the upgrade (section G): both attempts interrupted and uncounted, both tasks pending, the goal paused 「被重启打断」 for the human', async () => {
+    const { bench, room } = await incidentRoom()
+    newPlanProcess(bench)
+    await (bench.service as unknown as { ensureLive(id: SessionId): Promise<unknown> }).ensureLive(bench.sessionId)
+    await bench.service.engine.idle()
+    const plan = readPlan(room)!
+    expect(plan).toMatchObject({ status: 'paused', reason: PLAN_RESTART_REASON })
+    expect(plan.tasks.map(task => [task.id, task.status, task.attempts.map(attempt => [attempt.status, attempt.interrupted])])).toEqual([
+      ['task-a', 'pending', [['cancelled', 'restart']]],
+      ['task-b', 'pending', [['cancelled', 'restart']]],
+    ])
+    expect(plan.tasks.map(task => countedAttempts(task).length)).toEqual([0, 0])
+    expect(activePlanAttempts(plan)).toEqual([])
+    // Nothing opened on its own (an earlier restart's goal), nothing sent to the coordinator.
+    expect(room.snapshotEvents().filter(event => event.type === 'room/dispatch' && event.data.plan?.attemptId !== undefined)).toHaveLength(2)
+  })
+
+  it('全部继续 resumes it: a second attempt per task, the started one\'s brief says it was interrupted, and 地图匠 can submit the new attempt (the 5c561cf7 case)', async () => {
+    const { bench, cast, room, seeded } = await incidentRoom()
+    newPlanProcess(bench)
+    const access = (bench.service as unknown as { ensureLive(id: SessionId): Promise<unknown> }).ensureLive.bind(bench.service)
+    await access(bench.sessionId)
+    await bench.service.engine.idle()
+    // 地图匠's round for the new attempt stays open until released.
+    let release!: () => void
+    const open = new Promise<void>(resolve => { release = resolve })
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) => child === cast.mapper.child
+      ? { id: SessionId(child), localAgent: undefined, result: open.then(() => ({ output: [{ type: 'text', text: '格子补完，已提交' }], stopReason: 'completed' as const })), dispose: async () => {} } as SubagentRun
+      : settledRun(child, '整合好了'))
+    expect(await bench.service.continueInterrupted({ sessionId: bench.sessionId, runIds: [], goal: true })).toMatchObject({ ok: true })
+    await vi.waitFor(() => expect(readPlan(room)!.tasks.find(task => task.id === 'task-b')!.attempts.at(-1)!.status).toBe('running'))
+    const plan = readPlan(room)!
+    expect(plan.status).toBe('running')
+    const briefs = room.snapshotEvents().flatMap(event => event.type === 'room/dispatch' && event.data.plan?.attemptId !== undefined && !['attempt-a1', 'attempt-b1'].includes(event.data.plan.attemptId) ? [event.data] : [])
+    const forA = briefs.find(entry => entry.plan?.taskId === 'task-a')!
+    const forB = briefs.find(entry => entry.plan?.taskId === 'task-b')!
+    expect(forA.text).toContain('上一次尝试（attempt-a1）被实例重启打断')
+    expect(forA.continues).toEqual([seeded.d1541])
+    expect(forB.text).not.toContain('被实例重启打断')
+    expect(forB.continues).toBeUndefined()
+    expect(plan.tasks.map(task => task.attempts.map(attempt => attempt.number))).toEqual([[1, 2], [1, 2]])
+    // The member submits the NEW attempt while its round runs; the old one is gone.
+    const b2 = plan.tasks.find(task => task.id === 'task-b')!.attempts.at(-1)!
+    const submit = (attemptId: string, requestId: string) => bench.service.plans.command(room, JSON.stringify({ action: 'submit', taskId: 'task-b', attemptId, requestId, expectedRevision: readPlan(room)!.revision,
+      evidence: { summary: '格子补完，测试通过', references: ['levels/north-ridge.json'], artifacts: [] } }), { kind: 'worker', memberId: cast.mapper.id })
+    await expect(submit('attempt-b1', 'submit-old')).rejects.toThrow('superseded')
+    await submit(b2.id, 'submit-new')
+    expect(readPlan(room)!.tasks.find(task => task.id === 'task-b')!.attempts.at(-1)).toMatchObject({ id: b2.id, status: 'submitted' })
+    release()
+    await bench.service.engine.idle()
+  })
+
+  it('auto-continue on: a fresh interruption opens the next attempt at once (goal keeps running), the coordinator hears nothing in between; a second interruption in a row pauses', async () => {
+    const bench = await bootRoom()
+    const cast = await seatCast(bench)
+    const room = bench.ctx.sessions.get(bench.sessionId)!
+    room.append('room/coordinator', { version: 1, memberId: cast.coordinator.id, revision: 1, previousMemberId: '', handoff: '你是协调者。' })
+    const now = Date.now()
+    const plan: RoomPlan = {
+      version: 1, id: 'g', revision: 1, objective: '北岭', status: 'running', activeMs: 0, resumedAt: now - 10_000,
+      budget: { maxParallel: 2, maxAttempts: 3, maxAttemptsPerTask: 1, maxActiveMs: 3_600_000 }, stages: [{ id: 's', title: 'S' }],
+      tasks: [{ id: 't', title: '关卡', stageId: 's', kind: 'task', ownerMemberId: cast.mapper.id, instruction: '做关卡', criteria: ['可核对'], inputRefs: [], artifactPaths: [], dependsOn: [], status: 'running',
+        attempts: [{ id: 'att-1', deliveryId: 'att-1-dispatch', number: 1, status: 'running', createdAt: now - 9_000, startedAt: now - 9_000 }] }],
+      requests: [],
+    }
+    const dispatch = room.append('room/dispatch', { id: 'att-1-dispatch', origin: 'coordinator', targets: [cast.mapper.name], targetIds: [cast.mapper.id], replyTo: cast.coordinator.id,
+      text: 'Goal g, task t, attempt att-1.', plan: { goalId: 'g', taskId: 't', attemptId: 'att-1' } })
+    const id = `${dispatch.seq}:${cast.mapper.id}`
+    room.append('room/delivery-state', { id, dispatchSeq: dispatch.seq, memberId: cast.mapper.id, state: 'running' })
+    room.append('room/run-state', { member: cast.mapper.name, runId: id, state: 'running', startedAt: now - 9_000, executionId: 'exec-att-1' })
+    room.append('room/plan-state', plan)
+    bench.stub.seedLedgerRow(cast.mapper.child, { id: 'exec-att-1', key: id, caller: 'room', status: 'cancelled', interrupted: 'restart' })
+    let release!: () => void
+    const open = new Promise<void>(resolve => { release = resolve })
+    bench.facade.resume.mockImplementation(async (_parent: string, _provider: string, child: string) =>
+      ({ id: SessionId(child), localAgent: undefined, result: open.then(() => ({ output: [{ type: 'text', text: '做完了' }], stopReason: 'completed' as const })), dispose: async () => {} } as SubagentRun))
+    newPlanProcess(bench)
+    await (bench.service as unknown as { ensureLive(id: SessionId): Promise<unknown> }).ensureLive(bench.sessionId)
+    await vi.waitFor(() => expect(readPlan(room)!.tasks[0]!.attempts.at(-1)!.status).toBe('running'))
+    const recovered = readPlan(room)!
+    expect(recovered.status).toBe('running')
+    // maxAttemptsPerTask 1, and still a second attempt: the interrupted one does not count.
+    expect(recovered.tasks[0]!.attempts.map(attempt => [attempt.number, attempt.status, attempt.interrupted])).toEqual([[1, 'cancelled', 'restart'], [2, 'running', undefined]])
+    const brief = room.snapshotEvents().findLast(event => event.type === 'room/dispatch' && event.data.plan?.taskId === 't')
+    expect(brief?.type === 'room/dispatch' ? brief.data : undefined).toMatchObject({ continues: [id] })
+    expect(brief?.type === 'room/dispatch' ? brief.data.text : '').toContain('上一次尝试（att-1）被实例重启打断')
+    // No message reached the coordinator in between.
+    expect(room.snapshotEvents().some(event => event.type === 'room/dispatch' && event.data.origin === 'report')).toBe(false)
+    // The banner offers nothing: the goal continued the round.
+    const state = await bench.service.getState({ sessionId: bench.sessionId })
+    if (!state.ok) throw new Error('room unavailable')
+    expect(interruptedRounds(state.value)).toEqual([])
+
+    // The host dies again during the second attempt: not opened a third time on its own.
+    const second = recovered.tasks[0]!.attempts.at(-1)!
+    const secondDispatch = room.snapshotEvents().find(event => event.type === 'room/dispatch' && event.data.id === second.deliveryId)!
+    bench.stub.seedLedgerRow(cast.mapper.child, { id: 'exec-att-2', key: `${secondDispatch.seq}:${cast.mapper.id}`, caller: 'room', status: 'cancelled', interrupted: 'restart' })
+    newPlanProcess(bench)
+    ;(bench.service.plans as unknown as { recovered: Set<string> }).recovered.clear()
+    const again = recoverPlan(readPlan(room)!, Date.now(), { autoContinue: true })
+    expect(again).toMatchObject({ status: 'paused', reason: PLAN_RESTART_REASON })
+    release()
+    await bench.service.engine.idle()
   })
 })

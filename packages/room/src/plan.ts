@@ -10,7 +10,19 @@ export interface PlanAttempt {
   id: string
   deliveryId: string
   number: number
+  /**
+   * `uncertain` is legacy (before the restart-recovery consolidation,
+   * 2026-11-09): recovery rewrites it to `cancelled` + {@link interrupted}.
+   */
   status: 'queued' | 'running' | 'submitted' | 'accepted' | 'rejected' | 'failed' | 'cancelled' | 'uncertain'
+  /**
+   * `restart`: a host restart cut this attempt off (with `status:
+   * 'cancelled'`). It does not count against `maxAttemptsPerTask` /
+   * `maxAttempts`; the goal opens a new attempt whose brief says the
+   * previous one was interrupted. Optional: an older version reads an
+   * ordinary cancellation (and counts it — harmless).
+   */
+  interrupted?: 'restart'
   createdAt: number
   startedAt?: number
   settledAt?: number
@@ -137,7 +149,53 @@ export function readyPlanTasks(plan: RoomPlan): PlanTask[] {
   return plan.tasks.filter(task => task.kind === 'task' && task.status === 'pending' && dependenciesOf(plan, task).every(id => acceptedTask(plan, id)))
 }
 export function activePlanAttempts(plan: RoomPlan): PlanAttempt[] {
-  return plan.tasks.flatMap(task => task.attempts.filter(attempt => attempt.settledAt === undefined && ['queued', 'running', 'submitted', 'uncertain'].includes(attempt.status)))
+  return plan.tasks.flatMap(task => task.attempts.filter(attempt => attempt.settledAt === undefined && ['queued', 'running', 'submitted'].includes(attempt.status)))
+}
+
+/** Why a goal is paused because a host restart cut its work off and nothing continued it. */
+export const PLAN_RESTART_REASON = '被重启打断'
+/** A goal the human stopped instead of continuing after a restart (the banner's 停止). */
+export const PLAN_RESTART_STOPPED_REASON = '已停止'
+/** The pause reasons older versions wrote at a restart (read as {@link PLAN_RESTART_REASON}). */
+const LEGACY_RESTART_REASONS = new Set(['Reconcile uncertain attempts before continuing', 'Host restarted; review and resume explicitly', 'Interrupted attempts reconciled; review and resume explicitly'])
+/** The attempt errors older versions wrote at a restart. */
+const LEGACY_RESTART_ERRORS = new Set(['Execution outcome is unknown after restart', 'Restart interrupted the durable admission boundary'])
+
+/**
+ * Whether a host restart cut this attempt off — the mark, or a legacy
+ * shape (`uncertain`, or a legacy restart error). Such an attempt does not
+ * count against the budget. An attempt a human once reconciled lost its
+ * error and cannot be told apart: it keeps counting.
+ */
+export function attemptInterrupted(attempt: PlanAttempt): boolean {
+  return attempt.interrupted === 'restart' || attempt.status === 'uncertain' || (attempt.error !== undefined && LEGACY_RESTART_ERRORS.has(attempt.error))
+}
+
+/** The attempts that count against the budget (interrupted ones do not). */
+export function countedAttempts(task: PlanTask): PlanAttempt[] {
+  return task.attempts.filter(attempt => !attemptInterrupted(attempt))
+}
+
+/** Whether a goal is paused because a restart cut its work off (any version's wording). */
+export function pausedByRestart(plan: Pick<RoomPlan, 'status' | 'reason'> | undefined): boolean {
+  return plan?.status === 'paused' && plan.reason !== undefined && (plan.reason === PLAN_RESTART_REASON || LEGACY_RESTART_REASONS.has(plan.reason))
+}
+
+/**
+ * Close one attempt a restart cut off: `cancelled` + `interrupted`, its task
+ * back to `pending` (the goal opens a new attempt). A no-op on an attempt
+ * that is not the task's latest or already settled.
+ */
+export function interruptPlanAttempt(current: RoomPlan, taskId: string, attemptId: string, now: number): RoomPlan {
+  const plan = clone(current)
+  const task = plan.tasks.find(entry => entry.id === taskId)
+  const attempt = task?.attempts.at(-1)
+  if (task === undefined || attempt?.id !== attemptId || attempt.settledAt !== undefined) return plan
+  attempt.status = 'cancelled'; attempt.interrupted = 'restart'; attempt.settledAt = now
+  delete attempt.error
+  if (!['accepted', 'cancelled'].includes(task.status)) task.status = 'pending'
+  plan.revision++
+  return plan
 }
 function taskAndAttempt(plan: RoomPlan, taskId: string, attemptId: string): [PlanTask, PlanAttempt] {
   const task = plan.tasks.find(task => task.id === taskId)
@@ -183,6 +241,9 @@ function validateGraph(plan: RoomPlan, memberIds: ReadonlySet<string>): void {
   for (const id of tasks.keys()) visit(id)
 }
 
+/** The answer to the retired `reconcile` command (open item 9: refused this release, dropped from the schema next). */
+export const RECONCILE_RETIRED = '重启打断的尝试会自动重开，不需要对账'
+
 /** Pure transition: the service persists the returned revision before dispatch. */
 export function changePlan(current: RoomPlan | undefined, command: PlanCommand, context: PlanContext): RoomPlan {
   identifier(command.requestId)
@@ -209,7 +270,8 @@ export function changePlan(current: RoomPlan | undefined, command: PlanCommand, 
   } else {
     if (current === undefined) throw new Error('No formal goal exists')
     plan = clone(current)
-    if (['completed', 'cancelled'].includes(plan.status) && command.action !== 'reconcile') throw new Error('The plan is closed')
+    if (command.action === 'reconcile') throw new Error(RECONCILE_RETIRED)
+    if (['completed', 'cancelled'].includes(plan.status)) throw new Error('The plan is closed')
     switch (command.action) {
       case 'extend':
         plan.stages.push(...structuredClone(command.stages))
@@ -226,7 +288,6 @@ export function changePlan(current: RoomPlan | undefined, command: PlanCommand, 
         validateBudget(command.budget); plan.budget = structuredClone(command.budget)
         break
       case 'resume':
-        if (activePlanAttempts(plan).some(attempt => attempt.status === 'uncertain')) throw new Error('Reconcile uncertain attempts before resuming')
         if (activePlanMs(plan, context.now) >= plan.budget.maxActiveMs) throw new Error('The active-time budget is exhausted')
         if (plan.status !== 'running') plan.resumedAt = context.now
         plan.status = 'running'; delete plan.reason
@@ -263,19 +324,6 @@ export function changePlan(current: RoomPlan | undefined, command: PlanCommand, 
         if (attempt !== undefined) attempt.retry = { by: context.actor.memberId, reason: command.reason, time: context.now }
         break
       }
-      case 'reconcile': {
-        if (context.actor.kind !== 'human') throw new Error('Only a human may reconcile an uncertain execution')
-        const [task, attempt] = taskAndAttempt(plan, command.taskId, command.attemptId)
-        if (attempt.status !== 'uncertain') throw new Error('Attempt is not uncertain')
-        evidence(command.evidence); attempt.submission = structuredClone(command.evidence)
-        attempt.status = command.outcome; attempt.settledAt = context.now
-        delete attempt.error
-        task.status = command.outcome === 'submitted' ? 'submitted' : 'failed'
-        if (plan.reason === 'Reconcile uncertain attempts before continuing' && !activePlanAttempts(plan).some(attempt => attempt.status === 'uncertain')) {
-          plan.reason = 'Interrupted attempts reconciled; review and resume explicitly'
-        }
-        break
-      }
       case 'complete':
         if (!plan.tasks.some(task => task.kind === 'task' && task.status === 'accepted') || plan.tasks.some(task => task.kind === 'task' && !['accepted', 'cancelled'].includes(task.status))) throw new Error('All remaining leaf tasks must be accepted before completing the goal')
         evidence(command.evidence); stopClock(plan, context.now); plan.status = 'completed'; plan.completion = structuredClone(command.evidence)
@@ -293,8 +341,9 @@ export function queuePlanAttempt(current: RoomPlan, taskId: string, attemptId: s
   if (!readyPlanTasks(plan).some(task => task.id === taskId)) throw new Error('Task is not ready for execution')
   if (activePlanAttempts(plan).length >= plan.budget.maxParallel) throw new Error('Goal concurrency is full')
   const task = plan.tasks.find(task => task.id === taskId)!
-  if (activePlanMs(plan, now) >= plan.budget.maxActiveMs || task.attempts.length >= plan.budget.maxAttemptsPerTask
-    || plan.tasks.reduce((count, task) => count + task.attempts.length, 0) >= plan.budget.maxAttempts) {
+  // An attempt a restart cut off does not count (restart-recovery consolidation).
+  if (activePlanMs(plan, now) >= plan.budget.maxActiveMs || countedAttempts(task).length >= plan.budget.maxAttemptsPerTask
+    || plan.tasks.reduce((count, task) => count + countedAttempts(task).length, 0) >= plan.budget.maxAttempts) {
     stopClock(plan, now); plan.status = 'paused'; plan.reason = 'Execution budget exhausted'; plan.revision++
     return plan
   }
@@ -316,12 +365,14 @@ export function admitPlanAttempt(current: RoomPlan, taskId: string, attemptId: s
 }
 
 /** A normal native result is a submission to review, never implicit acceptance. */
-export function settlePlanAttempt(current: RoomPlan, taskId: string, attemptId: string, result: { state: 'done' | 'failed' | 'cancelled'; evidence?: PlanEvidence; error?: string }, now: number): RoomPlan {
+export function settlePlanAttempt(current: RoomPlan, taskId: string, attemptId: string, result: { state: 'done' | 'failed' | 'cancelled'; interrupted?: 'restart'; evidence?: PlanEvidence; error?: string }, now: number): RoomPlan {
   const plan = clone(current)
   const task = plan.tasks.find(task => task.id === taskId)
   const attempt = task?.attempts.at(-1)
   // Duplicate or late results cannot rewrite a reviewed or newer attempt.
   if (task === undefined || attempt?.id !== attemptId || attempt.settledAt !== undefined || attempt.status === 'uncertain') return plan
+  // A host restart cut it off (the room closed its delivery): interrupted, not cancelled.
+  if (result.interrupted === 'restart') return interruptPlanAttempt(current, taskId, attemptId, now)
   if (attempt.startedAt === undefined && current.status === 'paused') {
     attempt.status = 'cancelled'; attempt.error = 'Paused before native admission'; attempt.settledAt = now
     task.status = 'pending'; plan.revision++; return plan
@@ -338,18 +389,64 @@ export function settlePlanAttempt(current: RoomPlan, taskId: string, attemptId: 
   return plan
 }
 
-/** Restart always pauses automation and fences native executions with unknown outcomes. */
-export function recoverPlan(current: RoomPlan, now: number): RoomPlan {
+/** What decides whether a goal keeps running after a restart (the room's 重启后自动继续 rule). */
+export interface PlanRestartGuards {
+  /** The room's 重启后自动继续 setting is on and the room is not paused. */
+  readonly autoContinue: boolean
+  /** The member id whose round requested the restart (self-restart guard), when recorded. */
+  readonly restartInitiator?: string
+  /** When the host process before this one started: an attempt that started earlier was cut off by an earlier restart (stale). */
+  readonly previousProcessStartedAt?: number
+}
+
+/**
+ * A host restart (restart-recovery consolidation): every attempt it cut off
+ * closes as interrupted — `cancelled` + `interrupted: 'restart'`, its task
+ * back to `pending`, not counted against the budget — and a legacy
+ * `uncertain` attempt is rewritten the same way. An unsettled `submitted`
+ * attempt keeps its evidence: it settles as submitted for review.
+ *
+ * Whether the goal keeps running follows the room's auto-continue rule
+ * (open item 1 A): it stays `running` — the scheduler opens new attempts at
+ * once — unless the setting is off or the room paused, an interrupted
+ * attempt belongs to the member that requested the restart, an interrupted
+ * attempt already continued an interrupted one (`again`), or an attempt was
+ * cut off by an earlier restart (stale; any legacy shape counts as one). Then
+ * the goal pauses with 「被重启打断」 and the human's 全部继续 resumes it. An
+ * older version's restart pause reads as that pause.
+ * @param guards - absent: the conservative reading (pause whenever work was cut off).
+ */
+export function recoverPlan(current: RoomPlan, now: number, guards?: PlanRestartGuards): RoomPlan {
   const plan = clone(current)
   if (plan.status === 'completed') return plan
-  if (plan.status === 'running') { stopClock(plan, now); plan.status = 'paused'; plan.reason = 'Host restarted; review and resume explicitly' }
+  let cut = false
+  let blocked = guards === undefined || !guards.autoContinue
   for (const task of plan.tasks) {
-    const attempt = latestAttempt(task)
-    if (attempt !== undefined && attempt.settledAt === undefined && ['running', 'submitted'].includes(attempt.status)) {
-      attempt.status = 'uncertain'; attempt.error = 'Execution outcome is unknown after restart'; task.status = 'failed'
-      if (plan.status !== 'cancelled') plan.status = 'paused'
-      plan.reason = 'Reconcile uncertain attempts before continuing'
+    // An older version's fence (`uncertain`): an earlier restart's, so stale.
+    for (const legacy of task.attempts.filter(entry => entry.status === 'uncertain')) {
+      legacy.status = 'cancelled'; legacy.interrupted = 'restart'; legacy.settledAt ??= now
+      delete legacy.error
+      if (legacy === latestAttempt(task) && task.status === 'failed') task.status = 'pending'
+      cut = true; blocked = true
     }
+    const attempt = latestAttempt(task)
+    if (attempt === undefined || attempt.settledAt !== undefined) continue
+    if (attempt.status === 'submitted') { attempt.settledAt = now; continue }
+    if (attempt.status !== 'running') continue
+    const previous = task.attempts.at(-2)
+    if ((previous !== undefined && attemptInterrupted(previous))
+      || (guards?.restartInitiator !== undefined && task.ownerMemberId === guards.restartInitiator)
+      || (guards?.previousProcessStartedAt !== undefined && attempt.startedAt !== undefined && attempt.startedAt < guards.previousProcessStartedAt)) blocked = true
+    attempt.status = 'cancelled'; attempt.interrupted = 'restart'; attempt.settledAt = now
+    delete attempt.error
+    if (!['accepted', 'cancelled'].includes(task.status)) task.status = 'pending'
+    cut = true
+  }
+  if (pausedByRestart(plan)) plan.reason = PLAN_RESTART_REASON
+  if (plan.status === 'running') {
+    stopClock(plan, now)
+    if (cut && blocked) { plan.status = 'paused'; plan.reason = PLAN_RESTART_REASON }
+    else plan.resumedAt = now
   }
   plan.revision++
   return plan
@@ -391,6 +488,7 @@ const commandSchema: WireSchema = { oneOf: [
   object({ ...base, action: enumeration('submit'), taskId: idSchema, attemptId: idSchema, evidence: evidenceSchema }),
   object({ ...base, action: enumeration('review'), taskId: idSchema, attemptId: idSchema, decision: enumeration('accepted', 'rework'), reason: shortText, references: { ...strings, minItems: 1 } }),
   object({ ...base, action: enumeration('retry'), taskId: idSchema, reason: shortText }),
+  // COMPAT(restart-recovery consolidation, remove next release): refused with RECONCILE_RETIRED.
   object({ ...base, action: enumeration('reconcile'), taskId: idSchema, attemptId: idSchema, outcome: enumeration('failed', 'submitted'), evidence: evidenceSchema }),
   object({ ...base, action: enumeration('complete'), evidence: evidenceSchema }),
 ] }

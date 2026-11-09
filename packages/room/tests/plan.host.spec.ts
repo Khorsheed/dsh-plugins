@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { acceptedTask, dependencyResults, activePlanMs, parsePlanCommand, planCommandContract, admitPlanAttempt, changePlan, queuePlanAttempt, readyPlanTasks, recoverPlan, settlePlanAttempt } from '../src/plan.ts'
+import { acceptedTask, attemptInterrupted, countedAttempts, dependencyResults, activePlanMs, parsePlanCommand, pausedByRestart, PLAN_RESTART_REASON, planCommandContract, admitPlanAttempt, changePlan, queuePlanAttempt, readyPlanTasks, RECONCILE_RETIRED, recoverPlan, settlePlanAttempt } from '../src/plan.ts'
 import type { PlanActor, PlanCommand, PlanEvidence, PlanTaskInput, RoomPlan } from '../src/plan.ts'
 
 const coordinator: PlanActor = { kind: 'coordinator', memberId: 'main' }
@@ -173,20 +173,63 @@ describe('formal room goal transitions', () => {
     expect(admitPlanAttempt(plan, 'a', 'attempt-a', 10010).tasks[0]!.attempts[0]!.status).toBe('running')
   })
 
-  it('requires human reconciliation after restart and retains unstarted reservations', () => {
+  it('a restart closes the running attempt as interrupted: not counted, the task pending again, the goal running when auto-continue may', () => {
     let plan = running(planned([task('a'), task('b')]))
     plan = queuePlanAttempt(plan, 'b', 'attempt-b', 'delivery:b', 30)
-    plan = recoverPlan(plan, 40)
-    expect(plan.status).toBe('paused')
-    expect(plan.tasks.map(task => task.attempts[0]!.status)).toEqual(['uncertain', 'queued'])
-    expect(() => change(plan, { action: 'resume' }, human)).toThrow('uncertain')
+    plan = recoverPlan(plan, 40, { autoContinue: true })
+    expect(plan.status).toBe('running')
+    expect(plan.tasks.map(entry => [entry.status, entry.attempts[0]!.status, entry.attempts[0]!.interrupted])).toEqual([['pending', 'cancelled', 'restart'], ['running', 'queued', undefined]])
+    expect(attemptInterrupted(plan.tasks[0]!.attempts[0]!)).toBe(true)
+    expect(countedAttempts(plan.tasks[0]!)).toEqual([])
+    // maxAttemptsPerTask 1: the interrupted attempt does not use it up.
+    const tight = { ...plan, budget: { ...plan.budget, maxAttemptsPerTask: 1, maxAttempts: 2 } }
+    const second = queuePlanAttempt(tight, 'a', 'attempt-a2', 'delivery:a2', 50)
+    expect(second.status).toBe('running')
+    expect(second.tasks[0]!.attempts.map(attempt => [attempt.number, attempt.status])).toEqual([[1, 'cancelled'], [2, 'queued']])
+  })
+
+  it('the goal pauses 「被重启打断」 when auto-continue may not: setting off, the member that restarted, a second interruption in a row, an earlier restart\'s attempt', () => {
+    const base = running(planned([task('a'), task('b')]))
+    expect(recoverPlan(base, 40)).toMatchObject({ status: 'paused', reason: PLAN_RESTART_REASON })
+    expect(recoverPlan(base, 40, { autoContinue: false })).toMatchObject({ status: 'paused', reason: PLAN_RESTART_REASON })
+    expect(recoverPlan(base, 40, { autoContinue: true, restartInitiator: 'worker' })).toMatchObject({ status: 'paused', reason: PLAN_RESTART_REASON })
+    expect(recoverPlan(base, 40, { autoContinue: true, previousProcessStartedAt: 30 })).toMatchObject({ status: 'paused', reason: PLAN_RESTART_REASON })
+    // Interrupted, continued by a new attempt, interrupted again: not opened a third time on its own.
+    const once = recoverPlan(base, 40, { autoContinue: true })
+    const again = admitPlanAttempt(queuePlanAttempt(once, 'a', 'attempt-a2', 'delivery:a2', 50), 'a', 'attempt-a2', 55)
+    expect(recoverPlan(again, 60, { autoContinue: true })).toMatchObject({ status: 'paused', reason: PLAN_RESTART_REASON })
+    // Nothing was cut off: a running goal keeps running.
+    expect(recoverPlan(planned(), 40, { autoContinue: true }).status).toBe('running')
+    // The human's 全部继续 resumes it; the interrupted attempt blocks nothing.
+    expect(change(recoverPlan(base, 40), { action: 'resume' }, human, 50).status).toBe('running')
+  })
+
+  it('an unsettled submission keeps its evidence: it settles for review instead of being cut off', () => {
+    const plan = change(running(), { action: 'submit', taskId: 'a', attemptId: 'attempt-a', evidence }, { kind: 'worker', memberId: 'worker' })
+    const recovered = recoverPlan(plan, 40, { autoContinue: true })
+    expect(recovered.tasks[0]!.attempts[0]).toMatchObject({ status: 'submitted', settledAt: 40, submission: evidence })
+    expect(change(recovered, { action: 'review', taskId: 'a', attemptId: 'attempt-a', decision: 'accepted', reason: 'ok', references: ['r'] }).tasks[0]!.status).toBe('accepted')
+  })
+
+  it('an older version\'s restart fence is rewritten by data: `uncertain` attempts interrupted, a failed task pending, the pause reworded, still paused (stale)', () => {
+    const legacy = running(planned([task('a'), task('b')]))
+    legacy.status = 'paused'; legacy.reason = 'Reconcile uncertain attempts before continuing'; delete legacy.resumedAt
+    Object.assign(legacy.tasks[0]!.attempts[0]!, { status: 'uncertain', error: 'Execution outcome is unknown after restart' })
+    legacy.tasks[0]!.status = 'failed'
+    const recovered = recoverPlan(legacy, 40, { autoContinue: true })
+    expect(recovered).toMatchObject({ status: 'paused', reason: PLAN_RESTART_REASON })
+    expect(pausedByRestart(recovered)).toBe(true)
+    expect(recovered.tasks[0]).toMatchObject({ status: 'pending', attempts: [{ status: 'cancelled', interrupted: 'restart' }] })
+    expect(recovered.tasks[0]!.attempts[0]!.error).toBeUndefined()
+    // A legacy restart error alone also keeps an attempt out of the budget.
+    expect(attemptInterrupted({ id: 'x', deliveryId: 'd', number: 1, status: 'cancelled', createdAt: 0, error: 'Restart interrupted the durable admission boundary' })).toBe(true)
+  })
+
+  it('the retired `reconcile` command is refused with the reason, for any actor', () => {
+    const plan = recoverPlan(running(), 40)
     const reconcile = { action: 'reconcile' as const, taskId: 'a', attemptId: 'attempt-a', outcome: 'submitted' as const, evidence }
-    expect(() => change(plan, reconcile)).toThrow('Only a human')
-    plan = change(plan, reconcile, human)
-    expect(plan.status).toBe('paused')
-    expect(plan.reason).toBe('Interrupted attempts reconciled; review and resume explicitly')
-    expect(plan.tasks[0]!.attempts[0]!.error).toBeUndefined()
-    expect(change(plan, { action: 'resume' }, human).status).toBe('running')
+    expect(() => change(plan, reconcile, human)).toThrow(RECONCILE_RETIRED)
+    expect(() => change(plan, reconcile)).toThrow(RECONCILE_RETIRED)
   })
 
   it('makes matching retries idempotent, rejects changed request IDs and fences stale coordinator edits', () => {
