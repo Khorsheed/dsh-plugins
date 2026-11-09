@@ -46,7 +46,7 @@ interface ScriptedStub {
  * @returns the same stub.
  */
 /** A ledger row a spec seeds (an execution from a previous process, say). */
-export interface SeededRow { id: string; key?: string; caller: string; status: string; text?: string; error?: string }
+export interface SeededRow { id: string; key?: string; caller: string; status: string; text?: string; error?: string; interrupted?: 'restart'; reconciledAt?: number }
 
 export function withRunEntry<T extends ScriptedStub>(stub: T, ctx?: Context): T & { run: ReturnType<typeof vi.fn>; seedLedgerRow: (child: string, row: SeededRow) => void } {
   /** Requested child id → the child that published (a member with a record continues). */
