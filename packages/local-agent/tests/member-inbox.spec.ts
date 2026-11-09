@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { SubagentRun, SubagentResult } from '@deepseek-ai/dsh-subagent'
-import { MemberInbox, SELF_ROUND_RESTARTED } from '../src/member-inbox.ts'
+import { MEMBER_RESTART_CONTINUE_PREVIEW, MEMBER_RESTART_CONTINUE_TEXT, MemberInbox, RESTART_INTERRUPTED_ERROR, SELF_ROUND_RESTARTED } from '../src/member-inbox.ts'
+import { coordinatorAfterOldRestart, mapperAfterOldRestart, runningAtCrash, writeLedger } from './fixtures/restart-ledgers.ts'
 import type { HostProcesses } from '../src/host-process.ts'
 import type { LocalAgentMemberInput } from '../src/types.ts'
 
@@ -116,7 +117,7 @@ describe('member execution ledger', () => {
     m.inbox.dispose()
   })
 
-  it('restarts: running → uncertain for every caller, composer input kept (paused), other queued rows dropped, blocked until reconciled', async () => {
+  it('restarts: a running row closes as 「被重启打断」 for every caller, blocks nothing, other queued rows are dropped and typed input replays', async () => {
     const before = mount()
     void before.submit('member', 'tool-run', 'tool')
     before.jobs[0]!.admitted()
@@ -124,47 +125,115 @@ describe('member execution ledger', () => {
     void before.submit('member', 'room-queued', 'room', 'delivery-3')
     before.inbox.dispose()
     const after = mount(before.directory)
-    expect(after.inbox.read('member')).toMatchObject({ paused: true, messages: [{ id: 'tool-run', status: 'uncertain' }, { key: 'second', status: 'queued' }] })
-    expect(after.composer).not.toHaveBeenCalled()
-    expect(() => after.inbox.assertAdmission('member')).toThrow('uncertain')
-    expect(() => after.inbox.resume('member')).toThrow('Reconcile')
-    expect(() => after.inbox.reconcile('member', 'tool-run', 'done', '')).toThrow('evidence')
-    after.inbox.reconcile('member', 'tool-run', 'failed', 'the CLI transcript shows it crashed')
-    expect(() => after.inbox.assertAdmission('member')).toThrow('paused')
-    after.inbox.resume('member')
+    const read = after.inbox.read('member')
+    expect(read.paused).toBe(false)
+    expect(read.pausedBy).toBeUndefined()
+    expect(read.messages[0]).toMatchObject({ id: 'tool-run', status: 'cancelled', interrupted: 'restart', error: RESTART_INTERRUPTED_ERROR })
+    expect(read.messages[0]!.settledAt).toEqual(expect.any(Number))
+    expect(read.messages.some(row => row.id === 'room-queued')).toBe(false)
+    // Nothing waits for a decision: the next caller is admitted.
+    expect(() => after.inbox.assertAdmission('member')).not.toThrow()
+    // A tool round is only closed (its caller decides); the typed input replays on its own.
+    await Promise.resolve()
     expect(after.jobs.map(job => job.row.text)).toEqual(['waiting'])
+    // The retired reconciliation answers an old page with its refusal.
+    expect(() => after.inbox.reconcile('member', 'tool-run', 'failed', 'transcript says it crashed')).toThrow('uncertain')
     after.inbox.dispose()
   })
 
-  it('the boot pause lifts by itself once the lost round is reconciled and no composer input waits; an operator pause stays', async () => {
+  it('a members-page round this restart cut off continues on its own, ahead of the input typed behind it', async () => {
     const before = mount()
-    void before.submit('member', 'room-run', 'room', 'delivery-1')
+    before.enqueue('member', '把北岭的捷径再加一条', 'first')
     before.jobs[0]!.admitted()
+    before.enqueue('member', '顺便把出生点挪到桥头', 'second')
     before.inbox.dispose()
     const after = mount(before.directory)
-    expect(after.inbox.read('member')).toMatchObject({ paused: true, pausedBy: 'restart' })
-    // Auto-continue / moving on reconciles the lost round: nothing left to decide.
-    after.inbox.reconcile('member', 'room-run', 'cancelled', 'moved on after restart')
-    expect(after.inbox.read('member').paused).toBe(false)
-    expect(after.inbox.read('member').pausedBy).toBeUndefined()
+    const rows = after.inbox.read('member').messages
+    expect(rows.map(row => [row.key, row.status])).toEqual([['first', 'cancelled'], [expect.stringMatching(/^restart-continue:/), 'queued'], ['second', 'queued']])
+    expect(rows[1]).toMatchObject({ caller: 'composer', text: MEMBER_RESTART_CONTINUE_TEXT, preview: MEMBER_RESTART_CONTINUE_PREVIEW })
+    await Promise.resolve()
+    expect(after.jobs.map(job => job.row.text)).toEqual([MEMBER_RESTART_CONTINUE_TEXT])
+    await after.finish(after.jobs[0]!)
+    await vi.waitFor(() => expect(after.jobs.map(job => job.row.text)).toEqual([MEMBER_RESTART_CONTINUE_TEXT, '顺便把出生点挪到桥头']))
+    // Loading again (another read) never adds a second continuation.
+    expect(after.inbox.read('member').messages.filter(row => row.key?.startsWith('restart-continue:'))).toHaveLength(1)
     after.inbox.dispose()
+  })
 
-    // Composer input still waiting: the pause stays until it is resumed or cancelled.
-    const b2 = mount()
-    void b2.submit('member', 'run-2', 'tool')
-    b2.jobs[0]!.admitted()
-    b2.enqueue('member', 'waiting', 'w')
-    b2.inbox.dispose()
-    const a2 = mount(b2.directory)
-    a2.inbox.reconcile('member', 'run-2', 'failed', 'crashed')
-    expect(a2.inbox.read('member')).toMatchObject({ paused: true, pausedBy: 'restart' })
-    a2.inbox.cancel('member', 'w')
-    expect(a2.inbox.read('member').paused).toBe(false)
-    // An operator's pause never lifts by itself.
-    a2.inbox.pause('member')
-    expect(a2.inbox.read('member')).toMatchObject({ paused: true })
-    expect(a2.inbox.read('member').pausedBy).toBeUndefined()
-    a2.inbox.dispose()
+  it('no members-page continuation for an operator pause, the member that requested the restart, or a tool round', async () => {
+    const paused = mount()
+    paused.enqueue('member', '一轮', 'first')
+    paused.jobs[0]!.admitted()
+    paused.inbox.pause('member')
+    paused.inbox.dispose()
+    const afterPause = mount(paused.directory)
+    expect(afterPause.inbox.read('member')).toMatchObject({ paused: true, messages: [{ key: 'first', status: 'cancelled', interrupted: 'restart' }] })
+    expect(afterPause.inbox.read('member').pausedBy).toBeUndefined()
+    afterPause.inbox.dispose()
+
+    const self = mount()
+    self.enqueue('member', '部署并重启', 'first')
+    self.jobs[0]!.admitted()
+    self.inbox.dispose()
+    const selfAfter = new MemberInbox(self.directory, vi.fn(), vi.fn(), undefined, { continueComposer: member => member !== 'member' })
+    expect(selfAfter.read('member').messages.map(row => row.key)).toEqual(['first'])
+    selfAfter.dispose()
+
+    const tool = mount()
+    void tool.submit('member', 'tool-run', 'tool')
+    tool.jobs[0]!.admitted()
+    tool.inbox.dispose()
+    const toolAfter = mount(tool.directory)
+    expect(toolAfter.inbox.read('member').messages.map(row => row.id)).toEqual(['tool-run'])
+    toolAfter.inbox.dispose()
+  })
+
+  it('an older core\'s ledger: its `uncertain` rows close as interrupted (an earlier restart\'s), its boot pause lifts, nothing continues on its own', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'member-inbox-'))
+    writeLedger(directory, mapperAfterOldRestart)
+    writeLedger(directory, coordinatorAfterOldRestart)
+    const after = mount(directory)
+    // Read-only listing: an older core's uncertain row is not this restart's.
+    expect(after.inbox.interruptedMembers()).toEqual([])
+    const mapper = after.inbox.read('child-map')
+    expect(mapper).toMatchObject({ paused: false, messages: [
+      { id: 'exec-1530', status: 'cancelled', interrupted: 'restart', error: RESTART_INTERRUPTED_ERROR },
+      { id: 'exec-page', status: 'queued' },
+    ] })
+    expect(mapper.pausedBy).toBeUndefined()
+    expect(mapper.messages.some(row => row.key?.startsWith('restart-continue:'))).toBe(false)
+    expect(after.inbox.read('child-coord').messages[0]).toMatchObject({ id: 'exec-1541', status: 'cancelled', interrupted: 'restart' })
+    expect(() => after.inbox.assertAdmission('child-coord')).not.toThrow()
+    expect(after.inbox.interruptedMembers()).toEqual([])
+    // The page input the old boot pause held goes out now.
+    await Promise.resolve()
+    expect(after.jobs.map(job => job.row.text)).toEqual(['顺便把出生点挪到桥头。'])
+    // Written back: an older core reading this file sees an ordinary cancellation.
+    const stored = JSON.parse(readFileSync(join(directory, readdirSync(directory).find(name => readFileSync(join(directory, name), 'utf8').includes('child-coord'))!), 'utf8')) as { state: { paused: boolean; messages: LocalAgentMemberInput[] } }
+    expect(stored.state.messages[0]).toMatchObject({ status: 'cancelled', interrupted: 'restart' })
+    after.inbox.dispose()
+  })
+
+  it('a host death mid-round (fixture): the room round closes, the queued room row is dropped for its caller to resubmit, the typed input waits behind nothing', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'member-inbox-'))
+    writeLedger(directory, runningAtCrash('child-map', Date.now() - 1_000))
+    const after = mount(directory)
+    expect(after.inbox.interruptedMembers()).toEqual(['child-map'])
+    expect(after.inbox.read('child-map').messages.map(row => [row.id, row.status, row.interrupted])).toEqual([
+      ['exec-room', 'cancelled', 'restart'],
+      ['exec-typed', 'queued', undefined],
+    ])
+    // Listed for the startup load once closed (this restart's), and the next room delivery is admitted at once.
+    expect(after.inbox.interruptedMembers()).toEqual(['child-map'])
+    const ended = after.submit('child-map', 'exec-next', 'room', '9:map')
+    expect(after.inbox.read('child-map').messages.at(-1)).toMatchObject({ id: 'exec-next', status: 'queued' })
+    await Promise.resolve()
+    expect(after.jobs.length).toBeGreaterThan(0)
+    for (const job of after.jobs) await after.finish(job)
+    await vi.waitFor(() => expect(after.jobs).toHaveLength(2))
+    await after.finish(after.jobs[1]!)
+    await ended
+    after.inbox.dispose()
   })
 
   it('lists members a restart interrupted without loading, converting or saving their ledgers (M10)', async () => {
@@ -183,35 +252,32 @@ describe('member execution ledger', () => {
     expect(after.inbox.interruptedMembers()).toEqual(['ada'])
     // Read-only: every file is byte-identical, still `running` on disk.
     expect(Object.fromEntries(readdirSync(before.directory).map(name => [name, readFileSync(join(before.directory, name), 'utf8')]))).toEqual(files)
-    // Once loaded (uncertain in memory) it is still listed, once.
-    expect(after.inbox.read('ada').messages[0]).toMatchObject({ status: 'uncertain' })
+    // Once loaded (closed as interrupted) it is still listed, once.
+    expect(after.inbox.read('ada').messages[0]).toMatchObject({ status: 'cancelled', interrupted: 'restart' })
     expect(after.inbox.interruptedMembers()).toEqual(['ada'])
-    // Reconciled: no longer interrupted.
-    after.inbox.reconcile('ada', 'ada-run', 'done', 'checked the transcript')
-    expect(after.inbox.interruptedMembers()).toEqual([])
     // A stray or corrupt file in the directory is skipped, not thrown.
     writeFileSync(join(before.directory, `${'0'.repeat(64)}.json`), '{oops')
     writeFileSync(join(before.directory, 'notes.txt'), 'x')
-    expect(after.inbox.interruptedMembers()).toEqual([])
+    expect(after.inbox.interruptedMembers()).toEqual(['ada'])
     after.inbox.dispose()
     // No directory at all (no member ever ran): nothing.
     expect(mount(join(before.directory, 'missing')).inbox.interruptedMembers()).toEqual([])
   })
 
-  it('an older restart\'s leftover (already `uncertain` on disk) is not interrupted by this restart (M10)', () => {
+  it('an earlier boot\'s closed row is not interrupted by this restart (M10)', () => {
     const first = mount()
     void first.submit('ada', 'ada-run', 'room', 'delivery-ada')
     first.jobs[0]!.admitted()
     first.inbox.dispose()
-    // Boot 2 loads the ledger (running → uncertain, saved) and nobody reconciles it.
+    // Boot 2 loads the ledger (running → interrupted, saved).
     const second = mount(first.directory)
-    expect(second.inbox.read('ada').messages[0]).toMatchObject({ status: 'uncertain' })
+    expect(second.inbox.read('ada').messages[0]).toMatchObject({ status: 'cancelled', interrupted: 'restart' })
     expect(second.inbox.interruptedMembers()).toEqual(['ada'])
     second.inbox.dispose()
-    // Boot 3: the same stale row, from disk and once loaded, is not this restart's.
+    // Boot 3: the same closed row, from disk and once loaded, is not this restart's.
     const third = mount(first.directory)
     expect(third.inbox.interruptedMembers()).toEqual([])
-    expect(third.inbox.read('ada').messages[0]).toMatchObject({ status: 'uncertain' })
+    expect(third.inbox.read('ada').messages[0]).toMatchObject({ status: 'cancelled', interrupted: 'restart' })
     expect(third.inbox.interruptedMembers()).toEqual([])
     third.inbox.dispose()
   })
@@ -226,20 +292,20 @@ describe('member execution ledger', () => {
     const later: HostProcesses = { current: { id: 'p3', startedAt: admittedAt + 20 }, previous: { id: 'p2', startedAt: admittedAt + 10 } }
     const third = mount(first.directory, later)
     expect(third.inbox.interruptedMembers()).toEqual([])
-    // Loading still converts it (it does block admission), but not as this restart's.
-    expect(third.inbox.read('ada').messages[0]).toMatchObject({ status: 'uncertain' })
+    // Loading still closes it, but not as this restart's.
+    expect(third.inbox.read('ada').messages[0]).toMatchObject({ status: 'cancelled', interrupted: 'restart' })
     expect(third.inbox.interruptedMembers()).toEqual([])
     third.inbox.dispose()
     // The same file with the round started inside the previous process: this restart's.
     const fresh = mount(mkdtempSync(join(tmpdir(), 'member-inbox-')), { current: { id: 'p3', startedAt: admittedAt + 20 }, previous: { id: 'p2', startedAt: admittedAt - 10 } })
     writeFileSync(join(fresh.directory, readdirSync(first.directory).find(name => name.endsWith('.json'))!), JSON.stringify({ version: 2, state: { memberId: 'ada', paused: false, messages: [{ id: 'ada-run', caller: 'room', key: 'delivery-ada', status: 'running', createdAt: admittedAt, updatedAt: admittedAt, admittedAt }] } }))
     expect(fresh.inbox.interruptedMembers()).toEqual(['ada'])
-    expect(fresh.inbox.read('ada').messages[0]).toMatchObject({ status: 'uncertain' })
+    expect(fresh.inbox.read('ada').messages[0]).toMatchObject({ status: 'cancelled', interrupted: 'restart' })
     expect(fresh.inbox.interruptedMembers()).toEqual(['ada'])
     fresh.inbox.dispose()
   })
 
-  it('reads a version-1 member inbox file as composer rows keyed by their request id', () => {
+  it('reads a version-1 member inbox file as composer rows keyed by their request id', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'member-inbox-v1-'))
     const seed = mount(directory)
     seed.enqueue('member', 'placeholder', 'p')
@@ -251,17 +317,19 @@ describe('member execution ledger', () => {
       { id: 'old-3', text: 'was waiting', status: 'queued', createdAt: 5, updatedAt: 6 },
     ] } }))
     const after = mount(directory)
-    expect(after.inbox.read('member')).toMatchObject({ paused: true, messages: [
+    expect(after.inbox.read('member')).toMatchObject({ paused: false, messages: [
       { id: 'old-1', key: 'old-1', caller: 'composer', text: 'done before', status: 'done' },
-      { id: 'old-2', key: 'old-2', caller: 'composer', status: 'uncertain' },
+      { id: 'old-2', key: 'old-2', caller: 'composer', status: 'cancelled', interrupted: 'restart' },
+      { caller: 'composer', text: MEMBER_RESTART_CONTINUE_TEXT, status: 'queued' },
       { id: 'old-3', key: 'old-3', caller: 'composer', text: 'was waiting', status: 'queued' },
     ] })
     expect(JSON.parse(readFileSync(path, 'utf8')).version).toBe(2)
     // A retry of an old request id is still deduplicated.
     expect(after.enqueue('member', 'was waiting', 'old-3')).toMatchObject({ id: 'old-3' })
-    after.inbox.reconcile('member', 'old-2', 'done', 'confirmed')
-    after.inbox.resume('member')
-    expect(after.jobs.map(job => job.row.text)).toEqual(['was waiting'])
+    await Promise.resolve()
+    expect(after.jobs.map(job => job.row.text)).toEqual([MEMBER_RESTART_CONTINUE_TEXT])
+    await after.finish(after.jobs[0]!)
+    await vi.waitFor(() => expect(after.jobs.map(job => job.row.text)).toEqual([MEMBER_RESTART_CONTINUE_TEXT, 'was waiting']))
     after.inbox.dispose()
   })
 

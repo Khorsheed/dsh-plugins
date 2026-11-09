@@ -1247,6 +1247,22 @@ function legacyPlan(mode: 'start' | 'resume', parentSessionId: string, provider:
   }
 }
 
+/**
+ * The member whose round requested the last host restart, as the restart
+ * guard (ankh-guard's optional `selfRestartGuard` service) records it.
+ * Probed duck-typed; no guard, a guard without the read, or a failing read
+ * answer undefined (the restart then counts as nobody's).
+ */
+function restartInitiatorMember(ctx: Context): string | undefined {
+  try {
+    const guard = (ctx.get as (name: string) => unknown)('selfRestartGuard') as { lastRestart?: () => { readonly initiatorMember?: unknown } | null | undefined } | undefined
+    const member = guard?.lastRestart?.()?.initiatorMember
+    return typeof member === 'string' && member !== '' ? member : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** A ledger row's terminal status as an execution outcome. */
 function rowOutcome(status: LocalAgentMemberInput['status']): LocalAgentExecutionSettlement['outcome'] {
   return status === 'done' ? 'done' : status === 'cancelled' ? 'cancelled' : 'failed'
@@ -1377,8 +1393,10 @@ export class LocalAgentRegistry {
     reconciled: (childSessionId, executionId) => {
       let row: LocalAgentMemberInput | undefined
       try { row = this.memberInbox.find(childSessionId, executionId) } catch { return undefined }
-      // A round the CLI opened itself, cut off by a restart: unknown, and nobody's to reconcile.
-      if (row?.caller === 'cli' && row.status === 'failed' && row.error === SELF_ROUND_RESTARTED) {
+      // A round the CLI opened itself, or any round a restart cut off
+      // (closed as interrupted): its end reads `uncertain` — unknown, and
+      // nobody's to reconcile (Context Lens reads it as 停了).
+      if ((row?.caller === 'cli' && row.status === 'failed' && row.error === SELF_ROUND_RESTARTED) || row?.interrupted === 'restart') {
         return { outcome: 'uncertain', at: row.settledAt ?? row.updatedAt, reconciled: false }
       }
       return row?.reconciledAt === undefined || (row.status !== 'done' && row.status !== 'failed' && row.status !== 'cancelled')
@@ -1416,8 +1434,8 @@ export class LocalAgentRegistry {
   }
 
   /**
-   * The parent sessions of members a restart left with an execution of
-   * unknown outcome (M10): the room loads those of them that are rooms once
+   * The parent sessions of members whose execution this restart cut off
+   * (M10): the room loads those of them that are rooms once
    * after the host starts, so its auto-continue pass runs without anyone
    * opening the room. Reads the ledger files only (no model call, nothing
    * converted); a member whose identity is unknown (its provider is not
@@ -1719,7 +1737,14 @@ export class LocalAgentRegistry {
     // (its in-memory dispatcher is gone) runs from its stored text here.
     this.memberInbox = new MemberInbox(join(homesRoot, '.member-inbox'), async (childSessionId, row, signal, admitted) => {
       return await this.dispatchExecution(this.composerPlan(childSessionId, row.text ?? '', row.key), row.id, signal, admitted)
-    }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`), this.processes)
+    }, error => this.ctx.logger.warn(`localAgent: member inbox failed: ${String(error)}`), this.processes, {
+      // A members-page round a restart cut off continues on its own, except
+      // the member whose own round requested the restart (the guard's record).
+      continueComposer: childSessionId => restartInitiatorMember(this.ctx) !== childSessionId,
+      canReplay: (childSessionId) => {
+        try { this.requireInboxMember(childSessionId); return true } catch { return false }
+      },
+    })
     this.memberControls = new MemberControls(new FileMemberControlStorage(join(homesRoot, '.member-controls')), binding => {
       const adapter = this.harnessForProvider(binding.provider)?.modelBroker?.configurationAdapter?.(binding)
       if (adapter === undefined) throw new Error(`localAgent: ${binding.provider} exposes no configuration admission adapter`)
@@ -3486,8 +3511,9 @@ export class LocalAgentRegistry {
    * {@link LocalAgentExecutionRequest.key}).
    * @param request - the execution request.
    * @returns the execution id and its settlement (and the published run).
-   * @throws when the provider is not registered, the member has an uncertain
-   *   execution or a paused queue, or the key names an uncertain execution.
+   * @throws when the provider is not registered, the member's queue is
+   *   paused with composer input waiting, or the key names an execution
+   *   still queued or running elsewhere.
    */
   async run(request: LocalAgentExecutionRequest): Promise<LocalAgentExecutionHandle> {
     this.requireProvider(this.requireSubagents(), request.provider)
@@ -3520,8 +3546,8 @@ export class LocalAgentRegistry {
       if (existing !== undefined) return this.existingExecution(existing)
     }
     plan.signal?.throwIfAborted()
-    // Composer input may wait behind a paused or unreconciled queue (the
-    // members page shows it); every other caller is refused at once.
+    // Composer input may wait behind a paused queue (the members page shows
+    // it); every other caller is refused at once.
     if (plan.caller !== 'composer') ledger.assertAdmission(memberId)
     const executionId = randomUUID()
     let resolveSettled!: (settlement: LocalAgentExecutionSettlement) => void
@@ -3782,16 +3808,14 @@ export class LocalAgentRegistry {
   }
 
   /**
-   * The one reconciliation action (user decision 2026-11-03 ③): settle an
-   * execution a restart left uncertain, with the operator's evidence. Every
-   * surface that shows the uncertain execution (the members page, room)
-   * reconciles through here, so reconciling in one place clears it in all.
-   * The child log closes the execution too (batch 5 S7): an end record with
-   * the operator's outcome and `reconciled: true` is written now when the
-   * member's session is live, else just before the member's next execution
-   * opens (the session is live again by then).
+   * COMPAT(restart-recovery consolidation, remove one release after): the
+   * retired reconciliation action. A restart no longer leaves an execution
+   * `uncertain` (the ledger closes it as interrupted and the member
+   * continues on its own), so this only answers a client that has not
+   * reloaded — with the old refusal, since no row is uncertain.
    * @param outcome - what the evidence shows.
-   * @param evidence - non-empty operator evidence, kept on the ledger row.
+   * @param evidence - non-empty operator evidence.
+   * @deprecated nothing reconciles any more.
    */
   reconcileExecution(childSessionId: string, executionId: string, outcome: 'done' | 'failed' | 'cancelled', evidence: string): void {
     this.memberInbox.reconcile(childSessionId, executionId, outcome, evidence)

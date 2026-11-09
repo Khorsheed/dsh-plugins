@@ -238,7 +238,7 @@ describe('run(): the single execution entry', () => {
     expect(h.rounds).toHaveLength(1)
   })
 
-  it('after a restart a running row is uncertain and blocks every caller until reconcileExecution', async () => {
+  it('after a restart a running row closes as 「被重启打断」 and blocks nothing: the next room delivery is admitted at once', async () => {
     const before = await mount()
     const running = await before.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('long'), caller: 'room', key: 'delivery-9' })
     await roundsReach(before, 1)
@@ -259,29 +259,25 @@ describe('run(): the single execution entry', () => {
     const after = await mount(before.homes, before.store)
     after.registry.recordDelegation({ childSessionId: 'member-r', provider: PROVIDER, parentSessionId: PARENT, cliSessionId: 'native', cwd: '/home/user/work' })
     const ledger = after.registry.readMemberInbox('member-r')
-    expect(ledger.messages.map(row => [row.key, row.status])).toEqual([['delivery-9', 'done'], ['delivery-10', 'uncertain']])
-    // Every caller is refused while uncertain — and replaying the same key is too.
-    await expect(after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('x'), caller: 'tool' })).rejects.toThrow('uncertain')
-    await expect(after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('x'), caller: 'room', key: 'delivery-10' })).rejects.toThrow('uncertain')
-    await expect(after.registry.resume(PARENT, PROVIDER, 'member-r', text('x'))).rejects.toThrow('uncertain')
-    expect(() => after.registry.reconcileExecution('member-r', second.executionId, 'done', '')).toThrow('evidence')
-    after.registry.reconcileExecution('member-r', second.executionId, 'done', 'checked the CLI transcript')
-    expect(after.registry.readMemberInbox('member-r').messages[1]).toMatchObject({ status: 'done', error: 'checked the CLI transcript' })
-    // The key of the reconciled execution now reads as settled, not as new work.
-    expect(await (await after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('x'), caller: 'room', key: 'delivery-10' })).settled).toMatchObject({ outcome: 'done' })
-    const next = await after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('after reconcile'), caller: 'room', key: 'delivery-11' })
+    expect(ledger.paused).toBe(false)
+    expect(ledger.messages.map(row => [row.key, row.status, row.interrupted])).toEqual([['delivery-9', 'done', undefined], ['delivery-10', 'cancelled', 'restart']])
+    // The interrupted execution's key reads as that closed execution, never as new work.
+    expect(await (await after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('x'), caller: 'room', key: 'delivery-10' })).settled).toMatchObject({ outcome: 'cancelled' })
+    // The retired reconciliation answers an old page with its refusal.
+    expect(() => after.registry.reconcileExecution('member-r', second.executionId, 'done', 'checked the CLI transcript')).toThrow('uncertain')
+    // The next room delivery (the room's continuation, say) is admitted at once.
+    const next = await after.registry.run({ parentSessionId: PARENT, provider: PROVIDER, member: { childSessionId: 'member-r' }, input: text('check, then finish'), caller: 'room', key: 'delivery-11' })
     await next.started
-    await roundsReach(after, 1, 'the post-reconcile round')
-    expect(after.rounds[0]).toMatchObject({ kind: 'resume', prompt: 'after reconcile' })
+    await roundsReach(after, 1, 'the round after the restart')
+    expect(after.rounds[0]).toMatchObject({ kind: 'resume', prompt: 'check, then finish' })
     after.rounds[0]!.release()
     expect(await next.settled).toMatchObject({ outcome: 'done' })
     // This harness's "crash" is a graceful dispose (only the ledger file is
     // restored), which already wrote an end for the interrupted round: the
-    // reconciliation closer never writes a second one (a real crash leaves
-    // the start open; see the recorder case in execution-records.spec.ts).
+    // closer never writes a second one (a real crash leaves the start open;
+    // see the recorder case in execution-records.spec.ts).
     const closed = records(after.childEvents('member-r'))
     expect(closed.filter(record => record.phase === 'end' && record.executionId === second.executionId)).toHaveLength(1)
-    expect(after.registry.readMemberInbox('member-r').messages[1]).toMatchObject({ reconciledAt: expect.any(Number) })
   })
 
   it('the host subagent tool and the members-page composer share one queue: no concurrent rounds, each recorded with its cause', async () => {

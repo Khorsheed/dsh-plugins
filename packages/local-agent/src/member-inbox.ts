@@ -16,10 +16,16 @@
  *   prompt at admission; a tool call's host turn is gone): a queued one is
  *   dropped on load and its caller resubmits under the same key.
  * - **Restart recovery, in one place.** A row still `running` when the file
- *   is loaded becomes `uncertain`, whoever submitted it; an uncertain row
- *   blocks every later admission of that member until it is reconciled. The
- *   exception is a round the CLI opened itself (caller `cli`, {@link MemberInbox.runNow}):
- *   it ends `failed` with {@link SELF_ROUND_RESTARTED} and blocks nothing.
+ *   is loaded was cut off by a host restart: it closes as 「被重启打断」
+ *   (`cancelled` + `interrupted: 'restart'`), whoever submitted it, and
+ *   blocks nothing — the member checks what it had done and continues in a
+ *   new row (restart-recovery consolidation, 2026-11-09). A members-page
+ *   round continues on its own: a continuation row joins the head of the
+ *   queue. A room round is continued by the room; a host `subagent` tool or
+ *   plugin round only closes (its caller decides). A round the CLI opened
+ *   itself (caller `cli`, {@link MemberInbox.runNow}) ends `failed` with
+ *   {@link SELF_ROUND_RESTARTED}. A row an older core left `uncertain`, and
+ *   its boot pause, are rewritten the same way on load.
  * @module @khorsheed/dsh-local-agent/member-inbox
  */
 import { createHash, randomUUID } from 'node:crypto'
@@ -52,6 +58,30 @@ const KEEP_TERMINAL = 200
 const QUEUE_LIMIT = 100
 /** The error a self-opened round's row ends with when a restart cut it off (see load). */
 export const SELF_ROUND_RESTARTED = 'Host restarted during a round the member\'s CLI opened itself; its outcome is unknown'
+/** The error a row a host restart cut off closes with (`cancelled` + `interrupted: 'restart'`). */
+export const RESTART_INTERRUPTED_ERROR = '被重启打断'
+/**
+ * The members-page continuation after a restart: the same words the room's
+ * 「全部继续」 sends (room's `RESTART_CONTINUE_TEXT`).
+ */
+export const MEMBER_RESTART_CONTINUE_TEXT = '刚才实例重启，打断了你上一轮的工作。继续之前请先核对已经做完的部分——改过的文件、跑过的测试、已有的提交、已做的部署——已经完成的步骤不要重做，然后接着把这件事做完。如果有后台任务，它们不会自动重跑，需要的话先确认状态再决定。'
+/** The members-page queue row of that continuation (display only). */
+export const MEMBER_RESTART_CONTINUE_PREVIEW = '重启后继续'
+
+/** What the ledger asks its host about a member while recovering from a restart. */
+export interface MemberInboxRecovery {
+  /**
+   * Whether a members-page round this restart cut off continues on its own
+   * (default yes). The host says no for the member whose own round
+   * requested the restart (the self-restart guard).
+   */
+  continueComposer?(memberId: string): boolean
+  /**
+   * Whether the member's composer rows can be replayed now (its provider is
+   * registered). Default yes; a no leaves them queued for the next pump.
+   */
+  canReplay?(memberId: string): boolean
+}
 
 function validRow(row: Partial<LocalAgentMemberInput> | undefined, version: number): boolean {
   if (typeof row?.id !== 'string' || !STATUSES.includes(row.status as string)) return false
@@ -80,7 +110,7 @@ export class MemberInbox {
    *   process's start, not by the restart that started this one. Absent: no
    *   evidence, every row still `running` on disk counts as this restart's.
    */
-  constructor(private readonly directory: string, private readonly composer: ComposerDispatch, private readonly onError: (error: unknown) => void, private readonly processes?: HostProcesses) {}
+  constructor(private readonly directory: string, private readonly composer: ComposerDispatch, private readonly onError: (error: unknown) => void, private readonly processes?: HostProcesses, private readonly recovery: MemberInboxRecovery = {}) {}
 
   /** Whether a row still `running` on disk was cut off by an earlier restart than this process's (see the constructor). */
   private earlierRestart(row: { readonly admittedAt?: unknown; readonly createdAt?: unknown }): boolean {
@@ -114,21 +144,54 @@ export class MemberInbox {
     // A queued row without its input cannot replay; its caller resubmits it.
     recovered.messages = recovered.messages.filter(row => row.status !== 'queued' || row.text !== undefined)
     const cutOff = new Set<string>()
+    const now = Date.now()
     for (const row of recovered.messages) {
-      if (row.status !== 'running') continue
-      // A round the CLI opened itself is nobody's request: there is no
-      // delivery to reconcile, so it never blocks the member — it ends here,
-      // and its execution's end record reads `uncertain` (core).
-      if (row.caller === 'cli') { row.status = 'failed'; row.error = SELF_ROUND_RESTARTED; row.updatedAt = row.settledAt = Date.now(); continue }
-      row.status = 'uncertain'; row.error = 'Host restarted before durable settlement; reconcile this input before continuing'
-      // Converted here, but an earlier restart's leftover when nobody loaded
-      // the file since: it began before the previous process did.
-      if (!this.earlierRestart(row)) cutOff.add(row.id)
+      // An older core's `uncertain` row (an earlier restart's, by data, not
+      // by date): closed the same way, never this restart's.
+      const legacy = row.status === 'uncertain'
+      if (row.status !== 'running' && !legacy) continue
+      // A round the CLI opened itself ends here, and its execution's end
+      // record reads `uncertain` (core).
+      if (row.caller === 'cli' && !legacy) { row.status = 'failed'; row.error = SELF_ROUND_RESTARTED; row.updatedAt = row.settledAt = now; continue }
+      row.status = 'cancelled'; row.interrupted = 'restart'; row.error = RESTART_INTERRUPTED_ERROR; row.updatedAt = row.settledAt = now
+      // Closed here, but an earlier restart's leftover when the row was
+      // already `uncertain`, or began before the previous process did.
+      if (!legacy && !this.earlierRestart(row)) cutOff.add(row.id)
     }
     if (cutOff.size > 0) this.cutOffThisBoot.set(memberId, cutOff)
-    if (!recovered.paused && recovered.messages.some(row => row.status === 'queued' || row.status === 'uncertain')) { recovered.paused = true; recovered.pausedBy = 'restart' }
+    // An older core's boot pause: nothing waits for a decision any more.
+    if (recovered.pausedBy === 'restart') { recovered.paused = false; delete recovered.pausedBy }
+    this.continueComposerRounds(recovered, cutOff)
     this.save(recovered)
+    this.replayLater(memberId, recovered)
     return recovered
+  }
+
+  /**
+   * A members-page round this restart cut off continues on its own: one
+   * continuation row at the head of the queue (before the input the human
+   * queued behind it), unless the operator paused the queue or the member's
+   * own round requested the restart. One per member and restart.
+   */
+  private continueComposerRounds(state: LocalAgentMemberInbox, cutOff: ReadonlySet<string>): void {
+    const cut = state.messages.filter(row => cutOff.has(row.id) && row.caller === 'composer' && row.operation !== 'compact')
+    if (cut.length === 0 || state.paused || this.recovery.continueComposer?.(state.memberId) === false) return
+    const now = Date.now()
+    const key = `restart-continue:${cut.at(-1)!.id}`
+    if (state.messages.some(row => row.key === key)) return
+    const row: LocalAgentMemberInput = { id: randomUUID(), caller: 'composer', key, text: MEMBER_RESTART_CONTINUE_TEXT, preview: MEMBER_RESTART_CONTINUE_PREVIEW, status: 'queued', createdAt: now, updatedAt: now }
+    const head = state.messages.findIndex(entry => entry.status === 'queued')
+    if (head < 0) state.messages.push(row)
+    else state.messages.splice(head, 0, row)
+  }
+
+  /** Replay queued composer input soon (after the read that loaded it returns). */
+  private replayLater(memberId: string, state: LocalAgentMemberInbox): void {
+    if (state.paused || this.active.has(memberId) || !state.messages.some(row => row.status === 'queued' && row.caller === 'composer')) return
+    queueMicrotask(() => {
+      if (this.closed || this.recovery.canReplay?.(memberId) === false) return
+      try { this.pump(memberId) } catch (error) { this.onError(error) }
+    })
   }
 
   private save(state: LocalAgentMemberInbox): void {
@@ -151,19 +214,21 @@ export class MemberInbox {
     } catch (error) { this.storageErrors.set(state.memberId, String(error)); throw error } finally { try { unlinkSync(temporary) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error } }
   }
   read(memberId: string): LocalAgentMemberInbox {
-    const state = structuredClone(this.load(memberId))
+    const loaded = this.load(memberId)
+    this.replayLater(memberId, loaded)
+    const state = structuredClone(loaded)
     const error = this.storageErrors.get(memberId)
     return error === undefined ? state : { ...state, error }
   }
   /**
    * Members the restart that started THIS process cut off (M10, the startup
    * room load): a row still written `running` in a ledger file nobody has
-   * loaded since the restart, or a row this process converted from
-   * `running` to `uncertain` on load and that is still unreconciled. A row
-   * that was already `uncertain` on disk is an older restart's leftover and
-   * does not count, and neither does a `running` row admitted before the
-   * previous host process started (an older restart cut it off; nobody
-   * loaded its file since) — those wait for the human, never for a startup load.
+   * loaded since the restart, or a row this process closed as interrupted
+   * (`interrupted: 'restart'`) when it loaded the file. A row an older core
+   * had left `uncertain` is an older restart's leftover and does not count,
+   * and neither does a `running` row admitted before the previous host
+   * process started (an older restart cut it off; nobody loaded its file
+   * since) — those wait for the human, never for a startup load.
    * Read-only: nothing is loaded, converted or saved; an unreadable
    * directory or file is skipped.
    * @returns the member ids (dsh child session ids), each once.
@@ -172,7 +237,7 @@ export class MemberInbox {
     const members = new Set<string>()
     for (const [memberId, state] of this.states) {
       const cutOff = this.cutOffThisBoot.get(memberId)
-      if (cutOff !== undefined && state.messages.some(row => row.status === 'uncertain' && cutOff.has(row.id))) members.add(memberId)
+      if (cutOff !== undefined && state.messages.some(row => row.interrupted === 'restart' && cutOff.has(row.id))) members.add(memberId)
     }
     let names: string[]
     try { names = readdirSync(this.directory) } catch { return [...members] }
@@ -199,14 +264,14 @@ export class MemberInbox {
     return row === undefined ? undefined : structuredClone(row)
   }
   /**
-   * Whether the member may admit another execution now: storage works, no
-   * row is uncertain, and the queue is not paused with composer input
-   * waiting (the row the ledger itself dispatched does not count).
+   * Whether the member may admit another execution now: storage works and
+   * the queue is not paused with composer input waiting (the row the ledger
+   * itself dispatched does not count). A row a restart cut off blocks
+   * nothing (it is closed).
    */
   assertAdmission(memberId: string): void {
     if (this.storageErrors.has(memberId)) throw new Error('Member inbox persistence failed; reconcile storage before admission')
     const state = this.load(memberId)
-    if (state.messages.some(row => row.status === 'uncertain')) throw new Error('A member input has an uncertain outcome; reconcile before continuing')
     const dispatched = this.active.get(memberId)?.id
     if (state.paused && state.messages.some(row => row.status === 'queued' && row.id !== dispatched)) throw new Error('Member inbox is paused; resume or cancel queued inputs first')
   }
@@ -250,7 +315,6 @@ export class MemberInbox {
   resume(memberId: string): void {
     if (this.storageErrors.has(memberId)) { this.states.delete(memberId); this.storageErrors.delete(memberId) }
     const state = this.read(memberId)
-    if (state.messages.some(row => row.status === 'uncertain')) throw new Error('Reconcile uncertain inputs before resuming')
     state.paused = false
     delete state.pausedBy
     this.save(state)
@@ -271,21 +335,22 @@ export class MemberInbox {
     const row = state.messages.find(row => row.id === idOrKey) ?? state.messages.find(row => row.key === idOrKey)
     if (row?.status !== 'queued') throw new Error('Only a queued input can be cancelled here; use member Stop for a running turn')
     row.status = 'cancelled'; row.updatedAt = Date.now(); row.settledAt = row.updatedAt
-    liftRestartPause(state)
     this.save(state)
     const active = this.active.get(memberId)
     if (active?.id === row.id) active.controller.abort(new Error('Queued input cancelled'))
     else this.finish(memberId, row, undefined, new Error('Queued input cancelled'))
   }
-  /** Settle an uncertain row with the operator's evidence (reconcileExecution). */
-  reconcile(memberId: string, idOrKey: string, outcome: 'done' | 'failed' | 'cancelled', evidence: string): void {
+  /**
+   * COMPAT(restart-recovery consolidation, remove one release after): the
+   * old reconciliation action, kept for a client that has not reloaded. No
+   * row is `uncertain` once loaded (load closes it as interrupted), so this
+   * throws the old refusal.
+   * @deprecated nothing reconciles any more.
+   */
+  reconcile(memberId: string, idOrKey: string, _outcome: 'done' | 'failed' | 'cancelled', evidence: string): void {
     const state = this.read(memberId)
     const row = state.messages.find(row => row.id === idOrKey) ?? state.messages.find(row => row.key === idOrKey)
     if (row?.status !== 'uncertain' || evidence.trim() === '') throw new Error('Reconciliation requires an uncertain input and evidence')
-    row.status = outcome; row.error = evidence.trim(); row.updatedAt = Date.now(); row.settledAt = row.updatedAt; row.reconciledAt = row.updatedAt
-    liftRestartPause(state)
-    this.save(state)
-    this.pump(memberId)
   }
   private update(memberId: string, id: string, update: (row: LocalAgentMemberInput) => void): LocalAgentMemberInput {
     const state = this.read(memberId)
@@ -306,7 +371,6 @@ export class MemberInbox {
   private pump(memberId: string): void {
     if (this.closed || this.storageErrors.has(memberId) || this.active.has(memberId)) return
     const state = this.load(memberId)
-    if (state.messages.some(row => row.status === 'uncertain')) return
     const row = state.messages.find(input => input.status === 'queued')
     if (row === undefined || (state.paused && row.caller === 'composer')) return
     const pending = this.pending.get(this.pendingKey(memberId, row.id))
@@ -322,9 +386,8 @@ export class MemberInbox {
    * A round the member's CLI already runs (a self-opened round, caller
    * `cli`): recorded `running` at once and holding the member's slot — the
    * rows queued meanwhile wait for it — never queued itself. Refused
-   * (undefined) while another row holds the slot, while a row is uncertain,
-   * or when storage failed; a paused queue does not refuse it (it consumes
-   * no queued input).
+   * (undefined) while another row holds the slot or when storage failed; a
+   * paused queue does not refuse it (it consumes no queued input).
    * @param memberId - the member.
    * @param row - the row's id and caller.
    * @param pending - how it runs (`dispatch`, whose `admitted` is a no-op) and who hears its end.
@@ -333,7 +396,7 @@ export class MemberInbox {
   runNow(memberId: string, row: { id: string; caller: LocalAgentExecutionCaller }, pending: Pending): LocalAgentMemberInput | undefined {
     if (this.closed || this.storageErrors.has(memberId) || this.active.has(memberId)) return undefined
     const state = this.read(memberId)
-    if (state.messages.some(existing => existing.status === 'uncertain' || existing.id === row.id)) return undefined
+    if (state.messages.some(existing => existing.id === row.id)) return undefined
     const now = Date.now()
     const accepted: LocalAgentMemberInput = { id: row.id, caller: row.caller, status: 'running', createdAt: now, updatedAt: now, admittedAt: now }
     state.messages.push(accepted)
@@ -416,14 +479,3 @@ export class MemberInbox {
 /** The ledger under its batch-5 name. */
 export { MemberInbox as MemberLedger }
 
-/**
- * The boot pause exists so nothing replays before its lost round is decided.
- * Once no row is uncertain and no composer input waits, nothing is left to
- * decide: it lifts (an operator's own pause never does).
- */
-function liftRestartPause(state: LocalAgentMemberInbox): void {
-  if (!state.paused || state.pausedBy !== 'restart') return
-  if (state.messages.some(row => row.status === 'uncertain' || (row.status === 'queued' && row.caller === 'composer'))) return
-  state.paused = false
-  delete state.pausedBy
-}

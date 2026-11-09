@@ -1052,15 +1052,32 @@ export interface LocalAgentMemberInput {
   preview?: string
   /** `compact` for a compaction execution; absent = a prompt. */
   operation?: 'compact'
+  /**
+   * `uncertain` is a legacy status (restart-recovery consolidation,
+   * 2026-11-09): an older core wrote it for a row a restart cut off. This
+   * core never writes it, and rewrites one it loads to `cancelled` +
+   * {@link interrupted}; the status stays in the vocabulary so such a file
+   * still validates.
+   */
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'uncertain'
+  /**
+   * `restart`: a host restart cut this row off (it was still `running` on
+   * disk when the ledger loaded, or an older core had left it `uncertain`).
+   * The row is closed — `status: 'cancelled'`, error 「被重启打断」 — and blocks
+   * nothing; continuing the work is a new row (restart-recovery
+   * consolidation). Optional, so an older core reads the row as an ordinary
+   * cancellation.
+   */
+  interrupted?: 'restart'
   createdAt: number
   updatedAt: number
   admittedAt?: number
   settledAt?: number
   /**
-   * Set when an operator reconciled the row from `uncertain`
-   * (`reconcileExecution`): its terminal status is the operator's finding,
-   * and `error` holds their evidence (batch 5 S7).
+   * Set when an operator reconciled the row from `uncertain` with an older
+   * core (`reconcileExecution`, batch 5 S7): its terminal status is the
+   * operator's finding, and `error` holds their evidence. Read as an ordinary
+   * outcome; nothing reconciles any more.
    */
   reconciledAt?: number
   error?: string
@@ -1069,9 +1086,10 @@ export interface LocalAgentMemberInbox {
   memberId: string
   paused: boolean
   /**
-   * `restart`: the pause the host put on at boot because a restart left rows
-   * to reconcile; it lifts by itself once nothing is left to decide (no
-   * uncertain row, no queued composer input). Absent: the operator paused.
+   * Legacy: `restart` marked the boot pause an older core put on after a
+   * restart. This core never pauses at boot and lifts such a pause when it
+   * loads the file (restart-recovery consolidation); a pause without it is
+   * the operator's own.
    */
   pausedBy?: 'restart'
   error?: string
