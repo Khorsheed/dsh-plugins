@@ -65,6 +65,8 @@ export interface RoomRunData {
   readonly elapsedMs?: number
   /** Why the run failed (failed terminal edges only). */
   readonly error?: string
+  /** `restart`: a host restart cut the round off — the card stays, closed, 「被重启打断」. */
+  readonly endedBy?: 'restart'
 }
 
 /** Chat node data of one boundary line (member join/leave). */
@@ -331,7 +333,8 @@ export const roomSpeechDefinition: ConversationNodeDefinition<RoomSpeechData> = 
  * member+startedAt), started by the running edge and updated by its terminal
  * edge. A `room/run-moved` edge re-anchors a running card (its seq, which the
  * view orders by) below a reply or human message that landed after it. A running run renders the live row; a failed run stays as a dim
- * error row; done/cancelled hide the row IN PLACE — the assembler's live
+ * error row; a round a restart cut off (`endedBy: 'restart'`) stays as its
+ * closed card; done/cancelled hide the row IN PLACE — the assembler's live
  * incremental flush forbids withdrawing a materialized node with null (the
  * withdrawal contract is the same key with `visibility: 'hidden'`; a null
  * there throws and freezes the session's whole chat pipeline), while the
@@ -367,16 +370,18 @@ export const roomRunDefinition: ConversationNodeDefinition<RoomRunData> = {
     // A move re-anchors a running card below what landed after it (the view orders by seq).
     if (event.type === 'room/run-moved') return context.state.state === 'running' ? { ...context.state, seq: event.seq } : context.state
     if (event.type !== 'room/run-state') return context.state
-    const { error: _error, elapsedMs: _elapsed, ...previous } = context.state
+    const { error: _error, elapsedMs: _elapsed, endedBy: _endedBy, ...previous } = context.state
     return {
       ...previous,
       state: event.data.state,
       ...event.data.elapsedMs === undefined ? {} : { elapsedMs: event.data.elapsedMs },
       ...event.data.error === undefined ? {} : { error: event.data.error },
+      ...event.data.endedBy === undefined ? {} : { endedBy: event.data.endedBy },
     }
   },
+  // A round a restart cut off keeps its (closed) card: the one place it says so.
   buildViewNode: context => viewNode(context, 'room-run',
-    context.state !== undefined && (context.state.state === 'done' || context.state.state === 'cancelled')
+    context.state !== undefined && (context.state.state === 'done' || (context.state.state === 'cancelled' && context.state.endedBy !== 'restart'))
       ? 'hidden'
       : 'visible'),
 }

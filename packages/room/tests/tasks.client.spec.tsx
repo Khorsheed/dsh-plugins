@@ -28,7 +28,7 @@ const STATE: RoomState = {
     { id: '4:m-dsh', dispatchSeq: 4, memberId: 'm-dsh', status: 'done', origin: 'report', text: '回报', task: 'msg-1', queuedAt: 20000, heldAt: 20000, releasedAt: 21000, startedAt: 21000, endedAt: 22000 },
     { id: '5:m-claude', dispatchSeq: 5, memberId: 'm-claude', status: 'running', origin: 'coordinator', text: '审查登录实现', task: 'msg-1', parent: '4:m-dsh', queuedAt: 22000, startedAt: 23000 },
     { id: '6:m-kimi', dispatchSeq: 6, memberId: 'm-kimi', status: 'running', origin: 'agent', text: '为边界写测试', task: 'msg-1', parent: '5:m-claude', queuedAt: 24000, startedAt: 24500 },
-    { id: '8:m-kimi', dispatchSeq: 8, memberId: 'm-kimi', status: 'uncertain', origin: 'human', text: '翻日志找报错', task: 'msg-2', queuedAt: 30000, startedAt: 30100, endedAt: 31000 },
+    { id: '8:m-kimi', dispatchSeq: 8, memberId: 'm-kimi', status: 'held', origin: 'report', text: '翻日志找报错', task: 'msg-2', queuedAt: 30000 },
   ],
   jobs: [
     { id: 'msg-2', number: 2, title: '查一下线上报错', messages: [{ id: 'msg-2', time: 30000, text: '@kimi 查一下线上报错' }], status: 'attention', startedAt: 30000, deliveries: ['8:m-kimi'], members: ['m-kimi'] },
@@ -41,13 +41,16 @@ const STATE: RoomState = {
 }
 
 describe('task projections', () => {
-  it('filters: running includes tasks needing the human; attention counts uncertain outcomes and held relays', () => {
+  it('filters: running includes tasks needing the human; attention counts held relays — never a round a restart cut off', () => {
     expect(filterJobs(STATE, 'running').map(job => job.number)).toEqual([2, 1])
     expect(filterJobs(STATE, 'attention').map(job => job.number)).toEqual([2])
     expect(filterJobs(STATE, 'done').map(job => job.number)).toEqual([0])
-    expect(attentionCount(STATE)).toBe(1)
+    expect(attentionCount(STATE)).toBe(0)
+    // A round a restart cut off — or a legacy `uncertain` one — is nothing to handle.
+    const cut = { ...STATE.deliveries!.at(-1)!, id: '9:m-kimi', origin: 'human' as const, status: 'cancelled' as const, endedBy: 'restart' as const }
+    expect(attentionCount({ ...STATE, deliveries: [...STATE.deliveries!, cut, { ...cut, id: '10:m-kimi', status: 'uncertain' }] })).toBe(0)
     const relay = { id: 'r1', from: 'kimi', to: 'claude', content: 'x', state: 'pending' as const, intent: { task: 'msg-1' } as never }
-    expect(attentionCount({ ...STATE, relays: [relay] })).toBe(2)
+    expect(attentionCount({ ...STATE, relays: [relay] })).toBe(1)
     expect(filterJobs({ ...STATE, relays: [relay] }, 'attention').map(job => job.number)).toEqual([2, 1])
   })
 

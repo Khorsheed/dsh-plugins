@@ -38,7 +38,6 @@
     "src/client/RoomEventView.tsx",
     "src/client/RoomModelPicker.tsx",
     "src/client/RoomQueueStrip.tsx",
-    "src/client/RoomRecoveryView.tsx",
     "src/client/RoomPlanView.tsx",
     "src/client/RoomRelayView.tsx",
     "src/client/RoomDispatchView.tsx",

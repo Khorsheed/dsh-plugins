@@ -15,10 +15,10 @@ describe('member inbox controls', () => {
     render(<MemberInboxView face={face} t={t} />)
     await screen.findByText(/queued work/)
     fireEvent.click(screen.getByRole('button', { name: zh['inbox.cancel'] }))
-    await waitFor(() => expect(face.control).toHaveBeenCalledWith('cancel', 'input-1', undefined, ''))
+    await waitFor(() => expect(face.control).toHaveBeenCalledWith('cancel', 'input-1'))
     fireEvent.click(screen.getByRole('button', { name: zh['inbox.resume'] }))
     await screen.findByRole('button', { name: zh['inbox.pause'] })
-    expect(face.control).toHaveBeenCalledWith('resume', undefined, undefined, '')
+    expect(face.control).toHaveBeenCalledWith('resume', undefined)
   })
 
   it('the room\'s copy leaves out the room\'s own queued rows and the pause control; other callers\' rows stay', async () => {
@@ -72,7 +72,7 @@ describe('member inbox controls', () => {
     fireEvent.click(toggle)
     expect(screen.getAllByRole('listitem')).toHaveLength(10)
     fireEvent.click(screen.getAllByRole('button', { name: zh['inbox.cancel'] })[0]!)
-    await waitFor(() => expect(face.control).toHaveBeenCalledWith('cancel', 'q-0', undefined, ''))
+    await waitFor(() => expect(face.control).toHaveBeenCalledWith('cancel', 'q-0'))
   })
 
   it('keeps a paused empty queue resumable without a zero pending count', async () => {
@@ -83,15 +83,17 @@ describe('member inbox controls', () => {
     expect(screen.queryByText(/· 0/)).toBeNull()
   })
 
-  it('requires reconciliation evidence and sends the selected outcome without replaying', async () => {
-    const state: LocalAgentMemberInbox = { memberId: 'member', paused: true, messages: [{ id: 'uncertain-1', text: 'unknown work', status: 'uncertain', createdAt: 1, updatedAt: 1 }] }
+  it('a round a restart closed asks nothing (no evidence box); the continuation queued ahead of typed input reads 重启后继续', async () => {
+    const state: LocalAgentMemberInbox = { memberId: 'member', paused: false, messages: [
+      { id: 'cut', caller: 'composer', key: 'k-1', text: '把北岭的捷径再加一条', status: 'cancelled', interrupted: 'restart', error: '被重启打断', createdAt: 1, updatedAt: 2 },
+      { id: 'cont', caller: 'composer', key: 'restart-continue:cut', text: '刚才实例重启，打断了你上一轮的工作。……', preview: '重启后继续', status: 'queued', createdAt: 3, updatedAt: 3 },
+      { id: 'typed', caller: 'composer', key: 'k-2', text: '顺便把出生点挪到桥头。', status: 'queued', createdAt: 4, updatedAt: 4 },
+    ] }
     const face: MemberInboxFace = { read: vi.fn(async () => state), control: vi.fn(async () => ({ ok: true })) }
-    render(<MemberInboxView face={face} t={t} />)
-    const done = await screen.findByRole('button', { name: zh['inbox.confirmDone'] }) as HTMLButtonElement
-    expect(done.disabled).toBe(true)
-    fireEvent.change(screen.getByRole('textbox', { name: zh['inbox.evidence'] }), { target: { value: 'verified native output' } })
-    fireEvent.click(done)
-    await waitFor(() => expect(face.control).toHaveBeenCalledWith('reconcile', 'uncertain-1', 'done', 'verified native output'))
-    expect(face.control).toHaveBeenCalledTimes(1)
+    const view = render(<MemberInboxView face={face} t={t} />)
+    fireEvent.click(await screen.findByRole('button', { expanded: false }))
+    expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['重启后继续', '顺便把出生点挪到桥头。'])
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(view.container.textContent).not.toContain('被重启打断')
   })
 })

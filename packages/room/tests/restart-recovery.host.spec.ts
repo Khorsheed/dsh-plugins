@@ -137,6 +137,8 @@ describe('the dispatcher hears only the continued round\'s normal report (R3)', 
     expect(continuation?.data).toMatchObject({ continues: [id] })
     const continuationId = `${continuation!.seq}:${continuation!.type === 'room/dispatch' ? continuation!.data.targetIds![0] : ''}`
     expect(reports(room)).toEqual([expect.objectContaining({ reportFor: continuationId, followUpOf: id, text: '核对过：格子补完了，测试通过' })])
+    // The continued round's reply says where it went, as any reported reply does.
+    expect(room.snapshotEvents().find(event => event.type === 'room/speech' && event.data.runId === continuationId)?.data).toMatchObject({ reportedTo: 'dsh' })
     // The queued message ran after the continuation, on its own (no merge).
     expect(edges(room, laterId)).toEqual(['running', 'done'])
     expect(bench.facade.resume).toHaveBeenCalledTimes(2)

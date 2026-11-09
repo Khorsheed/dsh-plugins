@@ -6,10 +6,14 @@
  * no handle), and a trailing stop button cancels through the Remote. A
  * failed run stays as a dim error row with the journaled reason (truncated,
  * the full text on hover); done/cancelled are hidden by the Definition and
- * never reach here. A CLI round the core's ledger says a restart cut off
- * reads 待对账 (a warning row, no stop) until it is reconciled — here, on
- * the members page or in the edit dialog — and so does the row of a
- * delivery waiting for its member's 待对账 (batch 5 S7). A RUNNING member's row takes the speech card's shape —
+ * never reach here. A round a host restart cut off (restart-recovery
+ * consolidation: `endedBy: 'restart'`, or any legacy shape the projection
+ * and `interruptedByRestart` read) keeps its card, closed — a dashed card
+ * whose title line reads 「被重启打断」, no warning colour, no button, its
+ * output up to the cut-off when this page still holds it. That card is the
+ * one place the room says so; continuing is the next card (「重启后继续」).
+ * A legacy row the core once refused while its member waited (待对账) never
+ * ran and shows nothing. A RUNNING member's row takes the speech card's shape —
  * avatar and light card, the row as the card's header, the live output
  * below — so the reply card that replaces it lands in the same place.
  */
@@ -22,6 +26,7 @@ import { memberColor } from './member-color.ts'
 import { pathMentions } from './path-mentions.ts'
 import { continuedSince, useRoundGroup } from './round-segments.ts'
 import { RunSubagentWait } from './SubagentCards.tsx'
+import { interruptedByRestart, MEMBER_WAITING_TEXT } from '../restart-interrupted.ts'
 import css from './RoomRunView.module.css'
 import speech from './RoomSpeechView.module.css'
 
@@ -58,13 +63,35 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
   const grouped = useRoundGroup(root, runId, since !== undefined)
   const attachments = runId === undefined ? [] : state?.executions?.find(entry => entry.id === runId)?.attachments ?? []
   const mentions = useMemo(() => openPath === undefined ? undefined : pathMentions((path) => { openPath(sessionId, path) }, memberCwd), [openPath, sessionId, memberCwd])
+  // A restart cut this round off (any shape): its closed card.
+  const cutOff = interruptedByRestart(data as { state: string; endedBy?: string; error?: string })
+  // A legacy 待对账 wait row: that message never ran (its own receipt says what became of it).
+  if (data.state === 'failed' && data.error === MEMBER_WAITING_TEXT) return null
   // The Definition hides done/cancelled; guard the same states here.
-  if (superseded || data.state === 'done' || data.state === 'cancelled') return null
+  if (superseded || data.state === 'done' || (data.state === 'cancelled' && !cutOff)) return null
   if (waiting.length > 0 && data.state === 'running') return null
+  if (cutOff) {
+    // Its output up to the cut-off, when this page still holds it (a reload does not bring it back).
+    const delivery = data.runId === undefined ? undefined : state?.deliveries?.find(row => row.id === data.runId)
+    const until = delivery?.interruptedAt ?? (data.elapsedMs === undefined ? undefined : data.startedAt + data.elapsedMs)
+    return (
+      <div className={speech.speech} data-room-run-closed={data.runId} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
+        <span className={speech.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>
+        <div className={`${speech.card} ${css.closedCard}`}>
+          <div className={css.run} data-state="interrupted" role="button" tabIndex={0}
+            onClick={() => { if (childSessionId !== undefined) openSession(childSessionId) }}
+            onKeyDown={(event) => { if ((event.key === 'Enter' || event.key === ' ') && childSessionId !== undefined) { event.preventDefault(); openSession(childSessionId) } }}>
+            <span className={css.title}>{t('run.interrupted', { member: data.member })}</span>
+          </div>
+          {childSessionId !== undefined && until !== undefined && <div className={css.closedBody}>
+            {renderMemberOutput?.(childSessionId, data.startedAt, { until, ...mentions === undefined ? {} : { fileMentions: mentions } })}
+          </div>}
+        </div>
+      </div>
+    )
+  }
 
   const failed = data.state === 'failed'
-  const uncertain = data.state === 'uncertain'
-  const waitsForReconcile = uncertain && (data as { waiting?: string }).waiting === 'reconcile'
   const elapsed = failed ? data.elapsedMs : Math.max(0, now - data.startedAt)
   const jump = (): void => {
     if (childSessionId !== undefined) openSession(childSessionId)
@@ -78,27 +105,25 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
   const row = (
     <div
       className={css.run}
-      data-state={failed ? 'failed' : uncertain ? 'uncertain' : 'running'}
+      data-state={failed ? 'failed' : 'running'}
       role="button"
       tabIndex={0}
       onClick={jump}
       onKeyDown={onKeyDown}
     >
-      <StateDot state={failed ? 'error' : uncertain || waiting.length > 0 ? 'warning' : 'ongoing'} />
+      <StateDot state={failed ? 'error' : waiting.length > 0 ? 'warning' : 'ongoing'} />
       <span className={css.title}>
-        {uncertain ? t(waitsForReconcile ? 'run.waitingReconcile' : 'run.uncertain', { member: data.member }) : failed ? t('run.failed', { member: data.member }) : waiting.length > 0 ? t('run.waiting', { member: data.member }) : data.operation === 'compact' ? t('run.compacting', { member: data.member }) : data.continues !== undefined ? t('run.selfRound', { member: data.member }) : t('run.working', { member: data.member })}
+        {failed ? t('run.failed', { member: data.member }) : waiting.length > 0 ? t('run.waiting', { member: data.member }) : data.operation === 'compact' ? t('run.compacting', { member: data.member }) : data.continues !== undefined ? t('run.selfRound', { member: data.member }) : t('run.working', { member: data.member })}
       </span>
-      {uncertain
-        ? <span className={css.hint} title={t(waitsForReconcile ? 'run.waitingReconcileHint' : 'run.uncertainHint')}>· {t(waitsForReconcile ? 'run.waitingReconcileHint' : 'run.uncertainHint')}</span>
-        : <span className={css.elapsed} aria-hidden>· {elapsed === undefined ? t('run.durationUnknown') : formatDurationMs(elapsed)}</span>}
+      <span className={css.elapsed} aria-hidden>· {elapsed === undefined ? t('run.durationUnknown') : formatDurationMs(elapsed)}</span>
       {/* A foreground subagent the member waits for is the round's current action. */}
-      {!failed && !uncertain && waiting.length === 0 && (
+      {!failed && waiting.length === 0 && (
         <RunSubagentWait face={memberSubagents} childSessionId={childSessionId} startedAt={data.startedAt} openSession={id => { openSession(id as never) }} t={t} className={css.wait} linkClassName={css.link} fullClassName={css.waitFull} shortClassName={css.waitShort} />
       )}
       {failed && data.error !== undefined && (
         <span className={css.reason} title={data.error}>{data.error}</span>
       )}
-      {!failed && !uncertain && (
+      {!failed && (
         <Tooltip label={t('run.stop')} side="bottom">
           <button
             type="button"
@@ -115,7 +140,7 @@ export function RoomRunView({ node, sessionId, roomStore, openSession, cancelMem
       )}
     </div>
   )
-  if (failed || uncertain) return <div>{row}</div>
+  if (failed) return <div>{row}</div>
   return (
     <div ref={root} className={grouped ? `${speech.speech} ${speech.grouped}` : speech.speech} data-room-run-live={runId} style={{ '--member-color': memberColor(data.member) } as CSSProperties}>
       <span className={speech.avatar} aria-hidden>{data.member.slice(0, 1).toUpperCase()}</span>

@@ -28,7 +28,7 @@ const WIDE = 600
 type T = MembersViewProps['t']
 
 function StatusDot({ node, t }: { readonly node: TeamNode; readonly t: T }): ReactNode {
-  const label = node.status === 'running' ? t('members.status.running') : node.status === 'failed' ? t('members.status.failed') : node.status === 'uncertain' ? t('members.status.uncertain') : t('members.status.idle')
+  const label = node.status === 'running' ? t('members.status.running') : node.status === 'failed' ? t('members.status.failed') : t('members.status.idle')
   return <span className={css.status} data-status={node.status} title={label}><i aria-hidden /><span>{label}</span></span>
 }
 

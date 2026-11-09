@@ -1,7 +1,7 @@
 /**
  * The receipt line under a human message (room-timeline-interaction-order
  * B①/B②): one quiet row that says what became of the message for each
- * recipient — 排队中 / 已暂停 / 等核对 / 暂存 / 排队 N 后送达 / 当作回答交给了
+ * recipient — 排队中 / 已暂停 / 暂存 / 排队 N 后送达 / 当作回答交给了
  * 这一轮 / 已撤回 / 没送达. Its only source is the room's deliveries (the same
  * rows the member-to-member 排队中 tag reads); the official bubble cannot
  * carry it (its seat names no message id), so it is a node of its own,
@@ -9,15 +9,18 @@
  *
  * Old logs: every delivery there has settled, so the line shows only where
  * something worth knowing happened (it waited, was withdrawn, failed, was
- * superseded, answered a question); a dispatch from before `targetIds` has
+ * answered a question); a dispatch from before `targetIds` has
  * no delivery rows and no line. A message the room's own agent writes when
  * it takes the message in (the direct path) has no bubble above the
  * dispatch, so no line either — it waits in the queue above the composer.
+ * A round a restart cut off says so on its own card only (restart-recovery
+ * consolidation): its message's line reads as delivered.
  * @module @khorsheed/dsh-room/client/receipt
  */
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatConversationViewNode } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { ANSWERED_QUESTION_TEXT, WITHDRAWN_TEXT } from '../delivery-notes.ts'
+import { deliveryEnding, interruptedByRestart } from '../restart-interrupted.ts'
 import type { RoomDelivery, RoomState } from '../types.ts'
 
 /** Chat node data of one human message's receipt line. */
@@ -79,19 +82,19 @@ export interface ReceiptPart {
   readonly memberId: string
   /** The recipient's current name (a removed member keeps its id). */
   readonly member: string
-  readonly kind: 'queued' | 'paused' | 'reconcile' | 'held' | 'waited' | 'answered' | 'withdrawn' | 'cancelled' | 'failed' | 'uncertain' | 'received'
+  readonly kind: 'queued' | 'paused' | 'held' | 'waited' | 'answered' | 'withdrawn' | 'cancelled' | 'failed' | 'received'
   /** `waited`: how long it queued before its member took it in. */
   readonly waitedMs?: number
-  /** `cancelled`/`failed`/`uncertain`: why, in the settling edge's words. */
+  /** `cancelled`/`failed`: why, in the settling edge's words. */
   readonly reason?: string
 }
 
 /** How a part reads (the line's colour). */
 export function receiptTone(kind: ReceiptPart['kind']): 'wait' | 'ok' | 'bad' | 'quiet' | 'into' {
   switch (kind) {
-    case 'queued': case 'paused': case 'reconcile': return 'wait'
+    case 'queued': case 'paused': return 'wait'
     case 'answered': return 'into'
-    case 'failed': case 'uncertain': return 'bad'
+    case 'failed': return 'bad'
     case 'received': return 'ok'
     default: return 'quiet'
   }
@@ -99,9 +102,10 @@ export function receiptTone(kind: ReceiptPart['kind']): 'wait' | 'ok' | 'bad' | 
 
 function partOf(row: RoomDelivery, state: RoomState): ReceiptPart {
   const base = { deliveryId: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, member: state.members.find(member => member.id === row.memberId)?.name ?? row.memberId }
+  // Cut off by a restart: the round's own card says so, the message reached its member.
+  if (interruptedByRestart(deliveryEnding(row))) return { ...base, kind: 'received' }
   switch (row.status) {
     case 'queued':
-      if (row.waiting === 'reconcile') return { ...base, kind: 'reconcile' }
       return { ...base, kind: state.restartFacts?.queuePaused?.includes(row.memberId) === true ? 'paused' : 'queued' }
     case 'held':
       return { ...base, kind: 'held' }
@@ -115,9 +119,8 @@ function partOf(row: RoomDelivery, state: RoomState): ReceiptPart {
       if (row.note === WITHDRAWN_TEXT) return { ...base, kind: 'withdrawn' }
       return { ...base, kind: 'cancelled', ...row.note === undefined ? {} : { reason: row.note } }
     case 'failed':
-      return { ...base, kind: 'failed', ...row.error === undefined ? {} : { reason: row.error } }
     case 'uncertain':
-      return { ...base, kind: 'uncertain', ...row.error === undefined ? {} : { reason: row.error } }
+      return { ...base, kind: 'failed', ...row.error === undefined ? {} : { reason: row.error } }
   }
 }
 

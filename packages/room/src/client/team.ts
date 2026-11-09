@@ -42,7 +42,7 @@ export interface TeamNode {
   /** Parent node id, or {@link TEAM_ROOT}. */
   readonly parent: string
   readonly coordinator: boolean
-  readonly status: 'running' | 'idle' | 'failed' | 'uncertain'
+  readonly status: 'running' | 'idle' | 'failed'
   /** The running delivery's task title, when running. */
   readonly current?: string
   readonly model?: string
@@ -161,7 +161,7 @@ export function teamOf(state: RoomState): Team {
     return {
       id, member, parent: parent.get(id) ?? TEAM_ROOT,
       coordinator: coordinator !== undefined && idOf(coordinator) === id,
-      status: run?.state === 'running' ? 'running' : run?.state === 'failed' ? 'failed' : run?.state === 'uncertain' ? 'uncertain' : 'idle',
+      status: run?.state === 'running' ? 'running' : run?.state === 'failed' ? 'failed' : 'idle',
       ...current === undefined ? {} : { current },
       ...model === undefined ? {} : { model },
       tokens: executions.reduce((sum, row) => sum + (roundUsage(row)?.tokens ?? 0), 0),

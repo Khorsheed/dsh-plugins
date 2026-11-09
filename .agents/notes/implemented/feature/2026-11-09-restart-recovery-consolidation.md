@@ -44,6 +44,20 @@ Design: `proposals/active/2026-11-09-restart-recovery-consolidation.md` (all ten
 - **Upgrade, by data.** A legacy `uncertain` attempt becomes interrupted; a `failed` task whose attempt it was goes back to `pending`; the old pause reasons (「Reconcile uncertain attempts…」, 「Host restarted…」, 「Interrupted attempts reconciled…」) read as 「被重启打断」 and the goal stays paused for the human.
 - **Removed.** `resume`'s `uncertain` check, the human `reconcile` transition and `PlanService.reconcileDelivery` (its 「Human reconciled task …」 message). The `reconcile` command stays in the schema this release and is refused with 「重启打断的尝试会自动重开，不需要对账」 (open item 9); remove it from the schema next release.
 
+### The interface: each thing in one place (R5)
+
+| What | Its one place | Removed |
+|---|---|---|
+| This round was cut off by a restart | the round's own card, kept closed: dashed, its title line 「{member} · 被重启打断」 in the quiet tone, no button, its output up to the cut-off when the page still holds it (`RoomRunView`; the run Definition keeps a `cancelled` + `endedBy: 'restart'` card visible) | receipt 「等核对 · 去核对」/「结果待核对」, the 「⚠ N 件需要处理」 count, the coordinator's 「上一轮待核对」 capsule, the fallback reconcile panel (`RoomRecoveryView`), the member card's restart line, the edit dialog's 待对账, the members page's 结果待核对 + evidence box, the goal panel's 「结果未知，需对账」 |
+| It was continued | the continuing round's own card; its reply says 「已汇报给 …」 when the original would have reported | the 「重启后已自动继续 N 位成员」 half of the banner, the member card's 「重启后已继续」 |
+| The room pressed 继续 itself | its node: 「房间 · 自动」, the message, 「设置」 | the 「已自动继续：…（重启打断）」 line |
+| The human decides whether to continue | one line above the composer: 「N 位成员被重启打断：A、B · 停止 · 全部继续」, or 「这个目标被重启打断」 for a goal the restart paused; a reason only where the human cannot see it (interrupted again after an automatic continue, the member requested the restart, its queue is paused in the member session) | —— |
+| A goal's attempt | the attempt history: 「第 1 次 · 被重启打断」「第 2 次 · …」; 「尝试 N / M」 counts only counted attempts; a restart's pause reason is not repeated in the panel | 「对账为待验收 / 对账为失败」 and the evidence box |
+
+No hint words the human can infer (「已核对」「不用对账了」「不计入预算」). Legacy shapes render through the same reader: a restart-failed card with the old English reason reads 「被重启打断」 without the reason; a legacy 待对账 wait row (a message that never ran) renders nothing. Locale keys of the removed surfaces are gone; the legacy statuses still in a type union (`plan.status.uncertain`, `team.status.uncertain`) read 「被重启打断」.
+
+The members page (local-agent `MemberInboxView`) lost its `uncertain` rows and evidence box; the continuation row reads its preview 「重启后继续」; the paused notice no longer mentions a restart. The edit dialog keeps only 「启动失败 · 对账并重试」 (a failed native start — another matter).
+
 **R2 and R3 ship together.** With R2 alone, a room still waits for the core to say `uncertain`; it would read the closed row as an ordinary cancellation and lose its auto-continue. Deploy room and the local-agent family together.
 
 ## Alternatives considered
@@ -71,5 +85,8 @@ Design: `proposals/active/2026-11-09-restart-recovery-consolidation.md` (all ten
 - `packages/room/tests/restart-recovery.host.spec.ts`: the dispatcher gets nothing while a round is cut off and exactly one normal report (`followUpOf` the original delivery) after the auto-continued or human-continued round; 停止 sends the one sentence and releases the queue; the incident fixture's obsolete reports are retired and its legacy 「按没做完处理」 round is not offered again.
 - `packages/room/tests/plan.host.spec.ts`: a restart closes the running attempt uncounted (a second attempt fits `maxAttemptsPerTask: 1`); the pause rule (setting off, restart initiator, two interruptions in a row, stale); an unsettled submission settles for review; legacy fences rewritten by data; `reconcile` refused.
 - `packages/room/tests/restart-recovery.host.spec.ts` (goals): the incident goal after the upgrade (both attempts interrupted and uncounted, both tasks pending, paused 「被重启打断」); 全部继续 opens second attempts — the started one's brief says it was interrupted and `continues` the old round — and the member submits the new attempt while the old one is refused as superseded; with auto-continue on the goal keeps running and opens the next attempt at once, telling the coordinator nothing in between.
+- `packages/room/tests/restart-recovery.client.spec.tsx`: the closed card (new mark and legacy shapes, output bounded at the cut-off, no button, no reconcile words), the 待对账 wait row and an ordinary cancellation render nothing, the run Definition's visibility; the goal panel's attempt history and budget count, no reason line for a restart pause.
+- `packages/room/tests/restart-continue.client.spec.tsx`: the composer line (names, 停止 / 全部继续, reasons only where invisible, the goal line, legacy pause reasons) and the auto-continue node; `receipt`, `tasks`, `room-composer`, `member-recovery` client specs and local-agent's `member-inbox.client.spec.tsx` pin the removals.
+- Screenshots of `packages/room/tests/preview/restart.html` (scenes t1 t2 c1 g1 m1, 1280 and 390, light and dark) compared against the prototype's 「改后」 frames; images are never committed.
 - `packages/room/tests/restart-interrupted.client.spec.ts`: the new mark and the four legacy shapes; handled rounds; obsolete reports.
 - `packages/room/tests/dispatch.host.spec.ts`, `real-core.host.spec.ts`, `jobs.host.spec.ts`, `help.host.spec.ts`: recovery closes without replay or report, the continuation runs first and the queue follows, D-4 continuations from a human message and a help request, the real core admits the next delivery at once and writes the `uncertain` end for the interrupted execution.

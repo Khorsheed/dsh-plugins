@@ -192,10 +192,10 @@ interface AttachmentActions {
 
 /** The room composer takeover component. */
 export function RoomComposer({
-  sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, reconcileDelivery,
+  sessionId, roomStore, submit, stop, openTasks, taskTags, openPlanSession, restartRounds,
   roomCwd, invite, listProviders, browseDirectory, modelSurface, renderHarnessModelPicker,
   modelDirectory, renderMemberConfiguration, renderMemberInbox, renderMemberTools, stopMember, openReference, listSessions, insertSessionReference, useSession, useSessions, useProjection, useInput, inputActions, modeNames, t,
-  attachments: attachmentFace, setCoordinator, runCommand, memberActivity, setSettings, controlMemberQueue, withdrawDelivery,
+  attachments: attachmentFace, setCoordinator, runCommand, memberActivity, controlMemberQueue, withdrawDelivery,
 }: RoomComposerProps): ReactNode {
   const [coordinatorMenu, setCoordinatorMenu] = useState(false)
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
@@ -304,7 +304,7 @@ export function RoomComposer({
   const switchable = setCoordinator !== undefined && (state?.members.length ?? 0) > 1
   const busyMembers = new Set((state?.runs ?? []).filter(run => run.state === 'running').map(run => run.member))
   const handoffBlocked = running || busyMembers.size > 0
-    || (state?.deliveries ?? []).some(row => row.status === 'queued' || row.status === 'running' || row.status === 'uncertain')
+    || (state?.deliveries ?? []).some(row => row.status === 'queued' || row.status === 'running')
   const coordinatorItems: readonly MenuEntry[] = [
     { type: 'label', id: 'coordinator-switch', text: t('coordinator.switchTitle') },
     ...handoffBlocked ? [{ type: 'label' as const, id: 'coordinator-busy', text: t('coordinator.switchBusy') }] : [],
@@ -321,13 +321,6 @@ export function RoomComposer({
     }]),
   ]
 
-  // The coordinator's own room deliveries: a round a restart interrupted
-  // blocks the ones after it until the human reconciles or stops its task —
-  // say so, instead of a silent queue.
-  const coordinatorRows = (state?.deliveries ?? []).filter(row => row.memberId === coordinator?.id && (row.status === 'queued' || row.status === 'uncertain'))
-  // Also blocked by a round of the coordinator the core holds as 待对账 (the
-  // members page, a tool call: batch 5 S7), which is not a room delivery.
-  const blocked = coordinatorRows.some(row => row.status === 'uncertain' || row.waiting === 'reconcile')
   // Rows only for what has no bubble in the timeline yet (room-timeline D):
   // a message with its bubble reads its state on its receipt line, and the
   // member-level state rides the capsules below.
@@ -339,7 +332,7 @@ export function RoomComposer({
     .filter(row => row.origin === 'human' && row.messageId !== undefined && row.bubble === undefined && (row.status === 'queued' || row.status === 'running'))
     .map(row => ({
       id: row.id,
-      preview: row.memberId === coordinator?.id && blocked ? t('job.queueBlocked', { text: row.text }) : row.text,
+      preview: row.text,
       pending: true,
       ...withdrawDelivery === undefined || row.status !== 'queued' ? {} : {
         withdraw: () => {
@@ -350,7 +343,7 @@ export function RoomComposer({
         },
       },
     }))
-  const capsules = queueCapsules(state, coordinator?.id)
+  const capsules = queueCapsules(state)
 
   const resize = (area: HTMLTextAreaElement): void => {
     area.style.height = 'auto'
@@ -473,20 +466,19 @@ export function RoomComposer({
   // The oldest question a member's round is waiting on (shown inline in its card).
   const waitingAsk = state?.askLog?.find(ask => ask.state === 'pending' && ask.runId !== undefined)
   // Members whose latest room round a host restart cut off (the shared rule,
-  // ../restart-continue.ts, that the room's own auto-continue runs on): the
-  // banner lists the ones waiting for the human. Messaging them moves on
-  // from the lost round; another caller's round (`execution:`) is not the
-  // room's to drop.
-  const continueAll = async (rounds: readonly InterruptedRound[]): Promise<void> => {
-    if (busy || rounds.length === 0) return
+  // ../restart-continue.ts, that the room's own auto-continue runs on), and a
+  // goal the restart paused: the banner's 全部继续 / 停止 (restart-recovery
+  // consolidation). An older host without the Remotes: the continue message.
+  const restartAction = async (action: 'continue' | 'stop', rounds: readonly InterruptedRound[], goal: boolean): Promise<void> => {
+    if (busy || (rounds.length === 0 && !goal)) return
     setBusy(true)
     setError(null)
     try {
-      const names = rounds.map(round => round.member)
-      const continues = rounds.flatMap(round => round.runId === undefined ? [] : [round.runId])
-      const outcome = continues.length === 0
-        ? await submit(sessionId, t('composer.continueText'), names)
-        : await submit(sessionId, t('composer.continueText'), names, undefined, undefined, continues)
+      const runIds = rounds.flatMap(round => round.runId === undefined ? [] : [round.runId])
+      const outcome = restartRounds !== undefined ? await restartRounds[action](runIds, goal)
+        : action === 'stop' || rounds.length === 0 ? { ok: true as const }
+          : runIds.length === 0 ? await submit(sessionId, t('composer.continueText'), rounds.map(round => round.member))
+            : await submit(sessionId, t('composer.continueText'), rounds.map(round => round.member), undefined, undefined, runIds)
       if (!outcome.ok) setError(outcome.message)
     } finally {
       setBusy(false)
@@ -610,7 +602,6 @@ export function RoomComposer({
         {state !== undefined && <RoomTaskCapsule
           state={state}
           openTasks={openTasks}
-          reconcileDelivery={reconcileDelivery}
           openPlanSession={openPlanSession}
           roomCwd={roomCwd}
           invite={invite}
@@ -653,16 +644,14 @@ export function RoomComposer({
           items={[...external ? [] : queued, ...coordinatorQueue]}
           t={t}
         />
-        {/* A host restart interrupts every working member at once and each
-            row reads 待对账 far up the conversation: the room continues them
-            itself (重启后自动继续, on by default) and says so; the rounds it
-            leaves to the human get one 全部继续 (the same message). */}
+        {/* The one place the room asks the human after a host restart:
+            only the rounds it did not continue on its own (重启后自动继续 off,
+            a guard, an earlier restart) — 全部继续 or 停止. */}
         <RoomRestartBanner
-          sessionId={sessionId}
           state={state}
           busy={busy}
-          onContinueAll={(rounds) => { void continueAll(rounds) }}
-          setSettings={setSettings}
+          onContinue={(rounds, goal) => { void restartAction('continue', rounds, goal) }}
+          {...restartRounds === undefined ? {} : { onStop: (rounds: readonly InterruptedRound[], goal: boolean) => { void restartAction('stop', rounds, goal) } }}
           t={t}
         />
       </div>

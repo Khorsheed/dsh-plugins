@@ -33,19 +33,19 @@
   color: var(--dsw-alias-text-error, #d9363e);
 }
 
-/* 待对账 (batch 5 S7): the outcome is unknown, not a failure — a warning
-   title and the plain-language hint in the elapsed slot. */
-.run[data-state='uncertain'] .title {
-  color: var(--dsw-alias-state-warn-primary, #b26a00);
+/* 被重启打断 (restart-recovery consolidation): a closed card — dashed, no
+   fill, its title in the quiet tone; nothing to act on. */
+.closedCard.closedCard {
+  background: transparent;
+  border-style: dashed;
 }
 
-.hint {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.run[data-state='interrupted'] .title {
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+}
+
+.closedBody {
+  opacity: 0.7;
 }
 
 .elapsed {

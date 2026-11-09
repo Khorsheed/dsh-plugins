@@ -1,33 +1,32 @@
 /**
- * What the room shows after a host restart (member-self-started-rounds M9,
- * prototype member-activity.html states 4–7), as pure state over the room
- * state `getState` projects. The interrupted list itself is the shared rule
- * (../restart-continue.ts) the server's auto-continue runs on.
+ * The one place the room asks the human about a host restart (restart-recovery
+ * consolidation, prototype restart-recovery.html ③): the line above the
+ * composer, 「N 位成员被重启打断：A、B · 停止 · 全部继续」, as pure state over
+ * the room state `getState` projects. The interrupted list itself is the
+ * shared rule (../restart-continue.ts) the server's auto-continue runs on.
  *
- * - `auto`: the room continued members itself and some of those rounds are
- *   still queued or running — the composer's 「重启后已自动继续 N 位成员」.
- * - `manual`: the rounds waiting for the human's 「全部继续」: all of them
- *   with the setting off (no reasons: the banner reads as before M9);
- *   with it on, the ones a guard held back (with the reason), goal
- *   attempts, and stale rounds an earlier restart cut off (no reason). Rounds the room is about to continue itself are not listed —
- *   pressing then would send the message twice.
+ * It lists only what waits for the human: every interrupted round with the
+ * setting off; with it on, the rounds a guard held back, goal attempts the
+ * goal did not continue, rounds without a run id, and stale rounds an earlier
+ * restart cut off. Rounds the room continues itself are not listed (pressing
+ * would send the message twice), and nothing is said about them here — the
+ * continued round's own card says 「重启后继续」.
+ *
+ * A reason is shown only where the human cannot see it themselves (the member
+ * requested this restart; it was interrupted again after an automatic
+ * continue; its input queue is paused in the member session) — never for the
+ * setting being off or the room being paused.
  */
 import type { RoomState } from '../types.ts'
-import { autoContinueOn, interruptedRounds, type InterruptedRound, type RestartContinueBlock } from '../restart-continue.ts'
+import { autoContinueOn, interruptedRounds, type InterruptedRound } from '../restart-continue.ts'
+import { pausedByRestart } from '../plan.ts'
 
-/** The room's latest auto-continue still in progress. */
-export interface AutoContinued {
-  /** The newest auto-continue dispatch seq (the banner's dismiss key). */
-  readonly seq: number
-  /** The members it continued whose round is still queued or running. */
-  readonly names: readonly string[]
-}
-
-/** The composer banner's two halves (either may be absent). */
+/** The composer line's content (nothing to show: no rounds and no goal). */
 export interface RestartBanner {
-  readonly auto?: AutoContinued
-  /** Rounds for the human; `blocked` is shown only when the setting is on. */
+  /** Rounds for the human; `blocked` only where the reason is not visible elsewhere. */
   readonly manual: readonly InterruptedRound[]
+  /** A formal goal the restart paused: 全部继续 resumes it (its attempts reopen). */
+  readonly goal?: { readonly id: string }
 }
 
 /** Fold the room state into the banner. */
@@ -36,33 +35,6 @@ export function restartBanner(state: RoomState | undefined): RestartBanner {
   const on = autoContinueOn(state.settings)
   const manual = interruptedRounds(state)
     .filter(round => !on || round.blocked !== undefined || round.goalAttempt === true || round.runId === undefined || round.stale === true)
-    .map(round => on ? round : (({ blocked: _blocked, ...rest }) => rest)(round))
-  const active = (state.deliveries ?? []).filter(row => row.via === 'auto-continue' && (row.status === 'queued' || row.status === 'running'))
-  if (active.length === 0) return { manual }
-  const names = [...new Set(active.flatMap(row => {
-    const member = state.members.find(entry => entry.id === row.memberId)
-    return member === undefined ? [] : [member.name]
-  }))]
-  return names.length === 0 ? { manual } : { auto: { seq: Math.max(...active.map(row => row.dispatchSeq)), names }, manual }
-}
-
-/** The members page's restart line for one member. */
-export type MemberRestartLine =
-  | { readonly kind: 'continued' }
-  | { readonly kind: 'interrupted'; readonly blocked?: RestartContinueBlock }
-
-/**
- * 「重启后已继续」 while the room's auto-continue round for this member is
- * queued or running; 「被重启打断」 while its round waits for the human
- * (the banner's manual list); nothing otherwise.
- */
-export function memberRestartLine(state: RoomState | undefined, memberName: string): MemberRestartLine | undefined {
-  if (state === undefined) return undefined
-  const member = state.members.find(entry => entry.name === memberName)
-  if (member === undefined) return undefined
-  if ((state.deliveries ?? []).some(row => row.via === 'auto-continue' && row.memberId === member.id && (row.status === 'queued' || row.status === 'running'))) {
-    return { kind: 'continued' }
-  }
-  const round = restartBanner(state).manual.find(entry => entry.member === memberName)
-  return round === undefined ? undefined : { kind: 'interrupted', ...round.blocked === undefined ? {} : { blocked: round.blocked } }
+    .map(round => on && round.blocked !== 'room-paused' ? round : (({ blocked: _blocked, ...rest }) => rest)(round))
+  return { manual, ...pausedByRestart(state.plan) && state.plan !== undefined ? { goal: { id: state.plan.id } } : {} }
 }

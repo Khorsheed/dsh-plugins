@@ -8,7 +8,6 @@
  */
 import { useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RoomStore } from './room-store.ts'
 import { receiptParts, receiptTone, receiptWithdrawn, type ReceiptPart } from './receipt.ts'
 import css from './RoomReceiptView.module.css'
@@ -21,8 +20,6 @@ export interface RoomReceiptInjected {
   readonly withdraw?: ((dispatchSeq: number, memberId: string) => Promise<string | undefined>) | undefined
   /** Resume a member's paused input queue (继续队列); absent = no button. */
   readonly resumeQueue?: ((memberId: string) => Promise<string | undefined>) | undefined
-  /** Open a member's own session (where its 待对账 is reconciled). */
-  readonly openSession?: ((sessionId: SessionId) => void) | undefined
 }
 
 /** Full props of the 'room-receipt' chat-node renderer. */
@@ -48,10 +45,10 @@ function partText(part: ReceiptPart, alone: boolean, t: Translate): string {
   // A cancellation with its own words (并入下一条一起送达 …) reads as those words.
   const kind = part.kind === 'cancelled' && part.reason !== undefined ? 'cancelledWhy' : part.kind
   const text = t(`receipt.${alone ? 'one' : 'many'}.${kind}` as 'receipt.one.queued', vars)
-  return part.reason !== undefined && (part.kind === 'failed' || part.kind === 'uncertain') ? `${text}${t('receipt.reason', vars)}` : text
+  return part.reason !== undefined && part.kind === 'failed' ? `${text}${t('receipt.reason', vars)}` : text
 }
 
-export function RoomReceiptView({ node, sessionId, roomStore, withdraw, resumeQueue, openSession, t }: RoomReceiptViewProps): ReactNode {
+export function RoomReceiptView({ node, sessionId, roomStore, withdraw, resumeQueue, t }: RoomReceiptViewProps): ReactNode {
   const data = node.data
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [busy, setBusy] = useState(false)
@@ -70,8 +67,6 @@ export function RoomReceiptView({ node, sessionId, roomStore, withdraw, resumeQu
   }
   const queued = parts.filter(part => part.kind === 'queued' || part.kind === 'paused')
   const paused = parts.filter(part => part.kind === 'paused')
-  const reconcile = parts.find(part => part.kind === 'reconcile')
-  const reconcileChild = reconcile === undefined ? undefined : state?.members.find(member => member.id === reconcile.memberId)?.childSessionId
   return (
     <div className={css.receipt} data-room-receipt={data.seq} data-withdrawn={receiptWithdrawn(parts) || undefined} role="status">
       {parts.map((part, index) => (
@@ -85,9 +80,6 @@ export function RoomReceiptView({ node, sessionId, roomStore, withdraw, resumeQu
       ))}
       {resumeQueue !== undefined && paused.length > 0 && (
         <button type="button" className={css.action} disabled={busy} onClick={() => { act(async () => resumeQueue(paused[0]!.memberId)) }}>{t('receipt.resume')}</button>
-      )}
-      {openSession !== undefined && reconcileChild !== undefined && (
-        <button type="button" className={css.action} onClick={() => { openSession(reconcileChild) }}>{t('receipt.reconcile')}</button>
       )}
       {withdraw !== undefined && queued.map(part => (
         <button key={part.deliveryId} type="button" className={css.action} disabled={busy}

@@ -319,6 +319,25 @@ export function followUpDelivery(roomEvents: readonly SessionEvent[], runId: str
 }
 
 /**
+ * Who hears the result of a round that continues this member's interrupted
+ * delivery (its dispatch `continues` it): that delivery's report recipient.
+ * @param roomEvents - the room log.
+ * @param dispatchSeq - the continuing dispatch.
+ * @param identity - the member.
+ * @returns the recipient's name, or undefined.
+ */
+export function continuedRecipient(roomEvents: readonly SessionEvent[], dispatchSeq: number, identity: string): string | undefined {
+  const source = roomEvents.find(event => event.seq === dispatchSeq)
+  if (source?.type !== 'room/dispatch') return undefined
+  for (const original of source.data.continues ?? []) {
+    if (!original.endsWith(`:${identity}`)) continue
+    const recipient = followUpRecipient(roomEvents, original)
+    if (recipient !== undefined) return recipient
+  }
+  return undefined
+}
+
+/**
  * Who a follow-up on this delivery would go to: the recipient its own
  * report goes to, only when that report exists at all (the gate's rule:
  * a coordinator/member dispatch with `replyTo`).
@@ -1805,7 +1824,10 @@ export class DispatchEngine {
     const output = runOutputText(result.output)
     const interrupted = result.stopReason === 'completed' ? undefined
       : result.stopReason === 'aborted' ? 'cancelled' as const : 'failed' as const
-    const reportedTo = dispatchSeq === undefined ? undefined : reportRecipient(room.snapshotEvents(), dispatchSeq)?.name
+    // Who hears this round's reply: its own dispatch's recipient, else — a
+    // round that continues one a restart cut off — the original's (D-3).
+    const reportedTo = dispatchSeq === undefined ? undefined
+      : reportRecipient(room.snapshotEvents(), dispatchSeq)?.name ?? continuedRecipient(room.snapshotEvents(), dispatchSeq, memberId(room.snapshotEvents(), member))
     // The member's own closing message: per-message tools address it in its session.
     const closingMessageId = lastAssistantMessageId(this.ctx.sessions.get(run.id))
     const asks = askOffsets(room.snapshotEvents(), runId, output)

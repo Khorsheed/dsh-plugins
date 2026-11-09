@@ -23,7 +23,6 @@ import type { RoomMember, RoomRemoval } from '../types.ts'
 import { RemoveMemberConfirm, removalImpact } from './RemoveMemberConfirm.tsx'
 import { MemberCard } from './MemberCard.tsx'
 import { MemberActivityLine, useMemberActivity } from './MemberActivity.tsx'
-import { MemberRestartLineView } from './RoomRestart.tsx'
 import { InviteDialog, inviteRequest, type InviteDialogSubmit } from './InviteDialog.tsx'
 import { submitMemberEdit } from './MemberEditDialog.tsx'
 import type { MembersViewProps, RoomModelDirectory } from './slots.ts'
@@ -54,7 +53,7 @@ export function MembersView({
   sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, unlinkSession, updateMember, invite, listProviders, browseDirectory, listDirectory,
   modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator,
   renderMemberModelPicker, readMemberSelection, saveMemberSelection, memberTools, reloadMemberTools,
-  memberRecovery, retryMemberStart, reconcileMemberExecution, memberActivity, runningBackgroundTasks, useSessions, modeNames, t,
+  memberRecovery, retryMemberStart, memberActivity, runningBackgroundTasks, useSessions, modeNames, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
@@ -191,7 +190,6 @@ export function MembersView({
       reloadMemberTools={reloadMemberTools}
       memberRecovery={memberRecovery}
       retryMemberStart={retryMemberStart}
-      reconcileMemberExecution={reconcileMemberExecution}
       runningBackgroundTasks={runningBackgroundTasks}
       onSubmit={submitDialog}
       onClose={() => { setDialog(null) }}
@@ -264,11 +262,8 @@ export function MembersView({
                   t={t}
                 />
               ) : undefined}
-              activity={<>
-                <MemberRestartLineView state={state} member={member.name} t={t} />
-                {memberActivity === undefined || member.kind !== 'cli' || member.childSessionId === undefined ? undefined
-                  : <MemberActivityLine read={memberActivity.store.get(member.childSessionId)} t={t} />}
-              </>}
+              activity={memberActivity === undefined || member.kind !== 'cli' || member.childSessionId === undefined ? undefined
+                : <MemberActivityLine read={memberActivity.store.get(member.childSessionId)} t={t} />}
               modelHint={member.kind === 'main-agent'
                 ? (modelDirectory !== undefined ? <MainAgentModelHint directory={modelDirectory} /> : undefined)
                 : memberModels.get(member.name)}

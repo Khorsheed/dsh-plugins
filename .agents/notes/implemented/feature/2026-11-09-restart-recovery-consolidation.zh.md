@@ -44,6 +44,20 @@ Status: implemented
 - **升级，看数据。** 旧的 `uncertain` 尝试改成被打断；它所在的 `failed` 任务回 `pending`；旧的暂停原因（「Reconcile uncertain attempts…」「Host restarted…」「Interrupted attempts reconciled…」）读作「被重启打断」，目标保持暂停等人。
 - **删除。** `resume` 的 `uncertain` 检查、人工 `reconcile` 转换和 `PlanService.reconcileDelivery`（连同「Human reconciled task …」消息）。`reconcile` 命令本版本仍在 schema 里，收到时拒绝并说明「重启打断的尝试会自动重开，不需要对账」（待定 9）；下个版本从 schema 删除。
 
+### 界面：每件事一处（R5）
+
+| 事 | 唯一的位置 | 删掉的 |
+|---|---|---|
+| 这一轮被重启打断了 | 那一轮自己的卡片，保留并关闭：虚线、标题行「{成员} · 被重启打断」用安静的颜色、没有按钮，页面还留着时显示打断前的输出（`RoomRunView`；运行 Definition 让 `cancelled` + `endedBy: 'restart'` 的卡片保持可见） | 回执「等核对 · 去核对」/「结果待核对」、「⚠ N 件需要处理」计数、协调者的「上一轮待核对」胶囊、兜底对账面板（`RoomRecoveryView`）、成员卡片的重启行、编辑弹窗的待对账、成员页的结果待核对与证据框、目标面板的「结果未知，需对账」 |
+| 接着做了 | 续接那一轮自己的卡片；原投递会回报时，它的回复写「已汇报给 …」 | 横幅的「重启后已自动继续 N 位成员」、成员卡片的「重启后已继续」 |
+| 房间替人按了继续 | 它的节点：「房间 · 自动」、消息本身、「设置」 | 「已自动继续：…（重启打断）」那一行 |
+| 要人决定要不要继续 | 输入框上方一行：「N 位成员被重启打断：A、B · 停止 · 全部继续」，目标被重启暂停时是「这个目标被重启打断」；只在人看不出来时写理由（自动继续后又被打断、这次重启是它发起的、它的队列在成员会话里暂停着） | —— |
+| 正式目标的尝试 | 尝试历史：「第 1 次 · 被重启打断」「第 2 次 · …」；「尝试 N / M」只数计入的尝试；重启的暂停原因不在面板里重复 | 「对账为待验收 / 对账为失败」和证据框 |
+
+不加人自己能看出来的提示字（「已核对」「不用对账了」「不计入预算」）。旧形状经同一个读取口显示：带旧英文原因的失败卡片读作「被重启打断」且不显示原因；旧的待对账等待行（一条从没跑过的消息）什么都不显示。被删界面的 locale 键一并删除；类型联合里仍在的旧状态（`plan.status.uncertain`、`team.status.uncertain`）读作「被重启打断」。
+
+成员页（local-agent `MemberInboxView`）删掉 `uncertain` 行和证据框；续接那一行显示它的预览「重启后继续」；暂停提示不再提重启。编辑弹窗只保留「启动失败 · 对账并重试」（成员启动失败，另一件事）。
+
 **R2 与 R3 必须一起部署。** 只上 R2 时，房间还在等核心说 `uncertain`，会把关掉的行当普通取消，自动继续失效。房间与 local-agent 家族一起部署。
 
 ## Alternatives considered
@@ -71,5 +85,8 @@ Status: implemented
 - `packages/room/tests/restart-recovery.host.spec.ts`：一轮被打断期间派活人什么都收不到，自动或人按继续的那一轮结束后恰好收到一条正常回报（`followUpOf` 原投递）；「停止」只发那一句并放行排队；夹具里作废的回报被关掉，旧的「按没做完处理」那一轮不再被列出。
 - `packages/room/tests/plan.host.spec.ts`：重启把运行中的尝试关掉且不计数（`maxAttemptsPerTask: 1` 时仍能开第 2 次）；暂停规则（设置关、发起重启的成员、连续两次打断、stale）；未结算的提交结算后等验收；旧围栏按数据改写；`reconcile` 被拒绝。
 - `packages/room/tests/restart-recovery.host.spec.ts`（目标）：升级后的事故目标（两次尝试都被打断、不计数，两个任务回 `pending`，暂停「被重启打断」）；「全部继续」开第 2 次尝试——开始过的那个简报写明被打断并 `continues` 旧的一轮——成员能提交新尝试，旧尝试被拒（已被取代）；自动继续开着时目标不停、立刻开下一次尝试，中间不给协调者发任何消息。
+- `packages/room/tests/restart-recovery.client.spec.tsx`：关闭的卡片（新标记与旧形状、输出截止在打断处、没有按钮、没有对账字样），待对账等待行和普通取消什么都不显示，运行 Definition 的可见性；目标面板的尝试历史与预算计数，重启暂停时不显示原因行。
+- `packages/room/tests/restart-continue.client.spec.tsx`：输入框上方那一行（名单、停止 / 全部继续、只写看不出来的理由、目标那一行、旧暂停原因）和自动继续节点；`receipt`、`tasks`、`room-composer`、`member-recovery` 客户端用例和 local-agent 的 `member-inbox.client.spec.tsx` 固定了这些删除。
+- `packages/room/tests/preview/restart.html` 的截图（场景 t1 t2 c1 g1 m1，1280 与 390，浅色与深色）对照交互稿的「改后」画面；图片从不提交。
 - `packages/room/tests/restart-interrupted.client.spec.ts`：新标记与四种旧形状；已处理的轮；作废回报。
 - `packages/room/tests/dispatch.host.spec.ts`、`real-core.host.spec.ts`、`jobs.host.spec.ts`、`help.host.spec.ts`：恢复关掉、不重放不回报；续接先跑、排队跟上；人发消息和跨房间求助算作继续（D-4）；真实核心立即准入下一条，并为被打断的执行写 `uncertain` 的 end。

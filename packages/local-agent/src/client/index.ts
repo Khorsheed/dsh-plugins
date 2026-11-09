@@ -288,7 +288,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     let face = inboxFaces.get(id)
     if (face === undefined) inboxFaces.set(id, face = {
       read: async () => unwrap(await gateway.memberInbox(id)),
-      control: async (action, requestId, outcome, evidence) => unwrap(await gateway.controlMemberInbox(id, action, requestId, outcome, evidence)),
+      control: async (action, requestId) => unwrap(await gateway.controlMemberInbox(id, action, requestId)),
     })
     return face
   }

@@ -15,7 +15,6 @@ import { executionRows } from './executions.ts'
 import { formatClock, formatDurationMs } from './format.ts'
 import { memberColor } from './member-color.ts'
 import { RoomPlanView } from './RoomPlanView.tsx'
-import { RoomRecoveryView } from './RoomRecoveryView.tsx'
 import {
   TASK_FILTERS, filterJobs, isOpenDelivery, jobDeliveries, jobElapsed, needsAttention, pendingRelays, runningMembers, segmentsOf, subtaskTree,
   type SubtaskNode, type TaskFilter,
@@ -31,7 +30,6 @@ export interface TasksViewActions {
   readonly stopJob?: ((task: string) => Promise<RoomMutationOutcome>) | undefined
   /** Stop a member's running round (only the one with that run id, when given). */
   readonly stopDelivery?: ((member: string, deliveryId?: string) => void) | undefined
-  readonly reconcile?: RoomComposerProps['reconcileDelivery']
   readonly confirmRelay?: ((relayId: string) => Promise<void>) | undefined
   readonly dismissRelay?: ((relayId: string) => Promise<void>) | undefined
   readonly planCommand?: ((command: string) => Promise<RoomMutationOutcome>) | undefined
@@ -236,7 +234,6 @@ function JobDetail({ state, job, now, actions, back, t }: { readonly state: Room
       </div>
     </div>}
     {message !== null && <p role="alert" className={css.error}>{message}</p>}
-    {actions.reconcile !== undefined && <RoomRecoveryView deliveries={rows} members={state.members} reconcile={actions.reconcile} openSession={actions.openSession} t={t} />}
     {relays.map(relay => <div key={relay.id} className={css.need}>
       <p>{t('job.relay', { from: relay.from, to: relay.to })}</p>
       <p className={css.messageText}>{relay.content}</p>

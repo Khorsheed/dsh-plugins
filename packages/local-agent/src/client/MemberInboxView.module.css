@@ -36,5 +36,3 @@
 .notice span { flex: 1; }
 .recovery { border-top: .5px solid var(--dsw-alias-border-l1); }
 .recovery p { margin: 0; width: 100%; }
-.reconcile { width: 100%; display: flex; flex-wrap: wrap; gap: 6px; }
-.reconcile input { flex: 1; min-width: 150px; background: transparent; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 4px 6px; color: inherit; }

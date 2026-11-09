@@ -31,22 +31,14 @@ export function RoomQueueCapsules({ capsules, resume, openSession, t }: RoomQueu
           {t('queue.waiting', { count: capsule.count, member: capsule.member })}<span className={css.capsuleLink} aria-hidden>↑</span>
         </button>
       }
-      if (capsule.kind === 'paused') {
-        const child = capsule.childSessionId
-        return <button key={`p:${capsule.memberId}`} type="button" className={css.capsule} data-attention="" data-queue="paused" disabled={busy}
-          onClick={() => {
-            if (resume === undefined) { if (child !== undefined) openSession?.(child); return }
-            setBusy(true)
-            void resume(capsule).finally(() => { setBusy(false) })
-          }}>
-          {t('queue.paused', { member: capsule.member })}<span className={css.capsuleLink}>{t(resume === undefined ? 'queue.open' : 'queue.resume')}</span>
-        </button>
-      }
       const child = capsule.childSessionId
-      return <button key={`r:${capsule.memberId}`} type="button" className={css.capsule} data-attention="" data-queue="reconcile"
-        disabled={child === undefined || openSession === undefined}
-        onClick={() => { if (child !== undefined) openSession?.(child) }}>
-        {t('queue.reconcile', { member: capsule.member })}<span className={css.capsuleLink}>{t('queue.reconcileGo')}</span>
+      return <button key={`p:${capsule.memberId}`} type="button" className={css.capsule} data-attention="" data-queue="paused" disabled={busy}
+        onClick={() => {
+          if (resume === undefined) { if (child !== undefined) openSession?.(child); return }
+          setBusy(true)
+          void resume(capsule).finally(() => { setBusy(false) })
+        }}>
+        {t('queue.paused', { member: capsule.member })}<span className={css.capsuleLink}>{t(resume === undefined ? 'queue.open' : 'queue.resume')}</span>
       </button>
     })}
   </>

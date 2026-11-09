@@ -1,10 +1,10 @@
 /**
  * The edit dialog's recovery block as a pure state: what local-agent knows
  * about a CLI member that cannot take work right now — its last native start
- * failed (the member's configuration control is `failed`), or a host restart
- * left one of its executions with an unknown outcome (an `uncertain` ledger
- * row) — folded into what the block shows. Kept apart from the component so
- * every state is testable without rendering.
+ * failed (the member's configuration control is `failed`) — folded into what
+ * the block shows. (A round a host restart cut off is not one: it is closed
+ * and continued, restart-recovery consolidation.) Kept apart from the
+ * component so every state is testable without rendering.
  *
  * Read through local-agent's gateway (`memberConfiguration` and
  * `memberInbox`), duck-typed: a composition without the family, or an older
@@ -18,15 +18,6 @@ export interface MemberRecoveryRead {
   readonly inbox?: LocalAgentMemberInbox | undefined
 }
 
-/** One execution a restart interrupted, waiting for the human's verdict. */
-export interface MemberRecoveryUncertain {
-  readonly id: string
-  /** Who asked for it: the members page, the room, a host session's tool call, a plugin, the CLI itself. */
-  readonly caller: 'composer' | 'room' | 'tool' | 'api' | 'cli'
-  /** What was typed (members-page input only). */
-  readonly text?: string
-}
-
 export interface MemberRecoveryState {
   /**
    * The member's configuration control failed. `cause`: a native start (or
@@ -34,8 +25,6 @@ export interface MemberRecoveryState {
    * that did not apply (it stays pending). `revision` is what a retry names.
    */
   readonly failed?: { readonly cause: 'start' | 'selection'; readonly reason: string; readonly revision: number }
-  /** Executions a restart left with an unknown outcome (they block the member). */
-  readonly uncertain: readonly MemberRecoveryUncertain[]
 }
 
 /**
@@ -48,11 +37,7 @@ export function memberRecovery(read: MemberRecoveryRead | undefined): MemberReco
   const failed = control?.status === 'failed'
     ? { cause: control.pending === undefined ? 'start' as const : 'selection' as const, reason: plainReason(control.error), revision: control.revision }
     : undefined
-  const uncertain = (read?.inbox?.messages ?? [])
-    .filter(row => row.status === 'uncertain')
-    .map(row => ({ id: row.id, caller: row.caller ?? 'composer', ...row.text === undefined ? {} : { text: row.text } }))
-  if (failed === undefined && uncertain.length === 0) return undefined
-  return { ...failed === undefined ? {} : { failed }, uncertain }
+  return failed === undefined ? undefined : { failed }
 }
 
 /**

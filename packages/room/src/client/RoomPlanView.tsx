@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { PlanAttempt, PlanTask, RoomPlan } from '../plan.ts'
+import { attemptInterrupted, countedAttempts, pausedByRestart } from '../plan.ts'
 import type { RoomMember } from '../types.ts'
 import type { RoomComposerProps, RoomMutationOutcome } from './slots.ts'
 import { RoomRequestIds } from './request-ids.ts'
@@ -73,9 +74,9 @@ export function RoomPlanView({ plan, members, command, openSession, stopMember, 
   const list = (values: readonly string[]): ReactNode => <ul>{values.map((value, index) => <li key={`${index}:${value}`}>{/^https?:\/\//i.test(value)
     ? <a href={value} target="_blank" rel="noreferrer">{value}</a> : <span className={css.reference}>{value}</span>}</li>)}</ul>
   const attemptView = (attempt: PlanAttempt): ReactNode => <details key={attempt.id} className={css.attempt}>
-    <summary>{t('plan.attempt')} {attempt.number} · {status(attempt.status)}</summary>
+    <summary>{t('plan.attemptNumber', { n: attempt.number })} · {attemptInterrupted(attempt) ? t('plan.attemptInterrupted') : status(attempt.status)}</summary>
     <div className={css.reference}>{attempt.id}</div>
-    {attempt.error && <p role="status">{attempt.error}</p>}
+    {attempt.error && !attemptInterrupted(attempt) && <p role="status">{attempt.error}</p>}
     {attempt.submission && <><p className={css.text}>{attempt.submission.summary}</p>{list(attempt.submission.references)}{list(attempt.submission.artifacts)}</>}
     {attempt.review && <p>{attempt.review.by} · {attempt.review.reason}</p>}
     {attempt.retry && <p>{attempt.retry.by} · {attempt.retry.reason}</p>}
@@ -83,7 +84,6 @@ export function RoomPlanView({ plan, members, command, openSession, stopMember, 
   const taskView = (task: PlanTask): ReactNode => {
     const owner = members.find(member => member.id === task.ownerMemberId)
     const attempt = task.attempts.at(-1)
-    const uncertain = attempt?.status === 'uncertain'
     const reviewable = attempt?.status === 'submitted' && attempt.settledAt !== undefined
     return <details key={task.id} id={`room-plan-task-${task.id}`} className={task.parentId === undefined ? css.task : css.childTask}>
       <summary>{task.title} · {task.kind === 'group' ? t('plan.group') : status(task.status)}{owner && ` · ${owner.name}`}</summary>
@@ -96,7 +96,7 @@ export function RoomPlanView({ plan, members, command, openSession, stopMember, 
       <div className={css.actions}>
         {owner?.childSessionId && openSession && <button type="button" onClick={() => openSession(owner.childSessionId!)}>{t('plan.session')}</button>}
         {owner && stopMember && attempt?.startedAt !== undefined && attempt.settledAt === undefined && ['running', 'submitted'].includes(attempt.status) && <button type="button" onClick={() => stopMember(owner.name, attempt.deliveryId)}>{t('composer.stop')}</button>}
-        {(uncertain || (!closed && (reviewable || task.status === 'failed'))) && <button type="button" onClick={() => { setReviewTask(task.id); setGoalControls(false); setReason(''); setReferences(''); setArtifacts('') }}>{t(uncertain ? 'plan.reconcile' : reviewable ? 'plan.review' : 'plan.retry')}</button>}
+        {!closed && (reviewable || task.status === 'failed') && <button type="button" onClick={() => { setReviewTask(task.id); setGoalControls(false); setReason(''); setReferences(''); setArtifacts('') }}>{t(reviewable ? 'plan.review' : 'plan.retry')}</button>}
       </div>
       {reviewTask === task.id && attempt && <div className={css.review}>
         {evidenceFields}
@@ -105,11 +105,7 @@ export function RoomPlanView({ plan, members, command, openSession, stopMember, 
             <button type="button" disabled={busy || !hasEvidence} onClick={() => { void run({ action: 'review', taskId: task.id, attemptId: attempt.id, decision: 'accepted', reason, references: lines(references) }) }}>{t('plan.accept')}</button>
             <button type="button" disabled={busy || !hasEvidence} onClick={() => { void run({ action: 'review', taskId: task.id, attemptId: attempt.id, decision: 'rework', reason, references: lines(references) }) }}>{t('plan.rework')}</button>
           </>}
-          {uncertain && <>
-            <button type="button" disabled={busy || !hasEvidence} onClick={() => { void run({ action: 'reconcile', taskId: task.id, attemptId: attempt.id, outcome: 'submitted', evidence }) }}>{t('plan.reconcileSubmitted')}</button>
-            <button type="button" disabled={busy || !hasEvidence} onClick={() => { void run({ action: 'reconcile', taskId: task.id, attemptId: attempt.id, outcome: 'failed', evidence }) }}>{t('plan.reconcileFailed')}</button>
-          </>}
-          {!uncertain && !reviewable && task.status === 'failed' && <button type="button" disabled={busy || reason.trim() === ''} onClick={() => { void run({ action: 'retry', taskId: task.id, reason }) }}>{t('plan.retry')}</button>}
+          {!reviewable && task.status === 'failed' && <button type="button" disabled={busy || reason.trim() === ''} onClick={() => { void run({ action: 'retry', taskId: task.id, reason }) }}>{t('plan.retry')}</button>}
         </div>
       </div>}
       {task.attempts.map(attemptView)}
@@ -130,7 +126,9 @@ export function RoomPlanView({ plan, members, command, openSession, stopMember, 
     <summary>{plan === undefined ? t('plan.create') : `${plan.objective} · ${status(plan.status)} · ${t('plan.acceptedCount', { done: accepted, total: leaf.length })}`}</summary>
     {error && <p role="alert">{error}</p>}
     {plan === undefined ? createForm : <>
-      {plan.reason && <p role="status">{plan.reason}</p>}
+      {/* A restart's pause is the composer line's to explain (全部继续 · 停止). */}
+      {plan.reason && !pausedByRestart(plan) && <p role="status">{plan.reason}</p>}
+      <p className={css.usage}>{t('plan.attemptsUsed', { used: plan.tasks.reduce((count, task) => count + countedAttempts(task).length, 0), max: plan.budget.maxAttempts })}</p>
       {!closed && <div className={css.actions}>
         {plan.status === 'running' ? <button type="button" disabled={busy} onClick={() => { void run({ action: 'pause', goalId: plan.id, reason: t('plan.humanPause') }) }}>{t('plan.pause')}</button>
           : <button type="button" disabled={busy} onClick={() => { void run({ action: 'resume' }) }}>{t('plan.resume')}</button>}

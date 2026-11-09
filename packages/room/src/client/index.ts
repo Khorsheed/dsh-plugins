@@ -544,18 +544,6 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
         return { ok: false, message: t('recovery.member.error') }
       }
     },
-    reconcileMemberExecution: async (childSessionId, executionId, outcome, evidence) => {
-      const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
-      if (gateway === undefined || typeof gateway['controlMemberInbox'] !== 'function') return { ok: false, message: t('recovery.member.error') }
-      try {
-        const carried = await (gateway['controlMemberInbox'] as
-          (child: string, action: 'reconcile', id: string, verdict: 'done' | 'cancelled', proof: string) => Promise<{ readonly ok: true; readonly value: LocalAgentPromptResult } | { readonly ok: false }>)(childSessionId, 'reconcile', executionId, outcome, evidence)
-        if (!carried.ok) return { ok: false, message: t('recovery.member.error') }
-        return carried.value.ok ? { ok: true } : { ok: false, message: t('recovery.member.error') }
-      } catch {
-        return { ok: false, message: t('recovery.member.error') }
-      }
-    },
     setMemberModel: async (childSessionId, model) => {
       const gateway = ctx.get('remote.localAgentGateway') as Record<string, unknown> | undefined
       if (gateway === undefined || typeof gateway['setMemberModel'] !== 'function') return undefined
@@ -717,10 +705,14 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
   // main-agent turn Stop: the takeover renders the dock
   // surfaces and the Stop button itself, because their seats hide with the
   // official fallback.
-  const reconcileFor = (sessionId: SessionId) => async (deliveryId: string, outcome: 'done' | 'cancelled', evidence: string): Promise<RoomMutationOutcome> => {
-    const result = await remote?.reconcileDelivery({ sessionId, deliveryId, outcome, evidence })
-    await roomStore.refresh(sessionId)
-    return result?.ok && result.value.ok ? { ok: true } : { ok: false, message: result?.ok && !result.value.ok ? result.value.error.code : t('composer.error.generic') }
+  /** The restart banner's 全部继续 / 停止 (Remotes continueInterrupted / stopInterrupted). */
+  const restartFor = (sessionId: SessionId) => {
+    const act = (call: 'continueInterrupted' | 'stopInterrupted') => async (runIds: readonly string[], goal: boolean): Promise<RoomMutationOutcome> => {
+      const result = await remote?.[call]({ sessionId, runIds, goal })
+      await roomStore.refresh(sessionId)
+      return result?.ok && result.value.ok ? { ok: true } : { ok: false, message: t('composer.error.generic') }
+    }
+    return { continue: act('continueInterrupted'), stop: act('stopInterrupted') }
   }
   /** The task page's actions (sessionId binds per entry inject). */
   const tasksFace = (sessionId: SessionId): RoomTasksInjected => ({
@@ -736,7 +728,6 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
     stopDelivery: (member, deliveryId) => {
       void remote?.cancel({ sessionId, name: member, ...deliveryId === undefined ? {} : { expectedRunId: deliveryId } }).then(() => roomStore.refresh(sessionId))
     },
-    reconcile: reconcileFor(sessionId),
     confirmRelay: relayFace(sessionId).confirmRelay,
     dismissRelay: relayFace(sessionId).dismissRelay,
     planCommand: async command => {
@@ -803,7 +794,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
       ...goalFace(sessionId),
       ...inviteFace(sessionId),
       modeNames,
-      reconcileDelivery: reconcileFor(sessionId),
+      ...remote === undefined ? {} : { restartRounds: restartFor(sessionId) },
       openPlanSession: id => openSession(id as SessionId),
       memberActivity,
       ...sidebar === undefined || sidebarTabs === undefined ? {} : {
@@ -1017,7 +1008,7 @@ export async function apply(ctx: RoomClientContext): Promise<() => Promise<void>
         const ui = ctx.get('localAgentUi') as LocalAgentUi | undefined
         const control = ui?.controlMemberQueue
         return {
-          roomStore, openSession,
+          roomStore,
           ...remote === undefined ? {} : { withdraw: withdrawFor(sessionId) },
           ...control === undefined ? {} : {
             resumeQueue: async (memberId: string) => {

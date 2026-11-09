@@ -226,7 +226,16 @@ export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInject
   readonly openTasks?: ((task?: string) => void) | undefined
   /** The composer's task tag store (see task-tag.ts). */
   readonly taskTags?: import('./task-tag.ts').RoomTaskTags | undefined
-  readonly reconcileDelivery?: ((deliveryId: string, outcome: 'done' | 'cancelled', evidence: string) => Promise<RoomMutationOutcome>) | undefined
+  /**
+   * The banner's two actions on rounds a host restart cut off (Remotes
+   * `continueInterrupted` / `stopInterrupted`): `goal` also continues or
+   * stops a formal goal the restart paused. Absent: an older host — the
+   * banner falls back to sending the continue message.
+   */
+  readonly restartRounds?: {
+    readonly continue: (runIds: readonly string[], goal: boolean) => Promise<RoomMutationOutcome>
+    readonly stop: (runIds: readonly string[], goal: boolean) => Promise<RoomMutationOutcome>
+  } | undefined
   readonly openPlanSession?: ((sessionId: string) => void) | undefined
   /** Members' background activity (local-agent's read, polled); absent = no 后台 capsule. */
   readonly memberActivity?: import('./MemberActivity.tsx').MemberActivityFace | undefined
@@ -397,8 +406,6 @@ export interface RoomMembersInjected extends RoomInviteInjected, RoomModeNamesIn
   readonly memberRecovery?: ((childSessionId: string) => Promise<import('./member-recovery-view.ts').MemberRecoveryRead | undefined>) | undefined
   /** 对账并重试: the member-configuration retry (the localAgentGateway `retryMemberConfiguration` write). */
   readonly retryMemberStart?: ((childSessionId: string, revision: number) => Promise<RoomMutationOutcome>) | undefined
-  /** Record the human's verdict on an interrupted execution (the localAgentGateway `controlMemberInbox` reconcile). */
-  readonly reconcileMemberExecution?: ((childSessionId: string, executionId: string, outcome: 'done' | 'cancelled', evidence: string) => Promise<RoomMutationOutcome>) | undefined
   /**
    * The room session's official model directory (the same instance
    * RoomModelPicker renders): the main-agent card's model hint. undefined =

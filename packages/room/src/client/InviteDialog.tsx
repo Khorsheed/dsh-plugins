@@ -160,7 +160,6 @@ export interface InviteDialogProps {
   /** Edit mode: 对账并重试 for a member whose start failed. */
   readonly retryMemberStart?: MembersViewProps['retryMemberStart']
   /** Edit mode: the human's verdict on a round a restart interrupted. */
-  readonly reconcileMemberExecution?: MembersViewProps['reconcileMemberExecution']
   /**
    * Edit mode, a started CLI member: how many background tasks its live
    * process runs now. Saving a model change replaces that process, so a
@@ -182,7 +181,7 @@ export function InviteDialog({
   mode, member, providers, presets, sessionPreset, localAgentAvailable, inheritedCwd, existingNames,
   browseDirectory, listDirectory, modelSurface, renderHarnessModelPicker, memberModel, memberConfiguration,
   renderMemberModelPicker, readMemberSelection, mainModelDirectory, memberRunning = false, memberRun, memberTools, reloadMemberTools,
-  memberRecovery, retryMemberStart, reconcileMemberExecution, runningBackgroundTasks, onSubmit, onClose, t,
+  memberRecovery, retryMemberStart, runningBackgroundTasks, onSubmit, onClose, t,
 }: InviteDialogProps): ReactNode {
   const isMain = mode === 'edit' && member?.kind === 'main-agent'
   /** A started CLI member edited through the member-control form fields (saved on 保存). */
@@ -613,7 +612,6 @@ export function InviteDialog({
                   childSessionId={recoveryChild}
                   read={memberRecovery!}
                   retry={retryMemberStart!}
-                  reconcile={reconcileMemberExecution}
                   refreshKey={recoveryKey}
                   t={t}
                 />

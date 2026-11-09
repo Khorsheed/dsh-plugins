@@ -1,43 +1,30 @@
-/* 重启后继续 (M9): composer banners, the timeline's auto-continue row, and
-   the members page's short line. Prototype member-activity.html states 4–7. */
-
-.banners {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
+/* The restart surfaces besides a round's own card (restart-recovery
+   consolidation, prototype restart-recovery.html ①③): the composer line and
+   the room's auto-continue node. */
 
 .banner {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 4px 10px;
   padding: 6px 12px;
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(0, 0, 0, 0.08));
-  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1, #ffffff);
-  font-size: var(--dsh-panel-meta-size, 12px);
+  font-size: var(--dsh-panel-meta-size, 13px);
   line-height: 18px;
   color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.7));
 }
 
-.banner[data-tone='warning'] {
-  border-color: color-mix(in srgb, var(--dsw-alias-label-warning, #c87a12) 55%, transparent);
-  background: var(--dsw-alias-fill-warning-weak, rgba(200, 122, 18, 0.12));
-}
-
 .bannerText {
-  flex: 1 1 220px;
+  flex: 1 1 200px;
   min-width: 0;
   overflow-wrap: anywhere;
 }
 
 .why {
-  display: block;
-  color: var(--dsw-alias-label-warning, #c87a12);
-}
-
-.sep {
+  width: 100%;
+  font-size: 12px;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
 }
 
@@ -54,29 +41,32 @@
   text-decoration: underline;
 }
 
-.close {
+.stop {
   flex: none;
-  padding: 0 4px;
-  border: none;
-  background: none;
+  padding: 2px 10px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.7));
   font: inherit;
-  font-size: 15px;
-  line-height: 1;
-  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+  font-size: 12.5px;
   cursor: pointer;
 }
 
 .continueAll {
   flex: none;
-  padding: 2px 10px;
+  padding: 3px 12px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--dsw-alias-info-fill, #3964fe);
   color: #fff; /* panel-check: allow-color */
   font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
   cursor: pointer;
 }
 
+.stop:disabled,
 .continueAll:disabled {
   opacity: 0.5;
   cursor: default;
@@ -111,110 +101,41 @@
   color: var(--dsw-alias-text-error, #d9363e);
 }
 
-/* ---- timeline row */
+/* ---- the room's own 全部继续: a human-side message from 「房间 · 自动」 */
 
 .auto {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 3px;
   margin: 4px 0;
+  margin-left: auto;
+  max-width: 78%;
+  min-width: 0;
 }
 
-.line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 6px;
-  font-size: 12px;
-  line-height: 18px;
+.who {
+  font-size: 11.5px;
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
-}
-
-.line::before,
-.line::after {
-  content: '';
-  flex: 1;
-  min-width: 12px;
-  border-top: 1px dashed var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
-}
-
-.lineText {
-  flex: 0 1 auto;
-  text-align: center;
-  overflow-wrap: anywhere;
 }
 
 .message {
-  min-width: 0;
-  padding: 10px 14px;
-  border: 1px dashed var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.24));
+  margin: 0;
+  padding: 8px 12px;
   border-radius: 14px;
   background: var(--dsw-alias-bg-layer-2, rgba(127, 127, 127, 0.06));
-  font-size: 14px;
-}
-
-.messageHead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--dsw-alias-label-primary, rgba(0, 0, 0, 0.9));
-}
-
-.tag {
-  padding: 0 7px;
-  border-radius: 999px;
-  background: var(--dsw-alias-bg-layer-1, #ffffff);
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
-}
-
-.cause {
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
-}
-
-.messageText {
-  margin: 5px 0 0;
+  font-size: 13px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--dsw-alias-label-secondary, rgba(31, 35, 41, 0.7));
 }
 
-/* ---- members page line */
-
-.memberLine {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 2px 0 0 52px;
-  font-size: var(--dsh-panel-text-meta, 12px);
-  color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
+.autoLink {
+  font-size: 12px;
 }
 
-.memberLine[data-tone='warning'] {
-  color: var(--dsw-alias-state-warning, #c08419);
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-weight: 600;
-  white-space: nowrap;
-  --tone: var(--dsw-alias-label-secondary, rgb(97, 102, 107));
-  color: var(--tone);
-  background: color-mix(in srgb, var(--tone) 12%, transparent);
-}
-
-.pill[data-status='done'] { --tone: var(--dsw-alias-state-success, #1f9a55); }
-.pill[data-status='lost'] { --tone: var(--dsw-alias-state-warning, #c08419); }
-
-@media (max-width: 560px) {
-  .memberLine {
-    margin-left: 0;
+@container dsh-panel (max-width: 560px) {
+  .auto {
+    max-width: 92%;
   }
 }

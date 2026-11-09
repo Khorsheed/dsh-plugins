@@ -118,6 +118,7 @@ async function bench(
     setCoordinator?: RoomComposerProps['setCoordinator']
     controlMemberQueue?: RoomComposerProps['controlMemberQueue']
     withdrawDelivery?: RoomComposerProps['withdrawDelivery']
+    restartRounds?: RoomComposerProps['restartRounds']
   } = {},
 ): Promise<Bench> {
   const roomStore = await primedStore(options.state)
@@ -171,6 +172,7 @@ async function bench(
     setCoordinator: options.setCoordinator,
     controlMemberQueue: options.controlMemberQueue,
     withdrawDelivery: options.withdrawDelivery,
+    restartRounds: options.restartRounds,
     useSession,
     // Default: a projection seat that serves nothing (no stats row, no todo strip).
     useProjection: options.useProjection === undefined
@@ -374,6 +376,18 @@ describe('RoomComposer', () => {
     await waitFor(() => { expect(submit).toHaveBeenCalledWith(SESSION, 'composer.continueText', ['ada', 'bill']) })
   })
 
+  it('全部继续 / 停止 go through the room\'s restart actions with the rounds\' run ids; no 待核对 anywhere', async () => {
+    const restart = { continue: vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true })), stop: vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true })) }
+    await bench(vi.fn(), { restartRounds: restart, state: { ...STATE, settings: { ...STATE.settings!, autoContinueAfterRestart: false }, runs: [
+      { member: 'bill', runId: '4:bill', state: 'cancelled', endedBy: 'restart', startedAt: 1 },
+    ], deliveries: [{ ...STATE.deliveries!.find(row => row.id === '4:bill')!, status: 'cancelled', endedBy: 'restart' }] } })
+    fireEvent.click(screen.getByRole('button', { name: 'composer.continueAll' }))
+    await waitFor(() => { expect(restart.continue).toHaveBeenCalledWith(['4:bill'], false) })
+    fireEvent.click(screen.getByRole('button', { name: 'composer.stopInterrupted' }))
+    await waitFor(() => { expect(restart.stop).toHaveBeenCalledWith(['4:bill'], false) })
+    expect(document.body.textContent).not.toContain('reconcile')
+  })
+
   it('routes bare input through the room service', async () => {
     const submit = vi.fn(async (): Promise<RoomMutationOutcome> => ({ ok: true }))
     const { area, inputActions } = await bench(submit)
@@ -486,7 +500,8 @@ describe('RoomComposer', () => {
 
   it('renders the task capsule above the card; it and the amber attention capsule open the task page', async () => {
     const openTasks = vi.fn()
-    await bench(vi.fn(), { openTasks, t: makeTranslate(zh) as RoomComposerProps['t'] })
+    await bench(vi.fn(), { openTasks, t: makeTranslate(zh) as RoomComposerProps['t'],
+      state: { ...STATE, relays: [{ id: 'r1', from: 'ada', to: 'bill', content: 'x', state: 'pending', intent: { task: 'msg-2' } as never }] } })
     const taskCapsule = screen.getByTestId('room-task-capsule')
     expect(taskCapsule.textContent).toBe('1 个任务进行中')
     // The capsule sits before the composer card's textarea in tree order.
@@ -494,7 +509,7 @@ describe('RoomComposer', () => {
     expect(taskCapsule.compareDocumentPosition(area) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     fireEvent.click(taskCapsule)
     expect(openTasks).toHaveBeenLastCalledWith()
-    // The uncertain delivery needs the human: straight to its task.
+    // A held message needs the human: straight to its task.
     fireEvent.click(screen.getByRole('button', { name: '⚠ 1 件需要处理' }))
     expect(openTasks).toHaveBeenLastCalledWith('msg-2')
   })

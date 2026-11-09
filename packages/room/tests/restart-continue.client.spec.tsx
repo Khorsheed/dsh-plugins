@@ -9,8 +9,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { autoContinueRounds, interruptedRounds, RESTART_CONTINUE_TEXT } from '../src/restart-continue.ts'
-import { memberRestartLine, restartBanner } from '../src/client/restart-view.ts'
-import { MemberRestartLineView, RoomAutoContinueView, RoomRestartBanner } from '../src/client/RoomRestart.tsx'
+import { restartBanner } from '../src/client/restart-view.ts'
+import { RoomAutoContinueView, RoomRestartBanner } from '../src/client/RoomRestart.tsx'
 import { en, zh } from '../src/client/locales.ts'
 import { DEFAULT_ROOM_SETTINGS } from '../src/journal.ts'
 import type { RoomDelivery, RoomMember, RoomState } from '../src/types.ts'
@@ -83,8 +83,6 @@ describe('only this restart\'s rounds (incident 2026-11-06)', () => {
     expect(autoContinueRounds(mixed(), undefined, { recorded: true }).map(round => round.member)).toEqual(['bill'])
     const banner = restartBanner(mixed())
     expect(banner.manual.map(round => round.member)).toEqual(['ada'])
-    expect(memberRestartLine(mixed(), 'ada')).toEqual({ kind: 'interrupted' })
-    expect(memberRestartLine(mixed(), 'bill')).toBeUndefined()
   })
 
   it('a legacy run edge (startedAt + elapsedMs) dates the interruption when the delivery has none', () => {
@@ -122,90 +120,86 @@ describe('only this restart\'s rounds (incident 2026-11-06)', () => {
   })
 })
 
-describe('the composer banner', () => {
-  it('setting off: the manual banner as before — names, 全部继续, no reasons', () => {
+describe('the composer line (the one place the room asks the human)', () => {
+  it('setting off: names, 停止 and 全部继续, no reasons', () => {
     const state = interrupted({ settings: { ...DEFAULT_ROOM_SETTINGS, autoContinueAfterRestart: false }, restartFacts: { queuePaused: ['m-ada'] } })
-    const onContinueAll = vi.fn()
-    render(<RoomRestartBanner sessionId="room-1" state={state} busy={false} onContinueAll={onContinueAll} t={t} />)
-    expect(screen.getByTestId('restart-manual-banner').textContent).toContain('2 位成员被重启打断：ada、bill')
-    expect(screen.getByTestId('restart-manual-banner').textContent).not.toContain('暂停')
+    const onContinue = vi.fn()
+    const onStop = vi.fn()
+    render(<RoomRestartBanner state={state} busy={false} onContinue={onContinue} onStop={onStop} t={t} />)
+    const text = screen.getByTestId('restart-manual-banner').textContent ?? ''
+    expect(text).toContain('2 位成员被重启打断：ada、bill')
+    expect(text).not.toContain('暂停')
+    expect(text).not.toContain('对账')
+    expect(text).not.toContain('核对')
     fireEvent.click(screen.getByRole('button', { name: '全部继续' }))
-    expect(onContinueAll.mock.calls[0]![0].map((round: { member: string }) => round.member)).toEqual(['ada', 'bill'])
-    expect(restartBanner(state).auto).toBeUndefined()
+    expect(onContinue.mock.calls[0]![0].map((round: { member: string }) => round.member)).toEqual(['ada', 'bill'])
+    expect(onContinue.mock.calls[0]![1]).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: '停止' }))
+    expect(onStop.mock.calls[0]![0].map((round: { member: string }) => round.member)).toEqual(['ada', 'bill'])
   })
 
-  it('setting on: rounds the room is about to continue are not offered (pressing would send twice)', () => {
-    const { container } = render(<RoomRestartBanner sessionId="room-1" state={interrupted()} busy={false} onContinueAll={vi.fn()} t={t} />)
+  it('setting on: rounds the room is about to continue are not offered, and nothing says the room continued them', () => {
+    const { container } = render(<RoomRestartBanner state={interrupted()} busy={false} onContinue={vi.fn()} t={t} />)
     expect(container.textContent).toBe('')
-  })
-
-  it('auto-continued: 「重启后已自动继续 N 位成员 · 设置」, dismissible; the 设置 link opens the switch in place', async () => {
-    const setSettings = vi.fn(async () => ({ ok: true as const }))
-    const state: RoomState = {
+    const running: RoomState = {
       members: [ada, bill], relays: [], tasks: [], settings: DEFAULT_ROOM_SETTINGS,
-      runs: [{ member: 'ada', runId: '7:m-ada', state: 'running', startedAt: 3 }, { member: 'bill', runId: '7:m-bill', state: 'running', startedAt: 3 }],
-      deliveries: [delivery('7:m-ada', 'm-ada', { status: 'running', via: 'auto-continue' }), delivery('7:m-bill', 'm-bill', { status: 'queued', via: 'auto-continue' })],
-      continued: ['4:m-ada', '5:m-bill'],
+      runs: [{ member: 'ada', runId: '7:m-ada', state: 'running', startedAt: 3 }],
+      deliveries: [delivery('7:m-ada', 'm-ada', { status: 'running', via: 'auto-continue' })],
+      continued: ['4:m-ada'],
     }
-    const view = render(<RoomRestartBanner sessionId="room-1" state={state} busy={false} onContinueAll={vi.fn()} setSettings={setSettings} t={t} />)
-    expect(screen.getByTestId('restart-auto-banner').textContent).toContain('重启后已自动继续 2 位成员')
-    expect(screen.queryByTestId('restart-manual-banner')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: '设置' }))
-    const toggle = screen.getByRole('switch', { name: '重启后自动继续' })
-    expect(toggle.getAttribute('aria-checked')).toBe('true')
-    fireEvent.click(toggle)
-    await waitFor(() => expect(setSettings).toHaveBeenCalledWith({ autoContinueAfterRestart: false }))
-    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
-    expect(screen.queryByTestId('restart-auto-banner')).toBeNull()
-    // Dismissed for this continue only (kept in the browser across renders).
-    view.unmount()
-    render(<RoomRestartBanner sessionId="room-1" state={state} busy={false} onContinueAll={vi.fn()} t={t} />)
-    expect(screen.queryByTestId('restart-auto-banner')).toBeNull()
+    expect(render(<RoomRestartBanner state={running} busy={false} onContinue={vi.fn()} t={t} />).container.textContent).toBe('')
   })
 
-  it('an auto-continued round interrupted again falls back to the human with the reason; the others are unaffected', () => {
-    const state = interrupted({
-      runs: [{ member: 'ada', runId: '7:m-ada', state: 'uncertain', startedAt: 3, error: LOST }, { member: 'bill', runId: '7:m-bill', state: 'running', startedAt: 3 }],
-      deliveries: [delivery('7:m-ada', 'm-ada', { via: 'auto-continue' }), delivery('7:m-bill', 'm-bill', { status: 'running', via: 'auto-continue' })],
+  it('a reason only where the human cannot see it: interrupted again after an automatic continue, the member requested the restart — never the paused room', () => {
+    const again = interrupted({
+      runs: [{ member: 'ada', runId: '7:m-ada', state: 'cancelled', endedBy: 'restart', startedAt: 3 }, { member: 'bill', runId: '7:m-bill', state: 'running', startedAt: 3 }],
+      deliveries: [delivery('7:m-ada', 'm-ada', { status: 'cancelled', endedBy: 'restart', via: 'auto-continue' }), delivery('7:m-bill', 'm-bill', { status: 'running', via: 'auto-continue' })],
       continued: ['4:m-ada', '5:m-bill'],
     })
-    render(<RoomRestartBanner sessionId="room-1" state={state} busy={false} onContinueAll={vi.fn()} t={t} />)
-    const manual = screen.getByTestId('restart-manual-banner').textContent ?? ''
-    expect(manual).toContain('ada 被重启打断')
-    expect(manual).toContain('上次自动继续后又被打断，这次请你决定')
-    expect(screen.getByTestId('restart-auto-banner').textContent).toContain('重启后已自动继续 1 位成员')
+    render(<RoomRestartBanner state={again} busy={false} onContinue={vi.fn()} t={t} />)
+    const text = screen.getByTestId('restart-manual-banner').textContent ?? ''
+    expect(text).toContain('ada 被重启打断')
+    expect(text).toContain('上次自动继续后又被打断，这次请你决定')
+    cleanup()
+    const paused = interrupted({ settings: { ...DEFAULT_ROOM_SETTINGS, paused: true } })
+    render(<RoomRestartBanner state={paused} busy={false} onContinue={vi.fn()} t={t} />)
+    expect(screen.getByTestId('restart-manual-banner').textContent).not.toContain('房间已暂停')
+  })
+
+  it('a goal the restart paused: 「这个目标被重启打断」; 全部继续 continues the goal', () => {
+    const goal = {
+      version: 1 as const, id: 'g', revision: 2, objective: '北岭', status: 'paused' as const, reason: '被重启打断', activeMs: 0,
+      budget: { maxParallel: 2, maxAttempts: 12, maxAttemptsPerTask: 3, maxActiveMs: 60_000 }, stages: [], tasks: [],
+    }
+    const state: RoomState = { members: [ada], relays: [], tasks: [], runs: [], settings: DEFAULT_ROOM_SETTINGS, plan: goal }
+    const onContinue = vi.fn()
+    render(<RoomRestartBanner state={state} busy={false} onContinue={onContinue} onStop={vi.fn()} t={t} />)
+    expect(screen.getByTestId('restart-manual-banner').textContent).toContain('这个目标被重启打断')
+    fireEvent.click(screen.getByRole('button', { name: '全部继续' }))
+    expect(onContinue).toHaveBeenCalledWith([], true)
+    // An older version's pause reason reads the same.
+    expect(restartBanner({ ...state, plan: { ...goal, reason: 'Reconcile uncertain attempts before continuing' } }).goal).toEqual({ id: 'g' })
+    expect(restartBanner({ ...state, plan: { ...goal, reason: '已停止' } }).goal).toBeUndefined()
   })
 })
 
-describe('the timeline row and the members line', () => {
+describe('the room\'s auto-continue node', () => {
   const roomStore = (state: RoomState) => ({ subscribe: () => () => {}, getCached: () => state }) as never
 
-  it('the room\'s auto-continue reads 「已自动继续：…（重启打断）」 and shows the message from 「房间 · 自动」', () => {
+  it('reads 「房间 · 自动」, the message itself, and 设置 (the switch in place); no 「已自动继续」 line', () => {
     const node = { key: 'k', kind: 'room-auto-continue', id: '7', target: 'chat', anchorSeq: 7, location: { kind: 'unresolved' }, visibility: 'visible',
       data: { seq: 7, time: 7, targets: ['ada', 'bill'], text: RESTART_CONTINUE_TEXT } }
     const setSettings = vi.fn(async () => ({ ok: true as const }))
     render(<RoomAutoContinueView {...{ node, sessionId: 'room-1', roomStore: roomStore(interrupted()), setSettings, t } as never} />)
     const row = screen.getByTestId('restart-auto-row').textContent ?? ''
-    expect(row).toContain('已自动继续：ada、bill（重启打断）')
-    expect(row).toContain('房间自动')
-    expect(row).toContain('发给 ada、bill · 重启后自动继续')
+    expect(row).toContain('房间 · 自动')
     expect(row).toContain(RESTART_CONTINUE_TEXT)
+    expect(row).not.toContain('已自动继续')
     fireEvent.click(screen.getByRole('button', { name: '设置' }))
     fireEvent.click(screen.getByRole('switch', { name: '重启后自动继续' }))
     expect(setSettings).toHaveBeenCalledWith('room-1', { autoContinueAfterRestart: false })
-  })
-
-  it('members page: 「重启后已继续」 while the continued round runs, 「被重启打断」 while it waits for the human', () => {
-    const running: RoomState = { members: [ada], relays: [], tasks: [], runs: [{ member: 'ada', runId: '7:m-ada', state: 'running', startedAt: 3 }],
-      deliveries: [delivery('7:m-ada', 'm-ada', { status: 'running', via: 'auto-continue' })] }
-    expect(memberRestartLine(running, 'ada')).toEqual({ kind: 'continued' })
-    expect(memberRestartLine({ ...running, deliveries: [delivery('7:m-ada', 'm-ada', { status: 'done', via: 'auto-continue' })] }, 'ada')).toBeUndefined()
-    render(<MemberRestartLineView state={running} member="ada" t={t} />)
-    expect(screen.getByTestId('member-restart-line').textContent).toContain('重启后已继续这一轮结束后消失')
     cleanup()
-    const off = interrupted({ settings: { ...DEFAULT_ROOM_SETTINGS, autoContinueAfterRestart: false } })
-    expect(memberRestartLine(off, 'ada')).toEqual({ kind: 'interrupted' })
-    render(<MemberRestartLineView state={off} member="ada" t={makeTranslate(en) as never} />)
-    expect(screen.getByTestId('member-restart-line').textContent).toContain('Interrupted by a restartwaiting for you')
+    render(<RoomAutoContinueView {...{ node, sessionId: 'room-1', roomStore: roomStore(interrupted()), t: makeTranslate(en) } as never} />)
+    expect(screen.getByTestId('restart-auto-row').textContent).toContain('Room · automatic')
   })
 })

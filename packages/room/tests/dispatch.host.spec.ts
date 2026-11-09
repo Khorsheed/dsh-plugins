@@ -15,7 +15,7 @@ import type { LocalAgentFacade } from '../src/adapter.ts'
 import { withRunEntry } from './run-entry-shim.ts'
 import { replay } from '../src/journal.ts'
 import { RESTART_CONTINUE_TEXT, autoContinueRounds, interruptedRounds } from '../src/restart-continue.ts'
-import { memberRestartLine, restartBanner } from '../src/client/restart-view.ts'
+import { restartBanner } from '../src/client/restart-view.ts'
 import { loadEach } from '../src/startup-load.ts'
 
 /** A manually settled promise. */
@@ -2302,7 +2302,6 @@ describe('restart: the room continues interrupted rounds itself (M9)', () => {
     expect(bench.facade.resume).not.toHaveBeenCalled()
     // The banner's manual state: ada waits for the human, no reason.
     expect(restartBanner(await view(bench)).manual).toMatchObject([{ member: 'ada' }])
-    expect(restartBanner(await view(bench)).auto).toBeUndefined()
   })
 
   it('turning it back on through the settings continues once, under the written setting', async () => {
@@ -2389,7 +2388,6 @@ describe('restart: the room continues interrupted rounds itself (M9)', () => {
     expect(interruptedRounds(state)).toEqual([{ member: 'ada', memberId: expect.any(String), runId: id, task: expect.any(String), stale: true }])
     expect(autoContinueRounds(state)).toEqual([])
     expect(restartBanner(state)).toEqual({ manual: [expect.objectContaining({ member: 'ada', runId: id, stale: true })] })
-    expect(memberRestartLine(state, 'ada')).toEqual({ kind: 'interrupted' })
     // The human's 全部继续: the continue message, then what waited behind the round.
     expect(await bench.service.continueInterrupted({ sessionId: bench.sessionId, runIds: [id] })).toEqual({ ok: true, value: { continued: 1 } })
     await bench.service.engine.idle()

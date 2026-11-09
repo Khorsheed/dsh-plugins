@@ -106,13 +106,15 @@ describe('the receipt line', () => {
       return line(state, 5)?.textContent ?? null
     }
     expect(one({ status: 'queued' }, { restartFacts: { queuePaused: ['m-gu'] } })).toContain('⏸ 已暂停 · 故事顾问 的队列暂停中')
-    expect(one({ status: 'queued', waiting: 'reconcile' })).toContain('⚠ 等核对 · 故事顾问 上一轮被重启打断')
     expect(one({ status: 'held' })).toContain('暂存')
     expect(one({ status: 'done', note: ANSWERED_QUESTION_TEXT })).toBe('↩ 当作回答交给了 故事顾问 这一轮')
     expect(one({ status: 'cancelled', note: WITHDRAWN_TEXT })).toBe('已撤回 · 没有送到 故事顾问')
     expect(one({ status: 'cancelled', note: '已并入下一条消息一起送达' })).toBe('已并入下一条消息一起送达')
     expect(one({ status: 'failed', error: 'boom' })).toBe('没送达：boom')
-    expect(one({ status: 'uncertain' })).toBe('结果待核对')
+    // A round a restart cut off says so on its own card only: the message reached its member.
+    expect(one({ status: 'cancelled', endedBy: 'restart', note: '被重启打断' })).toBeNull()
+    expect(one({ status: 'uncertain' })).toBeNull()
+    expect(one({ status: 'cancelled', note: '你发了新消息；被重启打断的这一轮按没做完处理' })).toBeNull()
     expect(one({ status: 'done', startedAt: T0 + 2_000 })).toBeNull()
     // No bubble above the dispatch (the direct path): the queue above the composer carries it.
     expect(one({ status: 'queued', bubble: undefined })).toBeNull()

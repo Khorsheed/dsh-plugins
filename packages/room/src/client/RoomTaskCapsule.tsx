@@ -1,24 +1,22 @@
 /**
  * The task capsule above the room composer: 「● N 个任务进行中」 plus, when
- * something waits on the human (an uncertain outcome, a held message), an
- * amber 「⚠ N 件需要处理」. Both open the task page in the right sidebar
+ * something waits on the human (a held message, an approval, a question),
+ * an amber 「⚠ N 件需要处理」. Both open the task page in the right sidebar
  * (the second straight at the first task that needs the human). A fresh
  * room — no task, no goal — shows a single 「＋ 邀请成员」 capsule instead.
- * Without the sidebar the capsule cannot open anything, so uncertain
- * outcomes fall back to the inline reconcile view.
+ * Without the sidebar the capsule cannot open anything and shows nothing.
  */
 import { useState, type ReactNode } from 'react'
 import type { RoomProviderList, RoomState } from '../types.ts'
 import type { RoomComposerProps } from './slots.ts'
 import { InviteDialog, inviteRequest, type InviteDialogSubmit } from './InviteDialog.tsx'
-import { RoomRecoveryView } from './RoomRecoveryView.tsx'
 import { attentionCount, needsAttention } from './tasks.ts'
 import { ActivityCapsule, ActivityTray } from './MemberActivity.tsx'
 import type { ActivityGroup, ActivityItem } from './member-activity-view.ts'
 import css from './RoomTaskCapsule.module.css'
 
 type Props = Pick<RoomComposerProps,
-  'openTasks' | 'reconcileDelivery' | 'openPlanSession' | 'invite' | 'listProviders' | 'roomCwd' | 'browseDirectory' | 'listDirectory' | 'modelSurface' | 'renderHarnessModelPicker' | 't'>
+  'openTasks' | 'openPlanSession' | 'invite' | 'listProviders' | 'roomCwd' | 'browseDirectory' | 'listDirectory' | 'modelSurface' | 'renderHarnessModelPicker' | 't'>
   & {
     readonly state: RoomState
     /** A member waiting on a question inside its round: its capsule jumps back to the question. */
@@ -46,7 +44,7 @@ function backgroundParts(background: Props['background'], t: Props['t']): { read
 
 /** The capsule row. */
 export function RoomTaskCapsule({
-  state, openTasks, reconcileDelivery, openPlanSession, invite, listProviders, roomCwd, browseDirectory, listDirectory, modelSurface, renderHarnessModelPicker, waiting, background, extra, t,
+  state, openTasks, invite, listProviders, roomCwd, browseDirectory, listDirectory, modelSurface, renderHarnessModelPicker, waiting, background, extra, t,
 }: Props): ReactNode {
   const bg = backgroundParts(background, t)
   const [inviteOpen, setInviteOpen] = useState(false)
@@ -83,10 +81,7 @@ export function RoomTaskCapsule({
       />}
     </div>
   }
-  if (openTasks === undefined) {
-    return reconcileDelivery === undefined ? null
-      : <RoomRecoveryView deliveries={state.deliveries ?? []} members={state.members} reconcile={reconcileDelivery} openSession={openPlanSession} t={t} />
-  }
+  if (openTasks === undefined) return null
   const running = jobs.filter(job => job.status === 'running').length
   const attention = attentionCount(state)
   const firstAttention = jobs.find(job => needsAttention(state, job))

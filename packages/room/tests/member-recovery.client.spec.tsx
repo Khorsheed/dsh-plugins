@@ -32,13 +32,14 @@ function inbox(rows: LocalAgentMemberInbox['messages'] = []): LocalAgentMemberIn
 const uncertainRow = { id: 'exec-1', caller: 'room' as const, key: 'd1', status: 'uncertain' as const, createdAt: 1, updatedAt: 2 }
 
 describe('memberRecovery (the block\'s state)', () => {
-  it('a failed start, a failed selection, interrupted rounds, or nothing', () => {
+  it('a failed start, a failed selection, or nothing — a round a restart closed is not one', () => {
     expect(memberRecovery(undefined)).toBeUndefined()
     expect(memberRecovery({ configuration: control(), inbox: inbox() })).toBeUndefined()
-    expect(memberRecovery({ configuration: failed() })).toEqual({ failed: { cause: 'start', reason: REASON, revision: 4 }, uncertain: [] })
+    expect(memberRecovery({ configuration: failed() })).toEqual({ failed: { cause: 'start', reason: REASON, revision: 4 } })
     const pending = { revision: 4, requestId: 'r', kind: 'selection' as const, selection: control().current.selection }
     expect(memberRecovery({ configuration: failed({ pending }) })?.failed?.cause).toBe('selection')
-    expect(memberRecovery({ inbox: inbox([uncertainRow, { ...uncertainRow, id: 'done', status: 'done' }]) })).toEqual({ uncertain: [{ id: 'exec-1', caller: 'room' }] })
+    // Even an older core's `uncertain` row: nothing to decide here any more.
+    expect(memberRecovery({ inbox: inbox([uncertainRow, { ...uncertainRow, id: 'cut', status: 'cancelled', interrupted: 'restart' }]) })).toBeUndefined()
   })
 
   it('reads the reason without an error prefix, one short paragraph', () => {
@@ -49,13 +50,12 @@ describe('memberRecovery (the block\'s state)', () => {
   })
 })
 
-function block(reads: MemberRecoveryRead[], options: { retry?: () => Promise<{ ok: true } | { ok: false; message: string }>; reconcile?: boolean; locale?: Record<string, string> } = {}) {
+function block(reads: MemberRecoveryRead[], options: { retry?: () => Promise<{ ok: true } | { ok: false; message: string }>; locale?: Record<string, string> } = {}) {
   let index = 0
   const read = vi.fn(async () => reads[Math.min(index, reads.length - 1)])
   const retry = vi.fn(options.retry ?? (async () => { index++; return { ok: true as const } }))
-  const reconcile = vi.fn(async () => { index++; return { ok: true as const } })
-  render(<MemberRecoveryLine childSessionId="child-gm" read={read} retry={retry} reconcile={options.reconcile === false ? undefined : reconcile} t={makeTranslate(options.locale ?? zh)} />)
-  return { read, retry, reconcile }
+  render(<MemberRecoveryLine childSessionId="child-gm" read={read} retry={retry} t={makeTranslate(options.locale ?? zh)} />)
+  return { read, retry }
 }
 
 describe('MemberRecoveryLine', () => {
@@ -83,17 +83,11 @@ describe('MemberRecoveryLine', () => {
     await screen.findByText(/上次的模型设置没有生效/)
   })
 
-  it('an interrupted round: 待对账 with the members page\'s verdicts, evidence required', async () => {
-    const m = block([{ inbox: inbox([uncertainRow]) }, { inbox: inbox([{ ...uncertainRow, status: 'done' }]) }])
-    await screen.findByText('待对账')
-    expect(screen.getByText('协作间派活')).toBeTruthy()
-    const done = screen.getByRole('button', { name: '确认已完成' }) as HTMLButtonElement
-    expect(done.disabled).toBe(true)
-    fireEvent.change(screen.getByLabelText('填写核对结果或证据'), { target: { value: '看过会话，已经发布' } })
-    expect(done.disabled).toBe(false)
-    fireEvent.click(done)
-    await waitFor(() => { expect(m.reconcile).toHaveBeenCalledWith('child-gm', 'exec-1', 'done', '看过会话，已经发布') })
-    await waitFor(() => { expect(screen.queryByText('待对账')).toBeNull() })
+  it('a round a restart cut off shows nothing: no 待对账, no evidence box', async () => {
+    const m = block([{ inbox: inbox([{ ...uncertainRow, status: 'cancelled', interrupted: 'restart' }]) }])
+    await waitFor(() => { expect(m.read).toHaveBeenCalled() })
+    expect(screen.queryByTestId('member-recovery')).toBeNull()
+    expect(screen.queryByText('待对账')).toBeNull()
   })
 
   it('nothing to recover renders nothing; English copy in sync', async () => {
@@ -128,7 +122,6 @@ describe('the edit dialog', () => {
         {...options.recovery === false ? {} : {
           memberRecovery: async () => ({ configuration: recovered ? control({ revision: 5 }) : failed() }),
           retryMemberStart: retry,
-          reconcileMemberExecution: async () => ({ ok: true as const }),
         }}
         onSubmit={async () => ({ ok: true })}
         onClose={() => {}}

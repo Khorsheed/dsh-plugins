@@ -20,9 +20,7 @@ export function RoomDispatchView({ node, sessionId, roomStore, t }: RoomDispatch
   // simply running or done.
   const rows = (state?.deliveries ?? []).filter(row => row.dispatchSeq === data.seq)
   const statuses = rows.map(row => row.status)
-  // A recipient waiting for its 待对账 (batch 5 S7) says so rather than 排队中.
-  const pending = rows.some(row => row.status === 'queued' && row.waiting === 'reconcile') ? 'reconcile' as const
-    : (['queued', 'held', 'failed', 'cancelled'] as const).find(status => statuses.includes(status))
+  const pending = (['queued', 'held', 'failed', 'cancelled'] as const).find(status => statuses.includes(status))
   const head = t(data.kind === 'notify' ? 'dispatch.notify' : 'dispatch.task', { from, to: data.targets.join('、') })
   return (
     <div className={css.row} data-room-dispatch={data.seq} data-kind={data.kind} data-open={open || undefined}>
