@@ -94,3 +94,7 @@ Status: implemented
 - `packages/room/tests/room-composer.client.spec.tsx`：原有的「全部继续」用例在旧式行（无 run id）上照常通过。
 - 截图（不提交）：`packages/room/tests/preview/restart.html?state=autocont|manual|again|setting`，1280 与 390、亮色与暗色，存于 `/tmp/m9-autocontinue/`。
 - 未验证：3080 上带真实 CLI 成员的真实宿主重启。
+
+## 被扩展
+
+2026-11-09 起被[重启恢复收敛](2026-11-09-restart-recovery-consolidation.zh.md)扩展：自动继续和人按「全部继续」成了被打断的一轮继续下去的唯一方式——包括正式目标的尝试（目标开一次不计数的新尝试，而不是等对账）。续接消息不再「按没做完处理」被打断的那一轮（它已经关了），排在后面的消息也不再合并；它们等续接跑完后按顺序送达。横幅只保留需要人的那一半（「停止 · 全部继续」）；「重启后已自动继续 N 位成员」那一半、成员页的重启行、时间线上「已自动继续：…」那一行都已删除。守卫（`again`、`self-restart`、`queue-paused`、`room-paused`）和 stale 规则保留；`room-paused` 不再向人写出理由。Testing 里的预览状态（`autocont|manual|again`）换成了 `t1|t2|c1|g1|m1|setting`。

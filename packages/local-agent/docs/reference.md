@@ -137,7 +137,7 @@ registry 还持有家族的**委派 registry**：每个子会话一条记录，�
 
 **用量只写一处，读回靠 `readExecution`（批 5 S6）。** 一次调用的用量只在成员日志的 `assistant/message.usage` 上；CLI 自报的整轮合计只在该执行的 `local-agent/execution` end 记录的 `providerReportedUsage` 上（claude-code、codex 报，kimi、dsh 不报）；压缩调用的用量与前后上下文大小只在 `local-agent/compaction` 上（前后大小是上下文大小，不是用量）。`registry.readExecution(childSessionId, executionId)` 只读不写：返回该执行 `turns` 内各次调用用量之和（`callUsage`/`calls`）、原样的 `providerReportedUsage`、end 记录的 `unrecorded` 声明、以及执行区间内的压缩事实（`compactions`，从不并入 `callUsage`）。执行未结束时区间是 start 记录之后到下一条执行记录之前。活会话在日志变化后重算，冷会话从存储读一次；结果不落盘。两个数不一致时由读者显示差额，核心不调和。
 
-**排队与重启恢复只在核心（批 5 S7）。** 每个成员的执行账本是它唯一的队列：宿主工具、成员页输入框、room 派活都排在这里，room 不再自己排 CLI 成员的轮次。重启后账本里 running 的行变成 uncertain（结果不确定），在对账前挡住该成员的后续准入；room 的待对账、成员页的对账和编辑弹窗的「待对账」读写的都是同一行，任一处对账（`reconcileExecution`）其它地方随之解除。对账行记下 `reconciledAt`；成员会话里该执行的 start 若没有 end，核心补写一条 `reconciled: true` 的 end 记录（outcome 为对账结论，turns 为它区间里的轮次）——会话在内存里时立刻写，否则在该成员下一次执行开始前写。
+**排队与重启恢复只在核心（批 5 S7）。** 每个成员的执行账本是它唯一的队列：宿主工具、成员页输入框、room 派活都排在这里，room 不再自己排 CLI 成员的轮次。重启后账本里仍是 running 的行关掉，记为「被重启打断」（`cancelled` + `interrupted: 'restart'`，错误「被重启打断」），不挡任何后续准入，也没有开机暂停（2026-11-09 重启恢复收敛）；旧核心留下的 `uncertain` 行和 `pausedBy: 'restart'` 在载入时按同样方式改写。成员页输入被打断时，核心在队列头部插一行续接（预览「重启后继续」），人排在后面的输入跟着走；宿主工具和插件调用的轮只关掉。被打断执行的 end 记录为 `{ outcome: 'uncertain', reconciled: false }`。`reconcileExecution` 和网关的 `reconcile` 保留一个版本，只回答原来的拒绝；以前对过账的行仍带 `reconciledAt`，照结论读。
 
 `toolCalls` 只从 provider **已经解析过**的转录事件里数出来——不新开解析路径、不再走一遍流。`byName` 的键是各家 CLI 自己的工具词汇（codex 的 `command_execution`、claude 的 `Bash`/`Read`、kimi 与 dsh 各自事件里的工具名），原样保留、**不跨家归一**：因此横比只比 `count`，`byName` 是给人读的。归一化会凭空造出一份 CLI 之间从未约定过的等价关系。
 

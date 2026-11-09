@@ -67,3 +67,7 @@ Batch 5 (the unified execution entry, design `proposals/active/2026-11-03-unifie
 - local-agent 527 → 528, room 515 → 529 (51 files), context-lens 311 unchanged and green. The room→lens fixture is unchanged.
 - Screenshots (not committed), from `packages/room/tests/preview/recovery.html?state=timeline|dialog` at 1280 and 390: `/tmp/s7-recovery/{timeline,dialog}-{1280,390}.png`.
 - Not verified: a real CLI round across a real host restart, a live 3080 instance, and the dialog against a live gateway.
+
+## Superseded in part
+
+Its reconciliation half is superseded on 2026-11-09 by the [restart-recovery consolidation](2026-11-09-restart-recovery-consolidation.md): a restart no longer leaves a ledger row `uncertain` (the row closes as `cancelled` + `interrupted: 'restart'` and blocks nothing), there is no boot pause, and `reconcileExecution` / the gateway's `reconcile` / the room's `reconcileDelivery` remain one release only as refusals. The ledger itself — one queue per member, key dedup, the persistence split, S7's "the room journals what the core says" — stands. The preview page `packages/room/tests/preview/recovery.html` named in Testing no longer exists; `restart.html` shows the consolidated surfaces.

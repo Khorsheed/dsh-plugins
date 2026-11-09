@@ -67,3 +67,7 @@ Status: implemented
 - local-agent 527 → 528，room 515 → 529（51 个文件），context-lens 311 未变且全绿。room→lens 夹具未变。
 - 截图（未提交），来自 `packages/room/tests/preview/recovery.html?state=timeline|dialog`，1280 与 390 宽：`/tmp/s7-recovery/{timeline,dialog}-{1280,390}.png`。
 - 未验证：真实 CLI 轮次跨真实宿主重启、线上 3080 实例、编辑弹窗对接活网关。
+
+## 部分被取代
+
+2026-11-09 起，本篇的对账部分被[重启恢复收敛](2026-11-09-restart-recovery-consolidation.zh.md)取代：重启不再让账本行变成 `uncertain`（关成 `cancelled` + `interrupted: 'restart'`，不挡任何东西），没有开机暂停，`reconcileExecution`、网关的 `reconcile`、房间的 `reconcileDelivery` 只作为拒绝保留一个版本。账本本身——每个成员一条队列、key 去重、持久化拆分、S7 的「房间照核心说的记」——不变。Testing 里提到的预览页 `packages/room/tests/preview/recovery.html` 已删除；`restart.html` 展示收敛后的界面。

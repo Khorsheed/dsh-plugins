@@ -29,3 +29,7 @@ Status: implemented
 - 已核对的房间轮次会解除重启暂停。
 - 有排队中的输入框消息时保持暂停，取消后解除。
 - 操作者的暂停不带标记。
+
+## 被取代
+
+2026-11-09 起被[重启恢复收敛](../feature/2026-11-09-restart-recovery-consolidation.zh.md)取代：核心开机不再暂停账本，也就没有什么需要解除。仍带旧核心 `pausedBy: 'restart'` 的文件载入后不暂停；人自己按的暂停（没有 `pausedBy`）不动。`liftRestartPause` 已删除。

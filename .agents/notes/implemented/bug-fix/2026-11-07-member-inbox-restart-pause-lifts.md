@@ -29,3 +29,7 @@ After auto-continue, the banner disappears unless composer input is still waitin
 - A reconciled room round lifts the restart pause.
 - Queued composer input keeps the pause until it is cancelled.
 - An operator pause carries no marker.
+
+## Superseded
+
+Superseded on 2026-11-09 by the [restart-recovery consolidation](../feature/2026-11-09-restart-recovery-consolidation.md): the core never pauses a ledger at boot any more, so there is nothing to lift. A file that still carries an older core's `pausedBy: 'restart'` loads unpaused; an operator's own pause (no `pausedBy`) is untouched. `liftRestartPause` is gone.

@@ -90,3 +90,11 @@ Status: implemented
 - `packages/room/tests/preview/restart.html` 的截图（场景 t1 t2 c1 g1 m1，1280 与 390，浅色与深色）对照交互稿的「改后」画面；图片从不提交。
 - `packages/room/tests/restart-interrupted.client.spec.ts`：新标记与四种旧形状；已处理的轮；作废回报。
 - `packages/room/tests/dispatch.host.spec.ts`、`real-core.host.spec.ts`、`jobs.host.spec.ts`、`help.host.spec.ts`：恢复关掉、不重放不回报；续接先跑、排队跟上；人发消息和跨房间求助算作继续（D-4）；真实核心立即准入下一条，并为被打断的执行写 `uncertain` 的 end。
+
+## Related
+
+- 被取代：[房间重启对账](../bug-fix/2026-09-19-room-restart-reconciliation.zh.md)（拒绝把被打断的工作当作取消）、[成员收件箱重启暂停的解除](../bug-fix/2026-11-07-member-inbox-restart-pause-lifts.zh.md)（不再有开机暂停）。
+- 部分被取代：[核心里的队列与恢复](2026-11-05-queue-and-recovery-in-core.zh.md)（对账部分）、[在协作间里恢复成员](2026-11-04-member-recovery-in-room.zh.md)（编辑弹窗的待对账）。
+- 被扩展：[房间继续被重启打断的成员](2026-11-06-room-auto-continue-after-restart.zh.md)——它的自动继续和「全部继续」成了被打断的一轮继续下去的唯一方式，目标尝试也包括在内。
+- 事故夹具：[2026-11-09 重启事故的合成夹具](../testing/2026-11-09-restart-incident-fixture.zh.md)。
+- 房间与 local-agent 的参考文档（`packages/room/docs/reference*.md`、`packages/local-agent/docs/reference*.md`）在恢复那一段写了这条规则。

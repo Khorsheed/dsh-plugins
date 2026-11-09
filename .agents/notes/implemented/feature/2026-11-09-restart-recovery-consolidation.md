@@ -90,3 +90,11 @@ The members page (local-agent `MemberInboxView`) lost its `uncertain` rows and e
 - Screenshots of `packages/room/tests/preview/restart.html` (scenes t1 t2 c1 g1 m1, 1280 and 390, light and dark) compared against the prototype's 「改后」 frames; images are never committed.
 - `packages/room/tests/restart-interrupted.client.spec.ts`: the new mark and the four legacy shapes; handled rounds; obsolete reports.
 - `packages/room/tests/dispatch.host.spec.ts`, `real-core.host.spec.ts`, `jobs.host.spec.ts`, `help.host.spec.ts`: recovery closes without replay or report, the continuation runs first and the queue follows, D-4 continuations from a human message and a help request, the real core admits the next delivery at once and writes the `uncertain` end for the interrupted execution.
+
+## Related
+
+- Superseded: [room restart reconciliation](../bug-fix/2026-09-19-room-restart-reconciliation.md) (the refusal to treat interrupted work as cancelled), [member inbox restart pause lifts](../bug-fix/2026-11-07-member-inbox-restart-pause-lifts.md) (no boot pause any more).
+- Superseded in part: [queue and recovery in the core](2026-11-05-queue-and-recovery-in-core.md) (its reconciliation half), [member recovery in the room](2026-11-04-member-recovery-in-room.md) (the edit dialog's 待对账).
+- Extended: [the room continues members a restart interrupted](2026-11-06-room-auto-continue-after-restart.md) — its auto-continue and 「全部继续」 are now the one way an interrupted round goes on, goal attempts included.
+- The incident fixture: [a synthetic fixture of the 2026-11-09 restart incident](../testing/2026-11-09-restart-incident-fixture.md).
+- The room and local-agent references (`packages/room/docs/reference*.md`, `packages/local-agent/docs/reference*.md`) describe the rule in their recovery paragraphs.

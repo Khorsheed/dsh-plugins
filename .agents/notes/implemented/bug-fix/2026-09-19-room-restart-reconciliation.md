@@ -23,3 +23,7 @@ Room exposes an interruption panel for ordinary deliveries, including coordinato
 ## Consequences
 
 Unknown work remains blocked and visible without a misleading running timer. The panel preserves the finding when a request fails. Regression coverage verifies read-only projection, active-run preservation through existing concurrent dispatch tests, session navigation, required findings, retry after a transport failure and exclusion of formal tasks from ordinary recovery. Real crash recovery remains part of the isolated tarball acceptance matrix.
+
+## Superseded
+
+Superseded on 2026-11-09 by the [restart-recovery consolidation](../feature/2026-11-09-restart-recovery-consolidation.md). This note refused to treat interrupted work as cancelled because external actions may already have happened, and asked a human to inspect evidence and pick the outcome. The incident in room 6a56367b showed the human could not answer that question (the "evidence" entered was 「不确认是否做完」) and that a reconciliation in one place never reached the others. The answer now: the round is closed as 「被重启打断」 (not a failure, not unknown), and the **member** checks what it had done — files, tests, commits, deploys — in the round that continues it. The reconciliation surfaces this note introduced (the room's reconcile panel, `reconcileDelivery`) are gone; `reconcileDelivery` answers `delivery-not-uncertain` for one release.

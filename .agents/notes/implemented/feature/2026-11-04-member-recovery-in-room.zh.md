@@ -31,3 +31,7 @@ Status: implemented
 - `packages/room/tests/member-recovery.client.spec.tsx`：新增 12 个测试。覆盖状态折叠、启动失败块（按版本重试、已恢复提示、仍失败）、选择失败的措辞、待对账（必须填核对结果、对账参数）和无事可恢复。在窗口里覆盖：恢复块就在立即载入旁边，立即载入先 retry 再 reload，重试失败时显示原因、不载入，没有 family 时没有这一块。另外覆盖 `startError` 折叠和英文文案。
 - 截图：窗口在 1280 和 390 宽度下的启动失败和待对账两种状态，来自 `packages/room/tests/preview/member-tools.html?state=recoveryFailed|recoveryUncertain`。
 - 未验证：真实的 Kimi 过期锁、3080 线上实例、窗口连真实网关。
+
+## 部分被取代
+
+2026-11-09 起，编辑弹窗里的待对账部分随[重启恢复收敛](2026-11-09-restart-recovery-consolidation.zh.md)删除：被重启打断的一轮关掉并接着做，那里没有要对账的东西。启动失败的部分（「对账并重试」）保留。预览状态 `recoveryUncertain` 现在什么都不显示。

@@ -31,3 +31,7 @@ On 2026-11-04 (prod) the host restarted while a Kimi member was mid-round. Its `
 - `packages/room/tests/member-recovery.client.spec.tsx`: 12 new tests. They cover the state fold, the failed-start block (retry at the revision, recovered note, failed again), the selection wording, 待对账 (evidence required, reconcile arguments) and nothing to recover. In the dialog: the block beside 立即载入, 立即载入 running retry before reload, a failing retry showing the reason without loading, and no family meaning no block. They also cover the `startError` fold and English copy.
 - Screenshots of the dialog at 1280 and 390, failed and uncertain, from `packages/room/tests/preview/member-tools.html?state=recoveryFailed|recoveryUncertain`.
 - Not verified: a real Kimi stale lock, a live 3080 instance, and the dialog against a live gateway.
+
+## Superseded in part
+
+The edit dialog's 待对账 half is removed on 2026-11-09 by the [restart-recovery consolidation](2026-11-09-restart-recovery-consolidation.md): a round a restart cut off is closed and continued, so there is nothing to reconcile there. The failed-start half (「对账并重试」) stands. The preview state `recoveryUncertain` now renders nothing.

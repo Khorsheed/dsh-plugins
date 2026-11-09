@@ -94,3 +94,7 @@ The member self-started rounds design (`proposals/active/2026-11-06-member-self-
 - `packages/room/tests/room-composer.client.spec.tsx`: the existing 全部继续 case still passes on legacy rows (no run ids).
 - Screenshots (not committed), from `packages/room/tests/preview/restart.html?state=autocont|manual|again|setting` at 1280 and 390, light and dark: `/tmp/m9-autocontinue/`.
 - Not verified: a real host restart on 3080 with live CLI members.
+
+## Extended
+
+Extended on 2026-11-09 by the [restart-recovery consolidation](2026-11-09-restart-recovery-consolidation.md): the auto-continue and the human's 「全部继续」 are now the one way an interrupted round goes on — formal-goal attempts included (the goal opens a new, uncounted attempt instead of waiting for reconciliation). The continue message no longer "moves on" from the lost round (it is already closed) and nothing that queued behind it is merged; queued messages wait for the continuation and then go out in order. The banner keeps only its half for the human (「停止 · 全部继续」); the 「重启后已自动继续 N 位成员」 half, the members-page restart line and the 「已自动继续：…」 timeline line are removed. The guards (`again`, `self-restart`, `queue-paused`, `room-paused`) and the stale rule stand; `room-paused` is no longer spelled out to the human. The preview states named in Testing (`autocont|manual|again`) are replaced by `t1|t2|c1|g1|m1|setting`.

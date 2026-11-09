@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-06-room-auto-continue-after-restart.md
-.agents/notes/implemented/feature/2026-11-06-room-auto-continue-after-restart.md: 7fa3baa2f8d7a39be8d853bc54caab22d4538c6d
-.agents/notes/implemented/feature/2026-11-06-room-auto-continue-after-restart.zh.md: aa63a8f33146519cf861c94c9a30bea0f511615a
+.agents/notes/implemented/feature/2026-11-06-room-auto-continue-after-restart.md: e44d9b003c0b954449844a1e828e4b914b61d014
+.agents/notes/implemented/feature/2026-11-06-room-auto-continue-after-restart.zh.md: 187dda2a4803ec8ea819000b91ac20dc78f6746d
