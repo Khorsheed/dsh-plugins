@@ -13,6 +13,8 @@
   border: 1px solid var(--dsw-alias-border-l2-darkmode-thin, rgba(127, 127, 127, 0.2));
   border-radius: 12px;
   background: var(--dsw-specific-menu, var(--dsw-alias-bg-layer-1, #ffffff));
+  /* The translucent menu material needs the host's backdrop filter. */
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px));
   box-shadow: var(--dsw-shadow-lv2, 0 4px 16px rgba(0, 0, 0, 0.08));
   font-size: 12px;
   line-height: 18px;

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 /** The in-card removal confirmation and the impact it reads from room state. */
+import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
@@ -58,6 +59,13 @@ describe('RemoveMemberConfirm', () => {
       onConfirm={async () => {}} onCancel={() => {}} t={t} />)
     screen.getByText('它现在空闲，没有排队的消息和未完成的任务。')
     screen.getByRole('button', { name: '移除' })
+  })
+
+  it('pairs the translucent menu background with the host backdrop filter', () => {
+    const stylesheet = readFileSync('src/client/RemoveMemberConfirm.module.css', 'utf8')
+    const layer = /\.layer\s*\{([^}]*)\}/.exec(stylesheet)?.[1] ?? ''
+    expect(layer).toMatch(/background:\s*var\(--dsw-specific-menu,/)
+    expect(layer).toMatch(/backdrop-filter:\s*var\(--dsw-menu-backdrop-filter,\s*blur\(20px\)\);/)
   })
 
   it('the coordinator is explained, never offered a removal that would fail', () => {
