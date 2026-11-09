@@ -117,6 +117,7 @@ export function sendOrHold(session: Session, message: OutgoingMessage, skipHold 
     ...intent.followUpOf === undefined ? {} : { followUpOf: intent.followUpOf },
     ...intent.plan === undefined ? {} : { plan: intent.plan },
     ...intent.help === undefined ? {} : { help: intent.help },
+    ...intent.continues === undefined ? {} : { continues: intent.continues },
   })
   return { delivered: true, seq: dispatch.seq }
 }

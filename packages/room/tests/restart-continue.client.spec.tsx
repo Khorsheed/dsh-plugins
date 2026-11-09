@@ -72,7 +72,7 @@ describe('the shared rule', () => {
 describe('only this restart\'s rounds (incident 2026-11-06)', () => {
   // ada's interruption edge was journaled at 100 (an earlier restart), bill's at 300; this process booted at 200.
   const mixed = (extra: Partial<RoomState> = {}) => interrupted({
-    deliveries: [delivery('4:m-ada', 'm-ada', { endedAt: 100 }), delivery('5:m-bill', 'm-bill', { endedAt: 300 })],
+    deliveries: [delivery('4:m-ada', 'm-ada', { interruptedAt: 100 }), delivery('5:m-bill', 'm-bill', { interruptedAt: 300 })],
     restartFacts: { bootedAt: 200 },
     ...extra,
   })
@@ -110,7 +110,7 @@ describe('only this restart\'s rounds (incident 2026-11-06)', () => {
         { member: 'ada', runId: '4:m-ada', state: 'uncertain', startedAt: 1, error: LOST },
         { member: 'bill', runId: '5:m-bill', state: 'uncertain', startedAt: 160, error: LOST },
       ],
-      deliveries: [delivery('4:m-ada', 'm-ada', { endedAt: 300 }), delivery('5:m-bill', 'm-bill', { endedAt: 300 })],
+      deliveries: [delivery('4:m-ada', 'm-ada', { interruptedAt: 300 }), delivery('5:m-bill', 'm-bill', { interruptedAt: 300 })],
       restartFacts: { bootedAt: 200, previousProcessStartedAt: 150 },
     })
     expect(interruptedRounds(state).map(round => [round.member, round.stale])).toEqual([['ada', true], ['bill', undefined]])

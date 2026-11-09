@@ -1,5 +1,6 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { RoomDelivery } from './types.ts'
+import { interruptedByRestart } from './restart-interrupted.ts'
 
 /** Whether an event is a message the human typed (not a producer's followup); an in-place edit of one (message-tools) is the human's text too. */
 export function isHumanMessage(event: SessionEvent): event is SessionEvent<'user/message'> {
@@ -81,6 +82,7 @@ export function replayDeliveries(events: readonly SessionEvent[]): RoomDelivery[
           ...data.followUpOf === undefined ? {} : { followUpOf: data.followUpOf },
           ...data.releases === undefined ? {} : { releases: data.releases },
           ...data.via === undefined ? {} : { via: data.via },
+          ...data.continues === undefined ? {} : { continues: data.continues },
           ...data.messageId === undefined ? {} : { messageId: data.messageId },
           ...bubble === undefined ? {} : { bubble },
           ...data.held === true ? { heldAt: event.time } : {},
@@ -90,8 +92,14 @@ export function replayDeliveries(events: readonly SessionEvent[]): RoomDelivery[
       const row = rows.get(event.data.id)
       if (row === undefined || row.memberId !== event.data.memberId || row.dispatchSeq !== event.data.dispatchSeq) continue
       const terminal = event.data.state !== 'running'
+      const { endedBy: _endedBy, ...current } = row
+      // When a restart's cut-off was first journaled (a later rewrite of the
+      // same closing keeps the first time: the stale rule reads it).
+      const cutOff = row.interruptedAt === undefined && interruptedByRestart({ state: event.data.state, ...event.data.endedBy === undefined ? {} : { endedBy: event.data.endedBy }, ...event.data.text === undefined ? {} : { text: event.data.text }, ...event.data.error === undefined ? {} : { error: event.data.error } })
       rows.set(row.id, {
-        ...row, status: event.data.state,
+        ...current, status: event.data.state,
+        ...event.data.endedBy === undefined ? {} : { endedBy: event.data.endedBy },
+        ...cutOff ? { interruptedAt: event.time } : {},
         ...event.data.error === undefined ? {} : { error: event.data.error },
         ...event.data.text === undefined ? {} : { note: event.data.text },
         ...event.data.state === 'running' && row.startedAt === undefined ? { startedAt: event.time } : {},

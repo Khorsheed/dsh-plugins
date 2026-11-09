@@ -6,13 +6,15 @@
  * the room's own press always act on the same list.
  *
  * Interrupted = a member's latest room round (not another caller's
- * `execution:` round, not a delivery waiting for its member's 待对账) whose
- * outcome a restart lost: `uncertain` from the core, or a legacy failed run
- * with the restart reason.
+ * `execution:` round) that a restart cut off — 「被重启打断」, read by
+ * `interruptedByRestart` (restart-interrupted.ts) on the run or its
+ * delivery, in every shape old logs carry — and that nothing has handled
+ * since: no message continues it, the human did not stop it, and an older
+ * version did not move on from it (restart-recovery consolidation).
  *
  * The room continues an interrupted round itself only when the setting is
- * on (absent = on), the round is not a formal goal's attempt (those keep
- * their explicit reconciliation), and none of the guards holds:
+ * on (absent = on), the round is not a formal goal's attempt (the goal
+ * opens a new attempt for those), and none of the guards holds:
  * - `again`: the round is itself an auto-continue (each round at most once);
  * - `self-restart`: the member's round requested this restart (only when
  *   the restart guard records the member — before M10 it never does, and
@@ -26,8 +28,8 @@
  *
  * Only THIS restart's rounds are continued by the room (incident
  * 2026-11-06: the first prod pass continued rounds cut off weeks earlier).
- * A round is `stale` when its interruption edge — the delivery's `uncertain`
- * edge, else the run's restart-failed edge — was journaled before this host
+ * A round is `stale` when its interruption edge — the delivery's closing
+ * edge, else the run's restart edge — was journaled before this host
  * process's room service started (`RestartFacts.bootedAt`): an earlier
  * restart's recovery wrote it. Stale rounds stay in the human's banner
  * (「全部继续」 unchanged) and are never continued on the room's own. The
@@ -44,9 +46,9 @@
  * @module @khorsheed/dsh-room/restart-continue
  */
 import type { RestartFacts, RoomSettings, RoomState } from './types.ts'
+import { deliveryEnding, interruptedByRestart, restartHandled } from './restart-interrupted.ts'
 
-/** The run-state reason recovery journals for a round a restart cut off (dispatch.ts RESTART_UNKNOWN_TEXT's prefix). */
-export const RESTART_INTERRUPTED_PREFIX = 'Execution outcome is unknown after restart'
+export { AUTO_CONTINUE_MOVED_ON_TEXT, RESTART_INTERRUPTED_PREFIX } from './restart-interrupted.ts'
 
 /**
  * The continue message — the same words whether the human presses
@@ -54,9 +56,6 @@ export const RESTART_INTERRUPTED_PREFIX = 'Execution outcome is unknown after re
  * this sentence in Chinese and its English twin).
  */
 export const RESTART_CONTINUE_TEXT = '刚才实例重启，打断了你上一轮的工作。继续之前请先核对已经做完的部分——改过的文件、跑过的测试、已有的提交、已做的部署——已经完成的步骤不要重做，然后接着把这件事做完。如果有后台任务，它们不会自动重跑，需要的话先确认状态再决定。'
-
-/** Why the room moved on from a lost round when it continued it itself. */
-export const AUTO_CONTINUE_MOVED_ON_TEXT = '重启后房间自动继续；被重启打断的这一轮按没做完处理'
 
 /** Why the room did not continue an interrupted round on its own. */
 export type RestartContinueBlock = 'again' | 'self-restart' | 'queue-paused' | 'room-paused'
@@ -72,9 +71,9 @@ export interface InterruptedRound {
   /** Set when the room would not continue this round on its own. */
   readonly blocked?: RestartContinueBlock
   /**
-   * A formal goal's attempt: it keeps its explicit reconciliation (a new
-   * message does not move on from it), so the room never continues it on
-   * its own; the human's 「全部继续」 still lists it.
+   * A formal goal's attempt: continuing it is a new attempt the goal opens
+   * (not a message), so the room's message-continue skips it; the human's
+   * 「全部继续」 lists it and resumes the goal.
    */
   readonly goalAttempt?: true
   /**
@@ -116,22 +115,22 @@ function classify(
   const rounds: ClassifiedRound[] = []
   for (const run of state.runs) {
     if (run.runId?.startsWith('execution:') === true || run.waiting !== undefined) continue
-    const lost = run.state === 'uncertain' || (run.state === 'failed' && run.error?.startsWith(RESTART_INTERRUPTED_PREFIX) === true)
-    if (!lost || (run.runId !== undefined && continued.has(run.runId))) continue
+    const delivery = run.runId === undefined ? undefined : state.deliveries?.find(row => row.id === run.runId)
+    const ending = deliveryEnding(delivery)
+    const lost = interruptedByRestart(run) || (run.state !== 'running' && interruptedByRestart(ending))
+    if (!lost || (run.runId !== undefined && continued.has(run.runId)) || restartHandled(ending)) continue
     const member = state.members.find(entry => entry.name === run.member)
     if (member === undefined || rounds.some(entry => entry.round.member === member.name)) continue
-    const delivery = run.runId === undefined ? undefined : state.deliveries?.find(row => row.id === run.runId)
     const blocked: RestartContinueBlock | undefined = delivery?.via === 'auto-continue' ? 'again'
       : facts?.restartInitiator !== undefined && member.childSessionId !== undefined && String(member.childSessionId) === facts.restartInitiator ? 'self-restart'
         : member.id !== undefined && paused.has(member.id) ? 'queue-paused'
           : state.settings?.paused === true ? 'room-paused'
             : undefined
-    // The interruption edge's journal time: the delivery's `uncertain` edge
-    // (its last edge, so `endedAt`), else the run's restart-failed edge
-    // (`startedAt + elapsedMs`). A projection-only interruption has neither.
-    const interruptedAt = delivery?.status === 'uncertain' && delivery.endedAt !== undefined ? delivery.endedAt
-      : run.state === 'failed' && run.elapsedMs !== undefined ? run.startedAt + run.elapsedMs
-        : undefined
+    // The interruption edge's journal time: when the delivery's cut-off was
+    // first journaled (a projection-only closing has none), else the run's
+    // restart edge (`startedAt + elapsedMs`).
+    const interruptedAt = delivery?.interruptedAt
+      ?? (run.state !== 'running' && run.elapsedMs !== undefined ? run.startedAt + run.elapsedMs : undefined)
     // Stale by the journal (an earlier process recorded the edge), or by the
     // round's own start: it began before the previous host process did, so
     // that process's start already cut it off — however late its edge is

@@ -11,8 +11,9 @@
  * `on.admitted` at admission, and a settlement whose `turns` are the
  * `turn/start`s the child wrote since admission. It also keeps a ledger the
  * way the core does (batch 5 S7): one row per execution with its key and
- * status, readable through `readMemberInbox` and settled through
- * `reconcileExecution` — unless the spec scripts those itself. A stub whose
+ * status, readable through `readMemberInbox` — unless the spec scripts it
+ * itself. A row a restart cut off is closed (`cancelled` + `interrupted`)
+ * and blocks nothing (restart-recovery consolidation). A stub whose
  * `supportsMemberConfiguration(provider)` answers true admits through the
  * mock's own `onAdmitted` (a provider's admission point); otherwise the double
  * admits just before calling the mock.
@@ -85,8 +86,6 @@ export function withRunEntry<T extends ScriptedStub>(stub: T, ctx?: Context): T 
     const requested = request.member.childSessionId
     const keyId = request.key === undefined ? undefined : `${requested} ${request.key}`
     if (keyId !== undefined && keys.has(keyId)) return keys.get(keyId)!
-    // The core refuses every caller but the composer while a row is uncertain.
-    if (rowsOf(requested).some(row => row.status === 'uncertain')) throw new Error('A member input has an uncertain outcome; reconcile before continuing')
     const executionId = randomUUID()
     rowsOf(requested).push({ id: executionId, ...request.key === undefined ? {} : { key: request.key }, caller: request.caller ?? 'api', status: 'queued', createdAt: 0, updatedAt: 0 })
     let resolveStarted!: (run: SubagentRun) => void

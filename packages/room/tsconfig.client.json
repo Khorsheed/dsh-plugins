@@ -90,6 +90,7 @@
     "src/client/subagent-card-view.ts",
     "src/client/RoomRestart.tsx",
     "src/client/restart-view.ts",
-    "src/restart-continue.ts"
+    "src/restart-continue.ts",
+    "src/restart-interrupted.ts"
   ]
 }

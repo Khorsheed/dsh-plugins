@@ -9,7 +9,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import RoomService from '../src/index.ts'
 import { resolveTaskRef } from '../src/jobs.ts'
-import { MOVED_ON_TEXT } from '../src/dispatch.ts'
+import { MERGED_BACKLOG_TEXT, RESTART_STOPPED_TEXT, SUPERSEDED_BACKLOG_TEXT } from '../src/dispatch.ts'
 import { createRoom } from './promote.ts'
 import { withRunEntry } from './run-entry-shim.ts'
 
@@ -175,54 +175,56 @@ describe('tasks', () => {
     expect(bench.facade.resume).not.toHaveBeenCalled()
   })
 
-  it('a human message to a member moves on from its round a restart left uncertain; stopping that task settles it too', async () => {
+  it('a human message continues a member\'s round a restart cut off; stopping a task stops its interrupted round, and neither needs the human first', async () => {
     const bench = await boot()
     const room = bench.ctx.sessions.get(bench.sessionId)!
+    room.append('room/settings', { autoContinueAfterRestart: false })
     const kimi = (await bench.state()).members.find(member => member.name === 'kimi')!
     const bill = (await bench.state()).members.find(member => member.name === 'bill')!
-    // Rounds the previous process started and never settled — uncertain in
-    // the core's ledger too (batch 5 S7: the room journals what the core says).
+    // Rounds the previous process started and never settled — a legacy
+    // `uncertain` edge in the room, closed as interrupted in the core.
     const lost = (member: typeof kimi, id: string) => {
       const dispatch = room.append('room/dispatch', { id, targets: [member.name], targetIds: [member.id!], text: `旧活 ${member.name}`, origin: 'human', task: id })
       room.append('room/delivery-state', { id: `${dispatch.seq}:${member.id}`, dispatchSeq: dispatch.seq, memberId: member.id!, state: 'uncertain', error: 'Host restarted before a durable settlement; reconcile before retrying' })
-      bench.stub.seedLedgerRow(member.id!, { id: `exec-${id}`, key: `${dispatch.seq}:${member.id}`, caller: 'room', status: 'uncertain' })
+      room.append('room/run-state', { member: member.name, runId: `${dispatch.seq}:${member.id}`, state: 'running', startedAt: Date.now() - 5_000 })
+      bench.stub.seedLedgerRow(member.id!, { id: `exec-${id}`, key: `${dispatch.seq}:${member.id}`, caller: 'room', status: 'cancelled', interrupted: 'restart' })
+      return `${dispatch.seq}:${member.id}`
     }
-    const coreRow = (member: typeof kimi, id: string) => (bench.stub['readMemberInbox'] as (child: string) => { messages: Array<{ id: string; status: string; error?: string }> })(member.id!).messages.find(row => row.id === `exec-${id}`)
-    lost(kimi, 'lost-kimi')
+    const kimiLost = lost(kimi, 'lost-kimi')
     lost(bill, 'lost-bill')
-    // The unknown outcome needs the human, even once its task was stopped.
-    room.append('room/job-stopped', { task: 'lost-bill' })
-    expect((await bench.state()).jobs!.find(job => job.id === 'lost-bill')!.status).toBe('attention')
+    // A closed round needs nobody: the task is not 「需要处理」.
+    expect((await bench.state()).jobs!.find(job => job.id === 'lost-bill')!.status).not.toBe('attention')
 
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@kimi 新活' })
     await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledOnce())
     expect((await bench.state()).deliveries!.filter(row => row.memberId === kimi.id).map(row => [row.text, row.status]))
       .toEqual([['旧活 kimi', 'cancelled'], ['新活', 'running']])
-    // Moving on closed the lost round in the core as well (or the core would have refused the new message).
-    expect(coreRow(kimi, 'lost-kimi')).toMatchObject({ status: 'cancelled', error: MOVED_ON_TEXT })
-    expect(coreRow(bill, 'lost-bill')).toMatchObject({ status: 'uncertain' })
+    expect(room.snapshotEvents().findLast(event => event.type === 'room/dispatch')?.data).toMatchObject({ continues: [kimiLost] })
 
     expect(await bench.service.stopJob({ sessionId: bench.sessionId, task: 'lost-bill' })).toEqual({ ok: true, value: { stopped: 1 } })
     expect((await bench.state()).jobs!.find(job => job.id === 'lost-bill')!.status).toBe('stopped')
-    expect(coreRow(bill, 'lost-bill')).toMatchObject({ status: 'cancelled' })
+    expect(room.snapshotEvents().filter(event => event.type === 'room/delivery-state' && event.data.memberId === bill.id).at(-1)?.data).toMatchObject({ state: 'cancelled', text: RESTART_STOPPED_TEXT, endedBy: 'restart' })
   })
 
-  it('messages that queued behind a lost round ride along with the move-on message; a backlog an older move-on left behind closes on recovery', async () => {
+  it('messages that queued behind a lost round are never merged or superseded: they wait for its continuation, then go out one by one', async () => {
     const bench = await boot()
     const room = bench.ctx.sessions.get(bench.sessionId)!
+    room.append('room/settings', { autoContinueAfterRestart: false })
     const kimi = (await bench.state()).members.find(member => member.name === 'kimi')!
     const bill = (await bench.state()).members.find(member => member.name === 'bill')!
     const lost = room.append('room/dispatch', { id: 'lost', targets: ['kimi'], targetIds: [kimi.id!], text: '旧活', origin: 'human', task: 'lost' })
     room.append('room/delivery-state', { id: `${lost.seq}:${kimi.id}`, dispatchSeq: lost.seq, memberId: kimi.id!, state: 'uncertain', error: 'Host restarted before a durable settlement; reconcile before retrying' })
+    room.append('room/run-state', { member: 'kimi', runId: `${lost.seq}:${kimi.id}`, state: 'running', startedAt: Date.now() - 5_000 })
     // Queued behind the lost round (the restart lost the in-memory queue).
     room.append('room/dispatch', { id: 'q1', targets: ['kimi'], targetIds: [kimi.id!], text: '补充：先跑测试', origin: 'member', from: bill.id!, task: 'lost' })
     await bench.service.postMessage({ sessionId: bench.sessionId, text: '@kimi 继续' })
     await vi.waitFor(() => expect(bench.facade.start).toHaveBeenCalledOnce())
     const prompt = JSON.stringify(bench.facade.start.mock.calls[0])
     expect(prompt).toContain('继续')
-    expect(prompt).toContain('来自 bill：补充：先跑测试')
+    expect(prompt).not.toContain('补充：先跑测试')
     expect((await bench.state()).deliveries!.filter(row => row.memberId === kimi.id).map(row => [row.text, row.status]))
-      .toEqual([['旧活', 'cancelled'], ['补充：先跑测试', 'done'], ['继续', 'running']])
+      .toEqual([['旧活', 'cancelled'], ['补充：先跑测试', 'queued'], ['继续', 'running']])
+    expect(room.snapshotEvents().some(event => event.type === 'room/delivery-state' && (event.data.text === MERGED_BACKLOG_TEXT || event.data.text === SUPERSEDED_BACKLOG_TEXT))).toBe(false)
   })
 
   it('resolves task references', () => {

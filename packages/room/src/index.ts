@@ -55,15 +55,16 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type {} from './types.ts'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { probeLocalAgent, probeLocalAgentRoster } from './adapter.ts'
-import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, cliChildId, DispatchEngine, MERGED_BACKLOG_TEXT, roundTextSoFar, MOVED_ON_TEXT, floatRunningCards, heldReportsText, isRoomSource, RESTART_UNKNOWN_TEXT, roomSource, runChildSessionId, runChildTurn, runExecutionId, followUpDelivery, followUpRecipient, runOfExecution, backgroundTaskReportKey } from './dispatch.ts'
+import { ANSWER_BY_MESSAGE_PREFIX, ANSWERED_QUESTION_TEXT, BEFORE_TAIL, DispatchEngine, roundTextSoFar, floatRunningCards, heldReportsText, isRoomSource, openInterruptedRounds, roomSource, runChildSessionId, runChildTurn, runExecutionId, followUpDelivery, followUpRecipient, runOfExecution, backgroundTaskReportKey } from './dispatch.ts'
+import { RESTART_STOPPED_TEXT } from './restart-interrupted.ts'
 import { LOST_TASK_LOOKBACK_MS, lostReportText, lostToRecord, recordLostTask, type ReportedLoss } from './background-lost.ts'
-import { CoreLedgers, reconcileCore, type CoreOutcome } from './core-ledger.ts'
+import { CoreLedgers } from './core-ledger.ts'
 import { coordinatorMember, DEFAULT_ROOM_SETTINGS, memberId, isRoomLog, MAIN_AGENT_MEMBER, parseMentions, replay, ROOM_EVENT_TYPES, ROOM_ROLE_MAX } from './journal.ts'
 import { messageId, parseMessageRef, releaseIntent, SELF_TASK, sendOrHold, workingHop } from './messaging.ts'
 import { isHumanMessage, linkedTask, replayDeliveries, taskLinks } from './deliveries.ts'
 import { WITHDRAWN_TEXT } from './delivery-notes.ts'
 import { resolveTaskRef } from './jobs.ts'
-import { AUTO_CONTINUE_MOVED_ON_TEXT, autoContinueRounds, interruptedRounds, RESTART_CONTINUE_TEXT, type InterruptedRound } from './restart-continue.ts'
+import { autoContinueRounds, interruptedRounds, RESTART_CONTINUE_TEXT, type InterruptedRound } from './restart-continue.ts'
 import { suggestTask } from './report-gate.ts'
 import { loadEach, STARTUP_ROOM_LOAD_CONCURRENCY, STARTUP_ROOM_LOAD_DELAY_MS } from './startup-load.ts'
 import { decisionRecord } from './decisions.ts'
@@ -73,7 +74,7 @@ import type {
   RoomHelp, RoomHelpLinkRequest, RoomHelpLinkResult,
   RoomCancelRequest, RoomCancelResult,
   RoomPrepareMemberRequest, RoomPrepareMemberResult,
-  RoomFailure, RoomSetCoordinatorRequest, RoomSetCoordinatorResult, RoomReconcileDeliveryRequest, RoomReconcileDeliveryResult,
+  RoomFailure, RoomSetCoordinatorRequest, RoomSetCoordinatorResult, RoomReconcileDeliveryRequest, RoomReconcileDeliveryResult, RoomInterruptedRequest, RoomInterruptedResult,
   RoomGetStateRequest, RoomGetStateResult,
   RoomInviteRequest, RoomInviteResult,
   RoomIsRoomRequest,
@@ -323,22 +324,19 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
   }
 
   /**
-   * Settle a room delivery's execution in the local-agent core (batch 5 S7):
-   * the core's ledger row is the one place a restart-lost round is recorded,
-   * so reconciling — or moving on from — it in the room clears the same row
-   * the members page and the edit dialog show (user decision 2026-11-03 ③).
-   * A delivery the core holds no row for (the room's own agent, a delivery
-   * from before S7) has nothing to clear there.
-   * @returns undefined on success or nothing to do, else the core's refusal.
+   * The interrupted rounds of these members a new message continues (design
+   * D-4): a member's first message after a restart cut its round off — from
+   * the human, the coordinator, a late answer or another room — counts as
+   * the continuation (the member is told to check first, dispatch.ts
+   * `assemblePrompt`), so the round never needs a separate decision. Goal
+   * attempts continue through the goal, never through a message.
+   * @returns the run ids to record as the dispatch's `continues`.
    */
-  private reconcileInCore(session: Session, state: RoomState, delivery: { readonly id: string; readonly memberId: string }, outcome: CoreOutcome, evidence: string): string | undefined {
+  private continuesFor(session: Session, targets: readonly string[]): string[] {
     const events = session.snapshotEvents()
-    const member = state.members.find(entry => memberId(events, entry) === delivery.memberId)
-    if (member === undefined || member.kind === 'main-agent') return undefined
-    const facade = probeLocalAgent(this.ctx)
-    const child = cliChildId(events, member)
-    const row = new CoreLedgers(facade).find(child, delivery.id, runExecutionId(events, delivery.id))
-    return reconcileCore(facade, child, row, outcome, evidence)
+    const state = replay(events)
+    const ids = new Set(state.members.filter(member => targets.includes(member.name)).map(member => memberId(events, member)))
+    return [...openInterruptedRounds(this.engine.view(session.id, state))].flatMap(([member, runIds]) => ids.has(member) ? runIds : [])
   }
 
   /** sessionId → in-flight cold resume (mutations on a cold room dedupe). */
@@ -601,15 +599,18 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
   }
 
   /**
-   * 重启后自动继续 (member-self-started-rounds M9): after recovery, the room
-   * presses 「全部继续」 itself for every interrupted round the shared rule
-   * lets it (restart-continue.ts: setting on, not continued before, not an
-   * auto-continue itself, not self-triggered, queue and room not paused).
-   * The same action as the human's button — the same message, moving on
-   * from the lost round, the same dispatch path — written as a `room/dispatch`
-   * with `via: 'auto-continue'` and the rounds it `continues`, one per task.
+   * 重启后自动继续 (member-self-started-rounds M9): after recovery closed
+   * the rounds a restart cut off, the room presses 「全部继续」 itself for
+   * every interrupted round the shared rule lets it (restart-continue.ts:
+   * setting on, not continued before, not an auto-continue itself, not
+   * self-triggered, queue and room not paused, not a goal attempt — the goal
+   * opens a new attempt for that). The same action as the human's button —
+   * the same message, the same dispatch path — written as a `room/dispatch`
+   * with `via: 'auto-continue'` and the rounds it `continues`, one per task;
+   * then a recovery pass sends what queued behind those rounds (it waited
+   * for the continuation, which now heads the member's core queue).
    * Runs on every live access, so it must be idempotent: everything from the
-   * read to the appends is synchronous (a concurrent pass sees the
+   * read to the dispatch is synchronous (a concurrent pass sees the
    * `continues` and finds nothing), and a continued round never comes back.
    */
   private async autoContinue(session: Session): Promise<void> {
@@ -624,21 +625,29 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     if (rounds.length === 0) return
     const groups = new Map<string, InterruptedRound[]>()
     for (const round of rounds) groups.set(round.task ?? '', [...groups.get(round.task ?? '') ?? [], round])
-    const sent: { readonly seq: number; readonly targets: readonly string[]; readonly carry: (member: string, text: string) => string }[] = []
+    this.sendContinues(session, groups, 'auto-continue')
+    await this.ctx.sessions.flush(session)
+    await this.engine.recover(session)
+  }
+
+  /**
+   * Append and dispatch the continue message for interrupted rounds, one per
+   * task, in one synchronous stretch: the continuation reaches the member's
+   * core queue before anything that waited behind the round is resubmitted.
+   * @param via - `auto-continue` for the room's own press; absent for the human's.
+   */
+  private sendContinues(session: Session, groups: ReadonlyMap<string, readonly InterruptedRound[]>, via?: 'auto-continue'): void {
+    const events = session.snapshotEvents()
+    const state = replay(events)
     for (const [task, group] of groups) {
       const targets = group.map(round => round.member)
-      const carry = this.moveOnFromLostRounds(session, targets, AUTO_CONTINUE_MOVED_ON_TEXT)
       const dispatch = session.append('room/dispatch', {
-        id: randomUUID(), targets, text: RESTART_CONTINUE_TEXT, origin: 'human', via: 'auto-continue',
+        id: randomUUID(), targets, text: RESTART_CONTINUE_TEXT, origin: 'human', ...via === undefined ? {} : { via },
         continues: group.map(round => round.runId!),
         ...task === '' ? {} : { task },
         targetIds: targets.map(name => memberId(events, state.members.find(member => member.name === name)!)),
       })
-      sent.push({ seq: dispatch.seq, targets, carry })
-    }
-    await this.ctx.sessions.flush(session)
-    for (const { seq, targets, carry } of sent) {
-      for (const target of targets) this.engine.dispatch(session, target, carry(target, RESTART_CONTINUE_TEXT), { dispatchSeq: seq })
+      for (const target of targets) this.engine.dispatch(session, target, RESTART_CONTINUE_TEXT, { dispatchSeq: dispatch.seq })
     }
   }
 
@@ -849,7 +858,9 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     const reply = range.findLast(row => row.type === 'assistant/message')
     const text = reply?.type === 'assistant/message' ? reply.data.message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n') : ''
     const messageId = (reply?.data as { message?: { id?: unknown } } | undefined)?.message?.id
-    const state = data.outcome === 'done' ? 'done' as const : data.outcome === 'cancelled' ? 'cancelled' as const : 'failed' as const
+    // A round a restart cut off ends `uncertain` in the core's record: 被重启打断.
+    const cutOff = data.outcome === 'uncertain'
+    const state = data.outcome === 'done' ? 'done' as const : data.outcome === 'cancelled' || cutOff ? 'cancelled' as const : 'failed' as const
     queueMicrotask(() => {
       const { room } = round
       const events = room.snapshotEvents()
@@ -871,10 +882,12 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       room.append('room/run-state', { member: name, runId: round.runId, state, startedAt: round.startedAt, elapsedMs: Math.max(0, data.endedAt - round.startedAt),
         childSessionId: child.id, executionId: data.executionId, ...turn === undefined ? {} : { childTurn: turn },
         ...round.operation === 'compact' ? { operation: 'compact' as const } : {},
-        ...state === 'failed' ? { error: data.outcome === 'uncertain' ? RESTART_UNKNOWN_TEXT : 'the member round failed' } : {} })
+        ...cutOff ? { endedBy: 'restart' as const } : {},
+        ...state === 'failed' ? { error: 'the member round failed' } : {} })
       this.engine.releaseRun(room.id, round.runId)
       void this.ctx.sessions.flush(room).catch((error: unknown) => { this.ctx.logger.warn(`room: outside round edge flush failed: ${String(error)}`) })
-      if (followUpOf !== undefined && reportedTo !== undefined) {
+      // Cut off by a restart: nothing to report (no intermediate reports).
+      if (followUpOf !== undefined && reportedTo !== undefined && !cutOff) {
         void this.engine.reportFollowUp(room, followUpOf, { reportFor: round.runId }, state, text)
           .catch((error: unknown) => { this.ctx.logger.warn(`room: follow-up report failed: ${String(error)}`) })
       }
@@ -1240,17 +1253,13 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       } else if (row.status === 'queued' || row.status === 'held') {
         loaded.session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', error: '任务已被停止' })
         stopped++
-      } else if (row.status === 'uncertain' && row.plan?.taskId === undefined) {
-        // Stopping is the human abandoning the round whose outcome a restart
-        // lost: that settles it — in the core's ledger too — so the member's
-        // later messages run again.
-        this.reconcileInCore(loaded.session, loaded.state, row, 'cancelled', '任务已被停止；这一轮的结果没有核对')
-        loaded.session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: '任务已被停止；这一轮的结果没有核对' })
-        const run = loaded.state.runs.find(entry => entry.runId === row.id)
-        if (run !== undefined) loaded.session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled', ...this.terminalRunStateFields(loaded.session, loaded.state, run.member, row.id) })
-        stopped++
       }
     }
+    // A round of this task a restart cut off and nothing continued: stopping
+    // the task means it is not continued (the same as the banner's 停止).
+    const open = new Set([...openInterruptedRounds(this.engine.view(loaded.session.id, replay(loaded.session.snapshotEvents())))].flatMap(([, runIds]) => runIds))
+    const interrupted = (loaded.state.deliveries ?? []).filter(row => job.deliveries.includes(row.id) && open.has(row.id))
+    stopped += await this.stopRounds(loaded.session, interrupted.map(row => row.id))
     loaded.session.append('room/job-stopped', { task: job.id })
     await this.ctx.sessions.flush(loaded.session)
     await this.engine.recover(loaded.session)
@@ -1297,52 +1306,35 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     if (targets.some(target => !current.members.some(member => member.name === target))) return { ok: false, code: 'unknown-targets' }
     const body = parsed.targets.length > 0 ? parsed.text : text
     const filed = await this.fileHumanMessage(session, edit.data.id, text, task)
-    const carry = this.moveOnFromLostRounds(session, targets)
+    const continues = this.continuesFor(session, targets)
     const dispatch = session.append('room/dispatch', {
       id: requestId, targets, text: body, origin: 'human', task: filed.task, messageId: edit.data.id,
+      ...continues.length === 0 ? {} : { continues },
       targetIds: targets.map(name => memberId(session.snapshotEvents(), current.members.find(member => member.name === name)!)),
     })
     await this.ctx.sessions.flush(session)
-    for (const target of targets) this.engine.dispatch(session, target, carry(target, body), { dispatchSeq: dispatch.seq })
+    for (const target of targets) this.engine.dispatch(session, target, body, { dispatchSeq: dispatch.seq })
+    if (continues.length > 0) await this.engine.recover(session)
     return { ok: true }
   }
 
   /**
-   * The human messaging a member moves on from that member's ordinary
-   * rounds a restart left uncertain: they close as not finished, so the new
-   * message runs instead of queueing behind a reconciliation. Formal-goal
-   * attempts keep their explicit reconciliation.
+   * 停止 on rounds a restart cut off (the banner's 停止, a stopped task):
+   * they are not continued. Each interrupted delivery gets one more closing
+   * edge (`RESTART_STOPPED_TEXT`) — the round no longer waits for anyone —
+   * and the one thing its dispatcher hears about it: 「被重启打断，已停止」
+   * (user decision 2026-11-09, open item 5). What queued behind it goes out.
+   * @returns how many rounds were stopped.
    */
-  private moveOnFromLostRounds(session: Session, targets: readonly string[], why = MOVED_ON_TEXT): (member: string, text: string) => string {
-    const events = session.snapshotEvents()
-    const state = replay(events)
-    const members = state.members.filter(member => targets.includes(member.name))
-    const ids = new Set(members.map(member => memberId(events, member)))
-    const backlog = new Map<string, string[]>()
-    for (const row of state.deliveries ?? []) {
-      if (row.status !== 'uncertain' || row.plan?.taskId !== undefined || !ids.has(row.memberId)) continue
-      // The core's ledger holds the same lost round: closed there too, or it
-      // would refuse the very message that moves on (batch 5 S7).
-      this.reconcileInCore(session, state, row, 'cancelled', why)
-      session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: why })
-      const run = state.runs.find(entry => entry.runId === row.id)
-      if (run !== undefined) session.append('room/run-state', { member: run.member, runId: row.id, startedAt: run.startedAt, state: 'cancelled', ...this.terminalRunStateFields(session, state, run.member, row.id) })
-      // The messages that queued behind the lost round never ran (the round
-      // blocked them, the restart lost the queue): they ride along with this
-      // message, one round, instead of replaying stale rounds one by one.
-      const name = members.find(member => memberId(events, member) === row.memberId)?.name
-      if (name === undefined) continue
-      for (const queued of state.deliveries ?? []) {
-        if (queued.status !== 'queued' || queued.memberId !== row.memberId || queued.dispatchSeq <= row.dispatchSeq || queued.plan?.taskId !== undefined) continue
-        session.append('room/delivery-state', { id: queued.id, dispatchSeq: queued.dispatchSeq, memberId: queued.memberId, state: 'done', text: MERGED_BACKLOG_TEXT })
-        const from = queued.from === undefined ? undefined : state.members.find(member => memberId(events, member) === queued.from)?.name
-        backlog.set(name, [...backlog.get(name) ?? [], `- ${from === undefined ? '' : `来自 ${from}：`}${queued.text}`])
-      }
-    }
-    return (member, text) => {
-      const lines = backlog.get(member)
-      return lines === undefined ? text : [text, '', '（你被重启打断期间，房间里还有这些消息排着没送到，一并给你：', ...lines, '）'].join('\n')
-    }
+  private async stopRounds(session: Session, runIds: readonly string[]): Promise<number> {
+    const state = replay(session.snapshotEvents())
+    const rows = (state.deliveries ?? []).filter(row => runIds.includes(row.id))
+    for (const row of rows) session.append('room/delivery-state', { id: row.id, dispatchSeq: row.dispatchSeq, memberId: row.memberId, state: 'cancelled', text: RESTART_STOPPED_TEXT, endedBy: 'restart' })
+    if (rows.length === 0) return 0
+    await this.ctx.sessions.flush(session)
+    for (const row of rows) await this.engine.reportOutcome(session, row.dispatchSeq, row.id, row.memberId, 'cancelled', RESTART_STOPPED_TEXT)
+    await this.engine.recover(session)
+    return rows.length
   }
 
   /**
@@ -1668,26 +1660,60 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     } catch (error) { return { ok: false, error: { code: 'coordinator-not-ready', message: String(error) } } }
   }
 
-  /** A human records the known result before releasing a crashed member's queued work. */
+  /**
+   * COMPAT(restart-recovery consolidation, remove one release after): the
+   * retired reconciliation, for a page that has not reloaded. A round a
+   * restart cut off is closed, never `uncertain`, so nothing is left to
+   * reconcile.
+   * @deprecated the member checks and continues on its own.
+   */
   @Remote('reconcileDelivery')
-  async reconcileDelivery(request: RoomReconcileDeliveryRequest): Promise<RoomReconcileDeliveryResult> {
-    const loaded = await this.ensureLive(request.sessionId)
+  async reconcileDelivery(_request: RoomReconcileDeliveryRequest): Promise<RoomReconcileDeliveryResult> {
+    return { ok: false, error: { code: 'delivery-not-uncertain' } }
+  }
+
+  /**
+   * The human's 「全部继续」 on the rounds a restart cut off (the composer
+   * banner): the same action as the room's auto-continue — the continue
+   * message for message rounds (one per task, `continues` recorded), and for
+   * a formal goal the restart pause lifts so the goal opens a new attempt
+   * (R4). Rounds no longer interrupted (continued or stopped meanwhile) are
+   * skipped.
+   * @param request - the room, and the run ids the banner showed.
+   * @returns how many rounds were continued.
+   */
+  @Remote('continueInterrupted')
+  async continueInterrupted(request: RoomInterruptedRequest): Promise<RoomInterruptedResult> {
+    const loaded = await this.ensureLive(request.sessionId, { autoContinue: false })
     if (!loaded.ok) return { ok: false, error: loaded.error }
-    const delivery = loaded.state.deliveries?.find(row => row.id === request.deliveryId)
-    if (delivery?.status !== 'uncertain') return { ok: false, error: { code: 'delivery-not-uncertain' } }
-    if (delivery.plan?.taskId !== undefined) return { ok: false, error: { code: 'plan-reconciliation-required' } }
-    if (request.evidence.trim() === '') return { ok: false, error: { code: 'empty-text' } }
-    // One reconciliation (batch 5 S7): the core's ledger row first — the
-    // same row the members page and the edit dialog settle — then the room's
-    // records. A refusal leaves both untouched.
-    const refused = this.reconcileInCore(loaded.session, loaded.state, delivery, request.outcome, request.evidence.trim())
-    if (refused !== undefined) return { ok: false, error: { code: 'reconcile-failed', message: refused } }
-    loaded.session.append('room/delivery-state', { id: delivery.id, dispatchSeq: delivery.dispatchSeq, memberId: delivery.memberId, state: request.outcome, text: request.evidence.trim() })
-    const run = loaded.state.runs.find(run => run.runId === delivery.id)
-    if (run !== undefined) loaded.session.append('room/run-state', { member: run.member, runId: delivery.id, startedAt: run.startedAt, state: request.outcome, ...this.terminalRunStateFields(loaded.session, loaded.state, run.member, delivery.id) })
+    const rounds = interruptedRounds(this.engine.view(loaded.session.id, replay(loaded.session.snapshotEvents())))
+      .filter(round => round.runId !== undefined && request.runIds.includes(round.runId))
+    const groups = new Map<string, InterruptedRound[]>()
+    for (const round of rounds.filter(entry => entry.goalAttempt !== true)) groups.set(round.task ?? '', [...groups.get(round.task ?? '') ?? [], round])
+    this.sendContinues(loaded.session, groups)
     await this.ctx.sessions.flush(loaded.session)
+    const goal = await this.plans.continueAfterRestart(loaded.session, request.goal === true || rounds.some(round => round.goalAttempt === true))
     await this.engine.recover(loaded.session)
-    return { ok: true }
+    return { ok: true, value: { continued: [...groups.values()].reduce((count, group) => count + group.length, 0) + (goal ? 1 : 0) } }
+  }
+
+  /**
+   * The human's 「停止」 on the rounds a restart cut off (the composer
+   * banner): not continued; each dispatcher hears 「被重启打断，已停止」, and
+   * what queued behind them goes out. A formal goal paused by the restart
+   * stays paused as the human's own pause.
+   * @param request - the room, and the run ids the banner showed.
+   * @returns how many rounds were stopped.
+   */
+  @Remote('stopInterrupted')
+  async stopInterrupted(request: RoomInterruptedRequest): Promise<RoomInterruptedResult> {
+    const loaded = await this.ensureLive(request.sessionId, { autoContinue: false })
+    if (!loaded.ok) return { ok: false, error: loaded.error }
+    const rounds = interruptedRounds(this.engine.view(loaded.session.id, replay(loaded.session.snapshotEvents())))
+      .filter(round => round.runId !== undefined && request.runIds.includes(round.runId))
+    const stopped = await this.stopRounds(loaded.session, rounds.flatMap(round => round.goalAttempt === true ? [] : [round.runId!]))
+    const goal = await this.plans.stopAfterRestart(loaded.session, request.goal === true || rounds.some(round => round.goalAttempt === true))
+    return { ok: true, value: { continued: stopped + (goal ? 1 : 0) } }
   }
 
   /** Explicit human role change; state is committed only after readiness and idle checks. */
@@ -1730,7 +1756,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
           return { ok: false, error: { code: 'coordinator-not-ready', message: 'Member native session preparation is required before promotion' } }
         }
         const inbox = family.isPreparedMember?.(participant.childSessionId) === true ? undefined : family.readMemberInbox?.(participant.childSessionId)
-        if ((family.queuedMemberRounds?.(participant.childSessionId) ?? 0) > 0 || inbox?.messages.some(row => ['queued', 'running', 'uncertain'].includes(row.status))) return { ok: false, error: { code: 'coordinator-busy' } }
+        if ((family.queuedMemberRounds?.(participant.childSessionId) ?? 0) > 0 || inbox?.messages.some(row => ['queued', 'running'].includes(row.status))) return { ok: false, error: { code: 'coordinator-busy' } }
         const control = family.memberConfiguration(participant.childSessionId)
         if (control.status !== 'idle' || control.round !== undefined || control.pending !== undefined || control.lockedReason !== undefined) {
           return { ok: false, error: { code: 'coordinator-not-ready', message: 'Member configuration has not converged or is locked' } }
@@ -1925,12 +1951,14 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       this.engine.directMessages.add(String(human.id))
     }
     const filed = await this.fileHumanMessage(loaded.session, human.id, request.text.trim(), request.task ?? this.consumeTaskHint(request.sessionId))
-    // 「全部继续」 names the interrupted rounds it continues (M9): recorded
-    // for those that are interrupted rounds of its targets, read before the
-    // move-on below closes them.
-    const continues = request.continues === undefined ? [] : interruptedRounds(this.engine.view(loaded.session.id, replay(loaded.session.snapshotEvents())))
-      .flatMap(round => round.runId !== undefined && targets.includes(round.member) && request.continues!.includes(round.runId) ? [round.runId] : [])
-    const carry = this.moveOnFromLostRounds(loaded.session, targets)
+    // The interrupted rounds of its targets this message continues: a
+    // member's first message after a restart cut its round off counts as the
+    // continuation (D-4); an older page's 「全部继续」 names them itself.
+    const continues = [...new Set([
+      ...request.continues === undefined ? [] : interruptedRounds(this.engine.view(loaded.session.id, replay(loaded.session.snapshotEvents())))
+        .flatMap(round => round.runId !== undefined && targets.includes(round.member) && request.continues!.includes(round.runId) ? [round.runId] : []),
+      ...this.continuesFor(loaded.session, targets),
+    ])]
     const dispatch = loaded.session.append('room/dispatch', {
       id: request.requestId ?? randomUUID(), requestSignature, targets, text, origin: 'human', task: filed.task, messageId: String(human.id),
       ...continues.length === 0 ? {} : { continues },
@@ -1947,11 +1975,13 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       if (direct && loaded.state.members.find(member => member.name === target)?.kind === 'main-agent') {
         // Only the room's additions travel as text (the outside-session note);
         // the human's words are the message itself.
-        this.engine.dispatch(loaded.session, target, carry(target, prompt === text ? '' : prompt.slice(said.length).trim()), { dispatchSeq: dispatch.seq, direct: human })
+        this.engine.dispatch(loaded.session, target, prompt === text ? '' : prompt.slice(said.length).trim(), { dispatchSeq: dispatch.seq, direct: human })
         continue
       }
-      this.engine.dispatch(loaded.session, target, carry(target, withAttachmentPaths(prompt, admitted.records)), { dispatchSeq: dispatch.seq })
+      this.engine.dispatch(loaded.session, target, withAttachmentPaths(prompt, admitted.records), { dispatchSeq: dispatch.seq })
     }
+    // What queued behind the rounds this message continued goes out after it.
+    if (continues.length > 0) await this.engine.recover(loaded.session)
     return { ok: true, value: { parsed: { targets, text }, seq: dispatch.seq } }
   }
 
@@ -2056,9 +2086,12 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
         task = ref === 'new' ? SELF_TASK : ref
       }
     }
+    // A task to a member whose round a restart cut off continues that round (D-4).
+    const continues = kind === 'task' ? this.continuesFor(loaded.session, [target.name]) : []
     const sent = sendOrHold(loaded.session, {
       to: target, text, fromName: sender.name,
       intent: {
+        ...continues.length === 0 ? {} : { continues },
         origin: this.isCurrentCoordinator(loaded.session, actorChildSessionId) ? 'coordinator' : 'member',
         from: senderId, kind, hop: workingHop(events, loaded.state, sender) + 1,
         ...kind === 'task' ? { replyTo: senderId } : {},
@@ -2071,6 +2104,7 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     await this.ctx.sessions.flush(loaded.session)
     if (!sent.delivered) return { ok: true, value: { member: target.name, held: sent.reason } }
     this.engine.dispatch(loaded.session, target.name, text, { dispatchSeq: sent.seq })
+    if (continues.length > 0) await this.engine.recover(loaded.session)
     return { ok: true, value: { member: target.name, messageId: messageId(sent.seq) } }
   }
 
@@ -2235,19 +2269,21 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
       : other.state.members.find(entry => entry.name === help.target.member)
     if (member === undefined) return fail(help.target.member === undefined ? 'that room has no coordinator' : `that room has no member "${help.target.member}"`)
     const origin = { id: help.id, room: room.id, roomTitle: this.roomTitle(room), from: help.fromName, ...help.task === undefined ? {} : { task: help.task } }
-    // A round a restart left uncertain blocks the member's later work until a
-    // human reconciles it — silently, for a request from outside. Move on
-    // from it, as a human message to that member does.
-    const carry = this.moveOnFromLostRounds(other.session, [member.name], '另一个协作间来求助；被重启打断的这一轮按没做完处理')
+    // The member's round a restart cut off: this request continues it (the
+    // member checks first), as a human message to that member does.
+    const continues = this.continuesFor(other.session, [member.name])
     const sent = sendOrHold(other.session, {
       to: member, text, fromName: `${help.fromName}（${origin.roomTitle}）`,
-      intent: { origin: 'help', hop: 1, kind: 'task', help: origin, ...op === 'request' ? { task: SELF_TASK } : {} },
+      intent: { origin: 'help', hop: 1, kind: 'task', help: origin, ...op === 'request' ? { task: SELF_TASK } : {}, ...continues.length === 0 ? {} : { continues } },
     })
     other.session.append('room/help-in', { ...origin, member: member.name, text, op, ...sent.delivered ? {} : { held: true } })
     await this.ctx.sessions.flush(other.session)
     room.append('room/help-state', { help: help.id, state: sent.delivered ? 'running' : 'queued' })
     await this.ctx.sessions.flush(room)
-    if (sent.delivered) this.engine.dispatch(other.session, member.name, carry(member.name, text), { dispatchSeq: sent.seq })
+    if (sent.delivered) {
+      this.engine.dispatch(other.session, member.name, text, { dispatchSeq: sent.seq })
+      if (continues.length > 0) await this.engine.recover(other.session)
+    }
     const who = `${member.name} in the room "${help.target.title}"`
     return `${sent.delivered ? `Sent to ${who}.` : `Sent to ${who}; that room is paused, so the request waits until it resumes.`}`
       + ` Help id: ${help.id}. The reply reaches you on its own — end your turn now; do not poll.`
@@ -2710,12 +2746,14 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     })
     session.append('room/question-resolved', { id: request.id, outcome: 'answered', answers, late: true })
     const text = lateAnswerText(asked.data.questions, answers)
-    const carry = this.moveOnFromLostRounds(session, [member.name])
+    const continues = this.continuesFor(session, [member.name])
     const dispatch = session.append('room/dispatch', {
       id: randomUUID(), targets: [member.name], targetIds: [memberId(events, member)], text, origin: 'human',
+      ...continues.length === 0 ? {} : { continues },
     })
     await this.ctx.sessions.flush(session)
-    this.engine.dispatch(session, member.name, carry(member.name, text), { dispatchSeq: dispatch.seq })
+    this.engine.dispatch(session, member.name, text, { dispatchSeq: dispatch.seq })
+    if (continues.length > 0) await this.engine.recover(session)
     return { ok: true }
   }
 

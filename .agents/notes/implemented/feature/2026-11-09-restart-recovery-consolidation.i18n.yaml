@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-11-09-restart-recovery-consolidation.md
-.agents/notes/implemented/feature/2026-11-09-restart-recovery-consolidation.md: 0746b521a91f9775a86c7fcd4708c98e4b33f617
-.agents/notes/implemented/feature/2026-11-09-restart-recovery-consolidation.zh.md: 039e8fe9d68369cf91bb0aef34e26035337e0210
+.agents/notes/implemented/feature/2026-11-09-restart-recovery-consolidation.md: 798a2a1fdbadff8740e23b2fe44d5279a62a5e6d
+.agents/notes/implemented/feature/2026-11-09-restart-recovery-consolidation.zh.md: ab18113bf8bf2e413ad22bdf1887c4297ce3848c

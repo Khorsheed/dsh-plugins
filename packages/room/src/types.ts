@@ -454,6 +454,8 @@ export interface RoomRunStateEvent {
   readonly runId?: string
   readonly member: string
   readonly state: 'running' | 'done' | 'cancelled' | 'failed'
+  /** `restart` (with `state: 'cancelled'`): a host restart cut this round off — the card reads 「被重启打断」. */
+  readonly endedBy?: 'restart'
   readonly startedAt: number
   readonly elapsedMs?: number
   /**
@@ -510,6 +512,8 @@ export interface RoomHeldDispatch {
   readonly note?: string
   readonly task?: string
   readonly parent?: string
+  /** The interrupted rounds this message continues (see RoomDispatchEvent.continues). */
+  readonly continues?: readonly string[]
 }
 
 /**
@@ -1100,18 +1104,14 @@ export interface RoomMemberRun {
   readonly runId?: string
   readonly member: string
   /**
-   * `uncertain` is a projection only (`getState`, batch 5 S7), never a
-   * journaled edge: the core's ledger says a restart cut this CLI round off
-   * and nobody has reconciled it yet, or the round waits for its member's
-   * 待对账. The journal closes such a run `failed`.
+   * `uncertain` is legacy: a projection older versions produced for a round
+   * a restart cut off. The projection now reads such a round `cancelled` +
+   * `endedBy: 'restart'` (restart-recovery consolidation).
    */
   readonly state: 'running' | 'done' | 'cancelled' | 'failed' | 'uncertain'
-  /**
-   * Projection only (batch 5 S7), with `state: 'uncertain'`: this is the row
-   * of a delivery the core refused while its member waited for 待对账 — the
-   * delivery has not gone out yet and will once that is reconciled. Absent:
-   * the round itself is the one with the unknown outcome.
-   */
+  /** `restart`: a host restart cut this round off (see RoomRunStateEvent.endedBy). */
+  readonly endedBy?: 'restart'
+  /** Legacy projection (batch 5 S7 待对账): never produced any more. */
   readonly waiting?: 'reconcile'
   readonly startedAt: number
   readonly elapsedMs?: number
@@ -1784,7 +1784,18 @@ export interface RoomDeliveryStateEvent {
   readonly id: string
   readonly dispatchSeq: number
   readonly memberId: string
+  /**
+   * `uncertain` is legacy (written before the restart-recovery
+   * consolidation, 2026-11-09): a round a restart cut off. Read it with
+   * `interruptedByRestart` (restart-interrupted.ts); it is never written.
+   */
   readonly state: 'running' | 'done' | 'cancelled' | 'failed' | 'uncertain'
+  /**
+   * `restart`: a host restart cut this round off (with `state: 'cancelled'`):
+   * closed, 「被重启打断」, continued as a new round. Optional: an older
+   * reader sees an ordinary cancellation.
+   */
+  readonly endedBy?: 'restart'
   readonly text?: string
   readonly error?: string
 }
@@ -1836,16 +1847,17 @@ export interface RoomDelivery {
   readonly releases?: readonly number[]
   /** `auto-continue`: the room continued an interrupted round after a restart (see RoomDispatchEvent.via). */
   readonly via?: 'auto-continue'
+  /** The interrupted rounds this delivery's dispatch continues (see RoomDispatchEvent.continues). */
+  readonly continues?: readonly string[]
+  /** `restart`: a host restart cut this delivery's round off (see RoomDeliveryStateEvent.endedBy). */
+  readonly endedBy?: 'restart'
+  /** Epoch ms the journal first recorded that a restart cut this delivery's round off (any shape, see restart-interrupted.ts). */
+  readonly interruptedAt?: number
   /** Epoch ms: dispatched, admitted (first running edge), settled. */
   readonly queuedAt: number
   readonly startedAt?: number
   readonly endedAt?: number
-  /**
-   * Projection only (`getState`, batch 5 S7): a queued delivery whose member
-   * has a round with an unknown outcome in the core's ledger. The core admits
-   * nothing else of that member until it is reconciled (待对账); the delivery
-   * then goes out on its own.
-   */
+  /** Legacy projection (batch 5 S7 待对账): never produced any more. */
   readonly waiting?: 'reconcile'
   /** Epoch ms the report gate held this report, and released it. */
   readonly heldAt?: number
@@ -1883,6 +1895,18 @@ export interface RoomReconcileDeliveryRequest {
 }
 export type RoomReconcileDeliveryResult =
   | { readonly ok: true }
+  | { readonly ok: false; readonly error: RoomFailure }
+
+/** The banner's 「全部继续」/「停止」 on rounds a host restart cut off. */
+export interface RoomInterruptedRequest {
+  readonly sessionId: SessionId
+  /** The interrupted rounds (run ids) the banner showed. */
+  readonly runIds: readonly string[]
+  /** Also the formal goal the restart paused (its attempts continue as a new attempt). */
+  readonly goal?: boolean
+}
+export type RoomInterruptedResult =
+  | { readonly ok: true; readonly value: { readonly continued: number } }
   | { readonly ok: false; readonly error: RoomFailure }
 
 export interface RoomPrepareMemberRequest {

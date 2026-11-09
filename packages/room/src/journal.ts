@@ -433,7 +433,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
         const earlier = executions.get(id)
         // A run that starts again (a delivery that waited for 待对账, batch 5
         // S7) sheds the earlier edge's failure reason.
-        const { error: _error, ...shed } = earlier ?? {}
+        const { error: _error, endedBy: _endedBy, ...shed } = earlier ?? {}
         const previous = earlier === undefined ? undefined : event.data.state === 'running' ? shed : earlier
         executions.set(id, {
           id,
@@ -455,6 +455,7 @@ export function replay(events: readonly SessionEvent[]): RoomState {
           ...event.data.runId === undefined ? {} : { runId: event.data.runId },
           ...event.data.elapsedMs === undefined ? {} : { elapsedMs: event.data.elapsedMs },
           ...event.data.error === undefined ? {} : { error: event.data.error },
+          ...event.data.endedBy === undefined ? {} : { endedBy: event.data.endedBy },
         })
         break
       }

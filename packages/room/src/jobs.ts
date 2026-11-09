@@ -60,9 +60,9 @@ export function replayJobs(events: readonly SessionEvent[], deliveries: readonly
         return found === undefined ? [] : [{ ...found, by: link.by, ...link.probability === undefined ? {} : { probability: link.probability } }]
       })
     const open = rows.some(row => row.status === 'queued' || row.status === 'running' || row.status === 'held')
-    const attention = rows.some(row => row.status === 'uncertain')
-    // A round with an unknown outcome needs the human even in a stopped task.
-    const status: RoomJob['status'] = attention ? 'attention' : stopped.has(id) && !open ? 'stopped' : open ? 'running' : 'done'
+    // A round a restart cut off is closed (restart-recovery consolidation):
+    // it needs nobody, so it never makes a task 「需要处理」.
+    const status: RoomJob['status'] = stopped.has(id) && !open ? 'stopped' : open ? 'running' : 'done'
     const ended = Math.max(...rows.map(row => row.endedAt ?? row.queuedAt))
     const goal = rows.find(row => row.plan !== undefined)?.plan?.goalId
     return {

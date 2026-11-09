@@ -38,7 +38,9 @@ import { COMPACT_COMMAND, coordinatorMember, isCompactCommand, memberId, pending
 import { envelopeLine, messageId, sendOrHold } from './messaging.ts'
 import { gateState, judgeReport, outstandingFor, type GateVerdict } from './report-gate.ts'
 import { decisionRecord } from './decisions.ts'
-import { CoreLedgers, isCoreOutcome, type CoreRow } from './core-ledger.ts'
+import { CoreLedgers, coreInterrupted, isCoreOutcome, type CoreRow } from './core-ledger.ts'
+import { deliveryEnding, interruptedByRestart, MEMBER_WAITING_TEXT, OBSOLETE_RESTART_REPORT_TEXT, obsoleteRestartReport, RESTART_CONTINUE_NOTE, RESTART_INTERRUPTED_TEXT } from './restart-interrupted.ts'
+import { interruptedRounds, RESTART_CONTINUE_TEXT } from './restart-continue.ts'
 import type { LocalAgentCompactionEvent, LocalAgentExecutionAdmitted, LocalAgentExecutionCause, LocalAgentExecutionHandle, LocalAgentRunProgress, LocalAgentTaskRef } from '@khorsheed/dsh-local-agent/types'
 import type { RoomDelivery, RoomHeldDispatch, RoomMember, RoomMemberRun, RoomRelay, RoomState } from './types.ts'
 
@@ -158,56 +160,41 @@ export function askOffsets(events: readonly SessionEvent[], runId: string, text:
   return out
 }
 
-/** Why a human message's move-on closes a restart-lost round (index.ts moveOnFromLostRounds). */
-export const MOVED_ON_TEXT = '你发了新消息；被重启打断的这一轮按没做完处理'
-/** A message that queued behind a lost round and rode along with the move-on message. */
-export const MERGED_BACKLOG_TEXT = '已并入下一条消息一起送达'
+// The legacy restart texts live with their one reader (restart-interrupted.ts).
+export { DELIVERY_UNKNOWN_TEXT, MEMBER_WAITING_TEXT, MERGED_BACKLOG_TEXT, MOVED_ON_TEXT, RESTART_INTERRUPTED_TEXT, RESTART_STOPPED_TEXT, RESTART_UNKNOWN_TEXT, SUPERSEDED_BACKLOG_TEXT } from './restart-interrupted.ts'
 export { COMPACT_COMMAND }
 /** A compaction's delivery outcome text (the report a sender would read). */
 export const COMPACTED_TEXT = '已压缩上下文'
 /** A `/compact` round whose member reported no compaction record (its provider does not report one). */
 export const COMPACT_UNREPORTED_TEXT = '已发送压缩命令；该成员不报告压缩数据'
 /**
- * A round the core refused because the member has an execution a restart
- * left with an unknown outcome: it was not sent, and the place to clear it is
- * the member edit dialog's 待对账 (the same reconciliation the members page
- * offers — reconciling in either clears both).
+ * A round the core refused because the member's input queue is paused by
+ * the operator with typed input waiting in the member session.
  */
-export const MEMBER_UNRECONCILED_TEXT = '没有发出：该成员有一轮被重启打断、结果不确定。请在成员编辑弹窗的「待对账」里核对并填写结果，再重新发送这条消息'
-/** A round the core refused because the member's input queue is paused after a restart (typed input still waits there). */
-export const MEMBER_PAUSED_TEXT = '没有发出：该成员的输入队列在重启后暂停了。请在成员会话里继续或取消排队的输入，再重新发送这条消息'
-/**
- * A room delivery waiting for 待对账 (batch 5 S7): the member has an
- * execution a restart left with an unknown outcome — on the members page, in
- * the edit dialog or here — and the core admits nothing else of it until
- * that is reconciled. The delivery stays queued and goes out on its own once
- * it is (user decision 2026-11-03 ③: one 待对账, not a failed delivery).
- */
-export const MEMBER_WAITING_TEXT = '等待对账：该成员有一轮被重启打断、结果不确定。在成员编辑弹窗的「待对账」里核对后，这条消息会自动发出'
-/** A run a restart cut off whose outcome is unknown (the run row's reason). */
-export const RESTART_UNKNOWN_TEXT = 'Execution outcome is unknown after restart; reconcile before retrying'
-/** A delivery a restart cut off whose outcome is unknown. */
-export const DELIVERY_UNKNOWN_TEXT = 'Host restarted before a durable settlement; reconcile before retrying'
+export const MEMBER_PAUSED_TEXT = '没有发出：该成员的输入队列暂停了。请在成员会话里继续或取消排队的输入，再重新发送这条消息'
 /** `/compact` to a member that has never run: nothing to compact. */
 export const NOTHING_TO_COMPACT_TEXT = '还没有可压缩的上下文'
 export { ANSWERED_QUESTION_TEXT } from './delivery-notes.ts'
 /** How a message standing in for an answer reads on the card and to the member. */
 export const ANSWER_BY_MESSAGE_PREFIX = '没有选选项，直接回复了：'
-/** A message that queued behind a lost round an earlier move-on skipped: closed, not replayed. */
-export const SUPERSEDED_BACKLOG_TEXT = '被重启打断前排队，已被后续消息取代'
 
 /**
- * Whether a queued delivery sat behind a restart-lost round of the same
- * member that a human message has since moved on from (its dispatch lies
- * between the lost round and the move-on edge).
- * @param events - the room journal.
- * @param targetId - the member id.
- * @param dispatchSeq - the queued delivery's dispatch seq.
- * @returns whether the move-on superseded it.
+ * The interrupted rounds a member still has open (a restart cut them off,
+ * nothing continued or stopped them), by member id, from a projected state:
+ * message rounds only — a formal goal's attempt continues through the goal.
+ * Everything queued for such a member waits until the round is continued
+ * (the room's auto-continue, the human's 全部继续, any message that counts
+ * as a continuation) or stopped.
+ * @param view - the room state as `DispatchEngine.view` projects it.
+ * @returns member id → the open rounds' run ids.
  */
-export function supersededByMoveOn(events: readonly SessionEvent[], targetId: string, dispatchSeq: number): boolean {
-  return events.some(event => event.type === 'room/delivery-state' && event.data.memberId === targetId && event.data.state === 'cancelled'
-    && (event.data as { text?: string }).text === MOVED_ON_TEXT && event.data.dispatchSeq < dispatchSeq && dispatchSeq < event.seq)
+export function openInterruptedRounds(view: RoomState): Map<string, string[]> {
+  const open = new Map<string, string[]>()
+  for (const round of interruptedRounds(view)) {
+    if (round.goalAttempt === true || round.memberId === undefined || round.runId === undefined) continue
+    open.set(round.memberId, [...open.get(round.memberId) ?? [], round.runId])
+  }
+  return open
 }
 
 /**
@@ -646,6 +633,13 @@ function assemblePrompt(
   // Reports the gate held for this member and no inbox took: they ride this round.
   const held = (state.deliveries ?? []).filter(row => row.memberId === memberId(events, member) && row.status === 'held' && row.dispatchSeq !== dispatchSeq)
   for (const row of held) sections.push(`${envelopeLine(events, row.dispatchSeq) ?? ''}\n${row.text}`.trim())
+  // A message that continues this member's interrupted round (any but the
+  // continue message itself and a goal's new attempt, which says so in its
+  // own words): the member checks what it had done first.
+  const source = dispatchSeq === undefined ? undefined : events.find(event => event.seq === dispatchSeq)
+  const identity = memberId(events, member)
+  if (source?.type === 'room/dispatch' && source.data.plan?.attemptId === undefined && source.data.text !== RESTART_CONTINUE_TEXT
+    && (source.data.continues ?? []).some(runId => runId.endsWith(`:${identity}`))) sections.push(RESTART_CONTINUE_NOTE)
   const envelope = dispatchSeq === undefined ? undefined : envelopeLine(events, dispatchSeq)
   sections.push(envelope === undefined ? text : `${envelope}\n${text}`)
   return { prompt: sections.join('\n\n'), carried, heldCarried: held.map(row => row.dispatchSeq) }
@@ -730,6 +724,8 @@ function faultMessage(error: unknown): string {
 
 export interface RunOutcome {
   readonly state: 'done' | 'cancelled' | 'failed'
+  /** `restart`: a host restart cut the round off (a cancellation that is no one's decision). */
+  readonly interrupted?: 'restart'
   readonly text?: string
   readonly error?: string
   /** The member execution's recorded turns (its settlement), when the core ran it. */
@@ -860,7 +856,7 @@ export class DispatchEngine {
   hasPending(room: Session, memberName: string): boolean {
     const member = replay(room.snapshotEvents()).members.find(member => member.name === memberName)
     return member !== undefined && ([...this.inFlight.values()].includes(`${room.id} ${memberId(room.snapshotEvents(), member)}`)
-      || replayDeliveries(room.snapshotEvents()).some(delivery => delivery.memberId === member.id && ['queued', 'running', 'uncertain'].includes(delivery.status)))
+      || replayDeliveries(room.snapshotEvents()).some(delivery => delivery.memberId === member.id && ['queued', 'running'].includes(delivery.status)))
   }
 
   dispatch(room: Session, memberName: string, text: string, options: DispatchOptions = {}): void {
@@ -941,12 +937,14 @@ export class DispatchEngine {
   /**
    * Read-only recovery projection: persisted running edges are not live
    * processes. A CLI member's rounds read the core's ledger (batch 5 S7): a
-   * round the core still runs stays running, one a restart cut off reads
-   * `uncertain` (待对账) until someone reconciles it — here, on the members
-   * page or in the edit dialog — and then reads the reconciled outcome. A
-   * queued delivery of a member with such a round is marked as waiting for
-   * 待对账. Only runs the core holds no row for (the room's own agent, runs
-   * from before S7) keep the room's own verdict.
+   * round the core still runs stays running; one a restart cut off reads
+   * 「被重启打断」 — `cancelled` + `endedBy: 'restart'` (restart-recovery
+   * consolidation) — whatever shape the journal or the core holds it in (a
+   * legacy `uncertain` edge, a legacy restart-failed run, a core row closed
+   * as interrupted or left `uncertain` by an older core). An outcome an
+   * operator once reconciled reads as that outcome. Runs the core holds no
+   * row for (the room's own agent, runs from before S7) keep the room's own
+   * verdict: not live → interrupted.
    */
   view(sessionId: string, state: RoomState): RoomState {
     const ledgers = new CoreLedgers(probeLocalAgent(this.ctx))
@@ -954,65 +952,73 @@ export class DispatchEngine {
       member === undefined || member.kind === 'main-agent' ? undefined : String(member.childSessionId ?? member.id ?? member.name)
     const memberActive = (id: string | undefined): boolean => [...this.inFlight.values()].includes(`${sessionId} ${id ?? ''}`)
     const executionOf = (runId: string | undefined): string | undefined => runId === undefined ? undefined : state.executions?.find(row => row.id === runId)?.executionId
+    const interrupted = (row: RoomDelivery): RoomDelivery => {
+      const { error: _error, ...rest } = row
+      return { ...rest, status: 'cancelled', endedBy: 'restart' }
+    }
     const deliveries = state.deliveries?.map((row): RoomDelivery => {
       if (row.status === 'queued' && closedGoal(state, row.plan?.goalId)) return { ...row, status: 'cancelled' }
       const child = cliChild(state.members.find(entry => entry.id === row.memberId))
       if (child === undefined) {
         // The room's own agent (or a removed member): the room's own verdict.
-        return row.status === 'running' && !this.agentScheduled.has(`${sessionId}:${row.id}`)
-          ? { ...row, status: 'uncertain', error: RESTART_UNKNOWN_TEXT } : row
+        if (row.status === 'running' && !this.agentScheduled.has(`${sessionId}:${row.id}`)) return interrupted(row)
+        return row.status === 'uncertain' ? interrupted(row) : row
       }
       const core = ledgers.find(child, row.id, executionOf(row.id))
       // A round this process follows reads as the journal says.
       const followed = executionOf(row.id)
       if (row.status === 'running' && followed !== undefined && claimed.has(followed)) return row
-      if (row.status === 'running') {
-        // COMPAT(batch 5 S7, remove one release after): a delivery running
-        // since before this version has no ledger row the room can name.
-        if (core === undefined) return { ...row, status: 'uncertain', error: RESTART_UNKNOWN_TEXT }
-        return core.status === 'uncertain' ? { ...row, status: 'uncertain', error: RESTART_UNKNOWN_TEXT }
-          : isCoreOutcome(core.status) ? coreDelivery(row, core) : row
+      if (row.status === 'running' || row.status === 'uncertain') {
+        // COMPAT(batch 5 S7): a delivery running since before this version has no ledger row the room can name.
+        if (core === undefined) return interrupted(row)
+        if (coreInterrupted(core)) return interrupted(row)
+        if (isCoreOutcome(core.status)) return coreDelivery(row, core)
+        return row.status === 'uncertain' ? interrupted(row) : row
       }
-      if (row.status === 'uncertain' && core !== undefined && isCoreOutcome(core.status)) return coreDelivery(row, core)
-      if (row.status === 'queued') {
-        if (core?.status === 'uncertain') return { ...row, status: 'uncertain', error: RESTART_UNKNOWN_TEXT }
-        if (ledgers.uncertain(child)) return { ...row, waiting: 'reconcile' }
-      }
+      // Already closed by an older version (「按没做完处理」, 「被取代」): the same reading.
+      if (row.endedBy === undefined && interruptedByRestart(deliveryEnding(row))) return { ...row, endedBy: 'restart' }
       return row
     })
     const project = <T extends RoomMemberRun & { readonly executionId?: string; readonly memberId?: string }>(run: T): T => {
       const member = run.memberId === undefined ? state.members.find(entry => entry.name === run.member) : state.members.find(entry => entry.id === run.memberId)
-      // A round the core refused while its member waited for 待对账 follows
-      // its delivery: still queued → waiting; settled → that.
+      const closed = (): T => {
+        const { error: _error, ...rest } = run
+        return { ...rest, state: 'cancelled', endedBy: 'restart' } as T
+      }
+      // A legacy row the core refused while its member waited for 待对账: it
+      // never ran. It follows its delivery: settled → that; still queued → as is.
       if (run.state === 'failed' && run.error === MEMBER_WAITING_TEXT) {
         const delivery = deliveries?.find(row => row.id === run.runId)
-        if (delivery === undefined) return run
-        return delivery.status === 'queued' ? { ...run, state: 'uncertain', waiting: 'reconcile' }
-          : delivery.status === 'done' || delivery.status === 'cancelled' ? { ...run, state: delivery.status } : run
+        if (delivery === undefined || delivery.status === 'queued') return run
+        const { error: _error, ...rest } = run
+        return delivery.status === 'done' || delivery.status === 'cancelled' ? { ...rest, state: delivery.status } as T : run
       }
       const executionId = run.executionId ?? executionOf(run.runId)
-      const restartLost = run.state === 'failed' && run.error === RESTART_UNKNOWN_TEXT
+      const delivery = run.runId === undefined ? undefined : deliveries?.find(row => row.id === run.runId)
       const child = cliChild(member)
       if (executionId !== undefined && run.state === 'running' && claimed.has(executionId)) return run
-      if (executionId !== undefined && child !== undefined && (run.state === 'running' || restartLost)) {
+      if (executionId !== undefined && child !== undefined && (run.state === 'running' || interruptedByRestart(run))) {
         const core = ledgers.find(child, undefined, executionId)
         if (core !== undefined) {
-          if (core.status === 'uncertain') return { ...run, state: 'uncertain', error: RESTART_UNKNOWN_TEXT }
+          if (coreInterrupted(core)) return closed()
           if (!isCoreOutcome(core.status)) return run
           const { error: _error, ...rest } = run
           return { ...rest, state: core.status, ...core.status === 'failed' && core.error !== undefined ? { error: core.error } : {} } as T
         }
         // A round another caller started that the service follows.
         if (run.runId !== undefined && this.followed.has(`${sessionId}:${run.runId}`)) return run
-        if (restartLost) return run
-        // COMPAT(batch 5 S7, remove one release after): no ledger row to read.
-        return { ...run, state: 'failed', error: RESTART_UNKNOWN_TEXT }
+        // COMPAT(batch 5 S7): no ledger row to read.
+        return closed()
       }
-      if (run.state !== 'running') return run
+      if (run.state !== 'running') {
+        // Every interrupted shape reads the same (its delivery's legacy 「按没做完处理」 too).
+        if (run.endedBy === undefined && (interruptedByRestart(run) || (run.state === 'cancelled' && delivery?.endedBy === 'restart'))) return closed()
+        return run
+      }
       const active = member?.kind === 'main-agent' && run.runId !== undefined
         ? this.agentScheduled.has(`${sessionId}:${run.runId}`)
         : memberActive(member?.id) || (run.runId !== undefined && this.followed.has(`${sessionId}:${run.runId}`))
-      return active ? run : { ...run, state: 'failed', error: RESTART_UNKNOWN_TEXT }
+      return active ? run : closed()
     }
     // What the restart-continue rule needs beyond the journal (M9).
     const queuePaused = state.members.flatMap(member => member.id !== undefined && ledgers.paused(cliChild(member)) ? [member.id] : [])
@@ -1034,10 +1040,10 @@ export class DispatchEngine {
 
   /**
    * Whether the room's journal is behind the core: a CLI round the journal
-   * shows running or uncertain that the core has since settled, reconciled
-   * (on the members page, in the edit dialog) or marked uncertain, or a
-   * delivery that waited for its member's 待对账 that is now reconciled. The
-   * service then runs a recovery pass so the room's records catch up.
+   * shows running (or, from an older version, `uncertain`) that the core has
+   * since settled or closed as interrupted, or a legacy delivery the core once
+   * refused (待对账) still queued — the core admits it now. The service then
+   * runs a recovery pass so the room's records catch up.
    */
   behindCore(sessionId: string, state: RoomState): boolean {
     const ledgers = new CoreLedgers(probeLocalAgent(this.ctx))
@@ -1046,20 +1052,37 @@ export class DispatchEngine {
       const member = state.members.find(entry => entry.id === id)
       return member === undefined || member.kind === 'main-agent' ? undefined : String(member.childSessionId ?? member.id ?? member.name)
     }
-    const settledOrLost = (row: CoreRow | undefined): boolean => row !== undefined && !claimed.has(row.id) && (row.status === 'uncertain' || isCoreOutcome(row.status))
+    const settled = (row: CoreRow | undefined): boolean => row !== undefined && !claimed.has(row.id) && (row.status === 'uncertain' || isCoreOutcome(row.status))
     for (const row of state.deliveries ?? []) {
-      // A delivery that waited for its member's 待对账, now reconciled: it goes out.
-      if (row.status === 'queued' && !ledgers.uncertain(childOf(row.memberId))
-        && state.executions?.some(run => run.id === row.id && run.state === 'failed' && run.error === MEMBER_WAITING_TEXT) === true) return true
+      if (row.status === 'queued' && state.executions?.some(run => run.id === row.id && run.state === 'failed' && run.error === MEMBER_WAITING_TEXT) === true) return true
       if (row.status !== 'running' && row.status !== 'uncertain') continue
       const core = ledgers.find(childOf(row.memberId), row.id, state.executions?.find(run => run.id === row.id)?.executionId)
-      if (row.status === 'running' ? settledOrLost(core) : core !== undefined && isCoreOutcome(core.status)) return true
+      if (row.status === 'running' ? settled(core) : core !== undefined && isCoreOutcome(core.status)) return true
     }
     return (state.executions ?? []).some(run => run.id.startsWith('execution:') && run.executionId !== undefined && run.state === 'running'
-      && !this.followed.has(`${sessionId}:${run.id}`) && settledOrLost(ledgers.find(childOf(run.memberId), undefined, run.executionId)))
+      && !this.followed.has(`${sessionId}:${run.id}`) && settled(ledgers.find(childOf(run.memberId), undefined, run.executionId)))
   }
 
-  /** Restore accepted targets, never repeat an execution whose settlement is unknown. One pass per room at a time. */
+  /**
+   * The member's open interrupted message rounds a dispatch does not itself
+   * continue: while any is left, the dispatch waits (queued) — a member's
+   * queued work goes out after its continuation, or after the human stops
+   * the round (design D-6).
+   * @param room - the room.
+   * @param targetId - the member.
+   * @param dispatchSeq - the dispatch.
+   * @returns whether the dispatch must wait.
+   */
+  waitsForContinuation(room: Session, targetId: string, dispatchSeq: number | undefined): boolean {
+    const events = room.snapshotEvents()
+    const open = openInterruptedRounds(this.view(room.id, replay(events))).get(targetId)
+    if (open === undefined) return false
+    const source = dispatchSeq === undefined ? undefined : events.find(event => event.seq === dispatchSeq)
+    const continues = new Set(source?.type === 'room/dispatch' ? source.data.continues ?? [] : [])
+    return open.some(runId => !continues.has(runId))
+  }
+
+  /** Restore accepted targets; a round a restart cut off closes and is never repeated. One pass per room at a time. */
   async recover(room: Session): Promise<void> {
     const previous = this.recovering.get(room.id) ?? Promise.resolve()
     const pass = previous.catch(() => {}).then(() => this.recoverOnce(room))
@@ -1069,13 +1092,20 @@ export class DispatchEngine {
     return pass
   }
 
+  /**
+   * One recovery pass, in two halves: first every delivery's journal catches
+   * up (a round a restart cut off closes as interrupted — never reported; an
+   * outcome the core settled is journaled and reported; an obsolete restart
+   * report is retired), then the deliveries still queued go out under their
+   * keys — except those of a member whose interrupted round is still open
+   * (they wait for its continuation or 停止).
+   */
   private async recoverOnce(room: Session): Promise<void> {
     const events = room.snapshotEvents()
     const state = replay(events)
     const ledgers = new CoreLedgers(probeLocalAgent(this.ctx))
     await this.recoverOutsideRuns(room, state, ledgers)
-    /** Deliveries this pass settled from the core: they no longer hold their member back. */
-    const resolved = new Set<string>()
+    const pending: { readonly seq: number; readonly text: string; readonly targetId: string; readonly target: RoomMember; readonly cli: boolean }[] = []
     for (const dispatch of events) {
       if (dispatch.type !== 'room/dispatch' || dispatch.data.targetIds === undefined || dispatch.data.held === true) continue
       for (const targetId of dispatch.data.targetIds) {
@@ -1088,6 +1118,7 @@ export class DispatchEngine {
         if (last === undefined && closedGoal(state, dispatch.data.plan?.goalId)) {
           room.append('room/delivery-state', { id, dispatchSeq: dispatch.seq, memberId: targetId, state: 'cancelled', error: 'Goal closed before delivery admission' })
           await this.ctx.sessions.flush(room)
+          await this.hooks.settled?.(room, dispatch.seq, { state: 'cancelled', error: 'Goal closed before delivery admission' })
           continue
         }
         // What the core says became of this delivery's execution (CLI members).
@@ -1096,32 +1127,15 @@ export class DispatchEngine {
         const followed = cli ? runExecutionId(events, id) : undefined
         if ((core !== undefined && claimed.has(core.id)) || (followed !== undefined && claimed.has(followed))) continue
         if (last?.type === 'room/delivery-state') {
-          if (last.data.state === 'running') {
-            if (core !== undefined) {
-              if (core.status !== 'queued' && core.status !== 'running') await this.journalCore(room, dispatch.seq, id, targetId, target!, core)
-              continue
-            }
-            // The room's own agent, a removed member, and — COMPAT(batch 5
-            // S7, remove one release after) — a CLI delivery running since
-            // before this version (no ledger row to read): the room's own verdict.
-            room.append('room/delivery-state', { id, dispatchSeq: dispatch.seq, memberId: targetId, state: 'uncertain', error: DELIVERY_UNKNOWN_TEXT })
-            if (target !== undefined) {
-              const run = state.runs.find(run => run.member === target.name)
-              if (run?.state === 'running' && (run.runId === undefined || run.runId === id)) {
-                const childSessionId = runChildSessionId(room.id, target)
-                room.append('room/run-state', { member: target.name, state: 'failed', startedAt: run.startedAt,
-                  ...run.runId === undefined ? {} : { runId: run.runId },
-                  ...childSessionId === undefined ? {} : { childSessionId },
-                  error: RESTART_UNKNOWN_TEXT })
-              }
-            }
-            await this.ctx.sessions.flush(room)
-            await this.reportOutcome(room, dispatch.seq, id, targetId, 'uncertain', RESTART_UNKNOWN_TEXT)
-          } else if (last.data.state === 'uncertain' && core !== undefined && isCoreOutcome(core.status)) {
-            // Reconciled elsewhere (the members page, the edit dialog): the same finding here.
-            await this.journalCore(room, dispatch.seq, id, targetId, target!, core)
-            resolved.add(id)
-          } else {
+          if (last.data.state === 'running' || last.data.state === 'uncertain') {
+            // A legacy edge a human once reconciled in the core: that finding.
+            if (core !== undefined && isCoreOutcome(core.status) && !coreInterrupted(core)) await this.journalCore(room, dispatch.seq, id, targetId, target!, core)
+            // Still running in the core: its own run writes the edges.
+            else if (last.data.state === 'running' && core !== undefined && (core.status === 'queued' || core.status === 'running')) continue
+            // A restart cut it off (the core closed it, or holds no row — the
+            // room's own agent, a delivery from before S7, a legacy edge).
+            else await this.closeInterrupted(room, dispatch.seq, id, targetId, target)
+          } else if (!interruptedByRestart({ state: last.data.state, ...last.data.endedBy === undefined ? {} : { endedBy: last.data.endedBy }, ...last.data.text === undefined ? {} : { text: last.data.text }, ...last.data.error === undefined ? {} : { error: last.data.error } })) {
             await this.reportOutcome(room, dispatch.seq, id, targetId, last.data.state, last.data.text ?? last.data.error ?? '')
           }
           continue
@@ -1129,27 +1143,30 @@ export class DispatchEngine {
         // Admitted (and maybe finished) before the room journaled a single
         // edge of it: the core's word, never a second run.
         if (core !== undefined && (core.status === 'uncertain' || isCoreOutcome(core.status))) {
-          await this.journalCore(room, dispatch.seq, id, targetId, target!, core)
+          if (coreInterrupted(core)) await this.closeInterrupted(room, dispatch.seq, id, targetId, target)
+          else await this.journalCore(room, dispatch.seq, id, targetId, target!, core)
           continue
         }
-        // Queued behind a restart-lost round the human has since moved on
-        // from: that move-on carries its backlog along; a row it left behind
-        // (a move-on predating the hand-over) closes as superseded instead of
-        // replaying a stale round on this access.
-        if (supersededByMoveOn(events, targetId, dispatch.seq)) {
-          room.append('room/delivery-state', { id, dispatchSeq: dispatch.seq, memberId: targetId, state: 'cancelled', text: SUPERSEDED_BACKLOG_TEXT })
+        // An obsolete restart report (the legacy 「结果不确定」, 「被取代」,
+        // 「Human reconciled …」) never reaches its recipient.
+        if (dispatch.data.origin === 'report' && obsoleteRestartReport(dispatch.data.text)) {
+          room.append('room/delivery-state', { id, dispatchSeq: dispatch.seq, memberId: targetId, state: 'cancelled', text: OBSOLETE_RESTART_REPORT_TEXT, endedBy: 'restart' })
           await this.ctx.sessions.flush(room)
           continue
         }
-        if (target === undefined || state.deliveries?.some(row => row.memberId === targetId && row.status === 'uncertain' && !resolved.has(row.id))) continue
-        // The room's own agent: one round at a time, in its room queue.
-        if (!cli && state.deliveries?.some(row => row.memberId === targetId && row.status === 'running')) continue
-        // A CLI member: resubmitted under its key. The core runs it once (a
-        // key it holds comes back as that execution or its settlement) and
-        // orders it in the member's ledger; while the member waits for
-        // 待对账 the core refuses it and the delivery keeps waiting.
-        this.dispatch(room, target.name, dispatch.data.text, { dispatchSeq: dispatch.seq, targetId })
+        if (target === undefined) continue
+        pending.push({ seq: dispatch.seq, text: dispatch.data.text, targetId, target, cli })
       }
+    }
+    for (const { seq, text, targetId, target, cli } of pending) {
+      // Waits for its member's continuation (or 停止).
+      if (this.waitsForContinuation(room, targetId, seq)) continue
+      // The room's own agent: one round at a time, in its room queue.
+      if (!cli && replay(room.snapshotEvents()).deliveries?.some(row => row.memberId === targetId && row.status === 'running')) continue
+      // A CLI member: resubmitted under its key. The core runs it once (a
+      // key it holds comes back as that execution or its settlement) and
+      // orders it in the member's ledger.
+      this.dispatch(room, target.name, text, { dispatchSeq: seq, targetId })
     }
     // recover() runs on every live access; only holds whose wake timer this
     // process does not own (a restart lost it) are handed over now.
@@ -1160,29 +1177,41 @@ export class DispatchEngine {
   }
 
   /**
-   * Journal what the core says became of a delivery's execution: `uncertain`
-   * (a restart cut it off: the delivery waits for 待对账 and its card closes
-   * with the reason), or the outcome it settled with or was reconciled to
-   * (the evidence as the delivery's text). Reported to whoever waits on it.
+   * Close a delivery a restart cut off: `cancelled` + `endedBy: 'restart'` on
+   * the delivery and on its still-open card (a legacy restart-failed card is
+   * left as it reads). Nothing is reported: the dispatcher hears the
+   * continued round's normal report (design D-1, D-3). A formal goal's
+   * attempt learns it through the settled hook.
+   */
+  private async closeInterrupted(room: Session, dispatchSeq: number, id: string, targetId: string, target: RoomMember | undefined): Promise<void> {
+    const events = room.snapshotEvents()
+    const last = events.filter(event => event.type === 'room/delivery-state' && event.data.id === id).at(-1)
+    if (last?.type !== 'room/delivery-state' || last.data.endedBy !== 'restart') {
+      room.append('room/delivery-state', { id, dispatchSeq, memberId: targetId, state: 'cancelled', text: RESTART_INTERRUPTED_TEXT, endedBy: 'restart' })
+    }
+    const run = replay(events).executions?.find(row => row.id === id)
+    if (run !== undefined && target !== undefined && (run.state === 'running' || (run.state === 'failed' && interruptedByRestart(run)))) {
+      const childSessionId = runChildSessionId(room.id, target) ?? (target.kind === 'main-agent' ? undefined : SessionId(cliChildId(events, target)))
+      const executionId = runExecutionId(events, id)
+      room.append('room/run-state', { member: run.member, runId: id, startedAt: run.startedAt, state: 'cancelled', endedBy: 'restart',
+        ...childSessionId === undefined ? {} : { childSessionId },
+        ...executionId === undefined ? {} : { executionId } })
+    }
+    await this.ctx.sessions.flush(room)
+    await this.hooks.settled?.(room, dispatchSeq, { state: 'cancelled', interrupted: 'restart' })
+  }
+
+  /**
+   * Journal the outcome the core settled a delivery's execution with (or an
+   * operator once reconciled it to — the evidence as the delivery's text),
+   * and report it to whoever waits on it.
    */
   private async journalCore(room: Session, dispatchSeq: number, id: string, targetId: string, target: RoomMember, core: CoreRow): Promise<void> {
+    if (!isCoreOutcome(core.status)) return
     const events = room.snapshotEvents()
     const run = replay(events).executions?.find(row => row.id === id)
     const childSessionId = runChildSessionId(room.id, target) ?? SessionId(cliChildId(events, target))
     const executionId = runExecutionId(events, id) ?? core.id
-    if (core.status === 'uncertain') {
-      const last = events.filter(event => event.type === 'room/delivery-state' && event.data.id === id).at(-1)
-      if (last?.type !== 'room/delivery-state' || last.data.state !== 'uncertain') {
-        room.append('room/delivery-state', { id, dispatchSeq, memberId: targetId, state: 'uncertain', error: DELIVERY_UNKNOWN_TEXT })
-      }
-      if (run?.state === 'running') {
-        room.append('room/run-state', { member: run.member, runId: id, startedAt: run.startedAt, state: 'failed', error: RESTART_UNKNOWN_TEXT, childSessionId, executionId })
-      }
-      await this.ctx.sessions.flush(room)
-      await this.reportOutcome(room, dispatchSeq, id, targetId, 'uncertain', RESTART_UNKNOWN_TEXT)
-      return
-    }
-    if (!isCoreOutcome(core.status)) return
     const said = core.error === undefined || core.error.trim() === '' ? undefined : core.error
     room.append('room/delivery-state', { id, dispatchSeq, memberId: targetId, state: core.status,
       ...core.status === 'failed' ? { error: said ?? 'the member round failed' } : said === undefined ? {} : { text: said } })
@@ -1200,24 +1229,23 @@ export class DispatchEngine {
   /**
    * Rounds another caller started on a room member (`execution:<id>`, shown
    * by the service while it follows them) that a restart cut off: their card
-   * closes with what the core says — `uncertain` until reconciled (S5 left
-   * such a round failed in the room while the core said uncertain), then the
-   * reconciled outcome.
+   * closes with what the core says — 「被重启打断」 when the core closed the
+   * row as interrupted, else its outcome.
    */
   private async recoverOutsideRuns(room: Session, state: RoomState, ledgers: CoreLedgers): Promise<void> {
     let wrote = false
     for (const run of state.executions ?? []) {
       if (!run.id.startsWith('execution:') || run.executionId === undefined || this.followed.has(`${room.id}:${run.id}`)) continue
-      const restartLost = run.state === 'failed' && run.error === RESTART_UNKNOWN_TEXT
+      const restartLost = run.state === 'failed' && interruptedByRestart(run)
       if (run.state !== 'running' && !restartLost) continue
       const member = state.members.find(entry => entry.id === run.memberId)
       const childSessionId = run.childSessionId ?? (member === undefined ? undefined : SessionId(String(member.childSessionId ?? member.id ?? member.name)))
       if (childSessionId === undefined) continue
       const core = ledgers.find(String(childSessionId), undefined, run.executionId)
       if (core === undefined || core.status === 'queued' || core.status === 'running') continue
-      if (core.status === 'uncertain') {
+      if (coreInterrupted(core) || !isCoreOutcome(core.status)) {
         if (restartLost) continue
-        room.append('room/run-state', { member: run.member, runId: run.id, startedAt: run.startedAt, state: 'failed', error: RESTART_UNKNOWN_TEXT, childSessionId, executionId: run.executionId })
+        room.append('room/run-state', { member: run.member, runId: run.id, startedAt: run.startedAt, state: 'cancelled', endedBy: 'restart', childSessionId, executionId: run.executionId })
       } else {
         const childTurn = executionTurns(this.ctx.sessions.get(childSessionId), run.executionId)?.at(-1)
         room.append('room/run-state', { member: run.member, runId: run.id, startedAt: run.startedAt, state: core.status, childSessionId,
@@ -1237,10 +1265,13 @@ export class DispatchEngine {
     // Removed between the dispatch and its execution: nothing to run, and the
     // removal event is already the journal's answer.
     if (member === undefined) return
-    if (state.deliveries?.some(delivery => delivery.memberId === member.id && delivery.status === 'uncertain')) return
     memberName = member.name
     const identity = memberId(room.snapshotEvents(), member)
     const deliveryId = options.dispatchSeq === undefined ? undefined : `${options.dispatchSeq}:${identity}`
+    // The member has a round a restart cut off that nothing continued yet:
+    // this delivery waits (queued) for its continuation or the human's 停止;
+    // a recovery pass sends it then.
+    if (deliveryId !== undefined && this.waitsForContinuation(room, identity, options.dispatchSeq)) return
     // Settled while it waited in the queue (a removal cancels queued work;
     // an undo must not resurrect it).
     if (deliveryId !== undefined && state.deliveries?.some(delivery => delivery.id === deliveryId && delivery.status !== 'queued')) return
@@ -1306,7 +1337,30 @@ export class DispatchEngine {
     } finally {
       if (follow.executionId !== undefined) claimed.delete(follow.executionId)
     }
-    if (deliveryId !== undefined) await this.reportOutcome(room, options.dispatchSeq!, deliveryId, identity, outcome.state, outcome.text ?? outcome.error ?? '')
+    if (deliveryId !== undefined) {
+      await this.reportOutcome(room, options.dispatchSeq!, deliveryId, identity, outcome.state, outcome.text ?? outcome.error ?? '')
+      await this.reportContinued(room, options.dispatchSeq!, deliveryId, identity, outcome)
+    }
+  }
+
+  /**
+   * The continued round's result goes to whoever waited on the round a
+   * restart cut off (design D-3): a follow-up on each interrupted delivery of
+   * this member the dispatch `continues` that would have reported — the same
+   * recipient, task and goal cadence, keyed on the continuing delivery. Not
+   * when the continuing dispatch already reports to that same recipient.
+   */
+  private async reportContinued(room: Session, dispatchSeq: number, deliveryId: string, identity: string, outcome: RunOutcome): Promise<void> {
+    const events = room.snapshotEvents()
+    const source = events.find(event => event.seq === dispatchSeq)
+    if (source?.type !== 'room/dispatch') return
+    const own = reportRecipient(events, dispatchSeq)?.name
+    for (const original of source.data.continues ?? []) {
+      if (!original.endsWith(`:${identity}`)) continue
+      const recipient = followUpRecipient(events, original)
+      if (recipient === undefined || recipient === own) continue
+      await this.reportFollowUp(room, original, { reportFor: deliveryId }, outcome.state, outcome.text ?? outcome.error ?? '')
+    }
   }
 
   /**
@@ -1570,9 +1624,7 @@ export class DispatchEngine {
    * the round in the member's ledger under this delivery's key, evaluates the
    * prompt when the round reaches the head of that queue, and calls back at
    * admission — where room writes its running edges. The core's ledger is
-   * the member's only queue (batch 5 S7): a member waiting for 待对账 refuses
-   * the round, and a delivery then stays queued, marked as waiting, until
-   * the round is reconciled and recovery resubmits it under the same key.
+   * the member's only queue (batch 5 S7).
    */
   private async runCliMember(
     room: Session, member: RoomMember, text: string, admitted: (execution?: LocalAgentExecutionAdmitted) => Promise<number>,
@@ -1674,10 +1726,9 @@ export class DispatchEngine {
       })
     } catch (error) {
       admittedNow()
-      // The core refuses every round of a member with an unknown-outcome
-      // execution or a paused queue: say where to clear it instead of a bare failure.
-      const refused = this.refusal(facade, childSessionId, error)
-      if (refused === MEMBER_UNRECONCILED_TEXT && deliveryId !== undefined) return await this.waitForReconcile(room, member, runId)
+      // The core refuses a round of a member whose operator paused its queue
+      // with typed input waiting: say where to clear it instead of a bare failure.
+      const refused = this.refusal(error)
       throw refused === undefined ? error : new Error(refused)
     }
     void handle.settled.then(admittedNow, admittedNow)
@@ -1692,36 +1743,12 @@ export class DispatchEngine {
   }
 
   /**
-   * A delivery the core refused because its member waits for 待对账: it
-   * stays queued (recovery resubmits it under its key once the member's
-   * round is reconciled, wherever that happens), and the timeline says so
-   * once — a run row whose projection reads 待对账 while the delivery waits
-   * (`MEMBER_WAITING_TEXT`). A legacy relay has no delivery to wait and
-   * still fails with {@link MEMBER_UNRECONCILED_TEXT}.
-   */
-  private async waitForReconcile(room: Session, member: RoomMember, runId: string): Promise<typeof DROPPED> {
-    const events = room.snapshotEvents()
-    if (events.some(event => event.type === 'room/run-state' && event.data.runId === runId)) return DROPPED
-    const name = replay(events).members.find(entry => entry.id === member.id)?.name ?? member.name
-    const childSessionId = runChildSessionId(room.id, member)
-    room.append('room/run-state', { member: name, runId, state: 'failed', startedAt: Date.now(), elapsedMs: 0, error: MEMBER_WAITING_TEXT,
-      ...childSessionId === undefined ? {} : { childSessionId } })
-    await this.ctx.sessions.flush(room)
-    return DROPPED
-  }
-
-  /**
    * Why the core refused a member round, in the room's words, when it was
-   * the member's own state: an unreconciled execution, or a queue paused
-   * after a restart. Undefined for any other failure.
+   * the member's own state: its queue paused by the operator with typed
+   * input waiting. Undefined for any other failure.
    */
-  private refusal(facade: LocalAgentFacade, childSessionId: string, error: unknown): string | undefined {
-    let ledger: ReturnType<NonNullable<LocalAgentFacade['readMemberInbox']>> | undefined
-    try { ledger = facade.readMemberInbox?.(childSessionId) } catch { /* not a member the core knows yet: read the message */ }
-    const message = faultMessage(error)
-    if (ledger?.messages.some(row => row.status === 'uncertain') === true || /uncertain outcome/.test(message)) return MEMBER_UNRECONCILED_TEXT
-    if (/inbox is paused/.test(message)) return MEMBER_PAUSED_TEXT
-    return undefined
+  private refusal(error: unknown): string | undefined {
+    return /inbox is paused/.test(faultMessage(error)) ? MEMBER_PAUSED_TEXT : undefined
   }
 
   /** The rest of a CLI round once the core queued it: publish, mirror, settle. */
@@ -1742,8 +1769,7 @@ export class DispatchEngine {
     if (run === undefined) {
       const settlement = await handle.settled
       if (round.assembled().dropped) return DROPPED
-      const refused = settlement.outcome === 'done' ? undefined : this.refusal(round.facade, round.childSessionId, settlement.error ?? '')
-      if (refused === MEMBER_UNRECONCILED_TEXT && round.deliveryId !== undefined) return await this.waitForReconcile(room, member, runId)
+      const refused = settlement.outcome === 'done' ? undefined : this.refusal(settlement.error ?? '')
       if (refused !== undefined) return { state: 'failed', error: refused }
       // Ended before it started (a refused admission, a cancelled queue row),
       // or a replayed key whose execution already ended: nothing to mirror.

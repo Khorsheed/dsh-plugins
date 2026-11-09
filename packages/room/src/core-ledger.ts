@@ -1,11 +1,12 @@
 /**
  * The local-agent core's per-member execution ledger, as the room reads it
  * (batch 5 S7). Since S7 the ledger is the only queue a CLI member's rounds
- * pass through, and the only place that says what became of a round a
- * restart cut off: `uncertain` until someone reconciles it, in the room, on
- * the members page or in the member edit dialog — all three settle the same
- * ledger row (user decision 2026-11-03 ③). The room never guesses an outcome
- * for an execution the core knows; it journals what the core says.
+ * pass through, and the place that says what became of each round. A round
+ * a restart cut off reads closed as interrupted (`cancelled` +
+ * `interrupted: 'restart'`; an older core said `uncertain`) — see
+ * {@link coreInterrupted} (restart-recovery consolidation). The room never
+ * guesses an outcome for an execution the core knows; it journals what the
+ * core says.
  *
  * Reads are optional: without the core, or with a core older than the
  * ledger, every lookup answers `undefined` and the caller keeps the room's
@@ -24,6 +25,14 @@ export type CoreOutcome = 'done' | 'failed' | 'cancelled'
 /** Whether a row's status is an outcome. */
 export function isCoreOutcome(status: CoreRow['status']): status is CoreOutcome {
   return status === 'done' || status === 'failed' || status === 'cancelled'
+}
+
+/**
+ * Whether the core says a host restart cut this row off: closed as
+ * interrupted, or left `uncertain` by an older core (read by data).
+ */
+export function coreInterrupted(row: CoreRow | undefined): boolean {
+  return row !== undefined && (row.interrupted === 'restart' || row.status === 'uncertain')
 }
 
 /**
@@ -46,11 +55,9 @@ export class CoreLedgers {
 
   /**
    * Whether the member's input queue is paused with typed input waiting in
-   * the member session (members page). The core pauses every ledger that
-   * holds an uncertain or queued row when it loads it after a restart, so
-   * the flag alone is set for every interrupted member; only a queued
-   * composer row is input the human still has to decide on (the core holds
-   * just those back while paused — room rows run).
+   * the member session (members page): the operator's own pause. (An older
+   * core also paused every ledger at boot after a restart; only a queued
+   * composer row behind the flag is input the human still has to decide on.)
    */
   paused(childSessionId: string | undefined): boolean {
     const inbox = this.inbox(childSessionId)
@@ -78,26 +85,5 @@ export class CoreLedgers {
     if (rows === undefined) return undefined
     return (executionId === undefined ? undefined : rows.find(row => row.id === executionId))
       ?? (key === undefined ? undefined : rows.find(row => row.key === key))
-  }
-
-  /** Whether the member has an execution with an unknown outcome: the core admits nothing else of it until that is reconciled. */
-  uncertain(childSessionId: string | undefined): boolean {
-    return this.rows(childSessionId)?.some(row => row.status === 'uncertain') === true
-  }
-}
-
-/**
- * Settle a member's uncertain execution in the core (`reconcileExecution`).
- * A row that is not uncertain any more (reconciled elsewhere meanwhile) is
- * left alone: the same finding is not recorded twice.
- * @returns undefined on success (or nothing to do), else why it failed.
- */
-export function reconcileCore(facade: LocalAgentFacade | undefined, childSessionId: string, row: CoreRow | undefined, outcome: CoreOutcome, evidence: string): string | undefined {
-  if (row?.status !== 'uncertain' || facade?.reconcileExecution === undefined) return undefined
-  try {
-    facade.reconcileExecution(childSessionId, row.id, outcome, evidence)
-    return undefined
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error)
   }
 }

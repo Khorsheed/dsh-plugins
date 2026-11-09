@@ -26,6 +26,7 @@
     "src/decisions.ts",
     "src/help.ts",
     "src/restart-continue.ts",
+    "src/restart-interrupted.ts",
     "src/startup-load.ts",
     "src/background-lost.ts"
   ]
