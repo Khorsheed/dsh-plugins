@@ -19,6 +19,7 @@ import type { RoomProviderList, RoomQuestionAnswer, RoomRemoval, RoomRunAttachme
 import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsReloadOptions, LocalAgentMemberToolsStatus, LocalAgentModelInfo, LocalAgentPromptResult } from '@khorsheed/dsh-local-agent/types'
 import type { RoomChromeVisibility } from './preset-visibility.ts'
 import type { RoomStore } from './room-store.ts'
+import type { RoomModeNames } from './member-mode.ts'
 
 /** A mutation outcome with a localized failure message. */
 export type RoomMutationOutcome =
@@ -204,7 +205,12 @@ export interface RoomAttachmentsFace {
   readonly serialize: (ids: readonly string[]) => Promise<readonly import('../types.ts').RoomAttachmentInput[]>
 }
 
-export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInjected {
+/** Localized preset names shared by the member-facing surfaces. */
+export interface RoomModeNamesInjected {
+  readonly modeNames: RoomModeNames
+}
+
+export interface RoomComposerInjected extends RoomGoalInjected, RoomInviteInjected, RoomModeNamesInjected {
   /**
    * Run one host command on the room's own agent (`/compact` while dsh
    * coordinates): the official command channel, as the official composer
@@ -319,7 +325,7 @@ export type RoomInviteOutcome =
   | { readonly ok: false; readonly message: string }
 
 /** Injected face of the members tab. */
-export interface RoomMembersInjected extends RoomInviteInjected {
+export interface RoomMembersInjected extends RoomInviteInjected, RoomModeNamesInjected {
   readonly renderMemberConfiguration?: ((childSessionId: string) => ReactNode) | undefined
   /** The edit dialog's member-control face (local-agent); absent on an older core. */
   readonly renderMemberModelPicker?: LocalAgentUi['renderMemberModelPicker'] | undefined

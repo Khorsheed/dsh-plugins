@@ -60,6 +60,7 @@
     "src/client/index.ts",
     "src/client/locales.ts",
     "src/client/member-color.ts",
+    "src/client/member-mode.ts",
     "src/client/name-pool.ts",
     "src/client/nodes.ts",
     "src/client/preset-visibility.ts",

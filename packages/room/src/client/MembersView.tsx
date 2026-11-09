@@ -16,6 +16,7 @@ import { RoomSettingsView } from './RoomSettingsView.tsx'
 import { useEffect, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { memberColor } from './member-color.ts'
+import { memberModeName, roomPresetOf, useMemberModeNames } from './member-mode.ts'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import { IconAgentPresetOutlineMedium } from './icons.tsx'
 import type { RoomMember, RoomRemoval } from '../types.ts'
@@ -53,11 +54,13 @@ export function MembersView({
   sessionId, roomStore, roomCwd, openSession, removeMember, restoreMember, setSettings, openTeam, unlinkSession, updateMember, invite, listProviders, browseDirectory, listDirectory,
   modelSurface, renderHarnessModelPicker, memberModel, setMemberModel, renderMemberConfiguration, modelDirectory, setCoordinator,
   renderMemberModelPicker, readMemberSelection, saveMemberSelection, memberTools, reloadMemberTools,
-  memberRecovery, retryMemberStart, reconcileMemberExecution, memberActivity, runningBackgroundTasks, t,
+  memberRecovery, retryMemberStart, reconcileMemberExecution, memberActivity, runningBackgroundTasks, useSessions, modeNames, t,
 }: MembersViewProps): ReactNode {
   // Entering the tab pulls the freshest state once.
   useEffect(() => { void roomStore.refresh(sessionId) }, [roomStore, sessionId])
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
+  const roomPreset = useSessions(sessions => roomPresetOf(sessions.byId[sessionId]))
+  const modeNameById = useMemberModeNames(modeNames, sessionId)
   const [dialog, setDialog] = useState<DialogState>(null)
   const [providers, setProviders] = useState<RoomProviderList | undefined>(undefined)
   const [notice, setNotice] = useState<string | null>(null)
@@ -269,6 +272,7 @@ export function MembersView({
               modelHint={member.kind === 'main-agent'
                 ? (modelDirectory !== undefined ? <MainAgentModelHint directory={modelDirectory} /> : undefined)
                 : memberModels.get(member.name)}
+              modeHint={memberModeName(member, roomPreset, modeNameById)}
               t={t}
             />
           )

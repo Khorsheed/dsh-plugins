@@ -129,6 +129,21 @@
   white-space: nowrap;
 }
 
+.mode {
+  flex: 0 1 auto;
+  min-width: 4em;
+  max-width: 12em;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary, rgb(65, 118, 230)) 10%, transparent);
+  color: var(--dsw-alias-state-business-primary, rgb(65, 118, 230));
+  font-size: 11px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hint {
   color: var(--dsw-alias-label-tertiary, rgba(127, 127, 127, 0.8));
   font-size: 12px;

@@ -14,7 +14,7 @@ import css from './MembersView.module.css'
 
 /** One roster card: identity, avatar block, role, status chip, actions. */
 export function MemberCard({
-  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, coordinator = false, onPromote, preview = false, removal, onLocate, activity,
+  member, run, elapsedMs, openSession, onEdit, onRemove, t, modelHint, modeHint, coordinator = false, onPromote, preview = false, removal, onLocate, activity,
 }: {
   /** The member's background work, one read-only line under the head (the members page only; never in the dialog preview). */
   readonly activity?: ReactNode
@@ -39,6 +39,8 @@ export function MemberCard({
    * behavior).
    */
   readonly modelHint?: ReactNode
+  /** The member's localized mode name; absent when it has no mode. */
+  readonly modeHint?: string | undefined
   /** True = the dialog's live preview: no action foot. */
   readonly preview?: boolean
 }): ReactNode {
@@ -71,6 +73,7 @@ export function MemberCard({
           <span className={css.nameRow}>
             <span className={css.name}>{member.name}</span>
             {member.role !== undefined && <span className={css.role}>{member.role}</span>}
+            {modeHint !== undefined && <span className={css.mode} title={modeHint}>{modeHint}</span>}
           </span>
           {coordinator && <span className={css.hint}>{t('coordinator.label')}</span>}
           <span className={css.hint}>
