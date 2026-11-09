@@ -536,6 +536,16 @@ describe('UserMessageView text (the official user-text pipeline)', () => {
     expect(stylesheet).toMatch(/\.bubble\s*\{[^}]*\bwhite-space:\s*pre-wrap;/)
   })
 
+  it('wraps long official-pipeline runs at the bubble boundary', () => {
+    const text = 'Expected artifacts: ["game/elements/zhaoyao.json","game/design/quests/paths.json","game/tests/zhaoyao-rules.test.mjs"].'
+    const node = userNode([{ type: 'text', text }])
+    const renderFactorySlot = vi.fn((name: string) => name === 'conversation.user.text' ? <span data-testid="user-text">{text}</span> : null)
+    render(<UserMessageView {...props({ node, renderFactorySlot, userTextAvailable: true })} />)
+    expect(screen.getByTestId('user-text').parentElement?.className).toContain('bubble')
+    const stylesheet = readFileSync('src/client/UserMessageView.module.css', 'utf8')
+    expect(stylesheet).toMatch(/\.bubble\s*\{[^}]*\bword-break:\s*break-word;/)
+  })
+
   it('keeps the local token projection on a host without the factory', () => {
     const node = userNode([{ type: 'text', text: '用 /plan 拆一下' }])
     const renderFactorySlot = vi.fn(() => null)
