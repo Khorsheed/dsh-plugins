@@ -113,7 +113,7 @@ export class LocalSpeechProvider implements SpeechProvider {
 
   async transcribe(input: { audio: Uint8Array; language: string }, signal: AbortSignal) {
     const audioSeconds = validateWav(input.audio)
-    const language = input.language === 'zh' ? 'zh' : 'auto'
+    const language = input.language === 'zh' ? 'zh' : input.language === 'en' ? 'en' : 'auto'
     const required = this.service.modelsFor({ language })
     if (!(await this.service.models()).filter(model => required.includes(model.id)).every(model => model.state === 'installed')) {
       throw new Error('Prepare the local speech models before recording')

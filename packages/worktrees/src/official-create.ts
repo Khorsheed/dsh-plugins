@@ -2,9 +2,8 @@ import { isAbsolute, join } from 'node:path'
 import type { Agent } from '@deepseek-ai/dsh-agent/types'
 import type { CreatedWorktree } from '@deepseek-ai/dsh-experimental-worktree/types'
 
-/** The optional official creator; its configured pool is honored when readable. */
+/** The optional official creator, accessed only through its public create method. */
 export interface OfficialWorktreeCreator {
-  readonly config?: { readonly directory?: string }
   create(agent: Agent, request: { name: string }, signal?: AbortSignal): Promise<CreatedWorktree>
 }
 
@@ -19,6 +18,6 @@ export async function createInOfficialPool(options: {
 }): Promise<CreatedWorktree | undefined> {
   const { repo, path, branch, agent, signal, official } = options
   if (official === undefined || agent === undefined || branch === undefined || branch === '' || !isAbsolute(path)) return undefined
-  if (path !== join(repo, official.config?.directory ?? '.agents/worktrees', branch)) return undefined
+  if (path !== join(repo, '.agents/worktrees', branch)) return undefined
   return official.create(agent, { name: branch }, signal)
 }

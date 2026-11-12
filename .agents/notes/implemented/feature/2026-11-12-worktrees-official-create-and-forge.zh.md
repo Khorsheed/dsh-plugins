@@ -10,7 +10,7 @@
 
 ## 决策
 
-只有同时具备 Agent、非空新分支名、绝对路径，并且路径精确等于官方池加该分支时，才调用 `ctx.worktrees.create`。官方 `{ path, branch, baseCommit, repositoryRoot }` 进入工具结果，原会话绑定指向返回的规范化路径。列表、切换、编辑、dirty 展示与受保护删除不变。
+只有同时具备 Agent、非空新分支名、绝对路径，并且路径精确等于官方文档默认池加该分支时，才调用 `ctx.worktrees.create`。官方 `{ path, branch, baseCommit, repositoryRoot }` 进入工具结果，原会话绑定指向返回的规范化路径。列表、切换、编辑、dirty 展示与受保护删除不变。
 
 官方创建失败后直接报错，不再执行第二次旧创建。任意路径、采用已有工作树、无 Agent 上下文和无官方服务时保留旧实现。本次不启用归档清理，原有删除保护独立保留。
 

@@ -63,6 +63,8 @@ describe('official local speech provider', () => {
     expect(result.inferenceSeconds).toBeGreaterThanOrEqual(0)
     expect(run).toHaveBeenCalledOnce()
     expect(run.mock.calls[0]?.[0].language).toBe('zh')
+    await ctx.speechToText.transcribe(ctx.speechToText.resolve({ audio: wav(), language: 'en' }), new AbortController().signal)
+    expect(run.mock.calls[1]?.[0].language).toBe('en')
     expect(await readdir(join(service.root, 'tmp'))).toEqual([])
     const registry = ctx.speechToText
     await ctx.fiber.dispose()

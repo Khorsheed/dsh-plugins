@@ -10,7 +10,7 @@ The official 0.2.2-rc.2 worktree service creates a new branch in its configured 
 
 ## Decision
 
-Delegate to `ctx.worktrees.create` only when an Agent and a non-empty new branch name are present, the path is absolute, and it exactly matches the configured official pool plus that branch. The official `{ path, branch, baseCommit, repositoryRoot }` becomes part of the tool result and the existing per-session binding points at the canonical returned path. Legacy listing, switching, editing, dirty reporting and guarded removal are unchanged.
+Delegate to `ctx.worktrees.create` only when an Agent and a non-empty new branch name are present, the path is absolute, and it exactly matches the documented default pool plus that branch. The official `{ path, branch, baseCommit, repositoryRoot }` becomes part of the tool result and the existing per-session binding points at the canonical returned path. Legacy listing, switching, editing, dirty reporting and guarded removal are unchanged.
 
 An official failure is surfaced, never followed by a second legacy create. Arbitrary paths, existing-worktree adoption, missing Agent context and hosts without the service retain the old implementation. No archive cleanup is enabled by this change; the existing deletion guards stay independent.
 
