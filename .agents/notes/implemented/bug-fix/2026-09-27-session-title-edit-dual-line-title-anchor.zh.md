@@ -18,6 +18,8 @@ Status: implemented
 
 包套件 62 绿。就地编辑套件（11 + 3 例）按 `legacy` / `current` 各跑一遍，夹具复刻各线真实标记；把旧定位恢复后这批用例 11/11 全红（用 `git stash` 实测），所以它们是回归闸门而非现状描述。
 
+在 rc.2 的真实 Chromium 组合里，点击铅笔会在实际标题上打开输入框，断言一个 `data-ste-inplace` 标题节点，通过 `session.rename` 提交 `Inline title target`，再检查官方标题刷新、没有遗留隐藏节点和页面错误。这是用户工作流的真实浏览器验收，不只是官方对话框或共享后台的验收。
+
 实机验证（2026-09-27，就在此前坏掉的那条线上）：在 scratch `DSH_HOME` 里建一次性 profile（`dsh plugin --profile web add <worktree>/packages/client-session-title-edit`，link 安装），宿主 `0.1.7-rc.2`，打开一个真实种子会话后点铅笔。官方标题节点是文本等于会话标题的 `SPAN`，带 `data-ste-inplace`，矩形 300/11/184×28；覆盖输入框落在同一矩形（300/11、190×28），预填当前标题；没有行内编辑器出现；Escape 后节点复原、覆盖层消失。修复前同一操作得到的是行内编辑器、标题照旧显形。
 
 旧线的覆盖缺口如实记下：0.1.5/0.1.6 臂由双线单测，以及对已发布 0.1.5 产物 bundle 的 DOM 直读（`disabled: last`）钉住，**不是**实机跑出来的——一次性 0.1.5 实例确实起过，但那个 scratch home 的 workspace 浏览器不肯列出种子会话（渲染器/store 的一次性 home 限制，与本插件无关）；而本仓 CI 的 `gates` job 本来就把本包套件跑在钉住的 `dsh-v0.1.5-rc.1` 线上。
@@ -28,6 +30,7 @@ Status: implemented
 - **按 CSS Module 类名定位（`span.crumbCurrent`）。** 类名逐构建哈希（`wSkVaW_crumbCurrent`），是构建产物不是契约；两条线真正共有的东西是渲染出来的标题文本。
 - **注册进 `conversation.session.header.lineage`。** 它是官方唯一的标题旁槽位，但它是 `single`，且已被 ui-subagent 以默认优先级占用：同优先级注册会在 boot 抛错（"single slot … already has a registration"），压优先级遮蔽则会让所有会话的官方子代理 lineage 消失。
 - **先向上游要一个真正的标题槽位、再谈修复。** 作为终态是对的（插件里的 TODO 至今这么写），但 0.1.7 线的用户当下就在丢就地位；DOM 锚点本来就以「带降级路径的过渡方案」记档，所以先修好它，等标题槽位出现再整体退役。
+- **只用官方重命名菜单和共享后台，退役本包。** rc.2 的退役尝试删除了用户明确需要的就地编辑工作流，因此否决。官方对话框与本包的就地编辑通过同一个 `session.rename` 并存；后台能力等价不代表交互等价。
 - **按结构锚定「最后一段里第一个非分隔符子节点」。** 在子代理会话上会坏：那一线上整个 crumb 由 lineage 槽渲染（`renderSlot(..., { fallback: title })`），标题文本在 ui-subagent 自己的标记里；文本匹配仍能找到它，结构猜测则不能。
 
 ## Consequences

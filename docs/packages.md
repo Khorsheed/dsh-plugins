@@ -33,9 +33,9 @@
 | `@khorsheed/dsh-context-lens` | `packages/context-lens` | 0.1.1 | bundle | — | web | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-dev-suite` | `packages/dev-suite` | 0.1.1 | bundle | — | — | 0.1.7-rc.1 | — |
-| `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
-| `@khorsheed/dsh-eval-suite` | `packages/eval-suite` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | eval |
-| `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.4 | bundle | — | web | 0.1.5-rc.1 | eval |
+| `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0 | bundle | — | web | 0.2.2-rc.2 | — |
+| `@khorsheed/dsh-eval-suite` | `packages/eval-suite` | 0.1.0 | bundle | — | — | 0.2.2-rc.2 | eval |
+| `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.4 | bundle | — | web | 0.2.2-rc.2 | eval |
 | `@khorsheed/dsh-game` | `packages/game` | 0.1.1 | bundle | — | web | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-gamedev-suite` | `packages/gamedev-suite` | 0.1.2 | bundle | — | — | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.17 | bundle | — | web | 0.1.2-rc.1 | eval |

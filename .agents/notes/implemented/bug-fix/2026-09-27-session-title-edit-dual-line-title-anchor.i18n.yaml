@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-27-session-title-edit-dual-line-title-anchor.md
-.agents/notes/implemented/bug-fix/2026-09-27-session-title-edit-dual-line-title-anchor.md: e550c637e4e5dd0ad560bf5f54569bba62207416
-.agents/notes/implemented/bug-fix/2026-09-27-session-title-edit-dual-line-title-anchor.zh.md: 59a1cbcc0543d790ab1086edc69311b8e3c20c27
+.agents/notes/implemented/bug-fix/2026-09-27-session-title-edit-dual-line-title-anchor.md: d222e0f68640904041c594f68f4cf7e2eed07db7
+.agents/notes/implemented/bug-fix/2026-09-27-session-title-edit-dual-line-title-anchor.zh.md: 9afd317fb238671a1846d2663c49943d23dcb22e

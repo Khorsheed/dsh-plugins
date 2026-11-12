@@ -183,6 +183,9 @@ importers:
       '@khorsheed/dsh-client-message-tools':
         specifier: workspace:*
         version: link:../client-message-tools
+      '@khorsheed/dsh-client-session-title-edit':
+        specifier: workspace:*
+        version: link:../client-session-title-edit
       '@khorsheed/dsh-context-guard':
         specifier: workspace:*
         version: link:../context-guard
@@ -214,9 +217,6 @@ importers:
       '@deepseek-ai/cordis':
         specifier: 4.1.0
         version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
-      playwright:
-        specifier: ^1.49.0
-        version: 1.65.0
       tsdown:
         specifier: ^0.22.2
         version: 0.22.14(tsx@4.23.15)(typescript@5.9.3)
@@ -667,6 +667,49 @@ importers:
       react:
         specifier: ^18.2.0
         version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
+
+  packages/client-session-title-edit:
+    dependencies:
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: 4.1.0
+        version: 4.1.0(@deepseek-ai/cordis-plugin-include@1.1.0)(@deepseek-ai/cordis-plugin-loader@1.1.0)
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: 0.2.2-rc.2
+        version: 0.2.2-rc.2(fced896734ff152a21c3591a84aeb622)
+      '@deepseek-ai/dsh-client-locale':
+        specifier: 0.2.2-rc.2
+        version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
+      '@deepseek-ai/dsh-client-test-runtime':
+        specifier: 0.2.2-rc.2
+        version: 0.2.2-rc.2(b8323f5a4434dd7f0bd97f37d1b15319)
+      '@deepseek-ai/dsh-client-ui-conversation':
+        specifier: 0.2.2-rc.2
+        version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
+      '@deepseek-ai/dsh-client-ui-primitives':
+        specifier: 0.2.2-rc.2
+        version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: 0.2.2-rc.2
+        version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: 0.2.2-rc.2
+        version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)
+      '@deepseek-ai/dsh-session':
+        specifier: 0.2.2-rc.2
+        version: 0.2.2-rc.2(@deepseek-ai/cordis@4.1.0)(@deepseek-ai/dsh-error@0.2.2-rc.2(@deepseek-ai/cordis@4.1.0))(@deepseek-ai/dsh-scope@0.2.2-rc.2(@deepseek-ai/cordis@4.1.0))
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      playwright:
+        specifier: ^1.49.0
+        version: 1.65.0
       react-dom:
         specifier: ^18.2.0
         version: 18.3.1(react@18.3.1)
