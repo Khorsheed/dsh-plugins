@@ -19,6 +19,8 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 // Type-only: pulls the ctx.settings service merge.
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-mcp-manager'
+import { McpManagerBridge, type McpManagerSlice, type McpOfficialCredentials, type McpOfficialSettings } from './mcp-manager-bridge.ts'
 import type {
   CapabilityCatalogSnapshot,
   CatalogAddSkillRequest,
@@ -169,6 +171,7 @@ export class CapabilityCatalogService extends TypertRemoteService {
   private baseline: Set<string>
   private readonly appearedAfterApply: Set<string>
   private readonly mcp: McpStore
+  private mcpOfficial: McpManagerBridge | undefined
   /** The live `ctx.tools` (traceable proxy) captured from the tools inject. */
   private mcpToolsRegistry: McpToolRegistry | undefined
   /** Registered MCP tool disposers, keyed by model-facing public name. */
@@ -254,6 +257,30 @@ export class CapabilityCatalogService extends TypertRemoteService {
       // them by re-connecting the enabled servers at boot, async so boot is not
       // blocked. Re-syncs registration once the descriptions are back.
       void this.reconnectEnabledMcp()
+    })
+    ctx.inject(['mcpManager', 'settings', 'tools'], (officialCtx) => {
+      const settings = officialCtx.settings as unknown as McpOfficialSettings
+      if (typeof settings.update !== 'function' || typeof settings.mutate !== 'function') return
+      const bridge = new McpManagerBridge(
+        this.mcp,
+        officialCtx.mcpManager as McpManagerSlice,
+        settings,
+        { schemas: () => this.toolSchemasIn(undefined) },
+        officialCtx.get('credentials') as McpOfficialCredentials | undefined,
+        (message) => this.ctx.logger.warn(message),
+        () => this.syncRegisteredMcpTools(),
+      )
+      this.mcpOfficial = bridge
+      const lifetime = new AbortController()
+      officialCtx.effect(() => {
+        void bridge.watch(lifetime.signal)
+        return () => { lifetime.abort() }
+      }, 'capability-catalog: official MCP manager')
+      bridge.schedule()
+    })
+    ctx.inject(['credentials'], (credentialsCtx) => {
+      this.mcpOfficial?.bindCredentials(credentialsCtx.credentials as McpOfficialCredentials)
+      this.mcpOfficial?.schedule()
     })
     // Baseline snapshot of the tools visible once the registry is ready; tools
     // that appear later (a tools/change diff) are marked plugin/inferred. Set it
@@ -662,27 +689,41 @@ export class CapabilityCatalogService extends TypertRemoteService {
   @Remote('mcpAdd')
   async mcpAdd(config: CatalogMcpServerConfig): Promise<boolean> {
     if (config.serverName.trim() === '') return false
-    this.mcp.add(config)
-    this.afterMcpMutation()
-    return true
+    try {
+      if (this.mcpOfficial !== undefined && !await this.mcpOfficial.prepareEdit(config)) return false
+      this.mcp.add(config)
+      this.afterMcpMutation()
+      return true
+    } catch (error) {
+      this.ctx.logger.warn(`capability-catalog: MCP edit was not saved: ${error instanceof Error ? error.message : String(error)}`)
+      return false
+    }
   }
 
   @Remote('mcpRemove')
   async mcpRemove(serverName: string): Promise<boolean> {
-    this.mcp.remove(serverName)
-    this.afterMcpMutation()
-    return true
+    try {
+      if (this.mcpOfficial !== undefined) return await this.mcpOfficial.remove(serverName)
+      this.mcp.remove(serverName)
+      this.afterMcpMutation()
+      return true
+    } catch (error) {
+      this.ctx.logger.warn(`capability-catalog: MCP removal was not saved: ${error instanceof Error ? error.message : String(error)}`)
+      return false
+    }
   }
 
   @Remote('mcpSetEnabled')
   async mcpSetEnabled(serverName: string, enabled: boolean): Promise<void> {
     this.mcp.setEnabled(serverName, enabled)
     this.afterMcpMutation()
+    if (this.mcp.isOfficial(serverName)) await this.mcpOfficial?.reconcile()
   }
 
   @Remote('mcpSetCredential')
   async mcpSetCredential(ref: string, value: string): Promise<boolean> {
     this.mcp.setCredential(ref, value)
+    await this.mcpOfficial?.reconcile()
     return true
   }
 
@@ -690,11 +731,14 @@ export class CapabilityCatalogService extends TypertRemoteService {
   async mcpSetToolEnabled(serverName: string, tool: string, enabled: boolean): Promise<void> {
     this.mcp.setToolEnabled(serverName, tool, enabled)
     this.afterMcpMutation()
+    await this.mcpOfficial?.reconcile()
   }
 
   @Remote('mcpDiscover')
   async mcpDiscover(serverName: string): Promise<readonly CatalogMcpTool[]> {
-    const tools = await this.mcp.discover(serverName)
+    const tools = this.mcpOfficial === undefined
+      ? await this.mcp.discover(serverName)
+      : await this.mcpOfficial.discover(serverName)
     this.afterMcpMutation()
     return tools
   }
@@ -745,7 +789,7 @@ export class CapabilityCatalogService extends TypertRemoteService {
   private syncRegisteredMcpTools(): void {
     const registry = this.mcpToolsRegistry
     if (registry === undefined) return
-    const desired = desiredMcpTools(this.mcp.list(), this.mcp.toolsByServer())
+    const desired = desiredMcpTools(this.mcpOfficial?.legacyServers() ?? this.mcp.list(), this.mcp.toolsByServer())
     reconcileRegisteredMcpTools(desired, {
       register: (definition) => registry.register(definition),
       onRegisterError: (error) => this.ctx.logger.error(`capability-catalog: MCP tool registration failed: ${String(error)}`),
@@ -755,18 +799,15 @@ export class CapabilityCatalogService extends TypertRemoteService {
   /** Re-sync registered MCP tools after any MCP store mutation. */
   private afterMcpMutation(): void {
     this.syncRegisteredMcpTools()
+    this.mcpOfficial?.schedule()
   }
 
-  /** Refill the persisted MCP tools' descriptions/parameters by re-connecting the
-   * enabled servers at boot (the persisted `mcp` block stores only name+enabled to
-   * keep settings.yaml small). Async: boot is not blocked; each server's errors are
-   * contained, and registration is re-synced once the descriptions are back. */
+  /** Refill legacy tool metadata through its connector, official metadata through its registry. */
   private async reconnectEnabledMcp(): Promise<void> {
-    const enabled = this.mcp.list().filter(s => s.enabled)
-    if (enabled.length === 0) return
-    for (const server of enabled) {
+    for (const server of this.mcp.list().filter(s => s.enabled)) {
       try {
-        await this.mcp.discover(server.serverName)
+        if (this.mcp.isOfficial(server.serverName)) await this.mcpOfficial?.refresh(server.serverName)
+        else await this.mcp.discover(server.serverName)
       } catch (error) {
         this.ctx.logger.error(`capability-catalog: reconnect ${server.serverName} failed: ${String(error)}`)
       }

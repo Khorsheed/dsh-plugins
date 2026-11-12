@@ -28,6 +28,8 @@
     "src/shellEnv.ts",
     "src/envHint.ts",
     "src/mcpStore.ts",
+    "src/mcp-official.ts",
+    "src/mcp-manager-bridge.ts",
     "src/mcpConnector.ts",
     "src/mcpTools.ts",
     "src/mcps.ts"

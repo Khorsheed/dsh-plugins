@@ -46,7 +46,7 @@ dsh plugin --profile web remove @khorsheed/dsh-capability-catalog
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——0.1.5-rc.1 全量 boot 实证通过（42 包含 capture，2026-09-25），经三层兼容修复：[preset-registry 双名探测](../../../.agents/notes/implemented/bug-fix/2026-09-25-preset-registry-dual-name-probe.md)、[typert codec 双形状](../../../.agents/notes/implemented/bug-fix/2026-09-25-typert-codec-dual-shape.md)、[face 自带 zod@4](../../../.agents/notes/implemented/bug-fix/2026-09-25-typert-faces-carry-zod-v4.md)。`minHost` 即 0.1.5-rc.1，且 0.1.95 是本包首个发布——更早的宿主没有可用发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿（含 3080 生产部署验收），无其它表面变化；0.1.7-rc.2 为此前的 3080 生产实证线。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.2-rc.2）——完整启用的 MCP 服务器迁移到官方 `mcpManager`；旧宿主没有该服务时沿用原连接与工具桥，包最低版本不变。
 
 按模式的能力面读取（模式下拉、`snapshotAt` / `snapshotFor` / `modeFaces`、按 preset 的技能投递）按宿主线走两条 roster 面解析 preset 的 standing scope：0.1.5 的无租约 `standingKeyFor`，rc.1 的租约式 `acquireScope`——rc.1 删除了 `standingKeyFor`，本次双线修复前的目录版本在 rc.1 上会静默读成全局层。清单与指纹两条路径每次读完都释放租约。机器可读字段见 `package.json` 的 `dsh.compat`（`minHost`、`verifiedHost`、`notes`）。
 
@@ -54,7 +54,7 @@ dsh plugin --profile web remove @khorsheed/dsh-capability-catalog
 
 - **凭据注入是 default-hide，不是秘密边界**——构造的提示仍可让模型 `echo $DSH_KEY`。若要「模型永不持有原始值」，更硬的边界见 [masked-credential-proxy 提案](../../../proposals/active/2026-08-29-masked-credential-proxy.md)。
 - **未打标的插件工具退回启发式**——作者没设 origin 标记的工具可能被归到「内置」；设置页的「为什么我的插件工具不在这里？」弹窗（与 [docs/tool-origin-guide.md](../../../docs/tool-origin-guide.md)）给出了一行的修法。
-- **MCP 桥只覆盖文本结果形态**——发现的工具按纯文本进出注册，无图片/附件投影；组合里没有 settings 服务时，MCP server 状态只活在内存里，重启即重置。
+- **单工具过滤仍走旧 MCP 桥**——官方 manager 没有单工具开关。未过滤的服务器由官方管理连接与图片/附件结果；关闭一个工具时整台服务器退回旧桥，文本之外的投影仍不可用。没有 settings 服务时，目录中的服务器配置只活在内存里。
 
 ## 工作区接入接缝
 
@@ -135,7 +135,9 @@ hashOf(face) === face.sha  // true——`sha` 字段本身不进它摘要的那�
 
 凭据库是 dsh 官方 store（`.credentials.yaml`，ref 空间）；读用 `credentials.resolve(decl.key)` / `describe(decl.key).configured`（仅 presence，绝无值），写 `set(request.key, value)`，用本地 POSIX ref-name 校验——不做运行时 `@deepseek-ai/dsh-credentials` import，保持缺失时优雅降级。
 
-**MCP 管理。** 配置的 server 在两条宿上线都经 settings 服务持久化——0.1.5 的自由形 `settings.register` 命名空间，0.1.7 的 volatile 插件 Config 字段（经 SettingsForms，以 `settings/document-updated` 回合）——settings 缺失时降级为进程内 store。持久化块只存工具名与开关（描述和参数 schema 会撑大 `settings.yaml` 且会过期），所以 boot 时异步重连启用的 server 把它们补回来；boot 不被阻塞，各 server 的错误各自隔离。发现的工具按稳定的 `mcp__<serverName>__<rawName>` 契约注册到 `ctx.tools`，按函数名约束归一化（有损归一时追加 sha256 后缀消歧）；注册是「先 dispose 再 register」的 reconcile，且始终以可追踪服务代理上的成员调用发起 `register`。形似凭据的配置字段变成 `secretRef:` 标记，连接时经 `ctx.credentials` 解析——`mcpSnapshot` 只回 `configured` 状态，标记永不出宿主。
+**MCP 管理。** 0.2.2-rc.2 的组合启用 `McpManagerBridge`：完整启用且全部工具未过滤的服务器，逐台备份原配置，把 `secretRef:` 换成带稳定哈希名称的 `${credential:...}`，通过 Settings 写入 `mcp-manager`，探测成功后才标记为官方管理。旧配置与旧凭据保留用于回滚；同名不同配置不覆盖，失败恢复原凭据并禁用新建官方项。编辑、删除与回滚共用串行队列，回滚先等官方工具卸载；凭据服务晚到时重新绑定并恢复 load-failed 实例。工具名、参数与执行均读官方注册表，特殊字符名称按官方哈希规则匹配。关闭任一工具后该服务器退回旧桥，恢复全选后可再迁移。
+
+旧路径中，配置的 server 在两条宿上线都经 settings 服务持久化——0.1.5 的自由形 `settings.register` 命名空间，0.1.7 的 volatile 插件 Config 字段（经 SettingsForms，以 `settings/document-updated` 回合）——settings 缺失时降级为进程内 store。持久化块只存工具名与开关（描述和参数 schema 会撑大 `settings.yaml` 且会过期），所以 boot 时异步重连启用的 server 把它们补回来；boot 不被阻塞，各 server 的错误各自隔离。发现的工具按稳定的 `mcp__<serverName>__<rawName>` 契约注册到 `ctx.tools`，按函数名约束归一化（有损归一时追加 sha256 后缀消歧）；注册是「先 dispose 再 register」的 reconcile，且始终以可追踪服务代理上的成员调用发起 `register`。形似凭据的配置字段变成 `secretRef:` 标记，连接时经 `ctx.credentials` 解析——`mcpSnapshot` 只回 `configured` 状态，标记永不出宿主。
 
 **插件 skill 注册协议。** 目录渲染 skill 文件树所依赖的契约。skill 有两种被发现的方式：文件/提供者发现（`@deepseek-ai/dsh-skill-filesystem` 扫配置根目录里的 `<name>/SKILL.md`，这类自带 `resourceBase: { kind: 'directory', path }`，目录自动列出其 bundle 文件），以及运行时插件注册（`ctx.skills.register(...)`）——后者只有在你暴露了 bundle 时目录才能列出文件：
 

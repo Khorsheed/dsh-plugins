@@ -61,8 +61,8 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "notes": "0.1.5-rc.1 full-line boot-verified 2026-09-25 (42 packages including capture) through the three compat layers: preset-registry dual-name probe, dual-shape typert codecs, and typert faces carrying zod@4; 0.1.7-rc.2 is the 3080 production-verified line",
-      "verifiedHost": "0.2.1-rc.5"
+      "notes": "Older hosts retain the legacy MCP connector. On 0.2.2-rc.2, enabled unfiltered servers use the official manager; per-tool filtering retains the legacy bridge and its text-only limitation.",
+      "verifiedHost": "0.2.2-rc.2"
     },
     "runtimeDependencies": [
       "js-yaml"
@@ -91,6 +91,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-mcp-manager": "^0.2.2-rc.2",
     "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1 || ^0.2.2-rc.1",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1 || ^0.2.2-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1 || ^0.2.2-rc.1",
@@ -124,12 +125,20 @@
     },
     "@deepseek-ai/dsh-skill": {
       "optional": true
+    },
+    "@deepseek-ai/dsh-mcp-manager": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/cordis-plugin-loader": "^1.1.0",
+    "@deepseek-ai/dsh-app-boot": "^0.2.2-rc.2",
+    "@deepseek-ai/dsh-config-editor": "^0.2.2-rc.2",
     "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-mcp-client": "^0.2.2-rc.2",
+    "@deepseek-ai/dsh-mcp-manager": "^0.2.2-rc.2",
     "@deepseek-ai/dsh-client-test-runtime": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-primitives": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.1",
@@ -137,9 +146,12 @@
     "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-credentials": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-credentials-local": "^0.2.2-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "^0.2.2-rc.2",
     "@deepseek-ai/dsh-skill": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-tools": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-typert-protocol": "^0.2.0-rc.1",
+    "@modelcontextprotocol/server": "2.2.0",
     "@testing-library/react": "^16.1.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^26.2.0",

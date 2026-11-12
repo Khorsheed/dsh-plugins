@@ -1,13 +1,12 @@
 /**
  * MCP connector backed by the official `@modelcontextprotocol/sdk` (the same
  * library `@deepseek-ai/dsh-mcp-client` uses). Kept as a thin, swappable seam:
- * the catalog owns the connection lifecycle (connect → list → register tools →
- * call → close) and registers discovered tools on `ctx.tools`. If upstream later
- * exposes a stable dynamic `connect(ctx, config)`, swap this adapter for it.
+ * the legacy bridge owns the connection lifecycle (connect → list → call → close).
+ * Unfiltered servers use `mcpManager` on hosts that provide it; this adapter
+ * remains for per-tool filters and older hosts.
  *
- * v1 scope: stdio + streamable-http connect, paginated `tools/list`,
- * `tools/call` passthrough, and close. Reconnect/atomic-replace/tool-filter are
- * follow-ups.
+ * Scope: stdio + streamable-http connect, paginated `tools/list`,
+ * `tools/call` passthrough, and close.
  * @module @khorsheed/dsh-capability-catalog/mcpConnector
  */
 

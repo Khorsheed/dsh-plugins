@@ -3,7 +3,8 @@
  * discovered tools, credential state, and enable flags. Persistence is a pluggable
  * seam: the host hands the store an `onPersist` callback (backed by the settings
  * namespace) and seeds it with `loadFrom` at boot, so servers survive a restart.
- * Tool discovery connects via the SDK connector and caches the tool list.
+ * Tool metadata comes from the official manager for migrated servers and the
+ * legacy connector only for per-tool filters or hosts without that manager.
  */
 
 import type { CatalogMcpCredentialDecl, CatalogMcpServerConfig, CatalogMcpTool } from './types.ts'
@@ -32,28 +33,41 @@ export interface PersistedMcpServer {
   readonly tools: readonly PersistedMcpTool[]
 }
 
+export interface McpMigrationState {
+  readonly version: 1
+  readonly official: readonly string[]
+  readonly backups: Readonly<Record<string, PersistedMcpServer>>
+}
+
 /** The full persisted MCP state block (stored under the settings namespace `mcp` key). */
 export interface PersistedMcpState {
   readonly servers?: readonly PersistedMcpServer[]
   /** Namespaced credential ref -> value (the user's own config document). */
   readonly credentials?: Readonly<Record<string, string>>
+  readonly migration?: McpMigrationState
 }
 
 /** The catalog's own MCP management store (one per process). */
 export class McpStore {
   private readonly servers = new Map<string, StoredServer>()
+  private readonly official = new Set<string>()
+  private readonly backups = new Map<string, PersistedMcpServer>()
   /** Persistence hook, set by the host after the settings scope is available. */
   onPersist: (() => void) | undefined = undefined
 
-  /** Seed the store from the persisted state (boot or external config edit). */
+  /** Replace the persisted state while retaining freshly discovered tool metadata. */
   loadFrom(state: PersistedMcpState | undefined): void {
     if (state === undefined) return
+    const nextNames = new Set((state.servers ?? []).map(server => server.config.serverName))
+    for (const name of this.servers.keys()) if (!nextNames.has(name)) this.servers.delete(name)
+    this.official.clear()
+    for (const name of state.migration?.official ?? []) if (nextNames.has(name)) this.official.add(name)
+    this.backups.clear()
+    for (const [name, backup] of Object.entries(state.migration?.backups ?? {})) {
+      if (nextNames.has(name)) this.backups.set(name, backup)
+    }
     for (const server of state.servers ?? []) {
       const existing = this.servers.get(server.config.serverName)
-      // Keep descriptions/parameters already discovered in memory: the persisted
-      // block is authoritative only for the per-tool enabled flag (it stores just
-      // name+enabled), so a reload — e.g. after our own persist round-trips through
-      // the settings watch — must merge the toggle rather than wipe the tools.
       const known = new Map((existing?.tools ?? []).map(t => [t.name, t]))
       const tools = (server.tools ?? []).map(t => {
         const prev = known.get(t.name)
@@ -61,15 +75,10 @@ export class McpStore {
           ? { ...prev, enabled: t.enabled }
           : { name: t.name, description: '', enabled: t.enabled }
       })
-      this.servers.set(server.config.serverName, {
-        config: server.config,
-        credentials: existing?.credentials ?? new Map(),
-        tools,
-      })
+      this.servers.set(server.config.serverName, { config: server.config, credentials: new Map(), tools })
     }
     for (const [ref, value] of Object.entries(state.credentials ?? {})) {
-      const s = this.servers.get(refServer(ref))
-      if (s !== undefined) s.credentials.set(ref, value)
+      this.servers.get(refServer(ref))?.credentials.set(ref, value)
     }
   }
 
@@ -80,7 +89,12 @@ export class McpStore {
       .map(s => ({ config: s.config, tools: s.tools.map(t => ({ name: t.name, enabled: t.enabled })) }))
     const credentials: Record<string, string> = {}
     for (const s of this.servers.values()) for (const [ref, value] of s.credentials) credentials[ref] = value
-    return { servers, credentials }
+    return {
+      servers, credentials,
+      ...(this.official.size > 0 || this.backups.size > 0
+        ? { migration: { version: 1 as const, official: [...this.official].sort(), backups: Object.fromEntries(this.backups) } }
+        : {}),
+    }
   }
 
   private persist(): void {
@@ -122,10 +136,11 @@ export class McpStore {
   }
 
   remove(serverName: string): void {
+    this.official.delete(serverName)
+    this.backups.delete(serverName)
     if (this.servers.delete(serverName)) this.persist()
   }
 
-  /** Set server-level enable flag (discovery/registration is the caller's job). */
   setEnabled(serverName: string, enabled: boolean): void {
     const s = this.servers.get(serverName)
     if (s === undefined) return
@@ -133,17 +148,14 @@ export class McpStore {
     this.persist()
   }
 
-  /** Set one credential value (empty clears it). */
   setCredential(ref: string, value: string): void {
-    const serverName = refServer(ref)
-    const s = this.servers.get(serverName)
+    const s = this.servers.get(refServer(ref))
     if (s === undefined) return
     if (value === '') s.credentials.delete(ref)
     else s.credentials.set(ref, value)
     this.persist()
   }
 
-  /** Configure a tool's enable flag. */
   setToolEnabled(serverName: string, toolName: string, enabled: boolean): void {
     const s = this.servers.get(serverName)
     if (s === undefined) return
@@ -151,20 +163,58 @@ export class McpStore {
     this.persist()
   }
 
-  /** Connect + discover tools for a server; caches the list (connect errors surface). */
+  isOfficial(serverName: string): boolean {
+    return this.official.has(serverName)
+  }
+
+  backup(serverName: string): PersistedMcpServer | undefined {
+    const s = this.servers.get(serverName)
+    return s === undefined ? undefined : {
+      config: { ...s.config },
+      tools: s.tools.map(tool => ({ name: tool.name, enabled: tool.enabled })),
+    }
+  }
+
+  markOfficial(serverName: string): void {
+    const backup = this.backup(serverName)
+    if (backup === undefined) return
+    this.backups.set(serverName, backup)
+    this.official.add(serverName)
+    this.persist()
+  }
+
+  /** Return to the legacy connector without erasing the user's latest toggles. */
+  rollback(serverName: string): void {
+    const s = this.servers.get(serverName)
+    if (s === undefined) return
+    const backup = this.backups.get(serverName)
+    if (backup !== undefined) s.config = { ...backup.config, enabled: s.config.enabled }
+    this.official.delete(serverName)
+    this.backups.delete(serverName)
+    this.persist()
+  }
+
+  setOfficialTools(serverName: string, tools: readonly CatalogMcpTool[]): void {
+    const s = this.servers.get(serverName)
+    if (s === undefined || !this.official.has(serverName)) return
+    const enabled = new Map(s.tools.map(tool => [tool.name, tool.enabled]))
+    const next = tools.map(tool => ({ ...tool, enabled: enabled.get(tool.name) ?? true }))
+    if (JSON.stringify(next) === JSON.stringify(s.tools)) return
+    s.tools = next
+    this.persist()
+  }
+
+  credentialValue(ref: string): string | undefined {
+    return this.servers.get(refServer(ref))?.credentials.get(ref)
+  }
+
   async discover(serverName: string): Promise<readonly CatalogMcpTool[]> {
     const s = this.servers.get(serverName)
-    if (s === undefined) return []
+    if (s === undefined || this.official.has(serverName)) return s?.tools ?? []
     try {
-      // Dynamic import keeps the SDK-backed connector out of the typert-analyzed
-      // host face (third-party SDK types aren't resolvable in the gen-typert overlay).
       const { connectMcpServer } = await import('./mcpConnector.ts')
-      // Resolve secretRef markers to the stored credential values before connecting,
-      // so a configured API key is sent as its real value (never the secretRef).
       const resolved = await resolveConfigSecrets(s.config, this.secretResolver(serverName, s))
       const connection = await connectMcpServer(resolved)
-      // Preserve the user's per-tool enable flags — re-discovering refreshes
-      // descriptions/parameters without resetting toggles (new tools default on).
       const prevEnabled = new Map(s.tools.map(t => [t.name, t.enabled]))
       s.tools = connection.tools.map(t => ({ ...t, enabled: prevEnabled.get(t.name) ?? true }))
       await connection.close()
@@ -176,10 +226,10 @@ export class McpStore {
     }
   }
 
-  /** Forward one tool call to a server (connect → call → close). Resolves secrets. */
   async callTool(serverName: string, rawName: string, args: Record<string, unknown>): Promise<unknown> {
     const s = this.servers.get(serverName)
     if (s === undefined) throw new Error(`unknown MCP server: ${serverName}`)
+    if (this.official.has(serverName)) throw new Error(`MCP server "${serverName}" is managed by mcp-manager`)
     const resolved = await resolveConfigSecrets(s.config, this.secretResolver(serverName, s))
     const { connectMcpServer } = await import('./mcpConnector.ts')
     const connection = await connectMcpServer(resolved)

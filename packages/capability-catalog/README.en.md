@@ -37,11 +37,11 @@ The capability catalog comes with the Basic Essentials suite. Once installed, op
 
 - A skill's keys are hidden from the agent by default, not locked away: an agent that deliberately prints them can still see them.
 - Some plugins don't label their own tools, so those show as Built-in for now; "Why is my plugin tool not here?" on the page explains the fix.
-- MCP tools connected here pass text only — no images or attachments.
+- On 0.2.2-rc.2, fully enabled MCP servers use the official connection, reconnection, and credential rotation. Filtering a single tool moves that server to the compatibility connection, which passes text only — no images or attachments.
 
 ## Compatibility
 
-Needs DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.5.
+Needs DSH 0.1.5-rc.1 or later; verified on 0.2.2-rc.2. Official MCP management starts on 0.2.2-rc.2; older hosts keep the compatibility connection.
 
 ## For developers
 

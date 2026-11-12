@@ -72,4 +72,22 @@ describe('McpStore persistence', () => {
       { name: 'b', enabled: false },
     ])
   })
+
+  it('replaces removed state and does not rewrite unchanged official metadata', () => {
+    const store = new McpStore()
+    store.add({ serverName: 'old', transport: 'stdio', command: 'old', enabled: true })
+    store.add({ serverName: 'keep', transport: 'stdio', command: 'keep', enabled: true })
+    store.markOfficial('keep')
+    let writes = 0
+    store.onPersist = () => { writes += 1 }
+    store.setOfficialTools('keep', [{ name: 'echo', description: 'Echo', enabled: true }])
+    expect(writes).toBe(1)
+    store.setOfficialTools('keep', [{ name: 'echo', description: 'Echo', enabled: true }])
+    expect(writes).toBe(1)
+    const persisted = store.toPersisted()
+    expect(persisted.migration?.official).toEqual(['keep'])
+    expect(persisted.migration?.backups.keep?.config.command).toBe('keep')
+    store.loadFrom({ ...persisted, servers: persisted.servers?.filter(server => server.config.serverName === 'keep') })
+    expect(store.list().map(server => server.serverName)).toEqual(['keep'])
+  })
 })

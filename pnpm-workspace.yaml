@@ -131,6 +131,8 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/cordis-plugin-loader@1.1.0'
   - '@deepseek-ai/cordis@4.1.0'
   - '@deepseek-ai/dsh-error@0.2.2-rc.2'
+  - '@deepseek-ai/dsh-mcp-manager@0.2.2-rc.2'
+  - '@deepseek-ai/dsh-credentials-local@0.2.2-rc.2'
 
 overrides:
   # One cordis instance with the loader/include pair from rc2's vendored line.
