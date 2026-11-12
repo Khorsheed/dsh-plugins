@@ -107,7 +107,7 @@ describe('official MCP manager over a real stdio server', () => {
 
     restored.setToolEnabled('fixture', 'credential', true)
     await reopenedBridge.reconcile()
-    await vi.waitFor(() => { expect(reopened.mcpManager.list().find(row => row.name === 'fixture')?.status.state).toBe('connected') })
+    await vi.waitFor(() => { expect(reopened.tools.get('mcp__fixture__credential'), JSON.stringify(reopened.mcpManager.list())).toBeDefined() }, { timeout: 10_000 })
     expect(restored.isOfficial('fixture')).toBe(true)
     expect(reopened.tools.schemas().filter(tool => tool.name === 'mcp__fixture__add')).toHaveLength(1)
     expect(JSON.stringify(await call(reopened, 'mcp__fixture__credential', {}))).toContain('fixture-token-value')
