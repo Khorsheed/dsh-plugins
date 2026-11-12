@@ -225,6 +225,7 @@ export class EvalRunJobs {
   constructor(
     private readonly hosts?: { get(name: string): unknown },
     private readonly config: { stateRoot?: string } = {},
+    private readonly onComplete?: (report: RunReport, originSession: string) => Promise<void> | void,
   ) {}
 
   /** Whether this composition mounts a job registry at all. */
@@ -343,9 +344,10 @@ export class EvalRunJobs {
         )
         const done = start().then(
           async (report): Promise<JobOutcome> => {
+            const cancelled = report.meta['cancelled'] === true
+            if (!cancelled) await this.onComplete?.(report, record.parentSessionId)
             for (const line of this.settleLines(report)) emitLine(record, line)
             await this.releaseParent(record)
-            const cancelled = report.meta['cancelled'] === true
             record.settled = {
               status: cancelled ? 'killed' : 'completed',
               detail: this.settleDetail(report),

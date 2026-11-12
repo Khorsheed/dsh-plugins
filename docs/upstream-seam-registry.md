@@ -156,7 +156,7 @@
 - **现状绕行**：「实验」tab 标签上显示本会话发起、需要人处理的实验个数（`conversation.view` 的 `label` 是函数，宿主是否随状态重绘待证；不重绘就不显示这个数，不用 DOM 锚点硬改）+ 实验室列表的「需要你处理」分组 + agent 用 `eval_run_status` 读。要求退路本身就够用，不是临时凑合。见 `proposals/active/2026-09-23-eval-journey-redesign.md` D3 与 `profiles/eval/docs/ui-spec.md` §五「跨面旅程」。
 - **官方通道（0.2.2-rc.2 实测）**：真实 JSONL 写入并读回插件记录成功，`pluginRecordOf` 可识别，`foldSurface` 模型节点为 0。它满足「只通知、不触发执行」，但不适用于需要进入模型上下文的内容。
 - **退役条件**：eval 在三个节点往 `originSession` 投通知；tab 计数降为辅助（可留可拆），`eval_run_status` 不变。
-- **状态**：待实施（@khorsheed/dsh-eval；通道已具备，通知本身尚未落地，列入第二轮 P0.1，见 `proposals/active/2026-11-12-host-022-rc2-official-capabilities.md`）。
+- **状态**：已实施（@khorsheed/dsh-eval，2026-11-12）。三个完成节点按 run/ticket 去重写 `plugin:eval/lifecycle`；通知位于 `groupTree: 'turn'`，点击只提交实验室 focus，不唤醒 Agent、不自动导航。真实 JSONL 重启、94 个 eval 测试文件与 rc.2 Chromium 组合验收通过；未声称存在通用 Remote 插件事件转发通道。
 
 ### S19. 自定义 preset 无法携带「模式说明 / 如何使用」（guide 文案写死在内置 id 上）
 

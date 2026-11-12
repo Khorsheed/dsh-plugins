@@ -219,6 +219,10 @@ export type EvalKey =
   | 'judge.panel'
   | 'notice.humanFinal'
   | 'notice.humanFinalDuplicate'
+  | 'lifecycle.run-completed'
+  | 'lifecycle.judge-completed'
+  | 'lifecycle.human-final'
+  | 'lifecycle.open'
   | 'new.title'
   | 'new.description'
   | 'new.name'
@@ -1213,6 +1217,10 @@ export const en: Record<EvalKey, string> = {
   'error.details': 'Details',
   'error.detailsPath': 'Path',
   'open': 'Experiments',
+  'lifecycle.run-completed': 'Run completed: {title}',
+  'lifecycle.judge-completed': 'Judging completed: {title}',
+  'lifecycle.human-final': 'Human review recorded: {title}',
+  'lifecycle.open': 'Open experiment',
   'list.title': 'Experiments',
   'list.new': 'New experiment',
   'list.loading': 'Loading…',
@@ -2408,6 +2416,10 @@ export const zh: Record<EvalKey, string> = {
   'error.details': '详情',
   'error.detailsPath': '路径',
   'open': '实验室',
+  'lifecycle.run-completed': '实验运行完成：{title}',
+  'lifecycle.judge-completed': '判官评估完成：{title}',
+  'lifecycle.human-final': '人工评估已记录：{title}',
+  'lifecycle.open': '打开实验',
   'list.title': '实验',
   'list.new': '新建实验',
   'list.loading': '加载中…',

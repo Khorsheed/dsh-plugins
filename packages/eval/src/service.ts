@@ -28,6 +28,7 @@ import {
   type EvalRunOutput,
   type EvalRunStatus,
 } from './run/job.ts'
+import { EvalLifecycleNotifier } from './lifecycle-notices.ts'
 import {
   EvalReadRefused,
   diffConditions,
@@ -185,6 +186,7 @@ export class EvalService {
    * finished run's output stays readable for as long as the service lives.
    */
   private readonly jobs: EvalRunJobs
+  private readonly lifecycleNotices: EvalLifecycleNotifier
 
   /**
    * The instance-bound state root, when this service was constructed with one:
@@ -231,7 +233,12 @@ export class EvalService {
     this.instanceStateRoot = config.stateRoot === undefined ? undefined : containmentPath(config.stateRoot)
     this.evidence = config.evidence
     this.executionHome = config.executionHome
-    this.jobs = new EvalRunJobs(hosts, this.instanceStateRoot === undefined ? {} : { stateRoot: this.instanceStateRoot })
+    this.lifecycleNotices = new EvalLifecycleNotifier(hosts, this.instanceStateRoot)
+    this.jobs = new EvalRunJobs(
+      hosts,
+      this.instanceStateRoot === undefined ? {} : { stateRoot: this.instanceStateRoot },
+      (report, originSession) => this.lifecycleNotices.runCompleted(report, originSession),
+    )
   }
 
   /**
@@ -1718,7 +1725,18 @@ export class EvalService {
         + '— mount the dsh-mission plugin',
       )
     }
-    return await writeHumanFinal({ mission, annotate, runId, ticket, verdicts, sessionId })
+    const status = mission.runStatus(runId)
+    const result = await writeHumanFinal({ mission, annotate, runId, ticket, verdicts, sessionId })
+    if (!result.duplicate) {
+      await this.lifecycleNotices.humanFinal({
+        runId,
+        ticket,
+        experimentId: typeof status.run.meta['experimentId'] === 'string' ? status.run.meta['experimentId'] : null,
+        originSession: status.run.originSession ?? sessionId,
+        duplicate: result.duplicate,
+      })
+    }
+    return result
   }
 
   /**

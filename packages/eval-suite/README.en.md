@@ -128,7 +128,7 @@ The essentials are the layer everyone wants; add a suite for the scene you work 
 
 ## Compatibility
 
-Needs DSH 0.2.0 or later; verified on 0.2.1.
+Needs DSH 0.2.2-rc.2 or later; verified on 0.2.1-rc.5 and on the 0.2.2-rc.2 lifecycle-notification path.
 
 ## Changelog
 

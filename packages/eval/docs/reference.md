@@ -440,6 +440,7 @@ plan 路径与 `--out`（以及 `report` 的 bundle 路径）在服务边界统�
 ## 兼容性：降级与缺席项
 降级 / 缺席项（与 package.json 的 `dsh.compat` 同步）：
 
+- `minHost` 为 0.2.2-rc.2：生命周期通知依赖 `appendPluginRecord`。运行完成、判官完成和每张人工评估 ticket 都以去重后的 `plugin:eval/lifecycle` 记录写回发起会话，不唤醒 Agent，也不进入模型 surface。Conversation Definition 把通知放在 `groupTree: 'turn'` 的执行过程折叠区外；打开通知只在「实验室」里标记对应实验，不自动导航、不提交回合。旧宿主停留在上一发布线，不识别的记录保留并跳过。
 - 七个工具（T73 起 `eval_repo_write` 改名 `eval_analysis_write`）与 `tool:eval` 提示词段归本包的 `./tool` 组合入口（工具行 `@khorsheed/dsh-eval/tool`），走延迟注入：组合里没有工具注册表 / systemPrompt 时它们不注册，CLI 与服务面照常，不炸启动；`tools: 'none'`（或没有引用这一行）只是让模型看不到这七个工具。工具行随本包一起安装（T88 评测家族折叠前它是独立伴生包 `@khorsheed/dsh-eval-tool`，已退役）；行解析失败只让该 preset 组合报 broken，实例 boot 不受影响。浏览器半边（I5·T35a）的实验室 tab 按同一行自隐，判据读不到时失败开放；没有 `conversation.view` slot 的组合（TUI、headless）不注册它，服务面与 CLI 照常。矩阵的物化哈希要 mission 面报得出 `dataDir`，报不出就记「无法核验」；导出的两步要 mission 的 Remote 在场（没有 Typert 网关的组合就没有），不在场即整体拒绝——泄题闸绝不在 eval 这边重写一遍。
 - 面向早于 T11 的 local-agent：委派 `cwd` 被忽略、子代理继承父会话 cwd，格子因收不到产出文件而如实拒绝（submission-rejected），不会错记；`delegationOf` 与 settled 回读均缺席时 `usage` 与 `model.observed` 记 null，「受试对象一致」在报告里降为不可核验，而不是假定成立。判官同样靠 `cwd` 收 `verdicts.json`，没有 cwd 时该样本按解析失败记，不会误判。
 - `human-final` 不由本包写：它只从判官台或 `dsh-mission annotate --ns human-final` 进来（I5）。

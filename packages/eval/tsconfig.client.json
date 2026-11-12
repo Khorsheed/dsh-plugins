@@ -30,6 +30,8 @@
     "src/client/Grid.tsx",
     "src/client/JudgingPage.tsx",
     "src/client/LabView.tsx",
+    "src/client/LifecycleNotice.tsx",
+    "src/lifecycle-record.ts",
     "src/client/MarkdownDoc.tsx",
     "src/client/NewExperimentDialog.tsx",
     "src/client/ReportPage.tsx",

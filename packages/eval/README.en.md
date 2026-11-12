@@ -14,6 +14,7 @@ Wondering whether a kind of task goes better with another agent or another model
 
 - **Say what to compare and start**: press "New experiment" under Experiments, or just ask the agent; it drafts the question set, the groups and how many times each cell runs, and you edit and approve.
 - **You decide when it runs**: the agent can only draft; "Approve and start" is yours to press. The run goes on in the background, even if you close the tab.
+- **Completion comes back to the conversation**: finished runs, judging and human reviews leave a notification in the chat. Open it to mark the experiment in Experiments, without starting another agent turn.
 - **A dry run before the real one**: before the first real cell, each group runs one tiny task, so an expired login, the wrong model or a blocked network is caught early, with the reason shown.
 - **Three rounds of grading**: the question set's own check scripts go first, a blind judge writes a first draft, and on the "Human review" page you read the answers side by side, without knowing which agent wrote which, and give the final verdict.
 - **A verdict only when the comparison holds**: the "Results" page runs its "Validity checks" first; if conditions didn't match or there were too few runs, you get the facts and no ranking.
@@ -45,7 +46,7 @@ The in-session eval tools only appear in eval mode; not seeing them in other mod
 
 ## Compatibility
 
-Needs DSH 0.2.0-rc.2 or later; verified on 0.2.1-rc.5. How it degrades when a host capability is missing is in the [reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/eval/docs/reference.en.md#compatibility-degraded-and-absent-items).
+Needs DSH 0.2.2-rc.2 or later; verified on 0.2.2-rc.2. How it degrades when a host capability is missing is in the [reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/eval/docs/reference.en.md#compatibility-degraded-and-absent-items).
 
 ## For developers
 

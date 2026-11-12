@@ -47,6 +47,7 @@ import type {
 } from '../types.ts'
 import type { EvalRemote, LabViewInjected } from './contract.ts'
 import { DraftCard, type DraftCardFace } from './DraftCard.tsx'
+import { evalLifecycleDefinition, EvalLifecycleNoticeRow } from './LifecycleNotice.tsx'
 import { createLabFocus } from './draft-card.ts'
 import { inspectReadsOf } from './InspectPane.tsx'
 import { INSPECT_KIND, INSPECT_TAB_ID, type InspectTarget } from './inspect-target.ts'
@@ -397,6 +398,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       openExperiment: (experimentId: string) => { focus.request(sessionId, experimentId) },
     }),
   }, DraftCard))
+
+  ctx.inject(['uiConversation'], (lctx) => {
+    lctx.effect(() => lctx.uiConversation.events.register(evalLifecycleDefinition), 'eval: lifecycle notices')
+  })
+  slots.inject('conversation.chat.node', () => slots.register({
+    name: 'conversation.chat.node',
+    key: evalLifecycleDefinition.kind,
+    locale: NS,
+    inject: (sessionId: SessionId) => ({
+      openExperiment: (experimentId: string) => { focus.request(sessionId, experimentId) },
+    }),
+  }, EvalLifecycleNoticeRow))
 
   // 查看 in the host's right sidebar (T85 §三, T86 step 2). The two services are
   // a DEFERRED inject, never the inject list: a profile without the right
