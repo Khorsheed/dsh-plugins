@@ -35,10 +35,10 @@
 
 ## Compatibility
 
-需要 DSH 0.1.2-rc.1 或更新版本，已在 0.2.1-rc.5 上验证。
+需要 DSH 0.1.2-rc.1 或更新版本，已在 0.2.2-rc.2 上验证；新版本通过官方 Markdown fence 槽渲染，旧版本保留 DOM 兜底。
 
 ## 给开发者
 
 - 卡片的写法协议（`` ```dsh-card `` 代码块）、沙箱与能力桥、在页面上识别卡片的方式和实现原理，都在[完整参考](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/inline-html-render/docs/reference.md)里；完整写法见随包 skill `skills/inline-html-card` 与 `skills/3d-artifact`。
-- 入口：`src/index.ts`（注册两个 skill）、`src/client/renderer.ts`（把代码块换成卡片）。也可以单独安装：`dsh plugin --profile web add @khorsheed/dsh-inline-html-render`。
+- 入口：`src/index.ts`（注册两个 skill）、`src/client/fence.tsx`（官方语言槽）、`src/client/renderer.ts`（旧宿主 DOM 兜底）。也可以单独安装：`dsh plugin --profile web add @khorsheed/dsh-inline-html-render`。
 - 隶属 [dsh-plugins](https://github.com/Khorsheed/dsh-plugins)，问题与贡献请到该仓库；变更见 [CHANGELOG.md](CHANGELOG.md)。

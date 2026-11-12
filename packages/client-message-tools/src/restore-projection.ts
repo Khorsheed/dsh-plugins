@@ -28,8 +28,9 @@ import {
 
 /**
  * The `user/message` projection correcting restore replays at derivation
- * time. It registers on the SHARED user-message vocabulary (a custom event
- * type could never persist — S2), so the fold calls `project` synchronously
+ * time. It registers on the SHARED user-message vocabulary because an
+ * ignorable plugin record cannot enter the model surface, so the fold calls
+ * `project` synchronously
  * for EVERY user message, inside append validation: it must be a pure
  * pass-through (empty map) for anything without the restore mark, and it must
  * NEVER throw — a throw atomically rejects the candidate append, so a

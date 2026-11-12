@@ -35,10 +35,10 @@ Inline Cards come with the Basic Essentials suite. Once installed, tell the agen
 
 ## Compatibility
 
-Needs DSH 0.1.2-rc.1 or later; verified on 0.2.1-rc.5.
+Needs DSH 0.1.2-rc.1 or later; verified on 0.2.2-rc.2. New hosts render through the official Markdown fence slot; older hosts keep the DOM fallback.
 
 ## For developers
 
 - The card authoring protocol (the `` ```dsh-card `` block), the sandbox and capability bridge, how cards are detected on the page, and the internals are in the [full reference](https://github.com/Khorsheed/dsh-plugins/blob/main/packages/inline-html-render/docs/reference.en.md); the complete protocol is in the bundled skills `skills/inline-html-card` and `skills/3d-artifact`.
-- Entry points: `src/index.ts` (registers the two skills), `src/client/renderer.ts` (swaps code blocks for cards). Standalone install: `dsh plugin --profile web add @khorsheed/dsh-inline-html-render`.
+- Entry points: `src/index.ts` (registers the two skills), `src/client/fence.tsx` (official language slot), `src/client/renderer.ts` (legacy DOM fallback). Standalone install: `dsh plugin --profile web add @khorsheed/dsh-inline-html-render`.
 - Part of [dsh-plugins](https://github.com/Khorsheed/dsh-plugins); open issues and contributions there. Changes: [CHANGELOG.md](CHANGELOG.md).

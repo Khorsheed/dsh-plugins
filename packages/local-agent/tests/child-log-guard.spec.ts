@@ -157,6 +157,34 @@ describe('member child-log write guard', () => {
     expect(child.snapshotEvents().filter(e => e.type === 'tool/call')).toHaveLength(1)
   })
 
+  it('forwards a non-relational batch through the host batch append', () => {
+    const { child, diverted } = guarded('batch-plain')
+    const first = createUserMessage({ content: [{ type: 'text', text: 'first' }], source: { kind: 'user' } })
+    const second = createUserMessage({ content: [{ type: 'text', text: 'second' }], source: { kind: 'user' } })
+    const events = child.append([
+      ['user/message', first, { surfaceOp: 'append' }],
+      ['user/message', second, { surfaceOp: 'append' }],
+    ])
+    expect(events).toHaveLength(2)
+    expect(child.snapshotEvents().map(event => event.type)).toEqual(['user/message', 'user/message'])
+    expect(diverted).toEqual([])
+  })
+
+  it('applies relationship repair in order across a batch append', () => {
+    const { child, diverted } = guarded('batch-relational')
+    const events = child.append([
+      ['turn/start', { turn: 8 }],
+      ['step/start', { turn: 8, step: 9 }],
+      ['step/end', { turn: 8, step: 9 }],
+      ['turn/end', { turn: 8, reason: { kind: 'completed' } }],
+    ])
+    expect(events).toHaveLength(4)
+    expect(events.map(event => (event.data as { turn?: number }).turn)).toEqual([1, 1, 1, 1])
+    expect(steps(child)).toEqual([{ turn: 1, step: 1 }])
+    expect(diverted).toEqual([])
+    assertValid(child)
+  })
+
   it('installs once', () => {
     const { child, diverted } = guarded('once')
     guardChildLog(child, { quarantine: entry => diverted.push(entry), validate })

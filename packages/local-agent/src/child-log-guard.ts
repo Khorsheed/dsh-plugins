@@ -27,7 +27,9 @@
  *   the rules can never drift from the reader that enforces them; an event it
  *   still rejects is diverted too.
  *
- * Events without turn/step relationships pass through untouched.
+ * Events without turn/step relationships pass through untouched. Batch appends
+ * containing only those events keep the host's atomic batch path; batches with
+ * relational events apply the same repair to each member in order.
  *
  * @module @khorsheed/dsh-local-agent/child-log-guard
  */
@@ -69,7 +71,12 @@ const GUARDED = Symbol.for('@khorsheed/dsh-local-agent/child-log-guard')
 
 type Data = Record<string, unknown>
 type AppendOptions = { surfaceOp?: unknown; sourceEventSeqs?: number[] } | undefined
-type RawAppend = (type: string, data: unknown, options?: AppendOptions) => SessionEvent
+type AppendInput = readonly [type: string, data: unknown, options?: AppendOptions]
+type AppendSingle = (type: string, data: unknown, options?: AppendOptions) => SessionEvent
+interface RawAppend {
+  (type: string, data: unknown, options?: AppendOptions): SessionEvent
+  (inputs: readonly AppendInput[]): readonly SessionEvent[]
+}
 
 /** The relationship state of a log, as the released reader would see it after its last event. */
 interface LogState {
@@ -212,7 +219,7 @@ export function guardChildLog(session: Session, options: ChildLogGuardOptions): 
     return event
   }
 
-  target.append = (type: string, input: unknown, opts?: AppendOptions): SessionEvent => {
+  const appendOne: AppendSingle = (type, input, opts) => {
     if (!RELATIONAL.has(type) || typeof input !== 'object' || input === null) return raw(type, input, opts)
     const data: Data = { ...input as Data }
     let state = scan(session.snapshotEvents())
@@ -288,4 +295,10 @@ export function guardChildLog(session: Session, options: ChildLogGuardOptions): 
     }
     return write(type, data, opts)
   }
+
+  target.append = ((type: string | readonly AppendInput[], input?: unknown, opts?: AppendOptions): SessionEvent | readonly SessionEvent[] => {
+    if (typeof type === 'string') return appendOne(type, input, opts)
+    if (type.every(([eventType]) => !RELATIONAL.has(eventType))) return raw(type)
+    return type.map(([eventType, data, options]) => appendOne(eventType, data, options))
+  }) as RawAppend
 }

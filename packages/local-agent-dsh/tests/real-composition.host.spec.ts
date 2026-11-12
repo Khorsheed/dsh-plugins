@@ -19,7 +19,7 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import * as localAgentCore from '@khorsheed/dsh-local-agent'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as localAgentDsh from '../src/index.ts'
@@ -68,7 +68,7 @@ async function boot(rowConfig: Record<string, unknown>): Promise<{
   // the workingDirectory stub's rejection stands in for the provider's own
   // 0.2.0-era 'no working directory' start error.
   const id = SessionId('parent-1')
-  const parent = { id, session: { id, header: {} } } as unknown as Agent
+  const parent = { id, session: Session.create(id) } as unknown as Agent
   ctx.agents.enter(parent, undefined)
   return { ctx, parent }
 }
@@ -80,10 +80,12 @@ function startDshCli(ctx: Context, parent: Agent): Promise<unknown> {
   return ctx.subagents.startActivation({
     provider: 'dsh-cli',
     label: 'probe',
+    prompt: [],
+    parent,
     request: { prompt: [], parent },
     signal: new AbortController().signal,
     delivery: 'caller',
-  })
+  } as never)
 }
 
 describe('local-agent-dsh (real composition)', () => {
@@ -95,7 +97,7 @@ describe('local-agent-dsh (real composition)', () => {
     // dispatchable; the tool is NOT at the root (a preset grants ./tool).
     expect(ctx.localAgent.get('dsh')).toBeDefined()
     expect(ctx.localAgent.roster().map(row => row.name)).toContain('dsh')
-    expect(ctx.subagents.list()).toContain('dsh-cli')
+    expect(ctx.subagents.getProvider('dsh-cli')).toBeDefined()
     expect(ctx.tools.get('subagent_dsh')).toBeUndefined()
 
     // The ./tool entry, mounted the way a preset row mounts it, registers the tool.

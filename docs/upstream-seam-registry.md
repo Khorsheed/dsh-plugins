@@ -22,9 +22,10 @@
 ### S2. bash/子进程写入的文件不进任何日志结构
 
 - **需求**：bash 工具（cat heredoc、sed -i、python 脚本）写入的文件出现在产物视图。实测：whalesong 游戏会话十几个 HTML 产物几乎全走 bash,fold 完全不可见。
-- **现状绕行**："B 通道 + A 采集"——宿主侧采集器监听 `session/event`，从 `tool/call`（bash）命令里提取高精度写入候选（`cat > path` heredoc、单 `>` 重定向、`tee` 非追加、`sed -i`；`cp`/`mv`/`python open` 暂缓），`$VAR`/`~`/相对路径按宿主 env + 会话 cwd 展开，`tool/result` 落定后 `fs.stat` 验证（宁缺毋滥），存入按会话的内存登记表；`list` 把登记表并入 fold 结果；`session/created` 重放会话历史重建登记表（宿主重启不丢）。**不做**"追加 log-only 会话事件"：官方 `Session.append` 无法写入 `ignorable: true`，而持久化读回拒绝未知的非 ignorable 事件类型——插件事件进日志会毒化整个会话的读回（这本身是新的上游缝，见退役条件第三项）。
-- **退役条件**：官方 bash 工具在结果 meta 带写入路径（小改，首选）；或执行层（沙箱/子进程）落文件写入事件（大改，根治）；或会话库提供插件事件类型的注册/`ignorable` 通道（日志追加方案才有落点）。官方落地后采集器整体退役，fold 改读官方数据。
-- **状态**：绕行中（已实施，@khorsheed/dsh-file-preview 宿主半）。
+- **现状绕行**："B 通道 + A 采集"——宿主侧采集器监听 `session/event`，从 `tool/call`（bash）命令里提取高精度写入候选（`cat > path` heredoc、单 `>` 重定向、`tee` 非追加、`sed -i`；`cp`/`mv`/`python open` 暂缓），`$VAR`/`~`/相对路径按宿主 env + 会话 cwd 展开，`tool/result` 落定后 `fs.stat` 验证（宁缺毋滥），存入按会话的内存登记表；`list` 把登记表并入 fold 结果；`session/created` 重放会话历史重建登记表（宿主重启不丢）。普通 `Session.append` 仍不能自定义 `ignorable` 信封，但官方 `appendPluginRecord()` 已提供版本化 `plugin:*` + `ignorable: true` 的独立通道，读回保留且跳过、不进模型 surface；消费端尚未迁移，当前线上仍是内存表。
+- **官方通道（0.2.2-rc.2 实测）**：真实 JSONL 写入并读回插件记录成功。它解除的是旧「自定义事件无法安全持久化」限制，不是 bash 自动报告写入路径；采集器仍需要。
+- **退役条件**：官方 bash 工具在结果 meta 带写入路径（首选）；或执行层落文件写入事件（根治）；或 file-preview 把已验证的采集事实迁到插件记录后，删除内存重建，fold 改读持久记录。
+- **状态**：绕行中（采集器已实施，@khorsheed/dsh-file-preview 宿主半；持久化迁移列入第二轮 P0.2，见 `proposals/active/2026-11-12-host-022-rc2-official-capabilities.md`）。
 
 ### S3. Code Mode 嵌套派发无 diff 数据
 
@@ -151,11 +152,11 @@
 ### S18. 插件无法往会话里投「只通知、不触发执行」的系统事件（实验生命周期回流到发起它的会话）
 
 - **需求**：评测实验由会话里的 agent 起草、人在实验室 tab 批准启动，之后运行完成、判官判完、人工评估完成三个节点要回到发起它的会话里各留一条通知（「lean-vs-full-p0 跑完了，去人工评估」），只给人和 agent 看，**不触发 agent 执行**。一个会话可以同时有两个以上实验，所以不能靠会话头或 composer 上的单个「当前实验」常驻位来代替。
-- **现状**：宿主没有让插件往会话追加事件的 API。eval 对会话只用得到 `sessions.open` / `openSubagent`；插件事件写进会话日志还会撞 S2 记过的那堵墙（`Session.append` 写不了 `ignorable: true`，读回拒绝未知的非 ignorable 事件类型）。run 记录上有 `originSession`（`packages/eval/src/faces.ts`），只在传了 `parentSessionId` 时才写，命令行发起的 run 没有。
+- **现状**：`appendPluginRecord()` 已允许插件写入版本化 `plugin:*`、`ignorable: true` 的持久记录；不识别的宿主保留并跳过，记录不进模型 surface，也不唤醒 agent。普通 `Session.append` 的事件准入与这条独立通道不要混用。run 记录上的 `originSession`（`packages/eval/src/faces.ts`）仍只在传了 `parentSessionId` 时才写，命令行发起的 run 没有。
 - **现状绕行**：「实验」tab 标签上显示本会话发起、需要人处理的实验个数（`conversation.view` 的 `label` 是函数，宿主是否随状态重绘待证；不重绘就不显示这个数，不用 DOM 锚点硬改）+ 实验室列表的「需要你处理」分组 + agent 用 `eval_run_status` 读。要求退路本身就够用，不是临时凑合。见 `proposals/active/2026-09-23-eval-journey-redesign.md` D3 与 `profiles/eval/docs/ui-spec.md` §五「跨面旅程」。
-- **建议的官方改动**：给插件一个往指定会话追加「系统通知」事件的入口——渲染成对话里的一行、持久化可读回、不进模型上下文也不唤醒 agent（或由调用方显式选择是否进上下文）。最小版本：一个官方的 `ignorable` 通知事件类型 + 插件可调用的 append。
-- **退役条件**：官方提供该入口后，eval 在三个节点往 `originSession` 投通知；tab 计数降为辅助（可留可拆），`eval_run_status` 不变。
-- **状态**：待实施（@khorsheed/dsh-eval；绕行随 I5 收口批 T72 / T76 落地）。
+- **官方通道（0.2.2-rc.2 实测）**：真实 JSONL 写入并读回插件记录成功，`pluginRecordOf` 可识别，`foldSurface` 模型节点为 0。它满足「只通知、不触发执行」，但不适用于需要进入模型上下文的内容。
+- **退役条件**：eval 在三个节点往 `originSession` 投通知；tab 计数降为辅助（可留可拆），`eval_run_status` 不变。
+- **状态**：待实施（@khorsheed/dsh-eval；通道已具备，通知本身尚未落地，列入第二轮 P0.1，见 `proposals/active/2026-11-12-host-022-rc2-official-capabilities.md`）。
 
 ### S19. 自定义 preset 无法携带「模式说明 / 如何使用」（guide 文案写死在内置 id 上）
 
@@ -206,3 +207,4 @@
 - 2026-09-15 全量核对（`0.1.5-rc.1 → 0.1.6-alpha.1`，区间约 804 commits）：S12 部分落地（`registerMessageProjection`），转待实施；S2/S3/S4/S8/S10/S11/S13/S14/S15 均未落地，绕行保留；S5 维持（npm 生成器 exports 无变化，monorepo 耦合结论不变）。适配波次见提案 `proposals/active/2026-09-15-host-016-adaptation.md`。
 - 2026-09-29 全量核对（`0.1.7-rc.2 → 0.2.0-rc.1`，区间 261 commits）：**S11 已退役**（两臂落地均早于 0.1.7-rc.2，见条目）；S5 生成器已上 npm 但仍 monorepo 耦合，不退役；S2/S3/S4/S8/S10/S12/S13/S14/S15/S17/S18 与 meta-pack reconcile、browser-auth（cookie 仍无 `Secure`、`--host 0.0.0.0` 仍拒）均未落地，绕行保留。S3/S4 注意：事件已在此之前改名 `tool/ptc-dispatch`（payload 未变）。0.2.0-rc.1 无插件面 API 删改（唯一硬 break：`runNativeCommand` 新增必填第 4 参 `window`）；新能力：`ctx.otel` 共享 OTel 服务、`Volatile<T>` 配置模式、`ISessions.fork` 的 `onCreated`、schedule 转为可选 bundle（web 默认组合不再含 `time-context`/`schedule`/`ui-schedule` 三行）。
 - 2026-10-24 全量核对（`0.2.1-rc.1 → 0.2.1-rc.3`，release 分支 15 commits）：S1–S21 均未落地，绕行保留；新登记 **S22**（全局 Search/Fetch API 开关把原始文档抓取改成 Markdown）。新能力：三处「更多」菜单与 Pin（`sidebar.panellist.actions` / `conversation.session.header.views.actions` / `sidebar.right.tab.guide.actions`）、`DraftInitializationOptions.whenDraftExists`、新会话按预设复用空白会话、DeepSeek API key 路由跟随官方 `/models`。适配波次见提案 `proposals/active/2026-10-24-host-021-rc3-adaptation.md`。
+- 2026-11-12 全量核对（`0.2.2-rc.1 → 0.2.2-rc.2`，区间 1568 commits）：S2/S18 的 `appendPluginRecord` 持久化通道已实测可用，消费端迁移列入第二轮，尚未标已退役；S12 的真实 fold 探针仍不成立；S8/S10/S13/S14/S15/S17/S19/S20/S21/S22/S23 均未落地。新能力：Markdown fence HOC slot、MCP manager、Subagent 命名与批量 Session append、Forge/Team、官方 worktree 归档清理、官方 speech-to-text 与 Stats。两轮去向及未解锁项见 `proposals/active/2026-11-12-host-022-rc2-official-capabilities.md`。

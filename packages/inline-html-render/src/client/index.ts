@@ -1,22 +1,19 @@
 /**
- * Inline HTML card client plugin, browser half. Installs a DOM-layer renderer
- * that swaps rendered ` ```dsh-card ```` fenced blocks for sandboxed iframes
- * running the authored HTML, inline in the conversation flow.
+ * Inline HTML card client plugin, browser half. Renders settled ` ```dsh-card `
+ * fences as sandboxed iframes through the Chat fence slot when available, or
+ * the legacy DOM renderer on older hosts.
  *
- * It owns no slot and no Remote service — the browser half only mutates the
- * already-rendered DOM (the repo-accepted last-resort pattern, like
- * message-tools' dom-hider), so it composes as an independent package with no
- * edits to core packages. Card links open in the right-Sidebar Browser tab
- * when the host ships that type (0.1.6-alpha.2's ui-sidebar-browser), else in
- * a new window — a probe, not a dependency. Without this plugin the fenced
- * block simply renders as a normal code block: it degrades, never crashes.
+ * Card links open in the right-Sidebar Browser tab when the host ships that
+ * type, else in a new window. Without this plugin the fenced block renders as
+ * an ordinary code block.
  * @module @khorsheed/dsh-inline-html-render/client
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { installCardRenderer, type CardRenderer } from './renderer.ts'
+import { installCardRenderer } from './renderer.ts'
+import { registerCardFence } from './fence.tsx'
 
-/** The client half requires no service: every host capability is probed, never injected. */
+/** Optional services are probed; only the nested fence registration injects slots. */
 export const inject: readonly string[] = []
 
 /** The right-Sidebar navigation face, mirrored structurally (the quote package precedent). */
@@ -54,21 +51,27 @@ export function createLinkOpener(ctx: Context): (url: string) => void {
   }
 }
 
+function installLegacy(ctx: Context): () => void {
+  const renderer = installCardRenderer({ openLink: createLinkOpener(ctx) })
+  return () => { renderer.dispose() }
+}
+
 /**
  * Plugin body: install the card renderer for the browser lifetime.
- * @param ctx - client root context (probed for the optional Sidebar Browser route).
- * @returns a disposer tearing the renderer down.
+ * @param ctx - client root context (probed for optional host capabilities).
+ * @returns the legacy renderer disposer, or nothing when a nested scope owns disposal.
  */
-export function apply(ctx: Context): () => void {
-  let renderer: CardRenderer | undefined
-  // Effect so teardown/re-composition unwinds cleanly; a re-apply replaces the
-  // previous renderer.
-  const install = (): void => {
-    renderer = installCardRenderer({ openLink: createLinkOpener(ctx) })
-  }
-  install()
-  return () => {
-    renderer?.dispose()
-    renderer = undefined
-  }
+export function apply(ctx: Context): (() => void) | void {
+  if (ctx.get('slots') === undefined) return installLegacy(ctx)
+  void ctx.plugin({
+    inject: ['slots'],
+    apply: (slotCtx) => {
+      let disposeLegacy: (() => void) | undefined = installLegacy(slotCtx)
+      registerCardFence(slotCtx, () => {
+        disposeLegacy?.()
+        disposeLegacy = undefined
+      })
+      return () => { disposeLegacy?.() }
+    },
+  })
 }

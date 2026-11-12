@@ -63,8 +63,8 @@
     },
     "compat": {
       "minHost": "0.2.0-rc.1",
-      "notes": "minHost 0.2.0-rc.1 since 2026-11-02 (the 0.1.x host compat branches are removed); 0.2.1-rc.5 is the 3080 production-verified line. External coordinators require the unpublished local-agent family with prepared members, shared model/effort controls and authenticated member tools; without it these operations degrade to unavailable. Scoped cwd and cross-restart mappings are supported. Native DSH session model switching retains host semantics. Room vocabulary is registered through the active loader. DSH/Kimi source-host runtime checks and candidate tarball fresh/upgrade checks on the npm host pass; Codex/Claude auth and full P95 streaming acceptance remain pending. The session-granted room tool row folded back from the standalone `@khorsheed/dsh-room-tool` companion into this package at 0.2.0 as the `./tool` composition entry — the preset row id `room-tool` is unchanged, so a preset's composition state is unaffected once its row name points at `@khorsheed/dsh-room/tool`; the old npm name is deprecated.",
-      "verifiedHost": "0.2.1-rc.5"
+      "notes": "minHost 0.2.0-rc.1 since 2026-11-02 (the 0.1.x host compat branches are removed); 0.2.1-rc.5 is the 3080 production-verified line; 0.2.2-rc.2 source compatibility passed 62 test files / 736 tests. External coordinators require the unpublished local-agent family with prepared members, shared model/effort controls and authenticated member tools; without it these operations degrade to unavailable. Scoped cwd and cross-restart mappings are supported. Native DSH session model switching retains host semantics. Room vocabulary is registered through the active loader. DSH/Kimi source-host runtime checks and candidate tarball fresh/upgrade checks on the npm host pass; Codex/Claude auth and full P95 streaming acceptance remain pending. The session-granted room tool row folded back from the standalone `@khorsheed/dsh-room-tool` companion into this package at 0.2.0 as the `./tool` composition entry — the preset row id `room-tool` is unchanged, so a preset's composition state is unaffected once its row name points at `@khorsheed/dsh-room/tool`; the old npm name is deprecated.",
+      "verifiedHost": "0.2.2-rc.2"
     }
   },
   "scripts": {
@@ -172,6 +172,8 @@
     "lib/typert.host.js",
     "lib/typert.host.d.ts",
     "lib/typert.remote-client.js",
-    "lib/typert.remote-client.d.ts"
+    "lib/typert.remote-client.d.ts",
+    "lib/typert.remote-client.d.ts.map",
+    "src"
   ]
 }

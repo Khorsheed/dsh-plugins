@@ -41,7 +41,7 @@ It also comes with the Dev Suite (`@khorsheed/dsh-dev-suite`). Once installed, h
 
 ## Compatibility
 
-Needs DSH 0.1.5 or later; verified on 0.2.1.
+Needs DSH 0.1.5 or later; verified on 0.2.2-rc.2.
 
 ## For developers
 

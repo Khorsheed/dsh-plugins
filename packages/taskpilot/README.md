@@ -33,7 +33,7 @@ dsh plugin --profile web remove @khorsheed/dsh-taskpilot
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——详情抽屉迁移至官方右栏 tab 面（page-type 注册进 `ctx.sidebarRightTabs`，body 进 keyed `sidebar.right.pane.tab` 槽位），全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.5）——host-021 波对 0.2.1-rc.5 树全量 build+test 绿：jobs augmentation 改为直引 `@deepseek-ai/dsh-jobs` 包根。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.2-rc.2）——新版 user interrupt authority 与旧宿主 parent id 以同一结构载荷兼容；93 项测试通过。
 - 子 agent 打开位置：组合提供 `subagentchat` 右栏页面时默认在右栏打开；旧宿主或没有该页面的组合回退到 `uiWorkspace.openSession` 会话页。
 
 **版本线对照**：0.2.0 之后的首个发布起支持宿主 `0.1.5-rc.1` 及以后；宿主 `0.1.2-rc.1` 请停留在 `0.2.0`，宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 请停留在 0.1.x 发布线（末版 `0.1.0`）。

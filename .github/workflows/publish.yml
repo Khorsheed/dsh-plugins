@@ -38,14 +38,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: deepseek-ai/deepseek-harness
-          ref: dsh-v0.2.2-rc.1
+          ref: dsh-v0.2.2-rc.2
           path: deepseek-harness
           fetch-depth: 1
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 24 # npm >= 11.15 (staged publishing) ships bundled; also matches the engines floor
+          node-version: 24.9 # npm >= 11.15 (staged publishing) ships bundled; also matches the engines floor
           cache: pnpm
 
       - name: Install (harness seed)

@@ -30,7 +30,7 @@ import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, posix, relative, resolve } from 'node:path'
 
 /** Files copied from the package root into the staging dir when present. */
 const STAGED_ROOT_FILES = ['package.json', 'README.md', 'README.zh.md', 'README.en.md', 'README.i18n.yaml', 'CHANGELOG.md', 'cordis.patch.yml']
@@ -423,22 +423,22 @@ function walk(dir: string): string[] {
   return out
 }
 
+function isNonPublishableArtifact(file: string): boolean {
+  if (file.endsWith('.tsbuildinfo')) return true
+  return file.endsWith('.map') && basename(file) !== 'typert.remote-client.d.ts.map'
+}
+
 /**
- * Strip build artifacts that are never publishable payload — sourcemaps and
- * TypeScript incremental state — from a staging tree, recursively.
- *
- * Both are emitted next to the code they describe, so a `files: ["lib"]`
- * enumeration ships them by default. They are large, useless to consumers, and
- * the repo's hygiene rule already treats `*.tsbuildinfo` as non-committable
- * state. Pruning here fixes every package at once, and does it at the artifact
- * boundary instead of asking ~25 manifests to enumerate their own payload.
+ * Strip ordinary sourcemaps and TypeScript incremental state from a staging
+ * tree. The generated Remote declaration map is payload: its declaration
+ * references it so consumers can navigate to the Host implementation.
  * @param dir - the staging directory to prune in place.
  * @returns the pruned paths, staging-relative, for logging and assertions.
  */
 export function prunePublishArtifacts(dir: string): string[] {
   const pruned: string[] = []
   for (const file of walk(dir)) {
-    if (file.endsWith('.map') || file.endsWith('.tsbuildinfo')) {
+    if (isNonPublishableArtifact(file)) {
       rmSync(file, { force: true })
       pruned.push(relative(dir, file))
     }
@@ -560,7 +560,8 @@ export function packDist(options: PackDistOptions): string {
  * Post-pack verification. The tarball — not the staging dir — is what consumers
  * boot, so the artifact itself is checked:
  *
- *   1. payload hygiene — no sourcemap or tsbuildinfo may reach the tarball
+ *   1. payload hygiene — ordinary sourcemaps and tsbuildinfo never reach the
+ *      tarball; only the generated Remote declaration map is payload
  *      (prunePublishArtifacts strips them from staging; this re-checks the
  *      artifact, so a files-field glob or a late build cannot smuggle them in)
  *   2. completeness — every staged file must be in the tarball (files-field
@@ -583,10 +584,9 @@ export function packDist(options: PackDistOptions): string {
 export function verifyTarball(tarball: string, staging: string, selfName: string, devDeclared: Iterable<string> = []): void {
   const listing = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
   const packed = new Set(listing.split('\n').map(line => line.replace(/^package\//, '').trim()).filter(Boolean))
-  // 1. payload hygiene — sourcemaps and incremental build state are never
-  // publishable, so their presence means something re-added them after the
-  // prune (a files-field glob or a build that writes into staging).
-  const forbidden = [...packed].filter(file => file.endsWith('.map') || file.endsWith('.tsbuildinfo'))
+  // 1. payload hygiene — non-payload sourcemaps and incremental build state
+  // cannot re-enter through a files-field glob or a late build into staging.
+  const forbidden = [...packed].filter(isNonPublishableArtifact)
   if (forbidden.length > 0) {
     throw new Error(`pack-dist: tarball carries non-publishable build artifacts: ${forbidden.join(', ')}`)
   }
@@ -598,6 +598,19 @@ export function verifyTarball(tarball: string, staging: string, selfName: string
   const missing = walk(staging).filter(file => !packed.has(relative(staging, file)))
   if (missing.length > 0) {
     throw new Error(`pack-dist: staged files missing from the tarball: ${missing.join(', ')}`)
+  }
+  for (const file of packed) {
+    if (basename(file) !== 'typert.remote-client.d.ts.map') continue
+    const map = JSON.parse(execFileSync('tar', ['-xzOf', tarball, `package/${file}`], { encoding: 'utf8' })) as { sources?: unknown }
+    if (!Array.isArray(map.sources) || map.sources.some(source => typeof source !== 'string')) {
+      throw new Error(`pack-dist: Remote declaration map "${file}" has invalid sources`)
+    }
+    for (const source of map.sources as string[]) {
+      const target = posix.normalize(posix.join(posix.dirname(file), source))
+      if (!packed.has(target)) {
+        throw new Error(`pack-dist: Remote declaration map "${file}" has missing source "${target}"`)
+      }
+    }
   }
 
   const manifest = JSON.parse(readFileSync(join(staging, 'package.json'), 'utf8')) as PackageJson

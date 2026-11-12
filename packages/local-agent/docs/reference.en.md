@@ -53,7 +53,7 @@ A custom composition mounts the core once:
 ## Compatibility
 
 - npm release line (`@deepseek-ai/dsh@0.1.5-rc.1`): ✅ full — adapted to 0.1.5-rc.1 (format v2/v3; handle-based sessionPersistence), full build+test green; minHost moves up to 0.1.5-rc.1 — older hosts stay on the previous release line. The「Local Agent Delegation」family settings card mounts with the core's client bundle onto the Plugins page's `plugins.item` seat on host 0.1.7-alpha.1+ (no `configForms.whileServed` gate — the core's Config has no volatile field, so its namespace never enters the settings describe answer); older hosts lack that seat and render no family card, and the companion cards are unaffected.
-- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.1-rc.1) — host-021 wave: full build+test green against the 0.2.1-rc.1 tree; delegation moved to `ctx.subagents.startActivation` (managed activation), and run.id is now unique per execution.
+- source line (deepseek-harness master): ✅ (verifiedHost: 0.2.2-rc.2) — activation carries both the new flat `prompt` / `parent` and the legacy nested `request`, preserving caller delivery, resume, and cancellation; single and batch Session append work; 597 tests pass, including real SubagentRuntime success and cancellation.
 
 ## Known Limitations
 

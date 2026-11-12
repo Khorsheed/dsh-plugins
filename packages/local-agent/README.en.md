@@ -37,7 +37,7 @@ This plugin comes with the 「多Agent协作」 (multi-agent) suite, together wi
 
 ## Compatibility
 
-Needs DSH 0.2.0-rc.1 or later; verified on 0.2.1-rc.5.
+Needs DSH 0.2.0-rc.1 or later; verified on 0.2.2-rc.2.
 
 ## For developers
 

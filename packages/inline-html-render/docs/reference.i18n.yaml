@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/inline-html-render/docs/reference.en.md
-packages/inline-html-render/docs/reference.en.md: e4a1f647090b6866a52557d88ba4521e39ddc8e5
-packages/inline-html-render/docs/reference.md: e35c55346498a9afa2c342fbcecaa75c190fb245
+packages/inline-html-render/docs/reference.en.md: 401b19fb4b5d00a8739b7010cce0d403d9c10212
+packages/inline-html-render/docs/reference.md: bbde2bd86a0520fc69e5a759795642443b453f8c

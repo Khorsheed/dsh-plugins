@@ -73,7 +73,7 @@ const releasedLogCheck = releasedFormat?.assertReleasedV4Relationships === undef
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
-import type { SubagentActivation, SubagentResult, SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
+import type { SubagentActivation, SubagentActivationSpec, SubagentResult, SubagentRun, SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import type {
   DelegationCallOptions,
   LocalAgentCredentialState,
@@ -885,6 +885,25 @@ function delegationIntentKey(parentSessionId: string, provider: string): string 
 function fusedSignal(controller: AbortController, caller: AbortSignal | undefined): AbortSignal {
   if (caller === undefined) return controller.signal
   return AbortSignal.any([controller.signal, caller])
+}
+
+/** rc.2 reads the flat fields; older managers read the nested request. */
+function callerActivationSpec(
+  provider: string,
+  label: string,
+  prompt: ContentBlock[],
+  parent: Agent,
+  signal: AbortSignal,
+): SubagentActivationSpec {
+  return {
+    provider,
+    label,
+    prompt,
+    parent,
+    signal,
+    delivery: 'caller',
+    request: { prompt, parent },
+  } as SubagentActivationSpec
 }
 
 /**
@@ -2988,13 +3007,9 @@ export class LocalAgentRegistry {
       // The activation spec's label is required, so the absent-description
       // case rides through as the empty string, which the provider's label
       // composition reads as "no description" (the harness display name wins).
-      const activation = await subagents.startActivation({
-        provider,
-        label: options?.label ?? '',
-        request: { prompt, parent },
-        signal: fusedSignal(controller, options?.signal),
-        delivery: 'caller',
-      })
+      const activation = await subagents.startActivation(
+        callerActivationSpec(provider, options?.label ?? '', prompt, parent, fusedSignal(controller, options?.signal)),
+      )
       run = activationRun(activation, childSessionId, options?.signal, message => this.ctx.logger.warn(message))
     } catch (error: unknown) {
       this.unstageDelegationIntent(parentSessionId, provider, intent)
@@ -3197,13 +3212,9 @@ export class LocalAgentRegistry {
       // pushes it through its own Remote; the resumed child session id stays
       // the tracking key while the activation carries the provider's
       // per-execution id.
-      const activation = await subagents.startActivation({
-        provider,
-        label: options?.label ?? '',
-        request: { prompt, parent },
-        signal: fusedSignal(controller, options?.signal),
-        delivery: 'caller',
-      })
+      const activation = await subagents.startActivation(
+        callerActivationSpec(provider, options?.label ?? '', prompt, parent, fusedSignal(controller, options?.signal)),
+      )
       run = activationRun(activation, childSessionId, options?.signal, message => this.ctx.logger.warn(message))
     } catch (error: unknown) {
       this.unstageDelegationIntent(parentSessionId, provider, intent)

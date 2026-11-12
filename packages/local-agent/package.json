@@ -69,7 +69,7 @@
     ],
     "compat": {
       "minHost": "0.2.0-rc.1",
-      "verifiedHost": "0.2.1-rc.5"
+      "verifiedHost": "0.2.2-rc.2"
     }
   },
   "files": [
@@ -77,6 +77,8 @@
     "lib/typert.host.d.ts",
     "lib/typert.host.js",
     "lib/typert.remote-client.d.ts",
+    "lib/typert.remote-client.d.ts.map",
+    "src",
     "lib/typert.remote-client.js",
     "cordis.patch.yml",
     "locale/*.json"

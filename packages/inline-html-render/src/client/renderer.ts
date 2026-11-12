@@ -22,9 +22,9 @@
  * @module @khorsheed/dsh-inline-html-render
  */
 
-import { buildCardSrcDoc, CARD_CSP } from './srcdoc.ts'
-import { attachBridge, type BridgeCapabilities } from './bridge.ts'
-import { attachFrameLoading } from './loading.ts'
+import { CARD_CSP } from './srcdoc.ts'
+import type { BridgeCapabilities } from './bridge.ts'
+import { mountCardFrame } from './frame.ts'
 
 /** Info string that marks a fence as an inline card. */
 export const CARD_INFO_STRING = 'dsh-card'
@@ -34,8 +34,6 @@ const PROCESSED_ATTR = 'data-dsh-card-processed'
 const CONTAINER_CLASS = 'dsh-inline-card-container'
 /** The injected iframe's class, for cleanup. */
 const FRAME_CLASS = 'dsh-inline-card-frame'
-/** Attribute used to find the bridge-ready frame and its disposer. */
-const BRIDGE_ATTR = 'data-dsh-bridge'
 
 /**
  * The card document signature for hosts that hide the fence info string.
@@ -112,21 +110,10 @@ function readCardHtml(block: HTMLElement): string {
 function mountCard(block: HTMLElement, capabilities: BridgeCapabilities): MountedCard | null {
   const html = readCardHtml(block)
   if (html.trim() === '') return null
-  const srcdoc = buildCardSrcDoc(html)
   const container = document.createElement('div')
   container.className = CONTAINER_CLASS
   container.style.cssText = 'position:relative;width:100%'
-  const frame = document.createElement('iframe')
-  frame.className = FRAME_CLASS
-  frame.setAttribute('sandbox', 'allow-scripts')
-  frame.setAttribute('title', 'inline card')
-  frame.style.display = 'block'
-  frame.style.width = '100%'
-  frame.style.height = '150px'
-  frame.style.border = 'none'
-  container.appendChild(frame)
-  const disposeLoading = attachFrameLoading(frame, container, srcdoc)
-  frame.srcdoc = srcdoc
+  const mounted = mountCardFrame(container, html, capabilities)
 
   block.parentNode?.insertBefore(container, block.nextSibling)
   // Hide the block with a style React does not reconcile (React only manages
@@ -134,21 +121,18 @@ function mountCard(block: HTMLElement, capabilities: BridgeCapabilities): Mounte
   block.style.display = 'none'
   block.setAttribute(PROCESSED_ATTR, '')
 
-  const disposeBridge = attachBridge(frame, capabilities)
-  frame.setAttribute(BRIDGE_ATTR, '')
   let disposed = false
   const dispose = (): void => {
     if (disposed) return
     disposed = true
-    disposeLoading()
-    disposeBridge()
+    mounted.dispose()
     container.remove()
     block.removeAttribute(PROCESSED_ATTR)
     // Do NOT clear block.style.display — React may not have re-rendered; a
     // cleared style would flash the code block back. Cleaning up the frame is
     // enough; the block node itself belongs to React.
   }
-  return { block, container, frame, dispose }
+  return { block, container, frame: mounted.frame, dispose }
 }
 
 /**

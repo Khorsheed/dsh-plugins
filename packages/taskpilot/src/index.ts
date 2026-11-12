@@ -65,9 +65,9 @@ export function apply(ctx: Context): void {
       }
       const parentSessionId = (parentId ?? invocation.agent.session.id) as SessionId
       try {
-        // Continuable children: the subagent continuation manager's interrupt
-        // (user authority checks the live target's durable direct parent).
-        ctx.subagents.interrupt(childId as SessionId, { kind: 'user', parentSessionId })
+        // rc.2 accepts bare user authority; older hosts also read the optional parent id.
+        const authority = { kind: 'user' as const, parentSessionId }
+        ctx.subagents.interrupt(childId as SessionId, authority)
         // One-shot children have no continuation activation, so the interrupt
         // above is a silent no-op; cancel the live agent directly when it is a
         // direct child of the presented parent. For a continuable child the

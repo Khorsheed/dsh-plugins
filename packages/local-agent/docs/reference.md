@@ -53,7 +53,7 @@ dsh plugin --profile web remove @khorsheed/dsh-local-agent
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.1.5-rc.1`）：✅ 完整——适配 0.1.5-rc.1（format v2/v3；handle 制 sessionPersistence），全量构建测试通过；minHost 前移至 0.1.5-rc.1，旧宿主请停留在旧发布线。家族设置卡「本机 Agent 委派」随 core 的 client bundle 挂到 0.1.7-alpha.1+ 的 Plugins 页 `plugins.item` 席位（无 `configForms.whileServed` 门控——core 的 Config 无 volatile 字段，其命名空间不进 settings describe）；更旧的宿主没有该席位，不呈现该卡，各 companion 卡也不受影响。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿；委派迁移到 `ctx.subagents.startActivation`（受管 activation），run.id 改为每次执行唯一。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.2-rc.2）——activation 同时携带新版平铺 `prompt` / `parent` 与旧版嵌套 `request`，保留 caller delivery、resume 与取消；`Session.append` 单写/批写兼容；597 项测试通过，含真实 SubagentRuntime 成功与取消。
 
 ## 已知限制
 

@@ -6,13 +6,12 @@
  * watches each session's event stream, extracts high-precision write targets
  * from bash command strings, verifies each with `fs.stat` after the call
  * settles (prefer a miss over a false positive), and keeps a per-session
- * registry the `filePreview.list` fold merges into its entries. It never
- * touches the session log — the official `Session.append` cannot mark an
- * event `ignorable: true`, and the persistence read path refuses unknown
- * event types that lack the marker (a plugin-appended event would poison the
- * log on reload), which is exactly why this seam is a side registry instead.
- * The registry is rebuilt on `session/created` by replaying the session's own
- * history, so a restarted host regains its captures.
+ * registry the `filePreview.list` fold merges into its entries. The current
+ * implementation keeps that registry outside the session log. The official
+ * `appendPluginRecord` channel now permits versioned ignorable records that do
+ * not enter the model surface, so a later migration can persist these facts;
+ * until that consumer migration lands, the side registry is rebuilt on
+ * `session/created` by replaying the session's own history.
  * @module @khorsheed/dsh-file-preview
  */
 

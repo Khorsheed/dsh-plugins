@@ -290,6 +290,7 @@ describe('installCardRenderer', () => {
     const frame = document.querySelector('iframe')
     expect(frame).not.toBeNull()
     const frameEl = frame as HTMLIFrameElement
+    const containerEl = frameEl.parentElement
 
     renderer.dispose()
     expect(document.querySelector('iframe')).toBeNull()
@@ -298,7 +299,7 @@ describe('installCardRenderer', () => {
     expect(block.hasAttribute('data-dsh-card-processed')).toBe(false)
     // The whole owned container is detached with the frame.
     expect(frameEl.isConnected).toBe(false)
-    expect(frameEl.parentElement?.isConnected).toBe(false)
+    expect(containerEl?.isConnected).toBe(false)
   })
 
   it('disposes the old container when React replaces its code block', () => {

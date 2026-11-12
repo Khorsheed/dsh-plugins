@@ -32,7 +32,7 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 // Type-only: pulls the agent package's event merge ('agent/pre-step').
 import type {} from '@deepseek-ai/dsh-agent'
-import type { AgentOptions, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentOptions, AgentRegistry, ResumeAgentOptions } from '@deepseek-ai/dsh-agent'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -55,6 +55,12 @@ import {
   clearCredential, loadState, recordCredential, setCheckpoint, verifyCredential,
   type GuardState, type VerifyResult,
 } from './state.ts'
+
+function rootAgents(registry: AgentRegistry): Agent[] {
+  const legacy = registry as AgentRegistry & { roots?: () => Agent[] }
+  if (typeof registry.list !== 'function') return legacy.roots?.() ?? []
+  return registry.list().filter(agent => agent.session?.header?.origin !== 'subagent')
+}
 
 /**
  * The slice of a persisted session the preset derivation reads. Structural
@@ -627,7 +633,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     // pass, so a disabled resume must not leave stray state files behind.
     const snapshotInterrupted = (): void => {
       try {
-        const interrupted = ctx.agents.roots()
+        const interrupted = rootAgents(ctx.agents)
           .filter(agent => agent.status === 'running')
           .map(agent => agent.id as string)
         let initiator: string | undefined
@@ -762,7 +768,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
       const releaseTimer = setInterval(() => {
         if (disposed || cutoverBlocksWake(stateDir)) return
         clearInterval(releaseTimer)
-        for (const agent of ctx.agents.roots()) deliver(agent)
+        for (const agent of rootAgents(ctx.agents)) deliver(agent)
       }, 250)
       ctx.effect(() => () => { clearInterval(releaseTimer) })
     }
@@ -771,7 +777,7 @@ export function apply(ctx: Context, config: SelfRestartGuardConfig): void {
     // awaits whatever a listener returns, so delivery stays fire-and-forget
     // here — return nothing, and never await agent.whenIdle in this listener.
     ctx.on('agent/created', ({ agent }): undefined => {
-      if (!ctx.agents.roots().includes(agent)) return
+      if (!rootAgents(ctx.agents).includes(agent)) return
       deliver(agent)
     })
   }

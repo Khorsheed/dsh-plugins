@@ -11,7 +11,7 @@ import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SubagentResult } from '@deepseek-ai/dsh-subagent'
 import { LOCAL_AGENT_SERVICE, LocalAgentRegistry } from '../src/index.ts'
 import type { SubagentToolConfig } from '../src/tool-factory.ts'
@@ -44,7 +44,7 @@ function toolPlugin(config: SubagentToolConfig) {
 /** A minimal parent Agent passed through to the provider request. */
 function fakeAgent(id = 'parent-1'): Agent {
   const sessionId = SessionId(id)
-  return { id: sessionId, session: { id: sessionId, header: { id: sessionId } } } as unknown as Agent
+  return { id: sessionId, session: Session.create(sessionId) } as unknown as Agent
 }
 
 /**

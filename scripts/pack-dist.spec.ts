@@ -590,11 +590,16 @@ describe('verifyTarball', () => {
     }
   })
 
-  it('fails on a tarball carrying sourcemaps or tsbuildinfo', () => {
+  it('validates Remote declaration map sources and rejects other sourcemaps and tsbuildinfo', () => {
     // packDist prunes staging; this is the artifact-level backstop for a glob
     // or a late build writing them back in.
     const dir = stage({ 'package.json': '{}', 'lib/index.js': '' })
     try {
+      writeFileSync(join(dir, 'lib/typert.remote-client.d.ts.map'), '{"version":3,"sources":[]}')
+      expect(() => verifyTarball(pack(dir), dir, '@khorsheed/dsh-x')).not.toThrow()
+      writeFileSync(join(dir, 'lib/typert.remote-client.d.ts.map'), '{"version":3,"sources":["../src/missing.ts"]}')
+      expect(() => verifyTarball(pack(dir), dir, '@khorsheed/dsh-x'))
+        .toThrow(/declaration map.*missing source.*src\/missing\.ts/)
       writeFileSync(join(dir, 'lib/index.js.map'), '{}')
       writeFileSync(join(dir, 'lib/tsconfig.tsbuildinfo'), '{}')
       expect(() => verifyTarball(pack(dir), dir, '@khorsheed/dsh-x'))
@@ -606,7 +611,7 @@ describe('verifyTarball', () => {
 })
 
 describe('prunePublishArtifacts', () => {
-  it('removes maps and tsbuildinfo recursively, leaving real payload intact', () => {
+  it('removes ordinary maps and tsbuildinfo recursively, leaving real payload intact', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pack-dist-prune-'))
     try {
       mkdirSync(join(dir, 'lib/types/client'), { recursive: true })
@@ -617,6 +622,7 @@ describe('prunePublishArtifacts', () => {
       writeFileSync(join(dir, 'lib/tsconfig.tsbuildinfo'), '{}')
       writeFileSync(join(dir, 'lib/types/index.d.ts'), 'export {}\n')
       writeFileSync(join(dir, 'lib/types/index.d.ts.map'), '{}')
+      writeFileSync(join(dir, 'lib/typert.remote-client.d.ts.map'), '{}')
       // A file whose name merely ends in "map" but is real payload survives.
       writeFileSync(join(dir, 'lib/bitmap.js'), 'export {}\n')
       expect(prunePublishArtifacts(dir)).toEqual([
@@ -629,6 +635,7 @@ describe('prunePublishArtifacts', () => {
         'lib/bitmap.js',
         'lib/client.js',
         'lib/index.js',
+        'lib/typert.remote-client.d.ts.map',
         'lib/types/index.d.ts',
       ])
     } finally {
@@ -700,7 +707,7 @@ describe('packDist end-to-end (independent of the self-checks)', () => {
     }
   }, 60_000)
 
-  it('a real pack drops maps/tsbuildinfo but keeps hashed chunks, css and declarations', () => {
+  it('a real pack drops non-payload maps/tsbuildinfo but keeps chunks, css, declarations and the Remote declaration map', () => {
     const dir = mkdtempSync(join(tmpdir(), 'pack-dist-payload-'))
     try {
       mkdirSync(join(dir, 'src'), { recursive: true })
@@ -715,6 +722,8 @@ describe('packDist end-to-end (independent of the self-checks)', () => {
       writeFileSync(join(dir, 'lib/types/index.d.ts'), 'export {}\n')
       writeFileSync(join(dir, 'lib/typert.host.js'), 'export {}\n')
       writeFileSync(join(dir, 'lib/typert.remote-client.js'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/typert.remote-client.d.ts'), 'export {}\n')
+      writeFileSync(join(dir, 'lib/typert.remote-client.d.ts.map'), '{"version":3,"sources":["../src/index.ts"]}\n')
       // Build state that must not ship.
       writeFileSync(join(dir, 'lib/client.js.map'), '{}')
       writeFileSync(join(dir, 'lib/types/index.d.ts.map'), '{}')
@@ -728,6 +737,8 @@ describe('packDist end-to-end (independent of the self-checks)', () => {
           'lib/typert.host.js',
           'lib/typert.remote-client.d.ts',
           'lib/typert.remote-client.js',
+          'lib/typert.remote-client.d.ts.map',
+          'src',
         ],
       }))
       const tarball = packDist({ packageDir: dir, scope: '@khorsheed', version: '0.1.0', outDir: dir })
@@ -740,10 +751,13 @@ describe('packDist end-to-end (independent of the self-checks)', () => {
         'package/lib/types/index.d.ts',
         'package/lib/typert.host.js',
         'package/lib/typert.remote-client.js',
+        'package/lib/typert.remote-client.d.ts',
+        'package/lib/typert.remote-client.d.ts.map',
+        'package/src/index.ts',
       ]) {
         expect(listing).toContain(shipped)
       }
-      expect(listing).not.toMatch(/\.map$/m)
+      expect(listing.split('\n').filter(file => file.endsWith('.map'))).toEqual(['package/lib/typert.remote-client.d.ts.map'])
       expect(listing).not.toContain('.tsbuildinfo')
     } finally {
       rmSync(dir, { recursive: true, force: true })

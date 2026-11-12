@@ -4,11 +4,10 @@
  * replacements, edit triggers, and assistant-text restore replays apart from
  * withdrawals and user-message restores, the model-facing placeholder and
  * trigger texts, and the pure predicates both the Host service and the
- * browser projection consume. No new session event type is ever written — an
- * out-of-harness event type cannot carry `ignorable: true` (Session.append
- * assigns the envelope), so a persisted unknown type would make
- * session-persistence refuse the log on reload. The events themselves are the
- * durable audit trail.
+ * browser projection consume. Restore replays keep the shared user/message
+ * vocabulary because they must enter the model surface; an ignorable plugin
+ * record cannot carry that role. The events themselves are the durable audit
+ * trail.
  * @module @khorsheed/dsh-client-message-tools/marker
  */
 import { isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session/surface'

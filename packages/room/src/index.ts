@@ -37,18 +37,19 @@ import type {} from '@deepseek-ai/dsh-subagent'
 // the toolchain loads dsh-session from src (tsx path mapping) while a
 // profile-installed plugin resolves the root export to lib — two instances,
 // two catalog Sets, and a registration that never reaches the reader (the
-// prod 3080 failure mode). Importing the source file through the package's
-// `./src/*` export lands both sides on the same file URL, but no static
-// specifier expresses it (the exact-file exports map needs tsx's extension
-// probing; the `.ts` form trips TS2877) — so the specifier is computed and
-// resolved at runtime, and the top-level await lets the plugin loader block
-// boot on the registration completing. Test environments (vite) cannot
-// resolve the `./src/*` export and take the root fallback — there the root
-// and the toolchain already share one instance.
+// prod 3080 failure mode). Host 0.2.2 also ships `./src/*`, so a source import
+// can now succeed while the persistence reader uses the root export: both
+// module instances must be registered, not merely the first one that resolves.
+// The top-level await lets the plugin loader block boot on the registration
+// completing; an unavailable source or root remains an optional degradation.
 const catalogSpecifier = ['@deepseek-ai/dsh-session', 'src', 'known-event-types'].join('/')
-const catalogModule = await import(catalogSpecifier)
-  .catch(() => import('@deepseek-ai/dsh-session')) as { KNOWN_SESSION_EVENT_TYPES: Set<string> }
-for (const type of ROOM_EVENT_TYPES) catalogModule.KNOWN_SESSION_EVENT_TYPES.add(type)
+const catalogModules = await Promise.all([
+  import(catalogSpecifier).catch(() => undefined),
+  import('@deepseek-ai/dsh-session').catch(() => undefined),
+]) as Array<{ KNOWN_SESSION_EVENT_TYPES?: Set<string> } | undefined>
+for (const catalog of catalogModules) {
+  for (const type of ROOM_EVENT_TYPES) catalog?.KNOWN_SESSION_EVENT_TYPES?.add(type)
+}
 import { composeRoomAgent, deriveSessionPreset, probeAgentPresets, inspectCold, preloadPresetDerivationHost, presetDerivationHost, roomSessionPreset } from './agent-setup.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 // Type-only: pulls the `room/*` SessionEventMap merges.
@@ -3182,7 +3183,8 @@ export class RoomService extends TypertRemoteService implements RoomMemberMessag
     const facadeHit = probeLocalAgent(this.ctx)?.cancel(target.id) ?? false
     const agent = this.ctx.agents.get(target.id)
     if (agent) {
-      this.ctx.get('subagents')?.interrupt(target.id, { kind: 'user', parentSessionId: target.header.parentSession! })
+      const authority = { kind: 'user' as const, parentSessionId: target.header.parentSession! }
+      this.ctx.get('subagents')?.interrupt(target.id, authority)
       agent.cancel({ kind: 'user' })
     }
     return { ok: true, value: { cancelled: facadeHit || agent !== undefined } }

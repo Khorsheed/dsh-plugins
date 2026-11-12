@@ -51,7 +51,8 @@ dsh plugin --profile web remove @khorsheed/dsh-room
 ## Compatibility
 
 - npm 发布线（`@deepseek-ai/dsh@0.2.0-rc.1` 起）：✅ 支持、带一处设计内降级——`minHost` 钉在 0.2.0-rc.1（2026-11-02 起，面向 0.1.x 宿主的兼容分支已移除）。外部成员依赖 local-agent 家族（core + provider），该家族尚未发布到 npm：缺失时成员准备、共享模型/强度控制与认证成员工具返回不可用，原生 DSH Room 功能保持完整。候选 tarball 在 npm 宿主上的全新安装与升级检查通过，旧 Room 状态得到保留。
-- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.1-rc.1）——host-021 波对 0.2.1-rc.1 树全量 build+test 绿（含 3080 生产部署验收），无其它表面变化。Session V4 适配：主 agent followup 的 source 改为生产者归属 kind `room`（V4 原生准入在落盘写入时拒收退役的 `kind: 'plugin'` 包装），读侧兼认 `room` 与 `plugin:@khorsheed/dsh-room`（V3→V4 迁移形态——V3 文件先经官方迁移才被读到）。`conversation.chat.node` rc.1 契约复验通过（5 个 room 渲染器均不触 hookContext 与 disclosure 工厂）。DSH/Kimi 协调者、委派、两阶段验收与中断恢复已端到端实测——见[验收记录](../../../docs/acceptance/room-coordinator-2026-09-19.md)。
+- 源码线（deepseek-harness master）：✅（verifiedHost: 0.2.2-rc.2）——对 rc.2 的 62 个测试文件、736 项测试全部通过，包含经真实 local-agent core 的恢复路径。中断 authority 接受 rc.2 的裸 user 形态，同时以结构字段保留旧宿主需要的 parent id。由于 rc.2 随官方包发布源码，Room 会向源码导入与根导出两份事件目录实例注册词汇；旧宿主降级仍保留。本次源码验证不代表重新部署生产，也不关闭下述 Codex/Claude 与完整 P95 验收缺口。
+- 早期兼容记录（0.2.1-rc.1）：host-021 波对 0.2.1-rc.1 树全量 build+test 绿（含 3080 生产部署验收）。Session V4 适配把主 agent followup 的 source 改为生产者归属 kind `room`（V4 原生准入在落盘写入时拒收退役的 `kind: 'plugin'` 包装），读侧兼认 `room` 与 `plugin:@khorsheed/dsh-room`（V3→V4 迁移形态——V3 文件先经官方迁移才被读到）。`conversation.chat.node` rc.1 契约复验通过（5 个 room 渲染器均不触 hookContext 与 disclosure 工厂）。DSH/Kimi 协调者、委派、两阶段验收与中断恢复已端到端实测——见[验收记录](../../../docs/acceptance/room-coordinator-2026-09-19.md)。
 
 ## 已知限制
 

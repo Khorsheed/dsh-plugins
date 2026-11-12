@@ -42,7 +42,7 @@ The room comes with 开发套件 (the dev suite); for editing or making games, �
 
 ## Compatibility
 
-Requires DSH 0.2.0 or later; verified on 0.2.1.
+Requires DSH 0.2.0 or later; verified through 0.2.2-rc.2.
 
 ## For developers
 
