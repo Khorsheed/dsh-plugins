@@ -24,6 +24,7 @@ When you're tuning a prompt or building a plugin, the questions are always the s
 
 - **Subagents add up correctly**: each delegated subagent gets its own entry, and its time isn't counted twice in the main conversation.
 - **Turns from before you installed it**: when you open it, it fills in earlier turns from the session's record.
+- **Whole-log totals too**: when the host provides official statistics, the trend shows native turns, steps, input/output tokens and model/tool wall time, independent of the loaded window.
 - **It only looks**: it never changes what's sent to the model, and what it collects stays in memory rather than being written into the session.
 
 ## Install
@@ -46,7 +47,7 @@ The context lens comes with the Dev Suite, and with 「多Agent协作」 (multi-
 
 ## Compatibility
 
-Needs DSH 0.2.0-rc.1 or later; verified on 0.2.1-rc.5.
+Needs DSH 0.2.0-rc.1 or later; verified on 0.2.2-rc.2. Official whole-log totals appear when their projections are available.
 
 ## For developers
 

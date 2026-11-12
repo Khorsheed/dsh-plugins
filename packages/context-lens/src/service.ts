@@ -27,7 +27,9 @@ import type { SessionTrend } from './types.ts'
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { AssistantStreamRecord, GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionStatsProjection } from '@deepseek-ai/dsh-session-stats/types'
+import type { TokenUsageProjection } from '@deepseek-ai/dsh-token-meter/client'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type { CapturedRequest, ListTurnsResult, ScopeFilter, ScopedRefusal, TurnOverview, TurnTiming } from './types.ts'
 import { InspectorStore, scopeAuthorized, toolExecutionFromMeta, type EvictedTurn, type RequestSnapshot, type StoredRequest, type StoreConfig } from './store.ts'
@@ -685,7 +687,22 @@ export class InspectorService {
   /** Read the session map through the same backfill and scope-filtered path. */
   async getSessionTrend(sessionId: string, filter?: ScopeFilter): Promise<SessionTrend> {
     await this.listTurns(sessionId, filter)
-    return this.store.getSessionTrend(sessionId, filter)
+    const trend = this.store.getSessionTrend(sessionId, filter)
+    if (filter !== undefined) return trend
+    const registry = this.ctx.get('sessionProjections') as {
+      snapshot(session: Session, keys: readonly string[]): { values: { sessionStats?: SessionStatsProjection; tokenUsage?: TokenUsageProjection } }
+    } | undefined
+    const session = this.ctx.sessions.get(sessionId as SessionId)
+    if (registry === undefined || session === undefined) return trend
+    const values = registry.snapshot(session, ['sessionStats', 'tokenUsage']).values
+    if (values.sessionStats === undefined && values.tokenUsage === undefined) return trend
+    return {
+      ...trend,
+      official: {
+        ...values.sessionStats === undefined ? {} : { session: values.sessionStats },
+        ...values.tokenUsage === undefined ? {} : { tokenUsage: values.tokenUsage },
+      },
+    }
   }
 
   /** One turn's whole-turn timing aggregation. */

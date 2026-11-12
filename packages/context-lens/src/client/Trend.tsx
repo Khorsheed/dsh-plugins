@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SessionTrend } from '../types.ts'
 import type { InspectorTabProps } from './contract.ts'
-import { requestNumberText, cachePct, gapShown, inputTotal, turnNumber, type TurnGap } from './aggregate.ts'
+import { requestNumberText, cachePct, fmtK, fmtSpan, gapShown, inputTotal, turnNumber, type TurnGap } from './aggregate.ts'
 import css from './InspectorPanel.module.css'
 
 type TrendRequest = SessionTrend['requests'][number]
@@ -192,6 +192,14 @@ export function Trend({
         }}
       />}
       {requests.length === 0 && <span className={css.trendLabel}>{t('lens.trendEmpty')}</span>}
+      {data.official !== undefined && <span className={css.trendLabel} role="note">{t('trend.officialTotals', {
+        turns: data.official.session?.turns ?? '—',
+        steps: data.official.session?.steps ?? '—',
+        input: fmtK((data.official.tokenUsage?.uncachedInputTokens ?? 0) + (data.official.tokenUsage?.cacheReadTokens ?? 0) + (data.official.tokenUsage?.cacheWriteTokens ?? 0)),
+        output: fmtK(data.official.tokenUsage?.outputTokens ?? 0),
+        model: data.official.session === undefined ? '—' : fmtSpan(data.official.session.llmMs),
+        tools: data.official.session === undefined ? '—' : fmtSpan(data.official.session.toolMs),
+      })}</span>}
     </section>
   )
 }

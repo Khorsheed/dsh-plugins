@@ -800,4 +800,9 @@ export interface ToolTiming {
 /** Lightweight per-request session map, retaining the same scope authorization as all reads. */
 export interface SessionTrend extends ListTurnsResult {
   requests: (RequestListItem & { turnSeq: number })[]
+  /** Native whole-log projections, not a total over the loaded request window. */
+  official?: {
+    session?: import('@deepseek-ai/dsh-session-stats/types').SessionStatsProjection
+    tokenUsage?: import('@deepseek-ai/dsh-token-meter/client').TokenUsageProjection
+  }
 }

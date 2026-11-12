@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/context-lens/README.en.md
-packages/context-lens/README.en.md: e7515fbf891c76f5db5b4c99e33a041d2e0db63b
-packages/context-lens/README.md: 852b7af70cf48d685142473bca1e78c0c4291c1d
+packages/context-lens/README.en.md: 2ea5de4392c4a1928e70a5944a157d25aa743231
+packages/context-lens/README.md: d01c690919b2d82e1173d24a14a6361e64825bd4
