@@ -9,8 +9,10 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import { TranscribeService, type TranscribeConfig } from './service.ts'
+import { registerLocalSpeechProvider } from './speech-provider.ts'
 
 export { TranscribeService, segmentText } from './service.ts'
+export { LocalSpeechProvider, registerLocalSpeechProvider } from './speech-provider.ts'
 export type { TranscribeConfig } from './service.ts'
 export type * from './types.ts'
 
@@ -25,5 +27,6 @@ export const name = 'transcribe'
 export function apply(ctx: Context, config: TranscribeConfig = {}): void {
   const service = new TranscribeService(config, ctx.logger as unknown as Console)
   ctx.provide('transcribe', service)
+  registerLocalSpeechProvider(ctx, service, config.modelSource)
   ctx.effect(() => () => service.dispose(), 'transcribe: queue')
 }

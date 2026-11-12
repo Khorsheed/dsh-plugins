@@ -167,6 +167,7 @@ export async function fetchWithResume(
   part: string,
   expected: { bytes: number; sha256?: string | undefined },
   onProgress: (got: number) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
   const digestFile = async (): Promise<string> => {
     const hash = createHash('sha256')
@@ -185,7 +186,7 @@ export async function fetchWithResume(
     if (expected.sha256 && digest !== expected.sha256) throw new CorruptDownloadError('校验和不符')
     return digest
   }
-  const res = await fetch(url, { redirect: 'follow', headers: have > 0 ? { Range: `bytes=${have}-` } : {} })
+  const res = await fetch(url, { redirect: 'follow', headers: have > 0 ? { Range: `bytes=${have}-` } : {}, ...(signal === undefined ? {} : { signal }) })
   if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
   let append = false
   if (have > 0 && res.status === 206) {
@@ -204,7 +205,7 @@ export async function fetchWithResume(
     got += chunk.length
     onProgress(got)
   })
-  await pipeline(body, createWriteStream(part, { flags: append ? 'a' : 'w' }))
+  await pipeline(body, createWriteStream(part, { flags: append ? 'a' : 'w' }), ...(signal === undefined ? [] : [{ signal }]))
   // Short read: the prefix is still valid — keep it and let the retry resume.
   if (got !== expected.bytes) throw new Error(`文件大小不符（${got}/${expected.bytes}）`)
   const digest = hash.digest('hex')
@@ -213,14 +214,14 @@ export async function fetchWithResume(
 }
 
 /** HEAD-probe candidate sources; reachable ones first, fastest first. */
-export async function orderSources(cands: ReadonlyArray<{ id: string; url: string }>, timeoutMs = 3000): Promise<string[]> {
+export async function orderSources(cands: ReadonlyArray<{ id: string; url: string }>, timeoutMs = 3000, signal?: AbortSignal): Promise<string[]> {
   const probed = await Promise.all(
     cands.map(async (c) => {
       const start = Date.now()
       const ctrl = new AbortController()
       const timer = setTimeout(() => ctrl.abort(), timeoutMs)
       try {
-        const res = await fetch(c.url, { method: 'HEAD', redirect: 'follow', signal: ctrl.signal })
+        const res = await fetch(c.url, { method: 'HEAD', redirect: 'follow', signal: signal === undefined ? ctrl.signal : AbortSignal.any([ctrl.signal, signal]) })
         return { id: c.id, ok: res.ok, ms: Date.now() - start }
       } catch {
         return { id: c.id, ok: false, ms: timeoutMs }
@@ -243,10 +244,12 @@ export async function downloadHfFiles(
   repo: string,
   files: readonly ModelFile[],
   onProgress: (got: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
   const total = files.reduce((s, f) => s + f.bytes, 0)
   let done = 0
   for (const f of files) {
+    signal?.throwIfAborted()
     const finalPath = join(dir, f.path)
     const part = `${finalPath}.part`
     const installed = await stat(finalPath).then((s) => s.size, () => 0)
@@ -257,7 +260,7 @@ export async function downloadHfFiles(
     }
     if (installed > 0) await rm(finalPath, { force: true })
     try {
-      await fetchWithResume(hfUrl(origin, repo, f), part, { bytes: f.bytes, sha256: f.sha256 }, (got) => onProgress(done + got, total))
+      await fetchWithResume(hfUrl(origin, repo, f), part, { bytes: f.bytes, sha256: f.sha256 }, (got) => onProgress(done + got, total), signal)
     } catch (error) {
       if (error instanceof CorruptDownloadError) await rm(part, { force: true })
       throw error
@@ -351,9 +354,9 @@ export class ModelManager {
    * A call for models outside the running download starts its own pass once
    * that one finishes.
    */
-  ensure(choice: ModelSourceChoice = 'auto', ids: readonly ModelId[] = MODELS.map((m) => m.id)): Promise<void> {
+  ensure(choice: ModelSourceChoice = 'auto', ids: readonly ModelId[] = MODELS.map((m) => m.id), signal?: AbortSignal): Promise<void> {
     const source = MODEL_SOURCE_CHOICES.includes(choice) ? choice : 'auto'
-    const pass = (this.running ?? Promise.resolve()).then(() => this.downloadMissing(source, ids))
+    const pass = (this.running ?? Promise.resolve()).then(() => this.downloadMissing(source, ids, signal))
     const tail = pass.finally(() => {
       if (this.running === tail) this.running = null
     })
@@ -361,41 +364,56 @@ export class ModelManager {
     return tail
   }
 
-  private async downloadMissing(choice: ModelSourceChoice, ids: readonly ModelId[]): Promise<void> {
+  private async downloadMissing(choice: ModelSourceChoice, ids: readonly ModelId[], signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
     await mkdir(this.dir, { recursive: true })
     // Legacy GitHub-channel archive partials can never be resumed — drop them.
     for (const f of await readdir(this.dir)) if (f.endsWith('.tar.bz2.part')) await rm(join(this.dir, f), { force: true })
     await this.refresh()
     for (const m of MODELS) {
+      signal?.throwIfAborted()
       const s = this.status.get(m.id)!
       if (s.state === 'installed' || !ids.includes(m.id)) continue
       Object.assign(s, { state: 'downloading', progress: 0, error: undefined, partial: undefined })
       try {
         await this.download(m, choice, (p) => {
           s.progress = p
-        })
+        }, signal)
         if (!(await exists(join(this.dir, m.check)))) throw new Error('下载完成但文件不完整')
         Object.assign(s, { state: 'installed', progress: 1 })
       } catch (error) {
         Object.assign(s, { state: 'failed', error: error instanceof Error ? error.message : String(error) })
+        signal?.throwIfAborted()
       }
     }
   }
 
-  private async download(m: ModelSpec, choice: ModelSourceChoice, onProgress: (p: number) => void): Promise<void> {
+  private async download(m: ModelSpec, choice: ModelSourceChoice, onProgress: (p: number) => void, signal?: AbortSignal): Promise<void> {
     const order: HfOrigin[] =
       choice === 'auto'
-        ? ((await orderSources((Object.keys(HF_ORIGINS) as HfOrigin[]).map((o) => ({ id: o, url: hfUrl(HF_ORIGINS[o], m.hf.repo, m.hf.files[0]!) })))) as HfOrigin[])
+        ? ((await orderSources((Object.keys(HF_ORIGINS) as HfOrigin[]).map((o) => ({ id: o, url: hfUrl(HF_ORIGINS[o], m.hf.repo, m.hf.files[0]!) })), 3000, signal)) as HfOrigin[])
         : [choice]
     let lastError: unknown
     for (const origin of order) {
       for (let attempt = 0; attempt < 2; attempt++) {
+        signal?.throwIfAborted()
         try {
-          await downloadHfFiles(this.dir, HF_ORIGINS[origin], m.hf.repo, m.hf.files, (got, total) => onProgress(Math.min(0.99, got / total)))
+          await downloadHfFiles(this.dir, HF_ORIGINS[origin], m.hf.repo, m.hf.files, (got, total) => onProgress(Math.min(0.99, got / total)), signal)
           return
         } catch (error) {
+          signal?.throwIfAborted()
           lastError = error
-          await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)))
+          await new Promise<void>((resolve, reject) => {
+            const abort = (): void => {
+              clearTimeout(timer)
+              reject(signal?.reason)
+            }
+            const timer = setTimeout(() => {
+              signal?.removeEventListener('abort', abort)
+              resolve()
+            }, 1500 * (attempt + 1))
+            signal?.addEventListener('abort', abort, { once: true })
+          })
         }
       }
     }

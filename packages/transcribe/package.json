@@ -51,10 +51,17 @@
     "sherpa-onnx-node": "1.13.8"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1"
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-experimental-speech-to-text": "^0.2.2-rc.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-experimental-speech-to-text": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-experimental-speech-to-text": "^0.2.2-rc.2",
     "@types/node": "^22.0.0",
     "tsdown": "^0.22.2",
     "typescript": "^5.9.0",
@@ -71,8 +78,8 @@
     },
     "compat": {
       "minHost": "0.1.5-rc.1",
-      "verifiedHost": "0.2.1-rc.5",
-      "notes": "Host service only (`transcribe`), no browser half and no model-facing surface, so it composes at the profile root. Recognition runs in a forked child process through sherpa-onnx-node (prebuilt per-platform addon); a failed addon load fails that job only. ffmpeg is found on PATH or at a configured path; a missing binary fails jobs that need decoding, never the boot. Speech models download on first use into $DSH_HOME/state/transcribe/models (models a previous video-studio install downloaded are moved there once). Consumers (video-studio, dsh-reader) probe `ctx.get('transcribe')` at call time and degrade when it is absent."
+      "verifiedHost": "0.2.2-rc.2",
+      "notes": "Host service only (`transcribe`), no browser half and no model-facing surface, so it composes at the profile root. Recognition runs in a forked child process through sherpa-onnx-node (prebuilt per-platform addon); a failed addon load fails that job only. ffmpeg is found on PATH or at a configured path; a missing binary fails jobs that need decoding, never the boot. Speech models download on first use into $DSH_HOME/state/transcribe/models (models a previous video-studio install downloaded are moved there once). Consumers (video-studio, dsh-reader) probe `ctx.get('transcribe')` at call time and degrade when it is absent. With the official experimental speech registry on 0.2.2-rc.2, it also registers `transcribe-local`, with model preparation, cancellation and temporary WAV cleanup; older hosts retain the original service only."
     },
     "runtimeDependencies": [
       "sherpa-onnx-node"

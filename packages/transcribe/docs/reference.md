@@ -30,7 +30,7 @@ const result = await transcribe.run(
 | `run(request, options?)` | 排队执行并返回结果，缺模型时先下载；`onSegments` 每转完一段就回调一次 |
 | `speakers(request, options?)` | 只分说话人、不转文字（已有文稿时用）；只有一个人时直接返回 |
 | `modelsFor(request)` / `missingBytes(ids)` | 这次要哪些模型、还差多少字节（0 = 就绪） |
-| `prepare(ids, source?)` / `models()` | 下载缺的模型 / 看各模型的安装状态 |
+| `prepare(ids, source?, signal?)` / `models()` | 下载缺的模型 / 看各模型的安装状态；可取消下载，保留有效分片 |
 | `queue()` | 当前队列，正在跑的在前 |
 
 - **一次只跑一个**：所有调用方共用一条队列；中止 `signal` 会撤下排队中的任务、停掉正在跑的。识别在独立子进程里跑，原生模块加载失败只让那次任务失败。
@@ -38,3 +38,4 @@ const result = await transcribe.run(
 - **模型**第一次用到时下载到 `$DSH_HOME/state/transcribe/models/`（只下这次要用的），来源可选 Hugging Face 或 HF-Mirror，断点续传、下载后校验；以前剪辑插件下载过的会挪过来。
 - **不存结果**：临时音频任务结束即删，文字由调用方自己保存。需要本机有 `ffmpeg`，找不到时需要解码的任务报错，不影响启动。
 - **配置**：`stateDir`、`ffmpegPath`、`modelSource`（`auto` / `huggingface` / `hf-mirror`）、`numThreads`（默认 4）。
+- **官方语音 provider**：0.2.2-rc.2 的组合存在 `speechToText` 时，注册 `transcribe-local`（Local Paraformer / SenseVoice），支持 `auto` / `zh` / `en`、准备与取消。输入是官方约定的 16 kHz 单声道 PCM16 WAV，写入 `$DSH_HOME/state/transcribe/tmp` 后走同一个 `run()` 队列，返回全文、音频秒数与推理秒数，结束即删临时文件。官方语音 UI 属于实验组合，不因安装本包而默认出现；长音频、逐段回调和分人仍走 `transcribe` 原接口。

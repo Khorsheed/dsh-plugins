@@ -149,9 +149,9 @@ export class TranscribeService implements TranscribeApi {
     return status.filter((s) => ids.includes(s.id) && s.state !== 'installed').reduce((sum, s) => sum + s.bytes - (s.partial ?? 0), 0)
   }
 
-  async prepare(ids: readonly ModelId[], source?: ModelSourceChoice): Promise<void> {
+  async prepare(ids: readonly ModelId[], source?: ModelSourceChoice, signal?: AbortSignal): Promise<void> {
     await this.adoptLegacyModels()
-    await this.manager.ensure(source ?? this.config.modelSource ?? 'auto', ids)
+    await this.manager.ensure(source ?? this.config.modelSource ?? 'auto', ids, signal)
   }
 
   queue(): TranscribeQueueItem[] {
@@ -230,7 +230,7 @@ export class TranscribeService implements TranscribeApi {
         onProgress?.({ stage: 'models', progress: rows.reduce((sum, s) => sum + s.bytes * (s.state === 'installed' ? 1 : s.progress), 0) / total })
       }, 1000)
       try {
-        await this.prepare(ids)
+        await this.prepare(ids, undefined, signal)
       } finally {
         clearInterval(watch)
       }

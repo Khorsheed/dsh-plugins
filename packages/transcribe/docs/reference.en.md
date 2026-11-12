@@ -30,7 +30,7 @@ const result = await transcribe.run(
 | `run(request, options?)` | Queues, runs and returns the result, downloading missing models first; `onSegments` fires as each stretch finishes |
 | `speakers(request, options?)` | Separates speakers without transcribing (for when a transcript exists); returns at once when there's only one voice |
 | `modelsFor(request)` / `missingBytes(ids)` | Which models a request needs, and how many bytes are still missing (0 = ready) |
-| `prepare(ids, source?)` / `models()` | Download the missing models / read every model's install state |
+| `prepare(ids, source?, signal?)` / `models()` | Download the missing models / read every model's install state; cancellation keeps valid partial files |
 | `queue()` | The current queue, running job first |
 
 - **One job at a time**: every caller shares one queue; aborting `signal` withdraws a queued job or stops a running one. Recognition runs in a separate child process, so a native module that fails to load fails only that job.
@@ -38,3 +38,4 @@ const result = await transcribe.run(
 - **Models** download on first use into `$DSH_HOME/state/transcribe/models/` (only the ones the job needs), from Hugging Face or HF-Mirror, resumable and verified after download; models an earlier video-studio install downloaded are moved over.
 - **Nothing is kept**: temporary audio is deleted when the job ends, and callers store the text themselves. It needs `ffmpeg` on this computer; without it, jobs that need decoding fail, but startup doesn't.
 - **Configuration**: `stateDir`, `ffmpegPath`, `modelSource` (`auto` / `huggingface` / `hf-mirror`), `numThreads` (default 4).
+- **Official speech provider**: when the 0.2.2-rc.2 composition provides `speechToText`, registers `transcribe-local` (Local Paraformer / SenseVoice) with `auto` / `zh` / `en`, preparation and cancellation. Input is the official 16 kHz mono PCM16 WAV, written under `$DSH_HOME/state/transcribe/tmp`, executed through the same `run()` queue and returned as complete text, audio seconds and inference seconds; the temporary file is removed on settlement. The official voice UI belongs to an experimental composition and is not installed by this package. Long recordings, segment callbacks and speaker separation remain on the original `transcribe` API.

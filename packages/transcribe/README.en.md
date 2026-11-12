@@ -15,6 +15,7 @@ A two-hour podcast or a video without subtitles: getting a transcript used to me
 - **Chinese and English**: it transcribes either, or works out the language by itself.
 - **Text as it goes**: each stretch appears as soon as it is done — no waiting for the whole episode.
 - **Stays on your computer**: recognition runs locally and the recording is never uploaded; temporary audio is deleted when the job ends.
+- **Available for voice input too**: when the host has the official experimental voice-input composition, choose Local Paraformer / SenseVoice; short recordings and long files share the same models and queue.
 
 ## Install
 
@@ -38,7 +39,7 @@ Local Transcription comes with the Learning Suite and the Video Editing Suite. T
 
 ## Compatibility
 
-Needs DSH 0.1.5-rc.1 or later; verified on 0.2.1-rc.5.
+Needs DSH 0.1.5-rc.1 or later; verified on 0.2.2-rc.2. The official voice-input entry starts on 0.2.2-rc.2; older hosts retain the original service.
 
 ## For developers
 
