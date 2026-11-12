@@ -13,6 +13,7 @@ import z from '@deepseek-ai/schemastery'
 import { resolveWorktreesStateRoot, WORKTREES_SWITCHED_EVENT } from './bindings.ts'
 import { WorktreesRemoteService } from './remote.ts'
 import { WorktreesService } from './service.ts'
+import type { OfficialWorktreeCreator } from './official-create.ts'
 
 /** Plugin configuration. */
 export interface WorktreesPluginConfig {
@@ -78,6 +79,7 @@ export function apply(ctx: Context, config: WorktreesPluginConfig): void {
     // NOT a browser push: bridging it to clients or re-reading on it is the
     // consumer's job.
     onSwitched: event => ctx.emit(WORKTREES_SWITCHED_EVENT, event),
+    official: () => ctx.get('worktrees') as OfficialWorktreeCreator | undefined,
   })
   ctx.provide('worktreesCore', service)
   ctx.plugin(WorktreesRemoteService, { visiblePresets: config.visiblePresets ?? [] })

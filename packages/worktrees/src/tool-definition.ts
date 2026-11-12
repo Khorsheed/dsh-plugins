@@ -90,7 +90,7 @@ export function defineWorktreesTool(service: WorktreesService) {
           }
           case 'create': {
             if (args.path === undefined || args.path === '') return JSON.stringify({ error: 'worktrees: create requires a path' })
-            const info = await service.createWorktree(sessionId, cwd, args.path, args.branch)
+            const info = await service.createWorktree(sessionId, cwd, args.path, args.branch, exec.agent, exec.signal)
             return JSON.stringify({ ok: true, created: info })
           }
           case 'remove': {

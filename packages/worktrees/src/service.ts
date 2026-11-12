@@ -14,6 +14,8 @@
  * @module @khorsheed/dsh-worktrees
  */
 import { randomUUID } from 'node:crypto'
+import type { Agent } from '@deepseek-ai/dsh-agent/types'
+import { createInOfficialPool, type OfficialWorktreeCreator } from './official-create.ts'
 import { chmod, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, sep } from 'node:path'
 import {
@@ -94,6 +96,10 @@ export interface WorktreeInfo {
   dirty: number
   /** Clean AND its branch is merged into the base (a cleanup candidate). */
   stale: boolean
+  /** Pinned local commit, present for an official creation. */
+  baseCommit?: string
+  /** Source checkout root, present for an official creation. */
+  repositoryRoot?: string
 }
 
 /** Both change segments for the drawer's file tree. */
@@ -341,6 +347,8 @@ export interface WorktreesServiceOptions {
    * has no listeners.
    */
   onSwitched?: ((event: WorktreeSwitchedEvent) => void) | undefined
+  /** Optional official pool, probed only when a named branch is created. */
+  official?: (() => OfficialWorktreeCreator | undefined) | undefined
 }
 
 /**
@@ -351,6 +359,7 @@ export interface WorktreesServiceOptions {
 export class WorktreesService {
   private readonly store: WorktreeBindingStore | undefined
   private readonly onSwitched: ((event: WorktreeSwitchedEvent) => void) | undefined
+  private readonly official: (() => OfficialWorktreeCreator | undefined) | undefined
   private readonly ready: Promise<void>
 
   /**
@@ -360,6 +369,7 @@ export class WorktreesService {
    */
   constructor(private readonly baseRef: string, options: WorktreesServiceOptions = {}) {
     this.onSwitched = options.onSwitched
+    this.official = options.official
     this.store = options.stateRoot === undefined ? undefined : new WorktreeBindingStore(options.stateRoot)
     // Load on mount: every binding-reading/mutating path awaits this promise,
     // so a persisted override is never missed and never raced by an early
@@ -1066,10 +1076,17 @@ export class WorktreesService {
    * @param branch - optional branch to create (`git worktree add -b <branch>`).
    * @returns the new worktree's info.
    */
-  async createWorktree(sessionId: string, cwd: string, path: string, branch: string | undefined): Promise<WorktreeInfo> {
+  async createWorktree(sessionId: string, cwd: string, path: string, branch: string | undefined, agent?: Agent, signal?: AbortSignal): Promise<WorktreeInfo> {
     await this.ready
     const repo = await this.repoOf(cwd)
     if (repo === null) throw new Error('worktrees: not a git repository')
+    const official = await createInOfficialPool({ repo, path, branch, agent, signal, official: this.official?.() })
+    if (official !== undefined) {
+      await this.setBinding(sessionId, official.path)
+      const info = (await this.worktreeInfos(official.repositoryRoot)).find(candidate => WorktreesService.normPath(candidate.path) === WorktreesService.normPath(official.path))
+      if (info === undefined) throw new Error(`worktrees: could not resolve worktree at ${official.path}`)
+      return { ...info, baseCommit: official.baseCommit, repositoryRoot: official.repositoryRoot }
+    }
     const entries = parseWorktreeList(await git(repo, ['worktree', 'list', '--porcelain']))
     const existing = entryAt(entries, await this.canonicalPath(path))
     if (existing === undefined) {

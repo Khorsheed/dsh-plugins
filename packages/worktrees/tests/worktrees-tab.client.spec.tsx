@@ -312,3 +312,16 @@ it('reports a failed commit read and retries its details through refresh', async
   await waitFor(() => expect(screen.getByRole('button', { name: /restored.md/ })).toBeTruthy())
   expect(props.fetchCommitFiles).toHaveBeenCalledTimes(2)
 })
+
+it('opens Forge only when the official panel supplies an entry', async () => {
+  const { props } = makeHarness()
+  const { unmount } = render(<WorktreesTab {...props} />)
+  expect(screen.queryByRole('button', { name: 'action.openForge' })).toBeNull()
+  unmount()
+  const openForge = vi.fn()
+  props.openForge = openForge
+  props.useForge = (selector: (available: boolean) => boolean) => selector(true)
+  render(<WorktreesTab {...props} />)
+  fireEvent.click(screen.getByRole('button', { name: 'action.openForge' }))
+  expect(openForge).toHaveBeenCalledOnce()
+})

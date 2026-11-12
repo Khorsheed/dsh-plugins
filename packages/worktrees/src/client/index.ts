@@ -126,6 +126,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'worktrees: dictionaries')
   const t = ctx.locale.bind(NS)
   const remote = ctx.get('remote.worktrees') as WorktreesRemote
+  const forgeAvailability = {
+    subscribe: (listener: () => void) => ctx.sidebarRightTabs.subscribe(listener),
+    getSnapshot: () => ctx.sidebarRightTabs.get('forge-panel') !== undefined,
+  }
   // The OFFICIAL pluginInventory namespace, probed the taskpilot way: through
   // ctx.get, not the ctx.remote proxy — declaring 'remote.pluginInventory' in
   // inject would pend the whole client on a host without it, and the badge's
@@ -227,8 +231,11 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       fetchReadFileAtCommit: (sid: SessionId, request: ReadFileAtCommitRequest) => remote.readFileAtCommit(sid, request),
       writeFile: (sid: SessionId, request: WriteFileRequest) => remote.writeFile(sid, request),
       fetchReadRepoImage: (sid: SessionId, request: ReadRepoImageRequest) => remote.readRepoImage(sid, request),
-      hooks: { openInApp: openInApp.apps },
+      hooks: { openInApp: openInApp.apps, forge: forgeAvailability },
       openExternal: openOnHost,
+      openForge: () => {
+        try { ctx.sidebarRight.openTab('forge-panel') } catch (error) { ctx.logger.warn('worktrees: open Forge failed', error) }
+      },
       copyBranch: (branch: string) => writeClipboard(branch),
       copyText: (text: string) => writeClipboard(text),
     }),

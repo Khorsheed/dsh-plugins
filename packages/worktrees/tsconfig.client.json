@@ -16,6 +16,7 @@
     "src/bindings.ts",
     "src/git.ts",
     "src/service.ts",
+    "src/official-create.ts",
     "src/types.ts",
     "src/client/Badge.tsx",
     "src/client/CommitList.tsx",

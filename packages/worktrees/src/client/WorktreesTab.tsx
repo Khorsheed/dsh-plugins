@@ -49,9 +49,9 @@ const TREE_WIDTH_KEY = 'dsh-worktrees-tree-w'
 export function WorktreesTab({
   sessionId, useTabInfo, useStore, actions, t,
   fetchSummary, fetchChanges, fetchRepoFiles, fetchCommitLog, fetchCommitFiles,
-  fetchWorktrees, switchWorktree, directAgent, bumpVersion,
+  fetchWorktrees, switchWorktree, directAgent, bumpVersion, useForge,
   fetchFileDiff, fetchReadFile, fetchReadFileAtCommit, writeFile, fetchReadRepoImage, useOpenInApp, openExternal,
-  copyBranch, copyText,
+  copyBranch, copyText, openForge,
 }: WorktreesTabProps): ReactNode {
   const { tab } = useTabInfo()
   const mode = useStore(s => s.mode)
@@ -79,6 +79,7 @@ export function WorktreesTab({
   const openInAppApps = useOpenInApp(apps => apps)
   const folderApp = openInAppApps === null ? undefined : pickFileManager(openInAppApps)
   const ideApp = openInAppApps === null ? undefined : pickIde(openInAppApps)
+  const forgeAvailable = useForge?.(available => available) ?? false
 
   /**
    * One file's host-open gestures. The host route takes directories, so both
@@ -514,6 +515,12 @@ export function WorktreesTab({
           </span>
         </div>
         <div className={css.actions}>
+          {forgeAvailable && openForge !== undefined && (
+            <button type="button" className={css.action} title={t('action.openForge')} onClick={openForge}>
+              <IconBranchOutlineMedium />
+              {t('action.openForge')}
+            </button>
+          )}
           <button type="button" className={css.action} title={t('action.refresh')} onClick={() => { actions.refresh() }}>
             <IconRefreshOutlineMedium />
           </button>

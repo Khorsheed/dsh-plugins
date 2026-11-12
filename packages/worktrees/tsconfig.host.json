@@ -12,6 +12,7 @@
     "src/remote.ts",
     "src/panel-session.ts",
     "src/service.ts",
+    "src/official-create.ts",
     "src/tool.ts",
     "src/tool-definition.ts",
     "src/types.ts"

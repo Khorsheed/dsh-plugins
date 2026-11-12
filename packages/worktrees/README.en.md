@@ -19,6 +19,7 @@ With several worktrees going at once, finding out which branch the current sessi
 - **Spot it, fix it**: in the "Content" view, click "Edit", make the change and save with ⌘S or "Save" — it is written to the worktree and the change list on the left updates. If the agent changed the file while you were editing, you're told and choose to overwrite or discard.
 - **Move to another worktree**: pick one with "Switch worktree" at the top, then "Switch to this worktree", and the agent works in the new directory from its next turn on — without interrupting what it's doing.
 - **The agent can manage worktrees for you**: ask it in the conversation to list, create, switch or remove worktrees; it always asks before removing one, and it can't remove the main checkout or a worktree with uncommitted changes.
+- **Continue reviews in Forge**: when the host has the official Forge panel, the page offers Review in Forge. New branches in the official worktree pool keep the path, baseline commit and session working directory consistent.
 
 ## Install
 
@@ -39,7 +40,7 @@ Worktrees comes with 开发套件 (the dev suite). Once installed, open a sessio
 
 ## Compatibility
 
-Requires DSH 0.1.5 or later; verified on 0.2.1.
+Requires DSH 0.1.5 or later; verified on 0.2.2-rc.2. Official pool creation and the Forge entry start on 0.2.2-rc.2; other paths and older hosts keep the original behavior.
 
 ## For developers
 

@@ -96,12 +96,16 @@ export interface WorktreesTabInjected {
   hooks: {
     /** The official open-in-app probe feed (null until the host answered), bound by the slot renderer. */
     openInApp: OpenInAppSource
+    /** Registration feed for the optional official Forge panel. */
+    forge: { subscribe(listener: () => void): () => void; getSnapshot(): boolean }
   }
   /**
    * Open a directory with one probed host application (the official
    * open-in-app POST route; directories only).
    */
   openExternal: (appId: string, path: string) => void
+  /** Open the official Forge review panel when that optional panel is registered. */
+  openForge?: () => void
   /** Copy the branch name to the clipboard; resolves true only on acceptance. */
   copyBranch: (branch: string) => Promise<boolean>
   /** Write one text value to the clipboard (the pane's copy gestures). */
