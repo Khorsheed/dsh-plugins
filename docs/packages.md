@@ -4,10 +4,10 @@
 
 ## 概览
 
-- 包总数:**46**
-- 自挂载 bundle(`dsh.bundle.patch`):**42**
+- 包总数:**45**
+- 自挂载 bundle(`dsh.bundle.patch`):**41**
 - 组合组件(不自挂载,`dsh.composition.component`):**4** — `source-plane-library` 3、`sub-profile-patch` 1
-- 带浏览器半边(`dsh.client`):**31**
+- 带浏览器半边(`dsh.client`):**30**
 - 整合 profile(默认安装单元):**1** — `eval`
 
 **安装单元是 profile,不是单包。** 单包安装是高级路径:自挂载包 `dsh plugin add <pkg>` 即可,
@@ -25,7 +25,6 @@
 | `@khorsheed/dsh-capability-catalog` | `packages/capability-catalog` | 0.2.0 | bundle | — | web | 0.1.5-rc.1 | eval |
 | `@khorsheed/dsh-capture` | `packages/capture` | 0.1.3 | bundle | — | web | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-message-tools` | `packages/client-message-tools` | 0.3.5 | bundle | — | web | 0.1.5-rc.1 | eval |
-| `@khorsheed/dsh-client-session-title-edit` | `packages/client-session-title-edit` | 0.2.7 | bundle | — | web | 0.1.2-rc.1 | eval |
 | `@khorsheed/dsh-client-ui-agent-nav` | `packages/client-ui-agent-nav` | 0.1.0 | composition | source-plane-library | — | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-client-ui-content-preview` | `packages/client-ui-content-preview` | 0.1.1 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
 | `@khorsheed/dsh-client-ui-panel-kit` | `packages/client-ui-panel-kit` | 0.1.0 | composition | source-plane-library | — | 0.1.5-rc.1 | — |
@@ -33,9 +32,9 @@
 | `@khorsheed/dsh-context-lens` | `packages/context-lens` | 0.1.1 | bundle | — | web | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-datasets` | `packages/datasets` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
 | `@khorsheed/dsh-dev-suite` | `packages/dev-suite` | 0.1.1 | bundle | — | — | 0.1.7-rc.1 | — |
-| `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0 | bundle | — | web | 0.2.0-rc.2 | — |
-| `@khorsheed/dsh-eval-suite` | `packages/eval-suite` | 0.1.0 | bundle | — | — | 0.2.0-rc.2 | eval |
-| `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.4 | bundle | — | web | 0.1.5-rc.1 | eval |
+| `@khorsheed/dsh-eval` | `packages/eval` | 0.2.0 | bundle | — | web | 0.2.2-rc.2 | — |
+| `@khorsheed/dsh-eval-suite` | `packages/eval-suite` | 0.1.0 | bundle | — | — | 0.2.2-rc.2 | eval |
+| `@khorsheed/dsh-file-preview` | `packages/file-preview` | 0.4.4 | bundle | — | web | 0.2.2-rc.2 | eval |
 | `@khorsheed/dsh-game` | `packages/game` | 0.1.1 | bundle | — | web | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-gamedev-suite` | `packages/gamedev-suite` | 0.1.2 | bundle | — | — | 0.2.0-rc.1 | — |
 | `@khorsheed/dsh-inline-html-render` | `packages/inline-html-render` | 0.1.17 | bundle | — | web | 0.1.2-rc.1 | eval |
@@ -68,7 +67,7 @@
 
 | profile | 直接依赖 | bundles |
 | --- | --- | --- |
-| `profiles/eval` | 18 | 20 |
+| `profiles/eval` | 17 | 19 |
 
 ## 形态的含义
 

@@ -14,7 +14,7 @@
 @khorsheed/dsh-basic
 ```
 
-一次装齐下面 12 个成员，装完重启 DSH 就能用。每个成员仍可以在「插件」页里单独开关；也可以只装其中某一个——把它的包名填进同一个对话框即可。
+一次装齐下面 11 个成员，装完重启 DSH 就能用。每个成员仍可以在「插件」页里单独开关；也可以只装其中某一个——把它的包名填进同一个对话框即可。
 
 ## 成员插件列表
 
@@ -22,7 +22,6 @@
 |---|---|---|
 | message-tools | `@khorsheed/dsh-client-message-tools` | 发出去的消息可以原位编辑、撤回、恢复 |
 | message-timeline | `@khorsheed/dsh-message-timeline` | 会话左缘一条安静的时间轴——悬停展开，点击跳转 |
-| session-title-edit | `@khorsheed/dsh-client-session-title-edit` | 聊天头部内联重命名会话 |
 | quote | `@khorsheed/dsh-quote` | 选中任意文本浮出引用动作菜单：引用进输入框 / 复制 |
 | file-preview | `@khorsheed/dsh-file-preview` | 「产物」tab + 宿主服务一体：会话写过的每个文件，不开 IDE 直接预览 |
 | local-files | `@khorsheed/dsh-local-files` | 右栏本地文件浏览器：懒加载文件树 + 结构化预览，任意目录随手翻 |
@@ -36,6 +35,8 @@
 重启守卫（ankh-guard）和上下文透镜（context-lens）偏开发者用途，2026-10-24 起移到了[开发套件](https://github.com/Khorsheed/dsh-dev)。
 
 ## 功能展示
+
+会话改名使用宿主自带能力：在会话列表的菜单里选「重命名」，或双击会话标题；官方对话框支持空白校验、取消和保存后刷新。
 
 ### message-tools：消息编辑、撤回与恢复
 
@@ -66,19 +67,6 @@
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="640" alt="message-timeline:悬停展开的时间轴">
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="message-timeline:日常收成细线">
-
-</details>
-
-### session-title-edit：会话标题内联编辑
-
-点击聊天头部标题旁的铅笔，标题本身变成输入框，回车即保存、Escape 取消。用户改过的标题会被钉住，不再被自动生成覆盖。走官方 rename 通道，模型完全无感。
-
-<details open>
-<summary>功能示意（2 张）</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit1.png" width="640" alt="session-title-edit:标题旁的内联编辑入口">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit2.png" width="640" alt="session-title-edit:直接修改标题，回车保存">
 
 </details>
 
@@ -223,7 +211,7 @@ agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的�
 
 ## Compatibility
 
-需要 DSH 0.1.5 或更新版本，已在 0.2.1 上验证。
+需要 DSH 0.1.5 或更新版本，已在 0.2.2-rc.2 上验证；会话改名使用宿主自带入口。
 
 ## 变更记录
 
