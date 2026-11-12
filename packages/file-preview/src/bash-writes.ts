@@ -5,19 +5,17 @@
  * file-preview fold only knows `read`/`write`/`edit` tool calls. This module
  * watches each session's event stream, extracts high-precision write targets
  * from bash command strings, verifies each with `fs.stat` after the call
- * settles (prefer a miss over a false positive), and keeps a per-session
- * registry the `filePreview.list` fold merges into its entries. The current
- * implementation keeps that registry outside the session log. The official
- * `appendPluginRecord` channel now permits versioned ignorable records that do
- * not enter the model surface, so a later migration can persist these facts;
- * until that consumer migration lands, the side registry is rebuilt on
- * `session/created` by replaying the session's own history.
+ * settles (prefer a miss over a false positive), and records verified facts as
+ * versioned ignorable plugin records. Reads fold those durable records; logs
+ * written before this channel use a read-only replay instead of an in-memory
+ * fact registry.
  * @module @khorsheed/dsh-file-preview
  */
 
 import { homedir } from 'node:os'
 import { resolve as resolvePath } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import { appendPluginRecord, pluginRecordOf } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { FileSystem } from '@deepseek-ai/dsh-fs'
 
@@ -278,23 +276,41 @@ export interface BashWriteCollectorOptions {
   maxFiles?: number
 }
 
-/**
- * Per-session registry of bash-written files. Subscribes to the session event
- * firehose: `tool/call` (bash) records the command's write candidates keyed by
- * callId; the matching `tool/result` stat-verifies them (files must exist and
- * be files — prefer a miss over a false positive) and stores the survivors.
- * `session/created` replays the session's own history so a restarted host
- * regains captures without any durable state of its own.
- */
+export const BASH_WRITE_RECORD = 'plugin:file-preview/bash-write'
+
+interface BashWriteRecord extends CapturedWrite {
+  readonly version: 1
+  readonly path: string
+}
+
+declare module '@deepseek-ai/dsh-session' {
+  interface PluginRecordMap {
+    'plugin:file-preview/bash-write': BashWriteRecord
+  }
+}
+
+/** Read validated durable captures, or undefined when a log predates this channel. */
+export function readBashWrites(events: readonly SessionEvent[], maxFiles = 500): ReadonlyMap<string, CapturedWrite> | undefined {
+  const captured = new Map<string, CapturedWrite>()
+  for (const event of events) {
+    const record = pluginRecordOf(event)
+    if (record?.type !== BASH_WRITE_RECORD) continue
+    const data = record.data as Partial<BashWriteRecord> | null
+    if (data?.version !== 1 || typeof data.path !== 'string' || data.path.length === 0) continue
+    if (!Number.isSafeInteger(data.turn) || !Number.isSafeInteger(data.step) || !Number.isSafeInteger(data.seq)) continue
+    if ((data.turn ?? -1) < 0 || (data.step ?? -1) < 0 || (data.seq ?? -1) < 0 || captured.has(data.path) || captured.size >= maxFiles) continue
+    captured.set(data.path, { turn: data.turn!, step: data.step!, seq: data.seq! })
+  }
+  return captured.size === 0 ? undefined : captured
+}
+
+/** Collect and durably record verified bash writes; only pending calls need process memory. */
 export class BashWriteCollector {
   readonly #fs: Pick<FileSystem, 'resolve' | 'stat'>
   readonly #env: NodeJS.ProcessEnv
   readonly #home: string
   readonly #maxFiles: number
-  /** sessionId → callId → pending bash write candidates. */
   readonly #pending = new Map<string, Map<string, PendingWrite>>()
-  /** sessionId → path → verified capture. */
-  readonly #captured = new Map<string, Map<string, CapturedWrite>>()
 
   constructor(options: BashWriteCollectorOptions) {
     this.#fs = options.fs
@@ -303,47 +319,20 @@ export class BashWriteCollector {
     this.#maxFiles = options.maxFiles ?? 500
   }
 
-  /**
-   * Subscribe to the session feed; the returned disposer removes both
-   * listeners (fiber disposal also cleans them up — this is belt and braces).
-   * @param ctx - the owning composition context.
-   * @returns a disposer removing the listeners.
-   */
   attach(ctx: Context): () => void {
-    const offs = [
-      ctx.on('session/event', (session: Session, event: SessionEvent) => {
-        void this.#onEvent(session, event)
-      }),
-      ctx.on('session/created', (session: Session) => {
-        this.#replay(session)
-      }),
-    ]
-    return () => {
-      for (const off of offs) {
-        if (typeof off === 'function') off()
-      }
-    }
+    return ctx.on('session/event', (session: Session, event: SessionEvent) => {
+      void this.#onEvent(session, event)
+    })
   }
 
-  /** Verified captures for one session (the fold-merge source), or undefined. */
-  captured(sessionId: string): ReadonlyMap<string, CapturedWrite> | undefined {
-    return this.#captured.get(sessionId)
+  /** Read the durable captures, with a read-only replay for logs written before this channel. */
+  async captured(session: Session): Promise<ReadonlyMap<string, CapturedWrite> | undefined> {
+    const durable = readBashWrites(session.snapshotEvents(), this.#maxFiles)
+    if (durable !== undefined) return durable
+    return this.replaySnapshot(session.header?.cwd, session.snapshotEvents())
   }
 
-  /**
-   * Rebuild one session's captures from its own event snapshot — the
-   * snapshot-driven twin of the live feed's replay, for a caller that holds
-   * the session's events rather than a composition's event feed. The same
-   * extraction, expansion, and stat-verification pipeline runs in event
-   * order, every verification awaited, so the result mirrors what the live
-   * feed would have captured from the same events. Nothing is stored in the
-   * live registry: pending candidates and verified captures are local to the
-   * call.
-   * @param cwd - the session's cwd for relative write targets, or undefined.
-   * @param events - the session's events in ascending seq order.
-   * @returns the verified captures (undefined when none survived, mirroring
-   *   `captured`).
-   */
+  /** Recompute a legacy log's captures without retaining a second in-memory registry. */
   async replaySnapshot(cwd: string | undefined, events: readonly SessionEvent[]): Promise<ReadonlyMap<string, CapturedWrite> | undefined> {
     const pending = new Map<string, PendingWrite>()
     const captured = new Map<string, CapturedWrite>()
@@ -369,19 +358,10 @@ export class BashWriteCollector {
         const write = pending.get(callId)
         if (write === undefined) continue
         pending.delete(callId)
-        // Awaited in event order so the capture map's contents and insertion
-        // order are the deterministic twin of the live feed's.
         await this.#verifyInto(captured, write)
       }
     }
     return captured.size === 0 ? undefined : captured
-  }
-
-  /** Rebuild one session's registry from its own history (host restart). */
-  #replay(session: Session): void {
-    this.#pending.set(session.id, new Map())
-    this.#captured.set(session.id, new Map())
-    for (const event of session.snapshotEvents()) this.#onEvent(session, event)
   }
 
   #onEvent(session: Session, event: SessionEvent): Promise<void> | void {
@@ -414,11 +394,28 @@ export class BashWriteCollector {
     }
   }
 
-  /** stat-verify the pending candidates and store the survivors. */
   async #verify(session: Session, pending: PendingWrite): Promise<void> {
-    const captured = this.#captured.get(session.id) ?? new Map<string, CapturedWrite>()
-    await this.#verifyInto(captured, pending)
-    if (captured.size > 0) this.#captured.set(session.id, captured)
+    const captured = new Map(readBashWrites(session.snapshotEvents(), this.#maxFiles))
+    for (const candidate of pending.candidates) {
+      if (captured.size >= this.#maxFiles || captured.has(candidate)) continue
+      let ok = false
+      try {
+        const target = await this.#fs.resolve(candidate)
+        const info = await this.#fs.stat(target)
+        ok = info?.type === 'file'
+      } catch {
+        ok = false
+      }
+      if (!ok) continue
+      try {
+        appendPluginRecord(session, BASH_WRITE_RECORD, {
+          version: 1, path: candidate, turn: pending.turn, step: pending.step, seq: pending.seq,
+        })
+        captured.set(candidate, { turn: pending.turn, step: pending.step, seq: pending.seq })
+      } catch {
+        // A rejected record leaves the legacy read path available; it never changes the tool result.
+      }
+    }
   }
 
   /** stat-verify the pending candidates into the given capture map. */

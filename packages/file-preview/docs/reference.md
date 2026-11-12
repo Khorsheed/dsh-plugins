@@ -81,11 +81,10 @@ const surface = createFilePreviewReadSurface({
 
 | Host 行 | 结论 |
 | --- | --- |
-| deepseek-harness master（`0.2.1-rc.1`） | ✅ 完整——host-021 波对 0.2.1-rc.1 树全量 build+test 绿，无其它表面变化；与 0.1.5 同一形态：自建产物页 extension 档认领可渲染地址（rc.1 的 tab-registry 保留 band 机制）；turnTail list 槽臂附带官方 deliverables 遮蔽 |
-| npm release（`>= 0.1.5-rc.1`） | ✅ 完整（`verifiedHost: 0.1.5-rc.1`）——同一形态；turnTail 为 chain 槽时按探测回落 select + priority -1 抢占臂；0.1.5-rc.1 的 PTC 更名已适配（只匹配 `tool/ptc-dispatch`；旧日志由官方 v2→v3 迁移改写到新名） |
-| npm release（`<= 0.1.4.x`） | ❌ 不可用——右栏 tab 体系（`ctx.sidebarRightTabs` / `openResource`）随 0.1.5 落地；旧宿主请停留在旧发布线 |
+| deepseek-harness master（`0.2.2-rc.2`） | ✅ 完整——bash 写入事实改用 `plugin:file-preview/bash-write`；真实 V4 工具生命周期与 JSONL 重启通过；list 与 turnFiles 读取记录，旧日志提供只读回放 |
+| npm release（`>= 0.2.2-rc.2`） | ✅ 完整（`verifiedHost: 0.2.2-rc.2`）——同一持久形态；旧宿主请停留在上一发布线 |
 
-**版本线对照**：0.3.0 起要求宿主 `0.1.5-rc.1` 及以后；宿主 `0.1.2-rc.1` ~ `0.1.4.x` 的用户请停留在 0.2.x 发布线，宿主 `0.1.0-rc.6` ~ `0.1.1-rc.2` 的用户请停留在 0.1.x 发布线（末版 `0.1.1`）。minHost 不动：包内没有 rc.1 专有 API（turnTail 的 list/chain 双臂本就有 0.1.5 回退）。
+**版本线对照**：当前 0.4.x 线要求宿主 `0.2.2-rc.2`，因为已验证的 bash 写入事实使用 `appendPluginRecord`。旧版本对应的宿主地板仍按原说明，不要把新的宿主半与旧 Session 持久化实现混用。
 
 ## 已知限制
 
@@ -109,7 +108,7 @@ const surface = createFilePreviewReadSurface({
 - `openExternal(agent, path, app, signal)`——在指定宿主应用中打开文件（「在 IDE 打开」手势）：官方 open-in-app 路由只收目录，文件级打开走这里——macOS `open -a <App> <path>`，同样无 shell。`app` 是官方 open-in-app catalog id（客户端经 `/open-in-app/apps` 探测）；id → `.app` 名映射在 `open-external.ts`（镜像官方 catalog 的 darwin 条目）。非 macOS 或未知 id 返回 `{ opened: false, reason }`，客户端据此隐藏手势。不写入任何东西。
 - `turnFiles(agent)`——每个回合的文件变更，回合卡片与 `list` 同源但**不**去重：同一文件在两个回合改过，两个分组都有它——每张卡片精确列出该回合改了什么。行数增减由 `tool/result` 与 PTC dispatch 的 diff 求和；官方 create 以 `operation: 'create'` + 空 diff 表示，按参数里的完整写入内容计 added、removed=0，空 update 不贡献计数；没有 meta 的旧派发继续按不可计数处理，不把部分求和冒充完整结果。折叠按会话缓存、由日志水位线失效，响应携带水位线供客户端自缓存。与 `list` 一样，返回前按会话 cwd 校验存在性，只保留当前仍存在的文件（被清理的临时脚本不占卡片）。
 
-bash 写入采集器：监听每个会话的 bash `tool/call`/`tool/result` 配对，提取高精度写入目标（`cat > path` heredoc、单 `>` 重定向、`tee` 非追加、`sed -i`），按宿主环境与会话 cwd 展开 `$VAR`/`~`/相对路径，只记录 `fs.stat` 确认为文件的路径（宁缺毋滥）。采集结果存于按会话的内存登记表，`session/created` 时重放会话自身历史重建——宿主重启后不丢；会话日志本身绝不被改动（官方 `Session.append` 无法给插件事件标 `ignorable`——见 `docs/upstream-seam-registry.md` 的 S2 条目）。bash 采集的文件没有 diff 历史；预览与普通条目一样通过 `read` 读当前内容。
+bash 写入采集器：监听每个会话的 bash `tool/call`/`tool/result` 配对，提取高精度写入目标（`cat > path` heredoc、单 `>` 重定向、`tee` 非追加、`sed -i`），按宿主环境与会话 cwd 展开 `$VAR`/`~`/相对路径，只记录 `fs.stat` 确认为文件的路径（宁缺毋滥）。每个已验证事实都写成版本化 `plugin:file-preview/bash-write`，包含路径、turn、step 和源调用 seq；list 与 turnFiles 直接读取这些持久记录。无记录的旧日志只在读取时回放，不再保留内存事实表，也不依赖 `session/created` 重建。bash 采集的文件没有 diff 历史；预览与普通条目一样通过 `read` 读当前内容。
 
 浏览器半（`src/client/`）：
 
@@ -126,7 +125,7 @@ bash 写入采集器：监听每个会话的 bash `tool/call`/`tool/result` 配�
 
 0.1.5-rc.1 迁移退役了四处绕行（上游缝 S1 已落地）：`conversation.view` 的「产物」tab、`shell.overlay` 预览抽屉、正文 mention 的捕获阶段 DOM 拦截、turnTail 的 `priority: -1` 抢占——产物行 / 正文 mention / 工具结果行的打开入口官方已统一收敛到 `ctx.sidebarRight.openResource()`。方案 B（2026-09-24 落地、同日被仓主否决回退）：内容面注册进官方 `documentPreviews` 面做官方 document tab 默认渲染器 + 二期 headless 嵌入——接缝成本（renderer loading 协议、extension 档接管语义、headless 布局耦合）与 UX 妥协（改动记录塞进渲染器下拉、复制钮浮动压搜索行）不成立，自绘产物页（地址认领形态）双线恢复；turnTail 遮蔽不在否决范围，保留。
 
-信任与状态：受信任的只读能力——能读取 `ctx.fs` 允许会话访问的一切，组合它即授予对会话文件系统视图的预览权限；它不是安全边界。不产生会话事件；仅有的按会话状态是回合折叠缓存与 bash 采集器的已验证写入登记表。
+信任与状态：受信任的只读能力——能读取 `ctx.fs` 允许会话访问的一切，组合它即授予对会话文件系统视图的预览权限；它不是安全边界。会话日志只追加已验证的 `plugin:file-preview/bash-write` 事实，不进入模型 surface。进程内只保留待验证命令候选与回合折叠缓存；已验证事实住在会话日志，不另存第二份登记表。
 
 </details>
 

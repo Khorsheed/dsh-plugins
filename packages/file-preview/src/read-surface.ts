@@ -536,8 +536,8 @@ export interface FilePreviewReadSurface {
  * Build a read-only file-preview surface over an externally-authorized
  * session source. The surface runs the same core functions the Remote methods
  * run, so for the same session its answers are byte-identical to the Remote
- * face's — the bash-write merge included, rebuilt from the same events
- * through the same collector pipeline. The factory itself holds no state: the
+ * face's — the bash-write merge included, folded from the same events and
+ * durable plugin records through the same collector pipeline. The factory itself holds no state: the
  * caches live in the returned instance and die with {@link FilePreviewReadSurface.dispose}.
  * @param source - the caller-authorized events, anchor, fs face, and issuer.
  * @returns the read surface.

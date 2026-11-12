@@ -22,10 +22,10 @@
 ### S2. bash/子进程写入的文件不进任何日志结构
 
 - **需求**：bash 工具（cat heredoc、sed -i、python 脚本）写入的文件出现在产物视图。实测：whalesong 游戏会话十几个 HTML 产物几乎全走 bash,fold 完全不可见。
-- **现状绕行**："B 通道 + A 采集"——宿主侧采集器监听 `session/event`，从 `tool/call`（bash）命令里提取高精度写入候选（`cat > path` heredoc、单 `>` 重定向、`tee` 非追加、`sed -i`；`cp`/`mv`/`python open` 暂缓），`$VAR`/`~`/相对路径按宿主 env + 会话 cwd 展开，`tool/result` 落定后 `fs.stat` 验证（宁缺毋滥），存入按会话的内存登记表；`list` 把登记表并入 fold 结果；`session/created` 重放会话历史重建登记表（宿主重启不丢）。普通 `Session.append` 仍不能自定义 `ignorable` 信封，但官方 `appendPluginRecord()` 已提供版本化 `plugin:*` + `ignorable: true` 的独立通道，读回保留且跳过、不进模型 surface；消费端尚未迁移，当前线上仍是内存表。
-- **官方通道（0.2.2-rc.2 实测）**：真实 JSONL 写入并读回插件记录成功。它解除的是旧「自定义事件无法安全持久化」限制，不是 bash 自动报告写入路径；采集器仍需要。
-- **退役条件**：官方 bash 工具在结果 meta 带写入路径（首选）；或执行层落文件写入事件（根治）；或 file-preview 把已验证的采集事实迁到插件记录后，删除内存重建，fold 改读持久记录。
-- **状态**：绕行中（采集器已实施，@khorsheed/dsh-file-preview 宿主半；持久化迁移列入第二轮 P0.2，见 `proposals/active/2026-11-12-host-022-rc2-official-capabilities.md`）。
+- **现状绕行**："B 通道 + A 采集"——宿主侧采集器监听 `session/event`，从 `tool/call`（bash）命令里提取高精度写入候选（`cat > path` heredoc、单 `>` 重定向、`tee` 非追加、`sed -i`；`cp`/`mv`/`python open` 暂缓），`$VAR`/`~`/相对路径按宿主 env + 会话 cwd 展开，`tool/result` 落定后 `fs.stat` 验证（宁缺毋滥），把确认事实写为版本化 `plugin:file-preview/bash-write`。list 与 turn fold 直接读取这些持久记录；没有记录的旧日志只在读取时回放，不再于 `session/created` 重建内存登记表。
+- **官方通道（0.2.2-rc.2 实测）**：真实 V4 工具生命周期与 JSONL 重启读回通过。它解除的是旧「自定义事件无法安全持久化」限制，不是 bash 自动报告写入路径；采集器仍需要。
+- **退役条件**：官方 bash 工具在结果 meta 带写入路径（首选）；或执行层落文件写入事件（根治）。届时采集器整体退役，fold 改读官方数据；当前仅内存事实表已退役。
+- **状态**：持久化迁移已实施（@khorsheed/dsh-file-preview，2026-11-12；真实 JSONL、list、turnFiles 与旧日志回放验收通过）。官方 bash 尚未自动上报路径，采集器仍保留。
 
 ### S3. Code Mode 嵌套派发无 diff 数据
 

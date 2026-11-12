@@ -241,7 +241,7 @@ export class FilePreviewService extends TypertRemoteService {
       // the cwd inside the existence probe, which an empty fold never reached.
       { fs: this.fs, cwd: session.header?.cwd, maxFiles: this.resolved.maxFiles, parsePatch: await this.patchParser },
       session.snapshotEvents(),
-      this.collector?.captured(sessionId),
+      await this.collector?.captured(session),
     )
   }
 
@@ -277,7 +277,7 @@ export class FilePreviewService extends TypertRemoteService {
       { fs: this.fs, cwd: session.header?.cwd, maxFiles: this.resolved.maxFiles },
       asOfSeq,
       byTurn,
-      this.collector?.captured(session.id),
+      await this.collector?.captured(session),
     )
   }
 

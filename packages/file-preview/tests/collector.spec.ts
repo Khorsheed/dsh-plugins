@@ -7,9 +7,15 @@ import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { BashWriteCollector } from '../src/bash-writes.ts'
 import { FilePreviewService } from '@khorsheed/dsh-file-preview'
 
-/** A minimal session double carrying only the fields the collector reads. */
+/** A session double whose published events remain visible in its log. */
 function fakeSession(id: string, cwd: string | undefined, events: readonly SessionEvent[] = []): Session {
-  return { id, header: { cwd }, snapshotEvents: () => events } as unknown as Session
+  const history = [...events]
+  return { id, header: { cwd }, snapshotEvents: () => history } as unknown as Session
+}
+
+function recordSessionEvent(ctx: Context, session: Session, event: SessionEvent): void {
+  session.snapshotEvents().push(event)
+  ctx.emit('session/event', session, event)
 }
 
 function toolCall(callId: string, command: string, seq: number, turn = 1, step = 1): SessionEvent {
@@ -26,7 +32,7 @@ function toolResult(callId: string, seq: number): SessionEvent {
     type: 'tool/result',
     seq,
     time: 0,
-    data: { turn: 1, step: 1, message: { source: { kind: 'tool', callId } } },
+    data: { turn: 1, step: 1, message: { source: { kind: 'tool', callId }, content: [] } },
   } as unknown as SessionEvent
 }
 
@@ -51,10 +57,10 @@ describe('BashWriteCollector', () => {
     const collector = new BashWriteCollector({ fs: makeFs(['/tmp/x.html']), env: {}, home: '/h' })
     collector.attach(ctx)
     const session = fakeSession('s1', '/work')
-    ctx.emit('session/event', session, toolCall('c1', 'cat > /tmp/x.html <<\'EOF\'\nhi\nEOF\n', 1))
-    ctx.emit('session/event', session, toolResult('c1', 2))
+    recordSessionEvent(ctx, session, toolCall('c1', 'cat > /tmp/x.html <<\'EOF\'\nhi\nEOF\n', 1))
+    recordSessionEvent(ctx, session, toolResult('c1', 2))
     await flush()
-    const captured = collector.captured('s1')
+    const captured = await collector.captured(session)
     expect(captured?.get('/tmp/x.html')).toEqual({ turn: 1, step: 1, seq: 1 })
   })
 
@@ -64,10 +70,10 @@ describe('BashWriteCollector', () => {
     const collector = new BashWriteCollector({ fs: makeFs([]), env: {}, home: '/h' })
     collector.attach(ctx)
     const session = fakeSession('s1', '/work')
-    ctx.emit('session/event', session, toolCall('c1', 'echo hi > /tmp/gone.html', 1))
-    ctx.emit('session/event', session, toolResult('c1', 2))
+    recordSessionEvent(ctx, session, toolCall('c1', 'echo hi > /tmp/gone.html', 1))
+    recordSessionEvent(ctx, session, toolResult('c1', 2))
     await flush()
-    expect(collector.captured('s1')?.size).toBeUndefined()
+    expect((await collector.captured(session))?.size).toBeUndefined()
   })
 
   it('ignores non-bash calls', async () => {
@@ -80,13 +86,13 @@ describe('BashWriteCollector', () => {
       type: 'tool/call', seq: 1, time: 0,
       data: { turn: 1, step: 1, callId: 'w1', name: 'write', arguments: JSON.stringify({ file_path: '/work/a.md', content: 'x' }) },
     } as unknown as SessionEvent
-    ctx.emit('session/event', session, write)
-    ctx.emit('session/event', session, toolResult('w1', 2))
+    recordSessionEvent(ctx, session, write)
+    recordSessionEvent(ctx, session, toolResult('w1', 2))
     await flush()
-    expect(collector.captured('s1')).toBeUndefined()
+    expect(await collector.captured(session)).toBeUndefined()
   })
 
-  it('replays the session history on session/created (host restart recovery)', async () => {
+  it('replays legacy history on demand without a session/created registry rebuild', async () => {
     const ctx = new Context()
     provideAttachedSessions(ctx)
     const collector = new BashWriteCollector({ fs: makeFs(['/tmp/x.html']), env: {}, home: '/h' })
@@ -97,20 +103,21 @@ describe('BashWriteCollector', () => {
     ])
     ctx.emit('session/created', session)
     await flush()
-    expect(collector.captured('s1')?.get('/tmp/x.html')).toEqual({ turn: 1, step: 1, seq: 1 })
+    expect((await collector.captured(session))?.get('/tmp/x.html')).toEqual({ turn: 1, step: 1, seq: 1 })
   })
 
   it('disposes its listeners', async () => {
     const ctx = new Context()
     provideAttachedSessions(ctx)
-    const collector = new BashWriteCollector({ fs: makeFs(['/tmp/x.html']), env: {}, home: '/h' })
+    const backend = makeFs(['/tmp/x.html'])
+    const collector = new BashWriteCollector({ fs: backend, env: {}, home: '/h' })
     const dispose = collector.attach(ctx)
     const session = fakeSession('s1', '/work')
     dispose()
-    ctx.emit('session/event', session, toolCall('c1', 'cat > /tmp/x.html', 1))
-    ctx.emit('session/event', session, toolResult('c1', 2))
+    recordSessionEvent(ctx, session, toolCall('c1', 'cat > /tmp/x.html', 1))
+    recordSessionEvent(ctx, session, toolResult('c1', 2))
     await flush()
-    expect(collector.captured('s1')).toBeUndefined()
+    expect(backend.stat).not.toHaveBeenCalled()
   })
 })
 
@@ -121,8 +128,8 @@ describe('FilePreviewService.list with the collector', () => {
     Object.assign(ctx, { fs: makeFs(['/tmp/whale.html']) })
     const service = new FilePreviewService(ctx)
     const session = fakeSession('s1', '/work')
-    ctx.emit('session/event', session, toolCall('c1', 'cat > /tmp/whale.html', 1))
-    ctx.emit('session/event', session, toolResult('c1', 2))
+    recordSessionEvent(ctx, session, toolCall('c1', 'cat > /tmp/whale.html', 1))
+    recordSessionEvent(ctx, session, toolResult('c1', 2))
     await flush()
     const list = await service.list(attach(session))
     expect(list.entries.map(entry => entry.path)).toContain('/tmp/whale.html')
@@ -136,8 +143,8 @@ describe('FilePreviewService.list with the collector', () => {
     Object.assign(ctx, { fs: makeFs(['/tmp/whale.html']) })
     const service = new FilePreviewService(ctx, { captureBashWrites: false })
     const session = fakeSession('s1', '/work')
-    ctx.emit('session/event', session, toolCall('c1', 'cat > /tmp/whale.html', 1))
-    ctx.emit('session/event', session, toolResult('c1', 2))
+    recordSessionEvent(ctx, session, toolCall('c1', 'cat > /tmp/whale.html', 1))
+    recordSessionEvent(ctx, session, toolResult('c1', 2))
     await flush()
     const list = await service.list(attach(session))
     expect(list.entries).toEqual([])
@@ -196,8 +203,8 @@ describe('FilePreviewService.turnFiles', () => {
     // write/edit live in the session history (the fold's source); the bash
     // call/result flow through the event firehose to the collector.
     const session = fakeSession('s1', '/work', [write2, edit5])
-    ctx.emit('session/event', session, toolCall('b1', 'cat > /tmp/bash.html', 3, 5))
-    ctx.emit('session/event', session, toolResult('b1', 4))
+    recordSessionEvent(ctx, session, toolCall('b1', 'cat > /tmp/bash.html', 3, 5))
+    recordSessionEvent(ctx, session, toolResult('b1', 4))
     await flush()
     const map = await service.turnFiles(attach(session))
     const turn2 = map.turns.find(group => group.turn === 2)

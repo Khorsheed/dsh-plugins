@@ -11,6 +11,7 @@ After a long stretch of agent work, finding out which files it touched and what 
 ## What it does
 
 - **Every file it touched, on one page**: click "Session products" in the right sidebar's guide page; the files this session touched are listed by latest activity and searchable — files the agent wrote from the command line count too.
+- **Bash-written files survive a restart**: verified command-line writes are recorded in the session history, so the products view can restore them after the host restarts.
 - **Opens in a readable form**: Markdown shows as a document, JSON as a foldable tree, CSV as a table, code with highlighting, images as images — local images and links inside a document show and open too; a web page with scripts asks first, then runs them in an isolated sandbox.
 - **Step back through every change**: switch to "Changes" and page back through each write and edit the agent made to the file.
 - **A small card after every turn**: each turn in the conversation ends with an "N products" card listing the files it changed and the lines added and removed; click to open one.
@@ -40,7 +41,7 @@ It also comes with 基础体验 (the basic suite, `@khorsheed/dsh-basic`). Once 
 
 ## Compatibility
 
-Requires DSH 0.1.5 or later; verified on 0.2.1.
+Requires DSH 0.2.2-rc.2 or later; verified on 0.2.2-rc.2.
 
 ## For developers
 
