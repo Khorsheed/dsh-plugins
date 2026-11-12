@@ -12,6 +12,7 @@
 export const FAMILY_MEMBERS = [
   '@khorsheed/dsh-client-message-tools',
   '@khorsheed/dsh-message-timeline',
+  '@khorsheed/dsh-client-session-title-edit',
   '@khorsheed/dsh-quote',
   '@khorsheed/dsh-inline-html-render',
   '@khorsheed/dsh-context-guard',

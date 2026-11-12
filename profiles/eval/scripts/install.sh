@@ -109,7 +109,7 @@ UNPUBLISHED_DIRS="local-agent local-agent-dsh-headless \
 local-agent-kimi local-agent-codex local-agent-claude-code local-agent-dsh \
 capability-catalog datasets eval inline-html-render lab local-files mission \
 ankh-guard context-guard file-preview message-timeline message-tools taskpilot \
-whalesong \
+session-title-edit whalesong \
 bundle-eval"
 
 SOURCE=""

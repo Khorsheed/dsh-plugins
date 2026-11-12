@@ -1,5 +1,5 @@
 # @khorsheed/dsh-basic bundle patch: the everyday-experience family as one
-# bundle card — the eleven member rows, re-mounted VERBATIM from each member
+# bundle card — the twelve member rows, re-mounted VERBATIM from each member
 # package's own cordis.patch.yml (the canonical rows; check-plugin-independence's
 # `family` sanction pins this file to exactly that union — no invented ids, no
 # foreign rows).
@@ -18,6 +18,10 @@
     # 消息时间轴: jump back to any of your messages.
     - id: message-timeline
       name: '@khorsheed/dsh-message-timeline'
+
+    # 标题编辑: rename the current session from the chat header.
+    - id: session-title-edit
+      name: '@khorsheed/dsh-client-session-title-edit'
 
     # 引用: selected-text quote/copy action menu.
     - id: quote

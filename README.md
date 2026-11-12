@@ -47,6 +47,7 @@
 | --- | --- | --- | --- | --- |
 | [`message-tools`](packages/client-message-tools) | 用户消息**原位编辑 / 真撤回 / 恢复重放**——全家桶里唯一改变模型所见的插件,用的是与官方 compaction 同一套机制 | `@khorsheed/dsh-client-message-tools` | ≥ 0.1.5-rc.1 | basic |
 | [`message-timeline`](packages/message-timeline) | 会话左缘悬浮**历史消息时间轴**,点击跳转任意用户消息 | `@khorsheed/dsh-message-timeline` | ≥ 0.1.2-rc.1 | basic |
+| [`session-title-edit`](packages/client-session-title-edit) | 聊天区标题**内联重命名**,用户改过的标题不再被自动生成覆盖 | `@khorsheed/dsh-client-session-title-edit` | ≥ 0.1.2-rc.1 | basic |
 | [`quote`](packages/quote) | 选中任意文本浮出**引用动作菜单**(引用进 composer / 复制),其他插件可注册自己的动作 | `@khorsheed/dsh-quote` | ≥ 0.1.5-rc.1 | basic |
 
 ### 文件与产物

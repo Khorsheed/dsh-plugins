@@ -1,0 +1,138 @@
+.renameButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Sits right off the title text: the negative margin closes the official
+     titleCluster gap (10px) and part of the actions-row gap, leaving a ~2px
+     title-to-icon gutter. */
+  width: 22px;
+  height: 22px;
+  margin-left: -12px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.renameButton:hover,
+.renameButton:focus-visible {
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.editorInput {
+  box-sizing: border-box;
+  width: 220px;
+  height: 28px;
+  padding: 3px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.editorInput:focus {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.editorInput:disabled {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+.editorError {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* Over-limit length hint inside the row editor (same size, warning-tinted). */
+.editorHint {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+/* In-place overlay: the input sits on the hidden crumb's rect, so the title
+   itself reads as an editable field (viewport-fixed; the official header
+   exposes no title seat — see the component's deprecation TODO). Its width is
+   fitted to the draft between the crumb's original width and the 220px cap
+   (mirror span below); left/top/height come from the measured crumb rect. */
+.inPlaceInput {
+  position: fixed;
+  box-sizing: border-box;
+  z-index: 40;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.inPlaceInput:focus {
+  border-color: var(--dsw-alias-brand-primary);
+  background: var(--dsw-alias-bg-base);
+}
+
+.inPlaceInput:disabled {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+/* Hidden width-measuring mirror of the draft, rendered at the same font as
+   the in-place input so its width tracks the text exactly (an input's own
+   scrollWidth cannot shrink once content fits). Off-screen and invisible:
+   it never paints, intercepts pointers, or scrolls an ancestor. */
+.inPlaceMirror {
+  position: absolute;
+  left: -9999px;
+  top: -9999px;
+  visibility: hidden;
+  white-space: pre;
+  pointer-events: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.inPlaceError {
+  /* In-flow in the actions row (the overlay input is fixed, so this is the
+     row's only content): never fixed-positioned, so it cannot overlap the
+     title area or the chat below the header. */
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* Over-limit length hint, laid out like the in-place error: in-flow in the
+   actions row, warning-tinted. */
+.inPlaceHint {
+  margin-left: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+/* Hide the official current-title node while the in-place editor is open (DOM
+   layer: attribute set by the entry, removed on close). The selector is
+   element-agnostic on purpose — up to host 0.1.6 that node is a disabled
+   `button`, from 0.1.7-alpha.1 a plain `span.crumbCurrent`. visibility keeps
+   its layout box so the rect stays measurable for the overlay and for resize
+   re-measurement, and so the surrounding actions row never shifts. */
+header nav [data-ste-inplace] {
+  visibility: hidden !important;
+}

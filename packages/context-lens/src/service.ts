@@ -689,19 +689,25 @@ export class InspectorService {
     await this.listTurns(sessionId, filter)
     const trend = this.store.getSessionTrend(sessionId, filter)
     if (filter !== undefined) return trend
-    const registry = this.ctx.get('sessionProjections') as {
-      snapshot(session: Session, keys: readonly string[]): { values: { sessionStats?: SessionStatsProjection; tokenUsage?: TokenUsageProjection } }
-    } | undefined
-    const session = this.ctx.sessions.get(sessionId as SessionId)
-    if (registry === undefined || session === undefined) return trend
-    const values = registry.snapshot(session, ['sessionStats', 'tokenUsage']).values
-    if (values.sessionStats === undefined && values.tokenUsage === undefined) return trend
-    return {
-      ...trend,
-      official: {
-        ...values.sessionStats === undefined ? {} : { session: values.sessionStats },
-        ...values.tokenUsage === undefined ? {} : { tokenUsage: values.tokenUsage },
-      },
+    try {
+      const registry = this.ctx.get('sessionProjections') as {
+        snapshot(session: Session, keys: readonly string[]): { values: { sessionStats?: SessionStatsProjection; tokenUsage?: TokenUsageProjection } }
+      } | undefined
+      const agents = this.ctx.get('agents') as { get(id: SessionId): { session: Session } | undefined } | undefined
+      const session = this.ctx.get('sessions')?.get(sessionId as SessionId) ?? agents?.get(sessionId as SessionId)?.session
+      if (registry === undefined || session === undefined) return trend
+      const values = registry.snapshot(session, ['sessionStats', 'tokenUsage']).values
+      if (values.sessionStats === undefined && values.tokenUsage === undefined) return trend
+      return {
+        ...trend,
+        official: {
+          ...values.sessionStats === undefined ? {} : { session: values.sessionStats },
+          ...values.tokenUsage === undefined ? {} : { tokenUsage: values.tokenUsage },
+        },
+      }
+    } catch (error) {
+      this.logWarn(`context-lens: native whole-log totals unavailable; keeping the request trend (${error instanceof Error ? error.message : String(error)})`)
+      return trend
     }
   }
 

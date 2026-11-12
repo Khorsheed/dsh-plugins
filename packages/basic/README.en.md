@@ -14,7 +14,7 @@ In DSH, open Plugins → Add plugin, enter this package name, and press Install:
 @khorsheed/dsh-basic
 ```
 
-That installs all 11 members below; restart DSH and they're ready. Every member can still be switched on or off on the Plugins page, and you can install any single one on its own — just enter its package name in the same dialog.
+That installs all 12 members below; restart DSH and they're ready. Every member can still be switched on or off on the Plugins page, and you can install any single one on its own — just enter its package name in the same dialog.
 
 ## The dsh-basic suite — plugin list
 
@@ -22,6 +22,7 @@ That installs all 11 members below; restart DSH and they're ready. Every member 
 |---|---|---|
 | message-tools | `@khorsheed/dsh-client-message-tools` | Edit, withdraw, and restore messages you already sent |
 | message-timeline | `@khorsheed/dsh-message-timeline` | A quiet timeline on the chat's left edge — hover to expand, click to jump |
+| session-title-edit | `@khorsheed/dsh-client-session-title-edit` | Rename sessions inline in the chat header |
 | quote | `@khorsheed/dsh-quote` | Select any text for a floating quote menu: into the composer / copy |
 | file-preview | `@khorsheed/dsh-file-preview` | The Produced tab plus its host service in one package: preview every file the session touched, no IDE needed |
 | local-files | `@khorsheed/dsh-local-files` | A local file browser in the right sidebar: lazy file tree + structured preview, any directory within reach |
@@ -35,8 +36,6 @@ That installs all 11 members below; restart DSH and they're ready. Every member 
 The restart guard (ankh-guard) and the context lens (context-lens) are developer tools; since 2026-10-24 they ship in the [Dev Suite](https://github.com/Khorsheed/dsh-dev).
 
 ## The tour
-
-Use the host's built-in rename action in the session list menu, or double-click a session title. The official dialog validates blank names, supports cancellation and refreshes the title after saving.
 
 ### message-tools — edit, withdraw, restore
 
@@ -67,6 +66,19 @@ The official timeline gets costly to navigate in long sessions; I personally pre
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline1.png" width="640" alt="message-timeline: expanded on hover">
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/message-timeline2.png" width="640" alt="message-timeline: at rest, a thin rail">
+
+</details>
+
+### session-title-edit — rename inline
+
+Click the pencil beside the title in the chat header and the title itself becomes an input — Enter saves, Escape cancels. A user-set title is pinned and never overwritten by auto-generation. Rides the official rename channel; the model never notices.
+
+<details open>
+<summary>Screenshots (2)</summary>
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit1.png" width="640" alt="session-title-edit: the inline edit entry">
+
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/session-title-edit2.png" width="640" alt="session-title-edit: type and hit Enter">
 
 </details>
 
@@ -211,7 +223,7 @@ The essentials are the layer everyone wants; add a suite for the scene you work 
 
 ## Compatibility
 
-Needs DSH 0.1.5 or later; verified on 0.2.2-rc.2. Session renaming uses the host's built-in entry points.
+Needs DSH 0.1.5 or later; verified on 0.2.1.
 
 ## Changelog
 

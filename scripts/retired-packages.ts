@@ -25,11 +25,6 @@ export interface RetiredPackage {
 
 export const RETIRED_PACKAGES: readonly RetiredPackage[] = [
   {
-    name: '@khorsheed/dsh-client-session-title-edit',
-    replacement: "the host's built-in Session menus, title double-click, and shared session.rename dialog (>= 0.2.2-rc.2)",
-    note: 'retired after real rc.2 browser acceptance of the official rename flow; no new package is published for this name',
-  },
-  {
     name: '@khorsheed/dsh-worktrees-tool',
     replacement: "@khorsheed/dsh-worktrees' ./tool composition entry (>= 0.3.0; preset row id `worktrees-tool` is unchanged)",
     note: 'folded back into the core package at 0.3.0; the npm name is deprecated',

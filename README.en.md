@@ -47,6 +47,7 @@ Each package's details, configuration and screenshots live in its own directory 
 | --- | --- | --- | --- | --- |
 | [`message-tools`](packages/client-message-tools) | **In-place edit / true withdraw / restore-replay** for user messages — the only plugin here that changes what the model sees, riding the same mechanism as the official compaction | `@khorsheed/dsh-client-message-tools` | ≥ 0.1.5-rc.1 | basic |
 | [`message-timeline`](packages/message-timeline) | A floating **history timeline** on the chat's left edge — click to jump to any user message | `@khorsheed/dsh-message-timeline` | ≥ 0.1.2-rc.1 | basic |
+| [`session-title-edit`](packages/client-session-title-edit) | **Inline session-title renaming**; a user-set title is never overwritten by auto-generation | `@khorsheed/dsh-client-session-title-edit` | ≥ 0.1.2-rc.1 | basic |
 | [`quote`](packages/quote) | Select any text for a floating **quote action menu** (quote into the composer / copy); other plugins can register their own actions | `@khorsheed/dsh-quote` | ≥ 0.1.5-rc.1 | basic |
 
 ### Files and artifacts

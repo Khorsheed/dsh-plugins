@@ -10,7 +10,7 @@ The rc.2 host has native whole-log projections, background Jobs, and Team task b
 
 ## Decision
 
-Context Lens reads `sessionStats` and `tokenUsage` through the real projection registry and adds a separate whole-log totals line to the existing request trend. It covers native turns, steps, disjoint input/output token buckets and model/tool wall time. Filtered scope views do not inherit a global total, and a missing Session or projection omits the line. Per-request composition, cache breakpoints, external CLI records, Room attribution and `meta.localAgentTiming` stay unchanged.
+Context Lens reads `sessionStats` and `tokenUsage` through the real projection registry and adds a separate whole-log totals line to the existing request trend. It covers native turns, steps, disjoint input/output token buckets and model/tool wall time. Filtered scope views do not inherit a global total, and a missing Session or projection omits the line. Session lookup uses optional `ctx.get` probes, with the Agent registry as a fallback; a native-projection failure logs a warning and returns the original trend rather than suppressing it. Per-request composition, cache breakpoints, external CLI records, Room attribution and `meta.localAgentTiming` stay unchanged.
 
 TaskPilot already consumes the official job-controller roster through `JobsChannel` and stops Jobs through `ctx.jobs.kill`. No Goal or Schedule model is imposed on external CLI or Room execution records, and no duplicate job source is added.
 
@@ -28,7 +28,7 @@ Room keeps its external CLI providers, cross-room help, reporting gate, coordina
 
 ## Consequences
 
-The added statistics are native facts, never a sum over a loaded window. The integration changes no existing capture or collaboration lifecycle and does not claim that Team subsumes Room. Real `SessionStats`/`TokenMeter` events drive the acceptance test, including the filtered-scope absence case.
+The added statistics are native facts, never a sum over a loaded window. The integration changes no existing capture or collaboration lifecycle and does not claim that Team subsumes Room. Real `SessionStats`/`TokenMeter` events drive the acceptance test, including the filtered-scope absence case. A real rc.2 Loader/Remote/Chromium regression now proves that request bars remain visible beside the native totals; it reproduced `cannot get property "sessions" without inject` before the optional lookup fix. Separate fallback tests cover missing services and a failed projection without losing the original trend.
 
 ## Related
 

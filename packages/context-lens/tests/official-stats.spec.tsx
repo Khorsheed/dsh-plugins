@@ -63,4 +63,20 @@ describe('official whole-log statistics', () => {
     expect(note).toContain('trend.officialTotals')
     for (const value of ['8', '13', '125', '50', '1.2', '0.3']) expect(note).toContain(value)
   })
+
+  it('keeps the original trend when optional host services or projections are unavailable', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    const service = new InspectorService(ctx)
+    expect((await service.getSessionTrend('without-sessions')).official).toBeUndefined()
+    await ctx.plugin(SessionStore)
+    const warnings: string[] = []
+    const degraded = new InspectorService(ctx, {}, { logger: { warn: message => { warnings.push(message) } } })
+    const session = ctx.sessions.create(SessionId('projection-failure'))
+    ctx.provide('sessionProjections', { snapshot: () => { throw new Error('projection unavailable') } })
+    expect((await degraded.getSessionTrend(session.id)).official).toBeUndefined()
+    expect(warnings.filter(message => message.includes('keeping the request trend'))).toHaveLength(1)
+    service.dispose()
+    degraded.dispose()
+  })
 })
