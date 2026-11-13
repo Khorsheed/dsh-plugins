@@ -1,4 +1,6 @@
 import { join } from 'node:path'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import {
   checkCollections, compareVersions, installCommand, intersectRanges, loadCollections, packBlock, rootBlock,
@@ -70,5 +72,32 @@ describe('real tree', () => {
 
   it('has no findings (names resolve, host ranges intersect, READMEs current)', () => {
     expect(checkCollections(repoRoot)).toEqual([])
+  })
+})
+
+describe('optional mode-suite guide blocks', () => {
+  it('allows their absence without recreating them, while keeping the root collection required', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-collections-'))
+    try {
+      const collections = [{ id: 'mode', title: { zh: '模式', en: 'Mode' }, bundles: ['@a/basic', '@a/mode'] }]
+      await mkdir(join(root, 'packages/basic'), { recursive: true })
+      await mkdir(join(root, 'packages/mode'), { recursive: true })
+      await writeFile(join(root, 'collections.json'), JSON.stringify({ collections }))
+      await writeFile(join(root, 'README.md'), rootBlock(collections, 'zh'))
+      await writeFile(join(root, 'README.en.md'), rootBlock(collections, 'en'))
+      for (const [dir, name, kind] of [['basic', '@a/basic', 'family'], ['mode', '@a/mode', 'mode']] as const) {
+        await writeFile(join(root, `packages/${dir}/package.json`), JSON.stringify({ name, engines: { dsh: '>=0.1.0 <0.3.0-0' }, dsh: { bundle: { kind } } }))
+        await writeFile(join(root, `packages/${dir}/README.md`), '')
+        await writeFile(join(root, `packages/${dir}/README.en.md`), '')
+      }
+      expect(checkCollections(root, { write: true })).toEqual([])
+      expect(await readFile(join(root, 'packages/mode/README.md'), 'utf8')).toBe('')
+      expect(await readFile(join(root, 'packages/mode/README.en.md'), 'utf8')).toBe('')
+
+      await writeFile(join(root, 'README.md'), '')
+      expect(checkCollections(root)).toEqual([expect.objectContaining({ path: 'README.md', kind: 'generated' })])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })

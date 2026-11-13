@@ -110,28 +110,3 @@ See [CHANGELOG.md](CHANGELOG.md).
 ## Developing
 
 Plugins live in [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins) (single source of truth); each member's details are in its own README under [packages/](https://github.com/Khorsheed/dsh-plugins/tree/main/packages). Issues welcome.
-
-## Install guide for agents
-
-<details>
-<summary><strong>Expand: whole-suite install + single-package CLI install</strong> (follow this when the user says "install this for me")</summary>
-
-### 1. Installing the whole suite (recommended)
-
-<!-- collection:start -->
-Recommended: install it together with the basic suite (the Gamedev collection, one command):
-
-```sh
-dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-gamedev-suite
-```
-<!-- collection:end -->
-
-Or Settings → Plugins → Add plugin, enter `@khorsheed/dsh-gamedev-suite`. Restart the web instance, then ask the user to **hard-refresh** (Cmd/Ctrl+Shift+R) — new interface code only loads on a hard refresh; a plain reload may keep serving the cached page. Then tell the user to start a new session in "游戏开发模式" (game dev mode) and present the feature list (the plugin table above).
-
-### 2. Installing a single plugin
-
-- **Dialog**: Settings → Plugins → Add plugin, enter the package name (e.g. `@khorsheed/dsh-room`), enable as prompted.
-- **CLI**: `dsh plugin --profile <profile> add <package name>`; `remove` to uninstall, `update` to upgrade.
-- The game installed on its own makes its tools available in every session; local agent delegation needs the core package plus at least one tool installed together (`add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-codex`).
-
-</details>

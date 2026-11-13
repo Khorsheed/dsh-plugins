@@ -232,23 +232,3 @@ agent 在回复里写的 ```` ```dsh-card ```` HTML 块，渲染成会话内的�
 ## 开发
 
 插件源码在 [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins)（唯一事实源）。本仓只有 profile 模板与文档，不含插件代码。欢迎 issue。
-
-## 给 Agent 的安装指南
-
-<details>
-<summary><strong>展开：套件整体安装 + 单包命令行安装</strong>（用户说"帮我装一下"时照此执行）</summary>
-
-### 一、安装套件（推荐）
-
-```sh
-dsh plugin --profile web add @khorsheed/dsh-basic
-```
-
-或者在 设置 → 插件 → 添加插件 里填 `@khorsheed/dsh-basic`。装完重启对应 web 实例，然后让用户**硬刷**页面（Cmd/Ctrl+Shift+R）——新的界面代码要强刷才会加载，普通刷新可能继续跑缓存的旧页面。最后呈上功能清单（即上文「成员插件列表」一表）。
-
-### 二、安装单个插件
-
-- **对话框**：设置 → 插件 → 添加插件，填包名（如 `@khorsheed/dsh-whalesong`），按提示启用。
-- **命令行**：`dsh plugin --profile <profile> add <包名>`；卸载 `remove`，更新 `update`。
-
-</details>

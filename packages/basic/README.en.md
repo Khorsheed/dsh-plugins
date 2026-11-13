@@ -232,23 +232,3 @@ See [CHANGELOG.md](CHANGELOG.md).
 ## Developing
 
 Plugins live in [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins) (single source of truth). This repo carries only the profile template and docs. Issues welcome.
-
-## Install guide for agents
-
-<details>
-<summary><strong>Expand: whole-suite install + single-package CLI install</strong> (follow this when the user says "install this for me")</summary>
-
-### 1. Installing the whole suite (recommended)
-
-```sh
-dsh plugin --profile web add @khorsheed/dsh-basic
-```
-
-Or Settings → Plugins → Add plugin, enter `@khorsheed/dsh-basic`. Restart the web instance, then ask the user to **hard-refresh** (Cmd/Ctrl+Shift+R) — new interface code only loads on a hard refresh; a plain reload may keep serving the cached page. Then present the feature list (the plugin table above).
-
-### 2. Installing a single plugin
-
-- **Dialog**: Settings → Plugins → Add plugin, enter the package name (e.g. `@khorsheed/dsh-whalesong`), enable as prompted.
-- **CLI**: `dsh plugin --profile <profile> add <package name>`; `remove` to uninstall, `update` to upgrade.
-
-</details>

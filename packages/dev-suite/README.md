@@ -157,30 +157,3 @@
 ## 开发
 
 插件源码在 [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins)（唯一事实源），每个成员的详细说明在它自己的 README 里：[packages/](https://github.com/Khorsheed/dsh-plugins/tree/main/packages)。本包自己不带功能，只负责把开发模式和上面这些成员一起装上。欢迎 issue。
-
-## 给 Agent 的安装指南
-
-<details>
-<summary><strong>展开：套件整体安装 + 单包命令行安装</strong>（用户说"帮我装一下"时照此执行）</summary>
-
-### 一、安装套件（推荐）
-
-<!-- collection:start -->
-推荐连同基础体验一起装(「开发」集合,一条命令):
-
-```sh
-dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite
-```
-<!-- collection:end -->
-
-或者在 设置 → 插件 → 添加插件 里填 `@khorsheed/dsh-dev-suite`。装完重启对应 web 实例，然后让用户**硬刷**页面（Cmd/Ctrl+Shift+R）——新的界面代码要强刷才会加载，普通刷新可能继续跑缓存的旧页面。最后呈上功能清单（即上文「成员插件列表」一表），并提醒用户开新会话选「开发模式」。
-
-卸载套件（`dsh plugin --profile web remove @khorsheed/dsh-dev-suite`）会把成员一起移除；只想关一个，就在套件详情页里单独关。
-
-### 二、安装单个插件
-
-- **对话框**：设置 → 插件 → 添加插件，填包名（如 `@khorsheed/dsh-worktrees`），按提示启用。
-- **命令行**：`dsh plugin --profile <profile> add <包名>`；卸载 `remove`，更新 `update`。
-- 单装某一家本机 agent（如 `@khorsheed/dsh-local-agent-codex`）时，要连同 `@khorsheed/dsh-local-agent` 一起装。
-
-</details>
