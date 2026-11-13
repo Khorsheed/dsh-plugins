@@ -545,7 +545,7 @@ export function DatasetsView(props: DatasetsViewProps) {
           {page === 'list' && !registryEmpty && (
             <>
               {canAdd && (
-                <Button size="sm" variant="outline" onClick={() => { setAddOpen(true) }}>
+                <Button size="md" variant="outline" onClick={() => { setAddOpen(true) }}>
                   {t('registry.add')}
                 </Button>
               )}
@@ -693,7 +693,7 @@ export function DatasetsView(props: DatasetsViewProps) {
           {registryEmpty && (
             <EmptyState page icon={<ShelfIcon />} title={t('registry.empty')} hint={t('registry.emptyHint')}>
               {canAdd && (
-                <Button size="sm" variant="primary" onClick={() => { setAddOpen(true) }}>
+                <Button size="md" variant="primary" onClick={() => { setAddOpen(true) }}>
                   {t('registry.emptyAction')}
                 </Button>
               )}

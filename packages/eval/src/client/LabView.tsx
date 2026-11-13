@@ -1158,7 +1158,7 @@ export function LabView(props: LabViewProps) {
         <span className={css.barSpacer} />
         <Button variant="ghost" size="sm" onClick={() => { actions.refresh() }}>{t('list.refresh')}</Button>
         {openRow === undefined && (
-          <Button size="sm" variant="primary" onClick={() => { setNewOpen(true) }}>{t('list.new')}</Button>
+          <Button size="md" variant="primary" onClick={() => { setNewOpen(true) }}>{t('list.new')}</Button>
         )}
         {openRow !== undefined && openRow.question !== null && (
           <span className={css.headQuestion}>{openRow.question}</span>
@@ -1181,7 +1181,7 @@ export function LabView(props: LabViewProps) {
               // The page's one empty seat (T87): centred, one action — the
               // dialog — and the sentence says the chat is just as good a door.
               <EmptyState page icon={<FlaskIcon />} title={t('list.empty')} hint={t('list.emptyHint')}>
-                <Button size="sm" variant="primary" onClick={() => { setNewOpen(true) }}>
+                <Button size="md" variant="primary" onClick={() => { setNewOpen(true) }}>
                   {t('list.emptyAction')}
                 </Button>
               </EmptyState>
