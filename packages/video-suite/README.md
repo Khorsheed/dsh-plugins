@@ -4,7 +4,7 @@
 
 **这是一套为播客和对谈剪辑准备的一站式工具。** 你可以直接把文稿当作剪辑台：删一句话，就剪掉对应的那段音频；点一句剪掉，再点恢复，原始录音始终不会被改动。导入混录后会自动区分每位说话人，新声音命名一次，同一档节目下次就能自动识别。Agent 会扫描语气词、长停顿和重复表达，列出一组修改建议，只有你点「采纳」才会生效；长停顿默认缩短，而不是删光。支持边听边剪，播到哪句高亮到哪句，转写错的字可以直接改。手机拍摄的画面可按声音自动对齐，无需拍手打板。片头片尾、字幕样式、常驻成员的声音都保存在节目设置里，每期沿用。一键导出 MP3、带字幕的 MP4、SRT 字幕和文稿，shownotes 可在会话中让 agent 生成。转写全程在本机完成。剪一期节目所需的一整套能力，内置「剪辑模式」，一次装齐。
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="800" alt="剪辑模式里右栏的「剪辑」：按说话人分段的文稿，选中一段可以剪掉、改字或从这里播放，底部播放器可切剪后和原声">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="640" alt="右栏的开始页：会话产物、文件列表、Context Lens 之下就是「剪辑」入口">
 
 ## 安装
 
@@ -49,9 +49,7 @@
 几个朋友围着一支录音笔聊了一小时，以前要在剪辑软件里对着波形一点点找谁在说话、一刀刀切语气词。现在你把录音交给它，右栏的「剪辑」面板里就是按说话人着色的文稿：点一句剪掉，再点恢复，剪错了能撤销，原始录音不会被改动。剪什么在会话里和 agent 商量，它把语气词、长停顿、说重复的列成一组提议，你点「采纳」才算数；点「AI 帮改」，它把请求填进输入框，你补一句想重点处理什么再发。底部播放器能听「剪后」也能听「原声」，当前的词跟着高亮；转写错的字直接改，只改文字和字幕，不动声音。手机拍的画面按声音自动对齐；每档节目的片头片尾、音量、字幕样式和常驻成员的声音存一次，每期都沿用。导出在后台跑，进度在面板和会话里都看得到：MP3、1080p MP4（字幕烧进画面或做成可开关的字幕轨）、SRT 字幕和文稿。
 
 <details open>
-<summary>功能示意（4 张）</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="640" alt="右栏的开始页：会话产物、文件列表、Context Lens 之下就是「剪辑」入口">
+<summary>功能示意（3 张）</summary>
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-1.png" width="640" alt="「素材」页：一条带画面的录音，认出 5 个声音，每个声音一行，带时长、▶ 听和「合并到…」">
 

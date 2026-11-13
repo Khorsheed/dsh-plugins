@@ -4,7 +4,7 @@ English | [中文](README.md)
 
 **A one-stop kit for editing podcasts and conversations.** The transcript is your editing desk: delete a sentence and the matching stretch of audio is cut; click a sentence to cut it, click again to bring it back, and the original recording is never touched. Import a mixed recording and it tells each speaker apart; name a new voice once and the same show recognizes it next time. The agent scans for filler words, long pauses and repetition and lists a set of suggested edits that only take effect when you click "Adopt"; long pauses are shortened by default, not removed outright. Edit while you listen — the sentence being played is highlighted, and mis-transcribed words can be fixed directly. Footage shot on a phone lines up with the audio automatically, no clapperboard needed. Intro and outro, caption style and regular members' voices are saved in the show's settings and carry over to every episode. Export MP3, MP4 with captions, SRT captions and the transcript in one go, and ask the agent in the session for shownotes. Transcription runs entirely on your machine. Everything an episode needs, with "剪辑模式" (editing mode) built in, installed in one go.
 
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-2.png" width="800" alt="Studio in the right sidebar in editing mode: the transcript split by speaker, a selected passage offering cut, edit text or play from here, the player switching between edited and original">
+<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="640" alt="The right sidebar's start page: Studio sits below Session products, Files and Context Lens">
 
 ## Install
 
@@ -49,9 +49,7 @@ Before you start: you need ffmpeg on your computer, and the first transcription 
 A few friends talk for an hour around one recorder, and editing it used to mean staring at waveforms to work out who's speaking and slicing out filler words one by one. Now hand over the recording, and the Studio panel in the right sidebar shows the transcript colored by speaker: click a sentence to cut it, click again to bring it back, undo if you slip, and your original recording is never touched. Talk over what to cut with the agent in the session; it lists filler words, long pauses and repeats as a set of suggestions, and nothing counts until you press "Accept". Press "Agent assist" and it writes a request into the input box; add what you most want fixed and send. The player at the bottom plays either the "Edited" cut or the "Original", with the current word highlighted; fix mistranscribed words in place, which changes the text and subtitles but not the sound. Phone footage lines up with the audio by sound; each show's intro and outro, loudness, subtitle style and regulars' voices are saved once and reused every episode. Exports run in the background, with progress in both the panel and the session: MP3, 1080p MP4 (subtitles burned in or as a track you can switch off), SRT subtitles and the transcript.
 
 <details open>
-<summary>Screenshots (4)</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-0.png" width="640" alt="The right sidebar's start page: Studio sits below Session products, Files and Context Lens">
+<summary>Screenshots (3)</summary>
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/video-1.png" width="640" alt="The Sources page: a recording with video, five voices recognized, one row per voice with its length, ▶ Listen and "Merge into…"">
 
