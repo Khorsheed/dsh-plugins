@@ -8,6 +8,7 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 import { BRIDGE_VERSION, MOBILE_VERSION } from '../protocol.ts'
 import { MobilePresentation } from './presentation.ts'
 import { DirectoryFlow, MobileDirectoryOverlay } from './DirectoryFlow.tsx'
+import { injectMobileDirectoryFlow, type MobileDirectoryFlowSlot } from './directory-slots.ts'
 import { MobileDirectory, installMobileDirectoryPicker } from './directory.ts'
 import { MobileNavigation, mainSessionId } from './navigation.ts'
 import { MobileWelcome } from './MobileSeats.tsx'
@@ -38,7 +39,7 @@ export const MOBILE_DIRECTORY_FLOW_SLOTS = [
   'conversation.hero.workspace.directoryFlow',
   'sidebar.workspaces.directoryFlow',
   'workspace.picker.directoryFlow',
-] as const
+] as const satisfies readonly MobileDirectoryFlowSlot[]
 
 /** One browser-owned presentation; no Host preference or sibling plugin is changed. */
 export function apply(ctx: Context): void {
@@ -142,7 +143,7 @@ export function apply(ctx: Context): void {
   })
   // Shadow only these public flow slots while this client is in mobile mode.
   for (const name of MOBILE_DIRECTORY_FLOW_SLOTS) {
-    ctx.slots.inject(name, () => {
+    ctx.effect(() => injectMobileDirectoryFlow(ctx, name, name => {
       let remove: (() => void) | undefined
       const sync = () => {
         if (presentation.getSnapshot().active) {
@@ -152,7 +153,7 @@ export function apply(ctx: Context): void {
       sync()
       const unsubscribe = presentation.subscribe(sync)
       return () => { unsubscribe(); remove?.() }
-    })
+    }), `mobile: directory flow ${name}`)
   }
   const post = (type: 'ready' | 'unloaded') => {
     if (window.__DSH_MOBILE_SHELL__?.bridgeVersion !== BRIDGE_VERSION) return

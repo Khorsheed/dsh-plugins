@@ -38,7 +38,7 @@ Mobile comes with Basic Essentials. Once installed, open "Settings → Connect p
 
 ## Compatibility
 
-Requires DSH 0.2.0-rc.2 or later (0.1.x hosts stay on this plugin's 0.1.4); no verified version is listed until on-device validation is done.
+Requires DSH 0.2.0-rc.2 or later (0.1.x hosts stay on this plugin's 0.1.4); no verified version is listed until on-device validation is done. Before 0.2.2-rc.3, the two original Workspace directory flows remain available; the reusable `workspace.picker` directory flow registers only when the host declares it.
 
 ## For developers
 
