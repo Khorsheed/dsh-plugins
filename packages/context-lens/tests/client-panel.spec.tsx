@@ -643,6 +643,19 @@ describe('InspectorPanel · scroll-sync + 最新', () => {
     expect(scrollIntoView.mock.instances[0]).toBe(port?.querySelector('[data-chat-turn="1"]'))
   })
 
+  it('reselecting the current turn from the menu re-syncs the conversation without resetting its request', async () => {
+    mountConversation([1, 2])
+    bench()
+    await waitFor(() => expect(screen.getByText('#101 · read:a.ts')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /^turn 2 #102 · / }))
+    await waitFor(() => expect(screen.getByText('#102 · 助手回复', { selector: 'b' })).toBeTruthy())
+    scrollIntoView.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: zh['turn.switch'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /turn 2/ }))
+    await waitFor(() => expect(scrollIntoView.mock.instances[0]).toBe(port?.querySelector('[data-chat-turn="2"]')))
+    expect(screen.getByText('#102 · 助手回复', { selector: 'b' })).toBeTruthy()
+  })
+
   it('clicking another request bar in the current turn still re-syncs the conversation', async () => {
     mountConversation([1, 2])
     bench()
@@ -682,6 +695,23 @@ describe('InspectorPanel · scroll-sync + 最新', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /turn 1|第 1 轮/ }))
     await waitFor(() => expect(mocks.loadThrough).toHaveBeenCalledWith('s1', 5))
     await waitFor(() => expect(scrollIntoView.mock.instances.at(-1)).toBe(port?.querySelector('[data-chat-node-key="node:u-r1"]')))
+  })
+
+  it('pages a manual restart continuation to its own room-auto-continue node', async () => {
+    mountConversation([9])
+    const round = { ...TURNS[0]!, turnSeq: -1_001_777, hostTurn: undefined, ordinal: 140, room: { targets: ['人物建模大师'], continuationSeq: 1777 }, startSeq: 1777 }
+    const turns = [round, TURNS[1]!]
+    const { mocks } = bench({ turns, overview: seq => seq === round.turnSeq ? { ...OVERVIEW1, turn: round } : OVERVIEW2, onLoadThrough: () => {
+      const row = document.createElement('div')
+      row.setAttribute('data-chat-flow-kind', 'room-auto-continue')
+      row.setAttribute('data-chat-anchor-key', '18:room-auto-continue1777')
+      port?.appendChild(row)
+    } })
+    await waitFor(() => expect(screen.getByText('第二条 query')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: zh['turn.switch'] }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /turn 140|第 140 轮/ }))
+    await waitFor(() => expect(mocks.loadThrough).toHaveBeenCalledWith('s1', 1777))
+    await waitFor(() => expect(scrollIntoView.mock.instances.at(-1)).toBe(port?.querySelector('[data-chat-flow-kind="room-auto-continue"]')))
   })
 
   it('opening from the action row scroll-syncs to the navigated turn', async () => {

@@ -413,15 +413,17 @@ export function InspectorPanel({
   /** Scroll the conversation to one selected turn (real turns and room rounds; other pseudo-turns never scroll). */
   const syncScrollToTurn = (seq: number, list: readonly TurnListItem[] | null = turns): void => {
     const target = list?.find(candidate => candidate.turnSeq === seq)
-    // A room round has no host turn: it lands on the human's own message row.
+    // A room round has no host turn: it lands on its human message or its own restart-continuation row.
     const messageId = target?.room?.messageId
+    const continuationSeq = target?.room?.continuationSeq
     // Real turns key on the host's turn number (M5), so a positive seq is the
     // anchor even before the list resolves (the navigation-params path).
-    const hostTurn = messageId !== undefined ? undefined : target?.hostTurn ?? (seq > 0 ? seq : undefined)
-    if (messageId === undefined && hostTurn === undefined) return
+    const hostTurn = messageId !== undefined || continuationSeq !== undefined ? undefined : target?.hostTurn ?? (seq > 0 ? seq : undefined)
+    if (messageId === undefined && continuationSeq === undefined && hostTurn === undefined) return
     const jump = ++jumpToken.current
     void locateTurnPaging({
       messageId,
+      continuationSeq,
       hostTurn,
       startSeq: target?.startSeq,
       loadThrough: loadThrough === undefined ? undefined : start => loadThrough(sessionId, start),
@@ -504,8 +506,7 @@ export function InspectorPanel({
   }, [request])
 
   const onSelectTurn = (next: number): void => {
-    if (next === turnSeq) return
-    selectTurnState(next)
+    if (next !== turnSeq) selectTurnState(next)
     syncScrollToTurn(next)
   }
 

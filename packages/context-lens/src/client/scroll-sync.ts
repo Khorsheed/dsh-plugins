@@ -11,8 +11,8 @@
  * rows carry `[data-chat-turn="<hostTurn>"]` (ui-chat ChatNodeSeat /
  * ChatGroupSeat — the same selector `scrollToTurnAtOrAfter` uses). The panel's
  * real turns key on the host turn number (`TurnListItem.hostTurn`), so the
- * anchor lookup needs no mapping; purpose pseudo-turns have no hostTurn and
- * never scroll.
+ * anchor lookup needs no mapping. Room rounds use their recorded human-message
+ * or room-auto-continue node; other purpose pseudo-turns never scroll.
  *
  * Every failure path is a silent no-op: no conversation mounted, the turn
  * paged out of the virtualized list, a missing scroll primitive — nothing
@@ -144,6 +144,38 @@ function messageLanding(scope: ParentNode, messageId: string): Element | null {
 export function hasMessageAnchor(messageId: string, root: ParentNode = document): boolean {
   try {
     return messageLanding(scrollport(root) ?? root, messageId) !== null
+  } catch {
+    return false
+  }
+}
+
+/** The room's restart-continuation row; its engine-owned key is `<kind length>:<kind><dispatch seq>`. */
+function continuationLanding(scope: ParentNode, dispatchSeq: number): Element | null {
+  const kind = 'room-auto-continue'
+  const key = `${kind.length}:${kind}${dispatchSeq}`
+  const row = scope.querySelector(`[data-chat-flow-kind="${kind}"][data-chat-anchor-key="${key}"]:not([hidden]):not([hidden] *)`)
+  return row === null ? null : landingOf(row)
+}
+
+/** Whether the conversation has rendered this restart-continuation row yet. */
+export function hasContinuationAnchor(dispatchSeq: number, root: ParentNode = document): boolean {
+  try {
+    return continuationLanding(scrollport(root) ?? root, dispatchSeq) !== null
+  } catch {
+    return false
+  }
+}
+
+/** Scroll to the room's own continuation message, never to the original task it resumes. */
+export function scrollConversationToContinuation(
+  dispatchSeq: number,
+  root: ParentNode = document,
+  behavior: 'smooth' | 'auto' = preferredScrollBehavior(),
+): boolean {
+  try {
+    const port = scrollport(root)
+    const scope: ParentNode = port ?? root
+    return landOn(() => continuationLanding(scope, dispatchSeq), port, behavior)
   } catch {
     return false
   }
@@ -401,23 +433,26 @@ async function pageForAnchor(options: {
 }
 
 /**
- * Show a host turn or a room round's human message, paging the conversation's
- * history back when its row is not rendered yet. A host turn keeps the
- * at-or-after fallback; a missing room message stays put.
+ * Show a host turn, a room round's human message, or its restart-continuation
+ * row, paging history back when its row is not rendered yet. A host turn keeps
+ * the at-or-after fallback; a missing room anchor stays put.
  * @returns whether the exact anchor was found and scrolled (false: fallback or superseded).
  */
 export async function locateTurnPaging(options: {
   readonly messageId?: string | undefined
+  readonly continuationSeq?: number | undefined
   readonly hostTurn?: number | undefined
   readonly startSeq?: number | undefined
   readonly loadThrough?: ((seq: number) => Promise<void>) | undefined
   readonly alive: () => boolean
   readonly root?: ParentNode
 }): Promise<boolean> {
-  const { messageId, hostTurn, startSeq, loadThrough, alive } = options
+  const { messageId, continuationSeq, hostTurn, startSeq, loadThrough, alive } = options
   const root = options.root ?? document
-  const ready = (): boolean => messageId !== undefined ? hasMessageAnchor(messageId, root) : hostTurn !== undefined && hasTurnAnchor(hostTurn, root)
-  const scroll = (): boolean => messageId !== undefined ? scrollConversationToMessage(messageId, root) : hostTurn !== undefined && scrollConversationToTurn(hostTurn, root)
+  const ready = (): boolean => messageId !== undefined ? hasMessageAnchor(messageId, root)
+    : continuationSeq !== undefined ? hasContinuationAnchor(continuationSeq, root) : hostTurn !== undefined && hasTurnAnchor(hostTurn, root)
+  const scroll = (): boolean => messageId !== undefined ? scrollConversationToMessage(messageId, root)
+    : continuationSeq !== undefined ? scrollConversationToContinuation(continuationSeq, root) : hostTurn !== undefined && scrollConversationToTurn(hostTurn, root)
   if (await pageForAnchor({ ready, startSeq, loadThrough, alive, root })) return alive() && scroll()
   if (alive()) scroll()
   return false

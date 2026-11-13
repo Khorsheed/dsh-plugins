@@ -6,10 +6,10 @@
  * (boundary lines: member joined/left), and `room-relay` (the member-to-
  * member notification gate row, folding resolved edges in place). The
  * auto-seated main agent's member-added is bookkeeping, not a boundary
- * event, and is not claimed. Of `room/dispatch`, only member-to-member
- * sends are claimed (`room-dispatch`): the human's @-message lands as a
- * standard `user/message` event (see RoomService.postMessage) and renders
- * through the official user node.
+ * event, and is not claimed. Of `room/dispatch`, member-to-member sends are
+ * claimed (`room-dispatch`); restart continuations have their own row, including
+ * a manual one with no separate user/message. Ordinary human @-messages land
+ * as standard `user/message` events (see RoomService.postMessage).
  * @module @khorsheed/dsh-room/client/nodes
  */
 import type { RoomAsk, RoomDecisionEvent, RoomHelp, RoomQuestionAnswer, RoomQuestionItem, RoomRoundContinues } from '../types.ts'
@@ -204,7 +204,7 @@ export interface RoomDispatchData {
   readonly text: string
 }
 
-/** Chat node data of the room's own 「全部继续」 after a restart (M9). */
+/** A restart continuation's own chat row; manual marks the direct-dispatch form without a user bubble. */
 export interface RoomAutoContinueData {
   readonly seq: number
   readonly time: number
@@ -212,6 +212,8 @@ export interface RoomAutoContinueData {
   readonly targets: readonly string[]
   /** The continue message, as each member got it. */
   readonly text: string
+  /** The human pressed 「全部继续」: this dispatch is its visible message, not an automatic action. */
+  readonly manual?: true
 }
 
 /** Chat node data of one member compaction (the room's copy of its compaction event). */
@@ -595,19 +597,22 @@ export const roomDispatchDefinition: ConversationNodeDefinition<RoomDispatchData
 }
 
 /**
- * The room's own 「全部继续」 after a host restart (`room/dispatch` with
- * `via: 'auto-continue'`, M9): the line 「已自动继续：…（重启打断）· 设置」 and
- * the message itself from 「房间 · 自动」. The human's 「全部继续」 is their
- * own message (the official user bubble) and gets no row here.
+ * The room's automatic continuation and a manual continuation that was
+ * journaled directly, without a user/message (the restart-recovery path).
+ * Ordinary human messages keep their official bubble. The established kind
+ * and engine-owned key cover both forms; `manual` distinguishes the label.
  */
 export const roomAutoContinueDefinition: ConversationNodeDefinition<RoomAutoContinueData> = {
   kind: 'room-auto-continue',
   target: 'chat',
-  match: event => event.type === 'room/dispatch' && event.data.via === 'auto-continue' ? { id: String(event.seq), role: 'start' } : null,
+  match: event => event.type === 'room/dispatch' && event.data.origin === 'human'
+    && (event.data.via === 'auto-continue' || (event.data.messageId === undefined && event.data.continues !== undefined))
+    ? { id: String(event.seq), role: 'start' } : null,
   start: (_context, match) => {
     const event = match.event
     if (event.type !== 'room/dispatch') throw new Error('room-auto-continue start requires a room/dispatch event')
-    return { seq: event.seq, time: event.time, targets: event.data.targets, text: event.data.text }
+    return { seq: event.seq, time: event.time, targets: event.data.targets, text: event.data.text,
+      ...event.data.via === undefined ? { manual: true as const } : {} }
   },
   update: context => context.state,
   buildViewNode: context => viewNode(context, 'room-auto-continue'),

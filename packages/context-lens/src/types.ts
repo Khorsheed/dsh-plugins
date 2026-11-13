@@ -402,6 +402,8 @@ export interface TurnListItem {
     targets: string[]
     /** The human's message in the chat (the round's scroll anchor). */
     messageId?: string
+    /** A restart continuation's own `room-auto-continue` chat row, keyed by its dispatch seq. */
+    continuationSeq?: number
     /**
      * No write-side record ties this round's member runs to their requests
      * (no `room/run-state.executionId`, no `childTurn`): the round shows no

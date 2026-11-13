@@ -298,7 +298,7 @@ export interface TurnRecord {
   liveStartObserved?: boolean
   query: string
   /** A room round: the dispatch's targets, its chat anchor, and, without records, its fallback (see roomTurns). */
-  room?: { targets: string[]; messageId?: string; unrecorded?: true; fallback?: RoomFallbackMember[]; queuedMs?: number }
+  room?: { targets: string[]; messageId?: string; continuationSeq?: number; unrecorded?: true; fallback?: RoomFallbackMember[]; queuedMs?: number }
   /** First non-human message of the turn (see LogTurn.trigger). */
   trigger?: { source: string; text: string }
   /** A round the member's CLI opened itself (see LogTurn.selfCause). */
@@ -1522,6 +1522,7 @@ export class InspectorStore {
       ...turn.room === undefined ? {} : { room: {
         targets: turn.room.targets,
         ...turn.room.messageId === undefined ? {} : { messageId: turn.room.messageId },
+        ...turn.room.continuationSeq === undefined ? {} : { continuationSeq: turn.room.continuationSeq },
         ...turn.room.unrecorded === true ? { unrecorded: true as const } : {},
         ...turn.room.queuedMs === undefined ? {} : { queuedMs: turn.room.queuedMs },
       } },
@@ -1759,6 +1760,7 @@ export class InspectorStore {
       const ends = [...runs.map(run => run.endedAt), ...[...scopes.values()].filter(scope => scope.continues !== undefined).map(scope => scope.endedAt)]
         .filter((end): end is number => end !== undefined)
       const queuedMs = roomQueuedMs(dispatch.at, runsOf(room, dispatch.seq))
+      const continuationSeq = dispatch.via === 'auto-continue' || (dispatch.messageId === undefined && dispatch.continues !== undefined) ? dispatch.seq : undefined
       return {
         turnSeq: roomTurnSeq(dispatch.seq),
         purpose: 'room',
@@ -1766,12 +1768,14 @@ export class InspectorStore {
         room: {
           targets: dispatch.targets,
           ...dispatch.messageId === undefined ? {} : { messageId: dispatch.messageId },
+          ...continuationSeq === undefined ? {} : { continuationSeq },
           ...queuedMs === undefined ? {} : { queuedMs },
           ...recorded || runs.length === 0 ? {} : { unrecorded: true as const, fallback },
         },
-        // Where the chat pages history back to before landing on the human's
-        // message: it sits at most the lookback before the dispatch.
-        ...dispatch.messageId === undefined ? {} : { startSeq: Math.max(0, dispatch.seq - HUMAN_MESSAGE_LOOKBACK) },
+        // A continuation has its own dispatch node. An ordinary human message
+        // sits at most the lookback before its dispatch.
+        ...continuationSeq !== undefined ? { startSeq: continuationSeq }
+          : dispatch.messageId === undefined ? {} : { startSeq: Math.max(0, dispatch.seq - HUMAN_MESSAGE_LOOKBACK) },
         startedAt: dispatch.at,
         ...ends.length === 0 ? {} : { endedAt: Math.max(...ends) },
         liveContent: false,
