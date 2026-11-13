@@ -69,23 +69,9 @@
 
 公开课录像、播客常常没有字幕。在灵感空间里打开这样一条，它就在你这台电脑上把声音转成带时间的文字：转完的部分先出现，先能读、能记笔记；多人对谈会分出谁在说话，每段标上颜色，名字可以自己改。转好的稿留作正文，之后和文章一样能翻译、讨论、考考我。音频不出你的电脑；第一次用要先下载语音模型，电脑上需要装有 ffmpeg。
 
-<details open>
-<summary>功能示意（1 张）</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="640" alt="transcribe:灵感空间里一段 B 站视频的本机转写稿：上面是视频，下面按说话人 A、B 分段，每段前面有时间，点时间从那里播放，译文跟在原文下面">
-
-</details>
-
 ### capture：渲染抓取
 
 有些网页要靠脚本跑完才显示出正文，普通抓取只拿到一个空壳；有些站点干脆拦下普通抓取。这时灵感空间会改用渲染抓取：在后台用一个看不见的浏览器把页面真正打开、滚到底，等内容画完再把正文带回来，脚本画的图也会截成图片留在文中。站点拦了普通抓取时它自动接手，详情页里也有「渲染抓取」按钮可以手动再试。每次都是一个全新的浏览器，不带你的登录和 Cookie；浏览器第一次用时才下载。
-
-<details open>
-<summary>功能示意（1 张）</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="640" alt="capture:灵感空间详情页里用渲染抓取拿到的正文，文中保留了脚本画出的图">
-
-</details>
 
 ## 按你的方式调整
 
