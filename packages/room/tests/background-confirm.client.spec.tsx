@@ -157,16 +157,27 @@ describe('the live count', () => {
 })
 
 describe('the reload request', () => {
-  it('passes the confirmation to the gateway, and degrades without the family or on a failure', async () => {
+  it('passes the confirmation and optional options slot, and surfaces gateway failures', async () => {
     const call = vi.fn(async () => ({ ok: true as const, value: REFUSED }))
     expect(await reloadThroughGateway({ reloadMemberTools: call }, 'child-gm')).toEqual(REFUSED)
-    expect(call).toHaveBeenLastCalledWith('child-gm')
+    expect(call).toHaveBeenLastCalledWith('child-gm', undefined)
     await reloadThroughGateway({ reloadMemberTools: call }, 'child-gm', { confirmBackgroundTasks: true })
     expect(call).toHaveBeenLastCalledWith('child-gm', { confirmBackgroundTasks: true })
     expect(await reloadThroughGateway(undefined, 'child-gm')).toBeUndefined()
     expect(await reloadThroughGateway({}, 'child-gm')).toBeUndefined()
-    expect(await reloadThroughGateway({ reloadMemberTools: async () => ({ ok: false }) }, 'child-gm')).toBeUndefined()
-    expect(await reloadThroughGateway({ reloadMemberTools: async () => { throw new Error('x') } }, 'child-gm')).toBeUndefined()
+    expect(await reloadThroughGateway({ reloadMemberTools: async () => ({ ok: false }) }, 'child-gm')).toEqual({ ok: false, reason: 'start-failed', error: '' })
+    expect(await reloadThroughGateway({ reloadMemberTools: async () => { throw new Error('x') } }, 'child-gm')).toEqual({ ok: false, reason: 'start-failed', error: 'x' })
+  })
+
+  it('sends the optional options slot and returns gateway failures instead of swallowing them', async () => {
+    const arity = vi.fn(async (...args: unknown[]) => {
+      if (args.length !== 2) throw new Error('expected 2 argument(s), got 1')
+      return { ok: true as const, value: { ok: true as const, when: 'now' as const } }
+    })
+    expect(await reloadThroughGateway({ reloadMemberTools: arity }, 'child-gm')).toEqual({ ok: true, when: 'now' })
+    expect(arity).toHaveBeenLastCalledWith('child-gm', undefined)
+    expect(await reloadThroughGateway({ reloadMemberTools: async () => ({ ok: false, error: { message: 'expected 2 argument(s), got 1' } }) }, 'child-gm'))
+      .toEqual({ ok: false, reason: 'start-failed', error: 'expected 2 argument(s), got 1' })
   })
 })
 

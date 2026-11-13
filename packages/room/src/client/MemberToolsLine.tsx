@@ -51,7 +51,7 @@ export function MemberToolsLine({ childSessionId, modeName, provider, running, r
   const [status, setStatus] = useState<LocalAgentMemberToolsStatus | null | undefined>(undefined)
   const [open, setOpen] = useState(false)
   const [clickedAt, setClickedAt] = useState<number | undefined>(undefined)
-  const [refusal, setRefusal] = useState<'no-process' | 'unsupported' | 'busy' | undefined>(undefined)
+  const [refusal, setRefusal] = useState<'unknown-member' | 'no-process' | 'unsupported' | 'busy' | undefined>(undefined)
   // The load's own recovery failed again: its new reason (shown in place).
   const [startError, setStartError] = useState<string | undefined>(undefined)
   // What the last click asked for: replace the process (重新载入) or start
@@ -106,7 +106,7 @@ export function MemberToolsLine({ childSessionId, modeName, provider, running, r
         return
       }
       if (answer.reason === 'start-failed') { setStartError(answer.error); setClickedAt(undefined) }
-      else if (answer.reason === 'no-process' || answer.reason === 'unsupported' || answer.reason === 'busy') setRefusal(answer.reason)
+      else if (answer.reason === 'unknown-member' || answer.reason === 'no-process' || answer.reason === 'unsupported' || answer.reason === 'busy') setRefusal(answer.reason)
     }
     onLoad?.()
     await refresh()
@@ -134,8 +134,8 @@ export function MemberToolsLine({ childSessionId, modeName, provider, running, r
     </div>
   )
   const refused = startError !== undefined
-    ? <div className={`${css.hint} ${css.warnHint}`} role="alert">{t('tools.startFailedReason', { reason: startError })}</div>
-    : refusal === undefined ? null : <div className={css.hint}>{t(refusal === 'no-process' ? 'tools.refused.noProcess' : refusal === 'busy' ? 'tools.refused.busy' : 'tools.refused.unsupported')}</div>
+    ? <div className={`${css.hint} ${css.warnHint}`} role="alert">{t(startError === '' ? 'tools.startFailed' : 'tools.startFailedReason', { reason: startError })}</div>
+    : refusal === undefined ? null : <div className={css.hint}>{t(refusal === 'unknown-member' ? 'tools.refused.unknownMember' : refusal === 'no-process' ? 'tools.refused.noProcess' : refusal === 'busy' ? 'tools.refused.busy' : 'tools.refused.unsupported')}</div>
 
   let row: ReactNode
   let below: ReactNode = null

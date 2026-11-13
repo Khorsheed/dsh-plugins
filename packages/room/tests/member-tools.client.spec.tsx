@@ -213,6 +213,16 @@ describe('MemberToolsLine', () => {
     await screen.findByText('这个成员现在没有在运行的进程，下一条消息时会重新载入')
   })
 
+  it('shows gateway failures and unknown-member refusals instead of looking unchanged', async () => {
+    line(status({ process: 'none', received: [], startable: true }), { reload: async () => ({ ok: false, reason: 'start-failed', error: 'expected 2 argument(s), got 1' }) })
+    fireEvent.click(await screen.findByText('立即载入'))
+    await screen.findByText(/expected 2 argument\(s\), got 1/)
+    cleanup()
+    line(status({ process: 'none', received: [], startable: true }), { reload: async () => ({ ok: false, reason: 'unknown-member' }) })
+    fireEvent.click(await screen.findByText('立即载入'))
+    await screen.findByText('暂时找不到这个成员的会话，请关闭后重试；也可以先发一条消息让它恢复')
+  })
+
   it('the English line', async () => {
     line(status({ process: 'placeholder', received: [] }), { locale: en })
     await screen.findByText('Mode tools')
