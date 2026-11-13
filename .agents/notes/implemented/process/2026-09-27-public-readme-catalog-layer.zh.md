@@ -57,3 +57,7 @@ Status: implemented
 ## Testing
 
 纯文档改动:暂存集上 `pnpm check:hygiene` 通过;两份整合包配对的 `verify-translation-pairing` 已重录并全绿;三份 README 引用的每张图都在对应 profile 的 `docs/screenshots/` 下有跟踪文件。
+
+## 相关
+
+- [删除 README 中重复的 Agent 安装指南](../simplification/2026-11-13-remove-agent-install-guides.md)

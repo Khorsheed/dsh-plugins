@@ -22,9 +22,9 @@
  *      not released yet: its own README block is still generated, but the
  *      root README skips it, and no published collection may list a bundle
  *      that appears only in unpublished ones (its install command would fail).
- *   4. generated text — the install commands in README.md / README.en.md and
- *      in each mode suite's README pair are current (between the
- *      `collections:` / `collection:` markers).
+ *   4. generated text — the install commands in README.md / README.en.md are
+ *      required and current. A mode suite's optional command block, when
+ *      present, must also be current (between `collections:` / `collection:` markers).
  *
  * `pnpm map:collections` (`--write`) regenerates the README blocks;
  * `pnpm check:collections` fails on any finding. The spec re-runs the check
@@ -178,17 +178,17 @@ function sceneOf(collections: readonly Collection[], name: string): Collection |
 
 /** Every README the generator owns, with the text it should hold. */
 function expectedReadmes(repoRoot: string, collections: readonly Collection[], bundles: Map<string, BundlePackage>):
-  Array<{ path: string; mark: typeof ROOT_MARK; block: string }> {
-  const out: Array<{ path: string; mark: typeof ROOT_MARK; block: string }> = [
-    { path: 'README.md', mark: ROOT_MARK, block: rootBlock(collections, 'zh') },
-    { path: 'README.en.md', mark: ROOT_MARK, block: rootBlock(collections, 'en') },
+  Array<{ path: string; mark: typeof ROOT_MARK; block: string; required: boolean }> {
+  const out: Array<{ path: string; mark: typeof ROOT_MARK; block: string; required: boolean }> = [
+    { path: 'README.md', mark: ROOT_MARK, block: rootBlock(collections, 'zh'), required: true },
+    { path: 'README.en.md', mark: ROOT_MARK, block: rootBlock(collections, 'en'), required: true },
   ]
   for (const bundle of bundles.values()) {
     if (bundle.kind !== 'mode') continue
     const scene = sceneOf(collections, bundle.name)
     if (scene === undefined) continue
-    out.push({ path: `packages/${bundle.dir}/README.md`, mark: PACK_MARK, block: packBlock(scene, 'zh') })
-    out.push({ path: `packages/${bundle.dir}/README.en.md`, mark: PACK_MARK, block: packBlock(scene, 'en') })
+    out.push({ path: `packages/${bundle.dir}/README.md`, mark: PACK_MARK, block: packBlock(scene, 'zh'), required: false })
+    out.push({ path: `packages/${bundle.dir}/README.en.md`, mark: PACK_MARK, block: packBlock(scene, 'en'), required: false })
   }
   return out.filter(entry => existsSync(join(repoRoot, entry.path)))
 }
@@ -247,6 +247,7 @@ export function checkCollections(repoRoot: string, options: { write?: boolean } 
     const text = readFileSync(file, 'utf8')
     const next = replaceBlock(text, entry.mark, entry.block)
     if (next === undefined) {
+      if (!entry.required) continue
       findings.push({ path: entry.path, kind: 'generated', detail: `missing the ${entry.mark.start} … ${entry.mark.end} block` })
     } else if (next !== text) {
       if (options.write) writeFileSync(file, next)

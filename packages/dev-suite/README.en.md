@@ -157,30 +157,3 @@ See [CHANGELOG.md](CHANGELOG.md).
 ## Developing
 
 Plugins live in [Khorsheed/dsh-plugins](https://github.com/Khorsheed/dsh-plugins) (single source of truth); each member's details are in its own README under [packages/](https://github.com/Khorsheed/dsh-plugins/tree/main/packages). This package has no features of its own; it installs dev mode and the members above together. Issues welcome.
-
-## Install guide for agents
-
-<details>
-<summary><strong>Expand: whole-suite install + single-package CLI install</strong> (follow this when the user says "install this for me")</summary>
-
-### 1. Installing the whole suite (recommended)
-
-<!-- collection:start -->
-Recommended: install it together with the basic suite (the Dev collection, one command):
-
-```sh
-dsh plugin --profile web add @khorsheed/dsh-basic @khorsheed/dsh-dev-suite
-```
-<!-- collection:end -->
-
-Or Settings → Plugins → Add plugin, enter `@khorsheed/dsh-dev-suite`. Restart the web instance, then ask the user to **hard-refresh** (Cmd/Ctrl+Shift+R) — new interface code only loads on a hard refresh; a plain reload may keep serving the cached page. Then present the feature list (the plugin table above) and remind the user to start a new session in "开发模式" (dev mode).
-
-Uninstalling the suite (`dsh plugin --profile web remove @khorsheed/dsh-dev-suite`) removes its members too; to turn off just one, switch it off on the suite's detail page.
-
-### 2. Installing a single plugin
-
-- **Dialog**: Settings → Plugins → Add plugin, enter the package name (e.g. `@khorsheed/dsh-worktrees`), enable as prompted.
-- **CLI**: `dsh plugin --profile <profile> add <package name>`; `remove` to uninstall, `update` to upgrade.
-- When installing a single local agent (e.g. `@khorsheed/dsh-local-agent-codex`), install `@khorsheed/dsh-local-agent` alongside it.
-
-</details>

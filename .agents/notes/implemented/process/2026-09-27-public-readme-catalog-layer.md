@@ -55,3 +55,7 @@ The owner decided the public shape up front: dsh-plugins reads as a systematic c
 ## Testing
 
 Docs-only change: `pnpm check:hygiene` on the staged set; `verify-translation-pairing` re-recorded and green for both profile pairs; every image referenced by the three READMEs exists tracked in the corresponding profile's `docs/screenshots/`.
+
+## Related
+
+- [Remove duplicated agent-facing install guides from READMEs](../simplification/2026-11-13-remove-agent-install-guides.md)
