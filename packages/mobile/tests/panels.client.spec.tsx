@@ -103,6 +103,45 @@ it('covers a collapsed host track while open and restores native geometry on ret
   }
 })
 
+it('keeps the conversation library from covering a managed panel', () => {
+  const style = document.createElement('style')
+  style.textContent = '[data-mobile-frame] { padding-left:320px; }' + MOBILE_CSS
+  document.head.append(style)
+  document.documentElement.setAttribute('data-dsh-mobile', '')
+  document.documentElement.setAttribute('data-mobile-library-open', '')
+  document.documentElement.setAttribute('data-mobile-panel-open', '')
+  document.body.innerHTML = '<div data-mobile-frame><aside data-mobile-library-pane></aside></div>'
+  const frame = document.querySelector<HTMLElement>('[data-mobile-frame]')!
+  const pane = document.querySelector<HTMLElement>('[data-mobile-library-pane]')!
+  try {
+    expect(getComputedStyle(pane).display).toBe('none')
+    expect(getComputedStyle(frame).paddingLeft).toBe('0')
+    document.documentElement.removeAttribute('data-mobile-panel-open')
+    expect(getComputedStyle(pane).display).not.toBe('none')
+    expect(getComputedStyle(frame).paddingLeft).toBe('320px')
+  } finally {
+    style.remove()
+    document.documentElement.removeAttribute('data-dsh-mobile')
+    document.documentElement.removeAttribute('data-mobile-library-open')
+    document.documentElement.removeAttribute('data-mobile-panel-open')
+  }
+})
+
+it('strengthens the library divider only in the dark theme', () => {
+  const rules = MOBILE_CSS.split('\n')
+  const light = rules.find(line => line.includes('--mobile-divider:') && !line.includes('data-ds-dark-theme'))
+  const dark = rules.find(line => line.includes('--mobile-divider:') && line.includes('data-ds-dark-theme'))
+  expect(light).toContain('--mobile-divider:var(--dsw-alias-border-l3,var(--mobile-edge))')
+  expect(light).not.toContain('--mobile-divider:var(--mobile-divider)')
+  expect(dark).toContain('--mobile-divider:var(--dsw-alias-border-l4,')
+  expect(MOBILE_CSS).toContain('border-left:1px solid var(--mobile-divider)')
+})
+
+it('uses the same soft separator shadow for narrow and wide open libraries', () => {
+  const rule = MOBILE_CSS.split('\n').find(line => line.includes('[data-mobile-library-pane] { box-shadow:'))
+  expect(rule).toBe('html[data-mobile-library-open] [data-mobile-library-pane] { box-shadow:12px 0 28px color-mix(in srgb,var(--dsw-alias-label-primary) 12%,transparent); }')
+})
+
 it('replaces only the native panel entry and removes the unused hero action space', () => {
   const style = document.createElement('style')
   style.textContent = MOBILE_CSS

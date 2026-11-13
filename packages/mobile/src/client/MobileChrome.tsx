@@ -92,7 +92,7 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
     panels?.hide()
     if (!available) { toggleSidebar(); return }
     if (state.drawer) toggleSidebar()
-    setLibrary(true)
+    setLibrary(current => wide ? !current : true)
   }
   const startSession = () => {
     panels?.hide()
@@ -119,13 +119,13 @@ export function MobileChrome({ presentation, toggleSidebar, connection, navigati
   return <>
     {!state.active && state.mode === 'desktop' && <button data-mobile-restore onClick={() => presentation.setMode('mobile')}>{t('restoreMobile')}</button>}
     {state.active && <>
-      {available && <aside data-mobile-library-pane hidden={!library && !wide}>
+      {available && <aside data-mobile-library-pane hidden={!library}>
         <nav data-mobile-library-toolbar aria-label={t('menu')}><button aria-label={t('settings')} onClick={openSettings}><MobileIcon name="settings"/></button><button aria-label={t('newSession')} onClick={startSession}><MobileIcon name="compose"/></button></nav>
-        <MobileLibrary {...(rooms ? { rooms } : {})} navigation={available} visible={library || wide} t={t} onBeforeOpen={presentation.prepareNavigation} onOpen={() => setLibrary(false)} /></aside>}
+        <MobileLibrary {...(rooms ? { rooms } : {})} navigation={available} visible={library} t={t} onBeforeOpen={presentation.prepareNavigation} onOpen={() => setLibrary(false)} /></aside>}
       {library && available && !wide && <button type="button" data-mobile-peek-close aria-label={t('returnToConversation')} onClick={() => { presentation.prepareNavigation(); setLibrary(false) }} />}
       {state.drawer && <button data-mobile-shade aria-label={t('close')} onClick={toggleSidebar} />}
       <nav data-mobile-toolbar data-library={false} aria-label={t('menu')}>
-        <button aria-label={t('menu')} onClick={openLibrary}>
+        <button aria-label={t('menu')} aria-expanded={available ? library : state.drawer} onClick={openLibrary}>
           <MobileIcon name="back"/>
         </button>
         <div data-mobile-nav-title>{(available ? <ConversationTitle navigation={available} prepareNavigation={presentation.prepareNavigation} surface={presentation.surface} fallback={t('newSession')} t={t} /> : <strong>{t('brand')}</strong>)}{wire !== 'connected' && !connectionExpanded && <small role="status">{t(wire ?? 'connecting')}</small>}</div>
