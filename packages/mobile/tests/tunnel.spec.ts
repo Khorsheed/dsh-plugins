@@ -287,10 +287,46 @@ describe('quick tunnel supervisor', () => {
     tunnel.dispose()
   })
 
+  it('fails promptly when an observed sidecar disappears before announcing a domain', async () => {
+    const { deps, sidecars, dir } = makeDeps()
+    const launch = sidecars.launch.bind(sidecars)
+    sidecars.launch = config => {
+      launch(config)
+      const { pid } = sidecars.launched.at(-1)!
+      writeFileSync(config.stateFile, JSON.stringify({ pid, port: config.port, host: null, startedAt: Date.now(), heartbeatAt: Date.now() }))
+      setTimeout(() => { sidecars.crash(); rmSync(config.stateFile, { force: true }) }, 20)
+    }
+    const tunnel = createTunnelSupervisor(deps)
+    await tunnel.enable()
+    await vi.waitFor(() => {
+      expect(tunnel.status().state).toBe('recovering')
+      expect(stateOf(dir).lastError).toBe('tunnel: tunnel-exited')
+    }, { timeout: 2000, interval: 5 })
+    tunnel.dispose()
+  })
+
+  it('retries transient registration failures with a short initial backoff and recovers', async () => {
+    const { deps, sidecars } = makeDeps({ initialRecoveryCooldownMs: 20 })
+    const launch = sidecars.launch.bind(sidecars)
+    sidecars.launch = config => {
+      launch(config)
+      if (sidecars.launched.length >= 3) return
+      const { pid } = sidecars.launched.at(-1)!
+      writeFileSync(config.stateFile, JSON.stringify({ pid, port: config.port, host: null, startedAt: Date.now(), heartbeatAt: Date.now() }))
+      setTimeout(() => { sidecars.crash(); rmSync(config.stateFile, { force: true }) }, 20)
+    }
+    const tunnel = createTunnelSupervisor(deps)
+    await tunnel.enable()
+    await ready(tunnel)
+    expect(sidecars.launched).toHaveLength(3)
+    expect(tunnel.managedOrigin()).toBe('https://rotated-3-two-three.trycloudflare.com')
+    tunnel.dispose()
+  })
+
   it('keeps retrying past three failures, keeps the tunnel through trust-write failures, and heals', async () => {
     const editor = fakeEditor()
     editor.edit.mockRejectedValue(new Error('Configuration entry is no longer available'))
-    const { deps, sidecars, dir } = makeDeps({ locate: { configEditor: () => editor }, recoveryCooldownMs: 0 })
+    const { deps, sidecars, dir } = makeDeps({ locate: { configEditor: () => editor }, initialRecoveryCooldownMs: 0, recoveryCooldownMs: 0 })
     const tunnel = createTunnelSupervisor(deps)
     await tunnel.enable()
     await vi.waitFor(() => expect(tunnel.status()).toMatchObject({ state: 'error', reason: 'start-failed', detail: 'bind: Error: Configuration entry is no longer available' }), { timeout: 2000, interval: 5 })

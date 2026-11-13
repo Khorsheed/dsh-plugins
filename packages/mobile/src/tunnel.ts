@@ -56,6 +56,7 @@ export interface TunnelDeps {
   sleep?: ((ms: number) => Promise<void>) | undefined
   now?: (() => number) | undefined
   healthIntervalMs?: number | undefined
+  initialRecoveryCooldownMs?: number | undefined
   recoveryCooldownMs?: number | undefined
   maxRetryMs?: number | undefined
   wakeGapMs?: number | undefined
@@ -178,6 +179,7 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
   const sidecar = deps.sidecar ?? nodeSidecar
   const findBinary = deps.findBinary ?? findCloudflared
   const healthIntervalMs = deps.healthIntervalMs ?? 20_000
+  const initialRecoveryCooldownMs = deps.initialRecoveryCooldownMs ?? 30_000
   const recoveryCooldownMs = deps.recoveryCooldownMs ?? 10 * 60 * 1000
   const maxRetryMs = deps.maxRetryMs ?? 60 * 60 * 1000
   const wakeGapMs = deps.wakeGapMs ?? healthIntervalMs * 3
@@ -310,10 +312,13 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
       sidecar.launch({ binary: binary()!, port, stateFile: sidecarFile()! })
     }
     const deadline = now() + timeoutMs
+    let observed = running !== undefined
     for (;;) {
       await sleep(500)
       if (disposed) throw new Error('disposed')
       const state = sidecar.read(sidecarFile()!)
+      if (!state && observed) throw new Error('tunnel-exited')
+      if (state) observed = true
       if (state?.host && state.port === port) return state.host
       if (state && !sidecar.alive(state.pid)) throw new Error('tunnel-exited')
       if (now() >= deadline) { stopSidecar(); throw new Error('start-timeout') }
@@ -368,12 +373,12 @@ export function createTunnelSupervisor(deps: TunnelDeps): TunnelSupervisor {
     }
   }
 
-  /** Retries never stop while enabled: cooldown-spaced at first, then backing
-   * off to `maxRetryMs` so a long outage heals by itself without hammering. */
+  /** Retries never stop while enabled: a short initial delay backs off
+   * exponentially to `maxRetryMs` so a long outage heals without hammering. */
   function scheduleRetry(): void {
     clearTimeout(retryTimer)
-    const backoff = startFailures >= 3 ? Math.min(maxRetryMs, recoveryCooldownMs * 2 ** (startFailures - 3)) : recoveryCooldownMs
-    const wait = Math.max(0, backoff - (now() - lastRecovery)) + Math.floor(Math.random() * recoveryCooldownMs * 0.1)
+    const backoff = Math.min(maxRetryMs, initialRecoveryCooldownMs * 2 ** Math.max(0, startFailures - 2))
+    const wait = Math.max(0, backoff - (now() - lastRecovery)) + Math.floor(Math.random() * backoff * 0.1)
     retryTimer = setTimeout(() => { lastRecovery = now(); void start() }, wait)
     retryTimer.unref?.()
   }
