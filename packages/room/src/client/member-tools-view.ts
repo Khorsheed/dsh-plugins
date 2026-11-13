@@ -9,9 +9,9 @@ import type { LocalAgentMemberToolsReload, LocalAgentMemberToolsReloadOptions, L
 
 /**
  * The 重新载入 / 立即载入 request over the localAgentGateway namespace
- * (duck-typed: absent family or method, transport failure = undefined). The
- * options ride along — `confirmBackgroundTasks` once the human confirmed
- * cutting off the process's background work; an older core ignores them.
+ * (duck-typed: absent family or method = undefined; failures stay visible).
+ * The options slot is always sent, including undefined: the gateway's exact
+ * arity check counts it. `confirmBackgroundTasks` rides along once confirmed.
  * @param gateway - the mounted namespace, when any.
  * @param childSessionId - the member's session.
  * @param options - the reload options.
@@ -24,11 +24,11 @@ export async function reloadThroughGateway(
   if (gateway === undefined || typeof gateway['reloadMemberTools'] !== 'function') return undefined
   try {
     const call = gateway['reloadMemberTools'] as
-      (child: string, options?: LocalAgentMemberToolsReloadOptions) => Promise<{ readonly ok: true; readonly value: LocalAgentMemberToolsReload } | { readonly ok: false }>
-    const carried = await (options === undefined ? call(childSessionId) : call(childSessionId, options))
-    return carried.ok ? carried.value : undefined
-  } catch {
-    return undefined
+      (child: string, options?: LocalAgentMemberToolsReloadOptions) => Promise<{ readonly ok: true; readonly value: LocalAgentMemberToolsReload } | { readonly ok: false; readonly error?: { readonly message?: unknown } }>
+    const carried = await call(childSessionId, options)
+    return carried.ok ? carried.value : { ok: false, reason: 'start-failed', error: typeof carried.error?.message === 'string' ? carried.error.message : '' }
+  } catch (error) {
+    return { ok: false, reason: 'start-failed', error: error instanceof Error ? error.message : String(error) }
   }
 }
 
