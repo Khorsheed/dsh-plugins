@@ -90,23 +90,9 @@ The articles you come across sit in browser tabs, and talking them over with the
 
 Most Bilibili videos and most podcasts have no subtitles. Open one in the Reader and it is transcribed into timed text on this computer: the finished parts show up first, so you can read and take notes before it's done; with several speakers it works out who is talking, colors each paragraph by speaker, and lets you rename them ("host", "guest"). The transcript stays as the text, so you can translate it, discuss it and get quizzed on it like any article. The audio never leaves your computer; the speech model downloads the first time, and you need ffmpeg installed.
 
-<details open>
-<summary>Screenshots (1)</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-transcript.png" width="640" alt="transcribe: a podcast episode transcribed locally in the Reader, timestamps on the left and paragraphs colored by speaker">
-
-</details>
-
 ### capture: Capture
 
 Some pages only show their text once scripts have run, so a plain fetch gets an empty shell; some sites block plain fetches outright. That's when the Reader switches to a rendered fetch: a browser you never see opens the page for real, scrolls to the bottom, waits for everything to draw, and brings the text back, with script-drawn figures saved as images in place. It steps in on its own when a site blocks the plain fetch, and the detail page has a "Fetch rendered" button to try again by hand. Every run uses a fresh browser with none of your logins or cookies; the browser itself downloads the first time it's needed.
-
-<details open>
-<summary>Screenshots (1)</summary>
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/reader-render-fetch.png" width="640" alt="capture: text brought back by a rendered fetch on the Reader detail page, with a script-drawn figure kept in the text">
-
-</details>
 
 ## Make it yours
 

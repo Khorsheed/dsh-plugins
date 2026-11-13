@@ -51,7 +51,7 @@ Before you start: Kimi, Codex and Claude Code have to be installed by you; this 
 Getting your local Codex or Claude Code to help used to mean opening a terminal, copy-pasting, and carrying the result back. Now you say "give this to Codex" and it runs on your machine: its thinking, tool calls and the files it touches stream into a sub-session, you can stop it midway, or open the sub-session and keep talking to it; the result comes back to your main session with real usage and timing. Each tool runs in its own separate directory, so your existing setup and sign-ins on this machine are never touched. The "Local Agent Delegation" card in settings shows at a glance whether each one is signed in, and it's where you switch the default model and always-on mode. To hand subtasks to a separate DSH running on its own, just ask in a Dev mode session — nothing to switch on.
 
 <details open>
-<summary>Screenshots (5)</summary>
+<summary>Screenshots (4)</summary>
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-list.png" width="640" alt="The Plugins page's built-in plugin settings: after sub-agents, web search, agent loop and terminal come the Local Agent Delegation and Compaction reminder timing cards">
 
@@ -60,8 +60,6 @@ Getting your local Codex or Claude Code to help used to mean opening a terminal,
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex.png" width="640" alt="The expanded Codex section: Codex signed in with its version, endpoint, API key, "Verify endpoint & list models" and the available-models list">
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="640" alt="The expanded Claude Code section: Claude Code signed in with its version, endpoint, API key, Auth Token and the available-models list">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="640" alt="The “Local Agent Delegation” card with the “Local DSH Delegation” section open: signed in (0.2.1-rc.1), credentials taken from the host instance with no separate login, DeepSeek-V4.1-Flash as the default model, and resident mode (live) on">
 
 </details>
 

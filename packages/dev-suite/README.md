@@ -51,7 +51,7 @@
 以前想让本机的 Codex 或 Claude Code 帮一把，得自己开终端、复制粘贴、再把结果搬回来。现在你说一句「交给 Codex」，它就在你电脑上跑起来：思考、工具调用和改了哪些文件实时出现在子会话里，可以中途停下，也可以打开子会话接着跟它聊；结果带着真实用量和耗时回到主会话。每家都在自己单独的目录里运行，你电脑上原来的配置和登录一点不碰。设置里的「本机 Agent 委派」卡片一眼看清每家有没有登录好，默认模型和常驻模式都在这里切；想把子任务交给另一个单独运行的 DSH，开发模式里直接说就行，不用另外打开。
 
 <details open>
-<summary>功能示意（5 张）</summary>
+<summary>功能示意（4 张）</summary>
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-list.png" width="640" alt="「插件」页的「内置插件配置」：子智能体、网页搜索、Agent 循环、终端之后，是「本机 Agent 委派」和「压缩提醒时机」两张卡">
 
@@ -60,8 +60,6 @@
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-codex.png" width="640" alt="展开的 Codex 一节：已登录的 Codex 和版本号，端点地址、API Key、「验证端点并获取模型」和可用模型名单">
 
 <img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-claude.png" width="640" alt="展开的 Claude Code 一节：已登录的 Claude Code 和版本号，端点地址、API Key、Auth Token 和可用模型名单">
-
-<img src="https://raw.githubusercontent.com/Khorsheed/dsh-basic/main/docs/screenshots/local-agent-dsh.png" width="640" alt="「本机 Agent 委派」卡片里展开的「本机 DSH 委派」一节：已登录（0.2.1-rc.1），凭据走宿主实例、无需单独登录，默认模型选的是 DeepSeek-V4.1-Flash，常驻模式（live）开着">
 
 </details>
 
