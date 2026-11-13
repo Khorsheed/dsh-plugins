@@ -125,4 +125,19 @@ describe('McpManagerBridge', () => {
     expect(store.list()).toEqual([])
     expect(store.toPersisted().migration).toBeUndefined()
   })
+
+  it('does not erase known metadata while the official registry is not ready', async () => {
+    const { store, manager, settings } = fixture()
+    const bridge = new McpManagerBridge(store, manager, settings, { schemas: () => [] }, undefined, () => {}, () => {})
+    store.add(config)
+    store.markOfficial('fixture')
+    store.setOfficialTools('fixture', [{
+      name: 'echo', description: 'Echo input', enabled: true,
+      parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+    }])
+    expect((await bridge.refresh('fixture'))[0]).toMatchObject({
+      name: 'echo', description: 'Echo input',
+      parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
+    })
+  })
 })

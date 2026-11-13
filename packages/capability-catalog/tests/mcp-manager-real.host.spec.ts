@@ -74,6 +74,9 @@ describe('official MCP manager over a real stdio server', () => {
     const bridge = mountBridge(ctx, store)
     await bridge.reconcile()
     expect(store.isOfficial('fixture')).toBe(true)
+    expect(store.toolsByServer().fixture?.find(tool => tool.name === 'add')?.parameters).toMatchObject({
+      type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } }, required: ['a', 'b'],
+    })
     await vi.waitFor(() => { expect(ctx.tools.get('mcp__fixture__add')).toBeDefined() })
     await bridge.refresh('fixture')
     expect(store.toolsByServer().fixture?.find(tool => tool.name === 'add')?.description).toBe('Add two numbers')

@@ -203,7 +203,7 @@ export class McpManagerBridge {
       this.store.markOfficial(name)
       this.changed()
       if (desired.enabled) await this.settings.update('mcp-manager', { servers: { [name]: desired } })
-      this.store.setOfficialTools(name, this.officialTools(probe.toolNames ?? [], name))
+      await this.refresh(name)
     } catch (error) {
       this.warn(`capability-catalog: MCP migration for "${name}" rolled back: ${error instanceof Error ? error.message : String(error)}`)
       if (this.owned(name, config)) {
@@ -216,23 +216,49 @@ export class McpManagerBridge {
   }
 
   private officialTools(rawNames: readonly string[], serverName: string): CatalogMcpTool[] {
+    const previous = new Map((this.store.toolsByServer()[serverName] ?? []).map(tool => [tool.name, tool]))
     return rawNames.map(name => {
       const publicName = officialPublicToolName(serverName, name)
       const definition = this.tools.schemas().find(tool => tool.name === publicName)
-      return { name, description: definition?.description ?? '', ...(definition?.parameters !== undefined ? { parameters: definition.parameters } : {}), enabled: true }
+      const known = previous.get(name)
+      return {
+        name,
+        description: definition?.description ?? known?.description ?? '',
+        ...definition?.parameters !== undefined ? { parameters: definition.parameters }
+          : known?.parameters !== undefined ? { parameters: known.parameters } : {},
+        enabled: true,
+      }
     })
+  }
+
+  /** Official connected status is published only after its tools are registered. */
+  private async ready(name: string): Promise<boolean> {
+    const current = this.manager.list().find(row => row.name === name)?.status
+    if (current?.state === 'connected') return true
+    if (current === undefined || current.state !== 'connecting' && current.state !== 'reconnecting') return false
+    const timeout = AbortSignal.timeout(30_000)
+    try {
+      for await (const rows of this.manager.watch(timeout)) {
+        const status = rows.find(row => row.name === name)?.status
+        if (status?.state === 'connected') return true
+        if (status === undefined || status.state !== 'connecting' && status.state !== 'reconnecting') return false
+      }
+    } catch { /* A timeout retains the last known metadata. */ }
+    return false
   }
 
   async refresh(name: string): Promise<readonly CatalogMcpTool[]> {
     if (!this.store.isOfficial(name)) return this.store.toolsByServer()[name] ?? []
+    const config = this.store.list().find(server => server.serverName === name)
+    if (config?.enabled) {
+      const status = this.manager.list().find(row => row.name === name)?.status
+      if (status?.state === 'failed' && status.reason === 'load') await this.manager.restart(name)
+      if (!await this.ready(name)) return this.store.toolsByServer()[name] ?? []
+    }
     const probe = await this.manager.probe(name)
     if (!probe.ok || !probe.closeConfirmed || probe.cleanupError !== undefined) return this.store.toolsByServer()[name] ?? []
-    const status = this.manager.list().find(row => row.name === name)?.status
-    if (status?.state === 'failed' && status.reason === 'load' && this.store.list().find(server => server.serverName === name)?.enabled) {
-      await this.manager.restart(name)
-    }
-    const tools = this.officialTools(probe.toolNames ?? [], name)
-    this.store.setOfficialTools(name, tools)
+    if (config?.enabled && !await this.ready(name)) return this.store.toolsByServer()[name] ?? []
+    this.store.setOfficialTools(name, this.officialTools(probe.toolNames ?? [], name))
     return this.store.toolsByServer()[name] ?? []
   }
 

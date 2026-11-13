@@ -12,7 +12,7 @@ The capability catalog used a fresh SDK connection for discovery and every tool 
 
 Use `mcpManager` only when it, Settings and tools are available. Migrate each enabled server whose tools are all enabled. Persist a versioned ownership record and the original configuration in the catalog's settings. Convert each legacy `secretRef:` into a deterministic, provider-safe `${credential:...}` reference, retaining distinct env, header and query values. User configuration goes through `settings.update` / `mutate`, never through the manager's plugin-lifetime `register()`.
 
-Write the official entry disabled, probe it, then mark ownership and enable it. A failed migration restores previous credentials and the legacy connector. Existing different same-name entries remain foreign: the catalog does not replace or shadow them. Tools are read from the official registry, using its normalized-name hash rather than the legacy hash for non-simple names. Original catalog state remains for rollback, including its credential values; official configuration contains references, not those plaintext values.
+Write the official entry disabled, probe it, then mark ownership and enable it. A failed migration restores previous credentials and the legacy connector. Existing different same-name entries remain foreign: the catalog does not replace or shadow them. Tools are read from the official registry only after the manager reports `connected`, because that is when registration has settled; the probe alone proves only the remote tool names. While that registry is not ready, previously discovered descriptions and parameter schemas are retained rather than overwritten with empty fields. Names use the official normalized-name hash, not the legacy hash for non-simple names. Original catalog state remains for rollback, including its credential values; official configuration contains references, not those plaintext values.
 
 The official manager has no per-tool filter. Disabling one tool disables the official server, waits for its registrations to unmount, and returns that server to the existing connector. Restoring all tools permits another migration. Other hosts, missing capabilities and existing filtered servers retain the legacy path.
 
@@ -36,7 +36,7 @@ Real tests cover migration and rollback, name normalization, foreign entries, cr
 
 ## Testing
 
-The package's 23 test files / 313 tests pass on 0.2.2-rc.2, including two independent real-composition paths. The real fixture executes addition and credential-returning tools through official registrations, restarts the complete profile, switches between official and legacy ownership without duplicate names, and verifies Remote-driven removal and credential cleanup.
+The package's 24 test files / 315 tests pass on 0.2.2-rc.2, including two independent real-composition paths. The real fixture executes addition and credential-returning tools through official registrations, asserts the numeric required-parameter schema immediately after migration, restarts the complete profile, switches between official and legacy ownership without duplicate names, and verifies Remote-driven removal and credential cleanup. A separate registry-readiness test retains known metadata, and the client test passes a required `orderId` schema through the server list into the tool detail modal.
 
 ## Related
 

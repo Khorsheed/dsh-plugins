@@ -53,6 +53,9 @@ describe('capability catalog in a real MCP manager composition', () => {
     await vi.waitFor(async () => {
       expect((await catalog.mcpSnapshot()).tools.fixture?.find(tool => tool.name === 'add')?.description, JSON.stringify({ snapshot: await catalog.mcpSnapshot(), manager: ctx.mcpManager.list(), logs: ctx.logger.buffer.map(message => message.args) })).toBe('Add two numbers')
     }, { timeout: 10_000 })
+    expect((await catalog.mcpSnapshot()).tools.fixture?.find(tool => tool.name === 'add')?.parameters).toMatchObject({
+      type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } }, required: ['a', 'b'],
+    })
     expect(JSON.stringify(await call(ctx, 'mcp__fixture__credential'))).toContain('fixture-token-value')
     expect(ctx.mcpManager.config.servers.get().fixture?.enabled).toBe(true)
     expect(ctx.mcpManager.config.servers.get().fixture?.env.FIXTURE_TOKEN).toContain('${credential:')
