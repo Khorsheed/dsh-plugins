@@ -162,6 +162,35 @@ describe('mobile session navigation', () => {
     expect(editor.value).toBe('unsent draft')
   })
 
+  it('collapses and reopens a wide library without replacing the official editor', () => {
+    vi.stubGlobal('innerWidth', 1024)
+    const f = fixture(), navigation = new MobileNavigation()
+    navigation.set(f.navigation)
+    const snapshot = { active: true, drawer: false, supported: true, mode: 'mobile' }
+    const props = {
+      navigation, toggleSidebar: vi.fn(),
+      presentation: { prepareNavigation: vi.fn(), getSnapshot: () => snapshot, subscribe: () => () => {} },
+      connection: { state: { getSnapshot: () => 'connected', subscribe: () => () => {} } },
+    } as unknown as MobileChromeInjected
+    const page = render(<div data-mobile-frame><div><div data-slot="main"><textarea defaultValue="unsent draft" /></div></div><MobileChrome {...props} t={t}/></div>)
+    const editor = page.container.querySelector('textarea')!
+    const pane = document.querySelector<HTMLElement>('[data-mobile-library-pane]')!
+    const toggle = screen.getByRole('button', { name: en.menu, exact: true })
+    expect(pane.hidden).toBe(false)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(toggle)
+    expect(pane.hidden).toBe(true)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(document.documentElement.hasAttribute('data-mobile-library-open')).toBe(false)
+    expect(page.container.querySelector('textarea')).toBe(editor)
+    expect(editor.value).toBe('unsent draft')
+    fireEvent.click(toggle)
+    expect(pane.hidden).toBe(false)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(document.documentElement.hasAttribute('data-mobile-library-open')).toBe(true)
+    expect(page.container.querySelector('textarea')).toBe(editor)
+  })
+
   it('closes an official drawer it did not ask for, keeping the one settings opened', () => {
     const f = fixture(), navigation = new MobileNavigation()
     navigation.set(f.navigation)

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-24-mobile-tunnel-detached-sidecar.md
-.agents/notes/implemented/architecture/2026-10-24-mobile-tunnel-detached-sidecar.md: af0ca20252f8b33682d759b47b57f9fb3863244f
-.agents/notes/implemented/architecture/2026-10-24-mobile-tunnel-detached-sidecar.zh.md: b36771c59a8eb8afd0b909611b95a76ffb539c3c
+.agents/notes/implemented/architecture/2026-10-24-mobile-tunnel-detached-sidecar.md: f29b8185d3376f733ba92421685d5069672e511c
+.agents/notes/implemented/architecture/2026-10-24-mobile-tunnel-detached-sidecar.zh.md: bda33045bb7f013dd5c24d4c15d43394e0bf8f2a
