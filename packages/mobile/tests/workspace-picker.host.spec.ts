@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
@@ -13,7 +13,7 @@ afterEach(async () => {
   resources.scaffold = undefined
 })
 
-describe.skipIf(harness === undefined)('the reusable Workspace picker on a mobile client', () => {
+describe.skipIf(harness === undefined || !existsSync(join(harness, 'packages/experimental/deepseek-chat-import/package.json')))('the reusable Workspace picker on a mobile client', () => {
   it('uses the mobile directory flow for the official Session importer and creates the chosen Workspace', async () => {
     const packageRoot = fileURLToPath(new URL('..', import.meta.url))
     const { launchWebScaffold } = await import(pathToFileURL(join(harness!, 'apps/web/tests/scaffold.ts')).href) as {

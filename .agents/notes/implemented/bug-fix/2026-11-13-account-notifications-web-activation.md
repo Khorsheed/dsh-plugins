@@ -2,7 +2,7 @@
 
 Status: implemented
 
-English | [中文](2026-11-13-account-notifications-web-activation.md)
+English | [中文](2026-11-13-account-notifications-web-activation.zh.md)
 
 ## Problem
 
@@ -26,6 +26,9 @@ The built-in settings client now supplies `accountUi`, allowing the notification
 
 A real rc.2 Web scaffold opened the built-in Plugins inventory, expanded the global plugin group, displayed `Account notifications`, and found no `waiting for activation` message or page error. The test is in `packages/basic/tests/account-notifications.host.spec.ts`.
 
+The rc.3 rerun checks the signed-out sign-in menu item, the exact Host-manifest version, active account notifications and zero page errors. A signed-out client intentionally has no Account settings section. The test does not start external authorization or read credentials.
+
 ## Related
 
 - [Host 0.2.2-rc.2 adaptation](../process/2026-11-12-host-022-rc2-adaptation.md)
+- [Complete client builds preserve version metadata](2026-11-13-complete-client-build-metadata.md)

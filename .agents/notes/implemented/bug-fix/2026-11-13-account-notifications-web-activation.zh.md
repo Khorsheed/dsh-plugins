@@ -26,6 +26,9 @@ Web 启动覆盖层禁用了 `ui-settings-account`，却保留了 `ui-account-no
 
 真实 rc.2 Web 组合打开内置插件清单，展开全局插件分组，显示 `Account notifications`，未出现 `waiting for activation` 或页面错误。验收位于 `packages/basic/tests/account-notifications.host.spec.ts`。
 
+rc.3 复验覆盖未登录时的登录菜单项、与宿主清单一致的版本号、账号通知激活及无页面错误。未登录时不显示账号设置页是官方规则，不是插件回退。测试不启动外部授权，也不读取凭据。
+
 ## 相关
 
 - [宿主 0.2.2-rc.2 适配](../process/2026-11-12-host-022-rc2-adaptation.md)
+- [完整客户端构建保留版本元数据](2026-11-13-complete-client-build-metadata.md)
