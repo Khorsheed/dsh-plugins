@@ -61,7 +61,7 @@
     },
     "compat": {
       "minHost": "0.2.0-rc.2",
-      "notes": "Mobile layout and iOS shell under validation; device pairing and push are not provided. The one-click Quick Tunnel entry needs a local cloudflared binary; without it the connect section falls back to static-origin configuration."
+      "notes": "Mobile layout and iOS shell under validation; device pairing and push are not provided. The one-click Quick Tunnel entry needs a local cloudflared binary; without it the connect section falls back to static-origin configuration. On hosts before 0.2.2-rc.3, the two original Workspace directory flows remain available; the reusable workspace.picker directory flow registers only when the host declares it."
     }
   },
   "peerDependencies": {

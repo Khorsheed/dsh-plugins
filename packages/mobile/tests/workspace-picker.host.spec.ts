@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const harness = process.env.DSH_HARNESS
+const importerAvailable = harness !== undefined && existsSync(join(harness, 'packages/experimental/deepseek-chat-import/package.json'))
 const resources: { scaffold?: { close(): Promise<void> }; browser?: { close(): Promise<void> } } = {}
 afterEach(async () => {
   await resources.browser?.close()
@@ -13,8 +14,8 @@ afterEach(async () => {
   resources.scaffold = undefined
 })
 
-describe.skipIf(harness === undefined || !existsSync(join(harness, 'packages/experimental/deepseek-chat-import/package.json')))('the reusable Workspace picker on a mobile client', () => {
-  it('uses the mobile directory flow for the official Session importer and creates the chosen Workspace', async () => {
+describe.skipIf(harness === undefined)('the reusable Workspace picker on a mobile client', () => {
+  it.skipIf(!importerAvailable)('uses the mobile directory flow for the official Session importer and creates the chosen Workspace', async () => {
     const packageRoot = fileURLToPath(new URL('..', import.meta.url))
     const { launchWebScaffold } = await import(pathToFileURL(join(harness!, 'apps/web/tests/scaffold.ts')).href) as {
       launchWebScaffold(options: object): Promise<{
@@ -67,6 +68,30 @@ describe.skipIf(harness === undefined || !existsSync(join(harness, 'packages/exp
     await directory.waitFor({ state: 'hidden' })
     await dialog.locator('button[title]').filter({ hasText: 'import-target' }).waitFor()
     expect(scaffold.ctx.workspaceRegistry.list().some(workspace => workspace.path === target)).toBe(true)
+    expect(errors).toEqual([])
+  }, 120_000)
+
+  it.skipIf(importerAvailable)('keeps mobile loading without the reusable picker and without page errors', async () => {
+    const packageRoot = fileURLToPath(new URL('..', import.meta.url))
+    const { launchWebScaffold } = await import(pathToFileURL(join(harness!, 'apps/web/tests/scaffold.ts')).href) as {
+      launchWebScaffold(options: object): Promise<{ authenticatedUrl: string; workspaceCwd: string; close(): Promise<void> }>
+    }
+    const { chromium } = createRequire(pathToFileURL(join(harness!, 'apps/web/tests/scaffold.ts')))('playwright') as typeof import('playwright')
+    const { connectFreshWorkspace } = await import(pathToFileURL(join(harness!, 'apps/web/tests/support.ts')).href) as {
+      connectFreshWorkspace(page: import('playwright').Page, root: string): Promise<void>
+    }
+    const scaffold = await launchWebScaffold({ profile: { packages: [{ dir: packageRoot, enabled: true }] } })
+    resources.scaffold = scaffold
+    const browser = await chromium.launch()
+    resources.browser = browser
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, locale: 'en-US', hasTouch: true })
+    const errors: string[] = []
+    page.on('pageerror', error => { errors.push(error.message) })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.locator('html[data-dsh-mobile]').waitFor()
+    expect(await page.getByRole('button', { name: 'Import DeepSeek chats', exact: true }).count()).toBe(0)
     expect(errors).toEqual([])
   }, 120_000)
 })

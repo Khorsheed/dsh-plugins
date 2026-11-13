@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-13-mobile-directory-browser.md
-.agents/notes/implemented/bug-fix/2026-09-13-mobile-directory-browser.md: 78201b946d0925b1aee0bc98e861e589493ddc50
-.agents/notes/implemented/bug-fix/2026-09-13-mobile-directory-browser.zh.md: b7e6cce4e319d4901b1416365b8c1f0f020b150e
+.agents/notes/implemented/bug-fix/2026-09-13-mobile-directory-browser.md: 144c950b0d27e731076a662409f3c28d95b0dff4
+.agents/notes/implemented/bug-fix/2026-09-13-mobile-directory-browser.zh.md: e64388565117955eebf02e0f65dbb2cb577d3f23

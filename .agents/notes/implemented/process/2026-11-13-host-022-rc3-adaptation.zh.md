@@ -16,7 +16,7 @@ Status: implemented
 
 仓内实际使用的 117 个官方 dsh 包在 `pnpm-workspace.yaml` 中统一钉到 0.2.2-rc.3，Cordis 与 Schemastery 的独立版本钉保持不变。锁文件不再有 rc.2 实解。CI 与发布 workflow 使用 `dsh-v0.2.2-rc.3`；前瞻兼容 lane 与稳定 lane 一样使用 Node 24.9，符合宿主引擎下限。现有宽 peer 区间与各包 `minHost` 不变，`verifiedHost` 只随对应验收证据推进。
 
-移动端除两个旧目录流程槽外，也把现有目录面板注册进 `workspace.picker.directoryFlow`。可复用选择器（包括官方可选导入器）因此使用移动流程。`uiWorkspace.pickDirectory` 适配继续保留：新 Factory 选择或创建 Workspace，而 Room、datasets、video-studio、capability-catalog 与 canvas-novel 需要的是不产生该注册副作用的任意目录路径。
+移动端除两个旧目录流程槽外，也向 `workspace.picker.directoryFlow` 贡献现有目录面板。`injectMobileDirectoryFlow` 通过公开 `slots.inject` 转发随版本变化的键，在 rc.2 缺少声明时保持不激活，在宿主声明后接入，不依赖内部 core 的动态 spec 辅助方法。可复用选择器（包括官方可选导入器）因此使用移动流程，而 `minHost` 不抬高。`uiWorkspace.pickDirectory` 适配继续保留：新 Factory 选择或创建 Workspace，而 Room、datasets、video-studio、capability-catalog 与 canvas-novel 需要的是不产生该注册副作用的任意目录路径。
 
 官方导入器产生普通持久 Session。消息工具、消息时间轴、Context Lens、file-preview、TaskPilot 与 quote 因而可以直接在导入历史上验收，无需复制 ZIP 解析或冷写入实现。可复用工作区选择器是画布与评测后续整合点。新建会话 HOC 槽目前没有需要迁移的 DOM 消费方，本波不会为了用新槽而发明功能。
 
@@ -40,7 +40,7 @@ Status: implemented
 
 ## Testing
 
-精确 rc.3 worktree（`38a6a5c965aa`）已在 Node 24.9.0 下完成依赖安装、`build:lib`、`build:web` 与原生 addon 构建。移动端构建及 32 个测试文件、176 项测试通过，包括三槽注册契约。锁文件不再出现 `0.2.2-rc.2`，`ui-workspace` 实解为 `0.2.2-rc.3`。
+精确 rc.3 worktree（`38a6a5c965aa`）已在 Node 24.9.0 下完成依赖安装、`build:lib`、`build:web` 与原生 addon 构建。移动端构建及 33 个测试文件、179 项测试通过，另有一项按版本跳过，包括三槽注册契约与真实 SlotRegistry 生命周期用例。锁文件不再出现 `0.2.2-rc.2`，`ui-workspace` 实解为 `0.2.2-rc.3`。同一源码也通过 rc.2 移动端构建及 33 个文件、179 项测试，导入器专属用例跳过；真实 rc.2 Chromium 启动移动布局且无页面错误。
 
 真实 Loader/Chromium 组合同时挂载移动端与官方导入器。桌面打开导入对话框后切换到触控尺寸的移动视口，经可复用 Factory 选择添加工作区并输入新路径，页面显示移动目录面板，Host 工作区注册表随即创建该工作区，页面错误为 0。这是浏览器组合证据，不等于完整真机资格验收。
 
