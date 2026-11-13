@@ -91,7 +91,7 @@ export function RoomRestartBanner({ state, busy, onContinue, onStop, t }: {
   )
 }
 
-/** The timeline node of one auto-continue dispatch: 「房间 · 自动」, the message, 「设置」. */
+/** A restart continuation's own timeline message, attributed to the room's automatic action or the human's button. */
 export function RoomAutoContinueView({ node, sessionId, roomStore, setSettings, t }: RoomAutoContinueViewProps): ReactNode {
   const state = useSyncExternalStore(roomStore.subscribe, () => roomStore.getCached(sessionId))
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -99,7 +99,7 @@ export function RoomAutoContinueView({ node, sessionId, roomStore, setSettings, 
   const save = setSettings === undefined ? undefined : (patch: Partial<RoomSettings>) => setSettings(sessionId, patch)
   return (
     <div className={css.auto} data-room-dispatch={data.seq} data-testid="restart-auto-row">
-      <span className={css.who}>{t('restart.auto.who')}</span>
+      <span className={css.who}>{t(data.manual === true ? 'restart.manual.who' : 'restart.auto.who')}</span>
       <p className={css.message}>{data.text}</p>
       {save !== undefined && <span className={css.autoLink}><SettingsLink setSettings={save} open={settingsOpen} onOpen={setSettingsOpen} t={t} /></span>}
       {settingsOpen && save !== undefined && <SettingsPanel settings={state?.settings} setSettings={save} t={t} />}

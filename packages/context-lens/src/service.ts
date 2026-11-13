@@ -221,8 +221,8 @@ export class InspectorService {
     this.store.noteLogActivity(sessionId)
     if (eventType.startsWith('compaction/')) this.store.noteCompaction(sessionId, eventType, event.data as unknown as Record<string, unknown>)
     if (eventType.startsWith('room/')) {
-      // A round's chat anchor is the `messageId` its dispatch recorded; a
-      // dispatch without one has none (no lookup by text).
+      // Ordinary rounds anchor on their recorded `messageId`; restart continuations
+      // name their own room-auto-continue row instead (never a lookup by text).
       this.store.noteRoomEvent(sessionId, eventType, event.data, event.seq, at)
       return
     }

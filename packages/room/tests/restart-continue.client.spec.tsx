@@ -11,6 +11,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { autoContinueRounds, interruptedRounds, RESTART_CONTINUE_TEXT } from '../src/restart-continue.ts'
 import { restartBanner } from '../src/client/restart-view.ts'
 import { RoomAutoContinueView, RoomRestartBanner } from '../src/client/RoomRestart.tsx'
+import { roomAutoContinueDefinition } from '../src/client/nodes.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { DEFAULT_ROOM_SETTINGS } from '../src/journal.ts'
 import type { RoomDelivery, RoomMember, RoomState } from '../src/types.ts'
@@ -201,5 +202,26 @@ describe('the room\'s auto-continue node', () => {
     cleanup()
     render(<RoomAutoContinueView {...{ node, sessionId: 'room-1', roomStore: roomStore(interrupted()), t: makeTranslate(en) } as never} />)
     expect(screen.getByTestId('restart-auto-row').textContent).toContain('Room · automatic')
+  })
+
+  it('gives a manual continuation without a user/message its own accurately labelled row', () => {
+    const event = { type: 'room/dispatch', seq: 1777, time: 17_770, data: {
+      origin: 'human', targets: ['人物建模大师'], text: RESTART_CONTINUE_TEXT,
+      continues: ['1761:78e6ea0c-7631-47a4-9b41-c3de6c5a0fcb'], task: 'ca281806-e638-4402-a281-87950ffaebbd',
+    } }
+    expect(roomAutoContinueDefinition.match({ ...event, data: { ...event.data, messageId: 'u-human' } } as never)).toBeNull()
+    expect(roomAutoContinueDefinition.match({ ...event, data: { ...event.data, origin: 'member' } } as never)).toBeNull()
+    const match = roomAutoContinueDefinition.match(event as never)
+    expect(match).toEqual({ id: '1777', role: 'start' })
+    if (match === null || match.role !== 'start') throw new Error('manual continuation must have a start match')
+    const state = roomAutoContinueDefinition.start({} as never, { event } as never)
+    expect(state).toMatchObject({ seq: 1777, manual: true })
+    const node = roomAutoContinueDefinition.buildViewNode({ key: '18:room-auto-continue1777', id: '1777', state } as never, {} as never)
+    render(<RoomAutoContinueView {...{ node, sessionId: 'room-1', roomStore: roomStore(interrupted()), t } as never} />)
+    expect(screen.getByTestId('restart-auto-row').textContent).toContain('房间 · 手动')
+    expect(screen.getByTestId('restart-auto-row').getAttribute('data-room-dispatch')).toBe('1777')
+    cleanup()
+    render(<RoomAutoContinueView {...{ node, sessionId: 'room-1', roomStore: roomStore(interrupted()), t: makeTranslate(en) } as never} />)
+    expect(screen.getByTestId('restart-auto-row').textContent).toContain('Room · manual')
   })
 })

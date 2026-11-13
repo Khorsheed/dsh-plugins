@@ -302,19 +302,35 @@ describe('room rounds', () => {
 
   it('a round anchored on the human message carries where the chat pages back to', () => {
     const store = load(all)
-    store.noteRoomEvent('s', 'room/dispatch', { origin: 'human', text: 'x', targets: ['coco'], messageId: 'u9' }, 90, 90_000)
+    store.noteRoomEvent('s', 'room/dispatch', { origin: 'human', text: 'x', targets: ['coco'], messageId: 'u9', continues: ['run-old'] }, 90, 90_000)
     store.noteRoomEvent('s', 'room/dispatch', { origin: 'human', text: 'y', targets: ['coco'] }, 95, 95_000)
     const [x, y] = store.listTurns('s').turns.filter(t => t.room !== undefined && t.query !== '你好' && t.query !== '列出工具' && t.query !== '写测试')
-    expect([x?.room?.messageId, x?.startSeq]).toEqual(['u9', 78])
+    expect([x?.room?.messageId, x?.room?.continuationSeq, x?.startSeq]).toEqual(['u9', undefined, 78])
     expect(y?.startSeq).toBeUndefined()
   })
 
-  it('a dispatch that recorded no message has no chat anchor (no lookup by text)', () => {
+  it('a human dispatch without a message or its own continuation row has no chat anchor (no lookup by text)', () => {
     const rows = [...turn1, ...roster,
       { type: 'user/message', seq: 19, time: 4900, data: { id: 'own', source: { kind: 'user' }, content: [{ type: 'text', text: '你好' }] } },
       ...legacyRound,
     ] satisfies SessionLogRow[]
     expect(load(rows).listTurns('s').turns.map(t => t.room?.messageId)).toEqual([undefined, undefined])
+  })
+
+  it.each([
+    { seq: 1432, via: 'auto-continue' },
+    { seq: 1777, via: undefined },
+  ])('a restart continuation at $seq anchors on its own dispatch row, not the original task message', ({ seq, via }) => {
+    const store = load(turn1)
+    store.noteRoomEvent('s', 'room/dispatch', {
+      origin: 'human', ...via === undefined ? {} : { via },
+      text: '刚才实例重启，继续之前请先核对已经做完的部分', targets: ['人物建模大师'],
+      continues: ['1424:78e6ea0c-7631-47a4-9b41-c3de6c5a0fcb'], task: '175fdf9c-1f44-4473-8ad3-c6e7c852e060',
+    }, seq, 1_794_239_947_664)
+    const round = store.listTurns('s').turns.find(turn => turn.turnSeq === -1_000_000 - seq)
+    expect(round?.room).toMatchObject({ continuationSeq: seq })
+    expect(round?.room?.messageId).toBeUndefined()
+    expect(round?.startSeq).toBe(seq)
   })
 
   it('a message that waited behind the member\'s previous round says how long (排队 N 后开始); one taken at once says nothing', () => {

@@ -87,6 +87,10 @@ export interface RoomDispatch {
   targets: string[]
   /** The human's user/message the post appended alongside (the chat's anchor for the round). */
   messageId?: string
+  /** The room's own continuation after a restart: its chat row keys on this dispatch's seq. */
+  via?: 'auto-continue'
+  /** The interrupted runs it continues; a manual one may have no separate user/message. */
+  continues?: readonly string[]
 }
 
 /** A non-human dispatch's place in the collaboration tree; it never opens a numbered round. */
@@ -170,7 +174,13 @@ export function applyRoomEvent(room: RoomState, type: string, data: unknown, seq
       }
       const targets = Array.isArray(d['targets']) ? d['targets'].filter((t): t is string => typeof t === 'string') : []
       const messageId = str(d['messageId'])
-      room.dispatches.push({ seq, at, text: str(d['text']) ?? '', targets, ...messageId === undefined ? {} : { messageId } })
+      const continues = Array.isArray(d['continues']) ? d['continues'].filter((run): run is string => typeof run === 'string') : undefined
+      room.dispatches.push({
+        seq, at, text: str(d['text']) ?? '', targets,
+        ...messageId === undefined ? {} : { messageId },
+        ...d['via'] === 'auto-continue' ? { via: 'auto-continue' as const } : {},
+        ...continues === undefined ? {} : { continues },
+      })
       return true
     }
     case 'room/run-state': {

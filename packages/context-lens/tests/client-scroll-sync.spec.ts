@@ -217,6 +217,27 @@ describe('locateTurnPaging', () => {
     expect(loadThrough).toHaveBeenCalledTimes(2)
     expect(scrollIntoView.mock.instances[0]).toBe(port.querySelector('[data-chat-node-key="input-message-abc"]'))
   })
+  it('pages back to a restart continuation by its exact room node, not its original task', async () => {
+    const { locateTurnPaging } = await import('../src/client/scroll-sync.ts')
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    const { port } = conversation([9])
+    const loadThrough = vi.fn(async () => {
+      const row = document.createElement('div')
+      row.setAttribute('data-chat-flow-kind', 'room-auto-continue')
+      row.setAttribute('data-chat-anchor-key', '18:room-auto-continue1432')
+      port.appendChild(row)
+    })
+    const landed = locateTurnPaging({ continuationSeq: 1432, startSeq: 1432, loadThrough, alive: () => true })
+    for (let i = 0; i < 90; i += 1) {
+      frames.shift()?.(0)
+      await Promise.resolve()
+    }
+    expect(await landed).toBe(true)
+    expect(loadThrough).toHaveBeenCalledWith(1432)
+    expect(scrollIntoView.mock.instances[0]).toBe(port.querySelector('[data-chat-flow-kind="room-auto-continue"]'))
+  })
 })
 
 describe('scrollConversationToCall', () => {
