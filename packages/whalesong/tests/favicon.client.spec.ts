@@ -75,6 +75,32 @@ describe('createFaviconAnimator', () => {
     animator.dispose()
   })
 
+  it('updates both the dark and light shell icon links', async () => {
+    vi.useFakeTimers()
+    const dark = mountIcon(document, '/favicon-dark.svg')
+    dark.media = '(prefers-color-scheme: dark)'
+    const light = mountIcon(document)
+    light.media = '(prefers-color-scheme: light)'
+    const darkSvg = WHALE_SVG.replace('fill="#000" d="M1', 'fill="#fff" d="M1')
+    const fetchImpl = ((href: string) => Promise.resolve({
+      ok: true,
+      text: () => Promise.resolve(href === '/favicon-dark.svg' ? darkSvg : WHALE_SVG),
+    } as Response)) as unknown as typeof fetch
+    const animator = createFaviconAnimator(window, { doc: document, fetchImpl })
+    await vi.advanceTimersByTimeAsync(0)
+    animator.setActive(true)
+    const darkFirst = dark.getAttribute('href')
+    const lightFirst = light.getAttribute('href')
+    expect(darkFirst?.startsWith('data:image/svg+xml')).toBe(true)
+    expect(lightFirst?.startsWith('data:image/svg+xml')).toBe(true)
+    expect(currentFrameSvg(dark)).toContain('fill="#000000"')
+    expect(currentFrameSvg(light)).toContain('fill="#000000"')
+    await vi.advanceTimersByTimeAsync(FRAME_MS)
+    expect(dark.getAttribute('href')).not.toBe(darkFirst)
+    expect(light.getAttribute('href')).not.toBe(lightFirst)
+    animator.dispose()
+  })
+
   it('renders the waterline-bubble frame: bobbing whale group + waterline rect + 3 solid bubbles', async () => {
     vi.useFakeTimers()
     const link = mountIcon(document)

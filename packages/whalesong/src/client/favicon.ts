@@ -80,7 +80,7 @@ function defaultReducedMotion(win: Window): () => boolean {
 export function colorizeWhaleSvg(svgText: string, whaleFill = '#000000'): string {
   return svgText
     .replace(/<style>[\s\S]*?<\/style>/gi, '')
-    .replace('fill="#000"', `fill="${whaleFill}"`)
+    .replace(/fill="#(?:000000|ffffff|000|fff)"/i, `fill="${whaleFill}"`)
 }
 
 /**
@@ -113,7 +113,7 @@ function toDataUrl(svgText: string): string {
 }
 
 /**
- * Create the favicon animator. On creation it fetches the stock favicon and
+ * Create the favicon animator. On creation it fetches each shell favicon and
  * renders a page-matched static whale that stays in the tab icon at all times;
  * task activation animates it, deactivation and dispose fall back to the static
  * whale, and a page theme switch re-renders both.
@@ -129,12 +129,14 @@ export function createFaviconAnimator(win: Window, options: FaviconAnimatorOptio
   const reducedMotion = options.reducedMotion ?? defaultReducedMotion(win)
   const frameMs = options.frameMs ?? FRAME_MS
 
-  const link = doc.querySelector('link[rel~="icon"]')
-  const originalHref = link?.getAttribute('href')
+  const links = [...doc.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]')].flatMap(link => {
+    const originalHref = link.getAttribute('href')
+    return originalHref === null ? [] : [{ link, originalHref }]
+  })
 
-  /** Static page-matched whale data URL (shown while idle). */
-  let staticUrl: string | undefined
-  let frames: string[] | undefined
+  /** Static page-matched whale data URLs, one per shell icon link. */
+  let staticUrls: string[] | undefined
+  let frames: string[][] | undefined
   /** Page-dark flag the cached frames were generated with (whale fill contrast). */
   let frameDark: boolean | undefined
   let loading = false
@@ -154,43 +156,49 @@ export function createFaviconAnimator(win: Window, options: FaviconAnimatorOptio
   /** The page's actual palette, read from the official theme projection. */
   const pageIsDark = (): boolean => doc.body.hasAttribute(PAGE_DARK_ATTRIBUTE)
 
-  /** Idle state: show the static page-matched whale, not the stock icon. */
+  /** Idle state: show each link's static page-matched whale, not the stock icon. */
   const applyStatic = (): void => {
     stopInterval()
-    if (link != null && staticUrl != null) link.setAttribute('href', staticUrl)
+    if (staticUrls === undefined) return
+    for (const [index, { link }] of links.entries()) link.setAttribute('href', staticUrls[index]!)
+  }
+
+  const showFrame = (index: number): void => {
+    if (frames === undefined) return
+    for (const [linkIndex, { link }] of links.entries()) link.setAttribute('href', frames[linkIndex]![index]!)
   }
 
   const startInterval = (): void => {
-    if (timer !== undefined || frames === undefined || link == null) return
-    const activeFrames = frames
+    if (timer !== undefined || frames === undefined || links.length === 0) return
     frame = 0
-    link.setAttribute('href', activeFrames[frame]!)
+    showFrame(frame)
     timer = win.setInterval(() => {
       frame = (frame + 1) % FRAME_COUNT
-      // `activeFrames` holds exactly FRAME_COUNT entries; `frame` is
-      // modulo-bounded, so the index is always in range.
-      link.setAttribute('href', activeFrames[frame]!)
+      showFrame(frame)
     }, frameMs)
   }
 
   const ensureFrames = (): void => {
-    if (staticUrl !== undefined || loading || failed || originalHref == null || fetchImpl === undefined) return
+    if (staticUrls !== undefined || loading || failed || links.length === 0 || fetchImpl === undefined) return
     loading = true
     void (async () => {
       try {
-        const res = await fetchImpl(originalHref)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const svgText = await res.text()
-        if (!svgText.includes('</svg>')) throw new Error('favicon is not an SVG document')
-        // Resolve the whale's fill from the PAGE palette: the frames must carry
-        // an explicit color because the data-URL media context cannot evaluate
-        // the stock stylesheet's prefers-color-scheme query, and the contrast
-        // must match the page (a light page on a dark system would otherwise
-        // render an invisible white whale).
+        // Resolve each whale's fill from the PAGE palette: data-URL favicons
+        // cannot evaluate the stock stylesheet's prefers-color-scheme query.
         frameDark = pageIsDark()
         const whaleFill = frameDark ? '#FFFFFF' : '#000000'
-        staticUrl = toDataUrl(colorizeWhaleSvg(svgText, whaleFill))
-        frames = Array.from({ length: FRAME_COUNT }, (_, f) => toDataUrl(frameSvg(svgText, f, whaleFill)))
+        const assets = await Promise.all(links.map(async ({ originalHref }) => {
+          const res = await fetchImpl(originalHref)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const svgText = await res.text()
+          if (!svgText.includes('</svg>')) throw new Error('favicon is not an SVG document')
+          return {
+            staticUrl: toDataUrl(colorizeWhaleSvg(svgText, whaleFill)),
+            frames: Array.from({ length: FRAME_COUNT }, (_, f) => toDataUrl(frameSvg(svgText, f, whaleFill))),
+          }
+        }))
+        staticUrls = assets.map(asset => asset.staticUrl)
+        frames = assets.map(asset => asset.frames)
         loading = false
         if (requested && !reducedMotion()) startInterval()
         else applyStatic()
@@ -206,8 +214,8 @@ export function createFaviconAnimator(win: Window, options: FaviconAnimatorOptio
   // the new contrast color (static and animated alike) instead of keeping an
   // invisible fish in the tab icon.
   const observer = new MutationObserver(() => {
-    if (staticUrl === undefined || frameDark === pageIsDark()) return
-    staticUrl = undefined
+    if (staticUrls === undefined || frameDark === pageIsDark()) return
+    staticUrls = undefined
     frames = undefined
     failed = false
     ensureFrames()
@@ -226,7 +234,7 @@ export function createFaviconAnimator(win: Window, options: FaviconAnimatorOptio
         return
       }
       if (reducedMotion()) return // static whale stays
-      if (link == null || originalHref == null) {
+      if (links.length === 0) {
         console.warn('[whalesong] favicon animation unavailable: no usable icon link')
         return
       }
