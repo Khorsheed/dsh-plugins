@@ -22,13 +22,14 @@ function mcpToolRowFor(tool: CatalogMcpTool | CatalogToolRow, serverName: string
 }
 
 /** Manage-modal for one MCP server (opened from the tile): config JSON,
- * credential inputs, per-tool enable toggles, and discover. Clicking a tool row
- * opens the SHARED tool detail modal (stacked on top) for its parameter schema —
- * the manage modal stays server-level. */
-export function McpServerManageModal({ group, discovering, onClose, onSetCredential, onSetToolEnabled, onDiscover, onOpenTool, t }: {
+ * credential inputs, server and per-tool enable toggles, and discover. Clicking
+ * a tool row opens the SHARED tool detail modal (stacked on top) for its
+ * parameter schema — the manage modal stays server-level. */
+export function McpServerManageModal({ group, discovering, onClose, onSetEnabled, onSetCredential, onSetToolEnabled, onDiscover, onOpenTool, t }: {
   group: McpGroup
   discovering: boolean
   onClose: () => void
+  onSetEnabled: (serverName: string, enabled: boolean) => Promise<void>
   onSetCredential: (ref: string, value: string) => Promise<boolean>
   onSetToolEnabled: (serverName: string, tool: string, enabled: boolean) => Promise<void>
   onDiscover: (serverName: string) => Promise<void>
@@ -38,6 +39,7 @@ export function McpServerManageModal({ group, discovering, onClose, onSetCredent
   const [credValues, setCredValues] = useState<Record<string, string>>({})
   const [credState, setCredState] = useState<Record<string, CredentialSaveState>>({})
   const [toolQuery, setToolQuery] = useState('')
+  const [settingEnabled, setSettingEnabled] = useState(false)
 
   const saveCred = async (ref: string): Promise<void> => {
     const value = credValues[ref] ?? ''
@@ -46,6 +48,16 @@ export function McpServerManageModal({ group, discovering, onClose, onSetCredent
     const ok = await onSetCredential(ref, value)
     setCredState((s) => ({ ...s, [ref]: ok ? 'ok' : 'fail' }))
     if (ok) setCredValues((s) => ({ ...s, [ref]: '' }))
+  }
+
+  const runSetEnabled = async (enabled: boolean): Promise<void> => {
+    if (settingEnabled) return
+    setSettingEnabled(true)
+    try {
+      await onSetEnabled(group.serverName, enabled)
+    } finally {
+      setSettingEnabled(false)
+    }
   }
 
   const runDiscover = async (): Promise<void> => {
@@ -64,6 +76,23 @@ export function McpServerManageModal({ group, discovering, onClose, onSetCredent
   return (
     <ModalShell title={group.serverName} onClose={onClose} t={t}>
       <div className={css.mcpBody}>
+        {group.managed ? (
+          <div className={css.mcpToolBar}>
+            <span className={css.enableLabel}>{group.enabled ? t('mcpEnabled') : t('mcpDisabled')}</span>
+            <label className={css.switch} title={t('mcpEnabled')}>
+              <input
+                type="checkbox"
+                checked={group.enabled}
+                disabled={settingEnabled}
+                onChange={(e) => void runSetEnabled(e.target.checked)}
+                aria-label={`${t('mcpEnabled')}: ${group.serverName}`}
+              />
+              <span className={css.track} />
+              <span className={css.thumb} />
+            </label>
+          </div>
+        ) : null}
+
         {group.managed && group.config !== undefined ? (
           <>
             <details className={css.mcpConfigDetails}>

@@ -567,6 +567,7 @@ export function CapabilityCatalogCard({
           group={mcpDetail}
           discovering={discoveringMcp.has(mcpDetail.serverName)}
           onClose={() => setMcpDetailName(null)}
+          onSetEnabled={setMcpEnabled}
           onSetCredential={mcpSetCredential}
           onSetToolEnabled={setMcpToolEnabled}
           onDiscover={discoverMcp}
