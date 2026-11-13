@@ -36,7 +36,7 @@ Real tests cover migration and rollback, name normalization, foreign entries, cr
 
 ## Testing
 
-The package's 24 test files / 315 tests pass on 0.2.2-rc.2, including two independent real-composition paths. The real fixture executes addition and credential-returning tools through official registrations, asserts the numeric required-parameter schema immediately after migration, restarts the complete profile, switches between official and legacy ownership without duplicate names, and verifies Remote-driven removal and credential cleanup. A separate registry-readiness test retains known metadata, and the client test passes a required `orderId` schema through the server list into the tool detail modal.
+The package's 24 test files / 316 tests pass on 0.2.2-rc.2, including two independent real-composition paths and a disabled-to-connected readiness check. The real fixture executes addition and credential-returning tools through official registrations, asserts the numeric required-parameter schema immediately after migration, restarts the complete profile, switches between official and legacy ownership without duplicate names, and verifies Remote-driven removal and credential cleanup. A separate registry-readiness test retains known metadata, and the client test passes a required `orderId` schema through the server list into the tool detail modal.
 
 ## Related
 

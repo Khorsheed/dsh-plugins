@@ -231,17 +231,23 @@ export class McpManagerBridge {
     })
   }
 
+  /** A disabled entry can still be settling the requested enablement; failures are terminal. */
+  private pending(name: string, status: ManagerStatus | undefined): boolean {
+    if (this.entries()[name]?.enabled !== true) return false
+    return status === undefined || status.state === 'disabled' || status.state === 'connecting' || status.state === 'reconnecting'
+  }
+
   /** Official connected status is published only after its tools are registered. */
   private async ready(name: string): Promise<boolean> {
     const current = this.manager.list().find(row => row.name === name)?.status
-    if (current?.state === 'connected') return true
-    if (current === undefined || current.state !== 'connecting' && current.state !== 'reconnecting') return false
+    if (current?.state === 'connected' && this.entries()[name]?.enabled === true) return true
+    if (!this.pending(name, current)) return false
     const timeout = AbortSignal.timeout(30_000)
     try {
       for await (const rows of this.manager.watch(timeout)) {
         const status = rows.find(row => row.name === name)?.status
-        if (status?.state === 'connected') return true
-        if (status === undefined || status.state !== 'connecting' && status.state !== 'reconnecting') return false
+        if (status?.state === 'connected' && this.entries()[name]?.enabled === true) return true
+        if (!this.pending(name, status)) return false
       }
     } catch { /* A timeout retains the last known metadata. */ }
     return false

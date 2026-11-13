@@ -140,4 +140,20 @@ describe('McpManagerBridge', () => {
       parameters: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] },
     })
   })
+
+  it('waits for a disabled entry to become connected before probing metadata', async () => {
+    const { store, manager, entries, bridge } = fixture()
+    entries.fixture = officialMcpEntry(config)
+    let state = 'disabled'
+    manager.list = () => [{ name: 'fixture', configured: true, status: { state } }]
+    manager.watch = async function* () {
+      state = 'connected'
+      yield [{ name: 'fixture', status: { state } }]
+    }
+    store.add(config)
+    store.markOfficial('fixture')
+    await bridge.refresh('fixture')
+    expect(state).toBe('connected')
+    expect(manager.probe).toHaveBeenCalledWith('fixture')
+  })
 })
