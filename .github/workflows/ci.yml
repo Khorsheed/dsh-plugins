@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: deepseek-ai/deepseek-harness
-          ref: dsh-v0.2.2-rc.2
+          ref: dsh-v0.2.2-rc.3
           path: deepseek-harness
           fetch-depth: 1
 
@@ -140,7 +140,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: steps.next.outputs.ready == 'true'
         with:
-          node-version: 22
+          node-version: 24.9
           cache: pnpm
 
       - name: Clone deepseek-harness (forward line)

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/mobile/docs/reference.en.md
-packages/mobile/docs/reference.en.md: 1b5c5a3aa8dad0bcdd17a50efb31a4df48b1779b
-packages/mobile/docs/reference.md: 275e10636dbfd8d37c09c1960686ba5f31ce1117
+packages/mobile/docs/reference.en.md: cadb157124bee6cb8a4978edaeb5596163d0b24e
+packages/mobile/docs/reference.md: 2f11a511e796de6573eb514e40908ae6f7416a29

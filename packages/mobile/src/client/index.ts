@@ -34,6 +34,12 @@ declare global {
 
 export const inject = ['slots', 'locale', 'layout', 'connection']
 
+export const MOBILE_DIRECTORY_FLOW_SLOTS = [
+  'conversation.hero.workspace.directoryFlow',
+  'sidebar.workspaces.directoryFlow',
+  'workspace.picker.directoryFlow',
+] as const
+
 /** One browser-owned presentation; no Host preference or sibling plugin is changed. */
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { en, zh }), 'mobile: dictionaries')
@@ -135,7 +141,7 @@ export function apply(ctx: Context): void {
     return () => { unsubscribe(); remove?.() }
   })
   // Shadow only these public flow slots while this client is in mobile mode.
-  for (const name of ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.directoryFlow'] as const) {
+  for (const name of MOBILE_DIRECTORY_FLOW_SLOTS) {
     ctx.slots.inject(name, () => {
       let remove: (() => void) | undefined
       const sync = () => {
