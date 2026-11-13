@@ -2,6 +2,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { DirectoryFlow } from '../src/client/DirectoryFlow.tsx'
+import { MOBILE_DIRECTORY_FLOW_SLOTS } from '../src/client/index.ts'
 import { MobileDirectory, installMobileDirectoryPicker } from '../src/client/directory.ts'
 import { MobileNavigation, type NavigationCapabilities } from '../src/client/navigation.ts'
 import { en } from '../src/client/locales.ts'
@@ -90,4 +91,12 @@ it('starts adding a workspace with selectable folders, keeping path entry second
   expect(list).toHaveBeenCalledExactlyOnceWith(undefined, expect.any(AbortSignal))
   expect(document.querySelector('[data-directory-manual]')?.hasAttribute('open')).toBe(false)
   expect(screen.getByRole('button', { name: 'Use this directory' }).hasAttribute('disabled')).toBe(false)
+})
+
+it('covers the reusable Workspace picker as well as both original directory flows', () => {
+  expect(MOBILE_DIRECTORY_FLOW_SLOTS).toEqual([
+    'conversation.hero.workspace.directoryFlow',
+    'sidebar.workspaces.directoryFlow',
+    'workspace.picker.directoryFlow',
+  ])
 })
