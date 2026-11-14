@@ -58,6 +58,14 @@ jobs:
         working-directory: deepseek-harness
         run: pnpm run build:native-system
 
+      - name: Build harness Web app (browser tests)
+        working-directory: deepseek-harness
+        run: pnpm run build:web
+
+      - name: Install Playwright Chromium (browser tests)
+        working-directory: deepseek-harness
+        run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium
+
       - name: Install (repo)
         run: pnpm install --frozen-lockfile
 
@@ -168,6 +176,16 @@ jobs:
         if: steps.next.outputs.ready == 'true'
         working-directory: deepseek-harness
         run: pnpm run build:native-system
+
+      - name: Build harness Web app (browser tests)
+        if: steps.next.outputs.ready == 'true'
+        working-directory: deepseek-harness
+        run: pnpm run build:web
+
+      - name: Install Playwright Chromium (browser tests)
+        if: steps.next.outputs.ready == 'true'
+        working-directory: deepseek-harness
+        run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium
 
       - name: Install (repo)
         if: steps.next.outputs.ready == 'true'
