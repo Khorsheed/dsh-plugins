@@ -33,6 +33,8 @@ Status: implemented
 
 现有的重启续跑场景覆盖“恢复同步后重挂”。临时插桩确认第一个句柄关闭完成后才发生重挂打开，目标文件的九项测试在该顺序下通过；插桩已在提交前移除。原先 Linux CI 的失败提供跨平台回归信号。
 
+本机全包测试通过：59 个测试文件、597 项测试。[Linux CI](https://github.com/Khorsheed/dsh-plugins/actions/runs/43563981827) 中这 59 个文件、597 项测试也全部通过；这个结果仅指 local-agent 包，不表示整个仓库的工作流通过。
+
 ## Related
 
 - [本机 Agent 提供方共用一个镜像步骤写者](../simplification/2026-11-02-local-agent-shared-mirror-writer.md)

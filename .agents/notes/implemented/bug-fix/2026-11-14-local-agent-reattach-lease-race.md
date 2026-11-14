@@ -33,6 +33,8 @@ Reattachment can wait for sync work belonging to other children as well as its o
 
 The existing restart continuation case exercises the recovering sync followed by reattach. A temporary instrumented run showed the first handle's close completing before the reattach open, and the focused nine-test file passed with that ordering; the instrumentation was removed before committing. The original Linux CI failure provides the cross-platform regression signal.
 
+The complete local package suite passed: 59 files, 597 tests. In [Linux CI](https://github.com/Khorsheed/dsh-plugins/actions/runs/43563981827), those same 59 files and 597 tests also passed; this package-level result does not imply that the whole repository job passed.
+
 ## Related
 
 - [One mirror-step writer for the local-agent providers](../simplification/2026-11-02-local-agent-shared-mirror-writer.md)
