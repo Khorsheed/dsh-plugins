@@ -280,10 +280,17 @@ export function readBrowserHandoffAcknowledgement(stateDir: string): BrowserHand
 function authorityOf(req: IncomingMessage): { authority: string; origin: string } | null {
   const host = req.headers.host
   const origin = req.headers.origin
-  if (typeof host !== 'string' || typeof origin !== 'string') return null
+  if (typeof host !== 'string') return null
+  // Desktop forwards JSON POSTs with dsh-app://app or no Origin. Only
+  // loopback hosts may use those forms; opaque or remote origins stay forbidden.
+  const desktop = origin === undefined || origin === 'dsh-app://app'
+  const expectedOrigin = desktop
+    ? `${'encrypted' in req.socket && req.socket.encrypted === true ? 'https' : 'http'}://${host}`
+    : origin
   try {
-    const parsed = new URL(origin)
-    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.host !== host || parsed.origin !== origin) return null
+    const parsed = new URL(expectedOrigin)
+    if ((parsed.protocol !== 'http:' && parsed.protocol !== 'https:') || parsed.host !== host || parsed.origin !== expectedOrigin) return null
+    if (desktop && !['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)) return null
     return { authority: parsed.host, origin: parsed.origin }
   } catch {
     return null

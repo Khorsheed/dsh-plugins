@@ -1,6 +1,6 @@
 /** Original-tab browser handoff protocol: hashed registration, final-process URL, and real page acknowledgement. */
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -70,12 +70,12 @@ async function withHandler(
   await run(next => { handler = next }, `http://127.0.0.1:${String(address.port)}`)
 }
 
-async function post(origin: string, body: unknown, cookie?: string, originHeader = origin): Promise<Response> {
+async function post(origin: string, body: unknown, cookie?: string, originHeader?: string | null): Promise<Response> {
   return fetch(`${origin}/_ankh-guard/browser-handoff`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      origin: originHeader,
+      ...(originHeader === null ? {} : { origin: originHeader ?? origin }),
       ...(cookie === undefined ? {} : { cookie }),
     },
     body: JSON.stringify(body),
@@ -83,6 +83,56 @@ async function post(origin: string, body: unknown, cookie?: string, originHeader
 }
 
 describe('browser handoff host bridge', () => {
+  it('accepts Desktop origin-stripped loopback forwards without relaxing other origins', async () => {
+    const dir = stateDir()
+    const id = 'cutover-desktop-origin'
+    const capability = 'M'.repeat(43)
+    prepare(dir, id)
+    const identityMatches = (): boolean => true
+    await withHandler(createBrowserHandoffHandler({
+      stateDir: dir, pid: 103, identityMatches, identityProvider: () => null, longPollMs: 0,
+    }), async (setHandler, origin) => {
+      expect(await (await post(origin, { version: 1, operation: 'poll', capability }, undefined, null)).json())
+        .toEqual({ state: 'waiting', cutoverId: id })
+      expect(readBrowserHandoffRequest(dir)?.registrations[0]?.authority).toBe(new URL(origin).host)
+      recordCutoverEvent(dir, id, 'child-started', ['target', '1', '203', 'child-203'], 1200)
+      recordCutoverEvent(dir, id, 'transport', ['401'], 1201)
+      recordCutoverEvent(dir, id, 'launch-url', [], 1202)
+      recordCutoverEvent(dir, id, 'auth-exchange', ['303'], 1203)
+      recordCutoverEvent(dir, id, 'authenticated', ['200'], 1204)
+      recordCutoverEvent(dir, id, 'ownership-stable', ['target', '203', 'child-203', '204', 'listener-204', '3000', '0'], 1205)
+      recordCutoverEvent(dir, id, 'canary', ['pass'], 1206)
+      setHandler(createBrowserHandoffHandler({
+        stateDir: dir, pid: 204, identityMatches, identityProvider: () => null,
+        connection: {
+          requestRejection: request => request.headers.cookie === 'dsh=valid' ? undefined : 401,
+          authenticatedUrl: base => `${base}/?token=process-only`,
+        },
+      }))
+      expect(await (await post(origin, { version: 1, operation: 'poll', capability }, undefined, 'dsh-app://app')).json())
+        .toEqual({
+          state: 'ready', action: 'replace', cutoverId: id, role: 'target',
+          authentication: 'launch-url', launchUrl: `${origin}/?token=process-only`,
+        })
+      expect((await post(origin, {
+        version: 1, operation: 'ack', cutoverId: id, channel: 'original-tab', authentication: 'launch-url', capability,
+      }, 'dsh=valid', null)).status).toBe(204)
+      for (const rejected of ['null', 'dsh-app://shell', 'http://foreign.invalid']) {
+        expect((await post(origin, { version: 1, operation: 'poll', capability }, undefined, rejected)).status).toBe(403)
+      }
+      expect(await new Promise<number>((resolve, reject) => {
+        const request = httpRequest(`${origin}/_ankh-guard/browser-handoff`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', origin: 'dsh-app://app', host: 'foreign.invalid' },
+        }, (response) => {
+          response.resume()
+          response.once('end', () => { resolve(response.statusCode ?? 0) })
+        })
+        request.on('error', reject)
+        request.end(JSON.stringify({ version: 1, operation: 'poll', capability }))
+      })).toBe(403)
+    })
+  })
   it('hands the final process URL only to the armed original tab and persists acknowledgement without secrets', async () => {
     const dir = stateDir()
     const id = 'cutover-browser-1'
