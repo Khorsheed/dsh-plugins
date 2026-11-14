@@ -41,6 +41,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import canvasRemote from '@khorsheed/dsh-canvas/remote'
 import type { CanvasRemote, CanvasTabInjected, CanvasTalkInjected } from './contract.ts'
@@ -141,26 +142,36 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'canvas: dictionaries')
   const t = ctx.locale.bind(NS)
 
-  // The selection/freshness store: one instance, published into the tab's face.
-  const selection = new CanvasSelectionStore()
+  // One selection store per session; board freshness fans out to all of them.
+  const selections = new Map<string, CanvasSelectionStore>()
+  const selectionFor = (sessionId: SessionId | undefined): CanvasSelectionStore => {
+    const key = String(sessionId ?? '')
+    const existing = selections.get(key)
+    if (existing !== undefined) return existing
+    const created = new CanvasSelectionStore(sessionId)
+    selections.set(key, created)
+    return created
+  }
+  const currentSelection = (): CanvasSelectionStore => selectionFor(mainSessionId(ctx.sessions.list.getSnapshot()))
+  const touchBoards = (): void => {
+    for (const selection of selections.values()) selection.touch()
+  }
 
   /**
-   * Put the strip at one address (proposal 2026-10-30-agent-sidebar-navigation):
-   * the most specific field wins. Every way into the surface from outside —
-   * a destination, a conversation card, the desk row, the tab's navigation
-   * params — lands here, so "where did it open" has one answer.
+   * Put one session's strip at an address: the most specific field wins. Every
+   * outside entry lands here, with the session made explicit at the boundary.
    */
-  const goTo = (params: CanvasNavParams): void => {
+  const goTo = (selection: CanvasSelectionStore, params: CanvasNavParams): void => {
     const { canvasId, heading = '' } = params
     if (params.card !== undefined) selection.openCardTab(canvasId, params.card, heading)
     else if (params.manuscript !== undefined) selection.openManuscriptTab(canvasId, params.manuscript, heading)
-    else if (params.type !== undefined) selection.openTypeTab(canvasId, params.type as Parameters<typeof selection.openTypeTab>[1], heading)
+    else if (params.type !== undefined) selection.openTypeTab(canvasId, params.type as Parameters<CanvasSelectionStore['openTypeTab']>[1], heading)
     else if (params.page !== undefined) selection.openPageTab(canvasId, params.page, heading, params.param)
     else if (params.face !== undefined) selection.openBoardFace(canvasId, params.face, params.scope ?? null, params.item, params.focus, params.cards)
     else selection.openCanvas(canvasId)
   }
-  /** Open the canvas tab, then put the strip at the address. */
-  const go = (params: CanvasNavParams): void => {
+  /** Open the canvas tab, then put this session's strip at the address. */
+  const go = (params: CanvasNavParams, sessionId: SessionId | undefined = mainSessionId(ctx.sessions.list.getSnapshot())): void => {
     try {
       ctx.sidebarRight.openTab(CANVAS_KIND)
     } catch (error) {
@@ -168,7 +179,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       // strip write below still lands for the next time it shows.
       ctx.logger.warn('canvas: openTab failed (tab type not registered?)', error)
     }
-    goTo(params)
+    goTo(selectionFor(sessionId), params)
   }
 
   // The follower (proposal 2026-10-30-agent-sidebar-navigation): a canvas or
@@ -182,7 +193,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       events: event => deskDestinationsOf(CANVAS_KIND, event),
       badge: destination => {
         const canvasId = (destination.params as { canvasId?: unknown }).canvasId
-        if (typeof canvasId === 'string') selection.addCanvas(canvasId)
+        if (typeof canvasId === 'string') currentSelection().addCanvas(canvasId)
       },
     }), 'canvas: destination follower')
   }
@@ -207,12 +218,19 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
 
   /**
    * Every mutating wrapper in the face lands here: a landed board mutation
-   * touches the shared store, so every reader re-reads. (The mutating view
+   * touches every session store, so every reader re-reads. (The mutating view
    * already has the fresh board from the response; its own rev-triggered
    * re-read is the one idempotent extra fetch this consistency costs.)
    */
   const touchOnSuccess = <T extends { ok: boolean }>(result: T): T => {
-    if (result.ok) selection.touch()
+    if (result.ok) touchBoards()
+    return result
+  }
+  /** Local bindings wake the header chip immediately; Agent writes still use nav signals. */
+  const bindingRev = createSnapshotStore(0)
+  const bindRemote = async (sessionId: SessionId, request: Parameters<CanvasRemote['bindCanvas']>[1]) => {
+    const result = touchOnSuccess(await requireRemote().bindCanvas(sessionId, request))
+    if (result.ok && result.value.ok) bindingRev.set(bindingRev.getSnapshot() + 1)
     return result
   }
 
@@ -245,12 +263,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       if (typeof input.focus === 'function') input.focus()
       return true
     },
-    refreshBoards: () => { selection.touch() },
+    refreshBoards: touchBoards,
   }
 
-  const tabFace = (): CanvasTabInjected => ({
+  const tabFaceFor = (selection: CanvasSelectionStore): CanvasTabInjected => ({
     ...talkFace,
-    goTo,
+    goTo: params => { goTo(selection, params) },
     listCanvases: () => requireRemote().listCanvases(),
     readBoard: request => requireRemote().readBoard(request),
     openFile: (sessionId, cwd, path) => {
@@ -263,6 +281,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     // The mutating calls hand the TAB's session to the host (the tab is
     // session scope; the fence resolves that session's mode).
     createCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().createCanvas(sessionId, request)),
+    bindCanvas: bindRemote,
     putCard: async (sessionId, request) => touchOnSuccess(await requireRemote().putCard(sessionId, request)),
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
     markSeen: async (sessionId, request) => touchOnSuccess(await requireRemote().markSeen(sessionId, request)),
@@ -336,6 +355,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     closeTab: id => { selection.close(id) },
     openCanvas: canvasId => { selection.openCanvas(canvasId) },
     backToBoard: canvasId => { selection.backToBoard(canvasId) },
+    boundCanvas: sessionId => requireRemote().boundCanvas(sessionId),
     focusCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().focusCanvas(sessionId, request)),
     // The one-shot layout suggestion (M3.1): ONLY the session-list collapse
     // — the fullscreen suggestion is gone (the host's fullscreen hides the
@@ -356,6 +376,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     },
     hooks: { selection: selection.source, imageRev: images.source },
   })
+  const tabFace = (sessionId: SessionId | undefined): CanvasTabInjected => tabFaceFor(selectionFor(sessionId))
 
   // Stage one of the right-Sidebar registration: the page type itself (guide
   // entry, no address claims). The default band is 'extension', correct for a
@@ -396,7 +417,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({
     name: 'sidebar.right.pane.tab.title',
     key: CANVAS_TAB_ID,
-    inject: () => ({ hooks: { selection: selection.source } }),
+    inject: (sessionId: SessionId | undefined) => ({ hooks: { selection: selectionFor(sessionId).source } }),
   }, CanvasTabTitle)), 'canvas: tab chip title')
 
   // The canvas_propose_type row in the conversation: 去类型页看看 → opens the
@@ -414,10 +435,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // pages the same way: the tab first, then the row on the page. The cordis
   // fiber owns the provide's lifetime (the quote `ctx.quoteActions` precedent).
   const canvasNav: CanvasNavService = {
-    openPage: (canvasId, page, heading, param) => {
-      go({ canvasId })
-      selection.openPageTab(canvasId, page, heading, param)
-    },
+    openPage: (canvasId, page, heading, param) => { go({ canvasId, page, heading, ...(param === undefined ? {} : { param }) }) },
     openFace: (canvasId, face, scope) => { go({ canvasId, face, scope }) },
     go,
   }
@@ -440,7 +458,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       putCard: async (sessionId, request) => touchOnSuccess(await requireRemote().putCard(sessionId, request)),
     }),
     category => categoryLabelOf(category, t),
-    () => selection.source.getSnapshot().canvasId,
+    () => currentSelection().source.getSnapshot().canvasId,
     (canvasId, cardId) => { go({ canvasId, card: cardId }) },
   )
   ctx.provide('canvasInbox', inbox)
@@ -478,7 +496,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
             source: { type: 'paste', ref: target.label },
           })
           if (outcome.ok) inbox.openCard(canvasId, outcome.cardId)
-          else { openCanvasTab(); selection.openCanvas(canvasId) }
+          else { openCanvasTab(); selectionFor(sessionId).openCanvas(canvasId) }
         })()
       },
     }), 'canvas: quote action')
@@ -510,7 +528,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   // has no row, and the member's own session keeps its canvas_open row.
   const deskFace: DeskOpenRowFace & DeskWroteRowFace = {
     openCanvas: canvasId => { go({ canvasId }) },
-    addCanvas: canvasId => { selection.addCanvas(canvasId) },
+    addCanvas: canvasId => { currentSelection().addCanvas(canvasId) },
     go,
   }
   ctx.effect(() => toolSlots.inject('conversation.chat.node', () => {
@@ -561,20 +579,25 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }), `canvas: room card desk row (${seat})`)
   }
 
-  // The binding chip (创作体裁) in the session header: which canvas this
-  // writing session works on. Offered only where a genre is installed and the
-  // session reaches its agent row (bind/gate.ts), so a deployment without a
-  // genre never sees it. The header seat is declared by ui-conversation, which
-  // this package does not depend on — the same structural registration as the
-  // tool row above; without that package the inject never fires.
+  // The binding chip in the session header: which canvas this writing session
+  // works on. Offered where the session reaches the canvas row or a genre row
+  // (bind/gate.ts); ordinary canvases need no genre. The header seat is declared
+  // by ui-conversation, which this package does not depend on — the same
+  // structural registration as the tool row above; without that package the
+  // inject never fires.
   const bindGate = new GenreBindingGate(async () => requireRemote().listGenres(), tabVisibility)
   const bindFace = (sessionId: SessionId): CanvasBindInjected => ({
     offered: () => bindGate.offered(sessionId),
-    subscribe: listener => bindGate.subscribe(listener),
+    subscribe: listener => {
+      const offGate = bindGate.subscribe(listener)
+      const offRev = bindingRev.subscribe(listener)
+      return () => { offGate(); offRev() }
+    },
+    revision: () => bindingRev.getSnapshot(),
     boundCanvas: () => requireRemote().boundCanvas(sessionId),
-    bindCanvas: async canvasId => touchOnSuccess(await requireRemote().bindCanvas(sessionId, { canvasId })),
+    bindCanvas: (canvasId) => bindRemote(sessionId, { canvasId }),
     listCanvases: () => requireRemote().listCanvases(),
-    openCanvas: canvasId => { go({ canvasId }) },
+    openCanvas: canvasId => { go({ canvasId }, sessionId) },
   })
   ctx.effect(() => toolSlots.inject('conversation.session.header.actions', () => toolSlots.register({
     name: 'conversation.session.header.actions',

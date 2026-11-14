@@ -235,6 +235,7 @@ function makeHarness(options: {
       boards.set(minted.id, minted)
       return ok({ ok: true, board: minted, version: '1' })
     }),
+    bindCanvas: vi.fn(async (_sid: string, request: { canvasId: string | null }) => ok({ ok: true, canvasId: request.canvasId })),
     readBoard: vi.fn(async (request: { canvasId: string }): Promise<Result<BoardReadOutcome>> => {
       const current = boards.get(request.canvasId)
       if (current === undefined) return ok({ ok: false, error: 'missing' })

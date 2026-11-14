@@ -122,6 +122,8 @@ describe('ManuscriptView', () => {
     const { props } = harness()
     render(<ManuscriptView {...props} />)
     expect(await screen.findByText('正文第一段。')).toBeTruthy()
+    expect(screen.getAllByText('异议的代价')).toHaveLength(1)
+    expect(screen.getByText('成稿')).toBeTruthy()
     expect(screen.getByText('写作中')).toBeTruthy()
     expect(screen.getByText('v3')).toBeTruthy()
     const used = screen.getByRole('button', { name: '沉默螺旋' })
@@ -129,6 +131,31 @@ describe('ManuscriptView', () => {
     expect(props.openCardDetail).toHaveBeenCalledWith(CANVAS_ID, 'c_a', '沉默螺旋')
     // The card it left out has since been deleted: a struck, inert chip.
     expect((screen.getByTitle(zh['ms.cardGone']) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('folds a long source ledger without hiding its entries', async () => {
+    const { props, current } = harness()
+    current.board = board([manuscript({
+      sources: { used: ['c_a', 'c_2', 'c_3', 'c_4', 'c_5', 'c_6', 'c_7'], unused: [] },
+    })])
+    render(<ManuscriptView {...props} />)
+    await screen.findByText('正文第一段。')
+    const details = document.querySelector('details') as HTMLDetailsElement
+    expect(details.open).toBe(false)
+    fireEvent.click(screen.getByText('素材来源（用了 7 张 · 未用 0 张）'))
+    expect(details.open).toBe(true)
+    expect(screen.getByRole('button', { name: '沉默螺旋' })).toBeTruthy()
+  })
+
+  it('lets 取消 discard an edit while Esc remains guarded for an untouched one', async () => {
+    const { props } = harness()
+    render(<ManuscriptView {...props} />)
+    await screen.findByText('正文第一段。')
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    fireEvent.input(pad(), { target: { value: '不保存的正文' } })
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(document.querySelector('textarea')).toBeNull()
+    expect(await screen.findByText('正文第一段。')).toBeTruthy()
   })
 
   it('renders a whole HTML block in a sandboxed frame, not as its source', async () => {
@@ -148,6 +175,7 @@ describe('ManuscriptView', () => {
     render(<ManuscriptView {...props} />)
     await screen.findByText('正文第一段。')
     fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    expect(screen.getAllByText('异议的代价')).toHaveLength(1)
     fireEvent.input(pad(), { target: { value: '# 异议的代价\n\n改过的正文。' } })
     fireEvent.keyDown(pad(), { key: 'Enter', metaKey: true })
     await waitFor(() => { expect(mocks.writeManuscript).toHaveBeenCalledTimes(1) })

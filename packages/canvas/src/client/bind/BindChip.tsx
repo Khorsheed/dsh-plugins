@@ -1,12 +1,11 @@
 /**
- * The session header's binding chip (创作体裁): which canvas this writing
- * session works on. A bound session's canvas tools — and its genre's tools —
- * act on that canvas whatever the sidebar shows; unbound, they follow the
- * sidebar as they always did.
+ * The session header's binding chip: which canvas this writing session works
+ * on. A bound session's canvas tools act on that canvas whatever the sidebar
+ * shows; a genre's own tools still require that genre on the bound canvas.
+ * Unbound, the canvas tools follow the sidebar.
  *
- * The chip lists only canvases with a genre (a plain canvas cannot be bound)
- * and renders nothing in a session the gate does not offer it to, so a
- * deployment without a genre never sees it.
+ * Every live canvas is a work: a genre adds capabilities, not the right to be
+ * bound. The chip renders only where the gate offers it.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -26,6 +25,8 @@ export interface CanvasBindInjected {
   /** Whether this session gets the chip (gate.ts). */
   offered: () => boolean
   subscribe: (listener: () => void) => () => void
+  /** Local binding revision; optional for isolated mounts and specs. */
+  revision?: () => number
   boundCanvas: () => Promise<RemoteResult<string | null>>
   bindCanvas: (canvasId: string | null) => Promise<RemoteResult<BoardBindResult>>
   listCanvases: () => Promise<RemoteResult<BoardListResult>>
@@ -37,9 +38,9 @@ export interface CanvasBindChipProps extends CanvasBindInjected {
   readonly t: TranslateNS<'canvas'>
 }
 
-/** Rows the chip offers: live canvases with a genre. */
+/** Rows the chip offers: every live canvas, most recently active first. */
 function bindable(items: readonly CanvasSummary[]): CanvasSummary[] {
-  return items.filter(row => row.genre !== undefined && row.archivedAt === null)
+  return items.filter(row => row.archivedAt === null)
 }
 
 /** How often the chip re-reads a binding the model may have moved (the board poll's pace). */
@@ -50,11 +51,12 @@ export function CanvasBindChip(props: CanvasBindChipProps): ReactNode {
   return shown ? <BindMenu {...props} /> : null
 }
 
-function BindMenu({ t, boundCanvas, bindCanvas, listCanvases, openCanvas }: CanvasBindChipProps): ReactNode {
+function BindMenu({ t, subscribe, boundCanvas, bindCanvas, listCanvases, openCanvas, revision }: CanvasBindChipProps): ReactNode {
   const [open, setOpen] = useState(false)
   const [bound, setBound] = useState<string | null>(null)
   const [rows, setRows] = useState<readonly CanvasSummary[]>([])
   const [failed, setFailed] = useState(false)
+  const rev = useSyncExternalStore(subscribe, revision ?? (() => 0))
 
   const reload = useCallback(async () => {
     const [current, list] = await Promise.all([boundCanvas(), listCanvases()])
@@ -62,9 +64,9 @@ function BindMenu({ t, boundCanvas, bindCanvas, listCanvases, openCanvas }: Canv
     if (list.ok) setRows(bindable(list.value.items))
   }, [boundCanvas, listCanvases])
 
-  // Read on mount (the label names the bound canvas) and again on every open:
-  // a canvas may have gained a genre, or been deleted, since.
-  useEffect(() => { void reload().catch(() => {}) }, [reload])
+  // Read on mount and after every local binding, so a work created through the
+  // sidebar appears at once; opening the menu also refreshes the list below.
+  useEffect(() => { void reload().catch(() => {}) }, [reload, rev])
 
   // The model binds too (canvas_open, a genre's bind tool): a canvas write in
   // the conversation re-reads the binding at once (the destination follower's

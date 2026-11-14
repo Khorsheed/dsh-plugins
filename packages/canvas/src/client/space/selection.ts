@@ -1,14 +1,13 @@
 /**
- * The board state the canvas tabs share: the strip of open tabs, which one is
- * showing, and a rev that says "a board changed somewhere". One instance lives
- * in this client bundle's apply closure and reaches every seat through their
+ * The board state one session's canvas tabs use: the strip of open tabs, which
+ * one is showing, and a rev that says "a board changed somewhere". The apply
+ * closure owns one instance per session and publishes it through that session's
  * inject faces (`hooks.selection`, which the slot runtime materializes into
  * the `useSelection` prop).
  *
- * The `rev` field is the cross-tab freshness channel: whichever tab mutates a
- * board touches the store (the apply-level face wrappers do it centrally), and
- * the others re-read. Selection changes never bump it — opening a card is not
- * a board change.
+ * The `rev` field is the freshness channel: the apply-level mutation wrappers
+ * touch every session store, and their readers re-read. Selection changes never
+ * bump it — opening a card is not a board change.
  *
  * The strip holds CANVASES only (scheme B, 2026-09-27 review). Round 3 had a
  * board, a card of it and a card's draft as three rows of one strip; with a
@@ -21,9 +20,9 @@
  * canvas twice and you get one tab" a property of the id rather than a search
  * the caller has to remember to do.
  *
- * The strip also survives a reload, which the host dock never did: the list
- * rides `sessionStorage`, so closing the browser page and coming back returns
- * the canvases the user laid out and the card each one stood on. Draft TEXT
+ * The strip also survives a reload, which the host dock never did: each
+ * session's list rides its own `sessionStorage` key, so coming back restores
+ * the canvases that session laid out and the card each one stood on. Draft TEXT
  * does not ride along — an unsaved draft is held by the view that shows it,
  * and a page reload dropping it is the same behaviour every other editor here
  * has.
@@ -147,7 +146,20 @@ const EMPTY: CanvasBoardState = { tabs: [], active: '', canvasId: null, rev: 0 }
  */
 export class CanvasSelectionStore {
   /** The published feed (what the inject faces hand to `hooks.selection`). */
-  readonly source: SnapshotStore<CanvasBoardState> = createSnapshotStore<CanvasBoardState>(readStored() ?? EMPTY)
+  readonly source: SnapshotStore<CanvasBoardState>
+  private readonly storageKey: string
+
+  /**
+   * One session's strip. The legacy no-argument form keeps the original key for
+   * embedders and specs; a scoped store migrates that shared strip once, then
+   * persists independently.
+   */
+  constructor(sessionId?: string) {
+    this.storageKey = sessionId === undefined ? STORAGE_KEY : `${STORAGE_KEY}:${sessionId}`
+    const own = readStored(this.storageKey)
+    const migrated = sessionId !== undefined && own === null ? takeLegacyStrip(this.storageKey) : null
+    this.source = createSnapshotStore<CanvasBoardState>(own ?? migrated ?? EMPTY)
+  }
 
   /**
    * Switch to a canvas, opening its row if it is not on the strip. A row that
@@ -331,7 +343,7 @@ export class CanvasSelectionStore {
 
   private set(next: CanvasBoardState): void {
     this.source.set(next)
-    writeStored(next)
+    writeStored(this.storageKey, next)
   }
 }
 
@@ -366,9 +378,9 @@ function withinCap(tabs: readonly CanvasTabRow[], showing: string, added: string
  * their own, ids `c:`/`d:`) folds into one row per canvas, standing on its
  * board — the draft text never rode the stash, so nothing is lost.
  */
-function readStored(): CanvasBoardState | null {
+function readStored(storageKey: string): CanvasBoardState | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
+    const raw = sessionStorage.getItem(storageKey)
     if (raw === null) return null
     const parsed = JSON.parse(raw) as Partial<StoredTabs>
     if (!Array.isArray(parsed.tabs)) return null
@@ -424,11 +436,24 @@ function storedRowOf(value: unknown): CanvasTabRow | null {
 }
 
 /** Stash the strip. Its tab ids carry the canvas and card, so a reload finds them. */
-function writeStored(state: CanvasBoardState): void {
+function writeStored(storageKey: string, state: CanvasBoardState): void {
   try {
     const payload: StoredTabs = { tabs: [...state.tabs], active: state.active }
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+    sessionStorage.setItem(storageKey, JSON.stringify(payload))
   } catch {
     // A full or blocked stash costs the reload, never the session.
   }
+}
+
+/** Move the old shared strip to the first scoped reader, never to every session. */
+function takeLegacyStrip(storageKey: string): CanvasBoardState | null {
+  const legacy = readStored(STORAGE_KEY)
+  if (legacy === null) return null
+  writeStored(storageKey, legacy)
+  try {
+    sessionStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // A blocked removal only leaves an unused legacy copy behind.
+  }
+  return legacy
 }

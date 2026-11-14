@@ -1,15 +1,31 @@
-/* The manuscript page and the board's 成稿 face. The page borrows the card
-   reader's frame (CanvasDetailView.module.css: root, header, crumbs, meta,
-   body); this file holds only what a manuscript has and a card does not —
-   a reading column, the source ledger, the conflict banner, the list rows.
-   Every colour is a `--dsw-*` token, so light and dark are the theme's. */
+/* The manuscript page and the board's 成稿 face. DetailHeader and
+   MarkdownEditor share the card page's frame and raw-markdown editing layout;
+   this file holds only the manuscript's reading measure, title, source ledger,
+   conflict banner and list rows. Every colour is a `--dsw-*` token. */
 
-/* A manuscript is read, not scanned: one column at a reading measure, set a
-   step larger than a card body. */
+.header {
+  width: 100%;
+  max-width: 52em;
+  margin-inline: auto;
+}
+
+.title,
+.titleInput {
+  font-size: calc(var(--dsh-panel-text-reading, 14px) + 4px);
+  font-weight: 600;
+}
+
+/* One centred reading column; the editing split gets a little more room. */
 .prose {
+  width: 100%;
   max-width: 44em;
-  font: var(--dsh-panel-text-title, 14px)/1.5 var(--dsw-font-family);
-  line-height: 1.85;
+  margin-inline: auto;
+  font-size: var(--dsh-panel-text-reading, 14px);
+  line-height: var(--dsh-panel-reading-line-height, 1.85);
+}
+
+.prose[data-mode="split"] {
+  max-width: 52em;
 }
 
 .titleInput {
@@ -72,6 +88,9 @@
 /* ── Banners (a newer version arrived; a save lost the race) ─────────── */
 
 .banner {
+  width: 100%;
+  max-width: 52em;
+  margin-inline: auto;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -96,20 +115,24 @@
   min-width: 12em;
 }
 
-.editActions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 /* ── The source ledger: used, and — the point — what was left out ───── */
 
 .ledger {
+  width: 100%;
+  max-width: 52em;
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding-top: 12px;
   border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.sourceSummary {
+  margin-bottom: 8px;
+  font: var(--dsh-panel-text-meta, 12px)/1.5 var(--dsw-font-family);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
 }
 
 .ledgerRow {

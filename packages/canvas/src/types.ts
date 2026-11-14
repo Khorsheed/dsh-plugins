@@ -1186,7 +1186,7 @@ export interface CanvasSummary {
   readonly openQuestions: number
   readonly archivedAt: string | null
   readonly lastActiveAt: string
-  /** The selected genre's id, when the canvas has one (the binding chip lists only these). */
+  /** The selected genre's id, when the canvas has one; every live canvas is bindable. */
   readonly genre?: string
 }
 
@@ -1895,8 +1895,9 @@ export interface BoardBindRequest {
 }
 
 /**
- * The binding gesture's receipt. `no-genre` refuses a canvas without a genre:
- * binding exists for genre work, a plain canvas keeps following the sidebar.
+ * The binding gesture's receipt. Every existing canvas can be a session's work.
+ * Legacy `no-genre` stays in the union for TypeScript compatibility but is no
+ * longer returned: binding is not a genre capability grant.
  */
 export type BoardBindResult =
   | { readonly ok: true; readonly canvasId: string | null }

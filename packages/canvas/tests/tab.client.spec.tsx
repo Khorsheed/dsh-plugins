@@ -94,6 +94,7 @@ interface Harness {
   readonly mocks: {
     listCanvases: ReturnType<typeof vi.fn>
     createCanvas: ReturnType<typeof vi.fn>
+    bindCanvas: ReturnType<typeof vi.fn>
     readBoard: ReturnType<typeof vi.fn>
     putCard: ReturnType<typeof vi.fn>
     patchCard: ReturnType<typeof vi.fn>
@@ -151,6 +152,7 @@ function makeHarness(options: {
       boards.set(minted.id, minted)
       return ok({ ok: true, board: minted, version: '1' })
     }),
+    bindCanvas: vi.fn(async (_sid: string, request: { canvasId: string | null }) => ok({ ok: true, canvasId: request.canvasId })),
     readBoard: vi.fn(async (request: { canvasId: string }): Promise<Result<BoardReadOutcome>> => {
       const current = boards.get(request.canvasId)
       if (current === undefined) return ok({ ok: false, error: 'missing' })
@@ -299,6 +301,16 @@ describe('CanvasTab — list, switcher, board', () => {
     })
   })
 
+  it('opens the bound work first in a fresh session instead of the most recent canvas', async () => {
+    const other = board('canvas_second01abcdef', [card('c_x')], { title: '绑定作品' })
+    const { props, store } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')]), other] })
+    const boundCanvas = vi.fn(async () => ({ ok: true as const, value: other.id }))
+    render(<CanvasTab {...props} boundCanvas={boundCanvas as never} />)
+    await screen.findByText('卡片 c_x')
+    expect(store.source.getSnapshot().canvasId).toBe(other.id)
+    expect(screen.queryByText('卡片 c_1')).toBeNull()
+  })
+
   it('switches canvases from the switcher and re-reports the focus', async () => {
     const other = board('canvas_second01abcdef', [card('c_x')], { title: '第二块画布' })
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')]), other] })
@@ -325,6 +337,7 @@ describe('CanvasTab — list, switcher, board', () => {
     fireEvent.click(screen.getByRole('button', { name: '建立' }))
     await waitFor(() => {
       expect(mocks.createCanvas).toHaveBeenCalledWith('s1', { title: '远程团队的书面沟通礼仪', attachedWorkspaces: ['/ws/report'], genreId: null })
+      expect(mocks.bindCanvas).toHaveBeenCalledWith('s1', { canvasId: 'canvas_new00000abcdefgh' })
     })
     // No genre installed: the form carries no genre pick.
     expect(screen.queryByRole('radiogroup', { name: '体裁' })).toBeNull()
@@ -739,6 +752,11 @@ describe('CanvasTab — round-4 dismissal, undo and the archived canvas', () => 
     await screen.findByText('卡片 c_1')
     const switcher = screen.getByRole('button', { name: '打开或新建画布' })
     fireEvent.click(switcher)
+    expect(switcher.getAttribute('aria-expanded')).toBe('true')
+    const menu = document.querySelector('[class*="switcherMenu"]')
+    expect(menu?.parentElement).toBe(document.body)
+    fireEvent.click(screen.getByRole('button', { name: '新画布' }))
+    fireEvent.pointerDown(screen.getByPlaceholderText('这块画布思考什么主题？'))
     expect(switcher.getAttribute('aria-expanded')).toBe('true')
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(switcher.getAttribute('aria-expanded')).toBe('false')

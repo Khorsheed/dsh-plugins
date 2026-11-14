@@ -4,9 +4,9 @@
  * or one card's unsaved draft, and the card body is `CanvasDetailView` mounted
  * in that same page rather than in a tab of the HOST dock (stage ⑧'s shape,
  * retired). The seat is session scope — its mutations fence through the tab's
- * own session — and the strip plus board freshness ride the shared store
- * exposed as `hooks.selection` (the slot runtime binds it into the
- * `useSelection` prop).
+ * own session — and the strip rides that session's store, exposed as
+ * `hooks.selection` (the slot runtime binds it into the `useSelection` prop).
+ * Board freshness fans out to every session's store independently.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -30,7 +30,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardWorkspaceRequest,
-  BoardAttachImageOutcome, BoardAttachImageRequest, BoardCreateRequest,
+  BoardAttachImageOutcome, BoardAttachImageRequest, BoardBindRequest, BoardBindResult, BoardCreateRequest,
   BoardDeleteCanvasRequest, BoardDeleteCanvasResult, BoardDeleteCardRequest,
   BoardFocusRequest, BoardFocusResult,
   BoardListResult, BoardMarkSeenRequest, BoardMutationResult,
@@ -164,6 +164,10 @@ export interface CanvasTabInjected
   goTo?: (params: CanvasNavParams) => void
   /** Create one canvas (a topic, optionally with workspaces attached). */
   createCanvas: (sessionId: SessionId, request: BoardCreateRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Bind the work this session writes to; creating a canvas through the tab binds it immediately. */
+  bindCanvas: (sessionId: SessionId, request: BoardBindRequest) => Promise<RemoteResult<BoardBindResult>>
+  /** Read the durable work binding, used to choose a new session's initial view. */
+  boundCanvas: (sessionId: SessionId) => Promise<RemoteResult<string | null>>
   /** Read one board with the freshness token a later mutation must present. */
   readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
   /** Add one user card (createdBy user, straight to kept). */

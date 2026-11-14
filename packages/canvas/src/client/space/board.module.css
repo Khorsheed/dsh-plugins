@@ -890,16 +890,17 @@
 
 /* ---------------------------------------------------- dropdown primitives */
 
-/* The switcher dropdown's anchor and panel: absolute, so the topbar's
-   height never flexes to the menu's (the M3.1 topbar bug's whole shape). */
+/* The switcher dropdown portals out of the tab's stacking context and uses
+   viewport-fixed coordinates, so the conversation cannot cover its clicks. */
 .switcherMenu .listBody {
   overflow-y: auto;
   min-height: 0;
 }
 .switcherMenu {
-  position: absolute;
+  /* panel-check: allow-fixed — a body-portaled viewport menu, not a panel-local popover */
+  position: fixed;
   left: 0;
-  top: calc(100% + 6px);
+  top: 0;
   z-index: 30;
   width: 280px;
   max-height: 70vh;

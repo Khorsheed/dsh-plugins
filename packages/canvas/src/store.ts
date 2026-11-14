@@ -1003,8 +1003,8 @@ export class CanvasBoardService {
 
   /**
    * The canvas one session's canvas tools act on: the canvas it is bound to,
-   * else the one its sidebar tab has open. A plain canvas is never bound, so
-   * without a genre this is exactly the focus rule it always was.
+   * else the one its sidebar tab has open. The explicit binding is durable;
+   * focus is only the fallback for an unbound session.
    * @param session - the calling session.
    * @returns the canvas id, or undefined when there is neither.
    */
@@ -1089,8 +1089,9 @@ export class CanvasBoardService {
    * hold no card — a genre brings its own categories, and an empty 灵感/问题
    * chip beside them is only noise (2026-10-05). A built-in that holds cards
    * stays on. Clearing keeps the genre's categories and their cards, turns
-   * the built-ins it switched off back on, unloads the genre — and unbinds
-   * the sessions bound to it.
+   * the built-ins it switched off back on and unloads the genre. The canvas
+   * remains the session's bound work; only the genre's own tools lose their
+   * prerequisite.
    * @param request - canvas id and the genre id, or null.
    * @param session - the session that owns the gesture; supplies the fence.
    * @returns the fresh board and token, or the failure code.
@@ -1110,7 +1111,6 @@ export class CanvasBoardService {
       return board
     })
     if (!result.ok) return result
-    if (genre === undefined) await this.dropBindings(result.board.id, session)
     this.ctx.emit('canvas/genre-changed', result.board.id, genre?.id ?? null)
     return result
   }
@@ -1193,9 +1193,8 @@ export class CanvasBoardService {
   }
 
   /**
-   * Bind the calling session to a canvas (or unbind with `null`). Only a
-   * canvas with a genre can be bound: binding exists for genre work, and a
-   * plain canvas keeps following the sidebar exactly as before.
+   * Bind the calling session to any existing canvas (or unbind with `null`).
+   * A genre adds its own tools to this target; it is not a binding requirement.
    * @param request - the canvas id, or null.
    * @param session - the session being bound; also supplies the fence.
    * @returns the canvas now bound, or the failure code.
@@ -1209,7 +1208,6 @@ export class CanvasBoardService {
       const raw = await this.readRaw(id)
       if (raw === 'missing') return { ok: false, error: 'missing' }
       if (raw === 'corrupt') return { ok: false, error: 'io' }
-      if (raw.board.genre === undefined) return { ok: false, error: 'no-genre' }
       canvasId = id
     }
     let changed = false

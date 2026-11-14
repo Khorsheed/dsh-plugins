@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 /**
- * The session header's binding chip (创作体裁): the gate that decides which
- * sessions get it — no genre installed means no chip, whatever the preset —
- * and the chip itself, which lists only canvases with a genre and binds,
- * opens and unbinds through its face.
+ * The session header's binding chip: the gate that decides which sessions get
+ * it, and the chip itself, which lists every live canvas and binds, opens and
+ * unbinds through its face.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { CanvasBindChip, type CanvasBindInjected } from '../src/client/bind/BindChip.tsx'
 import { GenreBindingGate, type GenreGrantSource } from '../src/client/bind/gate.ts'
@@ -16,6 +15,7 @@ import { notifyWritten } from '@khorsheed/dsh-client-ui-agent-nav/src/client/ind
 
 const NOW = '2026-10-05T08:00:00.000Z'
 const S1 = 's1' as SessionId
+const CANVAS_ROW = '@khorsheed/dsh-canvas/agent'
 const NOVEL_ROW = '@khorsheed/dsh-canvas-novel/agent'
 
 const t = ((key: keyof typeof zh, params?: Record<string, string>): string =>
@@ -42,20 +42,22 @@ async function settledGate(gate: GenreBindingGate): Promise<void> {
 }
 
 describe('GenreBindingGate', () => {
-  it('offers no chip while no genre is installed, even where every row is granted', async () => {
-    const gate = new GenreBindingGate(async () => ({ ok: true, value: [] }), grants([NOVEL_ROW]))
-    expect(gate.offered(S1)).toBe(false)
-    await settledGate(gate)
-    expect(gate.offered(S1)).toBe(false)
+  it('offers ordinary binding through the canvas row without any genre', async () => {
+    const offered = new GenreBindingGate(async () => ({ ok: true, value: [] }), grants([CANVAS_ROW]))
+    const denied = new GenreBindingGate(async () => ({ ok: true, value: [] }), grants([]))
+    await settledGate(offered)
+    await settledGate(denied)
+    expect(offered.offered(S1)).toBe(true)
+    expect(denied.offered(S1)).toBe(false)
   })
 
-  it('offers no chip when the genre listing fails — the genre half fails closed', async () => {
-    const gate = new GenreBindingGate(async () => { throw new Error('host half missing') }, grants([NOVEL_ROW]))
+  it('keeps the canvas offer when the genre listing fails', async () => {
+    const gate = new GenreBindingGate(async () => { throw new Error('genre listing failed') }, grants([CANVAS_ROW]))
     await settledGate(gate)
-    expect(gate.offered(S1)).toBe(false)
+    expect(gate.offered(S1)).toBe(true)
   })
 
-  it('follows the preset grant of the genre’s agent row', async () => {
+  it('also follows the preset grant of a genre’s agent row', async () => {
     const granted = new GenreBindingGate(async () => ({ ok: true, value: [genre()] }), grants([NOVEL_ROW]))
     const denied = new GenreBindingGate(async () => ({ ok: true, value: [genre()] }), grants([]))
     await settledGate(granted)
@@ -110,16 +112,16 @@ describe('CanvasBindChip', () => {
     expect(container.innerHTML).toBe('')
   })
 
-  it('lists only live canvases with a genre, and binds the picked one', async () => {
+  it('lists every live canvas, including a plain one, and binds the picked work', async () => {
     const mocks = face()
     render(<CanvasBindChip t={t} {...mocks} />)
     fireEvent.click(await screen.findByRole('button', { name: zh['bind.aria'] }))
-    const rain = await screen.findByRole('menuitem', { name: '雨夜' })
-    expect(screen.queryByRole('menuitem', { name: '随手记' })).toBeNull()
+    const plain = await screen.findByRole('menuitem', { name: '随手记' })
+    expect(screen.getByRole('menuitem', { name: '雨夜' })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: '旧稿' })).toBeNull()
-    fireEvent.click(rain)
-    await waitFor(() => { expect(mocks.bindCanvas).toHaveBeenCalledWith('canvas_rain') })
-    await screen.findByText('作品 · 雨夜')
+    fireEvent.click(plain)
+    await waitFor(() => { expect(mocks.bindCanvas).toHaveBeenCalledWith('canvas_plain') })
+    await screen.findByText('作品 · 随手记')
   })
 
   it('names the bound work on its label, opens it, and unbinds', async () => {
@@ -133,6 +135,25 @@ describe('CanvasBindChip', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: zh['bind.unbind'] }))
     await waitFor(() => { expect(mocks.bindCanvas).toHaveBeenCalledWith(null) })
     await screen.findByText(zh['bind.unbound'])
+  })
+
+  it('re-reads the binding and list immediately after a local binding revision', async () => {
+    const listeners = new Set<() => void>()
+    let rev = 0
+    let bound: string | null = null
+    const items = [summary('canvas_plain', '随手记')]
+    const mocks = face({
+      subscribe: vi.fn((next: () => void) => { listeners.add(next); return () => { listeners.delete(next) } }),
+      revision: () => rev,
+      boundCanvas: vi.fn(async () => ({ ok: true as const, value: bound })),
+      listCanvases: vi.fn(async () => ({ ok: true as const, value: { items } })),
+    })
+    render(<CanvasBindChip t={t} {...mocks} />)
+    await screen.findByText(zh['bind.unbound'])
+    items.push(summary('canvas_new', '新作品'))
+    bound = 'canvas_new'
+    act(() => { rev += 1; for (const listener of listeners) listener() })
+    await screen.findByText('作品 · 新作品')
   })
 
   it('picks up a binding the model made when the conversation writes a canvas, else on the slow re-read', async () => {
