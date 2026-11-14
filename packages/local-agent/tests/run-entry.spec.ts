@@ -137,7 +137,7 @@ async function mount(homes = mkdtempSync(join(tmpdir(), 'run-entry-homes-')), st
     return batch.results[0]!.result
   }
   const childEvents = (childSessionId: string): readonly SessionEvent[] => ctx.sessions.get(SessionId(childSessionId))?.snapshotEvents() ?? []
-  const dispose = async (): Promise<void> => { await fiber.dispose(); await persistence.dispose() }
+  const dispose = async (): Promise<void> => { await fiber.dispose(); await ctx.fiber.dispose() }
   mounted.push(dispose)
   return { ctx, registry, homes, store, rounds, call, childEvents, maxRunning: () => maxRunning, dispose }
 }
