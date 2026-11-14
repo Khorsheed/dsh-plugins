@@ -52,20 +52,11 @@ jobs:
         working-directory: deepseek-harness
         run: pnpm install --frozen-lockfile
 
-      - name: Build harness libs (type seed)
+      # The complete build supplies native binaries and the Web dist, and embeds
+      # the client version used by browser settings tests.
+      - name: Build harness (complete)
         working-directory: deepseek-harness
-        run: pnpm run build:lib
-
-      # The flock native addon is compiled, not shipped in the harness tree
-      # (ci.yml gates comment carries the incident); room's persistence tests
-      # need it on Linux runners.
-      - name: Build harness native addon (flock)
-        working-directory: deepseek-harness
-        run: pnpm run build:native-system
-
-      - name: Build harness Web app (browser tests)
-        working-directory: deepseek-harness
-        run: pnpm run build:web
+        run: pnpm run build
 
       - name: Install Playwright Chromium (browser tests)
         working-directory: deepseek-harness
