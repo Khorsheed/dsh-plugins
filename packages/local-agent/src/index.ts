@@ -4084,6 +4084,9 @@ export class LocalAgentRegistry {
     if (this.ctx.get('sessionPersistence') === undefined) {
       throw new Error(`localAgent: child session ${childSessionId} is not live and the sessionPersistence service is not mounted to reattach it`)
     }
+    // A recovering suffix sync may still be closing the previous write handle;
+    // its close must finish before a new open competes for the session lease.
+    while (this.childSyncs.size > 0) await Promise.allSettled([...this.childSyncs])
     // Host 0.1.5 handle-based persistence: the backend routes live
     // session/event appends into the per-id writer only while a WRITE handle
     // is open, so the reattach claims the write handle first and the cache
