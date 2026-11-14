@@ -21,7 +21,7 @@ import { LOCAL_AGENT_SERVICE } from '@khorsheed/dsh-local-agent'
  * write handle for the same id is open rejects SessionAlreadyOwnedError, the
  * collision the registry's handle cache exists to prevent.
  */
-function fakePersistence(options: { beforeFlush?: () => Promise<void>; onClose?: () => void } = {}): {
+function fakePersistence(options: { beforeFlush?: () => Promise<void>; beforeClose?: () => Promise<void>; onClose?: () => void } = {}): {
   /** Stored events per session id. */
   stored: Map<string, unknown[]>
   /** Every accepted append batch, in order. */
@@ -59,6 +59,7 @@ function fakePersistence(options: { beforeFlush?: () => Promise<void>; onClose?:
     },
     flush: async () => { await options.beforeFlush?.(); flushed.push(id) },
     close: async () => {
+      await options.beforeClose?.()
       options.onClose?.()
       if (!own) return
       const count = (writeHandles.get(id) ?? 1) - 1
@@ -191,6 +192,32 @@ describe('LocalAgentRegistry.syncChildSession', () => {
     expect(events).toEqual(['flush:start', 'flush:end', 'close'])
     expect(ctx.sessions.get(SessionId('child-1'))).toBeUndefined()
     expect(persistence.stored.get('child-1')).toHaveLength(child.snapshotEvents().length)
+  })
+
+  it('serializes reacquisition after the previous write handle finishes closing', async () => {
+    let finishClose!: () => void
+    const closing = new Promise<void>((resolve) => { finishClose = resolve })
+    const persistence = fakePersistence({ beforeClose: () => closing })
+    const { registry } = await mount(persistence)
+    const internal = registry as unknown as {
+      childWriteHandles: Map<string, Promise<unknown>>
+      childWriteHandleReleases: Map<string, Promise<void>>
+      releaseChildWriteHandle(childSessionId: string): Promise<void>
+      acquireChildWriteHandle(childSessionId: string): Promise<unknown>
+    }
+    const initial = await persistence.open('member-r', 'write')
+    internal.childWriteHandles.set('member-r', Promise.resolve(initial))
+
+    const releasing = internal.releaseChildWriteHandle('member-r')
+    const acquiring = internal.acquireChildWriteHandle('member-r')
+    expect(internal.acquireChildWriteHandle('member-r')).toBe(acquiring)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(persistence.opened).toEqual(['member-r'])
+
+    finishClose()
+    await Promise.all([releasing, acquiring])
+    expect(persistence.opened).toEqual(['member-r', 'member-r'])
+    expect(internal.childWriteHandleReleases.size).toBe(0)
   })
 
   it('shares the write-handle cache with the reattach recipe — reattach then sync never double-opens', async () => {

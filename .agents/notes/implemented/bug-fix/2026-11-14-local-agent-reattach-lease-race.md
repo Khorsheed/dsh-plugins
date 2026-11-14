@@ -12,12 +12,15 @@ This is not a stale lock left by a dead process, and the host's `SessionWriteLea
 
 ## Decision
 
-`reattachChildSession` waits for the registry's active `childSyncs` to settle before calling `acquireChildWriteHandle`, using the same quiescence condition as plugin disposal. The previous write handle finishes closing before reattach can acquire a new one.
+The registry tracks a pending release promise per child in `childWriteHandleReleases`. `releaseChildWriteHandle` removes the cached handle and keeps its close promise visible until that close settles. Every later `acquireChildWriteHandle` awaits the pending release before it can stat, create, or open the session. Concurrent acquirers still share one promise from the existing cache.
 
-The existing cache, suffix-sync recovery, and reattach behavior otherwise stay unchanged. There is no lock retry, timeout, lock-file deletion, or relaxation of single-writer ownership. The test fixture disposes the local-agent fiber before the rest of its Cordis context, so execution-end records are written before the session store unloads; that fixture cleanup alone does not solve the runtime race.
+Plugin disposal goes through the same release helper and then awaits any outstanding releases. This makes the close itself the serialization point instead of relying on one caller to wait for a global sync set. Reattach does not wait for unrelated children's sync work.
+
+There is no lock retry, timeout, lock-file deletion, or relaxation of single-writer ownership. The test fixture disposes the local-agent fiber before the rest of its Cordis context, so execution-end records are written before the session store unloads; that fixture cleanup alone does not solve the runtime race.
 
 ## Alternatives considered
 
+- **Wait only for `childSyncs` at reattach.** Rejected after repeated Linux CI failures: not every close/acquisition is represented by that set, so the close can still overlap the next open. The pending release, not the caller, must be the shared ordering primitive.
 - **Retry the acquisition or treat contention as transient.** Rejected: the two owners are operations in the same registry, and the close/open ordering is the actual defect. A retry hides that lifecycle error and does not protect the log from other ordering mistakes.
 - **Delete or forcibly take the lock.** Rejected: the lock is live and correct. Removing the file would defeat the inode ownership check and could admit a genuinely concurrent writer.
 - **Dispose the whole test context and leave production unchanged.** Rejected as insufficient: the Linux failure persisted with complete fixture teardown. Disposal order still matters for retaining execution-end records, but it cannot serialize a later sync recovery with reattach.
@@ -25,15 +28,13 @@ The existing cache, suffix-sync recovery, and reattach behavior otherwise stay u
 
 ## Consequences
 
-A resume no longer competes with the recovering writer's close. The single-writer guarantee and genuine cross-process contention errors remain intact, with no data migration or configuration change.
-
-Reattachment can wait for sync work belonging to other children as well as its own, because `childSyncs` is a registry-wide set. That is the same bounded coordination already used at disposal; it is not a new background queue or persistent lock.
+A new write for one child cannot begin until the previous close for that same child has settled. Unrelated members do not block one another through a registry-wide wait. The single-writer guarantee and genuine cross-process contention errors remain intact, with no data migration or configuration change.
 
 ## Testing
 
-The existing restart continuation case exercises the recovering sync followed by reattach. A temporary instrumented run showed the first handle's close completing before the reattach open, and the focused nine-test file passed with that ordering; the instrumentation was removed before committing. The original Linux CI failure provides the cross-platform regression signal.
+`packages/local-agent/tests/child-session-sync.spec.ts` now holds the previous close open with a test gate. It proves that a second acquisition does not call `open` before the gate resolves, that concurrent acquirers share the same promise, and that the release record is removed afterward. The focused child-sync and restart-entry suites passed: 12 + 9 tests.
 
-The complete local package suite passed: 59 files, 597 tests. In [Linux CI](https://github.com/Khorsheed/dsh-plugins/actions/runs/43563981827), those same 59 files and 597 tests also passed; this package-level result does not imply that the whole repository job passed.
+The existing restart continuation case still exercises the recovering sync followed by reattach. The complete local package suite passed: 59 files, 598 tests, including the deterministic close/acquisition gate. Linux CI remains a required release check.
 
 ## Related
 

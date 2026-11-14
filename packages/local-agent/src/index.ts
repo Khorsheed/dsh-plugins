@@ -1736,6 +1736,8 @@ export class LocalAgentRegistry {
    * sync ({@link syncChildSession}). Every handle closes on plugin dispose.
    */
   private readonly childWriteHandles = new Map<string, Promise<SessionHandle>>()
+  /** Releases that a new acquisition must await before opening the same child session. */
+  private readonly childWriteHandleReleases = new Map<string, Promise<void>>()
   /** Child syncs that must finish before their write handles close on dispose. */
   private readonly childSyncs = new Set<Promise<void>>()
 
@@ -1794,15 +1796,8 @@ export class LocalAgentRegistry {
       while (this.childSyncs.size > 0) await Promise.allSettled([...this.childSyncs])
       for (const detach of this.reattachDisposers.values()) detach()
       this.reattachDisposers.clear()
-      await Promise.all([...this.childWriteHandles].map(async ([childSessionId, cached]) => {
-        this.childWriteHandles.delete(childSessionId)
-        try {
-          const handle = await cached
-          await handle.close()
-        } catch (error: unknown) {
-          this.ctx.logger.warn(`localAgent: closing the child session ${childSessionId} write handle failed: ${String(error)}`)
-        }
-      }))
+      await Promise.all([...this.childWriteHandles.keys()].map(childSessionId => this.releaseChildWriteHandle(childSessionId)))
+      await Promise.all([...this.childWriteHandleReleases.values()])
     })
   }
 
@@ -4084,9 +4079,6 @@ export class LocalAgentRegistry {
     if (this.ctx.get('sessionPersistence') === undefined) {
       throw new Error(`localAgent: child session ${childSessionId} is not live and the sessionPersistence service is not mounted to reattach it`)
     }
-    // A recovering suffix sync may still be closing the previous write handle;
-    // its close must finish before a new open competes for the session lease.
-    while (this.childSyncs.size > 0) await Promise.allSettled([...this.childSyncs])
     // Host 0.1.5 handle-based persistence: the backend routes live
     // session/event appends into the per-id writer only while a WRITE handle
     // is open, so the reattach claims the write handle first and the cache
@@ -4236,7 +4228,9 @@ export class LocalAgentRegistry {
       throw new Error('localAgent: the sessionPersistence service is not mounted')
     }
     const id = SessionId(childSessionId)
+    const pendingRelease = this.childWriteHandleReleases.get(childSessionId)
     const acquired = (async (): Promise<SessionHandle> => {
+      if (pendingRelease !== undefined) await pendingRelease
       if (header !== undefined && (await persistence.stat(id)) === undefined) {
         try {
           return await persistence.create(header)
@@ -4261,16 +4255,28 @@ export class LocalAgentRegistry {
   /**
    * Evict one child session's cached write handle and close it. Used when an
    * owner gives the session up (a failed reattach); normal lifetimes close
-   * with the cache on plugin dispose.
+   * with the cache on plugin dispose. A later acquisition waits for this close
+   * to settle before it can compete for the same session lease.
    */
   private async releaseChildWriteHandle(childSessionId: string): Promise<void> {
     const cached = this.childWriteHandles.get(childSessionId)
-    if (cached === undefined) return
+    if (cached === undefined) {
+      await this.childWriteHandleReleases.get(childSessionId)
+      return
+    }
     this.childWriteHandles.delete(childSessionId)
-    const handle = await cached.catch(() => undefined)
-    await handle?.close().catch((error: unknown) => {
-      this.ctx.logger.warn(`localAgent: closing the child session ${childSessionId} write handle failed: ${String(error)}`)
-    })
+    const released = (async (): Promise<void> => {
+      const handle = await cached.catch(() => undefined)
+      await handle?.close().catch((error: unknown) => {
+        this.ctx.logger.warn(`localAgent: closing the child session ${childSessionId} write handle failed: ${String(error)}`)
+      })
+    })()
+    this.childWriteHandleReleases.set(childSessionId, released)
+    try {
+      await released
+    } finally {
+      if (this.childWriteHandleReleases.get(childSessionId) === released) this.childWriteHandleReleases.delete(childSessionId)
+    }
   }
 
   /**

@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-11-14-local-agent-reattach-lease-race.md
-.agents/notes/implemented/bug-fix/2026-11-14-local-agent-reattach-lease-race.md: 24feeda281766cc2bb0f081fe147d5b4a8408c16
-.agents/notes/implemented/bug-fix/2026-11-14-local-agent-reattach-lease-race.zh.md: 0a5603ed510ebdbd16d828880cc8360f9c922fc6
+.agents/notes/implemented/bug-fix/2026-11-14-local-agent-reattach-lease-race.md: 2669813e6ed034cb9cd1cafdd3739ff0b0081799
+.agents/notes/implemented/bug-fix/2026-11-14-local-agent-reattach-lease-race.zh.md: daabcccd561d8fe00ae60cae4573b119194a85ad
