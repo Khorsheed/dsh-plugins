@@ -2,5 +2,5 @@
 # last confirmed-consistent state. Both languages carry equal authority; after
 # editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-11-14-canvas-detail-shared-ui.md
-.agents/notes/implemented/simplification/2026-11-14-canvas-detail-shared-ui.md: bd91eb981fd2fad878d038190bd30992edb821ab
-.agents/notes/implemented/simplification/2026-11-14-canvas-detail-shared-ui.zh.md: 59ae576e9b3a89e6ed6e6048ab7fc0159718b606
+.agents/notes/implemented/simplification/2026-11-14-canvas-detail-shared-ui.md: 5a15a5252cbf7afcf56855d01c9ba1a538f358a6
+.agents/notes/implemented/simplification/2026-11-14-canvas-detail-shared-ui.zh.md: cd1339bf80b25da11d5b0a553899ad784dac3fa8

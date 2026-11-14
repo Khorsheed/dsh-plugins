@@ -158,6 +158,29 @@ describe('ManuscriptView', () => {
     expect(await screen.findByText('正文第一段。')).toBeTruthy()
   })
 
+  it('switches read, source-only edit and split without losing the draft', async () => {
+    const { props } = harness()
+    render(<ManuscriptView {...props} />)
+    await screen.findByText('正文第一段。')
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    const draft = '# 异议的代价\n\n改过的正文。'
+    fireEvent.input(pad(), { target: { value: draft } })
+    expect(screen.queryByText('改过的正文。')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: zh['detail.split'] }))
+    expect(await screen.findByText('改过的正文。')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '阅读' }))
+    expect(document.querySelector('textarea')).toBeNull()
+    expect(screen.getByText('未保存')).toBeTruthy()
+    expect(screen.getByText('正文第一段。')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    expect(pad().value).toBe(draft)
+    fireEvent.click(screen.getByRole('button', { name: '阅读' }))
+    fireEvent.click(screen.getByRole('button', { name: zh['detail.split'] }))
+    expect(pad().value).toBe(draft)
+  })
+
   it('renders a whole HTML block in a sandboxed frame, not as its source', async () => {
     const { props, current } = harness()
     current.body = '# 异议的代价\n\n正文第一段。\n\n<div style="border:1px solid #e2e5ea"><div>行为层</div></div>\n\n结尾一段。'
