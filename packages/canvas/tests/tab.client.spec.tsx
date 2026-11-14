@@ -94,6 +94,7 @@ interface Harness {
   readonly mocks: {
     listCanvases: ReturnType<typeof vi.fn>
     createCanvas: ReturnType<typeof vi.fn>
+    bindCanvas: ReturnType<typeof vi.fn>
     readBoard: ReturnType<typeof vi.fn>
     putCard: ReturnType<typeof vi.fn>
     patchCard: ReturnType<typeof vi.fn>
@@ -151,6 +152,7 @@ function makeHarness(options: {
       boards.set(minted.id, minted)
       return ok({ ok: true, board: minted, version: '1' })
     }),
+    bindCanvas: vi.fn(async (_sid: string, request: { canvasId: string | null }) => ok({ ok: true, canvasId: request.canvasId })),
     readBoard: vi.fn(async (request: { canvasId: string }): Promise<Result<BoardReadOutcome>> => {
       const current = boards.get(request.canvasId)
       if (current === undefined) return ok({ ok: false, error: 'missing' })
@@ -325,6 +327,7 @@ describe('CanvasTab — list, switcher, board', () => {
     fireEvent.click(screen.getByRole('button', { name: '建立' }))
     await waitFor(() => {
       expect(mocks.createCanvas).toHaveBeenCalledWith('s1', { title: '远程团队的书面沟通礼仪', attachedWorkspaces: ['/ws/report'], genreId: null })
+      expect(mocks.bindCanvas).toHaveBeenCalledWith('s1', { canvasId: 'canvas_new00000abcdefgh' })
     })
     // No genre installed: the form carries no genre pick.
     expect(screen.queryByRole('radiogroup', { name: '体裁' })).toBeNull()

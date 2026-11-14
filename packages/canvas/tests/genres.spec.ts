@@ -240,15 +240,15 @@ describe('canvas genres', () => {
 })
 
 describe('session binding', () => {
-  it('binds only a canvas with a genre, and the tools target follows the binding', async () => {
+  it('binds plain and genre canvases alike, and the tools target follows the binding', async () => {
     const { board, events } = bench()
     board.registerGenre(NOVEL)
     const plain = await plainCanvas(board)
     const novel = await plainCanvas(board)
     await board.selectGenre({ canvasId: novel, genreId: 'novel' }, SESSION)
 
-    expect(await board.bindSession({ canvasId: plain }, SESSION)).toEqual({ ok: false, error: 'no-genre' })
-    await board.focusCanvas({ canvasId: plain }, SESSION)
+    expect(await board.bindSession({ canvasId: plain }, SESSION)).toEqual({ ok: true, canvasId: plain })
+    expect(events).toContainEqual(['canvas/binding-changed', 's1', plain])
     expect(await board.targetCanvasId(SESSION)).toBe(plain)
 
     expect(await board.bindSession({ canvasId: novel }, SESSION)).toEqual({ ok: true, canvasId: novel })
@@ -257,26 +257,25 @@ describe('session binding', () => {
     expect(await board.targetCanvasId(SESSION)).toBe(novel)
     expect(await board.targetCanvasId(OTHER)).toBeUndefined()
 
+    await board.focusCanvas({ canvasId: plain }, SESSION)
     expect(await board.bindSession({ canvasId: null }, SESSION)).toEqual({ ok: true, canvasId: null })
     expect(await board.targetCanvasId(SESSION)).toBe(plain)
   })
 
-  it('survives a restart: the binding lives in the state root', async () => {
+  it('survives a restart for a plain canvas: the binding lives in the state root', async () => {
     const { fs, board } = bench()
-    board.registerGenre(NOVEL)
-    const novel = await plainCanvas(board)
-    await board.selectGenre({ canvasId: novel, genreId: 'novel' }, SESSION)
-    await board.bindSession({ canvasId: novel }, SESSION)
-    expect(JSON.parse(await fs.readText(`${STATE}/${BINDINGS_FILE_NAME}`))).toEqual({ s1: novel })
+    const plain = await plainCanvas(board)
+    await board.bindSession({ canvasId: plain }, SESSION)
+    expect(JSON.parse(await fs.readText(`${STATE}/${BINDINGS_FILE_NAME}`))).toEqual({ s1: plain })
 
     const restarted = new CanvasBoardService(
       { fs, get: () => undefined, emit: () => {} } as unknown as Context, { stateRoot: STATE },
     )
-    expect(await restarted.boundCanvasId('s1')).toBe(novel)
+    expect(await restarted.boundCanvasId('s1')).toBe(plain)
     expect((await restarted.listCanvases()).items).toHaveLength(1)
   })
 
-  it('unbinds every session when the genre is cleared or the canvas deleted', async () => {
+  it('keeps the work bound when its genre clears, and unbinds only when it is deleted', async () => {
     const { board, events } = bench()
     board.registerGenre(NOVEL)
     const a = await plainCanvas(board)
@@ -286,8 +285,8 @@ describe('session binding', () => {
     await board.bindSession({ canvasId: b }, OTHER)
 
     await board.selectGenre({ canvasId: a, genreId: null }, SESSION)
-    expect(await board.boundCanvasId('s1')).toBeUndefined()
-    expect(events).toContainEqual(['canvas/binding-changed', 's1', null])
+    expect(await board.boundCanvasId('s1')).toBe(a)
+    expect(events).not.toContainEqual(['canvas/binding-changed', 's1', null])
 
     await board.deleteCanvas({ canvasId: b }, SESSION)
     expect(await board.boundCanvasId('s2')).toBeUndefined()

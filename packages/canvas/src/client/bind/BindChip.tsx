@@ -1,12 +1,11 @@
 /**
- * The session header's binding chip (创作体裁): which canvas this writing
- * session works on. A bound session's canvas tools — and its genre's tools —
- * act on that canvas whatever the sidebar shows; unbound, they follow the
- * sidebar as they always did.
+ * The session header's binding chip: which canvas this writing session works
+ * on. A bound session's canvas tools act on that canvas whatever the sidebar
+ * shows; a genre's own tools still require that genre on the bound canvas.
+ * Unbound, the canvas tools follow the sidebar.
  *
- * The chip lists only canvases with a genre (a plain canvas cannot be bound)
- * and renders nothing in a session the gate does not offer it to, so a
- * deployment without a genre never sees it.
+ * Every live canvas is a work: a genre adds capabilities, not the right to be
+ * bound. The chip renders only where the gate offers it.
  *
  * @module @khorsheed/dsh-canvas/client
  */
@@ -37,9 +36,9 @@ export interface CanvasBindChipProps extends CanvasBindInjected {
   readonly t: TranslateNS<'canvas'>
 }
 
-/** Rows the chip offers: live canvases with a genre. */
+/** Rows the chip offers: every live canvas, most recently active first. */
 function bindable(items: readonly CanvasSummary[]): CanvasSummary[] {
-  return items.filter(row => row.genre !== undefined && row.archivedAt === null)
+  return items.filter(row => row.archivedAt === null)
 }
 
 /** How often the chip re-reads a binding the model may have moved (the board poll's pace). */

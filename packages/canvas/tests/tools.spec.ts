@@ -410,6 +410,7 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
     expect(items[0]!.title).toBe('雨夜')
     expect(answer).toBe(`完成：已新建画布《雨夜》（${items[0]!.id}）并切过去。挂上了工作区 ${WS}。接下来用 canvas_write 落卡。`)
     expect(board.focusedCanvasId(FALLBACK)).toBe(items[0]!.id)
+    expect(await board.boundCanvasId(String(FALLBACK.id))).toBe(items[0]!.id)
     expect(await write({ op: 'card', kind: 'fragment', text: '雨声' })).toMatch(/^完成：c_/)
     expect(await open({})).toContain(`- ${items[0]!.id}　《雨夜》　1 张卡　← 本会话当前`)
   })
@@ -444,7 +445,7 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
     await expect(open({ canvas: '没有这块' })).rejects.toThrow('失败：没有叫「没有这块」的画布。')
   })
 
-  it('creates a genre canvas bound to the session, and a plain switch unbinds it', async () => {
+  it('binds a genre canvas at birth and rebinds when switching to a plain one', async () => {
     const { board, open } = bench()
     board.registerGenre({
       id: 'novel', label: '长篇小说', version: 'novel@1', description: '',
@@ -458,8 +459,8 @@ describe('canvas_open: list, switch to, or create the session\'s canvas', () => 
     expect(await board.boundCanvasId(String(FALLBACK.id))).toBe(novel.id)
     const plain = await board.createCanvas({ title: '杂记' }, FALLBACK)
     if (!plain.ok) throw new Error('expected a created canvas')
-    expect(await open({ canvas: '杂记' })).toBe(`完成：已切到画布《杂记》（${plain.board.id}）。已解除与《雾港》的绑定。`)
-    expect(await board.boundCanvasId(String(FALLBACK.id))).toBeUndefined()
+    expect(await open({ canvas: '杂记' })).toBe(`完成：已切到画布《杂记》（${plain.board.id}）。`)
+    expect(await board.boundCanvasId(String(FALLBACK.id))).toBe(plain.board.id)
     expect(await board.targetCanvasId(FALLBACK)).toBe(plain.board.id)
   })
 })

@@ -30,7 +30,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {
   BoardAddCommentRequest, BoardArchiveRequest, BoardWorkspaceRequest,
-  BoardAttachImageOutcome, BoardAttachImageRequest, BoardCreateRequest,
+  BoardAttachImageOutcome, BoardAttachImageRequest, BoardBindRequest, BoardBindResult, BoardCreateRequest,
   BoardDeleteCanvasRequest, BoardDeleteCanvasResult, BoardDeleteCardRequest,
   BoardFocusRequest, BoardFocusResult,
   BoardListResult, BoardMarkSeenRequest, BoardMutationResult,
@@ -164,6 +164,8 @@ export interface CanvasTabInjected
   goTo?: (params: CanvasNavParams) => void
   /** Create one canvas (a topic, optionally with workspaces attached). */
   createCanvas: (sessionId: SessionId, request: BoardCreateRequest) => Promise<RemoteResult<BoardMutationResult>>
+  /** Bind the work this session writes to; creating a canvas through the tab binds it immediately. */
+  bindCanvas: (sessionId: SessionId, request: BoardBindRequest) => Promise<RemoteResult<BoardBindResult>>
   /** Read one board with the freshness token a later mutation must present. */
   readBoard: (request: BoardReadRequest) => Promise<RemoteResult<BoardReadOutcome>>
   /** Add one user card (createdBy user, straight to kept). */

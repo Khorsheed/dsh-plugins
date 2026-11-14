@@ -308,6 +308,7 @@ function makeBench(boards: CanvasBoard[] = [board()]): Bench {
     sessionId: 's1',
     listCanvases: vi.fn(async (): Promise<Result<BoardListResult>> => ok({ items: [...current.values()].map(rowOf) })),
     createCanvas: vi.fn(),
+    bindCanvas: vi.fn(async (_sid: string, request: { canvasId: string | null }) => ok({ ok: true, canvasId: request.canvasId })),
     ...mocks,
     patchCard: vi.fn(async (_sid: string, request: { canvasId: string }): Promise<Result<BoardMutationResult>> => mutationFor(request.canvasId)),
     addComment: vi.fn(async (_sid: string, request: { canvasId: string }): Promise<Result<BoardMutationResult>> => mutationFor(request.canvasId)),

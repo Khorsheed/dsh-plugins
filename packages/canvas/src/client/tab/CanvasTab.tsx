@@ -145,7 +145,7 @@ const NO_SCOPES: readonly CanvasCardScope[] = []
 /** The canvas tab: the strip plus the row it is showing. */
 export function CanvasTab(props: CanvasTabProps): ReactNode {
   const {
-    t, listCanvases, createCanvas, readBoard, putCard, patchCard, markSeen, addComment,
+    t, listCanvases, createCanvas, bindCanvas, readBoard, putCard, patchCard, markSeen, addComment,
     archiveCanvas, setWorkspace, deleteCanvas, deleteCard, setCategories: writeCategories, setLayout: writeLayout, openCanvas: showCanvas,
     openCardDetail, openCardDraft, openManuscript, openTypePage, openCategoriesPage, backToBoard, activateTab, closeTab, focusCanvas,
     talkAvailable, quoteToConversation, refreshBoards, suggestWideMode, images, useImageRev,
@@ -712,12 +712,17 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
       showToast(errorText(value.error))
       return false
     }
-    showToast(t('toast.canvasCreated', { title: value.board.title }))
+    const bound = await run(() => bindCanvas(sessionId, { canvasId: value.board.id }))
+    if (bound !== null && !bound.ok) {
+      showToast(errorText(bound.error))
+    } else {
+      showToast(t('toast.canvasCreated', { title: value.board.title }))
+    }
     setCanvases(current => [summarizeBoard(value.board), ...(current ?? [])])
     showCanvas(value.board.id)
     setOpenBoard({ board: value.board, version: value.version })
     return true
-  }, [sessionId, createCanvas, run, showToast, errorText, t, showCanvas])
+  }, [sessionId, createCanvas, bindCanvas, run, showToast, errorText, t, showCanvas])
 
   const setCanvasArchived = useCallback(async (row: CanvasSummary, archived: boolean) => {
     if (sessionId === undefined) return

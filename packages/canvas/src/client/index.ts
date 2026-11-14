@@ -263,6 +263,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     // The mutating calls hand the TAB's session to the host (the tab is
     // session scope; the fence resolves that session's mode).
     createCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().createCanvas(sessionId, request)),
+    bindCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().bindCanvas(sessionId, request)),
     putCard: async (sessionId, request) => touchOnSuccess(await requireRemote().putCard(sessionId, request)),
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
     markSeen: async (sessionId, request) => touchOnSuccess(await requireRemote().markSeen(sessionId, request)),
@@ -561,12 +562,12 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     }), `canvas: room card desk row (${seat})`)
   }
 
-  // The binding chip (创作体裁) in the session header: which canvas this
-  // writing session works on. Offered only where a genre is installed and the
-  // session reaches its agent row (bind/gate.ts), so a deployment without a
-  // genre never sees it. The header seat is declared by ui-conversation, which
-  // this package does not depend on — the same structural registration as the
-  // tool row above; without that package the inject never fires.
+  // The binding chip in the session header: which canvas this writing session
+  // works on. Offered where the session reaches the canvas row or a genre row
+  // (bind/gate.ts); ordinary canvases need no genre. The header seat is declared
+  // by ui-conversation, which this package does not depend on — the same
+  // structural registration as the tool row above; without that package the
+  // inject never fires.
   const bindGate = new GenreBindingGate(async () => requireRemote().listGenres(), tabVisibility)
   const bindFace = (sessionId: SessionId): CanvasBindInjected => ({
     offered: () => bindGate.offered(sessionId),

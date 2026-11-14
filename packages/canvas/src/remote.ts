@@ -310,7 +310,7 @@ export class CanvasRemoteService extends TypertRemoteService<CanvasRemoteConfig>
   }
 
   /**
-   * Bind the calling session to a canvas with a genre (`null` unbinds).
+   * Bind the calling session to any canvas (`null` unbinds).
    * @param sessionId - the calling session (see panel-session.ts); it is the one bound.
    * @param request - the canvas id, or null.
    * @returns the canvas now bound, or the failure code.

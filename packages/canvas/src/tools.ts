@@ -835,31 +835,22 @@ export function canvasMainSessionToolDefinitions(board: CanvasBoardService): Too
   }
 
   /**
-   * Make one canvas this session's target. A genre canvas binds (binding is
-   * how a genre's own tools reach the session); a plain one takes the focus —
-   * and since a binding outranks the focus, a session bound elsewhere is
-   * unbound first, or the switch would not take.
+   * Make one canvas this session's target. Every canvas binds, so an explicit
+   * switch survives a restart and outranks the sidebar's transient focus. A
+   * genre's own tools still check the bound canvas's genre independently.
    */
   const switchTo = async (canvasId: string, session: Session): Promise<{ ok: true; note: string } | { ok: false; error: string }> => {
     const loaded = await board.readBoard({ canvasId })
     if (!loaded.ok) return { ok: false, error: loaded.error }
-    if (loaded.board.genre !== undefined) {
-      const bound = await board.bindSession({ canvasId }, session)
-      if (!bound.ok) return { ok: false, error: bound.error }
-      await board.focusCanvas({ canvasId }, session)
-      return { ok: true, note: `已绑定（体裁：${board.genre(loaded.board.genre.id)?.label ?? loaded.board.genre.id}）。` }
-    }
-    const previous = await board.boundCanvasId(String(session.id))
-    let note = ''
-    if (previous !== undefined && previous !== canvasId) {
-      const unbound = await board.bindSession({ canvasId: null }, session)
-      if (!unbound.ok) return { ok: false, error: unbound.error }
-      const was = await board.readBoard({ canvasId: previous })
-      note = `已解除与《${was.ok ? was.board.title : previous}》的绑定。`
-    }
+    const bound = await board.bindSession({ canvasId }, session)
+    if (!bound.ok) return { ok: false, error: bound.error }
     const focused = await board.focusCanvas({ canvasId }, session)
     if (!focused.ok) return { ok: false, error: focused.error }
-    return { ok: true, note }
+    const genre = loaded.board.genre
+    return {
+      ok: true,
+      note: genre === undefined ? '' : `已绑定（体裁：${board.genre(genre.id)?.label ?? genre.id}）。`,
+    }
   }
 
   const open = defineTool({
