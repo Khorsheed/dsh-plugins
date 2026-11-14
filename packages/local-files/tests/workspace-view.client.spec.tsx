@@ -190,6 +190,22 @@ describe('WorkspaceView reload gesture', () => {
   })
 })
 
+it('offers text editing inside the desktop application', async () => {
+  vi.stubGlobal('location', new URL('dsh-app://app/'))
+  try {
+    const { props } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
+    props.listDirectory = vi.fn().mockResolvedValue({ ok: true, value: { entries: [{ name: 'dataset.json', isDir: false }] } })
+    props.readFile = vi.fn().mockResolvedValue({ ok: true, value: { path: `${WORKSPACE}/dataset.json`, kind: 'text', content: '{"demo":true}' } })
+    render(<WorkspaceView {...props} />)
+    await act(async () => {})
+    fireEvent.click(screen.getByRole('button', { name: 'dataset.json' }))
+    await act(async () => {})
+    expect(screen.getByRole('button', { name: 'action.edit' })).toBeTruthy()
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})
+
 it('shows loading while a selected file is pending instead of asking for a selection', async () => {
   const { props } = makeProps({ byId: { [SESSION]: { cwd: WORKSPACE } } })
   props.listDirectory = vi.fn().mockResolvedValue({ ok: true, value: { entries: [{ name: 'slow.md', isDir: false }] } })

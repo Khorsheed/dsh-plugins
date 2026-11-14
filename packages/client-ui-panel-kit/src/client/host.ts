@@ -18,15 +18,17 @@ const LOOPBACK_HOSTS: readonly string[] = ['localhost', '127.0.0.1', '[::1]', ':
  * an IDE, a folder dialog. Reached through a tunnel from a phone or another
  * computer, the gesture fires on a machine nobody is sitting at and the
  * viewer sees nothing happen. The criterion is therefore "is the person at
- * the host", read from the page's own hostname, not screen size or touch: a
+ * the host", read from the page's own origin, not screen size or touch: a
  * remote desktop browser is just as far from the host's Finder, and a narrow
- * window on the host itself is not. An unreadable location keeps the old
- * behavior (treated as on-host).
+ * window on the host itself is not. The packaged `dsh-app://app` document is
+ * on the host too. An unreadable location keeps the old behavior (on-host).
  * @param scope - the global to read `location` from (tests pass a stub).
- * @returns true unless the page's hostname is clearly not loopback.
+ * @returns true for loopback and the packaged desktop application, false for remote origins.
  */
 export function browserOnHost(scope: unknown = globalThis): boolean {
-  const hostname = (scope as { location?: { hostname?: unknown } }).location?.hostname
+  const location = (scope as { location?: { hostname?: unknown; protocol?: unknown } }).location
+  if (location?.protocol === 'dsh-app:' && location.hostname === 'app') return true
+  const hostname = location?.hostname
   if (typeof hostname !== 'string' || hostname === '') return true
   return LOOPBACK_HOSTS.includes(hostname.toLowerCase())
 }
