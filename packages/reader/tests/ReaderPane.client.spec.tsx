@@ -487,6 +487,7 @@ describe('the pane renders content, never an empty column', () => {
     await ui.settle()
     expect(await screen.findByText(zh['state.emptyTitle'])).toBeTruthy()
     expect(screen.getByText(zh['state.emptyBody'])).toBeTruthy()
+    expect(screen.getByText(zh['add.title'])).toBeTruthy()
     expect(screen.getByPlaceholderText(zh['search.placeholder'])).toBeTruthy()
     // The empty state IS the add card: clicking it opens the dialog.
     fireEvent.click(screen.getByText(zh['state.emptyTitle']))

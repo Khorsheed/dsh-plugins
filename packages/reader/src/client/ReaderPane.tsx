@@ -5061,6 +5061,7 @@ function ReaderPaneBody(props: ReaderPaneProps): ReactNode {
           >
             <span className={css.emptyTitle}>{t('state.emptyTitle')}</span>
             <span className={css.emptyBody}>{t('state.emptyBody')}</span>
+            <span className={css.emptyCta}><span className={css.emptyMark} aria-hidden="true">＋</span>{t('add.title')}</span>
           </button>
         )}
         {!loading && sources.length > 0 && brokenSources.length > 0 && (

@@ -1131,17 +1131,18 @@
 .emptyCard {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
   grid-column: 1 / -1;
-  min-height: 132px;
-  padding: 18px 20px;
+  min-height: 180px;
+  padding: 24px;
   border: 1px dashed var(--dsw-alias-border-l2, rgba(127, 127, 127, 0.4));
   border-radius: 14px;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
   font: inherit;
-  text-align: left;
+  text-align: center;
   cursor: pointer;
 }
 
@@ -1156,9 +1157,29 @@
 }
 
 .emptyBody {
+  max-width: 36em;
   font-size: 12.5px;
   line-height: 19px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+.emptyCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-state-business-primary);
+  font-size: var(--dsh-panel-text-meta, 12.5px);
+  font-weight: 600;
+}
+
+.emptyMark {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .sourceInfo {
