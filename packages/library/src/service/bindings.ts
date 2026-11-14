@@ -137,7 +137,7 @@ export class LibraryService extends LibraryServiceAssess {
         changes.push({ ...event, projectId: project.id, projectName: project.name })
       }
     }
-    changes.sort((a, b) => b.at.localeCompare(a.at))
+    changes.reverse().sort((a, b) => b.at.localeCompare(a.at))
     return { changes: changes.slice(0, request.limit ?? 10) }
   }
 
@@ -160,7 +160,7 @@ export class LibraryService extends LibraryServiceAssess {
         })
       }
     }
-    records.sort((a, b) => b.at.localeCompare(a.at))
+    records.reverse().sort((a, b) => b.at.localeCompare(a.at))
     return { records: records.slice(0, request.limit ?? 10) }
   }
 

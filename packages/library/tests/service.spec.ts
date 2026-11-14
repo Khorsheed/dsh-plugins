@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cardKey, keySimilarity } from '../src/cards.ts'
 import { LibraryService } from '../src/service.ts'
 import type { LibraryQuizQuestion, LibraryTemplate } from '../src/types.ts'
@@ -27,6 +27,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   rmSync(root, { recursive: true, force: true })
 })
 
@@ -907,6 +908,8 @@ describe('quiz points (考点)', () => {
 
 describe('the assess cascade', () => {
   it('moves target cards, cards a card-less miss, and unlocks at the pass ratio', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime('2026-11-14T00:00:00.000Z')
     const { projectId, bookId } = await seed()
     await adopt(projectId, bookId)
     const weak = await service.writeCards({ projectId, resourceId: bookId, cards: [{ kind: 'concept', term: '绝对/相对不应期', gloss: 'g', source: { type: 'chat' }, weaken: true }] })
