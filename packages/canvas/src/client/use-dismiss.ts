@@ -15,15 +15,16 @@ import { useEffect, useRef, type RefObject } from 'react'
 
 /**
  * Close an open surface on Escape or on an outside pointer down.
- * @param root - the element holding both the trigger and the surface, so the
- * trigger's own click toggles instead of closing-then-reopening.
+ * @param root - the element holding the trigger and, when not portalled, the surface.
  * @param open - whether the surface is showing; false detaches the listeners.
  * @param close - called once per dismissal.
+ * @param surface - an optional portalled surface; its interior is not outside.
  */
 export function useDismiss(
   root: RefObject<HTMLElement | null>,
   open: boolean,
   close: () => void,
+  surface?: RefObject<HTMLElement | null>,
 ): void {
   // The latest close, so an inline arrow does not re-subscribe every render.
   const closeRef = useRef(close)
@@ -32,7 +33,9 @@ export function useDismiss(
     if (!open) return
     const onPointerDown = (event: PointerEvent): void => {
       const element = root.current
-      if (element !== null && event.target instanceof Node && !element.contains(event.target)) {
+      const floating = surface?.current
+      if (element !== null && event.target instanceof Node && !element.contains(event.target)
+        && (floating === null || floating === undefined || !floating.contains(event.target))) {
         closeRef.current()
       }
     }
@@ -47,5 +50,5 @@ export function useDismiss(
       document.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [root, open])
+  }, [root, open, surface])
 }

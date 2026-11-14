@@ -16,15 +16,16 @@
  * panel opens rightwards from the ＋ and flips left when that would run past
  * the viewport's edge.
  *
- * The dropdown floats above the row (absolute — its styles live in `../space/
- * board.module.css`, the module this file imports; a copy elsewhere would be
- * dead CSS) and closes on a choice, on Escape, and on outside pointer down.
+ * The dropdown portals to `document.body` with viewport-fixed placement, so
+ * the conversation cannot cover it. It closes on a choice, on Escape, and on
+ * outside pointer down; the portalled surface counts as inside for dismissal.
  *
  * @module @khorsheed/dsh-canvas/client
  */
 import {
   useCallback, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { IconArchiveOutlineMedium, IconChevronDownOutlineMedium, IconChevronRightOutlineMedium, IconPlusOutlineMedium, IconRefreshOutlineMedium } from '../icons.tsx'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { CanvasGenreSummary, CanvasSummary } from '../../types.ts'
@@ -78,23 +79,30 @@ export function CanvasSwitcher({
   const [error, setError] = useState<string | null>(null)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
-  /** The panel hangs left of the ＋ when hanging right would pass the viewport's edge. */
-  const [flip, setFlip] = useState(false)
+  /** Viewport-fixed placement, flipped left when the right edge would overflow. */
+  const [place, setPlace] = useState<{ top: number; left: number } | null>(null)
 
   useLayoutEffect(() => {
     if (!open) {
-      setFlip(false)
+      setPlace(null)
       return
     }
     const root = rootRef.current
     const menu = menuRef.current
     if (root === null || menu === null) return
-    setFlip(root.getBoundingClientRect().left + menu.offsetWidth > window.innerWidth - 8)
+    const anchor = root.getBoundingClientRect()
+    const preferredLeft = anchor.left + menu.offsetWidth > window.innerWidth - 8
+      ? anchor.right - menu.offsetWidth
+      : anchor.left
+    setPlace({
+      left: Math.max(8, Math.min(preferredLeft, window.innerWidth - menu.offsetWidth - 8)),
+      top: Math.max(8, Math.min(anchor.bottom + 6, window.innerHeight - menu.offsetHeight - 8)),
+    })
   }, [open])
 
   // Escape and an outside pointer down both close it (the shared rule). The
   // create form's own Escape still folds just the form: it stops there.
-  useDismiss(rootRef, open, () => { setOpen(false) })
+  useDismiss(rootRef, open, () => { setOpen(false) }, menuRef)
 
   const active = canvases?.filter(canvas => canvas.archivedAt === null) ?? []
   const archivedRows = canvases?.filter(canvas => canvas.archivedAt !== null) ?? []
@@ -136,8 +144,8 @@ export function CanvasSwitcher({
         <IconPlusOutlineMedium size={16} />
       </button>
 
-      {open && (
-        <div ref={menuRef} className={css.switcherMenu} style={flip ? { left: 'auto', right: 0 } : undefined}>
+      {open && createPortal(
+        <div ref={menuRef} className={css.switcherMenu} style={place === null ? { visibility: 'hidden' } : place}>
           {/* 新画布 leads the menu (scheme B): making a canvas is the one verb
               the menu has besides picking one, so it sits where the eye lands. */}
           {!readonly && (
@@ -301,7 +309,8 @@ export function CanvasSwitcher({
             )}
           </div>
 
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

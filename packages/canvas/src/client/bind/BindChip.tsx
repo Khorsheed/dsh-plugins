@@ -25,6 +25,8 @@ export interface CanvasBindInjected {
   /** Whether this session gets the chip (gate.ts). */
   offered: () => boolean
   subscribe: (listener: () => void) => () => void
+  /** Local binding revision; optional for isolated mounts and specs. */
+  revision?: () => number
   boundCanvas: () => Promise<RemoteResult<string | null>>
   bindCanvas: (canvasId: string | null) => Promise<RemoteResult<BoardBindResult>>
   listCanvases: () => Promise<RemoteResult<BoardListResult>>
@@ -49,11 +51,12 @@ export function CanvasBindChip(props: CanvasBindChipProps): ReactNode {
   return shown ? <BindMenu {...props} /> : null
 }
 
-function BindMenu({ t, boundCanvas, bindCanvas, listCanvases, openCanvas }: CanvasBindChipProps): ReactNode {
+function BindMenu({ t, subscribe, boundCanvas, bindCanvas, listCanvases, openCanvas, revision }: CanvasBindChipProps): ReactNode {
   const [open, setOpen] = useState(false)
   const [bound, setBound] = useState<string | null>(null)
   const [rows, setRows] = useState<readonly CanvasSummary[]>([])
   const [failed, setFailed] = useState(false)
+  const rev = useSyncExternalStore(subscribe, revision ?? (() => 0))
 
   const reload = useCallback(async () => {
     const [current, list] = await Promise.all([boundCanvas(), listCanvases()])
@@ -61,9 +64,9 @@ function BindMenu({ t, boundCanvas, bindCanvas, listCanvases, openCanvas }: Canv
     if (list.ok) setRows(bindable(list.value.items))
   }, [boundCanvas, listCanvases])
 
-  // Read on mount (the label names the bound canvas) and again on every open:
-  // a canvas may have gained a genre, or been deleted, since.
-  useEffect(() => { void reload().catch(() => {}) }, [reload])
+  // Read on mount and after every local binding, so a work created through the
+  // sidebar appears at once; opening the menu also refreshes the list below.
+  useEffect(() => { void reload().catch(() => {}) }, [reload, rev])
 
   // The model binds too (canvas_open, a genre's bind tool): a canvas write in
   // the conversation re-reads the binding at once (the destination follower's

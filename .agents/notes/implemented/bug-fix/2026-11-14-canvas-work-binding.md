@@ -12,6 +12,7 @@ The session header offered to bind a work, but both its menu and the store accep
 - `canvas_open` binds both plain and genre canvases on creation or switch, and records focus as before. The sidebar's create form explicitly binds the new canvas through the same Remote before opening it. A failed bind is reported without pretending that creation failed.
 - Clearing a genre no longer unbinds sessions. Deleting a canvas still removes every binding to it. Unbound sessions retain the old sidebar-focus fallback.
 - The binding gate offers the chip through either the canvas agent row or an installed genre's agent row; it no longer requires a genre to exist.
+- Successful local bindings advance a shared revision, so the header chip immediately re-reads both the binding and canvas list. Agent-written bindings retain the existing navigation signal and the 30-second fallback; local revision introduces no navigation side effect.
 
 ## Alternatives considered
 

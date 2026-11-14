@@ -41,6 +41,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import canvasRemote from '@khorsheed/dsh-canvas/remote'
 import type { CanvasRemote, CanvasTabInjected, CanvasTalkInjected } from './contract.ts'
@@ -225,6 +226,13 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     if (result.ok) touchBoards()
     return result
   }
+  /** Local bindings wake the header chip immediately; Agent writes still use nav signals. */
+  const bindingRev = createSnapshotStore(0)
+  const bindRemote = async (sessionId: SessionId, request: Parameters<CanvasRemote['bindCanvas']>[1]) => {
+    const result = touchOnSuccess(await requireRemote().bindCanvas(sessionId, request))
+    if (result.ok && result.value.ok) bindingRev.set(bindingRev.getSnapshot() + 1)
+    return result
+  }
 
   /**
    * The session's conversation input, when the composition has one. The input
@@ -273,7 +281,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     // The mutating calls hand the TAB's session to the host (the tab is
     // session scope; the fence resolves that session's mode).
     createCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().createCanvas(sessionId, request)),
-    bindCanvas: async (sessionId, request) => touchOnSuccess(await requireRemote().bindCanvas(sessionId, request)),
+    bindCanvas: bindRemote,
     putCard: async (sessionId, request) => touchOnSuccess(await requireRemote().putCard(sessionId, request)),
     patchCard: async (sessionId, request) => touchOnSuccess(await requireRemote().patchCard(sessionId, request)),
     markSeen: async (sessionId, request) => touchOnSuccess(await requireRemote().markSeen(sessionId, request)),
@@ -580,9 +588,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const bindGate = new GenreBindingGate(async () => requireRemote().listGenres(), tabVisibility)
   const bindFace = (sessionId: SessionId): CanvasBindInjected => ({
     offered: () => bindGate.offered(sessionId),
-    subscribe: listener => bindGate.subscribe(listener),
+    subscribe: listener => {
+      const offGate = bindGate.subscribe(listener)
+      const offRev = bindingRev.subscribe(listener)
+      return () => { offGate(); offRev() }
+    },
+    revision: () => bindingRev.getSnapshot(),
     boundCanvas: () => requireRemote().boundCanvas(sessionId),
-    bindCanvas: async canvasId => touchOnSuccess(await requireRemote().bindCanvas(sessionId, { canvasId })),
+    bindCanvas: (canvasId) => bindRemote(sessionId, { canvasId }),
     listCanvases: () => requireRemote().listCanvases(),
     openCanvas: canvasId => { go({ canvasId }, sessionId) },
   })

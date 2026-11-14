@@ -12,6 +12,7 @@ Cards and manuscripts already shared low-level breadcrumb, Markdown and textarea
 - `MarkdownEditor` owns the common uncontrolled raw-markdown textarea, save hint, optional explicit actions and optional live preview. Card source mode and manuscript split editing use it. The card's block editor, HTML renderer and genre sections remain separate by design.
 - A manuscript's breadcrumb names the canvas and 成稿, while its full title appears once in the title row. 编辑 and 让 Agent 改 stay in the action area instead of wrapping among status metadata.
 - Reading, conflict banners and the source ledger use consistent centered measures. The title and body use panel reading tokens. Narrow containers wrap actions and collapse split editing through the existing container query, not a separate mobile implementation.
+- The canvas switcher portals its menu to `document.body` and computes viewport-fixed placement with edge flipping. A parent stacking context can no longer put the conversation over the menu. The dismissal hook accepts the portalled surface as a second inside root, so create-form clicks stay open while outside clicks and Escape still close it.
 - Source ledgers with at most six entries remain open; longer ones use a native details disclosure and retain every entry. Manuscript cancel-button and Escape semantics remain distinct.
 
 ## Alternatives considered

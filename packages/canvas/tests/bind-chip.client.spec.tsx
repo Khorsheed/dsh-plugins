@@ -5,7 +5,7 @@
  * unbinds through its face.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { CanvasBindChip, type CanvasBindInjected } from '../src/client/bind/BindChip.tsx'
 import { GenreBindingGate, type GenreGrantSource } from '../src/client/bind/gate.ts'
@@ -135,6 +135,25 @@ describe('CanvasBindChip', () => {
     fireEvent.click(await screen.findByRole('menuitem', { name: zh['bind.unbind'] }))
     await waitFor(() => { expect(mocks.bindCanvas).toHaveBeenCalledWith(null) })
     await screen.findByText(zh['bind.unbound'])
+  })
+
+  it('re-reads the binding and list immediately after a local binding revision', async () => {
+    const listeners = new Set<() => void>()
+    let rev = 0
+    let bound: string | null = null
+    const items = [summary('canvas_plain', '随手记')]
+    const mocks = face({
+      subscribe: vi.fn((next: () => void) => { listeners.add(next); return () => { listeners.delete(next) } }),
+      revision: () => rev,
+      boundCanvas: vi.fn(async () => ({ ok: true as const, value: bound })),
+      listCanvases: vi.fn(async () => ({ ok: true as const, value: { items } })),
+    })
+    render(<CanvasBindChip t={t} {...mocks} />)
+    await screen.findByText(zh['bind.unbound'])
+    items.push(summary('canvas_new', '新作品'))
+    bound = 'canvas_new'
+    act(() => { rev += 1; for (const listener of listeners) listener() })
+    await screen.findByText('作品 · 新作品')
   })
 
   it('picks up a binding the model made when the conversation writes a canvas, else on the slow re-read', async () => {

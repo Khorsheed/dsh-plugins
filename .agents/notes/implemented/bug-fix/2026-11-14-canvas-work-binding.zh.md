@@ -12,6 +12,7 @@ Status: implemented
 - `canvas_open` 在新建或切换普通、体裁画布时都会绑定，并照旧记录 focus。侧栏新建表单也通过同一个 Remote 显式绑定后再打开。绑定失败会如实提示，但不会把已经创建成功说成失败。
 - 清除体裁不再解除会话绑定；删除画布仍会清理指向它的全部绑定。未绑定会话保留原有的侧栏 focus 回退。
 - 绑定入口可以通过画布 agent 行或已安装体裁的 agent 行出现，不再要求必须存在体裁。
+- 本地绑定成功后推进共享 revision，会话头 chip 立即重读绑定和作品列表。Agent 写入仍沿用既有导航信号与 30 秒兜底；本地 revision 不引入导航副作用。
 
 ## Alternatives considered
 
