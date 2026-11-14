@@ -5,9 +5,9 @@ monorepo 级别的发布摘要；各包的完整变更见 `packages/<包>/CHANGE
 ## 2026-11-14 发布波：宿主 0.2.2-rc.2 / rc.3 双线兼容与协作体验修复
 
 - **兼容与安装**：35 个已发布包按 PATCH 前移，完成 rc.2 / rc.3 的构建、组合与安装验证。canvas、canvas-novel、datasets、eval、eval-suite、lab、sidechat、writing-suite 八个未首发包继续 deferred，不混入本波。
-- **协作与恢复**：room 0.2.6 明确重启中断的关闭与续跑，续跑节点可被 Context Lens 正确定位，「立即载入」的 Remote 参数和错误反馈补齐；local-agent 家族七包同版 0.2.3，完善执行记录、成员子智能体镜像、后台任务和用量归属，并修复 Linux 下成员续跑的会话写锁竞争；context-lens 0.1.2 增加官方全日志统计与续跑定位；library 0.1.2 的同毫秒事件按写入顺序展示。
+- **协作与恢复**：room 0.2.6 明确重启中断的关闭与续跑，续跑节点可被 Context Lens 正确定位，「立即载入」的 Remote 参数和错误反馈补齐；local-agent 家族六包同版 0.2.3，完善执行记录、成员子智能体镜像、后台任务和用量归属，并修复 Linux 下成员续跑的会话写锁竞争；context-lens 0.1.2 增加官方全日志统计与续跑定位；library 0.1.2 的同毫秒事件按写入顺序展示。
 - **官方能力接入**：mobile 0.2.2 接入可复用目录选择流程并保留 rc.2 降级；capability-catalog 0.2.1 接入 MCP 管理器；file-preview 0.4.5 持久化 bash 文件写入；worktrees 0.3.4 支持官方工作池与 Forge 评审；taskpilot 0.3.7 在当前右栏打开子 agent；inline-html-render 0.1.18 修正 CSP 并增加加载重试；transcribe 0.1.1 注册官方语音 provider。
-- **版本清单**：ankh-guard 0.4.5、basic 0.1.2、bundle-local-agent 0.3.3、capability-catalog 0.2.1、capture 0.1.4、client-message-tools 0.3.6、client-session-title-edit 0.2.8、context-guard 0.2.8、context-lens 0.1.2、dev-suite 0.1.2、file-preview 0.4.5、game 0.1.2、gamedev-suite 0.1.3、inline-html-render 0.1.18、learning-suite 0.1.2、library 0.1.2、local-agent 家族七包 0.2.3、local-files 0.1.5、message-timeline 0.2.9、mobile 0.2.2、quote 0.1.6、reader 0.3.3、room 0.2.6、taskpilot 0.3.7、transcribe 0.1.1、typesafe 0.1.6、video-studio 0.1.1、video-suite 0.1.2、whalesong 0.2.7、worktrees 0.3.4。
+- **版本清单**：ankh-guard 0.4.5、basic 0.1.2、bundle-local-agent 0.3.3、capability-catalog 0.2.1、capture 0.1.4、client-message-tools 0.3.6、client-session-title-edit 0.2.8、context-guard 0.2.8、context-lens 0.1.2、dev-suite 0.1.2、file-preview 0.4.5、game 0.1.2、gamedev-suite 0.1.3、inline-html-render 0.1.18、learning-suite 0.1.2、library 0.1.2、local-agent 家族六包 0.2.3、local-files 0.1.5、message-timeline 0.2.9、mobile 0.2.2、quote 0.1.6、reader 0.3.3、room 0.2.6、taskpilot 0.3.7、transcribe 0.1.1、typesafe 0.1.6、video-studio 0.1.1、video-suite 0.1.2、whalesong 0.2.7、worktrees 0.3.4。
 - **文档**：各包 CHANGELOG 同步上述变化；README 移除过时截图和重复的 Agent 安装指南，兼容性按真实验收分别标注，不统一虚标 rc.3。
 
 ## Unreleased —— 2026-10-24 发布波：七个套件首发 + 套件成员首发 + 家族版本前移
