@@ -487,6 +487,7 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
           blurSubmits={false}
           autoFocus
           preview
+          previewText={reading(editing.text)}
           previewClassName={css.prose}
           hint={t('ms.editHint')}
           markdownLabels={markdownLabels}

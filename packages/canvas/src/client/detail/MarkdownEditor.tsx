@@ -7,7 +7,7 @@ import css from './CanvasDetailView.module.css'
 /** One raw-markdown editing layout, with optional live preview and explicit actions. */
 export function MarkdownEditor({
   text, submitOn, hint, markdownLabels, pathImages, onSave, onTextChange, onPaste, onCancel,
-  placeholder, autoFocus = false, blurSubmits = true, preview = false, previewClassName, actions,
+  placeholder, autoFocus = false, blurSubmits = true, preview = false, previewText, previewClassName, actions,
 }: {
   readonly text: string
   readonly submitOn: 'mod-enter' | 'auto-enter'
@@ -22,6 +22,7 @@ export function MarkdownEditor({
   readonly autoFocus?: boolean
   readonly blurSubmits?: boolean
   readonly preview?: boolean
+  readonly previewText?: string | undefined
   readonly previewClassName?: string | undefined
   readonly actions?: { readonly cancelLabel: string; readonly saveLabel: string; readonly onCancel?: (() => void) | undefined } | undefined
 }): ReactNode {
@@ -53,7 +54,7 @@ export function MarkdownEditor({
       </div>
       {preview && (
         <div className={previewClassName === undefined ? css.renderPane : `${css.renderPane} ${previewClassName}`}>
-          <CardMarkdown text={text} labels={markdownLabels} pathImages={pathImages} />
+          <CardMarkdown text={previewText ?? text} labels={markdownLabels} pathImages={pathImages} />
         </div>
       )}
     </div>

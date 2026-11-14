@@ -175,6 +175,7 @@ describe('ManuscriptView', () => {
     render(<ManuscriptView {...props} />)
     await screen.findByText('正文第一段。')
     fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    expect(screen.getAllByText('异议的代价')).toHaveLength(1)
     fireEvent.input(pad(), { target: { value: '# 异议的代价\n\n改过的正文。' } })
     fireEvent.keyDown(pad(), { key: 'Enter', metaKey: true })
     await waitFor(() => { expect(mocks.writeManuscript).toHaveBeenCalledTimes(1) })
