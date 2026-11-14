@@ -6,7 +6,9 @@ English | [中文](reference.md)
 
 A headless dsh at the caller's beck and call: the session id is yours to name, it runs the task, prints the final answer on stdout, and exits — or, with `--serve`, stays resident and takes turn after turn.
 
-The local-agent family delegates tasks to a standalone dsh process and needs to continue the *same* sub-session across rounds — which requires the session id to belong to the caller, not to a runner that generates its own. This bundle is the sibling of the official `@deepseek-ai/dsh-headless`: the same direct-Agent composition over `dsh-base`, differing only in who owns the id — here it arrives as `--session-id` / `--resume`, and stdout never carries a parseable session marker. You never install or mount it yourself: the parent `@khorsheed/dsh-local-agent-dsh` provider auto-provisions its sub-profile at runtime.
+The local-agent family delegates tasks to a standalone dsh process and needs to continue the *same* sub-session across rounds — which requires the session id to belong to the caller, not to a runner that generates its own. This bundle is the sibling of the official `@deepseek-ai/dsh-headless`: the same direct-Agent composition over `dsh-base`, but here the id arrives as `--session-id` / `--resume`, and stdout never carries a parseable session marker. You never install or mount it yourself: the parent `@khorsheed/dsh-local-agent-dsh` provider auto-provisions its sub-profile at runtime.
+
+For a delegated account launch, the bundle replaces only the token source: `src/account.ts` reuses the official `DeepSeekAccount` service and reads the launch grant for the parent-approved origin from the private environment. The official model and web providers retain their authentication protocols. The grant is never written to the child credential store; API-key launches retain the base composition's account service.
 
 ## Features
 

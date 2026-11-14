@@ -65,6 +65,21 @@ describe('dsh-local-agent-dsh-headless bundle patch', () => {
     expect(env.DSH_MEMBER_TOKEN).toHaveProperty('__jsExpr')
   })
 
+  it('replaces the account token source only for a delegated account launch', () => {
+    const rows = loadPatch()
+    const base = rows.find(row => row.id === 'deepseek-account')?.disabled as { __jsExpr: string }
+    const account = rows.flatMap(row => row.insert ?? []).find(row => row.id === 'local-agent-dsh-account')
+    expect(account?.name).toBe('@khorsheed/dsh-local-agent-dsh-headless/account')
+    const disabled = (expression: { __jsExpr: string }, token?: string): unknown =>
+      Function('process', `return (${expression.__jsExpr})`)({ env: { DSH_LOCAL_AGENT_DEEPSEEK_ACCOUNT_TOKEN: token } })
+    for (const token of [undefined, '']) {
+      expect([disabled(base, token), disabled(account?.disabled as { __jsExpr: string }, token)]).toEqual([false, true])
+    }
+    expect([disabled(base, 'fixture-token'), disabled(account?.disabled as { __jsExpr: string }, 'fixture-token')]).toEqual([true, false])
+    expect(account?.config?.inferenceOrigin).toHaveProperty('__jsExpr')
+    expect(JSON.stringify(rows)).not.toContain('fixture-token')
+  })
+
   it('pins the ptc-runtime insert row id — the documented web-composition collision', () => {
     // 2026-08-23 P0: mounted into the prod web profile (reconcilePlugins
     // auto-mounts dsh.bundle direct deps), this row hit the web-app bundle's

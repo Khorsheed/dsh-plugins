@@ -27,7 +27,7 @@
 dsh plugin --profile web add @khorsheed/dsh-local-agent @khorsheed/dsh-local-agent-dsh
 ```
 
-重启后即可在开发 / 游戏开发 / 剪辑模式的会话里使用；默认模型与常驻模式在 core 的「本机 Agent 委派」家族卡的 dsh 一节（Plugins 页）设置。无需登录步骤；`/dsh status` 报告父级的 `DEEPSEEK_API_KEY` 凭据是否可解析。
+重启后即可在开发 / 游戏开发 / 剪辑模式的会话里使用；默认模型与常驻模式在 core 的「本机 Agent 委派」家族卡的 dsh 一节（Plugins 页）设置。无需额外登录步骤；`/dsh status` 报告父级所选模型的 API Key 或 DeepSeek 账号授权是否可解析。
 
 tarball 安装（npm 上未发布的家族包）需要在 profile 的 `pnpm-workspace.yaml` 里把各家族包名 `overrides:` 钉到 `file:` tarball——tarball 内的家族边是 registry range，钉版让 headless 等成员以**传递**依赖解析（headless 自身不声明 `dsh.bundle`，即便被误装成直接依赖也不会被挂进组合，但无需如此）。
 
@@ -71,7 +71,7 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 
 **这不是评测的缺口。**评测 run 的条件在建立时冻结：run 跑到一半改这个键，下一轮的模型回读会发现声明模型 ≠ 实测模型，run 直接判为 misattributed 而失败（冻结决策 5）。
 
-**评测快照（effectiveSettings）。** 本 harness 向注册表声明的公平性设置快照有 drive(exec/live)、端点未固定、CLI 版本(拿委派真正要 spawn 的那条 launch argv 去问 `--version`,按入口脚本路径+mtime 缓存——无头子 dsh 复制的就是父实例自己的 build)与已配置模型(读宿主 `agentDefaultModel` 的当前选择,`provider/model` 格式——无头子 dsh 继承它;服务缺位或选择不可读就不给字段,绝不猜值)：`sandbox` 是子 profile 钉住的权限档，**配了才报**（缺位仍然是诚实的条件输入——这个作用域不钉边界，跑的就是 dsh-base 组成的那一档），端点即宿主实例的模型配置，本 provider 从不覆盖。`/dsh status` 与 `LocalAgentStatus` Remote 附带同一份快照。
+**评测快照（effectiveSettings）。** 本 harness 向注册表声明的公平性设置快照有 drive(exec/live)、端点未固定、CLI 版本(拿委派真正要 spawn 的那条 launch argv 去问 `--version`,按入口脚本路径+mtime 缓存——Desktop 使用其官方 CLI，其他环境复制父实例自己的 build)与已配置模型(读宿主 `agentDefaultModel` 的当前选择,`provider/model` 格式——无头子 dsh 继承它;服务缺位或选择不可读就不给字段,绝不猜值)：`sandbox` 是子 profile 钉住的权限档，**配了才报**（缺位仍然是诚实的条件输入——这个作用域不钉边界，跑的就是 dsh-base 组成的那一档），端点即宿主实例的模型配置，本 provider 从不覆盖。`/dsh status` 与 `LocalAgentStatus` Remote 附带同一份快照。
 
 ## Compatibility
 
@@ -80,7 +80,7 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 
 ## 已知限制
 
-- **无交互式或 device-code 登录流程**——子 dsh 只能通过父级的 `DEEPSEEK_API_KEY` 凭据认证；`/dsh login` 报告该 harness 无登录流程。
+- **没有独立的交互式或 device-code 登录流程**——子 dsh 继承父级所选的 API Key 或 DeepSeek 账号授权；`/dsh login` 报告该 harness 自身无登录流程。
 - **命名 scope 只走一次性 exec**——长驻 `serve` 进程按成员绑的是缺省 scoped home，命名 scope 的委派不走 live 驱动。
 - **宿主 0.1.5 上 token 级增量不进子会话日志**——见 Compatibility 的降级说明；最终合并文本与逐 token 镜像完全一致。
 
@@ -95,9 +95,9 @@ T30a 给三家 CLI harness 加了 `model` 插件配置键时，dsh 没拿到—�
 
 **长驻驱动（`live: true`）。** 替代每轮 spawn：成员首轮委派拉起一个常驻 `--serve` 子 dsh 进程，之后每轮 = 经家族内部 stdio JSON-RPC wire（headless 包 `src/wire.ts`）向活着的 runtime 发 `turn/start`；会话事件以 `session/event` 通知即时推回并逐事件镜像进子会话（与文件镜像同一折叠规则，settle 时再跑一次文件镜像做对账），`cancel` 落地为 runtime 级 `turn/interrupt`（进程内 `Agent.cancel`）——进程不死、会话可续。折叠规则是逐字拷贝：调用方任务的 `user/message`、每条 `assistant/message`、工具事件对，以及子 dsh 自己的 `step/start`–`step/end` 边界对（各带自己的 (turn, step) 坐标）都过河——宿主实时会话视图只在边界上登记 step，缺了边界 assistant 消息要等整页重建才渲染；turn 边界与脚手架用户消息（agent-instructions、plugin 等来源）留在子侧。被 interrupt 的 step 以开口对（有 start 无 end）原样过河，轮次中途绝不合成边界；而在轮次 settle 时、provider 自己的 `turn/end` 落地之前，仍开口的尾巴会被关闭：每个已通告未了结的工具调用先补一条中断 `tool/result`（已开始的用家族共享占位文案，未开始的是 released-log 读取端规定的 TOOL_NOT_STARTED 修复形状），再补 `step/end`——存盘的子会话日志由此通过 released-log 读取端的冷读校验（中途被杀死的子 dsh 留下的开口 step 曾让 `turn/end` 压上去，冷读即报 "turn/end does not match the open turn"）。runtime 空闲超时回收（wire `shutdown` → SIGTERM 阶梯），崩溃后下一轮自动重连并 `agents.resume` 盘上会话；spawn/握手失败标记通道不可用并永久回退 exec 路径。
 
-**本地模型继承。** 目录来自主实例的公开模型 API，并限定为可传递的原生 DeepSeek 与官方 pi-ai API-key 路线。每轮只读取所选 provider 的有效配置与凭据引用；地址、模型定义及兼容选项通过私有启动环境传给子进程，不复制整份 profile 或凭据库。常驻进程在所选路线或 key 变化后于下一轮重建，续接原会话。OAuth-only 路线及其他适配器尚不支持这一传递方式，不作为可继承候选展示；显式指定时给出原因。容器／远程目标继续使用目标自身配置。官方「子智能体」的模型选择开关只约束官方工具，不控制 `subagent_dsh`。
+**本地模型继承。** 目录来自主实例的公开模型 API，并限定为可传递的原生 DeepSeek、官方 pi-ai API-key 路线，以及宿主 0.2.2-rc.2 起的官方 DeepSeek 账号路线。每轮只读取所选 provider 的有效配置与对应凭据；地址、模型定义及兼容选项通过私有启动环境传给子进程，不复制整份 profile 或凭据库。账号路线由父实例的 `deepseekAccount.resolveToken(url)` 按目标来源授权，子 DSH 沿用官方账号 provider 的 `x-dsh-auth-token` 协议，绝不把账号 token 改名为 `DEEPSEEK_API_KEY`。常驻进程在所选路线或凭据变化后于下一轮重建，续接原会话。其他 OAuth-only 路线及适配器尚不支持这一传递方式，不作为可继承候选展示；显式指定时给出原因。容器／远程目标继续使用目标自身配置。官方「子智能体」的模型选择开关只约束官方工具，不控制 `subagent_dsh`。
 
-**认证与供给。** 无 device-code 登录：本地子 dsh 通过父实例所选模型的凭据认证（原生 DeepSeek 仍支持 `apiKeyRef`）；`/dsh status` 报告凭据是否可解析，`/dsh sessions` 从 scoped-home 存储列出子 dsh 自己的会话。子 profile 位于 `profiles/headless-local-agent-dsh`：一个 manifest（只列 `@deepseek-ai/dsh-base`）、headless 包的 patch 与本地模型环境引用组成的 profile patch 层、`node_modules` 下的 headless bundle 本身（供 loader 解析 insert 行）。bundle 是逐字节拷贝它自己的文件，不是符号链接：宿主 0.2.0 把 realpath 落在 profiles 树之外的软链包当作 *linked root*，只路由它声明的 `peerDependencies`；打包后的 bundle 没声明 `commander`、`@deepseek-ai/schemastery`、`@deepseek-ai/dsh-cmdline`，软链进来就导入失败，子 dsh 挂住、不出会话（依赖闭包不拷：`@deepseek-ai/*` 仍从运行子 dsh 的那份安装解析，各只一份实例）——其余一切从 dsh 安装锚点解析，供给零 pnpm install 成本且幂等，内容漂移时自动重写（升级与旧格式自愈）。父级复制自己的启动方式（或配置 `cliLaunch`），让子 dsh 与父级跑同一个 dsh 构建。
+**认证与供给。** 无 device-code 登录：本地子 dsh 通过父实例所选模型的凭据认证（原生 DeepSeek 仍支持 `apiKeyRef`）；`/dsh status` 报告凭据是否可解析，`/dsh sessions` 从 scoped-home 存储列出子 dsh 自己的会话。子 profile 位于 `profiles/headless-local-agent-dsh`：一个 manifest（只列 `@deepseek-ai/dsh-base`）、headless 包的 patch 与本地模型环境引用组成的 profile patch 层、`node_modules` 下的 headless bundle 本身（供 loader 解析 insert 行）。bundle 是逐字节拷贝它自己的文件，不是符号链接：宿主 0.2.0 把 realpath 落在 profiles 树之外的软链包当作 *linked root*，只路由它声明的 `peerDependencies`；打包后的 bundle 没声明 `commander`、`@deepseek-ai/schemastery`、`@deepseek-ai/dsh-cmdline`，软链进来就导入失败，子 dsh 挂住、不出会话（依赖闭包不拷：`@deepseek-ai/*` 仍从运行子 dsh 的那份安装解析，各只一份实例）——其余一切从 dsh 安装锚点解析，供给零 pnpm install 成本且幂等，内容漂移时自动重写（升级与旧格式自愈）。打包 Desktop 使用其官方 `runtime/cli/bin` 启动脚本；其他环境复制父级自己的启动方式，配置 `cliLaunch` 仍可完全覆盖，让子 dsh 与父级跑同一个 dsh 构建。
 
 **会话日志按代次解析，不写死文件名。** 子 dsh 的历史住在 `<作用域目录>/sessions/<项目>/<会话 id>/` 里，但**哪个文件**是宿主的代次选择：最初的一代叫 `session.jsonl`，此后每一代带一个小写 `vN`——宿主 0.1.5 写的是 `session.v3.jsonl.zstd`；两种基名都可能再带 `.zstd`（压缩是缺省）。本包按宿主自己的规则解析目录里的每个条目（`^session(\.v[1-9][0-9]*)?\.jsonl$`，去掉压缩后缀后匹配——`.v0`、前导零、大写、`session.lock` 与临时文件都不是代次），取**版本号最高**的那一份，并把选中的文件名带回读回结果（`sessionLogFile`）。
 

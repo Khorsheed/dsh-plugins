@@ -2,7 +2,7 @@
  * dsh harness instantiation of the local-agent family. At startup the plugin
  * registers the `dsh` harness into the core registry (scoped home under the
  * shared homes root, `$DSH_HOME`) and the `dsh-cli` delegation provider
- * (sub-dsh headless runs with the parent's selected API-key model route).
+ * (sub-dsh headless runs with the parent's selected supported model route).
  * The delegation tool is the package's `./tool` entry, granted per session by
  * a preset, so installing the plugin alone adds nothing model-visible.
  *
@@ -69,7 +69,7 @@ export interface LocalAgentDshConfig {
   apiKeyRef?: string
   /**
    * dsh launch argv prefix override (node + entry + launcher flags). Absent
-   * means replicate the parent instance's own launch.
+   * uses Desktop's packaged CLI when present, else the parent's own launch.
    */
   cliLaunch?: string[]
   /** Override the headless bundle directory the sub-profile symlinks to. */

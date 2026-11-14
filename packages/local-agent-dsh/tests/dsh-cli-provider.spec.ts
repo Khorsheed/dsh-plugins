@@ -136,6 +136,18 @@ describe('dsh launch argv', () => {
     ])
     expect(dshLaunchArgv({ cliLaunch: ['dsh'] })).toEqual(['dsh'])
   })
+
+  it('uses the official Desktop CLI instead of the Electron host entry', () => {
+    const resources = mkdtempSync(join(tmpdir(), 'dsh-desktop-resources-'))
+    mkdirSync(join(resources, 'runtime', 'cli', 'bin'), { recursive: true })
+    writeFileSync(join(resources, 'runtime', 'cli', 'bin', 'dsh'), '')
+    writeFileSync(join(resources, 'runtime', 'cli', 'bin', 'dsh.cmd'), '')
+    expect(dshLaunchArgv({}, resources, 'darwin')).toEqual([join(resources, 'runtime', 'cli', 'bin', 'dsh')])
+    expect(dshLaunchArgv({}, resources, 'win32')).toEqual([join(resources, 'runtime', 'cli', 'bin', 'dsh.cmd')])
+    expect(dshLaunchArgv({}, resources, 'linux')).toEqual([process.execPath, ...process.execArgv, process.argv[1] ?? 'dsh'])
+    expect(dshLaunchArgv({ cliLaunch: ['dsh-from-profile'] }, resources, 'darwin')).toEqual(['dsh-from-profile'])
+    expect(dshLaunchArgv({}, join(resources, 'missing'), 'darwin')).toEqual([process.execPath, ...process.execArgv, process.argv[1] ?? 'dsh'])
+  })
 })
 
 describe('dsh-cli-provider fresh run', () => {

@@ -1,11 +1,15 @@
 import { createHash } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type {} from '@deepseek-ai/dsh-deepseek-account'
+import { ACCOUNT_ORIGIN_ENV, ACCOUNT_TOKEN_ENV } from '@khorsheed/dsh-local-agent-dsh-headless/account-env'
 import type { LocalAgentDshConfig } from './index.ts'
 
 /** Private launch environment: never persisted in a profile, transcript or argv. */
 export const MODEL_CONFIG_ENV = 'DSH_LOCAL_AGENT_MODEL_CONFIG'
 const MODEL_KEY_ENV = 'DSH_LOCAL_AGENT_MODEL_API_KEY'
+const ACCOUNT_PROVIDER = 'deepseek-account'
+const PUBLIC_DEEPSEEK_BASE_URL = 'https://api.deepseek.com/anthropic'
 type ObjectValue = Record<string, unknown>
 function object(value: unknown): ObjectValue | undefined {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as ObjectValue : undefined
@@ -26,9 +30,18 @@ function piProfile(ctx: Context, provider: string, values: Map<string, ObjectVal
   return object(object(values.get(ns)?.providers)?.[provider])
 }
 
+function accountProfile(ctx: Context, values: Map<string, ObjectValue>): ObjectValue | undefined {
+  const directory = ctx.get('llm')?.listConfigurableProviders?.().find(row => row.provider === ACCOUNT_PROVIDER)
+  if (directory?.settingsNs !== 'llm-deepseek-account' || directory.settingsPath.length !== 0) return undefined
+  return object(values.get(directory.settingsNs)) ?? {}
+}
+
 /** Whether this provider has a supported local configuration transfer contract. */
 export function canInheritModelProvider(ctx: Context, provider: string): boolean {
   if (provider === 'deepseek-official') return true
+  if (provider === ACCOUNT_PROVIDER) {
+    return typeof ctx.get('deepseekAccount')?.resolveToken === 'function' && accountProfile(ctx, settings(ctx)) !== undefined
+  }
   const profile = piProfile(ctx, provider, settings(ctx))
   return typeof profile?.apiKeyEnv === 'string' && profile.apiKeyEnv.trim() !== ''
 }
@@ -43,6 +56,19 @@ export interface LocalModelLaunch {
 export async function localModelLaunch(ctx: Context, config: LocalAgentDshConfig, model?: string): Promise<LocalModelLaunch> {
   const provider = model?.includes('/') ? model.slice(0, model.indexOf('/')) : 'deepseek-official'
   const values = settings(ctx)
+  if (provider === ACCOUNT_PROVIDER) {
+    const profile = accountProfile(ctx, values)
+    if (profile === undefined) throw new Error('subagent-dsh: this host has no supported DeepSeek account route')
+    const baseURL = typeof profile.baseURL === 'string' && profile.baseURL.trim() !== '' ? profile.baseURL : PUBLIC_DEEPSEEK_BASE_URL
+    const token = await ctx.get('deepseekAccount')?.resolveToken(baseURL)
+    if (token === undefined || token === '') throw new Error('subagent-dsh: sign in to DeepSeek before delegating with the account route')
+    const env = {
+      [MODEL_CONFIG_ENV]: JSON.stringify({ deepseekAccount: { ...structuredClone(profile), baseURL } }),
+      [ACCOUNT_ORIGIN_ENV]: new URL(baseURL).origin,
+      [ACCOUNT_TOKEN_ENV]: token,
+    }
+    return { env, fingerprint: createHash('sha256').update(JSON.stringify(env)).digest('hex') }
+  }
   let inherited: ObjectValue, ref: string, keyName: string
   if (provider === 'deepseek-official') {
     const profile = structuredClone(values.get('llm-deepseek') ?? {})

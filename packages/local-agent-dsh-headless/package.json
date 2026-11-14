@@ -30,6 +30,14 @@
       "types": "./lib/types/wire.d.ts",
       "default": "./lib/wire.js"
     },
+    "./account": {
+      "types": "./lib/types/account.d.ts",
+      "default": "./lib/account.js"
+    },
+    "./account-env": {
+      "types": "./lib/types/account-env.d.ts",
+      "default": "./lib/account-env.js"
+    },
     "./src/*": "./src/*",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
@@ -40,6 +48,7 @@
     },
     "compat": {
       "minHost": "0.2.2-rc.1",
+      "notes": "DeepSeek account launches require host 0.2.2-rc.2 or later; API-key launches preserve the base account service and the rc.1 floor.",
       "verifiedHost": "0.2.1-rc.5"
     }
   },
@@ -62,11 +71,15 @@
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1 || ^0.2.2-rc.1",
     "@deepseek-ai/dsh-agent-default-model": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1 || ^0.2.2-rc.1",
+    "@deepseek-ai/dsh-deepseek-account": "^0.2.2-rc.2",
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1 || ^0.2.2-rc.1",
     "@deepseek-ai/dsh-mcp-client": "^0.1.0-rc.8 || ^0.2.0-rc.1 || ^0.2.1-rc.1 || ^0.2.2-rc.1",
     "@deepseek-ai/dsh-session": "^0.1.0-rc.6 || ^0.2.0-rc.1 || ^0.2.1-rc.1 || ^0.2.2-rc.1"
   },
   "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-deepseek-account": {
+      "optional": true
+    },
     "@deepseek-ai/dsh-mcp-client": {
       "optional": true
     }
@@ -76,9 +89,11 @@
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
     "@deepseek-ai/dsh-agent": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-agent-default-model": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-deepseek-account": "^0.2.2-rc.2",
     "@deepseek-ai/dsh-agent-loop-testkit": "^0.2.2-rc.1",
     "@deepseek-ai/dsh-fs-local": "^0.2.2-rc.1",
     "@deepseek-ai/dsh-llm": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-llm-deepseek-account": "^0.2.2-rc.2",
     "@deepseek-ai/dsh-loader-smoke": "^0.2.0-rc.1",
     "@deepseek-ai/dsh-ptc-runtime": "^0.2.2-rc.1",
     "@deepseek-ai/dsh-session": "^0.2.0-rc.1",

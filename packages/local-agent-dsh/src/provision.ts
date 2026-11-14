@@ -459,7 +459,8 @@ function provisionOneSubProfile(
       + permissionBoundaryLayer(config.permissions)
       + (config.inheritModelConfiguration ? '\n# Selected local model; values and credentials stay in the launch environment.\n'
         + '- id: llm-pi-ai\n  config:\n    providers: !!js JSON.parse(process.env.DSH_LOCAL_AGENT_MODEL_CONFIG || "{}").piAi?.providers ?? {}\n'
-        + '- id: llm-deepseek\n  config: !!js JSON.parse(process.env.DSH_LOCAL_AGENT_MODEL_CONFIG || "{}").deepseek ?? {}\n' : ''),
+        + '- id: llm-deepseek\n  config: !!js JSON.parse(process.env.DSH_LOCAL_AGENT_MODEL_CONFIG || "{}").deepseek ?? {}\n'
+        + '- id: llm-deepseek-account\n  config: !!js JSON.parse(process.env.DSH_LOCAL_AGENT_MODEL_CONFIG || "{}").deepseekAccount ?? {}\n' : ''),
   )
   const bundleLink = join(profileDir, 'node_modules', '@khorsheed', 'dsh-local-agent-dsh-headless')
   mkdirSync(dirname(bundleLink), { recursive: true })

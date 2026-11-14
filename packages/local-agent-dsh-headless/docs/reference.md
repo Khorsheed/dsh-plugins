@@ -6,7 +6,9 @@
 
 一个随叫随到的无头 dsh：会话 id 由调用方点名，跑完任务把最终回答打到 stdout 就退出；加 `--serve` 则常驻下来，一轮一轮地接活。
 
-local-agent 家族要把任务委派给一个独立的 dsh 进程，还要跨多轮续接**同一个**子会话——这要求会话 id 归调用方所有，而不是由 runner 自己生成。本 bundle 是官方 `@deepseek-ai/dsh-headless` 的兄弟版本：同样是 `dsh-base` 之上直驱 Agent 的无头组合，唯一区别就是 id 归谁——这里 id 以 `--session-id` / `--resume` 传入，stdout 永不携带可解析的会话标记。你永远不需要自己安装或挂载它：父侧 `@khorsheed/dsh-local-agent-dsh` provider 会在运行时把子 profile 自动 provision 好。
+local-agent 家族要把任务委派给一个独立的 dsh 进程，还要跨多轮续接**同一个**子会话——这要求会话 id 归调用方所有，而不是由 runner 自己生成。本 bundle 是官方 `@deepseek-ai/dsh-headless` 的兄弟版本：同样是 `dsh-base` 之上直驱 Agent 的无头组合，但这里 id 以 `--session-id` / `--resume` 传入，stdout 永不携带可解析的会话标记。你永远不需要自己安装或挂载它：父侧 `@khorsheed/dsh-local-agent-dsh` provider 会在运行时把子 profile 自动 provision 好。
+
+账号委派启动时，本 bundle 只替换 token 的读取来源：`src/account.ts` 复用官方 `DeepSeekAccount` 服务，按父实例批准的来源读取私有启动环境中的授权，官方模型与网页 provider 的鉴权协议不变。授权不写入子 DSH 的凭据库；API Key 启动继续使用 base 组合原有的账号服务。
 
 ## 特性
 

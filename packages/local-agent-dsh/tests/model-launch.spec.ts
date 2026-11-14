@@ -61,4 +61,36 @@ describe('local DSH selected model inheritance', () => {
     await localModelLaunch(ctx, {}, 'deepseek-official/chat')
     expect(resolve.mock.calls).toEqual([['OVERRIDE'], ['HOST_KEY']])
   })
+
+  it('inherits the official account route through its own token, never an API key', async () => {
+    const ctx = new Context()
+    const resolve = vi.fn()
+    const resolveToken = vi.fn(async (url: string) => url === 'https://api.deepseek.com/anthropic' ? 'account-token' : undefined)
+    ctx.provide('settings', { describe: () => [{ ns: 'llm-deepseek-account', value: { reasoningEffort: 'high' } }] })
+    ctx.provide('llm', { listConfigurableProviders: () => [{ provider: 'deepseek-account', settingsNs: 'llm-deepseek-account', settingsPath: [] }] })
+    ctx.provide('credentials', { resolve })
+    ctx.provide('deepseekAccount', { resolveToken } as never)
+    expect(canInheritModelProvider(ctx, 'deepseek-account')).toBe(true)
+    const launch = await localModelLaunch(ctx, {}, 'deepseek-account/deepseek-v4-flash')
+    expect(resolveToken).toHaveBeenCalledExactlyOnceWith('https://api.deepseek.com/anthropic')
+    expect(JSON.parse(launch.env[MODEL_CONFIG_ENV]!)).toEqual({ deepseekAccount: {
+      baseURL: 'https://api.deepseek.com/anthropic', reasoningEffort: 'high',
+    } })
+    expect(launch.env.DSH_LOCAL_AGENT_DEEPSEEK_ACCOUNT_TOKEN).toBe('account-token')
+    expect(launch.env.DSH_LOCAL_AGENT_DEEPSEEK_ACCOUNT_ORIGIN).toBe('https://api.deepseek.com')
+    expect(launch.env.DEEPSEEK_API_KEY).toBeUndefined()
+    expect(launch.env[MODEL_CONFIG_ENV]).not.toContain('account-token')
+    expect(resolve).not.toHaveBeenCalled()
+  })
+
+  it('does not fall back to an API key when the account is signed out', async () => {
+    const ctx = new Context()
+    const resolve = vi.fn()
+    ctx.provide('settings', { describe: () => [{ ns: 'llm-deepseek-account', value: { baseURL: 'https://api.deepseek.com/anthropic' } }] })
+    ctx.provide('llm', { listConfigurableProviders: () => [{ provider: 'deepseek-account', settingsNs: 'llm-deepseek-account', settingsPath: [] }] })
+    ctx.provide('credentials', { resolve })
+    ctx.provide('deepseekAccount', { resolveToken: async () => undefined } as never)
+    await expect(localModelLaunch(ctx, {}, 'deepseek-account/deepseek-v4-flash')).rejects.toThrow('sign in to DeepSeek')
+    expect(resolve).not.toHaveBeenCalled()
+  })
 })

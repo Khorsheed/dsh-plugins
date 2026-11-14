@@ -8,7 +8,7 @@
 
 一个无头的 DSH 组合：调用方给定会话编号，它把任务跑完、把最终回答打到标准输出就退出；加 `--serve` 则常驻下来，一轮一轮接活。`@khorsheed/dsh-local-agent-dsh` 用它来启动「另一个 DSH」，并在之后的轮次里续上同一个会话。
 
-和官方的 `@deepseek-ai/dsh-headless` 唯一的区别是会话编号归谁：这里由调用方用 `--session-id` / `--resume` 传入，输出里从不带会话标记。
+相比官方的 `@deepseek-ai/dsh-headless`，这里由调用方用 `--session-id` / `--resume` 传入会话编号，输出里从不带会话标记。账号委派时，它还通过官方账号服务接收父实例的本次启动授权，不写入自己的凭据库。
 
 ```sh
 dsh --profile headless-local-agent-dsh --session-id 6ba7... "run the tests"   # 新建
@@ -23,7 +23,7 @@ dsh --profile headless-local-agent-dsh --serve                               # �
 
 ## Compatibility
 
-需要 DSH 0.2.0-rc.1 或更新版本，已在 0.2.1-rc.5 上验证。
+需要 DSH 0.2.2-rc.1 或更新版本；账号委派需要 0.2.2-rc.2 或更新版本，API Key 委派仍支持 0.2.2-rc.1。
 
 ## 给开发者
 

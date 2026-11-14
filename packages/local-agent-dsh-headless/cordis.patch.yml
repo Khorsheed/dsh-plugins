@@ -31,6 +31,11 @@
 - id: hmr
   disabled: true
 
+# A delegated account grant replaces only the token source, not the official
+# model and web authentication providers. API-key launches keep the base service.
+- id: deepseek-account
+  disabled: !!js Boolean(process.env.DSH_LOCAL_AGENT_DEEPSEEK_ACCOUNT_TOKEN)
+
 - id: tool-executor-native
   disabled: !!js "!['native', undefined].includes(process.env.DSH_TOOLS_MODE)"
 
@@ -38,6 +43,12 @@
   disabled: !!js process.env.DSH_TOOLS_MODE !== 'ptc'
 
 - insert:
+    - id: local-agent-dsh-account
+      name: '@khorsheed/dsh-local-agent-dsh-headless/account'
+      disabled: !!js "!Boolean(process.env.DSH_LOCAL_AGENT_DEEPSEEK_ACCOUNT_TOKEN)"
+      config:
+        inferenceOrigin: !!js process.env.DSH_LOCAL_AGENT_DEEPSEEK_ACCOUNT_ORIGIN || 'https://api.deepseek.com'
+
     # Code Mode is a core execution capability, not a Web component.
     - id: ptc-runtime
       name: '@deepseek-ai/dsh-ptc-runtime-node'

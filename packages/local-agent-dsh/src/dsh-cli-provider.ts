@@ -13,6 +13,8 @@
 
 import { localModelLaunch } from './model-launch.ts'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -570,17 +572,31 @@ function thrown(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value))
 }
 
+function hostResourcesPath(): string | undefined {
+  return 'resourcesPath' in process && typeof process.resourcesPath === 'string' ? process.resourcesPath : undefined
+}
+
 /**
- * The dsh launch argv the provider replicates: the parent instance's own
- * node + tsx import + entry point, so the sub-dsh runs the same dsh build as
- * its parent. A configured `cliLaunch` replaces this entirely.
+ * Use Desktop's official CLI launcher when its packaged resource exists;
+ * elsewhere replicate the parent instance's own node + entry point. A
+ * configured `cliLaunch` replaces either default entirely.
  * @param config - plugin config carrying the optional override.
+ * @param resourcesPath - Electron's packaged resource directory, when present.
+ * @param platform - operating system selecting Desktop's launcher spelling.
  * @returns the launch prefix before the profile flag.
  */
-export function dshLaunchArgv(config: LocalAgentDshConfig): readonly string[] {
+export function dshLaunchArgv(
+  config: LocalAgentDshConfig,
+  resourcesPath: string | undefined = hostResourcesPath(),
+  platform: NodeJS.Platform = process.platform,
+): readonly string[] {
   // An empty array is a degenerate override (an absent schema field resolves
   // to [] without an explicit default); treat it as no override.
   if (config.cliLaunch !== undefined && config.cliLaunch.length > 0) return config.cliLaunch
+  if (resourcesPath !== undefined && (platform === 'darwin' || platform === 'win32')) {
+    const command = join(resourcesPath, 'runtime', 'cli', 'bin', platform === 'win32' ? 'dsh.cmd' : 'dsh')
+    if (existsSync(command)) return [command]
+  }
   return [process.execPath, ...process.execArgv, process.argv[1] ?? 'dsh']
 }
 
@@ -599,10 +615,10 @@ function markCredentialVerified(ctx: Context, scope?: string): void {
 
 /**
  * The dsh build the sub-dsh runs, probed by asking the very launch argv the
- * delegation would spawn for its `--version` (the sub-dsh replicates the
- * parent instance's own node + entry point, so the parent's build IS the
- * child's). Cached by the family probe against that entry script's identity,
- * so a harness upgrade re-probes and an unchanged one never spawns twice.
+ * delegation would spawn for its `--version` (Desktop's official CLI or the
+ * parent instance's own entry identifies the same build). Cached by the family
+ * probe against that entry script's identity, so a harness upgrade re-probes
+ * and an unchanged one never spawns twice.
  * @param ctx - host context carrying the subprocess seam.
  * @param config - plugin config carrying the optional launch override.
  * @param homeDir - the harness's scoped home.
@@ -663,10 +679,10 @@ export async function startDshCliRun(
   // measures actual CLI runtime.
   if (spec.childSession !== undefined) openMirrorTurn(spec.childSession, turn, 'exec')
 
-  // The default launch replicates THIS process (node + argv[1]), which only
-  // exists on the host. A container target therefore expects the caller to
-  // have pinned `cliLaunch` to the unit's own entry (`['dsh']` on the T16
-  // image) — the existing config knob, not a new field on the exec target.
+  // A container target cannot reuse the host's own CLI or Desktop resources;
+  // it expects the caller to have pinned `cliLaunch` to the unit's own entry
+  // (`['dsh']` on the T16 image) — the existing config knob, not a new field
+  // on the exec target.
   const launch = dshLaunchArgv(config)
   // The model rides `--model`, after the session flag on both variants: it is
   // orthogonal to which session runs, and the sub-dsh's parser takes it in
@@ -683,7 +699,7 @@ export async function startDshCliRun(
   const env = delegationEnv({
     DSH_HOME: spec.homeDir,
     ...modelEnv,
-    // The launch replicates the parent's tsx ESM hook (dshLaunchArgv), so
+    // A source launch replicates the parent's tsx ESM hook, so
     // the hook's tsconfig path is a hard launch dependency: without it tsx
     // compiles the harness source with default options and the child dies
     // at import time ('FiberState' export mismatch). Pass it explicitly —

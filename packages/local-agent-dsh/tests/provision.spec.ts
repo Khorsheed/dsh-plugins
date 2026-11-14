@@ -27,6 +27,8 @@ describe('dsh sub-profile provisioning', () => {
     const patch = readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')
     expect(patch).toContain('providers: !!js JSON.parse(process.env.DSH_LOCAL_AGENT_MODEL_CONFIG')
     expect(patch).toContain('- id: llm-deepseek')
+    expect(patch).toContain('- id: llm-deepseek-account')
+    expect(patch).toContain('.deepseekAccount ?? {}')
     expect(patch).not.toContain('DSH_LOCAL_AGENT_MODEL_API_KEY')
     provisionDshSubProfile(home, { headlessBundleDir: bundleDir })
     expect(readFileSync(join(profile, 'cordis.patch.yml'), 'utf8')).toBe('- id: runner\n')

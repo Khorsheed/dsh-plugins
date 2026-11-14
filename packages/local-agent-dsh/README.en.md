@@ -9,7 +9,7 @@ Some subtasks deserve a clean DSH: none of the current session's context, its ow
 ## What it does
 
 - **Works once installed**: no switch to turn on; the delegation tool follows the mode — sessions of the Dev, Game Dev and Video modes get it, every other session is unchanged.
-- **No separate sign-in**: it uses the model and key you picked in your current DSH, and the card shows whether that credential works.
+- **No separate sign-in**: it uses the model you picked and the API key or DeepSeek account already set up in your current DSH, and the card shows whether that credential works.
 - **Kept apart**: the second DSH's sessions, settings, and state live in their own folder; they never show up in your session list or change your current instance.
 - **See the work as it happens**: its output appears in the sub-session as it runs.
 - **Keep talking**: have the agent follow up, or open the sub-session and message it yourself; it's the same session on the second DSH.
@@ -33,7 +33,7 @@ This plugin comes with the 「多Agent协作」 (multi-agent) suite; all the loc
 
 ## Compatibility
 
-Needs DSH 0.2.2-rc.1 or later. On DSH 0.2.1 or earlier, stay on the previous release line.
+Needs DSH 0.2.2-rc.1 or later. On DSH 0.2.1 or earlier, stay on the previous release line. DeepSeek account delegation needs 0.2.2-rc.2 or later; API-key routes still support 0.2.2-rc.1.
 
 ## For developers
 
