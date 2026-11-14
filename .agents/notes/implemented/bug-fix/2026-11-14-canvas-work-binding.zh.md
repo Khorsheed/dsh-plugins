@@ -22,6 +22,6 @@ Status: implemented
 
 ## Consequences
 
-- 现有 `bindings.json` 无需迁移。普通画布沿用同一个 session → canvas 映射，用户或 Agent 再次选择作品后即生效。
+- 现有 `bindings.json` 无需迁移。普通画布沿用同一个 session → canvas 映射，用户或 Agent 再次选择作品后即生效。旧 `no-genre` 字面量保留在公开 TypeScript 联合类型中以避免消费者编译破坏，但存储层不再返回它。
 - 体裁变化仍发出原有事件，小说工具会在适当时撤销授权，同时保留会话的普通画布目标。
 - 画布包构建和全部 37 个测试文件通过，覆盖普通画布绑定与重启、清除体裁、两条创建路径和 chip 过滤。

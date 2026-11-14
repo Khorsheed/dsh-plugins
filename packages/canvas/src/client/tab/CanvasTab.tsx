@@ -723,7 +723,7 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     }
     const bound = await run(() => bindCanvas(sessionId, { canvasId: value.board.id }))
     if (bound !== null && !bound.ok) {
-      showToast(errorText(bound.error))
+      showToast(bound.error === 'no-genre' ? t('bind.failed') : errorText(bound.error))
     } else {
       showToast(t('toast.canvasCreated', { title: value.board.title }))
     }

@@ -1894,10 +1894,14 @@ export interface BoardBindRequest {
   readonly canvasId: string | null
 }
 
-/** The binding gesture's receipt. Every existing canvas can be a session's work. */
+/**
+ * The binding gesture's receipt. Every existing canvas can be a session's work.
+ * Legacy `no-genre` stays in the union for TypeScript compatibility but is no
+ * longer returned: binding is not a genre capability grant.
+ */
 export type BoardBindResult =
   | { readonly ok: true; readonly canvasId: string | null }
-  | { readonly ok: false; readonly error: CanvasError }
+  | { readonly ok: false; readonly error: CanvasError | 'no-genre' }
 
 /* --------------------------------------------------------- manuscripts (wire) */
 

@@ -22,6 +22,6 @@ The session header offered to bind a work, but both its menu and the store accep
 
 ## Consequences
 
-- Existing `bindings.json` data needs no migration. Plain-canvas bindings use the same session-to-canvas mapping and become effective after the user or Agent selects the work again.
+- Existing `bindings.json` data needs no migration. Plain-canvas bindings use the same session-to-canvas mapping and become effective after the user or Agent selects the work again. The legacy `no-genre` literal remains in the public TypeScript union for source compatibility, but the store no longer returns it.
 - Genre changes emit the existing genre event, so novel tool grants are revoked when appropriate without losing the session's ordinary canvas target.
 - The canvas package build and all 37 test files pass, including plain-canvas binding and restart, genre clearing, both creation paths, and chip filtering.
