@@ -45,6 +45,8 @@
     "src/client/detail/BlockEditor.tsx",
     "src/client/detail/CardMarkdown.tsx",
     "src/client/detail/CanvasDetailView.tsx",
+    "src/client/detail/DetailHeader.tsx",
+    "src/client/detail/MarkdownEditor.tsx",
     "src/client/manuscript/ManuscriptView.tsx",
     "src/client/type/fields.tsx",
     "src/client/type/TypeView.tsx",

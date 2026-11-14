@@ -10,8 +10,8 @@
  * conversation: 「让 Agent 改」 quotes the manuscript's handle and version into
  * the input, and the Agent writes back through `canvas_write` (op=manuscript).
  *
- * The user's own edit is the card editor's pad (CardTextarea, uncontrolled,
- * ⌘⏎ saves) beside a live preview, and every save presents the version the
+ * The user's own edit uses the shared MarkdownEditor (CardTextarea inside,
+ * uncontrolled, ⌘⏎ saves) beside a live preview, and every save presents the version the
  * edit started from. When someone wrote in between, the store refuses and the
  * page says so, offering both ways out — take theirs, or put mine over it —
  * rather than choosing for the user. Saving into a workspace follows the same
@@ -39,9 +39,9 @@ import type { CanvasManuscriptViewProps } from '../contract.ts'
 import { canvasErrorText } from '../error-text.ts'
 import { base64Of, imageFilesOf } from '../images.ts'
 import { ConfirmDelete } from '../confirm-delete.tsx'
-import { DetailCrumbs } from '../detail/DetailCrumbs.tsx'
+import { DetailHeader } from '../detail/DetailHeader.tsx'
+import { MarkdownEditor } from '../detail/MarkdownEditor.tsx'
 import { MoreMenu } from '../more-menu.tsx'
-import { CardTextarea } from '../space/CardTextarea.tsx'
 import { agoOf, basenameOf, messageOf } from '../text.ts'
 import {
   IconCheckOutlineMedium, IconCodeOutlineMedium, IconEditOutlineMedium, IconFolderOpenOutlineMedium,
@@ -275,9 +275,7 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
 
   const notice = (text: string): ReactNode => (
     <div className={detailCss.root}>
-      <div className={detailCss.header}>
-        <DetailCrumbs t={t} crumbs={crumbs} here={crumbs.heading} cardId={null} />
-      </div>
+      <DetailHeader t={t} crumbs={crumbs} here={crumbs.heading} cardId={null} />
       <div className={detailCss.notice}>{text}</div>
     </div>
   )
@@ -386,9 +384,14 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
 
   return (
     <div className={detailCss.root}>
-      <div className={detailCss.header}>
-        <DetailCrumbs t={t} crumbs={crumbs} here={manuscript.title} cardId={null} trailing={moreMenu} />
-        {renaming ? (
+      <DetailHeader
+        t={t}
+        className={css.header}
+        crumbs={crumbs}
+        here={t('view.manuscripts')}
+        cardId={null}
+        trailing={moreMenu}
+        title={renaming ? (
           <input
             className={`${detailCss.title} ${css.titleInput}`}
             defaultValue={manuscript.title}
@@ -402,52 +405,54 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
             }}
           />
         ) : (
-          <div className={detailCss.title}>{manuscript.title}</div>
+          <div className={`${detailCss.title} ${css.title}`}>{manuscript.title}</div>
         )}
-        <div className={detailCss.meta}>
-          <ManuscriptStatusTag t={t} manuscript={manuscript} />
-          <span className={css.version}>{t('ms.version', { version: String(manuscript.version) })}</span>
-          <span>{manuscript.lastWrittenBy === 'agent' ? t('ms.byAgent') : t('ms.byUser')}</span>
-          {!Number.isNaN(updated) && <span>{t('detail.updated', { time: agoOf(updated, t) })}</span>}
-          {exported !== undefined && (
-            <button
-              type="button"
-              className={css.savedPath}
-              title={exported.path}
-              onClick={() => { if (sessionId !== undefined) openFile(sessionId, exported.workspace, exported.path) }}
-            >
-              <IconRightUpOutlineMedium size={11} />
-              <span>{t('ms.savedAt', { path: basenameOf(exported.path) })}</span>
-            </button>
-          )}
-          <span className={detailCss.spacer} />
-          {editing === null && !readonly && (
-            <button
-              type="button"
-              className={detailCss.iconButton}
-              disabled={body === null}
-              onClick={() => { if (body !== null) setEditing({ base: body.version, text: body.text }) }}
-            >
-              <IconEditOutlineMedium size={12} />
-              {t('ms.edit')}
-            </button>
-          )}
-          {editing === null && canTalk && (
-            <button
-              type="button"
-              className={`${detailCss.iconButton} ${css.primary}`}
-              onClick={() => {
-                const block = t('ms.quote', {
-                  canvas: board.title, title: manuscript.title, id: manuscript.id, version: String(manuscript.version),
-                })
-                showToast(quoteToConversation(sessionId, block) ? t('talk.quoted') : t('talk.unavailable'))
-              }}
-            >
-              {t('ms.askAgent')}
-            </button>
-          )}
-        </div>
-      </div>
+        actions={editing === null ? (
+          <>
+            {!readonly && (
+              <button
+                type="button"
+                className={detailCss.iconButton}
+                disabled={body === null}
+                onClick={() => { if (body !== null) setEditing({ base: body.version, text: body.text }) }}
+              >
+                <IconEditOutlineMedium size={12} />
+                {t('ms.edit')}
+              </button>
+            )}
+            {canTalk && (
+              <button
+                type="button"
+                className={`${detailCss.iconButton} ${css.primary}`}
+                onClick={() => {
+                  const block = t('ms.quote', {
+                    canvas: board.title, title: manuscript.title, id: manuscript.id, version: String(manuscript.version),
+                  })
+                  showToast(quoteToConversation(sessionId, block) ? t('talk.quoted') : t('talk.unavailable'))
+                }}
+              >
+                {t('ms.askAgent')}
+              </button>
+            )}
+          </>
+        ) : undefined}
+      >
+        <ManuscriptStatusTag t={t} manuscript={manuscript} />
+        <span className={css.version}>{t('ms.version', { version: String(manuscript.version) })}</span>
+        <span>{manuscript.lastWrittenBy === 'agent' ? t('ms.byAgent') : t('ms.byUser')}</span>
+        {!Number.isNaN(updated) && <span>{t('detail.updated', { time: agoOf(updated, t) })}</span>}
+        {exported !== undefined && (
+          <button
+            type="button"
+            className={css.savedPath}
+            title={exported.path}
+            onClick={() => { if (sessionId !== undefined) openFile(sessionId, exported.workspace, exported.path) }}
+          >
+            <IconRightUpOutlineMedium size={11} />
+            <span>{t('ms.savedAt', { path: basenameOf(exported.path) })}</span>
+          </button>
+        )}
+      </DetailHeader>
 
       {newer && (
         <div className={css.banner} role="status">
@@ -476,33 +481,27 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
       )}
 
       {editing !== null ? (
-        <div className={detailCss.body} data-mode="split">
-          <div className={detailCss.sourcePane}>
-            <CardTextarea
-              className={detailCss.editor}
-              defaultValue={editing.text}
-              submitOn="mod-enter"
-              blurSubmits={false}
-              autoFocus
-              onPaste={onPaste}
-              onTextChange={text => { setEditing(current => current === null ? current : { ...current, text }) }}
-              onSubmit={text => { void save(text, editing.base) }}
-              // Esc leaves only an untouched edit: words are never dropped by a key.
-              onCancel={() => { if (editing.text === body?.text) setEditing(null) }}
-            />
-            <div className={css.editActions}>
-              <span className={detailCss.editHint}>{t('ms.editHint')}</span>
-              <span className={detailCss.spacer} />
-              <Button size="sm" onClick={() => { setEditing(null); setConflict(null) }}>{t('ms.cancel')}</Button>
-              <Button size="sm" variant="primary" onClick={() => { void save(editing.text, editing.base) }}>
-                {t('ms.save')}
-              </Button>
-            </div>
-          </div>
-          <div className={`${detailCss.renderPane} ${css.prose}`}>
-            <CardMarkdown text={editing.text} labels={markdownLabels} pathImages={pathImages} />
-          </div>
-        </div>
+        <MarkdownEditor
+          text={editing.text}
+          submitOn="mod-enter"
+          blurSubmits={false}
+          autoFocus
+          preview
+          previewClassName={css.prose}
+          hint={t('ms.editHint')}
+          markdownLabels={markdownLabels}
+          pathImages={pathImages}
+          onPaste={onPaste}
+          onTextChange={text => { setEditing(current => current === null ? current : { ...current, text }) }}
+          onSave={text => { void save(text, editing.base) }}
+          // Esc leaves only an untouched edit: words are never dropped by a key.
+          onCancel={() => { if (editing.text === body?.text) setEditing(null) }}
+          actions={{
+            cancelLabel: t('ms.cancel'),
+            saveLabel: t('ms.save'),
+            onCancel: () => { setEditing(null); setConflict(null) },
+          }}
+        />
       ) : (
         <div className={`${detailCss.body} ${css.prose}`}>
           {body === null
@@ -511,10 +510,20 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
         </div>
       )}
 
-      <div className={css.ledger}>
-        {ledger(t('ms.used'), manuscript.sources.used, false)}
-        {ledger(t('ms.unused'), manuscript.sources.unused, true)}
-      </div>
+      {manuscript.sources.used.length + manuscript.sources.unused.length > 6 ? (
+        <details className={css.ledger}>
+          <summary className={css.sourceSummary}>{t('ms.sourceSummary', {
+            used: String(manuscript.sources.used.length), unused: String(manuscript.sources.unused.length),
+          })}</summary>
+          {ledger(t('ms.used'), manuscript.sources.used, false)}
+          {ledger(t('ms.unused'), manuscript.sources.unused, true)}
+        </details>
+      ) : (
+        <div className={css.ledger}>
+          {ledger(t('ms.used'), manuscript.sources.used, false)}
+          {ledger(t('ms.unused'), manuscript.sources.unused, true)}
+        </div>
+      )}
 
       <Modal
         open={exportAsk !== null}

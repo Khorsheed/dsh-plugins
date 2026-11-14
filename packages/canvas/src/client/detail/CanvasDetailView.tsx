@@ -48,7 +48,9 @@ import {
 } from '../../types.ts'
 import type { CanvasDetailProps } from '../contract.ts'
 import { categoryLabelMap } from '../category-label.ts'
-import { DetailCrumbs, KindTag } from './DetailCrumbs.tsx'
+import { KindTag } from './DetailCrumbs.tsx'
+import { DetailHeader } from './DetailHeader.tsx'
+import { MarkdownEditor } from './MarkdownEditor.tsx'
 import { canvasErrorText } from '../error-text.ts'
 import { base64Of, imageFilesOf, type CanvasImageFile } from '../images.ts'
 import { choosePaste, type PasteArm } from '../paste-table.ts'
@@ -483,25 +485,20 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
     const draftMode = modeFor(mode, false)
     return (
       <div className={css.root}>
-        <div className={css.header}>
-          {crumbs !== undefined && (
-            <DetailCrumbs t={t} crumbs={crumbs} here={t('crumb.newCard')} cardId={null} />
-          )}
-          <div className={css.meta}>
-            <KindTag
-              t={t}
-              kind={create.kind}
-              categories={open?.board.categories ?? []}
-              labels={categoryLabels}
-              // Re-filing a draft is the ＋新卡 menu's own verb: one draft per
-              // canvas, re-categorized in place.
-              onPick={create.onKind}
-            />
-            <span className={`${css.ghostFlag} ${css.rowFlag}`}>{t('detail.unsaved')}</span>
-            <span className={css.spacer} />
-            <ModeSeg modes={FLOW_MODES} mode={draftMode} onMode={setMode} t={t} />
-          </div>
-        </div>
+        <DetailHeader t={t} crumbs={crumbs} here={t('crumb.newCard')} cardId={null}>
+          <KindTag
+            t={t}
+            kind={create.kind}
+            categories={open?.board.categories ?? []}
+            labels={categoryLabels}
+            // Re-filing a draft is the ＋新卡 menu's own verb: one draft per
+            // canvas, re-categorized in place.
+            onPick={create.onKind}
+          />
+          <span className={`${css.ghostFlag} ${css.rowFlag}`}>{t('detail.unsaved')}</span>
+          <span className={css.spacer} />
+          <ModeSeg modes={FLOW_MODES} mode={draftMode} onMode={setMode} t={t} />
+        </DetailHeader>
         <div className={css.body} data-mode={draftMode === 'edit' ? 'edit' : undefined}>
           {draftMode === 'edit' ? (
             <BlockEditor
@@ -566,11 +563,7 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
   // the card having loaded.
   const notice = (text: string): ReactNode => (
     <div className={css.root}>
-      {crumbs !== undefined && (
-        <div className={css.header}>
-          <DetailCrumbs t={t} crumbs={crumbs} here={crumbs.heading} cardId={cardId} />
-        </div>
-      )}
+      {crumbs !== undefined && <DetailHeader t={t} crumbs={crumbs} here={crumbs.heading} cardId={cardId} />}
       <div className={css.notice}>{text}</div>
     </div>
   )
@@ -675,98 +668,90 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
 
   return (
     <div className={css.root}>
-      <div className={css.header}>
-        {crumbs !== undefined && (
-          <DetailCrumbs
-            t={t}
-            crumbs={crumbs}
-            here={nameOf(card.id) || crumbs.heading}
-            cardId={card.id}
-            trailing={moreMenu}
-          />
+      <DetailHeader
+        t={t}
+        crumbs={crumbs}
+        here={nameOf(card.id) || crumbs?.heading || card.id}
+        cardId={card.id}
+        trailing={crumbs === undefined ? undefined : moreMenu}
+        // Only an HTML page gets a title line: a markdown card's heading is
+        // already the body's first line, and the crumb names the card.
+        title={html && heading !== undefined ? <div className={css.title}>{plainInline(heading.title)}</div> : undefined}
+      >
+        <KindTag
+          t={t}
+          kind={card.kind}
+          categories={open.board.categories}
+          labels={categoryLabels}
+          suffix={card.createdBy === 'agent' && !proposed ? t('card.fromAgent') : undefined}
+          onPick={readonly || archived ? undefined : kind => void mutate(sid => patchCard(sid, {
+            canvasId: open.board.id, cardId: card.id, kind,
+          }), 'toast.cardSaved')}
+        />
+        {proposed && (
+          <span className={css.ghostFlag}>
+            <IconSparkleMedium size={12} />
+            {t('card.proposed')}
+          </span>
         )}
-        {/* Only an HTML page gets a title line: its <title> is not on the
-            page it renders. A markdown card's heading is already the body's
-            first line, and the crumb names the card — a line here drew it twice. */}
-        {html && heading !== undefined && <div className={css.title}>{plainInline(heading.title)}</div>}
-        <div className={css.meta}>
-          <KindTag
-            t={t}
-            kind={card.kind}
-            categories={open.board.categories}
-            labels={categoryLabels}
-            suffix={card.createdBy === 'agent' && !proposed ? t('card.fromAgent') : undefined}
-            onPick={readonly || archived ? undefined : kind => void mutate(sid => patchCard(sid, {
-              canvasId: open.board.id, cardId: card.id, kind,
-            }), 'toast.cardSaved')}
-          />
-          {proposed && (
-            <span className={css.ghostFlag}>
-              <IconSparkleMedium size={12} />
-              {t('card.proposed')}
-            </span>
-          )}
-          {archived && (
-            <span className={css.archivedTag}>
-              <IconArchiveOutlineMedium size={11} />
-              {t('detail.archived')}
-            </span>
-          )}
-          {html && (
-            <span className={css.formatTag}>{t('detail.formatHtml')}</span>
-          )}
-          {card.kind === 'question' && card.question !== undefined && (
-            <span className={css.qState} data-state={card.question.state}>
-              <span className={css.qDot} />
-              {card.question.state === 'open'
-                ? t('q.open')
-                : card.question.state === 'exploring'
-                  ? t('q.exploring')
-                  : t('q.answered')}
-            </span>
-          )}
-          {!Number.isNaN(created) && <span>{t('detail.created', { time: agoOf(created, t) })}</span>}
-          {!Number.isNaN(updated) && updated !== created && (
-            <span>{t('detail.updated', { time: agoOf(updated, t) })}</span>
-          )}
-          {card.source !== undefined && (card.source.type === 'url' ? (
-            <a className={css.source} href={card.source.ref} target="_blank" rel="noreferrer" title={card.source.ref}>
-              <span>{t('detail.origin', { name: card.source.title ?? card.source.ref })}</span>
-              <IconRightUpOutlineMedium size={10} />
-            </a>
-          ) : card.source.type === 'file' ? (
-            <button
-              type="button"
-              className={css.source}
-              title={card.source.ref}
-              onClick={() => { if (sessionId !== undefined) openFile(sessionId, workspaceRoot, card.source!.ref) }}
-            >
-              <span>{t('detail.origin', { name: card.source.title ?? basenameOf(card.source.ref) })}</span>
-              <IconRightUpOutlineMedium size={10} />
-            </button>
-          ) : (
-            <span className={css.sourceText}>{t('detail.origin', { name: card.source.title ?? card.source.ref })}</span>
-          ))}
-          <span className={css.spacer} />
-          {!proposed && !archived && !readonly && (
-            <ModeSeg modes={html ? PAGE_MODES : FLOW_MODES} mode={view} onMode={setMode} t={t} />
-          )}
-          {archived && !readonly && (
-            <button
-              type="button"
-              className={css.iconButton}
-              onClick={() => void mutate(sid => patchCard(sid, {
-                canvasId: open.board.id, cardId: card.id, status: 'kept',
-              }), 'toast.cardRestored')}
-            >
-              <IconRefreshOutlineMedium size={12} />
-              {t('card.restore')}
-            </button>
-          )}
-          {/* A composition without the crumb row keeps the ⋯ where it was. */}
-          {crumbs === undefined && moreMenu}
-        </div>
-      </div>
+        {archived && (
+          <span className={css.archivedTag}>
+            <IconArchiveOutlineMedium size={11} />
+            {t('detail.archived')}
+          </span>
+        )}
+        {html && <span className={css.formatTag}>{t('detail.formatHtml')}</span>}
+        {card.kind === 'question' && card.question !== undefined && (
+          <span className={css.qState} data-state={card.question.state}>
+            <span className={css.qDot} />
+            {card.question.state === 'open'
+              ? t('q.open')
+              : card.question.state === 'exploring'
+                ? t('q.exploring')
+                : t('q.answered')}
+          </span>
+        )}
+        {!Number.isNaN(created) && <span>{t('detail.created', { time: agoOf(created, t) })}</span>}
+        {!Number.isNaN(updated) && updated !== created && (
+          <span>{t('detail.updated', { time: agoOf(updated, t) })}</span>
+        )}
+        {card.source !== undefined && (card.source.type === 'url' ? (
+          <a className={css.source} href={card.source.ref} target="_blank" rel="noreferrer" title={card.source.ref}>
+            <span>{t('detail.origin', { name: card.source.title ?? card.source.ref })}</span>
+            <IconRightUpOutlineMedium size={10} />
+          </a>
+        ) : card.source.type === 'file' ? (
+          <button
+            type="button"
+            className={css.source}
+            title={card.source.ref}
+            onClick={() => { if (sessionId !== undefined) openFile(sessionId, workspaceRoot, card.source!.ref) }}
+          >
+            <span>{t('detail.origin', { name: card.source.title ?? basenameOf(card.source.ref) })}</span>
+            <IconRightUpOutlineMedium size={10} />
+          </button>
+        ) : (
+          <span className={css.sourceText}>{t('detail.origin', { name: card.source.title ?? card.source.ref })}</span>
+        ))}
+        <span className={css.spacer} />
+        {!proposed && !archived && !readonly && (
+          <ModeSeg modes={html ? PAGE_MODES : FLOW_MODES} mode={view} onMode={setMode} t={t} />
+        )}
+        {archived && !readonly && (
+          <button
+            type="button"
+            className={css.iconButton}
+            onClick={() => void mutate(sid => patchCard(sid, {
+              canvasId: open.board.id, cardId: card.id, status: 'kept',
+            }), 'toast.cardRestored')}
+          >
+            <IconRefreshOutlineMedium size={12} />
+            {t('card.restore')}
+          </button>
+        )}
+        {/* A composition without the crumb row keeps the ⋯ where it was. */}
+        {crumbs === undefined && moreMenu}
+      </DetailHeader>
 
       {proposed && !readonly && (
         <div className={css.ghostActions}>
@@ -913,27 +898,24 @@ export function CanvasDetailView(props: CanvasDetailProps): ReactNode {
           onCancel={() => { setMode('read') }}
         />
       ) : view === 'source' && !readonly && !proposed && !archived ? (
-        <div className={css.body} data-mode="source">
-          <div className={css.sourcePane}>
-            <CardTextarea
-              className={css.editor}
-              defaultValue={card.text}
-              submitOn="mod-enter"
-              autoFocus
-              onPaste={onPaste}
-              onSubmit={text => {
-                const trimmed = text.trim()
-                setMode('read')
-                if (trimmed.length === 0 || trimmed === card.text) return
-                void mutate(sid => patchCard(sid, {
-                  canvasId: open.board.id, cardId: card.id, text: trimmed,
-                }), 'toast.cardSaved')
-              }}
-              onCancel={() => { setMode('read') }}
-            />
-            <span className={css.editHint}>{t('card.editHint')}</span>
-          </div>
-        </div>
+        <MarkdownEditor
+          text={card.text}
+          submitOn="mod-enter"
+          autoFocus
+          hint={t('card.editHint')}
+          markdownLabels={markdownLabels}
+          pathImages={pathImages}
+          onPaste={onPaste}
+          onSave={text => {
+            const trimmed = text.trim()
+            setMode('read')
+            if (trimmed.length === 0 || trimmed === card.text) return
+            void mutate(sid => patchCard(sid, {
+              canvasId: open.board.id, cardId: card.id, text: trimmed,
+            }), 'toast.cardSaved')
+          }}
+          onCancel={() => { setMode('read') }}
+        />
       ) : definition !== undefined && card.text.trim() === '' && !hasDrawings(card.drawings ?? {}) ? (
         // A typed card whose fields are its whole content: no empty body, and
         // no "write the text first" — the fields above are what it holds.
