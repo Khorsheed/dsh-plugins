@@ -18,10 +18,10 @@
  * editor whose text came from the card you looked at last is a corruption, not
  * a saving.
  *
- * State model: the strip, the open canvas and board freshness all ride the
- * shared selection store (`useSelection`), which is why the strip survives a
- * reload and reaches every seat. Gestures write it, the turn watch touches its
- * rev, and the tab re-reads. A draft's words are the one thing NOT in the store
+ * State model: the strip and open canvas ride this session's selection store
+ * (`useSelection`), so each session restores its own strip after a reload.
+ * Board freshness touches every session store; gestures write only their own.
+ * A draft's words are the one thing NOT in the store
  * — they live here, keyed by row id, so turning to another tab and back keeps
  * them and closing the row is what drops them (after the question). The tab
  * reports the open canvas to the host (`focusCanvas`) so the MAIN session's
@@ -470,16 +470,25 @@ export function CanvasTab(props: CanvasTabProps): ReactNode {
     return () => { stop(); clearInterval(timer) }
   }, [openId, refreshBoards])
 
-  // Put a board on the strip when there is nothing to show yet (a fresh session,
-  // or a stash that held nothing) — once, because after the user closes every
-  // row by hand, re-opening one would be an argument.
+  // A fresh session opens its bound work; without one it falls back to recent
+  // activity. This happens once per mounted session, so closing every row by
+  // hand does not re-open one on the next render.
   useEffect(() => {
     if (autoOpenedRef.current || canvases === null || canvases.length === 0) return
     autoOpenedRef.current = true
     if (selection.tabs.length > 0) return
-    const first = canvases.find(canvas => canvas.archivedAt === null) ?? canvases[0]
-    if (first !== undefined) showCanvas(first.id)
-  }, [canvases, selection.tabs.length, showCanvas])
+    let cancelled = false
+    void (async () => {
+      const bound = sessionId === undefined || props.boundCanvas === undefined
+        ? null
+        : await props.boundCanvas(sessionId).then(result => result.ok ? result.value : null).catch(() => null)
+      if (cancelled) return
+      const first = (bound === null ? undefined : canvases.find(canvas => canvas.id === bound && canvas.archivedAt === null))
+        ?? canvases.find(canvas => canvas.archivedAt === null) ?? canvases[0]
+      if (first !== undefined) showCanvas(first.id)
+    })()
+    return () => { cancelled = true }
+  }, [canvases, selection.tabs.length, showCanvas, sessionId, props.boundCanvas])
 
   // Report the open canvas to the host (the main-session tools' target). The
   // store derives it from the SHOWING row, so a card tab points the tools at

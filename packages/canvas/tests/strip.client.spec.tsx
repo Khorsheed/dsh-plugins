@@ -236,6 +236,27 @@ describe('CanvasSelectionStore — the rows', () => {
     expect(new CanvasSelectionStore().source.getSnapshot().tabs).toHaveLength(0)
   })
 
+  it('keeps scoped strips independent and restores each under its own session key', () => {
+    const first = new CanvasSelectionStore('s1')
+    const second = new CanvasSelectionStore('s2')
+    first.openCanvas(OTHER_ID)
+    second.openCardTab(CANVAS_ID, 'c_1', '自己的卡')
+    expect(first.source.getSnapshot().canvasId).toBe(OTHER_ID)
+    expect(second.source.getSnapshot().canvasId).toBe(CANVAS_ID)
+    expect(new CanvasSelectionStore('s1').source.getSnapshot().canvasId).toBe(OTHER_ID)
+    expect(new CanvasSelectionStore('s2').source.getSnapshot().tabs[0]?.at)
+      .toEqual({ kind: 'card', cardId: 'c_1', heading: '自己的卡' })
+    expect(sessionStorage.getItem('dsh-canvas.tabs:s1')).not.toBe(sessionStorage.getItem('dsh-canvas.tabs:s2'))
+  })
+
+  it('migrates the legacy shared strip to one scoped session, not every session', () => {
+    const legacy = new CanvasSelectionStore()
+    legacy.openCanvas(OTHER_ID)
+    expect(new CanvasSelectionStore('s1').source.getSnapshot().canvasId).toBe(OTHER_ID)
+    expect(sessionStorage.getItem('dsh-canvas.tabs')).toBeNull()
+    expect(new CanvasSelectionStore('s2').source.getSnapshot().tabs).toHaveLength(0)
+  })
+
   it('folds a stash from the card-row strip into one board row per canvas', () => {
     sessionStorage.setItem('dsh-canvas.tabs', JSON.stringify({
       tabs: [

@@ -301,6 +301,16 @@ describe('CanvasTab — list, switcher, board', () => {
     })
   })
 
+  it('opens the bound work first in a fresh session instead of the most recent canvas', async () => {
+    const other = board('canvas_second01abcdef', [card('c_x')], { title: '绑定作品' })
+    const { props, store } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')]), other] })
+    const boundCanvas = vi.fn(async () => ({ ok: true as const, value: other.id }))
+    render(<CanvasTab {...props} boundCanvas={boundCanvas as never} />)
+    await screen.findByText('卡片 c_x')
+    expect(store.source.getSnapshot().canvasId).toBe(other.id)
+    expect(screen.queryByText('卡片 c_1')).toBeNull()
+  })
+
   it('switches canvases from the switcher and re-reports the focus', async () => {
     const other = board('canvas_second01abcdef', [card('c_x')], { title: '第二块画布' })
     const { mocks, props } = makeHarness({ boards: [board(CANVAS_ID, [card('c_1')]), other] })
