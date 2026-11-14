@@ -1,7 +1,7 @@
 {
   "name": "@khorsheed/dsh-video-studio",
   "description": "剪辑台：以文稿为主的播客与对谈剪辑——一条混录自动分人、节目声纹认人、删字即删音频，右栏剪辑面板与剪辑模式工具",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
