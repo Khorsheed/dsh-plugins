@@ -49,7 +49,7 @@ import {
 import type { CanvasDetailProps } from '../contract.ts'
 import { categoryLabelMap } from '../category-label.ts'
 import { KindTag } from './DetailCrumbs.tsx'
-import { DetailHeader } from './DetailHeader.tsx'
+import { DetailHeader, DetailModeSeg } from './DetailHeader.tsx'
 import { MarkdownEditor } from './MarkdownEditor.tsx'
 import { canvasErrorText } from '../error-text.ts'
 import { base64Of, imageFilesOf, type CanvasImageFile } from '../images.ts'
@@ -117,18 +117,12 @@ function ModeSeg({ modes, mode, onMode, t }: {
   readonly t: CanvasDetailProps['t']
 }): ReactNode {
   return (
-    <span className={css.seg} role="group" aria-label={t('detail.viewMode')}>
-      {modes.map(candidate => (
-        <button
-          key={candidate}
-          type="button"
-          aria-pressed={mode === candidate}
-          onClick={() => { onMode(candidate) }}
-        >
-          {t(MODE_LABEL[candidate])}
-        </button>
-      ))}
-    </span>
+    <DetailModeSeg
+      modes={modes.map(candidate => ({ id: candidate, label: t(MODE_LABEL[candidate]) }))}
+      mode={mode}
+      onMode={onMode}
+      label={t('detail.viewMode')}
+    />
   )
 }
 

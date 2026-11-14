@@ -11,7 +11,8 @@
  * the input, and the Agent writes back through `canvas_write` (op=manuscript).
  *
  * The user's own edit uses the shared MarkdownEditor (CardTextarea inside,
- * uncontrolled, ⌘⏎ saves) beside a live preview, and every save presents the version the
+ * uncontrolled, ⌘⏎ saves) alone or beside a live preview. Read, edit and split
+ * share one in-flight draft; switching to read hides the editor without dropping it. Every save presents the version the
  * edit started from. When someone wrote in between, the store refuses and the
  * page says so, offering both ways out — take theirs, or put mine over it —
  * rather than choosing for the user. Saving into a workspace follows the same
@@ -39,7 +40,7 @@ import type { CanvasManuscriptViewProps } from '../contract.ts'
 import { canvasErrorText } from '../error-text.ts'
 import { base64Of, imageFilesOf } from '../images.ts'
 import { ConfirmDelete } from '../confirm-delete.tsx'
-import { DetailHeader } from '../detail/DetailHeader.tsx'
+import { DetailHeader, DetailModeSeg } from '../detail/DetailHeader.tsx'
 import { MarkdownEditor } from '../detail/MarkdownEditor.tsx'
 import { MoreMenu } from '../more-menu.tsx'
 import { agoOf, basenameOf, messageOf } from '../text.ts'
@@ -50,6 +51,9 @@ import {
 import type {} from '../locales.ts'
 import detailCss from '../detail/CanvasDetailView.module.css'
 import css from './ManuscriptView.module.css'
+
+/** Read the rendered text, edit source alone, or keep source and preview side by side. */
+type ManuscriptMode = 'read' | 'edit' | 'split'
 
 /** The user's edit in flight: the version it started from, and its words so far. */
 interface Editing {
@@ -97,6 +101,7 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
   const [open, setOpen] = useState<{ board: CanvasBoard; version: string } | null>(null)
   const [body, setBody] = useState<{ readonly version: number; readonly text: string } | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [mode, setMode] = useState<ManuscriptMode>('read')
   const [editing, setEditing] = useState<Editing | null>(null)
   /** A save lost the version race: the version it lost to. */
   const [conflict, setConflict] = useState<number | null>(null)
@@ -203,6 +208,7 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
     setBody({ version: value.manuscript.version, text })
     setEditing(null)
     setConflict(null)
+    setMode('read')
     showToast(t('ms.written', { version: String(value.manuscript.version) }))
   }, [sessionId, canvasId, manuscriptId, writeManuscript, run, showToast, errorText, t])
 
@@ -380,6 +386,17 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
     </div>
   )
 
+  const chooseMode = (next: ManuscriptMode): void => {
+    if (next === 'read') {
+      setMode('read')
+      return
+    }
+    const current = body
+    if (readonly || current === null) return
+    setEditing(was => was ?? { base: current.version, text: current.text })
+    setMode(next)
+  }
+
   const newer = editing !== null && conflict === null && manuscript.version > editing.base
 
   return (
@@ -407,20 +424,21 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
         ) : (
           <div className={`${detailCss.title} ${css.title}`}>{manuscript.title}</div>
         )}
-        actions={editing === null ? (
+        actions={(
           <>
-            {!readonly && (
-              <button
-                type="button"
-                className={detailCss.iconButton}
-                disabled={body === null}
-                onClick={() => { if (body !== null) setEditing({ base: body.version, text: body.text }) }}
-              >
-                <IconEditOutlineMedium size={12} />
-                {t('ms.edit')}
-              </button>
+            {!readonly && body !== null && (
+              <DetailModeSeg
+                modes={[
+                  { id: 'read', label: t('detail.read') },
+                  { id: 'edit', label: t('detail.edit') },
+                  { id: 'split', label: t('detail.split') },
+                ]}
+                mode={mode}
+                onMode={chooseMode}
+                label={t('detail.viewMode')}
+              />
             )}
-            {canTalk && (
+            {editing === null && canTalk && (
               <button
                 type="button"
                 className={`${detailCss.iconButton} ${css.primary}`}
@@ -435,9 +453,12 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
               </button>
             )}
           </>
-        ) : undefined}
+        )}
       >
         <ManuscriptStatusTag t={t} manuscript={manuscript} />
+        {editing !== null && mode === 'read' && (
+          <span className={detailCss.ghostFlag}>{t('detail.unsaved')}</span>
+        )}
         <span className={css.version}>{t('ms.version', { version: String(manuscript.version) })}</span>
         <span>{manuscript.lastWrittenBy === 'agent' ? t('ms.byAgent') : t('ms.byUser')}</span>
         {!Number.isNaN(updated) && <span>{t('detail.updated', { time: agoOf(updated, t) })}</span>}
@@ -469,6 +490,7 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
             onClick={() => {
               setEditing(null)
               setConflict(null)
+              setMode('read')
               setReload(value => value + 1)
             }}
           >
@@ -480,13 +502,13 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
         </div>
       )}
 
-      {editing !== null ? (
+      {editing !== null && mode !== 'read' ? (
         <MarkdownEditor
           text={editing.text}
           submitOn="mod-enter"
           blurSubmits={false}
           autoFocus
-          preview
+          preview={mode === 'split'}
           previewText={reading(editing.text)}
           previewClassName={css.prose}
           hint={t('ms.editHint')}
@@ -496,11 +518,16 @@ export function ManuscriptView(props: CanvasManuscriptViewProps): ReactNode {
           onTextChange={text => { setEditing(current => current === null ? current : { ...current, text }) }}
           onSave={text => { void save(text, editing.base) }}
           // Esc leaves only an untouched edit: words are never dropped by a key.
-          onCancel={() => { if (editing.text === body?.text) setEditing(null) }}
+          onCancel={() => {
+            if (editing.text === body?.text) {
+              setEditing(null)
+              setMode('read')
+            }
+          }}
           actions={{
             cancelLabel: t('ms.cancel'),
             saveLabel: t('ms.save'),
-            onCancel: () => { setEditing(null); setConflict(null) },
+            onCancel: () => { setEditing(null); setConflict(null); setMode('read') },
           }}
         />
       ) : (

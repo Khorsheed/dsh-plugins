@@ -32,3 +32,26 @@ export function DetailHeader({ t, crumbs, here, cardId, trailing, title, actions
     </div>
   )
 }
+
+/** One segmented view-mode control shared by card and manuscript detail pages. */
+export function DetailModeSeg<Mode extends string>({ modes, mode, onMode, label }: {
+  readonly modes: readonly { readonly id: Mode; readonly label: string }[]
+  readonly mode: Mode
+  readonly onMode: (mode: Mode) => void
+  readonly label: string
+}): ReactNode {
+  return (
+    <span className={css.seg} role="group" aria-label={label}>
+      {modes.map(candidate => (
+        <button
+          key={candidate.id}
+          type="button"
+          aria-pressed={mode === candidate.id}
+          onClick={() => { onMode(candidate.id) }}
+        >
+          {candidate.label}
+        </button>
+      ))}
+    </span>
+  )
+}
